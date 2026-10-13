@@ -2,6 +2,15 @@
 
 ## 2026-10-13
 
+- **Classic Baseplate and Flat Terrain on Home.** Home's New row now has
+  Studio's three plain templates. Each new place matches what real
+  Studio's own template holds, measured from Studio: Baseplate gets its
+  grid texture, spawn decal, Sky and lighting effects; Classic Baseplate
+  is the studded 512-stud floor under the old flat lighting, with no
+  spawn; Flat Terrain is a 2048×2048 plain of grass voxels, 64 studs
+  deep, with its top at y = 8.
+  — @chteau
+
 - **A Game Settings dialog.** Open it from Home › Game Settings or from
   File. It has Studio's tabs and edits the linked experience's settings
   together with the place file's own. Each row says where its value

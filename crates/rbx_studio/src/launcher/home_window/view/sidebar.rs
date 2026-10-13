@@ -104,7 +104,9 @@ impl HomeWindow {
                             .child(ui::icon("plus", 13.)),
                     )
                     .child("New place")
-                    .on_click(cx.listener(|this, _, _, cx| this.new_place(cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.new_place(crate::home::Template::Baseplate, cx)
+                    })),
             )
             .child(
                 h_flex()

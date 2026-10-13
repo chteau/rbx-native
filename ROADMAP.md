@@ -2549,13 +2549,15 @@ Roblox's own engine.
   this one: a real, in-app way to ship a half-finished feature switched
   off by default instead of either blocking a merge on it being complete
   or shipping it fully live before it's ready.
-- [ ] 📋 **More New templates on Home.** Home's New section has Baseplate
-  only. Flat Terrain needs a `Terrain.SmoothGrid` writer, which nothing
-  in the tree has yet; a terrain template without its voxels would be a
-  Baseplate by another name. Real Studio's own list keeps growing, so
-  treat it as a starting point. An account switcher (one key per Roblox
-  account) would be an rbx-native addition, not Studio parity — real
-  Studio has none.
+- [x] **More New templates on Home.** Home's New row now offers
+  Baseplate, Classic Baseplate and Flat Terrain, each with the parts,
+  Lighting (Sky and effects for the modern two) and camera zoom that real
+  Studio's own template holds, measured from Studio itself; Flat Terrain
+  writes its 2048×2048, 64-stud-deep grass through the `SmoothGrid`
+  writer the Terrain Editor brought. Studio's themed templates (Village,
+  Castle, Obby, …) are whole games built from Roblox's assets and are not
+  redrawn here. An account switcher (one key per Roblox account) would be
+  an rbx-native addition, not Studio parity — real Studio has none.
 - [ ] 📋 **An MCP server exposing the live editor session**, matching the
   shape (not the exact tool surface) of Roblox's own built-in Studio MCP
   server (checked against `studio/mcp.md` rather than assumed — real,

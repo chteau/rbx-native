@@ -272,7 +272,7 @@ impl HomeWindow {
 
     pub(super) fn new_tiles(&self, grid: &Grid, cx: &mut Context<Self>) -> impl IntoElement {
         let width = (grid.content - GAP * 3.) / 4.;
-        let tile = |id: &'static str, dashed: bool| {
+        let tile = |id: ElementId, dashed: bool| {
             h_flex()
                 .id(id)
                 .w(px(width))
@@ -316,14 +316,19 @@ impl HomeWindow {
         };
         h_flex()
             .gap(px(GAP))
-            .child(
-                tile("new-baseplate", false)
-                    .child(baseplate_thumb(52.))
-                    .child(label("Baseplate", "Empty place with a spawn"))
-                    .on_click(cx.listener(|this, _, _, cx| this.new_place(cx))),
+            .children(
+                crate::home::Template::ALL
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, t)| {
+                        tile(("new-template", index).into(), false)
+                            .child(template_thumb(t, 52.))
+                            .child(label(t.name(), t.blurb()))
+                            .on_click(cx.listener(move |this, _, _, cx| this.new_place(t, cx)))
+                    }),
             )
             .child(
-                tile("new-open-file", true)
+                tile("new-open-file".into(), true)
                     .child(
                         h_flex()
                             .size(px(52.))

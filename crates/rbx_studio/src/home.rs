@@ -9,10 +9,9 @@
 use std::path::{Path, PathBuf};
 
 use rbx_cloud::{Client, CloudError, Experience};
-use rbx_dom::{CFrameData, Variant, Vector3Data, WeakDom};
 use serde::{Deserialize, Serialize};
 
-use crate::save::{self, Format};
+use crate::save::Format;
 use crate::settings::{default_config_dir, write_atomic, SettingsError};
 
 /// Which window a launch opens first.
@@ -186,117 +185,8 @@ fn with_remembered(mut list: Vec<RecentPlace>, mut place: RecentPlace) -> Vec<Re
     list
 }
 
-/// Home's New tab. Flat Terrain is not here yet: nothing in the tree can
-/// write `Terrain.SmoothGrid`, and a terrain template without its voxels
-/// would be a Baseplate by another name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Template {
-    Baseplate,
-}
-
-impl Template {
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Template::Baseplate => "Baseplate",
-        }
-    }
-
-    /// Writes a new binary place at `path`. Refuses to overwrite a file.
-    pub(crate) fn create(self, path: &Path) -> Result<(), String> {
-        if path.exists() {
-            return Err(format!("{} already exists", path.display()));
-        }
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| format!("{}: {err}", parent.display()))?;
-        }
-        save::save(&self.dom(), Format::Binary, path)
-    }
-
-    fn dom(self) -> WeakDom {
-        let mut dom = WeakDom::new();
-        // The services a fresh Studio place shows in the Explorer; a place
-        // file's roots are its services, with no DataModel above them.
-        let service = |dom: &mut WeakDom, class| dom.new_instance(class, class, None);
-        let workspace = service(&mut dom, "Workspace");
-        for class in [
-            "Players",
-            "Lighting",
-            "ReplicatedFirst",
-            "ReplicatedStorage",
-            "ServerScriptService",
-            "ServerStorage",
-            "StarterGui",
-            "StarterPack",
-            "Teams",
-            "SoundService",
-            "TextChatService",
-        ] {
-            service(&mut dom, class);
-        }
-        let player = service(&mut dom, "StarterPlayer");
-        dom.new_instance("StarterPlayerScripts", "StarterPlayerScripts", Some(player));
-        dom.new_instance(
-            "StarterCharacterScripts",
-            "StarterCharacterScripts",
-            Some(player),
-        );
-        dom.new_instance("Camera", "Camera", Some(workspace));
-        dom.new_instance("Terrain", "Terrain", Some(workspace));
-
-        // ponytail: sizes and placement as Studio's own Baseplate template
-        // lays them out, from memory rather than a file saved by real
-        // Studio; check against one before calling this parity.
-        let set = |dom: &mut WeakDom, r, key: &str, value| {
-            dom.set_property(r, key, value).expect("instance exists");
-        };
-        let at = |x, y, z| {
-            Variant::CFrame(CFrameData {
-                position: Vector3Data { x, y, z },
-                rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
-            })
-        };
-        let baseplate = dom.new_instance("Part", "Baseplate", Some(workspace));
-        set(&mut dom, baseplate, "Anchored", Variant::Bool(true));
-        set(&mut dom, baseplate, "Locked", Variant::Bool(true));
-        set(
-            &mut dom,
-            baseplate,
-            "size",
-            Variant::Vector3(Vector3Data {
-                x: 2048.0,
-                y: 16.0,
-                z: 2048.0,
-            }),
-        );
-        set(&mut dom, baseplate, "CFrame", at(0.0, -8.0, 0.0));
-        set(
-            &mut dom,
-            baseplate,
-            "Color3uint8",
-            Variant::Color3uint8 {
-                r: 91,
-                g: 91,
-                b: 91,
-            },
-        );
-
-        let spawn = dom.new_instance("SpawnLocation", "SpawnLocation", Some(workspace));
-        set(&mut dom, spawn, "Anchored", Variant::Bool(true));
-        set(
-            &mut dom,
-            spawn,
-            "size",
-            Variant::Vector3(Vector3Data {
-                x: 12.0,
-                y: 1.0,
-                z: 12.0,
-            }),
-        );
-        set(&mut dom, spawn, "CFrame", at(0.0, 0.5, 0.0));
-        dom
-    }
-}
+mod template;
+pub(crate) use template::Template;
 
 /// Where Home's New place writes: `places/Baseplate.rbxl`, or the first
 /// free `Baseplate N.rbxl` beside it.
@@ -479,27 +369,5 @@ mod tests {
         named.name = Some("Liminal".to_string());
         with_link(&mut links, named);
         assert_eq!(links[&PathBuf::from("a")].name.as_deref(), Some("Liminal"));
-    }
-
-    #[test]
-    fn the_baseplate_template_writes_a_place_the_viewer_reads_back() {
-        let path = std::env::temp_dir().join(format!("rbx_home_{}.rbxl", std::process::id()));
-        let _ = std::fs::remove_file(&path);
-        Template::Baseplate.create(&path).unwrap();
-        assert!(
-            Template::Baseplate.create(&path).is_err(),
-            "never overwrites"
-        );
-
-        let dom = rbx_viewer::read_place(&path).unwrap();
-        std::fs::remove_file(&path).unwrap();
-        let names: Vec<_> = dom
-            .root_refs()
-            .iter()
-            .flat_map(|&r| dom.get(r).unwrap().children().to_vec())
-            .map(|r| dom.get(r).unwrap().name().to_string())
-            .collect();
-        assert!(names.contains(&"Baseplate".to_string()), "{names:?}");
-        assert!(names.contains(&"SpawnLocation".to_string()), "{names:?}");
     }
 }
