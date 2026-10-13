@@ -2,6 +2,14 @@
 
 ## 2026-10-13
 
+- **A joint gizmo for posing.** Selecting a limb of a posed rig now puts
+  Move or Rotate handles on its joint, the shoulder or hip it turns
+  about, whichever tool the toolbar holds, the way Studio's Animation
+  Editor draws its own. `R` switches between the two, as in Studio.
+  `Motor6D` and `AnimationConstraint` rigs work alike. The joint's pivot
+  is only lent to the handles while they are read, so the part's own
+  `PivotOffset` is no longer rewritten in the document. — @chteau
+
 - **Published animations play back by AnimationId.** The roadmap feared
   a separate, undocumented format behind a published animation; there is
   none. Asset delivery hands back an ordinary binary model with one
