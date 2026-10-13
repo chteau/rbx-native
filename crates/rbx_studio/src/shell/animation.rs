@@ -22,6 +22,7 @@ mod import;
 mod panel;
 mod pose;
 mod publish;
+pub(in crate::shell) mod published;
 mod seams;
 mod sheet;
 mod skeleton;
@@ -212,6 +213,8 @@ pub(super) struct Animation {
     /// What the local draft last held, and when it was written.
     drafted: Option<(rbx_animation::Clip, rbx_animation::graph::Graph)>,
     drafted_at: Option<Instant>,
+    /// Clips downloaded this session, by asset id.
+    pub(super) published: HashMap<u64, rbx_animation::Clip>,
 }
 
 impl Animation {
@@ -250,6 +253,7 @@ impl Animation {
             markers_sent: (Vec::new(), None),
             drafted: None,
             drafted_at: None,
+            published: HashMap::new(),
         }
     }
 

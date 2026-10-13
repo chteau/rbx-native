@@ -11,7 +11,9 @@
 //! an instance can do stays the same wherever you right-click, and each row
 //! is enabled by exactly the predicate its own handler returns early on
 //! (`clipboard::has_copyable`, `group::has_groupable`/`has_ungroupable`), so
-//! a row can never be clickable and do nothing.
+//! a row can never be clickable and do nothing. Play Animation is greyed
+//! unless the row is an `Animation` with a published AnimationId and a rig
+//! to play on.
 //!
 //! Rows are built here rather than through [`menu::item`] because Rename,
 //! Insert and Change Class need a `Window` the controlled dropdown's action type does not
@@ -232,6 +234,12 @@ impl Shell {
         // comes apart again (see `ui_editor::arrange`).
         let canvas = self.ui_canvas_active();
         live.ungroup |= canvas && self.ui_can_ungroup();
+        let playable = crate::shell::animation::published::playable(
+            &self.dom,
+            target,
+            self.anim_bound_model(),
+        )
+        .is_some();
 
         let rows = [
             row(
@@ -292,6 +300,13 @@ impl Shell {
                 "Freeze Rotation",
                 live.freeze,
                 |shell, _, cx| shell.freeze_selected(cx),
+            ),
+            row(
+                "play-animation",
+                IconName::Play,
+                "Play Animation",
+                playable,
+                move |shell, _, cx| shell.play_published_animation(target, cx),
             ),
             row(
                 "group",

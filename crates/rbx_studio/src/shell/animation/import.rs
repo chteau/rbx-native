@@ -83,16 +83,14 @@ impl Shell {
         cx.spawn(async move |shell, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    let client = rbx_cloud::Client::new(rbx_cloud::ApiKey::from_env_or_config());
-                    let content = client
-                        .asset(id)
-                        .map_err(|e| format!("Animation {id}: {e}"))?;
-                    rbx_animation::import::asset::clip_from_model(&content.bytes, &id.to_string())
-                        .map_err(|e| format!("Animation {id}: {e}"))
-                })
+                .spawn(async move { super::published::fetch_clip(id) })
                 .await;
-            let _ = shell.update(cx, |shell, cx| shell.finish_import(result, cx));
+            let _ = shell.update(cx, |shell, cx| {
+                if let Ok(clip) = &result {
+                    shell.anim.published.insert(id, clip.clone());
+                }
+                shell.finish_import(result, cx)
+            });
         })
         .detach();
     }
@@ -114,7 +112,7 @@ impl Shell {
         cx.notify();
     }
 
-    fn finish_import(&mut self, result: Result<Clip, String>, cx: &mut Context<Self>) {
+    pub(super) fn finish_import(&mut self, result: Result<Clip, String>, cx: &mut Context<Self>) {
         match result {
             Ok(clip) => {
                 let joints = clip.joints().len();
