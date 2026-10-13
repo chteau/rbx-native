@@ -2260,6 +2260,103 @@ Roblox's own engine.
   `AnimationId` can be typed in to fetch its `KeyframeSequence`. The
   timeline is the shared `timeline` component, and the sequence
   editor's plot now draws with its strokes.
+- [x] **The rest of the Animation Editor**:
+  - **IK posing** (Roblox's Manage IK): Body Part or Full Body chains
+    and pinned parts. It uses an analytic two-bone solve for limbs and
+    FABRIK for longer chains.
+  - **A Curve Editor**: the clip converted to per-channel
+    `FloatCurve`s, with Constant / Linear / Cubic keys, draggable
+    tangent handles, studs and degrees on twin rulers, and Generate
+    Curve. While converted, Save to rig and the `.rbxm` export write a
+    real `CurveAnimation` (Publish still uploads the baked
+    `KeyframeSequence`), and a saved `CurveAnimation` opens back as curves.
+  - **Facial (FACS) channels**: the 50 `FaceControls` properties as
+    `NumberPose`s under the head, keyed from sliders.
+  - **The sequence editor's plot** on the shared `timeline` model.
+  - **The 3D view as a stage**: the rig alone, on a floor grid with
+    its X and Z axes, on a plain backdrop under neutral light, as
+    Blender's animation workspace shows it. This uses the viewer's new
+    isolation mode.
+- [x] **An auto-rigger and a skeleton view** (`crates/rbx_autorig`).
+  - **Auto-rig a mesh…** takes an unrigged humanoid (FBX, OBJ or glTF).
+    - It finds the up axis, the front (−Z, left on −X) and the height.
+    - It places the 15 R15 joints from the mesh's own shape:
+      voxelised, with geodesic extremities, cross-section profiles and
+      the Mannequin's proportions. A-pose and T-pose both work.
+    - It cuts the mesh into the 15 capped, watertight body parts.
+  - **Smooth bends** adds bone-heat skin weights: four influences per
+    vertex, summing to 255, from each part's own, parent and child
+    bones. This is the layout of Roblox's own skinned bodies.
+  - **The rig in the place**: it is built through the Rig Builder, with
+    each part shown from the local asset cache before upload.
+  - **Adjusting the fit**: joints are moved from the panel (mirrored by
+    default), and the front can be turned or flipped. Each edit re-cuts
+    and rebuilds the rig in place.
+  - **Publish** uploads one `.glb` through Open Cloud: the 15
+    `<Part>_Geo` meshes, plus an R15 armature and skin when smooth. It
+    then points every part at its uploaded mesh. Saving before
+    publishing warns that the meshes are only local.
+  - **The viewer renders skinned meshes**:
+    - It reads skinning from mesh v4/v5/v6/v7.
+    - A MeshPart is deformed live by the parts its bones name,
+      including rigs inserted or replaced after load.
+    - Rest poses are taken from the rig's joints.
+  - **The skeleton view** draws every joint as a Blender-style bone over
+    the rig, with the selected one highlighted.
+- [x] **The auto-rigger's follow-ups**:
+  - joint markers are dragged directly in the 3D view, and a dropped joint
+    stays between its neighbours and inside the mesh;
+  - the Mannequin's accessory attachments are written, placed from the fit;
+  - outer cages: Roblox's Mannequin template cages, bent onto the fit
+    with their vertices and UVs kept, are uploaded as `<Part>_OuterCage`,
+    and the `WrapTarget`s the import makes come across onto the rig;
+  - hands modelled apart from the arms are bridged, and arms raised above
+    the head are fitted;
+  - live uploads confirmed that Roblox's importer reads the `.glb` in studs
+    and recognises the R15 armature of a skinned upload;
+  - a live upload confirmed the cages: Roblox's importer turns the 15
+    `<Part>_OuterCage` meshes into one `<Part>WrapTarget` per part, and a
+    layered jacket and pants worn in Studio follow the published body.
+- [x] **The Animation Editor writes `CurveAnimation`s and fits the stage's
+  shadow to the rig**:
+  - `ValuesAndTimes` was decoded from catalog emotes. The writer
+    (`curve::file::write`) builds the tree the emotes ship with: joint
+    `Folder`s nested along the rig, `Position`/`Rotation` curves,
+    `FaceControls` and `MarkerCurve`s. An unset tangent stores the slope to
+    the next key, as Roblox writes it. Every emote reads back identically
+    after a write, a binary save and a read. In real Studio, a written
+    clip registered through `AnimationClipProvider` played Constant,
+    Linear and set-tangent Cubic keys to within 6e-4 rad of the editor's
+    own curves;
+  - an isolated view fits its sun shadow to the rig and the floor around
+    it (`Scene::stage_bounds`), and the fit follows each pose.
+- [x] **Animation Graphs, authored and run natively**: an
+  `AnimationGraphDefinition` of `AnimationNodeDefinition`s (every
+  `AnimationNodeType`: Clip, Blend1D/2D, Over, Add, Subtract, Mask, Speed,
+  Select, Priority Select, Sequence, Random Sequence, One Shot and State
+  Machine, with `StateMachineTransitionDefinition`s) read, written and run.
+  Nodes are wired by pin `ObjectValue`s. Properties are fixed values,
+  bound to graph parameters (`$speed`) or Luau-subset expressions, and
+  transitions crossfade on a condition or when the state finishes. The
+  Animation Editor's Animation Graph tab edits one on a node canvas
+  (sharing the UI Editor canvas's pan and zoom) and previews it on the rig
+  with live parameters.
+- [x] **The Animation Graph matched to Roblox's own**, from its docs,
+  DevForum posts and the shipping Studio plugin (sources in
+  `agents/animation-research.md`):
+  - **Storage**: the plugin's own layout. That covers a `Configuration`
+    of `AnimGraph_*` layout attributes, `Parameter_<Name>` folders and
+    `param::` bindings, `SharedMasks`, transitions named `X_to_Y`, and
+    `(Entry)`/`(Any)` pseudo-states.
+  - **Defaults**: the editor's own (0.1 s transitions; a new transition
+    at Length 0.2, Priority 1).
+  - **Runtime**:
+    - ready transitions of equal priority are picked at random from a
+      seeded generator;
+    - blends are phase-synced, and Blend2D uses gradient-band weighting;
+    - animation events fire, and each node reports its live weight,
+      shown as "NN%" on the canvas;
+    - expressions take `Vector2`/`Vector3`/`Color3`/`CFrame` values.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2367,76 +2464,6 @@ Roblox's own engine.
 Two genuinely different feasibility tiers here, easy to conflate — verified
 against `Roblox/creator-docs` rather than assumed:
 
-- [x] **The rest of the Animation Editor**:
-  - **IK posing** (Roblox's Manage IK): Body Part or Full Body chains
-    and pinned parts. It uses an analytic two-bone solve for limbs and
-    FABRIK for longer chains.
-  - **A Curve Editor**: the clip converted to per-channel
-    `FloatCurve`s, with Constant / Linear / Cubic keys, draggable
-    tangent handles, studs and degrees on twin rulers, and Generate
-    Curve. While converted, Save to rig and the `.rbxm` export write a
-    real `CurveAnimation` (Publish still uploads the baked
-    `KeyframeSequence`), and a saved `CurveAnimation` opens back as curves.
-  - **Facial (FACS) channels**: the 50 `FaceControls` properties as
-    `NumberPose`s under the head, keyed from sliders.
-  - **The sequence editor's plot** on the shared `timeline` model.
-  - **The 3D view as a stage**: the rig alone, on a floor grid with
-    its X and Z axes, on a plain backdrop under neutral light, as
-    Blender's animation workspace shows it. This uses the viewer's new
-    isolation mode.
-- [x] **An auto-rigger and a skeleton view** (`crates/rbx_autorig`).
-  - **Auto-rig a mesh…** takes an unrigged humanoid (FBX, OBJ or glTF).
-    - It finds the up axis, the front (−Z, left on −X) and the height.
-    - It places the 15 R15 joints from the mesh's own shape:
-      voxelised, with geodesic extremities, cross-section profiles and
-      the Mannequin's proportions. A-pose and T-pose both work.
-    - It cuts the mesh into the 15 capped, watertight body parts.
-  - **Smooth bends** adds bone-heat skin weights: four influences per
-    vertex, summing to 255, from each part's own, parent and child
-    bones. This is the layout of Roblox's own skinned bodies.
-  - **The rig in the place**: it is built through the Rig Builder, with
-    each part shown from the local asset cache before upload.
-  - **Adjusting the fit**: joints are moved from the panel (mirrored by
-    default), and the front can be turned or flipped. Each edit re-cuts
-    and rebuilds the rig in place.
-  - **Publish** uploads one `.glb` through Open Cloud: the 15
-    `<Part>_Geo` meshes, plus an R15 armature and skin when smooth. It
-    then points every part at its uploaded mesh. Saving before
-    publishing warns that the meshes are only local.
-  - **The viewer renders skinned meshes**:
-    - It reads skinning from mesh v4/v5/v6/v7.
-    - A MeshPart is deformed live by the parts its bones name,
-      including rigs inserted or replaced after load.
-    - Rest poses are taken from the rig's joints.
-  - **The skeleton view** draws every joint as a Blender-style bone over
-    the rig, with the selected one highlighted.
-- [x] **The auto-rigger's follow-ups**:
-  - joint markers are dragged directly in the 3D view, and a dropped joint
-    stays between its neighbours and inside the mesh;
-  - the Mannequin's accessory attachments are written, placed from the fit;
-  - outer cages: Roblox's Mannequin template cages, bent onto the fit
-    with their vertices and UVs kept, are uploaded as `<Part>_OuterCage`,
-    and the `WrapTarget`s the import makes come across onto the rig;
-  - hands modelled apart from the arms are bridged, and arms raised above
-    the head are fitted;
-  - live uploads confirmed that Roblox's importer reads the `.glb` in studs
-    and recognises the R15 armature of a skinned upload;
-  - a live upload confirmed the cages: Roblox's importer turns the 15
-    `<Part>_OuterCage` meshes into one `<Part>WrapTarget` per part, and a
-    layered jacket and pants worn in Studio follow the published body.
-- [x] **The Animation Editor writes `CurveAnimation`s and fits the stage's
-  shadow to the rig**:
-  - `ValuesAndTimes` was decoded from catalog emotes. The writer
-    (`curve::file::write`) builds the tree the emotes ship with: joint
-    `Folder`s nested along the rig, `Position`/`Rotation` curves,
-    `FaceControls` and `MarkerCurve`s. An unset tangent stores the slope to
-    the next key, as Roblox writes it. Every emote reads back identically
-    after a write, a binary save and a read. In real Studio, a written
-    clip registered through `AnimationClipProvider` played Constant,
-    Linear and set-tangent Cubic keys to within 6e-4 rad of the editor's
-    own curves;
-  - an isolated view fits its sun shadow to the rig and the floor around
-    it (`Scene::stage_bounds`), and the fit follows each pose.
 - [ ] ⚠️ **Playing back an already-published `Animation.AnimationId`** (one
   fetched from Roblox's catalog by asset id, the common case for any rig
   using a stock/marketplace animation) — genuinely uncertain, likely in
@@ -2845,33 +2872,6 @@ clear they were considered and not missed.
   end, an ordinary instance tree written through the DOM.
 
 #### Animation
-- [x] **Animation Graphs, authored and run natively**: an
-  `AnimationGraphDefinition` of `AnimationNodeDefinition`s (every
-  `AnimationNodeType`: Clip, Blend1D/2D, Over, Add, Subtract, Mask, Speed,
-  Select, Priority Select, Sequence, Random Sequence, One Shot and State
-  Machine, with `StateMachineTransitionDefinition`s) read, written and run.
-  Nodes are wired by pin `ObjectValue`s. Properties are fixed values,
-  bound to graph parameters (`$speed`) or Luau-subset expressions, and
-  transitions crossfade on a condition or when the state finishes. The
-  Animation Editor's Animation Graph tab edits one on a node canvas
-  (sharing the UI Editor canvas's pan and zoom) and previews it on the rig
-  with live parameters.
-- [x] **The Animation Graph matched to Roblox's own**, from its docs,
-  DevForum posts and the shipping Studio plugin (sources in
-  `agents/animation-research.md`):
-  - **Storage**: the plugin's own layout. That covers a `Configuration`
-    of `AnimGraph_*` layout attributes, `Parameter_<Name>` folders and
-    `param::` bindings, `SharedMasks`, transitions named `X_to_Y`, and
-    `(Entry)`/`(Any)` pseudo-states.
-  - **Defaults**: the editor's own (0.1 s transitions; a new transition
-    at Length 0.2, Priority 1).
-  - **Runtime**:
-    - ready transitions of equal priority are picked at random from a
-      seeded generator;
-    - blends are phase-synced, and Blend2D uses gradient-band weighting;
-    - animation events fire, and each node reports its live weight,
-      shown as "NN%" on the canvas;
-    - expressions take `Vector2`/`Vector3`/`Color3`/`CFrame` values.
 - [ ] 📋 **What the Animation Graph still lacks**:
   - motion matching (Early 2027) and root motion (Mid 2027);
   - behaviour Roblox does not document, implemented as the likeliest
