@@ -12,57 +12,40 @@ use crate::tokens;
 use super::super::kit::{icon, text};
 use super::super::SettingsWindow;
 
-/// A card's small window, in its own colours: its theme's `dock`,
+/// A card's small window, read from its theme's palette: `dock`,
 /// `black`, `border`, `text2`, `text` and `field_select`.
 struct Mini {
-    body: u32,
-    chrome: u32,
+    body: Rgba,
+    chrome: Rgba,
     /// The window's lines, with their alpha.
     line: Rgba,
-    muted: u32,
-    title: u32,
-    field: u32,
+    muted: Rgba,
+    title: Rgba,
+    field: Rgba,
 }
 
-const DARK: Mini = Mini {
-    body: 0x121213,
-    chrome: 0x0A0A0B,
-    line: Rgba {
-        r: 1.,
-        g: 1.,
-        b: 1.,
-        a: 0.06,
-    },
-    muted: 0x8F8F97,
-    title: 0xE2E2E6,
-    field: 0x191A1C,
-};
-const HIGH_CONTRAST: Mini = Mini {
-    body: 0x000000,
-    chrome: 0x000000,
-    line: Rgba {
-        r: 1.,
-        g: 1.,
-        b: 1.,
-        a: 0.55,
-    },
-    muted: 0xD6D6DC,
-    title: 0xFFFFFF,
-    field: 0x0B0B0C,
-};
-const LIGHT: Mini = Mini {
-    body: 0xF7F7F8,
-    chrome: 0xE9E9EC,
-    line: Rgba {
-        r: 0.,
-        g: 0.,
-        b: 0.,
-        a: 0.08,
-    },
-    muted: 0x55555C,
-    title: 0x1B1B1F,
-    field: 0xFFFFFF,
-};
+fn mini(id: &str) -> Mini {
+    let palette = theme::ThemePack::embedded(id)
+        .expect("built-in themes always load")
+        .palette;
+    Mini {
+        body: palette.color("dock"),
+        chrome: palette.color("black"),
+        line: palette.color("border"),
+        muted: palette.color("text2"),
+        title: palette.color("text"),
+        field: palette.color("field_select"),
+    }
+}
+
+/// Dark soft, High contrast, Light; parsed once rather than every frame.
+static CARDS: std::sync::LazyLock<[Mini; 3]> = std::sync::LazyLock::new(|| {
+    [
+        mini(theme::DEFAULT_ID),
+        mini(theme::HIGH_CONTRAST_ID),
+        mini(theme::LIGHT_ID),
+    ]
+});
 
 /// `color` over `under`, both straight.
 fn over(color: Rgba, under: Rgba) -> Rgba {
@@ -80,14 +63,14 @@ impl SettingsWindow {
         let current = self.shell.read(cx).appearance.theme.clone();
         let current = current.as_deref().unwrap_or(theme::DEFAULT_ID);
         let cards = [
-            ("Dark soft", "Built-in", &DARK, theme::DEFAULT_ID),
+            ("Dark soft", "Built-in", &CARDS[0], theme::DEFAULT_ID),
             (
                 "High contrast",
                 "7:1 text, AAA",
-                &HIGH_CONTRAST,
+                &CARDS[1],
                 theme::HIGH_CONTRAST_ID,
             ),
-            ("Light", "Built-in", &LIGHT, theme::LIGHT_ID),
+            ("Light", "Built-in", &CARDS[2], theme::LIGHT_ID),
         ];
         h_flex()
             .gap(px(10.))
@@ -106,13 +89,13 @@ impl SettingsWindow {
 /// A theme's card.
 fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool) -> Div {
     let accent = tokens::check_on();
-    let body = rgb(mini.body);
-    let chrome = rgb(mini.chrome);
+    let body = mini.body;
+    let chrome = mini.chrome;
     let bar = |color: Rgba| div().h(px(4.)).rounded(px(2.)).bg(color);
     let muted = over(
         Rgba {
             a: 0.6,
-            ..rgb(mini.muted)
+            ..mini.muted
         },
         chrome,
     );
@@ -159,15 +142,15 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool) -> D
                                 .w(relative(0.6))
                                 .h(px(5.))
                                 .rounded(px(2.))
-                                .bg(rgb(mini.title)),
+                                .bg(mini.title),
                         )
                         .child(
                             div()
                                 .h(px(24.))
                                 .rounded(px(4.))
-                                .bg(rgb(mini.field))
+                                .bg(mini.field)
                                 .border_1()
-                                .border_color(over(mini.line, rgb(mini.field))),
+                                .border_color(over(mini.line, mini.field)),
                         )
                         .child(div().w(px(34.)).h(px(9.)).rounded(px(3.)).bg(accent)),
                 ),
@@ -209,4 +192,26 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool) -> D
         })
         .child(window)
         .child(footer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CARDS;
+    use crate::theme;
+
+    #[test]
+    fn theme_cards_paint_each_built_in_themes_own_palette() {
+        let ids = [theme::DEFAULT_ID, theme::HIGH_CONTRAST_ID, theme::LIGHT_ID];
+        for (index, id) in ids.into_iter().enumerate() {
+            let palette = theme::ThemePack::embedded(id).unwrap().palette;
+            assert_eq!(CARDS[index].body, palette.color("dock"), "{id} body");
+            assert_eq!(
+                CARDS[index].field,
+                palette.color("field_select"),
+                "{id} field"
+            );
+            assert_eq!(CARDS[index].title, palette.color("text"), "{id} title");
+        }
+        assert_ne!(CARDS[2].body, CARDS[0].body);
+    }
 }
