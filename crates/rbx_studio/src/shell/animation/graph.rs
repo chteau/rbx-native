@@ -8,10 +8,13 @@ mod panel;
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 
 use gpui_kit::component::input::InputState;
 use gpui_kit::*;
 use rbx_animation::graph::{self, Graph, NodeKind, Player, Prop, Value};
+use rbx_animation::import::asset::content_id;
 use rbx_animation::{sequence, Clip, Frame};
 use rbx_dom::Ref;
 
@@ -42,7 +45,12 @@ pub(in crate::shell) struct GraphDoc {
     pub(super) subscriptions: Vec<Subscription>,
     pub(super) dirty: bool,
     pub(super) fitted: bool,
+    /// Published clips still downloading for the preview, each id with its
+    /// clip or the reason it failed.
+    downloads: Option<Receiver<Downloaded>>,
 }
+
+type Downloaded = Vec<(u64, Result<Clip, String>)>;
 
 impl Default for GraphDoc {
     fn default() -> Self {
@@ -63,6 +71,7 @@ impl Default for GraphDoc {
             subscriptions: Vec::new(),
             dirty: false,
             fitted: false,
+            downloads: None,
         }
     }
 }
@@ -93,6 +102,25 @@ impl GraphDoc {
     }
 }
 
+/// The distinct published asset ids the graph's Clip nodes name, in node order.
+fn published_ids(graph: &Graph) -> Vec<u64> {
+    let mut ids = Vec::new();
+    for node in &graph.nodes {
+        if node.kind != NodeKind::Clip {
+            continue;
+        }
+        let Some(Prop::Value(Value::Text(text))) = node.props.get("AnimationId") else {
+            continue;
+        };
+        if let Some(id) = content_id(text) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    ids
+}
+
 impl Shell {
     /// Every clip the graph's Clip nodes name: a `KeyframeSequence` of that
     /// name in the place (the rig's own saves first), or the clip open in
@@ -107,7 +135,10 @@ impl Shell {
             if out.contains_key(id) || node.kind != NodeKind::Clip {
                 continue;
             }
-            let clip = if id == &self.anim.editor.clip.name {
+            let clip = if let Some(clip) = content_id(id).and_then(|n| self.anim.published.get(&n))
+            {
+                Some(clip.clone())
+            } else if id == &self.anim.editor.clip.name {
                 Some(self.anim.editor.clip.clone())
             } else {
                 place::sequence_named(&self.dom, id, rig).map(|s| sequence::read(&self.dom, s))
@@ -119,20 +150,80 @@ impl Shell {
         out
     }
 
+    /// Starts or stops the graph preview. Every published clip the graph
+    /// names downloads afresh on a worker thread each time the player is
+    /// built (an owner can overwrite one under the same id); the frame loop
+    /// picks them up and builds the player once they land.
     pub(super) fn anim_toggle_graph_playback(&mut self) {
         let doc = &mut self.anim.graph;
         doc.playing = !doc.playing;
-        if !doc.playing {
+        if !doc.playing || doc.player.is_some() {
             return;
         }
-        if doc.player.is_none() {
-            let clips = self.anim_graph_clips();
-            let player = Player::new(self.anim.graph.graph.clone(), &|id| clips.get(id).cloned());
-            self.anim.graph.player = Some(player);
+        self.anim_take_downloads();
+        if self.anim.graph.downloads.is_some() {
+            return;
+        }
+        let missing = published_ids(&self.anim.graph.graph);
+        if missing.is_empty() {
+            self.anim_build_graph_player();
+            return;
+        }
+        self.anim
+            .say(format!("Downloading {} animation(s)…", missing.len()));
+        let (send, receive) = mpsc::channel();
+        thread::spawn(move || {
+            let results: Downloaded = missing
+                .into_iter()
+                .map(|id| (id, super::published::fetch_clip(id)))
+                .collect();
+            let _ = send.send(results);
+        });
+        self.anim.graph.downloads = Some(receive);
+    }
+
+    /// Stores whatever finished downloading, warns about what failed, and
+    /// builds the player if the preview is still waiting on it.
+    fn anim_take_downloads(&mut self) {
+        let Some(receive) = &self.anim.graph.downloads else {
+            return;
+        };
+        let results = match receive.try_recv() {
+            Ok(results) => results,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                self.anim.graph.downloads = None;
+                self.anim
+                    .fail("The animation download stopped unexpectedly");
+                return;
+            }
+        };
+        self.anim.graph.downloads = None;
+        let mut failures = Vec::new();
+        for (id, result) in results {
+            match result {
+                Ok(clip) => {
+                    self.anim.published.insert(id, clip);
+                }
+                Err(message) => failures.push(message),
+            }
+        }
+        if !failures.is_empty() {
+            self.anim.warn(failures.join("; "));
+        }
+        if self.anim.graph.playing && self.anim.graph.player.is_none() {
+            self.anim_build_graph_player();
         }
     }
 
+    fn anim_build_graph_player(&mut self) {
+        let clips = self.anim_graph_clips();
+        let player = Player::new(self.anim.graph.graph.clone(), &|id| clips.get(id).cloned());
+        self.anim.graph.player = Some(player);
+    }
+
     pub(super) fn anim_step_graph(&mut self, dt: f32) {
+        self.anim_take_downloads();
         if let Some(player) = &mut self.anim.graph.player {
             self.anim.graph.pose = Some(player.step(dt));
         }
@@ -219,5 +310,43 @@ impl Shell {
             }
         }
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::published_ids;
+    use rbx_animation::graph::{Graph, Node, NodeKind, Prop, Value};
+
+    fn node(kind: NodeKind, id: &str, animation: &str) -> Node {
+        let mut node = Node::new(kind, id);
+        node.props.insert(
+            "AnimationId".into(),
+            Prop::Value(Value::Text(animation.into())),
+        );
+        node
+    }
+
+    #[test]
+    fn published_ids_collects_each_form_once_and_skips_names_and_other_nodes() {
+        let mut graph = Graph::default();
+        graph
+            .nodes
+            .push(node(NodeKind::Clip, "ClipNode", "rbxassetid://507777826"));
+        graph.nodes.push(node(NodeKind::Clip, "ClipNode1", "Walk"));
+        graph.nodes.push(node(
+            NodeKind::Clip,
+            "ClipNode2",
+            "http://www.roblox.com/asset/?id=123456",
+        ));
+        graph
+            .nodes
+            .push(node(NodeKind::Clip, "ClipNode3", "rbxassetid://507777826"));
+        graph.nodes.push(node(
+            NodeKind::Sequence,
+            "SequenceNode",
+            "rbxassetid://999999",
+        ));
+        assert_eq!(published_ids(&graph), vec![507777826, 123456]);
     }
 }

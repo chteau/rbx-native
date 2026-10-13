@@ -2,6 +2,19 @@
 
 ## 2026-10-13
 
+- **Published animations play back by AnimationId.** The roadmap feared
+  a separate, undocumented format behind a published animation; there is
+  none. Asset delivery hands back an ordinary binary model with one
+  `KeyframeSequence` in it, which the editor already reads, and a later
+  walk with face poses (913402848) is now a test fixture beside the stock
+  R15 ones. Right-click any `Animation` in the Explorer, such as the
+  rig's own `Animate` walk, and **Play Animation** downloads it, opens it
+  on that rig and plays it. Animation Graph Clip nodes that name a
+  published id download it before the preview starts. Every play
+  downloads afresh, so an animation its owner has overwritten under the
+  same id plays as it is now; the shared asset cache keeps the latest
+  copy, replaced whenever the download differs, and plays it offline.
+  — @chteau
 - **Auto-rigged cages checked against a real upload.** WomanBody13,
   auto-rigged with smooth bends and published (model 134707049711522),
   came back from Roblox's importer with a `<Part>WrapTarget` on each of

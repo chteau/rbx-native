@@ -8,7 +8,8 @@
 //! second Rotation X key selected), `rig=<name>` (bind the first
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
 //! walk cycle), `import=<path>` (an FBX/glTF), `import-id=<id>` (download a
-//! published animation by AnimationId, asynchronously), `autorig=<path>` (auto-rig an
+//! published animation by AnimationId, asynchronously), `play-animation=<name>` (play the first `Animation`
+//! of that name on its rig), `autorig=<path>` (auto-rig an
 //! unrigged mesh, in the background; then `rigid`/`smooth`, `front=1|2` and
 //! `publish` drive its panel, each waited for),
 //! `autorig-drag=<joint>:<dx>/<dy>/<dz>` (drag that joint's marker by that
@@ -18,7 +19,8 @@
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
 //! locomotion graph), `speed=<n>` (set the graph's `speed`), `play`,
-//! `node=<index>` (select a graph node), `save-graph`, `turn=<part>:<degrees>[:x|y|z]`
+//! `node=<index>` (select a graph node), `clip-id=<index>:<AnimationId>` (point that
+//! Clip node at an asset), `save-graph`, `turn=<part>:<degrees>[:x|y|z]`
 //! (rotate a rig part about one of its own axes, X unless named, the way a
 //! Rotate-tool drag writes it, then run one editor frame, which reads it back
 //! as a key; an auto-rigged T-pose arm lies along X, so it bends about Z),
@@ -48,6 +50,18 @@ fn find_model(dom: &rbx_dom::WeakDom, name: &str) -> Option<rbx_dom::Ref> {
     while let Some(r) = stack.pop() {
         let instance = dom.get(r)?;
         if instance.class() == "Model" && instance.name() == name {
+            return Some(r);
+        }
+        stack.extend(instance.children().iter().rev());
+    }
+    None
+}
+
+fn find_animation(dom: &rbx_dom::WeakDom, name: &str) -> Option<rbx_dom::Ref> {
+    let mut stack: Vec<rbx_dom::Ref> = dom.root_refs().to_vec();
+    while let Some(r) = stack.pop() {
+        let instance = dom.get(r)?;
+        if instance.class() == "Animation" && instance.name() == name {
             return Some(r);
         }
         stack.extend(instance.children().iter().rev());
@@ -225,6 +239,10 @@ impl Shell {
                 }
                 "import" => self.import_animation_file(std::path::Path::new(arg), cx),
                 "import-id" => self.import_animation_id(arg, cx),
+                "play-animation" => match find_animation(&self.dom, arg) {
+                    Some(animation) => self.play_published_animation(animation, cx),
+                    None => self.anim.warn(format!("No Animation named {arg}")),
+                },
                 "autorig" => {
                     self.anim.debug_rest = Some(steps[i + 1..].to_vec());
                     self.start_autorig(std::path::PathBuf::from(arg), cx);
@@ -309,6 +327,25 @@ impl Shell {
                 }
                 "play" => self.toggle_animation_playback(cx),
                 "node" => self.anim.graph.selected = arg.parse().ok(),
+                "clip-id" => {
+                    let set = arg.split_once(':').and_then(|(node, id)| {
+                        let node = self
+                            .anim
+                            .graph
+                            .graph
+                            .nodes
+                            .get_mut(node.parse::<usize>().ok()?)?;
+                        node.props.insert(
+                            "AnimationId".into(),
+                            rbx_animation::graph::Prop::Value(Value::Text(id.to_owned())),
+                        );
+                        Some(())
+                    });
+                    if set.is_none() {
+                        self.anim.warn(format!("No graph node for clip-id={arg}"));
+                    }
+                    self.anim.graph.player = None;
+                }
                 "save-graph" => self.anim_save_graph(cx),
                 "turn" => self.debug_turn(arg, cx),
                 "select" => {
