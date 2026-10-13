@@ -14,29 +14,29 @@ mod row;
 #[cfg(test)]
 mod tests;
 
-pub(super) use controls::{
+pub(in crate::shell) use controls::{
     destructive_button, destructive_header, destructive_icon, ghost_icon, readout,
     secondary_button, segmented, slider, ticked_slider, toggle, OnPick,
 };
-pub(super) use row::{section, section_card, Reset, Row, Section};
+pub(in crate::shell) use row::{section, section_card, Reset, Row, Section};
 
-pub(super) fn text(size: f32, line: f32) -> Div {
+pub(in crate::shell) fn text(size: f32, line: f32) -> Div {
     div().text_size(px(size)).line_height(px(line))
 }
 
-pub(super) fn mono(size: f32, line: f32) -> Div {
+pub(in crate::shell) fn mono(size: f32, line: f32) -> Div {
     text(size, line).font_family(tokens::FONT_FAMILY_MONO)
 }
 
 /// A Lucide glyph from the kit's catalogue, by file name.
-pub(super) fn icon(name: &'static str, size: f32) -> Icon {
+pub(in crate::shell) fn icon(name: &'static str, size: f32) -> Icon {
     Icon::empty()
         .path(SharedString::from(format!("icons/{name}.svg")))
         .size(px(size))
 }
 
 /// The `SOON` pill, with its "On the roadmap" tooltip.
-pub(super) fn soon_pill(id: impl Into<ElementId>) -> Stateful<Div> {
+pub(in crate::shell) fn soon_pill(id: impl Into<ElementId>) -> Stateful<Div> {
     h_flex()
         .id(id.into())
         .flex_none()
@@ -56,7 +56,7 @@ pub(super) fn soon_pill(id: impl Into<ElementId>) -> Stateful<Div> {
 }
 
 /// A key cap: border2 with a 2 px bottom edge, mono 10.5.
-pub(super) fn key_hint(keys: &'static str) -> Div {
+pub(in crate::shell) fn key_hint(keys: &'static str) -> Div {
     h_flex()
         .flex_none()
         .h(px(18.))
@@ -73,7 +73,7 @@ pub(super) fn key_hint(keys: &'static str) -> Div {
         .child(keys)
 }
 
-pub(super) fn card() -> Div {
+pub(in crate::shell) fn card() -> Div {
     v_flex()
         .border_1()
         .border_color(tokens::border())
@@ -84,7 +84,7 @@ pub(super) fn card() -> Div {
 
 /// A page header's ghost button ("Reset page", "Restore defaults"): text2
 /// with a reset glyph, or text3 and inert while there is nothing to do.
-pub(super) fn header_button(
+pub(in crate::shell) fn header_button(
     id: &'static str,
     label: &'static str,
     on_click: Option<impl Fn(&ClickEvent, &mut Window, &mut App) + 'static>,

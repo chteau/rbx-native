@@ -55,6 +55,7 @@ actions!(
         MenuPublishToRoblox,
         MenuLinkRobloxPlace,
         MenuVersionHistory,
+        MenuGameSettings,
         MenuOpenAutoSaves,
         MenuStudioSettings,
         MenuScriptTemplates,
@@ -194,6 +195,8 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 // Studio's lives under Window; this bar has none, and it
                 // belongs with the uploads it browses and restores.
                 MenuItem::action("Version History…", MenuVersionHistory),
+                // Studio's own File › Experience Settings; Home has it too.
+                MenuItem::action("Game Settings…", MenuGameSettings),
                 MenuItem::separator(),
                 // Studio files this under File › Advanced; this bar draws
                 // no submenus (`popup`), so it sits flat, under Studio's

@@ -2,6 +2,20 @@
 
 ## 2026-10-13
 
+- **A Game Settings dialog.** Open it from Home › Game Settings or from
+  File. It has Studio's tabs and edits the linked experience's settings
+  together with the place file's own. Each row says where its value
+  lives, because an API key reaches only part of what Studio's dialog
+  writes:
+  - Name, description, devices, voice chat, the private-server price and
+    the place's max players are saved to Roblox through Open Cloud.
+  - The voice, avatar and security properties are saved in the file, as
+    one undo step.
+  - Genre, thumbnails, collaborators, paid access, localization and the
+    live avatar settings are listed with the reason they are out of
+    reach, rather than offered and silently dropped.
+  — @chteau
+
 - **Light no longer leans on a dark ground anywhere in the chrome.**
   Appearance › Theme's three cards now draw each mini window from that
   theme's own palette instead of hex values copied beside it, so a change

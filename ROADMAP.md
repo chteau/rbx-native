@@ -2396,6 +2396,35 @@ Roblox's own engine.
     - animation events fire, and each node reports its live weight,
       shown as "NN%" on the canvas;
     - expressions take `Vector2`/`Vector3`/`Color3`/`CFrame` values.
+- [x] **A Game Settings dialog** (Home › Game Settings, File › Game
+  Settings…, the command palette, and Studio Settings' own-windows list),
+  with real Studio's tabs: Basic Info, Communication, Permissions,
+  Monetization, Localization, Avatar, Security and Places. The tabs and
+  their fields were checked against creator-docs (`projects/index.md`,
+  `chat/voice-chat.md`, `cloud-services/http-service.md`,
+  `studio/avatar-settings.md`; `studio/experience-settings.md` doesn't
+  exist, and the docs now call the dialog Experience Settings, under
+  File). Each row says where its value lives:
+  - **On Roblox**, through Open Cloud's universe and place resources
+    (`reference/cloud/openapi.json`): name and description (written to
+    the root place, which Roblox mirrors), playable devices, voice chat,
+    the private-server price, and the linked place's name, description
+    and max players. Maturity rating and playability are shown but only
+    read, because Open Cloud marks them output-only.
+  - **In this place file**: service properties Studio's dialog writes
+    too, saved as one undo step. These are the `VoiceChatService` voice
+    defaults, `Players.BanningEnabled`, the `StarterPlayer` avatar copies
+    (`GameSettingsAvatar`, `GameSettingsR15Collision` and the rest),
+    `HttpService.HttpEnabled` and `AssetService.AllowInsertFreeAssets`.
+  - **Not reachable from here**, each with its reason: genre,
+    thumbnails, collaborators, paid access, localization, the live
+    avatar settings and the Security toggles with no Open Cloud field.
+    They sit behind cookie-only or experimental legacy endpoints that an
+    API key can't call.
+
+  Edits wait for Save. A refusal names the scope the key is missing
+  (`universe:write`, `universe.place:write`), or reports that Team
+  Create holds the place open.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2527,19 +2556,6 @@ Roblox's own engine.
   treat it as a starting point. An account switcher (one key per Roblox
   account) would be an rbx-native addition, not Studio parity — real
   Studio has none.
-- [ ] 📋 **A Game Settings dialog**, matching real Studio's own (`Home` tab
-  → Game Settings, checked against `studio/experience-settings.md` rather
-  than assumed) rather than requiring every place-level setting to be
-  edited as a raw DOM property through the Properties panel or the
-  Command Bar. Real Studio's current tabs: **Basic Info** (name,
-  description, thumbnails), **Permissions** (who can access/edit),
-  **Monetization**, **Localization**, **Avatar** (scaling/clothing
-  overrides), and **Communication** (voice chat, camera-driven avatar
-  animation). Only the subset Open Cloud's own APIs actually expose
-  remotely can realistically read/write a live experience's real
-  settings; the rest would only ever apply to instance properties already
-  in the local place file, worth being clear about which is which rather
-  than implying the dialog reaches further than it can.
 - [ ] 📋 **An MCP server exposing the live editor session**, matching the
   shape (not the exact tool surface) of Roblox's own built-in Studio MCP
   server (checked against `studio/mcp.md` rather than assumed — real,

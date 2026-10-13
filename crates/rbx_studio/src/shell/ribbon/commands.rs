@@ -110,6 +110,8 @@ pub(in crate::shell) enum RibbonCommand {
     RigBuilder,
     /// Avatar › Animation: opens the Animation Editor document.
     AnimationEditor,
+    /// Home › Game Settings: opens (or raises) the Game Settings window.
+    GameSettings,
 }
 
 impl RibbonCommand {
@@ -135,6 +137,7 @@ impl RibbonCommand {
             RibbonCommand::AnimationEditor => {
                 shell.set_document(super::super::chrome::Document::Animation, cx)
             }
+            RibbonCommand::GameSettings => shell.open_game_settings(cx),
         }
     }
 }
@@ -224,6 +227,12 @@ pub(in crate::shell) fn palette_entries(
         "Terrain Editor".to_owned(),
         None,
         RibbonCommand::TerrainEditor,
+    ));
+    entries.push((
+        "Home",
+        "Game Settings".to_owned(),
+        None,
+        RibbonCommand::GameSettings,
     ));
     entries.push((
         "Avatar",

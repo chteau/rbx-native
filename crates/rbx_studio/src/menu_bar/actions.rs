@@ -81,6 +81,12 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuGameSettings, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_game_settings(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuStudioSettings, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_settings(cx));
         }

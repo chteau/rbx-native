@@ -156,15 +156,29 @@ impl SettingsWindow {
                 cx.notify();
             }))
         });
+        let shell = self.shell.clone();
         let own_windows = [
-            ("keyboard", "Keyboard shortcuts"),
-            ("sliders-horizontal", "Game settings"),
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(i, (glyph, label))| {
-            nav_item(("own", i), glyph, 14., label, 30., 12., 16.).child(soon_pill(("own-soon", i)))
-        });
+            nav_item(
+                ("own", 0usize),
+                "keyboard",
+                14.,
+                "Keyboard shortcuts",
+                30.,
+                12.,
+                16.,
+            )
+            .child(soon_pill(("own-soon", 0usize))),
+            nav_item(
+                ("own", 1usize),
+                "sliders-horizontal",
+                14.,
+                "Game settings",
+                30.,
+                12.,
+                16.,
+            )
+            .on_click(move |_, _, cx| shell.update(cx, |shell, cx| shell.open_game_settings(cx))),
+        ];
         let folder = crate::settings::default_config_dir();
         let shown = folder.as_ref().map(|path| tilde(path)).unwrap_or_default();
         v_flex()
