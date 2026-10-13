@@ -600,7 +600,10 @@ Roblox's own engine.
   animation-pack idles. An `Animation` instance's id
   (`rbxassetid://…`, `http://www.roblox.com/asset/?id=…` and the
   assetdelivery form, read strictly so a clip name is never taken for an
-  id) is downloaded once, kept in the shared asset cache, and played on its
+  id) is downloaded afresh on every play, so an animation its owner has
+  overwritten plays as it is now; the shared asset cache keeps the latest
+  copy (replaced whenever the download differs) for when the download
+  fails. It plays on its
   rig from the Explorer's **Play Animation** row (the rig the animation sits
   in, as the `Animate` script's are, else the bound one). Animation Graph
   Clip nodes naming a published id download before the preview starts.

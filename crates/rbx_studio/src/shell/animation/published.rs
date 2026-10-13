@@ -1,6 +1,8 @@
 //! Published animations played by `AnimationId`. assetdelivery serves them as
-//! ordinary `.rbxm` models, so they are read like any other model; downloads
-//! are kept in the shared asset cache.
+//! ordinary `.rbxm` models, so they are read like any other model. Each play
+//! downloads afresh, since an owner can overwrite an animation under the same
+//! id; the shared asset cache keeps the latest copy for when the download
+//! fails.
 
 use gpui_kit::Context;
 use rbx_animation::import::asset::{clip_from_model, content_id};
@@ -13,30 +15,35 @@ use crate::anim_editor::place;
 use crate::shell::chrome::Document;
 use crate::shell::Shell;
 
-/// The clip for a published animation: the cache's copy if it still decodes,
-/// else a fresh download, which is cached only once it has decoded.
+/// The clip for a published animation as Roblox serves it now. A download
+/// that decodes replaces the cache's copy when it differs from it; one that
+/// fails (offline, refused, or not an animation) falls back to that copy.
 pub(super) fn fetch_clip_with(
     cache: Option<&AssetCache>,
     id: u64,
     download: impl FnOnce(u64) -> Result<Vec<u8>, String>,
 ) -> Result<Clip, String> {
     let name = id.to_string();
-    if let Some(clip) = cache
-        .and_then(|c| c.get_id(id))
-        .and_then(|bytes| clip_from_model(&bytes, &name).ok())
-    {
-        return Ok(clip);
+    let cached = cache.and_then(|c| c.get_id(id));
+    let fresh = download(id).and_then(|bytes| {
+        let clip = clip_from_model(&bytes, &name).map_err(|e| e.to_string())?;
+        Ok((bytes, clip))
+    });
+    match fresh {
+        Ok((bytes, clip)) => {
+            if let Some(cache) = cache.filter(|_| cached.as_deref() != Some(&bytes[..])) {
+                let _ = cache.put_id(id, &bytes);
+            }
+            Ok(clip)
+        }
+        Err(e) => cached
+            .and_then(|bytes| clip_from_model(&bytes, &name).ok())
+            .ok_or_else(|| format!("Animation {id}: {e}")),
     }
-    let bytes = download(id).map_err(|e| format!("Animation {id}: {e}"))?;
-    let clip = clip_from_model(&bytes, &name).map_err(|e| format!("Animation {id}: {e}"))?;
-    if let Some(cache) = cache {
-        let _ = cache.put_id(id, &bytes);
-    }
-    Ok(clip)
 }
 
-/// Blocking: reads the shared cache, else downloads (anonymously, then
-/// through the stored Open Cloud key if Roblox refuses).
+/// Blocking: downloads (anonymously, then through the stored Open Cloud key
+/// if Roblox refuses), falling back to the shared cache.
 pub(super) fn fetch_clip(id: u64) -> Result<Clip, String> {
     let cache = AssetCache::new(None).ok();
     fetch_clip_with(cache.as_ref(), id, |id| {
@@ -87,11 +94,6 @@ impl Shell {
         if self.anim_bound_model() != Some(rig) {
             self.bind_rig(rig, cx);
         }
-        if let Some(clip) = self.anim.published.get(&id) {
-            let clip = clip.clone();
-            self.start_published(Ok(clip), cx);
-            return;
-        }
         self.anim.say(format!("Downloading animation {id}…"));
         cx.notify();
         cx.spawn(async move |shell, cx| {
@@ -99,12 +101,7 @@ impl Shell {
                 .background_executor()
                 .spawn(async move { fetch_clip(id) })
                 .await;
-            let _ = shell.update(cx, |shell, cx| {
-                if let Ok(clip) = &result {
-                    shell.anim.published.insert(id, clip.clone());
-                }
-                shell.start_published(result, cx);
-            });
+            let _ = shell.update(cx, |shell, cx| shell.start_published(result, cx));
         })
         .detach();
     }
@@ -149,47 +146,73 @@ mod tests {
         (AssetCache::new(Some(dir.clone())).unwrap(), dir)
     }
 
+    fn other_model_bytes() -> Vec<u8> {
+        let mut clip = Clip::default();
+        clip.set_pose(0.25, "Head", PoseKey::new(Frame::angles(0., 1., 0.)));
+        clip.set_pose(0.75, "Head", PoseKey::new(Frame::angles(0., -1., 0.)));
+        let mut dom = WeakDom::new();
+        rbx_animation::sequence::write(&mut dom, None, &clip, None);
+        rbx_binary::serialize(&dom).unwrap()
+    }
+
     #[test]
-    fn cache_hit_skips_download() {
-        let (cache, dir) = temp_cache("hit");
+    fn an_overwritten_animation_replaces_the_cached_copy() {
+        let (cache, dir) = temp_cache("overwritten");
         cache.put_id(7, &model_bytes()).unwrap();
-        let clip = fetch_clip_with(Some(&cache), 7, |_| panic!("downloaded")).unwrap();
-        assert_eq!(clip.keyframes.len(), 1);
+        let now = other_model_bytes();
+        let clip = fetch_clip_with(Some(&cache), 7, |_| Ok(now.clone())).unwrap();
+        assert_eq!(clip.keyframes.len(), 2);
+        assert_eq!(cache.get_id(7), Some(now));
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn bad_cached_bytes_refetch() {
-        let (cache, dir) = temp_cache("bad");
-        cache.put_id(8, b"junk").unwrap();
-        let good = model_bytes();
-        let clip = fetch_clip_with(Some(&cache), 8, |_| Ok(good.clone())).unwrap();
-        assert_eq!(clip.keyframes.len(), 1);
-        assert_eq!(cache.get_id(8), Some(good));
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn download_is_decoded_and_cached() {
-        let (cache, dir) = temp_cache("dl");
-        let good = model_bytes();
+    fn an_unchanged_animation_still_downloads() {
+        let (cache, dir) = temp_cache("unchanged");
+        let bytes = model_bytes();
+        cache.put_id(8, &bytes).unwrap();
         let calls = Cell::new(0);
-        fetch_clip_with(Some(&cache), 9, |_| {
+        fetch_clip_with(Some(&cache), 8, |_| {
             calls.set(calls.get() + 1);
-            Ok(good.clone())
+            Ok(bytes.clone())
         })
         .unwrap();
         assert_eq!(calls.get(), 1);
-        assert_eq!(cache.get_id(9), Some(good));
+        assert_eq!(cache.get_id(8), Some(bytes));
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn failed_decode_is_not_cached() {
-        let (cache, dir) = temp_cache("fail");
-        let err = fetch_clip_with(Some(&cache), 10, |_| Ok(b"junk".to_vec())).unwrap_err();
-        assert!(err.starts_with("Animation 10: "));
-        assert_eq!(cache.get_id(10), None);
+    fn a_failed_download_plays_the_cached_copy() {
+        let (cache, dir) = temp_cache("offline");
+        cache.put_id(9, &model_bytes()).unwrap();
+        let clip = fetch_clip_with(Some(&cache), 9, |_| Err("offline".into())).unwrap();
+        assert_eq!(clip.keyframes.len(), 1);
+        // A download that is not an animation does not displace it either.
+        let clip = fetch_clip_with(Some(&cache), 9, |_| Ok(b"junk".to_vec())).unwrap();
+        assert_eq!(clip.keyframes.len(), 1);
+        assert_eq!(cache.get_id(9), Some(model_bytes()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_first_download_is_cached() {
+        let (cache, dir) = temp_cache("first");
+        let good = model_bytes();
+        fetch_clip_with(Some(&cache), 10, |_| Ok(good.clone())).unwrap();
+        assert_eq!(cache.get_id(10), Some(good));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn nothing_to_play_says_why() {
+        let (cache, dir) = temp_cache("nothing");
+        cache.put_id(11, b"junk").unwrap();
+        let err = fetch_clip_with(Some(&cache), 11, |_| Err("refused".into())).unwrap_err();
+        assert_eq!(err, "Animation 11: refused");
+        let err = fetch_clip_with(None, 12, |_| Ok(b"junk".to_vec())).unwrap_err();
+        assert!(err.starts_with("Animation 12: "));
+        assert_eq!(cache.get_id(12), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 

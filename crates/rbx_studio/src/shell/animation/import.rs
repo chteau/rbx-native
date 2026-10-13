@@ -85,12 +85,7 @@ impl Shell {
                 .background_executor()
                 .spawn(async move { super::published::fetch_clip(id) })
                 .await;
-            let _ = shell.update(cx, |shell, cx| {
-                if let Ok(clip) = &result {
-                    shell.anim.published.insert(id, clip.clone());
-                }
-                shell.finish_import(result, cx)
-            });
+            let _ = shell.update(cx, |shell, cx| shell.finish_import(result, cx));
         })
         .detach();
     }

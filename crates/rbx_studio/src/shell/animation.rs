@@ -213,7 +213,7 @@ pub(super) struct Animation {
     /// What the local draft last held, and when it was written.
     drafted: Option<(rbx_animation::Clip, rbx_animation::graph::Graph)>,
     drafted_at: Option<Instant>,
-    /// Clips downloaded this session, by asset id.
+    /// The graph preview's published clips, by asset id, as last downloaded.
     pub(super) published: HashMap<u64, rbx_animation::Clip>,
 }
 

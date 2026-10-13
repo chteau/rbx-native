@@ -150,9 +150,10 @@ impl Shell {
         out
     }
 
-    /// Starts or stops the graph preview. Published clips the graph names
-    /// and has not fetched yet download on a worker thread first; the frame
-    /// loop picks them up and builds the player once they land.
+    /// Starts or stops the graph preview. Every published clip the graph
+    /// names downloads afresh on a worker thread each time the player is
+    /// built (an owner can overwrite one under the same id); the frame loop
+    /// picks them up and builds the player once they land.
     pub(super) fn anim_toggle_graph_playback(&mut self) {
         let doc = &mut self.anim.graph;
         doc.playing = !doc.playing;
@@ -163,10 +164,7 @@ impl Shell {
         if self.anim.graph.downloads.is_some() {
             return;
         }
-        let missing: Vec<u64> = published_ids(&self.anim.graph.graph)
-            .into_iter()
-            .filter(|id| !self.anim.published.contains_key(id))
-            .collect();
+        let missing = published_ids(&self.anim.graph.graph);
         if missing.is_empty() {
             self.anim_build_graph_player();
             return;
