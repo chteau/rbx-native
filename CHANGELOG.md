@@ -2,6 +2,17 @@
 
 ## 2026-10-13
 
+- **Light no longer leans on a dark ground anywhere in the chrome.**
+  Appearance › Theme's three cards now draw each mini window from that
+  theme's own palette instead of hex values copied beside it, so a change
+  to a built-in theme shows on its card. The roadmap's other items were
+  already done: the accent presets meet Light's contrast bars and show
+  Light's own accent as a preset, and a GitHub repository named `light`
+  or `high-contrast` installs under its owner's name. The literals left
+  (Dashboard screenshots, shadows, the picker's thumb, the Baseplate
+  thumbnail, viewport overlays) don't sit on the chrome's ground.
+  — @chteau
+
 - **A joint gizmo for posing.** Selecting a limb of a posed rig now puts
   Move or Rotate handles on its joint, the shoulder or hip it turns
   about, whichever tool the toolbar holds, the way Studio's Animation

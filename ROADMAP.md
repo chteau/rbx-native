@@ -1653,8 +1653,21 @@ Roblox's own engine.
   (WCAG 1.4.6, AAA); Light is asserted at 4.5:1 for the same labels
   (1.4.3), and both keep 3:1 for focus rings, toggle edges and tool
   colours. The accent guard's fix now darkens a colour on a light theme,
-  where lightening never passes. Colours still hardcoded for a dark
-  ground are listed under "What's planned".
+  where lightening never passes. Nothing in the chrome assumes a dark
+  ground any more: launcher and account screens read tokens
+  (`wash_faint`, `veil`, `avatar`, `avatar_on_accent`, `slide_backdrop`),
+  the accent presets are offered at the guard's fix for the active theme
+  with the theme's own accent standing in for the nearest one (so Light's
+  reads as a preset, not Custom), a GitHub repository named `light` or
+  `high-contrast` installs under `<owner>-<repo>` like one named
+  `default`, and the Appearance cards draw each theme's mini window from
+  that theme's own palette rather than copied hex values. The colours
+  still written as literals are deliberate, because none of them sits on
+  the chrome's ground: the key wizard's slides are screenshots of
+  Roblox's own Creator Dashboard, drop shadows are black on any ground,
+  the colour picker's thumb is a white ring with a dark halo over a
+  gradient that is the colour data itself, the Baseplate thumbnail
+  pictures the scene, and the viewport's overlays sit on the 3D view.
 - [x] **"Sober but alive" restyle of the gpui-kit layer (PR #87).** The
   chrome now follows the redesign reference (`gpui-ref/`, kept out of the
   repo) token for token: a three-tone surface ramp (`#0A0A0B` / `#121213` /
@@ -2501,23 +2514,6 @@ Roblox's own engine.
   `File > Customize Shortcuts` screen (view and rebind any hotkey), listed
   in the Settings nav as its own window rather than merged into the
   dialog, as Studio keeps it.
-- [ ] 📋 **What still assumes a dark ground under Light.** The chrome reads
-  the theme's tokens, launcher and account screens included (the skeleton
-  bar, dialog veil, avatar discs and the wizard's slide well are tokens
-  now: `wash_faint`, `veil`, `avatar`, `avatar_on_accent`,
-  `slide_backdrop`). What still paints literals: the key wizard's slide
-  images themselves (screenshots of the dark Creator Dashboard), drop
-  shadows (black on any ground, which is right), the colour picker's white
-  thumb ring and gradients, the Baseplate thumbnail, the Appearance
-  cards' mini previews of each theme, and the viewport's own overlays (the
-  view-cube labels, selection outlines, measurement boxes — these sit on
-  the 3D scene, so dark is arguably right). The accent presets are tuned for a
-  dark ground too: on Light every one of them fails Links and is offered
-  darkened, and a built-in theme's own accent shows as **Custom** in the
-  accent row. A GitHub install
-  of a repository named `light` or `high-contrast` still lands in a folder
-  the built-in theme shadows (`theme::github`'s `Source::id` reserves only
-  `default`; `theme::is_reserved` is the check to use).
 - [ ] 📋 **A "Beta Features" toggle**, matching real Studio's own
   `File > Beta Features` (experimental features switched on individually,
   applied after a restart). Directly useful for a fast-moving project like
