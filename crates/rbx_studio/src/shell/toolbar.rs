@@ -19,7 +19,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::tokens;
-use crate::transform::{Action, SnapKind, Tool};
+use crate::transform::{Action, JointTool, SnapKind, Tool};
 
 use super::ribbon;
 use super::Shell;
@@ -66,7 +66,21 @@ impl Shell {
     pub(crate) fn transform_action(&mut self, action: Action, cx: &mut Context<Self>) {
         match action {
             Action::Use(tool) if !self.transform.keyable(tool) => return,
-            Action::Use(tool) => self.transform.tool = tool,
+            Action::Use(tool) => {
+                self.transform.tool = tool;
+                match tool {
+                    Tool::Move => self.transform.joint = JointTool::Move,
+                    Tool::Rotate => self.transform.joint = JointTool::Rotate,
+                    _ => {}
+                }
+            }
+            Action::ToggleJoint if !self.transform.posing => return,
+            Action::ToggleJoint => {
+                self.transform.joint = match self.transform.joint {
+                    JointTool::Rotate => JointTool::Move,
+                    JointTool::Move => JointTool::Rotate,
+                };
+            }
             Action::ToggleLocal => self.transform.local = !self.transform.local,
             Action::ToggleSnap(kind) => {
                 let snap = self.snap_mut(kind);

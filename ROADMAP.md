@@ -2292,6 +2292,17 @@ Roblox's own engine.
     its X and Z axes, on a plain backdrop under neutral light, as
     Blender's animation workspace shows it. This uses the viewer's new
     isolation mode.
+- [x] **A joint gizmo** that turns a limb about its joint's pivot, with
+  `Motor6D` and `AnimationConstraint` joints handled as one kind of
+  thing. While a rig is being posed, a selected limb gets Move or Rotate
+  handles standing on its joint (its `C1`, or its `Attachment1`) whatever
+  tool the toolbar holds, as Studio's Animation Editor draws its own;
+  `R` switches between Move and Rotate, as it does there, and the
+  toolbar's Move and Rotate pick the same. Snap increments and Local/World
+  apply as they do to any part. The joint pivot is lent to the handles
+  only while they are read, so the part's own `PivotOffset` is never
+  written: it no longer shows changed in Properties or has to be stripped
+  out before a save.
 - [x] **An auto-rigger and a skeleton view** (`crates/rbx_autorig`).
   - **Auto-rig a mesh…** takes an unrigged humanoid (FBX, OBJ or glTF).
     - It finds the up axis, the front (−Z, left on −X) and the height.
@@ -2473,16 +2484,6 @@ Roblox's own engine.
   locally-hosted code-completion API instead — but that's a distinct,
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
-
-### Renderer
-#### Animation
-- [ ] 📋 **A joint gizmo** that turns a limb about its joint's pivot,
-  treating `Motor6D` and `AnimationConstraint` joints as the same kind of
-  thing. Posing works today through the part's own Rotate tool, read back
-  as a rotation about the joint. The simulation half of an
-  `AnimationConstraint` (force-based limbs, ragdolls) stays out of reach,
-  the same as any other physics (see
-  [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
@@ -2969,6 +2970,10 @@ and no amount of reverse engineering changes that:
   Server Authority model too: client prediction, rollback and resimulation
   are engine behaviour, so only its settings can be edited here (see
   Play / Test).
+  The simulation half of an `AnimationConstraint` (a limb driven by
+  `MaxForce`/`MaxTorque` with `IsKinematic` off, ragdolls) falls here as
+  well: its pose is edited and played like a `Motor6D`'s, but nothing
+  pushes it.
 
 ## Possible via a workaround
 

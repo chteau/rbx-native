@@ -213,7 +213,7 @@ fn ctrl_wheel_zooms_and_a_plain_wheel_scrolls_the_list() {
 /// joint's C0 on Part0 and C1 on Part1 sit at the same world point before
 /// the drag and after the drag is keyed, and the key carries exactly the
 /// turn the drag made. Run the way the editor runs it: the selected part's
-/// `PivotOffset` is C1 (`sync_joint_pivot`), the Rotate gizmo turns about
+/// `PivotOffset` is C1 (`pose_in` swaps it in), the Rotate gizmo turns about
 /// that pivot (`Targets::rotate_about`), and the part's new `CFrame` is
 /// solved back into a `Transform` and keyed (`settle_pose_edits`, `drag_key`).
 #[test]
@@ -254,7 +254,7 @@ fn a_rotate_drag_turns_the_limb_about_its_joint() {
     let c1_world = |p1: &Frame| p1.mul(&joint.c1).position;
     assert!(c0_world(&torso_at).distance(c1_world(&arm_at)) < 1e-4);
 
-    // What `pose_in` and `sync_joint_pivot` leave in the document.
+    // What `pose_in` leaves in the document.
     dom.set_property(torso, "CFrame", Variant::CFrame(torso_at.to_data()))
         .unwrap();
     dom.set_property(arm, "CFrame", Variant::CFrame(arm_at.to_data()))
@@ -316,4 +316,148 @@ fn a_rotate_drag_turns_the_limb_about_its_joint() {
         turned.dot(drag).abs() > 1.0 - 1e-5,
         "{turned:?} vs {drag:?}"
     );
+}
+
+/// Builds `HumanoidRootPart > Torso > Right Arm` with the given joint kind,
+/// non-identity `C0`/`C1`, parts at rest, the arm holding its own
+/// `PivotOffset` and the torso none; the log is cleared.
+fn pivot_rig(kind: JointKind) -> (WeakDom, rbx_dom::Ref, rbx_dom::Ref, rbx_dom::Ref) {
+    use glam::{Quat, Vec3};
+    use rbx_animation::Frame;
+
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "R", None);
+    let root = dom.new_instance("Part", "HumanoidRootPart", Some(model));
+    let torso = dom.new_instance("Part", "Torso", Some(model));
+    let arm = dom.new_instance("Part", "Right Arm", Some(model));
+    let links = [
+        (root, torso, "Waist", 0.2f32),
+        (torso, arm, "Shoulder", -0.3f32),
+    ];
+    for (part0, part1, name, turn) in links {
+        let c0 = Frame::new(Vec3::new(1.0, 0.5, 0.0), Quat::from_rotation_y(turn));
+        let c1 = Frame::new(Vec3::new(-0.5, 0.4, 0.1), Quat::from_rotation_x(turn));
+        match kind {
+            JointKind::Motor6D => {
+                let m = dom.new_instance("Motor6D", name, Some(part1));
+                dom.set_property(m, "Part0", Variant::Ref(part0)).unwrap();
+                dom.set_property(m, "Part1", Variant::Ref(part1)).unwrap();
+                dom.set_property(m, "C0", Variant::CFrame(c0.to_data()))
+                    .unwrap();
+                dom.set_property(m, "C1", Variant::CFrame(c1.to_data()))
+                    .unwrap();
+            }
+            JointKind::AnimationConstraint => {
+                let a0 = dom.new_instance("Attachment", name, Some(part0));
+                let a1 = dom.new_instance("Attachment", name, Some(part1));
+                dom.set_property(a0, "CFrame", Variant::CFrame(c0.to_data()))
+                    .unwrap();
+                dom.set_property(a1, "CFrame", Variant::CFrame(c1.to_data()))
+                    .unwrap();
+                let c = dom.new_instance("AnimationConstraint", name, Some(part1));
+                dom.set_property(c, "Attachment0", Variant::Ref(a0))
+                    .unwrap();
+                dom.set_property(c, "Attachment1", Variant::Ref(a1))
+                    .unwrap();
+            }
+        }
+    }
+    let rig = Rig::read(&dom, model);
+    let mut at = Frame::new(Vec3::new(3.0, 4.0, -2.0), Quat::from_rotation_y(0.7));
+    let mut frames = vec![(root, at)];
+    for joint in &rig.joints {
+        at = joint.place(&at, &Frame::default());
+        frames.push((joint.part1, at));
+    }
+    for (part, frame) in frames {
+        dom.set_property(part, "CFrame", Variant::CFrame(frame.to_data()))
+            .unwrap();
+    }
+    let size = Variant::Vector3(rbx_dom::Vector3Data {
+        x: 1.0,
+        y: 2.0,
+        z: 1.0,
+    });
+    dom.set_property(arm, "size", size).unwrap();
+    dom.set_property(
+        arm,
+        "PivotOffset",
+        Variant::CFrame(Frame::new(Vec3::new(0.0, 1.0, 0.0), Quat::IDENTITY).to_data()),
+    )
+    .unwrap();
+    dom.take_changes();
+    (dom, model, torso, arm)
+}
+
+/// Swapping joint pivots in puts every jointed part's pivot on its joint's
+/// `C1` so the handles stand on the joint, without a tracked write, and
+/// restoring gives back exactly what the parts held, for either joint kind.
+#[test]
+fn joint_pivots_are_swapped_in_untracked_and_restored() {
+    use rbx_animation::Frame;
+    use rbx_reflection::ReflectionDatabase;
+
+    use crate::transform::Targets;
+
+    for kind in [JointKind::Motor6D, JointKind::AnimationConstraint] {
+        let (mut dom, model, torso, arm) = pivot_rig(kind);
+        let rig = Rig::read(&dom, model);
+        assert_eq!(rig.joints.len(), 2);
+        let original = dom
+            .get(arm)
+            .unwrap()
+            .properties()
+            .get("PivotOffset")
+            .cloned();
+
+        let swapped = super::pose::swap_joint_pivots(&mut dom, &rig);
+        for joint in &rig.joints {
+            assert_eq!(
+                dom.get(joint.part1)
+                    .unwrap()
+                    .properties()
+                    .get("PivotOffset"),
+                Some(&Variant::CFrame(joint.c1.to_data())),
+                "{kind:?}"
+            );
+        }
+        assert!(dom.take_changes().is_empty(), "{kind:?}");
+
+        let joint = rig.joint_driving(arm).unwrap();
+        let part0 = match dom.get(joint.part0).unwrap().properties().get("CFrame") {
+            Some(Variant::CFrame(c)) => Frame::from_data(c),
+            other => panic!("{other:?}"),
+        };
+        let database = ReflectionDatabase::embedded();
+        let held = Targets::read(&dom, &database, &[arm]);
+        let origin = held
+            .pivot()
+            .expect("a lone part has a pivot")
+            .w_axis
+            .truncate();
+        assert!(
+            origin.distance(part0.mul(&joint.c0).position) < 1e-4,
+            "{kind:?}: {origin}"
+        );
+
+        super::pose::restore_joint_pivots(&mut dom, swapped);
+        assert_eq!(
+            dom.get(arm)
+                .unwrap()
+                .properties()
+                .get("PivotOffset")
+                .cloned(),
+            original,
+            "{kind:?}"
+        );
+        assert!(
+            dom.get(torso)
+                .unwrap()
+                .properties()
+                .get("PivotOffset")
+                .is_none(),
+            "{kind:?}"
+        );
+        assert!(dom.take_changes().is_empty(), "{kind:?}");
+    }
 }

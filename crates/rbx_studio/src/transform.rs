@@ -190,10 +190,36 @@ impl Default for Snap {
     }
 }
 
+/// The Animation Editor's own Move/Rotate mode for the joint gizmo.
+///
+/// creator-docs (`animation/editor.md`): "When creating poses, you can toggle
+/// between Move and Rotate modes by pressing R. These modes work exactly like
+/// moving and rotating base objects, including the snap settings and
+/// incremental values located in Studio's toolbar."
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum JointTool {
+    #[default]
+    Rotate,
+    Move,
+}
+
+impl JointTool {
+    /// The toolbar tool whose handles this mode draws.
+    pub(crate) fn tool(self) -> Tool {
+        match self {
+            JointTool::Rotate => Tool::Rotate,
+            JointTool::Move => Tool::Move,
+        }
+    }
+}
+
 /// Everything the transform toolbar holds.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Transform {
     pub(crate) tool: Tool,
+    /// Which handles the joint gizmo shows while posing, whatever the toolbar
+    /// holds (see [`JointTool`]).
+    pub(crate) joint: JointTool,
     /// Handles along the part's own axes rather than the world's.
     pub(crate) local: bool,
     /// The move/scale increment, in studs.
@@ -219,6 +245,7 @@ impl Default for Transform {
     fn default() -> Self {
         Transform {
             tool: Tool::default(),
+            joint: JointTool::default(),
             local: false,
             translate: Snap::default(),
             rotate: Snap {
@@ -238,7 +265,7 @@ impl Transform {
         self.effective().kind().map(|kind| Gizmo {
             kind,
             local: self.local,
-            hotspots: self.tool == Tool::Pivot && self.pivot_snap,
+            hotspots: self.effective() == Tool::Pivot && self.pivot_snap,
             ..Gizmo::default()
         })
     }
@@ -280,14 +307,14 @@ impl Transform {
         }
     }
 
-    /// The tool the viewport acts with: the chosen one, or Select while it
-    /// can't be used (so it draws and drags nothing rather than silently
-    /// resizing a rig part).
+    /// The tool the viewport acts with. While posing, every transform tool
+    /// acts as the joint gizmo's mode, so a rig part never gets resize
+    /// handles; Sun and Terrain, and everything outside posing, act as chosen.
     pub(crate) fn effective(self) -> Tool {
-        if self.keyable(self.tool) {
-            self.tool
+        if self.posing && !matches!(self.tool, Tool::Sun | Tool::Terrain) {
+            self.joint.tool()
         } else {
-            Tool::Select
+            self.tool
         }
     }
 }
@@ -305,6 +332,8 @@ pub(crate) enum Action {
     FocusIncrement(SnapKind),
     /// Edit Pivot's Snap checkbox.
     TogglePivotSnap,
+    /// Flip the joint gizmo between Move and Rotate while posing.
+    ToggleJoint,
 }
 
 /// Resolves a keystroke to a toolbar action, or `None` for anything else.
@@ -331,6 +360,7 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
         "2" if only_shift => Some(Action::FocusIncrement(SnapKind::Translate)),
         "r" if only_alt => Some(Action::FocusIncrement(SnapKind::Rotate)),
         _ if !plain => None,
+        "r" => Some(Action::ToggleJoint),
         "1" => Some(Action::Use(Tool::Select)),
         "2" => Some(Action::Use(Tool::Move)),
         "3" => Some(Action::Use(Tool::Scale)),
