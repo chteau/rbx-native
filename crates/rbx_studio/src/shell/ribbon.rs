@@ -208,14 +208,12 @@ impl Shell {
         let cluster: Vec<AnyElement> = Tool::TRANSFORM
             .map(|tool| {
                 let refusal = self.transform.refusal(tool);
-                cluster_icon(
-                    &self.ribbon_nav,
-                    ("tool", tool as usize),
-                    tool_icon(tool),
-                    cx,
-                )
+                let id = ("tool", tool as usize);
+                match refusal {
+                    Some(_) => refused_icon(&self.ribbon_nav, id, tool_icon(tool), cx),
+                    None => cluster_icon(&self.ribbon_nav, id, tool_icon(tool), cx),
+                }
                 .when(active == tool, |this| selected(this, tool_accent(tool)))
-                .when(refusal.is_some(), refused)
                 .tooltip(move |window, cx| {
                     let text = match (refusal, tool.shortcut()) {
                         (Some(reason), _) => format!("{} — {reason}", tool.label()),
@@ -633,17 +631,21 @@ pub(super) fn selected(tile: Stateful<Div>, accent: Rgba) -> Stateful<Div> {
 /// own at rest, so the icons read as members of one shared card rather than
 /// six tiles glued together — the border and the wash [`selected`] paints
 /// are what a hover or an active tool adds on top of this.
-/// Greys a cluster icon whose tool can't be used right now: its tooltip
-/// says why, and a click on it does nothing (`Shell::transform_action`
-/// refuses the tool too).
-pub(super) fn refused(this: Stateful<Div>) -> Stateful<Div> {
-    this.cursor_not_allowed()
-        .text_color(tokens::text_disabled())
-        .hover(|this| {
-            this.bg(transparent_black())
-                .text_color(tokens::text_disabled())
-        })
-        .active(|this| this.bg(transparent_black()))
+/// A cluster icon whose tool can't be used right now: greyed, and a hover
+/// or press lights nothing. Its tooltip says why, and a click on it does
+/// nothing (`Shell::transform_action` refuses the tool too). Built on
+/// [`cluster_frame`] rather than over [`cluster_icon`]: an element takes
+/// one hover style, and a second one panics in a debug build.
+pub(super) fn refused_icon(
+    nav: &Roving,
+    id: impl Into<ElementId>,
+    icon: IconName,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let el = cluster_frame(id, icon)
+        .cursor_not_allowed()
+        .text_color(tokens::text_disabled());
+    nav.claim(el, cx)
 }
 
 pub(super) fn cluster_icon(
@@ -652,10 +654,25 @@ pub(super) fn cluster_icon(
     icon: IconName,
     cx: &mut App,
 ) -> Stateful<Div> {
+    let el = cluster_frame(id, icon)
+        .cursor_pointer()
+        .text_color(tokens::text_muted())
+        .hover(|this| {
+            tokens::hover_fx(this)
+                .bg(tokens::hover())
+                .text_color(tokens::text_full())
+        })
+        .active(|this| this.bg(tokens::ribbon_tab_active()));
+    nav.claim(el, cx)
+}
+
+/// What [`cluster_icon`] and [`refused_icon`] share: the tile and its
+/// glyph, with no pointer styles yet.
+fn cluster_frame(id: impl Into<ElementId>, icon: IconName) -> Stateful<Div> {
     // 38x38, well over the WCAG floor: the icons this size sits next to
     // (Part, Script, UI, Toolbox) are drawn at a similar weight, and a
     // cluster of small glyphs beside them read as an afterthought.
-    let el = div()
+    div()
         .id(id.into())
         .flex_none()
         .size(tokens::scaled_width(38.))
@@ -663,17 +680,8 @@ pub(super) fn cluster_icon(
         .items_center()
         .justify_center()
         .rounded(tokens::radius_tile())
-        .cursor_pointer()
-        .text_color(tokens::text_muted())
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
-        .hover(|this| {
-            tokens::hover_fx(this)
-                .bg(tokens::hover())
-                .text_color(tokens::text_full())
-        })
-        .active(|this| this.bg(tokens::ribbon_tab_active()))
-        .child(Icon::new(icon).size(tokens::scaled_width(17.)));
-    nav.claim(el, cx)
+        .child(Icon::new(icon).size(tokens::scaled_width(17.)))
 }
 
 /// The frame's tile: icon over label, one hit target, full ribbon height.
