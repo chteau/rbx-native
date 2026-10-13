@@ -166,6 +166,30 @@ fn settings_and_face_keys_survive_with_curves() {
 }
 
 #[test]
+fn curve_animation_round_trips_through_a_written_place() {
+    use rbx_animation::curve::file;
+    let mut e = editor();
+    assert!(e.curve_animation().is_none());
+    e.convert_to_curves();
+    e.set_time(0.5);
+    e.key_face("JawDrop", 0.7, false);
+    e.clip.keyframe_mut(0.5).name = "Wave".into();
+    let a = e.curve_animation().unwrap();
+    assert_eq!(a.faces["JawDrop"].keys.len(), 1);
+    assert_eq!(a.keyframe_names, vec![(0.5, "Wave".to_owned())]);
+
+    let mut dom = rbx_dom::WeakDom::new();
+    let r = file::write(&mut dom, None, &a, None);
+    let back = file::read(&dom, r).unwrap();
+    let mut other = AnimEditor::default();
+    other.load_curves(back, None);
+    assert!(other.curves.is_some());
+    assert!(!other.clip.keyframes.is_empty());
+    assert!(!other.dirty);
+    assert_eq!(other.curve_animation(), Some(a));
+}
+
+#[test]
 fn a_tangent_drag_and_a_retime_are_each_one_undo() {
     let mut e = editor();
     e.convert_to_curves();
@@ -184,4 +208,23 @@ fn a_tangent_drag_and_a_retime_are_each_one_undo() {
     e.set_curve_time(1.49);
     assert!(e.curve_key(&id(1.5)).is_some());
     assert_eq!(e.curve_selected, vec![id(1.5)]);
+}
+
+#[test]
+fn a_cubic_face_curve_survives_save_and_load_unchanged() {
+    use rbx_animation::curve::file;
+    let mut e = editor();
+    e.convert_to_curves();
+    for (time, value) in [(0.0, 0.0), (1.0, 1.0)] {
+        let mut face = FaceKey::new(value);
+        face.style = Style::Cubic;
+        e.clip.set_face(time, "JawDrop", face);
+    }
+    let a = e.curve_animation().unwrap();
+    assert_eq!(a.faces["JawDrop"].keys.len(), 2);
+    let mut dom = rbx_dom::WeakDom::new();
+    let r = file::write(&mut dom, None, &a, None);
+    let mut other = AnimEditor::default();
+    other.load_curves(file::read(&dom, r).unwrap(), Some(r));
+    assert_eq!(other.curve_animation(), Some(a));
 }

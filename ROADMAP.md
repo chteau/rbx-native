@@ -2374,8 +2374,9 @@ against `Roblox/creator-docs` rather than assumed:
   - **A Curve Editor**: the clip converted to per-channel
     `FloatCurve`s, with Constant / Linear / Cubic keys, draggable
     tangent handles, studs and degrees on twin rulers, and Generate
-    Curve. Curves bake back to a `KeyframeSequence` on save, because
-    `CurveAnimation`'s `ValuesAndTimes` layout is not public.
+    Curve. While converted, Save to rig and the `.rbxm` export write a
+    real `CurveAnimation` (Publish still uploads the baked
+    `KeyframeSequence`), and a saved `CurveAnimation` opens back as curves.
   - **Facial (FACS) channels**: the 50 `FaceControls` properties as
     `NumberPose`s under the head, keyed from sliders.
   - **The sequence editor's plot** on the shared `timeline` model.
@@ -2423,9 +2424,19 @@ against `Roblox/creator-docs` rather than assumed:
   - a live upload confirmed the cages: Roblox's importer turns the 15
     `<Part>_OuterCage` meshes into one `<Part>WrapTarget` per part, and a
     layered jacket and pants worn in Studio follow the published body.
-- [ ] 📋 **What the Animation Editor still does not do**: write a
-  `CurveAnimation` itself (its byte layout is undocumented), and fit the
-  stage's shadow map to the rig rather than to the whole place.
+- [x] **The Animation Editor writes `CurveAnimation`s and fits the stage's
+  shadow to the rig**:
+  - `ValuesAndTimes` was decoded from catalog emotes. The writer
+    (`curve::file::write`) builds the tree the emotes ship with: joint
+    `Folder`s nested along the rig, `Position`/`Rotation` curves,
+    `FaceControls` and `MarkerCurve`s. An unset tangent stores the slope to
+    the next key, as Roblox writes it. Every emote reads back identically
+    after a write, a binary save and a read. In real Studio, a written
+    clip registered through `AnimationClipProvider` played Constant,
+    Linear and set-tangent Cubic keys to within 6e-4 rad of the editor's
+    own curves;
+  - an isolated view fits its sun shadow to the rig and the floor around
+    it (`Scene::stage_bounds`), and the fit follows each pose.
 - [ ] ⚠️ **Playing back an already-published `Animation.AnimationId`** (one
   fetched from Roblox's catalog by asset id, the common case for any rig
   using a stock/marketplace animation) — genuinely uncertain, likely in

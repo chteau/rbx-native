@@ -207,9 +207,73 @@ pub fn to_curve(keys: &[RawKey]) -> FloatCurve {
     )
 }
 
+fn ticks_of(time: f32) -> u32 {
+    (time * TICKS_PER_SECOND).round().max(0.) as u32
+}
+
+/// Raw keys for `curve`. An unset tangent is stored as the slope to the next
+/// key (0 on the last), which is what Roblox writes; a set one is kept as is.
+pub fn from_curve(curve: &FloatCurve) -> Vec<RawKey> {
+    let keys = &curve.keys;
+    keys.iter()
+        .enumerate()
+        .map(|(i, k)| {
+            let slope = keys.get(i + 1).map_or(0., |n| {
+                let dt = (f64::from(ticks_of(n.time)) - f64::from(ticks_of(k.time)))
+                    / f64::from(TICKS_PER_SECOND);
+                if dt > 0. {
+                    ((f64::from(n.value) - f64::from(k.value)) / dt) as f32
+                } else {
+                    0.
+                }
+            });
+            let mut flags = 0;
+            if k.left_tangent.is_some() {
+                flags |= LEFT_SET;
+            }
+            if k.right_tangent.is_some() {
+                flags |= RIGHT_SET;
+            }
+            RawKey {
+                ticks: ticks_of(k.time),
+                interpolation: k.interpolation.value() as u8,
+                flags,
+                value: k.value,
+                left: k.left_tangent.unwrap_or(slope),
+                right: k.right_tangent.unwrap_or(slope),
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn from_curve_stores_auto_slopes_and_ticks() {
+        let c = FloatCurve::new(vec![
+            FloatKey::new(0., 0., Interpolation::Linear),
+            FloatKey::new(0.2, 1., Interpolation::Linear),
+        ]);
+        let raw = from_curve(&c);
+        assert_eq!((raw[0].ticks, raw[1].ticks), (0, 480));
+        assert_eq!((raw[0].left, raw[0].right), (5., 5.));
+        assert_eq!((raw[1].left, raw[1].right, raw[1].flags), (0., 0., 0));
+    }
+
+    #[test]
+    fn from_curve_keeps_set_tangents() {
+        let mut k = FloatKey::new(0., 0., Interpolation::Cubic);
+        k.right_tangent = Some(-2.);
+        let raw = from_curve(&FloatCurve::new(vec![k]));
+        assert_eq!((raw[0].flags, raw[0].right, raw[0].left), (2, -2., 0.));
+    }
+
+    #[test]
+    fn from_curve_of_nothing_is_empty() {
+        assert!(from_curve(&FloatCurve::default()).is_empty());
+    }
 
     fn hex(s: &str) -> Vec<u8> {
         (0..s.len())

@@ -38,6 +38,21 @@ pub(super) struct Packed {
     pub(super) warning: Option<String>,
 }
 
+/// Writes the Curve Editor's animation as the only root of a fresh model
+/// file, its joint folders nested along `rig`.
+pub(super) fn pack_curves(
+    animation: &rbx_animation::curve::file::CurveAnimation,
+    rig: Option<&Rig>,
+) -> Result<Packed, String> {
+    let mut dom = WeakDom::new();
+    rbx_animation::curve::file::write(&mut dom, None, animation, rig);
+    let bytes = crate::save::Format::Binary.encode(&dom)?;
+    Ok(Packed {
+        bytes,
+        warning: warning(&rbx_animation::curve::file::bake(animation, 30.), rig),
+    })
+}
+
 /// Writes `clip` as the only root of a fresh place file. Poses nest under
 /// their parent joints when `rig` is given, which is what Roblox needs to
 /// play them; joints `rig` lacks are written flat.
@@ -286,7 +301,11 @@ impl Shell {
 
     pub(super) fn write_animation_rbxm(&mut self, path: &Path, cx: &mut Context<Self>) {
         let rig = self.anim_rig();
-        let written = pack(&self.anim.editor.clip, rig.as_ref()).and_then(|packed| {
+        let packed = match self.anim.editor.curve_animation() {
+            Some(curves) => pack_curves(&curves, rig.as_ref()),
+            None => pack(&self.anim.editor.clip, rig.as_ref()),
+        };
+        let written = packed.and_then(|packed| {
             crate::save::write_atomic(path, &packed.bytes).map(|()| packed.warning)
         });
         match written {

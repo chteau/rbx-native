@@ -5,8 +5,11 @@
 //! motion the curves describe. Face keys are not curves and stay on the
 //! clip as they were.
 
-use rbx_animation::curve::{self, Channel, CurveClip, FloatCurve, FloatKey, Interpolation};
+use std::collections::BTreeMap;
+
+use rbx_animation::curve::{self, file, Channel, CurveClip, FloatCurve, FloatKey, Interpolation};
 use rbx_animation::{Clip, Direction, Frame, Style};
+use rbx_dom::Ref;
 
 use super::{same_time, AnimEditor, Snapshot};
 
@@ -58,6 +61,68 @@ fn find(curve: &FloatCurve, time: f32) -> Option<usize> {
 impl AnimEditor {
     fn bake_fps(&self) -> f32 {
         self.fps.max(1) as f32
+    }
+
+    /// The curves plus the clip's face channels and keyframe names, as a
+    /// `CurveAnimation` ready to write; `None` outside the Curve Editor.
+    pub(crate) fn curve_animation(&self) -> Option<file::CurveAnimation> {
+        let mut curves = self.curves.clone()?;
+        copy_settings(&self.clip, &mut curves);
+        let mut channels: BTreeMap<String, Vec<FloatKey>> = BTreeMap::new();
+        let mut keyframe_names = Vec::new();
+        for k in &self.clip.keyframes {
+            if k.name != "Keyframe" {
+                keyframe_names.push((k.time, k.name.clone()));
+            }
+            for (channel, face) in &k.faces {
+                let mode = match face.style {
+                    Style::Constant => Interpolation::Constant,
+                    Style::Cubic => Interpolation::Cubic,
+                    _ => Interpolation::Linear,
+                };
+                channels
+                    .entry(channel.clone())
+                    .or_default()
+                    .push(FloatKey::new(k.time, face.value, mode));
+            }
+        }
+        keyframe_names.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let faces = channels
+            .into_iter()
+            .map(|(name, keys)| (name, FloatCurve::new(keys)))
+            .collect();
+        Some(file::CurveAnimation {
+            curves,
+            faces,
+            keyframe_names,
+        })
+    }
+
+    /// Starts editing a saved `CurveAnimation` in the Curve Editor.
+    pub(crate) fn load_curves(&mut self, animation: file::CurveAnimation, source: Option<Ref>) {
+        self.fps = self.fps.max(1);
+        // Face keys go onto the clip as they are, one per curve key with its
+        // mode as the key's style, rather than through `file::bake`, which
+        // samples a cubic face span into linear keys: those would come back
+        // as a dense linear curve on the next save.
+        let joints = file::CurveAnimation {
+            faces: BTreeMap::new(),
+            ..animation.clone()
+        };
+        let mut clip = file::bake(&joints, self.bake_fps());
+        for (channel, curve) in &animation.faces {
+            for key in &curve.keys {
+                let mut face = rbx_animation::facs::FaceKey::new(key.value);
+                face.style = match key.interpolation {
+                    Interpolation::Constant => Style::Constant,
+                    Interpolation::Cubic => Style::Cubic,
+                    Interpolation::Linear => Style::Linear,
+                };
+                clip.set_face(key.time, channel, face);
+            }
+        }
+        self.load(clip, source);
+        self.curves = Some(animation.curves);
     }
 
     /// Re-bakes the clip from the curves, keeping its face keys and
