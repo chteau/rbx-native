@@ -138,10 +138,46 @@ pub(super) fn drag_key(now: Frame, solved: Frame) -> Frame {
     }
 }
 
+/// Sets each joint's driven part's `PivotOffset` to the joint's `C1`,
+/// untracked, and returns what each held before (`None`: no property), for
+/// [`restore_joint_pivots`]. Parts missing from the document are skipped.
+pub(super) fn swap_joint_pivots(dom: &mut WeakDom, rig: &Rig) -> Vec<(Ref, Option<Variant>)> {
+    let mut swapped = Vec::new();
+    for joint in &rig.joints {
+        if let Some(instance) = dom.get_mut(joint.part1) {
+            let old = instance.properties_mut().insert(
+                "PivotOffset".to_owned(),
+                Variant::CFrame(joint.c1.to_data()),
+            );
+            swapped.push((joint.part1, old));
+        }
+    }
+    swapped
+}
+
+/// Puts back what [`swap_joint_pivots`] replaced, untracked, removing the
+/// property where the part had none. Applied in reverse so a part driven by
+/// two joints ends with its first original.
+pub(super) fn restore_joint_pivots(dom: &mut WeakDom, swapped: Vec<(Ref, Option<Variant>)>) {
+    for (part, old) in swapped.into_iter().rev() {
+        if let Some(instance) = dom.get_mut(part) {
+            match old {
+                Some(v) => instance
+                    .properties_mut()
+                    .insert("PivotOffset".to_owned(), v),
+                None => instance.properties_mut().remove("PivotOffset"),
+            };
+        }
+    }
+}
+
 /// What [`Shell::pose_in`] swapped into the document, for [`Shell::pose_out`]
-/// to put back.
+/// to put back: part `CFrame`s, then joint pivots.
 #[must_use]
-pub(in crate::shell) struct PoseShown(Vec<(Ref, Option<Variant>, CFrameData)>);
+pub(in crate::shell) struct PoseShown(
+    Vec<(Ref, Option<Variant>, CFrameData)>,
+    Vec<(Ref, Option<Variant>)>,
+);
 
 impl Shell {
     /// Every joint's `Transform` as the document should show it now.
@@ -227,13 +263,17 @@ impl Shell {
     /// Swaps each posed rig part's `CFrame` in the document for the one it
     /// is drawn at, untracked, so a read of where things stand (a hit test,
     /// the selection's boxes and handles) finds the pose the 3D view shows.
+    /// Every jointed part's `PivotOffset` is swapped for its joint's `C1` the
+    /// same way, so the transform tools' handles stand on the joint without
+    /// the document ever holding it.
     /// Always paired with [`Shell::pose_out`], with nothing between that
     /// writes the document or snapshots it for the view.
     pub(in crate::shell) fn pose_in(&mut self) -> PoseShown {
         let mut swapped = Vec::new();
         let Some(bound) = &self.anim.bound else {
-            return PoseShown(swapped);
+            return PoseShown(swapped, Vec::new());
         };
+        let pivots = swap_joint_pivots(&mut self.dom, &bound.rig);
         for (&part, posed) in &bound.posed {
             if bound.rest.get(&part).is_some_and(|r| same(r, posed)) {
                 continue;
@@ -245,14 +285,16 @@ impl Shell {
                 swapped.push((part, old, *posed));
             }
         }
-        PoseShown(swapped)
+        PoseShown(swapped, pivots)
     }
 
     /// Puts back what [`Shell::pose_in`] swapped — except a `CFrame` written
     /// in between (a drag step on an already posed limb), which is left for
     /// [`Shell::settle_pose_edits`] to key. Restoring it too would throw away
     /// every drag step after the first on a limb that is no longer at rest.
+    /// The swapped pivots always go back.
     pub(in crate::shell) fn pose_out(&mut self, shown: PoseShown) {
+        restore_joint_pivots(&mut self.dom, shown.1);
         for (part, old, posed) in shown.0 {
             if let Some(instance) = self.dom.get_mut(part) {
                 let written = !matches!(
@@ -380,89 +422,30 @@ impl Shell {
         log
     }
 
-    /// The joint gizmo: the selected rig part's `PivotOffset` is moved onto
-    /// its joint (its `C1`), so the Rotate tool's rings stand on the
-    /// shoulder or hip and turn the limb about it. The same holds for a
-    /// `Motor6D` or an `AnimationConstraint`, since both are a `Joint` here.
-    /// Every other part the editor moved gets its own pivot back.
-    fn sync_joint_pivot(&mut self, cx: &mut Context<Self>) {
-        let selected = self.selected_all().first().copied();
-        let Some(bound) = &mut self.anim.bound else {
-            return;
-        };
-        let wanted = selected.and_then(|s| bound.rig.joint_driving(s).map(|j| (s, j.c1)));
-        let mut wrote = false;
-        let stale: Vec<Ref> = bound
-            .pivots
-            .keys()
-            .copied()
-            .filter(|p| Some(*p) != wanted.map(|w| w.0))
-            .collect();
-        for part in stale {
-            if let Some(original) = bound.pivots.remove(&part) {
-                wrote |= match original {
-                    Some(v) => self.dom.set_property(part, "PivotOffset", v).is_ok(),
-                    None => self.dom.remove_property(part, "PivotOffset").is_ok(),
-                };
-            }
-        }
-        if let Some((part, c1)) = wanted {
-            let pivot = Variant::CFrame(c1.to_data());
-            let now = self
-                .dom
-                .get(part)
-                .and_then(|i| i.properties().get("PivotOffset").cloned());
-            if now.as_ref() != Some(&pivot) {
-                bound.pivots.entry(part).or_insert(now);
-                wrote |= self.dom.set_property(part, "PivotOffset", pivot).is_ok();
-            }
-        }
-        if wrote {
-            let changes = self.dom.take_changes();
-            self.reflect_changes(&changes, cx);
-        }
-    }
-
-    /// Puts every joint's `Transform` back as the editor found it, and
-    /// every part its own pivot: the document as it was before posing.
+    /// Puts every joint's `Transform` back as the editor found it: the
+    /// document as it was before posing.
     pub(in crate::shell) fn unpose_rig(&mut self, cx: &mut Context<Self>) {
         let Some(bound) = &mut self.anim.bound else {
             return;
         };
-        for (part, original) in bound.pivots.drain() {
-            let _ = match original {
-                Some(v) => self.dom.set_property(part, "PivotOffset", v).map(|_| ()),
-                None => self.dom.remove_property(part, "PivotOffset").map(|_| ()),
-            };
-        }
         restore_transforms(&mut self.dom, &mut bound.transforms);
         bound.posed.clear();
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
     }
 
-    /// Takes the editor's own writes (each joint's `Transform`, the joint
-    /// pivots) out of `copy`, a clone of the document, as
-    /// [`Shell::unpose_rig`] does to the document itself: what the recovery
-    /// copy holds is the place as it would save.
+    /// Takes the editor's own writes (each joint's `Transform`) out of
+    /// `copy`, a clone of the document, as [`Shell::unpose_rig`] does to the
+    /// document itself: what the recovery copy holds is the place as it
+    /// would save.
     pub(in crate::shell) fn unpose_copy(&self, copy: &mut WeakDom) {
         let Some(bound) = &self.anim.bound else {
             return;
         };
-        for (&part, original) in &bound.pivots {
-            let _ = match original {
-                Some(v) => copy
-                    .set_property(part, "PivotOffset", v.clone())
-                    .map(|_| ()),
-                None => copy.remove_property(part, "PivotOffset").map(|_| ()),
-            };
-        }
         restore_transforms(copy, &mut bound.transforms.clone());
         copy.take_changes();
     }
 
-    /// One frame of the document: advances playback, poses the rig, and
-    /// asks for the next frame while anything is moving.
     /// What a click on the posed rig takes while posing: the rig part
     /// nearest under the cursor — the part whose joint a drag keys — rather
     /// than the whole rig `Model` a click elsewhere would take. `Alt` keeps
@@ -476,6 +459,8 @@ impl Shell {
         joint_part(hits, bound.rig.root, |part| bound.rest.contains_key(part))
     }
 
+    /// One frame of the document: advances playback, poses the rig, and
+    /// asks for the next frame while anything is moving.
     pub(super) fn animation_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .anim
@@ -501,7 +486,6 @@ impl Shell {
         let posing = self.anim.bound.is_some();
         self.set_posing(posing, cx);
         self.pose_rig(cx);
-        self.sync_joint_pivot(cx);
         self.keep_draft(false);
         if moving {
             cx.on_next_frame(window, |_, _, cx| cx.notify());

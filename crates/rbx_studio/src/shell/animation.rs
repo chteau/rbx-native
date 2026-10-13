@@ -104,9 +104,6 @@ pub(super) struct Bound {
     /// before (`None`: nothing), put back before a save so a pose never
     /// reaches the file.
     pub(super) transforms: HashMap<Ref, Option<rbx_dom::Variant>>,
-    /// Each part whose `PivotOffset` the editor moved onto its joint, and
-    /// what it was (`None`: it had none).
-    pub(super) pivots: HashMap<Ref, Option<rbx_dom::Variant>>,
 }
 
 /// A pointer gesture on the dope sheet.
@@ -567,7 +564,6 @@ impl Shell {
             rest,
             posed: HashMap::new(),
             transforms: HashMap::new(),
-            pivots: HashMap::new(),
         });
         self.restore_draft(model);
         if self.anim.editor.clip.keyframes.is_empty() && self.anim.editor.source.is_none() {

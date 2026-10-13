@@ -93,9 +93,6 @@ fn alt_r_jumps_to_the_rotate_increment_field() {
         action_for("r", alt),
         Some(Action::FocusIncrement(SnapKind::Rotate))
     );
-    // A plain `r` is not it: that one belongs to cursor dragging's quarter
-    // turn (see `WorkspaceView::turn_key`).
-    assert_eq!(action_for("r", Modifiers::none()), None);
 }
 
 #[test]
@@ -838,15 +835,15 @@ fn posing_refuses_scale_and_never_hands_it_to_the_view() {
             "{} is usable on a joint",
             tool.label()
         );
-        assert_eq!(transform.effective(), Tool::Select);
-        assert_eq!(transform.for_view().tool, Tool::Select);
+        assert_eq!(transform.effective(), Tool::Rotate);
+        assert_eq!(transform.for_view().tool, Tool::Rotate);
         assert_eq!(
-            transform.gizmo(),
-            None,
-            "{} still draws handles",
+            transform.gizmo().map(|gizmo| gizmo.kind),
+            Tool::Rotate.kind(),
+            "{} hides the joint gizmo",
             tool.label()
         );
-        assert!(!transform.drags());
+        assert!(transform.drags());
     }
     assert_eq!(
         posing(Tool::Scale).refusal(Tool::Scale),
@@ -855,7 +852,7 @@ fn posing_refuses_scale_and_never_hands_it_to_the_view() {
     for tool in [Tool::Move, Tool::Rotate, Tool::Select] {
         let transform = posing(tool);
         assert!(transform.keyable(tool));
-        assert_eq!(transform.for_view().tool, tool);
+        assert_eq!(transform.for_view().tool, Tool::Rotate);
     }
     // Outside the Animation Editor nothing is refused.
     let workspace = Transform {
@@ -864,4 +861,67 @@ fn posing_refuses_scale_and_never_hands_it_to_the_view() {
     };
     assert_eq!(workspace.refusal(Tool::Scale), None);
     assert_eq!(workspace.for_view().tool, Tool::Scale);
+}
+
+#[test]
+fn posing_draws_the_joint_gizmo_whatever_the_tool() {
+    for joint in [JointTool::Rotate, JointTool::Move] {
+        for tool in Tool::TRANSFORM.into_iter().chain([Tool::Pivot]) {
+            let transform = Transform {
+                tool,
+                joint,
+                posing: true,
+                ..Transform::default()
+            };
+            assert_eq!(transform.effective(), joint.tool());
+            assert_eq!(
+                transform.gizmo().map(|gizmo| gizmo.kind),
+                joint.tool().kind()
+            );
+            assert!(transform.drags());
+        }
+    }
+    assert_eq!(JointTool::Move.tool().kind(), Some(Kind::Move));
+}
+
+#[test]
+fn posing_leaves_sun_and_terrain_alone() {
+    for tool in [Tool::Sun, Tool::Terrain] {
+        let transform = Transform {
+            tool,
+            posing: true,
+            ..Transform::default()
+        };
+        assert_eq!(transform.effective(), tool);
+        assert_eq!(transform.gizmo(), None);
+    }
+}
+
+#[test]
+fn not_posing_the_joint_mode_changes_nothing() {
+    let transform = Transform {
+        tool: Tool::Scale,
+        joint: JointTool::Move,
+        ..Transform::default()
+    };
+    assert_eq!(transform.effective(), Tool::Scale);
+    assert_eq!(Transform::default().joint, JointTool::Rotate);
+}
+
+#[test]
+fn r_toggles_the_joint_gizmo_and_its_chords_keep_their_meaning() {
+    assert_eq!(
+        action_for("r", Modifiers::none()),
+        Some(Action::ToggleJoint)
+    );
+    assert_eq!(action_for("r", control()), None);
+    assert_eq!(action_for("r", shift()), None);
+    let alt = Modifiers {
+        alt: true,
+        ..Modifiers::none()
+    };
+    assert_eq!(
+        action_for("r", alt),
+        Some(Action::FocusIncrement(SnapKind::Rotate))
+    );
 }

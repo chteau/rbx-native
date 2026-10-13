@@ -779,9 +779,13 @@ impl WorkspaceView {
                 return;
             }
             let (key, modifiers) = tool_key(&keystroke.key, keystroke.modifiers, layout);
-            if let Some(action) = transform::action_for(key, modifiers) {
-                cx.emit(ViewportAction::Tool(action));
-                return;
+            match transform::action_for(key, modifiers) {
+                Some(transform::Action::ToggleJoint) if !self.transform.posing => {}
+                Some(action) => {
+                    cx.emit(ViewportAction::Tool(action));
+                    return;
+                }
+                None => {}
             }
         }
 
