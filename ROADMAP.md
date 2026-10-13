@@ -592,6 +592,18 @@ Roblox's own engine.
   `Keyframe` / `Pose` / `KeyframeMarker` trees (structural poses at
   `Weight` 0), round-tripped through real `.rbxm` files. The research
   behind it, with each fact's source, is `agents/animation-research.md`.
+- [x] **Playing back a published `Animation.AnimationId`**. The feared
+  separate format does not exist: Roblox's asset delivery serves a
+  published animation as an ordinary binary model holding one
+  `KeyframeSequence` (a `CurveAnimation` for catalog emotes), checked on
+  the stock R15 set, a later face-posed walk (913402848) and Rthro-era
+  animation-pack idles. An `Animation` instance's id
+  (`rbxassetid://…`, `http://www.roblox.com/asset/?id=…` and the
+  assetdelivery form, read strictly so a clip name is never taken for an
+  id) is downloaded once, kept in the shared asset cache, and played on its
+  rig from the Explorer's **Play Animation** row (the rig the animation sits
+  in, as the `Animate` script's are, else the bound one). Animation Graph
+  Clip nodes naming a published id download before the preview starts.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -2461,23 +2473,6 @@ Roblox's own engine.
 
 ### Renderer
 #### Animation
-Two genuinely different feasibility tiers here, easy to conflate — verified
-against `Roblox/creator-docs` rather than assumed:
-
-- [ ] ⚠️ **Playing back an already-published `Animation.AnimationId`** (one
-  fetched from Roblox's catalog by asset id, the common case for any rig
-  using a stock/marketplace animation) — genuinely uncertain, likely in
-  the same risk category as CSGMDL. Roblox's own `KeyframeSequence` docs
-  say recovering the sequence from a published `AnimationId` requires
-  `AnimationClipProvider:GetAnimationClipAsync()`, a client-side
-  conversion call — not a direct asset download. That's evidence (not
-  proof) that the raw asset Roblox's CDN actually serves for a published
-  animation is a separate, likely non-`.rbxm` format this project would
-  need to reverse-engineer from scratch, the same category of risk as the
-  CSG mesh format. Needs its own investigation pass before committing to
-  it — don't assume it's as easy as the local-authoring case above just
-  because they sound like the same feature.
-
 - [ ] 📋 **A joint gizmo** that turns a limb about its joint's pivot,
   treating `Motor6D` and `AnimationConstraint` joints as the same kind of
   thing. Posing works today through the part's own Rotate tool, read back
