@@ -1046,6 +1046,18 @@ mod tests {
         assert!(has_local_meshes(&dom, model));
     }
 
+    /// A distinct `ImportOrigin` per part, as the importer writes one.
+    fn import_origin(i: usize) -> Variant {
+        Variant::CFrame(rbx_dom::CFrameData {
+            position: rbx_dom::Vector3Data {
+                x: 0.,
+                y: i as f32 * 0.25,
+                z: 0.,
+            },
+            rotation: rbx_dom::rotation::IDENTITY,
+        })
+    }
+
     #[test]
     fn publishing_takes_each_parts_mesh_and_skinning_but_not_the_joints() {
         let body = humanoid(Pose::A);
@@ -1093,7 +1105,11 @@ mod tests {
                 }
                 // The importer's own joint, which must not come across.
                 imported.new_instance("Motor6D", part.name(), Some(p));
-                let wrap = imported.new_instance("WrapTarget", "WrapTarget", Some(p));
+                // Shaped like the live import of model 134707049711522
+                // (2026-10-13): one `<Part>WrapTarget` per part, with the
+                // cage's id, origin and `ImportOrigin`.
+                let wrap_name = format!("{}WrapTarget", part.name());
+                let wrap = imported.new_instance("WrapTarget", &wrap_name, Some(p));
                 let cage = format!("rbxassetid://{}", 500 + i);
                 imported
                     .set_property(
@@ -1115,6 +1131,9 @@ mod tests {
                             rotation: rbx_dom::rotation::IDENTITY,
                         }),
                     )
+                    .unwrap();
+                imported
+                    .set_property(wrap, "ImportOrigin", import_origin(i))
                     .unwrap();
             }
             assert_eq!(swap_meshes(&mut dom, model, &imported), 15);
@@ -1138,6 +1157,11 @@ mod tests {
                     .filter(|c| c.class() == "WrapTarget")
                     .collect();
                 assert_eq!(wraps.len(), 1);
+                assert_eq!(wraps[0].name(), format!("{}WrapTarget", part.name()));
+                assert_eq!(
+                    wraps[0].properties().get("ImportOrigin"),
+                    Some(&import_origin(i))
+                );
                 assert_eq!(
                     wraps[0].properties().get("CageMeshId"),
                     Some(&Variant::Content(rbx_dom::Content::Uri(format!(

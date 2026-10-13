@@ -2419,10 +2419,10 @@ against `Roblox/creator-docs` rather than assumed:
   - hands modelled apart from the arms are bridged, and arms raised above
     the head are fitted;
   - live uploads confirmed that Roblox's importer reads the `.glb` in studs
-    and recognises the R15 armature of a skinned upload.
-- [ ] 📋 **Checking the auto-rigger's cages against a real upload**: that
-  Roblox's importer turns the `<Part>_OuterCage` meshes into `WrapTarget`s,
-  and that a layered garment fits the published body in Studio.
+    and recognises the R15 armature of a skinned upload;
+  - a live upload confirmed the cages: Roblox's importer turns the 15
+    `<Part>_OuterCage` meshes into one `<Part>WrapTarget` per part, and a
+    layered jacket and pants worn in Studio follow the published body.
 - [ ] 📋 **What the Animation Editor still does not do**: write a
   `CurveAnimation` itself (its byte layout is undocumented), and fit the
   stage's shadow map to the rig rather than to the whole place.

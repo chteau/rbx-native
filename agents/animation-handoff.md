@@ -311,11 +311,16 @@ l'upload par un modèle local.
     `real_cages_fit_real_characters`, `RBX_FIXTURES`) : 3 à 38 triangles
     retournés sur ~2700 selon le personnage (Rak, aisselles). Publish copie les
     `WrapTarget` renvoyés ; si l'upload avec cages est refusé, il repart sans
-    (`upload-plain.glb`). **Non vérifié en ligne** : la clé stockée renvoie
-    « 401 Invalid API Key » (2026-10-13). À faire : nouvelle clé, Publish,
-    vérifier les `WrapTarget` dans le `.rbxm` gardé
-    (`RBX_STUDIO_IMPORT_KEEP`) et habiller le corps d'un vêtement en couches
-    dans Studio.
+    (`upload-plain.glb`). **Vérifié en ligne le 2026-10-13** : WomanBody13
+    (Smooth, modèle 134707049711522, `.rbxm` gardé par
+    `RBX_STUDIO_IMPORT_KEEP`) revient avec un `WrapTarget` nommé
+    `<Part>WrapTarget` sur chacune des 15 parties (`CageMeshId`,
+    `CageOrigin`, `ImportOrigin`), sans `MeshPart` de cage en plus ; les 15
+    passent sur le rig. Dans Roblox Studio (Vinegar, Xephyr, barre de
+    commande : `InsertService:LoadAsset` du corps, puis
+    `Humanoid:AddAccessory` de Denim Jacket 8516609675 et Cargo Pants
+    6984740059), la veste suit le torse fin et les bras en T ; sur un R15
+    cubique d'origine à côté, la même veste gonfle.
   - Mains détachées et bras levés gérés. Un bras collé le long du flanc
     (pressé contre le torse) n'est toujours pas séparé par le fit.
   - Testé sur des humanoïdes synthétiques et quatre maillages de

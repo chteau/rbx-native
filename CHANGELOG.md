@@ -2,6 +2,15 @@
 
 ## 2026-10-13
 
+- **Auto-rigged cages checked against a real upload.** WomanBody13,
+  auto-rigged with smooth bends and published (model 134707049711522),
+  came back from Roblox's importer with a `<Part>WrapTarget` on each of
+  its 15 parts, each holding its own cage mesh, `CageOrigin` and
+  `ImportOrigin`, and all 15 came across onto the rig. Loaded into Roblox
+  Studio, the body wore the free Denim Jacket and Cargo Pants: the jacket
+  follows the slim torso and the T-posed arms, where on a stock blocky R15
+  beside it the same jacket balloons. The publish test now builds its
+  stand-in upload in that same shape. — @chteau
 - **Auto-rigged bodies get outer cages.** The auto-rigger now bends
   Roblox's own Mannequin cages onto the fit and uploads each one as
   `<Part>_OuterCage` beside its part, so layered clothing has a cage to
