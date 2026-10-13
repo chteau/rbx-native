@@ -362,9 +362,8 @@ impl Shell {
     /// the editor's own top bar beside the view toggles, so none of it hides
     /// at the bottom of the side panel. Publish is the one filled button.
     fn anim_file_group(&self, cx: &mut Context<Self>) -> AnyElement {
-        let saved = crate::anim_editor::place::all_of_class(
+        let saved = crate::anim_editor::place::saved_animations(
             &self.dom,
-            "KeyframeSequence",
             self.anim.bound.as_ref().map(|b| b.model),
         );
         let mut imports = vec![
@@ -385,9 +384,9 @@ impl Shell {
                     .hint("Export \u{203a} Save to rig stores the clip in the place; it is listed here after"),
             );
         } else {
-            imports.extend(saved.into_iter().map(|(r, n)| {
+            imports.extend(saved.into_iter().map(|(r, n, class)| {
                 menu::item(n)
-                    .hint("Open this KeyframeSequence saved in the place")
+                    .hint(format!("Open this {class} saved in the place"))
                     .on_click(move |shell, cx| {
                         shell.load_animation(r);
                         cx.notify();
@@ -397,10 +396,10 @@ impl Shell {
         let exports = vec![
             menu::item(".rbxm file\u{2026}")
                 .icon(IconName::FileDown)
-                .hint("Write the clip as a KeyframeSequence model file, like Studio's Save to File")
+                .hint("Write the clip as a KeyframeSequence (or CurveAnimation from the Curve Editor) model file, like Studio's Save to File")
                 .on_click(|shell, cx| shell.export_animation_rbxm(cx)),
             menu::item("Save to rig")
-                .hint("Store the clip as a KeyframeSequence in the place, beside the rig's other saves (undoable)")
+                .hint("Store the clip in the place beside the rig's other saves \u{2014} a CurveAnimation while the Curve Editor has converted it, a KeyframeSequence otherwise (undoable)")
                 .on_click(|shell, cx| shell.save_animation(cx)),
         ];
         let trigger = |id: &'static str, text: &'static str, tip: &'static str| {

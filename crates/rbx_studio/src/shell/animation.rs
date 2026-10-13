@@ -567,19 +567,38 @@ impl Shell {
         });
         self.restore_draft(model);
         if self.anim.editor.clip.keyframes.is_empty() && self.anim.editor.source.is_none() {
-            if let Some((seq, _)) = place::all_of_class(&self.dom, "KeyframeSequence", Some(model))
+            if let Some((saved, _, _)) = place::saved_animations(&self.dom, Some(model))
                 .into_iter()
                 .next()
             {
-                self.load_animation(seq);
+                self.load_animation(saved);
             }
         }
         cx.notify();
     }
 
     pub(super) fn load_animation(&mut self, sequence_ref: Ref) {
-        let clip = sequence::read(&self.dom, sequence_ref);
-        self.anim.editor.load(clip, Some(sequence_ref));
+        let is_curves = self
+            .dom
+            .get(sequence_ref)
+            .is_some_and(|i| i.class() == "CurveAnimation");
+        if is_curves {
+            match rbx_animation::curve::file::read(&self.dom, sequence_ref) {
+                Ok(a) => self.anim.editor.load_curves(a, Some(sequence_ref)),
+                Err(e) => {
+                    let name = self
+                        .dom
+                        .get(sequence_ref)
+                        .map(|i| i.name().to_string())
+                        .unwrap_or_default();
+                    self.anim.fail(format!("Can't open {name}: {e}"));
+                    return;
+                }
+            }
+        } else {
+            let clip = sequence::read(&self.dom, sequence_ref);
+            self.anim.editor.load(clip, Some(sequence_ref));
+        }
         self.anim.fitted = false;
     }
 
@@ -597,22 +616,55 @@ impl Shell {
         self.push_history();
         let rig = self.anim.bound.as_ref().map(|b| (b.model, b.rig.clone()));
         let clip = self.anim.editor.clip.clone();
-        let existing = self.anim.editor.source.filter(|&s| {
+        let curve = self.anim.editor.curve_animation();
+        let class = if curve.is_some() {
+            "CurveAnimation"
+        } else {
+            "KeyframeSequence"
+        };
+        let rig_ref = rig.as_ref().map(|r| &r.1);
+        // A source an undo of a class-changing save took away falls back to
+        // the save of that name in the rig's folder, so saving again
+        // replaces it rather than adding a second one beside it.
+        let folder = rig
+            .as_ref()
+            .map(|(m, _)| place::save_folder(&mut self.dom, *m));
+        let alive = self
+            .anim
+            .editor
+            .source
+            .filter(|&s| self.dom.get(s).is_some())
+            .or_else(|| {
+                place::saved_animations(&self.dom, rig.as_ref().map(|r| r.0))
+                    .into_iter()
+                    .find(|(r, n, _)| {
+                        *n == clip.name && folder.is_some() && self.dom.parent(*r) == folder
+                    })
+                    .map(|(r, _, _)| r)
+            });
+        let source = alive.and_then(|s| {
             self.dom
                 .get(s)
-                .is_some_and(|i| i.class() == "KeyframeSequence")
+                .map(|i| (s, i.class() == class, self.dom.parent(s)))
         });
-        let target = match existing {
-            Some(s) => {
-                sequence::overwrite(&mut self.dom, s, &clip, rig.as_ref().map(|r| &r.1));
+        let write_new = |dom: &mut rbx_dom::WeakDom, parent: Option<Ref>| match &curve {
+            Some(a) => rbx_animation::curve::file::write(dom, parent, a, rig_ref),
+            None => sequence::write(dom, parent, &clip, rig_ref),
+        };
+        let target = match source {
+            Some((s, true, _)) => {
+                match &curve {
+                    Some(a) => rbx_animation::curve::file::overwrite(&mut self.dom, s, a, rig_ref),
+                    None => sequence::overwrite(&mut self.dom, s, &clip, rig_ref),
+                }
                 s
             }
-            None => {
-                let folder = rig
-                    .as_ref()
-                    .map(|(m, _)| place::save_folder(&mut self.dom, *m));
-                sequence::write(&mut self.dom, folder, &clip, rig.as_ref().map(|r| &r.1))
+            Some((old, false, parent)) => {
+                let new = write_new(&mut self.dom, parent);
+                self.dom.remove(old);
+                new
             }
+            None => write_new(&mut self.dom, folder),
         };
         self.anim.editor.source = Some(target);
         self.anim.editor.dirty = false;
@@ -621,8 +673,7 @@ impl Shell {
         self.record_history_change(changes);
         self.rebuild_explorer(cx);
         self.keep_draft(true);
-        self.anim
-            .say(format!("Saved {} as a KeyframeSequence", clip.name));
+        self.anim.say(format!("Saved {} as a {class}", clip.name));
         cx.notify();
     }
 

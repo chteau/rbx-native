@@ -97,6 +97,30 @@ pub(crate) fn all_of_class(dom: &WeakDom, class: &str, rig: Option<Ref>) -> Vec<
         .collect()
 }
 
+/// The editor's Load list: every `KeyframeSequence` and `CurveAnimation`,
+/// the rig's own saves first.
+pub(crate) fn saved_animations(
+    dom: &WeakDom,
+    rig: Option<Ref>,
+) -> Vec<(Ref, String, &'static str)> {
+    let mut all: Vec<(Ref, String, &'static str)> = Vec::new();
+    for class in ["KeyframeSequence", "CurveAnimation"] {
+        all.extend(
+            all_of_class(dom, class, rig)
+                .into_iter()
+                .map(|(r, n)| (r, n, class)),
+        );
+    }
+    let preferred = rig.and_then(|r| child(dom, r, "AnimSaves")).and_then(|p| {
+        match dom.get(p)?.properties().get("Value")? {
+            Variant::Ref(f) => Some(*f),
+            _ => None,
+        }
+    });
+    all.sort_by_key(|(r, _, _)| !(preferred.is_some() && dom.parent(*r) == preferred));
+    all
+}
+
 /// A `KeyframeSequence` named `name`, preferring the rig's own saves: how a
 /// graph's Clip node finds its animation without a published asset id.
 pub(crate) fn sequence_named(dom: &WeakDom, name: &str, rig: Option<Ref>) -> Option<Ref> {
@@ -143,6 +167,21 @@ mod tests {
         assert_eq!(
             dom.get(pointer).unwrap().properties()["Value"],
             Variant::Ref(folder)
+        );
+    }
+
+    #[test]
+    fn saved_animations_lists_both_classes_rig_saves_first() {
+        let (mut dom, model, _) = place();
+        let loose = dom.new_instance("KeyframeSequence", "Loose", Some(model));
+        let folder = save_folder(&mut dom, model);
+        let saved = dom.new_instance("CurveAnimation", "Wave", Some(folder));
+        assert_eq!(
+            saved_animations(&dom, Some(model)),
+            [
+                (saved, "Wave".to_owned(), "CurveAnimation"),
+                (loose, "Loose".to_owned(), "KeyframeSequence"),
+            ]
         );
     }
 
