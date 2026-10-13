@@ -134,3 +134,20 @@ fn catalog_emotes_import_as_clips() {
     let clip = clip_from_model(&fixture(EMOTES[1]), "Emote").unwrap();
     assert_eq!(clip.face_channels(), ["LeftEyeClosed", "RightEyeClosed"]);
 }
+
+/// A later published walk (913402848, served 2026-10-13) with face
+/// `NumberPose`s beside its joint poses: the asset is still an ordinary
+/// binary model holding one `KeyframeSequence`, not a separate format.
+/// 26 `Keyframe`s at distinct times per `rbxdump`.
+#[test]
+fn a_later_published_walk_with_face_poses_imports() {
+    let bytes = fixture("walk_913402848.rbxm");
+    assert!(bytes.starts_with(b"<roblox!"));
+    let clip = clip_from_model(&bytes, "").unwrap();
+    assert_eq!(clip.name, "913402848_walk");
+    assert_eq!(clip.keyframes.len(), 26);
+    assert!(clip.looped);
+    assert_eq!(clip.priority, Priority::Core);
+    assert!(clip.joints().iter().any(|j| j == "LeftUpperLeg"));
+    assert!(clip.length() > 0.);
+}

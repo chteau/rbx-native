@@ -25,6 +25,37 @@ pub fn parse_id(text: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
+/// The asset id an `AnimationId` property names, strictly: a bare number,
+/// `rbxassetid://N`, or a `roblox.com` asset URL carrying `id=N`. Unlike
+/// [`parse_id`], a clip *name* such as "Walk2" is not an id.
+pub fn content_id(text: &str) -> Option<u64> {
+    let lower = text.trim().to_ascii_lowercase();
+    let digits = if let Some(rest) = lower.strip_prefix("rbxassetid://") {
+        rest
+    } else if lower.bytes().all(|b| b.is_ascii_digit()) {
+        &lower
+    } else {
+        let rest = lower
+            .strip_prefix("https://")
+            .or_else(|| lower.strip_prefix("http://"))?;
+        let rest = [
+            "www.roblox.com/asset",
+            "roblox.com/asset",
+            "assetdelivery.roblox.com/v1/asset",
+        ]
+        .iter()
+        .find_map(|path| rest.strip_prefix(path))?;
+        let query = rest.strip_prefix('/').unwrap_or(rest).strip_prefix('?')?;
+        query
+            .split('&')
+            .find_map(|param| param.strip_prefix("id="))?
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok().filter(|&id| id != 0)
+}
+
 fn find(dom: &WeakDom, class: &str) -> Option<Ref> {
     let mut stack: Vec<Ref> = dom.root_refs().to_vec();
     while let Some(r) = stack.pop() {
@@ -88,6 +119,47 @@ mod tests {
             Some(140610898812528)
         );
         assert_eq!(parse_id("walk"), None);
+    }
+
+    #[test]
+    fn content_id_accepts_every_property_shape() {
+        for text in [
+            "507777826",
+            "  507777826 ",
+            "rbxassetid://507777826",
+            "RBXASSETID://507777826",
+            "http://www.roblox.com/asset/?id=507777826",
+            "https://www.roblox.com/asset?id=507777826",
+            "HTTPS://WWW.ROBLOX.COM/asset/?id=507777826",
+            "https://roblox.com/asset/?id=507777826",
+            "https://assetdelivery.roblox.com/v1/asset/?id=507777826",
+            "https://www.roblox.com/asset/?id=507777826&version=2",
+            "https://www.roblox.com/asset/?version=2&id=507777826",
+        ] {
+            assert_eq!(content_id(text), Some(507777826), "{text}");
+        }
+    }
+
+    #[test]
+    fn content_id_rejects_names_and_malformed_values() {
+        for text in [
+            "",
+            "   ",
+            "Walk",
+            "Walk2",
+            "idle 3",
+            "rbxassetid://",
+            "rbxassetid://12abc",
+            "0",
+            "rbxassetid://0",
+            "99999999999999999999999",
+            "https://example.com/asset/?id=507777826",
+            "https://www.roblox.com/asset/?id=",
+            "https://www.roblox.com/asset/?id=12abc",
+            "https://www.roblox.com/asset/",
+        ] {
+            assert_eq!(content_id(text), None, "{text}");
+        }
     }
 
     #[test]
