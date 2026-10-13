@@ -217,7 +217,7 @@ impl Shell {
                 div()
                     .flex_none()
                     .whitespace_nowrap()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::scaled(11.))
                     .line_height(tokens::scaled(16.))
                     .text_color(tokens::text_muted())

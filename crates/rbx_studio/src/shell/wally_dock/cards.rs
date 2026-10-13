@@ -188,7 +188,7 @@ impl Shell {
             .child("for")
             .child(
                 div()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_sm())
                     .text_color(tokens::text())
                     .child(query),
@@ -264,7 +264,7 @@ pub(super) fn title_row(scope: &str, name: &str, version: &str) -> Div {
         .child(
             div()
                 .flex_none()
-                .font_family(tokens::FONT_FAMILY_MONO)
+                .font_family(tokens::font_mono())
                 .text_size(tokens::text_xs())
                 .line_height(tokens::line_xs())
                 .text_color(tokens::text2())

@@ -16,7 +16,7 @@ use gpui_kit::{point, px, rgb, rgba, BoxShadow, Rgba, WindowBackgroundAppearance
 use serde::Deserialize;
 
 use super::pack::{inside, MAX_IMAGE_BYTES};
-use super::{Background, Effects, Fit, Palette};
+use super::{Background, Effects, Fit, Fonts, Palette};
 
 pub(super) const DEFAULT_THEME_JSON: &str =
     include_str!("../../../../assets/themes/default/theme.json");
@@ -30,6 +30,11 @@ const MAX_SIZE: f32 = 2000.;
 
 const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
 
+pub(super) const MAX_FONT_BYTES: u64 = 8 * 1024 * 1024;
+const FONT_EXTENSIONS: [&str; 3] = ["ttf", "otf", "ttc"];
+const MAX_FONT_FILES: usize = 16;
+const MAX_FAMILY_CHARS: usize = 64;
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(super) struct ThemeFile {
@@ -39,6 +44,17 @@ pub(super) struct ThemeFile {
     window: Option<String>,
     background: Option<BackgroundFile>,
     hover: Option<HoverFile>,
+    fonts: Option<FontsFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FontsFile {
+    #[serde(default)]
+    ui: Option<String>,
+    #[serde(default)]
+    mono: Option<String>,
+    #[serde(default)]
+    files: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,7 +258,58 @@ fn effects(
         window,
         background,
         hover_glow,
+        fonts: fonts(theme.fonts.as_ref(), dir)?,
     })
+}
+
+fn family(field: &str, value: &Option<String>) -> Result<Option<String>, String> {
+    let Some(value) = value else { return Ok(None) };
+    let name = value.trim();
+    if name.is_empty() || name.chars().count() > MAX_FAMILY_CHARS {
+        return Err(format!(
+            "fonts {field} must be 1–{MAX_FAMILY_CHARS} characters"
+        ));
+    }
+    Ok(Some(name.to_string()))
+}
+
+fn fonts(file: Option<&FontsFile>, dir: Option<&Path>) -> Result<Fonts, String> {
+    let Some(file) = file else {
+        return Ok(Fonts::default());
+    };
+    let ui = family("ui", &file.ui)?;
+    let mono = family("mono", &file.mono)?;
+    if file.files.len() > MAX_FONT_FILES {
+        return Err(format!(
+            "fonts files lists {}, more than {MAX_FONT_FILES}",
+            file.files.len()
+        ));
+    }
+    let mut files = Vec::new();
+    for name in &file.files {
+        let dir = dir.ok_or("fonts files need a theme folder to live in")?;
+        let path = inside(dir, name)
+            .ok_or_else(|| format!("fonts file {name:?} is not inside the theme"))?;
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_lowercase)
+            .unwrap_or_default();
+        if !FONT_EXTENSIONS.contains(&extension.as_str()) {
+            return Err(format!(
+                "fonts file {name:?} is not one of {FONT_EXTENSIONS:?}"
+            ));
+        }
+        let meta = std::fs::metadata(&path).map_err(|err| format!("fonts file {name:?}: {err}"))?;
+        if !meta.is_file() || meta.len() > MAX_FONT_BYTES {
+            return Err(format!(
+                "fonts file {name:?} is not a file under {} MiB",
+                MAX_FONT_BYTES / (1024 * 1024)
+            ));
+        }
+        files.push(path);
+    }
+    Ok(Fonts { ui, mono, files })
 }
 
 fn background(file: &BackgroundFile, dir: Option<&Path>) -> Result<Background, String> {
@@ -310,3 +377,7 @@ pub(super) fn default_names() -> (Vec<String>, Vec<String>) {
         DEFAULT_FILE.sizes.keys().cloned().collect(),
     )
 }
+
+#[cfg(test)]
+#[path = "fonts_tests.rs"]
+mod fonts_tests;

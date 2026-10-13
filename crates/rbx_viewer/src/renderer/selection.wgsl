@@ -59,12 +59,17 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     return out;
 }
 
-// Studio's selection-box blue, sRGB (0.36, 0.71, 0.96) linearized the same way
-// `scene::srgb_to_linear` linearizes every other part color, so it reads as
-// the same blue once this renderer's HDR target is tonemapped.
-const COLOR: vec4<f32> = vec4<f32>(0.106, 0.462, 0.911, 1.0);
+// The outline colour, linear RGB plus alpha, set per pipeline from
+// `renderer::cue::OverlayColors`. The defaults are Studio's selection-box blue,
+// sRGB (0.36, 0.71, 0.96) linearized the same way `scene::srgb_to_linear`
+// linearizes every other part color, so it reads as the same blue once this
+// renderer's HDR target is tonemapped.
+override COLOR_R: f32 = 0.106;
+override COLOR_G: f32 = 0.462;
+override COLOR_B: f32 = 0.911;
+override COLOR_A: f32 = 1.0;
 
 @fragment
 fn fs_main(_input: VertexOutput) -> @location(0) vec4<f32> {
-    return COLOR;
+    return vec4<f32>(COLOR_R, COLOR_G, COLOR_B, COLOR_A);
 }

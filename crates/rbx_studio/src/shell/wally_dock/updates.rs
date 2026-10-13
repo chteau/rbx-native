@@ -57,7 +57,7 @@ impl Shell {
             .flex_none()
             .items_center()
             .gap(px(6.))
-            .font_family(tokens::FONT_FAMILY_MONO)
+            .font_family(tokens::font_mono())
             .text_size(tokens::text_sm())
             .line_height(tokens::line_sm())
             .child(

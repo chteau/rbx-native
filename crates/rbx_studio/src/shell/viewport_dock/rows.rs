@@ -232,7 +232,7 @@ impl Shell {
                         .px(px(0.))
                         .py(px(0.))
                         .text_center()
-                        .font_family(tokens::FONT_FAMILY_MONO)
+                        .font_family(tokens::font_mono())
                         .text_size(tokens::text_sm())
                         .line_height(tokens::line_sm())
                         .text_color(tokens::text()),
@@ -281,7 +281,7 @@ impl Shell {
             .child(
                 div()
                     .flex_none()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_sm())
                     .line_height(tokens::line_sm())
                     .text_color(tokens::text3())
@@ -331,7 +331,7 @@ impl Shell {
             .px(px(9.))
             .items_center()
             .gap(px(8.))
-            .font_family(tokens::FONT_FAMILY_MONO)
+            .font_family(tokens::font_mono())
             .text_size(tokens::text_sm())
             .line_height(tokens::line_sm())
             .child(div().text_color(tokens::text()).child(fps))

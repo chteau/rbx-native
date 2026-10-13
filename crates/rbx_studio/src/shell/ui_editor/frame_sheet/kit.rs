@@ -99,7 +99,7 @@ pub(in crate::shell::ui_editor) fn separator() -> Div {
 pub(super) fn mono(text: impl Into<SharedString>, size: f32, color: Rgba) -> Div {
     div()
         .flex_none()
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .text_size(px(size))
         .line_height(px(16.))
         .text_color(color)

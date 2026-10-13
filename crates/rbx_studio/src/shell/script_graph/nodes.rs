@@ -120,7 +120,7 @@ pub(super) fn node(graph: &Graph, node: &Node, view: View, mark: Mark) -> AnyEle
                     .border_1()
                     .border_color(style::node_border())
                     .rounded(s(3.0))
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(s(11.0))
                     .text_color(literal_colour(pin.ty))
                     .whitespace_nowrap()

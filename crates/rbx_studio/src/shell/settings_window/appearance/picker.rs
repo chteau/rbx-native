@@ -176,7 +176,7 @@ impl SettingsWindow {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .font_family(tokens::FONT_FAMILY_MONO)
+                            .font_family(tokens::font_mono())
                             .child(
                                 Input::new(&picker.hex)
                                     .appearance(false)

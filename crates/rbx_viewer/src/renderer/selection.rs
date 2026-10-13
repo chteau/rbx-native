@@ -26,8 +26,9 @@ use crate::gizmo;
 use crate::pick::Selected;
 use crate::scene::Placement;
 
+use super::cue::{overlay_pipeline, OverlayColors};
 use super::outline::{self, Vertex};
-use super::pipeline::{self, Surface, Target};
+use super::pipeline::{Surface, Target};
 
 const SHADER: &str = include_str!("selection.wgsl");
 
@@ -150,6 +151,11 @@ pub(super) struct Selection {
     /// arrives as a menu click with no device in hand to build the other from.
     on_top: wgpu::RenderPipeline,
     occluded_by_scene: wgpu::RenderPipeline,
+    /// The colour both pipelines were built with, and what they need to be
+    /// built again when it changes.
+    color: [f32; 4],
+    target: Target,
+    frame_layout: wgpu::BindGroupLayout,
     /// Whether geometry standing in front of the selection hides its box.
     occluded: bool,
     outline: Outline,
@@ -164,8 +170,33 @@ impl Selection {
         frame_layout: &wgpu::BindGroupLayout,
         placements: HashMap<Ref, Placement>,
     ) -> Self {
+        let color = OverlayColors::default().selection;
+        let (on_top, occluded_by_scene) = Self::pipelines(device, target, frame_layout, color);
+
+        Selection {
+            on_top,
+            occluded_by_scene,
+            color,
+            target,
+            frame_layout: frame_layout.clone(),
+            occluded: false,
+            outline: Outline {
+                placements,
+                ..Outline::default()
+            },
+            vertices: None,
+            count: 0,
+        }
+    }
+
+    fn pipelines(
+        device: &wgpu::Device,
+        target: Target,
+        frame_layout: &wgpu::BindGroupLayout,
+        color: [f32; 4],
+    ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
         let with_compare = |compare| {
-            pipeline::surface(
+            overlay_pipeline(
                 device,
                 target,
                 &Surface {
@@ -182,24 +213,28 @@ impl Selection {
                         &[Some(Vertex::layout())],
                     )
                 },
+                color,
             )
         };
-
-        Selection {
-            on_top: with_compare(wgpu::CompareFunction::Always),
+        (
+            with_compare(wgpu::CompareFunction::Always),
             // Reversed-Z (see `camera::Camera::projection`) makes `Greater`
             // the ordinary test; `GreaterEqual` takes the tie as well, so an
             // edge drawn exactly on the surface of the part it wraps is not
             // swallowed by it — the same compare `renderer::hover` picks.
-            occluded_by_scene: with_compare(wgpu::CompareFunction::GreaterEqual),
-            occluded: false,
-            outline: Outline {
-                placements,
-                ..Outline::default()
-            },
-            vertices: None,
-            count: 0,
+            with_compare(wgpu::CompareFunction::GreaterEqual),
+        )
+    }
+
+    /// Redraws the box in `colors.selection`, rebuilding both pipelines only
+    /// when that differs from the colour already in use.
+    pub(super) fn set_overlay_colors(&mut self, device: &wgpu::Device, colors: OverlayColors) {
+        if self.color == colors.selection {
+            return;
         }
+        self.color = colors.selection;
+        (self.on_top, self.occluded_by_scene) =
+            Self::pipelines(device, self.target, &self.frame_layout, self.color);
     }
 
     /// Replaces every placement with a rebuilt scene's, keeping the pipeline

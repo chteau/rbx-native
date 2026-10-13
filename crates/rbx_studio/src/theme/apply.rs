@@ -2,7 +2,12 @@
 //! reads, the toolkit's widget theme, the design fonts, and every open
 //! window's background mode.
 
+use std::borrow::Cow;
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Mutex;
+use std::time::SystemTime;
 
 use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{Theme, ThemeMode};
@@ -47,7 +52,7 @@ fn widgets(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
         ThemeMode::Dark => theme.dark_theme = Rc::new(config),
         ThemeMode::Light => theme.light_theme = Rc::new(config),
     }
-    design_fonts(cx);
+    design_fonts(pack, cx);
     Theme::change(mode, None, cx);
     // GPUI Kit only swaps its syntax palette for the one a theme file's
     // `highlight` block defines; a theme without one keeps whichever
@@ -73,15 +78,65 @@ fn widgets(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
 /// and a name that isn't installed is used as-is rather than falling
 /// through — so the fallback has to happen here, by asking the text system
 /// what exists before naming anything.
-fn design_fonts(cx: &mut App) {
+fn design_fonts(pack: &ThemePack, cx: &mut App) {
+    let wanted = &pack.palette.effects.fonts;
+    register(&wanted.files, cx);
     let installed = cx.text_system().all_font_names();
     let has = |family: &str| installed.iter().any(|name| name == family);
-    let (ui, mono) = (has(tokens::FONT_FAMILY_UI), has(tokens::FONT_FAMILY_MONO));
+    let pick = |theme_family: &Option<String>, default: &str| -> Option<String> {
+        theme_family
+            .as_deref()
+            .filter(|family| has(family))
+            .or(has(default).then_some(default))
+            .map(str::to_string)
+    };
+    let ui = pick(&wanted.ui, tokens::FONT_FAMILY_UI);
+    let mono = pick(&wanted.mono, tokens::FONT_FAMILY_MONO);
     let theme = Theme::global_mut(cx);
-    if ui {
-        theme.font_family = tokens::FONT_FAMILY_UI.into();
+    if let Some(ui) = ui {
+        theme.font_family = ui.into();
     }
-    if mono {
-        theme.mono_font_family = tokens::FONT_FAMILY_MONO.into();
+    if let Some(mono) = mono {
+        theme.mono_font_family = mono.into();
+    }
+    let (ui, mono) = (theme.font_family.clone(), theme.mono_font_family.clone());
+    tokens::set_fonts(ui, mono);
+}
+
+/// Adds font files the text system has not seen, keyed by path, size and
+/// mtime so an edited file is picked up and an unchanged one is not added
+/// twice on every theme switch.
+fn register(files: &[PathBuf], cx: &mut App) {
+    static SEEN: Mutex<Option<HashSet<(PathBuf, u64, SystemTime)>>> = Mutex::new(None);
+    let mut seen = SEEN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let seen = seen.get_or_insert_with(HashSet::new);
+    let mut fresh = Vec::new();
+    for path in files {
+        let key = std::fs::metadata(path)
+            .and_then(|meta| Ok((meta.len(), meta.modified()?)))
+            .map(|(len, mtime)| (path.clone(), len, mtime));
+        let key = match key {
+            Ok(key) => key,
+            Err(err) => {
+                eprintln!("theme font {}: {err}", path.display());
+                continue;
+            }
+        };
+        if seen.contains(&key) {
+            continue;
+        }
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                seen.insert(key);
+                fresh.push(Cow::Owned(bytes));
+            }
+            Err(err) => eprintln!("theme font {}: {err}", path.display()),
+        }
+    }
+    if fresh.is_empty() {
+        return;
+    }
+    if let Err(err) = cx.text_system().add_fonts(fresh) {
+        eprintln!("theme fonts: {err}");
     }
 }

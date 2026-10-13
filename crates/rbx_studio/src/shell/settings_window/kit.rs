@@ -25,7 +25,7 @@ pub(in crate::shell) fn text(size: f32, line: f32) -> Div {
 }
 
 pub(in crate::shell) fn mono(size: f32, line: f32) -> Div {
-    text(size, line).font_family(tokens::FONT_FAMILY_MONO)
+    text(size, line).font_family(tokens::font_mono())
 }
 
 /// A Lucide glyph from the kit's catalogue, by file name.
@@ -46,7 +46,7 @@ pub(in crate::shell) fn soon_pill(id: impl Into<ElementId>) -> Stateful<Div> {
         .border_1()
         .border_color(tokens::border2())
         .rounded(px(4.))
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .text_size(px(9.5))
         .line_height(px(12.))
         .font_weight(FontWeight::SEMIBOLD)
@@ -66,7 +66,7 @@ pub(in crate::shell) fn key_hint(keys: &'static str) -> Div {
         .border_b_2()
         .border_color(tokens::border2())
         .rounded(px(4.))
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .text_size(px(10.5))
         .line_height(px(12.))
         .text_color(tokens::text2())

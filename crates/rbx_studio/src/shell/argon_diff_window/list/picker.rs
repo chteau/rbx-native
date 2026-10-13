@@ -68,7 +68,7 @@ impl ArgonDiffWindow {
                         .flex_none()
                         .w(px(9.))
                         .text_center()
-                        .font_family(tokens::FONT_FAMILY_MONO)
+                        .font_family(tokens::font_mono())
                         .text_size(tokens::text_md())
                         .line_height(tokens::line_md())
                         .font_weight(tokens::WEIGHT_SEMIBOLD)
@@ -126,7 +126,7 @@ impl ArgonDiffWindow {
             .child(
                 div()
                     .flex_none()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_xs())
                     .line_height(tokens::line_xs())
                     .text_color(tokens::text3())

@@ -56,7 +56,7 @@ impl Render for SequenceWindow {
             .id("sequence-window")
             .size_full()
             .bg(tokens::chrome())
-            .font_family(tokens::FONT_FAMILY_UI)
+            .font_family(tokens::font_ui())
             .text_color(tokens::text_strong())
             // A drag that leaves the plot — which is most of them, since
             // pushing a keypoint past the top of the axis is how the axis

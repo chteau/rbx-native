@@ -42,14 +42,19 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     return out;
 }
 
-// A pale green, linearized the same way `scene::srgb_to_linear` linearizes
-// every other colour here, at half alpha so the geometry it is drawn over
-// still reads through it. Roblox publishes no colour for Studio's own align
-// preview, so this is chosen to sit apart from the selection's blue and the
-// hover cue's amber rather than to match one.
-const COLOR: vec4<f32> = vec4<f32>(0.278, 0.760, 0.354, 0.5);
+// The ghost box colour, linear RGB plus alpha, set per pipeline from
+// `renderer::cue::OverlayColors`. The default is a pale green, linearized the
+// same way `scene::srgb_to_linear` linearizes every other colour here, at half
+// alpha so the geometry it is drawn over still reads through it. Roblox
+// publishes no colour for Studio's own align preview, so this is chosen to sit
+// apart from the selection's blue and the hover cue's amber rather than to
+// match one.
+override COLOR_R: f32 = 0.278;
+override COLOR_G: f32 = 0.760;
+override COLOR_B: f32 = 0.354;
+override COLOR_A: f32 = 0.5;
 
 @fragment
 fn fs_main(_input: VertexOutput) -> @location(0) vec4<f32> {
-    return COLOR;
+    return vec4<f32>(COLOR_R, COLOR_G, COLOR_B, COLOR_A);
 }

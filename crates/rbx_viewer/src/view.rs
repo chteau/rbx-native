@@ -24,7 +24,7 @@ use glam::Mat4;
 
 use crate::gizmo::Gizmo;
 use crate::pick::Selected;
-use crate::renderer::Segment;
+use crate::renderer::{OverlayColors, Segment};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct View {
@@ -63,6 +63,10 @@ pub(crate) struct View {
     /// put back like every other one; the scene's half is re-applied from
     /// the same roots by whoever builds the scene.
     pub(crate) isolation: Option<Vec<rbx_dom::Ref>>,
+    /// The colours the selection, hover and preview cues are drawn in —
+    /// baked into their pipelines, so a rebuilt renderer must be told them
+    /// again.
+    pub(crate) overlay: OverlayColors,
 }
 
 impl View {
@@ -102,6 +106,10 @@ impl View {
 
     pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
         self.selection_occluded = occluded;
+    }
+
+    pub(crate) fn set_overlay(&mut self, colors: OverlayColors) {
+        self.overlay = colors;
     }
 
     pub(crate) fn set_isolation(&mut self, roots: Option<Vec<rbx_dom::Ref>>) {

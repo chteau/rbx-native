@@ -273,7 +273,7 @@ fn render_row(
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .text_color(label_color)
                                         .when(row.mono, |this| {
-                                            this.font_family(tokens::FONT_FAMILY_MONO)
+                                            this.font_family(tokens::font_mono())
                                                 .text_size(px(11.5))
                                         })
                                         .child(marked(row.label.into(), query)),
@@ -298,8 +298,7 @@ fn render_row(
                             let line = text(11.5, 16.)
                                 .text_color(description_color)
                                 .when(row.description_mono, |this| {
-                                    this.font_family(tokens::FONT_FAMILY_MONO)
-                                        .text_size(px(11.))
+                                    this.font_family(tokens::font_mono()).text_size(px(11.))
                                 })
                                 // Marked only where the label didn't
                                 // match: one mark per row says why it's here.

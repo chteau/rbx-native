@@ -184,10 +184,11 @@ impl Shell {
     /// The task is the shell's, not Settings', so closing Settings
     /// mid-download still applies the theme; a failure shows inline while
     /// Settings is open, and in Output once it has been closed. A link
-    /// that isn't a GitHub repository fails at once.
+    /// that isn't a GitHub repository fails at once. The download's
+    /// progress shows on the Install button.
     pub(in crate::shell) fn install_theme(&mut self, link: String, cx: &mut Context<Self>) {
         use super::ThemeInstall;
-        if matches!(self.theme_install, ThemeInstall::Running) {
+        if matches!(self.theme_install, ThemeInstall::Running(_)) {
             return;
         }
         if let Err(err) = crate::theme::Source::parse(&link) {
@@ -195,13 +196,31 @@ impl Shell {
             cx.notify();
             return;
         }
-        self.theme_install = ThemeInstall::Running;
+        let progress = std::sync::Arc::new(crate::theme::Progress::default());
+        self.theme_install = ThemeInstall::Running(progress.clone());
         cx.notify();
         cx.spawn(async move |shell, cx| {
+            use std::sync::atomic::{AtomicBool, Ordering};
             let from = link.clone();
-            let installed = cx
-                .background_spawn(async move { crate::theme::install(&from) })
-                .await;
+            let done = std::sync::Arc::new(AtomicBool::new(false));
+            let finished = done.clone();
+            let task = cx.background_spawn(async move {
+                let result = crate::theme::install(&from, &progress);
+                finished.store(true, Ordering::Release);
+                result
+            });
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(150))
+                    .await;
+                if done.load(Ordering::Acquire) {
+                    break;
+                }
+                if shell.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+            let installed = task.await;
             let _ = shell.update(cx, |shell, cx| {
                 let settings_open = shell
                     .settings_window

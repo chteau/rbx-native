@@ -43,7 +43,7 @@ impl Render for HistoryWindow {
             .relative()
             .size_full()
             .bg(tokens::dock())
-            .font_family(tokens::FONT_FAMILY_UI)
+            .font_family(tokens::font_ui())
             .text_size(px(13.))
             .text_color(tokens::text())
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {

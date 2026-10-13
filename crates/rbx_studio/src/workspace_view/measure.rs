@@ -19,9 +19,6 @@ use rbx_viewer::gizmo::Axis;
 use super::{guides, ViewportAction, WorkspaceView};
 use crate::dragger::label;
 
-/// Studio's `BorderSelected` and `BorderHover`, dark theme.
-const BORDER_LIT: u32 = 0x008bea;
-
 /// The box, while it is up.
 pub(super) struct Measure {
     input: Entity<InputState>,
@@ -146,9 +143,14 @@ impl WorkspaceView {
             .text_size(text)
             .line_height(text)
             .font_weight(FontWeight::BOLD)
-            .text_color(rgb(0xffffff));
-        let border = if lit { BORDER_LIT } else { 0x000000 };
-        let boxed = guides::measurement_box(rgb(border))
+            .text_color(crate::tokens::viewport_readout_text());
+        // Studio's `BorderSelected` and `BorderHover`, dark theme, when lit.
+        let border = if lit {
+            crate::tokens::viewport_measure_lit()
+        } else {
+            crate::tokens::viewport_readout_border()
+        };
+        let boxed = guides::measurement_box(border)
             .child(field)
             .id("measurement-box")
             // Studio's box takes the click: the view never sees it,

@@ -125,7 +125,7 @@ pub(in crate::shell) fn readout(value: impl Into<SharedString>) -> Div {
         .border_color(tokens::border())
         .rounded(px(5.))
         .bg(tokens::dock())
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .text_size(px(11.5))
         .line_height(px(16.))
         .text_color(tokens::text())
@@ -224,7 +224,7 @@ pub(in crate::shell) fn ticked_slider(
 pub(in crate::shell) fn secondary_button(
     id: impl Into<ElementId>,
     glyph: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
 ) -> Stateful<Div> {
     h_flex()
         .id(id.into())
@@ -244,7 +244,7 @@ pub(in crate::shell) fn secondary_button(
         .cursor_pointer()
         .hover(|this| this.bg(tokens::secondary_hover()))
         .child(icon(glyph, 12.))
-        .child(label)
+        .child(label.into())
 }
 
 // The destructive variants: WCAG 2.5.5's 44px rather than the compact

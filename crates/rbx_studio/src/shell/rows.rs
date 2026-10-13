@@ -344,7 +344,7 @@ pub(super) fn property_row(row: &PropertyRow) -> impl IntoElement {
             .max_w(tokens::value_width())
             .truncate()
             .pr(tokens::row_padding())
-            .font_family(tokens::FONT_FAMILY_MONO)
+            .font_family(tokens::font_mono())
             .text_size(tokens::text_sm())
             .text_color(tokens::text_placeholder())
             .child(SharedString::from(row.value.clone())),

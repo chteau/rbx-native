@@ -81,6 +81,7 @@ use texture::PER_FRAME;
 use trail::Trails;
 use translucent::Translucent;
 
+pub use cue::OverlayColors;
 pub use gui::GuiBox;
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;

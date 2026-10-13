@@ -345,7 +345,7 @@ impl TemplatesWindow {
                     )
                     .child(
                         text(11.5, 15.)
-                            .when(mono_sub, |this| this.font_family(tokens::FONT_FAMILY_MONO))
+                            .when(mono_sub, |this| this.font_family(tokens::font_mono()))
                             .text_color(tokens::text3())
                             .truncate()
                             .child(sub),

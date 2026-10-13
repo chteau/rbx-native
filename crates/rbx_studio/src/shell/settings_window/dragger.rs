@@ -182,7 +182,7 @@ pub(super) fn number(
                 })
                 .rounded(px(6.))
                 .bg(tokens::dock())
-                .font_family(tokens::FONT_FAMILY_MONO)
+                .font_family(tokens::font_mono())
                 .child(
                     Input::new(input)
                         .appearance(false)

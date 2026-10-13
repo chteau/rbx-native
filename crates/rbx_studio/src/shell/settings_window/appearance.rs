@@ -32,6 +32,9 @@ pub(super) use picker::{Picker, Target};
 
 type Choices = SearchableVec<SharedString>;
 
+/// Every listed theme's id and manifest.
+type Listed = Vec<(String, theme::Manifest)>;
+
 /// The transform tools, by the key their colour is stored under and the
 /// name their chip shows, in ribbon order.
 const TOOLS: [(&str, &str); 7] = [
@@ -48,7 +51,7 @@ const TOOLS: [(&str, &str); 7] = [
 /// outlives this window.
 pub(in crate::shell) enum Install {
     Idle,
-    Running,
+    Running(std::sync::Arc<crate::theme::Progress>),
     Failed(SharedString),
 }
 
@@ -60,6 +63,9 @@ pub(super) struct AppearanceControls {
     icon_packs: Vec<(Option<String>, IconPack)>,
     theme: Entity<SelectState<Choices>>,
     themes: Vec<String>,
+    /// Every theme the dropdown lists, with its manifest: what the theme
+    /// cards draw, in the same order.
+    pub(super) listed: Listed,
     ui_scale: Entity<SliderState>,
     /// The Script font size field, in px at 1x.
     pub(super) script_font: NumberField,
@@ -72,9 +78,10 @@ pub(super) struct AppearanceControls {
     installing: bool,
 }
 
-/// The installed themes' ids, their dropdown labels, and the row of
-/// `current`: what the theme dropdown lists, read afresh from the folder.
-fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<IndexPath>) {
+/// The installed themes' ids, their dropdown labels, the row of `current`
+/// and the themes themselves: what the theme dropdown and cards list, read
+/// afresh from the folder.
+fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<IndexPath>, Listed) {
     let installed = theme::themes_dir()
         .map(|dir| theme::installed(&dir))
         .unwrap_or_default();
@@ -88,9 +95,9 @@ fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<Index
             }
         })
         .collect();
-    let ids: Vec<String> = installed.into_iter().map(|(id, _)| id).collect();
+    let ids: Vec<String> = installed.iter().map(|(id, _)| id.clone()).collect();
     let row = ids.iter().position(|id| id == current).map(IndexPath::new);
-    (ids, labels, row)
+    (ids, labels, row, installed)
 }
 
 impl AppearanceControls {
@@ -138,8 +145,8 @@ impl AppearanceControls {
         });
 
         let current = shell.read(cx).appearance.theme.clone();
-        let installing = matches!(shell.read(cx).theme_install, Install::Running);
-        let (themes, theme_labels, theme_row) =
+        let installing = matches!(shell.read(cx).theme_install, Install::Running(_));
+        let (themes, theme_labels, theme_row, listed) =
             theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
         let theme =
             cx.new(|cx| SelectState::new(SearchableVec::new(theme_labels), theme_row, window, cx));
@@ -224,7 +231,7 @@ impl AppearanceControls {
             }),
             cx.observe_in(shell, window, |this, shell, window, cx| {
                 let install = &shell.read(cx).theme_install;
-                let running = matches!(install, Install::Running);
+                let running = matches!(install, Install::Running(_));
                 let done = this.appearance.installing && !running;
                 let succeeded = matches!(install, Install::Idle);
                 this.appearance.installing = running;
@@ -244,6 +251,7 @@ impl AppearanceControls {
                 icon_packs,
                 theme,
                 themes,
+                listed,
                 ui_scale,
                 script_font,
                 viewport_font,
@@ -316,8 +324,10 @@ impl SettingsWindow {
     /// an uninstall.
     fn refresh_themes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let current = self.shell.read(cx).appearance.theme.clone();
-        let (themes, labels, row) = theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
+        let (themes, labels, row, listed) =
+            theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
         self.appearance.themes = themes;
+        self.appearance.listed = listed;
         self.appearance.theme.update(cx, |state, cx| {
             state.set_items(SearchableVec::new(labels), window, cx);
             state.set_selected_index(row, window, cx);
@@ -385,7 +395,23 @@ impl SettingsWindow {
 
         let active =
             (self.shell.read(cx).appearance.theme.clone()).filter(|id| !theme::is_reserved(id));
-        let running = matches!(self.shell.read(cx).theme_install, Install::Running);
+        let running = match &self.shell.read(cx).theme_install {
+            Install::Running(progress) => {
+                use std::sync::atomic::Ordering::Relaxed;
+                Some(theme::install_label(
+                    progress.received.load(Relaxed),
+                    progress.total.load(Relaxed),
+                ))
+            }
+            _ => None,
+        };
+        let install_button = match running {
+            Some(label) => secondary_button("install-theme", "loader", label)
+                .text_color(tokens::text3())
+                .cursor_default(),
+            None => secondary_button("install-theme", "download", "Install")
+                .on_click(cx.listener(|this, _, _, cx| this.install_theme(cx))),
+        };
         let mut install_row = Row::new(
             "Install from GitHub",
             h_flex()
@@ -411,14 +437,7 @@ impl SettingsWindow {
                                 .text_color(tokens::text()),
                         ),
                 )
-                .child(if running {
-                    secondary_button("install-theme", "loader", "Installing\u{2026}")
-                        .text_color(tokens::text3())
-                        .cursor_default()
-                } else {
-                    secondary_button("install-theme", "download", "Install")
-                        .on_click(cx.listener(|this, _, _, cx| this.install_theme(cx)))
-                }),
+                .child(install_button),
         )
         .describe("A theme repository\u{2019}s link. Installing it again updates it.");
         if let Install::Failed(err) = &self.shell.read(cx).theme_install {

@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 
+use crate::tokens;
 use glam::Vec3;
 use rbx_animation::{Frame, Rig};
 use rbx_dom::Ref;
@@ -18,10 +19,17 @@ use rbx_viewer::Segment;
 const WAIST: f32 = 0.2;
 const GIRTH: f32 = 0.1;
 
-/// Linear RGB: a bone's light grey, and the selected bone's blue (the
-/// accent the rest of the editor selects with).
-const BONE: [f32; 4] = [0.62, 0.62, 0.62, 0.9];
-const SELECTED: [f32; 4] = [0.16, 0.42, 0.95, 1.0];
+/// A bone's light grey, as linear RGBA. A theme can change it, so the active
+/// palette is read on each call.
+fn bone_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_bone())
+}
+
+/// The selected bone's blue, the accent the rest of the editor selects with.
+/// Read from the active palette on each call, as [`bone_color`] is.
+fn selected_bone_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_bone_selected())
+}
 
 /// One bone: where its joint is, where it points, and whether it is the
 /// joint being edited.
@@ -82,7 +90,11 @@ pub(super) fn segments(bones: &[Bone]) -> Vec<Segment> {
         let waist = bone.head + axis * WAIST;
         let r = length * GIRTH;
         let ring = [a, b, -a, -b].map(|d| waist + d * r);
-        let colour = if bone.selected { SELECTED } else { BONE };
+        let colour = if bone.selected {
+            selected_bone_color()
+        } else {
+            bone_color()
+        };
         let line = |from: Vec3, to: Vec3, width: f32| Segment {
             from,
             to,
@@ -136,6 +148,8 @@ mod tests {
             tail: Vec3::X,
             selected: true,
         };
-        assert!(segments(&[picked]).iter().all(|s| s.color == SELECTED));
+        assert!(segments(&[picked])
+            .iter()
+            .all(|s| s.color == selected_bone_color()));
     }
 }

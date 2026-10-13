@@ -355,7 +355,7 @@ impl Render for SettingsWindow {
                     cx.stop_propagation();
                 }
             }))
-            .font_family(tokens::FONT_FAMILY_UI)
+            .font_family(tokens::font_ui())
             .text_size(px(13.))
             .text_color(tokens::text())
             .child(super::chrome::window_topbar(

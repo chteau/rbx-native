@@ -2,6 +2,15 @@
 
 ## 2026-10-13
 
+- **A theme browser, download progress, theme fonts and themeable
+  viewport overlays.** Settings › Appearance › Theme now shows a card for
+  every theme, with each installed theme's preview image, and Install
+  from GitHub shows how far the download has got. A theme can ship its own
+  fonts and name the interface's and the code's families in `theme.json`.
+  The 3D view's overlays (selection and hover boxes, guides, markers, the
+  orientation sphere, readouts) are `viewport_*` colour tokens a theme
+  can change. — @chteau
+
 - **Classic Baseplate and Flat Terrain on Home.** Home's New row now has
   Studio's three plain templates. Each new place matches what real
   Studio's own template holds, measured from Studio: Baseplate gets its

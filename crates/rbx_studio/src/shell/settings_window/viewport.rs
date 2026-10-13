@@ -517,7 +517,7 @@ fn band_number(input: &Entity<InputState>, focused: bool) -> impl IntoElement {
         })
         .rounded(px(6.))
         .bg(tokens::dock())
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .child(
             component::input::Input::new(input)
                 .appearance(false)

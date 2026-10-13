@@ -13,6 +13,7 @@
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use super::pack::is_reserved;
@@ -95,22 +96,47 @@ impl Source {
     }
 }
 
-/// Downloads and installs the theme `link` points at, replacing an earlier
-/// install of the same repository. Blocking: run it off the UI thread.
-pub(crate) fn install(link: &str) -> Result<(String, Manifest), String> {
-    let themes = pack::themes_dir().ok_or("there is no config directory")?;
-    install_into(&themes, link)
+/// How far a download is: the bytes so far, and the total the server
+/// announced (`0` when it gave none). Shared with the UI thread, which
+/// shows it on the Install button.
+#[derive(Debug, Default)]
+pub(crate) struct Progress {
+    pub(crate) received: AtomicU64,
+    pub(crate) total: AtomicU64,
 }
 
-fn install_into(themes: &Path, link: &str) -> Result<(String, Manifest), String> {
+/// The Install button's label while a download runs.
+pub(crate) fn label(received: u64, total: u64) -> String {
+    if total > 0 {
+        let percent = (u128::from(received) * 100 / u128::from(total)).min(100);
+        return format!("Installing\u{2026} {percent}%");
+    }
+    if received < 100_000 {
+        return "Installing\u{2026}".to_owned();
+    }
+    format!("Installing\u{2026} {:.1} MB", received as f64 / 1e6)
+}
+
+/// Downloads and installs the theme `link` points at, replacing an earlier
+/// install of the same repository. Blocking: run it off the UI thread.
+pub(crate) fn install(link: &str, progress: &Progress) -> Result<(String, Manifest), String> {
+    let themes = pack::themes_dir().ok_or("there is no config directory")?;
+    install_into(&themes, link, progress)
+}
+
+fn install_into(
+    themes: &Path,
+    link: &str,
+    progress: &Progress,
+) -> Result<(String, Manifest), String> {
     let source = Source::parse(link)?;
-    let archive = download(&source.archive_url())?;
+    let archive = download(&source.archive_url(), progress)?;
     let id = source.id();
     let manifest = install_archive(themes, &id, &archive)?;
     Ok((id, manifest))
 }
 
-fn download(url: &str) -> Result<Vec<u8>, String> {
+fn download(url: &str, progress: &Progress) -> Result<Vec<u8>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(60)))
         .build()
@@ -120,12 +146,30 @@ fn download(url: &str) -> Result<Vec<u8>, String> {
         .header("User-Agent", "rbx-native")
         .call()
         .map_err(|err| format!("could not download {url}: {err}"))?;
-    response
+    let announced = response
+        .headers()
+        .get("Content-Length")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    progress.total.store(announced, Ordering::Relaxed);
+    let failed = |err: &dyn std::fmt::Display| format!("could not download {url}: {err}");
+    let mut reader = response
         .body_mut()
         .with_config()
         .limit(MAX_ARCHIVE_BYTES)
-        .read_to_vec()
-        .map_err(|err| format!("could not download {url}: {err}"))
+        .reader();
+    let mut bytes = Vec::new();
+    let mut chunk = vec![0u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut chunk).map_err(|err| failed(&err))?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+        progress.received.fetch_add(read as u64, Ordering::Relaxed);
+    }
+    Ok(bytes)
 }
 
 /// Unpacks the theme in `archive` (a zip) into `<themes>/<id>`.

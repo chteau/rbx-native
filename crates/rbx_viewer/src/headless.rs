@@ -439,6 +439,22 @@ impl Headless {
         self.offscreen.set_hover(selected, self.loaded.scene());
     }
 
+    /// Recolours the editor cues — the selection and hover silhouettes and
+    /// boxes, and the preview's ghost boxes — from linear RGB plus alpha. A
+    /// no-op when `colors` equals what is already set; otherwise only the
+    /// pipelines that draw those cues are rebuilt.
+    ///
+    /// Same idle-skipping caveat as `set_hover`: force a frame afterwards if
+    /// the host's render loop only draws on camera movement.
+    pub fn set_overlay_colors(&mut self, colors: crate::OverlayColors) {
+        if self.view.overlay == colors {
+            return;
+        }
+        self.view.set_overlay(colors);
+        self.offscreen
+            .set_overlay_colors(colors, self.loaded.scene());
+    }
+
     /// Draws ghost boxes where a tool being configured would put things —
     /// the Align tool's live preview (`studio/align-tool.md`: "dynamically
     /// previewing the point of alignment before confirming"). An empty

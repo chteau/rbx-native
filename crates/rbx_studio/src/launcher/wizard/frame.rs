@@ -45,7 +45,7 @@ impl Wizard {
                         .rounded_full()
                         .items_center()
                         .justify_center()
-                        .font_family(tokens::FONT_FAMILY_MONO)
+                        .font_family(tokens::font_mono())
                         .text_size(px(11.))
                         .line_height(px(14.))
                         .map(|this| {

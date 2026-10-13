@@ -1667,7 +1667,29 @@ Roblox's own engine.
   Roblox's own Creator Dashboard, drop shadows are black on any ground,
   the colour picker's thumb is a white ring with a dark halo over a
   gradient that is the colour data itself, the Baseplate thumbnail
-  pictures the scene, and the viewport's overlays sit on the 3D view.
+  pictures the scene. The viewport's overlays, which sit on the 3D view,
+  are `viewport_*` tokens since the item below.
+- [x] **Choosing, installing and styling themes from inside the editor**
+  (Settings › Appearance › Theme, `theme/github.rs`, `THEMES.md`). The
+  cards above the dropdown list every theme, not just the three built-in
+  ones: the built-ins draw their mini window from their own palette, an
+  installed theme shows its manifest's preview image with its author and
+  version, more than three wrap onto new rows, and a click switches to
+  it. Install from GitHub streams the archive and shows the download's
+  progress on its button (a percentage when GitHub sends the archive's
+  size, the megabytes so far when it doesn't). A `theme.json` can name
+  the interface's and the code's families (`"fonts": {"ui", "mono",
+  "files"}`) and ship the TTF/OTF files for them, which are registered
+  before the families are named; a family that isn't found falls back to
+  Manrope and JetBrains Mono, and every element that named a family
+  reads the active one. The 3D view's overlays are colour tokens too
+  (`viewport_selection`, `viewport_hover`, `viewport_preview`, the joint
+  markers, dragger guides, terrain brush, Animation Editor grid and
+  skeleton, orientation sphere, camera-speed badge and distance
+  readouts), with Default's values equal to the old literals. The
+  renderer's selection, hover and preview colours are WGSL override
+  constants now, so a theme switch rebuilds those three pipelines and
+  the outline cue follows the same colours.
 - [x] **"Sober but alive" restyle of the gpui-kit layer (PR #87).** The
   chrome now follows the redesign reference (`gpui-ref/`, kept out of the
   repo) token for token: a three-tone surface ramp (`#0A0A0B` / `#121213` /
@@ -2583,17 +2605,6 @@ Roblox's own engine.
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
-- [ ] 📋 **Choosing and installing themes from inside the editor.** Themes
-  reach the whole editor and switch live (see "What's been implemented").
-  Settings › Appearance › Theme now picks an installed theme, uninstalls
-  the one in use and installs one from a GitHub link, off the UI thread,
-  with the failure shown under the field. Still open: a browser of the
-  installed themes with their previews (the cards show only the built-in
-  looks, and the dropdown only names), and a progress figure for a large
-  download (the button only reads "Installing…"). A theme cannot ship
-  fonts yet (the families are fixed to Manrope and JetBrains Mono), and the
-  3D viewport's own overlays still paint literal colours that no theme
-  reaches.
 - [ ] 📋 **What the visual pass left behind**, beyond the items that
   already have their own bullets under "What's planned" → Editor: hover feedback is instant — `gpui` has no
   CSS-style property transitions and cannot transform a `Div`;

@@ -91,7 +91,7 @@ pub(super) fn chip(id: impl Into<ElementId>, cell: &Cell, side: Side) -> AnyElem
         .items_center()
         .rounded(tokens::radius_badge())
         .bg(bg)
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .text_color(ink)
@@ -174,7 +174,7 @@ pub(super) fn plus_minus(added: usize, removed: usize, size: Pixels, line: Pixel
     h_flex()
         .flex_none()
         .gap(px(6.))
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .text_size(size)
         .line_height(line)
         .when(added > 0, |this| {

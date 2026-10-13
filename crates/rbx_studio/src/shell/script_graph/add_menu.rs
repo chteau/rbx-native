@@ -377,7 +377,7 @@ fn row(
         )
         .child(
             div()
-                .font_family(tokens::FONT_FAMILY_MONO)
+                .font_family(tokens::font_mono())
                 .text_size(tokens::text_xs())
                 .text_color(tokens::text_muted())
                 .child(signature),
