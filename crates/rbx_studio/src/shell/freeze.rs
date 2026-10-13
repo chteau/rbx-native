@@ -254,6 +254,11 @@ pub(super) fn resolve(
 /// most likely means.
 pub(super) fn describe(err: &CloudError) -> String {
     match err {
+        // Roblox's answer for a key it no longer knows: no permission would
+        // help, only a new key.
+        CloudError::Refused { status: 401, message } if message.contains("Invalid API Key") => format!(
+            "Roblox doesn\u{2019}t accept the stored API key: it has expired, been revoked or was mistyped. Create a new one and add it from Home \u{203a} Manage key. ({err})"
+        ),
         CloudError::Http { status: 401 | 403, .. } | CloudError::Refused { status: 401 | 403, .. } => format!(
             "The API key can\u{2019}t upload assets: it needs the asset:read and asset:write permissions \u{2014} Home \u{203a} Manage key. ({err})"
         ),

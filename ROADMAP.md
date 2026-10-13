@@ -2409,14 +2409,20 @@ against `Roblox/creator-docs` rather than assumed:
     - Rest poses are taken from the rig's joints.
   - **The skeleton view** draws every joint as a Blender-style bone over
     the rig, with the selected one highlighted.
-- [ ] 📋 **What the auto-rigger still does not do**:
-  - dragging joint markers directly in the 3D view (they are moved
-    from the panel);
-  - accessory attachments and cages;
-  - meshes whose hands are separate, unconnected pieces;
-  - arms raised above the head;
-  - checking against a real upload whether Roblox's importer reads the
-    `.glb` in studs and detects the R15 armature itself.
+- [x] **The auto-rigger's follow-ups**:
+  - joint markers are dragged directly in the 3D view, and a dropped joint
+    stays between its neighbours and inside the mesh;
+  - the Mannequin's accessory attachments are written, placed from the fit;
+  - outer cages: Roblox's Mannequin template cages, bent onto the fit
+    with their vertices and UVs kept, are uploaded as `<Part>_OuterCage`,
+    and the `WrapTarget`s the import makes come across onto the rig;
+  - hands modelled apart from the arms are bridged, and arms raised above
+    the head are fitted;
+  - live uploads confirmed that Roblox's importer reads the `.glb` in studs
+    and recognises the R15 armature of a skinned upload.
+- [ ] 📋 **Checking the auto-rigger's cages against a real upload**: that
+  Roblox's importer turns the `<Part>_OuterCage` meshes into `WrapTarget`s,
+  and that a layered garment fits the published body in Studio.
 - [ ] 📋 **What the Animation Editor still does not do**: write a
   `CurveAnimation` itself (its byte layout is undocumented), and fit the
   stage's shadow map to the rig rather than to the whole place.

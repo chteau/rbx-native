@@ -1,4 +1,5 @@
 use glam::Vec3;
+use rbx_cloud::CloudError;
 use rbx_dom::{Variant, WeakDom};
 
 use super::resolve;
@@ -121,4 +122,18 @@ fn live_round_trip() {
     let gltf = rbx_viewer::export::gltf(&plan.export).into_bytes();
     let (id, native) = super::upload(&plan, gltf).unwrap();
     eprintln!("mesh {id}, extent {native} for a bake of {}", plan.size);
+}
+
+#[test]
+fn an_invalid_key_is_not_blamed_on_its_permissions() {
+    let invalid = CloudError::Refused {
+        status: 401,
+        message: "Invalid API Key".into(),
+    };
+    assert!(super::describe(&invalid).contains("expired"));
+    let scoped = CloudError::Refused {
+        status: 403,
+        message: "Insufficient scope".into(),
+    };
+    assert!(super::describe(&scoped).contains("asset:write"));
 }

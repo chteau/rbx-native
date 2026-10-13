@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use glam::{Quat, Vec3};
 use gpui_kit::{AppContext as _, Context, PathPromptOptions};
 use rbx_animation::Frame;
-use rbx_autorig::{Body, Fit, FitOptions, Joint, Mesh, Orientation, Part, Side};
+use rbx_autorig::{Body, CageTemplate, Fit, FitOptions, Joint, Mesh, Orientation, Part, Side};
 use rbx_dom::{Ref, Variant, WeakDom};
 
 use crate::command_bar::Feedback;
@@ -22,6 +22,7 @@ use crate::shell::Shell;
 use crate::workspace_view::JointPhase;
 
 use super::bundle::{Family, Piece, Pieces};
+use super::cage_templates;
 use super::insert::spawn_top;
 use super::{build_rig, BodyScale, BodyShape, JointStyle, RigOptions, RigType};
 
@@ -98,6 +99,11 @@ fn local_uri(folder: &str, part: Part) -> String {
 /// the model alone, after the auto-rigger was left or the place reopened.
 const UPLOAD_FILE: &str = "upload.glb";
 
+/// The same upload without the body cages, cached beside it when it has
+/// them: Publish falls back to it should Roblox refuse the caged one, so a
+/// cage the importer dislikes never costs the rig its meshes.
+const PLAIN_FILE: &str = "upload-plain.glb";
+
 /// The cache path (relative to the native cache) of the upload cut with the
 /// local meshes under `root`, if any part still points at them.
 fn local_upload(dom: &WeakDom, root: Ref) -> Option<String> {
@@ -125,17 +131,41 @@ fn local_upload(dom: &WeakDom, root: Ref) -> Option<String> {
 }
 
 /// Cuts `mesh` along `fit` and writes each part into the local asset cache.
-fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
-    let body = rbx_autorig::split(mesh, fit).map_err(|e| e.to_string())?;
+///
+/// With `templates` the body also gets outer cages bent onto the fit, for
+/// layered clothing; without them (`cage_error` says why) it is warned.
+fn cut(
+    mesh: &Mesh,
+    fit: &Fit,
+    smooth: bool,
+    templates: Option<&[CageTemplate]>,
+    cage_error: Option<String>,
+) -> Result<Cut, String> {
+    let mut body = rbx_autorig::split(mesh, fit).map_err(|e| e.to_string())?;
+    let mut cages = Vec::new();
+    let mut reason = cage_error;
+    if let Some(templates) = templates {
+        match rbx_autorig::fit_cages(&body, templates) {
+            Ok(fitted) => cages = fitted,
+            Err(e) => reason = Some(e.to_string()),
+        }
+    }
+    if let Some(reason) = reason {
+        body.warnings.push(format!(
+            "This rig has no body cages, so layered clothing will not fit it: {reason}"
+        ));
+    }
     // A skinned part is a `version 4.00` mesh carrying its bones and
     // weights; a rigid one the plain `version 2.00`.
     let skin = smooth.then(|| rbx_autorig::weights(mesh, fit, &body));
     // Skinned, the upload carries the R15 armature and every part's
     // weights; rigid, just the 15 meshes.
-    let upload = match &skin {
-        Some(skin) => rbx_autorig::gltf_skinned(&body, skin),
-        None => rbx_autorig::gltf(&body),
+    let write = |cages: &[Mesh]| match &skin {
+        Some(skin) => rbx_autorig::gltf_skinned(&body, skin, cages),
+        None => rbx_autorig::gltf(&body, cages),
     };
+    let upload = write(&cages);
+    let plain = (!cages.is_empty()).then(|| write(&[]));
     let meshes: Vec<Vec<u8>> = body
         .parts
         .iter()
@@ -161,6 +191,11 @@ fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
     cache
         .put_native(&format!("{CACHE_FOLDER}/{folder}/{UPLOAD_FILE}"), &upload)
         .map_err(|e| format!("caching the upload: {e}"))?;
+    if let Some(plain) = plain {
+        cache
+            .put_native(&format!("{CACHE_FOLDER}/{folder}/{PLAIN_FILE}"), &plain)
+            .map_err(|e| format!("caching the upload: {e}"))?;
+    }
     Ok(Cut {
         body,
         uris,
@@ -242,7 +277,10 @@ impl Shell {
                 .background_spawn(async move {
                     let mesh = rbx_autorig::read(&path).map_err(|e| e.to_string())?;
                     let fit = rbx_autorig::fit(&mesh, HEIGHT).map_err(|e| e.to_string())?;
-                    let cut = cut(&mesh, &fit, true)?;
+                    let cut = match cage_templates::mannequin() {
+                        Ok(t) => cut(&mesh, &fit, true, Some(&t), None)?,
+                        Err(e) => cut(&mesh, &fit, true, None, Some(e))?,
+                    };
                     Ok::<_, String>((mesh, fit, cut))
                 })
                 .await;
@@ -366,7 +404,12 @@ impl Shell {
         let (mesh, fit, smooth) = (rig.mesh.clone(), rig.fit.clone(), rig.smooth);
         cx.spawn(async move |this, cx| {
             let result = cx
-                .background_spawn(async move { cut(&mesh, &fit, smooth) })
+                .background_spawn(async move {
+                    match cage_templates::mannequin() {
+                        Ok(t) => cut(&mesh, &fit, smooth, Some(&t), None),
+                        Err(e) => cut(&mesh, &fit, smooth, None, Some(e)),
+                    }
+                })
                 .await;
             let _ = this.update(cx, |shell, cx| {
                 let stale = shell.anim_autorig_mut().is_some_and(|rig| {
@@ -499,16 +542,38 @@ impl Shell {
                     let bytes = cache.get_native(&upload).ok_or_else(|| {
                         format!("{name}'s cut is no longer in the local cache: auto-rig the mesh again")
                     })?;
-                    let file = std::env::temp_dir().join(format!("{name}.glb"));
-                    std::fs::write(&file, bytes).map_err(|e| format!("{}: {e}", file.display()))?;
-                    let imported = crate::shell::import3d::upload_model(&file, &name);
-                    let _ = std::fs::remove_file(&file);
-                    imported
+                    let send = |bytes: Vec<u8>| {
+                        let file = std::env::temp_dir().join(format!("{name}.glb"));
+                        std::fs::write(&file, bytes)
+                            .map_err(|e| format!("{}: {e}", file.display()))?;
+                        let imported = crate::shell::import3d::upload_model(&file, &name);
+                        let _ = std::fs::remove_file(&file);
+                        imported
+                    };
+                    let plain = upload.replace(UPLOAD_FILE, PLAIN_FILE);
+                    match (send(bytes), cache.get_native(&plain)) {
+                        (Ok(imported), plain) => Ok((imported, None, plain.is_some())),
+                        (Err(err), Some(plain)) => send(plain).map(|imported| {
+                            let note = format!(
+                                "Roblox refused the upload with body cages ({err}), so it went without them: layered clothing will not fit this rig"
+                            );
+                            (imported, Some(note), false)
+                        }).map_err(|_| err),
+                        (Err(err), None) => Err(err),
+                    }
                 })
                 .await;
             let _ = this.update(cx, |shell, cx| match result {
-                Ok(imported) => {
+                Ok((imported, note, caged)) => {
                     let swapped = swap_meshes(&mut shell.dom, model, &imported.dom);
+                    let note = note.or_else(|| {
+                        (caged && wrap_targets(&shell.dom, model) == 0).then(|| {
+                            "The upload carried body cages, but Roblox's import made no WrapTarget of them: layered clothing will not fit this rig".to_string()
+                        })
+                    });
+                    if let Some(note) = note {
+                        shell.output.push(SOURCE, Feedback::Warning(note));
+                    }
                     let changes = shell.dom.take_changes();
                     shell.reflect_changes(&changes, cx);
                     shell.record_history_change(changes);
@@ -697,7 +762,9 @@ fn root_pivot(dom: &WeakDom, model: Ref) -> Option<Vec3> {
 /// importer's own Motor6Ds, rig attachments, Humanoid and
 /// `HumanoidRootPart` (models 95056738325785 and 91357319063637). Only the
 /// mesh and the skinning flags are taken, so the rig keeps its own joints
-/// and nothing is doubled. `JointOffset` is the bone's position from the
+/// and nothing is doubled. A `WrapTarget` the import carries (the body
+/// cage) replaces any under our part, with every property of the imported
+/// one. `JointOffset` is the bone's position from the
 /// part's centre; the importer's centre is the cut part's, as its
 /// `InitialSize` matches the cut's size exactly.
 fn swap_meshes(dom: &mut WeakDom, model: Ref, imported: &WeakDom) -> usize {
@@ -734,6 +801,26 @@ fn swap_meshes(dom: &mut WeakDom, model: Ref, imported: &WeakDom) -> usize {
         ] {
             if let Some(value) = source.properties().get(property).cloned() {
                 let _ = dom.set_property(target, property, value);
+            }
+        }
+        let wrap = source.children().iter().find_map(|&c| {
+            let i = imported.get(c)?;
+            (i.class() == "WrapTarget").then_some(i)
+        });
+        if let Some(wrap) = wrap {
+            let old: Vec<Ref> = dom.get(target).map_or_else(Vec::new, |t| {
+                t.children()
+                    .iter()
+                    .copied()
+                    .filter(|&c| dom.get(c).is_some_and(|i| i.class() == "WrapTarget"))
+                    .collect()
+            });
+            for r in old {
+                dom.remove(r);
+            }
+            let fresh = dom.new_instance("WrapTarget", wrap.name(), Some(target));
+            for (property, value) in wrap.properties() {
+                let _ = dom.set_property(fresh, property, value.clone());
             }
         }
         found += 1;
@@ -846,6 +933,17 @@ fn turn_part(dom: &mut WeakDom, model: Ref, part: Ref, turn: Quat) {
             }
         }
     }
+}
+
+/// How many `WrapTarget`s the body parts of `model` carry.
+fn wrap_targets(dom: &WeakDom, model: Ref) -> usize {
+    let parts = dom.get(model).map_or(&[][..], |m| m.children());
+    parts
+        .iter()
+        .filter_map(|&p| dom.get(p))
+        .flat_map(|p| p.children())
+        .filter(|&&c| dom.get(c).is_some_and(|i| i.class() == "WrapTarget"))
+        .count()
 }
 
 fn find_named(dom: &WeakDom, names: &[String]) -> Option<Ref> {
@@ -995,10 +1093,60 @@ mod tests {
                 }
                 // The importer's own joint, which must not come across.
                 imported.new_instance("Motor6D", part.name(), Some(p));
+                let wrap = imported.new_instance("WrapTarget", "WrapTarget", Some(p));
+                let cage = format!("rbxassetid://{}", 500 + i);
+                imported
+                    .set_property(
+                        wrap,
+                        "CageMeshId",
+                        Variant::Content(rbx_dom::Content::Uri(cage)),
+                    )
+                    .unwrap();
+                imported
+                    .set_property(
+                        wrap,
+                        "CageOrigin",
+                        Variant::CFrame(rbx_dom::CFrameData {
+                            position: rbx_dom::Vector3Data {
+                                x: 0.,
+                                y: 0.,
+                                z: 0.,
+                            },
+                            rotation: rbx_dom::rotation::IDENTITY,
+                        }),
+                    )
+                    .unwrap();
             }
             assert_eq!(swap_meshes(&mut dom, model, &imported), 15);
             assert!(!has_local_meshes(&dom, model));
             assert_eq!(joints(&dom), before);
+            for (i, part) in Part::ALL.iter().enumerate() {
+                let target = dom
+                    .get(model)
+                    .unwrap()
+                    .children()
+                    .iter()
+                    .copied()
+                    .find(|&c| dom.get(c).unwrap().name() == part.name())
+                    .unwrap();
+                let wraps: Vec<_> = dom
+                    .get(target)
+                    .unwrap()
+                    .children()
+                    .iter()
+                    .filter_map(|&c| dom.get(c))
+                    .filter(|c| c.class() == "WrapTarget")
+                    .collect();
+                assert_eq!(wraps.len(), 1);
+                assert_eq!(
+                    wraps[0].properties().get("CageMeshId"),
+                    Some(&Variant::Content(rbx_dom::Content::Uri(format!(
+                        "rbxassetid://{}",
+                        500 + i
+                    ))))
+                );
+            }
+            assert_eq!(wrap_targets(&dom, model), 15);
             let rig = rbx_animation::Rig::read(&dom, model);
             let head = rig.joint_for("Head").unwrap().part1;
             let props = dom.get(head).unwrap().properties();

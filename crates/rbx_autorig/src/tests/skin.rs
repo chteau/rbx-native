@@ -502,7 +502,7 @@ fn mesh_v4_round_trips_geometry_and_skin() {
 fn the_skinned_glb_has_one_skin_over_the_r15_armature() {
     let (_, _, body, skin) = skinned(Pose::A);
     use crate::write::file_space;
-    let bytes = crate::gltf_skinned(body, skin);
+    let bytes = crate::gltf_skinned(body, skin, &[]);
     let file = gltf::Gltf::from_slice(&bytes).unwrap();
     let blob = file.blob.as_deref().unwrap();
     let root = skin.joints[Joint::Root as usize];

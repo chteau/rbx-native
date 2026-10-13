@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-13
+
+- **Auto-rigged bodies get outer cages.** The auto-rigger now bends
+  Roblox's own Mannequin cages onto the fit and uploads each one as
+  `<Part>_OuterCage` beside its part, so layered clothing has a cage to
+  wrap. The template vertices and UVs are kept (a garment pairs with them
+  vertex for vertex); only their positions move: blended between the
+  bones so the seams stay closed, pushed out of the body along the cage's
+  own normals, and relaxed where they fold. After Publish the
+  `WrapTarget`s Roblox makes come across onto the rig, and an upload
+  refused because of its cages is sent again without them. The cages are
+  downloaded anonymously, not shipped. A refused key now says the key has
+  expired instead of blaming its permissions. — @chteau
+
 ## 2026-10-12
 
 - **Quality bands are a setting.** Studio Settings › Viewport › Advanced

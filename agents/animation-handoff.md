@@ -301,11 +301,21 @@ l'upload par un modèle local.
     détachée. Pas de garde-fou sur la position d'un joint.
   - Attachments d'accessoires écrits (même jeu que le Mannequin, placés
     depuis le fit), non comparés à l'œil dans le vrai Studio.
-  - Pas de cages de corps : une `_OuterCage` doit garder la topologie
-    (sommets et UV) de la cage gabarit de Roblox pour s'apparier aux
-    cages internes des vêtements en couches. Une enveloppe inventée ne
-    s'apparierait pas, et la vérifier demande des envois en ligne et
-    Studio. Il faudrait déformer la cage du Mannequin vers le fit.
+  - Cages de corps : `rbx_autorig::fit_cages` plie les 15 cages gabarit du
+    Mannequin (téléchargées anonymement par `rig/cage_templates.rs`, gardées
+    dans le cache d'assets) sur le fit, sommets et UV inchangés. Carte
+    grossière par os mélangée comme un skinning (coutures fermées), poussée
+    hors du corps le long des normales de la cage (nombre d'enroulement),
+    puis détente des plis. Écrites en `<Part>_OuterCage` dans le glb (skinnées
+    en mode Smooth). Mesuré (`--example cage_report`, test ignoré
+    `real_cages_fit_real_characters`, `RBX_FIXTURES`) : 3 à 38 triangles
+    retournés sur ~2700 selon le personnage (Rak, aisselles). Publish copie les
+    `WrapTarget` renvoyés ; si l'upload avec cages est refusé, il repart sans
+    (`upload-plain.glb`). **Non vérifié en ligne** : la clé stockée renvoie
+    « 401 Invalid API Key » (2026-10-13). À faire : nouvelle clé, Publish,
+    vérifier les `WrapTarget` dans le `.rbxm` gardé
+    (`RBX_STUDIO_IMPORT_KEEP`) et habiller le corps d'un vêtement en couches
+    dans Studio.
   - Mains détachées et bras levés gérés. Un bras collé le long du flanc
     (pressé contre le torse) n'est toujours pas séparé par le fit.
   - Testé sur des humanoïdes synthétiques et quatre maillages de
