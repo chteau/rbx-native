@@ -25,19 +25,24 @@ saved, which is also how to preview a theme while writing it. A theme that
 fails to load is named in the Output dock with what is wrong, and the
 current one stays on screen.
 
-Settings › Appearance › Theme does all of this from inside the editor: its
-dropdown picks an installed theme, the bin beside it uninstalls the one in
-use (the editor goes back to Default), and **Install from GitHub** takes a
-repository link (`github.com/owner/repo`, optionally `/tree/<branch or
-tag>`), downloads it, checks it loads, and switches to it. Installing the
-same repository again updates it.
+Settings › Appearance › Theme does all of this from inside the editor. Its
+cards list every theme, the built-in ones drawn in their own palette and
+each installed one showing its `preview` image, and a click switches to
+it; the dropdown below picks the same way, and the bin beside it
+uninstalls the one in use (the editor goes back to Default). **Install
+from GitHub** takes a repository link (`github.com/owner/repo`,
+optionally `/tree/<branch or tag>`), downloads it, checks it loads, and
+switches to it, with the download's progress on the button (a percentage,
+or the megabytes so far when GitHub doesn't say how big the archive is).
+Installing the same repository again updates it.
 
 ## Writing one
 
 ```text
 manifest.json    required
 preview.png      required (PNG, JPEG or WebP; any name, see "preview")
-theme.json       optional: colours, sizes, effects
+theme.json       optional: colours, sizes, fonts, effects
+fonts/           optional: font files theme.json names (any folder name)
 widgets.json     optional: the toolkit's widgets (a GPUI Kit ThemeSet)
 icons/           optional: an icon pack, one SVG per class
 ```
@@ -101,6 +106,22 @@ then delete what you don't change.
   of everything, never taking a click).
 - **`hover`**: a `glow` colour and `glow_radius` (0–64) added to every hover
   state the editor draws.
+- **`fonts`**: `{"ui": "Inter", "mono": "Fira Code", "files":
+  ["fonts/Inter-Regular.ttf", "fonts/Inter-SemiBold.ttf"]}`, every key
+  optional. `ui` is the interface's family and `mono` the Script Editor's
+  and every code-like field's; `files` are TTF, OTF or TTC files inside the
+  theme (at most 16, each under 8 MiB) registered before the families are
+  named, so a theme can ship a font the machine doesn't have. A family
+  that still isn't found falls back to Default's Manrope and JetBrains
+  Mono. Ship each weight you want: the editor uses regular, medium,
+  semibold and bold.
+- **The 3D view's overlays** are colour tokens too, all named
+  `viewport_*`: the selection and hover boxes, Align's ghost preview,
+  joint and attachment markers, the dragger's guides, the terrain brush,
+  the Animation Editor's floor grid and skeleton, the orientation sphere,
+  the camera-speed badge and the distance readouts. They sit on the scene
+  rather than on the chrome, so Light and High contrast leave them alone,
+  but a theme can change any of them.
 
 A token name the editor doesn't know is skipped with a warning, so a theme
 written for a newer version still loads; a value that doesn't parse stops

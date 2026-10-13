@@ -395,6 +395,7 @@ fn run(
     let mut scrolls = Vec::new();
     let mut canvas = canvas::Canvas::default();
     let mut joints = JointSolver::new();
+    let mut overlay: Option<rbx_viewer::OverlayColors> = None;
 
     loop {
         let wait = idle.then_some(if visible { interval } else { IDLE_WAIT });
@@ -416,6 +417,19 @@ fn run(
             wait,
         ) {
             return;
+        }
+
+        // Polled because a theme switch happens on the UI thread and sends
+        // no command; this is one `Arc` read per frame.
+        let colors = rbx_viewer::OverlayColors {
+            selection: crate::tokens::linear(crate::tokens::viewport_selection()),
+            hover: crate::tokens::linear(crate::tokens::viewport_hover()),
+            preview: crate::tokens::linear(crate::tokens::viewport_preview()),
+        };
+        if overlay != Some(colors) {
+            viewer.set_overlay_colors(colors);
+            overlay = Some(colors);
+            owed = true;
         }
 
         let now = Instant::now();

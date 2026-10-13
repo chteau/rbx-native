@@ -224,7 +224,7 @@ pub(in crate::shell) fn ticked_slider(
 pub(in crate::shell) fn secondary_button(
     id: impl Into<ElementId>,
     glyph: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
 ) -> Stateful<Div> {
     h_flex()
         .id(id.into())
@@ -244,7 +244,7 @@ pub(in crate::shell) fn secondary_button(
         .cursor_pointer()
         .hover(|this| this.bg(tokens::secondary_hover()))
         .child(icon(glyph, 12.))
-        .child(label)
+        .child(label.into())
 }
 
 // The destructive variants: WCAG 2.5.5's 44px rather than the compact

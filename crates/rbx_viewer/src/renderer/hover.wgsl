@@ -49,16 +49,21 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     return out;
 }
 
-// A warm amber, sRGB (0.98, 0.65, 0.15) linearized the same way
-// `scene::srgb_to_linear` linearizes every other part color — chosen for
-// contrast against the selection's blue rather than to match any particular
-// Studio convention (Studio itself has no separate hover outline). Drawn at
-// less than full alpha, through this pipeline's own blend state (see
+// The outline colour, linear RGB plus alpha, set per pipeline from
+// `renderer::cue::OverlayColors`. The default is a warm amber, sRGB
+// (0.98, 0.65, 0.15) linearized the same way `scene::srgb_to_linear`
+// linearizes every other part color — chosen for contrast against the
+// selection's blue rather than to match any particular Studio convention
+// (Studio itself has no separate hover outline). Drawn at less than full alpha
+// by default, through this pipeline's own blend state (see
 // `renderer::hover::Hover::new`), so it reads as a dimmer cue even where it
 // happens to sit beside the selection box's harder edge.
-const COLOR: vec4<f32> = vec4<f32>(0.955, 0.380, 0.020, 0.55);
+override COLOR_R: f32 = 0.955;
+override COLOR_G: f32 = 0.380;
+override COLOR_B: f32 = 0.020;
+override COLOR_A: f32 = 0.55;
 
 @fragment
 fn fs_main(_input: VertexOutput) -> @location(0) vec4<f32> {
-    return COLOR;
+    return vec4<f32>(COLOR_R, COLOR_G, COLOR_B, COLOR_A);
 }

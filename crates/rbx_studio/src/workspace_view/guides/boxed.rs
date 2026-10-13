@@ -12,18 +12,19 @@ pub(in crate::workspace_view) fn label_text() -> Pixels {
 
 /// Studio's floating measurement box, legacy dark theme: a white bold number
 /// on RGB(37, 37, 37) with a `border` and small rounded corners
-/// (`FloatingValueInput`), padded 4/4/2/4.
+/// (`FloatingValueInput`), padded 4/4/2/4. The colours come from the viewport
+/// readout tokens, so a theme can restyle them.
 pub(in crate::workspace_view) fn measurement_box(border: Rgba) -> Div {
     div()
         .pl(px(4.0))
         .pr(px(4.0))
         .pt(px(2.0))
         .pb(px(4.0))
-        .bg(rgb(0x252525))
+        .bg(crate::tokens::viewport_readout())
         .border_1()
         .border_color(border)
         .rounded(px(3.0))
-        .text_color(rgb(0xffffff))
+        .text_color(crate::tokens::viewport_readout_text())
         .text_size(label_text())
         .line_height(label_text())
         .font_weight(FontWeight::BOLD)
@@ -53,5 +54,8 @@ pub(in crate::workspace_view) fn label_element(
     at: Point<Pixels>,
     text: SharedString,
 ) -> impl IntoElement {
-    centred_on(at, measurement_box(rgb(0x000000)).child(text))
+    centred_on(
+        at,
+        measurement_box(crate::tokens::viewport_readout_border()).child(text),
+    )
 }

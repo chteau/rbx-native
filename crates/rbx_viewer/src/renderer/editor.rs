@@ -90,6 +90,27 @@ impl Renderer {
         );
     }
 
+    /// Recolours the selection, hover and preview cues. Each rebuilds only
+    /// its own pipeline, and only if its colour changed.
+    pub(crate) fn set_overlay_colors(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        colors: super::OverlayColors,
+        scene: &Scene,
+    ) {
+        self.selection.set_overlay_colors(device, colors);
+        self.hover.set_overlay_colors(device, colors);
+        self.preview.set_overlay_colors(device, colors);
+        self.cues.set_colors(
+            device,
+            queue,
+            &self.frame_layout,
+            colors,
+            Self::cue_source(scene),
+        );
+    }
+
     /// Replaces the ghost boxes a tool is previewing — see
     /// `renderer::preview`. An empty list clears them.
     pub(crate) fn set_preview(&mut self, device: &wgpu::Device, boxes: &[glam::Mat4]) {

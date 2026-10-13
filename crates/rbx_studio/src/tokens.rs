@@ -22,7 +22,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use gpui_kit::component::Size;
-use gpui_kit::{px, BoxShadow, FontWeight, Pixels, Rgba, SharedString, StyleRefinement, Styled as _};
+use gpui_kit::{
+    px, BoxShadow, FontWeight, Pixels, Rgba, SharedString, StyleRefinement, Styled as _,
+};
 
 use crate::theme;
 
@@ -527,7 +529,12 @@ pub(crate) fn linear(color: Rgba) -> [f32; 4] {
             ((value + 0.055) / 1.055).powf(2.4)
         }
     };
-    [channel(color.r), channel(color.g), channel(color.b), color.a]
+    [
+        channel(color.r),
+        channel(color.g),
+        channel(color.b),
+        color.a,
+    ]
 }
 
 /// The Curve Editor's X, Y and Z channels: red, green and blue as every 3D
@@ -843,19 +850,25 @@ static FONTS: std::sync::LazyLock<std::sync::RwLock<(SharedString, SharedString)
 
 /// The interface's family, for an element that names one explicitly.
 pub(crate) fn font_ui() -> SharedString {
-    let fonts = FONTS.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fonts = FONTS
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     fonts.0.clone()
 }
 
 /// The code family: the Script Editor, numbers in fields, hex values.
 pub(crate) fn font_mono() -> SharedString {
-    let fonts = FONTS.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fonts = FONTS
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     fonts.1.clone()
 }
 
 /// Called by `theme::apply` once the theme's families are resolved.
 pub(crate) fn set_fonts(ui: SharedString, mono: SharedString) {
-    let mut fonts = FONTS.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut fonts = FONTS
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     *fonts = (ui, mono);
 }
 

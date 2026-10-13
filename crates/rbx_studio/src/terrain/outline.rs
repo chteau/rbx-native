@@ -1,6 +1,7 @@
 //! What the editor draws over the viewport: the brush's wireframe where it
 //! would land, and the selection region with its handles.
 
+use crate::tokens;
 use glam::{Mat4, Vec3};
 use rbx_terrain::edit::brush::Shape;
 use rbx_terrain::edit::region::StudBox;
@@ -11,11 +12,23 @@ use super::settings::Settings;
 
 const RING: usize = 48;
 const LINE: f32 = 2.0;
-/// Studio's terrain brush is a light blue wire; subtracting turns it red so
-/// a held `Ctrl` reads at a glance.
-const ADD: [f32; 4] = [0.25, 0.62, 1.0, 1.0];
-const SUBTRACT: [f32; 4] = [1.0, 0.25, 0.2, 1.0];
-const REGION: [f32; 4] = [0.95, 0.75, 0.2, 1.0];
+/// Studio's terrain brush is a light blue wire. The active theme's add
+/// colour, as linear RGBA, read on each call so a theme can change it.
+fn brush_add_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_brush_add())
+}
+
+/// Subtracting turns the brush red so a held `Ctrl` reads at a glance. The
+/// active theme's subtract colour, read on each call.
+fn brush_subtract_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_brush_subtract())
+}
+
+/// The selection region's box. The active theme's region colour, read on
+/// each call.
+fn brush_region_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_brush_region())
+}
 const HANDLE_DOT: f32 = 14.0;
 
 fn segment(from: Vec3, to: Vec3, color: [f32; 4]) -> Segment {
@@ -51,7 +64,11 @@ fn box_edges(corners: [Vec3; 8], color: [f32; 4], out: &mut Vec<Segment>) {
 /// sphere, the twelve edges of a box, two rims and four struts for a
 /// cylinder.
 pub(crate) fn brush_outline(settings: &Settings, center: Vec3, subtract: bool) -> Vec<Segment> {
-    let color = if subtract { SUBTRACT } else { ADD };
+    let color = if subtract {
+        brush_subtract_color()
+    } else {
+        brush_add_color()
+    };
     let radius = settings.size * 0.5;
     let half_height = settings.brush_height() * 0.5;
     let mut out = Vec::new();
@@ -123,7 +140,7 @@ pub(crate) fn region_outline(
         model.transform_point3(Vec3::new(sign(i, 1), sign(i, 2), sign(i, 4)) * 0.5)
     });
     let mut out = Vec::new();
-    box_edges(corners, REGION, &mut out);
+    box_edges(corners, brush_region_color(), &mut out);
     if let Some(faces) = faces {
         for (axis, side) in faces.all() {
             let at = faces.handle(axis, side);
@@ -191,7 +208,7 @@ mod tests {
         settings.shape = Shape::Cylinder;
         let cylinder = brush_outline(&settings, Vec3::ZERO, true);
         assert_eq!(cylinder.len(), 2 * RING + 4);
-        assert_eq!(cylinder[0].color, SUBTRACT);
+        assert_eq!(cylinder[0].color, brush_subtract_color());
     }
 
     #[test]

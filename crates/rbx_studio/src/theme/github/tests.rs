@@ -200,6 +200,27 @@ fn paths_that_climb_out_of_the_archive_are_never_written() {
 #[ignore = "needs the network"]
 fn a_real_repository_without_a_manifest_is_refused_after_downloading() {
     let themes = scratch();
-    let err = install_into(&themes, "https://github.com/octocat/Hello-World").unwrap_err();
+    let err = install_into(
+        &themes,
+        "https://github.com/octocat/Hello-World",
+        &Progress::default(),
+    )
+    .unwrap_err();
     assert!(err.contains("no manifest.json"), "{err}");
+}
+
+#[test]
+fn the_label_shows_a_percentage_when_the_size_is_known() {
+    assert_eq!(label(0, 200), "Installing\u{2026} 0%");
+    assert_eq!(label(90, 200), "Installing\u{2026} 45%");
+    assert_eq!(label(199, 200), "Installing\u{2026} 99%");
+    assert_eq!(label(500, 200), "Installing\u{2026} 100%");
+}
+
+#[test]
+fn the_label_shows_megabytes_when_the_size_is_unknown() {
+    assert_eq!(label(0, 0), "Installing\u{2026}");
+    assert_eq!(label(99_999, 0), "Installing\u{2026}");
+    assert_eq!(label(100_000, 0), "Installing\u{2026} 0.1 MB");
+    assert_eq!(label(3_240_000, 0), "Installing\u{2026} 3.2 MB");
 }

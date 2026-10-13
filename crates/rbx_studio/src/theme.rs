@@ -11,6 +11,7 @@
 //! whatever a theme leaves out is Default's, so a theme that recolours one
 //! accent is a valid theme, and a theme without icons draws Default's.
 //! Light and High contrast are built in the same way, embedded beside it.
+//! The Appearance page lists every theme, built in or installed, as a card.
 //!
 //! `tokens` reads the active [`Palette`] on every call through [`color`] and
 //! [`size`]. It is process-wide state for the same reason `tokens`' UI scale
@@ -33,7 +34,9 @@ mod watch;
 pub(crate) use apply::{apply, startup};
 pub(crate) use github::{install, label as install_label, Progress, Source};
 pub(crate) use overrides::Overrides;
-pub(crate) use pack::{installed, is_reserved, themes_dir, uninstall, Manifest, ThemePack};
+pub(crate) use pack::{
+    installed, is_reserved, preview, themes_dir, uninstall, Manifest, ThemePack,
+};
 pub(crate) use watch::{fingerprint, Watch, POLL_INTERVAL};
 
 /// The folder name, and `appearance.json` value, of the built-in theme. No

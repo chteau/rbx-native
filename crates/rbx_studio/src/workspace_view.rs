@@ -47,7 +47,7 @@ use crate::camera::PlaceCamera;
 use crate::pointer_lock::{self, PointerLock};
 use crate::settle::Settle;
 use crate::transform::{self, Targets, Transform};
-use crate::{display, pacing};
+use crate::{display, pacing, tokens};
 pub(crate) use canvas::{Canvas, CanvasUpdated};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
@@ -1009,7 +1009,7 @@ impl Render for WorkspaceView {
             .on_action(cx.listener(Self::summon_handles))
             .relative()
             .size_full()
-            .bg(rgb(0x1c1d20))
+            .bg(tokens::viewport_background())
             // The Explorer's own pick cursor, so both places a pick can land
             // read the same while one is armed.
             .when(self.ref_picking, |this| this.cursor(CursorStyle::Crosshair))
@@ -1221,9 +1221,9 @@ impl Render for WorkspaceView {
                             .left_2()
                             .px_2()
                             .py_0p5()
-                            .bg(rgba(0x14151ae0))
+                            .bg(tokens::viewport_badge())
                             .text_size(crate::tokens::viewport_text(12.))
-                            .text_color(rgb(0xe4e5e9))
+                            .text_color(tokens::viewport_badge_text())
                             .child(speed),
                     )
                 },
@@ -1245,9 +1245,9 @@ impl Render for WorkspaceView {
                             .top(position.y)
                             .px_2()
                             .py_0p5()
-                            .bg(rgba(0x14151ae0))
+                            .bg(tokens::viewport_badge())
                             .text_size(crate::tokens::viewport_text(12.))
-                            .text_color(rgb(0xe4e5e9))
+                            .text_color(tokens::viewport_badge_text())
                             .child(text),
                     )
                 },
@@ -1353,12 +1353,12 @@ fn orientation_sphere(
             let mut body = PathBuilder::fill();
             body.add_polygon(&circle(center, SPHERE_RADIUS * k), true);
             if let Ok(path) = body.build() {
-                window.paint_path(path, rgba(0x5b8fd44d));
+                window.paint_path(path, tokens::viewport_orient_body());
             }
             let mut rim = PathBuilder::stroke(px(1.0));
             rim.add_polygon(&circle(center, SPHERE_RADIUS * k), true);
             if let Ok(path) = rim.build() {
-                window.paint_path(path, rgba(0x9dc4ff66));
+                window.paint_path(path, tokens::viewport_orient_rim());
             }
 
             // The cube, pale rather than per-face-coloured: the rings carry
@@ -1400,7 +1400,7 @@ fn cube_face(face: &orientation::Face) -> Rgba {
     const PALE: (f32, f32, f32) = (0.80, 0.86, 0.96);
     const TINT: f32 = 0.22;
 
-    let axis: Rgba = rgb(face.color);
+    let axis: Rgba = face.color;
     // `prominence` is 0 edge-on and 1 dead-on; the range keeps even a
     // glancing face visible rather than letting it go black.
     let light = 0.62 + 0.38 * face.prominence;
@@ -1418,7 +1418,7 @@ fn cube_face(face: &orientation::Face) -> Rgba {
 fn stroke_arc(
     window: &mut Window,
     arc: &[(f32, f32)],
-    color: u32,
+    color: Rgba,
     alpha: f32,
     center: Point<Pixels>,
     k: f32,
@@ -1439,7 +1439,7 @@ fn stroke_arc(
     let mut builder = PathBuilder::stroke(px(RING_WIDTH * k));
     builder.add_polygon(&points, false);
     if let Ok(path) = builder.build() {
-        let mut tint = rgb(color);
+        let mut tint = color;
         tint.a = alpha;
         window.paint_path(path, tint);
     }
@@ -1478,7 +1478,7 @@ fn axis_label(label: orientation::AxisLabel, k: f32) -> impl IntoElement {
         .justify_center()
         .text_size(px(11. * k))
         .font_weight(FontWeight::BOLD)
-        .text_color(rgb(label.color))
+        .text_color(label.color)
         .opacity(opacity)
         .child(label.text)
 }

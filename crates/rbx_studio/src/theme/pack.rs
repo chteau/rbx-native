@@ -292,6 +292,16 @@ pub(crate) fn installed(themes: &Path) -> Vec<(String, Manifest)> {
     embedded.chain(found).collect()
 }
 
+/// The preview image of an installed theme, for a chooser's card. `None`
+/// for the built-in themes (they are drawn) and for a preview that is
+/// missing, not a file, or outside the theme folder.
+pub(crate) fn preview(themes: &Path, id: &str, manifest: &Manifest) -> Option<PathBuf> {
+    if is_reserved(id) || !is_plain_name(id) {
+        return None;
+    }
+    inside(&themes.join(id), &manifest.preview).filter(|path| path.is_file())
+}
+
 /// Deletes an installed theme's folder. The themes shipped inside the
 /// editor are not folders and cannot be removed.
 pub(crate) fn uninstall(themes: &Path, id: &str) -> Result<(), String> {
@@ -348,4 +358,35 @@ fn file_label(path: &Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    fn manifest(preview: &str) -> Manifest {
+        Manifest {
+            name: "n".into(),
+            author: "a".into(),
+            description: "d".into(),
+            version: "1".into(),
+            preview: preview.into(),
+        }
+    }
+
+    #[test]
+    fn preview_is_the_file_inside_the_theme_folder_only() {
+        let root = std::env::temp_dir().join(format!("rbx-preview-test-{}", std::process::id()));
+        let dir = root.join("mine");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("p.png"), b"x").unwrap();
+        assert_eq!(
+            preview(&root, "mine", &manifest("p.png")),
+            Some(dir.join("p.png"))
+        );
+        assert_eq!(preview(&root, "mine", &manifest("missing.png")), None);
+        assert_eq!(preview(&root, "mine", &manifest("../mine/p.png")), None);
+        assert_eq!(preview(&root, DEFAULT_ID, &manifest("p.png")), None);
+        let _ = fs::remove_dir_all(&root);
+    }
 }

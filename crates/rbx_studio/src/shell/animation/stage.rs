@@ -4,6 +4,7 @@
 //! a line layer in the 3D view; hiding the rest of the place is the
 //! viewer's isolation (`rbx_viewer::Headless::set_isolation`).
 
+use crate::tokens;
 use glam::Vec3;
 use rbx_viewer::Segment;
 
@@ -16,11 +17,23 @@ const REACH: i32 = (rbx_viewer::STAGE_REACH / STEP) as i32;
 /// Every this many lines is drawn a little brighter, as Blender's are.
 const MAJOR: i32 = 5;
 
-/// Linear RGB: Blender's grid greys, and its axis reds and blues.
-const MINOR: [f32; 4] = [0.055, 0.055, 0.055, 1.0];
-const MAJOR_LINE: [f32; 4] = [0.085, 0.085, 0.085, 1.0];
-const AXIS_X: [f32; 4] = [0.72, 0.06, 0.08, 1.0];
-const AXIS_Z: [f32; 4] = [0.10, 0.28, 0.82, 1.0];
+/// Blender's grid greys, and its axis reds and blues, as linear RGBA. A
+/// theme can change each one, so the active palette is read on each call.
+fn grid_minor_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_grid_minor())
+}
+
+fn grid_major_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_grid_major())
+}
+
+fn grid_axis_x_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_grid_axis_x())
+}
+
+fn grid_axis_z_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_grid_axis_z())
+}
 
 /// The floor grid under a rig whose root stands over `centre` and whose
 /// lowest point is at height `floor`. The two axis lines cross at the
@@ -33,8 +46,8 @@ pub(super) fn grid(centre: Vec3, floor: f32) -> Vec<Segment> {
         let offset = i as f32 * STEP;
         let (colour, width) = match i {
             0 => continue,
-            _ if i % MAJOR == 0 => (MAJOR_LINE, 1.25),
-            _ => (MINOR, 1.0),
+            _ if i % MAJOR == 0 => (grid_major_color(), 1.25),
+            _ => (grid_minor_color(), 1.0),
         };
         for (from, to) in [
             (
@@ -53,13 +66,13 @@ pub(super) fn grid(centre: Vec3, floor: f32) -> Vec<Segment> {
     out.push(segment(
         origin + Vec3::new(-reach, 0.0, 0.0),
         origin + Vec3::new(reach, 0.0, 0.0),
-        AXIS_X,
+        grid_axis_x_color(),
         1.75,
     ));
     out.push(segment(
         origin + Vec3::new(0.0, 0.0, -reach),
         origin + Vec3::new(0.0, 0.0, reach),
-        AXIS_Z,
+        grid_axis_z_color(),
         1.75,
     ));
     out
@@ -96,10 +109,10 @@ mod tests {
         assert_eq!(lines.len(), 2 * 40 + 2);
         let x = &lines[lines.len() - 2];
         assert_eq!((x.from.z, x.to.z), (-4.0, -4.0));
-        assert_eq!(x.color, AXIS_X);
+        assert_eq!(x.color, grid_axis_x_color());
         let z = &lines[lines.len() - 1];
         assert_eq!((z.from.x, z.to.x), (10.0, 10.0));
-        assert_eq!(z.color, AXIS_Z);
+        assert_eq!(z.color, grid_axis_z_color());
     }
 
     #[test]

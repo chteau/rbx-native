@@ -1,6 +1,6 @@
-//! Appearance › Theme's three cards, each a small window drawn in its
-//! theme's palette: the three built-in themes, Dark soft (Default), High
-//! contrast and Light.
+//! Appearance › Theme's cards, one per listed theme. The built-in themes,
+//! Dark soft (Default), High contrast and Light, are small windows drawn in
+//! their own palette; an installed theme shows its preview image.
 
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -62,32 +62,119 @@ impl SettingsWindow {
     pub(super) fn theme_cards(&self, cx: &mut Context<Self>) -> AnyElement {
         let current = self.shell.read(cx).appearance.theme.clone();
         let current = current.as_deref().unwrap_or(theme::DEFAULT_ID);
-        let cards = [
-            ("Dark soft", "Built-in", &CARDS[0], theme::DEFAULT_ID),
-            (
-                "High contrast",
-                "7:1 text, AAA",
-                &CARDS[1],
-                theme::HIGH_CONTRAST_ID,
-            ),
-            ("Light", "Built-in", &CARDS[2], theme::LIGHT_ID),
-        ];
-        h_flex()
+        let themes = theme::themes_dir();
+        div()
+            .grid()
+            .grid_cols(3)
             .gap(px(10.))
             .py(px(14.))
             .px(px(16.))
-            .children(cards.into_iter().map(|(name, sub, mini, id)| {
-                card(name, sub, mini, id == current)
+            .children(self.appearance.listed.iter().map(|(id, manifest)| {
+                let builtin = match id.as_str() {
+                    theme::DEFAULT_ID => Some(("Dark soft", "Built-in", &CARDS[0])),
+                    theme::HIGH_CONTRAST_ID => Some(("High contrast", "7:1 text, AAA", &CARDS[1])),
+                    theme::LIGHT_ID => Some(("Light", "Built-in", &CARDS[2])),
+                    _ => None,
+                };
+                let (name, sub, face) = match builtin {
+                    Some((name, sub, mini)) => (
+                        SharedString::from(name),
+                        SharedString::from(sub),
+                        Face::Drawn(mini),
+                    ),
+                    None => (
+                        SharedString::from(manifest.name.clone()),
+                        SharedString::from(format!(
+                            "{} \u{b7} {}",
+                            manifest.author, manifest.version
+                        )),
+                        Face::Image(
+                            themes
+                                .as_deref()
+                                .and_then(|dir| theme::preview(dir, id, manifest)),
+                        ),
+                    ),
+                };
+                let pick = id.clone();
+                card(name, sub, face, *id == current)
                     .id(SharedString::from(format!("theme-{id}")))
                     .cursor_pointer()
-                    .on_click(self.set(move |shell, cx| shell.pick_theme(id, cx)))
+                    .on_click(self.set(move |shell, cx| shell.pick_theme(&pick, cx)))
             }))
             .into_any_element()
     }
 }
 
+/// What fills a card's window frame.
+enum Face<'a> {
+    Drawn(&'a Mini),
+    Image(Option<std::path::PathBuf>),
+}
+
 /// A theme's card.
-fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool) -> Div {
+fn card(name: SharedString, sub: SharedString, face: Face, selected: bool) -> Div {
+    let frame = v_flex()
+        .h(px(84.))
+        .rounded(px(6.))
+        .overflow_hidden()
+        .bg(tokens::dock())
+        .border_1()
+        .border_color(over(tokens::border(), tokens::dock()));
+    let window = match face {
+        Face::Drawn(mini) => drawn_window(mini),
+        Face::Image(Some(path)) => frame.child(img(path).size_full().object_fit(ObjectFit::Cover)),
+        Face::Image(None) => frame,
+    };
+    let footer = h_flex()
+        .gap(px(6.))
+        .px(px(2.))
+        .items_center()
+        .child(
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .child(
+                    text(12., 16.)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(tokens::text())
+                        .truncate()
+                        .child(name),
+                )
+                .child(
+                    text(10.5, 14.)
+                        .text_color(tokens::text2())
+                        .truncate()
+                        .child(sub),
+                ),
+        )
+        .when(selected, |this| {
+            this.child(
+                div()
+                    .text_color(tokens::check_on())
+                    .child(icon("check", 14.)),
+            )
+        });
+    v_flex()
+        .min_w_0()
+        .gap(px(8.))
+        .p(px(8.))
+        .rounded(px(8.))
+        .border_1()
+        .map(|this| {
+            if selected {
+                this.border_color(tokens::accent_line())
+                    .bg(tokens::accent_soft())
+            } else {
+                this.border_color(over(tokens::border(), tokens::dock()))
+                    .bg(tokens::dock())
+            }
+        })
+        .child(window)
+        .child(footer)
+}
+
+/// A built-in theme's mini window, drawn in its own palette.
+fn drawn_window(mini: &Mini) -> Div {
     let accent = tokens::check_on();
     let body = mini.body;
     let chrome = mini.chrome;
@@ -99,7 +186,7 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool) -> D
         },
         chrome,
     );
-    let window = v_flex()
+    v_flex()
         .h(px(84.))
         .rounded(px(6.))
         .overflow_hidden()
@@ -154,44 +241,7 @@ fn card(name: &'static str, sub: &'static str, mini: &Mini, selected: bool) -> D
                         )
                         .child(div().w(px(34.)).h(px(9.)).rounded(px(3.)).bg(accent)),
                 ),
-        );
-    let footer = h_flex()
-        .gap(px(6.))
-        .px(px(2.))
-        .items_center()
-        .child(
-            v_flex()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    text(12., 16.)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(tokens::text())
-                        .child(name),
-                )
-                .child(text(10.5, 14.).text_color(tokens::text2()).child(sub)),
         )
-        .when(selected, |this| {
-            this.child(div().text_color(accent).child(icon("check", 14.)))
-        });
-    v_flex()
-        .flex_1()
-        .min_w_0()
-        .gap(px(8.))
-        .p(px(8.))
-        .rounded(px(8.))
-        .border_1()
-        .map(|this| {
-            if selected {
-                this.border_color(tokens::accent_line())
-                    .bg(tokens::accent_soft())
-            } else {
-                this.border_color(over(tokens::border(), tokens::dock()))
-                    .bg(tokens::dock())
-            }
-        })
-        .child(window)
-        .child(footer)
 }
 
 #[cfg(test)]

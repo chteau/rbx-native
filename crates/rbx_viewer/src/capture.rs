@@ -94,6 +94,7 @@ impl Offscreen {
         offscreen.set_orthographic(view.orthographic);
         offscreen.set_selection(&view.selected, world.scene);
         offscreen.set_selection_occluded(view.selection_occluded, world.scene);
+        offscreen.set_overlay_colors(view.overlay, world.scene);
         offscreen.set_hover(view.hovered.clone(), world.scene);
         offscreen.set_preview(&view.preview);
         for (layer, segments) in view.lines.iter().enumerate() {
@@ -115,6 +116,7 @@ impl Offscreen {
         self.set_orthographic(view.orthographic);
         self.set_selection(&view.selected, world.scene);
         self.set_selection_occluded(view.selection_occluded, world.scene);
+        self.set_overlay_colors(view.overlay, world.scene);
         self.set_hover(view.hovered.clone(), world.scene);
         self.set_preview(&view.preview);
         for (layer, segments) in view.lines.iter().enumerate() {
@@ -179,6 +181,12 @@ impl Offscreen {
     pub(crate) fn set_hover(&mut self, selected: Vec<Selected>, scene: &Scene) {
         self.renderer
             .set_hover(&self.device, &self.queue, selected, scene);
+    }
+
+    /// Recolours the editor cues — see [`Renderer::set_overlay_colors`].
+    pub(crate) fn set_overlay_colors(&mut self, colors: crate::OverlayColors, scene: &Scene) {
+        self.renderer
+            .set_overlay_colors(&self.device, &self.queue, colors, scene);
     }
 
     /// Replaces the ghost boxes a tool is previewing.

@@ -4,6 +4,7 @@
 //! own depth. The view only knows where the dots are; `Shell` moves the
 //! joint and cuts the body again (see `ViewportAction::Joint`).
 
+use crate::tokens;
 use glam::{Vec2, Vec3, Vec4};
 use gpui_kit::{Context, Pixels, Point};
 use rbx_viewer::pick::{self, Ray};
@@ -16,9 +17,17 @@ use super::{ViewportAction, WorkspaceView};
 const JOINT_MARKERS: usize = 5;
 /// How close to a dot a press must land to grab it, in logical pixels.
 const GRAB_RADIUS: f32 = 10.0;
-/// Linear RGB: the markers' orange, and the joint being edited in yellow.
-const MARKER: [f32; 4] = [1.0, 0.42, 0.05, 1.0];
-const SELECTED: [f32; 4] = [1.0, 0.86, 0.1, 1.0];
+/// The markers' orange as linear RGBA. A theme can change it, so the active
+/// palette is read on each call rather than fixed at build time.
+fn marker_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_joint())
+}
+
+/// The joint being edited, in the theme's selected-joint colour. Read from
+/// the active palette on each call, as [`marker_color`] is.
+fn selected_marker_color() -> [f32; 4] {
+    tokens::linear(tokens::viewport_joint_selected())
+}
 
 /// Which part of a marker drag a [`ViewportAction::Joint`] is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +50,11 @@ pub(super) fn segments(markers: &[Vec3], selected: Option<usize>) -> Vec<Segment
             Segment {
                 from: at,
                 to: at,
-                color: if picked { SELECTED } else { MARKER },
+                color: if picked {
+                    selected_marker_color()
+                } else {
+                    marker_color()
+                },
                 on_top: true,
                 width: if picked { 13.0 } else { 10.0 },
             }
@@ -218,7 +231,7 @@ mod tests {
         assert!(on_plane(ray, Vec3::ZERO, Vec3::X.cross(ray.direction).normalize()).is_none());
         assert_eq!(
             segments(&[Vec3::ZERO, Vec3::ONE], Some(1))[1].color,
-            SELECTED
+            selected_marker_color()
         );
     }
 }

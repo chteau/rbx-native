@@ -93,7 +93,7 @@ impl ArgonDiffWindow {
                     // styled text out at the enclosing element's size, not
                     // the runs'.
                     let style = TextStyle {
-                        font_family: tokens::font_mono().into(),
+                        font_family: tokens::font_mono(),
                         color: tokens::text().into(),
                         font_features: FontFeatures::disable_ligatures(),
                         ..window.text_style()

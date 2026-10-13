@@ -21,19 +21,102 @@ use rbx_dom::Ref;
 
 use super::geometry::Meshes;
 use super::highlight::{Highlights, Source};
-use super::pipeline::Target;
+use super::pipeline::{self, Surface, Target};
 use super::post::Targets;
 use crate::pick::Selected;
 use crate::scene::{DepthMode, Highlight, Part, PartId, Resolved};
 
-/// Studio's own selection blue, linearized — the same colour
-/// `selection.wgsl` fills the container box with, kept in step by eye
-/// because a WGSL constant cannot be shared with Rust.
-const SELECTION: [f32; 3] = [0.106, 0.462, 0.911];
-/// The hover cue's amber, from `hover.wgsl`, at the same reduced alpha that
-/// shader blends its own box with.
-const HOVER: [f32; 3] = [0.955, 0.380, 0.020];
-const HOVER_ALPHA: f32 = 0.55;
+/// The colours of the editor's cues, as linear RGB plus straight alpha — what
+/// the renderer's HDR target is blended in, not sRGB.
+///
+/// One set drives both halves of each cue: the silhouette this module
+/// traces and the container box `selection.wgsl`, `hover.wgsl` and
+/// `preview.wgsl` draw, whose pipelines take these as override constants.
+/// The default is Studio's selection blue, an amber hover chosen to sit apart
+/// from it, and a pale green preview at half alpha.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverlayColors {
+    pub selection: [f32; 4],
+    pub hover: [f32; 4],
+    pub preview: [f32; 4],
+}
+
+impl Default for OverlayColors {
+    fn default() -> Self {
+        OverlayColors {
+            selection: [0.106, 0.462, 0.911, 1.0],
+            hover: [0.955, 0.380, 0.020, 0.55],
+            preview: [0.278, 0.760, 0.354, 0.5],
+        }
+    }
+}
+
+/// Builds one of the overlay pipelines with `color` as the shader's
+/// `COLOR_R`/`COLOR_G`/`COLOR_B`/`COLOR_A` override constants. Otherwise the
+/// same as `pipeline::surface`, which has no way to pass constants.
+pub(super) fn overlay_pipeline(
+    device: &wgpu::Device,
+    target: Target,
+    surface: &Surface<'_>,
+    color: [f32; 4],
+) -> wgpu::RenderPipeline {
+    let source = super::scene_depth::with_source(surface.shader, false, target.samples);
+    let shader = crate::gpu::shader(device, surface.label, &source);
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(surface.label),
+        bind_group_layouts: surface.layouts,
+        immediate_size: 0,
+    });
+    let constants = [
+        ("COLOR_R", f64::from(color[0])),
+        ("COLOR_G", f64::from(color[1])),
+        ("COLOR_B", f64::from(color[2])),
+        ("COLOR_A", f64::from(color[3])),
+    ];
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(surface.label),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: surface.buffers,
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: surface.topology,
+            cull_mode: surface.cull,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: pipeline::DEPTH_FORMAT,
+            depth_write_enabled: Some(!surface.translucent),
+            depth_compare: Some(surface.compare),
+            stencil: wgpu::StencilState::default(),
+            bias: surface.bias,
+        }),
+        multisample: target.multisample(),
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &constants,
+                ..Default::default()
+            },
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target.format,
+                blend: Some(if surface.translucent {
+                    pipeline::ALPHA_BLENDING
+                } else {
+                    wgpu::BlendState::REPLACE
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
 /// What stands in `Highlight::referent` for a cue: no instance asked for
 /// one, and nothing reads the field back — it exists so a re-planned list
 /// can be matched to the DOM, which the editor's own cues never are.
@@ -48,6 +131,7 @@ pub(super) struct Cues {
     /// setting `renderer::selection` carries for the container box, applied
     /// here as the `Highlight` depth mode that means the same thing.
     occluded: bool,
+    colors: OverlayColors,
 }
 
 impl Cues {
@@ -95,7 +179,25 @@ impl Cues {
             selection: Vec::new(),
             hover: Vec::new(),
             occluded: false,
+            colors: OverlayColors::default(),
         }
+    }
+
+    /// Redraws both silhouettes in `colors`; nothing changes when they are
+    /// the colours already in use.
+    pub(super) fn set_colors(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &wgpu::BindGroupLayout,
+        colors: OverlayColors,
+        scene: Source<'_>,
+    ) {
+        if self.colors == colors {
+            return;
+        }
+        self.colors = colors;
+        self.rebuild(device, queue, frame, scene);
     }
 
     /// The parts of `selected` that have a silhouette of their own: a part
@@ -172,7 +274,7 @@ impl Cues {
     }
 
     fn cues(&self) -> Vec<Highlight> {
-        cue_highlights(&self.selection, &self.hover, self.occluded)
+        cue_highlights(&self.selection, &self.hover, self.occluded, &self.colors)
     }
 
     pub(super) fn sync_part(&mut self, device: &wgpu::Device, part: &Part) {
@@ -227,22 +329,27 @@ impl Cues {
 /// part that is both selected and hovered shows the selection's own colour
 /// (the editor never sends a hover for something already selected, but the
 /// mask has to answer either way).
-fn cue_highlights(selection: &[Ref], hover: &[Ref], occluded: bool) -> Vec<Highlight> {
+fn cue_highlights(
+    selection: &[Ref],
+    hover: &[Ref],
+    occluded: bool,
+    colors: &OverlayColors,
+) -> Vec<Highlight> {
     let depth_mode = if occluded {
         DepthMode::Occluded
     } else {
         DepthMode::AlwaysOnTop
     };
-    [(selection, SELECTION, 1.0), (hover, HOVER, HOVER_ALPHA)]
+    [(selection, colors.selection), (hover, colors.hover)]
         .into_iter()
-        .filter(|(parts, _, _)| !parts.is_empty())
-        .map(|(parts, color, alpha)| Highlight {
+        .filter(|(parts, _)| !parts.is_empty())
+        .map(|(parts, [r, g, b, alpha])| Highlight {
             parts: parts.to_vec(),
             // No interior: a cue says what is selected, it does not paint
             // over it.
-            fill: color,
+            fill: [r, g, b],
             fill_alpha: 0.0,
-            outline: color,
+            outline: [r, g, b],
             outline_alpha: alpha,
             depth_mode,
             referent: NO_INSTANCE,
@@ -258,10 +365,11 @@ mod tests {
 
     #[test]
     fn a_cue_outlines_without_filling() {
-        let cues = cue_highlights(&[Ref::new(1)], &[], false);
+        let colors = OverlayColors::default();
+        let cues = cue_highlights(&[Ref::new(1)], &[], false, &colors);
         assert_eq!(cues.len(), 1);
         assert_eq!(cues[0].fill_alpha, 0.0);
-        assert_eq!(cues[0].outline, SELECTION);
+        assert_eq!(cues[0].outline, [0.106, 0.462, 0.911]);
         assert_eq!(cues[0].outline_alpha, 1.0);
         assert_eq!(cues[0].depth_mode, DepthMode::AlwaysOnTop);
     }
@@ -270,23 +378,24 @@ mod tests {
     /// selection hides it.
     #[test]
     fn the_occluded_setting_is_the_highlights_own_depth_mode() {
-        let cues = cue_highlights(&[Ref::new(1)], &[], true);
+        let cues = cue_highlights(&[Ref::new(1)], &[], true, &OverlayColors::default());
         assert_eq!(cues[0].depth_mode, DepthMode::Occluded);
     }
 
     #[test]
     fn hover_is_its_own_dimmer_cue_after_the_selection() {
-        let cues = cue_highlights(&[Ref::new(1)], &[Ref::new(2)], false);
+        let colors = OverlayColors::default();
+        let cues = cue_highlights(&[Ref::new(1)], &[Ref::new(2)], false, &colors);
         assert_eq!(cues.len(), 2);
         assert_eq!(cues[0].parts, vec![Ref::new(1)]);
         assert_eq!(cues[1].parts, vec![Ref::new(2)]);
-        assert_eq!(cues[1].outline, HOVER);
+        assert_eq!(cues[1].outline, [0.955, 0.380, 0.020]);
         assert!(cues[1].outline_alpha < cues[0].outline_alpha);
     }
 
     #[test]
     fn nothing_selected_or_hovered_is_no_pass_at_all() {
-        assert!(cue_highlights(&[], &[], false).is_empty());
+        assert!(cue_highlights(&[], &[], false, &OverlayColors::default()).is_empty());
     }
 
     /// A container has no silhouette to trace — it keeps the box

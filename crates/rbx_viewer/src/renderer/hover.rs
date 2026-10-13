@@ -16,8 +16,9 @@ use wgpu::util::DeviceExt;
 use crate::pick::Selected;
 use crate::scene::Placement;
 
+use super::cue::{overlay_pipeline, OverlayColors};
 use super::outline::{box_edges, Vertex};
-use super::pipeline::{self, Surface, Target};
+use super::pipeline::{Surface, Target};
 
 const SHADER: &str = include_str!("hover.wgsl");
 
@@ -26,6 +27,11 @@ const SHADER: &str = include_str!("hover.wgsl");
 /// colour (see `hover.wgsl`) so the two never look like the same effect.
 pub(super) struct Hover {
     pipeline: wgpu::RenderPipeline,
+    /// The colour the pipeline was built with, and what it needs to be built
+    /// again when it changes.
+    color: [f32; 4],
+    target: Target,
+    frame_layout: wgpu::BindGroupLayout,
     /// Every drawable part's placement, read once from the scene at
     /// construction and kept in step by [`Hover::place`] afterwards — a
     /// second copy of what [`super::selection::Selection`] already tracks,
@@ -48,7 +54,27 @@ impl Hover {
         frame_layout: &wgpu::BindGroupLayout,
         placements: HashMap<Ref, Placement>,
     ) -> Self {
-        let pipeline = pipeline::surface(
+        let color = OverlayColors::default().hover;
+
+        Hover {
+            pipeline: Self::pipeline(device, target, frame_layout, color),
+            color,
+            target,
+            frame_layout: frame_layout.clone(),
+            placements,
+            selected: Vec::new(),
+            vertices: None,
+            count: 0,
+        }
+    }
+
+    fn pipeline(
+        device: &wgpu::Device,
+        target: Target,
+        frame_layout: &wgpu::BindGroupLayout,
+        color: [f32; 4],
+    ) -> wgpu::RenderPipeline {
+        overlay_pipeline(
             device,
             target,
             &Surface {
@@ -68,15 +94,18 @@ impl Hover {
                     &[Some(Vertex::layout())],
                 )
             },
-        );
+            color,
+        )
+    }
 
-        Hover {
-            pipeline,
-            placements,
-            selected: Vec::new(),
-            vertices: None,
-            count: 0,
+    /// Redraws the outline in `colors.hover`, rebuilding the pipeline only
+    /// when that differs from the colour already in use.
+    pub(super) fn set_overlay_colors(&mut self, device: &wgpu::Device, colors: OverlayColors) {
+        if self.color == colors.hover {
+            return;
         }
+        self.color = colors.hover;
+        self.pipeline = Self::pipeline(device, self.target, &self.frame_layout, self.color);
     }
 
     /// Rebuilds the outline around `selected`, replacing whatever was hovered

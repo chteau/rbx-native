@@ -13,15 +13,10 @@
 //! same split `label.rs` keeps between formatting and layout.
 
 use glam::Vec3;
+use gpui_kit::Rgba;
 use rbx_viewer::Pose;
 
-// Studio's own red/green/blue X/Y/Z convention — the same sRGB source values
-// `rbx_viewer::gizmo::Axis::color`'s doc comment documents (that copy is
-// linearized for the HDR render pipeline; this one is plain sRGB, since GPUI
-// paints this overlay directly rather than through the scene's tonemap).
-const COLOR_X: u32 = 0xe62929;
-const COLOR_Y: u32 = 0x29c738;
-const COLOR_Z: u32 = 0x335cf2;
+use crate::tokens;
 
 /// One world axis's pair of opposite faces, and the square they each span.
 ///
@@ -41,7 +36,8 @@ struct AxisFaces {
     negative: &'static str,
     /// The axis's own one-letter name, for the orbital indicator's labels.
     name: &'static str,
-    color: u32,
+    /// Studio's red/green/blue for this axis, from `tokens`.
+    color: fn() -> Rgba,
 }
 
 const AXIS_FACES: [AxisFaces; 3] = [
@@ -52,7 +48,7 @@ const AXIS_FACES: [AxisFaces; 3] = [
         positive: "Right",
         negative: "Left",
         name: "X",
-        color: COLOR_X,
+        color: tokens::viewport_axis_x,
     },
     AxisFaces {
         axis: Vec3::Y,
@@ -61,7 +57,7 @@ const AXIS_FACES: [AxisFaces; 3] = [
         positive: "Top",
         negative: "Bottom",
         name: "Y",
-        color: COLOR_Y,
+        color: tokens::viewport_axis_y,
     },
     AxisFaces {
         axis: Vec3::Z,
@@ -70,7 +66,7 @@ const AXIS_FACES: [AxisFaces; 3] = [
         positive: "Front",
         negative: "Back",
         name: "Z",
-        color: COLOR_Z,
+        color: tokens::viewport_axis_z,
     },
 ];
 
@@ -79,7 +75,7 @@ const AXIS_FACES: [AxisFaces; 3] = [
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Face {
     pub(super) label: &'static str,
-    pub(super) color: u32,
+    pub(super) color: Rgba,
     /// The face's four corners, in cyclic (non-self-intersecting) order, on
     /// a unit-radius screen scale — the caller scales by the widget's
     /// actual on-screen radius. `x` is screen-right, `y` is screen-down
@@ -140,7 +136,7 @@ pub(super) fn visible_faces(pose: Pose) -> [Face; 3] {
 
         Face {
             label,
-            color: group.color,
+            color: (group.color)(),
             corners: [
                 project(normal + group.a + group.b),
                 project(normal + group.a - group.b),
@@ -165,7 +161,7 @@ pub(super) fn visible_faces(pose: Pose) -> [Face; 3] {
 /// as an open polyline, which is why neither is closed.
 #[derive(Debug, Clone)]
 pub(super) struct Ring {
-    pub(super) color: u32,
+    pub(super) color: Rgba,
     /// The arc on the camera's side of centre, in screen units.
     pub(super) near: Vec<(f32, f32)>,
     /// The arc behind it.
@@ -176,7 +172,7 @@ pub(super) struct Ring {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct AxisLabel {
     pub(super) text: &'static str,
-    pub(super) color: u32,
+    pub(super) color: Rgba,
     pub(super) at: (f32, f32),
     /// `1.0` when the axis points straight at the camera, `0.0` when it
     /// lies in the screen plane, and negative when it points away — a
@@ -214,7 +210,7 @@ pub(super) fn axis_rings(pose: Pose) -> [Ring; 3] {
         }
 
         Ring {
-            color: group.color,
+            color: (group.color)(),
             near,
             far,
         }
@@ -229,7 +225,7 @@ pub(super) fn axis_labels(pose: Pose) -> [AxisLabel; 3] {
 
     AXIS_FACES.map(|group| AxisLabel {
         text: group.name,
-        color: group.color,
+        color: (group.color)(),
         at: project(group.axis),
         depth: -group.axis.dot(forward),
     })
@@ -350,11 +346,8 @@ mod tests {
     fn the_three_rings_are_one_per_axis_colour_and_split_at_the_horizon() {
         let rings = axis_rings(pose(0.73, -0.31));
 
-        let mut colors: Vec<u32> = rings.iter().map(|ring| ring.color).collect();
-        colors.sort_unstable();
-        let mut expected = [COLOR_X, COLOR_Y, COLOR_Z];
-        expected.sort_unstable();
-        assert_eq!(colors, expected);
+        let colors: Vec<Rgba> = rings.iter().map(|ring| ring.color).collect();
+        assert_one_per_axis_colour(&colors);
 
         for ring in &rings {
             assert_eq!(
@@ -387,15 +380,24 @@ mod tests {
 
     #[test]
     fn the_three_visible_faces_are_one_per_axis_colour() {
-        let mut colors: Vec<u32> = visible_faces(pose(0.73, -0.31))
+        let colors: Vec<Rgba> = visible_faces(pose(0.73, -0.31))
             .iter()
             .map(|face| face.color)
             .collect();
-        colors.sort_unstable();
+        assert_one_per_axis_colour(&colors);
+    }
 
-        let mut expected = [COLOR_X, COLOR_Y, COLOR_Z];
-        expected.sort_unstable();
-        assert_eq!(colors, expected);
+    /// Exactly one entry per axis colour, with nothing else in between.
+    fn assert_one_per_axis_colour(colors: &[Rgba]) {
+        let expected = [
+            tokens::viewport_axis_x(),
+            tokens::viewport_axis_y(),
+            tokens::viewport_axis_z(),
+        ];
+        assert_eq!(colors.len(), expected.len(), "{colors:?}");
+        for axis in expected {
+            assert!(colors.contains(&axis), "{axis:?} missing from {colors:?}");
+        }
     }
 
     fn centre_of(face: &Face) -> (f32, f32) {

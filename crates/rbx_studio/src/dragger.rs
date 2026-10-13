@@ -23,6 +23,8 @@ pub(crate) mod tilt;
 use glam::Vec3;
 use rbx_viewer::{Pose, Segment};
 
+use crate::tokens;
+
 /// `Studio.DraggerMajorGridIncrement`'s default: every fifth ruler tick,
 /// counted from the edge, is a long one.
 const MAJOR_GRID_INCREMENT: u32 = 5;
@@ -39,10 +41,27 @@ const SOFT_SNAP_MARGIN: f32 = 1.0;
 const HAIRLINE: f32 = 1.0;
 
 /// `Studio.DraggerPassiveColor`: the hover ruler, a handle drag's axis line
-/// and its soft-snap dots.
+/// and its soft-snap dots. The geometry here is built and tested with this
+/// default; [`Guides::segments`] swaps in the active theme's guide colour.
 const PASSIVE: [f32; 3] = [1.0, 1.0, 1.0];
-/// `Studio.DraggerActiveColor`: whatever a drag is actually snapped to.
+/// `Studio.DraggerActiveColor`: whatever a drag is actually snapped to;
+/// swapped for the theme's active-guide colour the same way.
 const ACTIVE: [f32; 3] = [1.0, 1.0, 0.0];
+
+/// A guide's colour as drawn: [`PASSIVE`] and [`ACTIVE`] become the active
+/// theme's `viewport_guide` and `viewport_guide_active` (only their RGB),
+/// anything else is kept.
+fn themed(color: [f32; 3]) -> [f32; 3] {
+    let token = if color == PASSIVE {
+        tokens::viewport_guide()
+    } else if color == ACTIVE {
+        tokens::viewport_guide_active()
+    } else {
+        return color;
+    };
+    let [r, g, b, _] = tokens::linear(token);
+    [r, g, b]
+}
 
 /// The camera term of Studio's `getHandleScale`: the point's depth along the
 /// view direction times the sine of the vertical field of view.
@@ -140,7 +159,7 @@ impl Guides {
                     segments.push(Segment {
                         from: line.from,
                         to: line.to,
-                        color: Vec3::from(line.color).extend(alpha).to_array(),
+                        color: Vec3::from(themed(line.color)).extend(alpha).to_array(),
                         on_top,
                         width,
                     });
@@ -150,7 +169,7 @@ impl Guides {
         segments.extend(self.dots.iter().map(|dot| Segment {
             from: dot.centre,
             to: dot.centre,
-            color: Vec3::from(dot.color).extend(1.0).to_array(),
+            color: Vec3::from(themed(dot.color)).extend(1.0).to_array(),
             on_top: true,
             width: 2.0 * dot.radius / pixel(dot.centre),
         }));
