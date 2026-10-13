@@ -125,7 +125,7 @@ pub(in crate::shell) fn readout(value: impl Into<SharedString>) -> Div {
         .border_color(tokens::border())
         .rounded(px(5.))
         .bg(tokens::dock())
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .text_size(px(11.5))
         .line_height(px(16.))
         .text_color(tokens::text())

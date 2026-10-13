@@ -31,9 +31,9 @@ mod palette;
 mod watch;
 
 pub(crate) use apply::{apply, startup};
-pub(crate) use github::{install, Source};
+pub(crate) use github::{install, label as install_label, Progress, Source};
 pub(crate) use overrides::Overrides;
-pub(crate) use pack::{installed, is_reserved, themes_dir, uninstall, ThemePack};
+pub(crate) use pack::{installed, is_reserved, themes_dir, uninstall, Manifest, ThemePack};
 pub(crate) use watch::{fingerprint, Watch, POLL_INTERVAL};
 
 /// The folder name, and `appearance.json` value, of the built-in theme. No
@@ -69,6 +69,22 @@ pub(crate) struct Effects {
     pub(crate) background: Option<Background>,
     /// Added to every hover state the chrome draws, on top of its fill.
     pub(crate) hover_glow: Option<BoxShadow>,
+    pub(crate) fonts: Fonts,
+}
+
+/// The families a theme sets, and the font files it ships for them.
+/// `theme.json`'s `"fonts": { "ui": "Inter", "mono": "Fira Code",
+/// "files": ["fonts/Inter-Regular.ttf", ...] }`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Fonts {
+    /// The interface's family; `None` keeps `tokens::FONT_FAMILY_UI`.
+    pub(crate) ui: Option<String>,
+    /// The code family; `None` keeps `tokens::FONT_FAMILY_MONO`.
+    pub(crate) mono: Option<String>,
+    /// TTF, OTF or TTC files inside the theme folder, each checked to be
+    /// there and under `palette::MAX_FONT_BYTES`, registered with the text
+    /// system before the families are named.
+    pub(crate) files: Vec<PathBuf>,
 }
 
 /// An image under (or over) the whole editor window.

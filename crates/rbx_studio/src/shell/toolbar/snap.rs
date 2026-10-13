@@ -444,7 +444,7 @@ impl Shell {
                     .h_full()
                     .disabled(!enabled)
                     .text_center()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_md())
                     .text_color(if enabled {
                         tokens::text()

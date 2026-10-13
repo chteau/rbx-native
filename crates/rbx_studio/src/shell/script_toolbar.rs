@@ -107,7 +107,7 @@ impl Shell {
                     )
                     .child(
                         div()
-                            .font_family(tokens::FONT_FAMILY_MONO)
+                            .font_family(tokens::font_mono())
                             .text_size(tokens::text_xs())
                             .text_color(tokens::text_muted())
                             .child(path),
@@ -153,7 +153,7 @@ impl Shell {
                     .py(px(3.0))
                     .rounded(tokens::radius())
                     .cursor_pointer()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_xs())
                     .text_color(tokens::text_muted())
                     .hover(|this| this.bg(tokens::hover()))
@@ -265,7 +265,7 @@ impl Shell {
                 div()
                     .w(px(40.0))
                     .text_center()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_xs())
                     .text_color(tokens::text_muted())
                     .child(format!("{:.0}%", zoom * 100.0)),
@@ -308,7 +308,7 @@ impl Shell {
             .px(px(12.0))
             .border_t_1()
             .border_color(tokens::border())
-            .font_family(tokens::FONT_FAMILY_MONO)
+            .font_family(tokens::font_mono())
             .text_size(tokens::text_xs())
             .text_color(tokens::text_muted())
             .child(left)

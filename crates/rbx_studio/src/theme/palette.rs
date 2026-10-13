@@ -242,6 +242,7 @@ fn effects(
         window,
         background,
         hover_glow,
+        fonts: Default::default(),
     })
 }
 

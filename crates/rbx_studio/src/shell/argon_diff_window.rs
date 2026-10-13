@@ -262,7 +262,7 @@ impl Render for ArgonDiffWindow {
             .id("argon-diff-window")
             .size_full()
             .bg(tokens::dock())
-            .font_family(tokens::FONT_FAMILY_UI)
+            .font_family(tokens::font_ui())
             .text_color(tokens::text())
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.on_key(&event.keystroke, window, cx) {

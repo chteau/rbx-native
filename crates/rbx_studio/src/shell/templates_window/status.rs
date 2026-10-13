@@ -33,7 +33,7 @@ pub(super) enum Tone {
 /// A 10/12-padded banner: a 14 px glyph beside a sentence.
 pub(super) fn banner(glyph: &'static str, tone: Tone, parts: Vec<Part>, window: &Window) -> Div {
     let base = window.text_style().font();
-    let mono_font = font(tokens::FONT_FAMILY_MONO);
+    let mono_font = font(tokens::font_mono());
     let mut sentence = String::new();
     let mut runs = Vec::new();
     for part in parts {

@@ -69,7 +69,7 @@ impl ArgonDiffWindow {
                 .child(filter.label())
                 .child(
                     div()
-                        .font_family(tokens::FONT_FAMILY_MONO)
+                        .font_family(tokens::font_mono())
                         .text_size(px(10.))
                         .line_height(tokens::line_xs())
                         .font_weight(if active {

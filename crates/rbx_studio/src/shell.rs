@@ -1732,7 +1732,7 @@ impl Render for Shell {
         v_flex()
             .size_full()
             .bg(tokens::black())
-            .font_family(tokens::FONT_FAMILY_UI)
+            .font_family(tokens::font_ui())
             .text_color(tokens::text_strong())
             // Ctrl+S here rather than on one panel (contrast `instance_tree`'s
             // own `on_key_down`): a key event bubbles up from whatever holds

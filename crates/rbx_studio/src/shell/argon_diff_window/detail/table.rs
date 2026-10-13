@@ -147,7 +147,7 @@ pub(super) fn contents_grid(node: &DiffNode, pack: IconPack) -> Div {
                 )
                 .child(
                     div()
-                        .font_family(tokens::FONT_FAMILY_MONO)
+                        .font_family(tokens::font_mono())
                         .text_size(tokens::text_badge())
                         .line_height(tokens::line_badge())
                         .text_color(tokens::text())

@@ -103,7 +103,7 @@ impl Shell {
                 .readonly(readonly)
                 .tab_index(tab)
                 .px(px(10.))
-                .font_family(tokens::FONT_FAMILY_MONO)
+                .font_family(tokens::font_mono())
                 .text_size(tokens::text_md())
                 .text_color(ink)
         };
@@ -132,7 +132,7 @@ impl Shell {
             .child(
                 div()
                     .flex_none()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_md())
                     .line_height(tokens::line_md())
                     .text_color(tokens::text3())

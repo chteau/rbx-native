@@ -93,7 +93,7 @@ impl ArgonDiffWindow {
                     // styled text out at the enclosing element's size, not
                     // the runs'.
                     let style = TextStyle {
-                        font_family: tokens::FONT_FAMILY_MONO.into(),
+                        font_family: tokens::font_mono().into(),
                         color: tokens::text().into(),
                         font_features: FontFeatures::disable_ligatures(),
                         ..window.text_style()
@@ -116,7 +116,7 @@ impl ArgonDiffWindow {
                         .h(px(CODE_ROW))
                         .w_full()
                         .items_center()
-                        .font_family(tokens::FONT_FAMILY_MONO)
+                        .font_family(tokens::font_mono())
                         .text_size(px(12.))
                         .line_height(px(CODE_ROW))
                         .when_some(row_bg, |this, bg| this.bg(bg))
@@ -157,7 +157,7 @@ impl ArgonDiffWindow {
                             h_flex()
                                 .pl(px(4.))
                                 .whitespace_nowrap()
-                                .font_family(tokens::FONT_FAMILY_MONO)
+                                .font_family(tokens::font_mono())
                                 .text_size(px(11.))
                                 .text_color(tokens::text3())
                                 .child(format!("{header}  "))
@@ -178,7 +178,7 @@ impl ArgonDiffWindow {
                     .child(
                         div()
                             .pl(px(4.))
-                            .font_family(tokens::FONT_FAMILY_MONO)
+                            .font_family(tokens::font_mono())
                             .text_size(px(11.))
                             .text_color(tokens::text3())
                             .child(format!("{hidden} unchanged lines")),

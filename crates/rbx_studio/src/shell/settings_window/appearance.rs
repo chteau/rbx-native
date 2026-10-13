@@ -60,6 +60,9 @@ pub(super) struct AppearanceControls {
     icon_packs: Vec<(Option<String>, IconPack)>,
     theme: Entity<SelectState<Choices>>,
     themes: Vec<String>,
+    /// Every theme the dropdown lists, with its manifest: what the theme
+    /// cards draw, in the same order.
+    pub(super) listed: Vec<(String, theme::Manifest)>,
     ui_scale: Entity<SliderState>,
     /// The Script font size field, in px at 1x.
     pub(super) script_font: NumberField,
@@ -72,9 +75,17 @@ pub(super) struct AppearanceControls {
     installing: bool,
 }
 
-/// The installed themes' ids, their dropdown labels, and the row of
-/// `current`: what the theme dropdown lists, read afresh from the folder.
-fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<IndexPath>) {
+/// The installed themes' ids, their dropdown labels, the row of `current`
+/// and the themes themselves: what the theme dropdown and cards list, read
+/// afresh from the folder.
+fn theme_choices(
+    current: &str,
+) -> (
+    Vec<String>,
+    Vec<SharedString>,
+    Option<IndexPath>,
+    Vec<(String, theme::Manifest)>,
+) {
     let installed = theme::themes_dir()
         .map(|dir| theme::installed(&dir))
         .unwrap_or_default();
@@ -88,9 +99,9 @@ fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<Index
             }
         })
         .collect();
-    let ids: Vec<String> = installed.into_iter().map(|(id, _)| id).collect();
+    let ids: Vec<String> = installed.iter().map(|(id, _)| id.clone()).collect();
     let row = ids.iter().position(|id| id == current).map(IndexPath::new);
-    (ids, labels, row)
+    (ids, labels, row, installed)
 }
 
 impl AppearanceControls {
@@ -139,7 +150,7 @@ impl AppearanceControls {
 
         let current = shell.read(cx).appearance.theme.clone();
         let installing = matches!(shell.read(cx).theme_install, Install::Running);
-        let (themes, theme_labels, theme_row) =
+        let (themes, theme_labels, theme_row, listed) =
             theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
         let theme =
             cx.new(|cx| SelectState::new(SearchableVec::new(theme_labels), theme_row, window, cx));
@@ -244,6 +255,7 @@ impl AppearanceControls {
                 icon_packs,
                 theme,
                 themes,
+                listed,
                 ui_scale,
                 script_font,
                 viewport_font,
@@ -316,8 +328,10 @@ impl SettingsWindow {
     /// an uninstall.
     fn refresh_themes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let current = self.shell.read(cx).appearance.theme.clone();
-        let (themes, labels, row) = theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
+        let (themes, labels, row, listed) =
+            theme_choices(current.as_deref().unwrap_or(theme::DEFAULT_ID));
         self.appearance.themes = themes;
+        self.appearance.listed = listed;
         self.appearance.theme.update(cx, |state, cx| {
             state.set_items(SearchableVec::new(labels), window, cx);
             state.set_selected_index(row, window, cx);

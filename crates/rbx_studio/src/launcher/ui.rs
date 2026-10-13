@@ -62,7 +62,7 @@ pub(crate) fn text(size: f32, line: f32) -> Div {
 /// `rbxassetid: //123`, and an id must read exactly as it will be pasted.
 pub(crate) fn mono(size: f32, line: f32) -> Div {
     text(size, line)
-        .font_family(tokens::FONT_FAMILY_MONO)
+        .font_family(tokens::font_mono())
         .font_features(FontFeatures::disable_ligatures())
 }
 

@@ -98,7 +98,7 @@ impl HomeWindow {
                                             .disabled(resolving)
                                             .h_full()
                                             .px(px(0.))
-                                            .font_family(tokens::FONT_FAMILY_MONO)
+                                            .font_family(tokens::font_mono())
                                             .text_size(px(11.5))
                                             .text_color(if ellipsized {
                                                 gpui_kit::transparent_black().into()

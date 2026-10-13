@@ -203,7 +203,7 @@ fn count_badge(page: Page, counts: Counts, pill_padding: Pixels) -> Option<Div> 
         Page::Home => None,
         Page::Installed => Some(
             div()
-                .font_family(tokens::FONT_FAMILY_MONO)
+                .font_family(tokens::font_mono())
                 .text_size(tokens::text_xs())
                 .line_height(tokens::line_xs())
                 .font_weight(FontWeight::NORMAL)

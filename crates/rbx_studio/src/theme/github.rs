@@ -13,6 +13,7 @@
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use super::pack::is_reserved;
@@ -93,6 +94,21 @@ impl Source {
             self.repo.clone()
         }
     }
+}
+
+/// How far a download is: the bytes so far, and the total the server
+/// announced (`0` when it gave none). Shared with the UI thread, which
+/// shows it on the Install button.
+#[derive(Debug, Default)]
+pub(crate) struct Progress {
+    pub(crate) received: AtomicU64,
+    pub(crate) total: AtomicU64,
+}
+
+/// The Install button's label while a download runs.
+pub(crate) fn label(received: u64, total: u64) -> String {
+    let _ = (received, total);
+    todo!("install-progress")
 }
 
 /// Downloads and installs the theme `link` points at, replacing an earlier

@@ -91,7 +91,7 @@ impl Wizard {
                 .border_1()
                 .border_color(tokens::border())
                 .bg(ui::panel())
-                .font_family(tokens::FONT_FAMILY_MONO)
+                .font_family(tokens::font_mono())
                 .text_size(px(11.))
                 .line_height(px(16.))
                 .child(label)

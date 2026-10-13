@@ -95,7 +95,7 @@ impl HomeWindow {
             .flex()
             .flex_col()
             .bg(ui::panel())
-            .font_family(tokens::FONT_FAMILY_UI)
+            .font_family(tokens::font_ui())
             .text_color(tokens::text())
             .text_size(px(13.))
             .child(crate::shell::chrome::window_topbar(

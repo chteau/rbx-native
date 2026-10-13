@@ -151,7 +151,7 @@ impl Shell {
                 .child(
                     Input::new(&edit.input)
                         .xsmall()
-                        .font_family(tokens::FONT_FAMILY_MONO),
+                        .font_family(tokens::font_mono()),
                 )
                 .into_any_element(),
         )

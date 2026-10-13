@@ -82,7 +82,7 @@ pub(in crate::launcher) fn field(
                                 .text_color(tokens::text())
                                 .when(empty, |this| {
                                     this.text_color(tokens::text3())
-                                        .font_family(tokens::FONT_FAMILY_UI)
+                                        .font_family(tokens::font_ui())
                                         .child("Paste the key you copied from the Dashboard")
                                 })
                                 .when(!empty, |this| this.child(shown)),

@@ -118,7 +118,7 @@ impl Shell {
                     .h_full()
                     .px(px(0.))
                     .text_center()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_md())
                     .text_color(tokens::text()),
             )

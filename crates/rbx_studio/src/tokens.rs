@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use gpui_kit::component::Size;
-use gpui_kit::{px, BoxShadow, FontWeight, Pixels, Rgba, StyleRefinement, Styled as _};
+use gpui_kit::{px, BoxShadow, FontWeight, Pixels, Rgba, SharedString, StyleRefinement, Styled as _};
 
 use crate::theme;
 
@@ -376,6 +376,160 @@ pub(crate) fn tool_pivot() -> Rgba {
     theme::color("tool_pivot")
 }
 
+// The editor's own overlays on the 3D view. They sit on the scene, not on
+// the chrome, so a light theme need not change them, but a theme can. The
+// renderer and `Segment` lines take them linear: see [`linear`].
+
+/// The 3D view's own ground, before the scene draws and around it.
+pub(crate) fn viewport_background() -> Rgba {
+    theme::color("viewport_background")
+}
+
+/// The camera-speed badge over the 3D view.
+pub(crate) fn viewport_badge() -> Rgba {
+    theme::color("viewport_badge")
+}
+
+/// The camera-speed badge's text.
+pub(crate) fn viewport_badge_text() -> Rgba {
+    theme::color("viewport_badge_text")
+}
+
+/// The orientation sphere's fill.
+pub(crate) fn viewport_orient_body() -> Rgba {
+    theme::color("viewport_orient_body")
+}
+
+/// The orientation sphere's rim.
+pub(crate) fn viewport_orient_rim() -> Rgba {
+    theme::color("viewport_orient_rim")
+}
+
+/// The orientation sphere's X, Y and Z labels, and the ones opposite.
+pub(crate) fn viewport_axis_x() -> Rgba {
+    theme::color("viewport_axis_x")
+}
+
+pub(crate) fn viewport_axis_y() -> Rgba {
+    theme::color("viewport_axis_y")
+}
+
+pub(crate) fn viewport_axis_z() -> Rgba {
+    theme::color("viewport_axis_z")
+}
+
+/// A distance readout box over the 3D view (guides, Measure).
+pub(crate) fn viewport_readout() -> Rgba {
+    theme::color("viewport_readout")
+}
+
+/// Its text.
+pub(crate) fn viewport_readout_text() -> Rgba {
+    theme::color("viewport_readout_text")
+}
+
+/// Its border.
+pub(crate) fn viewport_readout_border() -> Rgba {
+    theme::color("viewport_readout_border")
+}
+
+/// A Measure readout's border while it is hovered or dragged.
+pub(crate) fn viewport_measure_lit() -> Rgba {
+    theme::color("viewport_measure_lit")
+}
+
+/// The selection box and selection cue, drawn by the renderer.
+pub(crate) fn viewport_selection() -> Rgba {
+    theme::color("viewport_selection")
+}
+
+/// The hover box and hover cue, at the alpha it blends with.
+pub(crate) fn viewport_hover() -> Rgba {
+    theme::color("viewport_hover")
+}
+
+/// Ghost boxes where a tool would put things (Align's preview).
+pub(crate) fn viewport_preview() -> Rgba {
+    theme::color("viewport_preview")
+}
+
+/// A joint or attachment marker.
+pub(crate) fn viewport_joint() -> Rgba {
+    theme::color("viewport_joint")
+}
+
+/// A selected joint or attachment marker.
+pub(crate) fn viewport_joint_selected() -> Rgba {
+    theme::color("viewport_joint_selected")
+}
+
+/// The dragger's passive guides: hover ruler, axis line, snap dots.
+pub(crate) fn viewport_guide() -> Rgba {
+    theme::color("viewport_guide")
+}
+
+/// The dragger's active guides.
+pub(crate) fn viewport_guide_active() -> Rgba {
+    theme::color("viewport_guide_active")
+}
+
+/// The terrain brush outline while adding.
+pub(crate) fn viewport_brush_add() -> Rgba {
+    theme::color("viewport_brush_add")
+}
+
+/// The terrain brush outline while subtracting.
+pub(crate) fn viewport_brush_subtract() -> Rgba {
+    theme::color("viewport_brush_subtract")
+}
+
+/// A terrain region's outline.
+pub(crate) fn viewport_brush_region() -> Rgba {
+    theme::color("viewport_brush_region")
+}
+
+/// The Animation Editor stage floor's minor lines.
+pub(crate) fn viewport_grid_minor() -> Rgba {
+    theme::color("viewport_grid_minor")
+}
+
+/// Its major lines.
+pub(crate) fn viewport_grid_major() -> Rgba {
+    theme::color("viewport_grid_major")
+}
+
+/// Its X axis line.
+pub(crate) fn viewport_grid_axis_x() -> Rgba {
+    theme::color("viewport_grid_axis_x")
+}
+
+/// Its Z axis line.
+pub(crate) fn viewport_grid_axis_z() -> Rgba {
+    theme::color("viewport_grid_axis_z")
+}
+
+/// An Animation Editor skeleton bone.
+pub(crate) fn viewport_bone() -> Rgba {
+    theme::color("viewport_bone")
+}
+
+/// A selected bone.
+pub(crate) fn viewport_bone_selected() -> Rgba {
+    theme::color("viewport_bone_selected")
+}
+
+/// A token's colour as the renderer takes it: linear RGB, alpha straight.
+pub(crate) fn linear(color: Rgba) -> [f32; 4] {
+    let channel = |value: f32| {
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    [channel(color.r), channel(color.g), channel(color.b), color.a]
+}
+
 /// The Curve Editor's X, Y and Z channels: red, green and blue as every 3D
 /// tool draws its axes. Colour is never the only cue, since each curve's
 /// row names its axis and the curve under the pointer is labelled.
@@ -678,6 +832,32 @@ pub(crate) const WEIGHT_SEMIBOLD: FontWeight = FontWeight::SEMIBOLD;
 /// UI font rather than to nothing.
 pub(crate) const FONT_FAMILY_UI: &str = "Manrope";
 pub(crate) const FONT_FAMILY_MONO: &str = "JetBrains Mono";
+
+/// The interface's and code's families in use: the theme's own when it
+/// names one the text system has, else [`FONT_FAMILY_UI`] and
+/// [`FONT_FAMILY_MONO`]. `theme::apply` sets them.
+static FONTS: std::sync::LazyLock<std::sync::RwLock<(SharedString, SharedString)>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::RwLock::new((FONT_FAMILY_UI.into(), FONT_FAMILY_MONO.into()))
+    });
+
+/// The interface's family, for an element that names one explicitly.
+pub(crate) fn font_ui() -> SharedString {
+    let fonts = FONTS.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+    fonts.0.clone()
+}
+
+/// The code family: the Script Editor, numbers in fields, hex values.
+pub(crate) fn font_mono() -> SharedString {
+    let fonts = FONTS.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+    fonts.1.clone()
+}
+
+/// Called by `theme::apply` once the theme's families are resolved.
+pub(crate) fn set_fonts(ui: SharedString, mono: SharedString) {
+    let mut fonts = FONTS.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+    *fonts = (ui, mono);
+}
 
 /// The size to hand a toolkit widget — an `Input`, a `Select`, a
 /// `ColorPicker` — so its text comes out at [`text_md`].

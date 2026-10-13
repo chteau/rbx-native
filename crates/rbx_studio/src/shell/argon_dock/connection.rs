@@ -176,7 +176,7 @@ fn identity_row(view: &View, cli: Option<(std::path::PathBuf, SharedString)>) ->
                 .rounded(tokens::radius_badge())
                 .border_1()
                 .border_color(tokens::border2())
-                .font_family(tokens::FONT_FAMILY_MONO)
+                .font_family(tokens::font_mono())
                 .text_size(tokens::text_xs())
                 .line_height(tokens::line_xs())
                 .text_color(tokens::text2())
@@ -313,7 +313,7 @@ fn status_line(view: &View, layout: Layout) -> Div {
             .child("Reaching the Argon server at\u{a0}")
             .child(
                 div()
-                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .font_family(tokens::font_mono())
                     .text_size(tokens::text_sm())
                     .text_color(tokens::text())
                     .child(address.clone()),
