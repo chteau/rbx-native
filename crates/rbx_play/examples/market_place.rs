@@ -5,8 +5,11 @@
 //! tunnel (the probe itself just fails to call home).
 //!
 //! ```text
-//! cargo run -p rbx_play --example market_place -- <in.rbxl> <out.rbxl> [--demo]
+//! cargo run -p rbx_play --example market_place -- <in.rbxl> <out.rbxl> [--demo] [--plain]
 //! ```
+//!
+//! `--plain` skips the rewrite and the probe: the result is a place to open
+//! in rbxstudio and press Play on, which prepares its own copy.
 //!
 //! `--demo` first adds a server Script and a LocalScript that use
 //! MarketplaceService the way games do: a pass prompted from the server, then
@@ -91,7 +94,7 @@ end)
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [input, output, rest @ ..] = args.as_slice() else {
-        eprintln!("usage: market_place <in.rbxl> <out.rbxl> [--demo]");
+        eprintln!("usage: market_place <in.rbxl> <out.rbxl> [--demo] [--plain]");
         std::process::exit(2);
     };
     let bytes = std::fs::read(input).expect("read the place");
@@ -99,8 +102,22 @@ fn main() {
     if rest.iter().any(|a| a == "--demo") {
         add_demo(&mut dom);
     }
+    if !rest.iter().any(|a| a == "--plain") {
+        probe(&mut dom);
+    }
 
-    for (script, name) in scripts(&dom) {
+    let database = ReflectionDatabase::shared();
+    let out = rbx_binary::serialize_with_defaults(&dom, |class, key| {
+        database.stored_default(class, key).cloned()
+    })
+    .expect("serialize");
+    std::fs::write(output, out).expect("write the copy");
+    println!("wrote {output}");
+}
+
+/// What Play does to its copy, as far as purchases go.
+fn probe(dom: &mut WeakDom) {
+    for (script, name) in scripts(dom) {
         let Some(Variant::String(source)) = dom
             .get(script)
             .and_then(|i| i.properties().get("Source"))
@@ -119,7 +136,7 @@ fn main() {
         }
     }
     inject::inject(
-        &mut dom,
+        dom,
         &ProbeConfig {
             base_url: "http://127.0.0.1:9".to_owned(),
             token: "market-place".to_owned(),
@@ -127,14 +144,6 @@ fn main() {
         },
     )
     .expect("inject");
-
-    let database = ReflectionDatabase::shared();
-    let out = rbx_binary::serialize_with_defaults(&dom, |class, key| {
-        database.stored_default(class, key).cloned()
-    })
-    .expect("serialize");
-    std::fs::write(output, out).expect("write the copy");
-    println!("wrote {output}");
 }
 
 /// Every game script (Script, LocalScript, ModuleScript) with its name.

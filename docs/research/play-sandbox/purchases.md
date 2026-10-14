@@ -93,6 +93,12 @@ A subscription, its completed view, and the Error view:
 
 ![Subscription and error](purchases/subscription-and-error.png)
 
+In a real sandbox session, in rbxstudio with Sober embedded:
+
+![Play session through Sober](purchases/sober-session.png)
+
+![Every kind in Sober](purchases/sober-kinds.png)
+
 ## Verified
 - The dialog was rendered in Studio from the module and compared with the
   reference. Every text and icon box lands on the same pixels. No interior
@@ -108,5 +114,16 @@ A subscription, its completed view, and the Error view:
   Every `…PurchaseFinished` signal fired with `true`, and with `false` for
   the invalid id. The BuilderIcons font and Foundation's shadow sprite load from
   `rbxasset://LuaPackages/…` in a game script.
-- Not yet run in a published sandbox through Sober. The flow uses only
-  APIs that behave the same there.
+- **Live through Sober (2026-10-14).** rbxstudio's own Play ran the
+  `--demo --plain` place: publish over the sandbox (Experimenting Place),
+  Sober embedded, every dialog clicked through in the real client. All 17
+  game prints reached the editor's Output with their Server/Client tags:
+  the pass, product (filtered `BindReceiptHandler`, `DEV-` receipt),
+  catalog item, bundle and subscription bought and owned, every Finished
+  signal fired (`false` for the invalid id). Stop closed Sober and restored
+  the edited place.
+- Seen only in Sober: text is drawn about 1.2× larger than in Studio while
+  frame sizes stay put. That is the Android client's own text scaling
+  (Roblox's top bar and badges grow the same way), not a layout change;
+  the dialog grows with its wrapped text. The subscription shows 7,99€
+  there: the mobile price tier.
