@@ -95,6 +95,13 @@ pub(crate) struct SettingsWindow {
 
 impl Shell {
     /// Brings the Settings window forward, opening it if it isn't.
+    /// Opens Settings on the page named `key` (as `Page::from_key` reads
+    /// it). A window already open is only brought forward.
+    pub(crate) fn open_settings_on(&mut self, key: &'static str, cx: &mut Context<Self>) {
+        self.settings_open_on = Some(key);
+        self.open_settings(cx);
+    }
+
     pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
         if let Some(existing) = &self.settings_window {
             if existing
@@ -204,7 +211,7 @@ impl SettingsWindow {
         subscriptions.extend(picked);
         let (appearance, chosen) = appearance::AppearanceControls::new(&shell, window, cx);
         subscriptions.extend(chosen);
-        let (recovery, moved) = files_account::RecoveryControls::new(&shell, cx);
+        let (recovery, moved) = files_account::RecoveryControls::new(&shell, window, cx);
         subscriptions.push(moved);
         let search = cx.new(|cx| {
             let mut state = InputState::new(window, cx).placeholder("Search settings");
@@ -232,9 +239,11 @@ impl SettingsWindow {
                 cx.notify();
             }
         }));
+        let requested = shell.update(cx, |shell, _| shell.settings_open_on.take());
         let page = std::env::var(PAGE_VARIABLE)
             .ok()
             .and_then(|name| Page::from_key(&name))
+            .or_else(|| requested.and_then(Page::from_key))
             .unwrap_or(Page::Appearance);
         SettingsWindow {
             shell,

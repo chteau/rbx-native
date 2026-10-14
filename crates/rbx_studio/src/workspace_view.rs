@@ -527,6 +527,13 @@ impl WorkspaceView {
     /// The file meshes the render thread last reported drawing — see the
     /// field. `Shell` reads this when it resolves a click, since the DOM it
     /// picks against lives there and the geometry lives here.
+    /// The 3D panel's last laid-out rect in its window, device pixels:
+    /// `(x, y, width, height)`; zero-sized before the first frame.
+    pub(crate) fn panel_rect(&self) -> (u32, u32, u32, u32) {
+        let panel = self.panel.get();
+        (panel.origin.0, panel.origin.1, panel.size.0, panel.size.1)
+    }
+
     pub(crate) fn meshes(&self) -> &Meshes {
         &self.meshes
     }

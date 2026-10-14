@@ -531,6 +531,7 @@ impl FigmaWindow {
                                 .border_color(tokens::border2())
                                 .bg(tokens::dock())
                                 .shadow_md()
+                                .relative()
                                 .children(CLASSES.iter().enumerate().map(|(n, &class)| {
                                     let id = id.clone();
                                     h_flex()
@@ -546,7 +547,8 @@ impl FigmaWindow {
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.pick_class(id.clone(), class, cx)
                                         }))
-                                })),
+                                }))
+                                .child(gpui_base::occlusion::probe()),
                         ),
                 ))
             });

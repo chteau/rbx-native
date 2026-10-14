@@ -2531,11 +2531,17 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [ ] 📋 Script debugging inside a Play session — the Edit-context
-  debugger (see "What's been implemented" → Editor) has no Play mode to run in, so a server or client
-  script can only be debugged once the Play workaround below exists.
-  Breakpoints would then trigger in that session's scripts, as Studio's
-  Client/Server "Trigger At" contexts do.
+- [x] **Script debugging inside a Play session** (`rbx_play::instrument`,
+  the probe's `debug` module, `shell/play/debug.rs`): breakpoints stop
+  server and client scripts of a running test, with the Watch and Call
+  Stack docks, Continue / Step Into / Over / Out and watch expressions
+  evaluated in the game. Scripts with breakpoints are published with
+  same-line hooks that hand the probe their locals (game scripts have no
+  `debug.getlocal`); toggling breakpoints reaches the game at once, and
+  each breakpoint has Studio's Trigger At contexts (Client / Server /
+  Edit). Only the stopped thread waits, not the whole session; conditions
+  and log messages, and breakpoints in scripts that had none, apply from
+  the next Play. `docs/research/play-sandbox/debugging.md`.
 - [ ] ⚠️ **Inline AI code completion**, matching what real Studio calls
   **Code Assist** (`studio/script-editor.md`) — suggests a line/block of
   code inline as you type or pause, distinct from `luau-lsp`'s
@@ -2612,13 +2618,47 @@ Roblox's own engine.
   ease uses it), but putting it behind every hover state is a larger job.
 
 ### Play / Test workflow
-- [ ] 📋 The sandbox-place design (private per-developer place, injected
-  probe scripts, a tunnel back to the editor) is fully designed — see
-  [Possible via a workaround](#play--test-a-private-sandbox--probe) — but
-  not implemented in code yet.
-- [ ] 📋 Wiring the Output dock to real script `print`/`warn`/`error` and
-  session events (join/leave messages and the like) once a sandbox session
-  is running — depends on the sandbox above existing first.
+- [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
+  Play publishes a probed copy of the place over a private sandbox
+  experience (Settings › Account), restarts its servers, opens it in the
+  Roblox client (Sober on Linux) and embeds that window frameless over the
+  3D view, following the editor window and taking the keyboard when
+  clicked. The probe reports back through a bundled cloudflared tunnel kept
+  open between sessions (a second Play is up in ~4 s). Stop, Roblox
+  closing and your player leaving end the session; a running Roblox is
+  closed after a confirmation (each client allows one instance); Invite
+  copies a link to the exact test server. Research and live results:
+  `docs/research/play-sandbox/`.
+- [x] Server and client `print`/`warn`/`error` reach the Output dock
+  during Play, tagged like Studio's context labels (Server blue, Client
+  green). An error shows the Luau message itself, its `Script:line`, and
+  its stack frames underneath; clicking any of them opens the place's
+  script at that line (`shell/output/game.rs`). Joins and leaves drive the
+  session but are not shown yet.
+- [x] **Client / Server views during Play** (`shell/play/live.rs`,
+  `rbx_play::{live, value}`, the probe's shared `live`/`codec` modules):
+  the Explorer and Properties show the running game's tree for the
+  tester's client or the server (ribbon toggle; tests open on Client), with
+  properties polled for the selection, and property edits, renames,
+  deletes, reparents and inserts made there go to the game in real time.
+  The edited place is stashed and comes back untouched on Stop. Tags
+  edit live too. Opening a script there opens the place's copy (Roblox's
+  join-time copies mapped back to their Starter containers); its edits
+  land in the place when the test stops.
+  `docs/research/play-sandbox/live-views.md`.
+- [x] Live stats on the Test ribbon: frame rate, ping and memory for the
+  client, heartbeat rate, players and memory for the server, every
+  reported number in the tooltip.
+- [x] Editor menus, dropdowns, tooltips and dialogs draw above the
+  embedded game (X Shape holes from `gpui_base::occlusion`).
+- [x] **"In Studio" on Roblox** (Settings › Account): the heartbeat real
+  Studio sends, signed in with Roblox's code sign-in (code + QR, no web
+  view); the session lives in the system keychain.
+- [x] The embedded game hides while another document (Scripts, UI
+  Editor, Animation) has the 3D view's room.
+- [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
+  embeds through `SetParent` (type-checked for the MSVC target only); on
+  macOS the client keeps its own window.
 - [ ] 📋 **Output window: the sandbox-dependent half.** Filtering by
   **context** (`Client`/`Server`/`User Plugin`) only means something once
   the sandbox's client/server split exists to produce it, and the **Show

@@ -521,6 +521,8 @@ impl RenderOnce for Dialog {
                     .left_0()
                     .w(viewport.width)
                     .h(viewport.height)
+                    // rbx-native addition: a dialog covers the whole window.
+                    .child(crate::occlusion::probe())
                     .role(self.role)
                     .track_focus(&self.focus)
                     .focus_trap(format!("dialog-{}", self.layer), &self.focus)

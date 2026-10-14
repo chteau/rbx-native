@@ -360,7 +360,15 @@ impl MenuBar {
                         anchored()
                             .anchor(Anchor::TopLeft)
                             .snap_to_window_with_margin(px(8.))
-                            .child(div().size_full().occlude().top_1().child(popup)),
+                            .child(
+                                div()
+                                    .size_full()
+                                    .occlude()
+                                    .top_1()
+                                    .relative()
+                                    .child(popup)
+                                    .child(gpui_base::occlusion::probe()),
+                            ),
                     )
                 }))
             })

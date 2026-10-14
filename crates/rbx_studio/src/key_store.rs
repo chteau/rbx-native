@@ -94,3 +94,32 @@ async fn migrate_plaintext(cx: &mut AsyncApp) {
         ),
     }
 }
+
+/// The Roblox web session from the code sign-in (`shell::roblox_login`),
+/// kept beside the API key under its own entry. It is a full account
+/// credential, so it only ever lives in the store and in memory.
+const SESSION_URL: &str = "https://www.roblox.com/rbx-native";
+const SESSION_ACCOUNT: &str = "roblosecurity";
+
+pub(crate) async fn save_session(
+    cookie: &rbx_cloud::heartbeats::SessionCookie,
+    cx: &mut AsyncApp,
+) -> anyhow::Result<()> {
+    let secret = cookie.expose_secret().as_bytes().to_vec();
+    cx.update(|cx| cx.write_credentials(SESSION_URL, SESSION_ACCOUNT, &secret))
+        .await
+}
+
+pub(crate) async fn read_session(
+    cx: &mut AsyncApp,
+) -> anyhow::Result<Option<rbx_cloud::heartbeats::SessionCookie>> {
+    let stored = cx.update(|cx| cx.read_credentials(SESSION_URL)).await?;
+    Ok(stored
+        .and_then(|(_, secret)| String::from_utf8(secret).ok())
+        .filter(|secret| !secret.trim().is_empty())
+        .map(|secret| rbx_cloud::heartbeats::SessionCookie::new(&secret)))
+}
+
+pub(crate) async fn forget_session(cx: &mut AsyncApp) -> anyhow::Result<()> {
+    cx.update(|cx| cx.delete_credentials(SESSION_URL)).await
+}

@@ -374,6 +374,7 @@ impl Shell {
                 }
             }))
             .occlude()
+            .relative()
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, window, cx| {
                 shell.close_row_menu(window, cx);
                 // The click that closes the menu does nothing else, as a
@@ -382,7 +383,8 @@ impl Shell {
                 // selected nor expanded by it.
                 cx.stop_propagation();
             }))
-            .children(rows);
+            .children(rows)
+            .child(gpui_base::occlusion::probe());
 
         Some(
             deferred(

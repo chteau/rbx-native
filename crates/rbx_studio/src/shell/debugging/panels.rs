@@ -76,7 +76,16 @@ impl Shell {
             );
 
         let pause = self.debug.run.as_ref().and_then(|run| run.pause.as_ref());
+        let outer_play_frame =
+            self.debug_in_play() && self.debug.run.as_ref().is_some_and(|run| run.frame != 0);
         let rows: Vec<AnyElement> = match tab {
+            // The probe captures the locals where the game stopped only.
+            WatchTab::Variables if pause.is_some() && outer_play_frame => {
+                vec![
+                    note("Only the frame where the game stopped has variables during Play")
+                        .into_any_element(),
+                ]
+            }
             WatchTab::Variables => match pause {
                 None => vec![placeholder(self.debug_running())],
                 Some(pause) if pause.variables.is_empty() => {

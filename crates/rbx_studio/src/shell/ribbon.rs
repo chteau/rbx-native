@@ -30,6 +30,7 @@ use crate::tokens;
 use crate::transform::Tool;
 
 use super::menu::{self, MenuId};
+use super::play::{session::StopReason, Phase};
 use super::Shell;
 
 mod commands;
@@ -133,7 +134,7 @@ impl Shell {
                 self.sun_tiles(cx),
                 file_tiles(),
             ],
-            Tab::Test => vec![test_tiles(), viewport_tiles()],
+            Tab::Test => vec![self.test_tiles(cx), viewport_tiles()],
             Tab::Plugins => vec![placeholders(
                 "plugins",
                 &[
@@ -509,27 +510,152 @@ pub(super) fn primary(id: &'static str, tile: Stateful<Div>) -> Stateful<Div> {
 
 /// `ROADMAP.md`'s Play/Test section still lists the sandbox-place design
 /// all of these would need as open.
+impl Shell {
+    /// Studio's "Current: Client / Server" switch: which game tree the
+    /// Explorer and Properties show while a test runs.
+    fn view_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        use super::play::live::View;
+        let view = self.play.live.view;
+        let (icon, label) = match view {
+            View::Client => (IconName::Globe, "Client"),
+            View::Server => (IconName::Server, "Server"),
+        };
+        if self.play.phase == Phase::Running {
+            let next = match view {
+                View::Client => View::Server,
+                View::Server => View::Client,
+            };
+            tile(&self.ribbon_nav, "ribbon-view", icon, label, cx)
+                .on_click(cx.listener(move |shell, _, _, cx| shell.live_set_view(next, cx)))
+        } else {
+            unavailable_tile("ribbon-view", icon, label, "no test is running")
+        }
+    }
+
+    /// The running game's numbers beside the test tiles: one row per side
+    /// (`play::session::stats_line`), every number in the row's tooltip.
+    /// Nothing while no test runs.
+    fn stats_readout(&self) -> Option<Div> {
+        use super::play::session::{stats_details, stats_line};
+        use rbx_play::protocol::Side;
+        if self.play.phase != Phase::Running {
+            return None;
+        }
+        let row = |id: &'static str, icon: IconName, side: Side, metrics| {
+            let (line, details) = match metrics {
+                Some(metrics) => (stats_line(side, metrics), stats_details(metrics)),
+                None => (
+                    "\u{2014}".to_owned(),
+                    "Waiting for the first report.".to_owned(),
+                ),
+            };
+            h_flex()
+                .id(id)
+                .w_full()
+                .flex_1()
+                .items_center()
+                .gap(px(6.))
+                .px(px(7.))
+                .rounded(tokens::radius())
+                .bg(tokens::tile())
+                .text_size(tokens::text_xs())
+                .line_height(tokens::line_xs())
+                .text_color(tokens::text_label())
+                .child(Icon::new(icon).size(tokens::text_xs()))
+                .child(div().flex_1().truncate().child(line))
+                .tooltip(move |window, cx| super::tooltip::text(details.clone(), window, cx))
+        };
+        Some(
+            v_flex()
+                .flex_none()
+                .w(px(190.))
+                .h_full()
+                .gap(px(4.))
+                .child(row(
+                    "ribbon-stats-client",
+                    IconName::Globe,
+                    Side::Client,
+                    self.play.stats.client.as_ref(),
+                ))
+                .child(row(
+                    "ribbon-stats-server",
+                    IconName::Server,
+                    Side::Server,
+                    self.play.stats.server.as_ref(),
+                )),
+        )
+    }
+
+    fn test_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let nav = &self.ribbon_nav;
+        let idle = self.play.phase == Phase::Idle;
+        let play = if idle {
+            tile(nav, "ribbon-play", IconName::Play, "Play", cx)
+                .on_click(cx.listener(|shell, _, window, cx| shell.play_start(window, cx)))
+        } else {
+            unavailable_tile(
+                "ribbon-play",
+                IconName::Play,
+                "Play",
+                "a test is already running",
+            )
+        };
+        let stop = if idle {
+            unavailable_tile(
+                "ribbon-stop",
+                IconName::Square,
+                "Stop",
+                "nothing is running",
+            )
+        } else {
+            tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.play_stop(StopReason::Stopped, cx)))
+        };
+        let invite = if self.play.job_id.is_some() {
+            tile(nav, "ribbon-invite", IconName::Users, "Invite", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.play_copy_join_link(cx)))
+        } else {
+            unavailable_tile(
+                "ribbon-invite",
+                IconName::Users,
+                "Invite",
+                "no test server yet",
+            )
+        };
+        let mut tiles = vec![
+            primary("ribbon-play", play).into_any_element(),
+            // Stop is a tile of its own rather than a third stack row: three
+            // rows in an 80px ribbon are ~25px each, and Stop is the control a
+            // person reaches for in a hurry.
+            stack(vec![
+                stack_row("ribbon-run", IconName::SquarePlay, "Run"),
+                stack_row("ribbon-pause", IconName::Pause, "Pause"),
+            ])
+            .into_any_element(),
+            primary("ribbon-stop", stop).into_any_element(),
+            invite.into_any_element(),
+            self.view_tile(cx).into_any_element(),
+            disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
+        ];
+        tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
+        tiles
+    }
+}
+
+/// The Play and Stop tiles in isolation, for the 44x44 layout check.
+#[cfg(test)]
 fn test_tiles() -> Vec<AnyElement> {
     vec![
         primary(
             "ribbon-play",
-            disabled_tile("ribbon-play", IconName::Play, "Play"),
+            unavailable_tile("ribbon-play", IconName::Play, "Play", "test"),
         )
-        .into_any_element(),
-        // Stop is a tile of its own rather than a third stack row: three
-        // rows in an 80px ribbon are ~25px each, and Stop is the control a
-        // person reaches for in a hurry.
-        stack(vec![
-            stack_row("ribbon-run", IconName::SquarePlay, "Run"),
-            stack_row("ribbon-pause", IconName::Pause, "Pause"),
-        ])
         .into_any_element(),
         primary(
             "ribbon-stop",
-            disabled_tile("ribbon-stop", IconName::Square, "Stop"),
+            unavailable_tile("ribbon-stop", IconName::Square, "Stop", "test"),
         )
         .into_any_element(),
-        disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
     ]
 }
 

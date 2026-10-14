@@ -112,6 +112,23 @@ impl Shell {
         let mut stored = editing.stored;
         stored.breakpoint.condition = text(&editing.condition);
         stored.breakpoint.log_message = text(&editing.log_message);
+        let before = self
+            .debug
+            .breakpoints
+            .get(editing.script, stored.breakpoint.line)
+            .map(|old| {
+                (
+                    old.breakpoint.condition.clone(),
+                    old.breakpoint.log_message.clone(),
+                )
+            });
+        let after = (
+            stored.breakpoint.condition.clone(),
+            stored.breakpoint.log_message.clone(),
+        );
+        if before.is_some_and(|before| before != after) {
+            self.play_debug_edited(editing.script);
+        }
         self.debug.breakpoints.set(editing.script, stored);
         self.sync_gutters(cx);
         cx.notify();
@@ -206,11 +223,13 @@ impl Shell {
         let surface = menu::surface()
             .id("breakpoint-menu")
             .occlude()
+            .relative()
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
                 shell.debug.menu = None;
                 cx.notify();
             }))
-            .children(rows);
+            .children(rows)
+            .child(gpui_base::occlusion::probe());
         Some(overlay(position, surface))
     }
 
@@ -250,6 +269,7 @@ impl Shell {
         menu::surface()
             .id("breakpoint-editor")
             .occlude()
+            .relative()
             .w(px(300.))
             .gap(px(2.))
             .child(
@@ -292,6 +312,27 @@ impl Shell {
                 stored.enabled,
                 |stored| stored.enabled = !stored.enabled,
             ))
+            // Studio's "Trigger At": the Edit context is the editor's own
+            // debug run, Client and Server the two sides of a Play session.
+            .child(label("Trigger At"))
+            .child(toggle(
+                "breakpoint-context-client",
+                "Client",
+                stored.contexts.client,
+                |stored| stored.contexts.client = !stored.contexts.client,
+            ))
+            .child(toggle(
+                "breakpoint-context-server",
+                "Server",
+                stored.contexts.server,
+                |stored| stored.contexts.server = !stored.contexts.server,
+            ))
+            .child(toggle(
+                "breakpoint-context-edit",
+                "Edit",
+                stored.contexts.edit,
+                |stored| stored.contexts.edit = !stored.contexts.edit,
+            ))
             .child(
                 div()
                     .flex()
@@ -310,6 +351,7 @@ impl Shell {
                         ),
                     ),
             )
+            .child(gpui_base::occlusion::probe())
     }
 }
 

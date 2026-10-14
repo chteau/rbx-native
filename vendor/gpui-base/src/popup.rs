@@ -139,7 +139,8 @@ impl RenderOnce for Popup {
                     // The host blocks the mouse, so no caller has to remember:
                     // what a popup covers belongs to the popup.
                     .occlude()
-                    .child(content),
+                    // rbx-native addition: records where it was painted.
+                    .child(crate::occlusion::wrap(content)),
             )
             .with_priority(POPUP_PRIORITY),
         )

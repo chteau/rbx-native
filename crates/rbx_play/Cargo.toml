@@ -1,0 +1,50 @@
+[package]
+name = "rbx_play"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rbx_dom = { path = "../rbx_dom" }
+# Property types for decoding live values (`value`, `live`).
+rbx_reflection = { path = "../rbx_reflection" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Tunnel URL scraping from the provider's stderr.
+regex = "1"
+# Per-Play session token.
+getrandom = "0.3"
+# `launchData` in the roblox:// join URI.
+percent-encoding = "2"
+# Parsing scripts to instrument them for the Play debugger (`instrument`);
+# the version rbx_studio already uses.
+full_moon = { version = "3", features = ["luau"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Embedding the client window; same version rbx_studio uses.
+x11rb = { version = "0.13", features = ["xinput", "shape"] }
+# `PR_SET_PDEATHSIG` for the tunnel child (`tunnel`); already in the tree.
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# Embedding RobloxPlayerBeta's window; same version rbx_studio uses.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+# Syntax-checks the probe's Luau sources; already built for rbx_lua.
+mlua = { version = "0.12", features = ["luau"] }
+# examples/live_probe.rs: publish the probed place and health-check the tunnel.
+rbx_binary = { path = "../rbx_binary" }
+rbx_cloud = { path = "../rbx_cloud" }
+ureq = "3"
+
+# examples/live_probe.rs falls back to the key rbxstudio stored in the keyring.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
+futures-lite = "2"

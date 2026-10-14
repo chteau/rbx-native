@@ -52,6 +52,28 @@ impl Client {
         let parsed: PublishResponseRaw = serde_json::from_value(body)?;
         Ok(parsed.version_number)
     }
+
+    /// `POST /cloud/v2/universes/{universe}:restartServers`: shuts down the
+    /// experience's running servers so the next join gets the newest
+    /// version (Play's sandbox, after each publish). Needs `universe:write`.
+    /// With `close_all_versions` every server goes, not only outdated ones.
+    pub fn restart_servers(
+        &self,
+        universe_id: u64,
+        close_all_versions: bool,
+    ) -> Result<(), CloudError> {
+        let url = restart_url(universe_id);
+        let body = serde_json::json!({ "closeAllVersions": close_all_versions });
+        let response = self.post_json_raw(&url, true, &body)?;
+        if (200..300).contains(&response.status) {
+            return Ok(());
+        }
+        answer(&url, response).map(|_| ())
+    }
+}
+
+fn restart_url(universe_id: u64) -> String {
+    format!("https://apis.roblox.com/cloud/v2/universes/{universe_id}:restartServers")
 }
 
 /// Roblox distinguishes a binary `.rbxl` from an XML `.rbxlx` by
@@ -71,6 +93,14 @@ fn content_type_for(bytes: &[u8]) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restart_url_names_the_universe() {
+        assert_eq!(
+            restart_url(42),
+            "https://apis.roblox.com/cloud/v2/universes/42:restartServers"
+        );
+    }
 
     #[test]
     fn parses_the_publish_response() {

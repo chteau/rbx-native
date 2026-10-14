@@ -61,3 +61,10 @@ upstream keeps the selection list private (still true in 0.6.6).
 To upgrade GPUI Kit: re-copy the matching `gpui-base` from
 `~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes, the tree changes (selection by id, the focus cursor) and the gutter slot, and bump the version.
 Delete this directory and the patch once upstream has an equivalent.
+
+And `src/occlusion.rs` (new, marked "rbx-native addition"): a per-window
+registry of where floating layers painted this frame. `popup.rs` and
+`tooltip.rs` wrap their content with `occlusion::wrap`, and `dialog.rs`'s
+host carries `occlusion::probe()`; rbx_studio's own `deferred` popups do
+the same. During Play the editor reads `occlusion::rects` to cut those
+areas out of the embedded Roblox window (X Shape), so popups draw above it.

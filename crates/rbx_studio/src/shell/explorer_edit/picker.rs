@@ -308,7 +308,9 @@ impl Shell {
             .when(hidden > 0, |this| {
                 this.child(note(format!("{hidden} more — keep typing")))
             })
-            .when_some(footer, |this, footer| this.child(note(footer)));
+            .when_some(footer, |this, footer| this.child(note(footer)))
+            .relative()
+            .child(gpui_base::occlusion::probe());
 
         Some(
             deferred(

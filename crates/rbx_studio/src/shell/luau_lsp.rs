@@ -72,7 +72,8 @@ impl Shell {
         if !matches!(self.lsp.status, Status::Off) {
             return;
         }
-        if let Err(error) = self.lsp.mirror.sync(&self.dom, &self.database) {
+        let place = super::play::live::edit_dom_of(&self.dom, &self.play.live);
+        if let Err(error) = self.lsp.mirror.sync(place, &self.database) {
             self.lsp.status =
                 Status::Failed(format!("could not write the place for luau-lsp: {error}"));
             return;
@@ -177,6 +178,9 @@ impl Shell {
     /// mirror last matched it — an undo, a Command Bar script, an Argon
     /// sync — and one is not already waiting.
     pub(super) fn notice_luau_lsp_dom_change(&mut self, cx: &mut Context<Self>) {
+        if self.live_shown() {
+            return;
+        }
         if !self.lsp.scheduled && self.lsp.synced != Some(self.history.revision()) {
             self.schedule_luau_lsp_refresh(cx);
         }
@@ -194,7 +198,8 @@ impl Shell {
             self.lsp.synced = Some(revision);
             // A failed write leaves the server on the last copy it read,
             // which is stale but still the right place.
-            if let Ok(changes) = self.lsp.mirror.sync(&self.dom, &self.database) {
+            let place = super::play::live::edit_dom_of(&self.dom, &self.play.live);
+            if let Ok(changes) = self.lsp.mirror.sync(place, &self.database) {
                 if !changes.is_empty() {
                     let changes: Vec<Value> = changes
                         .iter()
@@ -296,14 +301,14 @@ impl Shell {
     }
 
     /// Opens `reference` with `range` — in the server's columns — selected.
-    fn reveal(
+    pub(in crate::shell) fn reveal(
         &mut self,
         reference: Ref,
         range: Range,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.open_script(reference, window, cx);
+        self.open_place_script(reference, window, cx);
         let Some(open) = self.scripts.open.get(&reference) else {
             return;
         };

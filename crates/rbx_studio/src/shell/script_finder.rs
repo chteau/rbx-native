@@ -153,7 +153,7 @@ impl Shell {
                 .iter()
                 .flat_map(|&reference| {
                     let text = text_of(reference).unwrap_or_default();
-                    let name = source::label(&self.dom, reference).unwrap_or_default();
+                    let name = source::label(self.edit_dom(), reference).unwrap_or_default();
                     find::matches(&text, &query)
                         .into_iter()
                         .map(|range| {

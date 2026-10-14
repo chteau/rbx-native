@@ -182,7 +182,7 @@ impl Shell {
             let reference = *reference;
             // Read from the DOM rather than cached at open time, so a rename
             // in the Explorer retitles the tab.
-            let label = source::label(&self.dom, reference).unwrap_or_default();
+            let label = source::label(self.edit_dom(), reference).unwrap_or_default();
             Tab::new()
                 // The kit's Underline variant pads nothing, which leaves the
                 // glyph flush with the tab's edge; the document tabs above

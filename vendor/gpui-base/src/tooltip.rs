@@ -230,7 +230,8 @@ impl Render for TooltipOverlay {
                 .when_some(content.preferred_placement, |this, placement| {
                     this.placement(placement)
                 })
-                .child(rendered),
+                // rbx-native addition: records where it was painted.
+                .child(crate::occlusion::wrap(rendered)),
         )
         .with_priority(TOOLTIP_PRIORITY)
         .into_any_element()
