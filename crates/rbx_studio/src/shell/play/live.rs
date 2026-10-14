@@ -323,6 +323,61 @@ impl Shell {
         self.live_refresh(cx);
     }
 
+    /// An Output location from the game (`output::game`): opens the place's
+    /// copy of that script (the same mapping as `live_script_in_place`) at
+    /// `line`, during the test or after it. Says so in Output when the
+    /// script only exists in the game.
+    pub(in crate::shell) fn play_reveal(
+        &mut self,
+        context: super::super::output::game::Context,
+        location: &super::super::output::game::Location,
+        window: &mut gpui_kit::Window,
+        cx: &mut Context<Self>,
+    ) {
+        use super::super::output::game::Context as Side;
+        let path: Vec<String> = location.path.split('.').map(str::to_string).collect();
+        let tree = match context {
+            Side::Server => &self.play.live.server,
+            Side::Client => &self.play.live.client,
+        };
+        let mut players: Vec<String> = find_path(&tree.dom, &["Players".to_string()])
+            .and_then(|p| tree.dom.get(p))
+            .map(|p| {
+                p.children()
+                    .iter()
+                    .filter_map(|c| tree.dom.get(*c).map(|i| i.name().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        // After the test the live trees are gone: a `Workspace.<name>`
+        // the place does not have is taken to be the tester's character.
+        let place = self.edit_dom();
+        if let [workspace, name, ..] = path.as_slice() {
+            if workspace == "Workspace"
+                && find_path(place, &[workspace.clone(), name.clone()]).is_none()
+            {
+                players.push(name.clone());
+            }
+        }
+        let found = place_paths(&path, &players)
+            .iter()
+            .filter_map(|candidate| find_path(place, candidate))
+            .find(|r| crate::script_editor::source::is_script(place, &self.database, *r));
+        let Some(script) = found else {
+            self.output.push(
+                "Play",
+                crate::command_bar::Feedback::Warning(format!(
+                    "{} only exists in the running game, so its source cannot be shown.",
+                    location.path
+                )),
+            );
+            cx.notify();
+            return;
+        };
+        let at = lsp_types::Position::new(location.line.saturating_sub(1), 0);
+        self.reveal(script, lsp_types::Range::new(at, at), window, cx);
+    }
+
     /// Play stopped: swap the edited place back with its history and
     /// selection, rebuild the Explorer, reset the Properties cache
     /// (`Properties::new` or equivalent), clear both live trees.

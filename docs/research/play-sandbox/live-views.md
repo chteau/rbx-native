@@ -162,6 +162,19 @@ kept in the tab and written to the place when the test stops; the running
 game keeps the code it started with, as in Studio. The debugger refuses to
 start during a test (it runs against the edited place).
 
+## Output
+
+`LogService.MessageOut` hands an error over as one message: the error
+(`ServerScriptService.Later:4: attempt to index nil with 'field'`) followed
+by `Stack Begin`, one `Script '<full name>', Line <n>` per frame, and
+`Stack End` (seen live). `shell/output/game.rs` splits that, and the Output
+dock shows the message with a Server (blue) or Client (green) tag, the
+error's `Script:line` at the end, and each frame on its own line below.
+Clicking the row, the location or a frame opens the place's copy of the
+script at that line, with the same path mapping as opening a script from a
+live tree (a client error in `Players.<tester>.PlayerScripts.Hud` opens
+`StarterPlayer.StarterPlayerScripts.Hud`), during the test or after it.
+
 ## Popups over the embedded game
 
 The game window is a native X child window, which the X server draws over

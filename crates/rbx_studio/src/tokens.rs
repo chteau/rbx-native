@@ -212,6 +212,18 @@ pub(crate) fn diff_add() -> Rgba {
     theme::color("diff_add")
 }
 
+/// The Output dock's context tag for a message from the tester's client
+/// during Play: green, as Studio's Output labels it.
+pub(crate) fn output_client() -> Rgba {
+    theme::color("output_client")
+}
+
+/// The Output dock's context tag for a message from the Play server: blue,
+/// as Studio's Output labels it.
+pub(crate) fn output_server() -> Rgba {
+    theme::color("output_server")
+}
+
 /// [`diff_add`] at 10 %: an added code row, an AFTER value chip.
 pub(crate) fn diff_add_soft() -> Rgba {
     theme::color("diff_add_soft")

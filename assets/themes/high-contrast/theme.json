@@ -20,6 +20,8 @@
     "warning": "#FFC46B",
     "text_error": "#FF8F8F",
     "diff_add": "#7FE3A1",
+    "output_client": "#7FE3A1",
+    "output_server": "#8CC8FF",
 
     "check_on": "#9AA8FF",
     "accent_hover": "#A4B1FF",

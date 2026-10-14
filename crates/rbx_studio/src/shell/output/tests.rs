@@ -251,3 +251,28 @@ fn the_same_entry_pushed_twice_at_once_is_one_row() {
     log.push_once("Other", error("Another message"));
     assert_eq!(log.len(), 3);
 }
+
+#[test]
+fn a_game_error_keeps_its_side_location_and_stack() {
+    use super::game::Context;
+    let mut log = OutputLog::default();
+    log.push_game(
+        Context::Client,
+        error("Players.T.PlayerScripts.Hud:4: boom\n    Stack Begin\n    Script 'Players.T.PlayerScripts.Hud', Line 4\n    Stack End"),
+    );
+    let entry = log
+        .filtered(OutputFilter::Errors, "")
+        .next()
+        .expect("an error row");
+    assert_eq!(entry.source(), "Client");
+    let game = entry.game.as_ref().expect("a game row");
+    assert_eq!(game.context, Context::Client);
+    assert_eq!(game.text, "Players.T.PlayerScripts.Hud:4: boom");
+    assert_eq!(
+        game.location.as_ref().map(|l| l.short()),
+        Some("Hud:4".into())
+    );
+    assert_eq!(game.frames.len(), 1);
+    // The search box still finds it by the script's name.
+    assert_eq!(log.filtered(OutputFilter::All, "hud").count(), 1);
+}

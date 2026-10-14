@@ -301,7 +301,7 @@ impl Shell {
     }
 
     /// Opens `reference` with `range` — in the server's columns — selected.
-    fn reveal(
+    pub(in crate::shell) fn reveal(
         &mut self,
         reference: Ref,
         range: Range,

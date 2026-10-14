@@ -2623,9 +2623,12 @@ Roblox's own engine.
   closed after a confirmation (each client allows one instance); Invite
   copies a link to the exact test server. Research and live results:
   `docs/research/play-sandbox/`.
-- [x] Server and client `print`/`warn`/`error` reach the Output dock as
-  `Server`/`Client` rows during Play; joins and leaves drive the session
-  but are not shown yet.
+- [x] Server and client `print`/`warn`/`error` reach the Output dock
+  during Play, tagged like Studio's context labels (Server blue, Client
+  green). An error shows the Luau message itself, its `Script:line`, and
+  its stack frames underneath; clicking any of them opens the place's
+  script at that line (`shell/output/game.rs`). Joins and leaves drive the
+  session but are not shown yet.
 - [x] **Client / Server views during Play** (`shell/play/live.rs`,
   `rbx_play::{live, value}`, the probe's shared `live`/`codec` modules):
   the Explorer and Properties show the running game's tree for the

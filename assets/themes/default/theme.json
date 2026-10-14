@@ -28,6 +28,8 @@
     "warning": "#D9A55B",
     "text_error": "#E06C6C",
     "diff_add": "#74C98F",
+    "output_client": "#6CCB7E",
+    "output_server": "#5DA9F6",
     "diff_add_soft": "#74C98F1A",
     "diff_add_gutter": "#74C98F29",
     "diff_add_pill": "#74C98F1F",

@@ -33,6 +33,7 @@ use row_kind::{format_timestamp, RowColor, RowKind};
 
 use super::Shell;
 
+pub(crate) mod game;
 mod row_kind;
 
 /// How many runs the log keeps before dropping the oldest. Unlike
@@ -71,6 +72,10 @@ pub(crate) struct OutputEntry {
     /// "Show Timestamp" toggle (`Shell::output_show_timestamps`) is on; see
     /// [`OutputEntry::timestamp_label`].
     timestamp: SystemTime,
+    /// Set for a message from the running game during Play (see `game`):
+    /// such a row shows its Server/Client tag and, for an error, a link to
+    /// where it happened instead of a Command Bar source.
+    game: Option<game::GameMessage>,
 }
 
 impl OutputEntry {
@@ -79,6 +84,7 @@ impl OutputEntry {
             source: source.to_string(),
             feedback,
             timestamp: SystemTime::now(),
+            game: None,
         }
     }
 
@@ -206,6 +212,21 @@ impl OutputLog {
         });
         if !repeat {
             self.push(source, feedback);
+        }
+    }
+
+    /// Appends a message from the running game (`print`/`warn`/an error):
+    /// `feedback` carries its level and Roblox's whole message, stack
+    /// included; `game::parse` splits it for the row.
+    pub(crate) fn push_game(&mut self, context: game::Context, feedback: Feedback) {
+        let text = match &feedback {
+            Feedback::Output(text) | Feedback::Error(text) | Feedback::Warning(text) => text,
+            Feedback::Idle => return,
+        };
+        let message = game::parse(context, text);
+        self.push(context.label(), feedback);
+        if let Some(entry) = self.entries.last_mut() {
+            entry.game = Some(message);
         }
     }
 
@@ -411,7 +432,10 @@ fn output_row(
     index: usize,
     show_timestamp: bool,
     cx: &mut Context<Shell>,
-) -> impl IntoElement {
+) -> AnyElement {
+    if let Some(message) = &entry.game {
+        return game_row(entry, message, index, show_timestamp, cx).into_any_element();
+    }
     let kind = entry.kind();
     let color = match kind.color() {
         RowColor::Default => None,
@@ -460,6 +484,127 @@ fn output_row(
 
     row.child(div().flex_1().text_xs().child(entry.truncated_source()))
         .child(result_label)
+        .into_any_element()
+}
+
+/// A click that opens `location`'s script at its line (`Shell::play_reveal`).
+fn reveal(
+    context: game::Context,
+    location: &game::Location,
+    cx: &mut Context<Shell>,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+    let location = location.clone();
+    let shell = cx.weak_entity();
+    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+        cx.stop_propagation();
+        let _ = shell.update(cx, |shell, cx| {
+            shell.play_reveal(context, &location, window, cx);
+        });
+    }
+}
+
+/// A Play message (see `game`): the level icon, the Server/Client tag in
+/// its context colour, the message in the level's colour with the error's
+/// stack frames under it, and the error's `Script:line` at the end.
+/// Clicking the row, its location or a frame opens that script at that line
+/// (`Shell::play_reveal`); nothing is recalled into the Command Bar.
+fn game_row(
+    entry: &OutputEntry,
+    message: &game::GameMessage,
+    index: usize,
+    show_timestamp: bool,
+    cx: &mut Context<Shell>,
+) -> impl IntoElement {
+    let kind = entry.kind();
+    let color = match kind.color() {
+        RowColor::Default => None,
+        RowColor::Warning => Some(cx.theme().warning),
+        RowColor::Danger => Some(cx.theme().danger),
+    };
+    let icon = Icon::new(kind.icon()).small();
+    let icon = match color {
+        Some(color) => icon.text_color(color),
+        None => icon,
+    };
+    let context = message.context;
+    let tag_color = match context {
+        game::Context::Server => tokens::output_server(),
+        game::Context::Client => tokens::output_client(),
+    };
+
+    let mut row = h_flex()
+        .id(format!("output-entry-{index}"))
+        .w_full()
+        .items_start()
+        .gap_2()
+        .px_2()
+        .py_1()
+        .child(h_flex().flex_none().text_xs().child(icon).child("\u{200B}"));
+    if let Some(location) = &message.location {
+        row = row.cursor_pointer().on_click(reveal(context, location, cx));
+    }
+    if show_timestamp {
+        row = row.child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(entry.timestamp_label()),
+        );
+    }
+    row = row.child(
+        div()
+            .flex_none()
+            .w(px(44.))
+            .text_xs()
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(tag_color)
+            .child(context.label()),
+    );
+
+    let mut text = div()
+        .min_w_0()
+        .text_xs()
+        .child(truncate(&message.text, LABEL_MAX_LEN));
+    if let Some(color) = color {
+        text = text.text_color(color);
+    }
+    let mut body = v_flex().flex_1().min_w_0().gap_0p5().child(text);
+    for (frame_index, frame) in message.frames.iter().enumerate() {
+        let line = format!(
+            "{}, line {}{}{}",
+            frame.location.path,
+            frame.location.line,
+            if frame.detail.is_empty() { "" } else { " " },
+            frame.detail
+        );
+        body = body.child(
+            div()
+                .id(format!("output-entry-{index}-frame-{frame_index}"))
+                .min_w_0()
+                .pl_3()
+                .text_xs()
+                .text_color(tokens::text_muted())
+                .cursor_pointer()
+                .hover(|this| this.text_color(tag_color))
+                .on_click(reveal(context, &frame.location, cx))
+                .child(line),
+        );
+    }
+    row = row.child(body);
+    if let Some(location) = &message.location {
+        row = row.child(
+            div()
+                .id(format!("output-entry-{index}-location"))
+                .flex_none()
+                .text_xs()
+                .text_color(tokens::text_muted())
+                .cursor_pointer()
+                .hover(|this| this.text_color(tag_color).underline())
+                .on_click(reveal(context, location, cx))
+                .child(location.short()),
+        );
+    }
+    row
 }
 
 #[cfg(test)]

@@ -606,7 +606,16 @@ impl Shell {
                 continue;
             }
             if let Some((source, row)) = session::feedback_for(&event) {
-                self.output.push(source, row);
+                match &event {
+                    Uplink::Log { side, .. } => {
+                        let context = match side {
+                            Side::Server => super::output::game::Context::Server,
+                            Side::Client => super::output::game::Context::Client,
+                        };
+                        self.output.push_game(context, row);
+                    }
+                    _ => self.output.push(source, row),
+                }
             }
             if let Uplink::Hello { job_id, .. } = &event {
                 if !job_id.is_empty() {
