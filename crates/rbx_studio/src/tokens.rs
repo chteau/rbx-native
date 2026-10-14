@@ -218,6 +218,11 @@ pub(crate) fn output_client() -> Rgba {
     theme::color("output_client")
 }
 
+/// An info row in the Output dock (`TestService:Message`): Studio's blue.
+pub(crate) fn output_info() -> Rgba {
+    theme::color("output_info")
+}
+
 /// The Output dock's context tag for a message from the Play server: blue,
 /// as Studio's Output labels it.
 pub(crate) fn output_server() -> Rgba {

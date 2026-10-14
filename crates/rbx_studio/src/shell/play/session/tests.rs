@@ -65,7 +65,7 @@ fn log_rows_follow_side_and_level() {
     assert_eq!(source, CLIENT_SOURCE);
     assert!(matches!(row, Feedback::Warning(_)));
     let (_, row) = feedback_for(&log(Side::Client, LogLevel::Info)).unwrap();
-    assert!(matches!(row, Feedback::Output(_)));
+    assert!(matches!(row, Feedback::Info(_)));
     let (_, row) = feedback_for(&log(Side::Server, LogLevel::Output)).unwrap();
     assert!(matches!(row, Feedback::Output(_)));
 }

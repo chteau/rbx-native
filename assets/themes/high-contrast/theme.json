@@ -21,6 +21,7 @@
     "text_error": "#FF8F8F",
     "diff_add": "#7FE3A1",
     "output_client": "#7FE3A1",
+    "output_info": "#A6D4FF",
     "output_server": "#8CC8FF",
 
     "check_on": "#9AA8FF",

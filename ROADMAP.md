@@ -1826,6 +1826,21 @@ Roblox's own engine.
   (`Feedback::shown_inline`), when it is the one place the result would
   otherwise be lost — which is why a `Ctrl+S` save, which used to report
   through the label alone, now logs a `Save` row too.
+- [x] **Output window: the half that needed the sandbox**, checked against
+  `studio/output.md`. A **context filter** (All Contexts / Edit / Server /
+  Client) sits beside the level filter (`ContextFilter`,
+  `shell/output/filter.rs`). Everything said in edit mode is `Edit`, Studio's
+  name for it. **Show Context** and **Show Source** in the panel's overflow
+  menu hide or show a Play message's Server/Client tag and its `Script:line`.
+  `LogService`'s `MessageInfo` (what `TestService:Message` prints) is its
+  own blue **Info** kind and filter bucket (`RowKind::Info`,
+  `Feedback::Info`) instead of plain output. A table `print`ed from the
+  Command Bar is an expandable tree, with keys sorted and cycles cut
+  (`rbx_lua::printed`, `shell/output/tables.rs`). **Show Tables Expanded by
+  Default**, **Show Memory Address for Expandable Tables** and **Log Mode**
+  (plain text, no trees) round out Studio's list. A click flips one table
+  against that default. All five toggles persist in settings
+  (`OutputDisplay`).
 - [x] **The viewport no longer goes black, with the render thread's stats
   frozen, after a scripted full reload**
   (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`). Fixed by `ab24e6e`, five hours after
@@ -2659,15 +2674,12 @@ Roblox's own engine.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
-- [ ] 📋 **Output window: the sandbox-dependent half.** Filtering by
-  **context** (`Client`/`Server`/`User Plugin`) only means something once
-  the sandbox's client/server split exists to produce it, and the **Show
-  Context** and **Show Source** (script name + line number) toggles are
-  the same story — neither a Command Bar run nor an app warning carries a
-  script/line origin today. `TestService.Message`'s blue/info kind needs
-  the sandbox before anything can produce it. Whether logged tables show
-  expanded by default is the one piece here that does not need the sandbox
-  first.
+- [ ] 📋 **Output window: what still has no producer.** A `print`ed
+  table from the running game is a flat `table: 0x…` line, not an
+  expandable tree: `LogService.MessageOut` hands the probe a string, so a
+  game-side tree needs the probe to walk the table itself. The context
+  filter has no **User Plugin** bucket, since this editor runs no plugins
+  to produce one.
 - [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/

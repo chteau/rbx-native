@@ -325,6 +325,11 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// The Output panel's other display toggles (context, source, tables);
+    /// persisted beside `output_show_timestamps`.
+    output_display: crate::settings::OutputDisplay,
+    /// Which context (Edit, Server, Client) the Output panel shows.
+    output_context: output::ContextFilter,
     /// Whether opening a script's Graph side tidies it; persisted (see
     /// `settings`), written through `Shell::set_optimize_graph_on_open`.
     optimize_graph_on_open: bool,
@@ -509,6 +514,7 @@ impl Shell {
             named_layouts,
             output_collapsed,
             output_timestamps,
+            output_display,
             optimize_graph_on_open,
             increment_names,
             expand_on_select,
@@ -762,6 +768,8 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            output_display,
+            output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
             script_font_size,
             output_scroll: ScrollHandle::new(),
@@ -1667,6 +1675,7 @@ impl Shell {
             named_layouts: self.named_layouts.clone(),
             output_collapsed: self.output_collapsed,
             output_timestamps: self.output_show_timestamps,
+            output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,

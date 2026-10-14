@@ -302,6 +302,32 @@ impl Shell {
                     shell.set_output_timestamps(!timestamps, cx);
                 }),
         );
+        // The rest of Studio's "level of detail" list (`studio/output.md`),
+        // in its order; each flips one field of `OutputDisplay`.
+        let display = self.output_display;
+        type Field = fn(&mut crate::settings::OutputDisplay) -> &mut bool;
+        let toggles: [(&str, bool, Field); 5] = [
+            ("Show Context", display.context, |d| &mut d.context),
+            ("Show Source", display.source, |d| &mut d.source),
+            (
+                "Show Tables Expanded by Default",
+                display.tables_expanded,
+                |d| &mut d.tables_expanded,
+            ),
+            (
+                "Show Memory Address for Expandable Tables",
+                display.table_addresses,
+                |d| &mut d.table_addresses,
+            ),
+            ("Log Mode", display.log_mode, |d| &mut d.log_mode),
+        ];
+        for (label, on, field) in toggles {
+            items.push(menu::item(label).checked(on).on_click(move |shell, cx| {
+                let mut display = shell.output_display;
+                *field(&mut display) = !on;
+                shell.set_output_display(display, cx);
+            }));
+        }
         let overflow = menu::dropdown(
             self,
             MenuId::OutputOverflow,

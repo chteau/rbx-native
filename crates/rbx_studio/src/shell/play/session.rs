@@ -157,7 +157,8 @@ pub(crate) fn feedback_for(event: &Uplink) -> Option<(&'static str, Feedback)> {
             let row = match level {
                 LogLevel::Error => Feedback::Error(text),
                 LogLevel::Warning => Feedback::Warning(text),
-                LogLevel::Output | LogLevel::Info => Feedback::Output(text),
+                LogLevel::Info => Feedback::Info(text),
+                LogLevel::Output => Feedback::Output(text),
             };
             Some((source, row))
         }

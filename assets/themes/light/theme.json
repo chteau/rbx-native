@@ -26,6 +26,7 @@
     "text_error": "#B02A2A",
     "diff_add": "#176B36",
     "output_client": "#1B7A35",
+    "output_info": "#1A5FB4",
     "output_server": "#1F62C4",
     "diff_add_soft": "@diff_add/0.1",
     "diff_add_gutter": "@diff_add/0.16",

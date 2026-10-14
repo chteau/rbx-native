@@ -6,6 +6,8 @@ use std::rc::Rc;
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
+use crate::printed::{self, PrintPart};
+
 /// Handle to the DOM, the reflection data and the captured output.
 ///
 /// Every userdata needs the same three things, and mlua requires userdata to own
@@ -17,6 +19,9 @@ pub(crate) struct Ctx {
     dom: Rc<RefCell<WeakDom>>,
     database: Rc<ReflectionDatabase>,
     output: Rc<RefCell<Vec<String>>>,
+    /// Each `print` call's arguments, structured — see `printed`. Parallel to
+    /// `output` for a plain run; the debugger drains `output` alone.
+    printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
 }
 
 impl Ctx {
@@ -24,11 +29,13 @@ impl Ctx {
         dom: Rc<RefCell<WeakDom>>,
         database: Rc<ReflectionDatabase>,
         output: Rc<RefCell<Vec<String>>>,
+        printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
     ) -> Self {
         Ctx {
             dom,
             database,
             output,
+            printed,
         }
     }
 
@@ -44,7 +51,8 @@ impl Ctx {
         &self.database
     }
 
-    pub(crate) fn print(&self, line: String) {
-        self.output.borrow_mut().push(line);
+    pub(crate) fn print(&self, parts: Vec<PrintPart>) {
+        self.output.borrow_mut().push(printed::text(&parts));
+        self.printed.borrow_mut().push(parts);
     }
 }

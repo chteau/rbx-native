@@ -32,16 +32,16 @@ pub(super) fn format_timestamp(time: SystemTime) -> SharedString {
 }
 
 /// Which color/icon family a row's [`Feedback`] maps to — Studio's Output
-/// window docs give each of its four message kinds its own color and icon;
-/// `TestService.Message`'s blue/info kind has no producer anywhere in this
-/// codebase yet (there is no sandbox to run a `TestService` script in), so
-/// it has no variant here either — see `ROADMAP.md`'s Output window bullet.
+/// window docs give each of its four message kinds its own color and icon.
+/// `Info` is `LogService`'s `MessageInfo`, what `TestService:Message` (and
+/// the engine's own notices) print in a running game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RowKind {
     /// `print` and a script's own successful run — Studio's docs call this
     /// the "default/black text color", i.e. no override at all rather than
     /// a distinct one; see [`RowKind::color`].
     Success,
+    Info,
     Warning,
     Error,
 }
@@ -53,6 +53,7 @@ pub(crate) enum RowKind {
 pub(crate) enum RowColor {
     /// No override — the row keeps whatever text color it already had.
     Default,
+    Info,
     Warning,
     Danger,
 }
@@ -62,6 +63,7 @@ impl RowKind {
         match feedback {
             Feedback::Error(_) => RowKind::Error,
             Feedback::Warning(_) => RowKind::Warning,
+            Feedback::Info(_) => RowKind::Info,
             // `Idle` never reaches an `OutputEntry`: `run_command` always logs
             // a `Feedback::from_run` result (`Output`/`Error`), and
             // `push_warning` always logs `Warning` — there's no path that
@@ -74,6 +76,7 @@ impl RowKind {
     pub(super) fn icon(self) -> IconName {
         match self {
             RowKind::Success => IconName::CircleCheckBig,
+            RowKind::Info => IconName::Info,
             RowKind::Warning => IconName::CircleAlert,
             RowKind::Error => IconName::CircleX,
         }
@@ -82,6 +85,7 @@ impl RowKind {
     pub(super) fn color(self) -> RowColor {
         match self {
             RowKind::Success => RowColor::Default,
+            RowKind::Info => RowColor::Info,
             RowKind::Warning => RowColor::Warning,
             RowKind::Error => RowColor::Danger,
         }
@@ -134,6 +138,14 @@ mod tests {
         assert_eq!(kind, RowKind::Success);
         assert_eq!(kind.color(), RowColor::Default);
         assert_eq!(kind.icon(), IconName::CircleCheckBig);
+    }
+
+    #[test]
+    fn info_maps_to_the_info_color_and_an_info_icon() {
+        let kind = RowKind::of(&Feedback::Info("note".to_string()));
+        assert_eq!(kind, RowKind::Info);
+        assert_eq!(kind.color(), RowColor::Info);
+        assert_eq!(kind.icon(), IconName::Info);
     }
 
     #[test]

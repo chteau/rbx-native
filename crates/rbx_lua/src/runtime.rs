@@ -15,17 +15,26 @@ use crate::debugger::{self, Breakpoint, Paused, Resume};
 use crate::game::LuaGame;
 use crate::instance::LuaInstance;
 use crate::lua_enum::LuaEnums;
+use crate::printed::{self, PrintPart};
 use crate::{datatypes, instance, LuaError};
 
 /// Everything a script printed, in order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Output {
     lines: Vec<String>,
+    printed: Vec<Vec<PrintPart>>,
 }
 
 impl Output {
     pub fn lines(&self) -> &[String] {
         &self.lines
+    }
+
+    /// Each `print` call's arguments, tables kept as trees, one per line of
+    /// [`Output::lines`] — or empty for a debugger run, which hands its
+    /// lines over as they are printed and keeps only the text.
+    pub fn printed(&self) -> &[Vec<PrintPart>] {
+        &self.printed
     }
 
     pub fn text(&self) -> String {
@@ -43,13 +52,20 @@ pub struct Runtime {
     lua: Lua,
     dom: Rc<RefCell<WeakDom>>,
     output: Rc<RefCell<Vec<String>>>,
+    printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
 }
 
 impl Runtime {
     pub fn new(dom: WeakDom, database: ReflectionDatabase) -> Result<Self, LuaError> {
         let dom = Rc::new(RefCell::new(dom));
         let output = Rc::new(RefCell::new(Vec::new()));
-        let ctx = Ctx::new(dom.clone(), Rc::new(database), output.clone());
+        let printed = Rc::new(RefCell::new(Vec::new()));
+        let ctx = Ctx::new(
+            dom.clone(),
+            Rc::new(database),
+            output.clone(),
+            printed.clone(),
+        );
         let lua = Lua::new();
         // Luau's import optimization resolves and caches `a.b.c` chains rooted at a
         // global once per chunk, which would make `workspace.Part.Size` return a
@@ -62,16 +78,23 @@ impl Runtime {
         // point — one command-bar script cannot reshape the next one's environment.
         lua.sandbox(true)?;
 
-        Ok(Runtime { lua, dom, output })
+        Ok(Runtime {
+            lua,
+            dom,
+            output,
+            printed,
+        })
     }
 
     /// Runs a script to completion. Scripts are synchronous: there is no
     /// scheduler, so nothing can yield and no event can fire.
     pub fn run(&mut self, source: &str) -> Result<Output, LuaError> {
         self.output.borrow_mut().clear();
+        self.printed.borrow_mut().clear();
         self.lua.load(source).exec()?;
         Ok(Output {
             lines: std::mem::take(&mut self.output.borrow_mut()),
+            printed: std::mem::take(&mut self.printed.borrow_mut()),
         })
     }
 
@@ -98,8 +121,10 @@ impl Runtime {
             stop,
             on_pause,
         )?;
+        self.printed.borrow_mut().clear();
         Ok(Output {
             lines: std::mem::take(&mut self.output.borrow_mut()),
+            printed: Vec::new(),
         })
     }
 
@@ -112,11 +137,17 @@ impl Runtime {
     }
 
     pub fn into_dom(self) -> WeakDom {
-        let Runtime { lua, dom, output } = self;
+        let Runtime {
+            lua,
+            dom,
+            output,
+            printed,
+        } = self;
         // Closing the VM drops every userdata still holding a handle on the DOM,
         // which is what makes the unwrap below the normal path.
         drop(lua);
         drop(output);
+        drop(printed);
         Rc::try_unwrap(dom)
             .map(RefCell::into_inner)
             .unwrap_or_else(|shared| shared.borrow().clone())
@@ -132,9 +163,9 @@ fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
         lua.create_function(move |_, args: Variadic<Value>| {
             let mut parts = Vec::with_capacity(args.len());
             for value in args.iter() {
-                parts.push(value.to_string()?);
+                parts.push(printed::part(value)?);
             }
-            output_ctx.print(parts.join(" "));
+            output_ctx.print(parts);
             Ok(())
         })?,
     )?;

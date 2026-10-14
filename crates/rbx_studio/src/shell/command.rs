@@ -243,11 +243,15 @@ impl Shell {
         self.dom = dom;
 
         let succeeded = result.is_ok();
-        let feedback = Feedback::from_run(result);
+        let printed = result
+            .as_ref()
+            .map(|output| output.printed().to_vec())
+            .unwrap_or_default();
+        let feedback = Feedback::from_run(result.map(|output| output.lines().to_vec()));
         // Logged before the Command Bar's own label is overwritten below: the
         // Output panel is the only place a run's outcome survives past the
         // next one (see `shell::output`).
-        self.output.push(source, feedback.clone());
+        self.output.push_run(source, feedback.clone(), printed);
         self.command_bar.set_feedback(feedback);
         if succeeded {
             self.rebuild_after_script(cx);

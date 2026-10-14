@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-14
+
+- **Output: context filter, Show Context/Source, an Info kind and
+  expandable tables.** Now that Play messages carry a Server or Client
+  side, Output filters by context (All Contexts, Edit, Server, Client).
+  The overflow menu can hide a Play message's tag (Show Context) or its
+  `Script:line` (Show Source). `TestService:Message` and other info lines
+  from the game get their own blue Info kind and filter bucket. A table
+  printed from the Command Bar shows as a tree you can open and close, as
+  in Studio. Show Tables Expanded by Default, Show Memory Address for
+  Expandable Tables and Log Mode control it. — @chteau
+
 ## 2026-10-13
 
 - **A theme browser, download progress, theme fonts and themeable
