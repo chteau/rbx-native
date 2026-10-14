@@ -202,6 +202,7 @@ pub(crate) enum StopReason {
     /// The client process exited (Sober closed).
     ClientExited,
     /// The embedded window disappeared.
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     WindowClosed,
     /// The developer's own player left the game.
     PlayerLeft,

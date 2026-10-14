@@ -108,6 +108,7 @@ struct Session {
     last_rect: Option<session::rbx_play_rect::Rect>,
     /// The embedded window is hidden because another document (Scripts,
     /// UI Editor, Animation) took the room the 3D view had.
+    #[cfg(any(target_os = "linux", windows))]
     hidden: bool,
 }
 
@@ -494,6 +495,7 @@ impl Shell {
                     client,
                     own_user: None,
                     last_rect: None,
+                    #[cfg(any(target_os = "linux", windows))]
                     hidden: false,
                 });
                 Ok(shell.play_embed_target(cx))
@@ -599,6 +601,7 @@ impl Shell {
     }
 
     fn play_tick(&mut self, cx: &mut Context<Self>) -> bool {
+        #[cfg(any(target_os = "linux", windows))]
         let target = self.play_embed_target(cx);
         let Some(channel) = self.play.link.as_ref().map(|link| Rc::clone(&link.channel)) else {
             return false;
@@ -642,6 +645,7 @@ impl Shell {
             }
         }
         // The game replaces the 3D view only: another document hides it.
+        #[cfg(any(target_os = "linux", windows))]
         let on_viewport = self.document == super::chrome::Document::Viewport;
         let Some(running) = self.play.session.as_mut() else {
             return false;
@@ -742,6 +746,7 @@ impl Shell {
             // Hidden before the client is killed and the window handed back
             // to the root, so nothing flashes on the desktop.
             #[cfg(any(target_os = "linux", windows))]
+            #[cfg_attr(windows, allow(clippy::drop_non_drop))]
             drop(running.focus);
             #[cfg(any(target_os = "linux", windows))]
             if let Some(embedded) = &running.embedded {
