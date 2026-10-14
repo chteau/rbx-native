@@ -6,6 +6,7 @@
 //! - `tunnel`: starts a public tunnel to that server and scrapes its URL.
 //! - `inject`: adds the probe and the flags it needs to the DOM before publish.
 //! - `instrument`: rewrites a script with debugger hooks for Play.
+//! - `market`: rewrites a script's `MarketplaceService` lookups to the mock.
 //! - `launch`: the `roblox://` join URI and the program that opens it.
 //! - `value`: Roblox values ↔ JSON, both ways, for live properties.
 //! - `live`: a side's live instance tree as a `WeakDom`, from `Tree`/`Diff`/`Props`.
@@ -19,6 +20,7 @@ pub mod inject;
 pub mod instrument;
 pub mod launch;
 pub mod live;
+pub mod market;
 pub mod protocol;
 pub mod tunnel;
 pub mod value;

@@ -200,3 +200,39 @@ fn scripts_with_breakpoints_publish_with_hooks() {
         Some("local a = 1\nprint(a)\n")
     );
 }
+
+fn source_named(dom: &WeakDom, name: &str) -> Option<String> {
+    let mut stack: Vec<_> = dom.root_refs().to_vec();
+    while let Some(r) = stack.pop() {
+        let inst = dom.get(r)?;
+        if inst.name() == name {
+            return crate::script_editor::source::read(dom, r);
+        }
+        stack.extend(inst.children().iter().copied());
+    }
+    None
+}
+
+#[test]
+fn marketplace_scripts_are_rewritten_in_the_copy_only() {
+    let mut dom = WeakDom::new();
+    let sss = dom.new_instance("ServerScriptService", "ServerScriptService", None);
+    let shop = dom.new_instance("Script", "Shop", Some(sss));
+    let plain = dom.new_instance("Script", "Plain", Some(sss));
+    let shop_src = "local m = game:GetService(\"MarketplaceService\")\n";
+    assert!(crate::script_editor::source::write(
+        &mut dom, shop, shop_src
+    ));
+    assert!(crate::script_editor::source::write(
+        &mut dom,
+        plain,
+        "print(1)\n"
+    ));
+    let prepared = prepare(&dom, &config(), &[]).unwrap();
+    let back = rbx_binary::deserialize(prepared.bytes.as_slice()).unwrap();
+    assert!(source_named(&back, "Shop")
+        .unwrap()
+        .contains("__rbxnative_market"));
+    assert_eq!(source_named(&back, "Plain").as_deref(), Some("print(1)\n"));
+    assert_eq!(source_named(&dom, "Shop").as_deref(), Some(shop_src));
+}

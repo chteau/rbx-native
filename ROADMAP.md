@@ -2577,8 +2577,7 @@ Roblox's own engine.
 - [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
   shipped (see "What's been implemented" → Editor); these rows are drawn
   there, faded and inert, until what they stand for exists:
-  Play's **test-copy name** (Play itself is still the open sandbox design
-  under Play / Test),
+  Play's **test-copy name**,
   **several accounts**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and
@@ -2612,8 +2611,8 @@ Roblox's own engine.
   `execute_luau` over the existing Command Bar's DataModel access,
   `inspect_instance`/`search_game_tree` over the Explorer/Properties
   panel's existing DOM access, `screen_capture` over the viewport, and
-  `start_stop_play`/`get_console_output` over the sandbox Play workaround
-  and Output dock. Two sub-capabilities are **not** reachable the same
+  `start_stop_play`/`get_console_output` over Play (see
+  [Play / Test workflow](#play--test-workflow)) and the Output dock. Two sub-capabilities are **not** reachable the same
   way: `search_asset`/`insert_asset` depend on Roblox's Creator Store/
   Creator Inventory catalog — the same
   [Toolbox/marketplace parity](#explicitly-impossible-without-robloxs-engine)
@@ -2671,6 +2670,26 @@ Roblox's own engine.
   view); the session lives in the system keychain.
 - [x] The embedded game hides while another document (Scripts, UI
   Editor, Animation) has the 3D view's room.
+- [x] **Test purchases (game passes, developer products)**
+  (`rbx_play::market`, the probe's `market`/`market_ui` modules): the
+  sandbox is a real published place, so `MarketplaceService`'s own prompts
+  would charge real Robux. Play rewrites every
+  `GetService("MarketplaceService")` in the published copy's scripts
+  (in place, so lines and breakpoints hold) into a proxy, and game code
+  needs no change. `PromptProductPurchase`/`PromptGamePassPurchase` (from
+  the server or the client) open a copy of Roblox's test-purchase dialog,
+  matched to the pixel against Roblox's own (its layout, the 0.3 s slide
+  and fade, the backdrop, the 0.65 s Buy delay, hovers, "Purchase
+  completed"). A bought pass is owned for the session (both sides'
+  `UserOwnsGamePassAsync`); a product calls the game's `ProcessReceipt`
+  with a `DEV-` receipt, retried on the next purchase until it is granted;
+  both `…PurchaseFinished` signals fire. No `IsStudio()` patch and no
+  separate DataStore scope are needed: game code is untouched and the
+  sandbox universe's DataStores are already apart from production. Not
+  covered: `PromptPurchase`/subscriptions/bundles pass through to the real
+  prompts, and a service name built at runtime (not a string literal) is
+  not rewritten. `examples/market_place.rs` writes the probed copy for a
+  check in real Studio.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
@@ -2684,8 +2703,8 @@ Roblox's own engine.
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/
   headset screen size, pixel density, and input mode. The sandbox
-  workaround's mirror `LocalScript` (see
-  [Possible via a workaround](#play--test-a-private-sandbox--probe))
+  probe's mirror `LocalScript` (see
+  [Play / Test workflow](#play--test-workflow))
   already reports real client state back over a `RemoteEvent`, which is
   the right channel for something like this in principle — but whether a
   `LocalScript` can *legitimately* override what the real client reports
@@ -2699,9 +2718,9 @@ Roblox's own engine.
 - [ ] ⚠️ **Network Simulator equivalent** — real Studio's tool
   (`studio/network-simulator.md`) adds configurable latency/jitter/packet
   loss independently to inbound and outbound playtest traffic. More
-  directly reachable than Device Simulator above: the sandbox design's own
+  directly reachable than Device Simulator above: the sandbox's own
   Cloudflare-tunnel relay (see
-  [Possible via a workaround](#play--test-a-private-sandbox--probe)) is
+  [Play / Test workflow](#play--test-workflow)) is
   already the one chokepoint all probe traffic passes through, so
   delaying/dropping batched diffs and long-poll responses there
   approximates the same effect without needing any Roblox-side cooperation
@@ -2975,7 +2994,7 @@ clear they were considered and not missed.
 - [ ] ⚠️ **Multiple client views** (Late 2026), **Teleports in Studio** and
   **on-device testing** (both Early 2027), and **early testing** with up to
   10 friends (Late 2026). All four ride on the
-  [sandbox design](#play--test-a-private-sandbox--probe).
+  [sandbox Play](#play--test-workflow).
   - Multiple clients means several real clients joined to the same sandbox
     server. Each mirror `LocalScript` already reports its own state.
   - Teleports need a second sandbox place in the same universe.
@@ -3014,8 +3033,9 @@ clear they were considered and not missed.
   - The **streamlined publishing flow** and the **pre-publish asset
     moderation signals** would show up in Save/Publish, if Open Cloud
     exposes them.
-  - **Free trials for passes** is one more case for the monetization mocking
-    layer below: a pass owned for exactly one session.
+  - **Free trials for passes** is one more case for Play's test purchases
+    (see [Play / Test workflow](#play--test-workflow)), whose passes already
+    last exactly one session.
 
 ## Explicitly impossible without Roblox's engine
 
@@ -3025,7 +3045,8 @@ and no amount of reverse engineering changes that:
 
 - **Playing or testing a live game with real physics and client/server
   replication.** rbx-native can never have a native "Play" button in the
-  way Studio does — see the workaround below for what's actually reachable.
+  way Studio does — see [Play / Test workflow](#play--test-workflow) for
+  the private sandbox that stands in for it.
 - **Team Create** — proprietary real-time collaboration, no public
   equivalent API.
 - **Toolbox/marketplace parity** — public APIs (Creator Store, Open Cloud,
@@ -3053,75 +3074,6 @@ and no amount of reverse engineering changes that:
   pushes it.
 
 ## Possible via a workaround
-
-### Play / Test: a private sandbox + probe
-
-You can't run Roblox's engine locally, but you *can* run a real, private
-Roblox place and puppet it from the editor:
-
-1. A private place, one per developer, created once by hand in a test
-   universe. "Play" = `rbx_cloud::publish_place` of the currently-edited
-   place after injecting a probe (implemented client, never yet exercised
-   for real).
-2. Launch the real client — Sober (Flatpak) on Linux, `RobloxPlayerBeta.exe`
-   on Windows, both via the `roblox://placeId=…` protocol. Launched as an
-   ordinary top-level window today; embedding it borderless inside
-   `rbxstudio`'s own dock, the way real Studio's own "Play" runs the
-   client inside the editor window rather than a separate one, is a real,
-   separate follow-up — X11 supports reparenting another process's window
-   into one of this app's own (the same mechanism a panel-embedding
-   taskbar or a browser's PiP window uses), but Windows would need its own
-   platform-specific approach, and neither has been investigated yet.
-   Genuinely optional: everything else in this plan works the same with
-   the client in its own window.
-3. Before publishing, inject into the in-memory DOM only (never the real
-   saved file): `HttpService.HttpEnabled = true`,
-   `ServerScriptService.LoadStringEnabled = true`, a probe `Script`, and a
-   mirror `LocalScript` that reports client state back over a
-   `RemoteEvent`.
-4. A Cloudflare quick tunnel in front of a small HTTP server inside
-   `rbxstudio`: the probe posts batched diffs (~200ms) and long-polls for
-   commands. `HttpService` is HTTP-only (no WebSocket), ~500 req/min.
-5. The sandbox place is anonymized by default — randomized name, no
-   description/icon, private visibility — configurable via settings.
-6. Hot-reload via `loadstring`, so iteration doesn't need republishing
-   every change; one publish per session.
-
-### Monetization testing (gamepasses, developer products) inside the sandbox
-
-The sandbox above gets you a running game, but `MarketplaceService`'s real
-purchase prompts talk to Roblox's live payment servers — not something to
-trigger from a dev sandbox. The workaround is a mocking layer the game's
-own scripts call instead of the native API directly:
-
-1. **Force `RunService:IsStudio()`.** Either monkey-patch it in Luau at the
-   top of the sandbox's bootstrap script (`RunService.IsStudio = function()
-   return true end`), or, if working at the API-binding layer, make the
-   binding always return `true` in a playtest build.
-2. **A `MonetizationManager` wrapper.** Game code calls this instead of
-   `MarketplaceService` directly; it checks `IsStudio()` and, in the
-   sandbox, intercepts the purchase locally instead of calling
-   `PromptGamePassPurchase`/`PromptProductPurchase`.
-3. **A fake "Dev-Wallet".** On join, give the test player a default
-   balance of fictional currency (a plain value or table); debit it
-   locally when a purchase is "made".
-4. **A separate DataStore scope for dev purchases** (e.g.
-   `Dev_Purchases_v1`) so test transactions never touch production data.
-5. **Manually drive `ProcessReceipt`.** Real Developer Products rely on
-   Roblox calling the game's `ProcessReceipt` callback after a real
-   purchase — since the real prompt is short-circuited, the wrapper must
-   call it itself with a fabricated `ReceiptInfo` table (`PlayerId`,
-   `PlaceId`, `ProductId`, a `"DEV-" .. HttpService:GenerateGUID(false)`
-   purchase id, a fake `CurrencySpent`), or that callback never fires and
-   the purchase never actually resolves in-game.
-
-Not implemented yet — this is a design, not code — but it's a real,
-workable path to testing a full monetization loop without touching real
-accounts or real Robux, and it composes with the sandbox above rather than
-needing a separate mechanism. Open question this roadmap doesn't answer
-yet: whether the dev-purchase DataStore scope should live in real Roblox
-DataStores (simplest, reuses the sandbox's own persistence) or a fully
-local store — revisit when the sandbox itself is actually implemented.
 
 ### AI content generation
 
@@ -3156,8 +3108,7 @@ reachable is the same workflow shape with a different backend:
    write path to.
 
 Not implemented, not even designed in detail yet — recorded here as a
-real, workable shape rather than a rejected idea, the same "design, not
-code" status the monetization workaround above has.
+real, workable shape rather than a rejected idea.
 
 ### Studio fallback
 

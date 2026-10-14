@@ -16,6 +16,10 @@ pub const PROBE_CODEC: &str = include_str!("probe/codec.luau");
 pub const PROBE_LIVE: &str = include_str!("probe/live.luau");
 /// The debugger module both sides `require` (ModuleScript in ReplicatedStorage).
 pub const PROBE_DEBUG: &str = include_str!("probe/debug.luau");
+/// The purchase-mocking module both sides `require` (ModuleScript in ReplicatedStorage).
+pub const PROBE_MARKET: &str = include_str!("probe/market.luau");
+/// The purchase prompt UI the market module drives (ModuleScript in ReplicatedStorage).
+pub const PROBE_MARKET_UI: &str = include_str!("probe/market_ui.luau");
 pub const DEBUG_NAME: &str = "__rbxnative_debug";
 pub const CODEC_NAME: &str = "__rbxnative_codec";
 pub const LIVE_NAME: &str = "__rbxnative_live";
@@ -47,6 +51,8 @@ pub struct Injected {
     pub codec: Ref,
     pub live: Ref,
     pub debug: Ref,
+    pub market: Ref,
+    pub market_ui: Ref,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +72,8 @@ pub enum InjectError {
 ///   in those parents, then adds: `Script` `PROBE_NAME` (Source = `PROBE_SERVER`,
 ///   attributes BASE/TOKEN/SESSION as strings), `RemoteEvent` `REMOTE_NAME` in
 ///   ReplicatedStorage, `LocalScript` `MIRROR_NAME` (Source = `PROBE_CLIENT`).
+/// - Replaces the ReplicatedStorage `ModuleScript`s `MARKET_NAME`
+///   (Source = `PROBE_MARKET`) and `MARKET_UI_NAME` (Source = `PROBE_MARKET_UI`).
 pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, InjectError> {
     if dom.root_refs().is_empty() {
         return Err(InjectError::NoDataModel);
@@ -91,6 +99,23 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, rs, CODEC_NAME);
     remove_named(dom, rs, LIVE_NAME);
     remove_named(dom, rs, DEBUG_NAME);
+    remove_named(dom, rs, crate::market::MARKET_NAME);
+    remove_named(dom, rs, crate::market::MARKET_UI_NAME);
+
+    let market = dom.new_instance("ModuleScript", crate::market::MARKET_NAME, Some(rs));
+    set_prop(
+        dom,
+        market,
+        "Source",
+        Variant::String(PROBE_MARKET.to_owned()),
+    );
+    let market_ui = dom.new_instance("ModuleScript", crate::market::MARKET_UI_NAME, Some(rs));
+    set_prop(
+        dom,
+        market_ui,
+        "Source",
+        Variant::String(PROBE_MARKET_UI.to_owned()),
+    );
 
     let codec = dom.new_instance("ModuleScript", CODEC_NAME, Some(rs));
     set_prop(
@@ -148,6 +173,8 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         codec,
         live,
         debug,
+        market,
+        market_ui,
     })
 }
 

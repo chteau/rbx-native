@@ -14,6 +14,9 @@ local codec = require(ReplicatedStorage:WaitForChild("__rbxnative_codec"))
 local Live = require(ReplicatedStorage:WaitForChild("__rbxnative_live"))
 
 local Debug = require(ReplicatedStorage:WaitForChild("__rbxnative_debug"))
+-- Game scripts' MarketplaceService is rewritten to this module's proxy
+-- (test purchases); start it before any of them prompts.
+require(ReplicatedStorage:WaitForChild("__rbxnative_market")).start()
 
 local t0 = os.clock()
 local buffer = {}
