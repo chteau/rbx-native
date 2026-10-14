@@ -15,6 +15,16 @@ impl Shell {
         cx.notify();
     }
 
+    pub(in crate::shell) fn set_output_display(
+        &mut self,
+        display: crate::settings::OutputDisplay,
+        cx: &mut Context<Self>,
+    ) {
+        self.output_display = display;
+        self.save_settings();
+        cx.notify();
+    }
+
     pub(in crate::shell) fn set_optimize_graph_on_open(
         &mut self,
         on: bool,

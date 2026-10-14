@@ -218,7 +218,7 @@ mod tests {
     use std::path::Path;
 
     use crate::command_bar::Feedback;
-    use crate::shell::output::{OutputFilter, OutputLog};
+    use crate::shell::output::{ContextFilter, OutputFilter, OutputLog};
 
     use super::record_outcome;
 
@@ -234,7 +234,9 @@ mod tests {
         let feedback = record_outcome(&mut log, Err("disk full".into()), Path::new("place.rbxl"));
 
         assert!(feedback.is_error());
-        let errors: Vec<_> = log.filtered(OutputFilter::Errors, "").collect();
+        let errors: Vec<_> = log
+            .filtered(OutputFilter::Errors, ContextFilter::All, "")
+            .collect();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].source(), "Save");
         assert!(!feedback.shown_inline(false), "the label is off by default");
@@ -246,7 +248,9 @@ mod tests {
 
         record_outcome(&mut log, Ok(()), Path::new("place.rbxl"));
 
-        let rows: Vec<_> = log.filtered(OutputFilter::Output, "place.rbxl").collect();
+        let rows: Vec<_> = log
+            .filtered(OutputFilter::Output, ContextFilter::All, "place.rbxl")
+            .collect();
         assert_eq!(rows.len(), 1, "the row names the file that was written");
     }
 

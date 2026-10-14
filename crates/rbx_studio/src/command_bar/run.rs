@@ -15,16 +15,13 @@ pub(crate) fn run(
     dom: WeakDom,
     database: &ReflectionDatabase,
     source: &str,
-) -> (WeakDom, Result<Vec<String>, String>) {
+) -> (WeakDom, Result<rbx_lua::Output, String>) {
     let mut runtime = match Runtime::new(dom, database.clone()) {
         Ok(runtime) => runtime,
         Err(err) => return (WeakDom::new(), Err(err.to_string())),
     };
 
-    let result = runtime
-        .run(source)
-        .map(|output| output.lines().to_vec())
-        .map_err(|err| err.to_string());
+    let result = runtime.run(source).map_err(|err| err.to_string());
     (runtime.into_dom(), result)
 }
 
@@ -66,7 +63,7 @@ mod tests {
 
         let (_, result) = run(dom, &database, "print(1) print(2)");
 
-        assert_eq!(result.expect("script should run"), vec!["1", "2"]);
+        assert_eq!(result.expect("script should run").lines(), ["1", "2"]);
     }
 
     #[test]

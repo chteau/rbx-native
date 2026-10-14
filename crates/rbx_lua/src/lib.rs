@@ -14,11 +14,13 @@ mod instance;
 mod lua_enum;
 mod not_creatable;
 pub mod pivot;
+mod printed;
 mod property;
 mod runtime;
 
 pub use debugger::{Breakpoint, Frame, Paused, Resume, Variable, STOPPED};
 pub use mlua::Error as LuaError;
+pub use printed::{PrintPart, PrintValue, TableDump, TableEntry};
 pub use runtime::{Output, Runtime};
 
 /// Whether `source` compiles as Luau (nothing runs). `Err` is the

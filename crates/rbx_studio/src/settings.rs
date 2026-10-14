@@ -22,9 +22,11 @@ use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) mod argon;
 mod controls;
 mod dragger;
+mod output_display;
 
 pub(crate) use controls::{Controls, FEEL_SCALE_RANGE};
 pub(crate) use dragger::DraggerSettings;
+pub(crate) use output_display::OutputDisplay;
 
 /// What persists across a relaunch.
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +99,8 @@ pub(crate) struct Settings {
     pub(crate) output_collapsed: bool,
     /// Whether Output rows print their time.
     pub(crate) output_timestamps: bool,
+    /// The rest of the Output panel's "level of detail" toggles.
+    pub(crate) output_display: OutputDisplay,
     /// Whether opening a script's Graph side tidies it, rather than
     /// restoring the layout saved for it.
     pub(crate) optimize_graph_on_open: bool,
@@ -211,6 +215,7 @@ impl Default for Settings {
             named_layouts: Vec::new(),
             output_collapsed: false,
             output_timestamps: false,
+            output_display: OutputDisplay::default(),
             optimize_graph_on_open: false,
             increment_names: true,
             expand_on_select: true,
@@ -403,6 +408,7 @@ fn load_from(path: &Path) -> Settings {
             .get("output_timestamps")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        output_display: OutputDisplay::read(&value),
         optimize_graph_on_open: value
             .get("optimize_graph_on_open")
             .and_then(|v| v.as_bool())
@@ -679,6 +685,11 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
             .collect::<Vec<_>>(),
         "output_collapsed": settings.output_collapsed,
         "output_timestamps": settings.output_timestamps,
+        "output_show_context": settings.output_display.context,
+        "output_show_source": settings.output_display.source,
+        "output_tables_expanded": settings.output_display.tables_expanded,
+        "output_table_addresses": settings.output_display.table_addresses,
+        "output_log_mode": settings.output_display.log_mode,
         "optimize_graph_on_open": settings.optimize_graph_on_open,
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
@@ -1224,6 +1235,12 @@ mod tests {
             },
             output_collapsed: true,
             output_timestamps: true,
+            output_display: OutputDisplay {
+                context: false,
+                tables_expanded: true,
+                log_mode: true,
+                ..OutputDisplay::default()
+            },
             large_targets: true,
             reduce_motion: Some(true),
             ..Settings::default()
@@ -1234,6 +1251,7 @@ mod tests {
         assert_eq!(read.docks, settings.docks, "which panel sits where");
         assert!(read.output_collapsed);
         assert!(read.output_timestamps);
+        assert_eq!(read.output_display, settings.output_display);
         assert!(read.large_targets);
         assert_eq!(read.reduce_motion, Some(true));
 

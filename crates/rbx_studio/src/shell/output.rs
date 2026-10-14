@@ -18,23 +18,31 @@
 //! than working with it. A clickable list gets the same "browse and recall"
 //! behaviour without the fight.
 
+use std::collections::HashSet;
 use std::time::SystemTime;
 
+use rbx_lua::PrintPart;
+
 use crate::shell::chrome::ScrollbarY as _;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
-use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::v_flex;
 use gpui_kit::*;
 
 use crate::tokens;
 
 use crate::command_bar::Feedback;
 
-use row_kind::{format_timestamp, RowColor, RowKind};
+use row_kind::{format_timestamp, RowKind};
 
 use super::Shell;
 
+mod controls;
+mod filter;
 pub(crate) mod game;
 mod row_kind;
+mod rows;
+mod tables;
+
+pub(crate) use filter::{ContextFilter, OutputFilter};
 
 /// How many runs the log keeps before dropping the oldest. Unlike
 /// `History`'s 50 (whole-DOM snapshots, genuinely expensive to keep many of),
@@ -65,6 +73,9 @@ const SEARCH_MIN_WIDTH: f32 = 140.0;
 /// One run's worth of history: what was typed and what it did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OutputEntry {
+    /// Unique for the log's lifetime, unlike a position that shifts as the
+    /// oldest entries drop: what a table's open/closed state is keyed by.
+    id: u64,
     source: String,
     feedback: Feedback,
     /// Captured unconditionally at [`OutputEntry::new`] time — cheap to keep
@@ -76,16 +87,27 @@ pub(crate) struct OutputEntry {
     /// such a row shows its Server/Client tag and, for an error, a link to
     /// where it happened instead of a Command Bar source.
     game: Option<game::GameMessage>,
+    /// A Command Bar run's `print` calls with their tables kept as trees
+    /// (see `tables`); empty when nothing it printed was a table.
+    printed: Vec<Vec<PrintPart>>,
 }
 
 impl OutputEntry {
-    fn new(source: &str, feedback: Feedback) -> Self {
+    fn new(id: u64, source: &str, feedback: Feedback) -> Self {
         OutputEntry {
+            id,
             source: source.to_string(),
             feedback,
             timestamp: SystemTime::now(),
             game: None,
+            printed: Vec::new(),
         }
+    }
+
+    /// Where the message came from: the game's side during Play, `None` for
+    /// everything said in edit mode.
+    pub(crate) fn context(&self) -> Option<game::Context> {
+        self.game.as_ref().map(|message| message.context)
     }
 
     pub(crate) fn is_error(&self) -> bool {
@@ -141,51 +163,17 @@ fn truncate(text: &str, max_len: usize) -> SharedString {
     }
 }
 
-/// Which entries [`OutputLog::filtered`] shows — Studio's own Output window
-/// "filters output by type, such as **Error** or **Warning**"
-/// (`studio/output.md`), and these are the three types this editor can
-/// actually produce: a `print`/successful run, an app-level warning
-/// ([`OutputLog::push_warning`]) and a failed run. `TestService.Message`'s
-/// blue/info kind has no producer here until a sandbox exists to run one in,
-/// so it gets no bucket either.
-///
-/// One bucket means exactly one kind, which is why a warning no longer shows
-/// under `Output`: a bucket that quietly held two kinds would make the
-/// warnings one unable to answer "what is *only* a warning".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum OutputFilter {
-    #[default]
-    All,
-    Output,
-    Warnings,
-    Errors,
-}
-
-impl OutputFilter {
-    fn matches(self, entry: &OutputEntry) -> bool {
-        match self {
-            OutputFilter::All => true,
-            OutputFilter::Output => entry.kind() == RowKind::Success,
-            OutputFilter::Warnings => entry.kind() == RowKind::Warning,
-            OutputFilter::Errors => entry.is_error(),
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            OutputFilter::All => "All",
-            OutputFilter::Output => "Output",
-            OutputFilter::Warnings => "Warnings",
-            OutputFilter::Errors => "Errors",
-        }
-    }
-}
-
 /// A bounded, append-only log of Command Bar runs — oldest first, newest at
 /// the bottom, the order Studio's own Output window scrolls in.
 #[derive(Default)]
 pub(crate) struct OutputLog {
     entries: Vec<OutputEntry>,
+    next_id: u64,
+    /// Printed tables whose open state is the opposite of the default (see
+    /// `OutputDisplay::tables_expanded`), as (entry id, path of entry
+    /// indices from the printed table down). Flipping the default then
+    /// flips every untouched table and keeps what was clicked clicked.
+    flipped: HashSet<(u64, Vec<u32>)>,
 }
 
 impl OutputLog {
@@ -193,9 +181,43 @@ impl OutputLog {
     /// already at [`CAP`] — same drop-oldest shape as `History::push`.
     pub(crate) fn push(&mut self, source: &str, feedback: Feedback) {
         if self.entries.len() >= CAP {
-            self.entries.remove(0);
+            let dropped = self.entries.remove(0).id;
+            self.flipped.retain(|(id, _)| *id != dropped);
         }
-        self.entries.push(OutputEntry::new(source, feedback));
+        self.entries
+            .push(OutputEntry::new(self.next_id, source, feedback));
+        self.next_id += 1;
+    }
+
+    /// [`OutputLog::push`] for a Command Bar run, keeping its `print` calls'
+    /// structure when one of them printed a table.
+    pub(crate) fn push_run(
+        &mut self,
+        source: &str,
+        feedback: Feedback,
+        printed: Vec<Vec<PrintPart>>,
+    ) {
+        self.push(source, feedback);
+        let has_table = printed
+            .iter()
+            .flatten()
+            .any(|part| matches!(part, PrintPart::Table(_)));
+        if let (true, Some(entry)) = (has_table, self.entries.last_mut()) {
+            entry.printed = printed;
+        }
+    }
+
+    /// Whether the printed table at `path` in entry `id` is open, given
+    /// whether tables open by default.
+    pub(crate) fn table_open(&self, id: u64, path: &[u32], by_default: bool) -> bool {
+        by_default != self.flipped.contains(&(id, path.to_vec()))
+    }
+
+    pub(crate) fn toggle_table(&mut self, id: u64, path: Vec<u32>) {
+        let key = (id, path);
+        if !self.flipped.remove(&key) {
+            self.flipped.insert(key);
+        }
     }
 
     /// [`OutputLog::push`], unless the newest entry is already this very one
@@ -220,7 +242,10 @@ impl OutputLog {
     /// included; `game::parse` splits it for the row.
     pub(crate) fn push_game(&mut self, context: game::Context, feedback: Feedback) {
         let text = match &feedback {
-            Feedback::Output(text) | Feedback::Error(text) | Feedback::Warning(text) => text,
+            Feedback::Output(text)
+            | Feedback::Info(text)
+            | Feedback::Error(text)
+            | Feedback::Warning(text) => text,
             Feedback::Idle => return,
         };
         let message = game::parse(context, text);
@@ -241,6 +266,7 @@ impl OutputLog {
 
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
+        self.flipped.clear();
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -251,18 +277,19 @@ impl OutputLog {
         self.entries.len()
     }
 
-    /// The entries the panel draws: the level filter, then the search box's
-    /// text narrowing what survives it. `query` is taken already trimmed —
+    /// The entries the panel draws: the level and context filters, then the
+    /// search box's text narrowing what survives them. `query` is taken already trimmed —
     /// the caller reads it off an `InputState`, where a trailing space is a
     /// keystroke in progress rather than part of what is being looked for.
     pub(crate) fn filtered<'a>(
         &'a self,
         filter: OutputFilter,
+        context: ContextFilter,
         query: &'a str,
     ) -> impl Iterator<Item = &'a OutputEntry> {
-        self.entries
-            .iter()
-            .filter(move |entry| filter.matches(entry) && entry.matches_query(query))
+        self.entries.iter().filter(move |entry| {
+            filter.matches(entry) && context.matches(entry) && entry.matches_query(query)
+        })
     }
 }
 
@@ -284,111 +311,17 @@ impl Shell {
         window.focus(&handle, cx);
     }
 
-    /// The Output dock's strip controls (see `shell::workspace`): the run
-    /// count, then — at the strip's far end — the search box, the level
-    /// filter and the Clear button.
-    pub(super) fn output_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let current = self.output_filter;
-        h_flex()
-            .flex_1()
-            .h_full()
-            .items_center()
-            .gap(px(8.))
-            .child(
-                div()
-                    .flex_none()
-                    .ml(px(16.))
-                    .text_size(tokens::text_xs())
-                    .line_height(tokens::line_xs())
-                    .text_color(tokens::text_placeholder())
-                    .child(format!("{} runs", self.output.len())),
-            )
-            // No subscription behind it: the value is read straight off the
-            // `InputState` at render, the same way the Properties panel's
-            // own filter box is (`shell::panels`). Takes all the width the
-            // strip has left, as the reference's own search does.
-            .child(div().flex_1().min_w(px(SEARCH_MIN_WIDTH)).child(
-                super::workspace::search_field_compact(&self.tab_order, &self.output_search, cx),
-            ))
-            .child(
-                // One segmented control, not four separate buttons: the
-                // reference draws the four levels as segments of a single
-                // `field_select` pill, the active one carrying the accent.
-                h_flex()
-                    .flex_none()
-                    .bg(tokens::field_select())
-                    .rounded(tokens::radius())
-                    .p(px(2.))
-                    .gap(px(2.))
-                    .children(
-                        [
-                            OutputFilter::All,
-                            OutputFilter::Output,
-                            OutputFilter::Warnings,
-                            OutputFilter::Errors,
-                        ]
-                        .map(|level| {
-                            let selected = current == level;
-                            h_flex()
-                                .id(("output-filter", level as usize))
-                                .tab_index(self.tab_order.next())
-                                .items_center()
-                                .px(px(9.))
-                                .py(px(3.))
-                                .rounded(tokens::radius_segment())
-                                .text_size(tokens::text_xs())
-                                .line_height(tokens::line_xs())
-                                .cursor_pointer()
-                                .map(|this| {
-                                    if selected {
-                                        this.bg(tokens::accent_soft())
-                                            .text_color(tokens::check_on())
-                                            .font_weight(tokens::WEIGHT_SEMIBOLD)
-                                    } else {
-                                        this.text_color(tokens::text_placeholder()).hover(|this| {
-                                            tokens::hover_fx(this).bg(tokens::hover())
-                                        })
-                                    }
-                                })
-                                .on_click(cx.listener(move |shell, _, _, cx| {
-                                    shell.output_filter = level;
-                                    cx.notify();
-                                }))
-                                .child(level.label())
-                        }),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .id("output-clear")
-                    .tab_index(self.tab_order.next())
-                    .flex_none()
-                    .px(px(8.))
-                    .py(px(3.))
-                    .rounded(tokens::radius())
-                    .cursor_pointer()
-                    .text_size(tokens::text_xs())
-                    .line_height(tokens::line_xs())
-                    .text_color(tokens::text_placeholder())
-                    .hover(|this| {
-                        tokens::hover_fx(this)
-                            .bg(tokens::hover())
-                            .text_color(tokens::text_strong())
-                    })
-                    .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
-                    .on_click(cx.listener(|shell, _, _, cx| {
-                        shell.output.clear();
-                        cx.notify();
-                    }))
-                    .child("Clear"),
-            )
-    }
-
     pub(super) fn output_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let filter = self.output_filter;
-        let show_timestamp = self.output_show_timestamps;
+        let show = rows::Show {
+            timestamp: self.output_show_timestamps,
+            display: self.output_display,
+        };
         let query = self.output_search.read(cx).value().trim().to_lowercase();
-        let entries: Vec<&OutputEntry> = self.output.filtered(filter, &query).collect();
+        let entries: Vec<&OutputEntry> = self
+            .output
+            .filtered(filter, self.output_context, &query)
+            .collect();
 
         let list = if entries.is_empty() {
             v_flex().flex_1().p_2().child(
@@ -405,7 +338,7 @@ impl Shell {
         } else {
             let mut rows = v_flex().flex_1();
             for (index, entry) in entries.into_iter().enumerate() {
-                rows = rows.child(output_row(entry, index, show_timestamp, cx));
+                rows = rows.child(rows::output_row(entry, index, show, &self.output, cx));
             }
             rows
         };
@@ -421,190 +354,6 @@ impl Shell {
                 .scrollbar_y(&self.output_scroll),
         )
     }
-}
-
-/// One row of the log: a per-kind icon (see `row_kind::RowKind`), optionally
-/// that entry's timestamp, the truncated source that was run, and the result
-/// label — clicking anywhere on the row recalls that source into the Command
-/// Bar.
-fn output_row(
-    entry: &OutputEntry,
-    index: usize,
-    show_timestamp: bool,
-    cx: &mut Context<Shell>,
-) -> AnyElement {
-    if let Some(message) = &entry.game {
-        return game_row(entry, message, index, show_timestamp, cx).into_any_element();
-    }
-    let kind = entry.kind();
-    let color = match kind.color() {
-        RowColor::Default => None,
-        RowColor::Warning => Some(cx.theme().warning),
-        RowColor::Danger => Some(cx.theme().danger),
-    };
-    let icon = Icon::new(kind.icon()).small();
-    let icon = match color {
-        Some(color) => icon.text_color(color),
-        None => icon,
-    };
-    let source = entry.source().to_string();
-
-    let mut row = h_flex()
-        .id(format!("output-entry-{index}"))
-        .w_full()
-        .items_start()
-        .gap_2()
-        .px_2()
-        .py_1()
-        .on_click(cx.listener(move |shell, _, window, cx| {
-            shell.recall_command(&source, window, cx);
-        }))
-        // Top-aligned so a wrapped message keeps its icon and source on its
-        // first line. The zero-width space makes the icon's box one text
-        // line tall, centring it on that line as `items_center` did on a
-        // single-line row.
-        .child(h_flex().flex_none().text_xs().child(icon).child("\u{200B}"));
-
-    if show_timestamp {
-        row = row.child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(entry.timestamp_label()),
-        );
-    }
-
-    // `min_w_0` is what wraps a long message instead of cutting it at the
-    // panel edge: gpui measures text's min-content width unwrapped, so
-    // without it the label refuses to shrink and runs out of the row.
-    let mut result_label = div().min_w_0().text_xs().child(entry.label());
-    if let Some(color) = color {
-        result_label = result_label.text_color(color);
-    }
-
-    row.child(div().flex_1().text_xs().child(entry.truncated_source()))
-        .child(result_label)
-        .into_any_element()
-}
-
-/// A click that opens `location`'s script at its line (`Shell::play_reveal`).
-fn reveal(
-    context: game::Context,
-    location: &game::Location,
-    cx: &mut Context<Shell>,
-) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
-    let location = location.clone();
-    let shell = cx.weak_entity();
-    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-        cx.stop_propagation();
-        let _ = shell.update(cx, |shell, cx| {
-            shell.play_reveal(context, &location, window, cx);
-        });
-    }
-}
-
-/// A Play message (see `game`): the level icon, the Server/Client tag in
-/// its context colour, the message in the level's colour with the error's
-/// stack frames under it, and the error's `Script:line` at the end.
-/// Clicking the row, its location or a frame opens that script at that line
-/// (`Shell::play_reveal`); nothing is recalled into the Command Bar.
-fn game_row(
-    entry: &OutputEntry,
-    message: &game::GameMessage,
-    index: usize,
-    show_timestamp: bool,
-    cx: &mut Context<Shell>,
-) -> impl IntoElement {
-    let kind = entry.kind();
-    let color = match kind.color() {
-        RowColor::Default => None,
-        RowColor::Warning => Some(cx.theme().warning),
-        RowColor::Danger => Some(cx.theme().danger),
-    };
-    let icon = Icon::new(kind.icon()).small();
-    let icon = match color {
-        Some(color) => icon.text_color(color),
-        None => icon,
-    };
-    let context = message.context;
-    let tag_color = match context {
-        game::Context::Server => tokens::output_server(),
-        game::Context::Client => tokens::output_client(),
-    };
-
-    let mut row = h_flex()
-        .id(format!("output-entry-{index}"))
-        .w_full()
-        .items_start()
-        .gap_2()
-        .px_2()
-        .py_1()
-        .child(h_flex().flex_none().text_xs().child(icon).child("\u{200B}"));
-    if let Some(location) = &message.location {
-        row = row.cursor_pointer().on_click(reveal(context, location, cx));
-    }
-    if show_timestamp {
-        row = row.child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(entry.timestamp_label()),
-        );
-    }
-    row = row.child(
-        div()
-            .flex_none()
-            .w(px(44.))
-            .text_xs()
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(tag_color)
-            .child(context.label()),
-    );
-
-    let mut text = div()
-        .min_w_0()
-        .text_xs()
-        .child(truncate(&message.text, LABEL_MAX_LEN));
-    if let Some(color) = color {
-        text = text.text_color(color);
-    }
-    let mut body = v_flex().flex_1().min_w_0().gap_0p5().child(text);
-    for (frame_index, frame) in message.frames.iter().enumerate() {
-        let line = format!(
-            "{}, line {}{}{}",
-            frame.location.path,
-            frame.location.line,
-            if frame.detail.is_empty() { "" } else { " " },
-            frame.detail
-        );
-        body = body.child(
-            div()
-                .id(format!("output-entry-{index}-frame-{frame_index}"))
-                .min_w_0()
-                .pl_3()
-                .text_xs()
-                .text_color(tokens::text_muted())
-                .cursor_pointer()
-                .hover(|this| this.text_color(tag_color))
-                .on_click(reveal(context, &frame.location, cx))
-                .child(line),
-        );
-    }
-    row = row.child(body);
-    if let Some(location) = &message.location {
-        row = row.child(
-            div()
-                .id(format!("output-entry-{index}-location"))
-                .flex_none()
-                .text_xs()
-                .text_color(tokens::text_muted())
-                .cursor_pointer()
-                .hover(|this| this.text_color(tag_color).underline())
-                .on_click(reveal(context, location, cx))
-                .child(location.short()),
-        );
-    }
-    row
 }
 
 #[cfg(test)]

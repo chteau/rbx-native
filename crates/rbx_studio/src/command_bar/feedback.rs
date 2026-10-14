@@ -20,6 +20,9 @@ pub(crate) enum Feedback {
     /// [`Feedback::from_run`]: nothing about a script's own result is a
     /// warning today, only what the Output dock's other callers push.
     Warning(String),
+    /// An info line from the running game (`LogService`'s `MessageInfo`,
+    /// what `TestService:Message` prints) — see `shell::play::session`.
+    Info(String),
 }
 
 impl Feedback {
@@ -58,7 +61,7 @@ impl Feedback {
         match self {
             Feedback::Idle => SharedString::default(),
             Feedback::Output(text) if text.is_empty() => SharedString::from("(no output)"),
-            Feedback::Output(text) => truncate(text, max_len),
+            Feedback::Output(text) | Feedback::Info(text) => truncate(text, max_len),
             Feedback::Error(text) => truncate(&format!("Error: {text}"), max_len),
             Feedback::Warning(text) => truncate(&format!("Warning: {text}"), max_len),
         }
