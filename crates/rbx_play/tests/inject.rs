@@ -4,6 +4,8 @@ use rbx_play::inject::{
     MAX_PUBLISH_BYTES, MIRROR_NAME, PROBE_CLIENT, PROBE_CODEC, PROBE_DEBUG, PROBE_LIVE, PROBE_NAME,
     PROBE_SERVER, REMOTE_NAME,
 };
+use rbx_play::inject::{PROBE_MARKET, PROBE_MARKET_UI};
+use rbx_play::market::{MARKET_NAME, MARKET_UI_NAME};
 
 fn config() -> ProbeConfig {
     ProbeConfig {
@@ -175,6 +177,26 @@ fn injecting_twice_leaves_one_of_each() {
     assert_eq!(probes, vec![second.probe]);
     assert_eq!(remotes, vec![second.remote]);
     assert_eq!(mirrors, vec![second.mirror]);
+    let markets = children_matching(&dom, rs, |i| i.name() == MARKET_NAME);
+    let market_uis = children_matching(&dom, rs, |i| i.name() == MARKET_UI_NAME);
+    assert_eq!(markets, vec![second.market]);
+    assert_eq!(market_uis, vec![second.market_ui]);
+}
+
+#[test]
+fn market_modules_are_placed_in_replicated_storage() {
+    let (mut dom, root) = data_model_dom();
+    let injected = inject(&mut dom, &config()).expect("inject");
+    let rs = single_child_of_class(&dom, root, "ReplicatedStorage");
+    for (r, name, src) in [
+        (injected.market, MARKET_NAME, PROBE_MARKET),
+        (injected.market_ui, MARKET_UI_NAME, PROBE_MARKET_UI),
+    ] {
+        assert_eq!(dom.parent(r), Some(rs));
+        assert_eq!(dom.get(r).unwrap().class(), "ModuleScript");
+        assert_eq!(dom.get(r).unwrap().name(), name);
+        assert_eq!(string_prop(&dom, r, "Source").as_deref(), Some(src));
+    }
 }
 
 #[test]

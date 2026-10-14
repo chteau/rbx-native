@@ -2,6 +2,19 @@
 
 ## 2026-10-14
 
+- **Test purchases during Play.** Game passes, developer products, catalog
+  items, bundles and subscriptions can be bought in a test without spending
+  Robux or money. Play rewrites the published
+  copy's `MarketplaceService` lookups into a stand-in, so game code needs
+  no change. Prompts open a copy of Roblox's test-purchase dialog that
+  matches Roblox's own to the pixel, with the same motion, backdrop and
+  Buy delay, then "Purchase completed". A bought pass is owned for the
+  rest of the session, as is a catalog item, bundle or subscription. A
+  product goes to the game's `BindReceiptHandler` or `ProcessReceipt` with
+  a `DEV-` receipt, and every `…PurchaseFinished` signal fires as in Studio.
+  An id with nothing behind it shows Roblox's Error view.
+  — @chteau
+
 - **Output: context filter, Show Context/Source, an Info kind and
   expandable tables.** Now that Play messages carry a Server or Client
   side, Output filters by context (All Contexts, Edit, Server, Client).
