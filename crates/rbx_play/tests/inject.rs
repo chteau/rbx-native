@@ -1,7 +1,7 @@
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_play::inject::{
-    inject, preflight, InjectError, Preflight, ProbeConfig, CODEC_NAME, LIVE_NAME,
-    MAX_PUBLISH_BYTES, MIRROR_NAME, PROBE_CLIENT, PROBE_CODEC, PROBE_LIVE, PROBE_NAME,
+    inject, preflight, InjectError, Preflight, ProbeConfig, CODEC_NAME, DEBUG_NAME, LIVE_NAME,
+    MAX_PUBLISH_BYTES, MIRROR_NAME, PROBE_CLIENT, PROBE_CODEC, PROBE_DEBUG, PROBE_LIVE, PROBE_NAME,
     PROBE_SERVER, REMOTE_NAME,
 };
 
@@ -131,6 +131,7 @@ fn remote_and_mirror_are_placed_in_their_services() {
     for (r, name, src) in [
         (injected.codec, CODEC_NAME, PROBE_CODEC),
         (injected.live, LIVE_NAME, PROBE_LIVE),
+        (injected.debug, DEBUG_NAME, PROBE_DEBUG),
     ] {
         assert_eq!(dom.parent(r), Some(rs));
         assert_eq!(dom.get(r).unwrap().class(), "ModuleScript");

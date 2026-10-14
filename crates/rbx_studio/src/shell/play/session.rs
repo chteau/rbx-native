@@ -2,8 +2,9 @@
 //! messages into Output rows, deciding when a session is over, and the
 //! viewport rect the client window is embedded at. No GPUI here.
 
-use rbx_dom::WeakDom;
+use rbx_dom::{Ref, WeakDom};
 use rbx_play::inject::{Preflight, ProbeConfig};
+use rbx_play::instrument::Hook;
 use rbx_play::protocol::{LogLevel, Side, Uplink};
 
 use crate::command_bar::Feedback;
@@ -17,29 +18,101 @@ pub(crate) const PLAY_SOURCE: &str = "Play";
 #[derive(Debug)]
 pub(crate) struct Prepared {
     pub(crate) bytes: Vec<u8>,
-    /// `preflight_text` of every `Incomplete` finding (publish still goes).
+    /// `preflight_text` of every `Incomplete` finding (publish still goes),
+    /// and every script that could not be instrumented for debugging.
     pub(crate) warnings: Vec<String>,
+    /// The scripts published with debugger hooks.
+    pub(crate) debug: Vec<DebugScript>,
 }
 
-/// Clones `dom`, injects the probe, encodes it as a binary place with
-/// `crate::save::Format::Binary.encode`, and runs `preflight`. A `TooLarge`
-/// finding is an `Err` (its `preflight_text`); the user's DOM is untouched.
-pub(crate) fn prepare(dom: &WeakDom, probe: &ProbeConfig) -> Result<Prepared, String> {
+/// A script to debug during Play: its breakpoints when Play started.
+#[derive(Debug, Clone)]
+pub(crate) struct DebugRequest {
+    pub(crate) script: Ref,
+    pub(crate) hooks: Vec<Hook>,
+}
+
+/// A script published with debugger hooks (`rbx_play::instrument`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DebugScript {
+    /// The id its hooks report, from 1.
+    pub(crate) id: u32,
+    /// The script in the edited place (the copy keeps its refs).
+    pub(crate) script: Ref,
+    /// Where a breakpoint can stop (`Instrumented::lines`).
+    pub(crate) lines: Vec<u32>,
+}
+
+/// Rewrites each requested script's `Source` in `copy` with debugger hooks.
+/// A script that does not parse, or whose hooked text Luau rejects, keeps
+/// its source and is reported in the returned warnings.
+pub(crate) fn instrument_scripts(
+    copy: &mut WeakDom,
+    requests: &[DebugRequest],
+) -> (Vec<DebugScript>, Vec<String>) {
+    let mut scripts = Vec::new();
+    let mut warnings = Vec::new();
+    for request in requests {
+        let Some(source) = crate::script_editor::source::read(copy, request.script) else {
+            continue;
+        };
+        let name = copy
+            .get(request.script)
+            .map(|i| i.name().to_string())
+            .unwrap_or_default();
+        let id = scripts.len() as u32 + 1;
+        let instrumented =
+            rbx_play::instrument::instrument(&source, id, &request.hooks).and_then(|done| {
+                rbx_lua::compile_check(&done.source, &name)?;
+                Ok(done)
+            });
+        match instrumented {
+            Ok(done) => {
+                if crate::script_editor::source::write(copy, request.script, &done.source) {
+                    scripts.push(DebugScript {
+                        id,
+                        script: request.script,
+                        lines: done.lines,
+                    });
+                }
+            }
+            Err(err) => warnings.push(format!(
+                "{name} runs without breakpoints in this test: it could not be prepared for \
+                 debugging ({err})."
+            )),
+        }
+    }
+    (scripts, warnings)
+}
+
+/// Clones `dom`, instruments `debug`'s scripts, injects the probe, encodes
+/// it as a binary place with `crate::save::Format::Binary.encode`, and runs
+/// `preflight`. A `TooLarge` finding is an `Err` (its `preflight_text`); the
+/// user's DOM is untouched.
+pub(crate) fn prepare(
+    dom: &WeakDom,
+    probe: &ProbeConfig,
+    debug: &[DebugRequest],
+) -> Result<Prepared, String> {
     let mut copy = dom.clone();
+    let (debug, mut warnings) = instrument_scripts(&mut copy, debug);
     rbx_play::inject::inject(&mut copy, probe).map_err(|err| match err {
         rbx_play::inject::InjectError::NoDataModel => {
             "The place has no instances, so there is nothing to play.".to_owned()
         }
     })?;
     let bytes = crate::save::Format::Binary.encode(&copy)?;
-    let mut warnings = Vec::new();
     for finding in rbx_play::inject::preflight(&copy, bytes.len()) {
         match finding {
             Preflight::TooLarge { .. } => return Err(preflight_text(&finding)),
             Preflight::Incomplete { .. } => warnings.push(preflight_text(&finding)),
         }
     }
-    Ok(Prepared { bytes, warnings })
+    Ok(Prepared {
+        bytes,
+        warnings,
+        debug,
+    })
 }
 
 /// One sentence per finding, e.g. "The place is 12.4 MB; Roblox accepts at

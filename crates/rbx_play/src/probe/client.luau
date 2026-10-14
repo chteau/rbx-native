@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local codec = require(ReplicatedStorage:WaitForChild("__rbxnative_codec"))
 local Live = require(ReplicatedStorage:WaitForChild("__rbxnative_live"))
+local Debug = require(ReplicatedStorage:WaitForChild("__rbxnative_debug"))
 local remote = ReplicatedStorage:WaitForChild("__rbxnative_remote")
 
 local t0 = os.clock()
@@ -28,6 +29,12 @@ local live = Live.new("client", function(message)
 	table.insert(outgoing, message)
 end, codec)
 
+-- A paused thread waits on the editor: its messages go ahead of the tree
+-- snapshot's chunks in the one-per-tick relay.
+Debug.attach("client", function(m)
+	table.insert(outgoing, 1, m)
+end)
+
 remote.OnClientEvent:Connect(function(payload)
 	if type(payload) ~= "table" or payload.kind ~= "cmd" or type(payload.command) ~= "table" then
 		return
@@ -50,6 +57,8 @@ remote.OnClientEvent:Connect(function(payload)
 		live.create(cmd.class, cmd.name, cmd.parent)
 	elseif kind == "resync" then
 		live.resync()
+	elseif kind == "debug_set" or kind == "debug_resume" or kind == "debug_watch" then
+		Debug.command(cmd)
 	end
 end)
 

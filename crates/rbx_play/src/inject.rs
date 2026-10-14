@@ -14,6 +14,9 @@ pub const PROBE_CLIENT: &str = include_str!("probe/client.luau");
 pub const PROBE_CODEC: &str = include_str!("probe/codec.luau");
 /// The live-tree module both sides `require` (ModuleScript in ReplicatedStorage).
 pub const PROBE_LIVE: &str = include_str!("probe/live.luau");
+/// The debugger module both sides `require` (ModuleScript in ReplicatedStorage).
+pub const PROBE_DEBUG: &str = include_str!("probe/debug.luau");
+pub const DEBUG_NAME: &str = "__rbxnative_debug";
 pub const CODEC_NAME: &str = "__rbxnative_codec";
 pub const LIVE_NAME: &str = "__rbxnative_live";
 
@@ -43,6 +46,7 @@ pub struct Injected {
     pub remote: Ref,
     pub codec: Ref,
     pub live: Ref,
+    pub debug: Ref,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +90,7 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, rs, REMOTE_NAME);
     remove_named(dom, rs, CODEC_NAME);
     remove_named(dom, rs, LIVE_NAME);
+    remove_named(dom, rs, DEBUG_NAME);
 
     let codec = dom.new_instance("ModuleScript", CODEC_NAME, Some(rs));
     set_prop(
@@ -96,6 +101,13 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     );
     let live = dom.new_instance("ModuleScript", LIVE_NAME, Some(rs));
     set_prop(dom, live, "Source", Variant::String(PROBE_LIVE.to_owned()));
+    let debug = dom.new_instance("ModuleScript", DEBUG_NAME, Some(rs));
+    set_prop(
+        dom,
+        debug,
+        "Source",
+        Variant::String(PROBE_DEBUG.to_owned()),
+    );
 
     let probe = dom.new_instance("Script", PROBE_NAME, Some(sss));
     set_prop(
@@ -135,6 +147,7 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         remote,
         codec,
         live,
+        debug,
     })
 }
 

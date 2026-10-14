@@ -48,6 +48,10 @@ pub(crate) struct Pause {
     /// Printed since the last pause, so the Output dock is current while the
     /// script is stopped.
     pub(crate) output: Vec<String>,
+    /// The script of each `stack` frame, when frames can be in different
+    /// scripts (a Play pause); empty for an Edit run, all of whose frames
+    /// are the run's own script.
+    pub(crate) scripts: Vec<Option<rbx_dom::Ref>>,
 }
 
 pub(crate) type Evaluation = Result<String, String>;
@@ -168,6 +172,7 @@ fn on_pause(paused: &Paused, events: &Sender<Event>, commands: &Receiver<Command
         stack: paused.call_stack(),
         variables: paused.variables(0),
         output: paused.take_output(),
+        scripts: Vec::new(),
     };
     if events.send(Event::Paused(pause)).is_err() {
         return Resume::Stop;

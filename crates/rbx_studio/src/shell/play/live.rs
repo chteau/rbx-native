@@ -323,19 +323,16 @@ impl Shell {
         self.live_refresh(cx);
     }
 
-    /// An Output location from the game (`output::game`): opens the place's
-    /// copy of that script (the same mapping as `live_script_in_place`) at
-    /// `line`, during the test or after it. Says so in Output when the
-    /// script only exists in the game.
-    pub(in crate::shell) fn play_reveal(
-        &mut self,
+    /// The edited place's script a game script path names (`Players.<you>.
+    /// PlayerScripts.Hud` and the like mapped back as `live_script_in_place`
+    /// maps them), if the place has a script there.
+    pub(in crate::shell) fn play_place_script(
+        &self,
         context: super::super::output::game::Context,
-        location: &super::super::output::game::Location,
-        window: &mut gpui_kit::Window,
-        cx: &mut Context<Self>,
-    ) {
+        path: &str,
+    ) -> Option<Ref> {
         use super::super::output::game::Context as Side;
-        let path: Vec<String> = location.path.split('.').map(str::to_string).collect();
+        let path: Vec<String> = path.split('.').map(str::to_string).collect();
         let tree = match context {
             Side::Server => &self.play.live.server,
             Side::Client => &self.play.live.client,
@@ -359,11 +356,23 @@ impl Shell {
                 players.push(name.clone());
             }
         }
-        let found = place_paths(&path, &players)
+        place_paths(&path, &players)
             .iter()
             .filter_map(|candidate| find_path(place, candidate))
-            .find(|r| crate::script_editor::source::is_script(place, &self.database, *r));
-        let Some(script) = found else {
+            .find(|r| crate::script_editor::source::is_script(place, &self.database, *r))
+    }
+
+    /// An Output location from the game (`output::game`): opens the place's
+    /// copy of that script at `line`, during the test or after it. Says so
+    /// in Output when the script only exists in the game.
+    pub(in crate::shell) fn play_reveal(
+        &mut self,
+        context: super::super::output::game::Context,
+        location: &super::super::output::game::Location,
+        window: &mut gpui_kit::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(script) = self.play_place_script(context, &location.path) else {
             self.output.push(
                 "Play",
                 crate::command_bar::Feedback::Warning(format!(

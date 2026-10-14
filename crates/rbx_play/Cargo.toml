@@ -16,6 +16,9 @@ regex = "1"
 getrandom = "0.3"
 # `launchData` in the roblox:// join URI.
 percent-encoding = "2"
+# Parsing scripts to instrument them for the Play debugger (`instrument`);
+# the version rbx_studio already uses.
+full_moon = { version = "3", features = ["luau"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Embedding the client window; same version rbx_studio uses.

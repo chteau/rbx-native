@@ -86,6 +86,26 @@ pub enum Uplink {
     },
     /// Result of a command: `ok` plus a printable value or error text.
     Ack { id: u64, ok: bool, result: String },
+    /// Debugger: a thread stopped at a breakpoint or after a step, in
+    /// instrumented script `script` at `line`. It waits for a
+    /// `CommandBody::DebugResume` naming `pause`; other threads keep running.
+    Paused {
+        side: Side,
+        pause: u64,
+        script: u32,
+        line: u32,
+        /// Innermost first; the first is `script` at `line`.
+        frames: Vec<DebugFrame>,
+        /// The locals in scope at the pause, in declaration order.
+        locals: Vec<DebugVariable>,
+    },
+    /// Debugger: the answer to a `CommandBody::DebugWatch`.
+    #[serde(rename = "debug_values")]
+    DebugValues {
+        side: Side,
+        pause: u64,
+        values: Vec<DebugValue>,
+    },
     /// One side's performance, about once a second (see `Metrics`).
     Stats { side: Side, metrics: Metrics },
     /// A player joined the server (`Players.PlayerAdded`, and every player
@@ -168,6 +188,56 @@ pub struct Metrics {
     /// Server only: `#Players:GetPlayers()`.
     #[serde(default)]
     pub players: Option<u32>,
+}
+
+/// One breakpoint line of an instrumented script (`crate::instrument`'s
+/// `script_id`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugLine {
+    pub script: u32,
+    pub line: u32,
+}
+
+/// What a paused thread does next. Steps follow that thread only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DebugAction {
+    /// Run until the next breakpoint.
+    Continue,
+    /// Stop at the next hooked line this thread reaches, at any depth.
+    StepInto,
+    /// Stop at the next hooked line of this function or a caller.
+    StepOver,
+    /// Stop at the next hooked line of a caller.
+    StepOut,
+}
+
+/// One Call Stack frame of a paused thread, from `debug.info(level, "sln")`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugFrame {
+    /// The script's full name in the game (`ServerScriptService.Main`).
+    pub source: String,
+    pub line: u32,
+    /// The function's name, empty for the script's main chunk or an
+    /// anonymous function.
+    #[serde(default)]
+    pub function: String,
+}
+
+/// A local at a pause, formatted for display by the probe.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugVariable {
+    pub name: String,
+    pub value: String,
+}
+
+/// One watch expression's result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugValue {
+    pub expression: String,
+    pub ok: bool,
+    /// The formatted value, or the error.
+    pub text: String,
 }
 
 /// One instance in a side's tree. Ids are per side, assigned by that side's
@@ -262,4 +332,23 @@ pub enum CommandBody {
     },
     /// Send `side`'s whole tree again (`Tree` with `reset`).
     Resync { side: Side },
+    /// Debugger: replaces `side`'s active breakpoints. Every line of every
+    /// instrumented script (`crate::instrument`) not listed is off.
+    #[serde(rename = "debug_set")]
+    DebugSet { side: Side, lines: Vec<DebugLine> },
+    /// Debugger: lets the thread stopped at `pause` go on.
+    #[serde(rename = "debug_resume")]
+    DebugResume {
+        side: Side,
+        pause: u64,
+        action: DebugAction,
+    },
+    /// Debugger: evaluates each expression against the locals at `pause`
+    /// (and the script's globals); answered with `Uplink::DebugValues`.
+    #[serde(rename = "debug_watch")]
+    DebugWatch {
+        side: Side,
+        pause: u64,
+        expressions: Vec<String>,
+    },
 }

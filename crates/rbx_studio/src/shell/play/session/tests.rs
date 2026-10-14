@@ -50,7 +50,7 @@ fn prepare_injects_into_a_copy() {
     );
     let dom = rbx_binary::deserialize(&std::fs::read(path).unwrap()).unwrap();
     assert!(!has_probe(&dom));
-    let prepared = prepare(&dom, &config()).unwrap();
+    let prepared = prepare(&dom, &config(), &[]).unwrap();
     let back = rbx_binary::deserialize(prepared.bytes.as_slice()).unwrap();
     assert!(has_probe(&back));
     assert!(!has_probe(&dom));
@@ -153,4 +153,50 @@ fn stats_line_leads_with_rate_and_skips_unknowns() {
     assert!(details.contains("Ping: 44.8 ms"));
     assert!(details.contains("Instances: 9000"));
     assert!(!details.contains("Players"));
+}
+
+#[test]
+fn scripts_with_breakpoints_publish_with_hooks() {
+    let mut dom = WeakDom::new();
+    let sss = dom.new_instance("ServerScriptService", "ServerScriptService", None);
+    let main = dom.new_instance("Script", "Main", Some(sss));
+    let broken = dom.new_instance("Script", "Broken", Some(sss));
+    assert!(crate::script_editor::source::write(
+        &mut dom,
+        main,
+        "local a = 1\nprint(a)\n"
+    ));
+    assert!(crate::script_editor::source::write(
+        &mut dom,
+        broken,
+        "local = \n"
+    ));
+    let hook = |line| Hook {
+        line,
+        server: true,
+        ..Hook::default()
+    };
+    let requests = [
+        DebugRequest {
+            script: main,
+            hooks: vec![hook(2)],
+        },
+        DebugRequest {
+            script: broken,
+            hooks: vec![hook(1)],
+        },
+    ];
+    let prepared = prepare(&dom, &config(), &requests).unwrap();
+    assert_eq!(prepared.debug.len(), 1);
+    assert_eq!(prepared.debug[0].script, main);
+    assert_eq!(prepared.debug[0].lines, vec![1, 2]);
+    assert!(prepared
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("Broken runs without breakpoints")));
+    // The edited place keeps its own source.
+    assert_eq!(
+        crate::script_editor::source::read(&dom, main).as_deref(),
+        Some("local a = 1\nprint(a)\n")
+    );
 }

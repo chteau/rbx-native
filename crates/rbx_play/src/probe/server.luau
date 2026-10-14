@@ -13,6 +13,8 @@ local FLUSH_PERIOD = 0.25
 local codec = require(ReplicatedStorage:WaitForChild("__rbxnative_codec"))
 local Live = require(ReplicatedStorage:WaitForChild("__rbxnative_live"))
 
+local Debug = require(ReplicatedStorage:WaitForChild("__rbxnative_debug"))
+
 local t0 = os.clock()
 local buffer = {}
 local running = true
@@ -95,6 +97,8 @@ local loadstring_enabled = compiled and type(chunk) == "function"
 LogService.MessageOut:Connect(function(message, messageType)
 	push("server", levels[messageType] or "output", message, os.clock() - t0)
 end)
+
+Debug.attach("server", queue)
 
 local live = Live.new("server", queue, codec)
 
@@ -239,6 +243,8 @@ local function handleLive(cmd)
 		ackLive(cmd, live.reparent(cmd.target, cmd.parent))
 	elseif kind == "create" then
 		ackLive(cmd, live.create(cmd.class, cmd.name, cmd.parent))
+	elseif kind == "debug_set" or kind == "debug_resume" or kind == "debug_watch" then
+		Debug.command(cmd)
 	else
 		ackLive(cmd, live.resync())
 	end
@@ -253,6 +259,9 @@ local LIVE_COMMANDS = {
 	reparent = true,
 	create = true,
 	resync = true,
+	debug_set = true,
+	debug_resume = true,
+	debug_watch = true,
 }
 
 local function handle(cmd)

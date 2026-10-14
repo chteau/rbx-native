@@ -38,6 +38,7 @@
 //! step failing stops with `StopReason::Failed`.
 
 mod cloudflared;
+pub(crate) mod debug;
 pub(crate) mod live;
 pub(crate) mod session;
 
@@ -132,6 +133,11 @@ pub(super) struct Play {
     pub(super) job_id: Option<String>,
     /// The Client/Server views of the running game (`play::live`).
     pub(super) live: live::Live,
+    /// The scripts debugged in this test (`play::debug`).
+    pub(super) debug: debug::PlayDebug,
+    /// The window Play was pressed in, for work that needs a `Window` from
+    /// the poll (opening a script where the game paused).
+    window_handle: Option<AnyWindowHandle>,
     /// Each side's performance, as last reported.
     pub(super) stats: PlayStats,
     /// The window's scale factor when Play was pressed, to turn popups'
@@ -159,6 +165,8 @@ impl Play {
             main_window: None,
             gpui_window: None,
             live: live::Live::new(),
+            debug: debug::PlayDebug::default(),
+            window_handle: None,
             stats: PlayStats::default(),
             scale: 1.0,
             #[cfg(any(target_os = "linux", windows))]
@@ -223,6 +231,7 @@ impl Shell {
             return;
         }
         self.play.main_window = crate::pointer_lock::window_id(window);
+        self.play.window_handle = Some(window.window_handle());
         self.play.gpui_window = Some(window.window_handle().window_id());
         self.play.scale = window.scale_factor();
         if self.play.sandbox.is_none() {
@@ -307,6 +316,7 @@ impl Shell {
             },
         };
         let dom = self.dom.clone();
+        let debug_requests = self.play_debug_requests();
         cx.spawn(async move |this, cx| {
             if close_first {
                 if !step(&this, cx, attempt, "Closing Roblox\u{2026}") {
@@ -391,14 +401,16 @@ impl Shell {
                 session: session.clone(),
             };
             let prepared = match cx
-                .background_spawn(async move { session::prepare(&dom, &probe) })
+                .background_spawn(async move { session::prepare(&dom, &probe, &debug_requests) })
                 .await
             {
                 Ok(prepared) => prepared,
                 Err(text) => return fail(&this, cx, attempt, text),
             };
             let warnings = prepared.warnings.clone();
+            let debugged = prepared.debug.clone();
             let _ = this.update(cx, |shell, cx| {
+                shell.play.debug.pending = debugged;
                 for warning in warnings {
                     shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
                 }
@@ -546,6 +558,7 @@ impl Shell {
                 }
                 shell.play.phase = Phase::Running;
                 shell.live_begin(cx);
+                shell.play_debug_begin(cx);
                 shell.play.poll = Some(shell.play_poll(cx));
                 cx.notify();
             });
@@ -594,7 +607,7 @@ impl Shell {
         let mut changed = false;
         while let Ok(event) = channel.events().try_recv() {
             changed = true;
-            if self.live_apply(&event, cx) {
+            if self.live_apply(&event, cx) || self.play_debug_event(&event, cx) {
                 continue;
             }
             if let Uplink::Stats { side, metrics } = event {
@@ -717,6 +730,7 @@ impl Shell {
         self.play.attempt += 1;
         self.play.poll = None;
         self.live_end(cx);
+        self.play_debug_end(cx);
         #[cfg(any(target_os = "linux", windows))]
         self.play.holes.clear();
         if let Some(running) = self.play.session.take() {

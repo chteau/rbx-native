@@ -37,6 +37,8 @@ impl Shell {
                     .update(cx, |state, cx| state.set_gutter(Some(gutter), cx));
             }
         }
+        // Every breakpoint change ends here; a running test follows it.
+        self.play_debug_sync();
     }
 
     fn gutter_for(&self, script: Ref, cx: &mut Context<Self>) -> Gutter {

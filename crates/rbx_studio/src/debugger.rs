@@ -23,8 +23,28 @@ pub(crate) enum Kind {
     Temporary,
 }
 
+/// Studio's "Trigger At": where a breakpoint activates. Edit is the
+/// editor's own debug run (`shell::debugging`); Client and Server are the
+/// two sides of a Play session (`shell::play::debug`). All three by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Contexts {
+    pub(crate) edit: bool,
+    pub(crate) client: bool,
+    pub(crate) server: bool,
+}
+
+impl Default for Contexts {
+    fn default() -> Self {
+        Contexts {
+            edit: true,
+            client: true,
+            server: true,
+        }
+    }
+}
+
 /// One breakpoint as the editor keeps it: what the debugger runs, plus the
-/// two settings that only matter between runs.
+/// settings that only matter between runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Stored {
     pub(crate) breakpoint: Breakpoint,
@@ -35,6 +55,7 @@ pub(crate) struct Stored {
     /// Breakpoint on Hit", which it describes as removing itself after the
     /// first playtest session.
     pub(crate) temporary: bool,
+    pub(crate) contexts: Contexts,
 }
 
 impl Stored {
@@ -49,6 +70,7 @@ impl Stored {
             },
             enabled: true,
             temporary: kind == Kind::Temporary,
+            contexts: Contexts::default(),
         }
     }
 
@@ -113,12 +135,21 @@ impl Breakpoints {
         }
     }
 
-    /// What a run of `script` is handed: its enabled breakpoints.
+    /// What an Edit-context run of `script` is handed: its enabled
+    /// breakpoints that trigger at Edit.
     pub(crate) fn for_run(&self, script: Ref) -> Vec<Breakpoint> {
         self.of(script)
-            .filter(|stored| stored.enabled)
+            .filter(|stored| stored.enabled && stored.contexts.edit)
             .map(|stored| stored.breakpoint.clone())
             .collect()
+    }
+
+    /// Every script that has breakpoints, enabled or not.
+    pub(crate) fn scripts(&self) -> impl Iterator<Item = Ref> + '_ {
+        self.scripts
+            .iter()
+            .filter(|(_, lines)| !lines.is_empty())
+            .map(|(script, _)| *script)
     }
 
     /// Moves `script`'s breakpoints with an edit that turned its text from

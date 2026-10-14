@@ -2531,11 +2531,17 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [ ] 📋 Script debugging inside a Play session — the Edit-context
-  debugger (see "What's been implemented" → Editor) has no Play mode to run in, so a server or client
-  script can only be debugged once the Play workaround below exists.
-  Breakpoints would then trigger in that session's scripts, as Studio's
-  Client/Server "Trigger At" contexts do.
+- [x] **Script debugging inside a Play session** (`rbx_play::instrument`,
+  the probe's `debug` module, `shell/play/debug.rs`): breakpoints stop
+  server and client scripts of a running test, with the Watch and Call
+  Stack docks, Continue / Step Into / Over / Out and watch expressions
+  evaluated in the game. Scripts with breakpoints are published with
+  same-line hooks that hand the probe their locals (game scripts have no
+  `debug.getlocal`); toggling breakpoints reaches the game at once, and
+  each breakpoint has Studio's Trigger At contexts (Client / Server /
+  Edit). Only the stopped thread waits, not the whole session; conditions
+  and log messages, and breakpoints in scripts that had none, apply from
+  the next Play. `docs/research/play-sandbox/debugging.md`.
 - [ ] ⚠️ **Inline AI code completion**, matching what real Studio calls
   **Code Assist** (`studio/script-editor.md`) — suggests a line/block of
   code inline as you type or pause, distinct from `luau-lsp`'s
