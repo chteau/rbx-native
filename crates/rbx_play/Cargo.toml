@@ -20,6 +20,18 @@ percent-encoding = "2"
 [target.'cfg(target_os = "linux")'.dependencies]
 # Embedding the client window; same version rbx_studio uses.
 x11rb = { version = "0.13", features = ["xinput", "shape"] }
+# `PR_SET_PDEATHSIG` for the tunnel child (`tunnel`); already in the tree.
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# Embedding RobloxPlayerBeta's window; same version rbx_studio uses.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 # Syntax-checks the probe's Luau sources; already built for rbx_lua.

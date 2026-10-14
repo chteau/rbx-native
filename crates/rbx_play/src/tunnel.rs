@@ -63,19 +63,50 @@ pub enum TunnelProvider {
     },
 }
 
+/// Linux: the kernel sends the tunnel `SIGTERM` when the editor dies, so a
+/// crash or a kill (which skip `Tunnel`'s `Drop`) does not leave it running
+/// (`PR_SET_PDEATHSIG`; seen live: a killed editor left cloudflared behind).
+/// The signal follows the *thread* that spawned the child, so `start` must
+/// run on a thread that lives as long as the tunnel (the UI thread or a
+/// long-lived worker pool, as the editor's background executor is).
+#[cfg(target_os = "linux")]
+fn end_with_parent(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    let parent = std::process::id();
+    // SAFETY: `prctl` and `getppid` are async-signal-safe, as `pre_exec`
+    // requires; nothing is allocated between fork and exec.
+    unsafe {
+        command.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // The editor may have died before the prctl took effect (its
+            // orphans go to init or a subreaper such as `systemd --user`).
+            if u32::try_from(libc::getppid()).ok() != Some(parent) {
+                return Err(std::io::Error::other("parent exited"));
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn end_with_parent(_command: &mut Command) {}
+
 impl TunnelProvider {
     /// Starts the child with stdout+stderr piped, reads both on threads,
     /// and returns once a line matches or `timeout` passes.
     pub fn start(&self, port: u16, timeout: Duration) -> Result<Tunnel, TunnelError> {
         let (program, args) = self.command_line(port);
         let pattern = self.url_pattern();
-        let mut child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(TunnelError::Spawn)?;
+            .stderr(Stdio::piped());
+        end_with_parent(&mut command);
+        let mut child = command.spawn().map_err(TunnelError::Spawn)?;
 
         let (tx, rx) = mpsc::channel::<String>();
         if let Some(out) = child.stdout.take() {

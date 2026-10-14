@@ -2632,15 +2632,24 @@ Roblox's own engine.
   tester's client or the server (ribbon toggle; tests open on Client), with
   properties polled for the selection, and property edits, renames,
   deletes, reparents and inserts made there go to the game in real time.
-  The edited place is stashed and comes back untouched on Stop.
+  The edited place is stashed and comes back untouched on Stop. Tags
+  edit live too. Opening a script there opens the place's copy (Roblox's
+  join-time copies mapped back to their Starter containers); its edits
+  land in the place when the test stops.
   `docs/research/play-sandbox/live-views.md`.
+- [x] Live stats on the Test ribbon: frame rate, ping and memory for the
+  client, heartbeat rate, players and memory for the server, every
+  reported number in the tooltip.
 - [x] Editor menus, dropdowns, tooltips and dialogs draw above the
   embedded game (X Shape holes from `gpui_base::occlusion`).
 - [x] **"In Studio" on Roblox** (Settings › Account): the heartbeat real
   Studio sends, signed in with Roblox's code sign-in (code + QR, no web
   view); the session lives in the system keychain.
-- [ ] Play on Windows (RobloxPlayerBeta) and macOS: builds, never run.
-  Embedding is X11-only; elsewhere the client keeps its own window.
+- [x] The embedded game hides while another document (Scripts, UI
+  Editor, Animation) has the 3D view's room.
+- [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
+  embeds through `SetParent` (type-checked for the MSVC target only); on
+  macOS the client keeps its own window.
 - [ ] 📋 **Output window: the sandbox-dependent half.** Filtering by
   **context** (`Client`/`Server`/`User Plugin`) only means something once
   the sandbox's client/server split exists to produce it, and the **Show

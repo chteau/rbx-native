@@ -44,6 +44,21 @@ pub enum Launcher {
     MacOpen,
 }
 
+/// `Command::new(program)`, without the console window Windows would flash
+/// for a console program (`cmd`, `tasklist`, `taskkill`) started from a GUI.
+fn command_for(program: &str) -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        /// `CREATE_NO_WINDOW` from `winbase.h`.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 const SOBER_APP_ID: &str = "org.vinegarhq.Sober";
 const CLIENT_EXE: &str = "RobloxPlayerBeta.exe";
 
@@ -59,7 +74,7 @@ impl Launcher {
         } else if cfg!(target_os = "macos") {
             Launcher::MacOpen
         } else {
-            let sober_installed = Command::new("flatpak")
+            let sober_installed = command_for("flatpak")
                 .args(["info", SOBER_APP_ID])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -78,22 +93,22 @@ impl Launcher {
     pub fn command(self, uri: &str) -> Command {
         match self {
             Launcher::Sober => {
-                let mut cmd = Command::new("flatpak");
+                let mut cmd = command_for("flatpak");
                 cmd.args(["run", SOBER_APP_ID, uri]);
                 cmd
             }
             Launcher::XdgOpen => {
-                let mut cmd = Command::new("xdg-open");
+                let mut cmd = command_for("xdg-open");
                 cmd.arg(uri);
                 cmd
             }
             Launcher::WindowsShell => {
-                let mut cmd = Command::new("cmd");
+                let mut cmd = command_for("cmd");
                 cmd.args(["/C", "start", "", uri]);
                 cmd
             }
             Launcher::MacOpen => {
-                let mut cmd = Command::new("open");
+                let mut cmd = command_for("open");
                 cmd.arg(uri);
                 cmd
             }
@@ -114,7 +129,7 @@ impl Launcher {
             ),
             Launcher::XdgOpen | Launcher::MacOpen => return false,
         };
-        Command::new(program)
+        command_for(program)
             .args(args)
             .stdin(Stdio::null())
             .stderr(Stdio::null())
@@ -129,12 +144,12 @@ impl Launcher {
     pub fn close_running_client(self) -> io::Result<()> {
         let mut cmd = match self {
             Launcher::Sober => {
-                let mut cmd = Command::new("flatpak");
+                let mut cmd = command_for("flatpak");
                 cmd.args(["kill", SOBER_APP_ID]);
                 cmd
             }
             Launcher::WindowsShell => {
-                let mut cmd = Command::new("taskkill");
+                let mut cmd = command_for("taskkill");
                 cmd.args(["/IM", CLIENT_EXE, "/F"]);
                 cmd
             }
@@ -206,7 +221,7 @@ impl Drop for ClientProcess {
             Launcher::XdgOpen | Launcher::MacOpen => None,
         };
         if let Some((program, args)) = kill {
-            let _ = Command::new(program)
+            let _ = command_for(program)
                 .args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())

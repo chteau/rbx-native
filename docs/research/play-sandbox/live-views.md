@@ -36,9 +36,9 @@ through the probe and the tunnel (`README.md`).
 editor ⇄ (tunnel, HTTPS) ⇄ server probe ⇄ (RemoteEvent) ⇄ client mirror
 ```
 
-Messages are `rbx_play::protocol` (`Uplink::Tree/Diff/Props`,
-`CommandBody::Watch/Set/SetAttribute/Destroy/Reparent/Create/Resync`), each
-tagged with `side`. The server probe handles `side = "server"` itself and
+Messages are `rbx_play::protocol` (`Uplink::Tree/Diff/Props/Stats`,
+`CommandBody::Watch/Set/SetAttribute/SetTags/Destroy/Reparent/Create/Resync`),
+each tagged with `side`. The server probe handles `side = "server"` itself and
 relays `side = "client"` commands to the tester's client
 (`remote:FireClient(player, command)`, where the player is the first one
 that joined); the client mirror's messages come back over the same remote
@@ -93,8 +93,29 @@ Four scripts, injected by `rbx_play::inject`:
 - **Edits** (each in a pcall; errors reported as an `Ack`-like log line):
   `set(target, prop, value)` decodes with the codec (the current value of
   the property guides enum and instance decoding) and assigns;
-  `set_attribute`, `destroy`, `reparent(target, parent)` (`0` = nil),
-  `create(class, name, parent)`.
+  `set_attribute`, `set_tags(target, tags)` (`Instance:AddTag` /
+  `RemoveTag` until `GetTags()` equals `tags`), `destroy`,
+  `reparent(target, parent)` (`0` = nil), `create(class, name, parent)`.
+
+### Stats
+
+Each side sends `Stats { side, metrics }` once a second (`Metrics`, every
+field optional, each read in its own pcall; Roblox docs, 2026-10-14):
+
+| Field | Server | Client |
+|---|---|---|
+| `fps` | `RunService.Heartbeat` firings / s | `RunService.RenderStepped` firings / s |
+| `physics_fps` | `workspace:GetRealPhysicsFPS()` | — |
+| `frame_ms` | `Stats.HeartbeatTime` × 1000 | `Stats.FrameTime` × 1000 (client only) |
+| `memory_mb` | `Stats:GetTotalMemoryUsageMb()` | same |
+| `instances` | `Stats.InstanceCount` | same |
+| `send_kbps` / `receive_kbps` | `Stats.DataSendKbps` / `DataReceiveKbps` | same |
+| `ping_ms` | — | `LocalPlayer:GetNetworkPing()` × 1000 (round trip) |
+| `players` | `#Players:GetPlayers()` | — |
+
+(`Stats.HeartbeatTimeMs` is deprecated in favour of `HeartbeatTime`, in
+seconds.) The Test ribbon shows one line per side and every number in the
+line's tooltip.
 
 ### Server probe additions
 
@@ -122,9 +143,24 @@ Four scripts, injected by `rbx_play::inject`:
 side's tree into `Shell::dom` (Explorer and Properties read it as they read
 any place), stashes the edited place's history and selection, forwards
 edits made while live as commands, and keeps a `Watch` on the selection.
-The 3D viewport stays on the edited place under the embedded game.
-Auto-Recovery, the luau-lsp mirror and script tabs leave the live tree
-alone; Save writes the stashed edited place.
+The 3D viewport stays on the edited place under the embedded game, and
+the game window is hidden while another document (Scripts, UI Editor,
+Animation) has the room. Auto-Recovery, the luau-lsp mirror, the debugger
+and script tabs leave the live tree alone; Save writes the stashed edited
+place. `Tags` edits become `SetTags`.
+
+### Scripts during a test
+
+The running game never sends `Source`, so opening a script from a live
+tree opens the edited place's copy: the same path, else the container
+Roblox copied it from when the tester joined (`PlayerScripts` →
+`StarterPlayer.StarterPlayerScripts`, `PlayerGui` → `StarterGui`,
+`Backpack` → `StarterPack`, the character model →
+`StarterPlayer.StarterCharacterScripts`), with the same class. A script
+that exists only in the game says so. Typing in a tab during the test is
+kept in the tab and written to the place when the test stops; the running
+game keeps the code it started with, as in Studio. The debugger refuses to
+start during a test (it runs against the edited place).
 
 ## Popups over the embedded game
 
@@ -156,6 +192,44 @@ dialogs show above the game.
 - `RBX_PLAY_TRACE=1` prints every ingested batch and every command handed
   to the probe on stderr.
 
-Not done: script source in live views (game scripts cannot read `Source`;
-opening a script during a test says so); editing `Tags` live; a stats
-panel for the `Stats` message.
+## Verified live under a window manager (2026-10-14, GNOME Shell 46)
+
+GNOME Shell in X11 mode, nested in Xephyr (`dbus-run-session -- gnome-shell
+--x11 --replace` with every `XDG_*_HOME` pointed at a scratch directory, so
+the nested shell never touches the real profile):
+
+- The first attempt left Sober a maximized top-level window: the window
+  manager, unmanaging the client after our `UnmapWindow`, reparented it
+  back to the root after our `ReparentWindow`, then managed it again when
+  it was mapped. `embed::x11` now withdraws the window as ICCCM 4.1.4 asks
+  (unmap, synthetic `UnmapNotify` to the root, wait for `WM_STATE` to go)
+  and re-checks the parent after reparenting. Embedded since.
+- Clicking the game gives it the keyboard (a chat message typed and sent);
+  clicking the Explorer's search takes it back (typed a filter, and the
+  editor became the active window). Maximizing through the window manager
+  resizes the game with the 3D view. The View menu draws above the game.
+- The Script Editor document hides the game; going back shows it again.
+- Stats: client 52–60 fps, 18–55 ms ping, ~830 MB; server 60 Hz, 1 player,
+  ~420 MB, in the Test ribbon.
+- A tag added in Properties on the client's `Hud` reached the game
+  (`set_tags`) and came back in its `Props`.
+- Double-clicking `Players.<tester>.PlayerScripts.Hud` opened
+  `StarterPlayer.StarterPlayerScripts.Hud` from the place; a line typed
+  there during the test was in the place after Stop (and in the saved
+  file); `PlayerScriptsLoader` said it only exists in the game. No
+  `Source` command ever reached the game.
+- A killed editor used to leave cloudflared running (it never ran
+  `Tunnel`'s `Drop`); the tunnel now gets `PR_SET_PDEATHSIG`.
+
+## Platforms
+
+- Linux: X11 / XWayland (`rbx_play::embed` x11 back end). Live-tested
+  under Xephyr alone and under a real compositing window manager (GNOME
+  Shell 46 in X11 mode, nested in Xephyr).
+- Windows: `rbx_play::embed` win32 back end (`SetParent` + `WS_CHILD`,
+  window regions for the popup holes, native focus through the joined
+  input queues). Type-checked and linted for `x86_64-pc-windows-msvc`;
+  not run on Windows yet. The editor itself cannot be cross-checked from
+  Linux (`ring` and `gpui` build scripts need the MSVC toolchain).
+- macOS: no cross-process window parenting; the client keeps its own
+  window and everything else (live views, stats, Output) works the same.

@@ -86,8 +86,8 @@ pub enum Uplink {
     },
     /// Result of a command: `ok` plus a printable value or error text.
     Ack { id: u64, ok: bool, result: String },
-    /// Players, memory, fps; free-form until the UI needs a shape.
-    Stats { data: serde_json::Value },
+    /// One side's performance, about once a second (see `Metrics`).
+    Stats { side: Side, metrics: Metrics },
     /// A player joined the server (`Players.PlayerAdded`, and every player
     /// already in when the probe starts).
     Joined { user_id: u64 },
@@ -134,6 +134,40 @@ pub enum Uplink {
         #[serde(default)]
         tags: Option<Vec<String>>,
     },
+}
+
+/// A side's performance numbers, read from Roblox's `Stats` service and
+/// friends; a number the side could not read is `None`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Metrics {
+    /// Client: frames rendered in the last second (`RenderStepped`).
+    /// Server: heartbeats in the last second (`Heartbeat`).
+    #[serde(default)]
+    pub fps: Option<f64>,
+    /// Server only: `workspace:GetRealPhysicsFPS()`.
+    #[serde(default)]
+    pub physics_fps: Option<f64>,
+    /// `Stats:GetTotalMemoryUsageMb()`.
+    #[serde(default)]
+    pub memory_mb: Option<f64>,
+    /// `Stats.InstanceCount`.
+    #[serde(default)]
+    pub instances: Option<u64>,
+    /// `Stats.DataSendKbps` / `Stats.DataReceiveKbps`.
+    #[serde(default)]
+    pub send_kbps: Option<f64>,
+    #[serde(default)]
+    pub receive_kbps: Option<f64>,
+    /// Server: `Stats.HeartbeatTime`; client: `Stats.FrameTime` — in
+    /// milliseconds (Roblox reports seconds).
+    #[serde(default)]
+    pub frame_ms: Option<f64>,
+    /// Client only: `LocalPlayer:GetNetworkPing()`, round trip, in ms.
+    #[serde(default)]
+    pub ping_ms: Option<f64>,
+    /// Server only: `#Players:GetPlayers()`.
+    #[serde(default)]
+    pub players: Option<u32>,
 }
 
 /// One instance in a side's tree. Ids are per side, assigned by that side's
@@ -217,6 +251,14 @@ pub enum CommandBody {
         class: String,
         name: String,
         parent: u64,
+    },
+    /// Makes `instance:GetTags()` equal `tags`: `AddTag` each missing one,
+    /// `RemoveTag` each extra one.
+    #[serde(rename = "set_tags")]
+    SetTags {
+        side: Side,
+        target: u64,
+        tags: Vec<String>,
     },
     /// Send `side`'s whole tree again (`Tree` with `reset`).
     Resync { side: Side },

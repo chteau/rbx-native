@@ -17,7 +17,7 @@
 //! - `reflect_changes` hands every edit made while live to `live_reflect`,
 //!   which turns the change log into `CommandBody`s for the shown side:
 //!   `Property` → `Set` (`Name` included; `AttributesSerialize` →
-//!   `SetAttribute` per changed/removed attribute; `Tags` is skipped),
+//!   `SetAttribute` per changed/removed attribute; `Tags` → `SetTags`),
 //!   `Parent` → `Reparent`, `Removed` → `Destroy`, `Added` → `Create` (and
 //!   the local instance is removed again: the probe's own `Diff` adds the
 //!   real one with its id). Values are encoded with `rbx_play::value::encode`
@@ -25,6 +25,14 @@
 //! - `live_tick` (every Play poll) sends `Watch` for the shown side when the
 //!   selection changed: each selected instance with the property names the
 //!   Properties panel lists for its class (`properties_for_class`).
+//! - Scripts: a running game cannot read `Source`, so opening a script from
+//!   a live tree opens the edited place's copy (`live_script_in_place`,
+//!   matched by path, with the copies Roblox makes at join mapped back:
+//!   `PlayerScripts` → `StarterPlayerScripts`, `PlayerGui` → `StarterGui`,
+//!   `Backpack` → `StarterPack`, the character → `StarterCharacterScripts`).
+//!   Its tab keeps typed text uncommitted until the test stops, when
+//!   `live_end` writes it to the restored place (the running game keeps the
+//!   code it started with, as in Studio).
 //! - Stopping restores everything exactly as it was (`live_end`).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -75,6 +83,96 @@ pub(crate) struct Live {
     watched: Option<(View, Vec<u64>)>,
     server_attributes: HashMap<u64, AttributeJson>,
     client_attributes: HashMap<u64, AttributeJson>,
+    /// The "script edits apply when the test stops" note was shown.
+    pub(in crate::shell) script_note: bool,
+}
+
+/// The edited place given `Shell::dom` and its live state: `dom`, or the
+/// stashed place while a live tree is shown. A free function so a caller
+/// can borrow it beside another `Shell` field.
+pub(in crate::shell) fn edit_dom_of<'a>(dom: &'a WeakDom, live: &'a Live) -> &'a WeakDom {
+    match &live.stash {
+        Some(stash) => &live.tree(stash.view).dom,
+        None => dom,
+    }
+}
+
+/// Names from the top-level instance down to `referent`.
+fn path_of(dom: &WeakDom, referent: Ref) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut current = Some(referent);
+    while let Some(r) = current {
+        let Some(instance) = dom.get(r) else {
+            break;
+        };
+        if instance.class() == "DataModel" {
+            break;
+        }
+        names.push(instance.name().to_string());
+        current = dom.parent(r);
+    }
+    names.reverse();
+    names
+}
+
+/// The instance at `path` (names from the top level down), first match by
+/// name at each level; a `DataModel` root is looked through.
+fn find_path(dom: &WeakDom, path: &[String]) -> Option<Ref> {
+    let mut level: Vec<Ref> = dom.root_refs().to_vec();
+    if let [only] = level.as_slice() {
+        if dom.get(*only).is_some_and(|i| i.class() == "DataModel") {
+            level = dom
+                .get(*only)
+                .map(|i| i.children().to_vec())
+                .unwrap_or_default();
+        }
+    }
+    let mut found = None;
+    for name in path {
+        let next = level
+            .iter()
+            .copied()
+            .find(|r| dom.get(*r).is_some_and(|i| i.name() == name))?;
+        found = Some(next);
+        level = dom
+            .get(next)
+            .map(|i| i.children().to_vec())
+            .unwrap_or_default();
+    }
+    found
+}
+
+/// Where a script in the running game came from in the place: the same
+/// path, or for the copies Roblox makes when a player joins, the container
+/// it copied from. `players` are the names under `Players` in the live tree.
+pub(in crate::shell) fn place_paths(path: &[String], players: &[String]) -> Vec<Vec<String>> {
+    let mut paths = vec![path.to_vec()];
+    let rest = |from: usize| path.get(from..).unwrap_or_default().to_vec();
+    match path {
+        [players_service, _, container, ..] if players_service == "Players" => {
+            let start: &[&str] = match container.as_str() {
+                "PlayerScripts" => &["StarterPlayer", "StarterPlayerScripts"],
+                "PlayerGui" => &["StarterGui"],
+                "Backpack" | "StarterGear" => &["StarterPack"],
+                _ => &[],
+            };
+            if !start.is_empty() {
+                let mut mapped: Vec<String> = start.iter().map(|s| s.to_string()).collect();
+                mapped.extend(rest(3));
+                paths.push(mapped);
+            }
+        }
+        [workspace, character, ..] if workspace == "Workspace" && players.contains(character) => {
+            let mut mapped = vec![
+                "StarterPlayer".to_string(),
+                "StarterCharacterScripts".to_string(),
+            ];
+            mapped.extend(rest(2));
+            paths.push(mapped);
+        }
+        _ => {}
+    }
+    paths
 }
 
 impl Live {
@@ -87,6 +185,7 @@ impl Live {
             watched: None,
             server_attributes: HashMap::new(),
             client_attributes: HashMap::new(),
+            script_note: false,
         }
     }
 
@@ -164,10 +263,29 @@ impl Shell {
 
     /// The edited place: `self.dom`, or the stashed one while live.
     pub(in crate::shell) fn edit_dom(&self) -> &WeakDom {
-        match &self.play.live.stash {
-            Some(stash) => &self.play.live.tree(stash.view).dom,
-            None => &self.dom,
-        }
+        edit_dom_of(&self.dom, &self.play.live)
+    }
+
+    /// The edited place's script for `live`, a script in the shown live
+    /// tree (see the module docs), if the place has one of the same class.
+    pub(in crate::shell) fn live_script_in_place(&self, live: Ref) -> Option<Ref> {
+        let class = self.dom.get(live)?.class().to_string();
+        let path = path_of(&self.dom, live);
+        let players: Vec<String> = find_path(&self.dom, &["Players".to_string()])
+            .and_then(|p| self.dom.get(p))
+            .map(|players| {
+                players
+                    .children()
+                    .iter()
+                    .filter_map(|c| self.dom.get(*c).map(|i| i.name().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let place = self.edit_dom();
+        place_paths(&path, &players)
+            .iter()
+            .filter_map(|candidate| find_path(place, candidate))
+            .find(|r| place.get(*r).is_some_and(|i| i.class() == class))
     }
 
     fn live_swap(&mut self, view: View) {
@@ -201,6 +319,7 @@ impl Shell {
             view,
         });
         self.play.live.watched = None;
+        self.play.live.script_note = false;
         self.live_refresh(cx);
     }
 
@@ -226,6 +345,8 @@ impl Shell {
         live.server_attributes.clear();
         live.client_attributes.clear();
         live.watched = None;
+        // Typing kept in script tabs during the test reaches the place now.
+        self.flush_script_edits(cx);
         cx.notify();
     }
 
@@ -429,7 +550,10 @@ impl Shell {
             return;
         };
         match name {
-            "Tags" => {}
+            "Tags" => {
+                let tags = instance.tags().into_iter().map(str::to_string).collect();
+                commands.push(CommandBody::SetTags { side, target, tags });
+            }
             "AttributesSerialize" => {
                 let now = attribute_json(&instance.attributes());
                 let last = self
@@ -539,6 +663,58 @@ impl Shell {
 mod tests {
     use super::*;
     use rbx_reflection::ReflectionDatabase;
+
+    fn names(path: &[&str]) -> Vec<String> {
+        path.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn join_copies_map_back_to_their_starter_containers() {
+        let players = names(&["Tester"]);
+        let cases = [
+            (
+                names(&["Players", "Tester", "PlayerScripts", "Hud", "Init"]),
+                names(&["StarterPlayer", "StarterPlayerScripts", "Hud", "Init"]),
+            ),
+            (
+                names(&["Players", "Tester", "PlayerGui", "Menu", "Open"]),
+                names(&["StarterGui", "Menu", "Open"]),
+            ),
+            (
+                names(&["Players", "Tester", "Backpack", "Sword", "Swing"]),
+                names(&["StarterPack", "Sword", "Swing"]),
+            ),
+            (
+                names(&["Workspace", "Tester", "Sprint"]),
+                names(&["StarterPlayer", "StarterCharacterScripts", "Sprint"]),
+            ),
+        ];
+        for (live, place) in cases {
+            let paths = place_paths(&live, &players);
+            assert_eq!(paths[0], live, "the same path is tried first");
+            assert_eq!(paths.get(1), Some(&place));
+        }
+        // A model that is not a character keeps its own path only.
+        let model = names(&["Workspace", "Door", "Script"]);
+        assert_eq!(place_paths(&model, &players), vec![model]);
+    }
+
+    #[test]
+    fn find_path_looks_through_a_data_model_root() {
+        let mut dom = WeakDom::new();
+        let game = dom.new_instance("DataModel", "Game", None);
+        let sss = dom.new_instance("ServerScriptService", "ServerScriptService", Some(game));
+        let main = dom.new_instance("Script", "Main", Some(sss));
+        assert_eq!(
+            find_path(&dom, &names(&["ServerScriptService", "Main"])),
+            Some(main)
+        );
+        assert_eq!(path_of(&dom, main), names(&["ServerScriptService", "Main"]));
+        assert_eq!(
+            find_path(&dom, &names(&["ServerScriptService", "Gone"])),
+            None
+        );
+    }
 
     #[test]
     fn part_lists_visible_properties() {

@@ -180,4 +180,46 @@ mod unix_start {
             "tunnel died after its URL"
         );
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn tunnel_ends_when_its_spawning_thread_dies() {
+        // A killed or crashed editor never runs `Tunnel`'s Drop; the kernel's
+        // parent-death signal ends the tunnel instead. It follows the thread
+        // that spawned the child, which is what this test ends.
+        let (pid_tx, pid_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let tunnel = echo_provider("echo https://abc.example.test; sleep 30")
+                .start(1, Duration::from_secs(5))
+                .expect("tunnel starts");
+            pid_tx.send(tunnel.child.id()).expect("send pid");
+            // Skip Drop, as a crash would.
+            std::mem::forget(tunnel);
+        })
+        .join()
+        .expect("spawning thread");
+        let pid = pid_rx.recv().expect("pid");
+        let alive = |pid: u32| {
+            std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .ok()
+                .and_then(|stat| {
+                    let state = stat
+                        .rsplit(')')
+                        .next()?
+                        .split_whitespace()
+                        .next()?
+                        .to_owned();
+                    Some(state != "Z" && state != "X")
+                })
+                .unwrap_or(false)
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while alive(pid) && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            !alive(pid),
+            "the tunnel outlived the thread that started it"
+        );
+    }
 }

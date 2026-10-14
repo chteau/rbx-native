@@ -127,3 +127,30 @@ fn every_stop_reason_has_a_message() {
         assert!(!reason.message().is_empty());
     }
 }
+
+#[test]
+fn stats_line_leads_with_rate_and_skips_unknowns() {
+    use rbx_play::protocol::Metrics;
+    let client = Metrics {
+        fps: Some(59.6),
+        ping_ms: Some(44.8),
+        memory_mb: Some(811.7),
+        instances: Some(9000),
+        ..Metrics::default()
+    };
+    assert_eq!(
+        stats_line(Side::Client, &client),
+        "60 fps \u{b7} 45 ms ping \u{b7} 812 MB"
+    );
+    let server = Metrics {
+        fps: Some(60.0),
+        players: Some(1),
+        ..Metrics::default()
+    };
+    assert_eq!(stats_line(Side::Server, &server), "60 Hz \u{b7} 1 player");
+    assert_eq!(stats_line(Side::Server, &Metrics::default()), "\u{2014}");
+    let details = stats_details(&client);
+    assert!(details.contains("Ping: 44.8 ms"));
+    assert!(details.contains("Instances: 9000"));
+    assert!(!details.contains("Players"));
+}

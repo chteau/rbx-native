@@ -61,8 +61,8 @@ impl Shell {
             })
             .collect();
 
-        let name = source::label(&self.dom, active).unwrap_or_default();
-        let path = full_name(&self.dom, active);
+        let name = source::label(self.edit_dom(), active).unwrap_or_default();
+        let path = full_name(self.edit_dom(), active);
         let tools = match view {
             View::Code => self.code_tools(active, cx),
             View::Graph => self.graph_tools(active, cx),

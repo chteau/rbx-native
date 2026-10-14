@@ -49,7 +49,7 @@ use rbx_cloud::{ApiKey, Client, PublishMode};
 use rbx_play::channel::{ChannelServer, DEFAULT_HOLD};
 use rbx_play::inject::ProbeConfig;
 use rbx_play::launch::{join_server_uri, join_uri, ClientProcess, Launcher};
-use rbx_play::protocol::{Token, Uplink, TOKEN_HEADER};
+use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
 use rbx_play::tunnel::{Tunnel, TunnelProvider};
 
 use super::Shell;
@@ -67,15 +67,14 @@ pub(super) const DNS_SETTLE: Duration = Duration::from_secs(10);
 const TUNNEL_TIMEOUT: Duration = Duration::from_secs(60);
 const HEALTH_BUDGET: Duration = Duration::from_secs(60);
 const HEALTH_RETRY: Duration = Duration::from_secs(1);
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 const EMBED_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// Where the viewport is, for embedding: the X11 id of the window it is
-/// drawn in and its rect there in physical pixels. Written every frame by
-/// the viewport dock's prepaint.
+/// Where the viewport is, for embedding: the native window it is drawn in
+/// (X11 id or `HWND`) and its rect there in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EmbedTarget {
-    pub(crate) window: u32,
+    pub(crate) window: crate::pointer_lock::WindowId,
     pub(crate) rect: session::rbx_play_rect::Rect,
 }
 
@@ -98,14 +97,24 @@ struct Link {
 /// One running Play.
 struct Session {
     _token: Token,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     embedded: Option<rbx_play::embed::Embedded>,
     /// Gives the embedded client the keyboard when it is clicked.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     focus: Option<rbx_play::embed::FocusFollow>,
     client: ClientProcess,
     own_user: Option<u64>,
     last_rect: Option<session::rbx_play_rect::Rect>,
+    /// The embedded window is hidden because another document (Scripts,
+    /// UI Editor, Animation) took the room the 3D view had.
+    hidden: bool,
+}
+
+/// The latest `Uplink::Stats` of each side, shown in the Test ribbon.
+#[derive(Debug, Default)]
+pub(super) struct PlayStats {
+    pub(super) server: Option<rbx_play::protocol::Metrics>,
+    pub(super) client: Option<rbx_play::protocol::Metrics>,
 }
 
 pub(super) struct Play {
@@ -114,20 +123,22 @@ pub(super) struct Play {
     pub(super) phase: Phase,
     /// The "Roblox is already running" question is showing.
     pub(super) confirm_close: bool,
-    /// The X11 id of the editor window Play was pressed in; the client is
-    /// embedded there, over the 3D view.
-    main_window: Option<u32>,
+    /// The editor window Play was pressed in (X11 id or `HWND`); the client
+    /// is embedded there, over the 3D view.
+    main_window: Option<crate::pointer_lock::WindowId>,
     /// The same window as GPUI knows it, for `gpui_base::occlusion`.
     gpui_window: Option<gpui_kit::WindowId>,
     /// The running server's `game.JobId`, once its hello arrived.
     pub(super) job_id: Option<String>,
     /// The Client/Server views of the running game (`play::live`).
     pub(super) live: live::Live,
+    /// Each side's performance, as last reported.
+    pub(super) stats: PlayStats,
     /// The window's scale factor when Play was pressed, to turn popups'
     /// logical bounds into the embedded window's device pixels.
     scale: f32,
     /// The holes last cut out of the embedded window (`play_update_holes`).
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     holes: Vec<rbx_play::embed::Rect>,
     link: Option<Link>,
     session: Option<Session>,
@@ -148,8 +159,9 @@ impl Play {
             main_window: None,
             gpui_window: None,
             live: live::Live::new(),
+            stats: PlayStats::default(),
             scale: 1.0,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             holes: Vec::new(),
             job_id: None,
             link: None,
@@ -439,10 +451,10 @@ impl Shell {
             let uri = join_uri(place_id, &session);
             let launched = cx
                 .background_spawn(async move {
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", windows))]
                     let ignore = rbx_play::embed::Embedded::existing_clients().unwrap_or_default();
-                    #[cfg(not(target_os = "linux"))]
-                    let ignore: Vec<u32> = Vec::new();
+                    #[cfg(not(any(target_os = "linux", windows)))]
+                    let ignore: Vec<crate::pointer_lock::WindowId> = Vec::new();
                     ClientProcess::spawn(launcher, &uri).map(|client| (client, ignore))
                 })
                 .await;
@@ -463,13 +475,14 @@ impl Shell {
                 }
                 shell.play.session = Some(Session {
                     _token: token,
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", windows))]
                     embedded: None,
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", windows))]
                     focus: None,
                     client,
                     own_user: None,
                     last_rect: None,
+                    hidden: false,
                 });
                 Ok(shell.play_embed_target(cx))
             });
@@ -477,7 +490,7 @@ impl Shell {
                 return;
             };
 
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             if let Some(target) = target {
                 if !step(&this, cx, attempt, "Embedding the Roblox window\u{2026}") {
                     return;
@@ -524,7 +537,7 @@ impl Shell {
                     cx.notify();
                 });
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", windows)))]
             let _ = (target, ignore);
 
             let _ = this.update(cx, |shell, cx| {
@@ -584,6 +597,14 @@ impl Shell {
             if self.live_apply(&event, cx) {
                 continue;
             }
+            if let Uplink::Stats { side, metrics } = event {
+                let slot = match side {
+                    Side::Server => &mut self.play.stats.server,
+                    Side::Client => &mut self.play.stats.client,
+                };
+                *slot = Some(metrics);
+                continue;
+            }
             if let Some((source, row)) = session::feedback_for(&event) {
                 self.output.push(source, row);
             }
@@ -598,33 +619,44 @@ impl Shell {
                 }
             }
         }
+        // The game replaces the 3D view only: another document hides it.
+        let on_viewport = self.document == super::chrome::Document::Viewport;
         let Some(running) = self.play.session.as_mut() else {
             return false;
         };
         if stop.is_none() && running.client.exited() {
             stop = Some(StopReason::ClientExited);
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         if stop.is_none() {
             if let Some(embedded) = &running.embedded {
                 if !embedded.alive() {
                     stop = Some(StopReason::WindowClosed);
+                } else if !on_viewport {
+                    if !running.hidden {
+                        embedded.hide();
+                        running.hidden = true;
+                    }
                 } else if let Some(target) = target {
-                    if running.last_rect != Some(target.rect) {
+                    if running.last_rect != Some(target.rect) || running.hidden {
                         let _ = embedded.set_rect(target.rect);
                         running.last_rect = Some(target.rect);
+                    }
+                    if running.hidden {
+                        embedded.show();
+                        running.hidden = false;
                     }
                 }
             }
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", windows)))]
         let _ = &running.last_rect;
         if let Some(reason) = stop {
             self.play_stop(reason, cx);
             return false;
         }
         self.live_tick(cx);
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         self.play_update_holes();
         if changed {
             cx.notify();
@@ -635,7 +667,7 @@ impl Shell {
     /// Cuts the editor's popups out of the embedded game window, so they
     /// show above it (`gpui_base::occlusion` records where they were
     /// painted). Called after every frame while embedded and on each poll.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub(in crate::shell) fn play_update_holes(&mut self) {
         let (Some(window), Some(running)) = (self.play.gpui_window, self.play.session.as_ref())
         else {
@@ -644,6 +676,9 @@ impl Shell {
         let (Some(embedded), Some(rect)) = (&running.embedded, running.last_rect) else {
             return;
         };
+        if running.hidden {
+            return;
+        }
         let scale = self.play.scale;
         let holes: Vec<rbx_play::embed::Rect> = gpui_base::occlusion::rects(window)
             .into_iter()
@@ -673,7 +708,7 @@ impl Shell {
         self.play.attempt += 1;
         self.play.poll = None;
         self.live_end(cx);
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         self.play.holes.clear();
         if let Some(running) = self.play.session.take() {
             // Tell that session's server to close, so the next Play can't be
@@ -683,17 +718,18 @@ impl Shell {
             }
             // Hidden before the client is killed and the window handed back
             // to the root, so nothing flashes on the desktop.
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             drop(running.focus);
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             if let Some(embedded) = &running.embedded {
                 embedded.hide();
             }
             drop(running.client);
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             drop(running.embedded);
         }
         self.play.job_id = None;
+        self.play.stats = PlayStats::default();
         self.play.confirm_close = false;
         self.play.pending_launcher = None;
         self.output

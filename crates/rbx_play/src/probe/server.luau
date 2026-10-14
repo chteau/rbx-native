@@ -170,6 +170,50 @@ end)
 
 task.spawn(live.snapshot)
 
+local Stats = game:GetService("Stats")
+local beats = 0
+RunService.Heartbeat:Connect(function()
+	beats += 1
+end)
+
+task.spawn(function()
+	while running do
+		local started = os.clock()
+		beats = 0
+		task.wait(1)
+		-- task.wait resumes a little late; rate over the real interval.
+		local m = { fps = beats / math.max(os.clock() - started, 0.001) }
+		local function read(key, f)
+			local okRead, value = pcall(f)
+			if okRead and type(value) == "number" then
+				m[key] = value
+			end
+		end
+		read("physics_fps", function()
+			return workspace:GetRealPhysicsFPS()
+		end)
+		read("memory_mb", function()
+			return Stats:GetTotalMemoryUsageMb()
+		end)
+		read("instances", function()
+			return Stats.InstanceCount
+		end)
+		read("send_kbps", function()
+			return Stats.DataSendKbps
+		end)
+		read("receive_kbps", function()
+			return Stats.DataReceiveKbps
+		end)
+		read("frame_ms", function()
+			return Stats.HeartbeatTime * 1000
+		end)
+		read("players", function()
+			return #Players:GetPlayers()
+		end)
+		queue({ type = "stats", side = "server", metrics = m })
+	end
+end)
+
 local function ack(id, ok, result)
 	queue({ type = "ack", id = id, ok = ok, result = result })
 end
@@ -187,6 +231,8 @@ local function handleLive(cmd)
 		ackLive(cmd, live.set(cmd.target, cmd.prop, cmd.value))
 	elseif kind == "set_attribute" then
 		ackLive(cmd, live.set_attribute(cmd.target, cmd.name, cmd.value))
+	elseif kind == "set_tags" then
+		ackLive(cmd, live.set_tags(cmd.target, cmd.tags or {}))
 	elseif kind == "destroy" then
 		ackLive(cmd, live.destroy(cmd.target))
 	elseif kind == "reparent" then
@@ -202,6 +248,7 @@ local LIVE_COMMANDS = {
 	watch = true,
 	set = true,
 	set_attribute = true,
+	set_tags = true,
 	destroy = true,
 	reparent = true,
 	create = true,

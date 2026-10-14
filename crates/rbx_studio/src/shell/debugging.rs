@@ -96,6 +96,15 @@ impl Shell {
         let Some(script) = self.scripts.tabs.active() else {
             return;
         };
+        // The debugger runs against the edited place, which a test stashes.
+        if self.live_shown() {
+            self.output.push(
+                "Debugger",
+                Feedback::Warning("Stop the test to debug a script.".to_owned()),
+            );
+            cx.notify();
+            return;
+        }
         self.flush_script_edits(cx);
         let Some(text) = source::read(&self.dom, script) else {
             return;
@@ -303,7 +312,7 @@ impl Shell {
             Ok(()) => {}
         }
         if let Some(dom) = finished.dom {
-            if self.history.revision() == run.revision {
+            if self.history.revision() == run.revision && !self.live_shown() {
                 let before = std::mem::replace(&mut self.dom, dom);
                 self.push_history_snapshot(before);
                 self.rebuild_after_script(cx);

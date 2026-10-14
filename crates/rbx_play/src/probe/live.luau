@@ -1,7 +1,6 @@
 -- Live tree (ModuleScript): one side's instance tree, diffs, watched
 -- properties and edits, as rbx_play::protocol messages handed to `send`.
 local HttpService = game:GetService("HttpService")
-local CollectionService = game:GetService("CollectionService")
 
 local ROOT_NAMES = {
 	"Workspace",
@@ -275,7 +274,7 @@ function Live.new(side, send, codec)
 				any = true
 			end
 		end
-		local okT, tags = pcall(CollectionService.GetTags, CollectionService, inst)
+		local okT, tags = pcall(inst.GetTags, inst)
 		if okT then
 			local key = jsonKey(tags)
 			if state.tags ~= key then
@@ -341,6 +340,29 @@ function Live.new(side, send, codec)
 			end
 			inst:SetAttribute(name, decoded)
 			return "attribute " .. name .. " set"
+		end)
+	end
+
+	function self.set_tags(targetId, tags)
+		return guarded(function()
+			local inst = target(targetId)
+			local wanted = {}
+			for _, t in tags do
+				wanted[t] = true
+			end
+			local have = {}
+			for _, t in inst:GetTags() do
+				have[t] = true
+				if not wanted[t] then
+					inst:RemoveTag(t)
+				end
+			end
+			for t in wanted do
+				if not have[t] then
+					inst:AddTag(t)
+				end
+			end
+			return "tags set"
 		end)
 	end
 

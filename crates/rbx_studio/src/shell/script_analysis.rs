@@ -81,7 +81,7 @@ impl Shell {
 
         let mut list = v_flex().w_full();
         for (script, problems) in &self.lsp.problems {
-            list = list.child(script_row(&self.dom, *script, problems.len()));
+            list = list.child(script_row(self.edit_dom(), *script, problems.len()));
             for (index, problem) in problems.iter().enumerate() {
                 list = list.child(problem_row(*script, index, problem, cx));
             }

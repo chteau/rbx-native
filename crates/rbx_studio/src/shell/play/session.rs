@@ -173,16 +173,13 @@ pub(crate) fn stop_for(event: &Uplink, own_user: &mut Option<u64>) -> Option<Sto
     }
 }
 
-#[cfg(test)]
-mod tests;
-
-/// `rbx_play::embed::Rect` exists on Linux only; elsewhere an identical
+/// `rbx_play::embed::Rect` exists on Linux and Windows only; elsewhere an identical
 /// local struct stands in so this module builds everywhere.
 pub(crate) mod rbx_play_rect {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub(crate) use rbx_play::embed::Rect;
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", windows)))]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct Rect {
         pub x: i32,
@@ -191,3 +188,59 @@ pub(crate) mod rbx_play_rect {
         pub height: u32,
     }
 }
+
+/// The Test ribbon's one-line summary of a side's `Metrics`, the most
+/// telling numbers first; parts the side did not report are left out.
+/// Client: "60 fps · 45 ms ping · 812 MB"; server: "60 Hz · 1 player · 412 MB".
+pub(crate) fn stats_line(side: Side, metrics: &rbx_play::protocol::Metrics) -> String {
+    let mut parts = Vec::new();
+    if let Some(fps) = metrics.fps {
+        let unit = match side {
+            Side::Client => "fps",
+            Side::Server => "Hz",
+        };
+        parts.push(format!("{} {unit}", fps.round()));
+    }
+    if let Some(ping) = metrics.ping_ms {
+        parts.push(format!("{} ms ping", ping.round()));
+    }
+    if let Some(players) = metrics.players {
+        let plural = if players == 1 { "" } else { "s" };
+        parts.push(format!("{players} player{plural}"));
+    }
+    if let Some(memory) = metrics.memory_mb {
+        parts.push(format!("{} MB", memory.round()));
+    }
+    if parts.is_empty() {
+        "\u{2014}".to_owned()
+    } else {
+        parts.join(" \u{b7} ")
+    }
+}
+
+/// Every reported number of a side, one per line, for the readout's tooltip.
+pub(crate) fn stats_details(metrics: &rbx_play::protocol::Metrics) -> String {
+    let mut lines = Vec::new();
+    let mut push = |label: &str, value: Option<f64>, unit: &str| {
+        if let Some(value) = value {
+            lines.push(format!("{label}: {value:.1}{unit}"));
+        }
+    };
+    push("Frame rate", metrics.fps, "/s");
+    push("Physics rate", metrics.physics_fps, "/s");
+    push("Frame time", metrics.frame_ms, " ms");
+    push("Ping", metrics.ping_ms, " ms");
+    push("Memory", metrics.memory_mb, " MB");
+    push("Sent", metrics.send_kbps, " KB/s");
+    push("Received", metrics.receive_kbps, " KB/s");
+    if let Some(instances) = metrics.instances {
+        lines.push(format!("Instances: {instances}"));
+    }
+    if let Some(players) = metrics.players {
+        lines.push(format!("Players: {players}"));
+    }
+    lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests;

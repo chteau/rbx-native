@@ -8,10 +8,11 @@
 //! - `launch`: the `roblox://` join URI and the program that opens it.
 //! - `value`: Roblox values ↔ JSON, both ways, for live properties.
 //! - `live`: a side's live instance tree as a `WeakDom`, from `Tree`/`Diff`/`Props`.
-//! - `embed`: re-parents the client's X11 window, frameless, into the viewport.
+//! - `embed`: puts the client's window, frameless, into the viewport (Linux
+//!   X11 and Windows).
 
 pub mod channel;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 pub mod embed;
 pub mod inject;
 pub mod launch;

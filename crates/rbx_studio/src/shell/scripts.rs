@@ -39,29 +39,66 @@ const MENU_VARIABLE: &str = "RBX_STUDIO_GRAPH_MENU";
 const COMMIT_DELAY: Duration = Duration::from_millis(400);
 
 impl Shell {
-    /// Opens `reference` in the script editor, or brings its existing tab to
-    /// the front. Anything that is not a script is ignored, so this is safe to
-    /// call for any double-clicked Explorer row.
+    /// Opens `reference` — an instance in the tree the Explorer shows — in
+    /// the script editor, or brings its existing tab to the front. Anything
+    /// that is not a script is ignored, so this is safe to call for any
+    /// double-clicked Explorer row.
+    ///
+    /// During a test the Explorer shows the running game, which never sends
+    /// a script's source (game scripts cannot read `Source`): the edited
+    /// place's copy opens instead (`live_script_in_place`).
     pub(crate) fn open_script(
         &mut self,
         reference: Ref,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.live_shown() {
+            self.open_place_script(reference, window, cx);
+            return;
+        }
         if !source::is_script(&self.dom, &self.database, reference) {
             return;
         }
-        // A running game never sends a script's source (game scripts cannot
-        // read `Source`), and a tab must not outlive the live tree it came from.
-        if self.live_shown() {
+        let Some(place) = self.live_script_in_place(reference) else {
+            let name = self
+                .dom
+                .get(reference)
+                .map(|i| i.name().to_string())
+                .unwrap_or_default();
             self.output.push(
                 "Play",
-                crate::command_bar::Feedback::Warning(
-                    "Scripts open from the edited place: stop the test to read or edit them."
+                crate::command_bar::Feedback::Warning(format!(
+                    "{name} only exists in the running game, so its source cannot be shown."
+                )),
+            );
+            cx.notify();
+            return;
+        };
+        if !self.play.live.script_note {
+            self.play.live.script_note = true;
+            self.output.push(
+                "Play",
+                crate::command_bar::Feedback::Output(
+                    "Scripts open from your place during a test. Edits are saved to the place \
+                     when the test stops; the running game keeps the code it started with."
                         .to_owned(),
                 ),
             );
-            cx.notify();
+        }
+        self.open_place_script(place, window, cx);
+    }
+
+    /// Opens `reference`, a script of the edited place (`edit_dom`), in the
+    /// script editor, or brings its existing tab to the front.
+    pub(crate) fn open_place_script(
+        &mut self,
+        reference: Ref,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let live = self.live_shown();
+        if !source::is_script(self.edit_dom(), &self.database, reference) {
             return;
         }
 
@@ -69,7 +106,7 @@ impl Shell {
         // would throw away an edit in progress.
         // Argon's Open In Editor: a synced script opens in the OS editor
         // through the server instead of here.
-        if self.argon_open_in_editor(reference) {
+        if !live && self.argon_open_in_editor(reference) {
             return;
         }
 
@@ -80,7 +117,7 @@ impl Shell {
             return;
         }
 
-        let text = source::read(&self.dom, reference).unwrap_or_default();
+        let text = source::read(self.edit_dom(), reference).unwrap_or_default();
         let seed = text.clone();
         let state = cx.new(|cx| {
             let mut state = EditorState::new(window, cx)
@@ -171,10 +208,8 @@ impl Shell {
     /// debounce. `pub(super)`: `shell::history` calls it before an undo and
     /// `shell::save` before a write, so both act on the text as typed.
     pub(super) fn flush_script_edits(&mut self, cx: &mut Context<Self>) {
-        // Script tabs hold the edited place's refs; the live tree has others.
-        if self.live_shown() {
-            return;
-        }
+        // Script tabs hold the edited place's refs; the live tree has others
+        // (`commit_script` waits for the test to stop).
         for reference in self.scripts.tabs.all().to_vec() {
             self.commit_script(reference, None, cx);
         }
@@ -272,6 +307,11 @@ impl Shell {
     /// since it was scheduled, and `None` for a flush, which always writes
     /// whatever is there.
     fn commit_script(&mut self, reference: Ref, generation: Option<u64>, cx: &mut Context<Self>) {
+        // The tab belongs to the edited place, stashed while a live view
+        // shows: its text waits (still pending) until `live_end` flushes.
+        if self.live_shown() {
+            return;
+        }
         let Some(open) = self.scripts.open.get(&reference) else {
             return;
         };

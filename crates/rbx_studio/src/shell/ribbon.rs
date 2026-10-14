@@ -532,6 +532,60 @@ impl Shell {
         }
     }
 
+    /// The running game's numbers beside the test tiles: one row per side
+    /// (`play::session::stats_line`), every number in the row's tooltip.
+    /// Nothing while no test runs.
+    fn stats_readout(&self) -> Option<Div> {
+        use super::play::session::{stats_details, stats_line};
+        use rbx_play::protocol::Side;
+        if self.play.phase != Phase::Running {
+            return None;
+        }
+        let row = |id: &'static str, icon: IconName, side: Side, metrics| {
+            let (line, details) = match metrics {
+                Some(metrics) => (stats_line(side, metrics), stats_details(metrics)),
+                None => (
+                    "\u{2014}".to_owned(),
+                    "Waiting for the first report.".to_owned(),
+                ),
+            };
+            h_flex()
+                .id(id)
+                .w_full()
+                .flex_1()
+                .items_center()
+                .gap(px(6.))
+                .px(px(7.))
+                .rounded(tokens::radius())
+                .bg(tokens::tile())
+                .text_size(tokens::text_xs())
+                .line_height(tokens::line_xs())
+                .text_color(tokens::text_label())
+                .child(Icon::new(icon).size(tokens::text_xs()))
+                .child(div().flex_1().truncate().child(line))
+                .tooltip(move |window, cx| super::tooltip::text(details.clone(), window, cx))
+        };
+        Some(
+            v_flex()
+                .flex_none()
+                .w(px(190.))
+                .h_full()
+                .gap(px(4.))
+                .child(row(
+                    "ribbon-stats-client",
+                    IconName::Globe,
+                    Side::Client,
+                    self.play.stats.client.as_ref(),
+                ))
+                .child(row(
+                    "ribbon-stats-server",
+                    IconName::Server,
+                    Side::Server,
+                    self.play.stats.server.as_ref(),
+                )),
+        )
+    }
+
     fn test_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let nav = &self.ribbon_nav;
         let idle = self.play.phase == Phase::Idle;
@@ -568,7 +622,7 @@ impl Shell {
                 "no test server yet",
             )
         };
-        vec![
+        let mut tiles = vec![
             primary("ribbon-play", play).into_any_element(),
             // Stop is a tile of its own rather than a third stack row: three
             // rows in an 80px ribbon are ~25px each, and Stop is the control a
@@ -582,7 +636,9 @@ impl Shell {
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),
             disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
-        ]
+        ];
+        tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
+        tiles
     }
 }
 
