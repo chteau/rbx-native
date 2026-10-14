@@ -96,6 +96,8 @@ local SIZE = {
 	-- "New" sits one pixel below the pill's centre in the reference.
 	pillTextNudge = 1,
 	disclaimerTop = 12,
+	subscriptionDisclaimerTop = 20,
+	termsTop = 20,
 	completedTop = 28,
 	completedGap = 16,
 	completedIcon = 48,
@@ -147,6 +149,12 @@ local TEXT = {
 	pill = "New",
 	disclaimer = "This is a test purchase. Your account will not be charged.",
 	noPrice = "—",
+	subscriptionTitle = "Get subscription",
+	subscribe = "Subscribe",
+	terms = 'By clicking "Subscribe", you agree to the Terms of Use. You will be automatically charged each month and can cancel at any time.',
+	errorTitle = "Error",
+	errorMessage = "Your purchase failed because something went wrong. Your account has not been charged. Please try again later.",
+	completedMessage = "You have successfully bought %s.",
 }
 
 local current = nil
@@ -480,9 +488,31 @@ local function runBuyDelay(button, state)
 	end)
 end
 
-local function buildBuyView(body, info, state, actions)
-	header(body, TEXT.buyTitle, info.balance, actions.cancel)
+local function noteSection(body, order, top, text, align)
+	local note = section(body, order, top)
+	label({
+		Parent = note,
+		Text = text,
+		FontFace = sansFont("Medium"),
+		TextSize = FONT.disclaimerSize,
+		LineHeight = FONT.disclaimerLineHeight,
+		TextColor3 = hex(COLOR.body),
+		TextXAlignment = align,
+		TextWrapped = true,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+	})
+end
 
+local function priceLine(info)
+	if info.priceText then
+		return info.priceText, false
+	end
+	return robuxText(info.price) .. (info.period or ""), true
+end
+
+local function itemRow(body, info)
+	local priceText, rich = priceLine(info)
 	local item = make("Frame", {
 		Parent = body,
 		BackgroundTransparency = 1,
@@ -516,19 +546,28 @@ local function buildBuyView(body, info, state, actions)
 	itemLabel({
 		Parent = details,
 		LayoutOrder = 2,
-		RichText = true,
-		Text = robuxText(info.price),
+		RichText = rich,
+		Text = priceText,
 		AutomaticSize = Enum.AutomaticSize.XY,
 	})
+end
 
+local function buyButton(body, text, state, actions)
 	local buySection = section(body, 3, SIZE.buySectionTop)
-	local buy = primaryButton(buySection, TEXT.buy, state)
+	local buy = primaryButton(buySection, text, state)
 	buy.Activated:Connect(function()
 		if state.enabled then
 			actions.buy(buy)
 		end
 	end)
 	runBuyDelay(buy, state)
+	return buy
+end
+
+local function buildBuyView(body, info, state, actions)
+	header(body, TEXT.buyTitle, info.balance, actions.cancel)
+	itemRow(body, info)
+	local buy = buyButton(body, TEXT.buy, state, actions)
 
 	local bannerSection = section(body, 4, SIZE.bannerTop)
 	local banner = make("ImageButton", {
@@ -597,24 +636,21 @@ local function buildBuyView(body, info, state, actions)
 		banner.BackgroundTransparency = 1
 	end)
 
-	local disclaimer = section(body, 5, SIZE.disclaimerTop)
-	label({
-		Parent = disclaimer,
-		Text = TEXT.disclaimer,
-		FontFace = sansFont("Medium"),
-		TextSize = FONT.disclaimerSize,
-		LineHeight = FONT.disclaimerLineHeight,
-		TextColor3 = hex(COLOR.body),
-		TextXAlignment = Enum.TextXAlignment.Center,
-		TextWrapped = true,
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-	})
+	noteSection(body, 5, SIZE.disclaimerTop, TEXT.disclaimer, Enum.TextXAlignment.Center)
 	return buy
 end
 
-local function buildCompletedView(body, info, state, actions)
-	header(body, TEXT.completedTitle, nil, actions.finish)
+local function buildSubscriptionView(body, info, state, actions)
+	header(body, TEXT.subscriptionTitle, nil, actions.cancel)
+	itemRow(body, info)
+	local buy = buyButton(body, TEXT.subscribe, state, actions)
+	noteSection(body, 4, SIZE.subscriptionDisclaimerTop, TEXT.disclaimer, Enum.TextXAlignment.Center)
+	noteSection(body, 5, SIZE.termsTop, TEXT.terms, Enum.TextXAlignment.Left)
+	return buy
+end
+
+local function buildMessageView(body, title, icon, message, state, onClose)
+	header(body, title, nil, onClose)
 	local content = section(body, 2, SIZE.completedTop)
 	content.AutomaticSize = Enum.AutomaticSize.Y
 	make("UIListLayout", {
@@ -623,7 +659,7 @@ local function buildCompletedView(body, info, state, actions)
 		Padding = px(SIZE.completedGap),
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 	})
-	iconLabel("circle-check", FONT.completedIconSize, {
+	iconLabel(icon, FONT.completedIconSize, {
 		Parent = content,
 		LayoutOrder = 1,
 		TextColor3 = hex(COLOR.body),
@@ -632,7 +668,7 @@ local function buildCompletedView(body, info, state, actions)
 	label({
 		Parent = content,
 		LayoutOrder = 2,
-		Text = "You have successfully bought " .. info.name .. ".",
+		Text = message,
 		FontFace = sansFont("Regular"),
 		TextSize = FONT.itemSize,
 		LineHeight = FONT.itemLineHeight,
@@ -644,7 +680,22 @@ local function buildCompletedView(body, info, state, actions)
 	})
 	local okSection = section(body, 3, SIZE.okTop)
 	state.enabled = true
-	primaryButton(okSection, TEXT.ok, state).Activated:Connect(actions.finish)
+	primaryButton(okSection, TEXT.ok, state).Activated:Connect(onClose)
+end
+
+local function buildCompletedView(body, info, state, actions)
+	buildMessageView(
+		body,
+		TEXT.completedTitle,
+		"circle-check",
+		string.format(TEXT.completedMessage, info.name),
+		state,
+		actions.finish
+	)
+end
+
+local function buildErrorView(body, state, actions)
+	buildMessageView(body, TEXT.errorTitle, "triangle-exclamation", TEXT.errorMessage, state, actions.cancel)
 end
 
 -- Shadow and padded content live under whichever of the two containers is
@@ -856,7 +907,13 @@ function MarketUI.prompt(parent, info, onBuy, onClosed)
 		actions.finish()
 	end)
 
-	buildBuyView(replaceBody(), info, state, actions)
+	if info.failed then
+		buildErrorView(replaceBody(), state, actions)
+	elseif info.kind == "Subscription" then
+		buildSubscriptionView(replaceBody(), info, state, actions)
+	else
+		buildBuyView(replaceBody(), info, state, actions)
+	end
 	fadeScrim(shell, TRANSPARENCY.scrimOpen)
 	slide(shell, true)
 end

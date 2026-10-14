@@ -9,17 +9,28 @@
 //! ```
 //!
 //! `--demo` first adds a server Script and a LocalScript that use
-//! MarketplaceService the way games do (ProcessReceipt, both Finished signals,
-//! a pass prompted from the server, a product and a pass from the client).
+//! MarketplaceService the way games do: a pass prompted from the server, then
+//! from the client a product, a catalog item, a bundle, a subscription and an
+//! id with nothing behind it; BindReceiptHandler, ProcessReceipt, every
+//! Finished signal and the ownership calls.
 
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_play::inject::{self, ProbeConfig};
 use rbx_reflection::ReflectionDatabase;
 
-/// A public pass (Adopt Me's "+1 Pet Pen Slot") and a product id that has no
-/// developer product behind it, to see the dialog's fallback.
+/// Public ids from other experiences, so the demo runs in any place: a pass
+/// (Adopt Me's "+1 Pet Pen Slot"), a developer product ("100 coins"), a
+/// catalog hat, the Korblox bundle, a subscription (LifeTogether RP's
+/// "Premium") and a product id with nothing behind it (the Error view).
 const DEMO_SERVER: &str = r#"local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+
+-- The newer receipt API takes the product it filters for; ProcessReceipt
+-- would get any other product.
+MarketplaceService:BindReceiptHandler(Enum.ReceiptType.DeveloperProduct, function(receipt)
+	print("BindReceiptHandler", receipt.PurchaseId, receipt.ProductId, receipt.CurrencySpent)
+	return Enum.ReceiptDecision.Processed
+end, { 1183433727 })
 
 MarketplaceService.ProcessReceipt = function(receipt)
 	print("ProcessReceipt", receipt.PurchaseId, receipt.ProductId, receipt.CurrencySpent)
@@ -34,25 +45,46 @@ MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, produc
 	print("Server: product closed", userId, productId, bought)
 end)
 
+MarketplaceService.PromptSubscriptionPurchaseFinished:Connect(function(player, subscriptionId, tried)
+	local status = MarketplaceService:GetUserSubscriptionStatusAsync(player, subscriptionId)
+	print("Server: subscription closed", subscriptionId, tried, status.IsSubscribed)
+end)
+
 Players.PlayerAdded:Connect(function(player)
 	task.wait(3)
 	MarketplaceService:PromptGamePassPurchase(player, 1585546290)
 end)
 "#;
 
+/// Each prompt opens when the previous one closes.
 const DEMO_CLIENT: &str = r#"local MarketplaceService = game:GetService("MarketplaceService")
 local player = game:GetService("Players").LocalPlayer
 
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(_, passId, bought)
 	print("Client: pass closed", passId, bought)
-	if passId == 1585546290 then
-		MarketplaceService:PromptProductPurchase(player, 3714256301)
-	end
+	MarketplaceService:PromptProductPurchase(player, 1183433727)
 end)
 
 MarketplaceService.PromptProductPurchaseFinished:Connect(function(_, productId, bought)
 	print("Client: product closed", productId, bought)
-	print("Client: owns pass", MarketplaceService:UserOwnsGamePassAsync(player.UserId, 1585546290))
+	if productId == 1183433727 then
+		MarketplaceService:PromptPurchase(player, 96832580099063)
+	end
+end)
+
+MarketplaceService.PromptPurchaseFinished:Connect(function(_, assetId, bought)
+	print("Client: asset closed", assetId, bought, MarketplaceService:PlayerOwnsAssetAsync(player, assetId))
+	MarketplaceService:PromptBundlePurchase(player, 192)
+end)
+
+MarketplaceService.PromptBundlePurchaseFinished:Connect(function(_, bundleId, bought)
+	print("Client: bundle closed", bundleId, bought, MarketplaceService:PlayerOwnsBundleAsync(player, bundleId))
+	MarketplaceService:PromptSubscriptionPurchase(player, "EXP-6590555357501456598")
+end)
+
+MarketplaceService.PromptSubscriptionPurchaseFinished:Connect(function(_, subscriptionId, tried)
+	print("Client: subscription closed", subscriptionId, tried)
+	MarketplaceService:PromptProductPurchase(player, 3714256301)
 end)
 "#;
 

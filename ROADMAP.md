@@ -2670,25 +2670,31 @@ Roblox's own engine.
   view); the session lives in the system keychain.
 - [x] The embedded game hides while another document (Scripts, UI
   Editor, Animation) has the 3D view's room.
-- [x] **Test purchases (game passes, developer products)**
+- [x] **Test purchases (game passes, developer products, catalog items,
+  bundles, subscriptions)**
   (`rbx_play::market`, the probe's `market`/`market_ui` modules): the
   sandbox is a real published place, so `MarketplaceService`'s own prompts
   would charge real Robux. Play rewrites every
   `GetService("MarketplaceService")` in the published copy's scripts
   (in place, so lines and breakpoints hold) into a proxy, and game code
-  needs no change. `PromptProductPurchase`/`PromptGamePassPurchase` (from
-  the server or the client) open a copy of Roblox's test-purchase dialog,
-  matched to the pixel against Roblox's own (its layout, the 0.3 s slide
-  and fade, the backdrop, the 0.65 s Buy delay, hovers, "Purchase
-  completed"). A bought pass is owned for the session (both sides'
-  `UserOwnsGamePassAsync`); a product calls the game's `ProcessReceipt`
-  with a `DEV-` receipt, retried on the next purchase until it is granted;
-  both `…PurchaseFinished` signals fire. No `IsStudio()` patch and no
-  separate DataStore scope are needed: game code is untouched and the
-  sandbox universe's DataStores are already apart from production. Not
-  covered: `PromptPurchase`/subscriptions/bundles pass through to the real
-  prompts, and a service name built at runtime (not a string literal) is
-  not rewritten. `examples/market_place.rs` writes the probed copy for a
+  needs no change. Every `Prompt…Purchase` (product, pass, `PromptPurchase`,
+  bundle, subscription; from the server or the client) opens a copy of
+  Roblox's test-purchase dialog, matched to the pixel against Roblox's own
+  (its layout, the 0.3 s slide and fade, the backdrop, the 0.65 s Buy
+  delay, hovers, "Get subscription", "Purchase completed", and the Error
+  view for an id with nothing behind it). A bought pass, catalog item,
+  bundle or subscription is owned for the session (`UserOwnsGamePassAsync`,
+  `PlayerOwnsAsset(Async)`, `PlayerOwnsBundle(Async)`,
+  `GetUserSubscriptionStatusAsync` on both sides); a product goes to the
+  game's `BindReceiptHandler` handlers or `ProcessReceipt` with a `DEV-`
+  receipt, retried on the next purchase until it is granted; every
+  `…PurchaseFinished` signal fires. No `IsStudio()` patch and no separate
+  DataStore scope are needed: game code is untouched and the sandbox
+  universe's DataStores are already apart from production. Not covered:
+  `Players.UserSubscriptionStatusChanged` (an engine event a script cannot
+  fire), bulk purchases and Roblox Plus/Premium prompts, which still go to
+  the real ones, and a service name built at runtime (not a string
+  literal), which is not rewritten. `examples/market_place.rs` writes the probed copy for a
   check in real Studio.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on

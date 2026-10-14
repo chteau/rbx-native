@@ -164,3 +164,118 @@ fn settle_without_callback_keeps_everything() {
         "##,
     );
 }
+
+#[test]
+fn dispatcher_with_nothing_bound_returns_nil() {
+    let lua = Lua::new();
+    market(&lua);
+    run(
+        &lua,
+        r##"
+        local P, G = {}, {}
+        local store = { handlers = {}, ProcessReceipt = nil }
+        local dispatch = M.dispatcher(store, P, G)
+        assert(dispatch({ ProductId = 5 }) == nil)
+        "##,
+    );
+}
+
+#[test]
+fn dispatcher_process_receipt_granted_maps_to_granted() {
+    let lua = Lua::new();
+    market(&lua);
+    run(
+        &lua,
+        r##"
+        local P, G = {}, {}
+        local store = { handlers = {}, ProcessReceipt = function() return G end }
+        local dispatch = M.dispatcher(store, P, G)
+        assert(dispatch({ ProductId = 5 }) == "granted")
+        "##,
+    );
+}
+
+#[test]
+fn dispatcher_process_receipt_other_result_is_returned() {
+    let lua = Lua::new();
+    market(&lua);
+    run(
+        &lua,
+        r##"
+        local P, G = {}, {}
+        local store = { handlers = {}, ProcessReceipt = function() return "x" end }
+        local dispatch = M.dispatcher(store, P, G)
+        assert(dispatch({ ProductId = 5 }) == "x")
+        "##,
+    );
+}
+
+#[test]
+fn dispatcher_filtered_handler_wins_for_matching_product() {
+    let lua = Lua::new();
+    market(&lua);
+    run(
+        &lua,
+        r##"
+        local P, G = {}, {}
+        local ran = {}
+        local store = {
+            handlers = {
+                { handler = function() table.insert(ran, "all") return P end, filter = nil },
+                { handler = function() table.insert(ran, "f") return P end, filter = { [5] = true } },
+            },
+            ProcessReceipt = nil,
+        }
+        local dispatch = M.dispatcher(store, P, G)
+        assert(dispatch({ ProductId = 5 }) == "granted")
+        assert(#ran == 1 and ran[1] == "f")
+        ran = {}
+        assert(dispatch({ ProductId = 6 }) == "granted")
+        assert(#ran == 1 and ran[1] == "all")
+        "##,
+    );
+}
+
+#[test]
+fn dispatcher_catch_all_wins_over_process_receipt() {
+    let lua = Lua::new();
+    market(&lua);
+    run(
+        &lua,
+        r##"
+        local P, G = {}, {}
+        local store = {
+            handlers = { { handler = function() return P end, filter = nil } },
+            ProcessReceipt = function() error("ProcessReceipt must not run") end,
+        }
+        local dispatch = M.dispatcher(store, P, G)
+        assert(dispatch({ ProductId = 5 }) == "granted")
+        "##,
+    );
+}
+
+#[test]
+fn settle_with_dispatcher_keeps_only_undecided_receipts() {
+    let lua = Lua::new();
+    market(&lua);
+    run(
+        &lua,
+        r##"
+        local P, G = {}, {}
+        local store = {
+            handlers = { { handler = function() return P end, filter = { [1] = true } } },
+            ProcessReceipt = function(r)
+                if r.ProductId == 3 then return G end
+                return "no"
+            end,
+        }
+        local dispatch = M.dispatcher(store, P, G)
+        local a = { PurchaseId = "a", ProductId = 1 }
+        local b = { PurchaseId = "b", ProductId = 2 }
+        local c = { PurchaseId = "c", ProductId = 3 }
+        local rest = M.settle({ a, b, c }, dispatch, "granted")
+        assert(#rest == 1)
+        assert(rest[1] == b)
+        "##,
+    );
+}
