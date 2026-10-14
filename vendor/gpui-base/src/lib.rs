@@ -40,6 +40,8 @@ pub mod motion;
 mod nav_stack;
 mod number_input;
 mod observe;
+/// rbx-native addition: see `occlusion`.
+pub mod occlusion;
 mod otp_input;
 mod pagination;
 mod popover;

@@ -234,6 +234,12 @@ fn handle(shared: &Shared, mut stream: TcpStream) -> std::io::Result<()> {
             }
             let mut body = vec![0u8; req.content_length];
             reader.read_exact(&mut body)?;
+            if trace() {
+                eprintln!(
+                    "rbx_play ingest: {}",
+                    String::from_utf8_lossy(&body[..body.len().min(600)])
+                );
+            }
             match serde_json::from_slice::<Vec<Uplink>>(&body) {
                 Ok(batch) => {
                     for up in batch {
@@ -258,6 +264,9 @@ fn handle(shared: &Shared, mut stream: TcpStream) -> std::io::Result<()> {
                 finish(&mut stream, &mut reader, 204, "")
             } else {
                 let json = serde_json::to_string(&pending).unwrap_or_else(|_| "[]".into());
+                if trace() {
+                    eprintln!("rbx_play poll -> {}", &json[..json.len().min(600)]);
+                }
                 reply(&mut stream, 200, &json, true)?;
                 let _ = stream.shutdown(Shutdown::Write);
                 Ok(())
@@ -316,4 +325,11 @@ fn finish(
         }
     }
     Ok(())
+}
+
+/// `RBX_PLAY_TRACE=1` prints every ingested batch and every command handed
+/// to the probe on stderr (truncated), for diagnosing a Play session.
+fn trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("RBX_PLAY_TRACE").is_some_and(|v| v != "0"))
 }

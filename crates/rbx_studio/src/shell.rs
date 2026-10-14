@@ -1719,6 +1719,16 @@ impl Render for Shell {
     /// the pointer is still over the handle would drop the drag. This
     /// container spans the window, so it can't be outrun.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Popups record where they paint during this frame; Play cuts those
+        // areas out of the embedded game window once the frame is drawn.
+        gpui_base::occlusion::begin_frame(window.window_handle().window_id());
+        #[cfg(target_os = "linux")]
+        if self.play.phase == play::Phase::Running {
+            let shell = cx.entity().downgrade();
+            window.on_next_frame(move |_, cx| {
+                let _ = shell.update(cx, |shell, _| shell.play_update_holes());
+            });
+        }
         self.realize_animation_dialogs(window, cx);
         // Deliberately no seeded focus. Seeding it *programmatically* is
         // what left a cold start with focus somewhere and no ring anywhere:

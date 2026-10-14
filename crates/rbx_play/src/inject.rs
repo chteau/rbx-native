@@ -10,6 +10,13 @@ pub const PROBE_SERVER: &str = include_str!("probe/server.luau");
 /// Client mirror source (`LocalScript` in StarterPlayer.StarterPlayerScripts).
 pub const PROBE_CLIENT: &str = include_str!("probe/client.luau");
 
+/// The value codec both sides `require` (ModuleScript in ReplicatedStorage).
+pub const PROBE_CODEC: &str = include_str!("probe/codec.luau");
+/// The live-tree module both sides `require` (ModuleScript in ReplicatedStorage).
+pub const PROBE_LIVE: &str = include_str!("probe/live.luau");
+pub const CODEC_NAME: &str = "__rbxnative_codec";
+pub const LIVE_NAME: &str = "__rbxnative_live";
+
 /// Names of everything `inject` adds, so a re-inject can find and replace them.
 pub const PROBE_NAME: &str = "__rbxnative_probe";
 pub const MIRROR_NAME: &str = "__rbxnative_mirror";
@@ -34,6 +41,8 @@ pub struct Injected {
     pub probe: Ref,
     pub mirror: Ref,
     pub remote: Ref,
+    pub codec: Ref,
+    pub live: Ref,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +84,18 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, sss, PROBE_NAME);
     remove_named(dom, scripts, MIRROR_NAME);
     remove_named(dom, rs, REMOTE_NAME);
+    remove_named(dom, rs, CODEC_NAME);
+    remove_named(dom, rs, LIVE_NAME);
+
+    let codec = dom.new_instance("ModuleScript", CODEC_NAME, Some(rs));
+    set_prop(
+        dom,
+        codec,
+        "Source",
+        Variant::String(PROBE_CODEC.to_owned()),
+    );
+    let live = dom.new_instance("ModuleScript", LIVE_NAME, Some(rs));
+    set_prop(dom, live, "Source", Variant::String(PROBE_LIVE.to_owned()));
 
     let probe = dom.new_instance("Script", PROBE_NAME, Some(sss));
     set_prop(
@@ -112,6 +133,8 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         probe,
         mirror,
         remote,
+        codec,
+        live,
     })
 }
 

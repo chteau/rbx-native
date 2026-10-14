@@ -1,7 +1,8 @@
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_play::inject::{
-    inject, preflight, InjectError, Preflight, ProbeConfig, MAX_PUBLISH_BYTES, MIRROR_NAME,
-    PROBE_CLIENT, PROBE_NAME, PROBE_SERVER, REMOTE_NAME,
+    inject, preflight, InjectError, Preflight, ProbeConfig, CODEC_NAME, LIVE_NAME,
+    MAX_PUBLISH_BYTES, MIRROR_NAME, PROBE_CLIENT, PROBE_CODEC, PROBE_LIVE, PROBE_NAME,
+    PROBE_SERVER, REMOTE_NAME,
 };
 
 fn config() -> ProbeConfig {
@@ -126,6 +127,16 @@ fn remote_and_mirror_are_placed_in_their_services() {
         string_prop(&dom, injected.mirror, "Source").as_deref(),
         Some(PROBE_CLIENT)
     );
+
+    for (r, name, src) in [
+        (injected.codec, CODEC_NAME, PROBE_CODEC),
+        (injected.live, LIVE_NAME, PROBE_LIVE),
+    ] {
+        assert_eq!(dom.parent(r), Some(rs));
+        assert_eq!(dom.get(r).unwrap().class(), "ModuleScript");
+        assert_eq!(dom.get(r).unwrap().name(), name);
+        assert_eq!(string_prop(&dom, r, "Source").as_deref(), Some(src));
+    }
 }
 
 #[test]

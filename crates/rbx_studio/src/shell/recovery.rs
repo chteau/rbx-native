@@ -194,6 +194,11 @@ impl Shell {
     /// on a background one. `save::save` writes through a temp file, so a
     /// copy is never left half-written.
     fn write_recovery(&mut self, cx: &mut Context<Self>) {
+        // The live game's tree is not the place; the next write after Play
+        // has it back.
+        if self.live_shown() {
+            return;
+        }
         let state = &self.recovery;
         let Some(path) = state.copy.clone() else {
             return;

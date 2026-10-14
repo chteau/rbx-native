@@ -293,6 +293,12 @@ impl Shell {
         if changes.is_empty() {
             return;
         }
+        // During Play the DOM may be the live game's; its edits go to the
+        // game, never to the viewport, Auto-Recovery or Argon.
+        if self.live_shown() {
+            self.live_reflect(changes, cx);
+            return;
+        }
         self.recovery.changed();
         self.properties.dom_changed(changes);
         let mut refresh = refresh_for(changes, &self.covered);

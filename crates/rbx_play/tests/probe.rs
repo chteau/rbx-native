@@ -22,6 +22,12 @@ fn client_probe_compiles() {
 }
 
 #[test]
+fn live_modules_compile() {
+    compiles("codec.luau", include_str!("../src/probe/codec.luau"));
+    compiles("live.luau", include_str!("../src/probe/live.luau"));
+}
+
+#[test]
 fn server_probe_mentions_protocol_pieces() {
     for needle in [
         "/v1/ingest",

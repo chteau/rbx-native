@@ -206,11 +206,13 @@ impl Shell {
         let surface = menu::surface()
             .id("breakpoint-menu")
             .occlude()
+            .relative()
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
                 shell.debug.menu = None;
                 cx.notify();
             }))
-            .children(rows);
+            .children(rows)
+            .child(gpui_base::occlusion::probe());
         Some(overlay(position, surface))
     }
 
@@ -250,6 +252,7 @@ impl Shell {
         menu::surface()
             .id("breakpoint-editor")
             .occlude()
+            .relative()
             .w(px(300.))
             .gap(px(2.))
             .child(
@@ -310,6 +313,7 @@ impl Shell {
                         ),
                     ),
             )
+            .child(gpui_base::occlusion::probe())
     }
 }
 

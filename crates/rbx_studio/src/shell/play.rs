@@ -38,6 +38,7 @@
 //! step failing stops with `StopReason::Failed`.
 
 mod cloudflared;
+pub(crate) mod live;
 pub(crate) mod session;
 
 use std::rc::Rc;
@@ -116,8 +117,18 @@ pub(super) struct Play {
     /// The X11 id of the editor window Play was pressed in; the client is
     /// embedded there, over the 3D view.
     main_window: Option<u32>,
+    /// The same window as GPUI knows it, for `gpui_base::occlusion`.
+    gpui_window: Option<gpui_kit::WindowId>,
     /// The running server's `game.JobId`, once its hello arrived.
     pub(super) job_id: Option<String>,
+    /// The Client/Server views of the running game (`play::live`).
+    pub(super) live: live::Live,
+    /// The window's scale factor when Play was pressed, to turn popups'
+    /// logical bounds into the embedded window's device pixels.
+    scale: f32,
+    /// The holes last cut out of the embedded window (`play_update_holes`).
+    #[cfg(target_os = "linux")]
+    holes: Vec<rbx_play::embed::Rect>,
     link: Option<Link>,
     session: Option<Session>,
     poll: Option<Task<()>>,
@@ -135,6 +146,11 @@ impl Play {
             phase: Phase::Idle,
             confirm_close: false,
             main_window: None,
+            gpui_window: None,
+            live: live::Live::new(),
+            scale: 1.0,
+            #[cfg(target_os = "linux")]
+            holes: Vec::new(),
             job_id: None,
             link: None,
             session: None,
@@ -195,6 +211,8 @@ impl Shell {
             return;
         }
         self.play.main_window = crate::pointer_lock::window_id(window);
+        self.play.gpui_window = Some(window.window_handle().window_id());
+        self.play.scale = window.scale_factor();
         if self.play.sandbox.is_none() {
             self.output.push(
                 PLAY_SOURCE,
@@ -514,6 +532,7 @@ impl Shell {
                     return;
                 }
                 shell.play.phase = Phase::Running;
+                shell.live_begin(cx);
                 shell.play.poll = Some(shell.play_poll(cx));
                 cx.notify();
             });
@@ -562,6 +581,9 @@ impl Shell {
         let mut changed = false;
         while let Ok(event) = channel.events().try_recv() {
             changed = true;
+            if self.live_apply(&event, cx) {
+                continue;
+            }
             if let Some((source, row)) = session::feedback_for(&event) {
                 self.output.push(source, row);
             }
@@ -601,16 +623,58 @@ impl Shell {
             self.play_stop(reason, cx);
             return false;
         }
+        self.live_tick(cx);
+        #[cfg(target_os = "linux")]
+        self.play_update_holes();
         if changed {
             cx.notify();
         }
         true
     }
 
+    /// Cuts the editor's popups out of the embedded game window, so they
+    /// show above it (`gpui_base::occlusion` records where they were
+    /// painted). Called after every frame while embedded and on each poll.
+    #[cfg(target_os = "linux")]
+    pub(in crate::shell) fn play_update_holes(&mut self) {
+        let (Some(window), Some(running)) = (self.play.gpui_window, self.play.session.as_ref())
+        else {
+            return;
+        };
+        let (Some(embedded), Some(rect)) = (&running.embedded, running.last_rect) else {
+            return;
+        };
+        let scale = self.play.scale;
+        let holes: Vec<rbx_play::embed::Rect> = gpui_base::occlusion::rects(window)
+            .into_iter()
+            .filter_map(|bounds| {
+                let left = (f32::from(bounds.origin.x) * scale).floor() as i32 - rect.x;
+                let top = (f32::from(bounds.origin.y) * scale).floor() as i32 - rect.y;
+                let width = (f32::from(bounds.size.width) * scale).ceil() as i32;
+                let height = (f32::from(bounds.size.height) * scale).ceil() as i32;
+                let right = (left + width).min(rect.width as i32);
+                let bottom = (top + height).min(rect.height as i32);
+                let (left, top) = (left.max(0), top.max(0));
+                (right > left && bottom > top).then(|| rbx_play::embed::Rect {
+                    x: left,
+                    y: top,
+                    width: (right - left) as u32,
+                    height: (bottom - top) as u32,
+                })
+            })
+            .collect();
+        if holes != self.play.holes && embedded.set_holes(&holes).is_ok() {
+            self.play.holes = holes;
+        }
+    }
+
     /// The ribbon's Stop tile and every automatic stop.
     pub(in crate::shell) fn play_stop(&mut self, reason: StopReason, cx: &mut Context<Self>) {
         self.play.attempt += 1;
         self.play.poll = None;
+        self.live_end(cx);
+        #[cfg(target_os = "linux")]
+        self.play.holes.clear();
         if let Some(running) = self.play.session.take() {
             // Tell that session's server to close, so the next Play can't be
             // matched into it; its probe still holds the current token.

@@ -96,6 +96,74 @@ pub enum Uplink {
     Left { user_id: u64 },
     /// Server is shutting down (`game:BindToClose`).
     Bye,
+    /// A chunk of one side's whole instance tree, sent after the probe
+    /// starts and on `Resync`. `reset` on the first chunk (drop the editor's
+    /// copy), `done` on the last. Parents come before their children.
+    Tree {
+        side: Side,
+        reset: bool,
+        done: bool,
+        items: Vec<Node>,
+    },
+    /// Structural changes on one side since its last message, in the order
+    /// they happened.
+    Diff {
+        side: Side,
+        #[serde(default)]
+        added: Vec<Node>,
+        #[serde(default)]
+        removed: Vec<u64>,
+        #[serde(default)]
+        renamed: Vec<Rename>,
+        #[serde(default)]
+        moved: Vec<Move>,
+    },
+    /// Property values of one watched instance (see `CommandBody::Watch`):
+    /// every watched property the first time, then only those that changed.
+    /// Values use the encoding in `crate::value`; a property that could not
+    /// be read is absent.
+    Props {
+        side: Side,
+        id: u64,
+        #[serde(default)]
+        values: std::collections::BTreeMap<String, serde_json::Value>,
+        /// All attributes, when they changed (or on the first message).
+        #[serde(default)]
+        attributes: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+        /// `CollectionService` tags, when they changed (or first).
+        #[serde(default)]
+        tags: Option<Vec<String>>,
+    },
+}
+
+/// One instance in a side's tree. Ids are per side, assigned by that side's
+/// probe, never reused; `parent == 0` means a service (a child of `game`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Node {
+    pub id: u64,
+    pub parent: u64,
+    pub class: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rename {
+    pub id: u64,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Move {
+    pub id: u64,
+    pub parent: u64,
+}
+
+/// One instance whose properties the editor shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatchItem {
+    pub id: u64,
+    /// Property names to read (the editor's Properties panel list).
+    pub props: Vec<String>,
 }
 
 /// Editor → probe. `id` is assigned by the channel, strictly increasing.
@@ -116,4 +184,40 @@ pub enum CommandBody {
     Reload { path: String, source: String },
     /// `game:Shutdown()`-like: kick everyone, then stop polling.
     Shutdown,
+    /// Replaces `side`'s watch set: the probe answers `Props` for each item
+    /// at once, then re-reads them every 0.25 s and sends what changed
+    /// (polled, because `Changed` misses physics-driven properties).
+    Watch { side: Side, items: Vec<WatchItem> },
+    /// `instance[prop] = value` on `side` (value in `crate::value`'s encoding).
+    Set {
+        side: Side,
+        target: u64,
+        prop: String,
+        value: serde_json::Value,
+    },
+    /// `instance:SetAttribute(name, value)`; `null` removes it.
+    #[serde(rename = "set_attribute")]
+    SetAttribute {
+        side: Side,
+        target: u64,
+        name: String,
+        value: serde_json::Value,
+    },
+    /// `instance:Destroy()`.
+    Destroy { side: Side, target: u64 },
+    /// `instance.Parent = parent` (`0` = nil).
+    Reparent {
+        side: Side,
+        target: u64,
+        parent: u64,
+    },
+    /// `Instance.new(class)` named `name` under `parent`.
+    Create {
+        side: Side,
+        class: String,
+        name: String,
+        parent: u64,
+    },
+    /// Send `side`'s whole tree again (`Tree` with `reset`).
+    Resync { side: Side },
 }

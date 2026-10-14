@@ -2626,6 +2626,16 @@ Roblox's own engine.
 - [x] Server and client `print`/`warn`/`error` reach the Output dock as
   `Server`/`Client` rows during Play; joins and leaves drive the session
   but are not shown yet.
+- [x] **Client / Server views during Play** (`shell/play/live.rs`,
+  `rbx_play::{live, value}`, the probe's shared `live`/`codec` modules):
+  the Explorer and Properties show the running game's tree for the
+  tester's client or the server (ribbon toggle; tests open on Client), with
+  properties polled for the selection, and property edits, renames,
+  deletes, reparents and inserts made there go to the game in real time.
+  The edited place is stashed and comes back untouched on Stop.
+  `docs/research/play-sandbox/live-views.md`.
+- [x] Editor menus, dropdowns, tooltips and dialogs draw above the
+  embedded game (X Shape holes from `gpui_base::occlusion`).
 - [x] **"In Studio" on Roblox** (Settings › Account): the heartbeat real
   Studio sends, signed in with Roblox's code sign-in (code + QR, no web
   view); the session lives in the system keychain.

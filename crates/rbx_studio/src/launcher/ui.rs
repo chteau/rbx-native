@@ -359,6 +359,7 @@ pub(crate) fn dialog(
                         .children(footer),
                 ),
         )
+        .child(gpui_base::occlusion::probe())
 }
 
 /// The round tinted glyph a failing dialog leads with.

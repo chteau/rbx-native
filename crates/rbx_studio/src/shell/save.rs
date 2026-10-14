@@ -161,9 +161,12 @@ impl Shell {
         // the DOM happened to hold when typing last paused.
         self.flush_script_edits(cx);
         // A rig the Animation Editor is posing is saved at rest; the next
-        // frame poses it again.
-        self.unpose_rig(cx);
-        let result = save::save(&self.dom, self.format, path);
+        // frame poses it again. (Not during a live view: the rig is in the
+        // stashed place, which is what gets saved.)
+        if !self.live_shown() {
+            self.unpose_rig(cx);
+        }
+        let result = save::save(self.edit_dom(), self.format, path);
         let saved = result.is_ok();
         let feedback = record_outcome(&mut self.output, result, path);
         // An auto-rigged body not published yet points at meshes only this

@@ -199,6 +199,63 @@ impl Embedded {
     }
 
     /// Gives it keyboard focus (`SetInputFocus`, revert to parent).
+    /// Clips the window to its rect minus `holes` (rects in the window's own
+    /// coordinates, i.e. relative to its top-left), with the X Shape
+    /// extension's bounding region, so editor popups drawn under it show
+    /// through. Empty `holes` restores the full window. Uses
+    /// `visible_parts`; a hole covering everything leaves an empty shape.
+    pub fn set_holes(&self, holes: &[Rect]) -> Result<(), EmbedError> {
+        use x11rb::protocol::shape::{self, ConnectionExt as _};
+        use x11rb::protocol::xproto::{ClipOrdering, Rectangle};
+
+        if holes.is_empty() {
+            self.conn
+                .shape_mask(
+                    shape::SO::SET,
+                    shape::SK::BOUNDING,
+                    self.window,
+                    0,
+                    0,
+                    x11rb::NONE,
+                )
+                .map_err(x11)?;
+        } else {
+            let geometry = self
+                .conn
+                .get_geometry(self.window)
+                .map_err(x11)?
+                .reply()
+                .map_err(x11)?;
+            let full = Rect {
+                x: 0,
+                y: 0,
+                width: u32::from(geometry.width),
+                height: u32::from(geometry.height),
+            };
+            let rects: Vec<Rectangle> = visible_parts(full, holes)
+                .into_iter()
+                .map(|r| Rectangle {
+                    x: r.x as i16,
+                    y: r.y as i16,
+                    width: r.width as u16,
+                    height: r.height as u16,
+                })
+                .collect();
+            self.conn
+                .shape_rectangles(
+                    shape::SO::SET,
+                    shape::SK::BOUNDING,
+                    ClipOrdering::UNSORTED,
+                    self.window,
+                    0,
+                    0,
+                    &rects,
+                )
+                .map_err(x11)?;
+        }
+        self.conn.flush().map_err(x11)
+    }
+
     /// Unmaps the window, so a client about to be killed does not flash on
     /// the desktop when `Drop` hands it back to the root.
     pub fn hide(&self) {
@@ -361,4 +418,43 @@ impl Drop for FocusFollow {
             let _ = thread.join();
         }
     }
+}
+
+/// `full` minus every hole, as non-overlapping rects (each hole splits the
+/// remaining pieces into at most four: above, below, left, right). Holes
+/// outside `full` change nothing; empty input pieces are dropped.
+pub fn visible_parts(full: Rect, holes: &[Rect]) -> Vec<Rect> {
+    let mut pieces = vec![full];
+    for hole in holes {
+        let (hx0, hy0) = (i64::from(hole.x), i64::from(hole.y));
+        let (hx1, hy1) = (hx0 + i64::from(hole.width), hy0 + i64::from(hole.height));
+        let mut next = Vec::with_capacity(pieces.len() + 3);
+        for p in pieces {
+            let (px0, py0) = (i64::from(p.x), i64::from(p.y));
+            let (px1, py1) = (px0 + i64::from(p.width), py0 + i64::from(p.height));
+            let (ix0, iy0) = (px0.max(hx0), py0.max(hy0));
+            let (ix1, iy1) = (px1.min(hx1), py1.min(hy1));
+            if ix0 >= ix1 || iy0 >= iy1 {
+                next.push(p);
+                continue;
+            }
+            for (x0, y0, x1, y1) in [
+                (px0, py0, px1, iy0),
+                (px0, iy1, px1, py1),
+                (px0, iy0, ix0, iy1),
+                (ix1, iy0, px1, iy1),
+            ] {
+                if x0 < x1 && y0 < y1 {
+                    next.push(Rect {
+                        x: x0 as i32,
+                        y: y0 as i32,
+                        width: (x1 - x0) as u32,
+                        height: (y1 - y0) as u32,
+                    });
+                }
+            }
+        }
+        pieces = next;
+    }
+    pieces
 }

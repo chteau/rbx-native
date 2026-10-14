@@ -511,6 +511,27 @@ pub(super) fn primary(id: &'static str, tile: Stateful<Div>) -> Stateful<Div> {
 /// `ROADMAP.md`'s Play/Test section still lists the sandbox-place design
 /// all of these would need as open.
 impl Shell {
+    /// Studio's "Current: Client / Server" switch: which game tree the
+    /// Explorer and Properties show while a test runs.
+    fn view_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        use super::play::live::View;
+        let view = self.play.live.view;
+        let (icon, label) = match view {
+            View::Client => (IconName::Globe, "Client"),
+            View::Server => (IconName::Server, "Server"),
+        };
+        if self.play.phase == Phase::Running {
+            let next = match view {
+                View::Client => View::Server,
+                View::Server => View::Client,
+            };
+            tile(&self.ribbon_nav, "ribbon-view", icon, label, cx)
+                .on_click(cx.listener(move |shell, _, _, cx| shell.live_set_view(next, cx)))
+        } else {
+            unavailable_tile("ribbon-view", icon, label, "no test is running")
+        }
+    }
+
     fn test_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let nav = &self.ribbon_nav;
         let idle = self.play.phase == Phase::Idle;
@@ -559,6 +580,7 @@ impl Shell {
             .into_any_element(),
             primary("ribbon-stop", stop).into_any_element(),
             invite.into_any_element(),
+            self.view_tile(cx).into_any_element(),
             disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
         ]
     }

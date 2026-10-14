@@ -51,6 +51,19 @@ impl Shell {
         if !source::is_script(&self.dom, &self.database, reference) {
             return;
         }
+        // A running game never sends a script's source (game scripts cannot
+        // read `Source`), and a tab must not outlive the live tree it came from.
+        if self.live_shown() {
+            self.output.push(
+                "Play",
+                crate::command_bar::Feedback::Warning(
+                    "Scripts open from the edited place: stop the test to read or edit them."
+                        .to_owned(),
+                ),
+            );
+            cx.notify();
+            return;
+        }
 
         // An already-open script keeps its editor untouched — re-seeding it
         // would throw away an edit in progress.
@@ -158,6 +171,10 @@ impl Shell {
     /// debounce. `pub(super)`: `shell::history` calls it before an undo and
     /// `shell::save` before a write, so both act on the text as typed.
     pub(super) fn flush_script_edits(&mut self, cx: &mut Context<Self>) {
+        // Script tabs hold the edited place's refs; the live tree has others.
+        if self.live_shown() {
+            return;
+        }
         for reference in self.scripts.tabs.all().to_vec() {
             self.commit_script(reference, None, cx);
         }
@@ -172,6 +189,10 @@ impl Shell {
     /// alone — that text is what would be destroyed, and its own commit is
     /// what reaches the DOM next.
     pub(super) fn resync_scripts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Tabs belong to the edited place, stashed while a live view shows.
+        if self.live_shown() {
+            return;
+        }
         self.notice_luau_lsp_dom_change(cx);
         let Shell {
             scripts,

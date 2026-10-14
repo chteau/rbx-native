@@ -7,11 +7,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BASE = script:GetAttribute("BASE")
 local TOKEN = script:GetAttribute("TOKEN")
 local SESSION = script:GetAttribute("SESSION")
-local MAX_BATCH = 200
+local MAX_BYTES = 400000
+local FLUSH_PERIOD = 0.25
+
+local codec = require(ReplicatedStorage:WaitForChild("__rbxnative_codec"))
+local Live = require(ReplicatedStorage:WaitForChild("__rbxnative_live"))
 
 local t0 = os.clock()
 local buffer = {}
 local running = true
+local tester = nil
+-- Client-bound commands that arrived before the tester's client did; sent
+-- in order once it joins (a RemoteEvent queues them until the mirror
+-- connects its handler).
+local forLater = {}
 
 local function post(items)
 	local ok, res = pcall(function()
@@ -28,17 +37,31 @@ local function post(items)
 	return ok and res.Success
 end
 
+local function queue(message)
+	table.insert(buffer, message)
+end
+
 local function flush()
-	while #buffer > 0 do
-		local batch = {}
-		local n = math.min(#buffer, MAX_BATCH)
-		for i = 1, n do
-			batch[i] = buffer[i]
+	if #buffer == 0 then
+		return
+	end
+	local pending = buffer
+	buffer = {}
+	local batch = {}
+	local size = 0
+	for _, message in pending do
+		local okEnc, encoded = pcall(HttpService.JSONEncode, HttpService, message)
+		if okEnc then
+			if size + #encoded > MAX_BYTES and #batch > 0 then
+				post(batch)
+				batch = {}
+				size = 0
+			end
+			table.insert(batch, message)
+			size += #encoded + 1
 		end
-		table.move(buffer, n + 1, #buffer + n, 1)
-		for i = #buffer - n + 1, #buffer do
-			buffer[i] = nil
-		end
+	end
+	if #batch > 0 then
 		post(batch)
 	end
 end
@@ -51,7 +74,7 @@ local levels = {
 }
 
 local function push(side, level, message, time)
-	table.insert(buffer, {
+	queue({
 		type = "log",
 		side = side,
 		level = level,
@@ -73,9 +96,18 @@ LogService.MessageOut:Connect(function(message, messageType)
 	push("server", levels[messageType] or "output", message, os.clock() - t0)
 end)
 
+local live = Live.new("server", queue, codec)
+
 local remote = ReplicatedStorage:WaitForChild("__rbxnative_remote")
-remote.OnServerEvent:Connect(function(_player, payload)
+remote.OnServerEvent:Connect(function(player, payload)
 	if type(payload) ~= "table" then
+		return
+	end
+	if payload.kind == "msg" then
+		if player == tester and type(payload.message) == "table" then
+			payload.message.side = "client"
+			queue(payload.message)
+		end
 		return
 	end
 	for _, entry in payload do
@@ -89,51 +121,106 @@ remote.OnServerEvent:Connect(function(_player, payload)
 	end
 end)
 
+local function joined(player)
+	if tester == nil then
+		tester = player
+		for _, cmd in forLater do
+			remote:FireClient(player, { kind = "cmd", command = cmd })
+		end
+		table.clear(forLater)
+	end
+	queue({ type = "joined", user_id = player.UserId })
+end
+
 Players.PlayerRemoving:Connect(function(player)
-	post({ { type = "left", user_id = player.UserId } })
+	if player == tester then
+		tester = nil
+	end
+	queue({ type = "left", user_id = player.UserId })
 end)
 
-Players.PlayerAdded:Connect(function(player)
-	post({ { type = "joined", user_id = player.UserId } })
-end)
+Players.PlayerAdded:Connect(joined)
 for _, player in Players:GetPlayers() do
-	post({ { type = "joined", user_id = player.UserId } })
+	joined(player)
 end
 
 game:BindToClose(function()
 	running = false
+	live.stop()
+	queue({ type = "bye" })
 	flush()
-	post({ { type = "bye" } })
 end)
 
-post({
-	{
-		type = "hello",
-		session = SESSION,
-		place_version = game.PlaceVersion,
-		http_enabled = http_enabled,
-		loadstring_enabled = loadstring_enabled,
-		is_studio = RunService:IsStudio(),
-		job_id = game.JobId,
-	},
+queue({
+	type = "hello",
+	session = SESSION,
+	place_version = game.PlaceVersion,
+	http_enabled = http_enabled,
+	loadstring_enabled = loadstring_enabled,
+	is_studio = RunService:IsStudio(),
+	job_id = game.JobId,
 })
 
 task.spawn(function()
 	while running do
-		task.wait(0.2)
-		if #buffer > 0 then
-			flush()
-		end
+		flush()
+		task.wait(FLUSH_PERIOD)
 	end
 end)
 
+task.spawn(live.snapshot)
+
 local function ack(id, ok, result)
-	post({ { type = "ack", id = id, ok = ok, result = result } })
+	queue({ type = "ack", id = id, ok = ok, result = result })
 end
+
+local function ackLive(cmd, ok, result)
+	ack(cmd.id, ok == true, tostring(result))
+end
+
+local function handleLive(cmd)
+	local kind = cmd.type
+	if kind == "watch" then
+		live.watch(cmd.items or {})
+		ack(cmd.id, true, "watching")
+	elseif kind == "set" then
+		ackLive(cmd, live.set(cmd.target, cmd.prop, cmd.value))
+	elseif kind == "set_attribute" then
+		ackLive(cmd, live.set_attribute(cmd.target, cmd.name, cmd.value))
+	elseif kind == "destroy" then
+		ackLive(cmd, live.destroy(cmd.target))
+	elseif kind == "reparent" then
+		ackLive(cmd, live.reparent(cmd.target, cmd.parent))
+	elseif kind == "create" then
+		ackLive(cmd, live.create(cmd.class, cmd.name, cmd.parent))
+	else
+		ackLive(cmd, live.resync())
+	end
+end
+
+local LIVE_COMMANDS = {
+	watch = true,
+	set = true,
+	set_attribute = true,
+	destroy = true,
+	reparent = true,
+	create = true,
+	resync = true,
+}
 
 local function handle(cmd)
 	local kind = cmd.type
-	if kind == "eval" then
+	if LIVE_COMMANDS[kind] then
+		if cmd.side == "client" then
+			if tester then
+				remote:FireClient(tester, { kind = "cmd", command = cmd })
+			else
+				table.insert(forLater, cmd)
+			end
+		else
+			handleLive(cmd)
+		end
+	elseif kind == "eval" then
 		local fn, err = loadstring(cmd.source)
 		if not fn then
 			ack(cmd.id, false, tostring(err))
@@ -196,3 +283,4 @@ while running do
 		task.wait(backoff)
 	end
 end
+flush()

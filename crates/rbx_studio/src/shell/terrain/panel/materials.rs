@@ -121,11 +121,13 @@ impl Shell {
             .w(px(260.))
             .p(px(10.))
             .occlude()
+            .relative()
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
                 shell.terrain.picker_at = None;
                 cx.notify();
             }))
-            .child(grid);
+            .child(grid)
+            .child(gpui_base::occlusion::probe());
         Some(
             deferred(
                 anchored()

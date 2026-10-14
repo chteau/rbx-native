@@ -177,6 +177,9 @@ impl Shell {
     /// mirror last matched it — an undo, a Command Bar script, an Argon
     /// sync — and one is not already waiting.
     pub(super) fn notice_luau_lsp_dom_change(&mut self, cx: &mut Context<Self>) {
+        if self.live_shown() {
+            return;
+        }
         if !self.lsp.scheduled && self.lsp.synced != Some(self.history.revision()) {
             self.schedule_luau_lsp_refresh(cx);
         }
