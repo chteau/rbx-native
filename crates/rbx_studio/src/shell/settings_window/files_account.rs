@@ -2,11 +2,12 @@
 //! Rich Presence are live; the test-copy name waits on Play, and on
 //! Account the multi-account switcher is still on the roadmap.
 
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
-use crate::launcher::{self, KeyTag};
+use crate::launcher::{self, ui, KeyTag};
 use crate::recovery::{self, INTERVAL_DEFAULT, INTERVAL_MINUTES};
 use crate::tokens;
 
@@ -19,13 +20,17 @@ use super::{SettingsWindow, Shell};
 /// The Interval row's slider, one stop per minute.
 pub(super) struct RecoveryControls {
     interval: Entity<SliderState>,
+    sandbox: Entity<InputState>,
+    sandbox_error: Option<SharedString>,
 }
 
 impl RecoveryControls {
     pub(super) fn new(
         shell: &Entity<Shell>,
+        window: &mut Window,
         cx: &mut Context<SettingsWindow>,
     ) -> (Self, Subscription) {
+        let sandbox = cx.new(|cx| InputState::new(window, cx).placeholder("Place link or id"));
         let (low, high) = INTERVAL_MINUTES;
         let minutes = shell.read(cx).recovery.minutes();
         let interval = cx.new(|_| {
@@ -42,11 +47,109 @@ impl RecoveryControls {
                     .update(cx, |shell, cx| shell.set_recovery_minutes(minutes, cx));
             }
         });
-        (RecoveryControls { interval }, subscription)
+        (
+            RecoveryControls {
+                interval,
+                sandbox,
+                sandbox_error: None,
+            },
+            subscription,
+        )
     }
 }
 
 impl SettingsWindow {
+    fn use_sandbox(&mut self, cx: &mut Context<Self>) {
+        let text = self.recovery.sandbox.read(cx).value().trim().to_string();
+        let place_id = rbx_cloud::place_id_from_link(&text).or_else(|| text.parse::<u64>().ok());
+        let Some(place_id) = place_id else {
+            self.recovery.sandbox_error = Some("Not a place link or id.".into());
+            cx.notify();
+            return;
+        };
+        self.recovery.sandbox_error = None;
+        cx.spawn(async move |this, cx| {
+            let resolved = cx
+                .background_spawn(async move {
+                    rbx_cloud::Client::new(rbx_cloud::ApiKey::from_env_or_config())
+                        .universe_of_place(place_id)
+                        .map_err(|error| error.to_string())
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match resolved {
+                    Ok(None) => {
+                        this.recovery.sandbox_error =
+                            Some("Roblox has no universe for that place.".into())
+                    }
+                    Ok(Some(universe_id)) => {
+                        this.shell.update(cx, |shell, cx| {
+                            shell.set_play_sandbox(
+                                Some(crate::settings::PlaySandbox {
+                                    place_id,
+                                    universe_id,
+                                }),
+                                cx,
+                            )
+                        });
+                    }
+                    Err(error) => this.recovery.sandbox_error = Some(error.into()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+}
+
+impl SettingsWindow {
+    fn play_sandbox_section(&mut self, cx: &mut Context<Self>) -> Section {
+        let current = self.shell.read(cx).play.sandbox;
+        let input = self.recovery.sandbox.clone();
+        let mut row = Row::new(
+            "Sandbox place",
+            h_flex()
+                .gap(px(8.))
+                .items_center()
+                .child(div().w(px(180.)).child(Input::new(&input)))
+                .child(
+                    ui::button("sandbox-use", "Use", ui::Weight::Secondary, true)
+                        .on_click(cx.listener(|this, _, _, cx| this.use_sandbox(cx))),
+                )
+                .children(current.as_ref().map(|_| {
+                    ui::button("sandbox-clear", "Clear", ui::Weight::Secondary, true).on_click(
+                        cx.listener(|this, _, _, cx| {
+                            this.shell
+                                .update(cx, |shell, cx| shell.set_play_sandbox(None, cx));
+                        }),
+                    )
+                })),
+        )
+        .describe("A private experience you own. Play publishes your place over it; keep it private and use it for nothing else.");
+        let mut below = v_flex().gap(px(4.));
+        let mut any = false;
+        if let Some(sandbox) = &current {
+            any = true;
+            below = below.child(mono(11.5, 16.).child(format!(
+                "Place {} \u{b7} Universe {}",
+                sandbox.place_id, sandbox.universe_id
+            )));
+        }
+        if let Some(error) = &self.recovery.sandbox_error {
+            any = true;
+            below = below.child(
+                text(11.5, 16.)
+                    .text_color(tokens::text_error())
+                    .child(error.clone()),
+            );
+        }
+        if any {
+            row = row.below(below);
+        }
+        Section::new("Play", vec![row])
+    }
+
     pub(super) fn files_page(
         &mut self,
         window: &mut Window,
@@ -304,17 +407,74 @@ impl SettingsWindow {
                     .child(icon("plus", 13.))
                     .child("Add another account\u{2019}s key"),
             );
+        let signed_in = self.shell.read(cx).studio_presence.session.is_some();
+        let user_id = self.shell.read(cx).studio_presence.user_id;
+        let presence = self.shell.read(cx).studio_presence.enabled;
+        let status = if signed_in {
+            match user_id {
+                Some(id) => format!("Signed in as user {id}"),
+                None => "Signed in".to_string(),
+            }
+        } else {
+            String::new()
+        };
+        let sign_in_control = if signed_in {
+            h_flex()
+                .gap(px(10.))
+                .items_center()
+                .child(text(12., 16.).text_color(tokens::text2()).child(status))
+                .child(
+                    ui::button("roblox-sign-out", "Sign out", ui::Weight::Secondary, true)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.shell.update(cx, |shell, cx| shell.roblox_sign_out(cx));
+                        })),
+                )
+        } else {
+            h_flex().child(
+                ui::button(
+                    "roblox-sign-in",
+                    "Sign in\u{2026}",
+                    ui::Weight::Primary,
+                    true,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.shell
+                        .update(cx, |shell, cx| shell.open_roblox_login(cx));
+                })),
+            )
+        };
+        let play = self.play_sandbox_section(cx);
         vec![
             Section {
                 head: Some(key_card.into_any_element()),
                 ..Section::new(
                     "Roblox",
-                    vec![Row::new("Accounts", div())
-                        .describe("One key per Roblox account; switch without pasting keys again.")
-                        .soon()
-                        .below(accounts)],
+                    vec![
+                        Row::new("Accounts", div())
+                            .describe(
+                                "One key per Roblox account; switch without pasting keys again.",
+                            )
+                            .soon()
+                            .below(accounts),
+                        Row::new("Roblox sign-in", sign_in_control).describe(
+                            "Used only for \u{201c}In Studio\u{201d} on your profile. Stored in your system keychain.",
+                        ),
+                        Row::new(
+                            "Show \u{201c}In Studio\u{201d} on Roblox",
+                            toggle(
+                                "studio-presence",
+                                presence,
+                                self.set(move |shell, cx| shell.set_studio_presence(!presence, cx)),
+                            ),
+                        )
+                        .describe(
+                            "Your friends see you in Studio, with the place when it\u{2019}s linked.",
+                        )
+                        .changed(presence, |shell, cx| shell.set_studio_presence(false, cx)),
+                    ],
                 )
             },
+            play,
             {
                 let enabled = self.shell.read(cx).discord.is_some();
                 let hide = self.shell.read(cx).discord_hide_names;

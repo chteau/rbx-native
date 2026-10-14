@@ -34,6 +34,8 @@ rbx_binary = { path = "../rbx_binary" }
 # opening a place straight from Roblox. Already in the tree through
 # `rbx_viewer`'s asset fetches.
 rbx_cloud = { path = "../rbx_cloud" }
+# Play/Test without Studio: probe, channel, tunnel, launcher, embedding.
+rbx_play = { path = "../rbx_play" }
 rbx_animation = { path = "../rbx_animation" }
 rbx_autorig = { path = "../rbx_autorig" }
 rbx_dom = { path = "../rbx_dom" }
@@ -128,6 +130,10 @@ windows-sys = { version = "0.61", features = [
 # `sha2` under the toolkit), so this adds no new dependency version.
 ureq = "3"
 sha2 = "0.10"
+# The bundled cloudflared (Play's tunnel) is stored deflated, and the macOS
+# release is a .tgz; both crates are already in Cargo.lock at these versions.
+zip = { version = "8", default-features = false, features = ["deflate"] }
+flate2 = "1"
 
 [dev-dependencies]
 rbx_autorig = { path = "../rbx_autorig", features = ["test-humanoid"] }

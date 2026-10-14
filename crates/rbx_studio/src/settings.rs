@@ -121,6 +121,11 @@ pub(crate) struct Settings {
     pub(crate) discord_presence: bool,
     /// Defaults on: names are hidden unless the user opts in.
     pub(crate) discord_hide_names: bool,
+    /// "In Studio" on the user's Roblox profile (`rbx_cloud::heartbeats`).
+    /// Off by default; needs a Roblox sign-in.
+    pub(crate) studio_presence: bool,
+    /// The private place Play publishes over; see `shell::play`.
+    pub(crate) play_sandbox: Option<PlaySandbox>,
     /// The Animation Editor's bottom panel height, once its seam has been
     /// dragged; `None` keeps the default share of the room.
     pub(crate) anim_sheet_height: Option<f32>,
@@ -213,6 +218,8 @@ impl Default for Settings {
             controls: Controls::default(),
             discord_presence: false,
             discord_hide_names: true,
+            studio_presence: false,
+            play_sandbox: None,
             anim_sheet_height: None,
             anim_names_width: None,
         }
@@ -424,6 +431,11 @@ fn load_from(path: &Path) -> Settings {
             .get("discord_hide_names")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        studio_presence: value
+            .get("studio_presence")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        play_sandbox: PlaySandbox::read(&value),
         anim_sheet_height: read_extent(&value, "anim_sheet_height"),
         anim_names_width: read_extent(&value, "anim_names_width"),
     }
@@ -677,6 +689,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "argon": settings.argon.json(),
         "discord_presence": settings.discord_presence,
         "discord_hide_names": settings.discord_hide_names,
+        "studio_presence": settings.studio_presence,
+        "play_sandbox": settings.play_sandbox.map(PlaySandbox::json),
         "anim_sheet_height": settings.anim_sheet_height,
         "anim_names_width": settings.anim_names_width,
     });
@@ -762,6 +776,28 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), SettingsErro
         path: path.to_path_buf(),
         source,
     })
+}
+
+/// Play's sandbox: an experience the user owns, kept private, that Play
+/// publishes the probed place over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PlaySandbox {
+    pub(crate) universe_id: u64,
+    pub(crate) place_id: u64,
+}
+
+impl PlaySandbox {
+    fn read(value: &serde_json::Value) -> Option<Self> {
+        let sandbox = value.get("play_sandbox")?;
+        Some(PlaySandbox {
+            universe_id: sandbox.get("universe_id")?.as_u64()?,
+            place_id: sandbox.get("place_id")?.as_u64()?,
+        })
+    }
+
+    fn json(self) -> serde_json::Value {
+        serde_json::json!({ "universe_id": self.universe_id, "place_id": self.place_id })
+    }
 }
 
 #[cfg(test)]

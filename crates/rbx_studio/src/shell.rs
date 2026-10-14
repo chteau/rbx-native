@@ -38,6 +38,7 @@ mod palette;
 mod panel_window;
 mod panels;
 mod pivot;
+mod play;
 mod property_element;
 mod quality;
 mod recovery;
@@ -45,8 +46,10 @@ mod ref_pick;
 mod reparent;
 mod ribbon;
 mod rig;
+mod roblox_login;
 mod roblox_publish;
 mod roving;
+mod studio_presence;
 
 pub(crate) use chrome::panel_topbar;
 pub(crate) use export::Export;
@@ -451,6 +454,14 @@ pub(crate) struct Shell {
     discord_idle: bool,
     /// Polls for idleness while the main window is in the background.
     discord_idle_check: Option<Task<()>>,
+    /// Play/Test without Studio — see `shell::play`.
+    play: play::Play,
+    /// "In Studio" on Roblox — see `shell::studio_presence`.
+    studio_presence: studio_presence::StudioPresence,
+    /// The code sign-in window, while open — see `shell::roblox_login`.
+    roblox_login: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// The page the next Settings window opens on; see `open_settings_on`.
+    settings_open_on: Option<&'static str>,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
     /// drop strips on screen (see `shell::dock_drag`). `None` the rest of
@@ -507,6 +518,8 @@ impl Shell {
             argon: argon_settings,
             discord_presence: discord_presence_enabled,
             discord_hide_names,
+            studio_presence: studio_presence_enabled,
+            play_sandbox,
             anim_sheet_height,
             anim_names_width,
         } = settings;
@@ -802,6 +815,10 @@ impl Shell {
             discord_started: 0,
             discord_idle: false,
             discord_idle_check: None,
+            play: play::Play::new(play_sandbox),
+            studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
+            roblox_login: None,
+            settings_open_on: None,
             drag: None,
             _subscriptions: [
                 tree_focused,
@@ -844,6 +861,8 @@ impl Shell {
         if discord_presence_enabled {
             shell.start_discord();
         }
+        // Reads the stored Roblox sign-in, then starts the pulse if enabled.
+        shell.restore_roblox_session(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -1662,6 +1681,8 @@ impl Shell {
             argon: self.argon_settings.clone(),
             discord_presence: self.discord.is_some(),
             discord_hide_names: self.discord_hide_names,
+            studio_presence: self.studio_presence.enabled,
+            play_sandbox: self.play.sandbox,
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),
         };
@@ -1827,6 +1848,7 @@ impl Render for Shell {
             // is clipped by it.
             .children(self.explorer_popups(cx))
             .children(self.roblox_dialog(cx))
+            .children(self.play_dialog(cx))
             .children(self.close_place_dialog(cx))
             .children(self.rig_dialog_overlay(cx))
             .children(self.animation_publish_overlay(cx))

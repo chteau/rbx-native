@@ -6174,6 +6174,7 @@ name = "rbx_cloud"
 version = "0.1.0"
 dependencies = [
  "futures-lite",
+ "getrandom 0.3.4",
  "oo7",
  "serde",
  "serde_json",
@@ -6253,6 +6254,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_play"
+version = "0.1.0"
+dependencies = [
+ "futures-lite",
+ "getrandom 0.3.4",
+ "mlua",
+ "oo7",
+ "percent-encoding",
+ "rbx_binary",
+ "rbx_cloud",
+ "rbx_dom",
+ "rbx_reflection",
+ "regex",
+ "serde",
+ "serde_json",
+ "ureq",
+ "x11rb",
+]
+
+[[package]]
 name = "rbx_reflection"
 version = "0.1.0"
 dependencies = [
@@ -6268,6 +6289,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "flate2",
  "full_moon",
  "glam",
  "gpui-base",
@@ -6285,6 +6307,7 @@ dependencies = [
  "rbx_import",
  "rbx_lua",
  "rbx_mesh",
+ "rbx_play",
  "rbx_reflection",
  "rbx_terrain",
  "rbx_viewer",
