@@ -121,13 +121,16 @@ pub(crate) enum Panel {
     /// The Terrain Editor (`studio/terrain-editor.md`). Shut until asked
     /// for, as Studio's own is: see [`Panel::starts_closed`].
     TerrainEditor,
+    /// The plugins' dock widgets, one tab each. Shut until a plugin
+    /// enables a widget.
+    PluginWidgets,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 10] = [
+    pub(crate) const ALL: [Panel; 11] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -138,6 +141,7 @@ impl Panel {
         Panel::Watch,
         Panel::CallStack,
         Panel::TerrainEditor,
+        Panel::PluginWidgets,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
@@ -145,7 +149,7 @@ impl Panel {
     /// closing its torn-out window puts it back.
     pub(crate) fn home(self) -> Edge {
         match self {
-            Panel::Explorer => Edge::Right,
+            Panel::Explorer | Panel::PluginWidgets => Edge::Right,
             Panel::Properties | Panel::TerrainEditor => Edge::Left,
             Panel::Output
             | Panel::Viewport
@@ -171,6 +175,7 @@ impl Panel {
             Panel::Watch => "Watch",
             Panel::CallStack => "Call Stack",
             Panel::TerrainEditor => "Terrain Editor",
+            Panel::PluginWidgets => "Plugin Widgets",
         }
     }
 
@@ -178,7 +183,7 @@ impl Panel {
     /// leaves it shut: a tool opened from the ribbon, not a fixture of the
     /// window.
     pub(crate) fn starts_closed(self) -> bool {
-        self == Panel::TerrainEditor
+        matches!(self, Panel::TerrainEditor | Panel::PluginWidgets)
     }
 
     /// Whether its strip controls are a toolbar that takes the rest of the
