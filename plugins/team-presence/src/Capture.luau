@@ -6,6 +6,9 @@ local RunService = game:GetService("RunService")
 local Selection = game:GetService("Selection")
 local StudioService = game:GetService("StudioService")
 
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+
+local Edits = require(script.Parent.Edits)
 local Paths = require(script.Parent.Paths)
 local Schema = require(script.Parent.Schema)
 
@@ -13,8 +16,6 @@ local SAMPLE_INTERVAL = 0.2
 local MOVE_STUDS = 0.05
 local TURN_RADIANS = math.rad(0.5)
 local MAX_WATCHED = 50
-local MERGE_MS = 2000
-local EDIT_TTL_MS = 60000
 local VALUE_CUT = 80
 
 local Capture = {}
@@ -42,7 +43,7 @@ function Capture.new()
 		camera = nil :: { number }?,
 		lastCFrame = nil :: CFrame?,
 		lastSample = 0,
-		edits = {} :: { { path: string, property: string, value: string, at: number } },
+		tracker = Edits.new(),
 		watchers = {} :: { RBXScriptConnection },
 		connections = {} :: { RBXScriptConnection },
 	}, Capture)
@@ -59,6 +60,27 @@ function Capture.new()
 		end)
 	)
 	table.insert(self.connections, StudioService:GetPropertyChangedSignal("ActiveScript"):Connect(markDirty))
+	table.insert(
+		self.connections,
+		ChangeHistoryService.OnRecordingStarted:Connect(function()
+			self.tracker:recordingStarted(nowMs())
+		end)
+	)
+	table.insert(
+		self.connections,
+		ChangeHistoryService.OnRecordingFinished:Connect(
+			function(_name: string, _displayName: string?, _identifier: string?, operation: Enum.FinishRecordingOperation)
+				self.tracker:recordingFinished(operation ~= Enum.FinishRecordingOperation.Cancel, nowMs())
+				markDirty()
+			end
+		)
+	)
+	local function onUndoRedo()
+		self.tracker:undoRedo(nowMs())
+		markDirty()
+	end
+	table.insert(self.connections, ChangeHistoryService.OnUndo:Connect(onUndoRedo))
+	table.insert(self.connections, ChangeHistoryService.OnRedo:Connect(onUndoRedo))
 	table.insert(
 		self.connections,
 		RunService.Heartbeat:Connect(function()
@@ -113,20 +135,7 @@ function Capture:_recordEdit(instance: Instance, property: string)
 		return
 	end
 	local value = string.sub(tostring(raw), 1, VALUE_CUT)
-	local at = nowMs()
-	for _, edit in self.edits do
-		if edit.path == path and edit.property == property and at - edit.at <= MERGE_MS then
-			edit.value = value
-			edit.at = at
-			self.dirty = true
-			return
-		end
-	end
-	table.insert(self.edits, { path = path, property = property, value = value, at = at })
-	while #self.edits > Schema.MAX_EDITS do
-		table.remove(self.edits, 1)
-	end
-	self.dirty = true
+	self.tracker:changed(path, property, value, nowMs())
 end
 
 function Capture:_watchSelection()
@@ -144,17 +153,6 @@ function Capture:_watchSelection()
 	end
 end
 
-function Capture:_pruneEdits()
-	local cutoff = nowMs() - EDIT_TTL_MS
-	local kept = {}
-	for _, edit in self.edits do
-		if edit.at >= cutoff then
-			table.insert(kept, edit)
-		end
-	end
-	self.edits = kept
-end
-
 function Capture:state()
 	local selection = {}
 	for _, instance in Selection:Get() do
@@ -167,11 +165,7 @@ function Capture:state()
 		end
 	end
 
-	self:_pruneEdits()
-	local edits = {}
-	for _, edit in self.edits do
-		table.insert(edits, { path = edit.path, property = edit.property, value = edit.value, at = edit.at })
-	end
+	local edits = self.tracker:recent(nowMs())
 
 	local scriptPath: string? = nil
 	local active = StudioService.ActiveScript

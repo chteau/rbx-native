@@ -14,6 +14,27 @@ edit).
 - Nothing is edited or synchronised: presence is cameras, selections, the open
   script and recent property edits.
 
+## How edits are attributed
+
+Only changes made while a local `ChangeHistoryService` recording is open, or
+within 250 ms either side of a local undo/redo, count as yours
+(Studio does not document whether an undo's changes arrive before or after
+its `OnUndo` signal).
+
+- Studio tools or plugins that change things without a recording (legacy
+  `SetWaypoint`) are not reported.
+- A collaborator's replicated change to a selected instance that lands while a
+  local recording is open, or within 250 ms of a local undo/redo, is still
+  misattributed.
+- Only selected instances are watched.
+- Whether Studio's own Properties and dragger edits raise
+  `OnRecordingStarted` is not verified.
+
+## Colours
+
+Colours are assigned per room from the user ids, so every client shows the
+same colour for the same user.
+
 ## The shared secret
 
 The secret is a string attribute `PresenceSecret` (64 lower-case hex digits)

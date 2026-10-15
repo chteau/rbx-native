@@ -153,6 +153,107 @@ fn data_schema() {
     }
 }
 
+#[test]
+fn data_colors() {
+    let lua = new_lua();
+    let slot = func(&lua, "Schema", "colorSlot");
+    let assign = func(&lua, "Schema", "assignColors");
+    let fixture = fixture_json("colors.json");
+    for case in fixture["hashes"].as_array().unwrap() {
+        let got: f64 = slot.call(num_field(case, "userId")).unwrap();
+        assert_eq!(got, num_field(case, "slot"), "{}", case["userId"]);
+    }
+    for case in fixture["rooms"].as_array().unwrap() {
+        let ids = |key: &str| -> Vec<f64> {
+            case[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n.as_f64().unwrap())
+                .collect()
+        };
+        let got: Table = assign.call((ids("room"), ids("extra"))).unwrap();
+        let want = case["colors"].as_object().unwrap();
+        assert_eq!(got.pairs::<Value, Value>().count(), want.len(), "{case}");
+        for (id, color) in want {
+            let id: f64 = id.parse().unwrap();
+            assert_eq!(got.get::<String>(id).unwrap(), color.as_str().unwrap());
+        }
+    }
+}
+
+fn edits(body: &str) -> String {
+    let lua = new_lua();
+    lua.globals()
+        .set("Edits", load_module(&lua, "Edits").unwrap())
+        .unwrap();
+    let prelude = "local function s(l) local o = {} for _, e in ipairs(l) do \
+        table.insert(o, e.path .. '.' .. e.property .. '=' .. e.value) end \
+        return table.concat(o, ',') end local t = Edits.new() ";
+    lua.load(format!("{prelude}{body}")).eval().unwrap()
+}
+
+#[test]
+fn data_edits_recording() {
+    let committed = "t:recordingStarted(0) t:changed('A','P','v',10) \
+        t:recordingFinished(true,20) return s(t:recent(30))";
+    assert_eq!(edits(committed), "A.P=v");
+    let cancelled = "t:recordingStarted(0) t:changed('A','P','v',10) \
+        t:recordingFinished(false,20) return s(t:recent(30))";
+    assert_eq!(edits(cancelled), "");
+    assert_eq!(
+        edits("t:changed('A','P','v',10) return s(t:recent(30))"),
+        ""
+    );
+}
+
+#[test]
+fn data_edits_nested() {
+    let body = "t:recordingStarted(0) t:recordingStarted(5) t:changed('A','P','v',10) \
+        t:recordingFinished(true,20) local mid = s(t:recent(25)) \
+        t:recordingFinished(true,30) return mid .. '|' .. s(t:recent(35))";
+    assert_eq!(edits(body), "|A.P=v");
+}
+
+#[test]
+fn data_edits_undo_window() {
+    let inside = "t:undoRedo(1000) t:changed('A','P','v',1250) return s(t:recent(1300))";
+    assert_eq!(edits(inside), "A.P=v");
+    let after = "t:undoRedo(1000) t:changed('A','P','v',1251) return s(t:recent(1300))";
+    assert_eq!(edits(after), "");
+    // The undo's own changes may arrive just before its signal.
+    let before = "t:changed('A','P','v',900) t:undoRedo(1000) return s(t:recent(1100))";
+    assert_eq!(edits(before), "A.P=v");
+    let too_early = "t:changed('A','P','v',700) t:undoRedo(1000) return s(t:recent(1100))";
+    assert_eq!(edits(too_early), "");
+}
+
+#[test]
+fn data_edits_stale_recording() {
+    let body = "t:recordingStarted(0) t:changed('A','P','v',1000) \
+        t:recordingFinished(true,11000) return s(t:recent(11000))";
+    assert_eq!(edits(body), "");
+}
+
+#[test]
+fn data_edits_merge() {
+    let body = "t:recordingStarted(0) t:changed('A','P','1',0) t:changed('A','P','2',1500) \
+        t:recordingFinished(true,1600) \
+        t:recordingStarted(5000) t:changed('A','P','3',5000) \
+        t:recordingFinished(true,5100) return s(t:recent(6000))";
+    assert_eq!(edits(body), "A.P=2,A.P=3");
+}
+
+#[test]
+fn data_edits_limits() {
+    let many = "t:recordingStarted(0) for i = 1, 25 do t:changed('P' .. i,'X','v',i) end \
+        t:recordingFinished(true,100) local l = t:recent(200) return #l .. ':' .. l[1].path";
+    assert_eq!(edits(many), "20:P6");
+    let old = "t:recordingStarted(0) t:changed('A','P','v',0) t:recordingFinished(true,1) \
+        return s(t:recent(59999)) .. '|' .. s(t:recent(60000))";
+    assert_eq!(edits(old), "A.P=v|");
+}
+
 const FAKE_TREE: &str = r#"
 local function chain(names)
     local function node(name, parent)
