@@ -153,7 +153,7 @@ local function start()
 					lastPublish = os.clock()
 					backoff = 0
 				else
-					widget:setStatus(err or "Publish failed", true)
+					widget:setStatus(err or "Publish failed", not myRelay:waiting())
 					backoff = nextBackoff(backoff)
 					lastPublish = os.clock()
 					task.wait(backoff)
@@ -197,7 +197,7 @@ local function start()
 				-- ntfy polls return at once; pace them so we don't spin.
 				task.wait(myRelay:pollDelay())
 			else
-				widget:setStatus(err or "Poll failed", true)
+				widget:setStatus(err or "Poll failed", not myRelay:waiting())
 				backoff = nextBackoff(backoff)
 				task.wait(backoff)
 			end

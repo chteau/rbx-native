@@ -72,6 +72,8 @@ pub(super) struct TeamPresence {
     /// Persisted; `enabled` is the opt-in.
     pub(super) settings: TeamPresenceSettings,
     pub(super) connection: Connection,
+    /// In a hosted room: whether this editor hosts it or joined another's.
+    pub(super) route: Option<rbx_presence::client::Route>,
     /// The relay URL field in the dock's hidden Advanced section.
     pub(super) relay_input: Entity<InputState>,
     /// Whether the Advanced section (the owner's relay setup) is revealed.
@@ -140,9 +142,10 @@ impl TeamPresence {
         TeamPresence {
             settings,
             connection: Connection::Off,
+            route: None,
             relay_input,
             show_advanced: false,
-            owner_kind: RelayKind::Worker,
+            owner_kind: RelayKind::Hosted,
             client: None,
             watch: None,
             snapshot: None,
@@ -218,6 +221,32 @@ fn drop_defaults(nodes: &mut [rbx_dom::diff::DiffNode], db: &rbx_reflection::Ref
         }
         drop_defaults(&mut node.children, db);
     }
+}
+
+/// Opens a Cloudflare quick tunnel (no account) to the presence host's
+/// port, with the cloudflared built into this editor. Called on the
+/// presence worker thread, which outlives the tunnel (see
+/// `rbx_play::tunnel`'s note on `PR_SET_PDEATHSIG`).
+fn quick_tunnel() -> rbx_presence::client::Hosting {
+    struct Quick(rbx_play::tunnel::Tunnel);
+
+    impl rbx_presence::client::Tunnel for Quick {
+        fn alive(&mut self) -> bool {
+            matches!(self.0.child.try_wait(), Ok(None))
+        }
+    }
+
+    rbx_presence::client::Hosting(std::sync::Arc::new(|port: u16| {
+        let binary = crate::shell::play::cloudflared::program().map_err(|e| e.to_string())?;
+        let tunnel = rbx_play::tunnel::TunnelProvider::Cloudflared { binary }
+            .start(port, std::time::Duration::from_secs(30))
+            .map_err(|e| e.to_string())?;
+        let url = tunnel.public_url.clone();
+        Ok((
+            url,
+            Box::new(Quick(tunnel)) as Box<dyn rbx_presence::client::Tunnel>,
+        ))
+    }))
 }
 
 pub(super) fn now_ms() -> u64 {
@@ -372,8 +401,9 @@ impl Shell {
     /// Owner setup: cycles the transport the Save button will write.
     pub(super) fn toggle_owner_kind(&mut self, cx: &mut Context<Self>) {
         self.team_presence.owner_kind = match self.team_presence.owner_kind {
+            RelayKind::Hosted => RelayKind::Worker,
             RelayKind::Worker => RelayKind::Ntfy,
-            RelayKind::Ntfy => RelayKind::Worker,
+            RelayKind::Ntfy => RelayKind::Hosted,
         };
         cx.notify();
     }
@@ -401,6 +431,7 @@ impl Shell {
     fn disconnect_presence(&mut self, cx: &mut Context<Self>) {
         let presence = &mut self.team_presence;
         presence.client = None;
+        presence.route = None;
         presence.watch = None;
         presence.snapshot = None;
         presence.departed.clear();
@@ -465,6 +496,9 @@ impl Shell {
             room,
             key,
             user_id,
+            // A hosted room: this editor may host it, through the bundled
+            // cloudflared, when nobody else does.
+            hosting: (config.kind == RelayKind::Hosted).then(quick_tunnel),
         };
         // Catch up only on what happened since this client last left this
         // place, and keep the snapshot it left behind for "View changes".
@@ -659,6 +693,7 @@ impl Shell {
                     presence.snapshot = Some(next);
                 }
                 Event::Disconnected(why) => presence.connection = Connection::Retrying(why),
+                Event::Route(route) => presence.route = Some(route),
                 Event::Rejected(why) => presence.connection = Connection::Rejected(why),
             }
             changed = true;

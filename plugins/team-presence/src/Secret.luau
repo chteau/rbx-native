@@ -55,7 +55,7 @@ function Secret.readRelay(): { kind: string, url: string }?
 	end
 	local kind = folder:GetAttribute(RELAY_KIND)
 	local url = folder:GetAttribute(RELAY_URL)
-	if (kind == "worker" or kind == "ntfy") and type(url) == "string" and url ~= "" then
+	if (kind == "hosted" or kind == "worker" or kind == "ntfy") and type(url) == "string" and url ~= "" then
 		return { kind = kind :: string, url = url }
 	end
 	return nil

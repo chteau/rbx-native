@@ -127,6 +127,21 @@ fn agent() -> ureq::Agent {
 /// (there is none to miss).
 pub fn fetch(config: &Config, since_ms: u64) -> Result<Summary, String> {
     match config.kind {
+        RelayKind::Hosted => {
+            // The announced host's journal; nobody hosting means nothing
+            // was journaled since.
+            let found = crate::announce::find(&config.relay_url, &config.key, &config.room)?;
+            match found {
+                Some(host) => from_worker(
+                    &Config {
+                        relay_url: host.url,
+                        ..config.clone()
+                    },
+                    since_ms,
+                ),
+                None => Ok(summarize(&[])),
+            }
+        }
         RelayKind::Worker => from_worker(config, since_ms),
         RelayKind::Ntfy => from_ntfy(config, since_ms),
     }
@@ -302,6 +317,7 @@ mod tests {
             room: "room1".into(),
             key: "k".repeat(64),
             user_id: 42,
+            hosting: None,
         }
     }
 

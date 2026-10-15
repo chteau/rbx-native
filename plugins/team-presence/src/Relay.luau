@@ -1,5 +1,9 @@
 --!strict
---! The presence transport. Two kinds, both official:
+--! The presence transport. Three kinds, all official:
+--!  - "hosted" (the default): an rbx-native collaborator runs the relay
+--!    behind a Cloudflare quick tunnel and announces its address on ntfy
+--!    (see Announce); we read the address, then speak "worker" to it. Studio
+--!    cannot host, so with nobody in rbx-native we wait.
 --!  - "worker": the signed-WebSocket relay in relay/ (here over HTTP long-poll,
 --!    since Studio's HttpService cannot hold a socket), which keeps the room
 --!    and answers with a snapshot.
@@ -9,6 +13,7 @@
 
 local HttpService = game:GetService("HttpService")
 
+local Announce = require(script.Parent.Announce)
 local Auth = require(script.Parent.Auth)
 local Ntfy = require(script.Parent.Ntfy)
 local Schema = require(script.Parent.Schema)
@@ -16,14 +21,23 @@ local Schema = require(script.Parent.Schema)
 export type Config = { kind: string, url: string, key: string, room: string, userId: number }
 
 local EXPIRY_MS = 15000
+-- How often a hosted room looks for its host while it has none.
+local RESOLVE_EVERY = 15
+local WAITING = "Waiting for an rbx-native collaborator to open the place"
+
 
 local Relay = {}
 Relay.__index = Relay
 
 function Relay.new(config: Config)
+	local url = string.gsub(config.url, "/+$", "")
+	local hosted = config.kind == "hosted"
 	local self = {
 		kind = config.kind,
-		base = string.gsub(config.url, "/+$", ""),
+		-- hosted: the announce server; `base` is the host, once found.
+		announceBase = if hosted then url else nil,
+		base = if hosted then nil else url,
+		lastResolve = -math.huge,
 		key = config.key,
 		room = config.room,
 		topic = Ntfy.topic(config.room),
@@ -41,9 +55,66 @@ local function nowMs(): number
 	return DateTime.now().UnixTimestampMillis
 end
 
--- A short wait between ntfy polls, so the poll loop does not spin.
+-- A short wait between ntfy polls, so the poll loop does not spin; a
+-- hosted room with no host yet waits until it looks again.
 function Relay:pollDelay(): number
+	if self.kind == "hosted" and self.base == nil then
+		return RESOLVE_EVERY
+	end
 	return if self.kind == "ntfy" then 1 else 0
+end
+
+-- Whether a hosted room is waiting for an rbx-native user to host it (not
+-- an error: nothing is wrong, nobody is there yet).
+function Relay:waiting(): boolean
+	return self.kind == "hosted" and self.base == nil
+end
+
+-- hosted: finds the host from the newest announcement, at most once every
+-- RESOLVE_EVERY seconds. True when there is one to talk to.
+function Relay:_resolve(): (boolean, string?)
+	if self.base ~= nil then
+		return true, nil
+	end
+	if os.clock() - self.lastResolve < RESOLVE_EVERY then
+		return false, WAITING
+	end
+	self.lastResolve = os.clock()
+	local url = string.format("%s/%s/json?poll=1&since=12h", self.announceBase, Announce.topic(self.room))
+	local ok, res = pcall(function()
+		return HttpService:RequestAsync({ Url = url, Method = "GET" })
+	end)
+	if not ok then
+		return false, tostring(res)
+	end
+	if not res.Success then
+		return false, string.format("announce HTTP %d", res.StatusCode)
+	end
+	local texts = {}
+	for line in string.gmatch(res.Body or "", "[^\n]+") do
+		local decoded, parsed = pcall(function()
+			return HttpService:JSONDecode(line)
+		end)
+		if decoded and type(parsed) == "table" and parsed.event == "message" and type(parsed.message) == "string" then
+			table.insert(texts, parsed.message)
+		end
+	end
+	local host = Announce.newest(self.key, self.room, nowMs(), texts)
+	if not host then
+		return false, WAITING
+	end
+	self.base = string.gsub(host, "/+$", "")
+	self.sendKey = true
+	return true, nil
+end
+
+-- hosted: the host stopped answering (left, crashed, or handed over); look
+-- for it again on the next call.
+function Relay:_lost()
+	if self.kind == "hosted" then
+		self.base = nil
+		self.lastResolve = -math.huge
+	end
 end
 
 -- ===== Worker (signed HTTP) =====
@@ -82,7 +153,24 @@ local function needsKey(res: any): boolean
 end
 
 function Relay:_send(method: string, suffix: string, body: string): (any?, string?)
+	if self.kind == "hosted" then
+		local found, why = self:_resolve()
+		if not found then
+			return nil, why
+		end
+	end
 	local res, err, raw = self:_request(method, suffix, body)
+	if res == nil and raw == nil and self.kind == "hosted" then
+		-- No HTTP answer at all: the host may be gone, or its address not
+		-- reachable yet; look again shortly.
+		self:_lost()
+		err = `Can't reach the rbx-native host yet ({err})`
+	elseif res == nil and raw and self.kind == "hosted" and (raw.StatusCode == 404 or raw.StatusCode >= 500) then
+		-- A closed tunnel answers 404/502/530 from Cloudflare's edge (an
+		-- HTML page: keep it out of the status line).
+		self:_lost()
+		err = `Can't reach the rbx-native host yet (HTTP {raw.StatusCode})`
+	end
 	if res == nil and needsKey(raw) and not self.sendKey then
 		self.sendKey = true
 		res, err = self:_request(method, suffix, body)
@@ -261,8 +349,8 @@ function Relay:journal(sinceMs: number): (any?, string?)
 end
 
 function Relay:leave()
-	if self.kind == "ntfy" then
-		-- Nothing to delete on a dumb pub/sub; peers expire us.
+	if self.kind == "ntfy" or self:waiting() then
+		-- Nothing to delete on a dumb pub/sub (peers expire us), or no host.
 		return
 	end
 	self:_send("DELETE", "/state", "")

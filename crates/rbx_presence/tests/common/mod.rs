@@ -4,6 +4,9 @@
 
 use std::path::PathBuf;
 
+#[allow(dead_code)]
+pub mod studio;
+
 use mlua::{Lua, Table, Value};
 
 pub fn root() -> PathBuf {

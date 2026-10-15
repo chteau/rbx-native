@@ -22,7 +22,7 @@ use tungstenite::{Error as WsError, Message, WebSocket};
 
 use crate::relay::{self, RelayKind};
 use crate::schema::{self, Client as Editor, Snapshot, UserState, EXPIRY_MS, HEARTBEAT_MS};
-use crate::{auth, ntfy};
+use crate::{announce, auth, host, ntfy};
 
 /// How long a read blocks before the loop checks for something to send.
 const READ_TIMEOUT: Duration = Duration::from_millis(200);
@@ -39,19 +39,62 @@ fn unix_ms() -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
+/// A public tunnel to a loopback port, kept open while it lives.
+pub trait Tunnel: Send {
+    /// Whether the tunnel is still up (its process has not exited).
+    fn alive(&mut self) -> bool;
+}
+
+/// Opens a [`Tunnel`] to `127.0.0.1:<port>` and returns its public
+/// `https://` URL. Supplied by the editor, which ships `cloudflared`.
+pub type OpenTunnel = dyn Fn(u16) -> Result<(String, Box<dyn Tunnel>), String> + Send + Sync;
+
+/// How a [`RelayKind::Hosted`] client may host the room itself; without
+/// one (or when it fails) the client only joins an announced host.
+#[derive(Clone)]
+pub struct Hosting(pub std::sync::Arc<OpenTunnel>);
+
+impl std::fmt::Debug for Hosting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Hosting(..)")
+    }
+}
+
+impl PartialEq for Hosting {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Hosting {}
+
 /// Where and as whom to connect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// Which transport the relay speaks.
     pub kind: RelayKind,
     /// `https://host[/prefix]` or `http://…` (a local `wrangler dev`); a
-    /// trailing `/` is ignored.
+    /// trailing `/` is ignored. For [`RelayKind::Hosted`], the ntfy server
+    /// the host's address is announced on.
     pub relay_url: String,
     /// [`crate::auth::room_id`] of `key`.
     pub room: String,
     /// [`crate::auth::derive_key`] for the place.
     pub key: String,
     pub user_id: u64,
+    /// [`RelayKind::Hosted`] only: lets this client host the room.
+    pub hosting: Option<Hosting>,
+}
+
+/// How a [`RelayKind::Hosted`] client is connected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Route {
+    /// This client runs the relay, public at this address.
+    Hosting(String),
+    /// Connected to the relay another rbx-native user hosts there.
+    Joined(String),
+    /// Nobody hosts the room yet, and this client cannot.
+    Waiting,
 }
 
 /// What the worker reports.
@@ -64,6 +107,8 @@ pub enum Event {
     /// The relay refused us (HTTP 401/403 on the upgrade): wrong key or
     /// clock. Retries continue at the slowest pace.
     Rejected(String),
+    /// [`RelayKind::Hosted`]: how this client reaches the room now.
+    Route(Route),
 }
 
 /// The handle; dropping it stops the worker.
@@ -121,7 +166,24 @@ struct Worker {
     /// ntfy only: the id of the newest message polled, so the next poll asks
     /// only for later ones.
     ntfy_last_id: Option<String>,
+    /// Hosted only: the relay this client runs, while it hosts.
+    hosted: Option<Hosted>,
+    /// Hosted only: the announced relay this client joined.
+    joined: Option<String>,
 }
+
+/// The relay this client runs for the room, and its public tunnel.
+struct Hosted {
+    host: host::Host,
+    tunnel: Box<dyn Tunnel>,
+    public: String,
+    /// When the address was last announced (unix ms).
+    announced: u64,
+}
+
+/// How often a hosted-room client re-checks the announcements (a host to
+/// re-announce and to yield to a newer host, a guest to follow a move).
+const ROUTE_CHECK: Duration = Duration::from_secs(60);
 
 fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
     let mut worker = Worker {
@@ -133,11 +195,16 @@ fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
         ntfy_room: HashMap::new(),
         ntfy_cursor: 0,
         ntfy_last_id: None,
+        hosted: None,
+        joined: None,
     };
     let mut delay = BACKOFF_START;
     loop {
         let (event, wait) = match worker.session(&mut delay) {
-            Outcome::Stopped => return,
+            Outcome::Stopped => {
+                worker.stop_hosting();
+                return;
+            }
             Outcome::Failed(why) => (Event::Disconnected(why), delay),
             Outcome::Rejected(why) => {
                 delay = BACKOFF_MAX;
@@ -145,6 +212,7 @@ fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
             }
         };
         if worker.events.send(event).is_err() || !worker.wait(wait) {
+            worker.stop_hosting();
             return;
         }
         delay = (delay * 2).min(BACKOFF_MAX);
@@ -187,13 +255,142 @@ impl Worker {
 
     fn session(&mut self, delay: &mut Duration) -> Outcome {
         match self.config.kind {
-            RelayKind::Worker => self.worker_session(delay),
+            RelayKind::Hosted => self.hosted_session(delay),
+            RelayKind::Worker => {
+                let url = self.config.relay_url.clone();
+                self.worker_session(&url, delay)
+            }
             RelayKind::Ntfy => self.ntfy_session(delay),
         }
     }
 
-    fn worker_session(&mut self, delay: &mut Duration) -> Outcome {
-        let mut socket = match self.connect() {
+    /// A hosted room: join the announced host if it answers, else host it
+    /// ourselves (when we can), then talk to that relay like a Worker.
+    fn hosted_session(&mut self, delay: &mut Duration) -> Outcome {
+        if self.hosted.is_none() {
+            let ntfy = self.config.relay_url.clone();
+            match announce::find(&ntfy, &self.config.key, &self.config.room) {
+                Err(why) => return Outcome::Failed(why),
+                Ok(Some(found)) if reachable(&found.url) => {
+                    self.joined = Some(found.url.clone());
+                    if self
+                        .events
+                        .send(Event::Route(Route::Joined(found.url.clone())))
+                        .is_err()
+                    {
+                        return Outcome::Stopped;
+                    }
+                    return self.worker_session(&found.url, delay);
+                }
+                Ok(_) => {
+                    self.joined = None;
+                    let Some(hosting) = self.config.hosting.clone() else {
+                        if self.events.send(Event::Route(Route::Waiting)).is_err() {
+                            return Outcome::Stopped;
+                        }
+                        return Outcome::Failed("no rbx-native collaborator is hosting yet".into());
+                    };
+                    if let Err(why) = self.start_hosting(&hosting) {
+                        return Outcome::Failed(why);
+                    }
+                }
+            }
+        }
+        let Some(local) = self.hosted.as_ref().map(|h| h.host.local_url()) else {
+            return Outcome::Failed("hosting stopped".into());
+        };
+        self.worker_session(&local, delay)
+    }
+
+    fn start_hosting(&mut self, hosting: &Hosting) -> Result<(), String> {
+        let host = host::Host::start(&self.config.key).map_err(|e| e.to_string())?;
+        let (public, tunnel) = (hosting.0)(host.port())?;
+        if !announce::allowed_url(&public) {
+            return Err(format!("the tunnel gave an unusable address: {public}"));
+        }
+        // Collaborators look the address up the moment it is announced; one
+        // asked before the record exists caches "no such host" for many
+        // minutes. Announce only once public DNS has it.
+        wait_until_resolvable(&public, Duration::from_secs(45));
+        announce::publish(
+            &self.config.relay_url,
+            &self.config.key,
+            &self.config.room,
+            &public,
+        )?;
+        let _ = self
+            .events
+            .send(Event::Route(Route::Hosting(public.clone())));
+        self.hosted = Some(Hosted {
+            host,
+            tunnel,
+            public,
+            announced: unix_ms(),
+        });
+        Ok(())
+    }
+
+    /// Leaves the room's hosting: says goodbye so guests look again at once,
+    /// then closes the tunnel and the relay.
+    fn stop_hosting(&mut self) {
+        if let Some(hosted) = self.hosted.take() {
+            let _ = announce::publish(
+                &self.config.relay_url,
+                &self.config.key,
+                &self.config.room,
+                "",
+            );
+            drop(hosted);
+        }
+    }
+
+    /// The periodic hosted-room check; `Some` ends the session (to rejoin or
+    /// re-host): a host whose tunnel died or that a newer host replaced, or a
+    /// guest whose host moved or left.
+    fn check_route(&mut self) -> Option<Outcome> {
+        let found = announce::find(&self.config.relay_url, &self.config.key, &self.config.room);
+        if let Some(hosted) = &mut self.hosted {
+            if !hosted.tunnel.alive() {
+                self.hosted = None;
+                return Some(Outcome::Failed("the tunnel closed".into()));
+            }
+            if let Ok(Some(newer)) = &found {
+                if newer.url != hosted.public && newer.at > hosted.announced {
+                    // Two hosted at once: the newer one keeps the room.
+                    self.hosted = None;
+                    return Some(Outcome::Failed(
+                        "another rbx-native user hosts the room".into(),
+                    ));
+                }
+            }
+            let now = unix_ms();
+            let due = now.saturating_sub(hosted.announced) >= announce::REANNOUNCE_MS;
+            if due
+                && announce::publish(
+                    &self.config.relay_url,
+                    &self.config.key,
+                    &self.config.room,
+                    &hosted.public,
+                )
+                .is_ok()
+            {
+                hosted.announced = now;
+            }
+            return None;
+        }
+        if let Some(joined) = &self.joined {
+            match found {
+                Ok(Some(current)) if &current.url == joined => None,
+                Ok(_) => Some(Outcome::Failed("the room's host moved".into())),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn worker_session(&mut self, url: &str, delay: &mut Duration) -> Outcome {
+        let mut socket = match self.connect(url) {
             Ok(socket) => socket,
             Err(WsError::Http(response)) if matches!(response.status().as_u16(), 401 | 403) => {
                 return Outcome::Rejected(format!("relay refused us: HTTP {}", response.status()));
@@ -207,10 +404,18 @@ impl Worker {
         // Resend whatever we hold so a reconnect restores our presence.
         self.dirty = self.latest.is_some();
         let mut last_sent = Instant::now();
+        let mut last_check = Instant::now();
         loop {
             if !self.drain() {
                 let _ = socket.close(None);
                 return Outcome::Stopped;
+            }
+            if self.config.kind == RelayKind::Hosted && last_check.elapsed() >= ROUTE_CHECK {
+                last_check = Instant::now();
+                if let Some(outcome) = self.check_route() {
+                    let _ = socket.close(None);
+                    return outcome;
+                }
             }
             let heartbeat = last_sent.elapsed() >= Duration::from_millis(HEARTBEAT_MS);
             if self.dirty || heartbeat {
@@ -395,8 +600,8 @@ impl Worker {
         Ok(())
     }
 
-    fn connect(&self) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, WsError> {
-        let url = ws_url(&self.config.relay_url, &self.config.room)
+    fn connect(&self, relay_url: &str) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, WsError> {
+        let url = ws_url(relay_url, &self.config.room)
             .ok_or_else(|| WsError::Url(tungstenite::error::UrlError::UnsupportedUrlScheme))?;
         let mut request = url.into_client_request()?;
         let path = format!("/v1/rooms/{}/ws", self.config.room);
@@ -428,6 +633,60 @@ impl Worker {
         }
         Ok(socket)
     }
+}
+
+/// Waits (at most `limit`) until `url`'s host has an address in public DNS,
+/// asking Cloudflare's DNS-over-HTTPS resolver so this machine's own resolver
+/// never caches an early "no such host". Loopback addresses return at once.
+fn wait_until_resolvable(url: &str, limit: Duration) {
+    let Some(host) = url
+        .strip_prefix("https://")
+        .map(|rest| rest.split(['/', ':']).next().unwrap_or(rest))
+    else {
+        return;
+    };
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .into();
+    let end = Instant::now() + limit;
+    while Instant::now() < end {
+        let answered = agent
+            .get("https://cloudflare-dns.com/dns-query")
+            .query("name", host)
+            .query("type", "A")
+            .header("Accept", "application/dns-json")
+            .call()
+            .ok()
+            .and_then(|mut resp| resp.body_mut().read_to_string().ok())
+            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+            .is_some_and(|json| {
+                json.get("Status").and_then(|s| s.as_u64()) == Some(0)
+                    && json
+                        .get("Answer")
+                        .and_then(|a| a.as_array())
+                        .is_some_and(|a| !a.is_empty())
+            });
+        if answered {
+            return;
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// Whether a relay answers its health check (a host that crashed leaves its
+/// last announcement behind).
+fn reachable(url: &str) -> bool {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(8)))
+        .build()
+        .into();
+    agent
+        .get(format!("{}/health", url.trim_end_matches('/')))
+        .call()
+        .is_ok_and(|resp| resp.status().as_u16() == 200)
 }
 
 trait FromStaticLower {
@@ -531,6 +790,7 @@ mod tests {
             room: "room1".into(),
             key: key.clone(),
             user_id: 42,
+            hosting: None,
         });
         client.publish(state(1));
 

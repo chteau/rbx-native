@@ -1,6 +1,8 @@
-//! Two editors meeting in a real relay. Needs one running
-//! (`cd relay && npx wrangler dev`), so it is ignored unless asked for:
-//! `RBX_PRESENCE_RELAY=http://127.0.0.1:8787 cargo test -p rbx_presence --test relay_e2e -- --ignored`.
+//! Two editors meeting in a real relay: rbx-native's own host
+//! (`rbx_presence::host`), started in-process, so the Rust port of the
+//! Worker is held to the same behaviour. Set `RBX_PRESENCE_RELAY` (e.g.
+//! `http://127.0.0.1:8787` with `cd relay && npx wrangler dev`) to run the
+//! same tests against the Cloudflare Worker instead.
 
 mod common;
 
@@ -25,6 +27,17 @@ fn state(user_id: u64, selection: &str) -> UserState {
     }
 }
 
+/// The relay under test for `key`'s room, and what keeps it running.
+fn relay_for(key: &str) -> (String, Option<rbx_presence::host::Host>) {
+    match std::env::var("RBX_PRESENCE_RELAY") {
+        Ok(url) => (url, None),
+        Err(_) => {
+            let host = rbx_presence::host::Host::start(key).expect("host starts");
+            (host.local_url(), Some(host))
+        }
+    }
+}
+
 fn join(relay: &str, key: &str, user_id: u64) -> (Client, std::sync::mpsc::Receiver<Event>) {
     Client::start(Config {
         kind: rbx_presence::relay::RelayKind::Worker,
@@ -32,6 +45,7 @@ fn join(relay: &str, key: &str, user_id: u64) -> (Client, std::sync::mpsc::Recei
         room: auth::room_id(key),
         key: key.to_owned(),
         user_id,
+        hosting: None,
     })
 }
 
@@ -58,10 +72,9 @@ fn sees(events: &std::sync::mpsc::Receiver<Event>, other: u64, selection: &str) 
 }
 
 #[test]
-#[ignore = "needs a running relay in RBX_PRESENCE_RELAY"]
 fn two_editors_see_each_other_and_a_stranger_is_refused() {
-    let relay = std::env::var("RBX_PRESENCE_RELAY").expect("RBX_PRESENCE_RELAY");
     let key = auth::derive_key(&secret::generate(), 4567);
+    let (relay, _host) = relay_for(&key);
 
     let (ana, ana_events) = join(&relay, &key, 1);
     let (ben, ben_events) = join(&relay, &key, 2);
@@ -78,6 +91,7 @@ fn two_editors_see_each_other_and_a_stranger_is_refused() {
         room: auth::room_id(&key),
         key: auth::derive_key(&secret::generate(), 4567),
         user_id: 3,
+        hosting: None,
     });
     let refused = loop {
         match eve_events.recv_timeout(Duration::from_secs(10)) {
@@ -92,14 +106,13 @@ fn two_editors_see_each_other_and_a_stranger_is_refused() {
 /// The plugin's own `Relay.luau`, over a stand-in for `HttpService`, meets
 /// this crate's client in the same room.
 #[test]
-#[ignore = "needs a running relay in RBX_PRESENCE_RELAY"]
 fn the_plugin_and_the_editor_see_each_other() {
-    let relay = std::env::var("RBX_PRESENCE_RELAY").expect("RBX_PRESENCE_RELAY");
     let secret = secret::generate();
     let key = auth::derive_key(&secret, 4567);
+    let (relay, _host) = relay_for(&key);
 
     let lua = common::new_lua();
-    studio_stubs(&lua);
+    common::studio::stubs(&lua);
     let (editor, editor_events) = join(&relay, &key, 8);
     editor.publish(state(8, "Workspace.SpawnLocation"));
 
@@ -132,91 +145,4 @@ fn the_plugin_and_the_editor_see_each_other() {
     let plugin_saw_editor: bool = lua.load(chunk).eval().expect("plugin side ran");
     assert!(plugin_saw_editor);
     assert!(sees(&editor_events, 7, "Workspace.Baseplate"));
-}
-
-/// `game:GetService("HttpService")` with `RequestAsync` done over a plain
-/// HTTP/1.1 socket (the relay under test is local), `JSONDecode` through the
-/// plugin's own `Json`, and `DateTime.now()`.
-fn studio_stubs(lua: &mlua::Lua) {
-    let request = lua
-        .create_function(|lua, (_, request): (mlua::Table, mlua::Table)| {
-            let url: String = request.get("Url")?;
-            let method: String = request.get("Method")?;
-            let body: Option<String> = request.get("Body")?;
-            let headers: mlua::Table = request.get("Headers")?;
-            let mut extra = String::new();
-            for pair in headers.pairs::<String, String>() {
-                let (name, value) = pair?;
-                extra.push_str(&format!("{name}: {value}\r\n"));
-            }
-            let (status, text) = http(&url, &method, &extra, body.as_deref().unwrap_or(""))
-                .map_err(mlua::Error::runtime)?;
-            let response = lua.create_table()?;
-            response.set("Success", (200..300).contains(&status))?;
-            response.set("StatusCode", status)?;
-            response.set("Body", text)?;
-            Ok(response)
-        })
-        .unwrap();
-    let setup = lua
-        .load(
-            r#"
-            local requestAsync, nowMs = ...
-            local http = {
-                RequestAsync = requestAsync,
-                JSONDecode = function(_, text) return script.Parent.Json.decode(text) end,
-            }
-            game = { GetService = function(_, name) assert(name == "HttpService"); return http end }
-            DateTime = { now = function() return { UnixTimestampMillis = nowMs() } end }
-            "#,
-        )
-        .into_function()
-        .unwrap();
-    let now_ms = lua
-        .create_function(|_, ()| {
-            let since = std::time::UNIX_EPOCH.elapsed().expect("clock after 1970");
-            Ok(since.as_millis() as f64)
-        })
-        .unwrap();
-    setup.call::<()>((request, now_ms)).unwrap();
-}
-
-/// One request; answers the status and the (de-chunked) body.
-fn http(url: &str, method: &str, headers: &str, body: &str) -> Result<(u16, String), String> {
-    use std::io::{Read, Write};
-    let rest = url.strip_prefix("http://").ok_or("http:// only")?;
-    let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
-    let mut socket = std::net::TcpStream::connect(host).map_err(|e| e.to_string())?;
-    let head = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nContent-Length: {}\r\n{headers}\r\n",
-        body.len()
-    );
-    socket
-        .write_all(format!("{head}{body}").as_bytes())
-        .map_err(|e| e.to_string())?;
-    let mut raw = String::new();
-    socket.read_to_string(&mut raw).map_err(|e| e.to_string())?;
-    let (head, mut payload) = raw.split_once("\r\n\r\n").ok_or("no header end")?;
-    let status = head
-        .split(' ')
-        .nth(1)
-        .and_then(|code| code.parse().ok())
-        .ok_or("no status")?;
-    let mut body = String::new();
-    if head
-        .to_ascii_lowercase()
-        .contains("transfer-encoding: chunked")
-    {
-        while let Some((size, rest)) = payload.split_once("\r\n") {
-            let size = usize::from_str_radix(size.trim(), 16).map_err(|e| e.to_string())?;
-            if size == 0 {
-                break;
-            }
-            body.push_str(&rest[..size]);
-            payload = &rest[size + 2..];
-        }
-    } else {
-        body.push_str(payload);
-    }
-    Ok((status, body))
 }

@@ -12,7 +12,7 @@ use crate::relay::{RelayConfig, RelayKind};
 pub const SERVICE: &str = "ServerStorage";
 pub const FOLDER_NAME: &str = "RbxNativePresence";
 pub const ATTRIBUTE: &str = "PresenceSecret";
-/// The relay transport the place's owner chose ("worker" or "ntfy").
+/// The relay transport the place's owner chose ("hosted", "worker" or "ntfy").
 pub const RELAY_KIND_ATTRIBUTE: &str = "RelayKind";
 /// The relay base URL the place's owner set.
 pub const RELAY_URL_ATTRIBUTE: &str = "RelayUrl";

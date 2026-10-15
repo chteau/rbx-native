@@ -130,6 +130,34 @@ interop. It is therefore specified here and left for a coordinated, live-tested
 change. **Do not flip the wire to encrypted until all three implementations pass
 a shared golden fixture and a live Studio round trip.**
 
+## Hosted rooms (the default): no account, no server
+
+With no relay named in the place, the first rbx-native user to share
+presence hosts the room: `host` runs the Worker's routes on a loopback
+port, the editor's bundled `cloudflared` opens a Cloudflare quick tunnel
+to it (no account), and `announce` posts the tunnel's address, signed with
+the place key, to the room's announce topic on ntfy.sh. Everyone else, the
+Studio plugin included, reads the newest genuine announcement and talks to
+that relay; a host that leaves posts a goodbye. ntfy carries only these few
+messages a day, far under its 250/day anonymous limit (live presence over
+public ntfy.sh is not workable; see `relay.rs`).
+
+- **What the tunnel exposes:** only the presence routes for this one room;
+  every request is HMAC-signed with the place key, the same checks as the
+  Worker (`tests/relay_e2e.rs` runs the same tests against both). The
+  tunnel URL is public but useless without the key.
+- **Announcements:** signed over room, URL and time; stale (over 12 h),
+  future, unsigned, and non-HTTPS addresses are ignored. Only key holders
+  can redirect a room, and they are collaborators already.
+- **DNS:** the host announces only after public DNS (asked over
+  DNS-over-HTTPS) resolves the new hostname, so no collaborator's resolver
+  caches an early "no such host".
+- **Availability:** the room exists while some rbx-native user hosts it.
+  Studio users see each other through Studio's own Team Create, so this is
+  exactly when presence across the two editors matters. Two hosts at once
+  settle on the newer announcement within a minute. Quick tunnels have no
+  uptime promise.
+
 ## Offline catch-up — what each transport can reconstruct
 
 On reconnect (or opening a place), presence can summarise "while you were away".

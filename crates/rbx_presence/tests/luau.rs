@@ -562,3 +562,48 @@ fn data_changes_group_by_instance() {
     let text: String = ago.call((0.0, 240_000.0)).unwrap();
     assert_eq!(text, "4 min ago");
 }
+
+/// An announcement signed by the Rust host verifies in the plugin, the
+/// newest wins, a goodbye means no host, and a forgery is ignored.
+#[test]
+fn announce_cross_checks_with_rust() {
+    use rbx_presence::announce;
+    let lua = new_lua();
+    let key = "k".repeat(64);
+    let room = "0123456789abcdef0123456789abcdef";
+    let now = 1_800_000_000_000u64;
+    let old = announce::encode(&key, room, "https://old.trycloudflare.com", now - 60_000);
+    let new = announce::encode(&key, room, "https://new.trycloudflare.com", now - 1_000);
+    let bye = announce::encode(&key, room, "", now - 500);
+    let forged = announce::encode("other", room, "https://evil.example", now);
+
+    let newest = func(&lua, "Announce", "newest");
+    let texts = |items: &[&str]| {
+        let t = lua.create_table().unwrap();
+        for (i, item) in items.iter().enumerate() {
+            t.set(i + 1, *item).unwrap();
+        }
+        t
+    };
+    let got: Option<String> = newest
+        .call((
+            key.as_str(),
+            room,
+            now as f64,
+            texts(&[&new, &old, &forged]),
+        ))
+        .unwrap();
+    assert_eq!(got.as_deref(), Some("https://new.trycloudflare.com"));
+    let gone: Option<String> = newest
+        .call((key.as_str(), room, now as f64, texts(&[&new, &old, &bye])))
+        .unwrap();
+    assert_eq!(gone, None);
+    let only_forged: Option<String> = newest
+        .call((key.as_str(), room, now as f64, texts(&[&forged])))
+        .unwrap();
+    assert_eq!(only_forged, None);
+
+    let topic = func(&lua, "Announce", "topic");
+    let t: String = topic.call(room).unwrap();
+    assert_eq!(t, announce::topic(room));
+}

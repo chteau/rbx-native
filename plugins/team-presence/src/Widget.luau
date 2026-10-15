@@ -30,6 +30,7 @@ export type Widget = typeof(setmetatable({} :: {
 	status: TextLabel,
 	advanced: TextButton,
 	owner: Frame,
+	kindHosted: TextButton,
 	kindWorker: TextButton,
 	kindNtfy: TextButton,
 	urlBox: TextBox,
@@ -113,14 +114,15 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	Ui.pad(kinds, 2)
 	Ui.list(kinds, 2, true)
 	kinds.Parent = owner
-	local kindWorker = segment(kinds, "Worker", 1)
-	local kindNtfy = segment(kinds, "ntfy", 2)
+	local kindHosted = segment(kinds, "Auto", 1)
+	local kindWorker = segment(kinds, "Worker", 2)
+	local kindNtfy = segment(kinds, "ntfy", 3)
 
 	local urlBox = Instance.new("TextBox")
 	urlBox.LayoutOrder = 3
 	urlBox.Size = UDim2.new(1, 0, 0, 28)
 	urlBox.ClearTextOnFocus = false
-	urlBox.PlaceholderText = "Relay URL (blank = community default)"
+	urlBox.PlaceholderText = "Relay URL (blank = Auto, no account needed)"
 	urlBox.PlaceholderColor3 = Ui.color("text3")
 	urlBox.Text = ""
 	urlBox.TextXAlignment = Enum.TextXAlignment.Left
@@ -171,11 +173,12 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	self = setmetatable({
 		gui = gui,
 		enabled = false,
-		relayKind = "worker",
+		relayKind = "hosted",
 		switch = switch,
 		status = status,
 		advanced = advanced,
 		owner = owner,
+		kindHosted = kindHosted,
 		kindWorker = kindWorker,
 		kindNtfy = kindNtfy,
 		urlBox = urlBox,
@@ -194,6 +197,13 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		advanced.Activated:Connect(function()
 			owner.Visible = not owner.Visible
 			advanced.Text = if owner.Visible then "Hide advanced" else "Show advanced"
+		end)
+	)
+	table.insert(
+		self.connections,
+		kindHosted.Activated:Connect(function()
+			self.relayKind = "hosted"
+			self:showKind()
 		end)
 	)
 	table.insert(
@@ -227,7 +237,7 @@ end
 
 -- The segmented control's active half: `accent_soft` behind `check_on`.
 function Widget.showKind(self: Widget)
-	for _, pair in { { self.kindWorker, "worker" }, { self.kindNtfy, "ntfy" } } do
+	for _, pair in { { self.kindHosted, "hosted" }, { self.kindWorker, "worker" }, { self.kindNtfy, "ntfy" } } do
 		local button, kind = pair[1] :: TextButton, pair[2] :: string
 		local active = self.relayKind == kind
 		Ui.fill(button, if active then "accent_soft" else "field_select")
@@ -254,7 +264,7 @@ function Widget.setRelay(self: Widget, kind: string, url: string, isCommunity: b
 		self.urlBox.Text = url
 		self.resolved.Text = `Relay: {url} ({kind})`
 	else
-		self.resolved.Text = `Relay: {url} (community instance, best effort, no uptime promise)`
+		self.resolved.Text = "Relay: Auto — hosted by whoever opens the place in rbx-native, no account needed"
 	end
 end
 

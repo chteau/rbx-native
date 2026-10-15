@@ -20,7 +20,17 @@ use crate::tokens;
 pub(super) const NOTE: &str = "Presence only works for collaborators who have Studio open with the rbx-native presence plugin running.";
 
 /// The status line's words for a connection.
-fn status_text(connection: &Connection) -> String {
+fn status_text(connection: &Connection, route: Option<&rbx_presence::client::Route>) -> String {
+    use rbx_presence::client::Route;
+    match (connection, route) {
+        (Connection::Connected, Some(Route::Hosting(_))) => {
+            return "Connected · hosting the room for collaborators".into()
+        }
+        (Connection::Retrying(_), Some(Route::Waiting)) => {
+            return "Waiting for collaborators to open the place".into()
+        }
+        _ => {}
+    }
     match connection {
         Connection::Off => "Off".into(),
         Connection::NoPlace => "Link this file to a Roblox place (Publish) first".into(),
@@ -138,6 +148,7 @@ impl Shell {
 
         let enabled = self.team_presence.settings.enabled;
         let connection = self.team_presence.connection.clone();
+        let route = self.team_presence.route.clone();
         let relay_input = self.team_presence.relay_input.clone();
         let show_advanced = self.team_presence.show_advanced;
         let owner_kind = self.team_presence.owner_kind;
@@ -199,10 +210,10 @@ impl Shell {
                     .child(
                         ui::button(
                             "collaborators-relay-kind",
-                            if owner_kind == rbx_presence::relay::RelayKind::Ntfy {
-                                "ntfy"
-                            } else {
-                                "Worker"
+                            match owner_kind {
+                                rbx_presence::relay::RelayKind::Hosted => "Auto",
+                                rbx_presence::relay::RelayKind::Worker => "Worker",
+                                rbx_presence::relay::RelayKind::Ntfy => "ntfy",
                             },
                             ui::Weight::Secondary,
                             true,
@@ -239,7 +250,7 @@ impl Shell {
                 } else {
                     tokens::text2()
                 })
-                .child(status_text(&connection)),
+                .child(status_text(&connection, route.as_ref())),
         );
 
         // The relay URL lives behind an Advanced reveal, so the dock is just

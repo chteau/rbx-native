@@ -14,6 +14,8 @@
 //! - [`secret`]: where the per-place secret lives inside the place.
 //! - [`relay`]: the default endpoint both sides connect to with no config.
 //! - [`client`]: the relay WebSocket, on a worker thread.
+//! - [`host`]: the relay itself, run by rbx-native behind a Cloudflare quick tunnel.
+//! - [`announce`]: where the room's host is, posted through ntfy.
 //! - [`catchup`]: a summary of the value-less edit journal for a reconnecting user.
 //! - [`lastseen`]: the per-place timestamp and snapshot a reconnecting user catches up from.
 
@@ -24,9 +26,11 @@ pub fn now_ms() -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
+pub mod announce;
 pub mod auth;
 pub mod catchup;
 pub mod client;
+pub mod host;
 pub mod lastseen;
 pub mod ntfy;
 pub mod paths;
