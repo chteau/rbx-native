@@ -241,3 +241,46 @@ fn instance_new_without_a_parent_can_be_reparented_later() {
 
     assert_eq!(output.lines(), ["DataModel true true"]);
 }
+
+#[test]
+fn new_handles_show_every_face_and_axis() {
+    let mut runtime = runtime();
+    runtime
+        .run(
+            r#"
+            Instance.new("Handles", workspace).Name = "H"
+            Instance.new("ArcHandles", workspace).Name = "A"
+        "#,
+        )
+        .expect("script must run");
+    let dom = runtime.dom();
+    let find = |name: &str| {
+        let workspace = dom
+            .root_refs()
+            .iter()
+            .copied()
+            .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Workspace"))
+            .expect("workspace");
+        let child = dom.get(workspace).unwrap().children().iter().copied();
+        child
+            .filter_map(|r| dom.get(r))
+            .find(|i| i.name() == name)
+            .expect("created")
+            .properties()
+            .clone()
+    };
+    assert_eq!(
+        find("H").get("Faces"),
+        Some(&rbx_dom::Variant::Faces(rbx_dom::Faces::from_bits(
+            0b11_1111
+        )))
+    );
+    assert_eq!(
+        find("A").get("Axes"),
+        Some(&rbx_dom::Variant::Axes(rbx_dom::Axes {
+            x: true,
+            y: true,
+            z: true
+        }))
+    );
+}

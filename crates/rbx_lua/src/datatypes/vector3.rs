@@ -4,6 +4,7 @@ use mlua::{Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMet
 use rbx_dom::Vector3Data;
 
 use super::{from_userdata, number_arg};
+use crate::lua_enum::LuaEnumItem;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LuaVector3(pub(crate) Vector3Data);
@@ -122,5 +123,50 @@ pub(crate) fn constructors(lua: &Lua) -> Result<Table> {
     )?;
     table.set("zero", LuaVector3::new(0.0, 0.0, 0.0))?;
     table.set("one", LuaVector3::new(1.0, 1.0, 1.0))?;
+    table.set("xAxis", LuaVector3::new(1.0, 0.0, 0.0))?;
+    table.set("yAxis", LuaVector3::new(0.0, 1.0, 0.0))?;
+    table.set("zAxis", LuaVector3::new(0.0, 0.0, 1.0))?;
+    table.set(
+        "FromNormalId",
+        lua.create_function(|_, item: Value| {
+            // Right, Top, Back, Left, Bottom, Front — `Enum.NormalId`'s order.
+            let [x, y, z] = match enum_value(&item, "NormalId")? {
+                0 => [1.0, 0.0, 0.0],
+                1 => [0.0, 1.0, 0.0],
+                2 => [0.0, 0.0, 1.0],
+                3 => [-1.0, 0.0, 0.0],
+                4 => [0.0, -1.0, 0.0],
+                _ => [0.0, 0.0, -1.0],
+            };
+            Ok(LuaVector3::new(x, y, z))
+        })?,
+    )?;
+    table.set(
+        "FromAxis",
+        lua.create_function(|_, item: Value| {
+            let [x, y, z] = match enum_value(&item, "Axis")? {
+                0 => [1.0, 0.0, 0.0],
+                1 => [0.0, 1.0, 0.0],
+                _ => [0.0, 0.0, 1.0],
+            };
+            Ok(LuaVector3::new(x, y, z))
+        })?,
+    )?;
     Ok(table)
+}
+
+/// The value of an `Enum.<expected>` item, or the error Roblox gives for
+/// anything else.
+fn enum_value(item: &Value, expected: &str) -> Result<u32> {
+    if let Value::UserData(data) = item {
+        if let Ok(item) = data.borrow::<LuaEnumItem>() {
+            if item.enum_name() == expected {
+                return Ok(item.value());
+            }
+        }
+    }
+    Err(mlua::Error::runtime(format!(
+        "invalid argument #1 (Enum.{expected} expected, got {})",
+        item.type_name()
+    )))
 }

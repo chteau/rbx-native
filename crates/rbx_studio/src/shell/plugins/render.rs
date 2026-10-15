@@ -107,6 +107,31 @@ impl Drop for Renderer {
     }
 }
 
+/// A viewer refuses a place with nothing 3D in it (it frames its camera on
+/// the parts), and a widget's DOM has only GUI: one invisible part gives it
+/// a scene that `render_gui` never draws anyway.
+fn with_stand_in_part(dom: &mut WeakDom) {
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let part = dom.new_instance("Part", "StandIn", Some(workspace));
+    let origin = rbx_dom::Vector3Data {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let one = rbx_dom::Vector3Data {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
+    let frame = rbx_dom::CFrameData {
+        position: origin,
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    };
+    let _ = dom.set_property(part, "size", rbx_dom::Variant::Vector3(one));
+    let _ = dom.set_property(part, "CFrame", rbx_dom::Variant::CFrame(frame));
+    let _ = dom.set_property(part, "Transparency", rbx_dom::Variant::Float32(1.0));
+}
+
 fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
     let mut headless: Option<Headless> = None;
     loop {
@@ -128,9 +153,11 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
                 };
             }
         };
+        let mut dom = job.dom;
+        with_stand_in_part(&mut dom);
         let loaded = match headless.as_mut() {
-            Some(viewer) => viewer.reload(&job.dom),
-            None => Headless::from_dom(&job.dom, true).map(|viewer| {
+            Some(viewer) => viewer.reload(&dom),
+            None => Headless::from_dom(&dom, true).map(|viewer| {
                 headless = Some(viewer);
             }),
         };

@@ -8,6 +8,8 @@
 use mlua::{Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMethods, Value};
 use rbx_dom::{Font, FontStyle};
 
+use crate::lua_enum::LuaEnumItem;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LuaFont(pub(crate) Font);
 
@@ -30,6 +32,10 @@ fn style_from_value(value: &Value) -> Result<FontStyle> {
         },
         Value::Integer(ordinal) => Ok(FontStyle::from(*ordinal as u8)),
         Value::Number(ordinal) => Ok(FontStyle::from(*ordinal as u8)),
+        Value::UserData(data) if data.borrow::<LuaEnumItem>().is_ok() => {
+            let item = data.borrow::<LuaEnumItem>()?;
+            Ok(FontStyle::from(item.value() as u8))
+        }
         other => Err(mlua::Error::runtime(format!(
             "Font.new expected a style string or number, got {}",
             other.type_name()
@@ -66,19 +72,39 @@ impl mlua::FromLua for LuaFont {
     }
 }
 
+/// `Font.new`'s weight: an `Enum.FontWeight` item (whose value is the CSS
+/// weight, 100–900) or the number itself.
+fn weight_from_value(value: &Value) -> Result<u16> {
+    match value {
+        Value::Integer(weight) => Ok(*weight as u16),
+        Value::Number(weight) => Ok(*weight as u16),
+        Value::UserData(data) if data.borrow::<LuaEnumItem>().is_ok() => {
+            Ok(data.borrow::<LuaEnumItem>()?.value() as u16)
+        }
+        other => Err(mlua::Error::runtime(format!(
+            "Font.new expected an Enum.FontWeight or number, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
 pub(crate) fn constructors(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "new",
         lua.create_function(
-            |_, (family, weight, style): (String, Option<i32>, Option<Value>)| {
+            |_, (family, weight, style): (String, Option<Value>, Option<Value>)| {
+                let weight = match weight {
+                    None | Some(Value::Nil) => 400,
+                    Some(value) => weight_from_value(&value)?,
+                };
                 let style = match style {
                     Some(value) => style_from_value(&value)?,
                     None => FontStyle::Normal,
                 };
                 Ok(LuaFont(Font {
                     family,
-                    weight: weight.unwrap_or(400) as u16,
+                    weight,
                     style,
                     cached_face_id: None,
                 }))

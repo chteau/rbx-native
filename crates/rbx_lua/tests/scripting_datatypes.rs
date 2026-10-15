@@ -229,3 +229,73 @@ fn wrong_argument_errors_for_new_datatype_constructors() {
         assert!(error.to_string().contains("String"));
     }
 }
+
+#[test]
+fn font_new_takes_enum_items_for_weight_and_style() {
+    let mut runtime = runtime();
+
+    let output = runtime
+        .run(
+            r#"
+            local font = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Italic)
+            print(font.Weight, font.Style)
+        "#,
+        )
+        .expect("script must run");
+
+    assert_eq!(output.lines(), ["600 Italic"]);
+}
+
+#[test]
+fn an_object_property_is_cleared_with_nil() {
+    let mut runtime = runtime();
+
+    let output = runtime
+        .run(
+            r#"
+            local part = Instance.new("Part", workspace)
+            local box = Instance.new("SelectionBox", workspace)
+            box.Adornee = part
+            print(box.Adornee == part)
+            box.Adornee = nil
+            print(box.Adornee)
+        "#,
+        )
+        .expect("script must run");
+
+    assert_eq!(output.lines(), ["true", "nil"]);
+}
+
+#[test]
+fn udim2_new_takes_two_udims_and_fractional_offsets() {
+    let mut runtime = runtime();
+
+    let output = runtime
+        .run(
+            r#"
+            local a = UDim2.new(UDim.new(1, 0), UDim.new(0, 18))
+            local b = UDim2.new(0.5, 10.7, 0, 4)
+            print(a.X.Scale, a.Y.Offset, b.X.Offset)
+        "#,
+        )
+        .expect("script must run");
+
+    assert_eq!(output.lines(), ["1 18 10"]);
+}
+
+#[test]
+fn vector3_from_normal_id_and_axis() {
+    let mut runtime = runtime();
+
+    let output = runtime
+        .run(
+            r#"
+            local front = Vector3.FromNormalId(Enum.NormalId.Front)
+            local y = Vector3.FromAxis(Enum.Axis.Y)
+            print(front.Z, y.Y, Vector3.xAxis.X)
+        "#,
+        )
+        .expect("script must run");
+
+    assert_eq!(output.lines(), ["-1 1 1"]);
+}

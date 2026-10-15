@@ -75,6 +75,16 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
         (descriptor.value_type.clone(), key, existing)
     };
 
+    // `Variant` has no null reference: clearing an object property (`Adornee
+    // = nil`, `PrimaryPart = nil`) erases the entry, which reads back as nil.
+    if value.is_nil() && ctx.database().class(&value_type).is_some() {
+        if existing.is_some() {
+            ctx.dom_mut()
+                .remove_property(referent, &key)
+                .map_err(|error| mlua::Error::runtime(error.to_string()))?;
+        }
+        return Ok(true);
+    }
     let variant = from_lua::lua_to_variant(ctx, name, &value_type, value)?;
     let variant = keep_representation(existing.as_ref(), variant);
     ctx.dom_mut()

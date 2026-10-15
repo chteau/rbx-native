@@ -267,6 +267,8 @@ impl Shell {
                     .child("Changes take effect on Reload."),
             );
         let body = v_flex()
+            .px(px(20.))
+            .pt(px(14.))
             .gap(px(12.))
             .child(rows)
             .child(studio_row)
@@ -285,7 +287,7 @@ impl Shell {
                 }))
                 .child(ui::dialog(
                     560.,
-                    ui::dialog_glyph("triangle-alert", ui::accent(), ui::wash()),
+                    ui::dialog_glyph("plug-2", ui::accent(), ui::wash()),
                     "Manage Plugins",
                     "Switches apply the next time plugins load.".to_string(),
                     Some(body),

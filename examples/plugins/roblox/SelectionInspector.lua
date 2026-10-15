@@ -48,6 +48,7 @@ local function refresh()
 		label.Size = UDim2.new(1, 0, 0, 20)
 		label.BackgroundTransparency = 1
 		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextColor3 = settings().Studio.Theme:GetColor(Enum.StudioStyleGuideColor.MainText)
 		label.Text = instance.Name .. " (" .. instance.ClassName .. ")"
 		label.LayoutOrder = index
 		label.Parent = list

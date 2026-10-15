@@ -220,20 +220,39 @@ pub(crate) fn udim2(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "new",
-        lua.create_function(
-            |_, (xs, xo, ys, yo): (Option<f32>, Option<i32>, Option<f32>, Option<i32>)| {
-                Ok(LuaUDim2(UDim2 {
-                    x: UDim {
-                        scale: xs.unwrap_or_default(),
-                        offset: xo.unwrap_or_default(),
-                    },
-                    y: UDim {
-                        scale: ys.unwrap_or_default(),
-                        offset: yo.unwrap_or_default(),
-                    },
-                }))
-            },
-        )?,
+        lua.create_function(|_, args: mlua::Variadic<Value>| {
+            // `UDim2.new(xUDim, yUDim)` as well as the four-number form.
+            if let (Some(Value::UserData(x)), Some(Value::UserData(y))) =
+                (args.first(), args.get(1))
+            {
+                if let (Ok(x), Ok(y)) = (x.borrow::<LuaUDim>(), y.borrow::<LuaUDim>()) {
+                    return Ok(LuaUDim2(UDim2 { x: x.0, y: y.0 }));
+                }
+            }
+            let number = |index: usize| -> Result<f32> {
+                match args.get(index) {
+                    None | Some(Value::Nil) => Ok(0.0),
+                    Some(value) => number_arg(value).ok_or_else(|| {
+                        mlua::Error::runtime(format!(
+                            "UDim2.new: argument #{} expected a number, got {}",
+                            index + 1,
+                            value.type_name()
+                        ))
+                    }),
+                }
+            };
+            // Roblox truncates a fractional offset rather than refusing it.
+            Ok(LuaUDim2(UDim2 {
+                x: UDim {
+                    scale: number(0)?,
+                    offset: number(1)? as i32,
+                },
+                y: UDim {
+                    scale: number(2)?,
+                    offset: number(3)? as i32,
+                },
+            }))
+        })?,
     )?;
     table.set(
         "fromScale",

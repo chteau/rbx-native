@@ -70,6 +70,29 @@ fn base_part_defaults() -> [(&'static str, Variant); 11] {
 /// creates blocks). Everything else (`Model`, `Folder`, services, ...) is
 /// left untouched.
 pub(crate) fn apply(ctx: &Ctx, class: &str, referent: Ref) {
+    // A new `Handles`/`ArcHandles` shows every face/axis until told
+    // otherwise; with neither stored, the renderer would draw none.
+    match class {
+        "Handles" => {
+            let all = rbx_dom::Faces::from_bits(0b11_1111);
+            let _ = ctx
+                .dom_mut()
+                .set_property(referent, "Faces", Variant::Faces(all));
+            return;
+        }
+        "ArcHandles" => {
+            let all = rbx_dom::Axes {
+                x: true,
+                y: true,
+                z: true,
+            };
+            let _ = ctx
+                .dom_mut()
+                .set_property(referent, "Axes", Variant::Axes(all));
+            return;
+        }
+        _ => {}
+    }
     if !ctx.database().is_subclass_of(class, "BasePart") {
         return;
     }

@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use gpui_kit::assets::IconName;
 use gpui_kit::component::{v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -38,6 +37,7 @@ impl Shell {
                     ("plugin-button", id as usize),
                     SharedString::from(button.text.clone()),
                     icon,
+                    "plug-2",
                     button.enabled,
                 );
                 if button.active && button.enabled {
@@ -69,6 +69,7 @@ impl Shell {
                     ElementId::from(SharedString::from(format!("wasm-{index}-{command}"))),
                     SharedString::from(text.clone()),
                     None,
+                    "plug-2",
                     true,
                 );
                 if !tooltip.is_empty() {
@@ -90,18 +91,18 @@ impl Shell {
         let manage = self
             .ribbon_nav
             .claim(
-                plugin_tile("plugins-manage", "Manage".into(), None, true).tooltip(|window, cx| {
-                    crate::shell::tooltip::text("Manage Plugins", window, cx)
-                }),
+                plugin_tile("plugins-manage", "Manage".into(), None, "settings", true).tooltip(
+                    |window, cx| crate::shell::tooltip::text("Manage Plugins", window, cx),
+                ),
                 cx,
             )
             .on_click(cx.listener(|shell, _, _, cx| shell.open_plugin_manager(cx)));
         let folder = self
             .ribbon_nav
             .claim(
-                plugin_tile("plugins-folder", "Folder".into(), None, true).tooltip(|window, cx| {
-                    crate::shell::tooltip::text("Open the plugins folder", window, cx)
-                }),
+                plugin_tile("plugins-folder", "Folder".into(), None, "folder-open", true).tooltip(
+                    |window, cx| crate::shell::tooltip::text("Open the plugins folder", window, cx),
+                ),
                 cx,
             )
             .on_click(cx.listener(|_, _, _, cx| {
@@ -113,9 +114,9 @@ impl Shell {
         let reload = self
             .ribbon_nav
             .claim(
-                plugin_tile("plugins-reload", "Reload".into(), None, true).tooltip(|window, cx| {
-                    crate::shell::tooltip::text("Reload all plugins", window, cx)
-                }),
+                plugin_tile("plugins-reload", "Reload".into(), None, "rotate-ccw", true).tooltip(
+                    |window, cx| crate::shell::tooltip::text("Reload all plugins", window, cx),
+                ),
                 cx,
             )
             .on_click(cx.listener(|shell, _, _, cx| shell.plugins_reload(cx)));
@@ -135,6 +136,8 @@ fn plugin_tile(
     id: impl Into<ElementId>,
     label: SharedString,
     icon: Option<PathBuf>,
+    // The toolkit icon drawn when `icon` has no image (yet).
+    fallback: &'static str,
     enabled: bool,
 ) -> Stateful<Div> {
     let size = px(20.);
@@ -142,7 +145,10 @@ fn plugin_tile(
         Some(path) => img(Arc::<Path>::from(path.as_path()))
             .size(size)
             .into_any_element(),
-        None => Icon::new(IconName::Settings).size(size).into_any_element(),
+        None => Icon::empty()
+            .path(SharedString::from(format!("icons/{fallback}.svg")))
+            .size(size)
+            .into_any_element(),
     };
     v_flex()
         .id(id.into())

@@ -12,12 +12,16 @@ Examples live in `examples/plugins/`:
 
 ## Where plugins are loaded from
 
-- Roblox plugins: the user's Studio `Plugins` folder and rbx-native's own
-  `plugins/roblox` folder. A `.lua`/`.luau` file runs as one `Script` named
+- Roblox plugins: rbx-native's own plugins folder (`<config dir>/plugins`,
+  e.g. `~/.config/rbx-native/plugins`, or `RBX_STUDIO_PLUGINS_DIR`) and,
+  unless switched off in Manage Plugins, Roblox Studio's own `Plugins`
+  folder (`%LOCALAPPDATA%\Roblox\Plugins`, `~/Documents/Roblox/Plugins`, or
+  the Vinegar prefix's on Linux). A `.lua`/`.luau` file runs as one `Script` named
   after the file. A `.rbxm`/`.rbxmx` runs every enabled `Script` in it
   (`LocalScript`s and `ModuleScript`s are not started); `require` resolves
   the `ModuleScript`s inside the same file.
-- Native plugins: one folder per plugin, each with a `plugin.toml`.
+- Native plugins: one folder per plugin inside rbx-native's plugins folder,
+  each with a `plugin.toml`.
 
 Each plugin gets its own Luau VM. The plugin manager lists every plugin with
 its origin and the last error that stopped one of its scripts from loading.
@@ -111,7 +115,9 @@ a plugin that walks a very large place in one call can run out of fuel.
 
 ## What cannot work
 
-- Roblox's built-in plugins: they are part of the Studio client, not files.
+- Roblox's built-in plugins (Toolbox, Terrain Editor, …): they ship inside
+  the Studio install and are written against internal Studio services and
+  security levels that no plugin file is granted.
 - Pixel-faithful plugin UI: widgets are drawn by rbx-native's own renderer
   and theme, so layout and styling can differ from Studio.
 - CSG: `plugin:Union`, `Separate` and `Negate` raise an error naming the

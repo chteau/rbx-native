@@ -96,7 +96,12 @@ impl Shell {
         modal(
             "Pick a Color",
             "A plugin is asking for a colour.",
-            ColorPicker::new(&state).into_any_element(),
+            // The toolkit's default featured row repeats colours its palette
+            // already lists, and two swatches of one colour share an element
+            // id (a debug-build panic): the palette alone is the whole choice.
+            ColorPicker::new(&state)
+                .featured_colors(Vec::new())
+                .into_any_element(),
             vec![
                 ui::button("plugin-prompt-cancel", "Cancel", Weight::Secondary, false)
                     .on_click(cx.listener(|shell, _, _, cx| {

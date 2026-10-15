@@ -177,7 +177,7 @@ fn reference(name: &str, class: &str, value: &Value) -> Result<Variant> {
             return Ok(Variant::Ref(instance.referent()));
         }
     }
-    // `Variant` has no null reference, so clearing an object property would have
-    // to erase the entry entirely, which `WeakDom::set_property` cannot express.
+    // `nil` never gets here: `property::set` clears the entry instead, since
+    // `Variant` has no null reference.
     Err(type_error(name, class, value))
 }
