@@ -65,6 +65,22 @@ struct CachedDiff {
     diff: diff::LineDiff,
 }
 
+/// Where the window's rows come from.
+pub(crate) enum Provider {
+    /// The pending Argon review, read live off the shell and keyed on its
+    /// serial — Accept or Cancel from the dock is reflected at once.
+    Argon,
+    /// A fixed two-DOM diff, computed once when the window opens — the
+    /// team-presence "View changes" (the last-seen snapshot vs the place as
+    /// it is now). It does not track the live DOM: it is a snapshot of what
+    /// changed while the user was away.
+    Presence(Rc<Vec<DiffNode>>),
+}
+
+/// The constant serial a presence diff caches its script line-diffs under
+/// (its rows never change, unlike an Argon review's).
+pub(super) const PRESENCE_SERIAL: u64 = u64::MAX;
+
 pub(crate) struct ArgonDiffWindow {
     shell: Entity<Shell>,
     grab: Rc<Cell<bool>>,
@@ -86,10 +102,39 @@ pub(crate) struct ArgonDiffWindow {
     width: Rc<Cell<f32>>,
     /// Applied on the first frame, once the tree is known.
     initial: Option<(Option<String>, Vec<String>, Vec<String>)>,
+    /// Where the rows come from: a live Argon review or a fixed diff.
+    provider: Provider,
+}
+
+/// The window's title for a given provider.
+pub(super) fn window_title(provider: &Provider, project: &str) -> SharedString {
+    match provider {
+        Provider::Argon => SharedString::from(format!("Argon Diff \u{2014} {project}")),
+        Provider::Presence(_) => SharedString::from("Changes while you were away"),
+    }
 }
 
 impl ArgonDiffWindow {
+    /// The Argon review's Diff window: rows read live off the pending batch.
     pub(super) fn open(shell: Entity<Shell>, cx: &mut App) -> Option<WindowHandle<Root>> {
+        Self::open_with(shell, Provider::Argon, cx)
+    }
+
+    /// The team-presence "View changes" window: `nodes` is a fixed diff of
+    /// the last-seen snapshot against the place as it is now.
+    pub(super) fn open_presence(
+        shell: Entity<Shell>,
+        nodes: Vec<DiffNode>,
+        cx: &mut App,
+    ) -> Option<WindowHandle<Root>> {
+        Self::open_with(shell, Provider::Presence(Rc::new(nodes)), cx)
+    }
+
+    fn open_with(
+        shell: Entity<Shell>,
+        provider: Provider,
+        cx: &mut App,
+    ) -> Option<WindowHandle<Root>> {
         let project = shell.read(cx).argon_project_name();
         // The window's content is the whole of these: the title bar is the
         // editor's own, drawn inside.
@@ -101,7 +146,7 @@ impl ArgonDiffWindow {
             tokens::scaled_width(MIN_WIDTH),
             tokens::scaled_width(MIN_HEIGHT),
         );
-        let title = SharedString::from(format!("Argon Diff \u{2014} {project}"));
+        let title = window_title(&provider, &project);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
@@ -166,6 +211,7 @@ impl ArgonDiffWindow {
                         list(COLLAPSE_VARIABLE),
                         list(EXPAND_VARIABLE),
                     )),
+                    provider,
                 }
             });
             cx.new(|cx| Root::new(view, window, cx))
@@ -208,7 +254,7 @@ impl Render for ArgonDiffWindow {
             let shell = self.shell.read(cx);
             (shell.argon_project_name(), shell.icon_pack())
         };
-        let title = SharedString::from(format!("Argon Diff \u{2014} {project}"));
+        let title = window_title(&self.provider, &project);
 
         let header = self.header(&project, counts, narrow, cx);
         let footer = self.footer(narrow, cx);

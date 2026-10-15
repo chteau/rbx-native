@@ -13,8 +13,12 @@ use super::model::{self, Row};
 use super::{diff, ArgonDiffWindow, CachedDiff};
 
 impl ArgonDiffWindow {
-    /// The tree for the pending review, rebuilt when its serial changes.
+    /// The tree the window draws: the pending Argon review (rebuilt when its
+    /// serial changes), or the fixed presence diff.
     pub(super) fn nodes(&mut self, cx: &App) -> Rc<Vec<DiffNode>> {
+        if let super::Provider::Presence(nodes) = &self.provider {
+            return nodes.clone();
+        }
         let shell = self.shell.read(cx);
         let serial = shell.argon_pending_serial().unwrap_or(0);
         match &self.nodes {
@@ -29,7 +33,10 @@ impl ArgonDiffWindow {
     }
 
     pub(super) fn serial(&self, cx: &App) -> u64 {
-        self.shell.read(cx).argon_pending_serial().unwrap_or(0)
+        match self.provider {
+            super::Provider::Presence(_) => super::PRESENCE_SERIAL,
+            super::Provider::Argon => self.shell.read(cx).argon_pending_serial().unwrap_or(0),
+        }
     }
 
     /// The search as typed, trimmed.
@@ -93,8 +100,12 @@ impl ArgonDiffWindow {
         };
         match (&source.old, &source.new) {
             (Some(_), Some(_)) => {
-                let key = self.nodes.as_ref().map(|(serial, _)| (*serial, node.id));
-                key.and_then(|key| self.diffs.get(&key))
+                let serial = match &self.provider {
+                    super::Provider::Presence(_) => super::PRESENCE_SERIAL,
+                    super::Provider::Argon => self.nodes.as_ref().map_or(0, |(serial, _)| *serial),
+                };
+                self.diffs
+                    .get(&(serial, node.id))
                     .map(|cached| (cached.diff.added, cached.diff.removed))
                     .unwrap_or((0, 0))
             }
