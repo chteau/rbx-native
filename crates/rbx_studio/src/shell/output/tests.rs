@@ -448,3 +448,19 @@ fn table_state_goes_with_its_entry() {
     log.clear();
     assert!(log.flipped.is_empty());
 }
+
+#[test]
+fn plugin_lines_show_under_user_plugin_only() {
+    let mut log = OutputLog::default();
+    log.push("print(1)", output("1"));
+    log.push_plugin("Inspector", output("hello"));
+
+    let sources = |context| -> Vec<String> {
+        log.filtered(OutputFilter::All, context, "")
+            .map(|e| e.source().to_string())
+            .collect()
+    };
+    assert_eq!(sources(ContextFilter::UserPlugin), vec!["Inspector"]);
+    assert_eq!(sources(ContextFilter::Edit), vec!["print(1)"]);
+    assert_eq!(sources(ContextFilter::All).len(), 2);
+}
