@@ -84,6 +84,12 @@ pub(super) struct TeamPresence {
     edits: EditLog,
     /// Our own camera, from the last `PoseSynced`.
     camera: Option<[f64; 12]>,
+    /// "While you were away": the value-less edit summary fetched once on
+    /// connect, until dismissed. `None` when there is nothing to catch up on.
+    pub(super) catchup: Option<rbx_presence::catchup::Summary>,
+    /// Set when the user dismisses the catch-up block, so a later refresh
+    /// does not bring it back.
+    pub(super) catchup_dismissed: bool,
     /// Our Roblox display name, once looked up; sent instead of the id.
     own_name: Option<String>,
     /// What was last handed to the worker, and when.
@@ -116,6 +122,8 @@ impl TeamPresence {
             collaborators: Vec::new(),
             edits: EditLog::default(),
             camera: None,
+            catchup: None,
+            catchup_dismissed: false,
             own_name: None,
             last_sent: None,
             scroll: ScrollHandle::new(),
@@ -137,7 +145,29 @@ impl Shell {
         if let Ok(spec) = std::env::var(MOCK_VARIABLE) {
             match model::load_mock(&spec, now_ms()) {
                 Ok(mock) => {
+                    // The canned room's edits double as a catch-up summary, so
+                    // the "While you were away" block screenshots from the mock.
+                    let entries: Vec<rbx_presence::catchup::JournalEntry> = mock
+                        .snapshot
+                        .users
+                        .iter()
+                        .flat_map(|u| {
+                            u.edits
+                                .iter()
+                                .map(move |e| rbx_presence::catchup::JournalEntry {
+                                    user_id: u.user_id,
+                                    name: u.name.clone(),
+                                    path: e.path.clone(),
+                                    property: e.property.clone(),
+                                    at: e.at,
+                                })
+                        })
+                        .collect();
+                    let summary = rbx_presence::catchup::summarize(&entries);
                     let presence = &mut self.team_presence;
+                    if !summary.authors.is_empty() {
+                        presence.catchup = Some(summary);
+                    }
                     presence.snapshot = Some(mock.snapshot);
                     presence.members = Some(mock.members);
                     presence.departed = mock.departed;
@@ -266,6 +296,7 @@ impl Shell {
         presence.departed.clear();
         presence.collaborators.clear();
         presence.last_sent = None;
+        presence.catchup = None;
         self.viewport
             .update(cx, |view, _| view.set_presence(Vec::new()));
     }
@@ -307,13 +338,15 @@ impl Shell {
             .unwrap_or_else(rbx_presence::relay::RelayConfig::community);
         let key = rbx_presence::auth::derive_key(&secret, place);
         let room = rbx_presence::auth::room_id(&key);
-        let (client, events) = Client::start(rbx_presence::client::Config {
+        let client_config = rbx_presence::client::Config {
             kind: config.kind,
             relay_url: config.trimmed_url().to_owned(),
             room,
             key,
             user_id,
-        });
+        };
+        self.fetch_catchup(client_config.clone(), cx);
+        let (client, events) = Client::start(client_config);
         self.team_presence.client = Some(client);
         self.team_presence.connection = Connection::Connecting;
         if self.team_presence.own_name.is_none() {
@@ -328,6 +361,38 @@ impl Shell {
                 return;
             }
         }));
+        cx.notify();
+    }
+
+    /// Fetches the "while you were away" summary once, off the UI thread, and
+    /// shows it if it has anything and the user has not dismissed one. Since
+    /// no persisted last-seen time exists yet, this asks for everything the
+    /// transport still retains (the journal's ~12 h window).
+    fn fetch_catchup(&mut self, config: rbx_presence::client::Config, cx: &mut Context<Self>) {
+        self.team_presence.catchup = None;
+        self.team_presence.catchup_dismissed = false;
+        cx.spawn(async move |this, cx| {
+            let summary = cx
+                .background_spawn(async move { rbx_presence::catchup::fetch(&config, 0) })
+                .await;
+            if let Ok(summary) = summary {
+                if !summary.authors.is_empty() {
+                    let _ = this.update(cx, |shell, cx| {
+                        if !shell.team_presence.catchup_dismissed {
+                            shell.team_presence.catchup = Some(summary);
+                            cx.notify();
+                        }
+                    });
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Dismisses the catch-up block; it does not come back this session.
+    pub(super) fn dismiss_catchup(&mut self, cx: &mut Context<Self>) {
+        self.team_presence.catchup = None;
+        self.team_presence.catchup_dismissed = true;
         cx.notify();
     }
 

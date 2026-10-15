@@ -36,6 +36,28 @@ fn status_text(connection: &Connection) -> String {
     }
 }
 
+fn plural(n: usize, one: &'static str, many: &'static str) -> &'static str {
+    if n == 1 {
+        one
+    } else {
+        many
+    }
+}
+
+/// "Ada made 3 edits to 2 properties across 1 instance" — with singulars.
+fn author_line(a: &rbx_presence::catchup::AuthorChange) -> String {
+    format!(
+        "{} made {} {} to {} {} across {} {}",
+        a.name,
+        a.edits,
+        plural(a.edits, "edit", "edits"),
+        a.properties,
+        plural(a.properties, "property", "properties"),
+        a.instances,
+        plural(a.instances, "instance", "instances"),
+    )
+}
+
 fn collaborator_row(who: &Collaborator) -> Div {
     let (r, g, b) = who.color;
     let colour = rgb((u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b));
@@ -237,6 +259,57 @@ impl Shell {
                 ),
         );
 
+        // "While you were away": the value-less catch-up summary, dismissible.
+        // Shows per-author counts only; a value diff would need the DOM diff
+        // ("View changes"), which is a separate, transport-independent path.
+        let catchup = self.team_presence.catchup.as_ref().map(|summary| {
+            let mut block = v_flex()
+                .m_2()
+                .p_2()
+                .gap_1()
+                .border_1()
+                .border_color(tokens::border())
+                .rounded_sm()
+                .child(
+                    h_flex()
+                        .w_full()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div()
+                                .text_size(tokens::text_xs())
+                                .text_color(tokens::text_strong())
+                                .child("While you were away"),
+                        )
+                        .child(
+                            div()
+                                .id("collaborators-catchup-dismiss")
+                                .text_size(tokens::text_xs())
+                                .text_color(tokens::text3())
+                                .cursor_pointer()
+                                .child("Dismiss")
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|shell, _, _, cx| shell.dismiss_catchup(cx)),
+                                ),
+                        ),
+                );
+            for author in &summary.authors {
+                block = block.child(
+                    div()
+                        .text_size(tokens::text_xs())
+                        .text_color(tokens::text2())
+                        .child(author_line(author)),
+                );
+            }
+            block.child(
+                div()
+                    .text_size(tokens::text_xs())
+                    .text_color(tokens::text3())
+                    .child("Edit values are not shared; see the place history for details."),
+            )
+        });
+
         let mut list = v_flex().w_full();
         for who in &self.team_presence.collaborators {
             list = list.child(collaborator_row(who));
@@ -257,6 +330,7 @@ impl Shell {
                     .child(status)
                     .child(advanced_toggle)
                     .when(show_advanced, |this| this.child(owner_setup))
+                    .children(catchup)
                     .child(list),
             )
             .scrollbar_y(&self.team_presence.scroll);
