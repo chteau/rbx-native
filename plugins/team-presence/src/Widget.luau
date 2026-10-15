@@ -28,6 +28,7 @@ export type Widget = typeof(setmetatable({} :: {
 	relayKind: string,
 	switch: Ui.Switch,
 	status: TextLabel,
+	faces: Frame,
 	advanced: TextButton,
 	owner: Frame,
 	kindHosted: TextButton,
@@ -93,6 +94,11 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	toggleLabel.Size = UDim2.fromOffset(0, 18)
 
 	local status = Ui.text(scroll, "Off", { size = Ui.TEXT_XS, color = "text2", order = 3 })
+	-- Everyone in rbx-native, as faces, like Studio's own row of collaborators.
+	local faces = Ui.frame(scroll, 3)
+	faces.Visible = false
+	local facesList = Ui.list(faces, 4, true)
+	facesList.Padding = UDim.new(0, -4)
 
 	local advanced = Ui.link(scroll, "Show advanced", 4)
 	advanced.TextColor3 = Ui.color("text3")
@@ -176,6 +182,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		relayKind = "hosted",
 		switch = switch,
 		status = status,
+		faces = faces,
 		advanced = advanced,
 		owner = owner,
 		kindHosted = kindHosted,
@@ -320,18 +327,29 @@ end
 -- One row per rbx-native collaborator: their colour's dot, the name, "Sending
 -- presence", then what they have selected, open and last edited.
 function Widget.setUsers(self: Widget, users: { any })
-	for _, child in self.rows:GetChildren() do
-		if not child:IsA("UIListLayout") then
-			child:Destroy()
+	for _, holder in { self.rows, self.faces } do
+		for _, child in holder:GetChildren() do
+			if not child:IsA("UIListLayout") then
+				child:Destroy()
+			end
 		end
 	end
+	local shown = 0
+	for _, user in users do
+		if user.client == "rbx-native" and shown < 8 then
+			shown += 1
+			local face = Ui.avatar(self.faces, user.userId, Ui.hex(user.color), 26, shown)
+			face.Name = user.name
+		end
+	end
+	self.faces.Visible = shown > 0
 	for index, user in users do
 		if user.client == "rbx-native" then
 			local row = Ui.frame(self.rows, index)
 			Ui.list(row, 3)
 			local line = Ui.frame(row, 1)
 			Ui.list(line, 8, true)
-			Ui.dot(line, Ui.hex(user.color), 10).LayoutOrder = 1
+			Ui.avatar(line, user.userId, Ui.hex(user.color), 22, 1)
 			local name = Ui.text(line, user.name, { size = Ui.TEXT_XS, order = 2, wrap = false })
 			name.AutomaticSize = Enum.AutomaticSize.X
 			name.Size = UDim2.fromOffset(0, 16)
@@ -341,7 +359,7 @@ function Widget.setUsers(self: Widget, users: { any })
 			for i, text in detailLines(user) do
 				local detail = Ui.text(row, text, { size = Ui.TEXT_XS, color = "text2", order = 1 + i })
 				local pad = Instance.new("UIPadding")
-				pad.PaddingLeft = UDim.new(0, 18)
+				pad.PaddingLeft = UDim.new(0, 30)
 				pad.Parent = detail
 			end
 		end

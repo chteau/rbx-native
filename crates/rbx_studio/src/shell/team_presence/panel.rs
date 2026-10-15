@@ -68,13 +68,55 @@ fn author_line(a: &rbx_presence::catchup::AuthorChange) -> String {
     )
 }
 
-fn collaborator_row(who: &Collaborator) -> Div {
-    let (r, g, b) = who.color;
+/// A collaborator as Studio draws one beside a Team Create session: their
+/// round Roblox headshot in a ring of their presence colour, or their
+/// initial on that colour until the headshot arrives (or when it can't).
+pub(in crate::shell) fn avatar(
+    image: Option<std::sync::Arc<RenderImage>>,
+    color: (u8, u8, u8),
+    name: &str,
+    size: f32,
+) -> Div {
+    let (r, g, b) = color;
     let colour = rgb((u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b));
-    // Under the name, past the colour dot.
+    let ring = div()
+        .flex_none()
+        .size(px(size))
+        .rounded_full()
+        .border_2()
+        .border_color(colour)
+        .p(px(1.))
+        .flex()
+        .items_center()
+        .justify_center();
+    match image {
+        Some(image) => ring.child(img(image).size_full().rounded_full()),
+        None => ring.child(
+            div()
+                .size_full()
+                .rounded_full()
+                .bg(colour)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px((size * 0.45).round()))
+                .font_weight(tokens::WEIGHT_BOLD)
+                .text_color(tokens::black())
+                .child(
+                    name.chars()
+                        .next()
+                        .map(|c| c.to_uppercase().to_string())
+                        .unwrap_or_default(),
+                ),
+        ),
+    }
+}
+
+fn collaborator_row(who: &Collaborator, image: Option<std::sync::Arc<RenderImage>>) -> Div {
+    // Under the name, past the avatar.
     let line = |text: String| {
         div()
-            .pl(px(18.))
+            .pl(px(30.))
             .text_size(tokens::text_xs())
             .text_color(tokens::text2())
             .child(text)
@@ -88,7 +130,7 @@ fn collaborator_row(who: &Collaborator) -> Div {
             h_flex()
                 .gap_2()
                 .items_center()
-                .child(div().flex_none().size(px(10.)).rounded_full().bg(colour))
+                .child(avatar(image, who.color, &who.name, 22.))
                 .child(
                     div()
                         .text_size(tokens::text_xs())
@@ -359,7 +401,8 @@ impl Shell {
 
         let mut list = v_flex().w_full();
         for who in &self.team_presence.collaborators {
-            list = list.child(collaborator_row(who));
+            let image = self.team_presence.avatars.get(&who.user_id).cloned();
+            list = list.child(collaborator_row(who, image));
         }
 
         let body = div()
@@ -386,5 +429,62 @@ impl Shell {
             Some(overflow.into_any_element()),
             Some(body.into_any_element()),
         )
+    }
+}
+
+impl Shell {
+    /// The editor's title bar, like Studio's: everyone sharing presence as
+    /// overlapping avatar rings, the name and state on hover; a click opens
+    /// the Collaborators dock. `None` when nobody is there.
+    pub(in crate::shell) fn presence_strip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        const SIZE: f32 = 24.;
+        const MAX: usize = 5;
+        let sending: Vec<&Collaborator> = self
+            .team_presence
+            .collaborators
+            .iter()
+            .filter(|c| c.status == super::model::Status::Sending)
+            .collect();
+        if sending.is_empty() {
+            return None;
+        }
+        let extra = sending.len().saturating_sub(MAX);
+        let mut strip = h_flex()
+            .id("presence-strip")
+            .flex_none()
+            .items_center()
+            .cursor_pointer()
+            .on_click(cx.listener(|shell, _, _, cx| {
+                shell.set_panel_open(Panel::Collaborators, true, cx);
+            }));
+        for (i, who) in sending.iter().take(MAX).enumerate() {
+            let image = self.team_presence.avatars.get(&who.user_id).cloned();
+            let label = SharedString::from(format!("{} \u{b7} {}", who.name, who.status.label()));
+            strip = strip.child(
+                div()
+                    .id(SharedString::from(format!(
+                        "presence-strip-{}-{i}",
+                        who.user_id
+                    )))
+                    // Overlap like Studio's row of faces.
+                    .when(i > 0, |this| this.ml(px(-6.)))
+                    .rounded_full()
+                    .bg(tokens::chrome())
+                    .tooltip(move |window, cx| {
+                        crate::shell::tooltip::text(label.clone(), window, cx)
+                    })
+                    .child(avatar(image, who.color, &who.name, SIZE)),
+            );
+        }
+        if extra > 0 {
+            strip = strip.child(
+                div()
+                    .ml(px(4.))
+                    .text_size(tokens::text_xs())
+                    .text_color(tokens::text2())
+                    .child(format!("+{extra}")),
+            );
+        }
+        Some(strip.into_any_element())
     }
 }

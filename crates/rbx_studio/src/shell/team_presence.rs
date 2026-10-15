@@ -74,6 +74,10 @@ pub(super) struct TeamPresence {
     pub(super) connection: Connection,
     /// In a hosted room: whether this editor hosts it or joined another's.
     pub(super) route: Option<rbx_presence::client::Route>,
+    /// Collaborators' round Roblox headshots, fetched once per user.
+    pub(super) avatars: std::collections::HashMap<u64, std::sync::Arc<gpui_kit::RenderImage>>,
+    /// Users whose headshot was asked for (fetched, in flight or failed).
+    avatar_asked: std::collections::HashSet<u64>,
     /// The relay URL field in the dock's hidden Advanced section.
     pub(super) relay_input: Entity<InputState>,
     /// Whether the Advanced section (the owner's relay setup) is revealed.
@@ -143,6 +147,8 @@ impl TeamPresence {
             settings,
             connection: Connection::Off,
             route: None,
+            avatars: std::collections::HashMap::new(),
+            avatar_asked: std::collections::HashSet::new(),
             relay_input,
             show_advanced: false,
             owner_kind: RelayKind::Hosted,
@@ -796,7 +802,54 @@ impl Shell {
         self.team_presence.collaborators = next;
         self.viewport
             .update(cx, |view, _| view.set_presence(segments));
+        self.fetch_avatars(cx);
         true
+    }
+
+    /// Fetches the headshots of collaborators not asked for yet (none for
+    /// the canned mock room, which stays offline); a failure leaves the
+    /// coloured initial in its place.
+    fn fetch_avatars(&mut self, cx: &mut Context<Self>) {
+        if self.team_presence.connection == Connection::Mock {
+            return;
+        }
+        let presence = &mut self.team_presence;
+        let missing: Vec<u64> = presence
+            .collaborators
+            .iter()
+            .map(|c| c.user_id)
+            .filter(|id| *id != 0 && presence.avatar_asked.insert(*id))
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let fetched = cx
+                .background_executor()
+                .spawn(async move {
+                    let client = rbx_cloud::Client::new(None);
+                    let Ok(urls) = client.user_headshot_urls(&missing) else {
+                        return Vec::new();
+                    };
+                    urls.into_iter()
+                        .filter_map(|(id, url)| {
+                            let png = client.download_image(&url).ok()?;
+                            let rgba = image::load_from_memory(&png).ok()?.to_rgba8();
+                            let (w, h) = rgba.dimensions();
+                            Some((
+                                id,
+                                crate::render_image::to_render_image(rgba.into_raw(), w, h)?,
+                            ))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                shell.team_presence.avatars.extend(fetched);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Puts a new secret into the place (an undoable edit, like an insert)

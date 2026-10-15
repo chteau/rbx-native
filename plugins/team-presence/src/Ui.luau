@@ -291,6 +291,27 @@ function Ui.pill(parent: Instance?, text: string, bg: string, ink: string, order
 	return pill
 end
 
+-- A collaborator as Studio shows one in a Team Create session: their round
+-- Roblox headshot in a ring of their presence colour (the colour behind it
+-- until the headshot loads).
+function Ui.avatar(parent: Instance?, userId: number, color: Color3, size: number?, order: number?): ImageLabel
+	local s = size or 22
+	local image = Instance.new("ImageLabel")
+	image.LayoutOrder = order or 0
+	image.Size = UDim2.fromOffset(s, s)
+	image.BackgroundColor3 = color
+	image.BorderSizePixel = 0
+	image.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%.0f&w=48&h=48", userId)
+	Ui.corner(image, 999)
+	local ring = Instance.new("UIStroke")
+	ring.Color = color
+	ring.Thickness = 2
+	ring.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	ring.Parent = image
+	image.Parent = parent
+	return image
+end
+
 -- The Explorer's own icon for `class`, from StudioService.
 function Ui.classIcon(parent: Instance?, class: string, size: number?): ImageLabel
 	local image = Instance.new("ImageLabel")
