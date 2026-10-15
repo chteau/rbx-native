@@ -14,8 +14,17 @@
 //! - [`secret`]: where the per-place secret lives inside the place.
 //! - [`relay`]: the default endpoint both sides connect to with no config.
 //! - [`client`]: the relay WebSocket, on a worker thread.
+//! - [`catchup`]: a summary of the value-less edit journal for a reconnecting user.
+
+/// Unix milliseconds now, or 0 if the clock is before the epoch.
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
 
 pub mod auth;
+pub mod catchup;
 pub mod client;
 pub mod ntfy;
 pub mod paths;
