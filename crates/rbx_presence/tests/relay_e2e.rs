@@ -27,6 +27,7 @@ fn state(user_id: u64, selection: &str) -> UserState {
 
 fn join(relay: &str, key: &str, user_id: u64) -> (Client, std::sync::mpsc::Receiver<Event>) {
     Client::start(Config {
+        kind: rbx_presence::relay::RelayKind::Worker,
         relay_url: relay.to_owned(),
         room: auth::room_id(key),
         key: key.to_owned(),
@@ -72,6 +73,7 @@ fn two_editors_see_each_other_and_a_stranger_is_refused() {
     // Someone who knows the room id but not the key: their own key does
     // not hash to that room, so the relay turns them away.
     let (_eve, eve_events) = Client::start(Config {
+        kind: rbx_presence::relay::RelayKind::Worker,
         relay_url: relay.clone(),
         room: auth::room_id(&key),
         key: auth::derive_key(&secret::generate(), 4567),

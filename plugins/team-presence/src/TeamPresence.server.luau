@@ -3,6 +3,7 @@
 
 local Auth = require(script.Auth)
 local Capture = require(script.Capture)
+local Defaults = require(script.Defaults)
 local Markers = require(script.Markers)
 local Relay = require(script.Relay)
 local Schema = require(script.Schema)
@@ -64,26 +65,29 @@ end
 
 local function start()
 	stop()
-	local relayUrl = plugin:GetSetting("RelayUrl")
-	if type(relayUrl) ~= "string" or relayUrl == "" then
-		widget:setStatus("Enter a relay URL")
-		return
-	end
 	if game.PlaceId == 0 then
 		widget:setStatus("Publish the place first")
 		return
 	end
+
+	-- Zero-config: the first connector mints the place's secret, everyone
+	-- else reads it. Writing it needs a Save/Publish to reach collaborators.
 	local secret = Secret.read()
 	if not secret then
-		widget:setNeedsKey(true)
-		widget:setStatus("No shared key in this place")
-		return
+		secret = Secret.create()
+		widget:setStatus("Shared a key — Save or Publish once to share it")
 	end
-	widget:setNeedsKey(false)
 
-	local key = Auth.deriveKey(secret, game.PlaceId)
+	-- The place names the relay; collaborators read it. A place that names
+	-- none falls back to the best-effort community instance.
+	local placeRelay = Secret.readRelay()
+	local kind = if placeRelay then placeRelay.kind else Defaults.communityKind
+	local url = if placeRelay then placeRelay.url else Defaults.communityUrl
+	widget:setRelay(kind, url, placeRelay == nil)
+
+	local key = Auth.deriveKey(secret :: string, game.PlaceId)
 	local ownId = userId()
-	local myRelay = Relay.new({ url = relayUrl, key = key, room = Auth.roomId(key), userId = ownId })
+	local myRelay = Relay.new({ kind = kind, url = url, key = key, room = Auth.roomId(key), userId = ownId })
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
 	relay, capture, markers = myRelay, myCapture, myMarkers
@@ -143,6 +147,8 @@ local function start()
 				myMarkers:render(snapshot.users, ownId)
 				widget:setUsers(native)
 				widget:setStatus(`Connected · {#native} rbx-native`)
+				-- ntfy polls return at once; pace them so we don't spin.
+				task.wait(myRelay:pollDelay())
 			else
 				widget:setStatus(err or "Poll failed")
 				backoff = nextBackoff(backoff)
@@ -176,14 +182,13 @@ widget = Widget.new(plugin, {
 	onToggle = function()
 		apply(not enabled)
 	end,
-	onRelayUrl = function(url: string)
-		plugin:SetSetting("RelayUrl", url)
-		if enabled then
-			start()
+	onSaveRelay = function(kind: string, url: string)
+		-- Owner setup: write the relay into the place (empty URL clears it).
+		if url == "" then
+			Secret.clearRelay()
+		else
+			Secret.writeRelay(kind, url)
 		end
-	end,
-	onCreateKey = function()
-		Secret.create()
 		if enabled then
 			start()
 		end
@@ -200,8 +205,10 @@ end)
 
 plugin.Unloading:Connect(stop)
 
-local savedUrl = plugin:GetSetting("RelayUrl")
-if type(savedUrl) == "string" then
-	widget:setRelayUrl(savedUrl)
+local savedRelay = Secret.readRelay()
+if savedRelay then
+	widget:setRelay(savedRelay.kind, savedRelay.url, false)
+else
+	widget:setRelay(Defaults.communityKind, Defaults.communityUrl, true)
 end
 apply(plugin:GetSetting("Enabled") == true)

@@ -322,6 +322,49 @@ fn data_paths() {
 }
 
 #[test]
+fn ntfy_signature_and_round_trip() {
+    let lua = new_lua();
+    let vectors = fixture_json("ntfy_vectors.json");
+    let key = str_field(&vectors, "key");
+    let topic = str_field(&vectors, "topic");
+    let u = num_field(&vectors, "u");
+    let t = num_field(&vectors, "t");
+    let d = str_field(&vectors, "d");
+
+    // The signature formula matches the golden file (and so the Rust side).
+    let sign_path = func(&lua, "Ntfy", "signPath");
+    let path: String = sign_path.call(topic).unwrap();
+    let canonical = func(&lua, "Auth", "canonical");
+    let canon: String = canonical.call(("POST", path, u, t, d)).unwrap();
+    let sign = func(&lua, "Auth", "sign");
+    let sig: String = sign.call((key, canon)).unwrap();
+    assert_eq!(sig, str_field(&vectors, "s"));
+
+    // A state encoded and decoded by the plugin round-trips, and a wrong key
+    // or a stale clock is rejected.
+    let encode = func(&lua, "Ntfy", "encode");
+    let decode = func(&lua, "Ntfy", "decode");
+    let state = lua.create_table().unwrap();
+    state.set("v", 1).unwrap();
+    state.set("userId", 4242.0).unwrap();
+    state.set("name", "Ann").unwrap();
+    state.set("color", "#e8590c").unwrap();
+    state.set("client", "studio").unwrap();
+    state.set("selection", lua.create_table().unwrap()).unwrap();
+    state.set("edits", lua.create_table().unwrap()).unwrap();
+    state.set("seen", 0).unwrap();
+    let body: String = encode.call((key, topic, 4242.0, t, state)).unwrap();
+    let got: Table = decode.call((key, topic, t, body.clone())).unwrap();
+    assert_eq!(got.get::<f64>("userId").unwrap(), 4242.0);
+    let bad: Value = decode
+        .call(("z".repeat(64), topic, t, body.clone()))
+        .unwrap();
+    assert!(matches!(bad, Value::Nil));
+    let stale: Value = decode.call((key, topic, t + 1_000_000.0, body)).unwrap();
+    assert!(matches!(stale, Value::Nil));
+}
+
+#[test]
 fn syntax_all() {
     let lua = Lua::new();
     let mut seen = 0;

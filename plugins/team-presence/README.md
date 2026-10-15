@@ -35,14 +35,45 @@ its `OnUndo` signal).
 Colours are assigned per room from the user ids, so every client shows the
 same colour for the same user.
 
-## The shared secret
+## Zero-config connect
 
-The secret is a string attribute `PresenceSecret` (64 lower-case hex digits)
-on the folder `RbxNativePresence` in `ServerStorage`. The widget's "Create key"
-button makes it. The room and signing key are derived from it and the PlaceId.
+Collaborators do not configure anything: they open the plugin and click
+**Connect**. Everything the connection needs lives in the place itself, on the
+folder `RbxNativePresence` in `ServerStorage`:
+
+- `PresenceSecret` — the shared secret (64 lower-case hex digits). The first
+  person to connect mints it automatically; everyone else reads it. The room
+  and signing key are derived from it and the `PlaceId`.
+- `RelayKind` / `RelayUrl` — which relay the team uses (see below). The place
+  **owner** sets these once in the widget's hidden "Owner setup" section; every
+  collaborator reads them from the place.
+
+Writing any of these is an undoable edit; it reaches other collaborators only
+after a **Save** or **Publish**, and the widget says so.
 
 Anyone who can open the place file can read the secret, so an uncopylocked
 place leaks it. Treat the secret as team-wide, not as strong access control.
+
+## Relays and transports
+
+Two transports, both official:
+
+- **worker** — the signed-WebSocket relay in `relay/` (a Cloudflare Worker),
+  which keeps the room in memory and fans out snapshots. Self-hosted.
+- **ntfy** — a plain [ntfy](https://ntfy.sh) pub/sub server, which needs no code
+  of ours. Each client publishes its signed presence to a topic derived from
+  the room (`rbxnp-<room>`) and rebuilds the room from the message stream.
+  Peers trust each other by HMAC, never the server. The topic is unguessable
+  (derived from the secret), so only holders of the place secret can read it.
+
+If the place names no relay, both sides fall back to a **community default**
+(a public ntfy instance): best effort, no uptime promise. Override it at build
+time with `RBX_PRESENCE_COMMUNITY_URL`. The default is written into the plugin's
+generated `Defaults` module from the one Rust constant
+(`rbx_presence::relay`), so the plugin and the editor can never disagree.
+
+Note: a public ntfy server caps message size (ntfy.sh ~4 KB), so a very large
+selection may not publish there; a self-hosted worker or ntfy raises that.
 
 ## Paths
 

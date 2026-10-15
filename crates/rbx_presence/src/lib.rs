@@ -12,10 +12,13 @@
 //! - [`auth`]: the per-place key, room id and request signatures.
 //! - [`paths`]: instances named by their full path from `game`.
 //! - [`secret`]: where the per-place secret lives inside the place.
+//! - [`relay`]: the default endpoint both sides connect to with no config.
 //! - [`client`]: the relay WebSocket, on a worker thread.
 
 pub mod auth;
 pub mod client;
+pub mod ntfy;
 pub mod paths;
+pub mod relay;
 pub mod schema;
 pub mod secret;

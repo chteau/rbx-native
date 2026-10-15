@@ -1,26 +1,35 @@
 --!strict
---// Dock widget: on/off switch, relay URL, status and the list of rbx-native collaborators.
+--// Dock widget: one Connect button, a live status line, the list of
+--// rbx-native collaborators, and a hidden "Owner setup" section where the
+--// place owner names the relay once for everyone.
 
 local Widget = {}
 Widget.__index = Widget
 
-local HTTP_NOTE = "Presence sends your selection, camera and open script to the relay you set. "
-	.. "Studio will ask you to allow HTTP requests to that domain."
+local HTTP_NOTE = "Presence sends your selection, camera and open script to the relay. "
+	.. "Studio will ask you to allow HTTP requests to that domain the first time; allow it."
+
+local NOTE = "Presence only works while Studio is open with this plugin running."
 
 type Callbacks = {
 	onToggle: () -> (),
-	onRelayUrl: (string) -> (),
-	onCreateKey: () -> (),
+	onSaveRelay: (string, string) -> (),
 }
 
 export type Widget = typeof(setmetatable({} :: {
 	gui: DockWidgetPluginGui,
 	enabled: boolean,
+	relayKind: string,
 	toggle: TextButton,
-	urlBox: TextBox,
-	status: TextLabel,
-	keyButton: TextButton,
 	note: TextLabel,
+	status: TextLabel,
+	advanced: TextButton,
+	owner: Frame,
+	kindButton: TextButton,
+	urlBox: TextBox,
+	saveButton: TextButton,
+	resolved: TextLabel,
+	httpNote: TextLabel,
 	rows: { Frame },
 	list: ScrollingFrame,
 	users: { any },
@@ -68,7 +77,7 @@ local function newButton(parent: Instance, order: number, text: string): TextBut
 end
 
 function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
-	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 280, 360, 220, 220)
+	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 280, 400, 220, 240)
 	local gui = plugin:CreateDockWidgetPluginGuiAsync("RbxNativePresence", info)
 	gui.Title = "rbx-native presence"
 
@@ -91,34 +100,59 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	padding.PaddingRight = UDim.new(0, 6)
 	padding.Parent = list
 
-	local toggle = newButton(list, 1, "Presence: off")
+	local note = newLabel(list, 1, NOTE)
+	note.TextSize = 12
+	local toggle = newButton(list, 2, "Connect")
+	local status = newLabel(list, 3, "Off")
+	local advanced = newButton(list, 4, "Owner setup ▸")
 
+	-- Owner setup, hidden until the ▸ is clicked.
+	local owner = Instance.new("Frame")
+	owner.LayoutOrder = 5
+	owner.Size = UDim2.new(1, -8, 0, 0)
+	owner.AutomaticSize = Enum.AutomaticSize.Y
+	owner.BackgroundTransparency = 1
+	owner.Visible = false
+	owner.Parent = list
+	local ownerLayout = Instance.new("UIListLayout")
+	ownerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	ownerLayout.Padding = UDim.new(0, 4)
+	ownerLayout.Parent = owner
+
+	local kindButton = newButton(owner, 1, "Worker")
 	local urlBox = Instance.new("TextBox")
 	urlBox.LayoutOrder = 2
 	urlBox.Size = UDim2.new(1, -8, 0, 26)
 	urlBox.ClearTextOnFocus = false
-	urlBox.PlaceholderText = "Relay URL"
+	urlBox.PlaceholderText = "Relay URL (blank = community default)"
 	urlBox.Text = ""
 	urlBox.TextXAlignment = Enum.TextXAlignment.Left
 	urlBox.Font = Enum.Font.BuilderSans
 	urlBox.TextSize = 14
 	urlBox.BorderSizePixel = 1
-	urlBox.Parent = list
+	urlBox.Parent = owner
+	local saveButton = newButton(owner, 3, "Save to place")
+	local resolved = newLabel(owner, 4, "")
+	resolved.TextSize = 12
 
-	local status = newLabel(list, 3, "")
-	local keyButton = newButton(list, 4, "Create presence key")
-	keyButton.Visible = false
-	local note = newLabel(list, 5, HTTP_NOTE)
-	note.Visible = false
+	local httpNote = newLabel(list, 6, HTTP_NOTE)
+	httpNote.TextSize = 12
+	httpNote.Visible = false
 
 	local self: Widget = setmetatable({
 		gui = gui,
 		enabled = false,
+		relayKind = "worker",
 		toggle = toggle,
-		urlBox = urlBox,
-		status = status,
-		keyButton = keyButton,
 		note = note,
+		status = status,
+		advanced = advanced,
+		owner = owner,
+		kindButton = kindButton,
+		urlBox = urlBox,
+		saveButton = saveButton,
+		resolved = resolved,
+		httpNote = httpNote,
 		rows = {},
 		list = list,
 		users = {},
@@ -126,13 +160,24 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	}, Widget)
 
 	table.insert(self.connections, toggle.Activated:Connect(callbacks.onToggle))
-	table.insert(self.connections, keyButton.Activated:Connect(callbacks.onCreateKey))
 	table.insert(
 		self.connections,
-		urlBox.FocusLost:Connect(function(enterPressed: boolean)
-			if enterPressed then
-				callbacks.onRelayUrl(urlBox.Text)
-			end
+		advanced.Activated:Connect(function()
+			owner.Visible = not owner.Visible
+			advanced.Text = if owner.Visible then "Owner setup ▾" else "Owner setup ▸"
+		end)
+	)
+	table.insert(
+		self.connections,
+		kindButton.Activated:Connect(function()
+			self.relayKind = if self.relayKind == "ntfy" then "worker" else "ntfy"
+			kindButton.Text = if self.relayKind == "ntfy" then "ntfy" else "Worker"
+		end)
+	)
+	table.insert(
+		self.connections,
+		saveButton.Activated:Connect(function()
+			callbacks.onSaveRelay(self.relayKind, (string.gsub(urlBox.Text, "^%s*(.-)%s*$", "%1")))
 		end)
 	)
 	table.insert(
@@ -146,13 +191,12 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 end
 
 function Widget.applyTheme(self: Widget)
-	local main = Enum.StudioStyleGuideColor.MainBackground
-	self.list.BackgroundColor3 = themeColor(main)
+	self.list.BackgroundColor3 = themeColor(Enum.StudioStyleGuideColor.MainBackground)
 	self.list.ScrollBarImageColor3 = themeColor(Enum.StudioStyleGuideColor.ScrollBar)
-	for _, label in { self.status, self.note } do
+	for _, label in { self.note, self.status, self.resolved, self.httpNote } do
 		label.TextColor3 = themeColor(Enum.StudioStyleGuideColor.MainText)
 	end
-	for _, button in { self.toggle, self.keyButton } do
+	for _, button in { self.toggle, self.advanced, self.kindButton, self.saveButton } do
 		button.BackgroundColor3 = themeColor(Enum.StudioStyleGuideColor.Button)
 		button.BorderColor3 = themeColor(Enum.StudioStyleGuideColor.ButtonBorder)
 		button.TextColor3 = themeColor(Enum.StudioStyleGuideColor.ButtonText)
@@ -174,23 +218,27 @@ end
 
 function Widget.setEnabled(self: Widget, on: boolean)
 	self.enabled = on
-	self.toggle.Text = if on then "Presence: on" else "Presence: off"
+	self.toggle.Text = if on then "Disconnect" else "Connect"
 end
 
 function Widget.setStatus(self: Widget, text: string)
 	self.status.Text = text
 end
 
-function Widget.setRelayUrl(self: Widget, url: string)
-	self.urlBox.Text = url
-end
-
-function Widget.setNeedsKey(self: Widget, needs: boolean)
-	self.keyButton.Visible = needs
+-- Owner setup: show the kind, prefill the URL, and describe the relay in use.
+function Widget.setRelay(self: Widget, kind: string, url: string, isCommunity: boolean)
+	self.relayKind = kind
+	self.kindButton.Text = if kind == "ntfy" then "ntfy" else "Worker"
+	if not isCommunity then
+		self.urlBox.Text = url
+		self.resolved.Text = `Relay: {url} ({kind})`
+	else
+		self.resolved.Text = `Relay: {url} (community instance, best effort, no uptime promise)`
+	end
 end
 
 function Widget.showHttpNote(self: Widget, show: boolean)
-	self.note.Visible = show
+	self.httpNote.Visible = show
 end
 
 local function detailOf(user: any): string
@@ -247,7 +295,6 @@ function Widget.setUsers(self: Widget, users: { any })
 				d.TextSize = 12
 				d.Position = UDim2.fromOffset(18, 20)
 				d.Size = UDim2.new(1, -18, 0, 16)
-				row.Size = UDim2.new(1, -8, 0, 20)
 			end
 			row.Parent = self.list
 			table.insert(self.rows, row)

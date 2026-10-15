@@ -23,7 +23,6 @@ pub(super) const NOTE: &str = "Presence only works for collaborators who have St
 fn status_text(connection: &Connection) -> String {
     match connection {
         Connection::Off => "Off".into(),
-        Connection::NoRelay => "Set a relay URL".into(),
         Connection::NoPlace => "Link this file to a Roblox place (Publish) first".into(),
         Connection::NoSecret => "This place has no presence key".into(),
         Connection::NoUser => {
@@ -118,6 +117,16 @@ impl Shell {
         let enabled = self.team_presence.settings.enabled;
         let connection = self.team_presence.connection.clone();
         let relay_input = self.team_presence.relay_input.clone();
+        let show_advanced = self.team_presence.show_advanced;
+        let owner_kind = self.team_presence.owner_kind;
+        let resolved = match rbx_presence::secret::read_relay(&self.dom) {
+            Some(config) => format!("Relay: {} ({})", config.url, config.kind.as_str()),
+            None => format!(
+                "Relay: {} ({})",
+                rbx_presence::relay::COMMUNITY_URL,
+                rbx_presence::relay::COMMUNITY_LABEL
+            ),
+        };
 
         let note = div()
             .m_2()
@@ -148,45 +157,85 @@ impl Shell {
                     .child("Share my presence"),
             );
 
-        let relay_row = h_flex()
+        // Owner setup: pick a transport, type its URL, and write both into
+        // the place so collaborators read them. Non-owners can ignore it.
+        let owner_setup = v_flex()
             .w_full()
-            .gap_2()
+            .gap_1()
             .px_2()
-            .items_center()
-            .child(div().flex_1().child(Input::new(&relay_input)))
             .child(
-                ui::button("collaborators-apply", "Apply", ui::Weight::Secondary, true)
-                    .on_click(cx.listener(|shell, _, _, cx| shell.apply_presence_relay_url(cx))),
+                div()
+                    .text_size(tokens::text_xs())
+                    .text_color(tokens::text3())
+                    .child("Owner setup — saved into the place for everyone"),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        ui::button(
+                            "collaborators-relay-kind",
+                            if owner_kind == rbx_presence::relay::RelayKind::Ntfy {
+                                "ntfy"
+                            } else {
+                                "Worker"
+                            },
+                            ui::Weight::Secondary,
+                            true,
+                        )
+                        .on_click(cx.listener(|shell, _, _, cx| shell.toggle_owner_kind(cx))),
+                    )
+                    .child(div().flex_1().child(Input::new(&relay_input)))
+                    .child(
+                        ui::button(
+                            "collaborators-relay-save",
+                            "Save to place",
+                            ui::Weight::Secondary,
+                            true,
+                        )
+                        .on_click(cx.listener(|shell, _, _, cx| shell.save_presence_relay(cx))),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(tokens::text_xs())
+                    .text_color(tokens::text3())
+                    .child(resolved),
             );
 
         let failed = matches!(connection, Connection::Rejected(_));
-        let status = h_flex()
-            .w_full()
-            .gap_2()
-            .px_2()
-            .items_center()
-            .child(
-                div()
-                    .flex_1()
-                    .text_size(tokens::text_xs())
-                    .text_color(if failed {
-                        tokens::text_error()
-                    } else {
-                        tokens::text2()
-                    })
-                    .child(status_text(&connection)),
-            )
-            .when(connection == Connection::NoSecret, |this| {
-                this.child(
-                    ui::button(
-                        "collaborators-create-key",
-                        "Create presence key",
-                        ui::Weight::Secondary,
-                        true,
-                    )
-                    .on_click(cx.listener(|shell, _, _, cx| shell.create_presence_secret(cx))),
-                )
-            });
+        let status = h_flex().w_full().gap_2().px_2().items_center().child(
+            div()
+                .flex_1()
+                .text_size(tokens::text_xs())
+                .text_color(if failed {
+                    tokens::text_error()
+                } else {
+                    tokens::text2()
+                })
+                .child(status_text(&connection)),
+        );
+
+        // The relay URL lives behind an Advanced reveal, so the dock is just
+        // the toggle, the status and the list unless someone opts in.
+        let advanced_toggle = div().px_2().child(
+            div()
+                .id("collaborators-advanced")
+                .text_size(tokens::text_xs())
+                .text_color(tokens::text3())
+                .cursor_pointer()
+                .child(if show_advanced {
+                    "Advanced ▾"
+                } else {
+                    "Advanced ▸"
+                })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|shell, _, _, cx| shell.toggle_presence_advanced(cx)),
+                ),
+        );
 
         let mut list = v_flex().w_full();
         for who in &self.team_presence.collaborators {
@@ -205,8 +254,9 @@ impl Shell {
                     .gap_2()
                     .child(note)
                     .child(toggle_row)
-                    .child(relay_row)
                     .child(status)
+                    .child(advanced_toggle)
+                    .when(show_advanced, |this| this.child(owner_setup))
                     .child(list),
             )
             .scrollbar_y(&self.team_presence.scroll);

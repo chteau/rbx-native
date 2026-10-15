@@ -23,6 +23,9 @@ getrandom = "0.3"
 # The relay's WebSocket: a small blocking client over the rustls already in
 # the tree, so the connection lives on one plain worker thread.
 tungstenite = { version = "0.28", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
+# The ntfy transport: a blocking HTTP client (publish + poll), the same
+# version rbx_cloud uses, so nothing new in Cargo.lock.
+ureq = { version = "3", features = ["gzip"] }
 
 [dev-dependencies]
 # Runs the plugin's own Luau modules against the shared golden fixtures.

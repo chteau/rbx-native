@@ -9,6 +9,7 @@
 //! a failure, waiting 1 s, then twice as long each time up to 30 s, and
 //! stops when the [`Client`] is dropped.
 
+use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread;
@@ -19,17 +20,30 @@ use tungstenite::http::{HeaderName, HeaderValue};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Error as WsError, Message, WebSocket};
 
-use crate::auth;
-use crate::schema::{Snapshot, UserState, HEARTBEAT_MS};
+use crate::relay::{self, RelayKind};
+use crate::schema::{Snapshot, UserState, EXPIRY_MS, HEARTBEAT_MS};
+use crate::{auth, ntfy};
 
 /// How long a read blocks before the loop checks for something to send.
 const READ_TIMEOUT: Duration = Duration::from_millis(200);
 const BACKOFF_START: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(30);
+/// How often the ntfy transport publishes-then-polls; presence is best-effort
+/// on a shared public server, so a second's latency is fine.
+const NTFY_POLL: Duration = Duration::from_secs(1);
+
+/// Unix milliseconds now, or 0 if the clock is before the epoch.
+fn unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
 
 /// Where and as whom to connect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
+    /// Which transport the relay speaks.
+    pub kind: RelayKind,
     /// `https://host[/prefix]` or `http://…` (a local `wrangler dev`); a
     /// trailing `/` is ignored.
     pub relay_url: String,
@@ -97,6 +111,14 @@ struct Worker {
     events: Sender<Event>,
     latest: Option<UserState>,
     dirty: bool,
+    /// ntfy only: the room rebuilt from the message stream, each user with
+    /// the unix-ms we last heard from them.
+    ntfy_room: HashMap<u64, (UserState, u64)>,
+    /// ntfy only: grows on every room change, like the Worker relay's cursor.
+    ntfy_cursor: u64,
+    /// ntfy only: the id of the newest message polled, so the next poll asks
+    /// only for later ones.
+    ntfy_last_id: Option<String>,
 }
 
 fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
@@ -106,6 +128,9 @@ fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
         events,
         latest: None,
         dirty: false,
+        ntfy_room: HashMap::new(),
+        ntfy_cursor: 0,
+        ntfy_last_id: None,
     };
     let mut delay = BACKOFF_START;
     loop {
@@ -159,6 +184,13 @@ impl Worker {
     }
 
     fn session(&mut self, delay: &mut Duration) -> Outcome {
+        match self.config.kind {
+            RelayKind::Worker => self.worker_session(delay),
+            RelayKind::Ntfy => self.ntfy_session(delay),
+        }
+    }
+
+    fn worker_session(&mut self, delay: &mut Duration) -> Outcome {
         let mut socket = match self.connect() {
             Ok(socket) => socket,
             Err(WsError::Http(response)) if matches!(response.status().as_u16(), 401 | 403) => {
@@ -214,6 +246,150 @@ impl Worker {
                 Err(error) => return Outcome::Failed(error.to_string()),
             }
         }
+    }
+
+    /// Presence over a plain ntfy server: publish our signed state to the
+    /// room's topic, poll the topic for everyone else's, and rebuild the room
+    /// from the stream (ntfy keeps none of it for us). Backs off and retries
+    /// on any HTTP failure, like the Worker session.
+    fn ntfy_session(&mut self, delay: &mut Duration) -> Outcome {
+        let base = self.config.relay_url.trim_end_matches('/').to_string();
+        if !(base.starts_with("http://") || base.starts_with("https://")) {
+            return Outcome::Failed("ntfy relay url must be http(s)".into());
+        }
+        let topic = relay::ntfy_topic(&self.config.room);
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
+            .http_status_as_error(false)
+            .timeout_global(Some(Duration::from_secs(20)))
+            .build()
+            .into();
+
+        // Prime the room from the recent past before we announce ourselves.
+        if let Err(why) = self.ntfy_poll(&agent, &base, &topic) {
+            return Outcome::Failed(why);
+        }
+        *delay = BACKOFF_START;
+        if self.events.send(Event::Connected).is_err() {
+            return Outcome::Stopped;
+        }
+        self.dirty = self.latest.is_some();
+        let mut last_sent = Instant::now();
+        loop {
+            if !self.drain() {
+                return Outcome::Stopped;
+            }
+            let heartbeat = last_sent.elapsed() >= Duration::from_millis(HEARTBEAT_MS);
+            if self.dirty || heartbeat {
+                if let Some(state) = &self.latest {
+                    let mut state = state.clone();
+                    state.clamp();
+                    state.user_id = self.config.user_id;
+                    if let Err(why) = self.ntfy_publish(&agent, &base, &topic, &state) {
+                        return Outcome::Failed(why);
+                    }
+                    last_sent = Instant::now();
+                }
+                self.dirty = false;
+            }
+            if let Err(why) = self.ntfy_poll(&agent, &base, &topic) {
+                return Outcome::Failed(why);
+            }
+            if !self.wait(NTFY_POLL) {
+                return Outcome::Stopped;
+            }
+        }
+    }
+
+    fn ntfy_publish(
+        &self,
+        agent: &ureq::Agent,
+        base: &str,
+        topic: &str,
+        state: &UserState,
+    ) -> Result<(), String> {
+        let body = ntfy::encode(
+            &self.config.key,
+            topic,
+            self.config.user_id,
+            unix_ms(),
+            state,
+        )
+        .ok_or_else(|| "cannot encode presence".to_string())?;
+        let mut resp = agent
+            .post(format!("{base}/{topic}"))
+            .header("Content-Type", "text/plain")
+            .send(body.as_str())
+            .map_err(|e| e.to_string())?;
+        let status = resp.status().as_u16();
+        let _ = resp.body_mut().read_to_string();
+        if !(200..300).contains(&status) {
+            return Err(format!("ntfy publish: HTTP {status}"));
+        }
+        Ok(())
+    }
+
+    fn ntfy_poll(&mut self, agent: &ureq::Agent, base: &str, topic: &str) -> Result<(), String> {
+        let since = self
+            .ntfy_last_id
+            .clone()
+            .unwrap_or_else(|| "10s".to_owned());
+        let mut resp = agent
+            .get(format!("{base}/{topic}/json"))
+            .query("poll", "1")
+            .query("since", &since)
+            .call()
+            .map_err(|e| e.to_string())?;
+        let status = resp.status().as_u16();
+        let text = resp
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| e.to_string())?;
+        if !(200..300).contains(&status) {
+            return Err(format!("ntfy poll: HTTP {status}"));
+        }
+        let now = unix_ms();
+        let mut changed = false;
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            if let Some(id) = message.get("id").and_then(|i| i.as_str()) {
+                self.ntfy_last_id = Some(id.to_owned());
+            }
+            if message.get("event").and_then(|e| e.as_str()) != Some("message") {
+                continue;
+            }
+            let Some(body) = message.get("message").and_then(|m| m.as_str()) else {
+                continue;
+            };
+            if let Some(mut state) = ntfy::decode(&self.config.key, topic, now, body) {
+                if state.user_id == self.config.user_id {
+                    continue;
+                }
+                state.seen = now;
+                self.ntfy_room.insert(state.user_id, (state, now));
+                changed = true;
+            }
+        }
+        let before = self.ntfy_room.len();
+        self.ntfy_room
+            .retain(|_, (_, seen)| now.saturating_sub(*seen) <= EXPIRY_MS);
+        changed |= self.ntfy_room.len() != before;
+        if changed {
+            self.ntfy_cursor += 1;
+            let users = self.ntfy_room.values().map(|(s, _)| s.clone()).collect();
+            let snapshot = Snapshot {
+                cursor: self.ntfy_cursor,
+                users,
+            };
+            let _ = self.events.send(Event::Snapshot(snapshot));
+        }
+        Ok(())
     }
 
     fn connect(&self) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, WsError> {
@@ -347,6 +523,7 @@ mod tests {
         });
 
         let (client, events) = Client::start(Config {
+            kind: RelayKind::Worker,
             relay_url: format!("http://127.0.0.1:{port}"),
             room: "room1".into(),
             key: key.clone(),

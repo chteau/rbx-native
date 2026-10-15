@@ -25,6 +25,7 @@ use std::time::Instant;
 use gpui_kit::component::input::InputState;
 use gpui_kit::*;
 use rbx_presence::client::{Client, Event};
+use rbx_presence::relay::{RelayConfig, RelayKind};
 use rbx_presence::schema::{Snapshot, UserState, HEARTBEAT_MS};
 
 use super::Shell;
@@ -43,8 +44,6 @@ const TICK: std::time::Duration = std::time::Duration::from_millis(250);
 pub(super) enum Connection {
     /// Turned off in the dock.
     Off,
-    /// On, but no relay URL is set.
-    NoRelay,
     /// On, but the open file is not linked to a Roblox place.
     NoPlace,
     /// On, but the place has no presence secret yet.
@@ -65,8 +64,13 @@ pub(super) struct TeamPresence {
     /// Persisted; `enabled` is the opt-in.
     pub(super) settings: TeamPresenceSettings,
     pub(super) connection: Connection,
-    /// The relay URL field in the dock.
+    /// The relay URL field in the dock's hidden Advanced section.
     pub(super) relay_input: Entity<InputState>,
+    /// Whether the Advanced section (the owner's relay setup) is revealed.
+    /// Off by default: end users never see or type a URL.
+    pub(super) show_advanced: bool,
+    /// The transport the owner-setup field will write to the place.
+    pub(super) owner_kind: RelayKind,
     client: Option<Client>,
     /// Drains `client`'s events every `TICK`; dropped with it.
     watch: Option<Task<()>>,
@@ -95,13 +99,15 @@ impl TeamPresence {
     ) -> Self {
         let relay_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("https://relay.example.workers.dev")
+                .placeholder("Relay URL (blank = community default)")
                 .default_value(settings.relay_url.clone())
         });
         TeamPresence {
             settings,
             connection: Connection::Off,
             relay_input,
+            show_advanced: false,
+            owner_kind: RelayKind::Worker,
             client: None,
             watch: None,
             snapshot: None,
@@ -148,6 +154,9 @@ impl Shell {
                 ),
             }
         }
+        if let Some(config) = rbx_presence::secret::read_relay(&self.dom) {
+            self.team_presence.owner_kind = config.kind;
+        }
         if self.team_presence.settings.enabled {
             self.connect_presence(cx);
         }
@@ -168,8 +177,11 @@ impl Shell {
         cx.notify();
     }
 
-    /// The dock's relay URL field was applied; saves and reconnects.
-    pub(super) fn apply_presence_relay_url(&mut self, cx: &mut Context<Self>) {
+    /// Owner setup: writes the chosen relay (kind + URL) into the place, the
+    /// way the secret is written, so every collaborator reads it and connects
+    /// with nothing to type. An empty URL clears it (back to the community
+    /// default). Reconnects when presence is on.
+    pub(super) fn save_presence_relay(&mut self, cx: &mut Context<Self>) {
         let url = self
             .team_presence
             .relay_input
@@ -177,12 +189,52 @@ impl Shell {
             .value()
             .trim()
             .to_string();
-        self.team_presence.settings.relay_url = url;
+        // Keep the typed URL as a convenience so the field survives a reload.
+        self.team_presence.settings.relay_url = url.clone();
         self.save_settings();
+
+        self.push_history();
+        if url.is_empty() {
+            rbx_presence::secret::clear_relay(&mut self.dom);
+        } else {
+            let config = RelayConfig {
+                kind: self.team_presence.owner_kind,
+                url,
+            };
+            if rbx_presence::secret::write_relay(&mut self.dom, &config).is_none() {
+                self.output.push(
+                    "Presence",
+                    Feedback::Error(
+                        "This place has no ServerStorage to keep the relay setting in.".into(),
+                    ),
+                );
+                return;
+            }
+        }
+        let changes = self.dom.take_changes();
+        self.rebuild_explorer(cx);
+        self.reflect_changes(&changes, cx);
+        self.record_history_change(changes);
+        self.output.push(
+            "Presence",
+            Feedback::Info(
+                "Saved the relay to this place. Save or Publish once so collaborators get it."
+                    .into(),
+            ),
+        );
         if self.team_presence.settings.enabled && self.team_presence.connection != Connection::Mock
         {
             self.connect_presence(cx);
         }
+        cx.notify();
+    }
+
+    /// Owner setup: cycles the transport the Save button will write.
+    pub(super) fn toggle_owner_kind(&mut self, cx: &mut Context<Self>) {
+        self.team_presence.owner_kind = match self.team_presence.owner_kind {
+            RelayKind::Worker => RelayKind::Ntfy,
+            RelayKind::Ntfy => RelayKind::Worker,
+        };
         cx.notify();
     }
 
@@ -220,31 +272,44 @@ impl Shell {
 
     fn connect_presence(&mut self, cx: &mut Context<Self>) {
         self.disconnect_presence(cx);
-        let url = self.team_presence.settings.relay_url.trim().to_string();
-        let blocked = if url.is_empty() {
-            Some(Connection::NoRelay)
-        } else {
-            None
-        };
         let place = crate::home::link_of(&self.path).map(|link| link.place_id);
-        let secret = rbx_presence::secret::read(&self.dom);
         let user = self.studio_presence.user_id;
-        let blocked = blocked
-            .or_else(|| place.is_none().then_some(Connection::NoPlace))
-            .or_else(|| secret.is_none().then_some(Connection::NoSecret))
+        let blocked = place
+            .is_none()
+            .then_some(Connection::NoPlace)
             .or_else(|| user.is_none().then_some(Connection::NoUser));
         if let Some(state) = blocked {
             self.team_presence.connection = state;
             cx.notify();
             return;
         }
-        let (Some(place), Some(secret), Some(user_id)) = (place, secret, user) else {
+        let (Some(place), Some(user_id)) = (place, user) else {
             return;
         };
+        // Zero-config: the first connector mints the place's secret; everyone
+        // else reads it. Writing it needs a Save/Publish to reach Studio, so
+        // `write_new_secret` says so.
+        let secret = match rbx_presence::secret::read(&self.dom) {
+            Some(secret) => secret,
+            None => match self.write_new_secret(cx) {
+                Some(secret) => secret,
+                None => {
+                    self.team_presence.connection = Connection::NoSecret;
+                    cx.notify();
+                    return;
+                }
+            },
+        };
+        // The place names the relay; collaborators read it and connect with
+        // nothing to type. A place that names none falls back to the
+        // best-effort community instance.
+        let config = rbx_presence::secret::read_relay(&self.dom)
+            .unwrap_or_else(rbx_presence::relay::RelayConfig::community);
         let key = rbx_presence::auth::derive_key(&secret, place);
         let room = rbx_presence::auth::room_id(&key);
         let (client, events) = Client::start(rbx_presence::client::Config {
-            relay_url: url,
+            kind: config.kind,
+            relay_url: config.trimmed_url().to_owned(),
             room,
             key,
             user_id,
@@ -373,9 +438,10 @@ impl Shell {
     }
 
     /// Puts a new secret into the place (an undoable edit, like an insert)
-    /// and reconnects. Studio collaborators get it once the place is saved
-    /// or published.
-    pub(super) fn create_presence_secret(&mut self, cx: &mut Context<Self>) {
+    /// and returns it, or `None` when the place has no `ServerStorage` to
+    /// keep it in. Studio collaborators get it once the place is saved or
+    /// published, so this says so once.
+    fn write_new_secret(&mut self, cx: &mut Context<Self>) -> Option<String> {
         self.push_history();
         let secret = rbx_presence::secret::generate();
         if rbx_presence::secret::write(&mut self.dom, &secret).is_none() {
@@ -385,7 +451,7 @@ impl Shell {
                     "This place has no ServerStorage to keep the presence key in.".into(),
                 ),
             );
-            return;
+            return None;
         }
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
@@ -394,14 +460,16 @@ impl Shell {
         self.output.push(
             "Presence",
             Feedback::Info(
-                "Presence key created. Studio collaborators get it after you Save or Publish the place."
+                "Shared a presence key for this place. Save or Publish once so Studio collaborators get it."
                     .into(),
             ),
         );
-        if self.team_presence.settings.enabled && self.team_presence.connection != Connection::Mock
-        {
-            self.connect_presence(cx);
-        }
+        Some(secret)
+    }
+
+    /// The dock's Advanced section reveal.
+    pub(super) fn toggle_presence_advanced(&mut self, cx: &mut Context<Self>) {
+        self.team_presence.show_advanced = !self.team_presence.show_advanced;
         cx.notify();
     }
 }
