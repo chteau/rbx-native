@@ -2,7 +2,7 @@
 
 use gpui_kit::*;
 use rbx_dom::Ref;
-use rbx_lua::plugin::{OutputKind, Outcome, Request};
+use rbx_lua::plugin::{Outcome, OutputKind, Request};
 
 use crate::command_bar::Feedback;
 use crate::shell::Shell;
@@ -12,7 +12,12 @@ impl Shell {
     /// `reflect_changes` (+ `record_history_change` when a snapshot was
     /// pushed), selection via `reselect`, output lines, requests, and UI and
     /// adornment refreshes.
-    pub(in crate::shell) fn apply_plugin_outcome(&mut self, outcome: Outcome, snapshot: bool, cx: &mut Context<Self>) {
+    pub(in crate::shell) fn apply_plugin_outcome(
+        &mut self,
+        outcome: Outcome,
+        snapshot: bool,
+        cx: &mut Context<Self>,
+    ) {
         if !outcome.changes.is_empty() {
             self.plugins.applying = true;
             self.rebuild_explorer(cx);
@@ -80,7 +85,10 @@ impl Shell {
     /// Opening a tab needs the window, which an outcome is applied without,
     /// so it happens on the next turn of the main window.
     fn plugin_open_script(&mut self, script: Ref, cx: &mut Context<Self>) {
-        let Some(handle) = cx.active_window().or_else(|| cx.windows().into_iter().next()) else {
+        let Some(handle) = cx
+            .active_window()
+            .or_else(|| cx.windows().into_iter().next())
+        else {
             return;
         };
         let shell = cx.entity();

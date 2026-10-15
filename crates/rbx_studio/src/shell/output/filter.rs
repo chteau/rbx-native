@@ -80,10 +80,10 @@ impl ContextFilter {
     pub(super) fn matches(self, entry: &OutputEntry) -> bool {
         match self {
             ContextFilter::All => true,
-            ContextFilter::Edit => entry.context().is_none() && !entry.from_plugin(),
+            ContextFilter::Edit => entry.context().is_none() && !entry.is_plugin(),
             ContextFilter::Server => entry.context() == Some(game::Context::Server),
             ContextFilter::Client => entry.context() == Some(game::Context::Client),
-            ContextFilter::UserPlugin => entry.from_plugin(),
+            ContextFilter::UserPlugin => entry.is_plugin(),
         }
     }
 

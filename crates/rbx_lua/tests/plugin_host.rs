@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use rbx_dom::{Change, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::plugin::{
     Answer, Context, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, Input, Manifest, Origin,
-    OutputKind, Outcome, PluginHost, PluginSource, PromptKind, Request, SourceBody,
+    Outcome, OutputKind, PluginHost, PluginSource, PromptKind, Request, SourceBody,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -359,7 +359,10 @@ fn color_prompt_round_trip() {
         })
         .expect("prompt request");
     assert!(matches!(kind, PromptKind::Color3 { .. }));
-    let out = f.send(Input::PromptAnswered(id, Answer::Color3(Some([0.0, 1.0, 0.0]))));
+    let out = f.send(Input::PromptAnswered(
+        id,
+        Answer::Color3(Some([0.0, 1.0, 0.0])),
+    ));
     assert!(texts(&out, OutputKind::Print)
         .iter()
         .any(|t| t.contains("picked")));

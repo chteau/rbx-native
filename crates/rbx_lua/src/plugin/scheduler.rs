@@ -9,11 +9,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use mlua::{Function, Lua, MultiValue, Result, Thread, Value};
 use mlua::thread::ThreadStatus;
+use mlua::{Function, Lua, MultiValue, Result, Thread, Value};
 
-use super::api::{Arg, OutputKind};
-use super::arg;
+use super::api::OutputKind;
 use super::env::env;
 
 pub(crate) type AwaitId = u32;
@@ -98,15 +97,16 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
-    let delay_fn = lua.create_function(|lua, (seconds, func, args): (f64, Function, MultiValue)| {
-        let thread = lua.create_thread(runner(lua)?)?;
-        let id = sleep(lua, seconds);
-        let env = env(lua);
-        let mut scheduler = env.scheduler.borrow_mut();
-        scheduler.delayed.insert(id, (func, args));
-        scheduler.delay_threads.push((thread.clone(), id));
-        Ok(thread)
-    })?;
+    let delay_fn =
+        lua.create_function(|lua, (seconds, func, args): (f64, Function, MultiValue)| {
+            let thread = lua.create_thread(runner(lua)?)?;
+            let id = sleep(lua, seconds);
+            let env = env(lua);
+            let mut scheduler = env.scheduler.borrow_mut();
+            scheduler.delayed.insert(id, (func, args));
+            scheduler.delay_threads.push((thread.clone(), id));
+            Ok(thread)
+        })?;
     task.set("delay", delay_fn.clone())?;
     globals.set("delay", delay_fn)?;
 
@@ -117,7 +117,11 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
             let mut scheduler = env.scheduler.borrow_mut();
             scheduler.waiting.retain(|_, t| *t != thread);
             scheduler.deferred.retain(|(t, _)| *t != thread);
-            if let Some(index) = scheduler.delay_threads.iter().position(|(t, _)| *t == thread) {
+            if let Some(index) = scheduler
+                .delay_threads
+                .iter()
+                .position(|(t, _)| *t == thread)
+            {
                 let (_, id) = scheduler.delay_threads.remove(index);
                 scheduler.delayed.remove(&id);
                 scheduler.timers.retain(|(_, timer, _)| *timer != id);
@@ -269,7 +273,11 @@ pub(crate) fn new_await(lua: &Lua) -> AwaitId {
 
 /// Resumes the thread waiting on `id` (if any) with `(true, values…)` or
 /// `(false, message)`.
-pub(crate) fn resolve(lua: &Lua, id: AwaitId, result: std::result::Result<MultiValue, String>) -> Result<()> {
+pub(crate) fn resolve(
+    lua: &Lua,
+    id: AwaitId,
+    result: std::result::Result<MultiValue, String>,
+) -> Result<()> {
     let env = env(lua);
     let thread = {
         let mut scheduler = env.scheduler.borrow_mut();
@@ -285,23 +293,21 @@ pub(crate) fn resolve(lua: &Lua, id: AwaitId, result: std::result::Result<MultiV
     resume(lua, thread, args)
 }
 
-/// [`resolve`] with values built from [`Arg`]s on the VM's context.
-pub(crate) fn resolve_args(lua: &Lua, id: AwaitId, result: std::result::Result<Vec<Arg>, String>) -> Result<()> {
-    let result = match result {
-        Ok(args) => Ok(arg::to_lua_multi(lua, &env(lua).ctx, &args)?),
-        Err(message) => Err(message),
-    };
-    resolve(lua, id, result)
-}
-
 /// An await id resolved by [`tick`] once `seconds` (at least one tick) have
 /// passed, with the elapsed time.
 pub(crate) fn sleep(lua: &Lua, seconds: f64) -> AwaitId {
     let id = new_await(lua);
     let env = env(lua);
     let now = env.shared.borrow().context.now;
-    let seconds = if seconds.is_finite() { seconds.max(0.0) } else { 0.0 };
-    env.scheduler.borrow_mut().timers.push((now + seconds, id, now));
+    let seconds = if seconds.is_finite() {
+        seconds.max(0.0)
+    } else {
+        0.0
+    };
+    env.scheduler
+        .borrow_mut()
+        .timers
+        .push((now + seconds, id, now));
     id
 }
 
@@ -312,7 +318,10 @@ pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
     env.shared.borrow_mut().context.now = now;
     let (mut due, deferred) = {
         let mut scheduler = env.scheduler.borrow_mut();
-        let (due, rest): (Vec<_>, Vec<_>) = scheduler.timers.drain(..).partition(|(at, _, _)| *at <= now);
+        let (due, rest): (Vec<_>, Vec<_>) = scheduler
+            .timers
+            .drain(..)
+            .partition(|(at, _, _)| *at <= now);
         scheduler.timers = rest;
         let deferred: Vec<_> = scheduler.deferred.drain(..).collect();
         (due, deferred)
@@ -368,13 +377,21 @@ mod tests {
     use crate::plugin::testing::test_vm;
 
     fn run(lua: &Lua, src: &str) {
-        spawn(lua, lua.load(src).into_function().unwrap(), MultiValue::new()).unwrap();
+        spawn(
+            lua,
+            lua.load(src).into_function().unwrap(),
+            MultiValue::new(),
+        )
+        .unwrap();
     }
 
     #[test]
     fn wait_resolves_only_after_time_passes() {
         let (lua, _env, _) = test_vm(WeakDom::new(), false);
-        run(&lua, "done = false local e = task.wait(1) done = true elapsed = e");
+        run(
+            &lua,
+            "done = false local e = task.wait(1) done = true elapsed = e",
+        );
         assert!(!lua.globals().get::<bool>("done").unwrap());
         tick(&lua, 0.5).unwrap();
         assert!(!lua.globals().get::<bool>("done").unwrap());
@@ -396,7 +413,10 @@ mod tests {
     #[test]
     fn cancel_stops_delay() {
         let (lua, _env, _) = test_vm(WeakDom::new(), false);
-        run(&lua, "task.cancel(task.delay(1, function() got = true end))");
+        run(
+            &lua,
+            "task.cancel(task.delay(1, function() got = true end))",
+        );
         tick(&lua, 2.0).unwrap();
         assert!(lua.globals().get::<Option<bool>>("got").unwrap().is_none());
     }
@@ -425,11 +445,19 @@ mod tests {
     #[test]
     fn resolve_error_raises_in_thread() {
         let (lua, env, _) = test_vm(WeakDom::new(), false);
-        let f = yielding(&lua, lua.create_function(|lua, ()| Ok(new_await(lua))).unwrap()).unwrap();
+        let f = yielding(
+            &lua,
+            lua.create_function(|lua, ()| Ok(new_await(lua))).unwrap(),
+        )
+        .unwrap();
         lua.globals().set("op", f).unwrap();
         run(&lua, "local ok, e = pcall(op) result = e");
         let id = *env.scheduler.borrow().waiting.keys().next().unwrap();
         resolve(&lua, id, Err("nope".into())).unwrap();
-        assert!(lua.globals().get::<String>("result").unwrap().contains("nope"));
+        assert!(lua
+            .globals()
+            .get::<String>("result")
+            .unwrap()
+            .contains("nope"));
     }
 }

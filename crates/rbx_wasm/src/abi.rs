@@ -11,7 +11,9 @@ pub(crate) fn required(method: &str) -> Result<Option<&'static str>, String> {
     match method {
         "log" | "warn" | "notify" | "command.register" => Ok(None),
         "selection.get" | "selection.set" => Ok(Some("selection")),
-        "instance.roots" | "instance.get" | "instance.find" | "instance.property" => Ok(Some("dom.read")),
+        "instance.roots" | "instance.get" | "instance.find" | "instance.property" => {
+            Ok(Some("dom.read"))
+        }
         "instance.set_property" | "instance.new" | "instance.set_parent" | "instance.destroy" => {
             Ok(Some("dom.write"))
         }
@@ -35,8 +37,14 @@ fn string_param(params: &Value, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("param '{key}' must be a string"))
 }
 
-fn dispatch(request: &[u8], grants: &Grants, host: &mut dyn Host, effects: &mut Vec<Effect>) -> Result<Value, String> {
-    let request: Value = serde_json::from_slice(request).map_err(|e| format!("invalid request: {e}"))?;
+fn dispatch(
+    request: &[u8],
+    grants: &Grants,
+    host: &mut dyn Host,
+    effects: &mut Vec<Effect>,
+) -> Result<Value, String> {
+    let request: Value =
+        serde_json::from_slice(request).map_err(|e| format!("invalid request: {e}"))?;
     let method = request
         .get("method")
         .and_then(Value::as_str)
@@ -70,7 +78,12 @@ fn dispatch(request: &[u8], grants: &Grants, host: &mut dyn Host, effects: &mut 
 /// an [`Effect`] (→ `null`), forwards everything else to `host`. Returns
 /// the response JSON bytes: `{"ok": value}` or `{"error": message}` (a
 /// refused permission reads `permission '<name>' not granted`).
-pub(crate) fn handle(request: &[u8], grants: &Grants, host: &mut dyn Host, effects: &mut Vec<Effect>) -> Vec<u8> {
+pub(crate) fn handle(
+    request: &[u8],
+    grants: &Grants,
+    host: &mut dyn Host,
+    effects: &mut Vec<Effect>,
+) -> Vec<u8> {
     let response = match dispatch(request, grants, host, effects) {
         Ok(value) => json!({ "ok": value }),
         Err(message) => json!({ "error": message }),
@@ -80,5 +93,7 @@ pub(crate) fn handle(request: &[u8], grants: &Grants, host: &mut dyn Host, effec
 
 /// `params[key]` as the given JSON type, or an error naming it.
 pub(crate) fn param<'a>(params: &'a Value, key: &str) -> Result<&'a Value, String> {
-    params.get(key).ok_or_else(|| format!("missing param '{key}'"))
+    params
+        .get(key)
+        .ok_or_else(|| format!("missing param '{key}'"))
 }

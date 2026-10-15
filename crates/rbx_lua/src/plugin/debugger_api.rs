@@ -2,7 +2,7 @@
 //! Roblox's own `DebuggerManager`/`ScriptDebugger`, which real Studio only
 //! exposes to the command bar.
 
-use mlua::{AnyUserData, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods, Value};
 use rbx_dom::Ref;
 
 use super::api::{Arg, DebuggerRequest, DebuggerView, Permission, Request};
@@ -27,7 +27,11 @@ fn check(lua: &Lua) -> Result<()> {
 
 fn request(lua: &Lua, request: DebuggerRequest) -> Result<()> {
     check(lua)?;
-    env(lua).shared.borrow_mut().requests.push(Request::Debugger(request));
+    env(lua)
+        .shared
+        .borrow_mut()
+        .requests
+        .push(Request::Debugger(request));
     Ok(())
 }
 
@@ -45,7 +49,8 @@ fn referent(value: &Value) -> Result<Ref> {
 
 fn instance_value(lua: &Lua, referent: Ref) -> Result<Value> {
     let ctx = env(lua).ctx.clone();
-    lua.create_userdata(LuaInstance::new(referent, ctx)).map(Value::UserData)
+    lua.create_userdata(LuaInstance::new(referent, ctx))
+        .map(Value::UserData)
 }
 
 fn signal_value(lua: &Lua, owner: Owner, event: &str) -> Result<Value> {
@@ -71,12 +76,15 @@ fn expression(value: Value) -> Result<String> {
     match value {
         Value::String(s) => Ok(s.to_string_lossy().to_string()),
         Value::Table(t) => t.get("Expression"),
-        _ => Err(mlua::Error::runtime("invalid argument #1 (watch or expression expected)")),
+        _ => Err(mlua::Error::runtime(
+            "invalid argument #1 (watch or expression expected)",
+        )),
     }
 }
 
 fn debugger_value(lua: &Lua, script: Ref) -> Result<Value> {
-    lua.create_userdata(LuaScriptDebugger(script)).map(Value::UserData)
+    lua.create_userdata(LuaScriptDebugger(script))
+        .map(Value::UserData)
 }
 
 impl UserData for LuaManager {
@@ -99,18 +107,29 @@ impl UserData for LuaManager {
         });
         methods.add_method("Resume", |lua, _, ()| request(lua, DebuggerRequest::Resume));
         methods.add_method("StepIn", |lua, _, ()| request(lua, DebuggerRequest::StepIn));
-        methods.add_method("StepOver", |lua, _, ()| request(lua, DebuggerRequest::StepOver));
-        methods.add_method("StepOut", |lua, _, ()| request(lua, DebuggerRequest::StepOut));
+        methods.add_method("StepOver", |lua, _, ()| {
+            request(lua, DebuggerRequest::StepOver)
+        });
+        methods.add_method("StepOut", |lua, _, ()| {
+            request(lua, DebuggerRequest::StepOut)
+        });
         methods.add_method("Stop", |lua, _, ()| request(lua, DebuggerRequest::Stop));
         methods.add_method("Run", |lua, _, script: Value| {
-            request(lua, DebuggerRequest::Run { script: referent(&script)? })
+            request(
+                lua,
+                DebuggerRequest::Run {
+                    script: referent(&script)?,
+                },
+            )
         });
-        methods.add_meta_method(MetaMethod::Index, |lua, _, key: String| match key.as_str() {
-            "DebuggingEnabled" => Ok(Value::Boolean(true)),
-            "DebuggerAdded" => signal_value(lua, Owner::Debugger, "DebuggerAdded"),
-            _ => Err(mlua::Error::runtime(format!(
-                "{key} is not a valid member of DebuggerManager"
-            ))),
+        methods.add_meta_method(MetaMethod::Index, |lua, _, key: String| {
+            match key.as_str() {
+                "DebuggingEnabled" => Ok(Value::Boolean(true)),
+                "DebuggerAdded" => signal_value(lua, Owner::Debugger, "DebuggerAdded"),
+                _ => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of DebuggerManager"
+                ))),
+            }
         });
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("DebuggerManager"));
     }
@@ -118,15 +137,28 @@ impl UserData for LuaManager {
 
 impl UserData for LuaScriptDebugger {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("SetBreakpoint", |lua, this, (line, condition): (u32, Option<String>)| {
+        methods.add_method(
+            "SetBreakpoint",
+            |lua, this, (line, condition): (u32, Option<String>)| {
+                request(
+                    lua,
+                    DebuggerRequest::SetBreakpoint {
+                        script: this.0,
+                        line,
+                        condition: condition.clone(),
+                    },
+                )?;
+                breakpoint_table(lua, this.0, line, condition.as_deref())
+            },
+        );
+        methods.add_method("RemoveBreakpoint", |lua, this, line: u32| {
             request(
                 lua,
-                DebuggerRequest::SetBreakpoint { script: this.0, line, condition: condition.clone() },
-            )?;
-            breakpoint_table(lua, this.0, line, condition.as_deref())
-        });
-        methods.add_method("RemoveBreakpoint", |lua, this, line: u32| {
-            request(lua, DebuggerRequest::RemoveBreakpoint { script: this.0, line })
+                DebuggerRequest::RemoveBreakpoint {
+                    script: this.0,
+                    line,
+                },
+            )
         });
         methods.add_method("GetBreakpoints", |lua, this, ()| {
             check(lua)?;
@@ -179,14 +211,19 @@ impl UserData for LuaScriptDebugger {
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             let view = view(lua);
-            let paused_here = view.paused.as_ref().filter(|(script, _, _)| *script == this.0);
+            let paused_here = view
+                .paused
+                .as_ref()
+                .filter(|(script, _, _)| *script == this.0);
             match key.as_str() {
                 "Script" => instance_value(lua, this.0),
-                "CurrentLine" => Ok(Value::Integer(paused_here.map_or(0, |(_, line, _)| i64::from(*line)))),
+                "CurrentLine" => Ok(Value::Integer(
+                    paused_here.map_or(0, |(_, line, _)| i64::from(*line)),
+                )),
                 "IsDebugging" => Ok(Value::Boolean(view.running)),
                 "IsPaused" => Ok(Value::Boolean(paused_here.is_some())),
-                "EncounteredBreak" | "Resuming" | "BreakpointAdded" | "BreakpointRemoved" | "WatchAdded"
-                | "WatchRemoved" => signal_value(lua, Owner::Instance(this.0), &key),
+                "EncounteredBreak" | "Resuming" | "BreakpointAdded" | "BreakpointRemoved"
+                | "WatchAdded" | "WatchRemoved" => signal_value(lua, Owner::Instance(this.0), &key),
                 _ => Err(mlua::Error::runtime(format!(
                     "{key} is not a valid member of ScriptDebugger"
                 ))),
@@ -218,8 +255,10 @@ pub(crate) fn manager(lua: &Lua) -> Result<Value> {
 
 /// Installs the `DebuggerManager` global. Call before sandboxing.
 pub(crate) fn install(lua: &Lua) -> Result<()> {
-    lua.globals()
-        .set("DebuggerManager", lua.create_function(|lua, ()| manager(lua))?)
+    lua.globals().set(
+        "DebuggerManager",
+        lua.create_function(|lua, ()| manager(lua))?,
+    )
 }
 
 fn scripts_of(view: &DebuggerView) -> Vec<Ref> {
@@ -242,7 +281,11 @@ pub(crate) fn changed(lua: &Lua, before: &DebuggerView, after: &DebuggerView) ->
             fire(lua, &key(script, "Resuming"), &[])?;
         }
         if let Some((script, line)) = pause_of(after) {
-            fire(lua, &key(script, "EncounteredBreak"), &[Arg::Number(f64::from(line))])?;
+            fire(
+                lua,
+                &key(script, "EncounteredBreak"),
+                &[Arg::Number(f64::from(line))],
+            )?;
         }
     }
 
@@ -257,7 +300,11 @@ pub(crate) fn changed(lua: &Lua, before: &DebuggerView, after: &DebuggerView) ->
         ])
     };
     for (script, line, condition) in &after.breakpoints {
-        if !before.breakpoints.iter().any(|(s, l, _)| s == script && l == line) {
+        if !before
+            .breakpoints
+            .iter()
+            .any(|(s, l, _)| s == script && l == line)
+        {
             if !before.breakpoints.iter().any(|(s, _, _)| s == script) {
                 let value = debugger_value(lua, *script)?;
                 fire_values(
@@ -266,21 +313,42 @@ pub(crate) fn changed(lua: &Lua, before: &DebuggerView, after: &DebuggerView) ->
                     MultiValue::from_vec(vec![value]),
                 )?;
             }
-            fire(lua, &key(*script, "BreakpointAdded"), &[bp_arg(*script, *line, condition)])?;
+            fire(
+                lua,
+                &key(*script, "BreakpointAdded"),
+                &[bp_arg(*script, *line, condition)],
+            )?;
         }
     }
     for (script, line, condition) in &before.breakpoints {
-        if !after.breakpoints.iter().any(|(s, l, _)| s == script && l == line) {
-            fire(lua, &key(*script, "BreakpointRemoved"), &[bp_arg(*script, *line, condition)])?;
+        if !after
+            .breakpoints
+            .iter()
+            .any(|(s, l, _)| s == script && l == line)
+        {
+            fire(
+                lua,
+                &key(*script, "BreakpointRemoved"),
+                &[bp_arg(*script, *line, condition)],
+            )?;
         }
     }
 
     let mut scripts = scripts_of(before);
     scripts.extend(scripts_of(after));
     scripts.dedup();
-    let watch_arg = |expr: &str| Arg::Table(vec![("Expression".to_string(), Arg::String(expr.to_string()))]);
-    let mut fire_watch = |event: &str, expr: &str| -> Result<()> {
-        fire(lua, &SignalKey::new(Owner::Debugger, event), &[watch_arg(expr)])?;
+    let watch_arg = |expr: &str| {
+        Arg::Table(vec![(
+            "Expression".to_string(),
+            Arg::String(expr.to_string()),
+        )])
+    };
+    let fire_watch = |event: &str, expr: &str| -> Result<()> {
+        fire(
+            lua,
+            &SignalKey::new(Owner::Debugger, event),
+            &[watch_arg(expr)],
+        )?;
         for script in &scripts {
             fire(lua, &key(*script, event), &[watch_arg(expr)])?;
         }
@@ -319,16 +387,28 @@ mod tests {
     }
 
     fn run(lua: &Lua, src: &str) {
-        scheduler::spawn(lua, lua.load(src).into_function().unwrap(), MultiValue::new()).unwrap();
+        scheduler::spawn(
+            lua,
+            lua.load(src).into_function().unwrap(),
+            MultiValue::new(),
+        )
+        .unwrap();
     }
 
     #[test]
     fn set_breakpoint_pushes_request() {
         let (lua, env, script) = setup();
-        run(&lua, "bp = DebuggerManager():AddDebugger(s):SetBreakpoint(5) line = bp.Line");
+        run(
+            &lua,
+            "bp = DebuggerManager():AddDebugger(s):SetBreakpoint(5) line = bp.Line",
+        );
         assert_eq!(lua.globals().get::<u32>("line").unwrap(), 5);
         assert!(env.shared.borrow().requests.contains(&Request::Debugger(
-            DebuggerRequest::SetBreakpoint { script, line: 5, condition: None }
+            DebuggerRequest::SetBreakpoint {
+                script,
+                line: 5,
+                condition: None
+            }
         )));
     }
 
@@ -365,9 +445,16 @@ mod tests {
     #[test]
     fn resume_and_step_over_requests() {
         let (lua, env, _) = setup();
-        run(&lua, "DebuggerManager():Resume() DebuggerManager():StepOver()");
+        run(
+            &lua,
+            "DebuggerManager():Resume() DebuggerManager():StepOver()",
+        );
         let shared = env.shared.borrow();
-        assert!(shared.requests.contains(&Request::Debugger(DebuggerRequest::Resume)));
-        assert!(shared.requests.contains(&Request::Debugger(DebuggerRequest::StepOver)));
+        assert!(shared
+            .requests
+            .contains(&Request::Debugger(DebuggerRequest::Resume)));
+        assert!(shared
+            .requests
+            .contains(&Request::Debugger(DebuggerRequest::StepOver)));
     }
 }

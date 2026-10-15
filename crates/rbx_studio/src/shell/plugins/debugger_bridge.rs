@@ -15,7 +15,11 @@ impl Shell {
 
     /// Carries out a plugin's `Request::Debugger` through the same paths
     /// the editor's own controls use.
-    pub(super) fn plugin_debugger_request(&mut self, request: DebuggerRequest, cx: &mut Context<Self>) {
+    pub(super) fn plugin_debugger_request(
+        &mut self,
+        request: DebuggerRequest,
+        cx: &mut Context<Self>,
+    ) {
         match request {
             DebuggerRequest::SetBreakpoint {
                 script,

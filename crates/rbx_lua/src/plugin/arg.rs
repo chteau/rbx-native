@@ -54,11 +54,13 @@ pub(crate) fn to_lua(lua: &Lua, ctx: &Ctx, arg: &Arg) -> Result<Value> {
                 .and_then(|items| {
                     items
                         .iter()
-                        .find(|(name, _)| name.to_string() == *item)
+                        .find(|(name, _)| *name == item.as_str())
                         .map(|(_, value)| *value)
                 })
                 .ok_or_else(|| {
-                    mlua::Error::runtime(format!("{item} is not a valid member of Enum.{enum_name}"))
+                    mlua::Error::runtime(format!(
+                        "{item} is not a valid member of Enum.{enum_name}"
+                    ))
                 })?;
             lua.create_userdata(LuaEnumItem::new(
                 enum_name.clone(),
@@ -103,8 +105,10 @@ fn convert(value: &Value, depth: usize) -> Arg {
             if depth >= MAX_DEPTH {
                 return Arg::Nil;
             }
-            let pairs: Vec<(Value, Value)> =
-                table.pairs::<Value, Value>().filter_map(|p| p.ok()).collect();
+            let pairs: Vec<(Value, Value)> = table
+                .pairs::<Value, Value>()
+                .filter_map(|p| p.ok())
+                .collect();
             let len = pairs.len();
             let is_list = pairs.iter().all(|(k, _)| match k {
                 Value::Integer(i) => *i >= 1 && (*i as usize) <= len,

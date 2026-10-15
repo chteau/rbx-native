@@ -61,13 +61,27 @@ impl Renderer {
 
     /// Queues a render (`backdrop` = the panel's background, encoded sRGB);
     /// a newer request for the same widget replaces a queued one.
-    pub(crate) fn request(&self, widget: UiId, revision: u64, dom: WeakDom, size: (u32, u32), backdrop: [f32; 3]) {
+    pub(crate) fn request(
+        &self,
+        widget: UiId,
+        revision: u64,
+        dom: WeakDom,
+        size: (u32, u32),
+        backdrop: [f32; 3],
+    ) {
         // `PluginHost::widget_dom` roots the copy at a `ScreenGui` carrying
         // the widget's own referent.
         let Some(root) = dom.root_refs().first().copied() else {
             return;
         };
-        let job = Job { widget, revision, dom, root, size, backdrop };
+        let job = Job {
+            widget,
+            revision,
+            dom,
+            root,
+            size,
+            backdrop,
+        };
         let (lock, wake) = &*self.queue;
         let Ok(mut queue) = lock.lock() else {
             return;
@@ -131,7 +145,9 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
         match viewer.render_gui(job.root, size, job.backdrop) {
             Ok(canvas) => {
                 let (width, height) = canvas.size;
-                let Some(image) = crate::render_image::to_render_image(canvas.pixels, width, height) else {
+                let Some(image) =
+                    crate::render_image::to_render_image(canvas.pixels, width, height)
+                else {
                     continue;
                 };
                 let drawn = Drawn {

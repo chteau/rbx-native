@@ -203,6 +203,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
+        #[allow(clippy::type_complexity)]
         let floating: Vec<(UiId, u64, Option<(f32, f32)>, (f32, f32), bool)> = self
             .plugins
             .ui
@@ -210,9 +211,11 @@ impl Shell {
             .iter()
             .filter(|w| w.enabled)
             .filter_map(|w| match w.kind {
-                WidgetKind::Floating { position, size, light_dismiss } => {
-                    Some((w.id, w.revision, position, size, light_dismiss))
-                }
+                WidgetKind::Floating {
+                    position,
+                    size,
+                    light_dismiss,
+                } => Some((w.id, w.revision, position, size, light_dismiss)),
                 WidgetKind::Dock { .. } => None,
             })
             .collect();
@@ -231,7 +234,10 @@ impl Shell {
                     .entry(id)
                     .or_insert_with(|| window.mouse_position()),
             };
-            let size = (width.round().max(1.0) as u32, height.round().max(1.0) as u32);
+            let size = (
+                width.round().max(1.0) as u32,
+                height.round().max(1.0) as u32,
+            );
             self.request_widget_render(id, revision, size, cx);
             let surface = self.widget_surface(id, cx);
             let mut card = div()
@@ -243,9 +249,10 @@ impl Shell {
                 .shadow_lg()
                 .child(surface);
             if light_dismiss {
-                card = card.on_mouse_down_out(cx.listener(move |shell, _: &MouseDownEvent, _, cx| {
-                    shell.plugin_input(Input::WidgetClosed(id), cx);
-                }));
+                card =
+                    card.on_mouse_down_out(cx.listener(move |shell, _: &MouseDownEvent, _, cx| {
+                        shell.plugin_input(Input::WidgetClosed(id), cx);
+                    }));
             }
             overlays.push(
                 deferred(
@@ -268,7 +275,13 @@ impl Shell {
             .ui
             .widgets
             .iter()
-            .map(|w| (w.id, w.revision, w.enabled && matches!(w.kind, WidgetKind::Dock { .. })))
+            .map(|w| {
+                (
+                    w.id,
+                    w.revision,
+                    w.enabled && matches!(w.kind, WidgetKind::Dock { .. }),
+                )
+            })
             .collect();
         let state = &mut self.plugins.widgets;
         let alive: HashSet<UiId> = widgets.iter().map(|w| w.0).collect();
@@ -282,7 +295,11 @@ impl Shell {
         if state.pressed.is_some_and(|(id, _, _)| !alive.contains(&id)) {
             state.pressed = None;
         }
-        if state.editing.as_ref().is_some_and(|e| !alive.contains(&e.widget)) {
+        if state
+            .editing
+            .as_ref()
+            .is_some_and(|e| !alive.contains(&e.widget))
+        {
             state.editing = None;
         }
 
@@ -322,7 +339,12 @@ impl Shell {
         if self.plugins.widgets.requested.get(&id) == Some(&(revision, size)) {
             return;
         }
-        let Some(dom) = self.plugins.host.as_ref().and_then(|host| host.widget_dom(id)) else {
+        let Some(dom) = self
+            .plugins
+            .host
+            .as_ref()
+            .and_then(|host| host.widget_dom(id))
+        else {
             return;
         };
         let state = &mut self.plugins.widgets;
@@ -339,13 +361,13 @@ impl Shell {
         if self.plugins.widgets.poll.is_some() {
             return;
         }
-        self.plugins.widgets.poll = Some(cx.spawn(async move |shell, cx| {
-            loop {
-                cx.background_executor().timer(Duration::from_millis(16)).await;
-                match shell.update(cx, |shell, cx| shell.collect_widget_renders(cx)) {
-                    Ok(true) => {}
-                    _ => break,
-                }
+        self.plugins.widgets.poll = Some(cx.spawn(async move |shell, cx| loop {
+            cx.background_executor()
+                .timer(Duration::from_millis(16))
+                .await;
+            match shell.update(cx, |shell, cx| shell.collect_widget_renders(cx)) {
+                Ok(true) => {}
+                _ => break,
             }
         }));
     }
@@ -354,7 +376,11 @@ impl Shell {
     /// asked for is still owed.
     fn collect_widget_renders(&mut self, cx: &mut Context<Self>) -> bool {
         let state = &mut self.plugins.widgets;
-        let finished = state.renderer.as_ref().map(|r| r.finished()).unwrap_or_default();
+        let finished = state
+            .renderer
+            .as_ref()
+            .map(|r| r.finished())
+            .unwrap_or_default();
         if !finished.is_empty() {
             state.drawn.extend(finished);
             cx.notify();
@@ -400,7 +426,11 @@ impl Shell {
             .as_ref()
             .filter(|editing| editing.widget == id)
             .and_then(|editing| {
-                let rect = drawn?.boxes.iter().find(|b| b.referent == editing.referent)?.rect;
+                let rect = drawn?
+                    .boxes
+                    .iter()
+                    .find(|b| b.referent == editing.referent)?
+                    .rect;
                 Some(
                     div()
                         .absolute()
@@ -538,7 +568,13 @@ impl Shell {
         }
     }
 
-    fn begin_widget_edit(&mut self, id: UiId, referent: Ref, window: &mut Window, cx: &mut Context<Self>) {
+    fn begin_widget_edit(
+        &mut self,
+        id: UiId,
+        referent: Ref,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(editing) = &self.plugins.widgets.editing {
             if editing.referent == referent {
                 return;
@@ -555,23 +591,37 @@ impl Shell {
             .cloned()
             .unwrap_or_default();
         let field = cx.new(|cx| InputState::new(window, cx).default_value(text));
-        let events = cx.subscribe(&field, move |shell, field, event: &InputEvent, cx| match event {
-            InputEvent::Change => {
-                let text = field.read(cx).value().to_string();
-                shell.send_gui(referent, GuiEventKind::TextChanged(text), cx);
-            }
-            InputEvent::PressEnter { .. } => shell.end_widget_edit(referent, true, cx),
-            InputEvent::Blur => shell.end_widget_edit(referent, false, cx),
-            _ => {}
-        });
+        let events = cx.subscribe(
+            &field,
+            move |shell, field, event: &InputEvent, cx| match event {
+                InputEvent::Change => {
+                    let text = field.read(cx).value().to_string();
+                    shell.send_gui(referent, GuiEventKind::TextChanged(text), cx);
+                }
+                InputEvent::PressEnter { .. } => shell.end_widget_edit(referent, true, cx),
+                InputEvent::Blur => shell.end_widget_edit(referent, false, cx),
+                _ => {}
+            },
+        );
         field.update(cx, |state, cx| state.focus(window, cx));
-        self.plugins.widgets.editing = Some(Editing { widget: id, referent, field, _events: events });
+        self.plugins.widgets.editing = Some(Editing {
+            widget: id,
+            referent,
+            field,
+            _events: events,
+        });
         self.send_gui(referent, GuiEventKind::Focused, cx);
         cx.notify();
     }
 
     fn end_widget_edit(&mut self, referent: Ref, enter: bool, cx: &mut Context<Self>) {
-        if self.plugins.widgets.editing.as_ref().is_none_or(|e| e.referent != referent) {
+        if self
+            .plugins
+            .widgets
+            .editing
+            .as_ref()
+            .is_none_or(|e| e.referent != referent)
+        {
             return;
         }
         self.plugins.widgets.editing = None;

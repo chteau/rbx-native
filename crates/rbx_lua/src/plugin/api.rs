@@ -78,7 +78,10 @@ pub enum Arg {
     Color3([f32; 3]),
     BrickColor(u32),
     /// `Enum.<enum_name>.<item>`.
-    Enum { enum_name: String, item: String },
+    Enum {
+        enum_name: String,
+        item: String,
+    },
     /// A Luau dictionary.
     Table(Vec<(String, Arg)>),
     /// A Luau array.
@@ -106,11 +109,15 @@ pub struct DebuggerView {
     pub breakpoints: Vec<(Ref, u32, Option<String>)>,
     /// Watch expressions with their last value (`None` = not evaluated).
     pub watches: Vec<(String, Option<String>)>,
-    /// Some while a run is paused: script, line, call stack (function, line).
-    pub paused: Option<(Ref, u32, Vec<(String, u32)>)>,
+    /// Some while a run is paused.
+    pub paused: Option<PausedAt>,
     /// A run is in progress (paused or not).
     pub running: bool,
 }
+
+/// Where a debugger run is paused: script, 1-based line, and the call
+/// stack as (function, line), innermost first.
+pub type PausedAt = (Ref, u32, Vec<(String, u32)>);
 
 /// One thing that happened in the editor, for the plugins to react to.
 #[derive(Clone, Debug, PartialEq)]
@@ -159,23 +166,48 @@ pub struct GuiEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum GuiEventKind {
     /// Pointer position in widget pixels.
-    Enter { x: f32, y: f32 },
-    Leave { x: f32, y: f32 },
-    Move { x: f32, y: f32 },
+    Enter {
+        x: f32,
+        y: f32,
+    },
+    Leave {
+        x: f32,
+        y: f32,
+    },
+    Move {
+        x: f32,
+        y: f32,
+    },
     /// `button`: 1 left, 2 right.
-    Down { button: u8, x: f32, y: f32 },
-    Up { button: u8, x: f32, y: f32 },
+    Down {
+        button: u8,
+        x: f32,
+        y: f32,
+    },
+    Up {
+        button: u8,
+        x: f32,
+        y: f32,
+    },
     /// A full press and release on the same element: `MouseButton1Click`
     /// (+ `Activated`) on a `GuiButton`.
-    Click { button: u8, x: f32, y: f32 },
+    Click {
+        button: u8,
+        x: f32,
+        y: f32,
+    },
     /// A `TextBox` gained focus.
     Focused,
     /// A `TextBox`'s text was edited (sets `Text`, fires its change signals).
     TextChanged(String),
     /// A `TextBox` lost focus: `enter` when Return committed it.
-    FocusLost { enter: bool },
+    FocusLost {
+        enter: bool,
+    },
     /// Mouse wheel over a `ScrollingFrame` (pixels, positive = down).
-    Scroll { dy: f32 },
+    Scroll {
+        dy: f32,
+    },
 }
 
 /// Input on a plugin's `Handles`/`ArcHandles`/`*HandleAdornment`, picked by
@@ -190,19 +222,42 @@ pub struct HandleEvent {
 pub enum HandleEventKind {
     /// `face`: `Enum.NormalId` value (Right 0, Top 1, Back 2, Left 3,
     /// Bottom 4, Front 5).
-    Down { face: u8 },
+    Down {
+        face: u8,
+    },
     /// `Handles.MouseDrag(face, distance)` in studs from the grab.
-    Drag { face: u8, distance: f32 },
-    Up { face: u8 },
-    Enter { face: u8 },
-    Leave { face: u8 },
+    Drag {
+        face: u8,
+        distance: f32,
+    },
+    Up {
+        face: u8,
+    },
+    Enter {
+        face: u8,
+    },
+    Leave {
+        face: u8,
+    },
     /// `ArcHandles` — `axis`: `Enum.Axis` value (X 0, Y 1, Z 2).
-    ArcDown { axis: u8 },
+    ArcDown {
+        axis: u8,
+    },
     /// `ArcHandles.MouseDrag(axis, relativeAngle, deltaRadius)`, radians.
-    ArcDrag { axis: u8, angle: f32, delta_radius: f32 },
-    ArcUp { axis: u8 },
-    ArcEnter { axis: u8 },
-    ArcLeave { axis: u8 },
+    ArcDrag {
+        axis: u8,
+        angle: f32,
+        delta_radius: f32,
+    },
+    ArcUp {
+        axis: u8,
+    },
+    ArcEnter {
+        axis: u8,
+    },
+    ArcLeave {
+        axis: u8,
+    },
     /// A `HandleAdornment`'s own `MouseButton1Down`/`Up`/`MouseEnter`/`Leave`.
     AdornmentDown,
     AdornmentUp,
@@ -254,39 +309,74 @@ pub enum Request {
     /// `ChangeHistoryService:SetWaypoint` — the edits so far are one step.
     Waypoint(String),
     /// Ask the user; answer with [`Input::PromptAnswered`].
-    Prompt { id: UiId, plugin: PluginId, kind: PromptKind },
+    Prompt {
+        id: UiId,
+        plugin: PluginId,
+        kind: PromptKind,
+    },
     /// `plugin:OpenScript(script, line)`.
-    OpenScript { script: Ref, line: Option<u32> },
+    OpenScript {
+        script: Ref,
+        line: Option<u32>,
+    },
     Debugger(DebuggerRequest),
     /// `rbxnative.notify(text)` — a toast.
-    Notify { plugin: PluginId, text: String },
+    Notify {
+        plugin: PluginId,
+        text: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PromptKind {
-    Color3 { initial: Option<[f32; 3]> },
-    BrickColor { initial: Option<u32> },
+    Color3 {
+        initial: Option<[f32; 3]>,
+    },
+    BrickColor {
+        initial: Option<u32>,
+    },
     /// First request from this plugin to this host.
-    HttpPermission { host: String },
+    HttpPermission {
+        host: String,
+    },
     /// A `PluginMenu:ShowAsync` at the cursor.
-    Menu { title: String, items: Vec<MenuItem> },
+    Menu {
+        title: String,
+        items: Vec<MenuItem>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MenuItem {
-    Action { id: UiId, text: String, icon: String },
+    Action {
+        id: UiId,
+        text: String,
+        icon: String,
+    },
     Separator,
-    Submenu { title: String, items: Vec<MenuItem> },
+    Submenu {
+        title: String,
+        items: Vec<MenuItem>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DebuggerRequest {
-    SetBreakpoint { script: Ref, line: u32, condition: Option<String> },
-    RemoveBreakpoint { script: Ref, line: u32 },
+    SetBreakpoint {
+        script: Ref,
+        line: u32,
+        condition: Option<String>,
+    },
+    RemoveBreakpoint {
+        script: Ref,
+        line: u32,
+    },
     AddWatch(String),
     RemoveWatch(String),
     /// Start debugging this script (opens it first).
-    Run { script: Ref },
+    Run {
+        script: Ref,
+    },
     Resume,
     StepIn,
     StepOver,

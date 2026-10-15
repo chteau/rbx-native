@@ -71,7 +71,11 @@ impl Grants {
 /// What the editor provides to a WASM plugin. `method`/`params` are the
 /// request's; permission checks already passed when this is called.
 pub trait Host {
-    fn call(&mut self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value, String>;
+    fn call(
+        &mut self,
+        method: &str,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String>;
 }
 
 /// Something a plugin asked for that only the editor can show.
@@ -80,5 +84,9 @@ pub enum Effect {
     Log(String),
     Warn(String),
     Notify(String),
-    Command { id: String, text: String, tooltip: String },
+    Command {
+        id: String,
+        text: String,
+        tooltip: String,
+    },
 }

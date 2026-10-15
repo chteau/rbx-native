@@ -116,21 +116,19 @@ impl Shell {
         )
     }
 
-    fn brick_prompt(
-        &mut self,
-        initial: Option<u32>,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn brick_prompt(&mut self, initial: Option<u32>, cx: &mut Context<Self>) -> AnyElement {
         if !self.plugins.prompts.brick_seeded {
             self.plugins.prompts.brick_seeded = true;
             self.plugins.prompts.brick = initial;
             self.reset_brick_cursor(initial);
         }
         let current = self.plugins.prompts.brick;
-        let target = BrickTarget::Prompt(Rc::new(|shell: &mut Shell, number: u32, cx: &mut Context<Shell>| {
-            shell.plugins.prompts.brick = Some(number);
-            cx.notify();
-        }));
+        let target = BrickTarget::Prompt(Rc::new(
+            |shell: &mut Shell, number: u32, cx: &mut Context<Shell>| {
+                shell.plugins.prompts.brick = Some(number);
+                cx.notify();
+            },
+        ));
         let palette = self
             .brick_color_palette(target, current, cx)
             .into_any_element();
@@ -168,9 +166,7 @@ impl Shell {
                 440.,
                 ui::dialog_glyph("globe", ui::accent(), ui::wash()),
                 format!("Allow {name} to reach {host}?"),
-                format!(
-                    "{name} wants to send HTTP requests to {host}. Your answer is remembered."
-                ),
+                format!("{name} wants to send HTTP requests to {host}. Your answer is remembered."),
                 None,
                 vec![
                     ui::button("plugin-prompt-deny", "Deny", Weight::Secondary, false)
@@ -260,7 +256,12 @@ fn menu_label(text: &str, depth: usize) -> AnyElement {
 }
 
 /// Submenus open inline, indented under their title.
-fn menu_rows(items: &[MenuItem], depth: usize, rows: &mut Vec<AnyElement>, cx: &mut Context<Shell>) {
+fn menu_rows(
+    items: &[MenuItem],
+    depth: usize,
+    rows: &mut Vec<AnyElement>,
+    cx: &mut Context<Shell>,
+) {
     for item in items {
         match item {
             MenuItem::Action { id, text, .. } => {

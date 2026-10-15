@@ -9,7 +9,9 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use mlua::{FromLuaMulti, IntoLuaMulti, Lua, MetaMethod, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    FromLuaMulti, IntoLuaMulti, Lua, MetaMethod, Result, Table, UserData, UserDataMethods, Value,
+};
 use rbx_dom::{Ref, Variant};
 
 use super::api::{Answer, Request, UiId};
@@ -53,7 +55,9 @@ struct LuaService(&'static str);
 
 impl UserData for LuaService {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| index(lua, this.0, &key));
+        methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
+            index(lua, this.0, &key)
+        });
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(this.0));
     }
 }
@@ -84,24 +88,29 @@ pub(crate) fn service(lua: &Lua, name: &str) -> Result<Option<Value>> {
     }
     let env = env(lua);
     let value = match canon {
-        "CoreGui" => Value::UserData(lua.create_userdata(LuaInstance::new(env.core_gui, env.ctx.clone()))?),
-        "PluginGuiService" => {
-            Value::UserData(lua.create_userdata(LuaInstance::new(env.plugin_gui_service, env.ctx.clone()))?)
+        "CoreGui" => {
+            Value::UserData(lua.create_userdata(LuaInstance::new(env.core_gui, env.ctx.clone()))?)
         }
+        "PluginGuiService" => Value::UserData(
+            lua.create_userdata(LuaInstance::new(env.plugin_gui_service, env.ctx.clone()))?,
+        ),
         _ => Value::UserData(lua.create_userdata(LuaService(canon))?),
     };
     lua.set_named_registry_value(&key, value.clone())?;
     Ok(Some(value))
 }
 
-fn func<A: FromLuaMulti, R: IntoLuaMulti>(lua: &Lua, f: impl Fn(&Lua, A) -> Result<R> + 'static) -> Result<Value> {
+fn func<A: FromLuaMulti, R: IntoLuaMulti>(
+    lua: &Lua,
+    f: impl Fn(&Lua, A) -> Result<R> + 'static,
+) -> Result<Value> {
     Ok(Value::Function(lua.create_function(f)?))
 }
 
 fn signal(lua: &Lua, owner: &'static str, event: &str) -> Result<Value> {
-    Ok(Value::UserData(
-        lua.create_userdata(LuaSignal(SignalKey::new(Owner::Service(owner), event)))?,
-    ))
+    Ok(Value::UserData(lua.create_userdata(LuaSignal(
+        SignalKey::new(Owner::Service(owner), event),
+    ))?))
 }
 
 fn no_member(service: &str, key: &str) -> mlua::Error {
@@ -137,7 +146,10 @@ fn current_selection(lua: &Lua) -> Vec<Ref> {
     let env = env(lua);
     let selection = env.shared.borrow().context.selection.clone();
     let dom = env.ctx.dom();
-    selection.into_iter().filter(|r| dom.get(*r).is_some()).collect()
+    selection
+        .into_iter()
+        .filter(|r| dom.get(*r).is_some())
+        .collect()
 }
 
 fn write_selection(lua: &Lua, refs: Vec<Ref>) {
@@ -158,7 +170,9 @@ fn instances_table(lua: &Lua, refs: &[Ref]) -> Result<Table> {
 
 fn selection(lua: &Lua, key: &str) -> Result<Value> {
     match key {
-        "Get" => func(lua, |lua, _: Value| instances_table(lua, &current_selection(lua))),
+        "Get" => func(lua, |lua, _: Value| {
+            instances_table(lua, &current_selection(lua))
+        }),
         "Set" => func(lua, |lua, (_, list): (Value, Table)| {
             write_selection(lua, refs_of(&list)?);
             Ok(())
@@ -203,7 +217,10 @@ fn change_history(lua: &Lua, key: &str) -> Result<Value> {
         }),
         "FinishRecording" => func(lua, |lua, (_, id, _op): (Value, String, MultiValueRest)| {
             state(lua).borrow_mut().recordings.remove(&id);
-            let name = id.split_once(':').map_or(id.as_str(), |(_, n)| n).to_string();
+            let name = id
+                .split_once(':')
+                .map_or(id.as_str(), |(_, n)| n)
+                .to_string();
             push_request(lua, Request::Waypoint(name));
             Ok(())
         }),
@@ -280,11 +297,18 @@ fn collection_service(lua: &Lua, key: &str) -> Result<Value> {
             let parked = env.roots.borrow().clone();
             let found: Vec<Ref> = {
                 let dom = env.ctx.dom();
-                let mut stack: Vec<Ref> = dom.root_refs().iter().filter(|r| !parked.contains(r)).copied().collect();
+                let mut stack: Vec<Ref> = dom
+                    .root_refs()
+                    .iter()
+                    .filter(|r| !parked.contains(r))
+                    .copied()
+                    .collect();
                 let mut found = Vec::new();
                 while let Some(r) = stack.pop() {
                     let Some(instance) = dom.get(r) else { continue };
-                    if rbx_dom::attributes::tags(instance.properties().get("Tags")).contains(&tag.as_str()) {
+                    if rbx_dom::attributes::tags(instance.properties().get("Tags"))
+                        .contains(&tag.as_str())
+                    {
                         found.push(r);
                     }
                     stack.extend(instance.children().iter().rev());
@@ -350,19 +374,24 @@ pub(crate) fn install_settings(lua: &Lua) -> Result<()> {
     theme.set("Name", "Dark")?;
     theme.set(
         "GetColor",
-        lua.create_function(|lua, (_, color, _modifier): (Value, Value, Option<Value>)| {
-            let text = match &color {
-                Value::String(s) => s.to_string_lossy().to_string(),
-                other => other.to_string()?,
-            };
-            let name = text.rsplit('.').next().unwrap_or("");
-            let [r, g, b] = palette(name);
-            lua.create_userdata(LuaColor3::new(r, g, b))
-        })?,
+        lua.create_function(
+            |lua, (_, color, _modifier): (Value, Value, Option<Value>)| {
+                let text = match &color {
+                    Value::String(s) => s.to_string_lossy().to_string(),
+                    other => other.to_string()?,
+                };
+                let name = text.rsplit('.').next().unwrap_or("");
+                let [r, g, b] = palette(name);
+                lua.create_userdata(LuaColor3::new(r, g, b))
+            },
+        )?,
     )?;
     theme.set(
         "ThemeChanged",
-        LuaSignal(SignalKey::new(Owner::Service("StudioTheme"), "ThemeChanged")),
+        LuaSignal(SignalKey::new(
+            Owner::Service("StudioTheme"),
+            "ThemeChanged",
+        )),
     )?;
     let studio = lua.create_table()?;
     studio.set("Theme", theme)?;
@@ -407,12 +436,21 @@ mod tests {
     }
 
     fn run(lua: &Lua, src: &str) {
-        scheduler::spawn(lua, lua.load(src).into_function().unwrap(), MultiValue::new()).unwrap();
+        scheduler::spawn(
+            lua,
+            lua.load(src).into_function().unwrap(),
+            MultiValue::new(),
+        )
+        .unwrap();
     }
 
     fn no_errors(env: &crate::plugin::env::Env) {
         let shared = env.shared.borrow();
-        let errors: Vec<_> = shared.output.iter().filter(|l| l.kind == OutputKind::Error).collect();
+        let errors: Vec<_> = shared
+            .output
+            .iter()
+            .filter(|l| l.kind == OutputKind::Error)
+            .collect();
         assert!(errors.is_empty(), "{errors:?}");
     }
 
@@ -503,13 +541,21 @@ mod tests {
         assert_eq!(g.get::<String>("encoded").unwrap(), "[1,2,[3,4]]");
         assert_eq!(g.get::<String>("again").unwrap(), "3");
         assert_eq!(g.get::<String>("empty").unwrap(), "[]");
-        assert!(g.get::<Value>("bad").unwrap().to_string().unwrap().contains("non-finite"));
+        assert!(g
+            .get::<Value>("bad")
+            .unwrap()
+            .to_string()
+            .unwrap()
+            .contains("non-finite"));
     }
 
     #[test]
     fn guid_format() {
         let (lua, env) = vm(WeakDom::new());
-        run(&lua, "wrapped = HttpService:GenerateGUID() bare = HttpService:GenerateGUID(false)");
+        run(
+            &lua,
+            "wrapped = HttpService:GenerateGUID() bare = HttpService:GenerateGUID(false)",
+        );
         no_errors(&env);
         let wrapped = lua.globals().get::<String>("wrapped").unwrap();
         let bare = lua.globals().get::<String>("bare").unwrap();
@@ -529,7 +575,10 @@ mod tests {
                 .cloned()
                 .unwrap(),
         );
-        run(&lua, "ok, err = pcall(HttpService.GetAsync, HttpService, 'http://127.0.0.1:1/')");
+        run(
+            &lua,
+            "ok, err = pcall(HttpService.GetAsync, HttpService, 'http://127.0.0.1:1/')",
+        );
         assert!(env.shared.borrow().http.busy());
         let mut finished = Vec::new();
         for _ in 0..250 {
@@ -542,21 +591,35 @@ mod tests {
         assert_eq!(finished.len(), 1);
         http_finished(&lua, finished).unwrap();
         assert!(!lua.globals().get::<bool>("ok").unwrap());
-        assert!(lua.globals().get::<String>("err").unwrap().contains("HttpService"));
+        assert!(lua
+            .globals()
+            .get::<String>("err")
+            .unwrap()
+            .contains("HttpService"));
     }
 
     #[test]
     fn http_prompt_then_denied() {
         let (lua, env) = vm(WeakDom::new());
-        run(&lua, "ok, err = pcall(HttpService.GetAsync, HttpService, 'https://example.com/x')");
+        run(
+            &lua,
+            "ok, err = pcall(HttpService.GetAsync, HttpService, 'https://example.com/x')",
+        );
         let prompt = match env.shared.borrow().requests.first() {
             Some(Request::Prompt { id, .. }) => *id,
             other => panic!("expected prompt, got {other:?}"),
         };
         http_permission_answered(&lua, prompt, &Answer::Allow(false)).unwrap();
-        assert!(lua.globals().get::<String>("err").unwrap().contains("example.com"));
+        assert!(lua
+            .globals()
+            .get::<String>("err")
+            .unwrap()
+            .contains("example.com"));
         let shared = env.shared.borrow();
-        assert_eq!(shared.settings["Test"]["__rbxnative_http"]["example.com"], false);
+        assert_eq!(
+            shared.settings["Test"]["__rbxnative_http"]["example.com"],
+            false
+        );
     }
 
     #[test]

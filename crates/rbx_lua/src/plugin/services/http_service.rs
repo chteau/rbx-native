@@ -33,13 +33,17 @@ pub(super) fn index(lua: &Lua, key: &str) -> Result<Value> {
             serde_json::to_string(&json).map_err(mlua::Error::external)
         })?,
         "JSONDecode" => func(lua, |lua, (_, text): (Value, String)| {
-            let json: serde_json::Value =
-                serde_json::from_str(&text).map_err(|e| mlua::Error::runtime(format!("Can't parse JSON: {e}")))?;
+            let json: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| mlua::Error::runtime(format!("Can't parse JSON: {e}")))?;
             from_json(lua, &json)
         })?,
         "GenerateGUID" => func(lua, |_, (_, wrap): (Value, Option<bool>)| {
             let guid = uuid::Uuid::new_v4().hyphenated().to_string().to_uppercase();
-            Ok(if wrap == Some(false) { guid } else { format!("{{{guid}}}") })
+            Ok(if wrap == Some(false) {
+                guid
+            } else {
+                format!("{{{guid}}}")
+            })
         })?,
         "UrlEncode" => func(lua, |_, (_, text): (Value, String)| Ok(url_encode(&text)))?,
         "RequestAsync" => yielding(lua, |lua, (_, options): (Value, Table)| {
@@ -61,15 +65,35 @@ pub(super) fn index(lua: &Lua, key: &str) -> Result<Value> {
             begin(lua, request, Mode::Response)
         })?,
         "GetAsync" => yielding(lua, |lua, (_, url): (Value, String)| {
-            let request = HttpRequest { url, method: "GET".into(), headers: Vec::new(), body: None };
+            let request = HttpRequest {
+                url,
+                method: "GET".into(),
+                headers: Vec::new(),
+                body: None,
+            };
             begin(lua, request, Mode::Body)
         })?,
-        "PostAsync" => yielding(lua, |lua, (_, url, body, content_type): (Value, String, String, Option<String>)| {
-            let headers = vec![("Content-Type".to_string(), content_type.unwrap_or_else(|| "application/json".into()))];
-            let request = HttpRequest { url, method: "POST".into(), headers, body: Some(body) };
-            begin(lua, request, Mode::Body)
-        })?,
-        _ => return Err(mlua::Error::runtime(format!("{key} is not a valid member of HttpService"))),
+        "PostAsync" => yielding(
+            lua,
+            |lua, (_, url, body, content_type): (Value, String, String, Option<String>)| {
+                let headers = vec![(
+                    "Content-Type".to_string(),
+                    content_type.unwrap_or_else(|| "application/json".into()),
+                )];
+                let request = HttpRequest {
+                    url,
+                    method: "POST".into(),
+                    headers,
+                    body: Some(body),
+                };
+                begin(lua, request, Mode::Body)
+            },
+        )?,
+        _ => {
+            return Err(mlua::Error::runtime(format!(
+                "{key} is not a valid member of HttpService"
+            )))
+        }
     })
 }
 
@@ -81,7 +105,10 @@ where
     Ok(Value::Function(lua.create_function(f)?))
 }
 
-fn yielding<A: mlua::FromLuaMulti>(lua: &Lua, start: impl Fn(&Lua, A) -> Result<AwaitId> + 'static) -> Result<Value> {
+fn yielding<A: mlua::FromLuaMulti>(
+    lua: &Lua,
+    start: impl Fn(&Lua, A) -> Result<AwaitId> + 'static,
+) -> Result<Value> {
     let start: Function = lua.create_function(start)?;
     Ok(Value::Function(scheduler::yielding(lua, start)?))
 }
@@ -89,8 +116,9 @@ fn yielding<A: mlua::FromLuaMulti>(lua: &Lua, start: impl Fn(&Lua, A) -> Result<
 /// Checks the plugin may talk to the request's host, then sends it, or
 /// parks it behind a permission prompt.
 fn begin(lua: &Lua, request: HttpRequest, mode: Mode) -> Result<AwaitId> {
-    let host = host_of(&request.url)
-        .ok_or_else(|| mlua::Error::runtime(format!("HttpService: invalid URL \"{}\"", request.url)))?;
+    let host = host_of(&request.url).ok_or_else(|| {
+        mlua::Error::runtime(format!("HttpService: invalid URL \"{}\"", request.url))
+    })?;
     let env = env(lua);
     let id = scheduler::new_await(lua);
     state(lua).borrow_mut().modes.insert(id, mode);
@@ -193,7 +221,11 @@ pub(super) fn finished(lua: &Lua, finished: Vec<Finished>) -> Result<()> {
         if owner != plugin {
             continue;
         }
-        let mode = state(lua).borrow_mut().modes.remove(&id).unwrap_or(Mode::Response);
+        let mode = state(lua)
+            .borrow_mut()
+            .modes
+            .remove(&id)
+            .unwrap_or(Mode::Response);
         let outcome = match (result, mode) {
             (Err(message), _) => Err(format!("HttpService: {message}")),
             (Ok(response), Mode::Response) => {
@@ -210,7 +242,9 @@ pub(super) fn finished(lua: &Lua, finished: Vec<Finished>) -> Result<()> {
                 Ok(MultiValue::from_vec(vec![Value::Table(table)]))
             }
             (Ok(response), Mode::Body) if response.success => {
-                Ok(MultiValue::from_vec(vec![Value::String(lua.create_string(&response.body)?)]))
+                Ok(MultiValue::from_vec(vec![Value::String(
+                    lua.create_string(&response.body)?,
+                )]))
             }
             (Ok(response), Mode::Body) => Err(format!(
                 "HTTP {} ({})",
@@ -226,7 +260,9 @@ fn url_encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -238,12 +274,14 @@ fn url_encode(text: &str) -> String {
 fn to_json(value: &Value, depth: usize) -> Result<serde_json::Value> {
     use serde_json::Value as J;
     if depth > MAX_DEPTH {
-        return Err(mlua::Error::runtime("Cannot convert: table nested too deeply"));
+        return Err(mlua::Error::runtime(
+            "Cannot convert: table nested too deeply",
+        ));
     }
     Ok(match value {
         Value::Nil => J::Null,
         Value::Boolean(b) => J::Bool(*b),
-        Value::Integer(i) => J::from(*i as i64),
+        Value::Integer(i) => J::from(*i),
         Value::Number(n) => number(*n)?,
         Value::String(s) => J::String(s.to_string_lossy().to_string()),
         Value::Table(table) => {
@@ -260,9 +298,14 @@ fn to_json(value: &Value, depth: usize) -> Result<serde_json::Value> {
                 for pair in table.pairs::<Value, Value>() {
                     let (key, value) = pair?;
                     let Value::String(key) = key else {
-                        return Err(mlua::Error::runtime("Cannot convert table with mixed or non-string keys to JSON"));
+                        return Err(mlua::Error::runtime(
+                            "Cannot convert table with mixed or non-string keys to JSON",
+                        ));
                     };
-                    map.insert(key.to_string_lossy().to_string(), to_json(&value, depth + 1)?);
+                    map.insert(
+                        key.to_string_lossy().to_string(),
+                        to_json(&value, depth + 1)?,
+                    );
                 }
                 J::Object(map)
             }
@@ -278,7 +321,9 @@ fn to_json(value: &Value, depth: usize) -> Result<serde_json::Value> {
 
 fn number(n: f64) -> Result<serde_json::Value> {
     if !n.is_finite() {
-        return Err(mlua::Error::runtime("Can't convert a non-finite number to JSON"));
+        return Err(mlua::Error::runtime(
+            "Can't convert a non-finite number to JSON",
+        ));
     }
     if n.fract() == 0.0 && n.abs() < 9.0e15 {
         return Ok(serde_json::Value::from(n as i64));

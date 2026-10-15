@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use mlua::{AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, UserData, UserDataMethods, Value};
+use mlua::{
+    AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, UserData, UserDataMethods, Value,
+};
 use rbx_dom::Ref;
 
 use super::api::{Arg, UiId};
@@ -37,7 +39,10 @@ pub(crate) struct SignalKey {
 
 impl SignalKey {
     pub(crate) fn new(owner: Owner, event: impl Into<String>) -> Self {
-        SignalKey { owner, event: event.into() }
+        SignalKey {
+            owner,
+            event: event.into(),
+        }
     }
 }
 
@@ -104,7 +109,10 @@ pub(crate) struct LuaConnection {
 
 fn connect(lua: &Lua, key: &SignalKey, func: Function, once: bool) -> LuaConnection {
     let id = env(lua).signals.borrow_mut().connect(key, func, once);
-    LuaConnection { key: key.clone(), id }
+    LuaConnection {
+        key: key.clone(),
+        id,
+    }
 }
 
 fn wait_function(lua: &Lua) -> Result<Function> {
@@ -114,7 +122,8 @@ fn wait_function(lua: &Lua) -> Result<Function> {
     let start = lua.create_function(|lua, this: AnyUserData| {
         let key = this.borrow::<LuaSignal>()?.0.clone();
         let id = scheduler::new_await(lua);
-        let resolver = lua.create_function(move |lua, args: MultiValue| scheduler::resolve(lua, id, Ok(args)))?;
+        let resolver = lua
+            .create_function(move |lua, args: MultiValue| scheduler::resolve(lua, id, Ok(args)))?;
         env(lua).signals.borrow_mut().connect(&key, resolver, true);
         Ok(id)
     })?;
@@ -125,19 +134,27 @@ fn wait_function(lua: &Lua) -> Result<Function> {
 
 impl UserData for LuaSignal {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("Connect", |lua, this, func: Function| Ok(connect(lua, &this.0, func, false)));
+        methods.add_method("Connect", |lua, this, func: Function| {
+            Ok(connect(lua, &this.0, func, false))
+        });
         methods.add_method("ConnectParallel", |lua, this, func: Function| {
             Ok(connect(lua, &this.0, func, false))
         });
-        methods.add_method("Once", |lua, this, func: Function| Ok(connect(lua, &this.0, func, true)));
-        methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| match key.as_str() {
-            "Wait" => wait_function(lua).map(Value::Function),
-            _ => Err(mlua::Error::runtime(format!(
-                "{key} is not a valid member of Signal {}",
-                this.0.event
-            ))),
+        methods.add_method("Once", |lua, this, func: Function| {
+            Ok(connect(lua, &this.0, func, true))
         });
-        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(format!("Signal {}", this.0.event)));
+        methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
+            match key.as_str() {
+                "Wait" => wait_function(lua).map(Value::Function),
+                _ => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of Signal {}",
+                    this.0.event
+                ))),
+            }
+        });
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+            Ok(format!("Signal {}", this.0.event))
+        });
     }
 }
 
@@ -147,18 +164,20 @@ impl UserData for LuaConnection {
             env(lua).signals.borrow_mut().disconnect(&this.key, this.id);
             Ok(())
         });
-        methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| match key.as_str() {
-            "Connected" => {
-                let env = env(lua);
-                let signals = env.signals.borrow();
-                Ok(signals
-                    .connections
-                    .get(&this.key)
-                    .is_some_and(|c| c.iter().any(|c| c.id == this.id)))
+        methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
+            match key.as_str() {
+                "Connected" => {
+                    let env = env(lua);
+                    let signals = env.signals.borrow();
+                    Ok(signals
+                        .connections
+                        .get(&this.key)
+                        .is_some_and(|c| c.iter().any(|c| c.id == this.id)))
+                }
+                _ => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of RBXScriptConnection"
+                ))),
             }
-            _ => Err(mlua::Error::runtime(format!(
-                "{key} is not a valid member of RBXScriptConnection"
-            ))),
         });
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("Connection"));
     }
@@ -219,7 +238,12 @@ mod tests {
     }
 
     fn run(lua: &Lua, src: &str) {
-        scheduler::spawn(lua, lua.load(src).into_function().unwrap(), MultiValue::new()).unwrap();
+        scheduler::spawn(
+            lua,
+            lua.load(src).into_function().unwrap(),
+            MultiValue::new(),
+        )
+        .unwrap();
     }
 
     fn num(lua: &Lua, name: &str) -> Option<f64> {
@@ -232,7 +256,10 @@ mod tests {
         run(&lua, "sig:Connect(function(a, b) x = a + b end)");
         fire(&lua, &key, &[Arg::Number(2.0), Arg::Number(3.0)]).unwrap();
         assert_eq!(num(&lua, "x"), Some(5.0));
-        assert_eq!(lua.load("return tostring(sig)").eval::<String>().unwrap(), "Signal Test");
+        assert_eq!(
+            lua.load("return tostring(sig)").eval::<String>().unwrap(),
+            "Signal Test"
+        );
     }
 
     #[test]

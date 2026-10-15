@@ -39,7 +39,11 @@ impl Http {
     /// returned as a response rather than an error; only transport failures
     /// are `Err`). Its result comes back from [`Http::poll`].
     pub(crate) fn start(&mut self, plugin: PluginId, id: AwaitId, request: HttpRequest) {
-        let sender = self.channel.get_or_insert_with(std::sync::mpsc::channel).0.clone();
+        let sender = self
+            .channel
+            .get_or_insert_with(std::sync::mpsc::channel)
+            .0
+            .clone();
         self.in_flight += 1;
         std::thread::spawn(move || {
             let result = send(&request);
@@ -103,9 +107,14 @@ fn send(request: &HttpRequest) -> Result<HttpResponse, String> {
     let headers = response
         .headers()
         .iter()
-        .filter_map(|(name, value)| Some((name.as_str().to_string(), value.to_str().ok()?.to_string())))
+        .filter_map(|(name, value)| {
+            Some((name.as_str().to_string(), value.to_str().ok()?.to_string()))
+        })
         .collect();
-    let body = response.body_mut().read_to_string().map_err(|e| e.to_string())?;
+    let body = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| e.to_string())?;
     Ok(HttpResponse {
         success: status.is_success(),
         status_code: status.as_u16(),
@@ -121,7 +130,10 @@ mod tests {
 
     #[test]
     fn host_of_strips_scheme_port_and_path() {
-        assert_eq!(host_of("https://API.Example.com:8080/x?y").as_deref(), Some("api.example.com"));
+        assert_eq!(
+            host_of("https://API.Example.com:8080/x?y").as_deref(),
+            Some("api.example.com")
+        );
         assert_eq!(host_of("http://u:p@a.b/").as_deref(), Some("a.b"));
         assert_eq!(host_of("ftp://a.b"), None);
         assert_eq!(host_of("https:///x"), None);

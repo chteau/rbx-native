@@ -49,8 +49,19 @@ const GUI_OBJECT_SIGNALS: &[&str] = &[
 ];
 const GUI_BUTTON_SIGNALS: &[&str] = &["MouseButton1Click", "MouseButton2Click", "Activated"];
 const TEXT_BOX_SIGNALS: &[&str] = &["Focused", "FocusLost"];
-const HANDLES_SIGNALS: &[&str] = &["MouseButton1Down", "MouseButton1Up", "MouseDrag", "MouseEnter", "MouseLeave"];
-const HANDLE_ADORNMENT_SIGNALS: &[&str] = &["MouseButton1Down", "MouseButton1Up", "MouseEnter", "MouseLeave"];
+const HANDLES_SIGNALS: &[&str] = &[
+    "MouseButton1Down",
+    "MouseButton1Up",
+    "MouseDrag",
+    "MouseEnter",
+    "MouseLeave",
+];
+const HANDLE_ADORNMENT_SIGNALS: &[&str] = &[
+    "MouseButton1Down",
+    "MouseButton1Up",
+    "MouseEnter",
+    "MouseLeave",
+];
 const PLUGIN_GUI_SIGNALS: &[&str] = &["WindowFocused", "WindowFocusReleased"];
 const NORMAL_IDS: [&str; 6] = ["Right", "Top", "Back", "Left", "Bottom", "Front"];
 const AXES: [&str; 3] = ["X", "Y", "Z"];
@@ -67,7 +78,9 @@ fn with_state<R>(lua: &Lua, f: impl FnOnce(&mut EventState) -> R) -> R {
     if lua.app_data_ref::<EventState>().is_none() {
         lua.set_app_data(EventState::default());
     }
-    let mut state = lua.app_data_mut::<EventState>().expect("event state was just installed");
+    let mut state = lua
+        .app_data_mut::<EventState>()
+        .expect("event state was just installed");
     f(&mut state)
 }
 
@@ -140,7 +153,9 @@ fn ref_key(referent: Ref) -> String {
 
 fn read_attributes(ctx: &Ctx, referent: Ref) -> BTreeMap<String, Variant> {
     let dom = ctx.dom();
-    let blob = dom.get(referent).and_then(|i| i.properties().get(ATTRIBUTES));
+    let blob = dom
+        .get(referent)
+        .and_then(|i| i.properties().get(ATTRIBUTES));
     rbx_dom::attributes::decode(blob)
 }
 
@@ -187,14 +202,24 @@ fn set_attribute(ctx: &Ctx, referent: Ref, name: &str, value: Option<Variant>) -
     let raw = rbx_dom::attributes::encode(&attributes, |_| None)
         .ok_or_else(|| mlua::Error::runtime("these attributes cannot be written back"))?;
     ctx.dom_mut()
-        .set_property(referent, ATTRIBUTES, Variant::Unknown { type_id: STRING_TYPE_ID, raw })
+        .set_property(
+            referent,
+            ATTRIBUTES,
+            Variant::Unknown {
+                type_id: STRING_TYPE_ID,
+                raw,
+            },
+        )
         .map_err(|e| mlua::Error::runtime(e.to_string()))?;
     Ok(())
 }
 
 fn signal_getter(lua: &Lua, referent: Ref, prefix: &'static str) -> Result<Value> {
     lua.create_function(move |_, (_this, name): (Value, String)| {
-        Ok(LuaSignal(instance_key(referent, format!("{prefix}:{name}"))))
+        Ok(LuaSignal(instance_key(
+            referent,
+            format!("{prefix}:{name}"),
+        )))
     })
     .map(Value::Function)
 }
@@ -252,7 +277,13 @@ fn instance_function(lua: &Lua, ctx: &Ctx, referent: Ref, key: &str) -> Result<O
     Ok(Some(Value::Function(f)))
 }
 
-fn class_function(lua: &Lua, db: &ReflectionDatabase, referent: Ref, class: &str, key: &str) -> Result<Option<Value>> {
+fn class_function(
+    lua: &Lua,
+    db: &ReflectionDatabase,
+    referent: Ref,
+    class: &str,
+    key: &str,
+) -> Result<Option<Value>> {
     let is = |base: &str| db.is_subclass_of(class, base);
     let f = match key {
         "CaptureFocus" if is("TextBox") => lua.create_function(move |lua, _this: Value| {
@@ -268,22 +299,31 @@ fn class_function(lua: &Lua, db: &ReflectionDatabase, referent: Ref, class: &str
                 was
             });
             if was {
-                signal::fire(lua, &instance_key(referent, "FocusLost"), &[Arg::Bool(false), Arg::Nil])?;
+                signal::fire(
+                    lua,
+                    &instance_key(referent, "FocusLost"),
+                    &[Arg::Bool(false), Arg::Nil],
+                )?;
             }
             Ok(())
         })?,
-        "IsFocused" if is("TextBox") => {
-            lua.create_function(move |lua, _this: Value| Ok(with_state(lua, |s| s.focused == Some(referent))))?
-        }
-        "Fire" if is("BindableEvent") => lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-            signal::fire_values(lua, &instance_key(referent, "Event"), args)
+        "IsFocused" if is("TextBox") => lua.create_function(move |lua, _this: Value| {
+            Ok(with_state(lua, |s| s.focused == Some(referent)))
         })?,
+        "Fire" if is("BindableEvent") => {
+            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
+                signal::fire_values(lua, &instance_key(referent, "Event"), args)
+            })?
+        }
         "Invoke" if is("BindableFunction") => {
             lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-                let callback: Option<Function> = registry_table(lua, ON_INVOKE_KEY)?.get(ref_key(referent))?;
+                let callback: Option<Function> =
+                    registry_table(lua, ON_INVOKE_KEY)?.get(ref_key(referent))?;
                 match callback {
                     Some(callback) => callback.call::<MultiValue>(args),
-                    None => Err(mlua::Error::runtime("OnInvoke is not set on this BindableFunction")),
+                    None => Err(mlua::Error::runtime(
+                        "OnInvoke is not set on this BindableFunction",
+                    )),
                 }
             })?
         }
@@ -292,10 +332,14 @@ fn class_function(lua: &Lua, db: &ReflectionDatabase, referent: Ref, class: &str
                 registry_table(lua, BIND_TO_CLOSE_KEY)?.set(ref_key(referent), callback)
             })?
         }
-        "GetRelativeMousePosition" if is("PluginGui") => lua.create_function(move |lua, _this: Value| {
-            let (x, y) = with_state(lua, |s| s.pointer.get(&referent).copied().unwrap_or((0.0, 0.0)));
-            lua.create_userdata(LuaVector2(Vector2Data { x, y }))
-        })?,
+        "GetRelativeMousePosition" if is("PluginGui") => {
+            lua.create_function(move |lua, _this: Value| {
+                let (x, y) = with_state(lua, |s| {
+                    s.pointer.get(&referent).copied().unwrap_or((0.0, 0.0))
+                });
+                lua.create_userdata(LuaVector2(Vector2Data { x, y }))
+            })?
+        }
         "HostWidgetWasRestored" if is("PluginGui") => return Ok(Some(Value::Boolean(false))),
         _ => return Ok(None),
     };
@@ -303,7 +347,14 @@ fn class_function(lua: &Lua, db: &ReflectionDatabase, referent: Ref, class: &str
 }
 
 impl Hooks for PluginHooks {
-    fn index(&self, lua: &Lua, ctx: &Ctx, referent: Ref, class: &str, key: &str) -> Result<Option<Value>> {
+    fn index(
+        &self,
+        lua: &Lua,
+        ctx: &Ctx,
+        referent: Ref,
+        class: &str,
+        key: &str,
+    ) -> Result<Option<Value>> {
         let db = ctx.database();
         if is_signal(db, class, key) {
             return lua
@@ -316,7 +367,15 @@ impl Hooks for PluginHooks {
         class_function(lua, db, referent, class, key)
     }
 
-    fn new_index(&self, lua: &Lua, ctx: &Ctx, referent: Ref, class: &str, key: &str, value: &Value) -> Result<bool> {
+    fn new_index(
+        &self,
+        lua: &Lua,
+        ctx: &Ctx,
+        referent: Ref,
+        class: &str,
+        key: &str,
+        value: &Value,
+    ) -> Result<bool> {
         let db = ctx.database();
         if key == "OnInvoke" && db.is_subclass_of(class, "BindableFunction") {
             let callback = match value {
@@ -400,7 +459,12 @@ fn fire_parent(lua: &Lua, referent: Ref, old: Option<Ref>, new: Option<Ref>) -> 
     };
     let parent = new.map_or(Arg::Nil, Arg::Instance);
     for r in moved {
-        emit(lua, r, "AncestryChanged", &[Arg::Instance(referent), parent.clone()])?;
+        emit(
+            lua,
+            r,
+            "AncestryChanged",
+            &[Arg::Instance(referent), parent.clone()],
+        )?;
     }
     let child = [Arg::Instance(referent)];
     if let Some(old) = old {
@@ -441,8 +505,18 @@ pub(crate) fn fire_changes(lua: &Lua, changes: &[Change]) -> Result<()> {
                 emit(lua, *referent, &format!("Changed:{name}"), &[])?;
                 if name == ATTRIBUTES || name == "Attributes" {
                     for attribute in read_attributes(&ctx, *referent).into_keys() {
-                        emit(lua, *referent, "AttributeChanged", &[Arg::String(attribute.clone())])?;
-                        emit(lua, *referent, &format!("AttributeChanged:{attribute}"), &[])?;
+                        emit(
+                            lua,
+                            *referent,
+                            "AttributeChanged",
+                            &[Arg::String(attribute.clone())],
+                        )?;
+                        emit(
+                            lua,
+                            *referent,
+                            &format!("AttributeChanged:{attribute}"),
+                            &[],
+                        )?;
                     }
                 }
             }
@@ -510,15 +584,30 @@ pub(crate) fn fire_gui(lua: &Lua, event: &GuiEvent) -> Result<()> {
         }
         GuiEventKind::Down { button, x, y } => {
             remember_pointer(lua, r, *x, *y);
-            emit(lua, r, &format!("MouseButton{}Down", button_name(*button)), &at(*x, *y))
+            emit(
+                lua,
+                r,
+                &format!("MouseButton{}Down", button_name(*button)),
+                &at(*x, *y),
+            )
         }
         GuiEventKind::Up { button, x, y } => {
             remember_pointer(lua, r, *x, *y);
-            emit(lua, r, &format!("MouseButton{}Up", button_name(*button)), &at(*x, *y))
+            emit(
+                lua,
+                r,
+                &format!("MouseButton{}Up", button_name(*button)),
+                &at(*x, *y),
+            )
         }
         GuiEventKind::Click { button, x, y } => {
             remember_pointer(lua, r, *x, *y);
-            emit(lua, r, &format!("MouseButton{}Click", button_name(*button)), &[])?;
+            emit(
+                lua,
+                r,
+                &format!("MouseButton{}Click", button_name(*button)),
+                &[],
+            )?;
             if *button != 2 && ctx.database().is_subclass_of(&class, "GuiButton") {
                 emit(lua, r, "Activated", &[])?;
             }
@@ -541,7 +630,11 @@ pub(crate) fn fire_gui(lua: &Lua, event: &GuiEvent) -> Result<()> {
             emit(lua, r, "FocusLost", &[Arg::Bool(*enter), Arg::Nil])
         }
         GuiEventKind::Scroll { dy } => {
-            let event = if *dy > 0.0 { "MouseWheelBackward" } else { "MouseWheelForward" };
+            let event = if *dy > 0.0 {
+                "MouseWheelBackward"
+            } else {
+                "MouseWheelForward"
+            };
             let (x, y) = with_state(lua, |s| s.pointer.get(&r).copied().unwrap_or((0.0, 0.0)));
             emit(lua, r, event, &at(x, y))
         }
@@ -551,7 +644,11 @@ pub(crate) fn fire_gui(lua: &Lua, event: &GuiEvent) -> Result<()> {
 fn enum_arg(enum_name: &str, names: &[&str], value: u8) -> Arg {
     Arg::Enum {
         enum_name: enum_name.to_string(),
-        item: names.get(usize::from(value)).copied().unwrap_or(names[0]).to_string(),
+        item: names
+            .get(usize::from(value))
+            .copied()
+            .unwrap_or(names[0])
+            .to_string(),
     }
 }
 
@@ -565,18 +662,29 @@ pub(crate) fn fire_handle(lua: &Lua, event: &HandleEvent) -> Result<()> {
     let axis = |a: u8| enum_arg("Axis", &AXES, a);
     match &event.kind {
         HandleEventKind::Down { face: f } => emit(lua, r, "MouseButton1Down", &[face(*f)]),
-        HandleEventKind::Drag { face: f, distance } => {
-            emit(lua, r, "MouseDrag", &[face(*f), Arg::Number(f64::from(*distance))])
-        }
+        HandleEventKind::Drag { face: f, distance } => emit(
+            lua,
+            r,
+            "MouseDrag",
+            &[face(*f), Arg::Number(f64::from(*distance))],
+        ),
         HandleEventKind::Up { face: f } => emit(lua, r, "MouseButton1Up", &[face(*f)]),
         HandleEventKind::Enter { face: f } => emit(lua, r, "MouseEnter", &[face(*f)]),
         HandleEventKind::Leave { face: f } => emit(lua, r, "MouseLeave", &[face(*f)]),
         HandleEventKind::ArcDown { axis: a } => emit(lua, r, "MouseButton1Down", &[axis(*a)]),
-        HandleEventKind::ArcDrag { axis: a, angle, delta_radius } => emit(
+        HandleEventKind::ArcDrag {
+            axis: a,
+            angle,
+            delta_radius,
+        } => emit(
             lua,
             r,
             "MouseDrag",
-            &[axis(*a), Arg::Number(f64::from(*angle)), Arg::Number(f64::from(*delta_radius))],
+            &[
+                axis(*a),
+                Arg::Number(f64::from(*angle)),
+                Arg::Number(f64::from(*delta_radius)),
+            ],
         ),
         HandleEventKind::ArcUp { axis: a } => emit(lua, r, "MouseButton1Up", &[axis(*a)]),
         HandleEventKind::ArcEnter { axis: a } => emit(lua, r, "MouseEnter", &[axis(*a)]),
@@ -609,7 +717,9 @@ mod tests {
         let (lua, env, slot) = test_vm(dom, true);
         slot.borrow_mut().take_changes();
         for (name, r) in globals {
-            lua.globals().set(name, LuaInstance::new(r, env.ctx.clone())).unwrap();
+            lua.globals()
+                .set(name, LuaInstance::new(r, env.ctx.clone()))
+                .unwrap();
         }
         Vm { lua, slot }
     }
@@ -695,7 +805,14 @@ mod tests {
             "b.MouseButton1Click:Connect(function() clicked = true end) \
              b.Activated:Connect(function() activated = true end)",
         );
-        let event = GuiEvent { referent: button.unwrap(), kind: GuiEventKind::Click { button: 1, x: 1.0, y: 2.0 } };
+        let event = GuiEvent {
+            referent: button.unwrap(),
+            kind: GuiEventKind::Click {
+                button: 1,
+                x: 1.0,
+                y: 2.0,
+            },
+        };
         fire_gui(&vm.lua, &event).unwrap();
         assert!(vm.get::<bool>("clicked"));
         assert!(vm.get::<bool>("activated"));
@@ -710,7 +827,14 @@ mod tests {
             vec![("t", r)]
         });
         let r = text_box.unwrap();
-        fire_gui(&vm.lua, &GuiEvent { referent: r, kind: GuiEventKind::TextChanged("typed".into()) }).unwrap();
+        fire_gui(
+            &vm.lua,
+            &GuiEvent {
+                referent: r,
+                kind: GuiEventKind::TextChanged("typed".into()),
+            },
+        )
+        .unwrap();
         let dom = vm.slot.borrow();
         assert_eq!(
             dom.get(r).unwrap().properties().get("Text"),
@@ -727,7 +851,13 @@ mod tests {
             vec![("h", r)]
         });
         vm.run("h.MouseDrag:Connect(function(face, d) faceName = face.Name dist = d end)");
-        let event = HandleEvent { referent: handles.unwrap(), kind: HandleEventKind::Drag { face: 1, distance: 3.5 } };
+        let event = HandleEvent {
+            referent: handles.unwrap(),
+            kind: HandleEventKind::Drag {
+                face: 1,
+                distance: 3.5,
+            },
+        };
         fire_handle(&vm.lua, &event).unwrap();
         assert_eq!(vm.get::<String>("faceName"), "Top");
         assert_eq!(vm.get::<f64>("dist"), 3.5);

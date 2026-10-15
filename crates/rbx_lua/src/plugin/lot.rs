@@ -59,6 +59,7 @@ impl Lot {
     /// - `Added` for an instance visible now is kept, `Removed` for one
     ///   visible before is kept, any other change is kept only when the
     ///   instance is visible both before (or was added) and after.
+    ///
     /// Order is otherwise the log's.
     pub(crate) fn split(
         &mut self,
@@ -72,10 +73,7 @@ impl Lot {
             .copied()
             .filter(|root| !merge.place_roots.contains(root))
             .collect();
-        let hidden_after = park
-            .iter()
-            .flat_map(|&root| subtree(dom, root))
-            .collect();
+        let hidden_after = park.iter().flat_map(|&root| subtree(dom, root)).collect();
         let created = log
             .iter()
             .filter_map(|change| match change {

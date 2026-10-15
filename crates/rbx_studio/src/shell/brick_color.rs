@@ -129,13 +129,16 @@ fn opening_cell(current: Option<u32>) -> usize {
         .unwrap_or(0)
 }
 
+/// Called with a picked colour's number.
+pub(super) type OnPick = std::rc::Rc<dyn Fn(&mut Shell, u32, &mut Context<Shell>)>;
+
 /// Where a pick goes.
 #[derive(Clone)]
 pub(super) enum BrickTarget {
     /// Committed through this Properties row.
     Row(String),
     /// Handed the colour's number.
-    Prompt(std::rc::Rc<dyn Fn(&mut Shell, u32, &mut Context<Shell>)>),
+    Prompt(OnPick),
 }
 
 /// What one render of the open picker needs.

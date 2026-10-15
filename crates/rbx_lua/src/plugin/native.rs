@@ -43,7 +43,10 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
         lua.create_function(|lua, text: String| {
             let env = env(lua);
             let plugin = env.plugin;
-            env.shared.borrow_mut().requests.push(Request::Notify { plugin, text });
+            env.shared
+                .borrow_mut()
+                .requests
+                .push(Request::Notify { plugin, text });
             Ok(())
         })?,
     )?;
@@ -51,7 +54,14 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
     table.set(
         "command",
         lua.create_function(
-            |lua, (id, text, callback, tooltip, icon): (String, String, Function, Option<String>, Option<String>)| {
+            |lua,
+             (id, text, callback, tooltip, icon): (
+                String,
+                String,
+                Function,
+                Option<String>,
+                Option<String>,
+            )| {
                 let env = env(lua);
                 let button = plugin_object::toolbar_button(
                     lua,
@@ -65,11 +75,15 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
                 let mut signals = env.signals.borrow_mut();
                 signals.next += 1;
                 let conn_id = signals.next;
-                signals.connections.entry(key).or_default().push(Connection {
-                    id: conn_id,
-                    func: callback,
-                    once: false,
-                });
+                signals
+                    .connections
+                    .entry(key)
+                    .or_default()
+                    .push(Connection {
+                        id: conn_id,
+                        func: callback,
+                        once: false,
+                    });
                 Ok(())
             },
         )?,
@@ -112,6 +126,8 @@ pub(crate) fn allowed(lua: &Lua, permission: &Permission) -> bool {
         return true;
     };
     manifest.permissions.iter().any(|p| {
-        p == permission || (matches!(permission, Permission::Http(_)) && *p == Permission::Http("*".to_string()))
+        p == permission
+            || (matches!(permission, Permission::Http(_))
+                && *p == Permission::Http("*".to_string()))
     })
 }

@@ -23,7 +23,10 @@ impl Shell {
     /// its icon (resolved by `icon_path`, a generic plug icon otherwise),
     /// its text, its tooltip, the selected look while `active`, disabled
     /// while not `enabled`; clicking it sends `Input::ButtonClicked`.
-    pub(in crate::shell) fn plugin_ribbon_groups(&self, cx: &mut Context<Self>) -> Vec<Vec<AnyElement>> {
+    pub(in crate::shell) fn plugin_ribbon_groups(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Vec<Vec<AnyElement>> {
         let mut groups = Vec::new();
 
         for toolbar in &self.plugins.ui.toolbars {

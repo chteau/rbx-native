@@ -59,7 +59,12 @@ fn studio_dir_candidates() -> Vec<PathBuf> {
 #[cfg(target_os = "macos")]
 fn studio_dir_candidates() -> Vec<PathBuf> {
     std::env::var_os("HOME")
-        .map(|home| vec![PathBuf::from(home).join("Documents").join("Roblox").join("Plugins")])
+        .map(|home| {
+            vec![PathBuf::from(home)
+                .join("Documents")
+                .join("Roblox")
+                .join("Plugins")]
+        })
         .unwrap_or_default()
 }
 
@@ -175,10 +180,8 @@ mod tests {
 
     impl TempDir {
         fn new(tag: &str) -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "rbx-discover-{tag}-{}",
-                std::process::id()
-            ));
+            let path =
+                std::env::temp_dir().join(format!("rbx-discover-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&path);
             std::fs::create_dir_all(&path).expect("create temp dir");
             Self(path)

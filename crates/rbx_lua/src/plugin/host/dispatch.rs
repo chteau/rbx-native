@@ -11,7 +11,9 @@ use rbx_dom::{Change, Ref, Variant, WeakDom};
 
 use super::{Loaded, PluginHost};
 use crate::ctx::Ctx;
-use crate::plugin::api::{Arg, Context, DebuggerView, Input, Origin, Outcome, OutputKind, SourceBody};
+use crate::plugin::api::{
+    Arg, Context, DebuggerView, Input, Origin, Outcome, OutputKind, SourceBody,
+};
 use crate::plugin::env::Env;
 use crate::plugin::scheduler::{self, Scheduler};
 use crate::plugin::signal::{self, Owner, SignalKey, Signals};
@@ -23,7 +25,12 @@ const ROUNDS: usize = 8;
 /// widget root's referent printed with `{:?}`.
 const BIND_TO_CLOSE_KEY: &str = "__plugin_bind_to_close";
 
-pub(super) fn run(host: &mut PluginHost, dom: &mut WeakDom, context: Context, input: Input) -> Outcome {
+pub(super) fn run(
+    host: &mut PluginHost,
+    dom: &mut WeakDom,
+    context: Context,
+    input: Input,
+) -> Outcome {
     std::mem::swap(&mut *host.dom.borrow_mut(), dom);
     let debugger_before = {
         let mut shared = host.shared.borrow_mut();
@@ -57,7 +64,8 @@ pub(super) fn run(host: &mut PluginHost, dom: &mut WeakDom, context: Context, in
 
     let mut shared = host.shared.borrow_mut();
     shared.deadline = None;
-    let selection = std::mem::take(&mut shared.selection_written).then(|| shared.context.selection.clone());
+    let selection =
+        std::mem::take(&mut shared.selection_written).then(|| shared.context.selection.clone());
     Outcome {
         changes,
         selection,
@@ -116,7 +124,9 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
         }
         Input::Tick => tick(host),
         Input::ButtonClicked(id) => fire_all(host, &SignalKey::new(Owner::Ui(id), "Click"), &[]),
-        Input::ActionTriggered(id) => fire_all(host, &SignalKey::new(Owner::Ui(id), "Triggered"), &[]),
+        Input::ActionTriggered(id) => {
+            fire_all(host, &SignalKey::new(Owner::Ui(id), "Triggered"), &[])
+        }
         Input::SelectionChanged => fire_all(
             host,
             &SignalKey::new(Owner::Service("Selection"), "SelectionChanged"),
@@ -131,7 +141,9 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
             for (lua, env) in vms(host) {
                 match plugin_object::answer(&lua, id, &answer) {
                     Ok(true) => break,
-                    Ok(false) => report(&env, services::http_permission_answered(&lua, id, &answer)),
+                    Ok(false) => {
+                        report(&env, services::http_permission_answered(&lua, id, &answer))
+                    }
                     Err(error) => report(&env, Err(error)),
                 }
             }
@@ -250,12 +262,22 @@ fn tick(host: &mut PluginHost) {
     let run_service = |event: &str| SignalKey::new(Owner::Service("RunService"), event);
     for (lua, env) in all {
         report(&env, scheduler::tick(&lua, now));
-        report(&env, signal::fire(&lua, &run_service("Heartbeat"), &[Arg::Number(dt)]));
         report(
             &env,
-            signal::fire(&lua, &run_service("Stepped"), &[Arg::Number(now), Arg::Number(dt)]),
+            signal::fire(&lua, &run_service("Heartbeat"), &[Arg::Number(dt)]),
         );
-        report(&env, signal::fire(&lua, &run_service("RenderStepped"), &[Arg::Number(dt)]));
+        report(
+            &env,
+            signal::fire(
+                &lua,
+                &run_service("Stepped"),
+                &[Arg::Number(now), Arg::Number(dt)],
+            ),
+        );
+        report(
+            &env,
+            signal::fire(&lua, &run_service("RenderStepped"), &[Arg::Number(dt)]),
+        );
     }
 }
 
@@ -270,7 +292,10 @@ fn close_widget(host: &mut PluginHost, id: u32) {
         shared.ui_changed = true;
         root
     };
-    let _ = host.dom.borrow_mut().set_property(root, "Enabled", Variant::Bool(false));
+    let _ = host
+        .dom
+        .borrow_mut()
+        .set_property(root, "Enabled", Variant::Bool(false));
     let Some((lua, env)) = owner_of(host, root) else {
         return;
     };
@@ -278,7 +303,12 @@ fn close_widget(host: &mut PluginHost, id: u32) {
         .named_registry_value::<Option<Table>>(BIND_TO_CLOSE_KEY)
         .ok()
         .flatten()
-        .and_then(|table| table.get::<Option<Function>>(format!("{root:?}")).ok().flatten());
+        .and_then(|table| {
+            table
+                .get::<Option<Function>>(format!("{root:?}"))
+                .ok()
+                .flatten()
+        });
     if let Some(callback) = callback {
         report(&env, scheduler::spawn(&lua, callback, MultiValue::new()));
     }
@@ -288,8 +318,14 @@ fn unload(host: &mut PluginHost, id: u32) {
     let Some(index) = host.plugins.iter().position(|p| p.info.id == id) else {
         return;
     };
-    if let (Some(lua), Some(env)) = (host.plugins[index].lua.clone(), host.plugins[index].env.clone()) {
-        report(&env, signal::fire(&lua, &SignalKey::new(Owner::Plugin, "Unloading"), &[]));
+    if let (Some(lua), Some(env)) = (
+        host.plugins[index].lua.clone(),
+        host.plugins[index].env.clone(),
+    ) {
+        report(
+            &env,
+            signal::fire(&lua, &SignalKey::new(Owner::Plugin, "Unloading"), &[]),
+        );
         signal::disconnect_all(&lua);
     }
     if let Some(env) = host.plugins[index].env.take() {
@@ -336,7 +372,10 @@ fn mark_views(host: &PluginHost, log: &[Change], place_roots: &HashSet<Ref>) {
         while let Some(parent) = dom.parent(chain[chain.len() - 1]) {
             chain.push(parent);
         }
-        let widget_root = chain.iter().copied().find(|r| shared.widget_roots.contains(r));
+        let widget_root = chain
+            .iter()
+            .copied()
+            .find(|r| shared.widget_roots.contains(r));
         match widget_root {
             Some(root) => {
                 let mut bumped = false;

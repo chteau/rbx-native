@@ -1,8 +1,8 @@
 //! Loading and running one WASM plugin under wasmtime.
 
 use wasmtime::{
-    Caller, Config, Engine, Instance, Linker, Memory, Module, Store, StoreLimits, StoreLimitsBuilder, Trap,
-    TypedFunc,
+    Caller, Config, Engine, Instance, Linker, Memory, Module, Store, StoreLimits,
+    StoreLimitsBuilder, Trap, TypedFunc,
 };
 
 use crate::{abi, Effect, Grants, Host};
@@ -87,15 +87,26 @@ impl WasmPlugin {
         store.limiter(|s| &mut s.limits);
         store.set_fuel(FUEL_PER_CALL).map_err(describe)?;
         let mut linker = Linker::new(&engine);
-        linker.func_wrap("rbxn", "call", host_call).map_err(describe)?;
+        linker
+            .func_wrap("rbxn", "call", host_call)
+            .map_err(describe)?;
         let instance = linker.instantiate(&mut store, &module).map_err(describe)?;
         if instance.get_memory(&mut store, "memory").is_none() {
             return Err(format!("{name}: module does not export 'memory'"));
         }
-        if instance.get_typed_func::<i32, i32>(&mut store, "rbxn_alloc").is_err() {
-            return Err(format!("{name}: module does not export 'rbxn_alloc(i32) -> i32'"));
+        if instance
+            .get_typed_func::<i32, i32>(&mut store, "rbxn_alloc")
+            .is_err()
+        {
+            return Err(format!(
+                "{name}: module does not export 'rbxn_alloc(i32) -> i32'"
+            ));
         }
-        Ok(Self { name: name.to_string(), store, instance })
+        Ok(Self {
+            name: name.to_string(),
+            store,
+            instance,
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -111,7 +122,10 @@ impl WasmPlugin {
         // below before `host`'s borrow ends.
         let raw: *mut (dyn Host + 'static) = unsafe { std::mem::transmute(host as *mut dyn Host) };
         self.store.data_mut().host = Some(raw);
-        let result = self.store.set_fuel(FUEL_PER_CALL).and_then(|()| run(&mut self.store, &self.instance));
+        let result = self
+            .store
+            .set_fuel(FUEL_PER_CALL)
+            .and_then(|()| run(&mut self.store, &self.instance));
         let state = self.store.data_mut();
         state.host = None;
         let effects = std::mem::take(&mut state.effects);
@@ -132,7 +146,9 @@ impl WasmPlugin {
     /// Runs `rbxn_command(id)` if exported.
     pub fn command(&mut self, id: &str, host: &mut dyn Host) -> Result<Vec<Effect>, String> {
         self.enter(host, |store, instance| {
-            let Ok(command) = instance.get_typed_func::<(i32, i32), ()>(&mut *store, "rbxn_command") else {
+            let Ok(command) =
+                instance.get_typed_func::<(i32, i32), ()>(&mut *store, "rbxn_command")
+            else {
                 return Ok(());
             };
             let alloc = instance.get_typed_func::<i32, i32>(&mut *store, "rbxn_alloc")?;

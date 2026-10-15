@@ -5,7 +5,8 @@ fn build() -> (WeakDom, Ref, Ref, Ref) {
     let a = dom.new_instance("Folder", "A", None);
     let b = dom.new_instance("Part", "B", Some(a));
     let c = dom.new_instance("Part", "C", Some(a));
-    dom.set_property(b, "Anchored", Variant::Bool(true)).unwrap();
+    dom.set_property(b, "Anchored", Variant::Bool(true))
+        .unwrap();
     dom.take_changes();
     (dom, a, b, c)
 }

@@ -102,7 +102,9 @@ impl UserData for LuaAction {
                     Some(t) => Value::String(lua.create_string(&t)?),
                     None => Value::Nil,
                 },
-                "AllowBinding" => Value::Boolean(action_field(lua, id, |a| a.allow_binding).unwrap_or(false)),
+                "AllowBinding" => {
+                    Value::Boolean(action_field(lua, id, |a| a.allow_binding).unwrap_or(false))
+                }
                 _ => {
                     return Err(mlua::Error::runtime(format!(
                         "{key} is not a valid member of PluginAction"
@@ -110,8 +112,9 @@ impl UserData for LuaAction {
                 }
             })
         });
-        methods.add_meta_method(MetaMethod::NewIndex, |lua, this, (key, value): (String, Value)| {
-            match (key.as_str(), value) {
+        methods.add_meta_method(
+            MetaMethod::NewIndex,
+            |lua, this, (key, value): (String, Value)| match (key.as_str(), value) {
                 ("Enabled", Value::Boolean(enabled)) => {
                     with_state(lua, |s| {
                         if enabled {
@@ -122,9 +125,11 @@ impl UserData for LuaAction {
                     });
                     Ok(())
                 }
-                _ => Err(mlua::Error::runtime(format!("{key} cannot be set on PluginAction"))),
-            }
-        });
+                _ => Err(mlua::Error::runtime(format!(
+                    "{key} cannot be set on PluginAction"
+                ))),
+            },
+        );
         methods.add_meta_method(MetaMethod::Eq, |_, this, other: AnyUserData| {
             Ok(other.borrow::<LuaAction>().is_ok_and(|o| o.0 == this.0))
         });
@@ -151,7 +156,9 @@ fn items(lua: &Lua, menu: UiId, depth: usize) -> (String, Vec<MenuItem>) {
     for entry in entries {
         match entry {
             Entry::Action(id) => {
-                if let Some((text, icon)) = action_field(lua, id, |a| (a.text.clone(), a.icon.clone())) {
+                if let Some((text, icon)) =
+                    action_field(lua, id, |a| (a.text.clone(), a.icon.clone()))
+                {
                     out.push(MenuItem::Action { id, text, icon });
                 }
             }
@@ -237,7 +244,13 @@ impl UserData for LuaMenu {
                     let text = with_state(lua, |s| {
                         s.menus
                             .get(&id)
-                            .map(|m| if key == "Title" { m.title.clone() } else { m.icon.clone() })
+                            .map(|m| {
+                                if key == "Title" {
+                                    m.title.clone()
+                                } else {
+                                    m.icon.clone()
+                                }
+                            })
                             .unwrap_or_default()
                     });
                     Value::String(lua.create_string(&text)?)
@@ -249,19 +262,24 @@ impl UserData for LuaMenu {
                 }
             })
         });
-        methods.add_meta_method(MetaMethod::NewIndex, |lua, this, (key, value): (String, String)| {
-            with_state(lua, |s| match (key.as_str(), s.menus.get_mut(&this.0)) {
-                ("Title", Some(m)) => {
-                    m.title = value;
-                    Ok(())
-                }
-                ("Icon", Some(m)) => {
-                    m.icon = value;
-                    Ok(())
-                }
-                _ => Err(mlua::Error::runtime(format!("{key} cannot be set on PluginMenu"))),
-            })
-        });
+        methods.add_meta_method(
+            MetaMethod::NewIndex,
+            |lua, this, (key, value): (String, String)| {
+                with_state(lua, |s| match (key.as_str(), s.menus.get_mut(&this.0)) {
+                    ("Title", Some(m)) => {
+                        m.title = value;
+                        Ok(())
+                    }
+                    ("Icon", Some(m)) => {
+                        m.icon = value;
+                        Ok(())
+                    }
+                    _ => Err(mlua::Error::runtime(format!(
+                        "{key} cannot be set on PluginMenu"
+                    ))),
+                })
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginMenu"));
     }
 }

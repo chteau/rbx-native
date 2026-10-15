@@ -804,7 +804,8 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
             }
         }
         Command::PluginAdornments(adornments) => {
-            let changes = swap_plugin_adornments(rendering.mirror, rendering.plugin_adornments, adornments);
+            let changes =
+                swap_plugin_adornments(rendering.mirror, rendering.plugin_adornments, adornments);
             match rendering.viewer.apply_changes(rendering.mirror, &changes) {
                 Ok(Applied::Patched) => {}
                 Ok(Applied::Rebuilt(why)) => {

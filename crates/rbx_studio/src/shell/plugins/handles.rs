@@ -30,11 +30,16 @@ impl Shell {
         }
         let shapes = rbx_viewer::handle_pick::shapes(&self.dom, &self.database, &adornments);
         self.plugins.handles.sent = adornments.iter().map(|a| a.referent()).collect();
-        self.viewport.update(cx, |view, _| view.set_plugin_handles(adornments, shapes));
+        self.viewport
+            .update(cx, |view, _| view.set_plugin_handles(adornments, shapes));
     }
 
     /// `ViewportAction::PluginHandle`.
-    pub(in crate::shell) fn plugin_handle_event(&mut self, event: HandleEvent, cx: &mut Context<Self>) {
+    pub(in crate::shell) fn plugin_handle_event(
+        &mut self,
+        event: HandleEvent,
+        cx: &mut Context<Self>,
+    ) {
         self.plugin_input(Input::Handle(event), cx);
     }
 }

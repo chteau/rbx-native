@@ -38,12 +38,22 @@ pub(crate) fn load(folder: &Path) -> Result<Entry, String> {
     let permissions: Vec<String> = table
         .get("permissions")
         .and_then(|v| v.as_array())
-        .map(|list| list.iter().filter_map(|p| p.as_str().map(str::to_string)).collect())
+        .map(|list| {
+            list.iter()
+                .filter_map(|p| p.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
     let entry_path = folder.join(entry);
     let bytes = std::fs::read(&entry_path).map_err(|e| format!("{}: {e}", entry_path.display()))?;
     let plugin = WasmPlugin::load(&name, &bytes, Grants::from_permissions(&permissions))?;
-    Ok(Entry { name, plugin, commands: Vec::new(), error: None, started: false })
+    Ok(Entry {
+        name,
+        plugin,
+        commands: Vec::new(),
+        error: None,
+        started: false,
+    })
 }
 
 impl Shell {
@@ -98,8 +108,12 @@ impl Shell {
                 for effect in effects {
                     match effect {
                         Effect::Log(text) => self.output.push_plugin(&name, Feedback::Output(text)),
-                        Effect::Warn(text) => self.output.push_plugin(&name, Feedback::Warning(text)),
-                        Effect::Notify(text) => self.output.push_plugin(&name, Feedback::Info(text)),
+                        Effect::Warn(text) => {
+                            self.output.push_plugin(&name, Feedback::Warning(text))
+                        }
+                        Effect::Notify(text) => {
+                            self.output.push_plugin(&name, Feedback::Info(text))
+                        }
                         Effect::Command { id, text, tooltip } => {
                             let commands = &mut self.plugins.wasm[index].commands;
                             commands.retain(|(existing, _, _)| *existing != id);
@@ -109,7 +123,8 @@ impl Shell {
                 }
             }
             Err(message) => {
-                self.output.push_plugin(&name, Feedback::Error(message.clone()));
+                self.output
+                    .push_plugin(&name, Feedback::Error(message.clone()));
                 self.plugins.wasm[index].error = Some(message);
             }
         }

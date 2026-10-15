@@ -16,8 +16,14 @@ pub(crate) trait Hooks {
     /// Asked first by an instance's `__index` (after `Name`, `ClassName`
     /// and `Parent`): `Some` answers the read, `None` falls through to
     /// properties and children.
-    fn index(&self, lua: &Lua, ctx: &Ctx, referent: Ref, class: &str, key: &str)
-        -> Result<Option<Value>>;
+    fn index(
+        &self,
+        lua: &Lua,
+        ctx: &Ctx,
+        referent: Ref,
+        class: &str,
+        key: &str,
+    ) -> Result<Option<Value>>;
 
     /// Asked first by an instance's `__newindex` (after `Name`, `ClassName`
     /// and `Parent`): `true` means handled, `false` falls through to the

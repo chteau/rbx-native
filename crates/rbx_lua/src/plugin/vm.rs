@@ -55,9 +55,9 @@ pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
                     .map_err(|_| mlua::Error::runtime("require expects a ModuleScript"))?;
                 require(lua, referent)
             }
-            Value::Integer(_) | Value::Number(_) => Err(mlua::Error::runtime(
-                "require by asset id is not supported",
-            )),
+            Value::Integer(_) | Value::Number(_) => {
+                Err(mlua::Error::runtime("require by asset id is not supported"))
+            }
             _ => Err(mlua::Error::runtime("require expects a ModuleScript")),
         })?,
     )?;
@@ -158,8 +158,8 @@ pub(crate) fn require(lua: &Lua, module: Ref) -> Result<mlua::Value> {
     if let Some(value) = env.modules.borrow().get(&module) {
         return Ok(value.clone());
     }
-    let function = load(lua, module)?
-        .ok_or_else(|| mlua::Error::runtime("require expects a ModuleScript"))?;
+    let function =
+        load(lua, module)?.ok_or_else(|| mlua::Error::runtime("require expects a ModuleScript"))?;
     let mut values = function.call::<MultiValue>(())?;
     if values.len() != 1 {
         return Err(mlua::Error::runtime(
@@ -189,9 +189,7 @@ mod tests {
         r
     }
 
-    fn vm_with(
-        setup: impl FnOnce(&mut WeakDom, Ref) -> Ref,
-    ) -> (Lua, Rc<Env>, Ref) {
+    fn vm_with(setup: impl FnOnce(&mut WeakDom, Ref) -> Ref) -> (Lua, Rc<Env>, Ref) {
         let mut dom = WeakDom::new();
         let ws = dom.new_instance("Workspace", "Workspace", None);
         let main = setup(&mut dom, ws);
@@ -211,9 +209,8 @@ mod tests {
 
     #[test]
     fn print_warn_and_error_reach_output() {
-        let (lua, env, main) = vm_with(|dom, ws| {
-            script(dom, "Script", "S", ws, "print('a', 1) warn('b') error('c')")
-        });
+        let (lua, env, main) =
+            vm_with(|dom, ws| script(dom, "Script", "S", ws, "print('a', 1) warn('b') error('c')"));
         run_script(&lua, main).unwrap();
         let out = lines(&env);
         assert_eq!(out.len(), 3);
@@ -246,7 +243,10 @@ mod tests {
         let (lua, env, main) =
             vm_with(|dom, ws| script(dom, "Script", "S", ws, "print(script.Parent.Name)"));
         run_script(&lua, main).unwrap();
-        assert_eq!(lines(&env), vec![(OutputKind::Print, "Workspace".to_string())]);
+        assert_eq!(
+            lines(&env),
+            vec![(OutputKind::Print, "Workspace".to_string())]
+        );
     }
 
     #[test]

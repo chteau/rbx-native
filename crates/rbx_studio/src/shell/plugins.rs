@@ -80,11 +80,16 @@ impl Shell {
                 found.extend(discover::scan(&dir, true));
             }
         }
-        let settings_dir = crate::settings::default_config_dir().map(|dir| dir.join("plugin-settings"));
+        let settings_dir =
+            crate::settings::default_config_dir().map(|dir| dir.join("plugin-settings"));
         let mut host = PluginHost::new(self.database.clone(), settings_dir);
         let mut wasm = Vec::new();
         for plugin in &found {
-            if self.plugins.disabled.contains(&*plugin.path.to_string_lossy()) {
+            if self
+                .plugins
+                .disabled
+                .contains(&*plugin.path.to_string_lossy())
+            {
                 continue;
             }
             let loaded = match plugin.kind {
@@ -93,10 +98,13 @@ impl Shell {
                         host.add(source);
                     })
                 }
-                discover::Kind::NativeWasm => wasm::load(&plugin.path).map(|entry| wasm.push(entry)),
+                discover::Kind::NativeWasm => {
+                    wasm::load(&plugin.path).map(|entry| wasm.push(entry))
+                }
             };
             if let Err(message) = loaded {
-                self.output.push_plugin(&plugin.name, Feedback::Warning(message));
+                self.output
+                    .push_plugin(&plugin.name, Feedback::Warning(message));
             }
         }
         self.plugins.found = found;
@@ -185,7 +193,11 @@ impl Shell {
         if self.plugins.applying {
             return;
         }
-        let watched = self.plugins.host.as_ref().is_some_and(|host| host.watches(changes));
+        let watched = self
+            .plugins
+            .host
+            .as_ref()
+            .is_some_and(|host| host.watches(changes));
         if watched {
             self.plugin_input(Input::DomChanged(changes.to_vec()), cx);
         }
@@ -193,7 +205,11 @@ impl Shell {
 
     /// Painted at the window root: the open prompt, floating widgets and
     /// the Manage Plugins dialog.
-    pub(super) fn plugin_overlays(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn plugin_overlays(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let mut overlays = Vec::new();
         overlays.extend(self.floating_widget_overlays(window, cx));
         overlays.extend(self.plugin_prompt_overlay(window, cx));
@@ -212,7 +228,9 @@ impl Shell {
     }
 
     fn plugins_now(&self) -> f64 {
-        self.plugins.epoch.map_or(0.0, |epoch| epoch.elapsed().as_secs_f64())
+        self.plugins
+            .epoch
+            .map_or(0.0, |epoch| epoch.elapsed().as_secs_f64())
     }
 
     /// Starts the tick loop when the host has something to tick and no loop
@@ -222,7 +240,12 @@ impl Shell {
             return;
         }
         let now = self.plugins_now();
-        if !self.plugins.host.as_ref().is_some_and(|host| host.wants_tick(now)) {
+        if !self
+            .plugins
+            .host
+            .as_ref()
+            .is_some_and(|host| host.wants_tick(now))
+        {
             return;
         }
         self.plugins.poll = Some(cx.spawn(async move |shell, cx| {
@@ -243,6 +266,9 @@ impl Shell {
         }
         self.plugin_input(Input::Tick, cx);
         let now = self.plugins_now();
-        self.plugins.host.as_ref().is_some_and(|host| host.wants_tick(now))
+        self.plugins
+            .host
+            .as_ref()
+            .is_some_and(|host| host.wants_tick(now))
     }
 }

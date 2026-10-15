@@ -44,8 +44,12 @@ pub(super) fn adornments(host: &PluginHost) -> Vec<Instance> {
                 return None;
             }
             let mut copy = Instance::new(referent, class, instance.name());
-            copy.properties_mut()
-                .extend(instance.properties().iter().map(|(k, v)| (k.clone(), v.clone())));
+            copy.properties_mut().extend(
+                instance
+                    .properties()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone())),
+            );
             Some(copy)
         })
         .collect()

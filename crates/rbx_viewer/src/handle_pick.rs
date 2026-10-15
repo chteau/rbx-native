@@ -127,7 +127,10 @@ pub fn shapes_of(
         let Some(Variant::Faces(faces)) = properties.get("Faces") else {
             return Vec::new();
         };
-        let movement = matches!(properties.get("Style"), Some(&Variant::Enum(STYLE_MOVEMENT)));
+        let movement = matches!(
+            properties.get("Style"),
+            Some(&Variant::Enum(STYLE_MOVEMENT))
+        );
         let enabled = [
             faces.right,
             faces.top,
@@ -169,7 +172,12 @@ fn unit(size: Vec3) -> f32 {
 
 /// `Handles`: a sphere (Resize) or a shaft-and-cone arrow (Movement) off
 /// each enabled face, as `handles::handles` builds them.
-pub fn face_handles(enabled: [bool; 6], movement: bool, frame: Mat4, size: Vec3) -> Vec<(u8, Geometry)> {
+pub fn face_handles(
+    enabled: [bool; 6],
+    movement: bool,
+    frame: Mat4,
+    size: Vec3,
+) -> Vec<(u8, Geometry)> {
     let unit = unit(size);
     (0u8..6)
         .filter(|&face| enabled[face as usize])
@@ -341,7 +349,12 @@ mod tests {
 
     #[test]
     fn arrow_reaches_out_along_the_face() {
-        let list = face_handles([true, false, false, false, false, false], true, Mat4::IDENTITY, Vec3::splat(4.0));
+        let list = face_handles(
+            [true, false, false, false, false, false],
+            true,
+            Mat4::IDENTITY,
+            Vec3::splat(4.0),
+        );
         let Geometry::Capsule { to, .. } = list[0].1 else {
             panic!("arrow is a capsule");
         };
@@ -352,7 +365,11 @@ mod tests {
 
     #[test]
     fn ring_is_hit_on_its_band_only() {
-        let list = arc_handles([false, true, false], Mat4::IDENTITY, Vec3::new(2.0, 2.0, 2.0));
+        let list = arc_handles(
+            [false, true, false],
+            Mat4::IDENTITY,
+            Vec3::new(2.0, 2.0, 2.0),
+        );
         let Geometry::Ring { radius, .. } = list[0].1 else {
             panic!("arc is a ring");
         };

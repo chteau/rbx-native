@@ -1080,9 +1080,7 @@ impl Render for WorkspaceView {
             )
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                 view.note_input();
-                if !view.looking
-                    && view.plugin_move(event.position, window.scale_factor(), cx)
-                {
+                if !view.looking && view.plugin_move(event.position, window.scale_factor(), cx) {
                     return;
                 }
                 // Recorded, not applied: the step itself runs in `advance`,

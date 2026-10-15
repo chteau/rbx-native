@@ -19,7 +19,8 @@ pub fn read_source(path: &Path) -> Result<PluginSource, String> {
         let manifest_path = path.join("plugin.toml");
         let text = std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("cannot read {}: {e}", manifest_path.display()))?;
-        let manifest = parse_manifest(&text).map_err(|e| format!("{}: {e}", manifest_path.display()))?;
+        let manifest =
+            parse_manifest(&text).map_err(|e| format!("{}: {e}", manifest_path.display()))?;
         let entry_ext = Path::new(&manifest.entry)
             .extension()
             .and_then(|e| e.to_str())
@@ -62,10 +63,15 @@ pub fn read_source(path: &Path) -> Result<PluginSource, String> {
             SourceBody::Model(rbx_binary::deserialize(&bytes).map_err(|e| format!("{shown}: {e}"))?)
         }
         "rbxmx" => {
-            let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read {shown}: {e}"))?;
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("cannot read {shown}: {e}"))?;
             SourceBody::Model(rbx_xml::deserialize(&text).map_err(|e| format!("{shown}: {e}"))?)
         }
-        _ => return Err(format!("{shown}: not a plugin file (expected .lua, .luau, .rbxm or .rbxmx)")),
+        _ => {
+            return Err(format!(
+                "{shown}: not a plugin file (expected .lua, .luau, .rbxm or .rbxmx)"
+            ))
+        }
     };
     Ok(PluginSource {
         name,
@@ -102,7 +108,9 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
             let text = item
                 .as_str()
                 .ok_or_else(|| "`permissions` must be an array of strings".to_string())?;
-            permissions.push(parse_permission(text).ok_or_else(|| format!("unknown permission `{text}`"))?);
+            permissions.push(
+                parse_permission(text).ok_or_else(|| format!("unknown permission `{text}`"))?,
+            );
         }
     }
     Ok(Manifest {
@@ -231,10 +239,21 @@ mod tests {
     #[test]
     fn rejects_bad_permission_and_wasm() {
         let dir = temp_dir();
-        std::fs::write(dir.join("plugin.toml"), "name = \"X\"\npermissions = [\"root\"]\n").unwrap();
-        assert!(read_source(&dir).err().unwrap().contains("unknown permission"));
+        std::fs::write(
+            dir.join("plugin.toml"),
+            "name = \"X\"\npermissions = [\"root\"]\n",
+        )
+        .unwrap();
+        assert!(read_source(&dir)
+            .err()
+            .unwrap()
+            .contains("unknown permission"));
         let dir = temp_dir();
-        std::fs::write(dir.join("plugin.toml"), "name = \"X\"\nentry = \"a.wasm\"\n").unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            "name = \"X\"\nentry = \"a.wasm\"\n",
+        )
+        .unwrap();
         assert!(read_source(&dir).err().unwrap().contains("rbx_wasm"));
     }
 
@@ -263,7 +282,10 @@ mod tests {
         let kids = dst.get(new_root).unwrap().children().to_vec();
         assert_eq!(kids.len(), 2);
         assert_eq!(dst.get(kids[0]).unwrap().name(), "A");
-        assert_eq!(dst.get(kids[0]).unwrap().properties().get("Link"), Some(&Variant::Ref(kids[1])));
+        assert_eq!(
+            dst.get(kids[0]).unwrap().properties().get("Link"),
+            Some(&Variant::Ref(kids[1]))
+        );
         assert!(dst.get(kids[1]).unwrap().properties().get("Link").is_none());
     }
 
@@ -273,9 +295,11 @@ mod tests {
         let root = dom.new_instance("Folder", "Root", None);
         let good = dom.new_instance("Script", "Good", Some(root));
         let off = dom.new_instance("Script", "Off", Some(root));
-        dom.set_property(off, "Disabled", Variant::Bool(true)).unwrap();
+        dom.set_property(off, "Disabled", Variant::Bool(true))
+            .unwrap();
         let not_enabled = dom.new_instance("Script", "NotEnabled", Some(root));
-        dom.set_property(not_enabled, "Enabled", Variant::Bool(false)).unwrap();
+        dom.set_property(not_enabled, "Enabled", Variant::Bool(false))
+            .unwrap();
         dom.new_instance("LocalScript", "Local", Some(root));
         dom.new_instance("ModuleScript", "Module", Some(root));
         let nested = dom.new_instance("Script", "Nested", Some(good));

@@ -31,7 +31,10 @@ pub(crate) struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Self {
-        Self { disabled: Vec::new(), load_studio: true }
+        Self {
+            disabled: Vec::new(),
+            load_studio: true,
+        }
     }
 }
 
@@ -44,7 +47,10 @@ struct PrefsFile {
 
 impl Default for PrefsFile {
     fn default() -> Self {
-        Self { disabled: Vec::new(), load_studio: true }
+        Self {
+            disabled: Vec::new(),
+            load_studio: true,
+        }
     }
 }
 
@@ -56,12 +62,18 @@ fn load_from(path: &Path) -> Prefs {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str::<PrefsFile>(&text).ok())
-        .map(|file| Prefs { disabled: file.disabled, load_studio: file.load_studio })
+        .map(|file| Prefs {
+            disabled: file.disabled,
+            load_studio: file.load_studio,
+        })
         .unwrap_or_default()
 }
 
 fn save_to(path: &Path, prefs: &Prefs) {
-    let file = PrefsFile { disabled: prefs.disabled.clone(), load_studio: prefs.load_studio };
+    let file = PrefsFile {
+        disabled: prefs.disabled.clone(),
+        load_studio: prefs.load_studio,
+    };
     if let Ok(text) = serde_json::to_string_pretty(&file) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -73,7 +85,9 @@ fn save_to(path: &Path, prefs: &Prefs) {
 /// The saved prefs, or the defaults when there are none (or they do not
 /// parse).
 pub(crate) fn load_prefs() -> Prefs {
-    prefs_path().map(|path| load_from(&path)).unwrap_or_default()
+    prefs_path()
+        .map(|path| load_from(&path))
+        .unwrap_or_default()
 }
 
 /// Saves atomically (`settings::write_atomic`); failures are ignored, as
@@ -126,7 +140,12 @@ impl Shell {
             return ("Off".into(), false);
         }
         if found.kind == Kind::NativeWasm {
-            return match self.plugins.wasm.iter().find(|entry| entry.name == found.name) {
+            return match self
+                .plugins
+                .wasm
+                .iter()
+                .find(|entry| entry.name == found.name)
+            {
                 Some(entry) => match &entry.error {
                     Some(error) => (error.clone(), true),
                     None => ("Running".into(), false),
@@ -149,7 +168,11 @@ impl Shell {
         }
     }
 
-    pub(super) fn plugin_manager_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn plugin_manager_overlay(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         if !self.plugins.manager_open {
             return None;
         }
@@ -172,7 +195,11 @@ impl Shell {
             } else {
                 kind_label(&found.kind).to_string()
             };
-            let status_color = if is_error { tokens::text_error() } else { tokens::text2() };
+            let status_color = if is_error {
+                tokens::text_error()
+            } else {
+                tokens::text2()
+            };
             rows = rows.child(
                 h_flex()
                     .gap(px(10.))
@@ -186,7 +213,8 @@ impl Shell {
                                 } else {
                                     shell.plugins.disabled.insert(key.clone());
                                 }
-                                let mut names: Vec<String> = shell.plugins.disabled.iter().cloned().collect();
+                                let mut names: Vec<String> =
+                                    shell.plugins.disabled.iter().cloned().collect();
                                 names.sort();
                                 prefs.disabled = names;
                                 save_prefs(&prefs);
@@ -198,28 +226,51 @@ impl Shell {
                         v_flex()
                             .flex_1()
                             .child(div().text_color(tokens::text()).child(found.name.clone()))
-                            .child(div().text_color(tokens::text2()).text_size(px(11.)).child(tag)),
+                            .child(
+                                div()
+                                    .text_color(tokens::text2())
+                                    .text_size(px(11.))
+                                    .child(tag),
+                            ),
                     )
-                    .child(div().text_color(status_color).text_size(px(11.)).max_w(px(220.)).child(status)),
+                    .child(
+                        div()
+                            .text_color(status_color)
+                            .text_size(px(11.))
+                            .max_w(px(220.))
+                            .child(status),
+                    ),
             );
         }
         let studio_row = h_flex()
             .gap(px(10.))
             .items_center()
-            .child(switch("plugin-load-studio".into(), load_studio).on_click(cx.listener(|_, _, _, cx| {
-                let mut prefs = load_prefs();
-                prefs.load_studio = !prefs.load_studio;
-                save_prefs(&prefs);
-                cx.notify();
-            })))
-            .child(div().text_color(tokens::text()).child("Load Roblox Studio plugins"))
+            .child(
+                switch("plugin-load-studio".into(), load_studio).on_click(cx.listener(
+                    |_, _, _, cx| {
+                        let mut prefs = load_prefs();
+                        prefs.load_studio = !prefs.load_studio;
+                        save_prefs(&prefs);
+                        cx.notify();
+                    },
+                )),
+            )
+            .child(
+                div()
+                    .text_color(tokens::text())
+                    .child("Load Roblox Studio plugins"),
+            )
             .child(
                 div()
                     .text_color(tokens::text2())
                     .text_size(px(11.))
                     .child("Changes take effect on Reload."),
             );
-        let body = v_flex().gap(px(12.)).child(rows).child(studio_row).into_any_element();
+        let body = v_flex()
+            .gap(px(12.))
+            .child(rows)
+            .child(studio_row)
+            .into_any_element();
 
         Some(
             div()
@@ -271,7 +322,10 @@ mod tests {
     fn prefs_round_trip() {
         let dir = std::env::temp_dir().join(format!("rbx-plugin-prefs-{}", std::process::id()));
         let path = dir.join("plugins.json");
-        let prefs = Prefs { disabled: vec!["/a/b.lua".into(), "/c".into()], load_studio: false };
+        let prefs = Prefs {
+            disabled: vec!["/a/b.lua".into(), "/c".into()],
+            load_studio: false,
+        };
         save_to(&path, &prefs);
         assert_eq!(load_from(&path), prefs);
         let _ = std::fs::remove_dir_all(&dir);

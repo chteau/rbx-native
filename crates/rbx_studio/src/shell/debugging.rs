@@ -154,7 +154,12 @@ impl Shell {
     }
 
     pub(super) fn debug_add_watch(&mut self, expression: String) {
-        if self.debug.watches.iter().any(|w| w.expression == expression) {
+        if self
+            .debug
+            .watches
+            .iter()
+            .any(|w| w.expression == expression)
+        {
             return;
         }
         self.debug.watches.push(Watch {

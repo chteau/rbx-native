@@ -71,10 +71,15 @@ impl Host for DomHost<'_> {
                 let value = field(params, "value")?;
                 if name == "Name" {
                     let text = value.as_str().ok_or("Name must be a string")?;
-                    self.dom.set_name(referent, text).map_err(|e| e.to_string())?;
+                    self.dom
+                        .set_name(referent, text)
+                        .map_err(|e| e.to_string())?;
                     return Ok(Value::Null);
                 }
-                let current = self.dom.get(referent).and_then(|i| i.properties().get(name));
+                let current = self
+                    .dom
+                    .get(referent)
+                    .and_then(|i| i.properties().get(name));
                 let variant = json_to_variant(value, current)?;
                 self.dom
                     .set_property(referent, name, variant)
@@ -229,25 +234,39 @@ fn json_to_variant(value: &Value, current: Option<&Variant>) -> Result<Variant, 
                 map.get("position").and_then(Value::as_array),
                 map.get("rotation").and_then(Value::as_array),
             ) {
-                let p: Vec<f32> = position.iter().filter_map(|v| v.as_f64()).map(|v| v as f32).collect();
-                let r: Vec<f32> = rotation.iter().filter_map(|v| v.as_f64()).map(|v| v as f32).collect();
+                let p: Vec<f32> = position
+                    .iter()
+                    .filter_map(|v| v.as_f64())
+                    .map(|v| v as f32)
+                    .collect();
+                let r: Vec<f32> = rotation
+                    .iter()
+                    .filter_map(|v| v.as_f64())
+                    .map(|v| v as f32)
+                    .collect();
                 if p.len() != 3 || r.len() != 9 {
                     return Err("CFrame needs position[3] and rotation[9]".to_string());
                 }
                 let mut rotation = [0.0; 9];
                 rotation.copy_from_slice(&r);
                 return Ok(Variant::CFrame(CFrameData {
-                    position: Vector3Data { x: p[0], y: p[1], z: p[2] },
+                    position: Vector3Data {
+                        x: p[0],
+                        y: p[1],
+                        z: p[2],
+                    },
                     rotation,
                 }));
             }
-            if let (Some(x), Some(y), Some(z)) = (num(value, "x"), num(value, "y"), num(value, "z")) {
+            if let (Some(x), Some(y), Some(z)) = (num(value, "x"), num(value, "y"), num(value, "z"))
+            {
                 return Ok(Variant::Vector3(Vector3Data { x, y, z }));
             }
             if let (Some(x), Some(y)) = (num(value, "x"), num(value, "y")) {
                 return Ok(Variant::Vector2(Vector2Data { x, y }));
             }
-            if let (Some(r), Some(g), Some(b)) = (num(value, "r"), num(value, "g"), num(value, "b")) {
+            if let (Some(r), Some(g), Some(b)) = (num(value, "r"), num(value, "g"), num(value, "b"))
+            {
                 return Ok(Variant::Color3(Color3Data { r, g, b }));
             }
             Err("unrecognised value object".to_string())
@@ -264,9 +283,19 @@ mod tests {
         ReflectionDatabase::embedded()
     }
 
-    fn run(dom: &mut WeakDom, selection: &mut Vec<Ref>, method: &str, params: Value) -> Result<Value, String> {
+    fn run(
+        dom: &mut WeakDom,
+        selection: &mut Vec<Ref>,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, String> {
         let database = database();
-        let mut host = DomHost { dom, database: &database, selection, selection_changed: false };
+        let mut host = DomHost {
+            dom,
+            database: &database,
+            selection,
+            selection_changed: false,
+        };
         host.call(method, &params)
     }
 
@@ -276,11 +305,29 @@ mod tests {
         let ws = dom.new_instance("Workspace", "Workspace", None);
         let part = dom.new_instance("Part", "Part", Some(ws));
         let mut sel = Vec::new();
-        let found = run(&mut dom, &mut sel, "instance.find", json!({"path": "Workspace.Part"})).unwrap();
+        let found = run(
+            &mut dom,
+            &mut sel,
+            "instance.find",
+            json!({"path": "Workspace.Part"}),
+        )
+        .unwrap();
         assert_eq!(found, json!(part.value()));
-        let missing = run(&mut dom, &mut sel, "instance.find", json!({"path": "Workspace.Nope"})).unwrap();
+        let missing = run(
+            &mut dom,
+            &mut sel,
+            "instance.find",
+            json!({"path": "Workspace.Nope"}),
+        )
+        .unwrap();
         assert_eq!(missing, Value::Null);
-        let info = run(&mut dom, &mut sel, "instance.get", json!({"ref": part.value()})).unwrap();
+        let info = run(
+            &mut dom,
+            &mut sel,
+            "instance.get",
+            json!({"ref": part.value()}),
+        )
+        .unwrap();
         assert_eq!(info["class"], "Part");
         assert_eq!(info["parent"], json!(ws.value()));
         let roots = run(&mut dom, &mut sel, "instance.roots", json!({})).unwrap();
@@ -302,8 +349,20 @@ mod tests {
         ];
         for (i, value) in cases.iter().enumerate() {
             let name = format!("P{i}");
-            run(&mut dom, &mut sel, "instance.set_property", json!({"ref": part.value(), "name": name, "value": value})).unwrap();
-            let back = run(&mut dom, &mut sel, "instance.property", json!({"ref": part.value(), "name": name})).unwrap();
+            run(
+                &mut dom,
+                &mut sel,
+                "instance.set_property",
+                json!({"ref": part.value(), "name": name, "value": value}),
+            )
+            .unwrap();
+            let back = run(
+                &mut dom,
+                &mut sel,
+                "instance.property",
+                json!({"ref": part.value(), "name": name}),
+            )
+            .unwrap();
             assert_eq!(&back, value);
         }
     }
@@ -312,13 +371,29 @@ mod tests {
     fn unsupported_reads_as_unsupported() {
         let mut dom = WeakDom::new();
         let part = dom.new_instance("Part", "Part", None);
-        dom.set_property(part, "Weird", Variant::UDim2(rbx_dom::UDim2 {
-            x: rbx_dom::UDim { scale: 0.0, offset: 0 },
-            y: rbx_dom::UDim { scale: 0.0, offset: 0 },
-        }))
+        dom.set_property(
+            part,
+            "Weird",
+            Variant::UDim2(rbx_dom::UDim2 {
+                x: rbx_dom::UDim {
+                    scale: 0.0,
+                    offset: 0,
+                },
+                y: rbx_dom::UDim {
+                    scale: 0.0,
+                    offset: 0,
+                },
+            }),
+        )
         .unwrap();
         let mut sel = Vec::new();
-        let value = run(&mut dom, &mut sel, "instance.property", json!({"ref": part.value(), "name": "Weird"})).unwrap();
+        let value = run(
+            &mut dom,
+            &mut sel,
+            "instance.property",
+            json!({"ref": part.value(), "name": "Weird"}),
+        )
+        .unwrap();
         assert_eq!(value, json!({"unsupported": "UDim2"}));
     }
 
@@ -327,18 +402,46 @@ mod tests {
         let mut dom = WeakDom::new();
         let folder = dom.new_instance("Folder", "Folder", None);
         let mut sel = Vec::new();
-        let made = run(&mut dom, &mut sel, "instance.new", json!({"class": "Part", "name": "P"})).unwrap();
+        let made = run(
+            &mut dom,
+            &mut sel,
+            "instance.new",
+            json!({"class": "Part", "name": "P"}),
+        )
+        .unwrap();
         let part = made.as_u64().unwrap();
-        run(&mut dom, &mut sel, "instance.set_parent", json!({"ref": part, "parent": folder.value()})).unwrap();
+        run(
+            &mut dom,
+            &mut sel,
+            "instance.set_parent",
+            json!({"ref": part, "parent": folder.value()}),
+        )
+        .unwrap();
         assert_eq!(dom.parent(Ref::new(part as u32)), Some(folder));
-        assert!(run(&mut dom, &mut sel, "instance.new", json!({"class": "NotAClass"})).is_err());
+        assert!(run(
+            &mut dom,
+            &mut sel,
+            "instance.new",
+            json!({"class": "NotAClass"})
+        )
+        .is_err());
 
         let database = database();
-        let mut host = DomHost { dom: &mut dom, database: &database, selection: &mut sel, selection_changed: false };
-        host.call("selection.set", &json!({"refs": [part]})).unwrap();
+        let mut host = DomHost {
+            dom: &mut dom,
+            database: &database,
+            selection: &mut sel,
+            selection_changed: false,
+        };
+        host.call("selection.set", &json!({"refs": [part]}))
+            .unwrap();
         assert!(host.selection_changed);
-        assert_eq!(host.call("selection.get", &json!({})).unwrap(), json!([part]));
-        host.call("instance.destroy", &json!({"ref": part})).unwrap();
+        assert_eq!(
+            host.call("selection.get", &json!({})).unwrap(),
+            json!([part])
+        );
+        host.call("instance.destroy", &json!({"ref": part}))
+            .unwrap();
         assert_eq!(host.call("selection.get", &json!({})).unwrap(), json!([]));
         assert!(host.dom.get(Ref::new(part as u32)).is_none());
     }

@@ -7,7 +7,10 @@ mod widget;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use mlua::{AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods,
+    Value,
+};
 
 use super::api::{Answer, Arg, Button, PromptKind, Request, Toolbar, UiId};
 use super::arg;
@@ -77,7 +80,9 @@ fn with_state<R>(lua: &Lua, f: impl FnOnce(&mut State) -> R) -> R {
     if lua.app_data_ref::<StateSlot>().is_none() {
         lua.set_app_data(StateSlot(RefCell::new(State::default())));
     }
-    let slot = lua.app_data_ref::<StateSlot>().expect("state slot was just set");
+    let slot = lua
+        .app_data_ref::<StateSlot>()
+        .expect("state slot was just set");
     let mut state = slot.0.borrow_mut();
     f(&mut state)
 }
@@ -93,7 +98,12 @@ struct LuaPluginMouse;
 fn toolbar(lua: &Lua, name: &str) -> UiId {
     let env = env(lua);
     let mut shared = env.shared.borrow_mut();
-    if let Some(t) = shared.ui.toolbars.iter().find(|t| t.plugin == env.plugin && t.name == name) {
+    if let Some(t) = shared
+        .ui
+        .toolbars
+        .iter()
+        .find(|t| t.plugin == env.plugin && t.name == name)
+    {
         return t.id;
     }
     let id = shared.next_id();
@@ -107,7 +117,14 @@ fn toolbar(lua: &Lua, name: &str) -> UiId {
     id
 }
 
-fn button(lua: &Lua, toolbar: UiId, key: &str, tooltip: &str, icon: &str, text: Option<&str>) -> UiId {
+fn button(
+    lua: &Lua,
+    toolbar: UiId,
+    key: &str,
+    tooltip: &str,
+    icon: &str,
+    text: Option<&str>,
+) -> UiId {
     let env = env(lua);
     let mut shared = env.shared.borrow_mut();
     let id = shared.next_id();
@@ -152,10 +169,24 @@ impl UserData for LuaToolbar {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method(
             "CreateButton",
-            |lua, this, (key, tooltip, icon, text): (String, Option<String>, Option<String>, Option<String>)| {
+            |lua,
+             this,
+             (key, tooltip, icon, text): (
+                String,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+            )| {
                 let tooltip = tooltip.unwrap_or_default();
                 let icon = icon.unwrap_or_default();
-                Ok(LuaButton(button(lua, this.0, &key, &tooltip, &icon, text.as_deref())))
+                Ok(LuaButton(button(
+                    lua,
+                    this.0,
+                    &key,
+                    &tooltip,
+                    &icon,
+                    text.as_deref(),
+                )))
             },
         );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginToolbar"));
@@ -164,7 +195,9 @@ impl UserData for LuaToolbar {
 
 impl UserData for LuaButton {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("SetActive", |lua, this, active: bool| with_button(lua, this.0, |b| b.active = active));
+        methods.add_method("SetActive", |lua, this, active: bool| {
+            with_button(lua, this.0, |b| b.active = active)
+        });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             if key == "Click" {
                 let signal = LuaSignal(SignalKey::new(Owner::Ui(this.0), "Click"));
@@ -179,11 +212,14 @@ impl UserData for LuaButton {
             })?;
             match value {
                 Some(value) => arg::to_lua(lua, &env(lua).ctx, &value),
-                None => Err(mlua::Error::runtime(format!("{key} is not a valid member of PluginToolbarButton"))),
+                None => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of PluginToolbarButton"
+                ))),
             }
         });
-        methods.add_meta_method(MetaMethod::NewIndex, |lua, this, (key, value): (String, Value)| {
-            match (key.as_str(), value) {
+        methods.add_meta_method(
+            MetaMethod::NewIndex,
+            |lua, this, (key, value): (String, Value)| match (key.as_str(), value) {
                 ("Enabled", Value::Boolean(v)) => with_button(lua, this.0, |b| b.enabled = v),
                 ("ClickableWhenViewportHidden", Value::Boolean(v)) => {
                     with_button(lua, this.0, |b| b.clickable_when_viewport_hidden = v)
@@ -192,9 +228,11 @@ impl UserData for LuaButton {
                     let icon = s.to_string_lossy().to_string();
                     with_button(lua, this.0, |b| b.icon = icon)
                 }
-                _ => Err(mlua::Error::runtime(format!("{key} cannot be set on PluginToolbarButton"))),
-            }
-        });
+                _ => Err(mlua::Error::runtime(format!(
+                    "{key} cannot be set on PluginToolbarButton"
+                ))),
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginToolbarButton"));
     }
 }
@@ -219,7 +257,9 @@ impl UserData for LuaPluginMouse {
                     let signal = LuaSignal(SignalKey::new(Owner::Plugin, format!("Mouse.{key}")));
                     Ok(Value::UserData(lua.create_userdata(signal)?))
                 }
-                _ => Err(mlua::Error::runtime(format!("{key} is not a valid member of PluginMouse"))),
+                _ => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of PluginMouse"
+                ))),
             }
         });
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginMouse"));
@@ -233,7 +273,11 @@ fn json_to_arg(value: &serde_json::Value) -> Arg {
         serde_json::Value::Number(n) => Arg::Number(n.as_f64().unwrap_or(0.0)),
         serde_json::Value::String(s) => Arg::String(s.clone()),
         serde_json::Value::Array(items) => Arg::List(items.iter().map(json_to_arg).collect()),
-        serde_json::Value::Object(map) => Arg::Table(map.iter().map(|(k, v)| (k.clone(), json_to_arg(v))).collect()),
+        serde_json::Value::Object(map) => Arg::Table(
+            map.iter()
+                .map(|(k, v)| (k.clone(), json_to_arg(v)))
+                .collect(),
+        ),
     }
 }
 
@@ -245,14 +289,20 @@ fn arg_to_json(value: &Arg) -> Result<serde_json::Value> {
             .map(serde_json::Value::Number)
             .ok_or_else(|| mlua::Error::runtime("SetSetting cannot store NaN or infinity"))?,
         Arg::String(s) => serde_json::Value::String(s.clone()),
-        Arg::List(items) => serde_json::Value::Array(items.iter().map(arg_to_json).collect::<Result<_>>()?),
+        Arg::List(items) => {
+            serde_json::Value::Array(items.iter().map(arg_to_json).collect::<Result<_>>()?)
+        }
         Arg::Table(entries) => serde_json::Value::Object(
             entries
                 .iter()
                 .map(|(k, v)| Ok((k.clone(), arg_to_json(v)?)))
                 .collect::<Result<_>>()?,
         ),
-        _ => return Err(mlua::Error::runtime("SetSetting only stores JSON-compatible values")),
+        _ => {
+            return Err(mlua::Error::runtime(
+                "SetSetting only stores JSON-compatible values",
+            ))
+        }
     })
 }
 
@@ -303,30 +353,60 @@ fn prompt_function(lua: &Lua, pending: Pending) -> Result<Function> {
 }
 
 fn signal(lua: &Lua, event: &str) -> Result<Value> {
-    Ok(Value::UserData(lua.create_userdata(LuaSignal(SignalKey::new(Owner::Plugin, event)))?))
+    Ok(Value::UserData(lua.create_userdata(LuaSignal(
+        SignalKey::new(Owner::Plugin, event),
+    ))?))
 }
 
 impl UserData for LuaPlugin {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("CreateToolbar", |lua, _, name: String| Ok(LuaToolbar(toolbar(lua, &name))));
+        methods.add_method("CreateToolbar", |lua, _, name: String| {
+            Ok(LuaToolbar(toolbar(lua, &name)))
+        });
         methods.add_method(
             "CreatePluginAction",
-            |lua, _, (key, text, tooltip, icon, binding): (String, String, Option<String>, Option<String>, Option<bool>)| {
-                Ok(menu::create_action(lua, key, text, tooltip.unwrap_or_default(), icon, binding))
+            |lua,
+             _,
+             (key, text, tooltip, icon, binding): (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                Option<bool>,
+            )| {
+                Ok(menu::create_action(
+                    lua,
+                    key,
+                    text,
+                    tooltip.unwrap_or_default(),
+                    icon,
+                    binding,
+                ))
             },
         );
         methods.add_method(
             "CreatePluginMenu",
-            |lua, _, (_key, title, icon): (Value, Option<String>, Option<String>)| Ok(menu::create_menu(lua, title, icon)),
+            |lua, _, (_key, title, icon): (Value, Option<String>, Option<String>)| {
+                Ok(menu::create_menu(lua, title, icon))
+            },
         );
-        for name in ["CreateDockWidgetPluginGui", "CreateDockWidgetPluginGuiAsync"] {
-            methods.add_method(name, |lua, _, (key, info): (String, Option<AnyUserData>)| {
-                widget::create_dock(lua, key, info)
-            });
+        for name in [
+            "CreateDockWidgetPluginGui",
+            "CreateDockWidgetPluginGuiAsync",
+        ] {
+            methods.add_method(
+                name,
+                |lua, _, (key, info): (String, Option<AnyUserData>)| {
+                    widget::create_dock(lua, key, info)
+                },
+            );
         }
-        methods.add_method("CreateFloatingWidget", |lua, _, (key, options): (String, Option<Table>)| {
-            widget::create_floating(lua, key, options)
-        });
+        methods.add_method(
+            "CreateFloatingWidget",
+            |lua, _, (key, options): (String, Option<Table>)| {
+                widget::create_floating(lua, key, options)
+            },
+        );
         methods.add_method("GetSetting", |lua, _, key: String| {
             let env = env(lua);
             let value = env
@@ -339,7 +419,9 @@ impl UserData for LuaPlugin {
                 .unwrap_or(Arg::Nil);
             arg::to_lua(lua, &env.ctx, &value)
         });
-        methods.add_method("SetSetting", |lua, _, (key, value): (String, Value)| set_setting(lua, key, value));
+        methods.add_method("SetSetting", |lua, _, (key, value): (String, Value)| {
+            set_setting(lua, key, value)
+        });
         methods.add_method("Activate", |lua, _, exclusive: Option<bool>| {
             with_state(lua, |s| s.active = Some(exclusive.unwrap_or(false)));
             Ok(())
@@ -350,16 +432,25 @@ impl UserData for LuaPlugin {
             }
             Ok(())
         });
-        methods.add_method("IsActivated", |lua, _, ()| Ok(with_state(lua, |s| s.active.is_some())));
+        methods.add_method("IsActivated", |lua, _, ()| {
+            Ok(with_state(lua, |s| s.active.is_some()))
+        });
         methods.add_method("IsActivatedWithExclusiveMouse", |lua, _, ()| {
             Ok(with_state(lua, |s| s.active == Some(true)))
         });
         methods.add_method("GetMouse", |_, _, ()| Ok(LuaPluginMouse));
-        methods.add_method("OpenScript", |lua, _, (script, line): (AnyUserData, Option<u32>)| {
-            let script = script.borrow::<LuaInstance>()?.referent();
-            env(lua).shared.borrow_mut().requests.push(Request::OpenScript { script, line });
-            Ok(())
-        });
+        methods.add_method(
+            "OpenScript",
+            |lua, _, (script, line): (AnyUserData, Option<u32>)| {
+                let script = script.borrow::<LuaInstance>()?.referent();
+                env(lua)
+                    .shared
+                    .borrow_mut()
+                    .requests
+                    .push(Request::OpenScript { script, line });
+                Ok(())
+            },
+        );
         for name in ["SelectRibbonTool", "OpenWikiPage", "StartDrag"] {
             methods.add_method(name, |_, _, _: MultiValue| Ok(()));
         }
@@ -371,13 +462,21 @@ impl UserData for LuaPlugin {
                 )))
             });
         }
-        methods.add_method("GetDebuggerManager", |lua, _, ()| debugger_api::manager(lua));
-        methods.add_meta_method(MetaMethod::Index, |lua, _, key: String| match key.as_str() {
-            "Name" => Ok(Value::String(lua.create_string(&env(lua).name)?)),
-            "Deactivation" | "Unloading" => signal(lua, &key),
-            "PromptColor3" => prompt_function(lua, Pending::Color3).map(Value::Function),
-            "PromptBrickColor" => prompt_function(lua, Pending::BrickColor).map(Value::Function),
-            _ => Err(mlua::Error::runtime(format!("{key} is not a valid member of Plugin"))),
+        methods.add_method("GetDebuggerManager", |lua, _, ()| {
+            debugger_api::manager(lua)
+        });
+        methods.add_meta_method(MetaMethod::Index, |lua, _, key: String| {
+            match key.as_str() {
+                "Name" => Ok(Value::String(lua.create_string(&env(lua).name)?)),
+                "Deactivation" | "Unloading" => signal(lua, &key),
+                "PromptColor3" => prompt_function(lua, Pending::Color3).map(Value::Function),
+                "PromptBrickColor" => {
+                    prompt_function(lua, Pending::BrickColor).map(Value::Function)
+                }
+                _ => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of Plugin"
+                ))),
+            }
         });
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("Plugin"));
     }
@@ -395,7 +494,14 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
 /// it (the same key twice returns the same button), as `CreateButton`
 /// does; its `Click` signal is `SignalKey::new(Owner::Ui(id), "Click")`.
 /// For `rbxnative.command`.
-pub(crate) fn toolbar_button(lua: &Lua, toolbar: &str, key: &str, tooltip: &str, icon: &str, text: &str) -> Result<UiId> {
+pub(crate) fn toolbar_button(
+    lua: &Lua,
+    toolbar: &str,
+    key: &str,
+    tooltip: &str,
+    icon: &str,
+    text: &str,
+) -> Result<UiId> {
     let bar = self::toolbar(lua, toolbar);
     Ok(button(lua, bar, key, tooltip, icon, Some(text)))
 }
@@ -407,9 +513,15 @@ pub(crate) fn answer(lua: &Lua, prompt: UiId, answer: &Answer) -> Result<bool> {
         return Ok(false);
     };
     let value = match (pending, answer) {
-        (Pending::Color3, Answer::Color3(Some(c))) => arg::to_lua(lua, &env(lua).ctx, &Arg::Color3(*c))?,
-        (Pending::BrickColor, Answer::BrickColor(Some(n))) => arg::to_lua(lua, &env(lua).ctx, &Arg::BrickColor(*n))?,
-        (Pending::Menu, Answer::Menu(Some(id))) => Value::UserData(lua.create_userdata(menu::LuaAction(*id))?),
+        (Pending::Color3, Answer::Color3(Some(c))) => {
+            arg::to_lua(lua, &env(lua).ctx, &Arg::Color3(*c))?
+        }
+        (Pending::BrickColor, Answer::BrickColor(Some(n))) => {
+            arg::to_lua(lua, &env(lua).ctx, &Arg::BrickColor(*n))?
+        }
+        (Pending::Menu, Answer::Menu(Some(id))) => {
+            Value::UserData(lua.create_userdata(menu::LuaAction(*id))?)
+        }
         _ => Value::Nil,
     };
     scheduler::resolve(lua, prompt, Ok(MultiValue::from_vec(vec![value])))?;
@@ -424,18 +536,32 @@ mod tests {
     use crate::plugin::api::WidgetKind;
     use crate::plugin::testing::test_vm;
 
-    fn vm() -> (Lua, std::rc::Rc<crate::plugin::env::Env>, std::rc::Rc<RefCell<WeakDom>>) {
+    fn vm() -> (
+        Lua,
+        std::rc::Rc<crate::plugin::env::Env>,
+        std::rc::Rc<RefCell<WeakDom>>,
+    ) {
         let (lua, env, dom) = test_vm(WeakDom::new(), false);
         install(&lua).unwrap();
         (lua, env, dom)
     }
 
     fn run(lua: &Lua, src: &str) {
-        scheduler::spawn(lua, lua.load(src).into_function().unwrap(), MultiValue::new()).unwrap();
+        scheduler::spawn(
+            lua,
+            lua.load(src).into_function().unwrap(),
+            MultiValue::new(),
+        )
+        .unwrap();
     }
 
     fn errors(env: &crate::plugin::env::Env) -> Vec<String> {
-        env.shared.borrow().output.iter().map(|l| l.text.clone()).collect()
+        env.shared
+            .borrow()
+            .output
+            .iter()
+            .map(|l| l.text.clone())
+            .collect()
     }
 
     fn last_prompt(env: &crate::plugin::env::Env) -> (UiId, PromptKind) {
@@ -461,7 +587,10 @@ mod tests {
         assert_eq!(bar.name, "Tools");
         assert_eq!(bar.buttons.len(), 2);
         let b = &bar.buttons[0];
-        assert_eq!((b.icon.as_str(), b.text.as_str(), b.tooltip.as_str()), ("rbxassetid://1", "Go", "Go now"));
+        assert_eq!(
+            (b.icon.as_str(), b.text.as_str(), b.tooltip.as_str()),
+            ("rbxassetid://1", "Go", "Go now")
+        );
         assert!(b.active && !b.enabled);
         assert_eq!(bar.buttons[1].text, "other");
         assert!(shared.ui_changed);
@@ -498,11 +627,16 @@ mod tests {
     #[test]
     fn settings_persist() {
         let (lua, env, _) = vm();
-        let dir = std::env::temp_dir().join(format!("rbx_lua_plugin_settings_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("rbx_lua_plugin_settings_{}", std::process::id()));
         env.shared.borrow_mut().settings_dir = Some(dir.clone());
         run(&lua, "plugin:SetSetting('size', 4) plugin:SetSetting('tags', {'a', 'b'}) got = plugin:GetSetting('size') missing = plugin:GetSetting('none')");
         assert_eq!(lua.globals().get::<f64>("got").unwrap(), 4.0);
-        assert!(lua.globals().get::<Option<f64>>("missing").unwrap().is_none());
+        assert!(lua
+            .globals()
+            .get::<Option<f64>>("missing")
+            .unwrap()
+            .is_none());
         let text = std::fs::read_to_string(dir.join("Test.json")).unwrap();
         let saved: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(saved["size"], serde_json::json!(4.0));
@@ -532,7 +666,9 @@ mod tests {
              local chosen = m:ShowAsync() picked = chosen == a name = chosen.ActionId",
         );
         let (id, kind) = last_prompt(&env);
-        let PromptKind::Menu { title, items } = kind else { panic!("not a menu") };
+        let PromptKind::Menu { title, items } = kind else {
+            panic!("not a menu")
+        };
         assert_eq!(title, "Menu");
         let action = match &items[0] {
             crate::plugin::api::MenuItem::Action { id, text, .. } => {

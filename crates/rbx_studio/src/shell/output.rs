@@ -108,7 +108,7 @@ impl OutputEntry {
         }
     }
 
-    pub(crate) fn from_plugin(&self) -> bool {
+    pub(crate) fn is_plugin(&self) -> bool {
         self.plugin
     }
 

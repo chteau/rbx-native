@@ -1,7 +1,9 @@
 //! `CreateDockWidgetPluginGui`, `CreateFloatingWidget` and
 //! `DockWidgetPluginGuiInfo`.
 
-use mlua::{AnyUserData, Lua, MetaMethod, ObjectLike, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    AnyUserData, Lua, MetaMethod, ObjectLike, Result, Table, UserData, UserDataMethods, Value,
+};
 use rbx_dom::Variant;
 
 use crate::instance::LuaInstance;
@@ -69,21 +71,30 @@ impl UserData for LuaWidgetInfo {
                 }
             })
         });
-        methods.add_meta_method_mut(MetaMethod::NewIndex, |_, this, (key, value): (String, Value)| {
-            let bad = || mlua::Error::runtime(format!("invalid value for DockWidgetPluginGuiInfo.{key}"));
-            match key.as_str() {
-                "InitialDockState" => this.initial = dock_state(&value).ok_or_else(bad)?,
-                "InitialEnabled" => this.enabled = value.as_boolean().ok_or_else(bad)?,
-                "InitialEnabledShouldOverrideRestore" => this.override_restore = value.as_boolean().ok_or_else(bad)?,
-                "FloatingXSize" => this.float.0 = number(&value).ok_or_else(bad)?,
-                "FloatingYSize" => this.float.1 = number(&value).ok_or_else(bad)?,
-                "MinWidth" => this.min.0 = number(&value).ok_or_else(bad)?,
-                "MinHeight" => this.min.1 = number(&value).ok_or_else(bad)?,
-                _ => return Err(bad()),
-            }
-            Ok(())
+        methods.add_meta_method_mut(
+            MetaMethod::NewIndex,
+            |_, this, (key, value): (String, Value)| {
+                let bad = || {
+                    mlua::Error::runtime(format!("invalid value for DockWidgetPluginGuiInfo.{key}"))
+                };
+                match key.as_str() {
+                    "InitialDockState" => this.initial = dock_state(&value).ok_or_else(bad)?,
+                    "InitialEnabled" => this.enabled = value.as_boolean().ok_or_else(bad)?,
+                    "InitialEnabledShouldOverrideRestore" => {
+                        this.override_restore = value.as_boolean().ok_or_else(bad)?
+                    }
+                    "FloatingXSize" => this.float.0 = number(&value).ok_or_else(bad)?,
+                    "FloatingYSize" => this.float.1 = number(&value).ok_or_else(bad)?,
+                    "MinWidth" => this.min.0 = number(&value).ok_or_else(bad)?,
+                    "MinHeight" => this.min.1 = number(&value).ok_or_else(bad)?,
+                    _ => return Err(bad()),
+                }
+                Ok(())
+            },
+        );
+        methods.add_meta_method(MetaMethod::ToString, |_, _, ()| {
+            Ok("DockWidgetPluginGuiInfo")
         });
-        methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("DockWidgetPluginGuiInfo"));
     }
 }
 
@@ -147,7 +158,11 @@ fn create(lua: &Lua, key: String, enabled: bool, kind: WidgetKind) -> LuaInstanc
     LuaInstance::new(root, env.ctx.clone())
 }
 
-pub(super) fn create_dock(lua: &Lua, key: String, info: Option<AnyUserData>) -> Result<LuaInstance> {
+pub(super) fn create_dock(
+    lua: &Lua,
+    key: String,
+    info: Option<AnyUserData>,
+) -> Result<LuaInstance> {
     let info = match info {
         Some(ud) => ud.borrow::<LuaWidgetInfo>()?.clone(),
         None => LuaWidgetInfo::default(),
@@ -160,15 +175,28 @@ pub(super) fn create_dock(lua: &Lua, key: String, info: Option<AnyUserData>) -> 
     Ok(create(lua, key, info.enabled, kind))
 }
 
-pub(super) fn create_floating(lua: &Lua, key: String, options: Option<Table>) -> Result<LuaInstance> {
+pub(super) fn create_floating(
+    lua: &Lua,
+    key: String,
+    options: Option<Table>,
+) -> Result<LuaInstance> {
     let fields = match options.map(|t| arg::from_lua(&Value::Table(t))) {
         Some(Arg::Table(fields)) => fields,
         _ => Vec::new(),
     };
-    let field = |name: &str| fields.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+    let field = |name: &str| {
+        fields
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+    };
     let size = match field("Size") {
         Some(Arg::Vector2([x, y])) => (x, y),
-        _ => return Err(mlua::Error::runtime("CreateFloatingWidget needs a Size Vector2")),
+        _ => {
+            return Err(mlua::Error::runtime(
+                "CreateFloatingWidget needs a Size Vector2",
+            ))
+        }
     };
     let position = match field("Position") {
         Some(Arg::Vector2([x, y])) => Some((x, y)),
