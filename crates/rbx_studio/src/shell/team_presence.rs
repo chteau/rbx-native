@@ -218,6 +218,9 @@ impl Shell {
                     let presence = &mut self.team_presence;
                     if !summary.authors.is_empty() {
                         presence.catchup = Some(summary);
+                        // A canned last-seen snapshot so the dock shows the
+                        // "View changes" link for the catch-up screenshot.
+                        presence.before = Some(synthetic_diff_doms().0);
                     }
                     presence.snapshot = Some(mock.snapshot);
                     presence.members = Some(mock.members);
@@ -470,8 +473,6 @@ impl Shell {
         }
         let (before, after) = synthetic_diff_doms();
         let nodes = rbx_dom::diff::diff(&before, &after);
-        // Keep the snapshot so the dock shows the "View changes" link too.
-        self.team_presence.before = Some(before);
         let shell = cx.entity();
         cx.defer(move |cx| {
             let opened = crate::shell::argon_diff_window::ArgonDiffWindow::open_presence(
