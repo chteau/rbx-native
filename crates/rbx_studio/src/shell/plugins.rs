@@ -238,6 +238,7 @@ impl Shell {
             debugger: self.plugin_debugger_view(),
             mouse_target: self.plugins.mouse.map(|(part, _)| part),
             mouse_hit: self.plugins.mouse.map(|(_, hit)| hit),
+            user_id: self.presence_user_id(),
             viewport_size: self
                 .plugins
                 .view_bounds

@@ -21,12 +21,24 @@ impl LuaColor3 {
 
 impl UserData for LuaColor3 {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("R", |_, this| Ok(this.0.r));
-        fields.add_field_method_get("G", |_, this| Ok(this.0.g));
-        fields.add_field_method_get("B", |_, this| Ok(this.0.b));
+        fields.add_meta_field(MetaMethod::Type, "Color3");
+        // Roblox still answers to the lowercase spellings.
+        for name in ["R", "r"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.r));
+        }
+        for name in ["G", "g"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.g));
+        }
+        for name in ["B", "b"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.b));
+        }
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
+        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
+            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        });
         methods.add_method("ToHex", |_, this, ()| {
             let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
             Ok(format!(

@@ -45,22 +45,9 @@ pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
     let globals = lua.globals();
     globals.set("print", output_function(&lua, OutputKind::Print)?)?;
     globals.set("warn", output_function(&lua, OutputKind::Warn)?)?;
-    globals.set(
-        "require",
-        lua.create_function(|lua, target: Value| match target {
-            Value::UserData(data) => {
-                let referent = data
-                    .borrow::<LuaInstance>()
-                    .map(|instance| instance.referent())
-                    .map_err(|_| mlua::Error::runtime("require expects a ModuleScript"))?;
-                require(lua, referent)
-            }
-            Value::Integer(_) | Value::Number(_) => {
-                Err(mlua::Error::runtime("require by asset id is not supported"))
-            }
-            _ => Err(mlua::Error::runtime("require expects a ModuleScript")),
-        })?,
-    )?;
+    globals.set("require", super::require::require_for(&lua, Value::Nil)?)?;
+    // Deprecated spellings Roblox still answers to.
+    globals.set("Game", globals.get::<Value>("game")?)?;
 
     scheduler::install(&lua)?;
     plugin_object::install(&lua)?;
@@ -101,7 +88,11 @@ fn output_function(lua: &Lua, kind: OutputKind) -> Result<mlua::Function> {
 }
 
 /// The chunk for `script`, ready to call, in its own environment.
-fn load(lua: &Lua, script: Ref) -> Result<Option<mlua::Function>> {
+/// Compiles a script's `Source` with its own environment: `script`, a
+/// `require` bound to it, and the plugin's shared `_G`/`shared` tables,
+/// falling through to the globals. `None` (after reporting it) when the
+/// source does not compile.
+pub(crate) fn compile(lua: &Lua, script: Ref) -> Result<Option<mlua::Function>> {
     let env = env(lua);
     let (source, name) = {
         let dom = env.ctx.dom();
@@ -117,7 +108,13 @@ fn load(lua: &Lua, script: Ref) -> Result<Option<mlua::Function>> {
     };
 
     let scope = lua.create_table()?;
-    scope.set("script", LuaInstance::new(script, env.ctx.clone()))?;
+    let this = mlua::IntoLua::into_lua(LuaInstance::new(script, env.ctx.clone()), lua)?;
+    scope.set("script", this.clone())?;
+    scope.set("require", super::require::require_for(lua, this)?)?;
+    let (g, shared) = super::require::script_globals(lua)?;
+    scope.set("_G", g)?;
+    scope.set("shared", shared)?;
+    scope.set("getfenv", super::require::getfenv_for(lua, &scope)?)?;
     let meta: Table = lua.create_table()?;
     meta.set("__index", lua.globals())?;
     scope.set_metatable(Some(meta))?;
@@ -143,32 +140,19 @@ fn load(lua: &Lua, script: Ref) -> Result<Option<mlua::Function>> {
 /// `script` is that instance (other names fall through to the globals).
 /// A compile error is reported to the Output like a runtime one.
 pub(crate) fn run_script(lua: &Lua, script: Ref) -> Result<()> {
-    match load(lua, script)? {
-        Some(function) => scheduler::spawn(lua, function, MultiValue::new()),
-        None => Ok(()),
+    match compile(lua, script) {
+        Ok(Some(function)) => scheduler::spawn(lua, function, MultiValue::new()),
+        Ok(None) => Ok(()),
+        // Binding the script's `require` runs Lua, so a spent budget can
+        // stop it before the script starts: report it like a runtime error.
+        Err(error) => {
+            let env = env(lua);
+            env.shared
+                .borrow_mut()
+                .push_output(&env.name, OutputKind::Error, error.to_string());
+            Ok(())
+        }
     }
-}
-
-/// `require(moduleScript)`: runs the module once per VM (cached in
-/// `Env::modules`) with its own `script`; it must return exactly one
-/// value. `require(number)` is an error ("require by asset id is not
-/// supported").
-pub(crate) fn require(lua: &Lua, module: Ref) -> Result<mlua::Value> {
-    let env = env(lua);
-    if let Some(value) = env.modules.borrow().get(&module) {
-        return Ok(value.clone());
-    }
-    let function =
-        load(lua, module)?.ok_or_else(|| mlua::Error::runtime("require expects a ModuleScript"))?;
-    let mut values = function.call::<MultiValue>(())?;
-    if values.len() != 1 {
-        return Err(mlua::Error::runtime(
-            "Module code did not return exactly one value",
-        ));
-    }
-    let value = values.pop_front().unwrap_or(Value::Nil);
-    env.modules.borrow_mut().insert(module, value.clone());
-    Ok(value)
 }
 
 #[cfg(test)]

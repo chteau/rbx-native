@@ -2,7 +2,8 @@
 //! `DockWidgetPluginGuiInfo`.
 
 use mlua::{
-    AnyUserData, Lua, MetaMethod, ObjectLike, Result, Table, UserData, UserDataMethods, Value,
+    AnyUserData, Lua, MetaMethod, ObjectLike, Result, Table, UserData, UserDataFields,
+    UserDataMethods, Value,
 };
 use rbx_dom::Variant;
 
@@ -54,6 +55,10 @@ fn number(value: &Value) -> Option<f32> {
 }
 
 impl UserData for LuaWidgetInfo {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "DockWidgetPluginGuiInfo");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::Index, |_, this, key: String| {
             Ok(match key.as_str() {

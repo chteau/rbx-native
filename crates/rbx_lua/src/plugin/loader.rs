@@ -174,7 +174,8 @@ pub(crate) fn scripts_to_run(dom: &WeakDom, roots: &[Ref]) -> Vec<Ref> {
     let mut stack: Vec<Ref> = roots.iter().rev().copied().collect();
     while let Some(r) = stack.pop() {
         let Some(inst) = dom.get(r) else { continue };
-        if inst.class() == "Script" {
+        // Studio runs a plugin's LocalScripts as well as its Scripts.
+        if matches!(inst.class(), "Script" | "LocalScript") {
             let disabled = matches!(inst.properties().get("Disabled"), Some(Variant::Bool(true)));
             let off = matches!(inst.properties().get("Enabled"), Some(Variant::Bool(false)));
             if !disabled && !off {
@@ -290,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn scripts_skip_disabled_and_other_classes() {
+    fn scripts_and_local_scripts_run_unless_disabled() {
         let mut dom = WeakDom::new();
         let root = dom.new_instance("Folder", "Root", None);
         let good = dom.new_instance("Script", "Good", Some(root));
@@ -300,9 +301,9 @@ mod tests {
         let not_enabled = dom.new_instance("Script", "NotEnabled", Some(root));
         dom.set_property(not_enabled, "Enabled", Variant::Bool(false))
             .unwrap();
-        dom.new_instance("LocalScript", "Local", Some(root));
+        let local = dom.new_instance("LocalScript", "Local", Some(root));
         dom.new_instance("ModuleScript", "Module", Some(root));
         let nested = dom.new_instance("Script", "Nested", Some(good));
-        assert_eq!(scripts_to_run(&dom, &[root]), vec![good, nested]);
+        assert_eq!(scripts_to_run(&dom, &[root]), vec![good, nested, local]);
     }
 }

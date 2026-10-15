@@ -38,6 +38,7 @@ fn lerp_udim(a: UDim, b: UDim, t: f32) -> UDim {
 
 impl UserData for LuaUDim {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "UDim");
         fields.add_field_method_get("Scale", |_, this| Ok(this.0.scale));
         fields.add_field_method_get("Offset", |_, this| Ok(this.0.offset));
     }
@@ -68,6 +69,7 @@ pub(crate) struct LuaUDim2(pub(crate) UDim2);
 
 impl UserData for LuaUDim2 {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "UDim2");
         fields.add_field_method_get("X", |_, this| Ok(LuaUDim(this.0.x)));
         fields.add_field_method_get("Y", |_, this| Ok(LuaUDim(this.0.y)));
         fields.add_field_method_get("Width", |_, this| Ok(LuaUDim(this.0.x)));
@@ -75,6 +77,10 @@ impl UserData for LuaUDim2 {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
+        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
+            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        });
         methods.add_meta_method(
             MetaMethod::Eq,
             |_, this, other: LuaUDim2| Ok(*this == other),
@@ -141,8 +147,14 @@ pub(crate) fn udim2(lua: &Lua) -> Result<Table> {
             if let (Some(Value::UserData(x)), Some(Value::UserData(y))) =
                 (args.first(), args.get(1))
             {
-                if let (Ok(x), Ok(y)) = (x.borrow::<LuaUDim>(), y.borrow::<LuaUDim>()) {
-                    return Ok(LuaUDim2(UDim2 { x: x.0, y: y.0 }));
+                if let Ok(x) = x.borrow::<LuaUDim>() {
+                    // Roblox lets a second argument that is not a `UDim`
+                    // through as a zero one.
+                    let y = y.borrow::<LuaUDim>().map(|y| y.0).unwrap_or(UDim {
+                        scale: 0.0,
+                        offset: 0,
+                    });
+                    return Ok(LuaUDim2(UDim2 { x: x.0, y }));
                 }
             }
             let number = |index: usize| -> Result<f32> {

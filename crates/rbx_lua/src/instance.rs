@@ -1,9 +1,12 @@
 //! `Instance` userdata: one DOM node seen from Luau.
 
 mod bounds;
+mod tags;
 pub(crate) mod tree;
 
-use mlua::{IntoLua, Lua, MetaMethod, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    IntoLua, Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMethods, Value,
+};
 use rbx_dom::Ref;
 
 use crate::ctx::Ctx;
@@ -80,10 +83,13 @@ impl LuaInstance {
     }
 
     fn class(&self) -> Result<String> {
-        self.ctx
+        let found = self
+            .ctx
             .dom()
             .get(self.referent)
-            .map(|instance| instance.class().to_string())
+            .map(|i| i.class().to_string());
+        found
+            .or_else(|| self.ctx.tombstone(self.referent).map(|(class, _)| class))
             .ok_or_else(property::missing_instance)
     }
 
@@ -107,10 +113,13 @@ impl LuaInstance {
     }
 
     fn instance_name(&self) -> Result<String> {
-        self.ctx
+        let found = self
+            .ctx
             .dom()
             .get(self.referent)
-            .map(|instance| instance.name().to_string())
+            .map(|i| i.name().to_string());
+        found
+            .or_else(|| self.ctx.tombstone(self.referent).map(|(_, name)| name))
             .ok_or_else(property::missing_instance)
     }
 }
@@ -127,6 +136,16 @@ fn parent_target(value: &Value) -> Result<Option<Ref>> {
                 return Ok(Some(instance.referent));
             }
             if data.borrow::<LuaGame>().is_ok() {
+                return Ok(None);
+            }
+            // A plugin's own toolbar, button or `plugin` object: instances
+            // in Roblox, handles here. What is parented to one stays the
+            // plugin's own, out of the place.
+            let handle = data
+                .metatable()
+                .ok()
+                .and_then(|meta| meta.get::<Option<String>>("__type").ok().flatten());
+            if handle.as_deref() == Some("Instance") {
                 return Ok(None);
             }
             Err(mlua::Error::runtime(
@@ -159,6 +178,10 @@ pub(crate) fn instance_list(lua: &Lua, ctx: &Ctx, refs: Vec<Ref>) -> Result<Tabl
 }
 
 impl UserData for LuaInstance {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("IsA", |_, this, class: String| {
             Ok(this.ctx.database().is_subclass_of(&this.class()?, &class))
@@ -253,6 +276,7 @@ impl UserData for LuaInstance {
                 .ok_or_else(property::missing_instance)?;
             let mut dom = this.ctx.dom_mut();
             for child in children {
+                this.ctx.bury(&dom, child);
                 dom.remove(child);
             }
             Ok(())
@@ -304,7 +328,26 @@ impl UserData for LuaInstance {
             // A model losing its `PrimaryPart` keeps the pivot it had.
             crate::pivot::keep_pivots(&mut dom, this.ctx.database(), &[this.referent])
                 .map_err(mlua::Error::runtime)?;
+            this.ctx.bury(&dom, this.referent);
             dom.remove(this.referent);
+            Ok(())
+        });
+        methods.add_method("AddTag", |_, this, tag: String| {
+            tags::set(&this.ctx, this.referent, &tag, true).map(|_| ())
+        });
+        methods.add_method("RemoveTag", |_, this, tag: String| {
+            tags::set(&this.ctx, this.referent, &tag, false).map(|_| ())
+        });
+        methods.add_method("HasTag", |_, this, tag: String| {
+            Ok(tags::get(&this.ctx, this.referent).contains(&tag))
+        });
+        methods.add_method("GetTags", |_, this, ()| {
+            Ok(tags::get(&this.ctx, this.referent))
+        });
+        // Deprecated: parents the instance to nil, children and all.
+        methods.add_method("Remove", |_, this, ()| {
+            this.ctx.check_write(this.referent)?;
+            this.ctx.dom_mut().set_parent(this.referent, None);
             Ok(())
         });
         methods.add_method("Clone", |_, this, ()| {
@@ -317,8 +360,12 @@ impl UserData for LuaInstance {
                 "Name" => return this.instance_name()?.into_lua(lua),
                 "ClassName" => return this.class()?.into_lua(lua),
                 "Parent" => {
-                    // Reject a destroyed instance before reporting "no parent".
+                    // Reject an unknown instance before reporting "no parent";
+                    // a destroyed one has none.
                     this.class()?;
+                    if this.ctx.dom().get(this.referent).is_none() {
+                        return Ok(Value::Nil);
+                    }
                     let parent = tree::parent_of(&this.ctx.dom(), this.referent);
                     return match parent {
                         Some(referent) => {
@@ -340,6 +387,11 @@ impl UserData for LuaInstance {
                 return Ok(value);
             }
             let child = tree::find_child(&this.ctx.dom(), this.referent, &key, false);
+            if child.is_none() {
+                if let Some(alias) = crate::compat::lowercase_method(lua, &key)? {
+                    return Ok(alias);
+                }
+            }
             match child {
                 Some(referent) => LuaInstance::new(referent, this.ctx.clone()).into_lua(lua),
                 None => Err(mlua::Error::runtime(format!(

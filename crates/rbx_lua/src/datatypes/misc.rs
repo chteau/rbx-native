@@ -38,6 +38,7 @@ fn combine2(lhs: &LuaVector2, rhs: &Value, op: fn(f32, f32) -> f32) -> Result<Lu
 
 impl UserData for LuaVector2 {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Vector2");
         // Roblox still answers to the deprecated lowercase spellings.
         for name in ["X", "x"] {
             fields.add_field_method_get(name, |_, this| Ok(this.0.x));
@@ -59,6 +60,10 @@ impl UserData for LuaVector2 {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
+        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
+            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        });
         methods.add_meta_method(MetaMethod::Add, |_, this, rhs: Value| {
             combine2(this, &rhs, |a, b| a + b)
         });
@@ -157,6 +162,7 @@ pub(crate) struct LuaNumberRange(pub(crate) NumberRange);
 
 impl UserData for LuaNumberRange {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "NumberRange");
         fields.add_field_method_get("Min", |_, this| Ok(this.0.min));
         fields.add_field_method_get("Max", |_, this| Ok(this.0.max));
     }
@@ -200,6 +206,7 @@ impl LuaBrickColor {
 
 impl UserData for LuaBrickColor {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "BrickColor");
         fields.add_field_method_get("Number", |_, this| Ok(this.0.number));
         fields.add_field_method_get("Name", |_, this| Ok(this.0.name));
         fields.add_field_method_get("Color", |_, this| {
@@ -256,6 +263,26 @@ pub(crate) fn number_range(lua: &Lua) -> Result<Table> {
 
 pub(crate) fn brick_color(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
+    // The named shortcuts (`BrickColor.Yellow()`), by Roblox's own names.
+    for (shortcut, name) in [
+        ("White", "White"),
+        ("Gray", "Medium stone grey"),
+        ("DarkGray", "Dark stone grey"),
+        ("Black", "Black"),
+        ("Red", "Bright red"),
+        ("Yellow", "Bright yellow"),
+        ("Green", "Dark green"),
+        ("Blue", "Bright blue"),
+    ] {
+        table.set(
+            shortcut,
+            lua.create_function(move |_, ()| {
+                Ok(BrickColor::from_name(name)
+                    .map(LuaBrickColor)
+                    .unwrap_or_else(|| LuaBrickColor::from_number(DEFAULT_BRICK_COLOR)))
+            })?,
+        )?;
+    }
     table.set(
         "new",
         lua.create_function(|_, args: mlua::MultiValue| {

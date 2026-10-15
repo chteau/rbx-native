@@ -112,6 +112,59 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 }
 
 impl LuaDateTime {
+    /// Year, month, day, hour, minute, second, millisecond (UTC).
+    fn parts(&self) -> [i64; 7] {
+        let secs = self.millis.div_euclid(1000);
+        let (year, month, day) = civil_from_days(secs.div_euclid(86_400));
+        let rem = secs.rem_euclid(86_400);
+        [
+            year,
+            month,
+            day,
+            rem / 3600,
+            rem % 3600 / 60,
+            rem % 60,
+            self.millis.rem_euclid(1000),
+        ]
+    }
+
+    /// `FormatUniversalTime`'s common tokens: `YYYY`, `YY`, `MM`, `M`, `DD`,
+    /// `D`, `HH`, `H`, `hh`, `h`, `mm`, `ss`, `A`; others are copied.
+    fn format(&self, pattern: &str) -> String {
+        let [year, month, day, hour, minute, second, _] = self.parts();
+        let twelve = if hour % 12 == 0 { 12 } else { hour % 12 };
+        let tokens: [(&str, String); 13] = [
+            ("YYYY", format!("{year:04}")),
+            ("YY", format!("{:02}", year % 100)),
+            ("MM", format!("{month:02}")),
+            ("M", month.to_string()),
+            ("DD", format!("{day:02}")),
+            ("D", day.to_string()),
+            ("HH", format!("{hour:02}")),
+            ("H", hour.to_string()),
+            ("hh", format!("{twelve:02}")),
+            ("h", twelve.to_string()),
+            ("mm", format!("{minute:02}")),
+            ("ss", format!("{second:02}")),
+            ("A", if hour < 12 { "AM".into() } else { "PM".into() }),
+        ];
+        let mut out = String::new();
+        let mut rest = pattern;
+        'outer: while !rest.is_empty() {
+            for (token, value) in &tokens {
+                if let Some(after) = rest.strip_prefix(token) {
+                    out.push_str(value);
+                    rest = after;
+                    continue 'outer;
+                }
+            }
+            let mut chars = rest.chars();
+            out.extend(chars.next());
+            rest = chars.as_str();
+        }
+        out
+    }
+
     fn iso(&self) -> String {
         let secs = self.millis.div_euclid(1000);
         let (year, month, day) = civil_from_days(secs.div_euclid(86_400));
@@ -134,6 +187,31 @@ impl UserData for LuaDateTime {
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("ToIsoDate", |_, this, ()| Ok(this.iso()));
+        // rbx-native has no time-zone table, so local time is UTC.
+        for name in ["ToUniversalTime", "ToLocalTime"] {
+            methods.add_method(name, |lua, this, ()| {
+                let table = lua.create_table()?;
+                let keys = [
+                    "Year",
+                    "Month",
+                    "Day",
+                    "Hour",
+                    "Minute",
+                    "Second",
+                    "Millisecond",
+                ];
+                for (key, value) in keys.into_iter().zip(this.parts()) {
+                    table.set(key, value)?;
+                }
+                Ok(table)
+            });
+        }
+        for name in ["FormatUniversalTime", "FormatLocalTime"] {
+            methods.add_method(
+                name,
+                |_, this, (pattern, _locale): (String, Option<String>)| Ok(this.format(&pattern)),
+            );
+        }
         methods.add_meta_method(MetaMethod::Eq, |_, this, other: UserDataRef<Self>| {
             Ok(*this == *other)
         });

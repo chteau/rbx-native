@@ -4,7 +4,8 @@
 //! consume them read the `pub(crate)` fields directly.
 
 use mlua::{
-    AnyUserData, Lua, ObjectLike, Result, Table, UserData, UserDataFields, UserDataMethods, Value,
+    AnyUserData, Lua, MetaMethod, ObjectLike, Result, Table, UserData, UserDataFields,
+    UserDataMethods, Value,
 };
 use rbx_dom::{Ref, Vector3Data};
 
@@ -142,6 +143,7 @@ impl LuaRaycastParams {
 
 impl UserData for LuaRaycastParams {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "RaycastParams");
         filter_fields!(fields);
         fields.add_field_method_get("IgnoreWater", |_, this| Ok(this.ignore_water));
         fields.add_field_method_set("IgnoreWater", |_, this, on: bool| {
@@ -186,6 +188,7 @@ impl LuaOverlapParams {
 
 impl UserData for LuaOverlapParams {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "OverlapParams");
         filter_fields!(fields);
         fields.add_field_method_get("MaxParts", |_, this| Ok(this.max_parts));
         fields.add_field_method_set("MaxParts", |_, this, count: u32| {
@@ -234,6 +237,7 @@ impl LuaRaycastResult {
 
 impl UserData for LuaRaycastResult {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "RaycastResult");
         fields.add_field_method_get("Instance", |_, this| {
             Ok(LuaInstance::new(this.instance, this.ctx.clone()))
         });

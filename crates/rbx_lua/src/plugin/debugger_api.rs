@@ -2,7 +2,10 @@
 //! Roblox's own `DebuggerManager`/`ScriptDebugger`, which real Studio only
 //! exposes to the command bar.
 
-use mlua::{IntoLua, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    IntoLua, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataFields, UserDataMethods,
+    Value,
+};
 use rbx_dom::Ref;
 
 use super::api::{Arg, DebuggerRequest, DebuggerView, Permission, Request};
@@ -87,6 +90,10 @@ fn debugger_value(lua: &Lua, script: Ref) -> Result<Value> {
 }
 
 impl UserData for LuaManager {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("AddDebugger", |lua, _, script: Value| {
             check(lua)?;
@@ -135,6 +142,10 @@ impl UserData for LuaManager {
 }
 
 impl UserData for LuaScriptDebugger {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method(
             "SetBreakpoint",

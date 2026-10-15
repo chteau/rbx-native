@@ -40,6 +40,12 @@ pub(crate) trait Hooks {
 
     /// Asked first by `game:GetService(name)`.
     fn service(&self, lua: &Lua, ctx: &Ctx, name: &str) -> Result<Option<Value>>;
+
+    /// Asked by `game`'s `__index` for a member it does not have itself
+    /// (its signals, in the plugin host).
+    fn game_member(&self, _lua: &Lua, _key: &str) -> Result<Option<Value>> {
+        Ok(None)
+    }
 }
 
 /// The app-data slot a VM's hooks live in.

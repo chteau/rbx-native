@@ -50,6 +50,11 @@ impl UserData for LuaEnum {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // `item.EnumType == Enum.Material`: one enum however it was reached.
+        methods.add_meta_method(
+            MetaMethod::Eq,
+            |_, this, other: mlua::UserDataRef<LuaEnum>| Ok(this.name == other.name),
+        );
         methods.add_method("FromName", |lua, this, name: String| {
             this.ctx
                 .database()

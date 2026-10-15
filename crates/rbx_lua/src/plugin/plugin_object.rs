@@ -1,6 +1,7 @@
 //! The `plugin` global and what it creates: toolbars and buttons, plugin
 //! actions and menus, dock widgets, settings, and rbx-native's additions.
 
+mod like;
 mod menu;
 mod widget;
 
@@ -8,8 +9,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use mlua::{
-    AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods,
-    Value,
+    AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataFields,
+    UserDataMethods, Value,
 };
 
 use super::api::{Answer, Arg, Button, PromptKind, Request, Toolbar, UiId};
@@ -46,7 +47,7 @@ use crate::instance::LuaInstance;
 ///   `Button1Up`/`Move` signals that never fire yet);
 /// - `OpenScript(script, line?)` → `Request::OpenScript`;
 ///   `SelectRibbonTool`, `OpenWikiPage`, `StartDrag` → no-ops;
-///   `GetStudioUserId()` 0; `Union`/`Separate`/`Negate` → error naming
+///   `GetStudioUserId()` the signed-in user (0 when none); `Union`/`Separate`/`Negate` → error naming
 ///   the missing CSG support;
 /// - rbx-native additions: yielding `PromptColor3(initial?)` → Color3 or
 ///   nil, yielding `PromptBrickColor(initial?)` → BrickColor or nil,
@@ -166,6 +167,10 @@ fn with_button<R>(lua: &Lua, id: UiId, f: impl FnOnce(&mut Button) -> R) -> Resu
 }
 
 impl UserData for LuaToolbar {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method(
             "CreateButton",
@@ -189,11 +194,40 @@ impl UserData for LuaToolbar {
                 )))
             },
         );
+        methods.add_meta_method(
+            MetaMethod::Index,
+            |lua, this, key: String| match like::index(
+                lua,
+                &format!("toolbar:{}", this.0),
+                "PluginToolbar",
+                &key,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of PluginToolbar"
+                ))),
+            },
+        );
+        methods.add_meta_method(
+            MetaMethod::NewIndex,
+            |lua, this, (key, value): (String, Value)| {
+                if like::new_index(lua, &format!("toolbar:{}", this.0), &key, &value)? {
+                    return Ok(());
+                }
+                Err(mlua::Error::runtime(format!(
+                    "{key} cannot be set on PluginToolbar"
+                )))
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginToolbar"));
     }
 }
 
 impl UserData for LuaButton {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("SetActive", |lua, this, active: bool| {
             with_button(lua, this.0, |b| b.active = active)
@@ -210,8 +244,12 @@ impl UserData for LuaButton {
                 "Name" => Some(Arg::String(b.key.clone())),
                 _ => None,
             })?;
-            match value {
-                Some(value) => arg::to_lua(lua, &env(lua).ctx, &value),
+            if let Some(value) = value {
+                return arg::to_lua(lua, &env(lua).ctx, &value);
+            }
+            let handle = format!("button:{}", this.0);
+            match like::index(lua, &handle, "PluginToolbarButton", &key)? {
+                Some(value) => Ok(value),
                 None => Err(mlua::Error::runtime(format!(
                     "{key} is not a valid member of PluginToolbarButton"
                 ))),
@@ -228,9 +266,14 @@ impl UserData for LuaButton {
                     let icon = s.to_string_lossy().to_string();
                     with_button(lua, this.0, |b| b.icon = icon)
                 }
-                _ => Err(mlua::Error::runtime(format!(
-                    "{key} cannot be set on PluginToolbarButton"
-                ))),
+                (_, value) => {
+                    if like::new_index(lua, &format!("button:{}", this.0), &key, &value)? {
+                        return Ok(());
+                    }
+                    Err(mlua::Error::runtime(format!(
+                        "{key} cannot be set on PluginToolbarButton"
+                    )))
+                }
             },
         );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginToolbarButton"));
@@ -238,10 +281,23 @@ impl UserData for LuaButton {
 }
 
 impl UserData for LuaPluginMouse {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::Index, |lua, _, key: String| {
+            // `mouse.hit`, `mouse.target`: the deprecated spellings.
+            let key = match key.as_str() {
+                "hit" | "target" | "origin" => {
+                    let mut chars = key.chars();
+                    chars.next().map(|c| c.to_ascii_uppercase()).into_iter().chain(chars).collect()
+                }
+                _ => key,
+            };
             let env = env(lua);
             let context = env.shared.borrow().context.clone();
+            let size = context.viewport_size.unwrap_or([0.0, 0.0]);
             let cframe = |p: [f32; 3]| -> Result<Value> {
                 let new: Function = lua.globals().get::<Table>("CFrame")?.get("new")?;
                 new.call((p[0], p[1], p[2]))
@@ -249,19 +305,52 @@ impl UserData for LuaPluginMouse {
             match key.as_str() {
                 "Hit" => cframe(context.mouse_hit.unwrap_or_default()),
                 "Origin" => cframe([0.0; 3]),
+                "Icon" => match like::field(lua, "mouse", "Icon")? {
+                    Value::Nil => Ok(Value::String(lua.create_string("")?)),
+                    icon => Ok(icon),
+                },
+                "TargetFilter" => like::field(lua, "mouse", "TargetFilter"),
+                "TargetSurface" => lua.load("return Enum.NormalId.Top").eval(),
+                // The editor's pointer is only known as a 3D hit, so the
+                // screen point reads as the view's centre.
+                "X" => Ok(Value::Number(f64::from(size[0] / 2.0))),
+                "Y" => Ok(Value::Number(f64::from(size[1] / 2.0))),
+                "ViewSizeX" => Ok(Value::Number(f64::from(size[0]))),
+                "ViewSizeY" => Ok(Value::Number(f64::from(size[1]))),
+                "UnitRay" => {
+                    let camera: Value = lua
+                        .load("local c = workspace.CurrentCamera return c and c:ViewportPointToRay(...)")
+                        .call((size[0] / 2.0, size[1] / 2.0))?;
+                    Ok(camera)
+                }
                 "Target" => match context.mouse_target {
                     Some(r) => arg::to_lua(lua, &env.ctx, &Arg::Instance(r)),
                     None => Ok(Value::Nil),
                 },
-                "Button1Down" | "Button1Up" | "Move" => {
+                "Button1Down" | "Button1Up" | "Button2Down" | "Button2Up" | "Move" | "Idle"
+                | "WheelForward" | "WheelBackward" | "KeyDown" | "KeyUp" | "DragEnter" => {
                     let signal = LuaSignal(SignalKey::new(Owner::Plugin, format!("Mouse.{key}")));
                     Ok(Value::UserData(lua.create_userdata(signal)?))
                 }
-                _ => Err(mlua::Error::runtime(format!(
-                    "{key} is not a valid member of PluginMouse"
-                ))),
+                _ => match like::index(lua, "mouse", "PluginMouse", &key)? {
+                    Some(value) => Ok(value),
+                    None => Err(mlua::Error::runtime(format!(
+                        "{key} is not a valid member of PluginMouse"
+                    ))),
+                },
             }
         });
+        methods.add_meta_method(
+            MetaMethod::NewIndex,
+            |lua, _, (key, value): (String, Value)| {
+                if matches!(key.as_str(), "Icon" | "TargetFilter") {
+                    return like::set_field(lua, "mouse", &key, value);
+                }
+                Err(mlua::Error::runtime(format!(
+                    "{key} cannot be set on PluginMouse"
+                )))
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginMouse"));
     }
 }
@@ -402,6 +491,10 @@ fn signal(lua: &Lua, event: &str) -> Result<Value> {
 }
 
 impl UserData for LuaPlugin {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("CreateToolbar", |lua, _, name: String| {
             Ok(LuaToolbar(toolbar(lua, &name)))
@@ -497,7 +590,9 @@ impl UserData for LuaPlugin {
         for name in ["SelectRibbonTool", "OpenWikiPage", "StartDrag"] {
             methods.add_method(name, |_, _, _: MultiValue| Ok(()));
         }
-        methods.add_method("GetStudioUserId", |_, _, ()| Ok(0));
+        methods.add_method("GetStudioUserId", |lua, _, ()| {
+            Ok(env(lua).shared.borrow().context.user_id.unwrap_or(0))
+        });
         // Studio's "Join Surfaces" toggle, off by default; rbx-native has no
         // joints to make.
         methods.add_method("GetJoinMode", |lua, _, ()| {
@@ -522,11 +617,27 @@ impl UserData for LuaPlugin {
                 "PromptBrickColor" => {
                     prompt_function(lua, Pending::BrickColor).map(Value::Function)
                 }
-                _ => Err(mlua::Error::runtime(format!(
-                    "{key} is not a valid member of Plugin"
-                ))),
+                _ => match like::index(lua, "plugin", "Plugin", &key)? {
+                    Some(value) => Ok(value),
+                    None => Err(mlua::Error::runtime(format!(
+                        "{key} is not a valid member of Plugin"
+                    ))),
+                },
             }
         });
+        // `plugin.Name = …` is accepted (and kept) though the editor names
+        // the plugin itself.
+        methods.add_meta_method(
+            MetaMethod::NewIndex,
+            |lua, _, (key, value): (String, Value)| {
+                if like::new_index(lua, "plugin", &key, &value)? {
+                    return Ok(());
+                }
+                Err(mlua::Error::runtime(format!(
+                    "{key} cannot be set on Plugin"
+                )))
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("Plugin"));
     }
 }

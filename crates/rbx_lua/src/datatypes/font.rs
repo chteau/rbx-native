@@ -45,6 +45,7 @@ fn style_from_value(value: &Value) -> Result<FontStyle> {
 
 impl UserData for LuaFont {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Font");
         fields.add_field_method_get("Family", |_, this| Ok(this.0.family.clone()));
         fields.add_field_method_get("Weight", |_, this| Ok(i32::from(this.0.weight)));
         fields.add_field_method_get("Style", |_, this| Ok(style_name(this.0.style)));
@@ -111,5 +112,50 @@ pub(crate) fn constructors(lua: &Lua) -> Result<Table> {
             },
         )?,
     )?;
+    // `fromName`/`fromId` build the family URI `new` takes; `fromEnum` maps
+    // a legacy `Enum.Font` onto its family and weight the way Roblox's own
+    // table does for the common faces (others keep their own name).
+    let more: Table = lua
+        .load(
+            r#"
+            local new = ...
+            local families = {
+                SourceSans = { "SourceSansPro" }, SourceSansBold = { "SourceSansPro", "Bold" },
+                SourceSansLight = { "SourceSansPro", "Light" }, SourceSansSemibold = { "SourceSansPro", "SemiBold" },
+                SourceSansItalic = { "SourceSansPro", nil, "Italic" },
+                Gotham = { "GothamSSm" }, GothamMedium = { "GothamSSm", "Medium" },
+                GothamBold = { "GothamSSm", "Bold" }, GothamBlack = { "GothamSSm", "Heavy" },
+                GothamSemibold = { "GothamSSm", "SemiBold" },
+                Arial = { "Arimo" }, ArialBold = { "Arimo", "Bold" }, Legacy = { "LegacyArial" },
+                Code = { "RobotoMono" }, Highway = { "HighwayGothic" },
+                BuilderSans = { "BuilderSans" }, BuilderSansBold = { "BuilderSans", "Bold" },
+                BuilderSansMedium = { "BuilderSans", "Medium" }, BuilderSansExtraBold = { "BuilderSans", "ExtraBold" },
+            }
+            local function family(name) return "rbxasset://fonts/families/" .. name .. ".json" end
+            return {
+                fromName = function(name, weight, style) return new(family(name), weight, style) end,
+                fromId = function(id, weight, style) return new("rbxassetid://" .. tostring(id), weight, style) end,
+                fromEnum = function(item)
+                    local name = item.Name
+                    local known = families[name]
+                    if known then
+                        return new(
+                            family(known[1]),
+                            known[2] and Enum.FontWeight[known[2]] or nil,
+                            known[3] and Enum.FontStyle[known[3]] or nil
+                        )
+                    end
+                    local bold = name:match("Bold$") and Enum.FontWeight.Bold or nil
+                    return new(family((name:gsub("Bold$", ""))), bold)
+                end,
+            }
+            "#,
+        )
+        .set_name("=Font")
+        .call(table.get::<mlua::Function>("new")?)?;
+    for pair in more.pairs::<String, Value>() {
+        let (key, value) = pair?;
+        table.set(key, value)?;
+    }
     Ok(table)
 }

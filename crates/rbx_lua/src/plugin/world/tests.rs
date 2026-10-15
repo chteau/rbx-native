@@ -78,7 +78,7 @@ fn tween_applies_goals_and_completes() {
 #[test]
 fn marketplace_errors() {
     let out = eval(
-        r#"local ok, err = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(1) end)
+        r#"local ok, err = pcall(function() return game:GetService("MarketplaceService"):PromptPurchase(nil, 1) end)
         return tostring(ok) .. " " .. tostring(err):match("not available in rbx%-native")"#,
     );
     assert_eq!(out, "false not available in rbx-native");

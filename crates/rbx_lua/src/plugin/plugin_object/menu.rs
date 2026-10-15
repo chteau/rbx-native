@@ -1,6 +1,8 @@
 //! `PluginAction` and `PluginMenu`.
 
-use mlua::{AnyUserData, Lua, MetaMethod, Result, UserData, UserDataMethods, Value};
+use mlua::{
+    AnyUserData, Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods, Value,
+};
 
 use super::{with_state, Pending};
 use crate::plugin::api::{Action, MenuItem, PromptKind, Request, UiId};
@@ -86,6 +88,10 @@ fn action_field<T>(lua: &Lua, id: UiId, f: impl FnOnce(&Action) -> T) -> Option<
 }
 
 impl UserData for LuaAction {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             let id = this.0;
@@ -205,6 +211,10 @@ fn push(lua: &Lua, menu: UiId, entry: Entry) {
 }
 
 impl UserData for LuaMenu {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("AddAction", |lua, this, action: AnyUserData| {
             let id = action.borrow::<LuaAction>()?.0;

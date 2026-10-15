@@ -11,8 +11,8 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use mlua::{
-    FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, Result, Table, UserData, UserDataMethods,
-    Value,
+    FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, Result, Table, UserData, UserDataFields,
+    UserDataMethods, Value,
 };
 use rbx_dom::{Ref, Variant};
 
@@ -57,12 +57,42 @@ fn state(lua: &Lua) -> Rc<RefCell<State>> {
 struct LuaService(&'static str);
 
 impl UserData for LuaService {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             index(lua, this.0, &key)
         });
+        // `UserInputService.MouseBehavior = …` and the like: settings the
+        // editor's own pointer handling keeps, accepted and dropped.
+        methods.add_meta_method(
+            MetaMethod::NewIndex,
+            |_, this, (key, _value): (String, Value)| match (this.0, key.as_str()) {
+                (
+                    "UserInputService",
+                    "MouseBehavior" | "MouseIconEnabled" | "MouseIcon" | "MouseDeltaSensitivity",
+                ) => Ok(()),
+                (service, key) => Err(mlua::Error::runtime(format!(
+                    "{key} cannot be set on {service}"
+                ))),
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(this.0));
     }
+}
+
+/// `Players` members the host answers itself (see
+/// `http_service::players_member`).
+pub(crate) fn players_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
+    http_service::players_member(lua, key)
+}
+
+/// `MarketplaceService` members the host answers (see
+/// `http_service::marketplace_member`).
+pub(crate) fn marketplace_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
+    http_service::marketplace_member(lua, key)
 }
 
 /// `game:GetService(name)` for the services above (one userdata per VM per
@@ -72,8 +102,8 @@ impl UserData for LuaService {
 /// - `Selection`: `Get()`, `Set(list)`, `Add(list)`, `Remove(list)`,
 ///   `SelectionChanged`. Reads `Shared::context.selection` (dropping refs no
 ///   longer in the DOM); writes it back and sets `Shared::selection_written`.
-///   Nothing fires from a Rust-side write: the host compares selections on
-///   its next dispatch, so a `Set` inside a handler cannot re-enter.
+///   Nothing fires from inside the write: the host fires `SelectionChanged`
+///   once the input is handled, so a `Set` inside a handler cannot re-enter.
 /// - `ChangeHistoryService`: waypoints and undo/redo as [`Request`]s;
 ///   recordings are tracked per VM.
 /// - `HttpService`: see `http_service`. A Roblox plugin's first request to a
@@ -135,6 +165,24 @@ fn user_input_service(lua: &Lua, key: &str) -> Result<Value> {
         let ctx = env(lua).ctx.clone();
         super::input::enum_item(&ctx, enum_name, name)?.interned(lua)
     };
+    if key == "GetStringForKeyCode" {
+        // The key's own label: Roblox gives the character a key types on
+        // a US layout, which for letters and digits is the item's name.
+        return func(lua, |lua, (_, code): (Value, Value)| {
+            let name = match &code {
+                Value::UserData(u) => mlua::ObjectLike::get::<String>(u, "Name")?,
+                _ => String::new(),
+            };
+            let digits = [
+                "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+            ];
+            let label = match digits.iter().position(|d| *d == name) {
+                Some(n) => n.to_string(),
+                None => name,
+            };
+            lua.create_string(label)
+        });
+    }
     match key {
         "InputBegan"
         | "InputChanged"
@@ -289,8 +337,53 @@ fn change_history(lua: &Lua, key: &str) -> Result<Value> {
 
 type MultiValueRest = mlua::Variadic<Value>;
 
+/// Fires `GetInstanceAddedSignal(tag)` / `GetInstanceRemovedSignal(tag)`
+/// for a tag a plugin changed through `CollectionService`.
+fn tag_signal(lua: &Lua, event: &str, tag: &str, r: Ref) -> Result<()> {
+    let key = SignalKey::new(
+        Owner::Service("CollectionService"),
+        format!("{event}:{tag}"),
+    );
+    super::signal::fire(lua, &key, &[super::api::Arg::Instance(r)])
+}
+
+/// `BindToRenderStep(name, priority, fn)` / `UnbindFromRenderStep(name)`:
+/// named `RenderStepped` connections (priority is not ordered).
+fn render_step(lua: &Lua, unbind: bool) -> Result<Value> {
+    const KEY: &str = "rbxn.render_step";
+    let pair: Table = match lua.named_registry_value::<Option<Table>>(KEY)? {
+        Some(pair) => pair,
+        None => {
+            let stepped = signal(lua, "RunService", "RenderStepped")?;
+            let pair: Table = lua
+                .load(
+                    r#"
+                    local stepped = ...
+                    local bound = {}
+                    local function bind(_, name, _, fn)
+                        if bound[name] then bound[name]:Disconnect() end
+                        bound[name] = stepped:Connect(fn)
+                    end
+                    local function unbind(_, name)
+                        if bound[name] then bound[name]:Disconnect() end
+                        bound[name] = nil
+                    end
+                    return { bind, unbind }
+                    "#,
+                )
+                .set_name("=RunService")
+                .call(stepped)?;
+            lua.set_named_registry_value(KEY, pair.clone())?;
+            pair
+        }
+    };
+    pair.get(if unbind { 2 } else { 1 })
+}
+
 fn run_service(lua: &Lua, key: &str) -> Result<Value> {
     match key {
+        "BindToRenderStep" => render_step(lua, false),
+        "UnbindFromRenderStep" => render_step(lua, true),
         "IsStudio" | "IsEdit" => func(lua, |_, _: Value| Ok(true)),
         "IsRunning" | "IsRunMode" | "IsClient" | "IsServer" => func(lua, |_, _: Value| Ok(false)),
         "Heartbeat" | "RenderStepped" | "Stepped" => signal(lua, "RunService", key),
@@ -301,10 +394,27 @@ fn run_service(lua: &Lua, key: &str) -> Result<Value> {
 fn studio_service(lua: &Lua, key: &str) -> Result<Value> {
     match key {
         "ActiveScript" => Ok(Value::Nil),
-        "GetUserId" => func(lua, |_, _: Value| Ok(0)),
+        "GetUserId" => func(lua, |lua, _: Value| {
+            Ok(env(lua).shared.borrow().context.user_id.unwrap_or(0))
+        }),
         "StudioLocaleId" => Ok(Value::String(lua.create_string("en_us")?)),
         "GridSize" => Ok(Value::Number(1.0)),
         "RotateIncrement" => Ok(Value::Number(15.0)),
+        "UseLocalSpace" | "DraggerSolveConstraints" | "ShowConstraintDetails" => {
+            Ok(Value::Boolean(false))
+        }
+        "InstalledPluginData" => Ok(Value::String(lua.create_string("")?)),
+        // Studio's class icons come from its own sheet, which rbx-native
+        // does not ship; an empty image keeps an icon row laid out.
+        "GetClassIcon" => func(lua, |lua, _: mlua::MultiValue| {
+            let icon = lua.create_table()?;
+            icon.set("Image", "")?;
+            let vector2: Table = lua.globals().get("Vector2")?;
+            let zero: Value = vector2.get("zero")?;
+            icon.set("ImageRectOffset", zero.clone())?;
+            icon.set("ImageRectSize", zero)?;
+            Ok(icon)
+        }),
         _ => Err(no_member("StudioService", key)),
     }
 }
@@ -372,8 +482,9 @@ fn collection_service(lua: &Lua, key: &str) -> Result<Value> {
             let r = instance_ref(&inst)?;
             let mut tags = tags_of(lua, r);
             if !tags.contains(&tag) {
-                tags.push(tag);
+                tags.push(tag.clone());
                 write_tags(lua, r, &tags)?;
+                tag_signal(lua, "InstanceAdded", &tag, r)?;
             }
             Ok(())
         }),
@@ -383,9 +494,20 @@ fn collection_service(lua: &Lua, key: &str) -> Result<Value> {
             if tags.contains(&tag) {
                 tags.retain(|t| *t != tag);
                 write_tags(lua, r, &tags)?;
+                tag_signal(lua, "InstanceRemoved", &tag, r)?;
             }
             Ok(())
         }),
+        "GetInstanceAddedSignal" | "GetInstanceRemovedSignal" => {
+            let event = &key[3..key.len() - 6];
+            let event = event.to_string();
+            func(lua, move |_, (_, tag): (Value, String)| {
+                Ok(LuaSignal(SignalKey::new(
+                    Owner::Service("CollectionService"),
+                    format!("{event}:{tag}"),
+                )))
+            })
+        }
         _ => Err(no_member("CollectionService", key)),
     }
 }
@@ -437,6 +559,18 @@ pub(crate) fn install_settings(lua: &Lua) -> Result<()> {
     studio.set("Theme", theme)?;
     let root = lua.create_table()?;
     root.set("Studio", studio)?;
+    // `settings():GetService("Studio")`, the long way to the same table.
+    root.set(
+        "GetService",
+        lua.create_function(|_, (this, name): (Table, String)| {
+            match this.get::<Value>(name.as_str())? {
+                Value::Nil => Err(mlua::Error::runtime(format!(
+                    "{name} is not a valid service of settings()"
+                ))),
+                found => Ok(found),
+            }
+        })?,
+    )?;
     let getter = lua.create_function(move |_, ()| Ok(root.clone()))?;
     lua.globals().set("settings", getter.clone())?;
     lua.globals().set("UserSettings", getter)

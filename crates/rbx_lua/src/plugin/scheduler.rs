@@ -245,10 +245,10 @@ pub(crate) fn resume(lua: &Lua, thread: Thread, args: MultiValue) -> Result<()> 
                     return Ok(());
                 }
             },
-            None => {
-                scheduler.deferred.push_back((thread, MultiValue::new()));
-                return Ok(());
-            }
+            // A plain `coroutine.yield()` suspends the thread until
+            // whoever holds it resumes it, as in Roblox — signal libraries
+            // park their runner threads exactly this way.
+            None => return Ok(()),
         }
     }
 }

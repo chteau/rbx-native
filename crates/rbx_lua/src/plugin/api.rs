@@ -103,6 +103,9 @@ pub struct Context {
     pub mouse_hit: Option<[f32; 3]>,
     /// The 3D view's size in pixels, for `Camera.ViewportSize`.
     pub viewport_size: Option<[f32; 2]>,
+    /// The signed-in Roblox user, for `StudioService:GetUserId()` and
+    /// `plugin:GetStudioUserId()` (0 when nobody is).
+    pub user_id: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

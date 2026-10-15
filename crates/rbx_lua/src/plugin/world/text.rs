@@ -1,6 +1,9 @@
 //! `TextService`: text measurement without a font renderer.
 
-use mlua::{AnyUserData, Lua, ObjectLike, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    AnyUserData, Lua, MetaMethod, ObjectLike, Result, Table, UserData, UserDataFields,
+    UserDataMethods, Value,
+};
 
 struct Metrics {
     width: f32,
@@ -47,6 +50,10 @@ fn measure(text: &str, size: f32, limit: f32) -> Metrics {
 pub(super) struct TextService;
 
 impl UserData for TextService {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method(
             "GetTextSize",

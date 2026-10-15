@@ -5,6 +5,7 @@
 //! `game`, `workspace`, `Instance`, `Enum` and a first batch of datatypes. There
 //! is no scheduler: scripts run to completion, with no events and no yielding.
 
+mod compat;
 mod ctx;
 mod datatypes;
 mod debugger;

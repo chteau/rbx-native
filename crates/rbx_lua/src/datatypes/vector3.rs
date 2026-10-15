@@ -99,6 +99,7 @@ impl LuaVector3 {
 
 impl UserData for LuaVector3 {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Vector3");
         // Roblox still answers to the deprecated lowercase spellings.
         for (upper, lower) in [("X", "x"), ("Y", "y"), ("Z", "z")] {
             let axis = |v: &LuaVector3, name: &str| match name {
@@ -118,6 +119,10 @@ impl UserData for LuaVector3 {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
+        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
+            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        });
         methods.add_method("Dot", |_, this, other: LuaVector3| {
             Ok(this.0.x * other.0.x + this.0.y * other.0.y + this.0.z * other.0.z)
         });

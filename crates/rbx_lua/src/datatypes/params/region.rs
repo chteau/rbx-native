@@ -18,6 +18,7 @@ pub(crate) struct LuaRegion3 {
 
 impl UserData for LuaRegion3 {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Region3");
         fields.add_field_method_get("CFrame", |_, this| {
             Ok(LuaCFrame(CFrameData {
                 position: Vector3Data {
@@ -93,6 +94,7 @@ pub(crate) struct LuaFaces {
 
 impl UserData for LuaFaces {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Faces");
         for (index, name) in FACE_NAMES.iter().enumerate() {
             fields.add_field_method_get(*name, move |_, this| Ok(this.flags[index]));
             fields.add_field_method_set(*name, move |_, this, on: bool| {
@@ -127,6 +129,7 @@ const FACE_AXIS: [usize; 6] = [0, 1, 2, 0, 1, 2];
 
 impl UserData for LuaAxes {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Axes");
         for (index, name) in ["X", "Y", "Z"].iter().enumerate() {
             fields.add_field_method_get(*name, move |_, this| Ok(this.flags[index]));
             fields.add_field_method_set(*name, move |_, this, on: bool| {

@@ -19,6 +19,137 @@ pub(super) enum Mode {
     Response,
     /// `GetAsync`/`PostAsync`: the body, an error unless 2xx.
     Body,
+    /// `Players:GetNameFromUserIdAsync`: `name` from users.roblox.com.
+    UserName,
+    /// `Players:GetUserIdFromNameAsync`: the first `data[].id`.
+    UserId,
+    /// `MarketplaceService:GetProductInfo`: the JSON body as a table.
+    Json,
+}
+
+/// `MarketplaceService:GetProductInfo(assetId)` through the public asset
+/// details API (the fields Roblox's own call returns: `Name`,
+/// `Description`, `Creator`, `Updated`, …); ownership checks need a
+/// signed-in session and answer `false`.
+pub(crate) fn marketplace_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
+    Ok(Some(match key {
+        "GetProductInfo" | "GetProductInfoAsync" => yielding(lua, |lua, (_, id): (Value, i64)| {
+            let request = HttpRequest {
+                url: format!("https://economy.roblox.com/v2/assets/{id}/details"),
+                method: "GET".into(),
+                headers: Vec::new(),
+                body: None,
+            };
+            send_now(lua, request, Mode::Json)
+        })?,
+        "PlayerOwnsAsset" | "UserOwnsGamePassAsync" | "PlayerOwnsBundle" => {
+            func(lua, |_, _: MultiValue| Ok(false))?
+        }
+        _ => return Ok(None),
+    }))
+}
+
+/// `Players` lookups through Roblox's public users API, which Studio
+/// makes on the plugin's behalf: no permission prompt, a yield until the
+/// answer, an error when the user does not exist.
+pub(crate) fn players_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
+    Ok(Some(match key {
+        "GetNameFromUserIdAsync" => yielding(lua, |lua, (_, id): (Value, i64)| {
+            let request = HttpRequest {
+                url: format!("https://users.roblox.com/v1/users/{id}"),
+                method: "GET".into(),
+                headers: Vec::new(),
+                body: None,
+            };
+            send_now(lua, request, Mode::UserName)
+        })?,
+        "GetUserIdFromNameAsync" => yielding(lua, |lua, (_, name): (Value, String)| {
+            let body = serde_json::json!({ "usernames": [name], "excludeBannedUsers": false });
+            let request = HttpRequest {
+                url: "https://users.roblox.com/v1/usernames/users".into(),
+                method: "POST".into(),
+                headers: vec![("Content-Type".into(), "application/json".into())],
+                body: Some(body.to_string()),
+            };
+            send_now(lua, request, Mode::UserId)
+        })?,
+        // A `FriendPages` over the public friends list: one page holding
+        // every friend, `IsFinished` set.
+        "GetFriendsAsync" => {
+            let raw = yielding(lua, |lua, (_, id): (Value, i64)| {
+                let request = HttpRequest {
+                    url: format!("https://friends.roblox.com/v1/users/{id}/friends"),
+                    method: "GET".into(),
+                    headers: Vec::new(),
+                    body: None,
+                };
+                send_now(lua, request, Mode::Json)
+            })?;
+            lua.load(
+                r#"
+                local raw = ...
+                return function(self, id)
+                    local page = {}
+                    for _, friend in ipairs(raw(self, id).data or {}) do
+                        table.insert(page, {
+                            Id = friend.id,
+                            Username = friend.name,
+                            DisplayName = friend.displayName,
+                            IsOnline = friend.isOnline or false,
+                        })
+                    end
+                    return {
+                        IsFinished = true,
+                        GetCurrentPage = function() return page end,
+                        AdvanceToNextPageAsync = function() end,
+                    }
+                end
+                "#,
+            )
+            .set_name("=Players")
+            .call::<Value>(raw)?
+        }
+        // A `rbxthumb://` URL, which is what Roblox hands back and what
+        // the editor's image loader resolves.
+        "GetUserThumbnailAsync" => func(
+            lua,
+            |lua, (_, id, kind, size): (Value, i64, Value, Value)| {
+                let name = |v: &Value| -> Result<String> {
+                    match v {
+                        Value::UserData(u) => mlua::ObjectLike::get::<String>(u, "Name"),
+                        _ => Ok(String::new()),
+                    }
+                };
+                let kind = match name(&kind)?.as_str() {
+                    "AvatarBust" => "AvatarBust",
+                    "AvatarThumbnail" => "Avatar",
+                    _ => "AvatarHeadShot",
+                };
+                let size = name(&size)?;
+                let digits: String = size
+                    .chars()
+                    .skip_while(|c| !c.is_ascii_digit())
+                    .take_while(char::is_ascii_digit)
+                    .collect();
+                let edge = if digits.is_empty() {
+                    "420".to_string()
+                } else {
+                    digits
+                };
+                let url = format!("rbxthumb://type={kind}&id={id}&w={edge}&h={edge}");
+                Ok((lua.create_string(url)?, true))
+            },
+        )?,
+        _ => return Ok(None),
+    }))
+}
+
+fn send_now(lua: &Lua, request: HttpRequest, mode: Mode) -> Result<AwaitId> {
+    let env = env(lua);
+    let id = scheduler::new_await(lua);
+    state(lua).borrow_mut().modes.insert(id, mode);
+    env.shared.borrow_mut().http.start(env.plugin, id, request);
+    Ok(id)
 }
 
 fn denied(host: &str) -> String {
@@ -250,6 +381,30 @@ pub(super) fn finished(lua: &Lua, finished: Vec<Finished>) -> Result<()> {
                 "HTTP {} ({})",
                 response.status_code, response.status_message
             )),
+            (Ok(response), Mode::Json) if response.success => {
+                let json: serde_json::Value =
+                    serde_json::from_str(&response.body).unwrap_or_default();
+                Ok(MultiValue::from_vec(vec![from_json(lua, &json)?]))
+            }
+            (Ok(response), Mode::Json) => Err(format!(
+                "HTTP {} ({})",
+                response.status_code, response.status_message
+            )),
+            (Ok(response), Mode::UserName | Mode::UserId) => {
+                let json: serde_json::Value =
+                    serde_json::from_str(&response.body).unwrap_or_default();
+                let found = match mode {
+                    Mode::UserName => json["name"]
+                        .as_str()
+                        .map(|name| lua.create_string(name).map(Value::String))
+                        .transpose()?,
+                    _ => json["data"][0]["id"].as_i64().map(Value::Integer),
+                };
+                match found {
+                    Some(value) => Ok(MultiValue::from_vec(vec![value])),
+                    None => Err("Players: no such user".to_string()),
+                }
+            }
         };
         scheduler::resolve(lua, id, outcome)?;
     }

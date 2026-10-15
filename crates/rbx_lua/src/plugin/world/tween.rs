@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use mlua::{
-    AnyUserData, Lua, MultiValue, ObjectLike, Result, Table, UserData, UserDataFields,
+    AnyUserData, Lua, MetaMethod, MultiValue, ObjectLike, Result, Table, UserData, UserDataFields,
     UserDataMethods, Value,
 };
 use rbx_dom::Ref;
@@ -40,6 +40,7 @@ impl Tween {
 
 impl UserData for Tween {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
         fields.add_field_method_get("PlaybackState", |lua, this| {
             playback_state(lua, *this.state.borrow())
         });
@@ -77,6 +78,10 @@ impl UserData for Tween {
 }
 
 impl UserData for TweenService {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method(
             "Create",

@@ -31,6 +31,7 @@ mod loader;
 mod lot;
 mod native;
 mod plugin_object;
+mod require;
 mod scheduler;
 mod services;
 mod signal;

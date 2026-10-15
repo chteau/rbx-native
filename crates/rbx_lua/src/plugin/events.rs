@@ -46,6 +46,11 @@ const GUI_OBJECT_SIGNALS: &[&str] = &[
     "InputBegan",
     "InputEnded",
     "InputChanged",
+    "DragBegin",
+    "DragStopped",
+    "SelectionGained",
+    "SelectionLost",
+    "TouchTap",
 ];
 const GUI_BUTTON_SIGNALS: &[&str] = &["MouseButton1Click", "MouseButton2Click", "Activated"];
 const TEXT_BOX_SIGNALS: &[&str] = &["Focused", "FocusLost"];
@@ -237,6 +242,7 @@ fn is_signal(db: &ReflectionDatabase, class: &str, key: &str) -> bool {
         || has(HANDLE_ADORNMENT_SIGNALS, "HandleAdornment")
         || has(PLUGIN_GUI_SIGNALS, "PluginGui")
         || has(&["Event"], "BindableEvent")
+        || has(&["OnServerEvent", "OnClientEvent"], "RemoteEvent")
 }
 
 fn instance_key(referent: Ref, event: impl Into<String>) -> SignalKey {
@@ -433,6 +439,41 @@ fn class_function(
                 }
             })?
         }
+        // Inside a plugin there is no network: a remote is a bindable with
+        // a player argument. `…Server` calls pass `nil` for the player the
+        // server would see; `…Client` calls drop the player they name.
+        "FireServer" if is("RemoteEvent") => {
+            lua.create_function(move |lua, (_this, mut args): (Value, MultiValue)| {
+                args.push_front(Value::Nil);
+                signal::fire_values(lua, &instance_key(referent, "OnServerEvent"), args)
+            })?
+        }
+        "FireClient" | "FireAllClients" if is("RemoteEvent") => {
+            let skip = usize::from(key == "FireClient");
+            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
+                let args: MultiValue = args.into_iter().skip(skip).collect();
+                signal::fire_values(lua, &instance_key(referent, "OnClientEvent"), args)
+            })?
+        }
+        "InvokeServer" | "InvokeClient" if is("RemoteFunction") => {
+            let server = key == "InvokeServer";
+            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
+                let side = if server { "server" } else { "client" };
+                let callback: Option<Function> = registry_table(lua, ON_INVOKE_KEY)?
+                    .get(format!("{side}:{}", ref_key(referent)))?;
+                let mut args: MultiValue = args.into_iter().skip(usize::from(!server)).collect();
+                if server {
+                    args.push_front(Value::Nil);
+                }
+                match callback {
+                    Some(callback) => callback.call::<MultiValue>(args),
+                    None => Err(mlua::Error::runtime(format!(
+                        "On{}Invoke is not set on this RemoteFunction",
+                        if server { "Server" } else { "Client" }
+                    ))),
+                }
+            })?
+        }
         "BindToClose" if is("PluginGui") => {
             lua.create_function(move |lua, (_this, callback): (Value, Option<Function>)| {
                 registry_table(lua, BIND_TO_CLOSE_KEY)?.set(ref_key(referent), callback)
@@ -471,7 +512,29 @@ fn plugin_member(lua: &Lua, key: &str) -> Result<Value> {
     }
 }
 
+/// `game`'s own signals, keyed under `Owner::Service("DataModel")`;
+/// `DescendantAdded`/`DescendantRemoving` fire for the place's instances
+/// (see `fire_parent`), the others are there to connect to.
+fn game_signal(event: impl Into<String>) -> LuaSignal {
+    LuaSignal(SignalKey::new(Owner::Service("DataModel"), event))
+}
+
 impl Hooks for PluginHooks {
+    fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
+        Ok(Some(match key {
+            "Changed" | "ChildAdded" | "ChildRemoved" | "DescendantAdded"
+            | "DescendantRemoving" | "ItemChanged" | "Close" | "AncestryChanged" => {
+                Value::UserData(lua.create_userdata(game_signal(key))?)
+            }
+            "GetPropertyChangedSignal" => {
+                Value::Function(lua.create_function(|_, (_this, name): (Value, String)| {
+                    Ok(game_signal(format!("Changed:{name}")))
+                })?)
+            }
+            _ => return Ok(None),
+        }))
+    }
+
     fn index(
         &self,
         lua: &Lua,
@@ -531,6 +594,22 @@ impl Hooks for PluginHooks {
                 }
             };
             registry_table(lua, ON_INVOKE_KEY)?.set(ref_key(referent), callback)?;
+            return Ok(true);
+        }
+        if matches!(key, "OnServerInvoke" | "OnClientInvoke")
+            && db.is_subclass_of(class, "RemoteFunction")
+        {
+            let side = if key == "OnServerInvoke" {
+                "server"
+            } else {
+                "client"
+            };
+            let callback = match value {
+                Value::Function(f) => Some(f.clone()),
+                _ => None,
+            };
+            registry_table(lua, ON_INVOKE_KEY)?
+                .set(format!("{side}:{}", ref_key(referent)), callback)?;
             return Ok(true);
         }
         if matches!(key, "Title" | "Enabled") && db.is_subclass_of(class, "PluginGui") {
@@ -612,16 +691,36 @@ fn fire_parent(lua: &Lua, referent: Ref, old: Option<Ref>, new: Option<Ref>) -> 
     if let Some(old) = old {
         emit(lua, old, "ChildRemoved", &child)?;
     }
+    if !old_chain.is_empty() && in_place(lua, &old_chain) {
+        signal::fire(lua, &game_signal("DescendantRemoving").0, &child)?;
+    }
     for r in old_chain {
         emit(lua, r, "DescendantRemoving", &child)?;
     }
     if let Some(new) = new {
         emit(lua, new, "ChildAdded", &child)?;
     }
+    if !new_chain.is_empty() && in_place(lua, &new_chain) {
+        signal::fire(lua, &game_signal("DescendantAdded").0, &child)?;
+    }
     for r in new_chain {
         emit(lua, r, "DescendantAdded", &child)?;
     }
     Ok(())
+}
+
+/// Whether an ancestor chain (nearest first) ends at one of the place's
+/// services rather than at the plugin's own parked instances.
+fn in_place(lua: &Lua, chain: &[Ref]) -> bool {
+    let Some(&top) = chain.last() else {
+        return false;
+    };
+    let ctx = lua_ctx_dom(lua);
+    let service = ctx
+        .dom()
+        .get(top)
+        .is_some_and(|i| ctx.database().is_service(i.class()));
+    service && !env(lua).roots.borrow().contains(&top)
 }
 
 fn lua_ctx_dom(lua: &Lua) -> Ctx {
@@ -642,8 +741,25 @@ pub(crate) fn fire_changes(lua: &Lua, changes: &[Change]) -> Result<()> {
     for change in changes {
         match change {
             Change::Property { referent, name } => {
-                let name_arg = [Arg::String(name.clone())];
-                emit(lua, *referent, "Changed", &name_arg)?;
+                // A value object's `Changed` passes the new `Value` instead
+                // of a property name, and fires for nothing else.
+                let value_object = ctx
+                    .dom()
+                    .get(*referent)
+                    .is_some_and(|i| ctx.database().is_subclass_of(i.class(), "ValueBase"));
+                if value_object {
+                    if name == "Value" {
+                        let value = crate::property::get(lua, &ctx, *referent, "Value")?
+                            .unwrap_or(Value::Nil);
+                        signal::fire_values(
+                            lua,
+                            &instance_key(*referent, "Changed"),
+                            MultiValue::from_vec(vec![value]),
+                        )?;
+                    }
+                } else {
+                    emit(lua, *referent, "Changed", &[Arg::String(name.clone())])?;
+                }
                 emit(lua, *referent, &format!("Changed:{name}"), &[])?;
                 if name == ATTRIBUTES || name == "Attributes" {
                     for attribute in read_attributes(&ctx, *referent).into_keys() {

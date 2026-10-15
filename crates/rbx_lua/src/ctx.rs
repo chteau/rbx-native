@@ -23,6 +23,10 @@ pub(crate) struct Ctx {
     /// `output` for a plain run; the debugger drains `output` alone.
     printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
     guard: Option<WriteGuard>,
+    /// Class and name of instances scripts destroyed: Roblox keeps a
+    /// destroyed instance readable (`Parent` nil), so a handler that gets
+    /// one late can still ask what it was.
+    tombstones: Rc<RefCell<std::collections::HashMap<Ref, (String, String)>>>,
 }
 
 /// Decides whether a script may write to an instance; `Err` carries the reason.
@@ -54,7 +58,25 @@ impl Ctx {
             output,
             printed,
             guard: None,
+            tombstones: Rc::default(),
         }
+    }
+
+    /// Notes `root` and its descendants as destroyed; call before removing.
+    pub(crate) fn bury(&self, dom: &WeakDom, root: Ref) {
+        let mut tombstones = self.tombstones.borrow_mut();
+        let mut stack = vec![root];
+        while let Some(r) = stack.pop() {
+            if let Some(i) = dom.get(r) {
+                tombstones.insert(r, (i.class().to_string(), i.name().to_string()));
+                stack.extend_from_slice(i.children());
+            }
+        }
+    }
+
+    /// The class and name a destroyed instance had.
+    pub(crate) fn tombstone(&self, referent: Ref) -> Option<(String, String)> {
+        self.tombstones.borrow().get(&referent).cloned()
     }
 
     pub(crate) fn dom(&self) -> std::cell::Ref<'_, WeakDom> {

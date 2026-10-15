@@ -192,7 +192,51 @@ pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
         globals.set("Workspace", LuaInstance::new(referent, ctx.clone()))?;
     }
 
+    install_graphemes(lua)?;
     install_error_strings(lua)
+}
+
+/// `utf8.graphemes(s, i?, j?)`: iterates the grapheme clusters of `s`
+/// (bytes `i` to `j`), giving each one's first and last byte position.
+fn install_graphemes(lua: &Lua) -> Result<(), LuaError> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let ranges = lua.create_function(
+        |lua, (text, from, to): (mlua::LuaString, Option<i64>, Option<i64>)| {
+            let bytes = text.as_bytes();
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            let len = text.len() as i64;
+            let from = from.unwrap_or(1).max(1);
+            let to = to.unwrap_or(len).min(len);
+            let out = lua.create_table()?;
+            for (start, cluster) in text.grapheme_indices(true) {
+                let first = start as i64 + 1;
+                let last = start as i64 + cluster.len() as i64;
+                if first >= from && last <= to {
+                    out.push(lua.create_sequence_from([first, last])?)?;
+                }
+            }
+            Ok(out)
+        },
+    )?;
+    let graphemes: mlua::Function = lua
+        .load(
+            r#"
+            local ranges = ...
+            return function(s, i, j)
+                local list, k = ranges(s, i, j), 0
+                return function()
+                    k += 1
+                    local r = list[k]
+                    if r then return r[1], r[2] end
+                end
+            end
+            "#,
+        )
+        .set_name("=utf8")
+        .call(ranges)?;
+    lua.globals()
+        .get::<mlua::Table>("utf8")?
+        .set("graphemes", graphemes)
 }
 
 /// What a script sees of an error a binding raised: Roblox hands scripts

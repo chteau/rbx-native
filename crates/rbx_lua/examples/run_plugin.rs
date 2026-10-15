@@ -28,6 +28,9 @@ impl Run {
         let context = Context {
             now: self.now,
             selection: self.selection.clone(),
+            user_id: std::env::var("RUN_PLUGIN_USER_ID")
+                .ok()
+                .and_then(|id| id.parse().ok()),
             ..Context::default()
         };
         let outcome = self.host.dispatch(&mut self.dom, context, input);
@@ -44,6 +47,10 @@ impl Run {
     }
 
     fn tick(&mut self) -> Outcome {
+        // Real time passes too, so an HTTP request a plugin started (a
+        // version check, a name lookup) can come back as it would in the
+        // editor.
+        std::thread::sleep(std::time::Duration::from_millis(30));
         self.now += 0.05;
         self.step(Input::Tick)
     }
@@ -84,7 +91,7 @@ fn main() {
     };
 
     run.step(Input::Start);
-    for _ in 0..20 {
+    for _ in 0..60 {
         run.tick();
     }
     let buttons: Vec<_> = run

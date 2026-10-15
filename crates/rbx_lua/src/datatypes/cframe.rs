@@ -130,6 +130,7 @@ impl LuaCFrame {
 
 impl UserData for LuaCFrame {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "CFrame");
         fields.add_field_method_get("X", |_, this| Ok(this.0.position.x));
         fields.add_field_method_get("Y", |_, this| Ok(this.0.position.y));
         fields.add_field_method_get("Z", |_, this| Ok(this.0.position.z));
@@ -150,6 +151,10 @@ impl UserData for LuaCFrame {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
+        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
+            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        });
         methods.add_method("Inverse", |_, this, ()| Ok(this.inverse()));
         ops::add_methods(methods);
         methods.add_meta_method(MetaMethod::Mul, |lua, this, rhs: Value| {

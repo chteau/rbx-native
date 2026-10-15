@@ -151,6 +151,10 @@ impl UserData for LuaSignal {
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             match key.as_str() {
                 "Wait" => wait_function(lua).map(Value::Function),
+                "wait" => wait_function(lua).map(Value::Function),
+                _ if key.starts_with(|c: char| c.is_ascii_lowercase()) => {
+                    Ok(crate::compat::lowercase_method(lua, &key)?.unwrap_or(Value::Nil))
+                }
                 _ => Err(mlua::Error::runtime(format!(
                     "{key} is not a valid member of Signal {}",
                     this.0.event
@@ -175,17 +179,23 @@ impl UserData for LuaConnection {
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             match key.as_str() {
-                "Connected" => {
+                "Connected" | "connected" => {
                     let env = env(lua);
                     let signals = env.signals.borrow();
-                    Ok(signals
-                        .connections
-                        .get(&this.key)
-                        .is_some_and(|c| c.iter().any(|c| c.id == this.id)))
+                    Ok(Value::Boolean(
+                        signals
+                            .connections
+                            .get(&this.key)
+                            .is_some_and(|c| c.iter().any(|c| c.id == this.id)),
+                    ))
                 }
-                _ => Err(mlua::Error::runtime(format!(
-                    "{key} is not a valid member of RBXScriptConnection"
-                ))),
+                // `disconnect`, the deprecated spelling.
+                _ => match crate::compat::lowercase_method(lua, &key)? {
+                    Some(alias) => Ok(alias),
+                    None => Err(mlua::Error::runtime(format!(
+                        "{key} is not a valid member of RBXScriptConnection"
+                    ))),
+                },
             }
         });
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("Connection"));

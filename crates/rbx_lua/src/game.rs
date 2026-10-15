@@ -4,7 +4,7 @@
 //! root of the DOM — so `game` is its own userdata whose children are
 //! `WeakDom::root_refs`.
 
-use mlua::{IntoLua, MetaMethod, UserData, UserDataMethods, Value};
+use mlua::{IntoLua, MetaMethod, UserData, UserDataFields, UserDataMethods, Value};
 use rbx_dom::{Ref, WeakDom};
 
 use crate::ctx::Ctx;
@@ -35,7 +35,35 @@ impl LuaGame {
     }
 }
 
+/// Registers a `game` method that also works when a script calls it on
+/// another instance (`local Children = game.GetChildren; Children(part)`):
+/// the call is handed to that instance's own method of the same name.
+fn either<M, A, R>(
+    methods: &mut M,
+    name: &'static str,
+    f: impl Fn(&mlua::Lua, &LuaGame, A) -> mlua::Result<R> + 'static,
+) where
+    M: UserDataMethods<LuaGame>,
+    A: mlua::FromLuaMulti,
+    R: mlua::IntoLuaMulti,
+{
+    methods.add_function(
+        name,
+        move |lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            if let Ok(game) = this.borrow::<LuaGame>() {
+                let args = A::from_lua_multi(args, lua)?;
+                return f(lua, &game, args)?.into_lua_multi(lua);
+            }
+            mlua::ObjectLike::call_method::<mlua::MultiValue>(&this, name, args)
+        },
+    );
+}
+
 impl UserData for LuaGame {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Instance");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("GetService", |lua, this, class: String| {
             if let Some(hooks) = crate::hooks::hooks(lua) {
@@ -55,7 +83,8 @@ impl UserData for LuaGame {
             })?;
             LuaInstance::new(found, this.ctx.clone()).into_lua(lua)
         });
-        methods.add_method(
+        either(
+            methods,
             "FindFirstChild",
             |_, this, (name, recursive): (String, Option<bool>)| {
                 let dom = this.ctx.dom();
@@ -69,11 +98,11 @@ impl UserData for LuaGame {
                 Ok(found.map(|referent| LuaInstance::new(referent, this.ctx.clone())))
             },
         );
-        methods.add_method("GetChildren", |lua, this, ()| {
+        either(methods, "GetChildren", |lua, this, ()| {
             let roots = this.ctx.dom().root_refs().to_vec();
             instance_list(lua, &this.ctx, roots)
         });
-        methods.add_method("GetDescendants", |lua, this, ()| {
+        either(methods, "GetDescendants", |lua, this, ()| {
             let dom = this.ctx.dom();
             let mut found = Vec::new();
             for &root in dom.root_refs() {
@@ -108,11 +137,28 @@ impl UserData for LuaGame {
                 }
                 _ => {}
             }
+            // A service the host provides itself (`game.Selection`) is the
+            // same object `GetService` gives.
+            if let Some(hooks) = crate::hooks::hooks(lua) {
+                if let Some(service) = hooks.service(lua, &this.ctx, &key)? {
+                    return Ok(service);
+                }
+            }
             let dom = this.ctx.dom();
             // `game.Workspace` works whether the service was renamed or not, so the
             // name is tried first and the class name second.
             let found = LuaGame::child(&dom, &key).or_else(|| LuaGame::service(&dom, &key));
             drop(dom);
+            if found.is_none() {
+                if let Some(hooks) = crate::hooks::hooks(lua) {
+                    if let Some(member) = hooks.game_member(lua, &key)? {
+                        return Ok(member);
+                    }
+                }
+                if let Some(method) = crate::compat::instance_method(lua, &key)? {
+                    return Ok(method);
+                }
+            }
             match found {
                 Some(referent) => LuaInstance::new(referent, this.ctx.clone()).into_lua(lua),
                 None => Err(mlua::Error::runtime(format!(
@@ -122,13 +168,22 @@ impl UserData for LuaGame {
         });
         // The `DataModel` is left out of every path, so on its own it has only
         // its own name to give.
-        methods.add_method("GetFullName", |_, _, ()| Ok("game"));
-        methods.add_method("IsA", |_, _, class: String| {
+        either(methods, "GetFullName", |_, _, ()| Ok("game"));
+        either(methods, "IsA", |_, _, class: String| {
             Ok(matches!(
                 class.as_str(),
                 "DataModel" | "ServiceProvider" | "Instance"
             ))
         });
+        // Every service is already there, so nothing is waited for.
+        either(
+            methods,
+            "WaitForChild",
+            |_, this, (name, _timeout): (String, Option<f64>)| {
+                let found = LuaGame::child(&this.ctx.dom(), &name);
+                Ok(found.map(|referent| LuaInstance::new(referent, this.ctx.clone())))
+            },
+        );
         methods.add_method("FindService", |_, this, class: String| {
             let found = LuaGame::service(&this.ctx.dom(), &class);
             Ok(found.map(|referent| LuaInstance::new(referent, this.ctx.clone())))

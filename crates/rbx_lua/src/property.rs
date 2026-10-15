@@ -41,11 +41,38 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         (descriptor.value_type.clone(), stored)
     };
 
-    // Neither stored nor recorded: a value only a running engine computes.
-    let Some(stored) = stored else {
+    // Neither stored nor recorded: a value only a running engine computes
+    // (`AbsoluteSize` before anything laid the object out). Roblox never
+    // hands such a property back as nil, so it reads as its type's zero.
+    let Some(stored) = stored.or_else(|| zero_of(&value_type)) else {
         return Ok(Some(Value::Nil));
     };
     to_lua::variant_to_lua(lua, ctx, name, &value_type, &stored).map(Some)
+}
+
+/// The zero value of a property type, where it has an obvious one.
+fn zero_of(value_type: &str) -> Option<Variant> {
+    use rbx_dom::{CFrameData, Vector2Data, Vector3Data};
+    let origin = Vector3Data {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    Some(match value_type {
+        "Vector2" => Variant::Vector2(Vector2Data { x: 0.0, y: 0.0 }),
+        "Vector3" => Variant::Vector3(origin),
+        "CFrame" => Variant::CFrame(CFrameData {
+            position: origin,
+            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }),
+        "float" => Variant::Float32(0.0),
+        "double" => Variant::Float64(0.0),
+        "int" => Variant::Int32(0),
+        "int64" => Variant::Int64(0),
+        "bool" => Variant::Bool(false),
+        "string" => Variant::String(String::new()),
+        _ => return None,
+    })
 }
 
 /// Writes a property, returning `Ok(false)` when the class has no such member.
