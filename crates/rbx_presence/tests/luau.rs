@@ -364,6 +364,88 @@ fn ntfy_signature_and_round_trip() {
     assert!(matches!(stale, Value::Nil));
 }
 
+/// Mirrors the Rust `ntfy::fit_encode` test over the same large state: the
+/// plugin's `fitEncode` sheds down to a body that fits `MAX_BODY`, and the
+/// shed body interoperates with the Rust receiver — and vice versa — so the
+/// two shedding paths cannot drift.
+#[test]
+fn ntfy_fit_sheds_to_a_fitting_interoperable_body() {
+    use rbx_presence::ntfy;
+    use rbx_presence::schema::{Client, Edit, UserState, SCHEMA_VERSION};
+
+    let lua = new_lua();
+    let key = "k".repeat(64);
+    let topic = "rbxnp-abc";
+    let selection: Vec<String> = (0..100)
+        .map(|i| format!("{i}{}", "a".repeat(400)))
+        .collect();
+    let edits: Vec<Edit> = (0..20)
+        .map(|i| Edit {
+            path: "Workspace.Part".into(),
+            property: "Size".into(),
+            value: "1, 2, 3".into(),
+            at: i,
+        })
+        .collect();
+
+    // Luau `fitEncode` over the same state.
+    let state = lua.create_table().unwrap();
+    state.set("v", 1).unwrap();
+    state.set("userId", 42.0).unwrap();
+    state.set("name", "Ann").unwrap();
+    state.set("color", "#e8590c").unwrap();
+    state.set("client", "rbx-native").unwrap();
+    let sel = lua.create_table().unwrap();
+    for (i, path) in selection.iter().enumerate() {
+        sel.set(i + 1, path.clone()).unwrap();
+    }
+    state.set("selection", sel).unwrap();
+    let ed = lua.create_table().unwrap();
+    for (i, edit) in edits.iter().enumerate() {
+        let row = lua.create_table().unwrap();
+        row.set("path", edit.path.clone()).unwrap();
+        row.set("property", edit.property.clone()).unwrap();
+        row.set("value", edit.value.clone()).unwrap();
+        row.set("at", edit.at as f64).unwrap();
+        ed.set(i + 1, row).unwrap();
+    }
+    state.set("edits", ed).unwrap();
+    state.set("seen", 0).unwrap();
+
+    let max: f64 = load_module(&lua, "Ntfy").unwrap().get("MAX_BODY").unwrap();
+    let fit = func(&lua, "Ntfy", "fitEncode");
+    let luau_body: String = fit.call((key.clone(), topic, 42.0, 1000.0, state)).unwrap();
+    assert!(
+        luau_body.len() as f64 <= max,
+        "Luau fitEncode must fit MAX_BODY"
+    );
+    // The Luau-shed body verifies and decodes under the Rust receiver.
+    assert_eq!(
+        ntfy::decode(&key, topic, 1000, &luau_body).unwrap().user_id,
+        42
+    );
+
+    // The Rust side sheds the same inputs to a body that also fits and that
+    // the plugin's decoder accepts.
+    let rust_state = UserState {
+        v: SCHEMA_VERSION,
+        user_id: 42,
+        name: "Ann".into(),
+        color: "#e8590c".into(),
+        client: Client::RbxNative,
+        camera: None,
+        selection,
+        script: None,
+        edits,
+        seen: 0,
+    };
+    let rust_body = ntfy::fit_encode(&key, topic, 42, 1000, &rust_state).unwrap();
+    assert!(rust_body.len() <= ntfy::NTFY_MAX_BODY);
+    let decode = func(&lua, "Ntfy", "decode");
+    let got: Table = decode.call((key, topic, 1000.0, rust_body)).unwrap();
+    assert_eq!(got.get::<f64>("userId").unwrap(), 42.0);
+}
+
 #[test]
 fn syntax_all() {
     let lua = Lua::new();
