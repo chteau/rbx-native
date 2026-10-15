@@ -263,7 +263,15 @@ impl Shell {
         // Shows per-author counts only; a value diff would need the DOM diff
         // ("View changes"), which is a separate, transport-independent path.
         let has_before = self.team_presence.before.is_some();
-        let catchup = self.team_presence.catchup.as_ref().map(|summary| {
+        let away = self.team_presence.away_changes;
+        let authors: &[rbx_presence::catchup::AuthorChange] = self
+            .team_presence
+            .catchup
+            .as_ref()
+            .map_or(&[], |summary| summary.authors.as_slice());
+        let show_catchup = !self.team_presence.catchup_dismissed
+            && (!authors.is_empty() || (has_before && away > 0));
+        let catchup = show_catchup.then(|| {
             let mut block = v_flex()
                 .m_2()
                 .p_2()
@@ -295,7 +303,7 @@ impl Shell {
                                 ),
                         ),
                 );
-            for author in &summary.authors {
+            for author in authors {
                 block = block.child(
                     div()
                         .text_size(tokens::text_xs())
@@ -303,19 +311,29 @@ impl Shell {
                         .child(author_line(author)),
                 );
             }
-            if has_before {
-                block.child(
-                    div()
-                        .id("collaborators-view-changes")
-                        .text_size(tokens::text_xs())
-                        .text_color(tokens::accent_line())
-                        .cursor_pointer()
-                        .child("View changes")
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|shell, _, _, cx| shell.open_presence_diff(cx)),
-                        ),
-                )
+            if has_before && away > 0 {
+                let plural = if away == 1 { "change" } else { "changes" };
+                block
+                    .child(
+                        div()
+                            .text_size(tokens::text_xs())
+                            .text_color(tokens::text2())
+                            .child(format!(
+                                "{away} {plural} to the place since you were last here"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .id("collaborators-view-changes")
+                            .text_size(tokens::text_xs())
+                            .text_color(tokens::accent_line())
+                            .cursor_pointer()
+                            .child("View changes")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|shell, _, _, cx| shell.open_presence_diff(cx)),
+                            ),
+                    )
             } else {
                 block.child(
                     div()

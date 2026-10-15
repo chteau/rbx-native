@@ -172,8 +172,35 @@ impl ArgonDiffWindow {
     }
 
     /// `padding:16px 20px 20px` (16 14 20 narrow), blocks 16 apart. The
-    /// SOURCE card takes what is left and scrolls inside itself.
+    /// SOURCE card takes what is left and scrolls inside itself; without one,
+    /// the whole body scrolls, so a long PROPERTIES table (an added part
+    /// lists every property it was saved with) stays above the footer.
     fn detail_body(
+        &mut self,
+        node: &DiffNode,
+        properties: &[FormattedProperty],
+        pack: IconPack,
+        narrow: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let body = self.detail_sections(node, properties, pack, narrow, cx);
+        if node.source.is_some() {
+            return body.into_any_element();
+        }
+        // Keyed on the change, so picking another one starts at the top.
+        div()
+            .id(SharedString::from(format!(
+                "argon-diff-detail-{}",
+                node.full_path()
+            )))
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .child(body)
+            .into_any_element()
+    }
+
+    fn detail_sections(
         &mut self,
         node: &DiffNode,
         properties: &[FormattedProperty],

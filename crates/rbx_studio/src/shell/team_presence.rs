@@ -100,6 +100,11 @@ pub(super) struct TeamPresence {
     pub(super) catchup_dismissed: bool,
     /// Our Roblox display name, once looked up; sent instead of the id.
     own_name: Option<String>,
+    /// Who owns the Open Cloud key, for when nobody signed in to Roblox: the
+    /// key already says who this is, so presence needs no second sign-in.
+    key_user: Option<u64>,
+    /// The key lookup is under way (or failed); not started twice.
+    key_user_asked: bool,
     /// What was last handed to the worker, and when.
     last_sent: Option<(UserState, Instant)>,
     /// The place we are connected to, for persisting last-seen state.
@@ -109,6 +114,11 @@ pub(super) struct TeamPresence {
     /// compares the freshly loaded place against. `None` when nothing was
     /// stored or it could not be decoded.
     pub(super) before: Option<rbx_dom::WeakDom>,
+    /// How many changes the place has against `before`, worked out on
+    /// connect: offered as "View changes" even when the relay's journal has
+    /// nothing (edits by someone without the plugin, or made while nobody
+    /// was connected, only show up here).
+    pub(super) away_changes: usize,
     /// When the last-seen timestamp was last persisted, to throttle it.
     last_saved: Option<Instant>,
     /// The open "View changes" window (the catch-up diff), if any.
@@ -144,9 +154,12 @@ impl TeamPresence {
             catchup: None,
             catchup_dismissed: false,
             own_name: None,
+            key_user: None,
+            key_user_asked: false,
             last_sent: None,
             place_id: None,
             before: None,
+            away_changes: 0,
             last_saved: None,
             presence_diff: None,
             scroll: ScrollHandle::new(),
@@ -180,6 +193,31 @@ fn synthetic_diff_doms() -> (rbx_dom::WeakDom, rbx_dom::WeakDom) {
     let before = build(0.0, "print(\"hello\")\n", false);
     let after = build(0.5, "print(\"hello\")\nprint(\"world\")\n", true);
     (before, after)
+}
+
+/// An added instance carries every property it was saved with; like an
+/// Argon addition, show only what someone set: properties the Properties
+/// panel lists (not hidden, not deprecated: no `HistoryId`, and no
+/// `UniqueId`, the engine's own per-instance id, which the dump does not tag
+/// hidden) whose value differs from the class default (a new Part lists its
+/// size and position, not fifty untouched surfaces).
+fn drop_defaults(nodes: &mut [rbx_dom::diff::DiffNode], db: &rbx_reflection::ReflectionDatabase) {
+    for node in nodes {
+        if node.kind == rbx_dom::diff::ChangeKind::Added {
+            let class = node.class.clone();
+            node.properties.retain(|p| {
+                if p.name == "UniqueId" {
+                    return false;
+                }
+                let listed = db
+                    .resolve_property(&class, db.canonical_name(&class, &p.name))
+                    .is_some_and(|d| !d.is_hidden() && !d.is_deprecated());
+                let default = db.stored_default(&class, &p.name);
+                listed && !matches!((&p.after, default), (Some(after), Some(default)) if after == default)
+            });
+        }
+        drop_defaults(&mut node.children, db);
+    }
 }
 
 pub(super) fn now_ms() -> u64 {
@@ -220,7 +258,9 @@ impl Shell {
                         presence.catchup = Some(summary);
                         // A canned last-seen snapshot so the dock shows the
                         // "View changes" link for the catch-up screenshot.
-                        presence.before = Some(synthetic_diff_doms().0);
+                        let (before, after) = synthetic_diff_doms();
+                        presence.away_changes = rbx_dom::diff::diff(&before, &after).len();
+                        presence.before = Some(before);
                     }
                     presence.snapshot = Some(mock.snapshot);
                     presence.members = Some(mock.members);
@@ -243,6 +283,18 @@ impl Shell {
             self.team_presence.owner_kind = config.kind;
         }
         if self.team_presence.settings.enabled {
+            self.connect_presence(cx);
+        }
+    }
+
+    /// Team presence was turned on before the user id was known (startup
+    /// reads the session from the keyring after the shell opens, or the user
+    /// signs in from the dock's hint): connect now.
+    pub(super) fn retry_presence_after_sign_in(&mut self, cx: &mut Context<Self>) {
+        if self.team_presence.settings.enabled
+            && self.team_presence.connection == Connection::NoUser
+            && self.presence_user_id().is_some()
+        {
             self.connect_presence(cx);
         }
     }
@@ -357,6 +409,7 @@ impl Shell {
         presence.catchup = None;
         presence.place_id = None;
         presence.before = None;
+        presence.away_changes = 0;
         presence.last_saved = None;
         self.viewport
             .update(cx, |view, _| view.set_presence(Vec::new()));
@@ -365,7 +418,14 @@ impl Shell {
     fn connect_presence(&mut self, cx: &mut Context<Self>) {
         self.disconnect_presence(cx);
         let place = crate::home::link_of(&self.path).map(|link| link.place_id);
-        let user = self.studio_presence.user_id;
+        let user = self.presence_user_id();
+        if user.is_none() && !self.team_presence.key_user_asked {
+            self.team_presence.key_user_asked = true;
+            self.team_presence.connection = Connection::Connecting;
+            cx.notify();
+            self.look_up_key_user(cx);
+            return;
+        }
         let blocked = place
             .is_none()
             .then_some(Connection::NoPlace)
@@ -414,6 +474,11 @@ impl Shell {
         self.team_presence.before = record
             .and_then(|r| r.snapshot)
             .and_then(|bytes| rbx_binary::deserialize(&bytes).ok());
+        self.team_presence.away_changes = self
+            .team_presence
+            .before
+            .as_ref()
+            .map_or(0, |before| rbx_dom::diff::diff(before, &self.dom).len());
         self.team_presence.place_id = Some(place);
         self.team_presence.last_saved = None;
         self.fetch_catchup(client_config.clone(), since, cx);
@@ -495,7 +560,8 @@ impl Shell {
         let Some(before) = self.team_presence.before.clone() else {
             return;
         };
-        let nodes = rbx_dom::diff::diff(&before, &self.dom);
+        let mut nodes = rbx_dom::diff::diff(&before, &self.dom);
+        drop_defaults(&mut nodes, self.properties.db());
         if nodes.is_empty() {
             self.output.push(
                 "Presence",
@@ -519,8 +585,42 @@ impl Shell {
     /// Dismisses the catch-up block; it does not come back this session.
     pub(super) fn dismiss_catchup(&mut self, cx: &mut Context<Self>) {
         self.team_presence.catchup = None;
+        self.team_presence.away_changes = 0;
         self.team_presence.catchup_dismissed = true;
         cx.notify();
+    }
+
+    /// Who this is to collaborators: the signed-in Roblox user, else the
+    /// owner of the Open Cloud key.
+    pub(super) fn presence_user_id(&self) -> Option<u64> {
+        self.studio_presence.user_id.or(self.team_presence.key_user)
+    }
+
+    /// Asks Open Cloud who owns the key, then connects (or, without a key or
+    /// network, lands on "sign in").
+    fn look_up_key_user(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let owner = cx
+                .background_executor()
+                .spawn(async move {
+                    rbx_cloud::Client::new(rbx_cloud::ApiKey::from_env_or_config())
+                        .introspect()
+                        .map(|info| info.authorized_user_id)
+                })
+                .await
+                .ok()
+                .filter(|&id| id != 0);
+            let _ = this.update(cx, |shell, cx| {
+                shell.team_presence.key_user = owner;
+                if shell.team_presence.settings.enabled
+                    && shell.team_presence.connection == Connection::Connecting
+                    && shell.team_presence.client.is_none()
+                {
+                    shell.connect_presence(cx);
+                }
+            });
+        })
+        .detach();
     }
 
     fn look_up_own_name(&mut self, user_id: u64, cx: &mut Context<Self>) {
@@ -645,7 +745,7 @@ impl Shell {
     /// layer too. Returns whether anything changed.
     fn refresh_collaborators(&mut self, cx: &mut Context<Self>) -> bool {
         let presence = &self.team_presence;
-        let own = self.studio_presence.user_id.unwrap_or(0);
+        let own = self.presence_user_id().unwrap_or(0);
         let next = model::collaborators(
             presence.snapshot.as_ref(),
             presence.members.as_deref(),
@@ -698,5 +798,48 @@ impl Shell {
     pub(super) fn toggle_presence_advanced(&mut self, cx: &mut Context<Self>) {
         self.team_presence.show_advanced = !self.team_presence.show_advanced;
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drop_defaults;
+    use rbx_dom::{Variant, Vector3Data, WeakDom};
+
+    #[test]
+    fn an_added_part_shows_only_what_was_set() {
+        let db = rbx_reflection::ReflectionDatabase::embedded();
+        let before = {
+            let mut dom = WeakDom::new();
+            dom.new_instance("Workspace", "Workspace", None);
+            dom
+        };
+        let mut after = WeakDom::new();
+        let workspace = after.new_instance("Workspace", "Workspace", None);
+        let ramp = after.new_instance("Part", "Ramp", Some(workspace));
+        let props = after.get_mut(ramp).unwrap().properties_mut();
+        props.insert("Anchored".into(), Variant::Bool(true));
+        props.insert("CastShadow".into(), Variant::Bool(true));
+        props.insert(
+            "size".into(),
+            Variant::Vector3(Vector3Data {
+                x: 8.0,
+                y: 1.0,
+                z: 16.0,
+            }),
+        );
+        props.insert("UniqueId".into(), Variant::String("00001b74".into()));
+        props.insert("HistoryId".into(), Variant::String("0000".into()));
+
+        let mut nodes = rbx_dom::diff::diff(&before, &after);
+        drop_defaults(&mut nodes, &db);
+        let names: Vec<&str> = nodes[0]
+            .properties
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        // CastShadow is at its default; UniqueId and HistoryId are the
+        // engine's own.
+        assert_eq!(names, ["Anchored", "size"]);
     }
 }
