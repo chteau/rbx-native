@@ -172,8 +172,35 @@ impl ArgonDiffWindow {
     }
 
     /// `padding:16px 20px 20px` (16 14 20 narrow), blocks 16 apart. The
-    /// SOURCE card takes what is left and scrolls inside itself.
+    /// SOURCE card takes what is left and scrolls inside itself; without one,
+    /// the whole body scrolls, so a long PROPERTIES table (an added part
+    /// lists every property it was saved with) stays above the footer.
     fn detail_body(
+        &mut self,
+        node: &DiffNode,
+        properties: &[FormattedProperty],
+        pack: IconPack,
+        narrow: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let body = self.detail_sections(node, properties, pack, narrow, cx);
+        if node.source.is_some() {
+            return body.into_any_element();
+        }
+        // Keyed on the change, so picking another one starts at the top.
+        div()
+            .id(SharedString::from(format!(
+                "argon-diff-detail-{}",
+                node.full_path()
+            )))
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .child(body)
+            .into_any_element()
+    }
+
+    fn detail_sections(
         &mut self,
         node: &DiffNode,
         properties: &[FormattedProperty],
@@ -190,6 +217,25 @@ impl ArgonDiffWindow {
             .pt(px(16.))
             .pb(px(20.))
             .px(px(if narrow { 14. } else { 20. }));
+        // Whether any of the three sections below will render; a bare leaf
+        // (no changed properties, no source, nothing nested) gets a tidy
+        // line instead of an empty void.
+        let has_properties = node.kind != ChangeKind::Removed && !node.properties.is_empty();
+        let has_source = node.source.is_some();
+        let has_contents = node.kind != ChangeKind::Updated && node.nested > 0;
+        if !has_properties && !has_source && !has_contents {
+            let line = match node.kind {
+                ChangeKind::Removed => "This instance was removed, with nothing left to inspect.",
+                _ => "No properties set on this instance.",
+            };
+            return body.child(
+                div()
+                    .text_size(tokens::text_sm())
+                    .line_height(tokens::line_sm())
+                    .text_color(tokens::text3())
+                    .child(line),
+            );
+        }
         if node.kind != ChangeKind::Removed && !node.properties.is_empty() {
             body = body
                 .child(section_label("PROPERTIES", None))

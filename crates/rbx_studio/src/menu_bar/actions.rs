@@ -123,6 +123,7 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
         (Panel::Properties, &MenuToggleProperties),
         (Panel::Output, &MenuToggleOutput),
         (Panel::Viewport, &MenuToggleViewport),
+        (Panel::Collaborators, &MenuToggleCollaborators),
     ] {
         toggle.install(panel, shell.clone(), cx);
     }
@@ -299,3 +300,4 @@ panel_toggle!(MenuToggleExplorer);
 panel_toggle!(MenuToggleProperties);
 panel_toggle!(MenuToggleOutput);
 panel_toggle!(MenuToggleViewport);
+panel_toggle!(MenuToggleCollaborators);

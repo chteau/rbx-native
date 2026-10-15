@@ -24,7 +24,10 @@ impl ArgonDiffWindow {
         cx: &mut Context<Self>,
     ) -> Div {
         let total = counts[0];
-        let subtitle = if narrow {
+        let subtitle = if matches!(self.provider, super::Provider::Presence(_)) {
+            let plural = if total == 1 { "change" } else { "changes" };
+            format!("{total} {plural} since you were last here")
+        } else if narrow {
             format!("{project} \u{b7} {total} changes")
         } else {
             format!("{project} \u{b7} {total} changes from the server")
@@ -173,6 +176,32 @@ impl ArgonDiffWindow {
     /// 57 tall with its hairline: the note at the left (wide only), then
     /// Cancel and Accept, 96×34, the dock's own handlers.
     pub(super) fn footer(&mut self, narrow: bool, cx: &mut Context<Self>) -> Div {
+        // A presence "View changes" diff applies nothing: just a way out.
+        if matches!(self.provider, super::Provider::Presence(_)) {
+            return h_flex()
+                .h(px(57.))
+                .flex_none()
+                .items_center()
+                .gap(px(8.))
+                .px(px(if narrow { 14. } else { 16. }))
+                .border_t_1()
+                .border_color(tokens::border())
+                .when(!narrow, |this| {
+                    this.child(
+                        div()
+                            .text_size(tokens::text_sm())
+                            .line_height(tokens::line_sm())
+                            .text_color(tokens::text3())
+                            .child("A read-only view \u{2014} these changes are already in your place."),
+                    )
+                })
+                .child(div().flex_1())
+                .child(
+                    button("argon-diff-close", "Close", true).on_click(
+                        cx.listener(|_, _, window: &mut Window, _| window.remove_window()),
+                    ),
+                );
+        }
         let shell = self.shell.clone();
         let cancel = shell.clone();
         h_flex()

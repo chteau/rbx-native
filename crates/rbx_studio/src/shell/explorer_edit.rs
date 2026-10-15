@@ -15,11 +15,17 @@
 //! not inside the element — so opening either closes the other and Escape
 //! closes both.
 
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use gpui_kit::component::h_flex;
 use gpui_kit::component::input::InputState;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
+use super::team_presence::PresenceMark;
 use super::Shell;
+use crate::tokens;
 
 pub(super) mod menu;
 pub(super) mod picker;
@@ -104,6 +110,7 @@ impl Shell {
     /// two referents and an `Entity`, all cheap to clone.
     pub(super) fn row_slots(&self) -> RowSlots {
         RowSlots {
+            marks: Rc::new(self.presence_marks()),
             hovered: self.explorer_edit.hovered,
             renaming: self
                 .explorer_edit
@@ -193,6 +200,7 @@ fn give_focus_back(
 /// [`Shell::row_slots`].
 #[derive(Clone)]
 pub(super) struct RowSlots {
+    marks: Rc<HashMap<Ref, Vec<PresenceMark>>>,
     hovered: Option<Ref>,
     renaming: Option<(Ref, Entity<InputState>)>,
 }
@@ -211,8 +219,47 @@ impl RowSlots {
             .map(|(_, input)| rename::name_box(input));
         let trailing = (self.hovered == Some(reference) && name.is_none())
             .then(|| picker::insert_button(shell, reference));
-        RowWidgets { name, trailing }
+        let presence = self
+            .marks
+            .get(&reference)
+            .map(|marks| presence_dots(("presence-row", 0usize), marks).into_any_element());
+        RowWidgets {
+            name,
+            trailing,
+            presence,
+        }
     }
+}
+
+/// One small circle per collaborator in their colour with their initial,
+/// their texts as the tooltip. Shared by Explorer rows and script tabs.
+pub(super) fn presence_dots(id: impl Into<ElementId>, marks: &[PresenceMark]) -> impl IntoElement {
+    let text: SharedString = marks
+        .iter()
+        .map(|mark| mark.text.as_ref())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into();
+    h_flex()
+        .id(id)
+        .flex_none()
+        .gap_0p5()
+        .children(marks.iter().map(|mark| {
+            let (r, g, b) = mark.color;
+            div()
+                .size(px(14.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(rgb(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)))
+                .text_size(px(9.))
+                .font_weight(tokens::WEIGHT_BOLD)
+                .text_color(tokens::black())
+                .child(mark.initial.clone())
+        }))
+        .tooltip(move |window, cx| super::tooltip::text(text.clone(), window, cx))
 }
 
 /// The two widgets an Explorer row cannot build for itself — see
@@ -221,4 +268,5 @@ impl RowSlots {
 pub(super) struct RowWidgets {
     pub(super) name: Option<AnyElement>,
     pub(super) trailing: Option<AnyElement>,
+    pub(super) presence: Option<AnyElement>,
 }

@@ -129,15 +129,29 @@ impl Shell {
     /// `main::window_options`), so this row *is* the window's title bar:
     /// dragging it moves the window, and the three buttons on the right are
     /// the only minimize/maximize/close there are.
-    pub(super) fn topbar(&self, cx: &mut App) -> impl IntoElement {
+    pub(super) fn topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let title = self.title.clone();
+        // Collaborators' faces sit just left of the window buttons, outside
+        // the block the title is centred against, so the title stays put.
+        let strip = self.presence_strip(cx).map(|strip| {
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right(WINDOW_ACTIONS_WIDTH + px(8.))
+                .flex()
+                .items_center()
+                .child(strip)
+        });
 
         topbar_frame(title).child(
             h_flex()
+                .relative()
                 .flex_none()
                 .w(WINDOW_ACTIONS_WIDTH)
                 .h_full()
                 .justify_end()
+                .children(strip)
                 .child(window_button(
                     &self.tab_order.claim(cx),
                     "window-minimize",
