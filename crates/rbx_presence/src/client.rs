@@ -308,7 +308,7 @@ impl Worker {
         topic: &str,
         state: &UserState,
     ) -> Result<(), String> {
-        let body = ntfy::encode(
+        let body = ntfy::fit_encode(
             &self.config.key,
             topic,
             self.config.user_id,

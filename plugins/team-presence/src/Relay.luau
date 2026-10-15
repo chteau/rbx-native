@@ -93,7 +93,7 @@ end
 -- ===== ntfy (plain pub/sub) =====
 
 function Relay:_ntfyPublish(state: any): (boolean, string?)
-	local body = Ntfy.encode(self.key, self.topic, self.userId, nowMs(), state)
+	local body = Ntfy.fitEncode(self.key, self.topic, self.userId, nowMs(), state)
 	local ok, res = pcall(function()
 		return HttpService:RequestAsync({
 			Url = self.base .. "/" .. self.topic,

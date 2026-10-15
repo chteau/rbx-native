@@ -58,6 +58,48 @@ pub fn encode(
     serde_json::to_string(&envelope).ok()
 }
 
+/// Largest message body a plain ntfy server accepts.
+pub const NTFY_MAX_BODY: usize = 4096;
+
+/// Like [`encode`], but sheds detail until the envelope fits
+/// [`NTFY_MAX_BODY`]: oldest edits, then selection, then camera, then script.
+/// If even the identity alone is too big, the smallest encoding is returned.
+pub fn fit_encode(
+    key: &str,
+    topic: &str,
+    user_id: u64,
+    ts_ms: u64,
+    state: &UserState,
+) -> Option<String> {
+    let mut state = state.clone();
+    loop {
+        let body = encode(key, topic, user_id, ts_ms, &state)?;
+        if body.len() <= NTFY_MAX_BODY {
+            return Some(body);
+        }
+        let shed = if !state.edits.is_empty() {
+            state.edits.remove(0);
+            true
+        } else if !state.selection.is_empty() {
+            state.selection.pop();
+            true
+        } else if state.camera.is_some() {
+            state.camera = None;
+            true
+        } else if state.script.is_some() {
+            state.script = None;
+            true
+        } else {
+            false
+        };
+        if !shed {
+            // Only identity is left and it still does not fit: send the
+            // smallest encoding rather than loop forever.
+            return Some(body);
+        }
+    }
+}
+
 /// Verifies and decodes `body`: a well-formed envelope whose signature checks
 /// against `key` and `topic`, whose `t` is within [`CLOCK_SKEW_MS`] of
 /// `now_ms`, and whose state's `userId` matches `u`. Returns the state, or
@@ -106,6 +148,54 @@ mod tests {
         let d = v["d"].as_str().unwrap();
         let canonical = auth::canonical("POST", &sign_path(topic), u, t, d.as_bytes());
         assert_eq!(auth::sign(key, &canonical), v["s"].as_str().unwrap());
+    }
+
+    fn base_state() -> UserState {
+        UserState {
+            v: SCHEMA_VERSION,
+            user_id: 42,
+            name: "Ann".into(),
+            color: "#e8590c".into(),
+            client: Client::RbxNative,
+            camera: None,
+            selection: vec![],
+            script: None,
+            edits: vec![],
+            seen: 0,
+        }
+    }
+
+    #[test]
+    fn fit_encode_sheds_large_state() {
+        let key = "k".repeat(64);
+        let topic = "rbxnp-abc";
+        let mut state = base_state();
+        state.selection = (0..100)
+            .map(|i| format!("{i}{}", "a".repeat(400)))
+            .collect();
+        state.edits = (0..20)
+            .map(|i| crate::schema::Edit {
+                path: "Workspace.Part".into(),
+                property: "Size".into(),
+                value: "1, 2, 3".into(),
+                at: i,
+            })
+            .collect();
+        let body = fit_encode(&key, topic, 42, 1_000, &state).unwrap();
+        assert!(body.len() <= NTFY_MAX_BODY);
+        assert_eq!(decode(&key, topic, 1_000, &body).unwrap().user_id, 42);
+    }
+
+    #[test]
+    fn fit_encode_keeps_small_state() {
+        let key = "k".repeat(64);
+        let mut state = base_state();
+        state.selection = vec!["Workspace.Part".into()];
+        let body = fit_encode(&key, "t", 42, 1_000, &state).unwrap();
+        assert_eq!(body, encode(&key, "t", 42, 1_000, &state).unwrap());
+        let got = decode(&key, "t", 1_000, &body).unwrap();
+        assert_eq!(got.user_id, 42);
+        assert_eq!(got.name, "Ann");
     }
 
     #[test]

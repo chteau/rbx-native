@@ -27,6 +27,34 @@ function Ntfy.encode(key: string, topic: string, userId: number, ts: number, sta
 	return Json.encode({ u = userId, t = ts, s = sig, d = d })
 end
 
+Ntfy.MAX_BODY = 4096
+
+-- Like encode, but sheds detail until the envelope fits MAX_BODY: oldest
+-- edits, then selection, then camera, then script. If even the identity is
+-- too big, the smallest encoding is returned.
+function Ntfy.fitEncode(key: string, topic: string, userId: number, ts: number, state: any): string
+	local copy = table.clone(state)
+	copy.edits = table.clone(state.edits or {})
+	copy.selection = table.clone(state.selection or {})
+	while true do
+		local body = Ntfy.encode(key, topic, userId, ts, copy)
+		if #body <= Ntfy.MAX_BODY then
+			return body
+		end
+		if #copy.edits > 0 then
+			table.remove(copy.edits, 1)
+		elseif #copy.selection > 0 then
+			table.remove(copy.selection)
+		elseif copy.camera ~= nil then
+			copy.camera = nil
+		elseif copy.script ~= nil then
+			copy.script = nil
+		else
+			return body
+		end
+	end
+end
+
 -- Verifies and decodes `body`, returning the UserState or nil for anything
 -- that fails a check (bad JSON, stale time, bad signature, id mismatch).
 function Ntfy.decode(key: string, topic: string, nowMs: number, body: string): any?
