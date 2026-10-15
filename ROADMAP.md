@@ -2584,9 +2584,6 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 
 ### Editor
-- [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
-  stage/commit, branch switch), not relying on the user's own external git
-  client. Not scoped in any detail yet.
 - [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
   shipped (see "What's been implemented" → Editor); these rows are drawn
   there, faded and inert, until what they stand for exists:
@@ -2951,10 +2948,8 @@ clear they were considered and not missed.
   The core is a three-way DOM merge: instances added, removed or reparented,
   properties changed, and a script's `Source` merged as text. Instances
   would be matched by `UniqueId`, which Roblox writes for exactly this kind
-  of identity, rather than by file-local referents. The same merge is the
-  heart of the Native Git integration item above, so it should be built once
-  and used from both. Roblox's version is cloud-side; this one would be
-  local.
+  of identity, rather than by file-local referents. Roblox's version is
+  cloud-side; this one would be local.
 - [ ] ⚠️ **Package overrides** (Late 2026): inspect, diff, selectively
   revert or publish deliberate edits to a package copy, from the Properties
   panel. The diff itself is local: a `PackageLink`'s subtree compared,
