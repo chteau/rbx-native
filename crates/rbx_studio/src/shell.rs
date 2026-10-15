@@ -51,6 +51,7 @@ mod roblox_login;
 mod roblox_publish;
 mod roving;
 mod studio_presence;
+mod team_presence;
 
 pub(crate) use chrome::panel_topbar;
 pub(crate) use export::Export;
@@ -466,6 +467,8 @@ pub(crate) struct Shell {
     plugins: plugins::Plugins,
     /// "In Studio" on Roblox — see `shell::studio_presence`.
     studio_presence: studio_presence::StudioPresence,
+    /// Collaborators through the presence relay — see `shell::team_presence`.
+    team_presence: team_presence::TeamPresence,
     /// The code sign-in window, while open — see `shell::roblox_login`.
     roblox_login: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The page the next Settings window opens on; see `open_settings_on`.
@@ -528,6 +531,7 @@ impl Shell {
             discord_presence: discord_presence_enabled,
             discord_hide_names,
             studio_presence: studio_presence_enabled,
+            team_presence: team_presence_settings,
             play_sandbox,
             anim_sheet_height,
             anim_names_width,
@@ -660,6 +664,7 @@ impl Shell {
         });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
+            shell.presence_pose(event.0);
         });
         // `subscribe_in` rather than `subscribe`: one viewport action (the
         // snap increment shortcut) moves the caret, and focus needs a window.
@@ -829,6 +834,7 @@ impl Shell {
             play: play::Play::new(play_sandbox),
             plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
+            team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
             roblox_login: None,
             settings_open_on: None,
             drag: None,
@@ -875,6 +881,8 @@ impl Shell {
         }
         // Reads the stored Roblox sign-in, then starts the pulse if enabled.
         shell.restore_roblox_session(cx);
+        // Team presence: the mock feed, or the relay when turned on.
+        shell.init_team_presence(cx);
         // Loads and starts the installed plugins (see `shell::plugins`).
         shell.plugins_start(cx);
 
@@ -1698,6 +1706,7 @@ impl Shell {
             discord_presence: self.discord.is_some(),
             discord_hide_names: self.discord_hide_names,
             studio_presence: self.studio_presence.enabled,
+            team_presence: self.team_presence.settings.clone(),
             play_sandbox: self.play.sandbox,
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),

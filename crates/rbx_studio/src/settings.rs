@@ -23,10 +23,12 @@ pub(crate) mod argon;
 mod controls;
 mod dragger;
 mod output_display;
+mod team_presence;
 
 pub(crate) use controls::{Controls, FEEL_SCALE_RANGE};
 pub(crate) use dragger::DraggerSettings;
 pub(crate) use output_display::OutputDisplay;
+pub(crate) use team_presence::TeamPresenceSettings;
 
 /// What persists across a relaunch.
 #[derive(Debug, Clone, PartialEq)]
@@ -128,6 +130,8 @@ pub(crate) struct Settings {
     /// "In Studio" on the user's Roblox profile (`rbx_cloud::heartbeats`).
     /// Off by default; needs a Roblox sign-in.
     pub(crate) studio_presence: bool,
+    /// Team presence through the relay (`shell::team_presence`); opt-in.
+    pub(crate) team_presence: TeamPresenceSettings,
     /// The private place Play publishes over; see `shell::play`.
     pub(crate) play_sandbox: Option<PlaySandbox>,
     /// The Animation Editor's bottom panel height, once its seam has been
@@ -224,6 +228,7 @@ impl Default for Settings {
             discord_presence: false,
             discord_hide_names: true,
             studio_presence: false,
+            team_presence: TeamPresenceSettings::default(),
             play_sandbox: None,
             anim_sheet_height: None,
             anim_names_width: None,
@@ -441,6 +446,7 @@ fn load_from(path: &Path) -> Settings {
             .get("studio_presence")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        team_presence: TeamPresenceSettings::read(&value),
         play_sandbox: PlaySandbox::read(&value),
         anim_sheet_height: read_extent(&value, "anim_sheet_height"),
         anim_names_width: read_extent(&value, "anim_names_width"),
@@ -701,6 +707,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "discord_presence": settings.discord_presence,
         "discord_hide_names": settings.discord_hide_names,
         "studio_presence": settings.studio_presence,
+        "team_presence": settings.team_presence.json(),
         "play_sandbox": settings.play_sandbox.map(PlaySandbox::json),
         "anim_sheet_height": settings.anim_sheet_height,
         "anim_names_width": settings.anim_names_width,

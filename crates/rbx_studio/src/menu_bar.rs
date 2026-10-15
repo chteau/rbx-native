@@ -92,6 +92,7 @@ actions!(
         MenuToggleProperties,
         MenuToggleOutput,
         MenuToggleViewport,
+        MenuToggleCollaborators,
         /// Shared by every item below that has no real handler yet; always
         /// paired with `.disabled(true)` (see `menus`), so `PopupMenu` never
         /// lets a click reach it — `actions::install` still gives it a no-op
@@ -231,6 +232,9 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Command Bar", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
                 MenuItem::action("Style Editor", MenuStyleEditor),
+                // Team presence: who else is in the place, from Studio or
+                // rbx-native. Shut by default, so it needs a way in.
+                MenuItem::action("Collaborators", MenuToggleCollaborators),
                 MenuItem::separator(),
                 // The accessibility settings the reference guidance calls
                 // for a native app to expose itself rather than inherit

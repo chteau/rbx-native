@@ -14,6 +14,7 @@ local codec = require(ReplicatedStorage:WaitForChild("__rbxnative_codec"))
 local Live = require(ReplicatedStorage:WaitForChild("__rbxnative_live"))
 
 local Debug = require(ReplicatedStorage:WaitForChild("__rbxnative_debug"))
+local Print = require(ReplicatedStorage:WaitForChild("__rbxnative_print"))
 -- Game scripts' MarketplaceService is rewritten to this module's proxy
 -- (test purchases); start it before any of them prompts.
 require(ReplicatedStorage:WaitForChild("__rbxnative_market")).start()
@@ -78,14 +79,21 @@ local levels = {
 	[Enum.MessageType.MessageError] = "error",
 }
 
-local function push(side, level, message, time)
-	queue({
+local function push(side, level, message, time, parts, origin)
+	local log = {
 		type = "log",
 		side = side,
 		level = level,
 		message = message,
 		time = time,
-	})
+	}
+	if parts ~= nil and #parts > 0 then
+		log.parts = parts
+	end
+	if origin ~= nil then
+		log.origin = origin
+	end
+	queue(log)
 end
 
 -- Neither flag can simply be read: LoadStringEnabled is not scriptable at
@@ -98,7 +106,16 @@ local compiled, chunk = pcall(loadstring, "return 1")
 local loadstring_enabled = compiled and type(chunk) == "function"
 
 LogService.MessageOut:Connect(function(message, messageType)
-	push("server", levels[messageType] or "output", message, os.clock() - t0)
+	local level = levels[messageType] or "output"
+	local parts, origin
+	if level == "output" or level == "warning" then
+		local record = Print.take(message)
+		if record then
+			parts = record.parts
+			origin = record.origin
+		end
+	end
+	push("server", level, message, os.clock() - t0, parts, origin)
 end)
 
 Debug.attach("server", queue)
@@ -123,7 +140,16 @@ remote.OnServerEvent:Connect(function(player, payload)
 			if level ~= "output" and level ~= "info" and level ~= "warning" and level ~= "error" then
 				level = "output"
 			end
-			push("client", level, entry.message, tonumber(entry.time) or 0)
+			local parts = nil
+			if type(entry.parts) == "table" then
+				parts = entry.parts
+			end
+			local origin = nil
+			local eo = entry.origin
+			if type(eo) == "table" and type(eo.script) == "string" and type(eo.line) == "number" then
+				origin = { script = eo.script, line = eo.line }
+			end
+			push("client", level, entry.message, tonumber(entry.time) or 0, parts, origin)
 		end
 	end
 end)

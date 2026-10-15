@@ -36,7 +36,13 @@ pub(super) fn format_properties(shell: &Shell, node: &DiffNode) -> Vec<Formatted
     node.properties
         .iter()
         .map(|property| FormattedProperty {
-            name: property.name.clone(),
+            // The name the Properties panel shows (`Color` for a saved
+            // `Color3uint8`, `Size` for `size`).
+            name: shell
+                .properties
+                .db()
+                .canonical_name(&node.class, &property.name)
+                .to_owned(),
             before: property
                 .before
                 .as_ref()

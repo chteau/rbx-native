@@ -140,6 +140,7 @@ impl Shell {
             Panel::Watch => self.watch_dock(window, cx),
             Panel::CallStack => self.call_stack_dock(cx),
             Panel::TerrainEditor => self.terrain_dock(window, cx),
+            Panel::Collaborators => self.collaborators_dock(window, cx),
             Panel::PluginWidgets => self.plugin_widgets_dock(window, cx),
         }
     }

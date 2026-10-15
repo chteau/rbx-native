@@ -305,6 +305,7 @@ impl Shell {
         }
         self.plugins_dom_changed(changes, cx);
         self.recovery.changed();
+        self.presence_changes(changes, cx);
         self.properties.dom_changed(changes);
         let mut refresh = refresh_for(changes, &self.covered);
         // A selected model's own properties — its `WorldPivot`, its

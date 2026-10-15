@@ -296,6 +296,7 @@ fn focus_moves_into_every_dock_that_can_hold_it() {
             (Panel::Watch, Some(Entry::WatchExpression)),
             (Panel::CallStack, None),
             (Panel::TerrainEditor, None),
+            (Panel::Collaborators, None),
             (Panel::PluginWidgets, None),
         ]
     );

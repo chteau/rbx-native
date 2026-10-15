@@ -1,0 +1,32 @@
+[package]
+name = "rbx_presence"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "build-presence-plugin"
+path = "src/bin/build_presence_plugin.rs"
+
+[dependencies]
+rbx_dom = { path = "../rbx_dom" }
+# The plugin ships as a `.rbxmx`, written by the editor's own XML encoder.
+rbx_xml = { path = "../rbx_xml" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Request signatures and room ids (HMAC-SHA-256); both already in Cargo.lock.
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+# The per-place secret; same version `rbx_cloud` uses.
+getrandom = "0.3"
+# The relay's WebSocket: a small blocking client over the rustls already in
+# the tree, so the connection lives on one plain worker thread.
+tungstenite = { version = "0.28", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
+# The ntfy transport: a blocking HTTP client (publish + poll), the same
+# version rbx_cloud uses, so nothing new in Cargo.lock.
+ureq = { version = "3", features = ["gzip"] }
+
+[dev-dependencies]
+# Runs the plugin's own Luau modules against the shared golden fixtures.
+mlua = { version = "0.12", features = ["luau"] }

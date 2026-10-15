@@ -49,6 +49,40 @@ impl Location {
     }
 }
 
+/// The game's structured `print` arguments in the shape the Output renders.
+pub(crate) fn print_parts(parts: &[rbx_play::protocol::PrintedPart]) -> Vec<rbx_lua::PrintPart> {
+    use rbx_play::protocol::{PrintedPart, PrintedTable, PrintedValue};
+
+    fn table(t: &PrintedTable) -> rbx_lua::TableDump {
+        rbx_lua::TableDump {
+            address: t.address.clone(),
+            entries: t
+                .entries
+                .iter()
+                .map(|e| rbx_lua::TableEntry {
+                    key: e.key.clone(),
+                    value: match &e.value {
+                        PrintedValue::Text(s) => rbx_lua::PrintValue::Text(s.clone()),
+                        PrintedValue::Table(t) => rbx_lua::PrintValue::Table(table(t)),
+                        PrintedValue::Reference { reference } => {
+                            rbx_lua::PrintValue::Reference(reference.clone())
+                        }
+                    },
+                })
+                .collect(),
+            more: t.more,
+        }
+    }
+
+    parts
+        .iter()
+        .map(|part| match part {
+            PrintedPart::Text(s) => rbx_lua::PrintPart::Text(s.clone()),
+            PrintedPart::Table(t) => rbx_lua::PrintPart::Table(table(t)),
+        })
+        .collect()
+}
+
 /// One stack frame: its location and whatever followed it (` - function f`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Frame {

@@ -40,7 +40,7 @@ pub(super) fn output_row(
     cx: &mut Context<Shell>,
 ) -> AnyElement {
     if let Some(message) = &entry.game {
-        return game_row(entry, message, index, show, cx).into_any_element();
+        return game_row(entry, message, index, show, log, cx).into_any_element();
     }
     let kind = entry.kind();
     let color = level_color(kind.color(), cx);
@@ -123,6 +123,7 @@ fn game_row(
     message: &game::GameMessage,
     index: usize,
     show: Show,
+    log: &OutputLog,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
     let kind = entry.kind();
@@ -169,10 +170,12 @@ fn game_row(
         );
     }
 
-    let mut text = div()
-        .min_w_0()
-        .text_xs()
-        .child(truncate(&message.text, LABEL_MAX_LEN));
+    let mut text = div().min_w_0().text_xs();
+    text = if entry.printed.is_empty() || show.display.log_mode {
+        text.child(truncate(&message.text, LABEL_MAX_LEN))
+    } else {
+        text.child(tables::printed(entry, show.display, log, cx))
+    };
     if let Some(color) = color {
         text = text.text_color(color);
     }

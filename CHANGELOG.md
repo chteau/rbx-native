@@ -24,6 +24,12 @@
   `Enum.FontWeight`/`Enum.FontStyle` items, `UDim2.new` takes two `UDim`s,
   an object property can be cleared with `nil`, a new `Handles` shows
   every face, and `Vector3.FromNormalId`/`FromAxis` exist. — @chteau
+- **Game-printed tables as trees in the Output.** During Play, a table a
+  game script prints or warns opens as the same expandable tree as a Command Bar
+  print, and the row names the script and line that printed it (Show
+  Source), which a click opens. Play inserts a `print`/`warn` stand-in at the
+  start of each game script in the published copy, on the first line, so
+  line numbers stay as written. — @chteau
 
 ## 2026-10-14
 

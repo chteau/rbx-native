@@ -178,8 +178,12 @@ impl Shell {
         let selected = open.iter().position(|tab| *tab == active).unwrap_or(0);
         let clicked = open.clone();
 
+        let marks = self.presence_marks();
         let tabs = open.iter().enumerate().map(|(index, reference)| {
             let reference = *reference;
+            let dots = marks
+                .get(&reference)
+                .map(|marks| super::explorer_edit::presence_dots(("presence-tab", index), marks));
             // Read from the DOM rather than cached at open time, so a rename
             // in the Explorer retitles the tab.
             let label = source::label(self.edit_dom(), reference).unwrap_or_default();
@@ -194,14 +198,16 @@ impl Shell {
                 // nothing about which script is which.
                 .prefix(Icon::new(IconName::FileCode).xsmall())
                 .suffix(
-                    Button::new(("close-script-tab", index))
-                        .icon(IconName::Close)
-                        .ghost()
-                        .xsmall()
-                        .accessibility_label("Close tab")
-                        .on_click(cx.listener(move |shell, _, _, cx| {
-                            shell.close_script(reference, cx);
-                        })),
+                    h_flex().items_center().gap_1().children(dots).child(
+                        Button::new(("close-script-tab", index))
+                            .icon(IconName::Close)
+                            .ghost()
+                            .xsmall()
+                            .accessibility_label("Close tab")
+                            .on_click(cx.listener(move |shell, _, _, cx| {
+                                shell.close_script(reference, cx);
+                            })),
+                    ),
                 )
         });
 

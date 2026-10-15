@@ -1,6 +1,8 @@
 //! `GET thumbnails.roblox.com/v1/games/icons`: an experience's icon for the
 //! Home screen's grid. Anonymous, and answers for private universes too
-//! (checked live, 2026-09-25), so no scope is needed.
+//! (checked live, 2026-09-25), so no scope is needed. And
+//! `/v1/users/avatar-headshot`: a collaborator's round headshot, as Studio
+//! shows it beside the people in a Team Create session; anonymous too.
 
 use serde::Deserialize;
 
@@ -8,6 +10,7 @@ use crate::client::Client;
 use crate::error::{self, CloudError};
 
 const ICONS_URL: &str = "https://thumbnails.roblox.com/v1/games/icons";
+const HEADSHOTS_URL: &str = "https://thumbnails.roblox.com/v1/users/avatar-headshot";
 
 /// The endpoint's own per-request cap.
 const BATCH: usize = 100;
@@ -54,6 +57,35 @@ impl Client {
             icons.extend(parse(&response.body)?);
         }
         Ok(icons)
+    }
+
+    /// `(user_id, headshot URL)` for every user whose 48×48 circular
+    /// headshot is ready; the rest are left out for the caller's own
+    /// placeholder.
+    pub fn user_headshot_urls(&self, user_ids: &[u64]) -> Result<Vec<(u64, String)>, CloudError> {
+        let mut headshots = Vec::new();
+        for chunk in user_ids.chunks(BATCH) {
+            let ids = chunk
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            let response = self.get_with(HEADSHOTS_URL, false, true, |req| {
+                req.query("userIds", &ids)
+                    .query("size", "48x48")
+                    .query("format", "Png")
+                    .query("isCircular", "true")
+            })?;
+            if !(200..300).contains(&response.status) {
+                return Err(error::error_for_status(
+                    HEADSHOTS_URL,
+                    response.status,
+                    &response.headers,
+                ));
+            }
+            headshots.extend(parse(&response.body)?);
+        }
+        Ok(headshots)
     }
 
     /// The PNG behind one of [`game_icon_urls`](Self::game_icon_urls)' URLs.

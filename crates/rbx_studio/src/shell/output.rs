@@ -256,8 +256,16 @@ impl OutputLog {
 
     /// Appends a message from the running game (`print`/`warn`/an error):
     /// `feedback` carries its level and Roblox's whole message, stack
-    /// included; `game::parse` splits it for the row.
-    pub(crate) fn push_game(&mut self, context: game::Context, feedback: Feedback) {
+    /// included; `game::parse` splits it for the row. `printed` is a print's
+    /// structured arguments (kept only when one is a table) and `origin` the
+    /// script line that printed it, used when the message names no location.
+    pub(crate) fn push_game(
+        &mut self,
+        context: game::Context,
+        feedback: Feedback,
+        printed: Vec<PrintPart>,
+        origin: Option<game::Location>,
+    ) {
         let text = match &feedback {
             Feedback::Output(text)
             | Feedback::Info(text)
@@ -265,10 +273,19 @@ impl OutputLog {
             | Feedback::Warning(text) => text,
             Feedback::Idle => return,
         };
-        let message = game::parse(context, text);
+        let mut message = game::parse(context, text);
+        if message.location.is_none() {
+            message.location = origin;
+        }
+        let has_table = printed
+            .iter()
+            .any(|part| matches!(part, PrintPart::Table(_)));
         self.push(context.label(), feedback);
         if let Some(entry) = self.entries.last_mut() {
             entry.game = Some(message);
+            if has_table {
+                entry.printed = vec![printed];
+            }
         }
     }
 

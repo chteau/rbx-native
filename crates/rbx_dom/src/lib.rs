@@ -6,6 +6,7 @@
 pub mod attributes;
 mod brick_color;
 mod change;
+pub mod diff;
 mod dom;
 mod error;
 mod instance;

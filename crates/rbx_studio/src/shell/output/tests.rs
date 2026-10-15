@@ -331,6 +331,8 @@ fn a_game_error_keeps_its_side_location_and_stack() {
     log.push_game(
         Context::Client,
         error("Players.T.PlayerScripts.Hud:4: boom\n    Stack Begin\n    Script 'Players.T.PlayerScripts.Hud', Line 4\n    Stack End"),
+        Vec::new(),
+        None,
     );
     let entry = log
         .filtered(OutputFilter::Errors, ContextFilter::All, "")
@@ -359,8 +361,10 @@ fn an_info_message_has_its_own_bucket() {
     log.push_game(
         game::Context::Server,
         Feedback::Info("TestService: ok".into()),
+        Vec::new(),
+        None,
     );
-    log.push_game(game::Context::Server, output("hello"));
+    log.push_game(game::Context::Server, output("hello"), Vec::new(), None);
     let info: Vec<_> = log
         .filtered(OutputFilter::Info, ContextFilter::All, "")
         .collect();
@@ -378,8 +382,18 @@ fn the_context_filter_splits_edit_server_and_client() {
     let mut log = OutputLog::default();
     log.push("print(1)", output("1"));
     log.push_warning("texture fell back");
-    log.push_game(game::Context::Server, output("from server"));
-    log.push_game(game::Context::Client, output("from client"));
+    log.push_game(
+        game::Context::Server,
+        output("from server"),
+        Vec::new(),
+        None,
+    );
+    log.push_game(
+        game::Context::Client,
+        output("from client"),
+        Vec::new(),
+        None,
+    );
     let count = |context| log.filtered(OutputFilter::All, context, "").count();
     assert_eq!(count(ContextFilter::All), 4);
     assert_eq!(count(ContextFilter::Edit), 2);
@@ -414,6 +428,48 @@ fn a_run_keeps_its_print_structure_only_when_it_printed_a_table() {
         .collect();
     assert!(entries[0].printed.is_empty());
     assert_eq!(entries[1].printed, table_print());
+}
+
+#[test]
+fn a_game_print_keeps_a_table_and_plain_text_does_not() {
+    let mut log = OutputLog::default();
+    let parts = table_print().remove(0);
+    log.push_game(game::Context::Server, output("table: 0x1"), parts, None);
+    log.push_game(
+        game::Context::Server,
+        output("hi"),
+        vec![rbx_lua::PrintPart::Text("hi".into())],
+        None,
+    );
+    assert_eq!(log.entries[0].printed, table_print());
+    assert!(log.entries[1].printed.is_empty());
+}
+
+#[test]
+fn a_print_origin_fills_the_location_but_an_errors_own_wins() {
+    let origin = || {
+        Some(game::Location {
+            path: "ServerScriptService.Main".into(),
+            line: 3,
+        })
+    };
+    let mut log = OutputLog::default();
+    log.push_game(game::Context::Server, output("hello"), Vec::new(), origin());
+    log.push_game(
+        game::Context::Server,
+        error("ServerScriptService.Other:9: boom"),
+        Vec::new(),
+        origin(),
+    );
+    let short = |i: usize| {
+        log.entries[i]
+            .game
+            .as_ref()
+            .and_then(|g| g.location.as_ref())
+            .map(|l| l.short())
+    };
+    assert_eq!(short(0), Some("Main:3".into()));
+    assert_eq!(short(1), Some("Other:9".into()));
 }
 
 #[test]
