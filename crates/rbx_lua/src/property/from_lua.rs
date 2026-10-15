@@ -80,6 +80,8 @@ pub(crate) fn lua_to_variant(
         // which is how a place file stores one too.
         "string" | "ProtectedString" | "BinaryString" | "ContentId" => match value {
             Value::String(text) => Ok(Variant::String(text.to_str()?.to_string())),
+            // Roblox coerces a number the way `tostring` would (`Text = 5`).
+            Value::Integer(_) | Value::Number(_) => Ok(Variant::String(value.to_string()?)),
             other => Err(type_error(name, "string", other)),
         },
         "float" => Ok(Variant::Float32(number(name, value)? as f32)),

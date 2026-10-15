@@ -170,6 +170,11 @@ pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
         })?,
     )?;
 
+    globals.set(
+        "version",
+        lua.create_function(|_, ()| Ok(env!("CARGO_PKG_VERSION")))?,
+    )?;
+
     datatypes::register(lua)?;
     globals.set("Instance", instance::constructors(lua, ctx.clone())?)?;
     globals.set("Enum", LuaEnums::new(ctx.clone()))?;
@@ -187,5 +192,59 @@ pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
         globals.set("Workspace", LuaInstance::new(referent, ctx.clone()))?;
     }
 
-    Ok(())
+    install_error_strings(lua)
+}
+
+/// What a script sees of an error a binding raised: Roblox hands scripts
+/// the bare message ("Part is not a valid member of Workspace"), never an
+/// error object, and code such as Roact formats it with `%s`.
+fn error_text(error: &LuaError) -> String {
+    match error {
+        LuaError::CallbackError { cause, .. } => error_text(cause),
+        LuaError::RuntimeError(message) => message.clone(),
+        LuaError::SyntaxError { message, .. } => message.clone(),
+        LuaError::WithContext { cause, .. } => error_text(cause),
+        other => other.to_string(),
+    }
+}
+
+/// Wraps `pcall`, `xpcall` and `coroutine.resume` so a caught binding error
+/// comes back as its message string (see `error_text`); errors scripts
+/// raise themselves (strings, tables) pass through untouched.
+fn install_error_strings(lua: &Lua) -> Result<(), LuaError> {
+    let text = lua.create_function(|lua, value: Value| match value {
+        Value::Error(error) => Ok(Value::String(lua.create_string(error_text(&error))?)),
+        other => Ok(other),
+    })?;
+    lua.load(
+        r#"
+        local text, rawpcall, rawxpcall, resume = ...
+        local function caught(ok, ...)
+            if ok then
+                return true, ...
+            end
+            return false, text((...))
+        end
+        pcall = function(f, ...)
+            return caught(rawpcall(f, ...))
+        end
+        xpcall = function(f, handler, ...)
+            return rawxpcall(f, function(e)
+                return handler(text(e))
+            end, ...)
+        end
+        coroutine.resume = function(co, ...)
+            return caught(resume(co, ...))
+        end
+        "#,
+    )
+    .set_name("=errors")
+    .call::<()>((
+        text,
+        lua.globals().get::<Value>("pcall")?,
+        lua.globals().get::<Value>("xpcall")?,
+        lua.globals()
+            .get::<mlua::Table>("coroutine")?
+            .get::<Value>("resume")?,
+    ))
 }

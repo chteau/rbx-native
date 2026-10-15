@@ -5,8 +5,9 @@ use std::path::PathBuf;
 
 use rbx_dom::{Change, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::plugin::{
-    Answer, Context, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, Input, Manifest, Origin,
-    Outcome, OutputKind, PluginHost, PluginSource, PromptKind, Request, SourceBody,
+    Answer, Context, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, Input, LayoutBox,
+    Manifest, Origin, Outcome, OutputKind, Permission, PluginHost, PluginSource, PromptKind,
+    Request, SourceBody,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -139,6 +140,95 @@ fn all_refs(dom: &WeakDom) -> Vec<Ref> {
         }
     }
     out
+}
+
+#[test]
+fn layout_feeds_absolute_size() {
+    let src = r#"
+        local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 200, 100, 100, 50)
+        local gui = plugin:CreateDockWidgetPluginGui("w", info)
+        local frame = Instance.new("Frame")
+        frame.Name = "Box"
+        frame.Parent = gui
+        frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            local s = frame.AbsoluteSize
+            print(string.format("%.0f %.0f", s.X, s.Y))
+        end)
+    "#;
+    let (mut f, _) = started("layout", src);
+    let widget = f.host.ui().widgets[0].id;
+    let wdom = f.host.widget_dom(widget).unwrap();
+    let frame = all_refs(&wdom)
+        .into_iter()
+        .find(|r| wdom.get(*r).is_some_and(|i| i.name() == "Box"))
+        .unwrap();
+    let out = f.send(Input::Layout(vec![LayoutBox {
+        referent: frame,
+        position: [10.0, 20.0],
+        size: [120.0, 40.0],
+    }]));
+    let lines: Vec<String> = texts(&out, OutputKind::Print);
+    assert_eq!(lines, vec!["120 40".to_string()]);
+}
+
+#[test]
+fn native_plugin_without_dom_write_cannot_edit_place() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let part = dom.new_instance("Part", "Part", Some(workspace));
+    dom.take_changes();
+    let dir = tempdir::Dir::new("guard_denied");
+    let mut host = PluginHost::new(ReflectionDatabase::embedded(), Some(dir.0.clone()));
+    host.add(native_source(vec![]));
+    let ctx = Context {
+        now: 100.0,
+        ..Context::default()
+    };
+    let out = host.dispatch(&mut dom, ctx, Input::Start);
+    assert_eq!(texts(&out, OutputKind::Print), vec!["Mine".to_string()]);
+    assert!(!texts(&out, OutputKind::Error).is_empty());
+    assert_eq!(dom.get(part).unwrap().name(), "Part");
+}
+
+#[test]
+fn native_plugin_with_dom_write_renames_part() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let part = dom.new_instance("Part", "Part", Some(workspace));
+    dom.take_changes();
+    let dir = tempdir::Dir::new("guard_allowed");
+    let mut host = PluginHost::new(ReflectionDatabase::embedded(), Some(dir.0.clone()));
+    host.add(native_source(vec![Permission::DomWrite]));
+    let ctx = Context {
+        now: 100.0,
+        ..Context::default()
+    };
+    let out = host.dispatch(&mut dom, ctx, Input::Start);
+    assert!(texts(&out, OutputKind::Error).is_empty());
+    assert_eq!(dom.get(part).unwrap().name(), "Renamed");
+}
+
+fn native_source(permissions: Vec<Permission>) -> PluginSource {
+    PluginSource {
+        name: "Native".to_string(),
+        body: SourceBody::Luau(
+            r#"
+            local mine = Instance.new("Folder")
+            mine.Name = "Mine"
+            print(mine.Name)
+            workspace.Part.Name = "Renamed"
+            "#
+            .to_string(),
+        ),
+        origin: Origin::Native {
+            path: PathBuf::from("Native"),
+            manifest: Manifest {
+                name: "Native".to_string(),
+                permissions,
+                ..Manifest::default()
+            },
+        },
+    }
 }
 
 #[test]

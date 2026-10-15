@@ -50,6 +50,7 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
 
 /// Writes a property, returning `Ok(false)` when the class has no such member.
 pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
+    ctx.check_write(referent)?;
     if pseudo::set(ctx, referent, name, value)? {
         return Ok(true);
     }

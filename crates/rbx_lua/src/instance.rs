@@ -1,5 +1,6 @@
 //! `Instance` userdata: one DOM node seen from Luau.
 
+mod bounds;
 pub(crate) mod tree;
 
 use mlua::{IntoLua, Lua, MetaMethod, Result, Table, UserData, UserDataMethods, Value};
@@ -48,6 +49,25 @@ impl LuaInstance {
             .get(self.referent)
             .map(|instance| instance.class().to_string())
             .ok_or_else(property::missing_instance)
+    }
+
+    fn model_bounds(&self, member: &str) -> Result<(rbx_dom::CFrameData, rbx_dom::Vector3Data)> {
+        let class = self.class()?;
+        let found = if self.ctx.database().is_subclass_of(&class, "Model") {
+            bounds::bounding_box(&self.ctx.dom(), self.ctx.database(), self.referent)
+        } else {
+            None
+        };
+        found.ok_or_else(|| not_a_member(member, &class))
+    }
+
+    fn require_part(&self, member: &str) -> Result<()> {
+        let class = self.class()?;
+        if self.ctx.database().is_subclass_of(&class, "BasePart") {
+            Ok(())
+        } else {
+            Err(not_a_member(member, &class))
+        }
     }
 
     fn instance_name(&self) -> Result<String> {
@@ -160,7 +180,35 @@ impl UserData for LuaInstance {
             Ok(target != this.referent
                 && tree::is_ancestor_of(&this.ctx.dom(), this.referent, target))
         });
+        methods.add_method("GetDebugId", |_, this, _scope: Option<Value>| {
+            Ok(format!("{:?}", this.referent))
+        });
+        methods.add_method("GetBoundingBox", |_, this, ()| {
+            let (frame, size) = this.model_bounds("GetBoundingBox")?;
+            Ok((
+                LuaCFrame(frame),
+                crate::datatypes::vector3::LuaVector3::new(size.x, size.y, size.z),
+            ))
+        });
+        methods.add_method("GetExtentsSize", |_, this, ()| {
+            let (_, size) = this.model_bounds("GetExtentsSize")?;
+            Ok(crate::datatypes::vector3::LuaVector3::new(
+                size.x, size.y, size.z,
+            ))
+        });
+        methods.add_method("GetTouchingParts", |lua, this, ()| {
+            this.require_part("GetTouchingParts")?;
+            lua.create_table()
+        });
+        methods.add_method(
+            "GetConnectedParts",
+            |lua, this, _recursive: Option<bool>| {
+                this.require_part("GetConnectedParts")?;
+                lua.create_table()
+            },
+        );
         methods.add_method("ClearAllChildren", |_, this, ()| {
+            this.ctx.check_write(this.referent)?;
             let children = this
                 .ctx
                 .dom()
@@ -202,6 +250,7 @@ impl UserData for LuaInstance {
         });
         methods.add_method("PivotTo", |_, this, target: Value| {
             let target: LuaCFrame = from_userdata(&target, "CFrame")?;
+            this.ctx.check_write(this.referent)?;
             let moved = crate::pivot::pivot_to(
                 &mut this.ctx.dom_mut(),
                 this.ctx.database(),
@@ -214,6 +263,7 @@ impl UserData for LuaInstance {
             }
         });
         methods.add_method("Destroy", |_, this, ()| {
+            this.ctx.check_write(this.referent)?;
             let mut dom = this.ctx.dom_mut();
             // A model losing its `PrimaryPart` keeps the pivot it had.
             crate::pivot::keep_pivots(&mut dom, this.ctx.database(), &[this.referent])
@@ -274,6 +324,7 @@ impl UserData for LuaInstance {
                             )));
                         };
                         let text = text.to_str()?.to_string();
+                        this.ctx.check_write(this.referent)?;
                         this.ctx
                             .dom_mut()
                             .set_name(this.referent, &text)
@@ -287,7 +338,9 @@ impl UserData for LuaInstance {
                     }
                     "Parent" => {
                         let target = parent_target(&value)?;
+                        this.ctx.check_write(this.referent)?;
                         if let Some(parent) = target {
+                            this.ctx.check_write(parent)?;
                             let dom = this.ctx.dom();
                             if dom.get(parent).is_none() {
                                 return Err(property::missing_instance());
@@ -346,6 +399,9 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
                     Some(value) => parent_target(value)?,
                     None => None,
                 };
+                if let Some(parent) = target {
+                    ctx.check_write(parent)?;
+                }
                 let referent = ctx.dom_mut().new_instance(&class, &class, target);
                 defaults::apply(&ctx, &class, referent);
                 Ok(LuaInstance::new(referent, ctx.clone()))

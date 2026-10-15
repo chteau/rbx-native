@@ -62,13 +62,7 @@ pub(crate) fn to_lua(lua: &Lua, ctx: &Ctx, arg: &Arg) -> Result<Value> {
                         "{item} is not a valid member of Enum.{enum_name}"
                     ))
                 })?;
-            lua.create_userdata(LuaEnumItem::new(
-                enum_name.clone(),
-                item.clone(),
-                value,
-                ctx.clone(),
-            ))
-            .map(Value::UserData)
+            LuaEnumItem::new(enum_name.clone(), item.clone(), value, ctx.clone()).interned(lua)
         }
         Arg::Table(entries) => {
             let table = lua.create_table()?;

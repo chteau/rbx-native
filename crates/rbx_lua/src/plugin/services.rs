@@ -22,7 +22,8 @@ use super::signal::{LuaSignal, Owner, SignalKey};
 use crate::datatypes::color3::LuaColor3;
 use crate::instance::LuaInstance;
 
-const SERVICES: [&str; 8] = [
+const SERVICES: [&str; 9] = [
+    "UserInputService",
     "Selection",
     "ChangeHistoryService",
     "HttpService",
@@ -80,7 +81,7 @@ impl UserData for LuaService {
 ///   plugin's own `CoreGui` / `PluginGuiService` folders.
 pub(crate) fn service(lua: &Lua, name: &str) -> Result<Option<Value>> {
     let Some(&canon) = SERVICES.iter().find(|n| **n == name) else {
-        return Ok(None);
+        return super::world::service(lua, name);
     };
     let key = format!("rbxn.service.{canon}");
     if let Some(cached) = lua.named_registry_value::<Option<Value>>(&key)? {
@@ -124,7 +125,49 @@ fn index(lua: &Lua, service: &'static str, key: &str) -> Result<Value> {
         "HttpService" => http_service::index(lua, key),
         "RunService" => run_service(lua, key),
         "StudioService" => studio_service(lua, key),
+        "UserInputService" => user_input_service(lua, key),
         _ => collection_service(lua, key),
+    }
+}
+
+fn user_input_service(lua: &Lua, key: &str) -> Result<Value> {
+    let item = |lua: &Lua, enum_name: &str, name: &str| -> Result<Value> {
+        let ctx = env(lua).ctx.clone();
+        super::input::enum_item(&ctx, enum_name, name)?.interned(lua)
+    };
+    match key {
+        "InputBegan"
+        | "InputChanged"
+        | "InputEnded"
+        | "WindowFocused"
+        | "WindowFocusReleased"
+        | "TextBoxFocused"
+        | "TextBoxFocusReleased" => signal(lua, "UserInputService", key),
+        "GetMouseLocation" => func(lua, |lua, _: Value| {
+            let ((x, y), _) = super::events::pointer_state(lua);
+            lua.create_userdata(crate::datatypes::misc::LuaVector2(rbx_dom::Vector2Data {
+                x,
+                y,
+            }))
+        }),
+        "IsKeyDown" => func(lua, |_, _: MultiValueRest| Ok(false)),
+        "IsMouseButtonPressed" => func(lua, |lua, (_, button): (Value, Value)| {
+            let (_, pressed) = super::events::pointer_state(lua);
+            let text = button.to_string()?;
+            Ok(match text.rsplit('.').next() {
+                Some("MouseButton1") => pressed[0],
+                Some("MouseButton2") => pressed[1],
+                _ => false,
+            })
+        }),
+        "GetFocusedTextBox" => func(lua, |lua, _: Value| {
+            Ok(super::events::focused_text_box(lua)
+                .map(|r| LuaInstance::new(r, env(lua).ctx.clone())))
+        }),
+        "MouseEnabled" | "KeyboardEnabled" | "MouseIconEnabled" => Ok(Value::Boolean(true)),
+        "TouchEnabled" | "GamepadEnabled" | "VREnabled" => Ok(Value::Boolean(false)),
+        "MouseBehavior" => item(lua, "MouseBehavior", "Default"),
+        _ => Err(no_member("UserInputService", key)),
     }
 }
 
@@ -394,6 +437,9 @@ pub(crate) fn install_settings(lua: &Lua) -> Result<()> {
         )),
     )?;
     let studio = lua.create_table()?;
+    // `ThemeChanged` belongs to `Studio` (settings().Studio.ThemeChanged);
+    // the theme keeps a copy for older plugins that read it there.
+    studio.set("ThemeChanged", theme.get::<Value>("ThemeChanged")?)?;
     studio.set("Theme", theme)?;
     let root = lua.create_table()?;
     root.set("Studio", studio)?;

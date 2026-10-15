@@ -72,6 +72,111 @@ struct EventState {
     focused: Option<Ref>,
     /// Last pointer position, by element and by the widget root above it.
     pointer: HashMap<Ref, (f32, f32)>,
+    /// Last pointer position seen on any element, and whether mouse
+    /// buttons 1 and 2 are held.
+    mouse: (f32, f32),
+    buttons: [bool; 2],
+}
+
+/// The last pointer position and the held state of mouse buttons 1 and 2.
+pub(crate) fn pointer_state(lua: &Lua) -> ((f32, f32), [bool; 2]) {
+    with_state(lua, |s| (s.mouse, s.buttons))
+}
+
+/// The `TextBox` that currently has focus.
+pub(crate) fn focused_text_box(lua: &Lua) -> Option<Ref> {
+    with_state(lua, |s| s.focused)
+}
+
+/// Fires the `Input*` signals on the element and on `UserInputService`.
+fn fire_input(
+    lua: &Lua,
+    r: Ref,
+    signal_name: &str,
+    kind: &str,
+    state: &str,
+    position: [f32; 3],
+) -> Result<()> {
+    let [x, y, z] = position;
+    let input = if z == 0.0 {
+        super::input::input_object(lua, kind, state, x, y)?
+    } else {
+        super::input::input_object_at(lua, kind, state, position)?
+    };
+    signal::fire_values(
+        lua,
+        &instance_key(r, signal_name),
+        MultiValue::from_iter([input.clone()]),
+    )?;
+    signal::fire_values(
+        lua,
+        &SignalKey::new(Owner::Service("UserInputService"), signal_name),
+        MultiValue::from_iter([input, Value::Boolean(false)]),
+    )
+}
+
+fn fire_gui_input(lua: &Lua, r: Ref, kind: &GuiEventKind) -> Result<()> {
+    let button = |b: u8| {
+        if b == 2 {
+            "MouseButton2"
+        } else {
+            "MouseButton1"
+        }
+    };
+    match kind {
+        GuiEventKind::Enter { x, y } => {
+            with_state(lua, |s| s.mouse = (*x, *y));
+            fire_input(
+                lua,
+                r,
+                "InputBegan",
+                "MouseMovement",
+                "Begin",
+                [*x, *y, 0.0],
+            )
+        }
+        GuiEventKind::Leave { x, y } => {
+            with_state(lua, |s| s.mouse = (*x, *y));
+            fire_input(lua, r, "InputEnded", "MouseMovement", "End", [*x, *y, 0.0])
+        }
+        GuiEventKind::Move { x, y } => {
+            with_state(lua, |s| s.mouse = (*x, *y));
+            fire_input(
+                lua,
+                r,
+                "InputChanged",
+                "MouseMovement",
+                "Change",
+                [*x, *y, 0.0],
+            )
+        }
+        GuiEventKind::Down { button: b, x, y } => {
+            with_state(lua, |s| {
+                s.mouse = (*x, *y);
+                s.buttons[usize::from(*b == 2)] = true;
+            });
+            fire_input(lua, r, "InputBegan", button(*b), "Begin", [*x, *y, 0.0])
+        }
+        GuiEventKind::Up { button: b, x, y } => {
+            with_state(lua, |s| {
+                s.mouse = (*x, *y);
+                s.buttons[usize::from(*b == 2)] = false;
+            });
+            fire_input(lua, r, "InputEnded", button(*b), "End", [*x, *y, 0.0])
+        }
+        GuiEventKind::Scroll { dy } => {
+            let (x, y) = with_state(lua, |s| s.pointer.get(&r).copied().unwrap_or(s.mouse));
+            let z = if *dy > 0.0 {
+                -1.0
+            } else if *dy < 0.0 {
+                1.0
+            } else {
+                0.0
+            };
+            fire_input(lua, r, "InputChanged", "MouseWheel", "Change", [x, y, z])
+        }
+        _ => Ok(()),
+    }
 }
 
 fn with_state<R>(lua: &Lua, f: impl FnOnce(&mut EventState) -> R) -> R {
@@ -389,7 +494,10 @@ impl Hooks for PluginHooks {
         if let Some(value) = instance_function(lua, ctx, referent, key)? {
             return Ok(Some(value));
         }
-        class_function(lua, db, referent, class, key)
+        if let Some(value) = class_function(lua, db, referent, class, key)? {
+            return Ok(Some(value));
+        }
+        super::world::class_member(lua, ctx, referent, class, key)
     }
 
     fn new_index(
@@ -592,6 +700,7 @@ pub(crate) fn fire_gui(lua: &Lua, event: &GuiEvent) -> Result<()> {
         Some(instance) => instance.class().to_string(),
         None => return Ok(()),
     };
+    fire_gui_input(lua, r, &event.kind)?;
     let at = |x: f32, y: f32| [Arg::Number(f64::from(x)), Arg::Number(f64::from(y))];
     let button_name = |b: u8| if b == 2 { 2 } else { 1 };
     match &event.kind {

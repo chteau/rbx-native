@@ -1,7 +1,7 @@
 //! Smaller datatypes: `Vector2`, `UDim`, `UDim2`, `NumberRange`, `BrickColor`.
 
 use mlua::{Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMethods, Value};
-use rbx_dom::{BrickColor, Color3Data, NumberRange, UDim, UDim2, Vector2Data, DEFAULT_BRICK_COLOR};
+use rbx_dom::{BrickColor, Color3Data, NumberRange, Vector2Data, DEFAULT_BRICK_COLOR};
 
 use super::color3::LuaColor3;
 use super::{from_userdata, number_arg};
@@ -12,6 +12,13 @@ pub(crate) struct LuaVector2(pub(crate) Vector2Data);
 impl LuaVector2 {
     fn new(x: f32, y: f32) -> Self {
         LuaVector2(Vector2Data { x, y })
+    }
+}
+
+fn vec2_of(value: &Value) -> Option<LuaVector2> {
+    match value {
+        Value::UserData(data) => data.borrow::<LuaVector2>().ok().map(|v| *v),
+        _ => None,
     }
 }
 
@@ -31,11 +38,24 @@ fn combine2(lhs: &LuaVector2, rhs: &Value, op: fn(f32, f32) -> f32) -> Result<Lu
 
 impl UserData for LuaVector2 {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("X", |_, this| Ok(this.0.x));
-        fields.add_field_method_get("Y", |_, this| Ok(this.0.y));
-        fields.add_field_method_get("Magnitude", |_, this| {
-            Ok((this.0.x * this.0.x + this.0.y * this.0.y).sqrt())
-        });
+        // Roblox still answers to the deprecated lowercase spellings.
+        for name in ["X", "x"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.x));
+        }
+        for name in ["Y", "y"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.y));
+        }
+        for name in ["Magnitude", "magnitude"] {
+            fields.add_field_method_get(name, |_, this| {
+                Ok((this.0.x * this.0.x + this.0.y * this.0.y).sqrt())
+            });
+        }
+        for name in ["Unit", "unit"] {
+            fields.add_field_method_get(name, |_, this| {
+                let m = (this.0.x * this.0.x + this.0.y * this.0.y).sqrt();
+                Ok(LuaVector2::new(this.0.x / m, this.0.y / m))
+            });
+        }
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
@@ -45,9 +65,73 @@ impl UserData for LuaVector2 {
         methods.add_meta_method(MetaMethod::Sub, |_, this, rhs: Value| {
             combine2(this, &rhs, |a, b| a - b)
         });
-        methods.add_meta_method(MetaMethod::Mul, |_, this, rhs: Value| {
-            combine2(this, &rhs, |a, b| a * b)
+        methods.add_meta_function(MetaMethod::Mul, |_, (a, b): (Value, Value)| {
+            match (vec2_of(&a), vec2_of(&b)) {
+                (Some(lhs), _) => combine2(&lhs, &b, |x, y| x * y),
+                (None, Some(rhs)) => combine2(&rhs, &a, |x, y| x * y),
+                _ => Err(mlua::Error::runtime(
+                    "Vector2 expected a Vector2 or a number",
+                )),
+            }
         });
+        methods.add_meta_method(MetaMethod::Unm, |_, this, ()| {
+            Ok(LuaVector2::new(-this.0.x, -this.0.y))
+        });
+        methods.add_method("Dot", |_, this, o: LuaVector2| {
+            Ok(this.0.x * o.0.x + this.0.y * o.0.y)
+        });
+        methods.add_method("Cross", |_, this, o: LuaVector2| {
+            Ok(this.0.x * o.0.y - this.0.y * o.0.x)
+        });
+        methods.add_method("Lerp", |_, this, (o, t): (LuaVector2, f32)| {
+            Ok(LuaVector2::new(
+                this.0.x + (o.0.x - this.0.x) * t,
+                this.0.y + (o.0.y - this.0.y) * t,
+            ))
+        });
+        methods.add_method("Abs", |_, this, ()| {
+            Ok(LuaVector2::new(this.0.x.abs(), this.0.y.abs()))
+        });
+        methods.add_method("Floor", |_, this, ()| {
+            Ok(LuaVector2::new(this.0.x.floor(), this.0.y.floor()))
+        });
+        methods.add_method("Ceil", |_, this, ()| {
+            Ok(LuaVector2::new(this.0.x.ceil(), this.0.y.ceil()))
+        });
+        methods.add_method("Sign", |_, this, ()| {
+            let sign = |v: f32| if v == 0.0 { 0.0 } else { v.signum() };
+            Ok(LuaVector2::new(sign(this.0.x), sign(this.0.y)))
+        });
+        methods.add_method("Min", |_, this, others: mlua::Variadic<LuaVector2>| {
+            Ok(others.iter().fold(*this, |acc, o| {
+                LuaVector2::new(acc.0.x.min(o.0.x), acc.0.y.min(o.0.y))
+            }))
+        });
+        methods.add_method("Max", |_, this, others: mlua::Variadic<LuaVector2>| {
+            Ok(others.iter().fold(*this, |acc, o| {
+                LuaVector2::new(acc.0.x.max(o.0.x), acc.0.y.max(o.0.y))
+            }))
+        });
+        methods.add_method("FuzzyEq", |_, this, (o, eps): (LuaVector2, Option<f32>)| {
+            let eps = eps.unwrap_or(1e-5);
+            Ok(
+                (this.0.x - o.0.x).abs() <= eps * (1.0 + this.0.x.abs().max(o.0.x.abs()))
+                    && (this.0.y - o.0.y).abs() <= eps * (1.0 + this.0.y.abs().max(o.0.y.abs())),
+            )
+        });
+        methods.add_method(
+            "Angle",
+            |_, this, (o, signed): (LuaVector2, Option<bool>)| {
+                let dot = this.0.x * o.0.x + this.0.y * o.0.y;
+                let cross = this.0.x * o.0.y - this.0.y * o.0.x;
+                let angle = cross.atan2(dot);
+                Ok(if signed.unwrap_or(false) {
+                    angle
+                } else {
+                    angle.abs()
+                })
+            },
+        );
         methods.add_meta_method(MetaMethod::Div, |_, this, rhs: Value| {
             combine2(this, &rhs, |a, b| a / b)
         });
@@ -66,57 +150,7 @@ impl mlua::FromLua for LuaVector2 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct LuaUDim(pub(crate) UDim);
-
-impl UserData for LuaUDim {
-    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("Scale", |_, this| Ok(this.0.scale));
-        fields.add_field_method_get("Offset", |_, this| Ok(this.0.offset));
-    }
-
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method(MetaMethod::Eq, |_, this, other: LuaUDim| Ok(*this == other));
-        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
-            Ok(format!("{}, {}", this.0.scale, this.0.offset))
-        });
-    }
-}
-
-impl mlua::FromLua for LuaUDim {
-    fn from_lua(value: Value, _: &Lua) -> Result<Self> {
-        from_userdata(&value, "UDim")
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct LuaUDim2(pub(crate) UDim2);
-
-impl UserData for LuaUDim2 {
-    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("X", |_, this| Ok(LuaUDim(this.0.x)));
-        fields.add_field_method_get("Y", |_, this| Ok(LuaUDim(this.0.y)));
-    }
-
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method(
-            MetaMethod::Eq,
-            |_, this, other: LuaUDim2| Ok(*this == other),
-        );
-        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
-            Ok(format!(
-                "{}, {}, {}, {}",
-                this.0.x.scale, this.0.x.offset, this.0.y.scale, this.0.y.offset
-            ))
-        });
-    }
-}
-
-impl mlua::FromLua for LuaUDim2 {
-    fn from_lua(value: Value, _: &Lua) -> Result<Self> {
-        from_userdata(&value, "UDim2")
-    }
-}
+pub(crate) use super::udim::{udim, udim2, LuaUDim, LuaUDim2};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LuaNumberRange(pub(crate) NumberRange);
@@ -199,91 +233,10 @@ pub(crate) fn vector2(lua: &Lua) -> Result<Table> {
             ))
         })?,
     )?;
-    Ok(table)
-}
-
-pub(crate) fn udim(lua: &Lua) -> Result<Table> {
-    let table = lua.create_table()?;
-    table.set(
-        "new",
-        lua.create_function(|_, (scale, offset): (Option<f32>, Option<i32>)| {
-            Ok(LuaUDim(UDim {
-                scale: scale.unwrap_or_default(),
-                offset: offset.unwrap_or_default(),
-            }))
-        })?,
-    )?;
-    Ok(table)
-}
-
-pub(crate) fn udim2(lua: &Lua) -> Result<Table> {
-    let table = lua.create_table()?;
-    table.set(
-        "new",
-        lua.create_function(|_, args: mlua::Variadic<Value>| {
-            // `UDim2.new(xUDim, yUDim)` as well as the four-number form.
-            if let (Some(Value::UserData(x)), Some(Value::UserData(y))) =
-                (args.first(), args.get(1))
-            {
-                if let (Ok(x), Ok(y)) = (x.borrow::<LuaUDim>(), y.borrow::<LuaUDim>()) {
-                    return Ok(LuaUDim2(UDim2 { x: x.0, y: y.0 }));
-                }
-            }
-            let number = |index: usize| -> Result<f32> {
-                match args.get(index) {
-                    None | Some(Value::Nil) => Ok(0.0),
-                    Some(value) => number_arg(value).ok_or_else(|| {
-                        mlua::Error::runtime(format!(
-                            "UDim2.new: argument #{} expected a number, got {}",
-                            index + 1,
-                            value.type_name()
-                        ))
-                    }),
-                }
-            };
-            // Roblox truncates a fractional offset rather than refusing it.
-            Ok(LuaUDim2(UDim2 {
-                x: UDim {
-                    scale: number(0)?,
-                    offset: number(1)? as i32,
-                },
-                y: UDim {
-                    scale: number(2)?,
-                    offset: number(3)? as i32,
-                },
-            }))
-        })?,
-    )?;
-    table.set(
-        "fromScale",
-        lua.create_function(|_, (x, y): (f32, f32)| {
-            Ok(LuaUDim2(UDim2 {
-                x: UDim {
-                    scale: x,
-                    offset: 0,
-                },
-                y: UDim {
-                    scale: y,
-                    offset: 0,
-                },
-            }))
-        })?,
-    )?;
-    table.set(
-        "fromOffset",
-        lua.create_function(|_, (x, y): (i32, i32)| {
-            Ok(LuaUDim2(UDim2 {
-                x: UDim {
-                    scale: 0.0,
-                    offset: x,
-                },
-                y: UDim {
-                    scale: 0.0,
-                    offset: y,
-                },
-            }))
-        })?,
-    )?;
+    table.set("zero", LuaVector2::new(0.0, 0.0))?;
+    table.set("one", LuaVector2::new(1.0, 1.0))?;
+    table.set("xAxis", LuaVector2::new(1.0, 0.0))?;
+    table.set("yAxis", LuaVector2::new(0.0, 1.0))?;
     Ok(table)
 }
 

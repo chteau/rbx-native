@@ -13,7 +13,7 @@ use gpui_kit::component::input::{Input as TextField, InputEvent, InputState};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 use rbx_dom::{Ref, Variant, WeakDom};
-use rbx_lua::plugin::{GuiEvent, GuiEventKind, Input, UiId, WidgetKind};
+use rbx_lua::plugin::{GuiEvent, GuiEventKind, Input, LayoutBox, UiId, WidgetKind};
 use rbx_viewer::GuiBox;
 
 use super::render;
@@ -43,6 +43,8 @@ enum Pointer {
 pub(crate) struct Widgets {
     /// Last render per widget.
     pub(crate) drawn: HashMap<UiId, render::Drawn>,
+    /// The layout last fed back to the plugins, per widget.
+    layouts: HashMap<UiId, Vec<LayoutBox>>,
     /// The dock tab shown.
     pub(crate) current: Option<UiId>,
     pub(crate) renderer: Option<render::Renderer>,
@@ -289,6 +291,7 @@ impl Shell {
         state.requested.retain(|id, _| alive.contains(id));
         state.areas.retain(|id, _| alive.contains(id));
         state.text_boxes.retain(|id, _| alive.contains(id));
+        state.layouts.retain(|id, _| alive.contains(id));
         if state.hover.is_some_and(|(id, _)| !alive.contains(&id)) {
             state.hover = None;
         }
@@ -381,10 +384,33 @@ impl Shell {
             .as_ref()
             .map(|r| r.finished())
             .unwrap_or_default();
+        let mut layouts = Vec::new();
+        for (id, drawn) in finished.iter() {
+            let Some(origin) = drawn.boxes.first().map(|b| b.rect) else {
+                continue;
+            };
+            let boxes: Vec<LayoutBox> = drawn
+                .boxes
+                .iter()
+                .map(|b| LayoutBox {
+                    referent: b.referent,
+                    position: [b.rect[0] - origin[0], b.rect[1] - origin[1]],
+                    size: [b.rect[2], b.rect[3]],
+                })
+                .collect();
+            if state.layouts.get(id) != Some(&boxes) {
+                state.layouts.insert(*id, boxes.clone());
+                layouts.push(boxes);
+            }
+        }
         if !finished.is_empty() {
             state.drawn.extend(finished);
             cx.notify();
         }
+        for boxes in layouts {
+            self.plugin_input(Input::Layout(boxes), cx);
+        }
+        let state = &mut self.plugins.widgets;
         let pending = state.requested.iter().any(|(id, &(revision, size))| {
             state
                 .drawn

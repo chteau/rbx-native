@@ -141,8 +141,19 @@ pub enum Input {
     WidgetClosed(UiId),
     /// The debugger paused, resumed or its breakpoints/watches changed.
     DebuggerChanged,
+    /// Where the editor drew each widget element, in widget pixels relative
+    /// to the widget's own frame: `AbsolutePosition`/`AbsoluteSize`.
+    Layout(Vec<LayoutBox>),
     /// Fires `plugin.Unloading`, then drops the plugin's VM and instances.
     Unload(PluginId),
+}
+
+/// One drawn `GuiObject` rectangle.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LayoutBox {
+    pub referent: Ref,
+    pub position: [f32; 2],
+    pub size: [f32; 2],
 }
 
 #[derive(Clone, Debug, PartialEq)]

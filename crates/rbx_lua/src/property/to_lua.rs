@@ -55,7 +55,7 @@ pub(crate) fn variant_to_lua(
                 *value,
                 ctx.clone(),
             )
-            .into_lua(lua),
+            .interned(lua),
             // Enum ordinals absent from the dump stay visible as raw numbers
             // rather than failing the whole read.
             None => (*value).into_lua(lua),

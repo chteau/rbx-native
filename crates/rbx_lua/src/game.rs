@@ -9,6 +9,7 @@ use rbx_dom::{Ref, WeakDom};
 
 use crate::ctx::Ctx;
 use crate::instance::{instance_list, tree, LuaInstance};
+use crate::lua_enum::LuaEnumItem;
 
 pub(crate) struct LuaGame {
     ctx: Ctx,
@@ -87,6 +88,24 @@ impl UserData for LuaGame {
                 "Name" => return "game".into_lua(lua),
                 "ClassName" => return "DataModel".into_lua(lua),
                 "Parent" => return Ok(Value::Nil),
+                "PlaceId" | "GameId" | "CreatorId" | "PlaceVersion" => return 0.into_lua(lua),
+                "JobId" => return "".into_lua(lua),
+                "CreatorType" => {
+                    let value = this
+                        .ctx
+                        .database()
+                        .enum_items("CreatorType")
+                        .and_then(|items| items.iter().find(|(name, _)| *name == "User"))
+                        .map(|(_, value)| *value)
+                        .unwrap_or(0);
+                    return LuaEnumItem::new(
+                        "CreatorType".to_string(),
+                        "User".to_string(),
+                        value,
+                        this.ctx.clone(),
+                    )
+                    .interned(lua);
+                }
                 _ => {}
             }
             let dom = this.ctx.dom();
@@ -104,6 +123,16 @@ impl UserData for LuaGame {
         // The `DataModel` is left out of every path, so on its own it has only
         // its own name to give.
         methods.add_method("GetFullName", |_, _, ()| Ok("game"));
+        methods.add_method("IsA", |_, _, class: String| {
+            Ok(matches!(
+                class.as_str(),
+                "DataModel" | "ServiceProvider" | "Instance"
+            ))
+        });
+        methods.add_method("FindService", |_, this, class: String| {
+            let found = LuaGame::service(&this.ctx.dom(), &class);
+            Ok(found.map(|referent| LuaInstance::new(referent, this.ctx.clone())))
+        });
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("game"));
     }
 }

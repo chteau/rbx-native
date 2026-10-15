@@ -7,12 +7,13 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use mlua::{Function, Lua, MultiValue, Table};
-use rbx_dom::{Change, Ref, Variant, WeakDom};
+use rbx_dom::{Change, Ref, Variant, Vector2Data, WeakDom};
 
 use super::{Loaded, PluginHost};
 use crate::ctx::Ctx;
 use crate::plugin::api::{
-    Arg, Context, DebuggerView, Input, Origin, Outcome, OutputKind, SourceBody,
+    Arg, Context, DebuggerView, Input, LayoutBox, Origin, Outcome, OutputKind, Permission,
+    SourceBody,
 };
 use crate::plugin::env::Env;
 use crate::plugin::scheduler::{self, Scheduler};
@@ -167,7 +168,60 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
                 report(&env, debugger_api::changed(&lua, debugger_before, &after));
             }
         }
+        Input::Layout(boxes) => apply_layout(host, &boxes),
         Input::Unload(id) => unload(host, id),
+    }
+}
+
+fn set_vector2(dom: &mut WeakDom, referent: Ref, name: &str, value: [f32; 2]) {
+    let current = dom
+        .get(referent)
+        .and_then(|i| i.properties().get(name).cloned());
+    let new = Variant::Vector2(Vector2Data {
+        x: value[0],
+        y: value[1],
+    });
+    if current.as_ref() != Some(&new) {
+        let _ = dom.set_property(referent, name, new);
+    }
+}
+
+fn apply_layout(host: &PluginHost, boxes: &[LayoutBox]) {
+    let mut dom = host.dom.borrow_mut();
+    let by_ref: HashMap<Ref, &LayoutBox> = boxes.iter().map(|b| (b.referent, b)).collect();
+    for b in boxes {
+        if dom.get(b.referent).is_none() {
+            continue;
+        }
+        set_vector2(&mut dom, b.referent, "AbsolutePosition", b.position);
+        set_vector2(&mut dom, b.referent, "AbsoluteSize", b.size);
+        let Some(instance) = dom.get(b.referent) else {
+            continue;
+        };
+        let is_scrolling = instance.class() == "ScrollingFrame";
+        let children = instance.children().to_vec();
+        let layouts: Vec<Ref> = children
+            .iter()
+            .copied()
+            .filter(|c| {
+                dom.get(*c)
+                    .is_some_and(|i| matches!(i.class(), "UIListLayout" | "UIGridLayout"))
+            })
+            .collect();
+        if is_scrolling {
+            set_vector2(&mut dom, b.referent, "AbsoluteWindowSize", b.size);
+        }
+        if layouts.is_empty() {
+            continue;
+        }
+        let mut extent = [0.0f32; 2];
+        for child in children.iter().filter_map(|c| by_ref.get(c)) {
+            extent[0] = extent[0].max(child.position[0] + child.size[0] - b.position[0]);
+            extent[1] = extent[1].max(child.position[1] + child.size[1] - b.position[1]);
+        }
+        for layout in layouts {
+            set_vector2(&mut dom, layout, "AbsoluteContentSize", extent);
+        }
     }
 }
 
@@ -199,15 +253,23 @@ fn start(host: &mut PluginHost, index: usize) {
         Origin::Native { manifest, .. } => Some(manifest.clone()),
         Origin::Roblox { .. } => None,
     };
+    let mut ctx = Ctx::new(
+        host.dom.clone(),
+        host.database.clone(),
+        Rc::new(RefCell::new(Vec::new())),
+        Rc::new(RefCell::new(Vec::new())),
+    );
+    if let Some(manifest) = &manifest {
+        if !manifest.permissions.contains(&Permission::DomWrite) {
+            ctx = ctx.with_guard(Rc::new(crate::plugin::guard::place_writes_denied(
+                source.name.clone(),
+            )));
+        }
+    }
     let env = Rc::new(Env {
         plugin: id,
         name: source.name.clone(),
-        ctx: Ctx::new(
-            host.dom.clone(),
-            host.database.clone(),
-            Rc::new(RefCell::new(Vec::new())),
-            Rc::new(RefCell::new(Vec::new())),
-        ),
+        ctx,
         shared: host.shared.clone(),
         signals: RefCell::new(Signals::default()),
         scheduler: RefCell::new(Scheduler::default()),
