@@ -114,6 +114,60 @@ impl Shell {
         )
     }
 
+    /// The run, breakpoints and watches as plugins read them.
+    pub(super) fn debugger_view(&self) -> rbx_lua::plugin::DebuggerView {
+        let mut breakpoints = Vec::new();
+        for script in self.debug.breakpoints.scripts() {
+            for stored in self.debug.breakpoints.of(script) {
+                breakpoints.push((
+                    script,
+                    stored.breakpoint.line,
+                    stored.breakpoint.condition.clone(),
+                ));
+            }
+        }
+        rbx_lua::plugin::DebuggerView {
+            breakpoints,
+            watches: self
+                .debug
+                .watches
+                .iter()
+                .map(|watch| {
+                    let value = watch
+                        .value
+                        .as_ref()
+                        .map(|value| value.clone().unwrap_or_else(|message| message));
+                    (watch.expression.clone(), value)
+                })
+                .collect(),
+            paused: self.debug.run.as_ref().and_then(|run| {
+                let pause = run.pause.as_ref()?;
+                let stack = pause
+                    .stack
+                    .iter()
+                    .map(|frame| (frame.function.clone(), frame.line))
+                    .collect();
+                Some((run.script, pause.line, stack))
+            }),
+            running: self.debug.run.is_some(),
+        }
+    }
+
+    pub(super) fn debug_add_watch(&mut self, expression: String) {
+        if self.debug.watches.iter().any(|w| w.expression == expression) {
+            return;
+        }
+        self.debug.watches.push(Watch {
+            expression,
+            value: None,
+        });
+        self.request_watch_values();
+    }
+
+    pub(super) fn debug_remove_watch(&mut self, expression: &str) {
+        self.debug.watches.retain(|w| w.expression != expression);
+    }
+
     pub(super) fn debug_running(&self) -> bool {
         self.debug.run.is_some()
     }
@@ -172,6 +226,7 @@ impl Shell {
         }
         self.spawn_debug_poll(cx);
         self.sync_gutters(cx);
+        self.plugins_debugger_changed(cx);
         cx.notify();
     }
 
@@ -205,6 +260,7 @@ impl Shell {
             }
         }
         self.sync_gutters(cx);
+        self.plugins_debugger_changed(cx);
         cx.notify();
     }
 
@@ -267,6 +323,7 @@ impl Shell {
             watch.value = None;
         }
         self.sync_gutters(cx);
+        self.plugins_debugger_changed(cx);
         cx.notify();
     }
 
@@ -311,6 +368,7 @@ impl Shell {
             self.set_panel_open(Panel::Watch, true, cx);
         }
         self.sync_gutters(cx);
+        self.plugins_debugger_changed(cx);
         cx.notify();
     }
 
@@ -399,6 +457,7 @@ impl Shell {
             self.set_panel_open(Panel::Watch, true, cx);
         }
         self.sync_gutters(cx);
+        self.plugins_debugger_changed(cx);
     }
 
     /// Clicking a Call Stack row: the Watch dock reads that frame, and the
@@ -534,6 +593,7 @@ impl Shell {
             }
         }
         self.sync_gutters(cx);
+        self.plugins_debugger_changed(cx);
     }
 
     /// Moves `script`'s breakpoints with whatever its editor's text did
@@ -550,6 +610,7 @@ impl Shell {
         if old != text && self.debug.breakpoints.of(script).next().is_some() {
             self.debug.breakpoints.follow_edit(script, &old, &text);
             self.sync_gutters(cx);
+            self.plugins_debugger_changed(cx);
         }
     }
 

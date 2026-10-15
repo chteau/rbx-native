@@ -70,6 +70,7 @@ impl Shell {
             ViewportAction::Joint { index, to, phase } => {
                 self.autorig_drag_joint(*index, *to, *phase, cx)
             }
+            ViewportAction::PluginHandle(event) => self.plugin_handle_event(event.clone(), cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {

@@ -4,7 +4,7 @@
 //! plugin_handles`, which reports back as `ViewportAction::PluginHandle`.
 
 use gpui_kit::*;
-use rbx_lua::plugin::HandleEvent;
+use rbx_lua::plugin::{HandleEvent, Input};
 
 use crate::shell::Shell;
 
@@ -19,11 +19,22 @@ impl Shell {
     /// `PluginHost::adornments()` to the render mirror and their pickable
     /// shapes to the view.
     pub(super) fn sync_plugin_handles(&mut self, cx: &mut Context<Self>) {
-        todo!()
+        let adornments = self
+            .plugins
+            .host
+            .as_ref()
+            .map(|host| host.adornments())
+            .unwrap_or_default();
+        if adornments.is_empty() && self.plugins.handles.sent.is_empty() {
+            return;
+        }
+        let shapes = rbx_viewer::handle_pick::shapes(&self.dom, &self.database, &adornments);
+        self.plugins.handles.sent = adornments.iter().map(|a| a.referent()).collect();
+        self.viewport.update(cx, |view, _| view.set_plugin_handles(adornments, shapes));
     }
 
     /// `ViewportAction::PluginHandle`.
     pub(in crate::shell) fn plugin_handle_event(&mut self, event: HandleEvent, cx: &mut Context<Self>) {
-        todo!()
+        self.plugin_input(Input::Handle(event), cx);
     }
 }
