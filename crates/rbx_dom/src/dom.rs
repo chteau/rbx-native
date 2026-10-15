@@ -160,6 +160,28 @@ impl WeakDom {
         removed
     }
 
+    /// Moves the subtrees under `roots` into `into`, each becoming a root
+    /// there, with every referent unchanged; nothing is logged on either
+    /// side. A root whose subtree has any referent `into` already holds (or
+    /// that is not in `self`) is left where it is and returned. Raises
+    /// `into`'s allocator above every referent moved, so neither DOM can
+    /// hand one of them out again.
+    pub fn move_subtrees(&mut self, roots: &[Ref], into: &mut WeakDom) -> Vec<Ref> {
+        todo!()
+    }
+
+    /// The referent [`WeakDom::new_instance`] would allocate next.
+    pub fn next_ref(&self) -> u32 {
+        self.next_ref
+    }
+
+    /// Makes sure no referent below `floor` is ever allocated again — for
+    /// an editor that swaps in an older copy of its DOM (undo) while
+    /// instances allocated after that copy live on elsewhere.
+    pub fn raise_next_ref(&mut self, floor: u32) {
+        self.next_ref = self.next_ref.max(floor);
+    }
+
     /// Drains and returns every change recorded since the last call, in the order
     /// the mutations happened.
     pub fn take_changes(&mut self) -> Vec<Change> {

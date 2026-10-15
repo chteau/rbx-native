@@ -154,7 +154,7 @@ impl Runtime {
     }
 }
 
-fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
+pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
     let globals = lua.globals();
 
     let output_ctx = ctx.clone();

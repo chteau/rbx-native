@@ -39,6 +39,7 @@ mod panel_window;
 mod panels;
 mod pivot;
 mod play;
+mod plugins;
 mod property_element;
 mod quality;
 mod recovery;
@@ -461,6 +462,8 @@ pub(crate) struct Shell {
     discord_idle_check: Option<Task<()>>,
     /// Play/Test without Studio — see `shell::play`.
     play: play::Play,
+    /// Roblox Studio plugins and rbx-native's own — see `shell::plugins`.
+    plugins: plugins::Plugins,
     /// "In Studio" on Roblox — see `shell::studio_presence`.
     studio_presence: studio_presence::StudioPresence,
     /// The code sign-in window, while open — see `shell::roblox_login`.
@@ -824,6 +827,7 @@ impl Shell {
             discord_idle: false,
             discord_idle_check: None,
             play: play::Play::new(play_sandbox),
+            plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             roblox_login: None,
             settings_open_on: None,
@@ -871,6 +875,8 @@ impl Shell {
         }
         // Reads the stored Roblox sign-in, then starts the pulse if enabled.
         shell.restore_roblox_session(cx);
+        // Loads and starts the installed plugins (see `shell::plugins`).
+        shell.plugins_start(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -1120,6 +1126,7 @@ impl Shell {
     /// Properties editor belonged to the old selection, and the viewport's
     /// outline and draggers have to move to the new one.
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
+        self.plugins_selection_changed(cx);
         self.edits.clear();
         self.attribute_edits.clear();
         self.sync_viewport_pick(cx);
@@ -1874,6 +1881,7 @@ impl Render for Shell {
             .children(self.animation_id_prompt_overlay(cx))
             .children(self.publish_result_overlay(cx))
             .children(self.command_palette(cx))
+            .children(self.plugin_overlays(window, cx))
             .children(self.theme_background(true))
     }
 }

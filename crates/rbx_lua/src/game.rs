@@ -36,7 +36,12 @@ impl LuaGame {
 
 impl UserData for LuaGame {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("GetService", |_, this, class: String| {
+        methods.add_method("GetService", |lua, this, class: String| {
+            if let Some(hooks) = crate::hooks::hooks(lua) {
+                if let Some(service) = hooks.service(lua, &this.ctx, &class)? {
+                    return Ok(service);
+                }
+            }
             if this.ctx.database().class(&class).is_none() {
                 return Err(mlua::Error::runtime(format!(
                     "{class} is not a valid Service name"
@@ -47,7 +52,7 @@ impl UserData for LuaGame {
             let found = LuaGame::service(&this.ctx.dom(), &class).ok_or_else(|| {
                 mlua::Error::runtime(format!("{class} is not present in this DataModel"))
             })?;
-            Ok(LuaInstance::new(found, this.ctx.clone()))
+            LuaInstance::new(found, this.ctx.clone()).into_lua(lua)
         });
         methods.add_method(
             "FindFirstChild",

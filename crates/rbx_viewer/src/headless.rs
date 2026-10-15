@@ -129,6 +129,13 @@ impl Headless {
     /// The view opens orbiting the place's bounds and flies freely from there on
     /// the first input; [`Headless::open_at`] starts from a pose instead.
     pub fn load(path: &Path, textures: bool) -> Result<Self, String> {
+        let dom = crate::load::read_place(path)?;
+        Headless::from_dom(&dom, textures).map_err(|err| format!("{err} in {path:?}"))
+    }
+
+    /// [`Headless::load`] for a tree already in memory — e.g. one plugin
+    /// widget's GUI, drawn on its own with [`Headless::render_gui`].
+    pub fn from_dom(dom: &WeakDom, textures: bool) -> Result<Self, String> {
         let toggles = Toggles {
             textures,
             materials: textures,
@@ -137,12 +144,11 @@ impl Headless {
             show_development_gui: false,
         };
         let database = ReflectionDatabase::embedded();
-        let dom = crate::load::read_place(path)?;
         let mut resident = Resident::streaming();
-        let mut loaded = Loaded::from_dom(&dom, &database, toggles, &mut resident)
-            .map_err(|err| format!("nothing to show in {path:?}: {err}"))?;
+        let mut loaded = Loaded::from_dom(dom, &database, toggles, &mut resident)
+            .map_err(|err| format!("nothing to show: {err}"))?;
         let warnings = loaded.take_warnings();
-        let roles = Roles::of_dom(&dom, &database);
+        let roles = Roles::of_dom(dom, &database);
 
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();

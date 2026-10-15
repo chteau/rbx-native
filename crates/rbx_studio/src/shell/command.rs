@@ -303,6 +303,7 @@ impl Shell {
             self.live_reflect(changes, cx);
             return;
         }
+        self.plugins_dom_changed(changes, cx);
         self.recovery.changed();
         self.properties.dom_changed(changes);
         let mut refresh = refresh_for(changes, &self.covered);

@@ -117,7 +117,12 @@ impl Shell {
     /// the viewport is told, since what the viewport refreshes on this side
     /// depends on it.
     fn install(&mut self, dom: WeakDom, changes: &[Change], cx: &mut Context<Self>) {
+        // Instances allocated after `dom` was copied may live on outside it
+        // (a plugin's parked widgets, see `shell::plugins`): its allocator
+        // must never hand their referents out again.
+        let floor = self.dom.next_ref();
         self.dom = dom;
+        self.dom.raise_next_ref(floor);
         self.rebuild_explorer(cx);
         let kept: Vec<rbx_dom::Ref> = self
             .selected_all()

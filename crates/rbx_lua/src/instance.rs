@@ -166,6 +166,12 @@ impl UserData for LuaInstance {
                 _ => {}
             }
 
+            if let Some(hooks) = crate::hooks::hooks(lua) {
+                let class = this.class()?;
+                if let Some(value) = hooks.index(lua, &this.ctx, this.referent, &class, &key)? {
+                    return Ok(value);
+                }
+            }
             if let Some(value) = property::get(lua, &this.ctx, this.referent, &key)? {
                 return Ok(value);
             }
@@ -180,7 +186,7 @@ impl UserData for LuaInstance {
         });
         methods.add_meta_method(
             MetaMethod::NewIndex,
-            |_, this, (key, value): (String, Value)| {
+            |lua, this, (key, value): (String, Value)| {
                 match key.as_str() {
                     "Name" => {
                         let Value::String(text) = &value else {
@@ -220,6 +226,12 @@ impl UserData for LuaInstance {
                     _ => {}
                 }
 
+                if let Some(hooks) = crate::hooks::hooks(lua) {
+                    let class = this.class()?;
+                    if hooks.new_index(lua, &this.ctx, this.referent, &class, &key, &value)? {
+                        return Ok(());
+                    }
+                }
                 if property::set(&this.ctx, this.referent, &key, &value)? {
                     return Ok(());
                 }

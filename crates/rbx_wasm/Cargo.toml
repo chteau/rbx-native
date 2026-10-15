@@ -1,0 +1,14 @@
+[package]
+name = "rbx_wasm"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rbx_dom = { path = "../rbx_dom" }
+rbx_reflection = { path = "../rbx_reflection" }
+serde_json = "1"
+wasmtime = { version = "49.0.3", default-features = false, features = ["runtime", "cranelift", "wat", "std"] }
+
+[dev-dependencies]
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
