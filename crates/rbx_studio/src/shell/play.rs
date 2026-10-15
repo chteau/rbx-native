@@ -38,6 +38,7 @@
 //! step failing stops with `StopReason::Failed`.
 
 pub(in crate::shell) mod cloudflared;
+pub(crate) mod copy_name;
 pub(crate) mod debug;
 pub(crate) mod live;
 pub(crate) mod session;
@@ -122,6 +123,9 @@ pub(super) struct PlayStats {
 pub(super) struct Play {
     /// The chosen sandbox; persisted in settings.
     pub(super) sandbox: Option<PlaySandbox>,
+    /// The name template for the sandbox while it runs a test (see
+    /// `copy_name`); persisted in settings.
+    pub(super) copy_name: String,
     pub(super) phase: Phase,
     /// The "Roblox is already running" question is showing.
     pub(super) confirm_close: bool,
@@ -158,9 +162,10 @@ pub(super) struct Play {
 }
 
 impl Play {
-    pub(super) fn new(sandbox: Option<PlaySandbox>) -> Self {
+    pub(super) fn new(sandbox: Option<PlaySandbox>, copy_name: String) -> Self {
         Play {
             sandbox,
+            copy_name,
             phase: Phase::Idle,
             confirm_close: false,
             main_window: None,

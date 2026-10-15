@@ -56,6 +56,7 @@ pub(crate) use chrome::panel_topbar;
 pub(crate) use export::Export;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use roving::install as install_key_bindings;
+pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 mod tree_keys;
 
 mod argon_dock;
@@ -76,6 +77,7 @@ mod style_panel;
 mod sun;
 mod templates_live;
 mod templates_window;
+mod shortcuts_window;
 mod terrain;
 mod theme_live;
 mod toolbar;
@@ -232,6 +234,8 @@ pub(crate) struct Shell {
     settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Script Templates, while open — see `templates_window`.
     templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Customize Shortcuts, while open — see `shortcuts_window`.
+    shortcuts_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Version History, while open — see `roblox_publish::history`.
     version_history: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Game Settings, while open — see `game_settings`.
@@ -385,6 +389,9 @@ pub(crate) struct Shell {
     /// File › Close Place's unsaved-changes prompt is up; see
     /// `shell::close_place`.
     close_prompt: bool,
+    /// The close prompt above is for a restart (Settings › Beta features'
+    /// Restart now), not for going back to Home — see `close_place`.
+    restart_after_close: bool,
     /// Held by the prompt while it is up, so Escape reaches the window's
     /// key handler rather than whatever panel had focus.
     close_focus: FocusHandle,
@@ -530,6 +537,7 @@ impl Shell {
             studio_presence: studio_presence_enabled,
             team_presence: team_presence_settings,
             play_sandbox,
+            play_copy_name,
             anim_sheet_height,
             anim_names_width,
         } = settings;
@@ -734,6 +742,7 @@ impl Shell {
             argon_diff: None,
             settings_window: None,
             templates_window: None,
+            shortcuts_window: None,
             version_history: None,
             game_settings: None,
             theme_install: settings_window::ThemeInstall::Idle,
@@ -783,6 +792,7 @@ impl Shell {
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             roblox: roblox_publish::RobloxPublish::new(cx),
             close_prompt: false,
+            restart_after_close: false,
             close_focus: cx.focus_handle(),
             rig_dialog: None,
             rig_focus: cx.focus_handle(),
@@ -828,7 +838,7 @@ impl Shell {
             discord_started: 0,
             discord_idle: false,
             discord_idle_check: None,
-            play: play::Play::new(play_sandbox),
+            play: play::Play::new(play_sandbox, play_copy_name),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
             roblox_login: None,
@@ -991,6 +1001,11 @@ impl Shell {
         // for Script Templates.
         if std::env::var_os(templates_window::OPEN_VARIABLE).is_some() {
             shell.open_script_templates(cx);
+        }
+        // `RBX_STUDIO_SHORTCUTS` (see `shell::shortcuts_window`): the same,
+        // for Customize Shortcuts.
+        if std::env::var_os(shortcuts_window::OPEN_VARIABLE).is_some() {
+            shell.open_shortcuts(cx);
         }
 
         // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the
@@ -1701,6 +1716,7 @@ impl Shell {
             studio_presence: self.studio_presence.enabled,
             team_presence: self.team_presence.settings.clone(),
             play_sandbox: self.play.sandbox,
+            play_copy_name: self.play.copy_name.clone(),
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),
         };

@@ -15,6 +15,8 @@
 //! `Client` built afterwards — the viewer's asset fetches included — uses
 //! it. `RBX_API_KEY` still wins over it, for scripted launches.
 
+pub(crate) mod accounts;
+
 use gpui_kit::AsyncApp;
 use rbx_cloud::ApiKey;
 

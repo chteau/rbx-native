@@ -116,6 +116,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # The one new dependency this feature needs: a fetched package's `wally.toml`
 # is plain TOML, and nothing in this workspace parses that format yet.
 toml = "0.9"
+# Account fingerprints (`key_store::accounts`); already in the tree at this
+# version, as the build script's hash.
+sha2 = "0.10"
+# The colour popover's eyedropper.
+rbx_eyedropper = { path = "../rbx_eyedropper" }
 
 # The pointer lock's Win32 backend (`pointer_lock::server`): cursor warp and
 # hide. Already in the tree (under `mio`, `rustix`, …) at this version.

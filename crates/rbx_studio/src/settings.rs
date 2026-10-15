@@ -134,6 +134,9 @@ pub(crate) struct Settings {
     pub(crate) team_presence: TeamPresenceSettings,
     /// The private place Play publishes over; see `shell::play`.
     pub(crate) play_sandbox: Option<PlaySandbox>,
+    /// What Play names the sandbox while it runs a test; see
+    /// `shell::play::copy_name`. Empty leaves the sandbox's name alone.
+    pub(crate) play_copy_name: String,
     /// The Animation Editor's bottom panel height, once its seam has been
     /// dragged; `None` keeps the default share of the room.
     pub(crate) anim_sheet_height: Option<f32>,
@@ -230,6 +233,7 @@ impl Default for Settings {
             studio_presence: false,
             team_presence: TeamPresenceSettings::default(),
             play_sandbox: None,
+            play_copy_name: crate::shell::PLAY_COPY_NAME_DEFAULT.to_owned(),
             anim_sheet_height: None,
             anim_names_width: None,
         }
@@ -448,6 +452,11 @@ fn load_from(path: &Path) -> Settings {
             .unwrap_or(false),
         team_presence: TeamPresenceSettings::read(&value),
         play_sandbox: PlaySandbox::read(&value),
+        play_copy_name: value
+            .get("play_copy_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(crate::shell::PLAY_COPY_NAME_DEFAULT)
+            .to_owned(),
         anim_sheet_height: read_extent(&value, "anim_sheet_height"),
         anim_names_width: read_extent(&value, "anim_names_width"),
     }
@@ -657,7 +666,7 @@ fn read_named_layouts(value: &serde_json::Value) -> Vec<NamedLayout> {
 
 fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     let [camera, snap] = settings.controls.json();
-    let value = serde_json::json!({
+    let mut value = serde_json::json!({
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
         "service_overrides": settings.service_overrides,
@@ -712,6 +721,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "anim_sheet_height": settings.anim_sheet_height,
         "anim_names_width": settings.anim_names_width,
     });
+    // Outside the literal: `json!` hits the macro recursion limit at this size.
+    value["play_copy_name"] = settings.play_copy_name.clone().into();
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
     write_atomic(path, &bytes)

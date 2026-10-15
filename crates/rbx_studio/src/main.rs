@@ -85,6 +85,7 @@ mod accent;
 mod align;
 mod anim_editor;
 mod argon_client;
+mod beta;
 mod camera;
 mod change_class;
 mod class_icons;
@@ -120,6 +121,7 @@ mod sequence_editor;
 mod sequence_window;
 mod settings;
 mod settle;
+mod shortcuts;
 mod shell;
 mod style_editor;
 mod sun;
@@ -162,6 +164,8 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
 fn main() {
+    // Before anything can ask whether a beta feature is on.
+    beta::init();
     // Loaded once, up front: the CLI's `--quality` still wins when given (see
     // `parse`), and the Explorer's initial visibility set comes straight from
     // here since nothing on the command line can express it.
