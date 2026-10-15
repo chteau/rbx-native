@@ -2,12 +2,12 @@
 //!
 //! `LogService.MessageOut` hands the probe a `print`ed table as the flat
 //! `table: 0x…` string, so the table itself has to be caught where it is
-//! printed. Every game script that mentions `print` gets [`PREFIX`] inserted
+//! printed. Every game script that mentions `print` or `warn` gets [`PREFIX`] inserted
 //! right before its first token, on that same line (line numbers, and so
 //! errors and breakpoints, stay as written; `--!` directives stay first):
 //!
 //! ```lua
-//! local print = require(game:GetService("ReplicatedStorage"):WaitForChild("__rbxnative_print")).wrap(print);print({1, 2})
+//! local print, warn = require(game:GetService("ReplicatedStorage"):WaitForChild("__rbxnative_print")).wrap(print, warn);print({1, 2})
 //! ```
 //!
 //! The probe's `__rbxnative_print` module (`probe/print.luau`) walks the
@@ -21,14 +21,14 @@ use full_moon::tokenizer::TokenType;
 pub const PRINT_NAME: &str = "__rbxnative_print";
 
 /// Inserted before a script's first token.
-pub const PREFIX: &str = "local print = require(game:GetService(\"ReplicatedStorage\"):WaitForChild(\"__rbxnative_print\")).wrap(print);";
+pub const PREFIX: &str = "local print, warn = require(game:GetService(\"ReplicatedStorage\"):WaitForChild(\"__rbxnative_print\")).wrap(print, warn);";
 
 /// `source` with [`PREFIX`] inserted right before its first token.
-/// `Ok(None)` when `source` never says `print` or has no token at all,
+/// `Ok(None)` when `source` never says `print` or `warn` or has no token at all,
 /// `Err` with the parser's message when it does not parse (the caller
 /// publishes it as is).
 pub fn rewrite(source: &str) -> Result<Option<String>, String> {
-    if !source.contains("print") {
+    if !source.contains("print") && !source.contains("warn") {
         return Ok(None);
     }
     let ast = full_moon::parse(source).map_err(|errors| {
@@ -88,6 +88,12 @@ mod tests {
         let out = rewrite(src).unwrap().unwrap();
         assert_eq!(out, format!("--[[ a\nb ]] {PREFIX}print(1)"));
         assert_eq!(lines(&out), lines(src));
+    }
+
+    #[test]
+    fn warn_alone_is_enough() {
+        let out = rewrite("warn({})\n").unwrap().unwrap();
+        assert_eq!(out, format!("{PREFIX}warn({{}})\n"));
     }
 
     #[test]

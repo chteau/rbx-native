@@ -27,7 +27,7 @@ LogService.MessageOut:Connect(function(message, messageType)
 		message = message,
 		time = os.clock() - t0,
 	}
-	if entry.level == "output" then
+	if entry.level == "output" or entry.level == "warning" then
 		local record = Print.take(message)
 		if record then
 			entry.parts = record.parts

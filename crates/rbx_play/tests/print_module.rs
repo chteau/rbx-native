@@ -262,3 +262,23 @@ fn origin_is_caller_script_and_line() {
     .exec()
     .expect("caller chunk");
 }
+
+#[test]
+fn wrap_returns_one_wrapper_per_function() {
+    let lua = lua_with_print();
+    run(
+        &lua,
+        r#"
+        local warned = {}
+        local p, w = P.wrap(original, function(...) table.insert(warned, table.pack(...)) end)
+        w({ 1 }, "careful")
+        p("plain")
+        assert(#warned == 1 and #calls == 1)
+        assert(warned[1][2] == "careful")
+        local record = P.take(tostring(warned[1][1]) .. " careful")
+        assert(record ~= nil and record.parts ~= nil)
+        assert(record.parts[1].entries[1].value == "1")
+        assert(P.take("plain") ~= nil)
+        "#,
+    );
+}

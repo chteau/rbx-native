@@ -108,7 +108,7 @@ local loadstring_enabled = compiled and type(chunk) == "function"
 LogService.MessageOut:Connect(function(message, messageType)
 	local level = levels[messageType] or "output"
 	local parts, origin
-	if level == "output" then
+	if level == "output" or level == "warning" then
 		local record = Print.take(message)
 		if record then
 			parts = record.parts

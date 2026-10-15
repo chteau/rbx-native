@@ -114,11 +114,22 @@ local function buildParts(args, n)
 	return parts
 end
 
+local wrapOne
+
 local function cleanSource(s)
 	return string.match(s, '^%[string "(.*)"%]$') or s
 end
 
-function Print.wrap(original)
+-- One wrapper per function given: `wrap(print, warn)` returns both.
+function Print.wrap(...)
+	local wrapped = {}
+	for i = 1, select("#", ...) do
+		wrapped[i] = wrapOne((select(i, ...)))
+	end
+	return table.unpack(wrapped, 1, select("#", ...))
+end
+
+function wrapOne(original)
 	return function(...)
 		local source, line = debug.info(2, "sl")
 		pcall(function(...)
