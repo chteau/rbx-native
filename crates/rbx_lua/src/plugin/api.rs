@@ -101,6 +101,8 @@ pub struct Context {
     /// cursor and the hit point, if any.
     pub mouse_target: Option<Ref>,
     pub mouse_hit: Option<[f32; 3]>,
+    /// The 3D view's size in pixels, for `Camera.ViewportSize`.
+    pub viewport_size: Option<[f32; 2]>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -470,6 +472,8 @@ pub enum WidgetKind {
         size: (f32, f32),
         light_dismiss: bool,
     },
+    /// A ScreenGui the plugin parented to CoreGui, drawn over the 3D view.
+    Overlay { display_order: i32 },
 }
 
 /// One plugin as the plugin manager lists it.

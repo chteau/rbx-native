@@ -2,6 +2,33 @@
 
 ## 2026-10-15
 
+- **Plugins: Archimedes runs.** Scriptos's Archimedes arc builder — a
+  Roact plugin from the Creator Store — now works from its plain `.rbxm`:
+  its window over the 3D view, direction buttons, **Render**, **Render
+  All** and undo. A `ScreenGui` a plugin parents to `CoreGui` is drawn as
+  a transparent layer over the 3D view; only buttons, text boxes and
+  `Active` objects take the pointer there. Widgets feed their real
+  `AbsoluteSize`/`AbsolutePosition`/`AbsoluteContentSize` back, render
+  without the game top-bar inset, and send presses on a button's label to
+  the button. Plugin scripts sit under a `Plugin` instance;
+  `SelectionChanged` reaches the plugin that set the selection; settings
+  store enum items and vectors the way Studio's own files do; the theme
+  is Studio's own Dark palette, read from Studio; `ArcHandles` are
+  coloured per axis like Studio's. Luau gained what Archimedes and the
+  usual plugin libraries reach for — most of `CFrame` (`lookAt`,
+  `fromMatrix`, `ToObjectSpace`, `Lerp`, …), the `Vector2`/`Vector3`/
+  `UDim2`/`Color3` helpers, `Random`, `Ray`, `TweenInfo`, `DateTime`,
+  `RaycastParams`, `Region3`, `Faces`/`Axes`, `UserInputService`,
+  `TextService`, `TweenService`, `Workspace:Raycast`, `Camera:
+  ScreenPointToRay`, the `FindFirstAncestor*`/`FindFirstChild*Of*`
+  finds — and now matches Roblox where it did not: an instance or enum
+  item is one value however it is reached (so it works as a table key),
+  a binding error reaches `pcall` as its message, `Text = 5` writes "5",
+  `AutomaticSize` grows to fit scale-sized children's content (measured
+  in Studio), and `typeof` names signals `RBXScriptSignal`. A Luau
+  rbx-native plugin without `dom.write` can no longer edit the place.
+  The colour pickers no longer trip a debug-build panic on duplicate
+  swatches. — @chteau
 - **Plugins.** Real Roblox Studio plugins now run inside the editor: the
   `.lua`/`.rbxm`/`.rbxmx` files in rbx-native's plugins folder and in
   Studio's own Plugins folder (the Vinegar prefix on Linux) each get a

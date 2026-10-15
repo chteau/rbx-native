@@ -273,12 +273,48 @@ fn json_to_arg(value: &serde_json::Value) -> Arg {
         serde_json::Value::Number(n) => Arg::Number(n.as_f64().unwrap_or(0.0)),
         serde_json::Value::String(s) => Arg::String(s.clone()),
         serde_json::Value::Array(items) => Arg::List(items.iter().map(json_to_arg).collect()),
-        serde_json::Value::Object(map) => Arg::Table(
-            map.iter()
-                .map(|(k, v)| (k.clone(), json_to_arg(v)))
-                .collect(),
-        ),
+        serde_json::Value::Object(map) => serialized_to_arg(map).unwrap_or_else(|| {
+            Arg::Table(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), json_to_arg(v)))
+                    .collect(),
+            )
+        }),
     }
+}
+
+/// Roblox values in a settings file the way Studio writes them: an object
+/// tagged `serializedType` — `{"name": "Grass", "serializedType":
+/// "Material"}` for an enum item, `{"x", "y", "z", "serializedType":
+/// "Vector3"}` and the like (read from Studio's own plugin settings).
+fn serialized_to_arg(map: &serde_json::Map<String, serde_json::Value>) -> Option<Arg> {
+    let kind = map.get("serializedType")?.as_str()?;
+    let number = |key: &str| {
+        map.get(key)
+            .and_then(serde_json::Value::as_f64)
+            .map(|n| n as f32)
+    };
+    Some(match kind {
+        "Vector3" => Arg::Vector3([number("x")?, number("y")?, number("z")?]),
+        "Vector2" => Arg::Vector2([number("x")?, number("y")?]),
+        "Color3" => Arg::Color3([number("r")?, number("g")?, number("b")?]),
+        enum_name => Arg::Enum {
+            enum_name: enum_name.to_string(),
+            item: map.get("name")?.as_str()?.to_string(),
+        },
+    })
+}
+
+fn tagged(kind: &str, fields: &[(&str, f32)]) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "serializedType".into(),
+        serde_json::Value::String(kind.into()),
+    );
+    for (key, value) in fields {
+        map.insert((*key).into(), serde_json::json!(f64::from(*value)));
+    }
+    serde_json::Value::Object(map)
 }
 
 fn arg_to_json(value: &Arg) -> Result<serde_json::Value> {
@@ -298,6 +334,13 @@ fn arg_to_json(value: &Arg) -> Result<serde_json::Value> {
                 .map(|(k, v)| Ok((k.clone(), arg_to_json(v)?)))
                 .collect::<Result<_>>()?,
         ),
+        Arg::Enum { enum_name, item } => serde_json::json!({
+            "name": item,
+            "serializedType": enum_name,
+        }),
+        Arg::Vector3([x, y, z]) => tagged("Vector3", &[("x", *x), ("y", *y), ("z", *z)]),
+        Arg::Vector2([x, y]) => tagged("Vector2", &[("x", *x), ("y", *y)]),
+        Arg::Color3([r, g, b]) => tagged("Color3", &[("r", *r), ("g", *g), ("b", *b)]),
         _ => {
             return Err(mlua::Error::runtime(
                 "SetSetting only stores JSON-compatible values",
@@ -455,6 +498,12 @@ impl UserData for LuaPlugin {
             methods.add_method(name, |_, _, _: MultiValue| Ok(()));
         }
         methods.add_method("GetStudioUserId", |_, _, ()| Ok(0));
+        // Studio's "Join Surfaces" toggle, off by default; rbx-native has no
+        // joints to make.
+        methods.add_method("GetJoinMode", |lua, _, ()| {
+            let ctx = env(lua).ctx.clone();
+            crate::plugin::input::enum_item(&ctx, "JointCreationMode", "None")?.interned(lua)
+        });
         for name in ["Union", "Separate", "Negate"] {
             methods.add_method(name, move |_, _, _: MultiValue| -> Result<()> {
                 Err(mlua::Error::runtime(format!(

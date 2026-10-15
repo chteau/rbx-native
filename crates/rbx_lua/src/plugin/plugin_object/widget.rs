@@ -6,7 +6,7 @@ use mlua::{
 };
 use rbx_dom::Variant;
 
-use crate::instance::LuaInstance;
+use crate::instance::{InstanceRef, LuaInstance};
 use crate::plugin::api::{Arg, Widget, WidgetKind};
 use crate::plugin::arg;
 use crate::plugin::env::env;
@@ -119,7 +119,7 @@ pub(super) fn info_global(lua: &Lua) -> Result<Table> {
     Ok(table)
 }
 
-fn create(lua: &Lua, key: String, enabled: bool, kind: WidgetKind) -> LuaInstance {
+fn create(lua: &Lua, key: String, enabled: bool, kind: WidgetKind) -> InstanceRef {
     let env = env(lua);
     let existing = env
         .shared
@@ -162,7 +162,7 @@ pub(super) fn create_dock(
     lua: &Lua,
     key: String,
     info: Option<AnyUserData>,
-) -> Result<LuaInstance> {
+) -> Result<InstanceRef> {
     let info = match info {
         Some(ud) => ud.borrow::<LuaWidgetInfo>()?.clone(),
         None => LuaWidgetInfo::default(),
@@ -179,7 +179,7 @@ pub(super) fn create_floating(
     lua: &Lua,
     key: String,
     options: Option<Table>,
-) -> Result<LuaInstance> {
+) -> Result<InstanceRef> {
     let fields = match options.map(|t| arg::from_lua(&Value::Table(t))) {
         Some(Arg::Table(fields)) => fields,
         _ => Vec::new(),

@@ -8,11 +8,12 @@ use rbx_reflection::ReflectionDatabase;
 
 use crate::pick::Ray;
 
-/// `HANDLE_UNIT`, `GAP`, `ARC_CLEARANCE` and `ARC_TUBE` in
-/// `scene::adornment::handles`.
+/// `HANDLE_UNIT`, `GAP` and `ARC_CLEARANCE` in `scene::adornment::handles`.
 const HANDLE_UNIT: (f32, f32, f32) = (0.4, 1.0, 6.0);
 const GAP: f32 = 0.15;
 const ARC_CLEARANCE: f32 = 1.1;
+/// The ring tube the grab band is measured from — thicker than the line
+/// drawn (Studio's rings are hairlines), so an arc stays easy to catch.
 const ARC_TUBE: f32 = 0.04;
 /// `Enum.HandlesStyle.Movement`.
 const STYLE_MOVEMENT: u32 = 1;

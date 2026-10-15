@@ -20,6 +20,9 @@ use crate::plugin::scheduler::{self, Scheduler};
 use crate::plugin::signal::{self, Owner, SignalKey, Signals};
 use crate::plugin::{debugger_api, events, loader, plugin_object, services, vm};
 
+#[path = "overlays.rs"]
+mod overlays;
+
 const BUDGET: Duration = Duration::from_secs(5);
 const ROUNDS: usize = 8;
 /// Where `BindToClose` callbacks live in a VM's registry, keyed by the
@@ -42,7 +45,24 @@ pub(super) fn run(
     let merge = host.lot.merge(&mut host.dom.borrow_mut());
     let place_roots = merge.place_roots.clone();
 
+    let mut seen = host.shared.borrow().context.selection.clone();
     handle(host, input, &debugger_before);
+    // Roblox fires `SelectionChanged` for every listener, the plugin that
+    // called `Selection:Set` included; the editor does not echo a plugin's
+    // own change back, so the host fires it here (a few rounds, in case a
+    // handler moves the selection again).
+    for _ in 0..4 {
+        let now = host.shared.borrow().context.selection.clone();
+        if now == seen {
+            break;
+        }
+        seen = now;
+        fire_all(
+            host,
+            &SignalKey::new(Owner::Service("Selection"), "SelectionChanged"),
+            &[],
+        );
+    }
 
     let mut log = Vec::new();
     for _ in 0..ROUNDS {
@@ -59,6 +79,7 @@ pub(super) fn run(
     }
     log.extend(host.dom.borrow_mut().take_changes());
 
+    overlays::sync(host);
     mark_views(host, &log, &place_roots);
     let changes = host.lot.split(&mut host.dom.borrow_mut(), merge, log);
     std::mem::swap(&mut *host.dom.borrow_mut(), dom);

@@ -2,7 +2,7 @@
 //! Roblox's own `DebuggerManager`/`ScriptDebugger`, which real Studio only
 //! exposes to the command bar.
 
-use mlua::{Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods, Value};
+use mlua::{IntoLua, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataMethods, Value};
 use rbx_dom::Ref;
 
 use super::api::{Arg, DebuggerRequest, DebuggerView, Permission, Request};
@@ -49,8 +49,7 @@ fn referent(value: &Value) -> Result<Ref> {
 
 fn instance_value(lua: &Lua, referent: Ref) -> Result<Value> {
     let ctx = env(lua).ctx.clone();
-    lua.create_userdata(LuaInstance::new(referent, ctx))
-        .map(Value::UserData)
+    LuaInstance::new(referent, ctx).into_lua(lua)
 }
 
 fn signal_value(lua: &Lua, owner: Owner, event: &str) -> Result<Value> {
@@ -148,6 +147,15 @@ impl UserData for LuaScriptDebugger {
                         condition: condition.clone(),
                     },
                 )?;
+                // Listed at once, as in Studio; the editor's own view
+                // replaces this one on the next dispatch.
+                {
+                    let env = env(lua);
+                    let mut shared = env.shared.borrow_mut();
+                    let breakpoints = &mut shared.context.debugger.breakpoints;
+                    breakpoints.retain(|(script, at, _)| (*script, *at) != (this.0, line));
+                    breakpoints.push((this.0, line, condition.clone()));
+                }
                 breakpoint_table(lua, this.0, line, condition.as_deref())
             },
         );
@@ -158,7 +166,15 @@ impl UserData for LuaScriptDebugger {
                     script: this.0,
                     line,
                 },
-            )
+            )?;
+            env(lua)
+                .shared
+                .borrow_mut()
+                .context
+                .debugger
+                .breakpoints
+                .retain(|(script, at, _)| (*script, *at) != (this.0, line));
+            Ok(())
         });
         methods.add_method("GetBreakpoints", |lua, this, ()| {
             check(lua)?;

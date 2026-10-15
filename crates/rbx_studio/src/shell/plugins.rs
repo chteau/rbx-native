@@ -12,8 +12,10 @@
 mod debugger_bridge;
 mod discover;
 mod handles;
+mod hit;
 mod manager;
 mod outcome;
+mod overlays;
 mod prompts;
 mod render;
 mod ribbon;
@@ -25,7 +27,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::*;
 use rbx_dom::{Change, Ref};
-use rbx_lua::plugin::{Input, PluginHost, Ui};
+use rbx_lua::plugin::{GuiEventKind, Input, PluginHost, Ui};
 
 use super::Shell;
 use crate::command_bar::Feedback;
@@ -53,6 +55,10 @@ pub(crate) struct Plugins {
     pub(super) prompts: prompts::Prompts,
     pub(super) widgets: widgets::Widgets,
     pub(super) handles: handles::Handles,
+    /// The part under the cursor in the viewport and the world point hit.
+    pub(super) mouse: Option<(Ref, [f32; 3])>,
+    /// The 3D view's bounds as last laid out, for `Camera.ViewportSize`.
+    pub(super) view_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     /// The Manage Plugins dialog is open.
     pub(super) manager_open: bool,
     /// Origin of `Context::now`.
@@ -147,15 +153,23 @@ impl Shell {
         if self.live_shown() || self.plugins.host.is_none() {
             return;
         }
-        let undoable = matches!(
-            input,
+        // Pointer motion over a widget is not an edit, and cloning the
+        // place for it on every move would cost a full copy per event.
+        let undoable = match &input {
+            Input::Gui(event) => !matches!(
+                event.kind,
+                GuiEventKind::Enter { .. }
+                    | GuiEventKind::Leave { .. }
+                    | GuiEventKind::Move { .. }
+                    | GuiEventKind::Scroll { .. }
+            ),
             Input::ButtonClicked(_)
-                | Input::ActionTriggered(_)
-                | Input::PromptAnswered(..)
-                | Input::Gui(_)
-                | Input::Handle(_)
-                | Input::WidgetClosed(_)
-        );
+            | Input::ActionTriggered(_)
+            | Input::PromptAnswered(..)
+            | Input::Handle(_)
+            | Input::WidgetClosed(_) => true,
+            _ => false,
+        };
         let context = self.plugin_context();
         // Everything logged so far was already reflected; the host reports
         // its own edits in the outcome.
@@ -222,8 +236,13 @@ impl Shell {
             now: self.plugins_now(),
             selection: self.selected_all().to_vec(),
             debugger: self.plugin_debugger_view(),
-            mouse_target: None,
-            mouse_hit: None,
+            mouse_target: self.plugins.mouse.map(|(part, _)| part),
+            mouse_hit: self.plugins.mouse.map(|(_, hit)| hit),
+            viewport_size: self
+                .plugins
+                .view_bounds
+                .get()
+                .map(|b| [f32::from(b.size.width), f32::from(b.size.height)]),
         }
     }
 

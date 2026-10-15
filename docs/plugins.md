@@ -36,10 +36,32 @@ its origin and the last error that stopped one of its scripts from loading.
 | `HttpService` | `JSONEncode`/`JSONDecode`, `GenerateGUID`, `UrlEncode`, `RequestAsync`, `GetAsync`, `PostAsync` |
 | `RunService` | `IsStudio`, `IsEdit`, `Heartbeat`, `RenderStepped`, `Stepped` |
 | `CollectionService` | tags over the `Tags` property |
-| `StudioService`, `settings()` | a few constants; `settings().Studio.Theme` is a fixed dark palette |
-| Widgets | `GuiObject` trees, `UIListLayout`, `TextButton`, `TextBox`, `ScrollingFrame`, clicks, text input, scrolling |
-| 3D adornments | `Handles`, `ArcHandles`, `*HandleAdornment`, `SelectionBox` in `CoreGui` |
+| `StudioService`, `settings()` | a few constants; `settings().Studio.Theme` is Studio's own Dark palette (every `StudioStyleGuideColor` and modifier, read from Studio) and `settings().Studio.ThemeChanged` |
+| `UserInputService` | `InputBegan`/`InputChanged`/`InputEnded` (from widget and overlay input), `GetMouseLocation`, `IsMouseButtonPressed`, the `*Enabled` flags |
+| `TextService`, `TweenService` | `GetTextSize` (estimated metrics); `Create` → `Play` sets the goals and fires `Completed` |
+| `Workspace` | `Raycast`, `GetPartBoundsInBox`, `FindPartsInRegion3`; `JoinToOutsiders`/`UnjoinFromOutsiders` do nothing (no joints without physics) |
+| `Camera` | `ViewportSize` (the editor's 3D view), `ScreenPointToRay`/`ViewportPointToRay` |
+| Widgets | `GuiObject` trees, `UIListLayout`, `TextButton`, `TextBox`, `ScrollingFrame`, clicks, text input, scrolling, `InputBegan`/`InputEnded` with an `InputObject`, real `AbsoluteSize`/`AbsolutePosition`/`AbsoluteContentSize` fed back from the render |
+| Overlays | a `ScreenGui` parented to `CoreGui` is drawn over the 3D view, with no top-bar inset; buttons, text boxes and `Active` objects take the pointer, anything else lets it through to the view |
+| 3D adornments | `Handles`, `ArcHandles` (coloured per axis as in Studio), `*HandleAdornment`, `SelectionBox` in `CoreGui` |
 | Debugger | `GetDebuggerManager` (see below) |
+
+A plugin's scripts sit under a `Plugin` instance, so
+`script:FindFirstAncestorWhichIsA("Plugin")` reaches the same API as the
+`plugin` global. Settings keep Roblox values in the form Studio's own
+settings files use (`{"name": "Top", "serializedType": "NormalId"}`,
+`{"x", "y", "z", "serializedType": "Vector3"}`), and `SelectionChanged`
+also fires for the plugin that called `Selection:Set`, as in Studio.
+
+![Archimedes building an arc over the 3D view](plugins/archimedes.png)
+
+[Archimedes](https://create.roblox.com/store/asset/144938633) (Scriptos's
+arc builder, Roact + StudioComponents) is the reference plugin: it runs
+from a plain `.rbxm` — its window over the 3D view, the direction buttons,
+**Render**, **Render All** and undo. The `run_plugin` example
+(`cargo run -p rbx_lua --example run_plugin -- place.rbxl plugin.rbxm`)
+runs a plugin headless; `RUN_PLUGIN_SELECT=<name>` selects a part and
+`RUN_PLUGIN_CLICK=<text>` clicks a widget element by its text.
 
 The first HTTP request from a Roblox plugin to a host asks the user for
 permission; the answer is remembered in the plugin's settings.
@@ -123,4 +145,9 @@ a plugin that walks a very large place in one call can run out of fuel.
 - CSG: `plugin:Union`, `Separate` and `Negate` raise an error naming the
   missing support.
 - Features that need Roblox's servers or client: `GetStudioUserId` returns 0,
-  and `PluginMouse` button and move signals never fire.
+  `MarketplaceService` raises an error, and `PluginMouse` button and move
+  signals never fire (`Hit` and `Target` follow the 3D view's hover).
+- Luau rbx-native plugins without `dom.write` cannot change the place, but
+  the check covers property, attribute and tag writes, reparenting,
+  `Destroy`, `ClearAllChildren`, `PivotTo` and `Instance.new(class,
+  parent)`; WebAssembly is the stricter sandbox.

@@ -299,6 +299,7 @@ fn arg_to_variant(name: &str, value: Arg) -> Result<Option<Variant>> {
 }
 
 fn set_attribute(ctx: &Ctx, referent: Ref, name: &str, value: Option<Variant>) -> Result<()> {
+    ctx.check_write(referent)?;
     let mut attributes = read_attributes(ctx, referent);
     match value {
         Some(value) => attributes.insert(name.to_string(), value),
@@ -484,6 +485,14 @@ impl Hooks for PluginHooks {
         // `script:FindFirstAncestorWhichIsA("Plugin")` reaches the same API.
         if class == "Plugin" && env(lua).roots.borrow().first() == Some(&referent) {
             return plugin_member(lua, key).map(Some);
+        }
+        if key == "ViewportSize" && class == "Camera" {
+            let size = env(lua).shared.borrow().context.viewport_size;
+            if let Some([x, y]) = size {
+                return lua
+                    .create_userdata(LuaVector2(Vector2Data { x, y }))
+                    .map(|u| Some(Value::UserData(u)));
+            }
         }
         let db = ctx.database();
         if is_signal(db, class, key) {

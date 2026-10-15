@@ -94,7 +94,7 @@ impl Shell {
                             .flex_1()
                             .h_full()
                             .overflow_hidden()
-                            .child(self.viewport())
+                            .child(self.viewport(cx))
                             .children(toast),
                     )
                     .child(side),

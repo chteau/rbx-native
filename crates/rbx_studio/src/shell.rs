@@ -1719,8 +1719,17 @@ impl Shell {
     /// The 3D view itself. No border: Row D's panels are told apart from it
     /// by their own elevation and surface, not by a line (see
     /// `UX_GUIDELINES.md` §3).
-    pub(super) fn viewport(&self) -> impl IntoElement {
-        div().size_full().child(self.viewport.clone())
+    pub(super) fn viewport(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let bounds = self.plugins.view_bounds.clone();
+        let measure = canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
+            .absolute()
+            .inset_0();
+        div()
+            .relative()
+            .size_full()
+            .child(self.viewport.clone())
+            .child(measure)
+            .children(self.plugin_viewport_overlays(cx))
     }
 }
 

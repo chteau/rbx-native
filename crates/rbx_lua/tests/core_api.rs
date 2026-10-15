@@ -47,7 +47,7 @@ fn game_api() {
     );
     assert_eq!(out[0], "true true true false");
     assert_eq!(out[1], "true true");
-    assert_eq!(out[2], "Game 0 0 0 0");
+    assert_eq!(out[2], "game 0 0 0 0");
     assert_eq!(out[3], "true true");
 }
 

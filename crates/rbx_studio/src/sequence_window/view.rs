@@ -202,7 +202,13 @@ impl SequenceWindow {
                             .text_color(tokens::text_label())
                             .child("Colour"),
                     )
-                    .child(ColorPicker::new(&state).with_size(tokens::field_size()))
+                    .child(
+                        ColorPicker::new(&state)
+                            // See `shell::rows`: the default featured row
+                            // repeats palette colours (duplicate swatch ids).
+                            .featured_colors(Vec::new())
+                            .with_size(tokens::field_size()),
+                    )
             }))
             .child(div().flex_1())
             // The two buttons wrap as a pair, not one each: a `Reset` that

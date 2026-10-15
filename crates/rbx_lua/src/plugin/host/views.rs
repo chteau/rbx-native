@@ -3,14 +3,18 @@
 use rbx_dom::{Instance, Variant, WeakDom};
 
 use super::PluginHost;
-use crate::plugin::api::UiId;
+use crate::plugin::api::{UiId, WidgetKind};
 use crate::plugin::lot::subtree;
 
 pub(super) fn widget_dom(host: &PluginHost, widget: UiId) -> Option<WeakDom> {
-    let (root, title) = {
+    let (root, title, overlay) = {
         let shared = host.shared.borrow();
         let w = shared.ui.widgets.iter().find(|w| w.id == widget)?;
-        (w.root, w.title.clone())
+        (
+            w.root,
+            w.title.clone(),
+            matches!(w.kind, WidgetKind::Overlay { .. }),
+        )
     };
     let children = host.lot.parked.get(root)?.children().to_vec();
     let mut copy = host.lot.parked.clone();
@@ -18,7 +22,22 @@ pub(super) fn widget_dom(host: &PluginHost, widget: UiId) -> Option<WeakDom> {
         copy.set_parent(child, None);
     }
     let mut out = WeakDom::new();
-    out.insert(Instance::new(root, "ScreenGui", title));
+    let mut top = Instance::new(root, "ScreenGui", title);
+    if overlay {
+        if let Some(gui) = host.lot.parked.get(root) {
+            top = Instance::new(root, gui.class(), gui.name());
+            top.properties_mut()
+                .extend(gui.properties().iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+    }
+    // Neither a widget nor Studio's edit view has a top bar: the GUI starts
+    // at the top edge whatever the screen's own inset says (measured: a
+    // CoreGui window centred in a 668px view sat at y = 104).
+    top.properties_mut()
+        .insert("ScreenInsets".into(), Variant::Enum(0));
+    top.properties_mut()
+        .insert("IgnoreGuiInset".into(), Variant::Bool(true));
+    out.insert(top);
     copy.move_subtrees(&children, &mut out);
     for &child in &children {
         out.set_parent(child, Some(root));

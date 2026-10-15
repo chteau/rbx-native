@@ -20,21 +20,57 @@ pub(crate) struct LuaInstance {
     ctx: Ctx,
 }
 
+/// What [`LuaInstance::new`] hands back. Converting it into Lua yields
+/// the one userdata this VM holds for that instance — Roblox instances are
+/// unique objects, so scripts key tables by them and `table.find` /
+/// `rawequal` must see the same value however the instance was reached. The
+/// cache is weak-valued: an instance no script holds is let go.
+pub(crate) struct InstanceRef(LuaInstance);
+
+const INSTANCES: &str = "rbxn.instances";
+
+impl IntoLua for InstanceRef {
+    fn into_lua(self, lua: &Lua) -> Result<Value> {
+        let cache = match lua.named_registry_value::<Option<Table>>(INSTANCES)? {
+            Some(cache) => cache,
+            None => {
+                let cache = lua.create_table()?;
+                let weak = lua.create_table()?;
+                weak.set("__mode", "v")?;
+                cache.set_metatable(Some(weak))?;
+                lua.set_named_registry_value(INSTANCES, cache.clone())?;
+                cache
+            }
+        };
+        let key = format!("{:?}", self.0.referent);
+        let found: Value = cache.get(key.as_str())?;
+        if let Value::UserData(_) = found {
+            return Ok(found);
+        }
+        let value = Value::UserData(lua.create_userdata(self.0)?);
+        cache.set(key, value.clone())?;
+        Ok(value)
+    }
+}
+
 impl LuaInstance {
-    pub(crate) fn new(referent: Ref, ctx: Ctx) -> Self {
-        LuaInstance { referent, ctx }
+    // Hands back the interning handle, not the userdata itself: every
+    // route into Lua has to go through the one cache (see `InstanceRef`).
+    #[allow(clippy::new_ret_no_self)]
+    pub(crate) fn new(referent: Ref, ctx: Ctx) -> InstanceRef {
+        InstanceRef(LuaInstance { referent, ctx })
     }
 
     fn find_child(
         &self,
         recursive: bool,
         test: impl Fn(&rbx_dom::Instance) -> bool,
-    ) -> Option<LuaInstance> {
+    ) -> Option<InstanceRef> {
         tree::find_child_where(&self.ctx.dom(), self.referent, recursive, &test)
             .map(|referent| LuaInstance::new(referent, self.ctx.clone()))
     }
 
-    fn find_ancestor(&self, test: impl Fn(&rbx_dom::Instance) -> bool) -> Option<LuaInstance> {
+    fn find_ancestor(&self, test: impl Fn(&rbx_dom::Instance) -> bool) -> Option<InstanceRef> {
         tree::find_ancestor_where(&self.ctx.dom(), self.referent, &test)
             .map(|referent| LuaInstance::new(referent, self.ctx.clone()))
     }
@@ -384,7 +420,7 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
     table.set(
         "new",
         lua.create_function(
-            move |_, (class, parent): (String, Option<Value>)| -> Result<LuaInstance> {
+            move |_, (class, parent): (String, Option<Value>)| -> Result<InstanceRef> {
                 if ctx.database().class(&class).is_none() {
                     return Err(mlua::Error::runtime(format!(
                         "Unable to create an Instance of type {class}"

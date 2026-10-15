@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 
 use mlua::{
-    AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, UserData, UserDataMethods, Value,
+    AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, UserData, UserDataFields,
+    UserDataMethods, Value,
 };
 use rbx_dom::Ref;
 
@@ -133,6 +134,10 @@ fn wait_function(lua: &Lua) -> Result<Function> {
 }
 
 impl UserData for LuaSignal {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "RBXScriptSignal");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("Connect", |lua, this, func: Function| {
             Ok(connect(lua, &this.0, func, false))
@@ -159,6 +164,10 @@ impl UserData for LuaSignal {
 }
 
 impl UserData for LuaConnection {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "RBXScriptConnection");
+    }
+
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("Disconnect", |lua, this, ()| {
             env(lua).signals.borrow_mut().disconnect(&this.key, this.id);

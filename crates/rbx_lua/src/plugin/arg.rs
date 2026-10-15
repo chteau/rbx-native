@@ -1,6 +1,6 @@
 //! [`Arg`] ⇄ Luau values.
 
-use mlua::{Lua, ObjectLike, Result, Value};
+use mlua::{IntoLua, Lua, ObjectLike, Result, Value};
 
 use super::api::Arg;
 use crate::ctx::Ctx;
@@ -22,16 +22,11 @@ pub(crate) fn to_lua(lua: &Lua, ctx: &Ctx, arg: &Arg) -> Result<Value> {
         Arg::Bool(b) => Ok(Value::Boolean(*b)),
         Arg::Number(n) => Ok(Value::Number(*n)),
         Arg::String(s) => Ok(Value::String(lua.create_string(s)?)),
-        Arg::Instance(r) => lua
-            .create_userdata(LuaInstance::new(*r, ctx.clone()))
-            .map(Value::UserData),
+        Arg::Instance(r) => LuaInstance::new(*r, ctx.clone()).into_lua(lua),
         Arg::Instances(refs) => {
             let table = lua.create_table()?;
             for (i, r) in refs.iter().enumerate() {
-                table.set(
-                    i + 1,
-                    lua.create_userdata(LuaInstance::new(*r, ctx.clone()))?,
-                )?;
+                table.set(i + 1, LuaInstance::new(*r, ctx.clone()))?;
             }
             Ok(Value::Table(table))
         }

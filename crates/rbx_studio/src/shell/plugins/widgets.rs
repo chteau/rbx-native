@@ -14,7 +14,6 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_lua::plugin::{GuiEvent, GuiEventKind, Input, LayoutBox, UiId, WidgetKind};
-use rbx_viewer::GuiBox;
 
 use super::render;
 use crate::shell::{Panel, Shell};
@@ -22,7 +21,7 @@ use crate::tokens;
 
 /// Where a widget's surface was last laid out, written during prepaint so
 /// pointer positions can be made widget-local and the render sized.
-type Area = Rc<Cell<Option<Bounds<Pixels>>>>;
+pub(super) type Area = Rc<Cell<Option<Bounds<Pixels>>>>;
 
 struct Editing {
     widget: UiId,
@@ -32,7 +31,7 @@ struct Editing {
 }
 
 #[derive(Clone, Copy)]
-enum Pointer {
+pub(super) enum Pointer {
     Move,
     Down(u8),
     Up(u8),
@@ -48,7 +47,7 @@ pub(crate) struct Widgets {
     /// The dock tab shown.
     pub(crate) current: Option<UiId>,
     pub(crate) renderer: Option<render::Renderer>,
-    areas: HashMap<UiId, Area>,
+    pub(super) areas: HashMap<UiId, Area>,
     /// The last revision and size asked of the renderer.
     requested: HashMap<UiId, (u64, (u32, u32))>,
     /// Each widget's `TextBox`es with their text as last rendered.
@@ -61,20 +60,6 @@ pub(crate) struct Widgets {
     /// Where cursor-placed floating widgets opened.
     anchors: HashMap<UiId, Point<Pixels>>,
     poll: Option<Task<()>>,
-}
-
-/// The last box containing the point in paint order, skipping the widget's
-/// own frame; rotation is ignored.
-fn hit(boxes: &[GuiBox], x: f32, y: f32) -> Option<Ref> {
-    boxes
-        .iter()
-        .skip(1)
-        .rev()
-        .find(|b| {
-            let [bx, by, bw, bh] = b.rect;
-            x >= bx && y >= by && x < bx + bw && y < by + bh
-        })
-        .map(|b| b.referent)
 }
 
 fn text_boxes(dom: &WeakDom) -> HashMap<Ref, String> {
@@ -96,7 +81,7 @@ fn text_boxes(dom: &WeakDom) -> HashMap<Ref, String> {
     found
 }
 
-fn pixel_size(bounds: Bounds<Pixels>) -> (u32, u32) {
+pub(super) fn pixel_size(bounds: Bounds<Pixels>) -> (u32, u32) {
     (
         f32::from(bounds.size.width).round().max(0.0) as u32,
         f32::from(bounds.size.height).round().max(0.0) as u32,
@@ -218,7 +203,7 @@ impl Shell {
                     size,
                     light_dismiss,
                 } => Some((w.id, w.revision, position, size, light_dismiss)),
-                WidgetKind::Dock { .. } => None,
+                WidgetKind::Dock { .. } | WidgetKind::Overlay { .. } => None,
             })
             .collect();
         self.plugins
@@ -329,7 +314,7 @@ impl Shell {
         cx.notify();
     }
 
-    fn request_widget_render(
+    pub(super) fn request_widget_render(
         &mut self,
         id: UiId,
         revision: u64,
@@ -350,12 +335,18 @@ impl Shell {
         else {
             return;
         };
+        let transparent = self
+            .plugins
+            .ui
+            .widgets
+            .iter()
+            .any(|w| w.id == id && matches!(w.kind, WidgetKind::Overlay { .. }));
         let state = &mut self.plugins.widgets;
         state.text_boxes.insert(id, text_boxes(&dom));
         state
             .renderer
             .get_or_insert_with(render::Renderer::new)
-            .request(id, revision, dom, size, backdrop());
+            .request(id, revision, dom, size, backdrop(), transparent);
         state.requested.insert(id, (revision, size));
         self.arm_widget_poll(cx);
     }
@@ -519,14 +510,14 @@ impl Shell {
         self.plugin_input(Input::Gui(GuiEvent { referent, kind }), cx);
     }
 
-    fn widget_left(&mut self, id: UiId, cx: &mut Context<Self>) {
+    pub(super) fn widget_left(&mut self, id: UiId, cx: &mut Context<Self>) {
         if let Some((_, old)) = self.plugins.widgets.hover.filter(|(w, _)| *w == id) {
             self.plugins.widgets.hover = None;
             self.send_gui(old, GuiEventKind::Leave { x: -1.0, y: -1.0 }, cx);
         }
     }
 
-    fn widget_pointer(
+    pub(super) fn widget_pointer(
         &mut self,
         id: UiId,
         position: Point<Pixels>,
@@ -544,7 +535,7 @@ impl Shell {
             .widgets
             .drawn
             .get(&id)
-            .and_then(|drawn| hit(&drawn.boxes, x, y));
+            .and_then(|drawn| super::hit::hit(&drawn.boxes, &drawn.sinks, x, y));
         match pointer {
             Pointer::Move => {
                 let now = target.map(|r| (id, r));

@@ -1,6 +1,7 @@
 //! World-facing services (`TextService`, `TweenService`,
 //! `MarketplaceService`) and the spatial queries on `Workspace`.
 
+mod legacy;
 mod raycast;
 #[cfg(test)]
 mod tests;
@@ -55,6 +56,9 @@ pub(crate) fn class_member(
     class: &str,
     key: &str,
 ) -> Result<Option<Value>> {
+    if let Some(value) = legacy::member(lua, ctx, referent, class, key)? {
+        return Ok(Some(value));
+    }
     if class != "Workspace" {
         return Ok(None);
     }

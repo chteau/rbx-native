@@ -4,13 +4,15 @@
 //! folders), plus the `settings()` global.
 
 mod http_service;
+mod palette;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use mlua::{
-    FromLuaMulti, IntoLuaMulti, Lua, MetaMethod, Result, Table, UserData, UserDataMethods, Value,
+    FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, Result, Table, UserData, UserDataMethods,
+    Value,
 };
 use rbx_dom::{Ref, Variant};
 
@@ -89,12 +91,10 @@ pub(crate) fn service(lua: &Lua, name: &str) -> Result<Option<Value>> {
     }
     let env = env(lua);
     let value = match canon {
-        "CoreGui" => {
-            Value::UserData(lua.create_userdata(LuaInstance::new(env.core_gui, env.ctx.clone()))?)
+        "CoreGui" => LuaInstance::new(env.core_gui, env.ctx.clone()).into_lua(lua)?,
+        "PluginGuiService" => {
+            LuaInstance::new(env.plugin_gui_service, env.ctx.clone()).into_lua(lua)?
         }
-        "PluginGuiService" => Value::UserData(
-            lua.create_userdata(LuaInstance::new(env.plugin_gui_service, env.ctx.clone()))?,
-        ),
         _ => Value::UserData(lua.create_userdata(LuaService(canon))?),
     };
     lua.set_named_registry_value(&key, value.clone())?;
@@ -323,6 +323,7 @@ fn tags_of(lua: &Lua, r: Ref) -> Vec<String> {
 }
 
 fn write_tags(lua: &Lua, r: Ref, tags: &[String]) -> Result<()> {
+    env(lua).ctx.check_write(r)?;
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
     let text = rbx_dom::attributes::encode_tags(&refs);
     env(lua)
@@ -389,45 +390,38 @@ fn collection_service(lua: &Lua, key: &str) -> Result<Value> {
     }
 }
 
-/// The dark theme's colours by `Enum.StudioStyleGuideColor` name.
-fn palette(name: &str) -> [f32; 3] {
-    let rgb = |r: u8, g: u8, b: u8| [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
-    match name {
-        "MainBackground" | "Titlebar" | "ScrollBarBackground" => rgb(46, 46, 46),
-        "MainText" | "ButtonText" | "BrightText" | "TitlebarText" => rgb(204, 204, 204),
-        "SubText" | "DimmedText" => rgb(170, 170, 170),
-        "Button" => rgb(60, 60, 60),
-        "ButtonBorder" | "Border" | "CategoryItem" => rgb(34, 34, 34),
-        "InputFieldBackground" => rgb(37, 37, 37),
-        "InputFieldBorder" => rgb(58, 58, 58),
-        "Item" | "ScriptBackground" => rgb(37, 37, 37),
-        "MainButton" => rgb(0, 162, 255),
-        "ErrorText" => rgb(255, 68, 68),
-        "WarningText" => rgb(255, 150, 0),
-        _ => rgb(128, 128, 128),
-    }
+/// Studio's Dark theme colour for an `Enum.StudioStyleGuideColor` (or its
+/// name) under an optional `Enum.StudioStyleGuideModifier`; mid grey for a
+/// name Studio does not know.
+fn palette(color: &Value, modifier: Option<&Value>) -> Result<[f32; 3]> {
+    let name = |value: &Value| -> Result<String> {
+        let text = match value {
+            Value::String(s) => s.to_string_lossy().to_string(),
+            other => other.to_string()?,
+        };
+        Ok(text.rsplit('.').next().unwrap_or("").to_string())
+    };
+    let modifier = match modifier {
+        Some(Value::Nil) | None => String::new(),
+        Some(value) => name(value)?,
+    };
+    let [r, g, b] = palette::dark(&name(color)?, &modifier).unwrap_or([128, 128, 128]);
+    Ok([r, g, b].map(|channel| f32::from(channel) / 255.0))
 }
 
 /// Installs `settings()` (and `UserSettings()`): `settings().Studio.Theme`
-/// with `Name` "Dark", `GetColor(styleGuideColor, modifier?)` from a fixed
-/// dark palette keyed by `Enum.StudioStyleGuideColor` names (falling back to
-/// mid grey) and `ThemeChanged` (never fires).
+/// with `Name` "Dark", `GetColor(styleGuideColor, modifier?)` from Studio's
+/// own Dark palette (see `palette`, falling back to mid grey) and
+/// `ThemeChanged` (never fires).
 pub(crate) fn install_settings(lua: &Lua) -> Result<()> {
     let theme = lua.create_table()?;
     theme.set("Name", "Dark")?;
     theme.set(
         "GetColor",
-        lua.create_function(
-            |lua, (_, color, _modifier): (Value, Value, Option<Value>)| {
-                let text = match &color {
-                    Value::String(s) => s.to_string_lossy().to_string(),
-                    other => other.to_string()?,
-                };
-                let name = text.rsplit('.').next().unwrap_or("");
-                let [r, g, b] = palette(name);
-                lua.create_userdata(LuaColor3::new(r, g, b))
-            },
-        )?,
+        lua.create_function(|lua, (_, color, modifier): (Value, Value, Option<Value>)| {
+            let [r, g, b] = palette(&color, modifier.as_ref())?;
+            lua.create_userdata(LuaColor3::new(r, g, b))
+        })?,
     )?;
     theme.set(
         "ThemeChanged",
