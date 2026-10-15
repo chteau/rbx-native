@@ -1,198 +1,213 @@
 --!strict
---// Dock widget: one Connect button, a live status line, the list of
---// rbx-native collaborators, and a hidden "Owner setup" section where the
---// place owner names the relay once for everyone.
+--// Dock widget, laid out like rbx-native's own Collaborators dock and drawn
+--// in its palette (see Ui): the note, a "Share my presence" switch, the
+--// status line, an "Advanced" reveal holding the owner's relay setup, the
+--// "While you were away" card, then one row per rbx-native collaborator.
 
 local Catchup = require(script.Parent.Catchup)
+local Ui = require(script.Parent.Ui)
 
 local Widget = {}
 Widget.__index = Widget
 
-local HTTP_NOTE = "Presence sends your selection, camera and open script to the relay. "
-	.. "Studio will ask you to allow HTTP requests to that domain the first time; allow it."
+local NOTE = "Presence only works for collaborators who have Studio open with the rbx-native "
+	.. "presence plugin running, or rbx-native itself."
 
-local NOTE = "Presence only works while Studio is open with this plugin running."
+local HTTP_NOTE = "Presence sends your selection, camera and open script to the relay. "
+	.. "Studio asks once whether this plugin may reach that domain; allow it."
 
 type Callbacks = {
 	onToggle: () -> (),
 	onSaveRelay: (string, string) -> (),
+	onViewChanges: () -> (),
 }
 
 export type Widget = typeof(setmetatable({} :: {
 	gui: DockWidgetPluginGui,
 	enabled: boolean,
 	relayKind: string,
-	toggle: TextButton,
-	note: TextLabel,
+	switch: Ui.Switch,
 	status: TextLabel,
 	advanced: TextButton,
 	owner: Frame,
-	kindButton: TextButton,
+	kindWorker: TextButton,
+	kindNtfy: TextButton,
 	urlBox: TextBox,
-	saveButton: TextButton,
 	resolved: TextLabel,
-	httpNote: TextLabel,
+	httpNote: Frame,
 	catchup: Frame,
-	catchupRows: { TextLabel },
-	rows: { Frame },
-	list: ScrollingFrame,
-	users: { any },
+	catchupBody: Frame,
+	rows: Frame,
+	onViewChanges: () -> (),
 	connections: { RBXScriptConnection },
 }, Widget))
 
-local function themeColor(color: Enum.StudioStyleGuideColor): Color3
-	return (settings() :: any).Studio.Theme:GetColor(color)
-end
-
-local function parseColor(hex: string): Color3
-	local r, g, b = string.match(hex, "^#(%x%x)(%x%x)(%x%x)$")
-	if not r then
-		return Color3.new(1, 1, 1)
-	end
-	return Color3.fromRGB(tonumber(r, 16) :: number, tonumber(g, 16) :: number, tonumber(b, 16) :: number)
-end
-
-local function newLabel(parent: Instance, order: number, text: string): TextLabel
-	local label = Instance.new("TextLabel")
-	label.LayoutOrder = order
-	label.Size = UDim2.new(1, -8, 0, 20)
-	label.AutomaticSize = Enum.AutomaticSize.Y
-	label.BackgroundTransparency = 1
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextWrapped = true
-	label.Font = Enum.Font.BuilderSans
-	label.TextSize = 14
-	label.Text = text
-	label.Parent = parent
-	return label
-end
-
-local function newButton(parent: Instance, order: number, text: string): TextButton
+-- One half of the Worker/ntfy segmented control.
+local function segment(parent: Instance, text: string, order: number): TextButton
 	local button = Instance.new("TextButton")
+	button.AutoButtonColor = false
 	button.LayoutOrder = order
-	button.Size = UDim2.new(1, -8, 0, 28)
-	button.AutoButtonColor = true
-	button.BorderSizePixel = 1
-	button.Font = Enum.Font.BuilderSans
-	button.TextSize = 14
+	button.Size = UDim2.fromOffset(0, 22)
+	button.AutomaticSize = Enum.AutomaticSize.X
+	button.FontFace = Ui.FONT
+	button.TextSize = Ui.TEXT_XS
 	button.Text = text
+	Ui.pad(button, 0, 10, 0, 10)
+	Ui.corner(button, 3)
 	button.Parent = parent
 	return button
 end
 
 function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
-	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 280, 400, 220, 240)
+	local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Right, false, false, 300, 420, 240, 260)
 	local gui = plugin:CreateDockWidgetPluginGuiAsync("RbxNativePresence", info)
-	gui.Title = "rbx-native presence"
+	gui.Title = "Collaborators"
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-	local list = Instance.new("ScrollingFrame")
-	list.Size = UDim2.fromScale(1, 1)
-	list.BorderSizePixel = 0
-	list.CanvasSize = UDim2.new()
-	list.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	list.ScrollBarThickness = 8
-	list.Parent = gui
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Size = UDim2.fromScale(1, 1)
+	scroll.CanvasSize = UDim2.new()
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.ScrollBarThickness = 6
+	scroll.ScrollBarImageColor3 = Ui.color("text3")
+	scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	Ui.fill(scroll, "dock")
+	scroll.Parent = gui
+	Ui.pad(scroll, 8, 10, 12, 8)
+	Ui.list(scroll, 10)
 
-	local layout = Instance.new("UIListLayout")
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 6)
-	layout.Parent = list
+	-- The note.
+	local noteCard = Ui.card(scroll, 1)
+	Ui.text(noteCard, NOTE, { size = Ui.TEXT_XS, color = "text2" })
 
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 6)
-	padding.PaddingLeft = UDim.new(0, 6)
-	padding.PaddingRight = UDim.new(0, 6)
-	padding.Parent = list
+	-- "Share my presence".
+	local toggleRow = Ui.frame(scroll, 2)
+	Ui.list(toggleRow, 8, true)
+	local self: Widget
+	local switch = Ui.switch(toggleRow, function()
+		callbacks.onToggle()
+	end, 1)
+	local toggleLabel = Ui.text(toggleRow, "Share my presence", { size = Ui.TEXT_SM, order = 2, wrap = false })
+	toggleLabel.AutomaticSize = Enum.AutomaticSize.X
+	toggleLabel.Size = UDim2.fromOffset(0, 18)
 
-	local note = newLabel(list, 1, NOTE)
-	note.TextSize = 12
-	local toggle = newButton(list, 2, "Connect")
-	local status = newLabel(list, 3, "Off")
-	local advanced = newButton(list, 4, "Owner setup ▸")
+	local status = Ui.text(scroll, "Off", { size = Ui.TEXT_XS, color = "text2", order = 3 })
 
-	-- Owner setup, hidden until the ▸ is clicked.
-	local owner = Instance.new("Frame")
-	owner.LayoutOrder = 5
-	owner.Size = UDim2.new(1, -8, 0, 0)
-	owner.AutomaticSize = Enum.AutomaticSize.Y
-	owner.BackgroundTransparency = 1
+	local advanced = Ui.link(scroll, "Show advanced", 4)
+	advanced.TextColor3 = Ui.color("text3")
+	advanced.FontFace = Ui.FONT
+
+	-- Owner setup, behind the reveal: the transport, its URL, and saving both
+	-- into the place for every collaborator.
+	local owner = Ui.frame(scroll, 5)
 	owner.Visible = false
-	owner.Parent = list
-	local ownerLayout = Instance.new("UIListLayout")
-	ownerLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	ownerLayout.Padding = UDim.new(0, 4)
-	ownerLayout.Parent = owner
+	Ui.list(owner, 6)
+	Ui.text(owner, "Owner setup — saved into the place for everyone", { size = Ui.TEXT_XS, color = "text3", order = 1 })
 
-	local kindButton = newButton(owner, 1, "Worker")
+	local kinds = Instance.new("Frame")
+	kinds.LayoutOrder = 2
+	kinds.AutomaticSize = Enum.AutomaticSize.X
+	kinds.Size = UDim2.fromOffset(0, 26)
+	Ui.fill(kinds, "field_select")
+	Ui.corner(kinds)
+	Ui.pad(kinds, 2)
+	Ui.list(kinds, 2, true)
+	kinds.Parent = owner
+	local kindWorker = segment(kinds, "Worker", 1)
+	local kindNtfy = segment(kinds, "ntfy", 2)
+
 	local urlBox = Instance.new("TextBox")
-	urlBox.LayoutOrder = 2
-	urlBox.Size = UDim2.new(1, -8, 0, 26)
+	urlBox.LayoutOrder = 3
+	urlBox.Size = UDim2.new(1, 0, 0, 28)
 	urlBox.ClearTextOnFocus = false
 	urlBox.PlaceholderText = "Relay URL (blank = community default)"
+	urlBox.PlaceholderColor3 = Ui.color("text3")
 	urlBox.Text = ""
 	urlBox.TextXAlignment = Enum.TextXAlignment.Left
-	urlBox.Font = Enum.Font.BuilderSans
-	urlBox.TextSize = 14
-	urlBox.BorderSizePixel = 1
+	urlBox.FontFace = Ui.FONT
+	urlBox.TextSize = Ui.TEXT_SM
+	urlBox.TextColor3 = Ui.color("text")
+	urlBox.TextTruncate = Enum.TextTruncate.AtEnd
+	Ui.fill(urlBox, "field_select")
+	Ui.corner(urlBox)
+	local urlStroke = Ui.stroke(urlBox, "border")
+	Ui.pad(urlBox, 0, 9, 0, 9)
 	urlBox.Parent = owner
-	local saveButton = newButton(owner, 3, "Save to place")
-	local resolved = newLabel(owner, 4, "")
-	resolved.TextSize = 12
+	urlBox.Focused:Connect(function()
+		urlStroke.Color = Ui.color("check_on")
+		urlStroke.Transparency = 0.45
+	end)
+	urlBox.FocusLost:Connect(function()
+		urlStroke.Color = Ui.color("border")
+		urlStroke.Transparency = Ui.alpha("border")
+	end)
 
-	local httpNote = newLabel(list, 6, HTTP_NOTE)
-	httpNote.TextSize = 12
+	local saveButton = Ui.button(owner, "Save to place", false, 4)
+	saveButton.Size = UDim2.fromOffset(110, 28)
+	local resolved = Ui.text(owner, "", { size = Ui.TEXT_XS, color = "text3", order = 5 })
+
+	local httpNote = Ui.card(scroll, 6)
 	httpNote.Visible = false
+	Ui.text(httpNote, HTTP_NOTE, { size = Ui.TEXT_XS, color = "text2" })
 
-	-- "While you were away": the value-less catch-up list, hidden until a
-	-- summary arrives on connect.
-	local catchup = Instance.new("Frame")
+	-- "While you were away", hidden until something changed.
+	local catchup = Ui.card(scroll, 7, 4)
 	catchup.Name = "Catchup"
-	catchup.LayoutOrder = 7
-	catchup.Size = UDim2.new(1, -8, 0, 0)
-	catchup.AutomaticSize = Enum.AutomaticSize.Y
-	catchup.BackgroundTransparency = 1
 	catchup.Visible = false
-	catchup.Parent = list
-	local catchupLayout = Instance.new("UIListLayout")
-	catchupLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	catchupLayout.Padding = UDim.new(0, 2)
-	catchupLayout.Parent = catchup
+	local head = Ui.frame(catchup, 1)
+	local title = Ui.text(head, "While you were away", { size = Ui.TEXT_XS, font = Ui.FONT_SEMIBOLD, wrap = false })
+	title.Size = UDim2.new(1, -60, 0, 16)
+	local dismiss = Ui.link(head, "Dismiss")
+	dismiss.TextColor3 = Ui.color("text3")
+	dismiss.FontFace = Ui.FONT
+	dismiss.AnchorPoint = Vector2.new(1, 0)
+	dismiss.Position = UDim2.fromScale(1, 0)
+	local catchupBody = Ui.frame(catchup, 2)
+	Ui.list(catchupBody, 3)
 
-	local self: Widget = setmetatable({
+	local rows = Ui.frame(scroll, 8)
+	Ui.list(rows, 10)
+
+	self = setmetatable({
 		gui = gui,
 		enabled = false,
 		relayKind = "worker",
-		toggle = toggle,
-		note = note,
+		switch = switch,
 		status = status,
 		advanced = advanced,
 		owner = owner,
-		kindButton = kindButton,
+		kindWorker = kindWorker,
+		kindNtfy = kindNtfy,
 		urlBox = urlBox,
-		saveButton = saveButton,
 		resolved = resolved,
 		httpNote = httpNote,
 		catchup = catchup,
-		catchupRows = {},
-		rows = {},
-		list = list,
-		users = {},
+		catchupBody = catchupBody,
+		rows = rows,
+		onViewChanges = callbacks.onViewChanges,
 		connections = {},
 	}, Widget)
+	self:showKind()
 
-	table.insert(self.connections, toggle.Activated:Connect(callbacks.onToggle))
 	table.insert(
 		self.connections,
 		advanced.Activated:Connect(function()
 			owner.Visible = not owner.Visible
-			advanced.Text = if owner.Visible then "Owner setup ▾" else "Owner setup ▸"
+			advanced.Text = if owner.Visible then "Hide advanced" else "Show advanced"
 		end)
 	)
 	table.insert(
 		self.connections,
-		kindButton.Activated:Connect(function()
-			self.relayKind = if self.relayKind == "ntfy" then "worker" else "ntfy"
-			kindButton.Text = if self.relayKind == "ntfy" then "ntfy" else "Worker"
+		kindWorker.Activated:Connect(function()
+			self.relayKind = "worker"
+			self:showKind()
+		end)
+	)
+	table.insert(
+		self.connections,
+		kindNtfy.Activated:Connect(function()
+			self.relayKind = "ntfy"
+			self:showKind()
 		end)
 	)
 	table.insert(
@@ -203,53 +218,38 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	)
 	table.insert(
 		self.connections,
-		(settings() :: any).Studio.ThemeChanged:Connect(function()
-			self:applyTheme()
+		dismiss.Activated:Connect(function()
+			self.catchup.Visible = false
 		end)
 	)
-	self:applyTheme()
 	return self
 end
 
-function Widget.applyTheme(self: Widget)
-	self.list.BackgroundColor3 = themeColor(Enum.StudioStyleGuideColor.MainBackground)
-	self.list.ScrollBarImageColor3 = themeColor(Enum.StudioStyleGuideColor.ScrollBar)
-	for _, label in { self.note, self.status, self.resolved, self.httpNote } do
-		label.TextColor3 = themeColor(Enum.StudioStyleGuideColor.MainText)
-	end
-	for _, button in { self.toggle, self.advanced, self.kindButton, self.saveButton } do
-		button.BackgroundColor3 = themeColor(Enum.StudioStyleGuideColor.Button)
-		button.BorderColor3 = themeColor(Enum.StudioStyleGuideColor.ButtonBorder)
-		button.TextColor3 = themeColor(Enum.StudioStyleGuideColor.ButtonText)
-	end
-	self.urlBox.BackgroundColor3 = themeColor(Enum.StudioStyleGuideColor.InputFieldBackground)
-	self.urlBox.BorderColor3 = themeColor(Enum.StudioStyleGuideColor.InputFieldBorder)
-	self.urlBox.TextColor3 = themeColor(Enum.StudioStyleGuideColor.MainText)
-	self.urlBox.PlaceholderColor3 = themeColor(Enum.StudioStyleGuideColor.DimmedText)
-	for _, row in self.rows do
-		for _, child in row:GetChildren() do
-			if child:IsA("TextLabel") then
-				child.TextColor3 = themeColor(
-					if child.Name == "Detail" then Enum.StudioStyleGuideColor.DimmedText else Enum.StudioStyleGuideColor.MainText
-				)
-			end
-		end
+-- The segmented control's active half: `accent_soft` behind `check_on`.
+function Widget.showKind(self: Widget)
+	for _, pair in { { self.kindWorker, "worker" }, { self.kindNtfy, "ntfy" } } do
+		local button, kind = pair[1] :: TextButton, pair[2] :: string
+		local active = self.relayKind == kind
+		Ui.fill(button, if active then "accent_soft" else "field_select")
+		button.TextColor3 = Ui.color(if active then "check_on" else "text2")
+		button.FontFace = if active then Ui.FONT_SEMIBOLD else Ui.FONT
 	end
 end
 
 function Widget.setEnabled(self: Widget, on: boolean)
 	self.enabled = on
-	self.toggle.Text = if on then "Disconnect" else "Connect"
+	self.switch.set(on)
 end
 
-function Widget.setStatus(self: Widget, text: string)
+function Widget.setStatus(self: Widget, text: string, failed: boolean?)
 	self.status.Text = text
+	self.status.TextColor3 = Ui.color(if failed then "text_error" else "text2")
 end
 
--- Owner setup: show the kind, prefill the URL, and describe the relay in use.
+-- Owner setup: show the kind, prefill the URL, and say which relay is in use.
 function Widget.setRelay(self: Widget, kind: string, url: string, isCommunity: boolean)
 	self.relayKind = kind
-	self.kindButton.Text = if kind == "ntfy" then "ntfy" else "Worker"
+	self:showKind()
 	if not isCommunity then
 		self.urlBox.Text = url
 		self.resolved.Text = `Relay: {url} ({kind})`
@@ -262,40 +262,38 @@ function Widget.showHttpNote(self: Widget, show: boolean)
 	self.httpNote.Visible = show
 end
 
--- "While you were away": one line per author, value-less, mirroring the
--- rbx-native dock. `nil` or an empty summary hides the block.
+-- "While you were away": one line per author (value-less, as rbx-native's
+-- dock words it), then how many instances changed and "View changes" when
+-- there is anything to show. `nil` or an empty summary hides the card.
 function Widget.setCatchup(self: Widget, summary: any?)
-	for _, label in self.catchupRows do
-		label:Destroy()
+	for _, child in self.catchupBody:GetChildren() do
+		if not child:IsA("UIListLayout") then
+			child:Destroy()
+		end
 	end
-	table.clear(self.catchupRows)
 	if not summary or #summary.authors == 0 then
 		self.catchup.Visible = false
 		return
 	end
 	self.catchup.Visible = true
 	local order = 0
-	local function add(text: string, dim: boolean): TextLabel
-		order += 1
-		local label = newLabel(self.catchup, order, text)
-		label.TextSize = if dim then 12 else 13
-		label.TextColor3 = themeColor(
-			if dim then Enum.StudioStyleGuideColor.DimmedText else Enum.StudioStyleGuideColor.MainText
-		)
-		table.insert(self.catchupRows, label)
-		return label
-	end
-	add("While you were away", false)
 	for _, author in summary.authors do
-		add(Catchup.authorLine(author), true)
+		order += 1
+		Ui.text(self.catchupBody, Catchup.authorLine(author), { size = Ui.TEXT_XS, color = "text2", order = order })
 	end
-	add("Edit values are not shared; see the place history for details.", true)
+	local view = Ui.link(self.catchupBody, "View changes", order + 1)
+	view.Activated:Connect(function()
+		self.onViewChanges()
+	end)
 end
 
-local function detailOf(user: any): string
-	local parts: { string } = {}
+local function detailLines(user: any): { string }
+	local lines: { string } = {}
+	if #user.selection > 0 then
+		table.insert(lines, `Selected: {#user.selection}`)
+	end
 	if user.script then
-		table.insert(parts, `has {user.script} open`)
+		table.insert(lines, `Has {user.script} open`)
 	end
 	local newest: any = nil
 	for _, edit in user.edits do
@@ -304,54 +302,40 @@ local function detailOf(user: any): string
 		end
 	end
 	if newest then
-		table.insert(parts, `{newest.path}.{newest.property} = {tostring(newest.value)}`)
+		table.insert(lines, `{newest.property} of {newest.path} -> {tostring(newest.value)}`)
 	end
-	return table.concat(parts, "\n")
+	return lines
 end
 
+-- One row per rbx-native collaborator: their colour's dot, the name, "Sending
+-- presence", then what they have selected, open and last edited.
 function Widget.setUsers(self: Widget, users: { any })
-	for _, row in self.rows do
-		row:Destroy()
-	end
-	table.clear(self.rows)
-	self.users = users
-
-	local order = 10
-	for _, user in users do
-		if user.client == "rbx-native" then
-			order += 1
-			local row = Instance.new("Frame")
-			row.LayoutOrder = order
-			row.Size = UDim2.new(1, -8, 0, 20)
-			row.AutomaticSize = Enum.AutomaticSize.Y
-			row.BackgroundTransparency = 1
-
-			local swatch = Instance.new("Frame")
-			swatch.Name = "Swatch"
-			swatch.Size = UDim2.fromOffset(12, 12)
-			swatch.Position = UDim2.fromOffset(0, 4)
-			swatch.BorderSizePixel = 0
-			swatch.BackgroundColor3 = parseColor(user.color)
-			swatch.Parent = row
-
-			local name = newLabel(row, 1, user.name)
-			name.Name = "Name"
-			name.Position = UDim2.fromOffset(18, 0)
-			name.Size = UDim2.new(1, -18, 0, 20)
-
-			local detail = detailOf(user)
-			if detail ~= "" then
-				local d = newLabel(row, 2, detail)
-				d.Name = "Detail"
-				d.TextSize = 12
-				d.Position = UDim2.fromOffset(18, 20)
-				d.Size = UDim2.new(1, -18, 0, 16)
-			end
-			row.Parent = self.list
-			table.insert(self.rows, row)
+	for _, child in self.rows:GetChildren() do
+		if not child:IsA("UIListLayout") then
+			child:Destroy()
 		end
 	end
-	self:applyTheme()
+	for index, user in users do
+		if user.client == "rbx-native" then
+			local row = Ui.frame(self.rows, index)
+			Ui.list(row, 3)
+			local line = Ui.frame(row, 1)
+			Ui.list(line, 8, true)
+			Ui.dot(line, Ui.hex(user.color), 10).LayoutOrder = 1
+			local name = Ui.text(line, user.name, { size = Ui.TEXT_XS, order = 2, wrap = false })
+			name.AutomaticSize = Enum.AutomaticSize.X
+			name.Size = UDim2.fromOffset(0, 16)
+			local state = Ui.text(line, "Sending presence", { size = Ui.TEXT_XS, color = "text3", order = 3, wrap = false })
+			state.AutomaticSize = Enum.AutomaticSize.X
+			state.Size = UDim2.fromOffset(0, 16)
+			for i, text in detailLines(user) do
+				local detail = Ui.text(row, text, { size = Ui.TEXT_XS, color = "text2", order = 1 + i })
+				local pad = Instance.new("UIPadding")
+				pad.PaddingLeft = UDim.new(0, 18)
+				pad.Parent = detail
+			end
+		end
+	end
 end
 
 function Widget.destroy(self: Widget)

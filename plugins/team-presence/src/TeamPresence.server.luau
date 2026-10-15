@@ -5,6 +5,7 @@ local Auth = require(script.Auth)
 local Capture = require(script.Capture)
 local Catchup = require(script.Catchup)
 local Defaults = require(script.Defaults)
+local DiffWindow = require(script.DiffWindow)
 local Markers = require(script.Markers)
 local Relay = require(script.Relay)
 local Schema = require(script.Schema)
@@ -14,6 +15,9 @@ local Widget = require(script.Widget)
 local Players = game:GetService("Players")
 
 local HEARTBEAT = 5
+-- How often the last-seen time is saved while connected: what arrives while
+-- connected is seen live, so the next catch-up starts after it.
+local LAST_SEEN_EVERY = 30
 local TICK = 0.2
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
@@ -27,6 +31,9 @@ local capture: any = nil
 local markers: any = nil
 local relay: any = nil
 local widget: any = nil
+local diffWindow: any = nil
+-- The journal the last "While you were away" came from, for View changes.
+local lastEntries: { any } = {}
 
 local function userId(): number
 	local id = Players.LocalPlayer and Players.LocalPlayer.UserId or 0
@@ -41,7 +48,20 @@ local function userId(): number
 	return id
 end
 
+local function lastSeenKey(): string
+	return "LastSeen_" .. tostring(game.PlaceId)
+end
+
+local function saveLastSeen()
+	if game.PlaceId ~= 0 then
+		plugin:SetSetting(lastSeenKey(), DateTime.now().UnixTimestampMillis)
+	end
+end
+
 local function stop()
+	if relay then
+		saveLastSeen()
+	end
 	generation += 1
 	if relay then
 		relay:leave()
@@ -103,16 +123,20 @@ local function start()
 	-- edits since this client last left this place (kept in plugin settings
 	-- per place, mirroring rbx-native's on-disk last-seen).
 	task.spawn(function()
-		local sinceKey = "LastSeen_" .. tostring(game.PlaceId)
-		local since = tonumber(plugin:GetSetting(sinceKey)) or 0
+		local since = tonumber(plugin:GetSetting(lastSeenKey())) or 0
 		local entries = myRelay:journal(since)
 		if generation ~= myGen then
 			return
 		end
 		if entries then
+			lastEntries = entries
 			widget:setCatchup(Catchup.summarize(entries))
 		end
-		plugin:SetSetting(sinceKey, DateTime.now().UnixTimestampMillis)
+		-- From here on, changes arrive live; keep the mark moving.
+		while generation == myGen do
+			saveLastSeen()
+			task.wait(LAST_SEEN_EVERY)
+		end
 	end)
 
 	task.spawn(function()
@@ -129,7 +153,7 @@ local function start()
 					lastPublish = os.clock()
 					backoff = 0
 				else
-					widget:setStatus(err or "Publish failed")
+					widget:setStatus(err or "Publish failed", true)
 					backoff = nextBackoff(backoff)
 					lastPublish = os.clock()
 					task.wait(backoff)
@@ -173,7 +197,7 @@ local function start()
 				-- ntfy polls return at once; pace them so we don't spin.
 				task.wait(myRelay:pollDelay())
 			else
-				widget:setStatus(err or "Poll failed")
+				widget:setStatus(err or "Poll failed", true)
 				backoff = nextBackoff(backoff)
 				task.wait(backoff)
 			end
@@ -204,6 +228,12 @@ end
 widget = Widget.new(plugin, {
 	onToggle = function()
 		apply(not enabled)
+	end,
+	onViewChanges = function()
+		if not diffWindow then
+			diffWindow = DiffWindow.new(plugin)
+		end
+		diffWindow:show(lastEntries)
 	end,
 	onSaveRelay = function(kind: string, url: string)
 		-- Owner setup: write the relay into the place (empty URL clears it).

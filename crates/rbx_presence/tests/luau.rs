@@ -523,3 +523,42 @@ fn syntax_all() {
     }
     assert!(seen > 0, "no .luau files found");
 }
+
+#[test]
+fn data_changes_group_by_instance() {
+    let lua = new_lua();
+    let entries: Table = lua
+        .load(
+            r#"return {
+                { userId = 1, name = "Ana", path = "Workspace.Ramp", property = "Size", at = 1000 },
+                { userId = 2, name = "Cleo", path = "Workspace.Ramp", property = "Size", at = 3000 },
+                { userId = 1, name = "Ana", path = "Workspace.Ramp", property = "Anchored", at = 1500 },
+                { userId = 1, name = "Ana", path = "Lighting", property = "ClockTime", at = 2000 },
+            }"#,
+        )
+        .eval()
+        .unwrap();
+    let from = func(&lua, "Changes", "fromJournal");
+    let changes: Table = from.call(entries).unwrap();
+    assert_eq!(changes.raw_len(), 2);
+
+    // Newest edit first: the Ramp (3000) before Lighting (2000).
+    let ramp: Table = changes.get(1).unwrap();
+    assert_eq!(ramp.get::<String>("name").unwrap(), "Ramp");
+    assert_eq!(ramp.get::<String>("parent").unwrap(), "Workspace");
+    let props: Table = ramp.get("properties").unwrap();
+    let first: Table = props.get(1).unwrap();
+    assert_eq!(first.get::<String>("property").unwrap(), "Anchored");
+    let size: Table = props.get(2).unwrap();
+    assert_eq!(size.get::<f64>("edits").unwrap(), 2.0);
+    let authors: Table = size.get("authors").unwrap();
+    assert_eq!(authors.get::<String>(1).unwrap(), "Cleo");
+    assert_eq!(authors.get::<String>(2).unwrap(), "Ana");
+
+    let lighting: Table = changes.get(2).unwrap();
+    assert_eq!(lighting.get::<String>("parent").unwrap(), "game");
+
+    let ago = func(&lua, "Changes", "ago");
+    let text: String = ago.call((0.0, 240_000.0)).unwrap();
+    assert_eq!(text, "4 min ago");
+}

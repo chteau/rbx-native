@@ -231,6 +231,8 @@ impl Shell {
         let status = h_flex().w_full().gap_2().px_2().items_center().child(
             div()
                 .flex_1()
+                // Wraps inside the dock rather than running off its edge.
+                .min_w_0()
                 .text_size(tokens::text_xs())
                 .text_color(if failed {
                     tokens::text_error()
