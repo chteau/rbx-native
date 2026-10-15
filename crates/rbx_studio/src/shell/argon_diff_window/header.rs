@@ -192,7 +192,7 @@ impl ArgonDiffWindow {
                             .text_size(tokens::text_sm())
                             .line_height(tokens::line_sm())
                             .text_color(tokens::text3())
-                            .child("Edit values that this editor cannot read are shown as blank."),
+                            .child("A read-only view \u{2014} these changes are already in your place."),
                     )
                 })
                 .child(div().flex_1())

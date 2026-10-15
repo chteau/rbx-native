@@ -190,6 +190,25 @@ impl ArgonDiffWindow {
             .pt(px(16.))
             .pb(px(20.))
             .px(px(if narrow { 14. } else { 20. }));
+        // Whether any of the three sections below will render; a bare leaf
+        // (no changed properties, no source, nothing nested) gets a tidy
+        // line instead of an empty void.
+        let has_properties = node.kind != ChangeKind::Removed && !node.properties.is_empty();
+        let has_source = node.source.is_some();
+        let has_contents = node.kind != ChangeKind::Updated && node.nested > 0;
+        if !has_properties && !has_source && !has_contents {
+            let line = match node.kind {
+                ChangeKind::Removed => "This instance was removed, with nothing left to inspect.",
+                _ => "No properties set on this instance.",
+            };
+            return body.child(
+                div()
+                    .text_size(tokens::text_sm())
+                    .line_height(tokens::line_sm())
+                    .text_color(tokens::text3())
+                    .child(line),
+            );
+        }
         if node.kind != ChangeKind::Removed && !node.properties.is_empty() {
             body = body
                 .child(section_label("PROPERTIES", None))
