@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-15
+
+- **Game-printed tables as trees in the Output.** During Play, a table a
+  game script prints opens as the same expandable tree as a Command Bar
+  print, and the row names the script and line that printed it (Show
+  Source), which a click opens. Play inserts a `print` stand-in at the
+  start of each game script in the published copy, on the first line, so
+  line numbers stay as written. — @chteau
+
 ## 2026-10-14
 
 - **Test purchases during Play.** Game passes, developer products, catalog

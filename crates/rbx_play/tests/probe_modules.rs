@@ -11,6 +11,25 @@ fn compiles(name: &str, source: &str) {
     }
 }
 
+const SERVER: &str = include_str!("../src/probe/server.luau");
+const CLIENT: &str = include_str!("../src/probe/client.luau");
+const PRINT: &str = include_str!("../src/probe/print.luau");
+
+#[test]
+fn server_compiles() {
+    compiles("server.luau", SERVER);
+}
+
+#[test]
+fn client_compiles() {
+    compiles("client.luau", CLIENT);
+}
+
+#[test]
+fn print_compiles() {
+    compiles("print.luau", PRINT);
+}
+
 #[test]
 fn codec_compiles() {
     compiles("codec.luau", CODEC);

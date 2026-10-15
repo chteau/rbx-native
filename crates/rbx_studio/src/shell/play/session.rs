@@ -91,20 +91,7 @@ pub(crate) fn instrument_scripts(
 /// reported in the returned warnings.
 pub(crate) fn mock_purchases(copy: &mut WeakDom) -> Vec<String> {
     let mut warnings = Vec::new();
-    let mut stack: Vec<Ref> = copy.root_refs().to_vec();
-    let mut scripts = Vec::new();
-    while let Some(r) = stack.pop() {
-        let Some(inst) = copy.get(r) else {
-            continue;
-        };
-        stack.extend(inst.children().iter().copied());
-        if matches!(inst.class(), "Script" | "LocalScript" | "ModuleScript")
-            && !inst.name().starts_with("__rbxnative")
-        {
-            scripts.push((r, inst.name().to_string()));
-        }
-    }
-    for (script, name) in scripts {
+    for (script, name) in game_scripts(copy) {
         let Some(source) = crate::script_editor::source::read(copy, script) else {
             continue;
         };
@@ -129,6 +116,55 @@ pub(crate) fn mock_purchases(copy: &mut WeakDom) -> Vec<String> {
     warnings
 }
 
+/// Every script of the game's own (not the probe's) with its name.
+fn game_scripts(copy: &WeakDom) -> Vec<(Ref, String)> {
+    let mut stack: Vec<Ref> = copy.root_refs().to_vec();
+    let mut scripts = Vec::new();
+    while let Some(r) = stack.pop() {
+        let Some(inst) = copy.get(r) else {
+            continue;
+        };
+        stack.extend(inst.children().iter().copied());
+        if matches!(inst.class(), "Script" | "LocalScript" | "ModuleScript")
+            && !inst.name().starts_with("__rbxnative")
+        {
+            scripts.push((r, inst.name().to_string()));
+        }
+    }
+    scripts
+}
+
+/// Game scripts' `print` goes through the probe's structured stand-in, so a
+/// printed table reaches the Output as a tree (see `rbx_play::print`). A
+/// script that cannot be rewritten keeps its source and is reported in the
+/// returned warnings.
+pub(crate) fn structured_prints(copy: &mut WeakDom) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for (script, name) in game_scripts(copy) {
+        let Some(source) = crate::script_editor::source::read(copy, script) else {
+            continue;
+        };
+        let result = rbx_play::print::rewrite(&source).and_then(|rewritten| match rewritten {
+            Some(new) => {
+                rbx_lua::compile_check(&new, &name).map_err(|err| err.to_string())?;
+                Ok(Some(new))
+            }
+            None => Ok(None),
+        });
+        match result {
+            Ok(Some(new)) => {
+                crate::script_editor::source::write(copy, script, &new);
+            }
+            Ok(None) => {}
+            Err(err) => warnings.push(format!(
+                "{name} could not be prepared to print tables as trees ({err}); its printed \
+                 tables show as plain text in this test."
+            )),
+        }
+    }
+    warnings
+}
+
 /// Clones `dom`, instruments `debug`'s scripts, injects the probe, encodes
 /// it as a binary place with `crate::save::Format::Binary.encode`, and runs
 /// `preflight`. A `TooLarge` finding is an `Err` (its `preflight_text`); the
@@ -140,6 +176,7 @@ pub(crate) fn prepare(
 ) -> Result<Prepared, String> {
     let mut copy = dom.clone();
     let mut warnings = mock_purchases(&mut copy);
+    warnings.extend(structured_prints(&mut copy));
     let (debug, instrument_warnings) = instrument_scripts(&mut copy, debug);
     warnings.extend(instrument_warnings);
     rbx_play::inject::inject(&mut copy, probe).map_err(|err| match err {

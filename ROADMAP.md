@@ -1841,6 +1841,18 @@ Roblox's own engine.
   (plain text, no trees) round out Studio's list. A click flips one table
   against that default. All five toggles persist in settings
   (`OutputDisplay`).
+- [x] **Output window: game-printed tables as trees.** A table `print`ed
+  by the running game is the same expandable tree as a Command Bar one,
+  not a flat `table: 0x…` line. `LogService.MessageOut` only hands the
+  probe a string, so Play rewrites the published copy of each game script
+  that says `print`: a `local print = …wrap(print);` goes in front of its
+  first token, on that same line, so line numbers and `--!` directives stay
+  put (`rbx_play::print`). The probe's `__rbxnative_print` module walks the
+  arguments with the Command Bar's rules (keys sorted, cycles cut, 200
+  entries and 8 levels deep) and notes the caller's script and line. The
+  probe pairs that record with the `MessageOut` line it causes. As a bonus,
+  a game `print` now carries its `Script:line` for **Show Source**, and a
+  click opens it.
 - [x] **The viewport no longer goes black, with the render thread's stats
   frozen, after a scripted full reload**
   (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`). Fixed by `ab24e6e`, five hours after
@@ -2699,12 +2711,9 @@ Roblox's own engine.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
-- [ ] 📋 **Output window: what still has no producer.** A `print`ed
-  table from the running game is a flat `table: 0x…` line, not an
-  expandable tree: `LogService.MessageOut` hands the probe a string, so a
-  game-side tree needs the probe to walk the table itself. The context
-  filter has no **User Plugin** bucket, since this editor runs no plugins
-  to produce one.
+- [ ] 📋 **Output window: a User Plugin context.** The context filter has
+  no **User Plugin** bucket, since this editor runs no plugins to produce
+  one. It belongs to whatever first runs plugin code in the editor.
 - [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/

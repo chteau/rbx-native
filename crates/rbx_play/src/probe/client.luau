@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local codec = require(ReplicatedStorage:WaitForChild("__rbxnative_codec"))
 local Live = require(ReplicatedStorage:WaitForChild("__rbxnative_live"))
 local Debug = require(ReplicatedStorage:WaitForChild("__rbxnative_debug"))
+local Print = require(ReplicatedStorage:WaitForChild("__rbxnative_print"))
 -- Game scripts' MarketplaceService is rewritten to this module's proxy
 -- (test purchases); start it before any of them prompts.
 require(ReplicatedStorage:WaitForChild("__rbxnative_market")).start()
@@ -21,11 +22,19 @@ local levels = {
 }
 
 LogService.MessageOut:Connect(function(message, messageType)
-	table.insert(buffer, {
+	local entry = {
 		level = levels[messageType] or "output",
 		message = message,
 		time = os.clock() - t0,
-	})
+	}
+	if entry.level == "output" then
+		local record = Print.take(message)
+		if record then
+			entry.parts = record.parts
+			entry.origin = record.origin
+		end
+	end
+	table.insert(buffer, entry)
 end)
 
 local live = Live.new("client", function(message)
