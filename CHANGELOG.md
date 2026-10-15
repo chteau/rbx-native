@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-15
+
+- **Plugins.** Real Roblox Studio plugins now run inside the editor: the
+  `.lua`/`.rbxm`/`.rbxmx` files in rbx-native's plugins folder and in
+  Studio's own Plugins folder (the Vinegar prefix on Linux) each get a
+  sandboxed Luau VM with an allow-listed slice of the plugin API —
+  toolbars and buttons on the Plugins tab, `DockWidgetPluginGui`s drawn by
+  the editor's own GUI renderer in a Plugin Widgets dock (clicks and text
+  input reach the plugin), `Selection`, `ChangeHistoryService`,
+  `HttpService` (each new host asks first), `RunService`, signals and
+  `task`. A plugin's `Handles`/`ArcHandles` show in the 3D view and can be
+  dragged, firing `MouseDrag`. rbx-native's own plugins describe
+  themselves in a `plugin.toml` and are either Luau (with an `rbxnative`
+  global) or WebAssembly run under `wasmtime` with a fuel budget and
+  per-permission access to the place. Every plugin also gets
+  `plugin:PromptColor3`/`PromptBrickColor` (the editor's own pickers),
+  `plugin:CreateFloatingWidget`, and `plugin:GetDebuggerManager()` to set
+  breakpoints and watches and step the script debugger. Manage Plugins
+  switches each one on or off, and plugin output has its own **User
+  Plugin** context in the Output panel. Running a real plugin turned up
+  gaps the Command Bar shares, now closed: `Font.new` takes
+  `Enum.FontWeight`/`Enum.FontStyle` items, `UDim2.new` takes two `UDim`s,
+  an object property can be cleared with `nil`, a new `Handles` shows
+  every face, and `Vector3.FromNormalId`/`FromAxis` exist. — @chteau
+
 ## 2026-10-14
 
 - **Test purchases during Play.** Game passes, developer products, catalog
