@@ -167,7 +167,33 @@ impl WeakDom {
     /// `into`'s allocator above every referent moved, so neither DOM can
     /// hand one of them out again.
     pub fn move_subtrees(&mut self, roots: &[Ref], into: &mut WeakDom) -> Vec<Ref> {
-        todo!()
+        let mut left = Vec::new();
+        for &root in roots {
+            let mut subtree = Vec::new();
+            let mut stack = vec![root];
+            while let Some(current) = stack.pop() {
+                if let Some(instance) = self.instances.get(&current) {
+                    stack.extend_from_slice(instance.children());
+                    subtree.push(current);
+                }
+            }
+            if subtree.is_empty() || subtree.iter().any(|r| into.instances.contains_key(r)) {
+                left.push(root);
+                continue;
+            }
+            self.detach(root);
+            for referent in subtree {
+                if let Some(instance) = self.instances.remove(&referent) {
+                    into.next_ref = into.next_ref.max(referent.value().saturating_add(1));
+                    into.instances.insert(referent, instance);
+                }
+                if let Some(parent) = self.parents.remove(&referent) {
+                    into.parents.insert(referent, parent);
+                }
+            }
+            into.root_refs.push(root);
+        }
+        left
     }
 
     /// The referent [`WeakDom::new_instance`] would allocate next.
