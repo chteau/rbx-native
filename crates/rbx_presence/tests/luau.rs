@@ -1,0 +1,240 @@
+//! Runs the plugin's pure Luau modules in plain Luau (mlua) against the
+//! shared golden fixtures, so the plugin and the Rust side cannot drift apart.
+
+mod common;
+
+use common::{load_module, new_lua, root, src_dir};
+use mlua::{Function, Lua, Table, Value};
+use serde_json::Value as Json;
+
+fn fixture_text(name: &str) -> String {
+    let path = root().join("plugins/team-presence/fixtures").join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn fixture_json(name: &str) -> Json {
+    serde_json::from_str(&fixture_text(name)).expect("fixture is JSON")
+}
+
+fn func(lua: &Lua, module: &str, name: &str) -> Function {
+    load_module(lua, module)
+        .unwrap()
+        .get(name)
+        .unwrap_or_else(|e| panic!("{module}.{name}: {e}"))
+}
+
+fn str_field<'a>(v: &'a Json, key: &str) -> &'a str {
+    v[key].as_str().unwrap_or_else(|| panic!("missing {key}"))
+}
+
+fn num_field(v: &Json, key: &str) -> f64 {
+    v[key].as_f64().unwrap_or_else(|| panic!("missing {key}"))
+}
+
+#[test]
+fn crypto_sha256() {
+    let lua = new_lua();
+    let hex = func(&lua, "Sha256", "hex");
+    let vectors = fixture_json("auth_vectors.json");
+    for case in vectors["sha256"].as_array().unwrap() {
+        let got: String = hex.call(str_field(case, "input")).unwrap();
+        assert_eq!(got, str_field(case, "sha256"), "input {:?}", case["input"]);
+    }
+}
+
+#[test]
+fn crypto_hmac() {
+    let lua = new_lua();
+    let hmac = func(&lua, "Hmac", "sha256Hex");
+    let vectors = fixture_json("auth_vectors.json");
+    for case in vectors["hmac"].as_array().unwrap() {
+        let got: String = hmac
+            .call((str_field(case, "key"), str_field(case, "message")))
+            .unwrap();
+        assert_eq!(got, str_field(case, "hmac"), "key {:?}", case["key"]);
+    }
+}
+
+#[test]
+fn crypto_requests() {
+    let lua = new_lua();
+    let derive = func(&lua, "Auth", "deriveKey");
+    let room = func(&lua, "Auth", "roomId");
+    let canonical = func(&lua, "Auth", "canonical");
+    let sign = func(&lua, "Auth", "sign");
+    let headers = func(&lua, "Auth", "headers");
+    let vectors = fixture_json("auth_vectors.json");
+    for case in vectors["requests"].as_array().unwrap() {
+        let key: String = derive
+            .call((str_field(case, "secret"), num_field(case, "placeId")))
+            .unwrap();
+        assert_eq!(key, str_field(case, "key"));
+        let room_id: String = room.call(key.clone()).unwrap();
+        assert_eq!(room_id, str_field(case, "room"));
+
+        let args = (
+            str_field(case, "method"),
+            str_field(case, "path"),
+            num_field(case, "userId"),
+            num_field(case, "ts"),
+            str_field(case, "body"),
+        );
+        let canon: String = canonical.call(args).unwrap();
+        assert_eq!(canon, str_field(case, "canonical"));
+        let sig: String = sign.call((key.clone(), canon)).unwrap();
+        assert_eq!(sig, str_field(case, "sig"));
+
+        let map: Table = headers
+            .call((key.clone(), args.0, args.1, args.2, args.3, args.4, true))
+            .unwrap();
+        assert_eq!(map.pairs::<Value, Value>().count(), 4);
+        let get = |name: &str| map.get::<String>(name).unwrap();
+        assert_eq!(get("X-Presence-Sig"), sig);
+        assert_eq!(get("X-Presence-Key"), key);
+        assert_eq!(get("X-Presence-Time"), format!("{:.0}", args.3));
+        assert_eq!(get("X-Presence-User"), format!("{:.0}", args.2));
+    }
+}
+
+#[test]
+fn data_json_round_trip() {
+    let lua = new_lua();
+    let decode = func(&lua, "Json", "decode");
+    let encode = func(&lua, "Json", "encode");
+    for name in ["state_studio.json", "state_native.json", "snapshot.json"] {
+        let text = fixture_text(name);
+        let text = text.trim();
+        let value: Value = decode.call(text).unwrap();
+        let again: String = encode.call(value).unwrap();
+        assert_eq!(again, text, "{name}");
+    }
+}
+
+#[test]
+fn data_schema() {
+    let lua = new_lua();
+    let decode = func(&lua, "Schema", "decodeState");
+    let encode = func(&lua, "Schema", "encode");
+    let text = fixture_text("state_studio.json");
+    let state: Table = decode.call(text.trim()).unwrap();
+    let out: String = encode.call(state).unwrap();
+    let got: Json = serde_json::from_str(&out).unwrap();
+    assert_eq!(got, serde_json::from_str::<Json>(&text).unwrap());
+
+    let decode_snapshot = func(&lua, "Schema", "decodeSnapshot");
+    let snapshot: Table = decode_snapshot
+        .call(fixture_text("snapshot.json").trim())
+        .unwrap();
+    let expected = fixture_json("snapshot.json");
+    assert_eq!(
+        snapshot.get::<f64>("cursor").unwrap(),
+        num_field(&expected, "cursor")
+    );
+    let users: Table = snapshot.get("users").unwrap();
+    let expected_users = expected["users"].as_array().unwrap();
+    assert_eq!(users.raw_len(), expected_users.len());
+    for (i, want) in expected_users.iter().enumerate() {
+        let user: Table = users.get(i + 1).unwrap();
+        assert_eq!(
+            user.get::<f64>("userId").unwrap(),
+            num_field(want, "userId")
+        );
+        assert_eq!(user.get::<String>("name").unwrap(), str_field(want, "name"));
+        assert_eq!(
+            user.get::<String>("client").unwrap(),
+            str_field(want, "client")
+        );
+    }
+
+    let color_for = func(&lua, "Schema", "colorFor");
+    for id in 0u64..20 {
+        let got: String = color_for.call(id as f64).unwrap();
+        assert_eq!(got, rbx_presence::schema::color_for(id));
+    }
+}
+
+const FAKE_TREE: &str = r#"
+local function chain(names)
+    local function node(name, parent)
+        local n = {Name = name, Parent = parent, children = {}}
+        function n.FindFirstChild(self, child)
+            for _, c in ipairs(self.children) do
+                if c.Name == child then return c end
+            end
+            return nil
+        end
+        return n
+    end
+    local root = node("game", nil)
+    local leaf = root
+    for _, name in ipairs(names) do
+        local child = node(name, leaf)
+        table.insert(leaf.children, child)
+        leaf = child
+    end
+    return root, leaf
+end
+return chain
+"#;
+
+#[test]
+fn data_paths() {
+    let lua = new_lua();
+    let join = func(&lua, "Paths", "join");
+    let split = func(&lua, "Paths", "split");
+    let path_of = func(&lua, "Paths", "pathOf");
+    let resolve = func(&lua, "Paths", "resolve");
+    let chain: Function = lua.load(FAKE_TREE).eval().unwrap();
+    let fixtures = fixture_json("paths.json");
+
+    for case in fixtures["valid"].as_array().unwrap() {
+        let names: Vec<String> = case["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_str().unwrap().to_owned())
+            .collect();
+        let path = str_field(case, "path");
+        let joined: String = join.call(names.clone()).unwrap();
+        assert_eq!(joined, path);
+        let parts: Option<Vec<String>> = split.call(path).unwrap();
+        assert_eq!(parts, Some(names.clone()));
+
+        let (root, leaf): (Table, Table) = chain.call(names).unwrap();
+        let found: Option<String> = path_of.call((leaf.clone(), root.clone())).unwrap();
+        assert_eq!(found.as_deref(), Some(path));
+        let resolved: Table = resolve.call((root.clone(), path)).unwrap();
+        assert!(resolved.equals(&leaf).unwrap(), "{path}");
+        let own: Option<String> = path_of.call((root.clone(), root)).unwrap();
+        assert_eq!(own, None);
+    }
+
+    for path in fixtures["invalid"].as_array().unwrap() {
+        let parts: Option<Vec<String>> = split.call(path.as_str().unwrap()).unwrap();
+        assert_eq!(parts, None, "{path}");
+    }
+
+    let (root, _): (Table, Table) = chain.call(vec!["Workspace".to_owned()]).unwrap();
+    let (_, stranger): (Table, Table) = chain.call(vec!["Workspace".to_owned()]).unwrap();
+    let outside: Option<String> = path_of.call((stranger, root)).unwrap();
+    assert_eq!(outside, None);
+}
+
+#[test]
+fn syntax_all() {
+    let lua = Lua::new();
+    let mut seen = 0;
+    for entry in std::fs::read_dir(src_dir()).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("luau") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).unwrap();
+        lua.load(src)
+            .set_name(format!("={}", path.display()))
+            .into_function()
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        seen += 1;
+    }
+    assert!(seen > 0, "no .luau files found");
+}

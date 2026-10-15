@@ -1,0 +1,130 @@
+//! The presence message, identical in both directions: the plugin's Luau
+//! encoder (`plugins/team-presence/src/Schema.luau`) and these types read and
+//! write the same JSON, checked against the shared golden files in
+//! `plugins/team-presence/fixtures/`.
+//!
+//! Field names are camelCase. A missing `camera` or `script` means "none":
+//! a Luau table cannot hold `nil`, so the plugin leaves the key out rather
+//! than writing `null`, and both are accepted here.
+
+use serde::{Deserialize, Serialize};
+
+/// The `v` every message carries; a relay or client drops other versions.
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// Largest request or WebSocket message body the relay accepts, in bytes.
+pub const MAX_BODY_BYTES: usize = 16 * 1024;
+/// Most selection paths one message carries; extra ones are dropped by the
+/// sender (the relay rejects the message instead).
+pub const MAX_SELECTION: usize = 100;
+/// Most recent edits one message carries.
+pub const MAX_EDITS: usize = 20;
+/// Longest path, property, value or name string, in UTF-8 bytes.
+pub const MAX_TEXT: usize = 512;
+/// A user the relay has not heard from for this long is dropped.
+pub const EXPIRY_MS: u64 = 15_000;
+/// How often a client re-sends its state when nothing changed.
+pub const HEARTBEAT_MS: u64 = 5_000;
+
+/// Which editor a user is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Client {
+    #[serde(rename = "studio")]
+    Studio,
+    #[serde(rename = "rbx-native")]
+    RbxNative,
+}
+
+/// One user's presence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserState {
+    /// Always [`SCHEMA_VERSION`].
+    pub v: u32,
+    /// The Roblox user id (below 2^53, so a Luau number holds it exactly).
+    pub user_id: u64,
+    pub name: String,
+    /// `#rrggbb`, lower case.
+    pub color: String,
+    pub client: Client,
+    /// The camera as `CFrame:GetComponents()` orders it: position x, y, z,
+    /// then the rotation matrix row by row (R00 R01 R02 R10 … R22).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<[f64; 12]>,
+    /// Selected instances, as [`crate::paths`] paths.
+    #[serde(default)]
+    pub selection: Vec<String>,
+    /// The script open in the editor (Studio's `StudioService.ActiveScript`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<String>,
+    /// Recent property edits, oldest first.
+    #[serde(default)]
+    pub edits: Vec<Edit>,
+    /// Unix milliseconds the relay last heard from this user; written by the
+    /// relay, 0 from a sender.
+    #[serde(default)]
+    pub seen: u64,
+}
+
+/// One property edit someone made.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Edit {
+    pub path: String,
+    pub property: String,
+    /// The new value as short display text (at most [`MAX_TEXT`] bytes).
+    pub value: String,
+    /// Unix milliseconds.
+    pub at: u64,
+}
+
+/// What the relay sends: everyone in the room, the receiver included (a
+/// client skips its own `user_id`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Snapshot {
+    /// Grows by one each time the room changes; a long-poll waits for a
+    /// cursor past the one it names.
+    pub cursor: u64,
+    pub users: Vec<UserState>,
+}
+
+/// The colour a user gets when they have not picked one: the same eight
+/// colours, in the same order, as `Schema.colorFor` in the plugin.
+pub const PALETTE: [&str; 8] = [
+    "#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f08c00", "#0c8599", "#e03131", "#7048e8",
+];
+
+/// `PALETTE[user_id % 8]`.
+pub fn color_for(user_id: u64) -> &'static str {
+    PALETTE[(user_id % PALETTE.len() as u64) as usize]
+}
+
+impl UserState {
+    /// Cuts the lists and strings down to the limits above, so the relay
+    /// never refuses a message for its size. Truncates strings on a char
+    /// boundary; keeps the first selections and the newest edits.
+    pub fn clamp(&mut self) {
+        fn cut(text: &mut String) {
+            if text.len() > MAX_TEXT {
+                let mut end = MAX_TEXT;
+                while !text.is_char_boundary(end) {
+                    end -= 1;
+                }
+                text.truncate(end);
+            }
+        }
+        cut(&mut self.name);
+        self.selection.truncate(MAX_SELECTION);
+        self.selection.iter_mut().for_each(cut);
+        if let Some(script) = &mut self.script {
+            cut(script);
+        }
+        if self.edits.len() > MAX_EDITS {
+            self.edits.drain(..self.edits.len() - MAX_EDITS);
+        }
+        for edit in &mut self.edits {
+            cut(&mut edit.path);
+            cut(&mut edit.property);
+            cut(&mut edit.value);
+        }
+    }
+}

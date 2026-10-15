@@ -1,0 +1,51 @@
+{
+  "valid": [
+    {
+      "names": [
+        "Workspace",
+        "Baseplate"
+      ],
+      "path": "Workspace.Baseplate"
+    },
+    {
+      "names": [
+        "Workspace",
+        "Model.v2",
+        "Part"
+      ],
+      "path": "Workspace.Model\\.v2.Part"
+    },
+    {
+      "names": [
+        "ReplicatedStorage",
+        "a\\b"
+      ],
+      "path": "ReplicatedStorage.a\\\\b"
+    },
+    {
+      "names": [
+        "Workspace",
+        "..."
+      ],
+      "path": "Workspace.\\.\\.\\."
+    },
+    {
+      "names": [
+        "Teleport Service"
+      ],
+      "path": "Teleport Service"
+    },
+    {
+      "names": [
+        "ServerScriptService",
+        "Été"
+      ],
+      "path": "ServerScriptService.Été"
+    }
+  ],
+  "invalid": [
+    "Workspace.Part\\",
+    "Workspace\\x",
+    ""
+  ]
+}

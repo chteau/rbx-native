@@ -1,0 +1,125 @@
+//! Packs the Studio plugin's Luau sources into an installable `.rbxmx`.
+//!
+//! The plugin is one `Script` whose children are the other modules, so the
+//! file can be dropped into Studio's plugins folder as is.
+
+use std::error::Error;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use rbx_dom::{Variant, WeakDom};
+
+const MAIN_FILE: &str = "TeamPresence.server.luau";
+const SOURCE_OPEN: &str = "<string name=\"Source\">";
+const SOURCE_CLOSE: &str = "</string>";
+
+fn plugin_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/team-presence")
+}
+
+fn build(src_dir: &Path) -> Result<String, Box<dyn Error>> {
+    let mut modules: Vec<(String, String)> = Vec::new();
+    for entry in fs::read_dir(src_dir)? {
+        let path = entry?.path();
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if file_name == MAIN_FILE || path.extension().and_then(|e| e.to_str()) != Some("luau") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        modules.push((stem.to_string(), fs::read_to_string(&path)?));
+    }
+    modules.sort();
+
+    let main_source = fs::read_to_string(src_dir.join(MAIN_FILE))?;
+    let mut dom = WeakDom::new();
+    let script = dom.new_instance("Script", "TeamPresence", None);
+    dom.set_property(script, "Source", Variant::String(main_source))?;
+    for (name, source) in modules {
+        let module = dom.new_instance("ModuleScript", &name, Some(script));
+        dom.set_property(module, "Source", Variant::String(source))?;
+    }
+
+    Ok(protect_sources(&rbx_xml::serialize(&dom)?))
+}
+
+/// Studio only loads script source from `ProtectedString` elements.
+fn protect_sources(xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len() + 256);
+    let mut rest = xml;
+    while let Some(start) = rest.find(SOURCE_OPEN) {
+        let body_start = start + SOURCE_OPEN.len();
+        let Some(len) = rest[body_start..].find(SOURCE_CLOSE) else {
+            break;
+        };
+        let body_end = body_start + len;
+        out.push_str(&rest[..start]);
+        out.push_str("<ProtectedString name=\"Source\">");
+        out.push_str(&rest[body_start..body_end]);
+        out.push_str("</ProtectedString>");
+        rest = &rest[body_end + SOURCE_CLOSE.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let plugin = plugin_dir();
+    let out = match std::env::args_os().nth(1) {
+        Some(arg) => PathBuf::from(arg),
+        None => plugin.join("build/TeamPresence.rbxmx"),
+    };
+    let xml = build(&plugin.join("src"))?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&out, xml)?;
+    println!("{}", out.display());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_round_trips_with_every_module() {
+        let src = plugin_dir().join("src");
+        let xml = build(&src).expect("build");
+        assert!(!xml.contains(SOURCE_OPEN));
+        assert!(xml.contains("<ProtectedString name=\"Source\">"));
+
+        let dom = rbx_xml::deserialize(&xml).expect("deserialize");
+        assert_eq!(dom.root_refs().len(), 1);
+        let root = dom.get(dom.root_refs()[0]).expect("root");
+        assert_eq!(root.class(), "Script");
+        assert_eq!(root.name(), "TeamPresence");
+
+        let mut expected = 0;
+        for entry in fs::read_dir(&src).expect("read src") {
+            let path = entry.expect("entry").path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name == MAIN_FILE || !name.ends_with(".luau") {
+                continue;
+            }
+            expected += 1;
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap();
+            let child = root
+                .children()
+                .iter()
+                .filter_map(|&r| dom.get(r))
+                .find(|c| c.name() == stem)
+                .unwrap_or_else(|| panic!("missing module {stem}"));
+            assert_eq!(child.class(), "ModuleScript");
+            let want = fs::read_to_string(&path).unwrap();
+            match child.properties().get("Source") {
+                Some(Variant::String(got)) => assert_eq!(got, &want, "{stem}"),
+                other => panic!("{stem}: unexpected Source {other:?}"),
+            }
+        }
+        assert_eq!(root.children().len(), expected);
+    }
+}
