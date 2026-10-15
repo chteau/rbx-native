@@ -3,6 +3,12 @@
 A small Cloudflare Worker that lets Roblox Studio (through the Team Presence
 plugin) and rbx-native show each other's cameras, selections and open scripts.
 
+**Optional.** Rooms work with no relay at all: by default (Auto) the first
+rbx-native user in the place runs this same relay (`rbx_presence::host`, a
+Rust port held to the same tests, `crates/rbx_presence/tests/relay_e2e.rs`)
+behind a Cloudflare quick tunnel, no account needed. Deploy this Worker only
+if a team wants an always-on relay of its own.
+
 ## What it keeps
 
 - Presence lives in the memory of one Durable Object per room. Nothing is
