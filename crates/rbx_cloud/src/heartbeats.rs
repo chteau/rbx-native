@@ -47,6 +47,42 @@ impl std::fmt::Debug for SessionCookie {
     }
 }
 
+/// `GET users.roblox.com/v1/users/authenticated`: who a session belongs to.
+pub const AUTHENTICATED_URL: &str = "https://users.roblox.com/v1/users/authenticated";
+
+/// The user id behind `cookie` (a session restored from the keyring carries
+/// none). `Unauthorized` when Roblox no longer accepts the cookie.
+pub fn authenticated_user_id(cookie: &SessionCookie) -> Result<u64, PulseError> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(15)))
+        .build()
+        .into();
+    let mut resp = agent
+        .get(AUTHENTICATED_URL)
+        .header("Cookie", &format!(".ROBLOSECURITY={}", cookie.value()))
+        .call()
+        .map_err(|e| PulseError::Other(e.to_string()))?;
+    let status = resp.status().as_u16();
+    let body = resp.body_mut().read_to_string().unwrap_or_default();
+    parse_authenticated(status, &body)
+}
+
+/// `{"id": N, ...}` on 200; 401/403 is a dead session.
+fn parse_authenticated(status: u16, body: &str) -> Result<u64, PulseError> {
+    match status {
+        200 => serde_json::from_str::<serde_json::Value>(body)
+            .ok()
+            .and_then(|v| v.get("id").and_then(serde_json::Value::as_u64))
+            .ok_or_else(|| PulseError::Other("users/authenticated: no id".into())),
+        401 | 403 => Err(PulseError::Unauthorized),
+        other => Err(PulseError::Other(format!(
+            "users/authenticated: HTTP {other}"
+        ))),
+    }
+}
+
 /// Where the user is, as far as presence is concerned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StudioLocation {
@@ -284,5 +320,25 @@ impl Pulser {
 impl Drop for Pulser {
     fn drop(&mut self) {
         let _ = self.sender.send(PulserMessage::Stop);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authenticated_reads_the_id_or_reports_a_dead_session() {
+        let ok = r#"{"id":925308243,"name":"x","displayName":"x"}"#;
+        assert_eq!(parse_authenticated(200, ok), Ok(925_308_243));
+        assert_eq!(parse_authenticated(401, ""), Err(PulseError::Unauthorized));
+        assert!(matches!(
+            parse_authenticated(200, "{}"),
+            Err(PulseError::Other(_))
+        ));
+        assert!(matches!(
+            parse_authenticated(500, ""),
+            Err(PulseError::Other(_))
+        ));
     }
 }

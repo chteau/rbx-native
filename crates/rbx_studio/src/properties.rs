@@ -305,6 +305,11 @@ pub(crate) struct Properties {
 }
 
 impl Properties {
+    /// The reflection data the panel reads its rows and defaults from.
+    pub(crate) fn db(&self) -> &ReflectionDatabase {
+        &self.db
+    }
+
     pub(crate) fn new(db: ReflectionDatabase) -> Self {
         Properties {
             db,

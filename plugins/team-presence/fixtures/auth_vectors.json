@@ -1,0 +1,116 @@
+{
+  "sha256": [
+    {
+      "input": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "input": "abc",
+      "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    },
+    {
+      "input": "abcdbcdecdefdefgefghfghighijhijkijkljklmjklmnklmnolmnopmnopqnopq",
+      "sha256": "9ad289b5b8ca3b67b3e1238ea026560d218cac02ee49b871795a3311874d107e"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256": "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256": "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256": "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256": "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"
+    },
+    {
+      "input": "été ☃",
+      "sha256": "b47bb60108a0466896911e295386e844388d87eb3a64b84b17115a40ec5a015f"
+    }
+  ],
+  "hmac": [
+    {
+      "key": "key",
+      "message": "The quick brown fox jumps over the lazy dog",
+      "hmac": "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+    },
+    {
+      "key": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+      "message": "exactly one block key",
+      "hmac": "e73e6474ed2f863bbf5500617c3b577e141d3c1543e1563f3630b762d038f14c"
+    },
+    {
+      "key": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+      "message": "key longer than a block",
+      "hmac": "b4fd9673bd349a5142539b59efa2ae4a06ce953951b5b10b40e05e6d599e40f8"
+    },
+    {
+      "key": "",
+      "message": "",
+      "hmac": "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
+    }
+  ],
+  "requests": [
+    {
+      "secret": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "placeId": 123425890481264,
+      "key": "1f1db67f3ea4752ee25c0d6c389bb5c746d45b3695c1776fce6509a7a7a90510",
+      "room": "ed5415f76f5e36cd4755f52b9ae322e9",
+      "method": "POST",
+      "path": "/v1/rooms/ed5415f76f5e36cd4755f52b9ae322e9/state",
+      "userId": 1234567,
+      "ts": 1760000000000,
+      "body": "{\"v\":1}",
+      "bodySha256": "afbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91",
+      "canonical": "POST\n/v1/rooms/ed5415f76f5e36cd4755f52b9ae322e9/state\n1234567\n1760000000000\nafbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91",
+      "sig": "c4a1acda0aa84f80ecae774463eefe4e64118f0866665a3f35f14c20c29dec79"
+    },
+    {
+      "secret": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "placeId": 1,
+      "key": "dca3ce975e1518f3c8511073cd175f81378dff3a00d72ab6cd6bb14ae794a396",
+      "room": "62f7ad0c9b65307426990ef120ef2fbc",
+      "method": "GET",
+      "path": "/v1/rooms/62f7ad0c9b65307426990ef120ef2fbc/poll?since=42",
+      "userId": 9007199254740991,
+      "ts": 1,
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonical": "GET\n/v1/rooms/62f7ad0c9b65307426990ef120ef2fbc/poll?since=42\n9007199254740991\n1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sig": "294ef995c2f80ec03e4015da17664eacd0aca2ee39b72e872304166215f6b996"
+    },
+    {
+      "secret": "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+      "placeId": 4567,
+      "key": "fb746b1f2b3da15286a0612e6ac332f7cf855f45b7f98ae59f8ca2172abaac8b",
+      "room": "95899b7da78494a13fa96485b6f71c6a",
+      "method": "GET",
+      "path": "/v1/rooms/95899b7da78494a13fa96485b6f71c6a/ws",
+      "userId": 42,
+      "ts": 1760000123456,
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonical": "GET\n/v1/rooms/95899b7da78494a13fa96485b6f71c6a/ws\n42\n1760000123456\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sig": "03f5e6eb359a9554e2acee4fe579bf648784fd5d0dd6c28c6bc99c03c667060d"
+    },
+    {
+      "secret": "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+      "placeId": 4567,
+      "key": "fb746b1f2b3da15286a0612e6ac332f7cf855f45b7f98ae59f8ca2172abaac8b",
+      "room": "95899b7da78494a13fa96485b6f71c6a",
+      "method": "DELETE",
+      "path": "/v1/rooms/95899b7da78494a13fa96485b6f71c6a/state",
+      "userId": 42,
+      "ts": 1760000123999,
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonical": "DELETE\n/v1/rooms/95899b7da78494a13fa96485b6f71c6a/state\n42\n1760000123999\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sig": "14270bde1e51e3e8a9e1d84b4048790b3a0a3b60429028089007ee6d146f2e7c"
+    }
+  ]
+}

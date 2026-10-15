@@ -34,7 +34,9 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         Panel::Argon => Some(Entry::ArgonAddress),
         Panel::Wally => Some(Entry::WallySearch),
         Panel::Watch => Some(Entry::WatchExpression),
-        Panel::ScriptAnalysis | Panel::CallStack | Panel::TerrainEditor => None,
+        Panel::ScriptAnalysis | Panel::CallStack | Panel::TerrainEditor | Panel::Collaborators => {
+            None
+        }
     }
 }
 

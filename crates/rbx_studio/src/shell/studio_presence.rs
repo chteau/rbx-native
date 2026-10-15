@@ -54,11 +54,21 @@ impl Shell {
             let Ok(Some(session)) = crate::key_store::read_session(cx).await else {
                 return;
             };
+            // A stored session carries no user id; team presence needs it
+            // to say who this is, so ask Roblox whose session it is.
+            let probe = session.clone();
+            let user_id = cx
+                .background_executor()
+                .spawn(async move { rbx_cloud::heartbeats::authenticated_user_id(&probe) })
+                .await
+                .ok();
             let _ = this.update(cx, |shell, cx| {
                 shell.studio_presence.session = Some(session);
+                shell.studio_presence.user_id = user_id;
                 if shell.studio_presence.enabled {
                     shell.start_studio_presence(cx);
                 }
+                shell.retry_presence_after_sign_in(cx);
             });
         })
         .detach();
@@ -161,6 +171,7 @@ impl Shell {
         if self.studio_presence.enabled {
             self.start_studio_presence(cx);
         }
+        self.retry_presence_after_sign_in(cx);
         cx.notify();
     }
 

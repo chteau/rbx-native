@@ -14,63 +14,10 @@ use crate::folder_colors::path_of;
 
 use super::{Shell, DIFF_VARIABLE};
 
-/// What one node of the batch is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ChangeKind {
-    Added,
-    Updated,
-    Removed,
-}
-
-/// One property of a change: what the DOM holds now and what the server
-/// sends. `None` on either side is "no such value": an addition has no
-/// before, a value this client can't decode has no after.
-#[derive(Debug, Clone)]
-pub(crate) struct PropertyChange {
-    pub(crate) name: String,
-    pub(crate) before: Option<Variant>,
-    pub(crate) after: Option<Variant>,
-}
-
-/// A script's source on each side; a `None` side is a script that didn't
-/// exist (an addition) or won't (a removal).
-#[derive(Debug, Clone)]
-pub(crate) struct SourceChange {
-    pub(crate) old: Option<String>,
-    pub(crate) new: Option<String>,
-}
-
-/// One change, with an addition's subtree under it.
-#[derive(Debug, Clone)]
-pub(crate) struct DiffNode {
-    /// Stable within one batch: nodes are numbered in list order.
-    pub(crate) id: usize,
-    pub(crate) kind: ChangeKind,
-    pub(crate) name: String,
-    pub(crate) class: String,
-    /// The parent's full name, `game` for a service.
-    pub(crate) path: String,
-    /// `Name` first when the change renames, then the rest by name.
-    /// `Source` never appears here; it is [`DiffNode::source`].
-    pub(crate) properties: Vec<PropertyChange>,
-    pub(crate) source: Option<SourceChange>,
-    /// An addition's own subtree, in the server's order.
-    pub(crate) children: Vec<DiffNode>,
-    /// Every descendant, however deep.
-    pub(crate) nested: usize,
-    /// Descendants by class, most first, then by name.
-    pub(crate) contents: Vec<(String, usize)>,
-}
-
-impl DiffNode {
-    pub(crate) fn full_path(&self) -> String {
-        if self.path == "game" {
-            self.name.clone()
-        } else {
-            format!("{}.{}", self.path, self.name)
-        }
-    }
-}
+// The diff tree's types live in `rbx_dom::diff`, so a pure two-DOM differ
+// (team-presence "View changes") can build the same shape the window draws.
+// The Argon review path still builds them here, its own way.
+pub(crate) use rbx_dom::diff::{ChangeKind, DiffNode, PropertyChange, SourceChange};
 
 /// A `LuaSourceContainer`: the classes whose `Source` is shown as code
 /// rather than as a property.

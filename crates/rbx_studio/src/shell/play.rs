@@ -37,7 +37,7 @@
 //! writes `reason.message()` to Output, back to `Phase::Idle`. Any start
 //! step failing stops with `StopReason::Failed`.
 
-mod cloudflared;
+pub(in crate::shell) mod cloudflared;
 pub(crate) mod debug;
 pub(crate) mod live;
 pub(crate) mod session;

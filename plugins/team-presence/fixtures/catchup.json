@@ -1,0 +1,19 @@
+{
+  "comment": "Golden vector for rbx_presence::catchup::summarize and the TS/Luau mirrors. Input is a value-less journal of edits recovered on reconnect; the summary aggregates per author and in total. Authors are sorted by edit count descending, then name (case-insensitive). 'instances' counts distinct paths, 'properties' counts distinct (path, property) pairs, 'edits' counts entries.",
+  "entries": [
+    { "userId": 101, "name": "Ada", "path": "Workspace.Part", "property": "Size", "at": 1000 },
+    { "userId": 101, "name": "Ada", "path": "Workspace.Part", "property": "Position", "at": 1100 },
+    { "userId": 101, "name": "Ada", "path": "Workspace.Part", "property": "Size", "at": 1200 },
+    { "userId": 202, "name": "Lin", "path": "Workspace.Model", "property": "Name", "at": 1300 },
+    { "userId": 202, "name": "Lin", "path": "Lighting.Sky", "property": "Brightness", "at": 1400 }
+  ],
+  "summary": {
+    "authors": [
+      { "userId": 101, "name": "Ada", "instances": 1, "properties": 2, "edits": 3 },
+      { "userId": 202, "name": "Lin", "instances": 2, "properties": 2, "edits": 2 }
+    ],
+    "instances": 3,
+    "properties": 4,
+    "edits": 5
+  }
+}

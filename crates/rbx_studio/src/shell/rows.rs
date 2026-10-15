@@ -236,6 +236,7 @@ pub(super) fn row(
                         .unwrap_or_else(|| div().child(item.label.clone()).into_any_element()),
                 ),
         )
+        .children(widgets.presence)
         .children(widgets.trailing)
         .into_any_element()
 }

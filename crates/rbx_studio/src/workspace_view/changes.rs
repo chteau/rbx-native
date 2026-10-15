@@ -15,6 +15,8 @@ const LIGHT_GUIDES: usize = 0;
 const STAGE_GRID: usize = 3;
 /// The Animation Editor's skeleton view (see `shell::animation::skeleton`).
 const SKELETON: usize = 4;
+/// Collaborators' selections and cameras (see `shell::team_presence`).
+const TEAM_PRESENCE: usize = 6;
 
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
@@ -74,6 +76,12 @@ impl WorkspaceView {
     /// it. An empty list clears them.
     pub(crate) fn set_skeleton(&mut self, segments: Vec<Segment>) {
         self.pump.lines(SKELETON, segments);
+    }
+
+    /// Collaborators' selection boxes and camera markers. An empty list
+    /// clears them.
+    pub(crate) fn set_presence(&mut self, segments: Vec<Segment>) {
+        self.pump.lines(TEAM_PRESENCE, segments);
     }
 
     /// Draws only `roots` (the Animation Editor's rig) on a plain backdrop,
