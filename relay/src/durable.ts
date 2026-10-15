@@ -17,7 +17,7 @@ import { Room } from "./room.js";
 import { parseState } from "./validate.js";
 
 const SWEEP_MS = 5_000;
-const ROUTE = /^\/v1\/rooms\/([0-9a-f]{32})\/(state|poll|ws)$/;
+const ROUTE = /^\/v1\/rooms\/([0-9a-f]{32})\/(state|poll|ws|journal)$/;
 
 interface Poll {
   since: number;
@@ -59,6 +59,7 @@ export class RoomObject implements DurableObject {
     const allowed =
       (route === "state" && (method === "POST" || method === "DELETE")) ||
       (route === "poll" && method === "GET") ||
+      (route === "journal" && method === "GET") ||
       (route === "ws" && method === "GET");
     if (!allowed) return new Response("method not allowed", { status: 405 });
 
@@ -96,6 +97,7 @@ export class RoomObject implements DurableObject {
     if (route === "state" && method === "POST") return this.handlePost(body, userId, now);
     if (route === "state") return this.handleDelete(userId);
     if (route === "poll") return this.handlePoll(url);
+    if (route === "journal") return this.handleJournal(url, now);
     return this.handleSocket(request, userId);
   }
 
@@ -117,6 +119,12 @@ export class RoomObject implements DurableObject {
   private handleDelete(userId: number): Response {
     if (this.room.remove(userId)) this.notify();
     return json({ cursor: this.room.cursor });
+  }
+
+  private handleJournal(url: URL, now: number): Response {
+    const since = Number(url.searchParams.get("since") ?? 0);
+    if (!Number.isFinite(since)) return refuse({ status: 400, error: "schema" });
+    return json({ entries: this.room.journalSince(since, now) });
   }
 
   private handlePoll(url: URL): Promise<Response> | Response {

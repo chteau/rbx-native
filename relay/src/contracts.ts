@@ -18,6 +18,19 @@ export const CLOCK_SKEW_MS = 60_000;
 /** Token bucket per user: burst size and refill per second. */
 export const RATE_BURST = 8;
 export const RATE_PER_SECOND = 4;
+/** Most journal entries kept per room. */
+export const JOURNAL_CAP = 256;
+/** Journal entries older than this are dropped. */
+export const JOURNAL_TTL_MS = 12 * 60 * 60 * 1000;
+
+/** A value-less record of one property edit; the value is never stored. */
+export interface JournalEntry {
+  userId: number;
+  name: string;
+  path: string;
+  property: string;
+  at: number;
+}
 
 export const USER_HEADER = "X-Presence-User";
 export const TIME_HEADER = "X-Presence-Time";
@@ -93,7 +106,9 @@ export interface Refusal {
 // export class RoomObject implements DurableObject — one per room id. Holds a
 // Room, the open WebSockets (userId per socket) and the pending long-polls.
 // fetch(request): routes by URL pathname suffix after /v1/rooms/<room>:
-//   POST /state, DELETE /state, GET /poll?since=N, GET /ws (upgrade).
+//   POST /state, DELETE /state, GET /poll?since=N, GET /ws (upgrade),
+//   GET /journal?since=N → { entries: JournalEntry[] } (value-less edits
+//   recorded since the unix-ms time N, oldest first).
 // Authentication (key learning, signature, time) is done here, before
 // any route, from the four headers. Every change resolves waiting polls and
 // sends the snapshot to every socket. An alarm every 5 s while the room is

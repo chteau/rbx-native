@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CLOCK_SKEW_MS,
   EXPIRY_MS,
+  JOURNAL_CAP,
+  JOURNAL_TTL_MS,
   MAX_USERS,
   RATE_BURST,
   type UserState,
@@ -17,6 +19,60 @@ const user = (userId: number): UserState => ({
   selection: [],
   edits: [],
   seen: 0,
+});
+
+// Edits carry the client's own edit time; entry `i` happened at `baseAt + i`.
+const withEdits = (userId: number, n: number, baseAt: number): UserState => ({
+  ...user(userId),
+  edits: Array.from({ length: n }, (_, i) => ({
+    path: `Workspace.P${i}`,
+    property: "Size",
+    value: "secret",
+    at: baseAt + i,
+  })),
+});
+
+describe("journal", () => {
+  it("records value-less entries, keyed on the client's edit time", () => {
+    const room = new Room();
+    room.put(withEdits(7, 2, 5), 1000);
+    const entries = room.journalSince(4, 1000);
+    expect(entries).toEqual([
+      { userId: 7, name: "u7", path: "Workspace.P0", property: "Size", at: 5 },
+      { userId: 7, name: "u7", path: "Workspace.P1", property: "Size", at: 6 },
+    ]);
+    for (const e of entries) expect("value" in e).toBe(false);
+    // `since` is exclusive on the edit time.
+    expect(room.journalSince(6, 1000).map((e) => e.at)).toEqual([]);
+  });
+
+  it("does not duplicate an edit re-sent on later heartbeats", () => {
+    const room = new Room();
+    room.put(withEdits(7, 2, 5), 1000);
+    room.put(withEdits(7, 2, 5), 6000);
+    room.put(withEdits(7, 2, 5), 11000);
+    expect(room.journalSince(0, 11000)).toHaveLength(2);
+  });
+
+  it("drops entries older than the TTL", () => {
+    const room = new Room();
+    room.put(withEdits(1, 1, 0), 0);
+    const later = JOURNAL_TTL_MS + 1;
+    expect(room.journalSince(-1, later)).toEqual([]);
+    room.put(withEdits(2, 1, later), later);
+    expect(room.journalSince(-1, later).map((e) => e.userId)).toEqual([2]);
+  });
+
+  it("keeps only the last JOURNAL_CAP distinct entries", () => {
+    const room = new Room();
+    // One put with more distinct edits than the cap; MAX_EDITS bounds a real
+    // message, but the cap must hold regardless.
+    room.put(withEdits(1, JOURNAL_CAP + 50, 1), JOURNAL_CAP + 100);
+    const entries = room.journalSince(0, JOURNAL_CAP + 100);
+    expect(entries).toHaveLength(JOURNAL_CAP);
+    // The newest edits are the ones kept.
+    expect(entries[entries.length - 1]?.at).toBe(JOURNAL_CAP + 50);
+  });
 });
 
 describe("Room", () => {

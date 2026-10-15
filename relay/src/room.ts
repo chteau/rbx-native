@@ -4,9 +4,12 @@
 import {
   CLOCK_SKEW_MS,
   EXPIRY_MS,
+  JOURNAL_CAP,
+  JOURNAL_TTL_MS,
   MAX_USERS,
   RATE_BURST,
   RATE_PER_SECOND,
+  type JournalEntry,
   type Refusal,
   type Snapshot,
   type UserState,
@@ -23,6 +26,7 @@ export class Room {
   private users = new Map<number, UserState>();
   private buckets = new Map<number, Bucket>();
   private lastTs = new Map<number, number>();
+  private journal: JournalEntry[] = [];
 
   put(state: UserState, now: number): Refusal | null {
     if (!this.take(state.userId, now)) return { status: 429, error: "rate" };
@@ -31,7 +35,39 @@ export class Room {
     }
     this.users.set(state.userId, { ...state, seen: now });
     this.cursor++;
+    // Clients re-send their recent edits on every heartbeat, so the journal
+    // keys on the client's own edit time and skips an edit it already holds;
+    // otherwise re-sends would flood the cap and evict real history in
+    // seconds. The value is never stored.
+    for (const edit of state.edits) {
+      const at = edit.at;
+      const seen = this.journal.some(
+        (e) =>
+          e.userId === state.userId &&
+          e.at === at &&
+          e.path === edit.path &&
+          e.property === edit.property,
+      );
+      if (seen) continue;
+      this.journal.push({
+        userId: state.userId,
+        name: state.name,
+        path: edit.path,
+        property: edit.property,
+        at,
+      });
+    }
+    this.journal = this.journal.filter((e) => e.at >= now - JOURNAL_TTL_MS);
+    if (this.journal.length > JOURNAL_CAP) {
+      this.journal = this.journal.slice(-JOURNAL_CAP);
+    }
     return null;
+  }
+
+  journalSince(since: number, now: number): JournalEntry[] {
+    return this.journal
+      .filter((e) => e.at > since && e.at >= now - JOURNAL_TTL_MS)
+      .sort((a, b) => a.at - b.at);
   }
 
   remove(userId: number): boolean {
