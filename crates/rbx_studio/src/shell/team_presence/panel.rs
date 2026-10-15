@@ -262,6 +262,7 @@ impl Shell {
         // "While you were away": the value-less catch-up summary, dismissible.
         // Shows per-author counts only; a value diff would need the DOM diff
         // ("View changes"), which is a separate, transport-independent path.
+        let has_before = self.team_presence.before.is_some();
         let catchup = self.team_presence.catchup.as_ref().map(|summary| {
             let mut block = v_flex()
                 .m_2()
@@ -302,12 +303,27 @@ impl Shell {
                         .child(author_line(author)),
                 );
             }
-            block.child(
-                div()
-                    .text_size(tokens::text_xs())
-                    .text_color(tokens::text3())
-                    .child("Edit values are not shared; see the place history for details."),
-            )
+            if has_before {
+                block.child(
+                    div()
+                        .id("collaborators-view-changes")
+                        .text_size(tokens::text_xs())
+                        .text_color(tokens::accent_line())
+                        .cursor_pointer()
+                        .child("View changes")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|shell, _, _, cx| shell.open_presence_diff(cx)),
+                        ),
+                )
+            } else {
+                block.child(
+                    div()
+                        .text_size(tokens::text_xs())
+                        .text_color(tokens::text3())
+                        .child("Edit values are not shared; see the place history for details."),
+                )
+            }
         });
 
         let mut list = v_flex().w_full();

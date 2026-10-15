@@ -35,9 +35,17 @@ use model::{Collaborator, Departed, EditLog, Member};
 
 /// The environment variable for the canned room (see the module doc).
 pub(super) const MOCK_VARIABLE: &str = "RBX_STUDIO_PRESENCE_MOCK";
+/// `RBX_STUDIO_PRESENCE_DIFF=1`: alongside the mock room, seed a last-seen
+/// snapshot and open the catch-up "View changes" window on a canned diff,
+/// so the presence-mode diff can be captured without a live session (the
+/// same reason every other `RBX_STUDIO_*` capture variable exists).
+const DIFF_VARIABLE: &str = "RBX_STUDIO_PRESENCE_DIFF";
 /// How often the worker's events are drained and our own state re-sent if
 /// it changed.
 const TICK: std::time::Duration = std::time::Duration::from_millis(250);
+/// How often, while connected, the last-seen timestamp is persisted, so a
+/// crash does not reset catch-up to the whole retention window next time.
+const SAVE_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Where the connection stands, as the dock's status line says it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +102,17 @@ pub(super) struct TeamPresence {
     own_name: Option<String>,
     /// What was last handed to the worker, and when.
     last_sent: Option<(UserState, Instant)>,
+    /// The place we are connected to, for persisting last-seen state.
+    place_id: Option<u64>,
+    /// The place as this client last saw it, loaded from the last-seen store
+    /// on connect — the "before" that a catch-up diff ("View changes")
+    /// compares the freshly loaded place against. `None` when nothing was
+    /// stored or it could not be decoded.
+    pub(super) before: Option<rbx_dom::WeakDom>,
+    /// When the last-seen timestamp was last persisted, to throttle it.
+    last_saved: Option<Instant>,
+    /// The open "View changes" window (the catch-up diff), if any.
+    pub(super) presence_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     pub(super) scroll: ScrollHandle,
 }
 
@@ -126,9 +145,41 @@ impl TeamPresence {
             catchup_dismissed: false,
             own_name: None,
             last_sent: None,
+            place_id: None,
+            before: None,
+            last_saved: None,
+            presence_diff: None,
             scroll: ScrollHandle::new(),
         }
     }
+}
+
+/// Two small DOMs whose diff is a representative catch-up: a changed
+/// property, a changed script source, and an added part. Used only by the
+/// `DIFF_VARIABLE` capture path.
+fn synthetic_diff_doms() -> (rbx_dom::WeakDom, rbx_dom::WeakDom) {
+    use rbx_dom::{Variant, WeakDom};
+    let build = |transparency: f32, source: &str, extra: bool| {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let part = dom.new_instance("Part", "Platform", Some(workspace));
+        dom.get_mut(part)
+            .unwrap()
+            .properties_mut()
+            .insert("Transparency".into(), Variant::Float32(transparency));
+        let script = dom.new_instance("Script", "Main", Some(workspace));
+        dom.get_mut(script)
+            .unwrap()
+            .properties_mut()
+            .insert("Source".into(), Variant::String(source.into()));
+        if extra {
+            dom.new_instance("Part", "Ramp", Some(workspace));
+        }
+        dom
+    };
+    let before = build(0.0, "print(\"hello\")\n", false);
+    let after = build(0.5, "print(\"hello\")\nprint(\"world\")\n", true);
+    (before, after)
 }
 
 pub(super) fn now_ms() -> u64 {
@@ -175,6 +226,7 @@ impl Shell {
                     self.set_panel_open(super::layout::Panel::Collaborators, true, cx);
                     self.refresh_collaborators(cx);
                     self.keep_mock_alive(cx);
+                    self.apply_debug_presence_diff(cx);
                     cx.notify();
                     return;
                 }
@@ -200,6 +252,9 @@ impl Shell {
             if enabled {
                 self.connect_presence(cx);
             } else {
+                // Persist the snapshot before tearing down, so the next
+                // connect can diff against where the place was left.
+                self.save_last_seen(true);
                 self.disconnect_presence(cx);
                 self.team_presence.connection = Connection::Off;
             }
@@ -297,6 +352,9 @@ impl Shell {
         presence.collaborators.clear();
         presence.last_sent = None;
         presence.catchup = None;
+        presence.place_id = None;
+        presence.before = None;
+        presence.last_saved = None;
         self.viewport
             .update(cx, |view, _| view.set_presence(Vec::new()));
     }
@@ -345,7 +403,17 @@ impl Shell {
             key,
             user_id,
         };
-        self.fetch_catchup(client_config.clone(), cx);
+        // Catch up only on what happened since this client last left this
+        // place, and keep the snapshot it left behind for "View changes".
+        let record =
+            Self::presence_cache_dir().and_then(|dir| rbx_presence::lastseen::load(&dir, place));
+        let since = record.as_ref().map_or(0, |r| r.journal_ms);
+        self.team_presence.before = record
+            .and_then(|r| r.snapshot)
+            .and_then(|bytes| rbx_binary::deserialize(&bytes).ok());
+        self.team_presence.place_id = Some(place);
+        self.team_presence.last_saved = None;
+        self.fetch_catchup(client_config.clone(), since, cx);
         let (client, events) = Client::start(client_config);
         self.team_presence.client = Some(client);
         self.team_presence.connection = Connection::Connecting;
@@ -365,15 +433,20 @@ impl Shell {
     }
 
     /// Fetches the "while you were away" summary once, off the UI thread, and
-    /// shows it if it has anything and the user has not dismissed one. Since
-    /// no persisted last-seen time exists yet, this asks for everything the
-    /// transport still retains (the journal's ~12 h window).
-    fn fetch_catchup(&mut self, config: rbx_presence::client::Config, cx: &mut Context<Self>) {
+    /// shows it if it has anything and the user has not dismissed one.
+    /// `since_ms` is the timestamp this client last caught up to for this
+    /// place (0 the first time, so everything the transport still retains).
+    fn fetch_catchup(
+        &mut self,
+        config: rbx_presence::client::Config,
+        since_ms: u64,
+        cx: &mut Context<Self>,
+    ) {
         self.team_presence.catchup = None;
         self.team_presence.catchup_dismissed = false;
         cx.spawn(async move |this, cx| {
             let summary = cx
-                .background_spawn(async move { rbx_presence::catchup::fetch(&config, 0) })
+                .background_spawn(async move { rbx_presence::catchup::fetch(&config, since_ms) })
                 .await;
             if let Ok(summary) = summary {
                 if !summary.authors.is_empty() {
@@ -387,6 +460,59 @@ impl Shell {
             }
         })
         .detach();
+    }
+
+    /// Capture aid: with `DIFF_VARIABLE` set, seeds a last-seen snapshot
+    /// and opens the "View changes" window on a canned, self-contained diff.
+    fn apply_debug_presence_diff(&mut self, cx: &mut Context<Self>) {
+        if std::env::var(DIFF_VARIABLE).as_deref() != Ok("1") {
+            return;
+        }
+        let (before, after) = synthetic_diff_doms();
+        let nodes = rbx_dom::diff::diff(&before, &after);
+        // Keep the snapshot so the dock shows the "View changes" link too.
+        self.team_presence.before = Some(before);
+        let shell = cx.entity();
+        cx.defer(move |cx| {
+            let opened = crate::shell::argon_diff_window::ArgonDiffWindow::open_presence(
+                shell.clone(),
+                nodes,
+                cx,
+            );
+            shell.update(cx, |shell, _| shell.team_presence.presence_diff = opened);
+        });
+    }
+
+    /// Opens the catch-up diff ("View changes"): the place as this client
+    /// last saw it against the place as it is now. Raises the window if one
+    /// is already open; says so when nothing changed.
+    pub(super) fn open_presence_diff(&mut self, cx: &mut Context<Self>) {
+        if let Some(existing) = &self.team_presence.presence_diff {
+            let _ = existing.update(cx, |_, window, _| window.activate_window());
+            return;
+        }
+        let Some(before) = self.team_presence.before.clone() else {
+            return;
+        };
+        let nodes = rbx_dom::diff::diff(&before, &self.dom);
+        if nodes.is_empty() {
+            self.output.push(
+                "Presence",
+                Feedback::Info("No changes to the place since you were last here.".into()),
+            );
+            return;
+        }
+        let shell = cx.entity();
+        // Deferred like `open_argon_diff`: opening a window renders it at
+        // once, and this runs inside the click handler's own `Shell` update.
+        cx.defer(move |cx| {
+            let opened = crate::shell::argon_diff_window::ArgonDiffWindow::open_presence(
+                shell.clone(),
+                nodes,
+                cx,
+            );
+            shell.update(cx, |shell, _| shell.team_presence.presence_diff = opened);
+        });
     }
 
     /// Dismisses the catch-up block; it does not come back this session.
@@ -456,6 +582,41 @@ impl Shell {
         changed |= self.refresh_collaborators(cx);
         if changed {
             cx.notify();
+        }
+
+        // Keep the last-seen timestamp fresh while connected, so catch-up
+        // after a crash still starts from roughly where we are now.
+        let due_save = self
+            .team_presence
+            .last_saved
+            .is_none_or(|at| at.elapsed() >= SAVE_EVERY);
+        if self.team_presence.connection == Connection::Connected && due_save {
+            self.save_last_seen(false);
+        }
+    }
+
+    /// Where per-place last-seen state is kept (under the editor's config
+    /// dir). `None` when no config directory can be determined.
+    fn presence_cache_dir() -> Option<std::path::PathBuf> {
+        crate::settings::default_config_dir().map(|dir| dir.join("presence"))
+    }
+
+    /// Persists the connected place's last-seen timestamp, and its snapshot
+    /// when `snapshot` is set. Best effort: a store that cannot be written
+    /// (no config dir, encode failure) is skipped — it only costs a wider
+    /// catch-up next time.
+    fn save_last_seen(&mut self, snapshot: bool) {
+        let Some(place) = self.team_presence.place_id else {
+            return;
+        };
+        let Some(dir) = Self::presence_cache_dir() else {
+            return;
+        };
+        let bytes = snapshot
+            .then(|| rbx_binary::serialize(&self.dom).ok())
+            .flatten();
+        if rbx_presence::lastseen::save(&dir, place, now_ms(), bytes.as_deref()).is_ok() {
+            self.team_presence.last_saved = Some(Instant::now());
         }
     }
 
