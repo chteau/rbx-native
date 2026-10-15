@@ -119,10 +119,20 @@ describe("Room", () => {
     const room = new Room();
     room.put(user(1), 0);
     const c = room.cursor;
-    expect(room.remove(1)).toBe(true);
+    expect(room.remove(1, "studio")).toBe(true);
     expect(room.cursor).toBe(c + 1);
-    expect(room.remove(1)).toBe(false);
+    expect(room.remove(1, "studio")).toBe(false);
     expect(room.cursor).toBe(c + 1);
+  });
+
+  it("keeps one user's Studio and rbx-native states apart", () => {
+    const room = new Room();
+    room.put(user(1), 0);
+    room.put({ ...user(1), client: "rbx-native", selection: ["Workspace.A"] }, 100);
+    const clients = room.snapshot().users.map((u) => `${u.userId}/${u.client}`);
+    expect(clients.sort()).toEqual(["1/rbx-native", "1/studio"]);
+    expect(room.remove(1, "rbx-native")).toBe(true);
+    expect(room.snapshot().users.map((u) => u.client)).toEqual(["studio"]);
   });
 
   it("checks clock skew", () => {

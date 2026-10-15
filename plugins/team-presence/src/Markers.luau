@@ -93,7 +93,7 @@ local function makeCamera(folder: Folder, user: any): Part
 	return part
 end
 
-function Markers.render(self: Markers, users: { any }, ownId: number)
+function Markers.render(self: Markers, users: { any })
 	local folder = self:ensureFolder()
 	if not folder then
 		return
@@ -101,7 +101,9 @@ function Markers.render(self: Markers, users: { any }, ownId: number)
 	local wanted: { [string]: boolean } = {}
 
 	for _, user in users do
-		if user.client == "rbx-native" and user.userId ~= ownId then
+		-- Only rbx-native senders: Studio draws its own collaborators. The
+		-- signed-in user in rbx-native is drawn too (another machine).
+		if user.client == "rbx-native" then
 			local color = parseColor(user.color)
 			for index, path in user.selection do
 				local target = Paths.resolve(game, path)

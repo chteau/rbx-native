@@ -136,9 +136,11 @@ function Relay:_ntfyPoll(): (any?, string?)
 			end
 			if parsed.event == "message" and type(parsed.message) == "string" then
 				local state = Ntfy.decode(self.key, self.topic, now, parsed.message)
-				if state and state.userId ~= self.userId then
+				-- Our own echo is this user in Studio; the same user in
+				-- rbx-native is another sender, keyed apart.
+				if state and not (state.userId == self.userId and state.client == "studio") then
 					state.seen = now
-					self.peers[state.userId] = { state = state, seen = now }
+					self.peers[`{state.userId}/{state.client}`] = { state = state, seen = now }
 					changed = true
 				end
 			end

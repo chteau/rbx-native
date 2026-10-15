@@ -23,17 +23,19 @@ interface Bucket {
 export class Room {
   key: string | null = null;
   cursor = 0;
-  private users = new Map<number, UserState>();
+  /** Keyed by {@link senderKey}: one user can be in Studio and rbx-native at once. */
+  private users = new Map<string, UserState>();
   private buckets = new Map<number, Bucket>();
   private lastTs = new Map<number, number>();
   private journal: JournalEntry[] = [];
 
   put(state: UserState, now: number): Refusal | null {
     if (!this.take(state.userId, now)) return { status: 429, error: "rate" };
-    if (!this.users.has(state.userId) && this.users.size >= MAX_USERS) {
+    const key = senderKey(state.userId, state.client);
+    if (!this.users.has(key) && this.users.size >= MAX_USERS) {
       return { status: 403, error: "full" };
     }
-    this.users.set(state.userId, { ...state, seen: now });
+    this.users.set(key, { ...state, seen: now });
     this.cursor++;
     // Clients re-send their recent edits on every heartbeat, so the journal
     // keys on the client's own edit time and skips an edit it already holds;
@@ -70,22 +72,27 @@ export class Room {
       .sort((a, b) => a.at - b.at);
   }
 
-  remove(userId: number): boolean {
-    const had = this.users.delete(userId);
-    this.buckets.delete(userId);
-    this.lastTs.delete(userId);
+  /** Drops one editor's state; the user's rate and replay state go with their last one. */
+  remove(userId: number, client: UserState["client"]): boolean {
+    const had = this.users.delete(senderKey(userId, client));
+    if (!this.hasUser(userId)) {
+      this.buckets.delete(userId);
+      this.lastTs.delete(userId);
+    }
     if (had) this.cursor++;
     return had;
   }
 
   expire(now: number): boolean {
     let dropped = false;
-    for (const [id, user] of this.users) {
+    for (const [key, user] of this.users) {
       if (user.seen < now - EXPIRY_MS) {
-        this.users.delete(id);
-        this.buckets.delete(id);
-        this.lastTs.delete(id);
+        this.users.delete(key);
         dropped = true;
+        if (!this.hasUser(user.userId)) {
+          this.buckets.delete(user.userId);
+          this.lastTs.delete(user.userId);
+        }
       }
     }
     if (dropped) this.cursor++;
@@ -115,6 +122,13 @@ export class Room {
     return null;
   }
 
+  private hasUser(userId: number): boolean {
+    for (const user of this.users.values()) {
+      if (user.userId === userId) return true;
+    }
+    return false;
+  }
+
   isEmpty(): boolean {
     return this.users.size === 0;
   }
@@ -129,4 +143,9 @@ export class Room {
     this.buckets.set(userId, b);
     return ok;
   }
+}
+
+/** One sender: a user in one editor. */
+export function senderKey(userId: number, client: UserState["client"]): string {
+  return `${userId}/${client}`;
 }

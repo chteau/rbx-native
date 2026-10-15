@@ -12,6 +12,7 @@ import {
   USER_HEADER,
   type Env,
   type Refusal,
+  type UserState,
 } from "./contracts.js";
 import { Room } from "./room.js";
 import { parseState } from "./validate.js";
@@ -41,7 +42,8 @@ function isRefusal(value: unknown): value is Refusal {
 
 export class RoomObject implements DurableObject {
   private readonly room = new Room();
-  private readonly sockets = new Map<WebSocket, number>();
+  /** Each socket's user, and its editor once its first state names it. */
+  private readonly sockets = new Map<WebSocket, { userId: number; client?: UserState["client"] }>();
   private polls = new Set<Poll>();
 
   constructor(
@@ -95,7 +97,7 @@ export class RoomObject implements DurableObject {
     }
 
     if (route === "state" && method === "POST") return this.handlePost(body, userId, now);
-    if (route === "state") return this.handleDelete(userId);
+    if (route === "state") return this.handleDelete(userId, url);
     if (route === "poll") return this.handlePoll(url);
     if (route === "journal") return this.handleJournal(url, now);
     return this.handleSocket(request, userId);
@@ -116,8 +118,13 @@ export class RoomObject implements DurableObject {
     return json({ cursor: this.room.cursor });
   }
 
-  private handleDelete(userId: number): Response {
-    if (this.room.remove(userId)) this.notify();
+  /**
+   * `?client=` (signed with the path) names which editor is leaving; only the
+   * plugin deletes over HTTP, so it defaults to Studio.
+   */
+  private handleDelete(userId: number, url: URL): Response {
+    const client = url.searchParams.get("client") === "rbx-native" ? "rbx-native" : "studio";
+    if (this.room.remove(userId, client)) this.notify();
     return json({ cursor: this.room.cursor });
   }
 
@@ -153,7 +160,8 @@ export class RoomObject implements DurableObject {
     const client = pair[0];
     const server = pair[1];
     server.accept();
-    this.sockets.set(server, userId);
+    const entry: { userId: number; client?: UserState["client"] } = { userId };
+    this.sockets.set(server, entry);
 
     server.addEventListener("message", (event) => {
       const data = event.data;
@@ -162,6 +170,7 @@ export class RoomObject implements DurableObject {
         server.close(1008, "invalid state");
         return;
       }
+      entry.client = parsed.client;
       if (this.room.put(parsed, Date.now())) {
         server.close(1008, "refused");
         return;
@@ -171,8 +180,12 @@ export class RoomObject implements DurableObject {
     });
     const gone = () => {
       if (!this.sockets.delete(server)) return;
-      const another = [...this.sockets.values()].includes(userId);
-      if (!another && this.room.remove(userId)) this.notify();
+      const client = entry.client;
+      if (client === undefined) return;
+      const another = [...this.sockets.values()].some(
+        (e) => e.userId === userId && e.client === client,
+      );
+      if (!another && this.room.remove(userId, client)) this.notify();
     };
     server.addEventListener("close", gone);
     server.addEventListener("error", gone);

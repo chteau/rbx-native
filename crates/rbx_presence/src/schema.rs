@@ -27,7 +27,7 @@ pub const EXPIRY_MS: u64 = 15_000;
 pub const HEARTBEAT_MS: u64 = 5_000;
 
 /// Which editor a user is in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Client {
     #[serde(rename = "studio")]
     Studio,
@@ -77,8 +77,20 @@ pub struct Edit {
     pub at: u64,
 }
 
+/// Who sent a state: one user can be in Studio and rbx-native at the same
+/// time, and each is a separate sender.
+pub fn sender_key(state: &UserState) -> (u64, Client) {
+    (state.user_id, state.client)
+}
+
+/// Whether `state` is this rbx-native client's own (the same user in Studio
+/// is someone else to show).
+pub fn is_own(state: &UserState, own_id: u64) -> bool {
+    state.user_id == own_id && state.client == Client::RbxNative
+}
+
 /// What the relay sends: everyone in the room, the receiver included (a
-/// client skips its own `user_id`).
+/// client skips its own state, see [`is_own`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// Grows by one each time the room changes; a long-poll waits for a

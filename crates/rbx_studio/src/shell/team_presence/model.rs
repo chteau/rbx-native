@@ -121,13 +121,16 @@ pub(crate) fn collaborators(
         parse_color(assigned.get(&id).copied().unwrap_or(schema::color_for(id)))
             .unwrap_or((128, 128, 128))
     };
+    let mut senders_seen: Vec<(u64, Client)> = Vec::new();
     for user in senders {
-        if user.user_id == own_id
-            || listed.contains(&user.user_id)
+        let key = schema::sender_key(user);
+        if schema::is_own(user, own_id)
+            || senders_seen.contains(&key)
             || now_ms.saturating_sub(user.seen) > schema::EXPIRY_MS
         {
             continue;
         }
+        senders_seen.push(key);
         listed.push(user.user_id);
         let mut selection = Vec::new();
         let mut unresolved = 0;
@@ -139,7 +142,13 @@ pub(crate) fn collaborators(
         }
         out.push(Collaborator {
             user_id: user.user_id,
-            name: user.name.clone(),
+            // The signed-in user in Studio at the same time (another
+            // machine, or both editors side by side).
+            name: if user.user_id == own_id {
+                format!("{} (you, in Studio)", user.name)
+            } else {
+                user.name.clone()
+            },
             color: color_of(user.user_id),
             client: Some(user.client),
             status: Status::Sending,
@@ -211,7 +220,14 @@ pub(crate) fn departures(
     previous
         .users
         .iter()
-        .filter(|u| u.user_id != own_id && !next.users.iter().any(|n| n.user_id == u.user_id))
+        .filter(|u| {
+            // Yourself, in either editor, never "leaves" the list.
+            u.user_id != own_id
+                && !next
+                    .users
+                    .iter()
+                    .any(|n| schema::sender_key(n) == schema::sender_key(u))
+        })
         .map(|u| Departed {
             user_id: u.user_id,
             name: u.name.clone(),

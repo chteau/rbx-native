@@ -72,11 +72,38 @@ fn expired_sender_drops_out_and_member_takes_over() {
 }
 
 #[test]
-fn own_id_is_skipped() {
-    let mock = load_mock("fixture", NOW).unwrap();
+fn own_rbx_native_state_is_skipped() {
+    let mut mock = load_mock("fixture", NOW).unwrap();
+    mock.snapshot.users[1].client = Client::RbxNative;
     let list = rows(3, &mock, &dom());
     assert!(list.iter().all(|c| c.user_id != 3));
     assert_eq!(list.len(), 3);
+}
+
+#[test]
+fn own_studio_session_is_listed_as_you() {
+    // Cleo (3) is signed in here and also has Studio open with the plugin.
+    let mock = load_mock("fixture", NOW).unwrap();
+    let list = rows(3, &mock, &dom());
+    let me = list.iter().find(|c| c.user_id == 3).unwrap();
+    assert_eq!(me.name, "Cleo (you, in Studio)");
+    assert_eq!(me.status, Status::Sending);
+    assert_eq!(me.client, Some(Client::Studio));
+    assert_eq!(me.selection.len(), 1);
+    assert_eq!(list.len(), 4);
+}
+
+#[test]
+fn one_user_in_both_editors_is_two_senders() {
+    let mut mock = load_mock("fixture", NOW).unwrap();
+    let mut native = mock.snapshot.users[1].clone();
+    native.client = Client::RbxNative;
+    mock.snapshot.users.push(native);
+    let list = rows(99, &mock, &dom());
+    let cleo: Vec<_> = list.iter().filter(|c| c.user_id == 3).collect();
+    assert_eq!(cleo.len(), 2);
+    assert!(cleo.iter().any(|c| c.client == Some(Client::Studio)));
+    assert!(cleo.iter().any(|c| c.client == Some(Client::RbxNative)));
 }
 
 #[test]
@@ -109,6 +136,24 @@ fn departures_lists_missing_senders() {
     assert_eq!(gone[0].left_at, NOW);
     let none = departures(&mock.snapshot, &next, 3, NOW);
     assert!(none.is_empty());
+}
+
+#[test]
+fn closing_one_editor_is_not_a_departure_while_the_other_sends() {
+    let mut mock = load_mock("fixture", NOW).unwrap();
+    let mut native = mock.snapshot.users[1].clone();
+    native.client = Client::RbxNative;
+    mock.snapshot.users.push(native);
+    let mut next = mock.snapshot.clone();
+    next.users.pop();
+    let gone = departures(&mock.snapshot, &next, 99, NOW);
+    assert_eq!(gone.len(), 1);
+    assert_eq!(gone[0].user_id, 3);
+    // Still sending from Studio, so the row stays "Sending presence".
+    let list = collaborators(Some(&next), None, &gone, 99, &dom(), NOW);
+    let cleo: Vec<_> = list.iter().filter(|c| c.user_id == 3).collect();
+    assert_eq!(cleo.len(), 1);
+    assert_eq!(cleo[0].status, Status::Sending);
 }
 
 #[test]

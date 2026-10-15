@@ -21,7 +21,7 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Error as WsError, Message, WebSocket};
 
 use crate::relay::{self, RelayKind};
-use crate::schema::{Snapshot, UserState, EXPIRY_MS, HEARTBEAT_MS};
+use crate::schema::{self, Client as Editor, Snapshot, UserState, EXPIRY_MS, HEARTBEAT_MS};
 use crate::{auth, ntfy};
 
 /// How long a read blocks before the loop checks for something to send.
@@ -113,7 +113,9 @@ struct Worker {
     dirty: bool,
     /// ntfy only: the room rebuilt from the message stream, each user with
     /// the unix-ms we last heard from them.
-    ntfy_room: HashMap<u64, (UserState, u64)>,
+    /// Keyed on [`schema::sender_key`]: one user can be in Studio and
+    /// rbx-native at once.
+    ntfy_room: HashMap<(u64, Editor), (UserState, u64)>,
     /// ntfy only: grows on every room change, like the Worker relay's cursor.
     ntfy_cursor: u64,
     /// ntfy only: the id of the newest message polled, so the next poll asks
@@ -368,11 +370,12 @@ impl Worker {
                 continue;
             };
             if let Some(mut state) = ntfy::decode(&self.config.key, topic, now, body) {
-                if state.user_id == self.config.user_id {
+                if schema::is_own(&state, self.config.user_id) {
                     continue;
                 }
                 state.seen = now;
-                self.ntfy_room.insert(state.user_id, (state, now));
+                self.ntfy_room
+                    .insert(schema::sender_key(&state), (state, now));
                 changed = true;
             }
         }
@@ -443,7 +446,7 @@ impl FromStaticLower for HeaderName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{Client as Editor, SCHEMA_VERSION};
+    use crate::schema::SCHEMA_VERSION;
     use std::net::TcpListener;
     use tungstenite::handshake::server::{ErrorResponse, Request, Response};
 

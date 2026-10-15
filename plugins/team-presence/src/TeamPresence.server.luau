@@ -160,11 +160,14 @@ local function start()
 				end
 				local native = {}
 				for _, user in snapshot.users do
-					if user.userId ~= ownId and user.client == "rbx-native" then
+					if user.client == "rbx-native" then
+						if user.userId == ownId then
+							user.name = `{user.name} (you, in rbx-native)`
+						end
 						table.insert(native, user)
 					end
 				end
-				myMarkers:render(snapshot.users, ownId)
+				myMarkers:render(snapshot.users)
 				widget:setUsers(native)
 				widget:setStatus(`Connected · {#native} rbx-native`)
 				-- ntfy polls return at once; pace them so we don't spin.
