@@ -24,6 +24,20 @@ impl LuaInstance {
         LuaInstance { referent, ctx }
     }
 
+    fn find_child(
+        &self,
+        recursive: bool,
+        test: impl Fn(&rbx_dom::Instance) -> bool,
+    ) -> Option<LuaInstance> {
+        tree::find_child_where(&self.ctx.dom(), self.referent, recursive, &test)
+            .map(|referent| LuaInstance::new(referent, self.ctx.clone()))
+    }
+
+    fn find_ancestor(&self, test: impl Fn(&rbx_dom::Instance) -> bool) -> Option<LuaInstance> {
+        tree::find_ancestor_where(&self.ctx.dom(), self.referent, &test)
+            .map(|referent| LuaInstance::new(referent, self.ctx.clone()))
+    }
+
     pub(crate) fn referent(&self) -> Ref {
         self.referent
     }
@@ -70,6 +84,16 @@ fn parent_target(value: &Value) -> Result<Option<Ref>> {
     }
 }
 
+/// An `Instance` argument as a referent; `nil` and non-instances give `None`.
+fn instance_arg(value: &Value) -> Result<Option<Ref>> {
+    match value {
+        Value::UserData(data) if data.is::<LuaInstance>() => {
+            Ok(Some(data.borrow::<LuaInstance>()?.referent))
+        }
+        _ => Ok(None),
+    }
+}
+
 pub(crate) fn instance_list(lua: &Lua, ctx: &Ctx, refs: Vec<Ref>) -> Result<Table> {
     let table = lua.create_table()?;
     for (index, referent) in refs.into_iter().enumerate() {
@@ -95,6 +119,60 @@ impl UserData for LuaInstance {
                 Ok(found.map(|referent| LuaInstance::new(referent, this.ctx.clone())))
             },
         );
+        // The class- and ancestor-flavoured finds every plugin leans on.
+        // `OfClass` matches the exact class, `WhichIsA` any subclass.
+        methods.add_method("FindFirstChildOfClass", |_, this, class: String| {
+            Ok(this.find_child(false, |i| i.class() == class))
+        });
+        methods.add_method(
+            "FindFirstChildWhichIsA",
+            |_, this, (class, recursive): (String, Option<bool>)| {
+                let db = this.ctx.database();
+                Ok(this.find_child(recursive.unwrap_or(false), |i| {
+                    db.is_subclass_of(i.class(), &class)
+                }))
+            },
+        );
+        methods.add_method("FindFirstAncestor", |_, this, name: String| {
+            Ok(this.find_ancestor(|i| i.name() == name))
+        });
+        methods.add_method("FindFirstAncestorOfClass", |_, this, class: String| {
+            Ok(this.find_ancestor(|i| i.class() == class))
+        });
+        methods.add_method("FindFirstAncestorWhichIsA", |_, this, class: String| {
+            let db = this.ctx.database();
+            Ok(this.find_ancestor(|i| db.is_subclass_of(i.class(), &class)))
+        });
+        methods.add_method("IsDescendantOf", |_, this, other: Value| {
+            let Some(ancestor) = instance_arg(&other)? else {
+                // `game` is not a DOM node, yet everything in the place is
+                // under it.
+                let is_game = matches!(&other, Value::UserData(u) if u.is::<LuaGame>());
+                return Ok(is_game && tree::parent_of(&this.ctx.dom(), this.referent).is_some());
+            };
+            Ok(ancestor != this.referent
+                && tree::is_ancestor_of(&this.ctx.dom(), ancestor, this.referent))
+        });
+        methods.add_method("IsAncestorOf", |_, this, other: Value| {
+            let Some(target) = instance_arg(&other)? else {
+                return Ok(false);
+            };
+            Ok(target != this.referent
+                && tree::is_ancestor_of(&this.ctx.dom(), this.referent, target))
+        });
+        methods.add_method("ClearAllChildren", |_, this, ()| {
+            let children = this
+                .ctx
+                .dom()
+                .get(this.referent)
+                .map(|instance| instance.children().to_vec())
+                .ok_or_else(property::missing_instance)?;
+            let mut dom = this.ctx.dom_mut();
+            for child in children {
+                dom.remove(child);
+            }
+            Ok(())
+        });
         methods.add_method("GetChildren", |lua, this, ()| {
             let children = this
                 .ctx

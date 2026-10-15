@@ -25,6 +25,7 @@ mod env;
 mod events;
 mod host;
 mod http;
+mod input;
 mod loader;
 mod lot;
 mod native;
@@ -33,6 +34,7 @@ mod scheduler;
 mod services;
 mod signal;
 mod vm;
+mod world;
 
 #[cfg(test)]
 mod testing;

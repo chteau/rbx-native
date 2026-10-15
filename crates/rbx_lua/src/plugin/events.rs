@@ -346,6 +346,25 @@ fn class_function(
     Ok(Some(Value::Function(f)))
 }
 
+/// `plugin[key]`, with methods rebound so `instance:Method(...)` calls them
+/// on the `plugin` global instead of the instance.
+fn plugin_member(lua: &Lua, key: &str) -> Result<Value> {
+    let plugin: Value = lua.globals().get("plugin")?;
+    let Value::UserData(object) = &plugin else {
+        return Ok(Value::Nil);
+    };
+    match mlua::ObjectLike::get::<Value>(object, key)? {
+        Value::Function(method) => lua
+            .create_function(move |_, (_this, rest): (Value, mlua::MultiValue)| {
+                let mut args = rest;
+                args.push_front(plugin.clone());
+                method.call::<mlua::MultiValue>(args)
+            })
+            .map(Value::Function),
+        other => Ok(other),
+    }
+}
+
 impl Hooks for PluginHooks {
     fn index(
         &self,
@@ -355,6 +374,12 @@ impl Hooks for PluginHooks {
         class: &str,
         key: &str,
     ) -> Result<Option<Value>> {
+        // The `Plugin` instance a model plugin's scripts sit under (see
+        // `dispatch::start`) is the `plugin` global seen from the tree, so
+        // `script:FindFirstAncestorWhichIsA("Plugin")` reaches the same API.
+        if class == "Plugin" && env(lua).roots.borrow().first() == Some(&referent) {
+            return plugin_member(lua, key).map(Some);
+        }
         let db = ctx.database();
         if is_signal(db, class, key) {
             return lua

@@ -178,7 +178,8 @@ fn start(host: &mut PluginHost, index: usize) {
     let id = host.plugins[index].info.id;
     let (folder, core_gui, plugin_gui_service) = {
         let mut dom = host.dom.borrow_mut();
-        let folder = dom.new_instance("Folder", &source.name, None);
+        // Studio parents a plugin's scripts under a `Plugin` instance.
+        let folder = dom.new_instance("Plugin", &source.name, None);
         match &source.body {
             SourceBody::Luau(text) => {
                 let script = dom.new_instance("Script", &source.name, Some(folder));

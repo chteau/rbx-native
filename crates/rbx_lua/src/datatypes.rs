@@ -6,11 +6,14 @@
 
 pub(crate) mod cframe;
 pub(crate) mod color3;
+pub(crate) mod extra;
 pub(crate) mod font;
 pub(crate) mod misc;
+pub(crate) mod params;
 pub(crate) mod physical_properties;
 pub(crate) mod rect;
 pub(crate) mod sequence;
+pub(crate) mod udim;
 pub(crate) mod vector3;
 
 use mlua::{Lua, Result, Value};
@@ -63,5 +66,8 @@ pub(crate) fn register(lua: &Lua) -> Result<()> {
         "ColorSequenceKeypoint",
         sequence::color_sequence_keypoint(lua)?,
     )?;
+    extra::register(lua)?;
+    params::register(lua)?;
+    udim::register(lua)?;
     Ok(())
 }
