@@ -364,6 +364,65 @@ fn ntfy_signature_and_round_trip() {
     assert!(matches!(stale, Value::Nil));
 }
 
+/// The plugin's `Catchup.summarize` agrees with the golden fixture (and so
+/// the Rust `catchup::summarize`), so the two cannot drift.
+#[test]
+fn data_catchup() {
+    let lua = new_lua();
+    let fixture = fixture_json("catchup.json");
+    let entries = fixture["entries"].as_array().unwrap();
+    let arr = lua.create_table().unwrap();
+    for (i, entry) in entries.iter().enumerate() {
+        let row = lua.create_table().unwrap();
+        row.set("userId", num_field(entry, "userId")).unwrap();
+        row.set("name", str_field(entry, "name")).unwrap();
+        row.set("path", str_field(entry, "path")).unwrap();
+        row.set("property", str_field(entry, "property")).unwrap();
+        row.set("at", num_field(entry, "at")).unwrap();
+        arr.set(i + 1, row).unwrap();
+    }
+
+    let summarize = func(&lua, "Catchup", "summarize");
+    let summary: Table = summarize.call(arr).unwrap();
+    let want = &fixture["summary"];
+    assert_eq!(
+        summary.get::<f64>("instances").unwrap(),
+        num_field(want, "instances")
+    );
+    assert_eq!(
+        summary.get::<f64>("properties").unwrap(),
+        num_field(want, "properties")
+    );
+    assert_eq!(
+        summary.get::<f64>("edits").unwrap(),
+        num_field(want, "edits")
+    );
+
+    let authors: Table = summary.get("authors").unwrap();
+    let want_authors = want["authors"].as_array().unwrap();
+    assert_eq!(authors.raw_len(), want_authors.len());
+    for (i, wanted) in want_authors.iter().enumerate() {
+        let got: Table = authors.get(i + 1).unwrap();
+        assert_eq!(
+            got.get::<f64>("userId").unwrap(),
+            num_field(wanted, "userId")
+        );
+        assert_eq!(
+            got.get::<String>("name").unwrap(),
+            str_field(wanted, "name")
+        );
+        assert_eq!(
+            got.get::<f64>("instances").unwrap(),
+            num_field(wanted, "instances")
+        );
+        assert_eq!(
+            got.get::<f64>("properties").unwrap(),
+            num_field(wanted, "properties")
+        );
+        assert_eq!(got.get::<f64>("edits").unwrap(), num_field(wanted, "edits"));
+    }
+}
+
 /// Mirrors the Rust `ntfy::fit_encode` test over the same large state: the
 /// plugin's `fitEncode` sheds down to a body that fits `MAX_BODY`, and the
 /// shed body interoperates with the Rust receiver — and vice versa — so the

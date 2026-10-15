@@ -3,6 +3,8 @@
 --// rbx-native collaborators, and a hidden "Owner setup" section where the
 --// place owner names the relay once for everyone.
 
+local Catchup = require(script.Parent.Catchup)
+
 local Widget = {}
 Widget.__index = Widget
 
@@ -30,6 +32,8 @@ export type Widget = typeof(setmetatable({} :: {
 	saveButton: TextButton,
 	resolved: TextLabel,
 	httpNote: TextLabel,
+	catchup: Frame,
+	catchupRows: { TextLabel },
 	rows: { Frame },
 	list: ScrollingFrame,
 	users: { any },
@@ -139,6 +143,21 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	httpNote.TextSize = 12
 	httpNote.Visible = false
 
+	-- "While you were away": the value-less catch-up list, hidden until a
+	-- summary arrives on connect.
+	local catchup = Instance.new("Frame")
+	catchup.Name = "Catchup"
+	catchup.LayoutOrder = 7
+	catchup.Size = UDim2.new(1, -8, 0, 0)
+	catchup.AutomaticSize = Enum.AutomaticSize.Y
+	catchup.BackgroundTransparency = 1
+	catchup.Visible = false
+	catchup.Parent = list
+	local catchupLayout = Instance.new("UIListLayout")
+	catchupLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	catchupLayout.Padding = UDim.new(0, 2)
+	catchupLayout.Parent = catchup
+
 	local self: Widget = setmetatable({
 		gui = gui,
 		enabled = false,
@@ -153,6 +172,8 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		saveButton = saveButton,
 		resolved = resolved,
 		httpNote = httpNote,
+		catchup = catchup,
+		catchupRows = {},
 		rows = {},
 		list = list,
 		users = {},
@@ -239,6 +260,36 @@ end
 
 function Widget.showHttpNote(self: Widget, show: boolean)
 	self.httpNote.Visible = show
+end
+
+-- "While you were away": one line per author, value-less, mirroring the
+-- rbx-native dock. `nil` or an empty summary hides the block.
+function Widget.setCatchup(self: Widget, summary: any?)
+	for _, label in self.catchupRows do
+		label:Destroy()
+	end
+	table.clear(self.catchupRows)
+	if not summary or #summary.authors == 0 then
+		self.catchup.Visible = false
+		return
+	end
+	self.catchup.Visible = true
+	local order = 0
+	local function add(text: string, dim: boolean): TextLabel
+		order += 1
+		local label = newLabel(self.catchup, order, text)
+		label.TextSize = if dim then 12 else 13
+		label.TextColor3 = themeColor(
+			if dim then Enum.StudioStyleGuideColor.DimmedText else Enum.StudioStyleGuideColor.MainText
+		)
+		table.insert(self.catchupRows, label)
+		return label
+	end
+	add("While you were away", false)
+	for _, author in summary.authors do
+		add(Catchup.authorLine(author), true)
+	end
+	add("Edit values are not shared; see the place history for details.", true)
 end
 
 local function detailOf(user: any): string

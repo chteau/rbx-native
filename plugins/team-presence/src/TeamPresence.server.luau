@@ -3,6 +3,7 @@
 
 local Auth = require(script.Auth)
 local Capture = require(script.Capture)
+local Catchup = require(script.Catchup)
 local Defaults = require(script.Defaults)
 local Markers = require(script.Markers)
 local Relay = require(script.Relay)
@@ -54,6 +55,9 @@ local function stop()
 		markers:destroy()
 		markers = nil
 	end
+	if widget then
+		widget:setCatchup(nil)
+	end
 end
 
 local function nextBackoff(current: number): number
@@ -94,6 +98,22 @@ local function start()
 	generation += 1
 	local myGen = generation
 	widget:setStatus("Connecting…")
+
+	-- "While you were away": fetch the value-less journal once, scoped to
+	-- edits since this client last left this place (kept in plugin settings
+	-- per place, mirroring rbx-native's on-disk last-seen).
+	task.spawn(function()
+		local sinceKey = "LastSeen_" .. tostring(game.PlaceId)
+		local since = tonumber(plugin:GetSetting(sinceKey)) or 0
+		local entries = myRelay:journal(since)
+		if generation ~= myGen then
+			return
+		end
+		if entries then
+			widget:setCatchup(Catchup.summarize(entries))
+		end
+		plugin:SetSetting(sinceKey, DateTime.now().UnixTimestampMillis)
+	end)
 
 	task.spawn(function()
 		local lastPublish = 0.0

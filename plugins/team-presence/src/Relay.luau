@@ -188,6 +188,76 @@ function Relay:poll(cursor: number): (any?, string?)
 	return snapshot, nil
 end
 
+-- The value-less edit journal since `sinceMs`, for the "While you were
+-- away" catch-up. Worker: a signed GET of its bounded journal. ntfy: the
+-- topic's retained messages, verified against each message's own time
+-- (they predate now by more than the signing skew), edits lifted out,
+-- filtered to after `sinceMs` and de-duplicated. Mirrors
+-- crates/rbx_presence/src/catchup.rs.
+function Relay:journal(sinceMs: number): (any?, string?)
+	if self.kind == "ntfy" then
+		local url = string.format("%s/%s/json?poll=1&since=12h", self.base, self.topic)
+		local ok, res = pcall(function()
+			return HttpService:RequestAsync({ Url = url, Method = "GET" })
+		end)
+		if not ok then
+			return nil, tostring(res)
+		end
+		if not res.Success then
+			return nil, string.format("ntfy journal HTTP %d", res.StatusCode)
+		end
+		local now = nowMs()
+		local seen: { [string]: boolean } = {}
+		local entries = {}
+		for line in string.gmatch(res.Body or "", "[^\n]+") do
+			local parsed
+			local decoded = pcall(function()
+				parsed = HttpService:JSONDecode(line)
+			end)
+			if
+				decoded
+				and type(parsed) == "table"
+				and parsed.event == "message"
+				and type(parsed.message) == "string"
+			then
+				local checkAt = if type(parsed.time) == "number" then parsed.time * 1000 else now
+				local state = Ntfy.decode(self.key, self.topic, checkAt, parsed.message)
+				if state then
+					for _, edit in state.edits or {} do
+						if edit.at > sinceMs then
+							local dedupe =
+								string.format("%.0f\0%s\0%s\0%.0f", state.userId, edit.path, edit.property, edit.at)
+							if not seen[dedupe] then
+								seen[dedupe] = true
+								table.insert(entries, {
+									userId = state.userId,
+									name = state.name,
+									path = edit.path,
+									property = edit.property,
+									at = edit.at,
+								})
+							end
+						end
+					end
+				end
+			end
+		end
+		return entries, nil
+	end
+	local res, err = self:_send("GET", string.format("/journal?since=%.0f", sinceMs), "")
+	if res == nil then
+		return nil, err
+	end
+	local parsed
+	local ok = pcall(function()
+		parsed = HttpService:JSONDecode(res.Body)
+	end)
+	if not ok or type(parsed) ~= "table" then
+		return nil, "journal reply"
+	end
+	return parsed.entries or {}, nil
+end
+
 function Relay:leave()
 	if self.kind == "ntfy" then
 		-- Nothing to delete on a dumb pub/sub; peers expire us.
