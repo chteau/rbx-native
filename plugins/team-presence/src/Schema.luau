@@ -12,8 +12,54 @@ Schema.MAX_EDITS = 20
 Schema.MAX_TEXT = 512
 Schema.PALETTE = { "#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f08c00", "#0c8599", "#e03131", "#7048e8" }
 
+-- FNV-1a over the decimal digits; the prime 16777619 is 2^24 + 403, which
+-- keeps every intermediate product exact in a double.
+function Schema.colorSlot(userId: number): number
+	local h = 2166136261
+	for _, byte in ipairs({ string.byte(string.format("%.0f", userId), 1, -1) }) do
+		h = bit32.bxor(h, byte)
+		h = (bit32.lshift(h, 24) + h * 403) % 4294967296
+	end
+	return h % 8
+end
+
 function Schema.colorFor(userId: number): string
-	return Schema.PALETTE[userId % 8 + 1]
+	return Schema.PALETTE[Schema.colorSlot(userId) + 1]
+end
+
+function Schema.assignColors(room: {number}, extra: {number}?): {[number]: string}
+	local ordered: {number} = {}
+	local seen: {[number]: boolean} = {}
+	local function add(ids: {number})
+		local sorted = table.clone(ids)
+		table.sort(sorted)
+		for _, id in ipairs(sorted) do
+			if not seen[id] then
+				seen[id] = true
+				table.insert(ordered, id)
+			end
+		end
+	end
+	add(room)
+	if extra then
+		add(extra)
+	end
+
+	local taken: {[number]: boolean} = {}
+	local count = 0
+	local colors: {[number]: string} = {}
+	for _, id in ipairs(ordered) do
+		local slot = Schema.colorSlot(id)
+		if count < 8 then
+			while taken[slot] do
+				slot = (slot + 1) % 8
+			end
+			taken[slot] = true
+			count += 1
+		end
+		colors[id] = Schema.PALETTE[slot + 1]
+	end
+	return colors
 end
 
 local function clampText(s: string): string

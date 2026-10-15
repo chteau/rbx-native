@@ -87,15 +87,58 @@ pub struct Snapshot {
     pub users: Vec<UserState>,
 }
 
-/// The colour a user gets when they have not picked one: the same eight
-/// colours, in the same order, as `Schema.colorFor` in the plugin.
+/// The colours users are drawn in. A receiver assigns them from who is in
+/// the room ([`assign_colors`]) rather than trusting each sender's `color`,
+/// so two people in one room never share one while there are colours left.
+/// `Schema.PALETTE` in the plugin is the same list in the same order.
 pub const PALETTE: [&str; 8] = [
     "#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f08c00", "#0c8599", "#e03131", "#7048e8",
 ];
 
-/// `PALETTE[user_id % 8]`.
+/// A user's preferred palette slot: FNV-1a (32-bit) of the decimal user id,
+/// modulo the palette size. Pinned by `fixtures/colors.json`.
+pub fn color_slot(user_id: u64) -> usize {
+    let hash = user_id.to_string().bytes().fold(2_166_136_261u32, |h, b| {
+        (h ^ u32::from(b)).wrapping_mul(16_777_619)
+    });
+    hash as usize % PALETTE.len()
+}
+
+/// `PALETTE[color_slot(user_id)]`: what a sender puts in its own `color`.
 pub fn color_for(user_id: u64) -> &'static str {
-    PALETTE[(user_id % PALETTE.len() as u64) as usize]
+    PALETTE[color_slot(user_id)]
+}
+
+/// Colours for everyone in a room: `room` (the relay snapshot's users, the
+/// receiver included) in ascending id order, then `extra` ids not in `room`
+/// (people known only from elsewhere) in ascending order. Each takes its
+/// preferred slot, or the next free one after it (wrapping); once all eight
+/// are taken, its preferred slot again. Duplicates are ignored. Every client
+/// that sees the same room computes the same colours.
+pub fn assign_colors(room: &[u64], extra: &[u64]) -> std::collections::HashMap<u64, &'static str> {
+    let mut room_ids = room.to_vec();
+    room_ids.sort_unstable();
+    room_ids.dedup();
+    let mut extra_ids: Vec<u64> = extra
+        .iter()
+        .copied()
+        .filter(|id| room_ids.binary_search(id).is_err())
+        .collect();
+    extra_ids.sort_unstable();
+    extra_ids.dedup();
+
+    let mut taken = [false; PALETTE.len()];
+    let mut colors = std::collections::HashMap::new();
+    for id in room_ids.into_iter().chain(extra_ids) {
+        let preferred = color_slot(id);
+        let slot = (0..PALETTE.len())
+            .map(|step| (preferred + step) % PALETTE.len())
+            .find(|&slot| !taken[slot])
+            .unwrap_or(preferred);
+        taken[slot] = true;
+        colors.insert(id, PALETTE[slot]);
+    }
+    colors
 }
 
 impl UserState {

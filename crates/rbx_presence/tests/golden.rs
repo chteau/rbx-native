@@ -2,7 +2,8 @@
 //! encoder is also tested with, so both sides agree on the wire shape.
 
 use rbx_presence::schema::{
-    color_for, Client, Edit, Snapshot, UserState, MAX_EDITS, MAX_SELECTION, MAX_TEXT, PALETTE,
+    assign_colors, color_for, color_slot, Client, Edit, Snapshot, UserState, MAX_EDITS,
+    MAX_SELECTION, MAX_TEXT, PALETTE,
 };
 use serde_json::Value;
 
@@ -136,8 +137,59 @@ fn clamp_truncates_multibyte_name_on_a_char_boundary() {
 }
 
 #[test]
-fn color_for_wraps_the_palette() {
-    assert_eq!(color_for(9), PALETTE[1]);
-    assert_eq!(color_for(9), "#1c7ed6");
-    assert_eq!(color_for(8), PALETTE[0]);
+fn palette_matches_the_fixture() {
+    let fixture = read_fixture("colors.json");
+    let palette: Vec<&str> = fixture["palette"]
+        .as_array()
+        .expect("palette")
+        .iter()
+        .map(|c| c.as_str().expect("colour"))
+        .collect();
+    assert_eq!(palette, PALETTE.to_vec());
+}
+
+#[test]
+fn color_slots_match_the_fixture_hashes() {
+    let fixture = read_fixture("colors.json");
+    for case in fixture["hashes"].as_array().expect("hashes") {
+        let id = case["userId"].as_u64().expect("userId");
+        let slot = case["slot"].as_u64().expect("slot") as usize;
+        assert_eq!(color_slot(id), slot, "slot of {id}");
+        assert_eq!(color_for(id), PALETTE[slot], "colour of {id}");
+    }
+}
+
+#[test]
+fn assigned_colors_match_the_fixture_rooms() {
+    let fixture = read_fixture("colors.json");
+    let ids = |value: &Value| -> Vec<u64> {
+        value
+            .as_array()
+            .expect("array")
+            .iter()
+            .map(|v| v.as_u64().expect("id"))
+            .collect()
+    };
+    for case in fixture["rooms"].as_array().expect("rooms") {
+        let got = assign_colors(&ids(&case["room"]), &ids(&case["extra"]));
+        let want = case["colors"].as_object().expect("colors");
+        assert_eq!(got.len(), want.len(), "{case}");
+        for (key, colour) in want {
+            let id: u64 = key.parse().expect("decimal id");
+            assert_eq!(
+                got.get(&id).copied(),
+                colour.as_str(),
+                "user {id} in {case}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_room_of_eight_gets_eight_distinct_colors() {
+    let room: Vec<u64> = (100..108).collect();
+    let colors = assign_colors(&room, &[]);
+    let distinct: std::collections::HashSet<_> = colors.values().collect();
+    assert_eq!(colors.len(), 8);
+    assert_eq!(distinct.len(), 8);
 }

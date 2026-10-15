@@ -85,19 +85,15 @@ pub(crate) fn parse_color(hex: &str) -> Option<(u8, u8, u8)> {
     Some((byte(0)?, byte(2)?, byte(4)?))
 }
 
-fn color_or_default(hex: &str, user_id: u64) -> (u8, u8, u8) {
-    parse_color(hex)
-        .or_else(|| parse_color(schema::color_for(user_id)))
-        .unwrap_or((128, 128, 128))
-}
-
 /// Everyone to list, `own_id` left out: senders from `snapshot` whose
 /// `seen` is within `schema::EXPIRY_MS` of `now_ms` (`Sending`), `members`
-/// who are not sending (`InSessionWithoutPlugin`, palette colour from
-/// `schema::color_for`), then `departed` within `DEPARTED_KEEP_MS` who are
-/// in neither (`NotInStudio`). Sorted by status, then name
-/// (case-insensitive). Paths resolve against `dom` with
-/// `rbx_presence::paths::resolve`; a bad colour falls back to `color_for`.
+/// who are not sending (`InSessionWithoutPlugin`), then `departed` within
+/// `DEPARTED_KEEP_MS` who are in neither (`NotInStudio`). Sorted by status,
+/// then name (case-insensitive). Paths resolve against `dom` with
+/// `rbx_presence::paths::resolve`. Colours are not taken from what senders
+/// claim: `schema::assign_colors` gives everyone in the room (the snapshot's
+/// users plus `own_id` when it is not 0) a distinct one, with members and
+/// departed ids placed after them, so every client agrees.
 pub(crate) fn collaborators(
     snapshot: Option<&Snapshot>,
     members: Option<&[Member]>,
@@ -110,6 +106,21 @@ pub(crate) fn collaborators(
     let mut listed: Vec<u64> = vec![own_id];
 
     let senders = snapshot.map(|s| s.users.as_slice()).unwrap_or(&[]);
+    let mut room: Vec<u64> = senders.iter().map(|u| u.user_id).collect();
+    if own_id != 0 {
+        room.push(own_id);
+    }
+    let extra: Vec<u64> = members
+        .unwrap_or(&[])
+        .iter()
+        .map(|m| m.user_id)
+        .chain(departed.iter().map(|d| d.user_id))
+        .collect();
+    let assigned = schema::assign_colors(&room, &extra);
+    let color_of = |id: u64| {
+        parse_color(assigned.get(&id).copied().unwrap_or(schema::color_for(id)))
+            .unwrap_or((128, 128, 128))
+    };
     for user in senders {
         if user.user_id == own_id
             || listed.contains(&user.user_id)
@@ -129,7 +140,7 @@ pub(crate) fn collaborators(
         out.push(Collaborator {
             user_id: user.user_id,
             name: user.name.clone(),
-            color: color_or_default(&user.color, user.user_id),
+            color: color_of(user.user_id),
             client: Some(user.client),
             status: Status::Sending,
             selection,
@@ -151,7 +162,7 @@ pub(crate) fn collaborators(
         out.push(bare(
             member.user_id,
             &member.name,
-            schema::color_for(member.user_id),
+            color_of(member.user_id),
             Status::InSessionWithoutPlugin,
         ));
     }
@@ -165,7 +176,7 @@ pub(crate) fn collaborators(
         out.push(bare(
             gone.user_id,
             &gone.name,
-            &gone.color,
+            color_of(gone.user_id),
             Status::NotInStudio,
         ));
     }
@@ -174,11 +185,11 @@ pub(crate) fn collaborators(
     out
 }
 
-fn bare(user_id: u64, name: &str, color: &str, status: Status) -> Collaborator {
+fn bare(user_id: u64, name: &str, color: (u8, u8, u8), status: Status) -> Collaborator {
     Collaborator {
         user_id,
         name: name.to_string(),
-        color: color_or_default(color, user_id),
+        color,
         client: None,
         status,
         selection: Vec::new(),

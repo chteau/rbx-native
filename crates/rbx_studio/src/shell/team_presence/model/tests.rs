@@ -40,10 +40,26 @@ fn statuses_and_order_from_fixture() {
     assert_eq!(list[0].selection.len(), 1);
     assert_eq!(list[0].unresolved, 0);
     assert_eq!(list[0].client, Some(Client::Studio));
-    assert_eq!(list[0].color, (0xe8, 0x59, 0x0c));
     assert_eq!(list[0].edits[0].at, NOW - 4_000);
     assert!(list[0].script.as_ref().unwrap().1.is_none());
     assert_eq!(list[2].client, None);
+}
+
+#[test]
+fn everyone_gets_a_distinct_assigned_color() {
+    let mock = load_mock("fixture", NOW).unwrap();
+    let list = rows(0, &mock, &dom());
+    let got: Vec<(&str, (u8, u8, u8))> = list.iter().map(|c| (c.name.as_str(), c.color)).collect();
+    let hex = |s: &str| parse_color(s).unwrap();
+    assert_eq!(
+        got,
+        vec![
+            ("Ana", hex("#7048e8")),
+            ("Cleo", hex("#2f9e44")),
+            ("Dee", hex("#0c8599")),
+            ("Eli", hex("#e03131")),
+        ]
+    );
 }
 
 #[test]

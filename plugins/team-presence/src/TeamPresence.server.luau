@@ -5,6 +5,7 @@ local Auth = require(script.Auth)
 local Capture = require(script.Capture)
 local Markers = require(script.Markers)
 local Relay = require(script.Relay)
+local Schema = require(script.Schema)
 local Secret = require(script.Secret)
 local Widget = require(script.Widget)
 
@@ -125,6 +126,14 @@ local function start()
 			if snapshot then
 				backoff = 0
 				cursor = snapshot.cursor
+				local ids = { ownId }
+				for _, user in snapshot.users do
+					table.insert(ids, user.userId)
+				end
+				local colors = Schema.assignColors(ids)
+				for _, user in snapshot.users do
+					user.color = colors[user.userId] or user.color
+				end
 				local native = {}
 				for _, user in snapshot.users do
 					if user.userId ~= ownId and user.client == "rbx-native" then
