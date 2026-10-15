@@ -39,6 +39,8 @@ rbx_play = { path = "../rbx_play" }
 rbx_animation = { path = "../rbx_animation" }
 rbx_autorig = { path = "../rbx_autorig" }
 rbx_dom = { path = "../rbx_dom" }
+# Team presence: the relay protocol, the place secret and the WebSocket.
+rbx_presence = { path = "../rbx_presence" }
 # Import 3D Model…: the triangle budget check and the file that is uploaded.
 rbx_import = { path = "../rbx_import" }
 # The UI Editor's "Import from Figma…": sign-in, the API and the class
