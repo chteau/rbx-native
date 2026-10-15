@@ -623,12 +623,25 @@ impl Shell {
             }
             if let Some((source, row)) = session::feedback_for(&event) {
                 match &event {
-                    Uplink::Log { side, .. } => {
+                    Uplink::Log {
+                        side,
+                        parts,
+                        origin,
+                        ..
+                    } => {
                         let context = match side {
                             Side::Server => super::output::game::Context::Server,
                             Side::Client => super::output::game::Context::Client,
                         };
-                        self.output.push_game(context, row);
+                        self.output.push_game(
+                            context,
+                            row,
+                            super::output::game::print_parts(parts),
+                            origin.as_ref().map(|o| super::output::game::Location {
+                                path: o.script.clone(),
+                                line: o.line,
+                            }),
+                        );
                     }
                     _ => self.output.push(source, row),
                 }

@@ -62,6 +62,53 @@ pub enum LogLevel {
     Error,
 }
 
+/// Where a game `print` was called: the chunk name Roblox gives the script
+/// (its full name, `ServerScriptService.Main`) and the line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Origin {
+    pub script: String,
+    pub line: u32,
+}
+
+/// One `print` argument: what `tostring` said, or a table walked into a tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PrintedPart {
+    Text(String),
+    Table(PrintedTable),
+}
+
+/// A printed table, keys sorted numbers first, then strings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrintedTable {
+    /// `0x…`, the address `tostring` puts after `table: `.
+    pub address: String,
+    #[serde(default)]
+    pub entries: Vec<PrintedEntry>,
+    /// Entries past the probe's cap, counted but not walked.
+    #[serde(default)]
+    pub more: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrintedEntry {
+    /// The key as Studio writes it inside its brackets: `"name"` or `1`.
+    pub key: String,
+    pub value: PrintedValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PrintedValue {
+    /// A scalar, strings quoted.
+    Text(String),
+    Table(PrintedTable),
+    /// A table already open up this branch, or past the depth cap.
+    Reference {
+        reference: String,
+    },
+}
+
 /// Probe → editor. Tagged by `"type"`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -83,6 +130,14 @@ pub enum Uplink {
         message: String,
         /// Seconds since the probe started.
         time: f64,
+        /// The `print` call's arguments, kept structured, when one of them
+        /// was a table (`probe/print.luau`); empty otherwise.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<PrintedPart>,
+        /// The game script and line that printed it, for a `print` from a
+        /// game script (`crate::print`); `None` for everything else.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Origin>,
     },
     /// Result of a command: `ok` plus a printable value or error text.
     Ack { id: u64, ok: bool, result: String },

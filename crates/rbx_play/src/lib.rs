@@ -21,6 +21,7 @@ pub mod instrument;
 pub mod launch;
 pub mod live;
 pub mod market;
+pub mod print;
 pub mod protocol;
 pub mod tunnel;
 pub mod value;

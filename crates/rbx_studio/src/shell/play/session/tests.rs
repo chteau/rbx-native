@@ -28,6 +28,8 @@ fn log(side: Side, level: LogLevel) -> Uplink {
         level,
         message: "m".to_owned(),
         time: 0.0,
+        parts: Vec::new(),
+        origin: None,
     }
 }
 
@@ -226,13 +228,34 @@ fn marketplace_scripts_are_rewritten_in_the_copy_only() {
     assert!(crate::script_editor::source::write(
         &mut dom,
         plain,
-        "print(1)\n"
+        "local x = 1\n"
     ));
     let prepared = prepare(&dom, &config(), &[]).unwrap();
     let back = rbx_binary::deserialize(prepared.bytes.as_slice()).unwrap();
     assert!(source_named(&back, "Shop")
         .unwrap()
         .contains("__rbxnative_market"));
-    assert_eq!(source_named(&back, "Plain").as_deref(), Some("print(1)\n"));
+    assert_eq!(
+        source_named(&back, "Plain").as_deref(),
+        Some("local x = 1\n")
+    );
     assert_eq!(source_named(&dom, "Shop").as_deref(), Some(shop_src));
+}
+
+#[test]
+fn printing_scripts_shadow_print_on_their_first_line_in_the_copy_only() {
+    let mut dom = WeakDom::new();
+    let sss = dom.new_instance("ServerScriptService", "ServerScriptService", None);
+    let main = dom.new_instance("Script", "Main", Some(sss));
+    let src = "--!strict\nprint({1})\n";
+    assert!(crate::script_editor::source::write(&mut dom, main, src));
+    let prepared = prepare(&dom, &config(), &[]).unwrap();
+    let back = rbx_binary::deserialize(prepared.bytes.as_slice()).unwrap();
+    let published = source_named(&back, "Main").unwrap();
+    assert_eq!(
+        published,
+        format!("--!strict\n{}print({{1}})\n", rbx_play::print::PREFIX)
+    );
+    assert_eq!(source_named(&dom, "Main").as_deref(), Some(src));
+    assert!(source_named(&back, rbx_play::print::PRINT_NAME).is_some());
 }

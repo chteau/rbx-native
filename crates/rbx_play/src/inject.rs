@@ -20,6 +20,8 @@ pub const PROBE_DEBUG: &str = include_str!("probe/debug.luau");
 pub const PROBE_MARKET: &str = include_str!("probe/market.luau");
 /// The purchase prompt UI the market module drives (ModuleScript in ReplicatedStorage).
 pub const PROBE_MARKET_UI: &str = include_str!("probe/market_ui.luau");
+/// `__rbxnative_print`: game scripts' structured `print` (see `crate::print`).
+pub const PROBE_PRINT: &str = include_str!("probe/print.luau");
 pub const DEBUG_NAME: &str = "__rbxnative_debug";
 pub const CODEC_NAME: &str = "__rbxnative_codec";
 pub const LIVE_NAME: &str = "__rbxnative_live";
@@ -53,6 +55,7 @@ pub struct Injected {
     pub debug: Ref,
     pub market: Ref,
     pub market_ui: Ref,
+    pub print: Ref,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +104,7 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, rs, DEBUG_NAME);
     remove_named(dom, rs, crate::market::MARKET_NAME);
     remove_named(dom, rs, crate::market::MARKET_UI_NAME);
+    remove_named(dom, rs, crate::print::PRINT_NAME);
 
     let market = dom.new_instance("ModuleScript", crate::market::MARKET_NAME, Some(rs));
     set_prop(
@@ -115,6 +119,14 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         market_ui,
         "Source",
         Variant::String(PROBE_MARKET_UI.to_owned()),
+    );
+
+    let print = dom.new_instance("ModuleScript", crate::print::PRINT_NAME, Some(rs));
+    set_prop(
+        dom,
+        print,
+        "Source",
+        Variant::String(PROBE_PRINT.to_owned()),
     );
 
     let codec = dom.new_instance("ModuleScript", CODEC_NAME, Some(rs));
@@ -175,6 +187,7 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         debug,
         market,
         market_ui,
+        print,
     })
 }
 

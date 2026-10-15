@@ -85,6 +85,8 @@ fn ingest_two_uplinks_returns_204_and_events_arrive_in_order() {
             level: LogLevel::Output,
             message: "hello".to_owned(),
             time: 1.5,
+            parts: Vec::new(),
+            origin: None,
         },
         Uplink::Hello {
             session: "s1".to_owned(),
