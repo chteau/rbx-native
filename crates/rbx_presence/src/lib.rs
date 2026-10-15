@@ -15,6 +15,7 @@
 //! - [`relay`]: the default endpoint both sides connect to with no config.
 //! - [`client`]: the relay WebSocket, on a worker thread.
 //! - [`catchup`]: a summary of the value-less edit journal for a reconnecting user.
+//! - [`lastseen`]: the per-place timestamp and snapshot a reconnecting user catches up from.
 
 /// Unix milliseconds now, or 0 if the clock is before the epoch.
 pub fn now_ms() -> u64 {
@@ -26,6 +27,7 @@ pub fn now_ms() -> u64 {
 pub mod auth;
 pub mod catchup;
 pub mod client;
+pub mod lastseen;
 pub mod ntfy;
 pub mod paths;
 pub mod relay;
