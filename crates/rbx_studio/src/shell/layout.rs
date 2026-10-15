@@ -188,7 +188,10 @@ impl Panel {
     /// leaves it shut: a tool opened from the ribbon, not a fixture of the
     /// window.
     pub(crate) fn starts_closed(self) -> bool {
-        matches!(self, Panel::TerrainEditor | Panel::Collaborators | Panel::PluginWidgets)
+        matches!(
+            self,
+            Panel::TerrainEditor | Panel::Collaborators | Panel::PluginWidgets
+        )
     }
 
     /// Whether its strip controls are a toolbar that takes the rest of the
