@@ -30,6 +30,13 @@ pub(super) fn member(
         "BreakJoints" | "MakeJoints" if is("BasePart") || is("Model") => {
             lua.create_function(|_, _: MultiValue| Ok(()))?
         }
+        // Without physics no joints or constraints are ever formed.
+        "GetJoints" | "GetNoCollisionConstraints" | "GetConnectedParts" | "GetTouchingParts"
+            if is("BasePart") =>
+        {
+            lua.create_function(|lua, _: MultiValue| lua.create_table())?
+        }
+        "CanCollideWith" if is("BasePart") => lua.create_function(|_, _: MultiValue| Ok(true))?,
         // No assemblies without physics: every part is its own root.
         "GetRootPart" if is("BasePart") => {
             let ctx = ctx.clone();
@@ -43,6 +50,12 @@ pub(super) fn member(
             lua.create_function(move |_, _: MultiValue| {
                 let frame = crate::pivot::pivot(&ctx.dom(), ctx.database(), referent);
                 Ok(LuaCFrame(frame.unwrap_or(IDENTITY)))
+            })?
+        }
+        "WorldToViewportPoint" | "WorldToScreenPoint" if class == "Camera" => {
+            let ctx = ctx.clone();
+            lua.create_function(move |lua, (_this, point): (Value, Value)| {
+                world_to_view(lua, &ctx, referent, &point)
             })?
         }
         "ScreenPointToRay" | "ViewportPointToRay" if class == "Camera" => {
@@ -66,6 +79,62 @@ const IDENTITY: CFrameData = CFrameData {
     },
     rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
 };
+
+/// `Camera:WorldToViewportPoint(p)`: `(Vector3(x, y, depth), onScreen)`,
+/// x/y in the view's pixels and depth along the look direction.
+fn world_to_view(lua: &Lua, ctx: &Ctx, camera: Ref, point: &Value) -> Result<(Value, bool)> {
+    let p =
+        crate::datatypes::from_userdata::<crate::datatypes::vector3::LuaVector3>(point, "Vector3")?
+            .0;
+    let (frame, fov) = camera_pose(ctx, camera)?;
+    let [width, height] = env(lua)
+        .shared
+        .borrow()
+        .context
+        .viewport_size
+        .unwrap_or([1280.0, 720.0]);
+    let d = [
+        p.x - frame.position.x,
+        p.y - frame.position.y,
+        p.z - frame.position.z,
+    ];
+    // Into camera space: the transpose of the rotation, the camera looking
+    // down its own -Z.
+    let r = &frame.rotation;
+    let local = [
+        r[0] * d[0] + r[3] * d[1] + r[6] * d[2],
+        r[1] * d[0] + r[4] * d[1] + r[7] * d[2],
+        r[2] * d[0] + r[5] * d[1] + r[8] * d[2],
+    ];
+    let depth = -local[2];
+    let tan = (fov.to_radians() / 2.0).tan();
+    let aspect = width / height.max(1.0);
+    let safe = if depth.abs() < 1e-6 { 1e-6 } else { depth };
+    let ndc_x = local[0] / (safe * tan * aspect);
+    let ndc_y = local[1] / (safe * tan);
+    let x = (ndc_x + 1.0) / 2.0 * width;
+    let y = (1.0 - ndc_y) / 2.0 * height;
+    let on_screen = depth > 0.0 && (0.0..=width).contains(&x) && (0.0..=height).contains(&y);
+    let vector3: Table = lua.globals().get("Vector3")?;
+    let new_vector: mlua::Function = vector3.get("new")?;
+    Ok((new_vector.call((x, y, depth))?, on_screen))
+}
+
+fn camera_pose(ctx: &Ctx, camera: Ref) -> Result<(CFrameData, f32)> {
+    let dom = ctx.dom();
+    let instance = dom
+        .get(camera)
+        .ok_or_else(crate::property::missing_instance)?;
+    let frame = match instance.properties().get("CFrame") {
+        Some(Variant::CFrame(frame)) => *frame,
+        _ => IDENTITY,
+    };
+    let fov = match instance.properties().get("FieldOfView") {
+        Some(Variant::Float32(degrees)) => *degrees,
+        _ => DEFAULT_FOV,
+    };
+    Ok((frame, fov))
+}
 
 /// A unit `Ray` from the camera through pixel `point` of the 3D view,
 /// starting `depth` studs out. Studio's edit view has no top bar, so the

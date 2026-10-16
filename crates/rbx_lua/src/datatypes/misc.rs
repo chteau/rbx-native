@@ -61,8 +61,14 @@ impl UserData for LuaVector2 {
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
-        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
-            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        methods.add_meta_function(MetaMethod::Index, |lua, (this, key): (Value, String)| {
+            match crate::compat::datatype_method(lua, &key)? {
+                Some(method) => Ok(method),
+                None => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of {}",
+                    this.type_name()
+                ))),
+            }
         });
         methods.add_meta_method(MetaMethod::Add, |_, this, rhs: Value| {
             combine2(this, &rhs, |a, b| a + b)

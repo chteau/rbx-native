@@ -20,10 +20,20 @@ pub(crate) type AwaitId = u32;
 const YIELDING_KEY: &str = "__plugin_yielding";
 const RUNNER_KEY: &str = "__plugin_runner";
 
+/// The running thread parks itself under its await id before yielding
+/// (`park` hands back the result at once when it is already there), so a
+/// wait works in any coroutine — one a script made with `coroutine.wrap`
+/// included — as in Roblox, where the engine resumes whichever thread
+/// waited, not whoever last resumed it.
 const YIELDING_SRC: &str = r#"
+local park = ...
 return function(start)
     return function(...)
-        local r = table.pack(coroutine.yield("__await", start(...)))
+        local id = start(...)
+        local ready, r = park(id, coroutine.running())
+        if not ready then
+            r = table.pack(coroutine.yield())
+        end
         if r[1] then
             return table.unpack(r, 2, r.n)
         end
@@ -62,7 +72,24 @@ pub(crate) struct Scheduler {
 /// `delay`, `spawn`, `tick`, `time`, `elapsedTime` as globals, and the
 /// registry function [`yielding`] uses. Call before sandboxing.
 pub(crate) fn install(lua: &Lua) -> Result<()> {
-    let maker: Function = lua.load(YIELDING_SRC).set_name("=yielding").eval()?;
+    let park = lua.create_function(|lua, (id, thread): (AwaitId, Thread)| {
+        let env = env(lua);
+        let mut scheduler = env.scheduler.borrow_mut();
+        match scheduler.early.remove(&id) {
+            Some(result) => {
+                drop(scheduler);
+                let values = resolution(lua, result)?;
+                let packed = lua.create_sequence_from(values.iter().cloned())?;
+                packed.set("n", values.len())?;
+                Ok((true, Value::Table(packed)))
+            }
+            None => {
+                scheduler.waiting.insert(id, thread);
+                Ok((false, Value::Nil))
+            }
+        }
+    })?;
+    let maker: Function = lua.load(YIELDING_SRC).set_name("=yielding").call(park)?;
     lua.set_named_registry_value(YIELDING_KEY, maker)?;
     let runner_fn: Function = lua.load(RUNNER_SRC).set_name("=runner").eval()?;
     lua.set_named_registry_value(RUNNER_KEY, runner_fn)?;

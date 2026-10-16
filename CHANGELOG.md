@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-10-16
+
+- **Plugins: most popular community plugins run.** Of the 30 most-voted free
+  plugins on the Creator Store, 28 now start and answer their toolbar
+  buttons without an error, F3X Building Tools among them: its tool dock,
+  panels and move handles draw over the 3D view, clicking selects, dragging
+  a handle moves the part and Ctrl+Z undoes it. An activated plugin
+  (`plugin:Activate`) now gets the 3D view's mouse (`PluginMouse` and
+  `UserInputService` events, with the cursor's position) instead of the
+  editor selecting, a press-to-release being one undo step. Scripts get
+  Roblox's environment rules — `getfenv(0)`, writable `_G`/`shared`,
+  `require("./Sibling")`, waits inside `coroutine.wrap` — and LocalScripts
+  run. Services a place lacks (`ScriptEditorService`, `ContentProvider`,
+  `ContextActionService`, `GuiService`, …) are made on demand; `Players`
+  name/thumbnail/friends lookups and `MarketplaceService:GetProductInfo` go
+  through Roblox's public web APIs; `typeof` names Roblox types; the
+  deprecated lowercase spellings (`part:findFirstChild`, `cf.p`, `c:lerp`,
+  `signal:connect`) answer; and many smaller members landed (tags,
+  remotes, GUI tweens, `Font.fromName`, `DateTime` formatting,
+  `utf8.graphemes`, int16 vectors, the `FindPartOnRay` family, …). Images
+  in plugin GUIs now appear once they finish downloading. Two plugins still
+  fail: one depends on script start order, the other needs its own GUI kit
+  in the place. — @chteau
+
 ## 2026-10-15
 
 - **Plugins: Archimedes runs.** Scriptos's Archimedes arc builder — a

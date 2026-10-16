@@ -120,8 +120,14 @@ impl UserData for LuaVector3 {
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
-        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
-            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        methods.add_meta_function(MetaMethod::Index, |lua, (this, key): (Value, String)| {
+            match crate::compat::datatype_method(lua, &key)? {
+                Some(method) => Ok(method),
+                None => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of {}",
+                    this.type_name()
+                ))),
+            }
         });
         methods.add_method("Dot", |_, this, other: LuaVector3| {
             Ok(this.0.x * other.0.x + this.0.y * other.0.y + this.0.z * other.0.z)
@@ -283,6 +289,22 @@ fn enum_value(item: &Value, expected: &str) -> Result<u32> {
                 return Ok(item.value());
             }
         }
+    }
+    // Roblox also takes an item's name or value where an enum is expected.
+    let names: &[&str] = match expected {
+        "NormalId" => &["Right", "Top", "Back", "Left", "Bottom", "Front"],
+        _ => &["X", "Y", "Z"],
+    };
+    match item {
+        Value::String(name) => {
+            let name = name.to_str()?;
+            if let Some(index) = names.iter().position(|n| *n == &*name) {
+                return Ok(index as u32);
+            }
+        }
+        Value::Integer(n) if (0..names.len() as i64).contains(n) => return Ok(*n as u32),
+        Value::Number(n) if (0.0..names.len() as f64).contains(n) => return Ok(*n as u32),
+        _ => {}
     }
     Err(mlua::Error::runtime(format!(
         "invalid argument #1 (Enum.{expected} expected, got {})",

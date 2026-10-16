@@ -25,8 +25,14 @@ pub(super) fn member(
         }
     }
     match (class, key) {
-        ("LocalizationTable", "GetTranslator")
-        | ("LocalizationService", "GetTranslatorForLocaleAsync")
+        ("LocalizationTable", "GetTranslator") => {
+            let entries = table_entries(ctx, referent);
+            let f = lua.create_function(move |lua, (_, locale): (Value, Option<String>)| {
+                table_translator(lua, &entries, locale.as_deref().unwrap_or("en-us"))
+            })?;
+            Ok(Some(Value::Function(f)))
+        }
+        ("LocalizationService", "GetTranslatorForLocaleAsync")
         | ("LocalizationService", "GetTranslatorForPlayerAsync")
         | ("LocalizationService", "GetTranslatorForPlayer") => {
             let translator = translator(lua)?;
@@ -80,6 +86,65 @@ fn gui_tween(lua: &Lua, fields: &'static [&'static str]) -> Result<Value> {
         Ok(true)
     })?;
     Ok(Value::Function(f))
+}
+
+/// A `LocalizationTable`'s entries, from the JSON its `Contents` holds:
+/// `[{ "key", "source", "context", "values": { locale: text } }]`.
+fn table_entries(ctx: &Ctx, referent: Ref) -> Vec<serde_json::Value> {
+    let dom = ctx.dom();
+    let text = dom
+        .get(referent)
+        .and_then(|i| match i.properties().get("Contents") {
+            Some(rbx_dom::Variant::String(text)) => Some(text.clone()),
+            _ => None,
+        });
+    text.and_then(|t| serde_json::from_str::<Vec<serde_json::Value>>(&t).ok())
+        .unwrap_or_default()
+}
+
+/// A `Translator` over one table's entries for `locale` (falling back to
+/// `en-us`, then the source text): `FormatByKey(key, args)` with `{name}`
+/// / `{1}` placeholders filled, `Translate(context, source)`.
+fn table_translator(lua: &Lua, entries: &[serde_json::Value], locale: &str) -> Result<Value> {
+    let by_key = lua.create_table()?;
+    let by_source = lua.create_table()?;
+    for entry in entries {
+        let values = &entry["values"];
+        let text = values[locale]
+            .as_str()
+            .or_else(|| values["en-us"].as_str())
+            .or_else(|| entry["source"].as_str())
+            .unwrap_or_default();
+        if let Some(key) = entry["key"].as_str().filter(|k| !k.is_empty()) {
+            by_key.set(key, text)?;
+        }
+        if let Some(source) = entry["source"].as_str().filter(|s| !s.is_empty()) {
+            by_source.set(source, text)?;
+        }
+    }
+    lua.load(
+        r#"
+        local byKey, bySource, locale = ...
+        local function fill(text, args)
+            if type(args) ~= "table" then return text end
+            return (text:gsub("{([%w_]+)}", function(name)
+                local value = args[name] or args[tonumber(name)]
+                return value ~= nil and tostring(value) or nil
+            end))
+        end
+        return {
+            LocaleId = locale,
+            FormatByKey = function(_, key, args)
+                local text = byKey[key]
+                if text == nil then error("FormatByKey: no entry for key " .. tostring(key), 2) end
+                return fill(text, args)
+            end,
+            Translate = function(_, _, source) return bySource[source] or source end,
+        }
+        "#,
+    )
+    .set_name("=Translator")
+    .call((by_key, by_source, locale))
 }
 
 /// A `Translator` that hands text back untranslated.

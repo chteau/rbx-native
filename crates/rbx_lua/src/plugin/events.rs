@@ -94,6 +94,43 @@ pub(crate) fn focused_text_box(lua: &Lua) -> Option<Ref> {
 }
 
 /// Fires the `Input*` signals on the element and on `UserInputService`.
+/// `UserInputService` events for the 3D view's mouse (what Roblox reports
+/// for input over the viewport), at `at` in the view's pixels.
+pub(crate) fn fire_viewport_input(
+    lua: &Lua,
+    input: crate::plugin::api::MouseInput,
+    at: [f32; 2],
+) -> Result<()> {
+    use crate::plugin::api::MouseInput;
+    let [x, y] = at;
+    let button = |b: u8| {
+        if b == 2 {
+            "MouseButton2"
+        } else {
+            "MouseButton1"
+        }
+    };
+    let (signal_name, kind, state, z) = match input {
+        MouseInput::Down(b) => {
+            with_state(lua, |s| s.buttons[usize::from(b == 2)] = true);
+            ("InputBegan", button(b), "Begin", 0.0)
+        }
+        MouseInput::Up(b) => {
+            with_state(lua, |s| s.buttons[usize::from(b == 2)] = false);
+            ("InputEnded", button(b), "End", 0.0)
+        }
+        MouseInput::Move => ("InputChanged", "MouseMovement", "Change", 0.0),
+        MouseInput::Wheel(dir) => ("InputChanged", "MouseWheel", "Change", f32::from(dir)),
+    };
+    with_state(lua, |s| s.mouse = (x, y));
+    let object = super::input::input_object_at(lua, kind, state, [x, y, z])?;
+    signal::fire_values(
+        lua,
+        &SignalKey::new(Owner::Service("UserInputService"), signal_name),
+        MultiValue::from_iter([object, Value::Boolean(false)]),
+    )
+}
+
 fn fire_input(
     lua: &Lua,
     r: Ref,

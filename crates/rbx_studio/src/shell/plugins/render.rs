@@ -38,6 +38,9 @@ struct Job {
 struct Queue {
     jobs: VecDeque<Job>,
     closed: bool,
+    /// Bumped whenever images a render was missing have since arrived, so
+    /// the widgets are drawn again with them (see `Renderer::landed`).
+    landed: u64,
 }
 
 type Shared = Arc<(Mutex<Queue>, Condvar)>;
@@ -94,6 +97,12 @@ impl Renderer {
         queue.jobs.retain(|queued| queued.widget != widget);
         queue.jobs.push_back(job);
         wake.notify_one();
+    }
+
+    /// How many times images landed after a render went out without them;
+    /// a change means every widget should be drawn again.
+    pub(crate) fn landed(&self) -> u64 {
+        self.queue.0.lock().map(|queue| queue.landed).unwrap_or(0)
     }
 
     /// Renders finished since the last call.
@@ -173,18 +182,25 @@ fn sinks(dom: &WeakDom) -> HashSet<Ref> {
         let Some(instance) = dom.get(referent) else {
             continue;
         };
-        let active = matches!(
-            instance.properties().get("Active"),
-            Some(rbx_dom::Variant::Bool(true))
-        );
+        // `Active` decides when it is set; unset, buttons, text boxes and
+        // scrolling frames take the pointer (their default is `true`) and
+        // anything else lets it through. F3X's handle dots are buttons with
+        // `Active = false` so a press reaches the handle beneath.
         let class = instance.class();
-        if active || ["TextButton", "ImageButton", "TextBox", "ScrollingFrame"].contains(&class) {
+        let takes = match instance.properties().get("Active") {
+            Some(rbx_dom::Variant::Bool(active)) => *active,
+            _ => ["TextButton", "ImageButton", "TextBox", "ScrollingFrame"].contains(&class),
+        };
+        if takes {
             found.insert(referent);
         }
         stack.extend_from_slice(instance.children());
     }
     found
 }
+
+/// How often an idle renderer checks for images that have landed.
+const LANDING_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
     let mut headless: Option<Headless> = None;
@@ -199,13 +215,36 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
                     return;
                 }
                 if let Some(job) = guard.jobs.pop_front() {
-                    break job;
+                    break Some(job);
                 }
-                guard = match wake.wait(guard) {
-                    Ok(guard) => guard,
+                // Idle with a viewer: wake now and then to collect images
+                // that were still downloading when the last render went out.
+                if headless.is_none() {
+                    guard = match wake.wait(guard) {
+                        Ok(guard) => guard,
+                        Err(_) => return,
+                    };
+                    continue;
+                }
+                let (next, timeout) = match wake.wait_timeout(guard, LANDING_POLL) {
+                    Ok(pair) => pair,
                     Err(_) => return,
                 };
+                guard = next;
+                if timeout.timed_out() && guard.jobs.is_empty() {
+                    break None;
+                }
             }
+        };
+        let Some(job) = job else {
+            if let Some(viewer) = headless.as_mut() {
+                if viewer.tick(LANDING_POLL) {
+                    if let Ok(mut queue) = queue.0.lock() {
+                        queue.landed += 1;
+                    }
+                }
+            }
+            continue;
         };
         let mut dom = job.dom;
         let sinks = sinks(&dom);
@@ -223,6 +262,10 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
         let Some(viewer) = headless.as_mut() else {
             continue;
         };
+        // Swap in images that landed since the last render; a widget drawn
+        // every frame never leaves the renderer idle long enough to do it
+        // in the wait above.
+        viewer.tick(std::time::Duration::ZERO);
         let size = (job.size.0.max(1), job.size.1.max(1));
         let rendered = if job.transparent {
             viewer

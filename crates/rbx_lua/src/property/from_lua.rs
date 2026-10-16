@@ -72,8 +72,10 @@ pub(crate) fn lua_to_variant(
     value: &Value,
 ) -> Result<Variant> {
     match value_type {
+        // `nil` reads as `false` (plugins such as F3X write `Visible = nil`).
         "bool" => match value {
             Value::Boolean(flag) => Ok(Variant::Bool(*flag)),
+            Value::Nil => Ok(Variant::Bool(false)),
             other => Err(type_error(name, "boolean", other)),
         },
         // A ContentId (`Decal.Texture`) is the asset URI as a plain string,

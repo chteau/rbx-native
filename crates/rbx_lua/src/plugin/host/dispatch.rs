@@ -12,8 +12,8 @@ use rbx_dom::{Change, Ref, Variant, Vector2Data, WeakDom};
 use super::{Loaded, PluginHost};
 use crate::ctx::Ctx;
 use crate::plugin::api::{
-    Arg, Context, DebuggerView, Input, LayoutBox, Origin, Outcome, OutputKind, Permission,
-    SourceBody,
+    Arg, Context, DebuggerView, Input, LayoutBox, MouseInput, Origin, Outcome, OutputKind,
+    Permission, SourceBody,
 };
 use crate::plugin::env::Env;
 use crate::plugin::scheduler::{self, Scheduler};
@@ -47,6 +47,14 @@ pub(super) fn run(
 
     let mut seen = host.shared.borrow().context.selection.clone();
     handle(host, input, &debugger_before);
+    // A plugin another one's `Activate` displaced hears `Deactivation`.
+    let displaced = std::mem::take(&mut host.shared.borrow_mut().displaced);
+    for (lua, env) in vms(host) {
+        if displaced.contains(&env.plugin) {
+            let key = SignalKey::new(Owner::Plugin, "Deactivation");
+            report(&env, signal::fire(&lua, &key, &[]));
+        }
+    }
     // Roblox fires `SelectionChanged` for every listener, the plugin that
     // called `Selection:Set` included; the editor does not echo a plugin's
     // own change back, so the host fires it here (a few rounds, in case a
@@ -72,6 +80,7 @@ pub(super) fn run(
         }
         for loaded in &host.plugins {
             if let (Some(lua), Some(env)) = (&loaded.lua, &loaded.env) {
+                fresh_budget(env);
                 report(env, events::fire_changes(lua, &changes));
             }
         }
@@ -106,6 +115,11 @@ fn report(env: &Env, result: mlua::Result<()>) {
     }
 }
 
+/// Restarts the time budget, so one plugin's work cannot use up another's.
+fn fresh_budget(env: &Env) {
+    env.shared.borrow_mut().deadline = Some(Instant::now() + BUDGET);
+}
+
 fn vms(host: &PluginHost) -> Vec<(Lua, Rc<Env>)> {
     host.plugins
         .iter()
@@ -115,6 +129,7 @@ fn vms(host: &PluginHost) -> Vec<(Lua, Rc<Env>)> {
 
 fn fire_all(host: &PluginHost, key: &SignalKey, args: &[Arg]) {
     for (lua, env) in vms(host) {
+        fresh_budget(&env);
         report(&env, signal::fire(&lua, key, args));
     }
 }
@@ -190,7 +205,39 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
             }
         }
         Input::Layout(boxes) => apply_layout(host, &boxes),
-        Input::Unload(id) => unload(host, id),
+        Input::Unload(id) => {
+            {
+                let mut shared = host.shared.borrow_mut();
+                if shared.active.is_some_and(|(active, _)| active == id) {
+                    shared.active = None;
+                }
+            }
+            unload(host, id)
+        }
+        Input::Mouse(input) => {
+            let at = host.shared.borrow().context.mouse_position;
+            if let Some(at) = at {
+                for (lua, env) in vms(host) {
+                    report(&env, events::fire_viewport_input(&lua, input, at));
+                }
+            }
+            let active = host.shared.borrow().active;
+            let event = match input {
+                MouseInput::Down(2) => "Button2Down",
+                MouseInput::Down(_) => "Button1Down",
+                MouseInput::Up(2) => "Button2Up",
+                MouseInput::Up(_) => "Button1Up",
+                MouseInput::Move => "Move",
+                MouseInput::Wheel(dir) if dir > 0 => "WheelForward",
+                MouseInput::Wheel(_) => "WheelBackward",
+            };
+            let key = SignalKey::new(Owner::Plugin, format!("Mouse.{event}"));
+            for (lua, env) in vms(host) {
+                if active.is_some_and(|(id, _)| id == env.plugin) {
+                    report(&env, signal::fire(&lua, &key, &[]));
+                }
+            }
+        }
     }
 }
 
@@ -315,6 +362,9 @@ fn start(host: &mut PluginHost, index: usize) {
         }
     };
     loaded.lua = Some(lua.clone());
+    // Each plugin gets the whole budget for its start: several large ones
+    // loading together must not use up each other's time.
+    host.shared.borrow_mut().deadline = Some(Instant::now() + BUDGET);
     let scripts = loader::scripts_to_run(&host.dom.borrow(), &[folder]);
     for script in scripts {
         if let Err(error) = vm::run_script(&lua, script) {
@@ -345,6 +395,7 @@ fn tick(host: &mut PluginHost) {
     host.last_tick = Some(now);
     let run_service = |event: &str| SignalKey::new(Owner::Service("RunService"), event);
     for (lua, env) in all {
+        fresh_budget(&env);
         report(&env, scheduler::tick(&lua, now));
         report(
             &env,

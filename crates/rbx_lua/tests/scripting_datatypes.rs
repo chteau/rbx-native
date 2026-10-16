@@ -153,9 +153,9 @@ fn font_face_round_trips_while_the_legacy_font_enum_still_reads() {
     assert_eq!(
         output.lines(),
         [
-            "rbxasset://fonts/families/BuilderSans.json 500 Normal",
+            "rbxasset://fonts/families/BuilderSans.json Enum.FontWeight.Medium Enum.FontStyle.Normal",
             "Enum.Font.BuilderSansMedium",
-            "rbx://foo 700 Italic",
+            "rbx://foo Enum.FontWeight.Bold Enum.FontStyle.Italic",
         ]
     );
 }
@@ -243,7 +243,10 @@ fn font_new_takes_enum_items_for_weight_and_style() {
         )
         .expect("script must run");
 
-    assert_eq!(output.lines(), ["600 Italic"]);
+    assert_eq!(
+        output.lines(),
+        ["Enum.FontWeight.SemiBold Enum.FontStyle.Italic"]
+    );
 }
 
 #[test]

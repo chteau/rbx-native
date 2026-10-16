@@ -36,8 +36,14 @@ impl UserData for LuaColor3 {
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
-        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
-            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        methods.add_meta_function(MetaMethod::Index, |lua, (this, key): (Value, String)| {
+            match crate::compat::datatype_method(lua, &key)? {
+                Some(method) => Ok(method),
+                None => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of {}",
+                    this.type_name()
+                ))),
+            }
         });
         methods.add_method("ToHex", |_, this, ()| {
             let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;

@@ -46,7 +46,22 @@ impl UserData for LuaInputObject {
             enum_item(&this.ctx, "UserInputState", &this.state)?.interned(lua)
         });
         fields.add_field_method_get("KeyCode", |lua, this| {
-            enum_item(&this.ctx, "KeyCode", "Unknown")?.interned(lua)
+            // `Unknown` for mouse input; the bundled dump may lack the item,
+            // in which case the enum's first one stands in.
+            match enum_item(&this.ctx, "KeyCode", "Unknown") {
+                Ok(item) => item.interned(lua),
+                Err(_) => {
+                    let first = this
+                        .ctx
+                        .database()
+                        .enum_items("KeyCode")
+                        .and_then(|items| items.first().map(|(name, _)| name.to_string()));
+                    match first {
+                        Some(name) => enum_item(&this.ctx, "KeyCode", &name)?.interned(lua),
+                        None => Ok(Value::Nil),
+                    }
+                }
+            }
         });
         fields.add_field_method_get("Position", |_, this| {
             let [x, y, z] = this.position;

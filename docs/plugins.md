@@ -66,6 +66,56 @@ runs a plugin headless; `RUN_PLUGIN_SELECT=<name>` selects a part and
 The first HTTP request from a Roblox plugin to a host asks the user for
 permission; the answer is remembered in the plugin's settings.
 
+## Community plugins
+
+The 30 most-voted free plugins on the Creator Store were run through the
+headless harness (start, every toolbar button, `RUN_PLUGIN_USER_ID=1`), and
+the big ones by hand in the editor. 28 start and answer their buttons with
+no error; the two that do not are noted. "Runs" means the plugin loads and
+its toolbar works without an error — not that every feature was exercised.
+
+![F3X moving a part with its own handles](plugins/f3x-move.png)
+
+| Plugin | Votes | Headless | Notes |
+| --- | ---: | --- | --- |
+| [Load Character Lite](https://create.roblox.com/store/asset/752585459) | 57000 | runs |  |
+| [Lemonade AI](https://create.roblox.com/store/asset/85716018250741) | 17600 | runs |  |
+| [Building Tools by F3X (Plugin)](https://create.roblox.com/store/asset/144950355) | 9600 | runs | live: select, move with handles, undo |
+| [Archimedes (v3.1.9)](https://create.roblox.com/store/asset/144938633) | 6790 | runs | live: render arcs, undo |
+| [Roblox Animation Editor](https://create.roblox.com/store/asset/144373835) | 6300 | runs | retired by Roblox; inert |
+| [Resurface - Convert surfaces to studs and more](https://create.roblox.com/store/asset/5070921519) | 5820 | runs | live: toolbar opens |
+| [ThreeDText 2](https://create.roblox.com/store/asset/2273628561) | 4800 | runs |  |
+| [Part to Terrain](https://create.roblox.com/store/asset/261634767) | 4700 | runs | live: widget title localized |
+| [Rebirth](https://create.roblox.com/store/asset/124244262358116) | 3840 | runs |  |
+| [Stravant - GapFill & Extrude](https://create.roblox.com/store/asset/165687726) | 3840 | runs | live: panel opens |
+| [AutoScale Lite](https://create.roblox.com/store/asset/1496745047) | 3720 | runs |  |
+| [RigEdit Lite](https://create.roblox.com/store/asset/1274343708) | 3600 | runs |  |
+| [Realism Mod](https://create.roblox.com/store/asset/400812710) | 3600 | runs |  |
+| [Rig Editor](https://create.roblox.com/store/asset/2908380847) | 3440 | runs |  |
+| [Asset Creator](https://create.roblox.com/store/asset/1602528167) | 2790 | runs |  |
+| [Lighting Shading Plugin (Free)](https://create.roblox.com/store/asset/13964761992) | 2760 | error | depends on script start order (unconfirmed) |
+| [Rain Plugin](https://create.roblox.com/store/asset/2166774609) | 2700 | runs |  |
+| [Stravant - ResizeAlign](https://create.roblox.com/store/asset/165534573) | 1960 | runs |  |
+| [RBXMonkey - Blender Animations](https://create.roblox.com/store/asset/16708835782) | 1860 | runs |  |
+| [Avatar Importer](https://create.roblox.com/store/asset/1921957669) | 1820 | runs |  |
+| [Brushtool 2.1](https://create.roblox.com/store/asset/2268520847) | 1820 | runs |  |
+| [Maor's Gui Animation Plugin](https://create.roblox.com/store/asset/14972318524) | 1680 | runs |  |
+| [Blender rig exporter/animation importer](https://create.roblox.com/store/asset/716953901) | 1660 | runs |  |
+| [Legacy Animation Editor](https://create.roblox.com/store/asset/1882309978) | 1580 | runs |  |
+| [Selection To Camera](https://create.roblox.com/store/asset/15142310521) | 950 | runs |  |
+| [Ro-Defender™ Plugin v8.7](https://create.roblox.com/store/asset/142273772) | 940 | runs | no visible UI (minified loader) |
+| [UltraWorks Shop Creator [Pro tools]](https://create.roblox.com/store/asset/184275443) | 920 | error | needs its shop kit in StarterGui |
+| [Infinite Terrain](https://create.roblox.com/store/asset/7229545707) | 920 | runs |  |
+| [Load Roblox Characters 4](https://create.roblox.com/store/asset/8867876284) | 920 | runs |  |
+| [Studio Build Suite](https://create.roblox.com/store/asset/260276858) | 900 | runs |  |
+
+What made the difference, beyond the API itself: Roblox's identity rules
+(one value per instance and per enum item), each script's own environment
+(`getfenv(0)`, `_G`, `shared`, `require` by path, `wait` inside any
+coroutine), the deprecated lowercase spellings, services made on demand,
+`plugin:Activate` handing the plugin the 3D view's mouse, and images in
+plugin GUIs drawn once they arrive.
+
 ## rbx-native additions
 
 Available to every plugin, Roblox or native:

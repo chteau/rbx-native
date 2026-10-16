@@ -60,6 +60,10 @@ pub(crate) struct Widgets {
     /// Where cursor-placed floating widgets opened.
     anchors: HashMap<UiId, Point<Pixels>>,
     poll: Option<Task<()>>,
+    /// `Renderer::landed` as last acted on.
+    landed_seen: u64,
+    /// When the last render came back (see `collect_widget_renders`).
+    last_render: Option<std::time::Instant>,
 }
 
 fn text_boxes(dom: &WeakDom) -> HashMap<Ref, String> {
@@ -370,6 +374,14 @@ impl Shell {
     /// asked for is still owed.
     fn collect_widget_renders(&mut self, cx: &mut Context<Self>) -> bool {
         let state = &mut self.plugins.widgets;
+        // Images that were still downloading have arrived: draw everything
+        // again (forgetting what was asked makes the next frame re-ask).
+        let landed = state.renderer.as_ref().map_or(0, |r| r.landed());
+        if landed != state.landed_seen {
+            state.landed_seen = landed;
+            state.requested.clear();
+            cx.notify();
+        }
         let finished = state
             .renderer
             .as_ref()
@@ -395,6 +407,7 @@ impl Shell {
             }
         }
         if !finished.is_empty() {
+            state.last_render = Some(std::time::Instant::now());
             state.drawn.extend(finished);
             cx.notify();
         }
@@ -408,6 +421,11 @@ impl Shell {
                 .get(id)
                 .is_none_or(|drawn| drawn.revision != revision || drawn.size != size)
         });
+        // Keep listening for late images a little while after any render.
+        let settling = state
+            .last_render
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(10));
+        let pending = pending || settling;
         if !pending {
             state.poll = None;
         }

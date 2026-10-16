@@ -91,6 +91,13 @@ impl PluginHost {
     /// Whether `Input::Tick` at `now` would do anything: a due timer, a
     /// deferred thread, a finished or pending HTTP request, a `Heartbeat`/
     /// `RenderStepped`/`Stepped` connection.
+    /// The plugin `plugin:Activate` made current, and whether it took the
+    /// mouse exclusively; the editor hands it the 3D view's mouse
+    /// (`Input::Mouse`) instead of selecting.
+    pub fn active_plugin(&self) -> Option<(PluginId, bool)> {
+        self.shared.borrow().active
+    }
+
     pub fn wants_tick(&self, now: f64) -> bool {
         if self.shared.borrow().http.busy() {
             return true;

@@ -79,6 +79,12 @@ pub(crate) struct Shared {
     /// Instances whose subtree a widget shows: a change under one bumps that
     /// widget's revision.
     pub(crate) widget_roots: HashSet<Ref>,
+    /// The plugin `plugin:Activate` made current, and whether it took the
+    /// mouse exclusively; one at a time, as in Studio.
+    pub(crate) active: Option<(PluginId, bool)>,
+    /// Plugins another one's `Activate` displaced: their `Deactivation`
+    /// fires once the input is handled.
+    pub(crate) displaced: Vec<PluginId>,
 }
 
 impl Shared {

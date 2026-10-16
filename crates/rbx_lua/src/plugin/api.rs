@@ -103,6 +103,9 @@ pub struct Context {
     pub mouse_hit: Option<[f32; 3]>,
     /// The 3D view's size in pixels, for `Camera.ViewportSize`.
     pub viewport_size: Option<[f32; 2]>,
+    /// The cursor over the 3D view, in its logical pixels, while a plugin
+    /// owns the mouse.
+    pub mouse_position: Option<[f32; 2]>,
     /// The signed-in Roblox user, for `StudioService:GetUserId()` and
     /// `plugin:GetStudioUserId()` (0 when nobody is).
     pub user_id: Option<u64>,
@@ -151,6 +154,9 @@ pub enum Input {
     Layout(Vec<LayoutBox>),
     /// Fires `plugin.Unloading`, then drops the plugin's VM and instances.
     Unload(PluginId),
+    /// The 3D view's mouse while a plugin is activated (`plugin:Activate`):
+    /// its `PluginMouse` fires the matching signal.
+    Mouse(MouseInput),
 }
 
 /// One drawn `GuiObject` rectangle.
@@ -170,6 +176,17 @@ pub enum Answer {
     Allow(bool),
     /// A `PluginMenu:ShowAsync`: the chosen action, `None` = dismissed.
     Menu(Option<UiId>),
+}
+
+/// A 3D-view mouse event for the activated plugin's `PluginMouse`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseInput {
+    /// `button`: 1 left, 2 right.
+    Down(u8),
+    Up(u8),
+    Move,
+    /// `1` forward (away from the user), `-1` backward.
+    Wheel(i8),
 }
 
 /// Input on a widget's GUI, hit-tested by the editor on its own render.

@@ -105,3 +105,69 @@ fn ancestor_and_class_finds() {
     );
     assert_eq!(out, ["true true", "true true true", "true true", "0 false"]);
 }
+
+#[test]
+fn typeof_names_roblox_types() {
+    let out = lines(
+        r#"
+        print(typeof(workspace), typeof(game), typeof(Vector3.new()), typeof(CFrame.new()))
+        print(typeof(UDim2.new()), typeof(Color3.new()), typeof(Vector3int16.new(1, 2, 3)))
+        "#,
+    );
+    assert_eq!(
+        out,
+        [
+            "Instance Instance Vector3 CFrame",
+            "UDim2 Color3 Vector3int16"
+        ]
+    );
+}
+
+#[test]
+fn deprecated_spellings_still_answer() {
+    let out = lines(
+        r#"
+        local cf = CFrame.new(1, 2, 3)
+        print(cf.p.X, cf.x, cf:inverse().X, Color3.new(1, 0, 0).r)
+        print(Vector3.fromNormalId(Enum.NormalId.Top).Y, Vector3.FromNormalId("Right").X)
+        print(workspace:findFirstChild("Baseplate") ~= nil, #workspace:children() > 0)
+        local GetChildren = game.GetChildren
+        print(#GetChildren(workspace) > 0, pcall(function() return game:Clone() end))
+        "#,
+    );
+    assert_eq!(out[0], "1 1 -1 1");
+    assert_eq!(out[1], "1 1");
+    assert_eq!(out[2], "true true");
+    assert!(out[3].starts_with("true false"), "{}", out[3]);
+}
+
+#[test]
+fn tags_remove_and_tolerant_writes() {
+    let out = lines(
+        r#"
+        local part = Instance.new("Part", workspace)
+        part:AddTag("a") part:AddTag("b") part:RemoveTag("a")
+        print(part:HasTag("b"), part:HasTag("a"), #part:GetTags())
+        local frame = Instance.new("Frame")
+        frame.Visible = nil
+        print(frame.Visible, UDim2.new(UDim.new(0, 5), UDim2.new(0, 0)).X.Offset)
+        part:Remove()
+        print(part.Parent, part.Name)
+        "#,
+    );
+    assert_eq!(out, ["true false 1", "false 5", "nil Part"]);
+}
+
+#[test]
+fn graphemes_dates_and_fonts() {
+    let out = lines(
+        r#"
+        local n = 0 for _ in utf8.graphemes("héllo") do n += 1 end
+        local d = DateTime.fromUnixTimestamp(0)
+        print(n, d:FormatUniversalTime("YYYY-MM-DD HH:mm", "en-us"), d:ToUniversalTime().Year)
+        print(Font.fromName("Ubuntu").Family, Font.fromEnum(Enum.Font.SourceSansBold).Weight == Enum.FontWeight.Bold)
+        "#,
+    );
+    assert_eq!(out[0], "5 1970-01-01 00:00 1970");
+    assert_eq!(out[1], "rbxasset://fonts/families/Ubuntu.json true");
+}

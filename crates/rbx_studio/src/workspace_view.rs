@@ -22,6 +22,7 @@ mod measure;
 mod orientation;
 mod pivot;
 mod plugin_handles;
+mod plugin_mouse;
 mod presence;
 mod pump;
 mod quality;
@@ -201,6 +202,9 @@ pub(crate) enum ViewportAction {
     /// A press, drag step, release or hover on a plugin's handle (see
     /// `plugin_handles`), for `Shell` to hand to the plugins.
     PluginHandle(rbx_lua::plugin::HandleEvent),
+    /// The view's mouse while a plugin is activated (see `plugin_mouse`).
+    /// With where the cursor is, in the view's logical pixels.
+    PluginMouse(rbx_lua::plugin::MouseInput, [f32; 2]),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -1036,13 +1040,20 @@ impl Render for WorkspaceView {
                     if view.plugin_press(event.position, scale, cx) {
                         return;
                     }
+                    // An activated plugin takes the press instead of a tool.
+                    if view.plugin_mouse_press(1, event.position, scale, cx) {
+                        return;
+                    }
                     view.press(event.position, event.modifiers, scale, cx);
                 }),
             )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                    if !view.plugin_release(cx) {
+                cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    let scale = window.scale_factor();
+                    if !view.plugin_release(cx)
+                        && !view.plugin_mouse_release(1, event.position, scale, cx)
+                    {
                         view.end_drag(window, cx);
                     }
                 }),
@@ -1059,14 +1070,16 @@ impl Render for WorkspaceView {
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(|view, _: &MouseDownEvent, window, cx| {
+                cx.listener(|view, event: &MouseDownEvent, window, cx| {
                     view.note_input();
+                    view.plugin_mouse_press(2, event.position, window.scale_factor(), cx);
                     view.begin_look(window, cx);
                 }),
             )
             .on_mouse_up(
                 MouseButton::Right,
-                cx.listener(|view, _: &MouseUpEvent, _, _| {
+                cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    view.plugin_mouse_release(2, event.position, window.scale_factor(), cx);
                     view.end_look();
                 }),
             )
@@ -1095,6 +1108,7 @@ impl Render for WorkspaceView {
                     return;
                 }
                 view.mouse_moved(event.position);
+                view.plugin_mouse_move(event.position, window.scale_factor(), cx);
                 // While a look is in progress this same motion just turned
                 // the camera above, not the cursor: there is nothing new
                 // under it to resolve a hover against, and the last one
@@ -1134,6 +1148,8 @@ impl Render for WorkspaceView {
                     return;
                 }
                 let scale = window.scale_factor();
+                let notch = f32::from(event.delta.pixel_delta(px(1.)).y);
+                view.plugin_mouse_wheel(notch, event.position, scale, cx);
                 view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {

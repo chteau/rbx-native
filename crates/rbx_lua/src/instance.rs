@@ -371,7 +371,12 @@ impl UserData for LuaInstance {
                         Some(referent) => {
                             LuaInstance::new(referent, this.ctx.clone()).into_lua(lua)
                         }
-                        None => LuaGame::new(this.ctx.clone()).into_lua(lua),
+                        // A root is a service (its parent is `game`) or an
+                        // instance nothing holds (nil).
+                        None if this.ctx.database().is_service(&this.class()?) => {
+                            LuaGame::new(this.ctx.clone()).into_lua(lua)
+                        }
+                        None => Ok(Value::Nil),
                     };
                 }
                 _ => {}

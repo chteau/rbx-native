@@ -47,8 +47,20 @@ impl UserData for LuaFont {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
         fields.add_meta_field(MetaMethod::Type, "Font");
         fields.add_field_method_get("Family", |_, this| Ok(this.0.family.clone()));
-        fields.add_field_method_get("Weight", |_, this| Ok(i32::from(this.0.weight)));
-        fields.add_field_method_get("Style", |_, this| Ok(style_name(this.0.style)));
+        // Enum items, as Roblox hands them back (the number when the dump
+        // has no item for it).
+        fields.add_field_method_get("Weight", |lua, this| {
+            let item: Value = lua
+                .load("local v = ... return Enum.FontWeight:FromValue(v) or v")
+                .call(i32::from(this.0.weight))?;
+            Ok(item)
+        });
+        fields.add_field_method_get("Style", |lua, this| {
+            let item: Value = lua
+                .load("local n = ... return Enum.FontStyle:FromName(n) or n")
+                .call(style_name(this.0.style))?;
+            Ok(item)
+        });
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {

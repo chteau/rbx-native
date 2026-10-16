@@ -18,6 +18,11 @@ pub(super) struct PluginHandles {
     shapes: Vec<Shape>,
     drag: Option<Grab>,
     hovered: Option<(Ref, Part)>,
+    /// A plugin is activated (`plugin:Activate`): the view's mouse is its
+    /// `PluginMouse` rather than the selection's (see `plugin_mouse`).
+    pub(super) mouse_owned: bool,
+    /// The left button went down while a plugin owned the mouse.
+    pub(super) mouse_held: bool,
 }
 
 /// A handle held down: what was grabbed, the adornee frame it is measured

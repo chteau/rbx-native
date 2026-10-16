@@ -70,8 +70,6 @@ struct State {
     prompts: HashMap<UiId, Pending>,
     menus: HashMap<UiId, menu::Menu>,
     disabled_actions: HashSet<UiId>,
-    /// `Some(exclusive)` while activated.
-    active: Option<bool>,
 }
 
 struct StateSlot(RefCell<State>);
@@ -291,7 +289,12 @@ impl UserData for LuaPluginMouse {
             let key = match key.as_str() {
                 "hit" | "target" | "origin" => {
                     let mut chars = key.chars();
-                    chars.next().map(|c| c.to_ascii_uppercase()).into_iter().chain(chars).collect()
+                    chars
+                        .next()
+                        .map(|c| c.to_ascii_uppercase())
+                        .into_iter()
+                        .chain(chars)
+                        .collect()
                 }
                 _ => key,
             };
@@ -311,17 +314,24 @@ impl UserData for LuaPluginMouse {
                 },
                 "TargetFilter" => like::field(lua, "mouse", "TargetFilter"),
                 "TargetSurface" => lua.load("return Enum.NormalId.Top").eval(),
-                // The editor's pointer is only known as a 3D hit, so the
-                // screen point reads as the view's centre.
-                "X" => Ok(Value::Number(f64::from(size[0] / 2.0))),
-                "Y" => Ok(Value::Number(f64::from(size[1] / 2.0))),
+                // Where the cursor was over the 3D view at its last move
+                // (the view's centre before any).
+                "X" => Ok(Value::Number(f64::from(
+                    context.mouse_position.map_or(size[0] / 2.0, |p| p[0]),
+                ))),
+                "Y" => Ok(Value::Number(f64::from(
+                    context.mouse_position.map_or(size[1] / 2.0, |p| p[1]),
+                ))),
                 "ViewSizeX" => Ok(Value::Number(f64::from(size[0]))),
                 "ViewSizeY" => Ok(Value::Number(f64::from(size[1]))),
                 "UnitRay" => {
-                    let camera: Value = lua
-                        .load("local c = workspace.CurrentCamera return c and c:ViewportPointToRay(...)")
-                        .call((size[0] / 2.0, size[1] / 2.0))?;
-                    Ok(camera)
+                    let [x, y] = context
+                        .mouse_position
+                        .unwrap_or([size[0] / 2.0, size[1] / 2.0]);
+                    lua.load(
+                        "local c = workspace.CurrentCamera return c and c:ViewportPointToRay(...)",
+                    )
+                    .call::<Value>((x, y))
                 }
                 "Target" => match context.mouse_target {
                     Some(r) => arg::to_lua(lua, &env.ctx, &Arg::Instance(r)),
@@ -559,20 +569,40 @@ impl UserData for LuaPlugin {
             set_setting(lua, key, value)
         });
         methods.add_method("Activate", |lua, _, exclusive: Option<bool>| {
-            with_state(lua, |s| s.active = Some(exclusive.unwrap_or(false)));
+            let env = env(lua);
+            let mut shared = env.shared.borrow_mut();
+            if let Some((other, _)) = shared.active {
+                if other != env.plugin {
+                    shared.displaced.push(other);
+                }
+            }
+            shared.active = Some((env.plugin, exclusive.unwrap_or(false)));
             Ok(())
         });
         methods.add_method("Deactivate", |lua, _, ()| {
-            if with_state(lua, |s| s.active.take()).is_some() {
+            let env = env(lua);
+            let was = {
+                let mut shared = env.shared.borrow_mut();
+                let mine = shared.active.is_some_and(|(id, _)| id == env.plugin);
+                if mine {
+                    shared.active = None;
+                }
+                mine
+            };
+            if was {
                 super::signal::fire(lua, &SignalKey::new(Owner::Plugin, "Deactivation"), &[])?;
             }
             Ok(())
         });
         methods.add_method("IsActivated", |lua, _, ()| {
-            Ok(with_state(lua, |s| s.active.is_some()))
+            let env = env(lua);
+            let active = env.shared.borrow().active;
+            Ok(active.is_some_and(|(id, _)| id == env.plugin))
         });
         methods.add_method("IsActivatedWithExclusiveMouse", |lua, _, ()| {
-            Ok(with_state(lua, |s| s.active == Some(true)))
+            let env = env(lua);
+            let active = env.shared.borrow().active;
+            Ok(active == Some((env.plugin, true)))
         });
         methods.add_method("GetMouse", |_, _, ()| Ok(LuaPluginMouse));
         methods.add_method(

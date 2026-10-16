@@ -207,7 +207,54 @@ fn instances(lua: &Lua, ctx: &Ctx, refs: Vec<Ref>, max: usize) -> Result<mlua::T
     )
 }
 
+/// The deprecated `FindPartOnRay*` family, on top of `Raycast`: the part,
+/// the hit point, its normal and material, or nil and the ray's end.
+fn legacy_find(lua: &Lua, key: &str) -> Result<Option<Value>> {
+    const KEY: &str = "rbxn.find_part_on_ray";
+    let all: mlua::Table = match lua.named_registry_value::<Option<mlua::Table>>(KEY)? {
+        Some(found) => found,
+        None => {
+            let made: mlua::Table = lua
+                .load(
+                    r#"
+                    local function find(self, ray, list, include)
+                        local params = RaycastParams.new()
+                        params.FilterDescendantsInstances = list or {}
+                        params.FilterType = include and Enum.RaycastFilterType.Include
+                            or Enum.RaycastFilterType.Exclude
+                        local hit = self:Raycast(ray.Origin, ray.Direction, params)
+                        if hit then
+                            return hit.Instance, hit.Position, hit.Normal, hit.Material
+                        end
+                        return nil, ray.Origin + ray.Direction, Vector3.zero, Enum.Material.Air
+                    end
+                    return {
+                        FindPartOnRay = function(self, ray, ignore)
+                            return find(self, ray, ignore and { ignore } or {}, false)
+                        end,
+                        FindPartOnRayWithIgnoreList = function(self, ray, list)
+                            return find(self, ray, list, false)
+                        end,
+                        FindPartOnRayWithWhitelist = function(self, ray, list)
+                            return find(self, ray, list, true)
+                        end,
+                    }
+                    "#,
+                )
+                .set_name("=Workspace")
+                .eval()?;
+            lua.set_named_registry_value(KEY, made.clone())?;
+            made
+        }
+    };
+    let found: Value = all.get(key)?;
+    Ok((!found.is_nil()).then_some(found))
+}
+
 pub(super) fn member(lua: &Lua, ctx: &Ctx, root: Ref, key: &str) -> Result<Option<Value>> {
+    if key.starts_with("FindPartOnRay") {
+        return legacy_find(lua, key);
+    }
     let ctx = ctx.clone();
     let function = match key {
         "Raycast" => lua.create_function(

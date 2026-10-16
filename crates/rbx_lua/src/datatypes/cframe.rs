@@ -131,29 +131,50 @@ impl LuaCFrame {
 impl UserData for LuaCFrame {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
         fields.add_meta_field(MetaMethod::Type, "CFrame");
-        fields.add_field_method_get("X", |_, this| Ok(this.0.position.x));
-        fields.add_field_method_get("Y", |_, this| Ok(this.0.position.y));
-        fields.add_field_method_get("Z", |_, this| Ok(this.0.position.z));
-        fields.add_field_method_get("Position", |_, this| Ok(LuaVector3(this.0.position)));
-        fields.add_field_method_get("LookVector", |_, this| {
-            let r = &this.0.rotation;
-            Ok(LuaVector3::new(-r[2], -r[5], -r[8]))
-        });
-        fields.add_field_method_get("RightVector", |_, this| {
-            let r = &this.0.rotation;
-            Ok(LuaVector3::new(r[0], r[3], r[6]))
-        });
-        fields.add_field_method_get("UpVector", |_, this| {
-            let r = &this.0.rotation;
-            Ok(LuaVector3::new(r[1], r[4], r[7]))
-        });
+        for name in ["X", "x"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.position.x));
+        }
+        for name in ["Y", "y"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.position.y));
+        }
+        for name in ["Z", "z"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.position.z));
+        }
+        // With the deprecated spellings Roblox still answers to.
+        for name in ["Position", "p"] {
+            fields.add_field_method_get(name, |_, this| Ok(LuaVector3(this.0.position)));
+        }
+        for name in ["LookVector", "lookVector"] {
+            fields.add_field_method_get(name, |_, this| {
+                let r = &this.0.rotation;
+                Ok(LuaVector3::new(-r[2], -r[5], -r[8]))
+            });
+        }
+        for name in ["RightVector", "rightVector"] {
+            fields.add_field_method_get(name, |_, this| {
+                let r = &this.0.rotation;
+                Ok(LuaVector3::new(r[0], r[3], r[6]))
+            });
+        }
+        for name in ["UpVector", "upVector"] {
+            fields.add_field_method_get(name, |_, this| {
+                let r = &this.0.rotation;
+                Ok(LuaVector3::new(r[1], r[4], r[7]))
+            });
+        }
         ops::add_fields(fields);
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
-        methods.add_meta_function(MetaMethod::Index, |lua, (_this, key): (Value, String)| {
-            crate::compat::lowercase_method(lua, &key).map(|v| v.unwrap_or(Value::Nil))
+        methods.add_meta_function(MetaMethod::Index, |lua, (this, key): (Value, String)| {
+            match crate::compat::datatype_method(lua, &key)? {
+                Some(method) => Ok(method),
+                None => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of {}",
+                    this.type_name()
+                ))),
+            }
         });
         methods.add_method("Inverse", |_, this, ()| Ok(this.inverse()));
         ops::add_methods(methods);

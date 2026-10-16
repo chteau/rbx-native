@@ -26,8 +26,8 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use gpui_kit::*;
-use rbx_dom::{Change, Ref};
-use rbx_lua::plugin::{GuiEventKind, Input, PluginHost, Ui};
+use rbx_dom::{Change, Ref, WeakDom};
+use rbx_lua::plugin::{GuiEventKind, Input, MouseInput, PluginHost, Ui};
 
 use super::Shell;
 use crate::command_bar::Feedback;
@@ -57,6 +57,13 @@ pub(crate) struct Plugins {
     pub(super) handles: handles::Handles,
     /// The part under the cursor in the viewport and the world point hit.
     pub(super) mouse: Option<(Ref, [f32; 3])>,
+    /// The place as a left press handed to the activated plugin found it,
+    /// and whether the plugin has changed it since: the press-to-release
+    /// sequence is one undo step.
+    pub(super) mouse_before: Option<(WeakDom, bool)>,
+    /// Where the cursor last was over the 3D view (logical pixels), for
+    /// `Mouse.X`/`Y` and `UserInputService:GetMouseLocation`.
+    pub(super) mouse_position: Option<[f32; 2]>,
     /// The 3D view's bounds as last laid out, for `Camera.ViewportSize`.
     pub(super) view_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     /// The Manage Plugins dialog is open.
@@ -187,8 +194,35 @@ impl Shell {
             }
             _ => false,
         };
+        if !outcome.changes.is_empty() {
+            if let Some((_, dirty)) = self.plugins.mouse_before.as_mut() {
+                *dirty = true;
+            }
+        }
         self.apply_plugin_outcome(outcome, snapshot, cx);
         self.plugins_arm_poll(cx);
+        let owned = self
+            .plugins
+            .host
+            .as_ref()
+            .is_some_and(|host| host.active_plugin().is_some());
+        self.viewport
+            .update(cx, |view, _| view.set_plugin_mouse(owned));
+    }
+
+    /// The 3D view's mouse for the activated plugin; a left press through
+    /// its release is one undo step when the plugin edited the place.
+    pub(super) fn plugin_mouse(&mut self, input: MouseInput, at: [f32; 2], cx: &mut Context<Self>) {
+        self.plugins.mouse_position = Some(at);
+        if input == MouseInput::Down(1) {
+            self.plugins.mouse_before = Some((self.dom.clone(), false));
+        }
+        self.plugin_input(Input::Mouse(input), cx);
+        if input == MouseInput::Up(1) {
+            if let Some((before, true)) = self.plugins.mouse_before.take() {
+                self.push_history_snapshot(before);
+            }
+        }
     }
 
     /// From `selection_changed`: `Input::SelectionChanged` when the
@@ -239,6 +273,7 @@ impl Shell {
             mouse_target: self.plugins.mouse.map(|(part, _)| part),
             mouse_hit: self.plugins.mouse.map(|(_, hit)| hit),
             user_id: self.presence_user_id(),
+            mouse_position: self.plugins.mouse_position,
             viewport_size: self
                 .plugins
                 .view_bounds

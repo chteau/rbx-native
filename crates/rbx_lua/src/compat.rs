@@ -91,6 +91,40 @@ pub(crate) fn lowercase_method(lua: &Lua, key: &str) -> Result<Option<Value>> {
     }
 }
 
+/// The deprecated lowercase methods of the datatypes (`cf:inverse()`,
+/// `cf:components()`, `c:lerp(…)`), forwarded to the current ones.
+pub(crate) fn datatype_method(lua: &Lua, key: &str) -> Result<Option<Value>> {
+    let current = match key {
+        "components" | "getComponents" => "GetComponents",
+        "lerp"
+        | "inverse"
+        | "toWorldSpace"
+        | "toObjectSpace"
+        | "pointToWorldSpace"
+        | "pointToObjectSpace"
+        | "vectorToWorldSpace"
+        | "vectorToObjectSpace"
+        | "dot"
+        | "cross"
+        | "fuzzyEq"
+        | "toEulerAnglesXYZ"
+        | "toEulerAnglesYXZ"
+        | "toAxisAngle"
+        | "toOrientation"
+        | "toHSV"
+        | "toHex"
+        | "angle"
+        | "abs"
+        | "floor"
+        | "ceil"
+        | "sign" => {
+            return lowercase_method(lua, key);
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(Value::Function(forwarder(lua, current)?)))
+}
+
 /// `game.Clone` and the like: a forwarding function for an `Instance`
 /// method, so it works on whatever instance it is called with.
 pub(crate) fn instance_method(lua: &Lua, key: &str) -> Result<Option<Value>> {

@@ -48,6 +48,7 @@ fn run(tag: &str, src: &str) -> (Host, Vec<String>) {
     let mut dom = WeakDom::new();
     let workspace = dom.new_instance("Workspace", "Workspace", None);
     dom.new_instance("Part", "Part", Some(workspace));
+    dom.new_instance("Players", "Players", None);
     let camera = dom.new_instance("Camera", "Camera", Some(workspace));
     dom.set_property(
         camera,
@@ -162,5 +163,166 @@ fn camera_theme_joint_and_debugger_members_answer() {
     assert_eq!(
         out,
         ["800 600 -1", "RBXScriptSignal 25 31", "true true", "1"]
+    );
+}
+
+fn model_plugin(tag: &str, scripts: &[(&str, &str, &str)]) -> (Host, Vec<String>) {
+    let mut model = WeakDom::new();
+    let root = model.new_instance("Folder", "Root", None);
+    let mut made = std::collections::HashMap::new();
+    for (class, name, source) in scripts {
+        let parent = match name.rsplit_once('/') {
+            Some((parent, _)) => made[parent],
+            None => root,
+        };
+        let short = name.rsplit('/').next().unwrap();
+        let r = model.new_instance(class, short, Some(parent));
+        model
+            .set_property(r, "Source", Variant::String(source.to_string()))
+            .unwrap();
+        made.insert(name.to_string(), r);
+    }
+    let (mut h, _) = run(tag, "");
+    h.host.add(PluginSource {
+        name: "Model".to_string(),
+        body: SourceBody::Model(model),
+        origin: Origin::Roblox {
+            path: PathBuf::from("Model.rbxm"),
+        },
+    });
+    let out = h.send(Input::Start);
+    let mut lines = prints(&out);
+    for _ in 0..5 {
+        let mut context = Context {
+            now: 2.0,
+            viewport_size: h.viewport,
+            ..Context::default()
+        };
+        context.now += 1.0;
+        let out = h.host.dispatch(&mut h.dom, context, Input::Tick);
+        lines.extend(prints(&out));
+    }
+    (h, lines)
+}
+
+#[test]
+fn scripts_get_their_own_env_require_paths_and_shared_tables() {
+    let (_, out) = model_plugin(
+        "env",
+        &[
+            ("ModuleScript", "Lib", "task.wait() return { value = 7 }"),
+            ("ModuleScript", "Lib/Inner", "return 'inner'"),
+            (
+                "Script",
+                "Main",
+                r#"
+                local lib = require("./Lib")
+                _G.seen = lib.value
+                print(lib.value, require(script.Parent.Lib).value, getfenv(0).script == script)
+                print(require("../Root/Lib/Inner"))
+                "#,
+            ),
+            (
+                "LocalScript",
+                "Other",
+                "task.wait() task.wait() print('shared', _G.seen)",
+            ),
+        ],
+    );
+    assert!(out.contains(&"7 7 true".to_string()), "{out:?}");
+    assert!(out.contains(&"inner".to_string()), "{out:?}");
+    assert!(out.contains(&"shared 7".to_string()), "{out:?}");
+}
+
+#[test]
+fn waits_inside_wrapped_coroutines_and_parked_runner_threads() {
+    let (_, out) = run(
+        "coroutines",
+        r#"
+        local ticks = 0
+        coroutine.wrap(function() while ticks < 2 do task.wait() ticks += 1 print("tick", ticks) end end)()
+        -- A signal library's runner thread: parked by a plain yield, resumed
+        -- with work by whoever holds it.
+        local runner = coroutine.create(function()
+            while true do
+                local fn, arg = coroutine.yield()
+                fn(arg)
+            end
+        end)
+        coroutine.resume(runner)
+        task.spawn(runner, print, "ran")
+        "#,
+    );
+    assert!(out.contains(&"ran".to_string()), "{out:?}");
+}
+
+#[test]
+fn value_objects_pass_their_value_to_changed() {
+    let (_, out) = run(
+        "values",
+        r#"
+        local v = Instance.new("NumberValue")
+        v.Changed:Connect(function(value) print("changed", value) end)
+        v.Value = 3
+        "#,
+    );
+    assert_eq!(out, ["changed 3"]);
+}
+
+#[test]
+fn activated_plugins_get_the_views_mouse() {
+    let (mut h, out) = run(
+        "mouse",
+        r#"
+        local mouse = plugin:GetMouse()
+        mouse.Button1Down:Connect(function() print("down", mouse.X, mouse.Y) end)
+        game:GetService("UserInputService").InputBegan:Connect(function(input)
+            print("began", input.UserInputType.Name)
+        end)
+        plugin:Activate(true)
+        print(plugin:IsActivated(), plugin:IsActivatedWithExclusiveMouse())
+        "#,
+    );
+    assert_eq!(out, ["true true"]);
+    assert!(h.host.active_plugin().is_some());
+    let context = Context {
+        now: 1.0,
+        mouse_position: Some([10.0, 20.0]),
+        viewport_size: h.viewport,
+        ..Context::default()
+    };
+    let out = h.host.dispatch(
+        &mut h.dom,
+        context,
+        Input::Mouse(rbx_lua::plugin::MouseInput::Down(1)),
+    );
+    let lines = prints(&out);
+    assert!(
+        lines.contains(&"began MouseButton1".to_string()),
+        "{lines:?}"
+    );
+    assert!(lines.contains(&"down 10 20".to_string()), "{lines:?}");
+}
+
+#[test]
+fn stand_in_services_and_web_free_members() {
+    let (_, out) = run(
+        "standins",
+        r#"
+        local s = Instance.new("Script")
+        s.Source = "print(1)"
+        print(game:GetService("ScriptEditorService"):GetEditorSource(s))
+        game:GetService("ContentProvider"):PreloadAsync({})
+        local cas = game:GetService("ContextActionService")
+        cas:BindAction("x", function() end, false, Enum.KeyCode.E)
+        print(cas:GetBoundActionInfo("x").callback ~= nil)
+        print(game:GetService("Players"):GetUserThumbnailAsync(1, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150))
+        "#,
+    );
+    assert_eq!(out[0], "print(1)");
+    assert_eq!(out[1], "true");
+    assert_eq!(
+        out[2],
+        "rbxthumb://type=AvatarHeadShot&id=1&w=150&h=150 true"
     );
 }
