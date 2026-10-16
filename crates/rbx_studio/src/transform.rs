@@ -374,20 +374,21 @@ pub(crate) fn action_for(key: impl AsRef<str>, modifiers: Modifiers) -> Option<A
         (Command::ToolTransform, Action::Use(Tool::Transform)),
     ];
     // ⌘ and Ctrl are one chord to the docs' shortcuts, whichever the
-    // binding was recorded with.
+    // binding was recorded with: try the press with the two traded.
     let swapped = Keystroke {
         modifiers: Modifiers {
-            control: modifiers.control || modifiers.platform,
-            platform: false,
+            control: modifiers.platform,
+            platform: modifiers.control,
             ..modifiers
         },
         ..keystroke.clone()
     };
+    let one_of_them = modifiers.control != modifiers.platform;
     bindings
         .into_iter()
         .find(|(command, _)| {
             shortcuts::pressed(*command, &keystroke)
-                || (modifiers.platform && shortcuts::pressed(*command, &swapped))
+                || (one_of_them && shortcuts::pressed(*command, &swapped))
         })
         .map(|(_, action)| action)
 }
