@@ -141,6 +141,7 @@ impl Shell {
             Panel::CallStack => self.call_stack_dock(cx),
             Panel::TerrainEditor => self.terrain_dock(window, cx),
             Panel::Collaborators => self.collaborators_dock(window, cx),
+            Panel::PluginWidgets => self.plugin_widgets_dock(window, cx),
         }
     }
 
@@ -154,7 +155,7 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.set_canvas(canvas));
         match self.document {
-            Document::Viewport => self.viewport().into_any_element(),
+            Document::Viewport => self.viewport(cx).into_any_element(),
             Document::Scripts => self.script_editor(window, cx).into_any_element(),
             Document::UiEditor => self.ui_editor(window, cx),
             Document::Animation => self.animation_editor(window, cx),

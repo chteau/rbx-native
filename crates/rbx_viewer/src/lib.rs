@@ -37,6 +37,7 @@ mod fonts;
 mod fps;
 pub mod gizmo;
 mod gpu;
+pub mod handle_pick;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless;
 mod input;

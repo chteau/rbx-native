@@ -226,18 +226,58 @@ fn instance_new_without_a_parent_can_be_reparented_later() {
             r#"
             local p = Instance.new("Part")
             p.Name = "Orphan"
-            -- The DOM has no separate storage for "belongs to no tree": an
-            -- unparented instance is a root, and the getter reports its
-            -- parent as the pseudo-`DataModel` (`game`), same as it would
-            -- for any other root (see `instance.rs`'s `parent_target` doc
-            -- comment). `game` itself is a fresh userdata per read, so this
-            -- checks its `ClassName` rather than object identity.
+            -- An unparented instance is a root of the DOM, but only a
+            -- service's parent reads as `game`: this one has none, as in
+            -- Roblox.
             local before = p.Parent
             p.Parent = workspace
-            print(before.ClassName, p.Parent == workspace, workspace.Orphan == p)
+            print(before, p.Parent == workspace, workspace.Orphan == p)
         "#,
         )
         .expect("a parentless instance must still exist and be reparentable");
 
-    assert_eq!(output.lines(), ["DataModel true true"]);
+    assert_eq!(output.lines(), ["nil true true"]);
+}
+
+#[test]
+fn new_handles_show_every_face_and_axis() {
+    let mut runtime = runtime();
+    runtime
+        .run(
+            r#"
+            Instance.new("Handles", workspace).Name = "H"
+            Instance.new("ArcHandles", workspace).Name = "A"
+        "#,
+        )
+        .expect("script must run");
+    let dom = runtime.dom();
+    let find = |name: &str| {
+        let workspace = dom
+            .root_refs()
+            .iter()
+            .copied()
+            .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Workspace"))
+            .expect("workspace");
+        let child = dom.get(workspace).unwrap().children().iter().copied();
+        child
+            .filter_map(|r| dom.get(r))
+            .find(|i| i.name() == name)
+            .expect("created")
+            .properties()
+            .clone()
+    };
+    assert_eq!(
+        find("H").get("Faces"),
+        Some(&rbx_dom::Variant::Faces(rbx_dom::Faces::from_bits(
+            0b11_1111
+        )))
+    );
+    assert_eq!(
+        find("A").get("Axes"),
+        Some(&rbx_dom::Variant::Axes(rbx_dom::Axes {
+            x: true,
+            y: true,
+            z: true
+        }))
+    );
 }

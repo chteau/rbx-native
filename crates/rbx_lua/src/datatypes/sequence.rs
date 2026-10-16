@@ -15,6 +15,7 @@ pub(crate) struct LuaNumberSequenceKeypoint(pub(crate) NumberSequenceKeypoint);
 
 impl UserData for LuaNumberSequenceKeypoint {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "NumberSequenceKeypoint");
         fields.add_field_method_get("Time", |_, this| Ok(this.0.time));
         fields.add_field_method_get("Value", |_, this| Ok(this.0.value));
         fields.add_field_method_get("Envelope", |_, this| Ok(this.0.envelope));
@@ -41,6 +42,7 @@ pub(crate) struct LuaNumberSequence(pub(crate) NumberSequence);
 
 impl UserData for LuaNumberSequence {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "NumberSequence");
         fields.add_field_method_get("Keypoints", |lua, this| {
             let table = lua.create_table()?;
             for (index, keypoint) in this.0.keypoints.iter().enumerate() {
@@ -76,6 +78,7 @@ pub(crate) struct LuaColorSequenceKeypoint(pub(crate) ColorSequenceKeypoint);
 
 impl UserData for LuaColorSequenceKeypoint {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "ColorSequenceKeypoint");
         fields.add_field_method_get("Time", |_, this| Ok(this.0.time));
         fields.add_field_method_get("Value", |_, this| Ok(LuaColor3(this.0.color)));
         fields.add_field_method_get("Envelope", |_, this| Ok(this.0.envelope));
@@ -100,6 +103,7 @@ pub(crate) struct LuaColorSequence(pub(crate) ColorSequence);
 
 impl UserData for LuaColorSequence {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "ColorSequence");
         fields.add_field_method_get("Keypoints", |lua, this| {
             let table = lua.create_table()?;
             for (index, keypoint) in this.0.keypoints.iter().enumerate() {

@@ -307,6 +307,42 @@ fn automatic_size_grows_only_the_axes_it_names_and_never_below_the_size() {
 }
 
 #[test]
+fn automatic_size_grows_until_a_scale_sized_child_holds_its_content() {
+    // Measured in Studio: the button comes to 320, the `(1, -20)` body and
+    // its `(1, 1)` child to 300 — the 300px item reaches up through both.
+    let (mut dom, gui) = screen_gui();
+    let button = frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 190, 0.0, 0),
+    );
+    dom.set_property(button, "AutomaticSize", Variant::Enum(2))
+        .unwrap();
+    frame(
+        &mut dom,
+        button,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(1.0, 0, 0.0, 20),
+    );
+    let body = frame(
+        &mut dom,
+        button,
+        udim2(0.0, 0, 0.0, 20),
+        udim2(1.0, 0, 1.0, -20),
+    );
+    let scroll = frame(&mut dom, body, udim2(0.0, 0, 0.0, 0), udim2(1.0, 0, 1.0, 0));
+    frame(
+        &mut dom,
+        scroll,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(1.0, 0, 0.0, 300),
+    );
+    let heights: Vec<f32> = rects(&dom).iter().map(|rect| rect.height).collect();
+    assert_eq!(heights, [320.0, 20.0, 300.0, 300.0, 300.0]);
+}
+
+#[test]
 fn automatic_size_counts_a_list_layouts_run_and_the_padding_around_it() {
     let (mut dom, gui) = screen_gui();
     let parent = frame(&mut dom, gui, udim2(0.0, 0, 0.0, 0), udim2(0.0, 0, 0.0, 0));

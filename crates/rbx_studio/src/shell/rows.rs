@@ -970,7 +970,11 @@ fn render_row_editor(
             .into_any_element(),
         RowEditor::Color(state) => {
             stops.register(&state.read(cx).focus_handle(cx));
+            // The toolkit's default featured row repeats colours its palette
+            // already lists, and two swatches of one colour share an element
+            // id (a debug-build panic): the palette alone is the choice.
             ColorPicker::new(&state)
+                .featured_colors(Vec::new())
                 .with_size(tokens::field_size())
                 .into_any_element()
         }

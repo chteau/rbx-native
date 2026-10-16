@@ -56,8 +56,8 @@ impl OutputFilter {
 /// Which entries show by where they came from — Studio "filters output by
 /// context, such as **Client**, **Server**, or **User Plugin**". Everything
 /// that is not a message from the running game (a Command Bar run, an app
-/// warning) is `Edit`, Studio's name for edit-mode output. This editor runs
-/// no plugins, so there is no `User Plugin` context to filter on.
+/// warning) is `Edit`, Studio's name for edit-mode output; what a plugin
+/// printed is `User Plugin`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum ContextFilter {
     #[default]
@@ -65,22 +65,25 @@ pub(crate) enum ContextFilter {
     Edit,
     Server,
     Client,
+    UserPlugin,
 }
 
 impl ContextFilter {
-    pub(super) const ALL: [ContextFilter; 4] = [
+    pub(super) const ALL: [ContextFilter; 5] = [
         ContextFilter::All,
         ContextFilter::Edit,
         ContextFilter::Server,
         ContextFilter::Client,
+        ContextFilter::UserPlugin,
     ];
 
     pub(super) fn matches(self, entry: &OutputEntry) -> bool {
         match self {
             ContextFilter::All => true,
-            ContextFilter::Edit => entry.context().is_none(),
+            ContextFilter::Edit => entry.context().is_none() && !entry.is_plugin(),
             ContextFilter::Server => entry.context() == Some(game::Context::Server),
             ContextFilter::Client => entry.context() == Some(game::Context::Client),
+            ContextFilter::UserPlugin => entry.is_plugin(),
         }
     }
 
@@ -90,6 +93,7 @@ impl ContextFilter {
             ContextFilter::Edit => "Edit",
             ContextFilter::Server => "Server",
             ContextFilter::Client => "Client",
+            ContextFilter::UserPlugin => "User Plugin",
         }
     }
 }

@@ -13,6 +13,7 @@ pub(crate) struct LuaRect(pub(crate) Rect);
 
 impl UserData for LuaRect {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Rect");
         fields.add_field_method_get("Min", |_, this| Ok(LuaVector2(this.0.min)));
         fields.add_field_method_get("Max", |_, this| Ok(LuaVector2(this.0.max)));
         fields.add_field_method_get("Width", |_, this| Ok(this.0.max.x - this.0.min.x));

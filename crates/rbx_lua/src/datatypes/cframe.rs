@@ -6,6 +6,8 @@ use rbx_dom::{CFrameData, Vector3Data};
 use super::from_userdata;
 use super::vector3::LuaVector3;
 
+mod ops;
+
 const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -128,29 +130,54 @@ impl LuaCFrame {
 
 impl UserData for LuaCFrame {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("X", |_, this| Ok(this.0.position.x));
-        fields.add_field_method_get("Y", |_, this| Ok(this.0.position.y));
-        fields.add_field_method_get("Z", |_, this| Ok(this.0.position.z));
-        fields.add_field_method_get("Position", |_, this| Ok(LuaVector3(this.0.position)));
-        fields.add_field_method_get("LookVector", |_, this| {
-            let r = &this.0.rotation;
-            Ok(LuaVector3::new(-r[2], -r[5], -r[8]))
-        });
-        fields.add_field_method_get("RightVector", |_, this| {
-            let r = &this.0.rotation;
-            Ok(LuaVector3::new(r[0], r[3], r[6]))
-        });
-        fields.add_field_method_get("UpVector", |_, this| {
-            let r = &this.0.rotation;
-            Ok(LuaVector3::new(r[1], r[4], r[7]))
-        });
+        fields.add_meta_field(MetaMethod::Type, "CFrame");
+        for name in ["X", "x"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.position.x));
+        }
+        for name in ["Y", "y"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.position.y));
+        }
+        for name in ["Z", "z"] {
+            fields.add_field_method_get(name, |_, this| Ok(this.0.position.z));
+        }
+        // With the deprecated spellings Roblox still answers to.
+        for name in ["Position", "p"] {
+            fields.add_field_method_get(name, |_, this| Ok(LuaVector3(this.0.position)));
+        }
+        for name in ["LookVector", "lookVector"] {
+            fields.add_field_method_get(name, |_, this| {
+                let r = &this.0.rotation;
+                Ok(LuaVector3::new(-r[2], -r[5], -r[8]))
+            });
+        }
+        for name in ["RightVector", "rightVector"] {
+            fields.add_field_method_get(name, |_, this| {
+                let r = &this.0.rotation;
+                Ok(LuaVector3::new(r[0], r[3], r[6]))
+            });
+        }
+        for name in ["UpVector", "upVector"] {
+            fields.add_field_method_get(name, |_, this| {
+                let r = &this.0.rotation;
+                Ok(LuaVector3::new(r[1], r[4], r[7]))
+            });
+        }
+        ops::add_fields(fields);
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("Inverse", |_, this, ()| Ok(this.inverse()));
-        methods.add_method("PointToWorldSpace", |_, this, v: LuaVector3| {
-            Ok(LuaVector3(this.transform(v.0)))
+        // `c:lerp(…)`, `cf:inverse()`: the deprecated lowercase methods.
+        methods.add_meta_function(MetaMethod::Index, |lua, (this, key): (Value, String)| {
+            match crate::compat::datatype_method(lua, &key)? {
+                Some(method) => Ok(method),
+                None => Err(mlua::Error::runtime(format!(
+                    "{key} is not a valid member of {}",
+                    this.type_name()
+                ))),
+            }
         });
+        methods.add_method("Inverse", |_, this, ()| Ok(this.inverse()));
+        ops::add_methods(methods);
         methods.add_meta_method(MetaMethod::Mul, |lua, this, rhs: Value| {
             if let Value::UserData(data) = &rhs {
                 if let Ok(other) = data.borrow::<LuaCFrame>() {
@@ -185,32 +212,7 @@ impl mlua::FromLua for LuaCFrame {
 
 pub(crate) fn constructors(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
-    table.set(
-        "new",
-        lua.create_function(
-            |_, (first, y, z): (Option<Value>, Option<f32>, Option<f32>)| match first {
-                None | Some(Value::Nil) => Ok(LuaCFrame::at(Vector3Data {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                })),
-                Some(Value::UserData(data)) => {
-                    let position = data.borrow::<LuaVector3>()?.0;
-                    Ok(LuaCFrame::at(position))
-                }
-                Some(other) => {
-                    let x = super::number_arg(&other).ok_or_else(|| {
-                        mlua::Error::runtime("CFrame.new expected a number or a Vector3")
-                    })?;
-                    Ok(LuaCFrame::at(Vector3Data {
-                        x,
-                        y: y.unwrap_or_default(),
-                        z: z.unwrap_or_default(),
-                    }))
-                }
-            },
-        )?,
-    )?;
+    ops::register(lua, &table)?;
     let angles =
         lua.create_function(|_, (rx, ry, rz): (f32, f32, f32)| Ok(LuaCFrame::angles(rx, ry, rz)))?;
     table.set("Angles", angles.clone())?;

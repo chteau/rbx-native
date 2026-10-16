@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rbx_dom::{Change, Snapshot, WeakDom};
+use rbx_dom::{Change, Ref, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
 use rbx_viewer::{
     Applied, Calibration, CameraFeel, CameraInput, Gizmo, Headless, JointSolver, Pose,
@@ -111,6 +111,10 @@ enum Command {
     /// rebuild (see `rbx_viewer::Rebuild`) get one right there on the render
     /// thread, and are reported on stderr so the reason is on record.
     Changes(Vec<Snapshot>, Vec<Change>),
+    /// The plugins' adornments, replacing the last set: they live in the
+    /// plugin host, not the place, so the mirror holds them under its
+    /// `Workspace` (where the viewer draws adornments) only for drawing.
+    PluginAdornments(Vec<rbx_dom::Instance>),
     Visible(bool),
     /// The UI editor's canvas to draw, or `None` once it is off screen —
     /// see [`canvas`].
@@ -306,6 +310,11 @@ impl Pump {
         let _ = self.commands.send(Command::Changes(snapshots, changes));
     }
 
+    /// Replaces the plugins' adornments drawn over the scene.
+    pub(super) fn plugin_adornments(&self, adornments: Vec<rbx_dom::Instance>) {
+        let _ = self.commands.send(Command::PluginAdornments(adornments));
+    }
+
     /// Tells the render thread whether the panel is actually on screen — the
     /// dock only mounts the active tab of a group, so a hidden viewport never
     /// calls back into `render` to report a size. Draws stop entirely while
@@ -396,6 +405,7 @@ fn run(
     let mut canvas = canvas::Canvas::default();
     let mut joints = JointSolver::new();
     let mut overlay: Option<rbx_viewer::OverlayColors> = None;
+    let mut plugin_adornments = Vec::new();
 
     loop {
         let wait = idle.then_some(if visible { interval } else { IDLE_WAIT });
@@ -413,6 +423,7 @@ fn run(
                 interval: &mut interval,
                 canvas: &mut canvas,
                 owed: &mut owed,
+                plugin_adornments: &mut plugin_adornments,
             },
             wait,
         ) {
@@ -646,6 +657,9 @@ struct Rendering<'a> {
     /// Set by every command, so the tick that follows draws: nearly all of
     /// them change the picture, and one frame for one that did not is cheap.
     owed: &'a mut bool,
+    /// The plugin adornments the mirror holds — see
+    /// [`Command::PluginAdornments`].
+    plugin_adornments: &'a mut Vec<Ref>,
 }
 
 /// Applies everything the UI thread has asked for, blocking for up to `idle`
@@ -789,12 +803,66 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
                 Err(err) => eprintln!("rbxstudio: edit failed: {err}"),
             }
         }
+        Command::PluginAdornments(adornments) => {
+            let changes =
+                swap_plugin_adornments(rendering.mirror, rendering.plugin_adornments, adornments);
+            match rendering.viewer.apply_changes(rendering.mirror, &changes) {
+                Ok(Applied::Patched) => {}
+                Ok(Applied::Rebuilt(why)) => {
+                    *rendering.rebuilt = true;
+                    eprintln!("rbxstudio: scene rebuilt: {why}");
+                }
+                Err(err) => eprintln!("rbxstudio: plugin adornments failed: {err}"),
+            }
+        }
         Command::Visible(new) => *rendering.visible = new,
         Command::Canvas(request) => rendering.canvas.set(request),
         Command::Stop => return false,
     }
 
     true
+}
+
+/// Takes the last plugin adornments out of `mirror` and puts `adornments`
+/// in under its `Workspace` (the viewer draws no root-level adornment),
+/// returning the change log for both. An adornment whose referent the place
+/// already uses is skipped rather than overwriting a real instance.
+fn swap_plugin_adornments(
+    mirror: &mut WeakDom,
+    held: &mut Vec<Ref>,
+    adornments: Vec<rbx_dom::Instance>,
+) -> Vec<Change> {
+    let mut changes = Vec::new();
+    for referent in held.drain(..) {
+        changes.extend(mirror.remove(referent).into_iter().map(Change::Removed));
+    }
+    let workspace = mirror.root_refs().iter().copied().find_map(|root| {
+        let instance = mirror.get(root)?;
+        if instance.class() == "Workspace" {
+            return Some(root);
+        }
+        instance
+            .children()
+            .iter()
+            .copied()
+            .find(|&child| mirror.get(child).is_some_and(|c| c.class() == "Workspace"))
+    });
+    for adornment in adornments {
+        let referent = adornment.referent();
+        if mirror.get(referent).is_some() {
+            continue;
+        }
+        mirror.insert(adornment);
+        if workspace.is_some() {
+            mirror.set_parent(referent, workspace);
+        }
+        held.push(referent);
+        changes.push(Change::Added(referent));
+    }
+    // The mirror's own log is never read; the list above is what the viewer
+    // patches from.
+    mirror.take_changes();
+    changes
 }
 
 /// How far to advance the camera for a frame that took `since` to come round.

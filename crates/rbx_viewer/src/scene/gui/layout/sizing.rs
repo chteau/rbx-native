@@ -29,17 +29,17 @@ pub(super) fn extent(node: &Node, parent: [f32; 2], measure: &mut dyn TextMeasur
         // Along an automatic axis the element's own size is what is being
         // worked out, so the box the children are measured in is zero wide
         // there and a child sized or positioned by scale contributes only its
-        // offsets. The docs describe neither that circularity nor what a
-        // scale-sized child should do, and this is the only reading that
-        // terminates.
+        // offsets — and then, separately, whatever its own content needs
+        // (see `scaled_need`).
         let probe = [0, 1].map(|axis| match node.automatic_size[axis] {
             true => 0.0,
             false => size[axis],
         });
         let content = content_extent(node, probe, node.automatic_size, measure);
+        let scaled = scaled_need(node, node.automatic_size, measure);
         for axis in 0..2 {
             if node.automatic_size[axis] {
-                size[axis] = size[axis].max(content[axis]);
+                size[axis] = size[axis].max(content[axis]).max(scaled[axis]);
             }
         }
     }
@@ -56,6 +56,38 @@ pub(super) fn extent(node: &Node, parent: [f32; 2], measure: &mut dyn TextMeasur
         }
     }
     size
+}
+
+/// How big an automatically sized parent has to be for each child sized by
+/// scale along an automatic axis to hold its own content: `(need - offset) /
+/// scale`, the child's need being its content, recursively through further
+/// scale-sized children. Measured in Studio (2026-10-15): a `TextButton`
+/// with `AutomaticSize` Y holding a 20px title and a `(1, -20)` frame, whose
+/// `(1, 1)` child holds a 300px item, comes to 320 — the scale-sized
+/// frame is measured by what it holds and the parent grows to fit it. A
+/// layout places its children itself, and a `ScrollingFrame` keeps its
+/// content on its canvas, so neither passes anything up.
+fn scaled_need(node: &Node, automatic: [bool; 2], measure: &mut dyn TextMeasure) -> [f32; 2] {
+    let mut need = [0.0f32; 2];
+    if node.list.is_some() {
+        return need;
+    }
+    for child in &node.children {
+        let scales = [0, 1].map(|axis| automatic[axis] && child.size.scale[axis] > 0.0);
+        if scales == [false, false] || child.scrolling.is_some() {
+            continue;
+        }
+        let content = content_extent(child, [0.0; 2], automatic, measure);
+        let deeper = scaled_need(child, automatic, measure);
+        for axis in 0..2 {
+            if scales[axis] {
+                let held = content[axis].max(deeper[axis]);
+                let wanted = (held - child.size.offset[axis]) / child.size.scale[axis];
+                need[axis] = need[axis].max(wanted);
+            }
+        }
+    }
+    need
 }
 
 /// The box this element's children — and any layout arranging them — resolve

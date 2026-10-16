@@ -90,6 +90,9 @@ pub(crate) struct OutputEntry {
     /// A Command Bar run's `print` calls with their tables kept as trees
     /// (see `tables`); empty when nothing it printed was a table.
     printed: Vec<Vec<PrintPart>>,
+    /// Said by a plugin (see `shell::plugins`): Studio's **User Plugin**
+    /// context.
+    plugin: bool,
 }
 
 impl OutputEntry {
@@ -101,7 +104,12 @@ impl OutputEntry {
             timestamp: SystemTime::now(),
             game: None,
             printed: Vec::new(),
+            plugin: false,
         }
+    }
+
+    pub(crate) fn is_plugin(&self) -> bool {
+        self.plugin
     }
 
     /// Where the message came from: the game's side during Play, `None` for
@@ -187,6 +195,15 @@ impl OutputLog {
         self.entries
             .push(OutputEntry::new(self.next_id, source, feedback));
         self.next_id += 1;
+    }
+
+    /// [`OutputLog::push`] for a line a plugin printed, `source` being the
+    /// plugin's name.
+    pub(crate) fn push_plugin(&mut self, source: &str, feedback: Feedback) {
+        self.push(source, feedback);
+        if let Some(entry) = self.entries.last_mut() {
+            entry.plugin = true;
+        }
     }
 
     /// [`OutputLog::push`] for a Command Bar run, keeping its `print` calls'

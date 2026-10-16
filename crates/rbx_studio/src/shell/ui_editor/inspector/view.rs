@@ -213,7 +213,13 @@ impl Shell {
         vec![
             div()
                 .flex_none()
-                .child(ColorPicker::new(&state).with_size(tokens::field_size()))
+                .child(
+                    ColorPicker::new(&state)
+                        // See `shell::rows`: the default featured row
+                        // repeats palette colours (duplicate swatch ids).
+                        .featured_colors(Vec::new())
+                        .with_size(tokens::field_size()),
+                )
                 .into_any_element(),
             div()
                 .flex_1()

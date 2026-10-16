@@ -68,6 +68,46 @@ pub(crate) fn find_child(dom: &WeakDom, parent: Ref, name: &str, recursive: bool
         .find_map(|child| find_child(dom, *child, name, true))
 }
 
+/// The first child (or, with `recursive`, descendant in pre-order) that
+/// `test` accepts: the shared walk behind `FindFirstChildOfClass` and
+/// `FindFirstChildWhichIsA`.
+pub(crate) fn find_child_where(
+    dom: &WeakDom,
+    parent: Ref,
+    recursive: bool,
+    test: &dyn Fn(&rbx_dom::Instance) -> bool,
+) -> Option<Ref> {
+    let children = dom.get(parent).map(|i| i.children().to_vec())?;
+    for child in &children {
+        if dom.get(*child).is_some_and(test) {
+            return Some(*child);
+        }
+        if recursive {
+            if let Some(found) = find_child_where(dom, *child, true, test) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// The nearest ancestor that `test` accepts, for the `FindFirstAncestor*`
+/// family. The instance itself is never a candidate.
+pub(crate) fn find_ancestor_where(
+    dom: &WeakDom,
+    target: Ref,
+    test: &dyn Fn(&rbx_dom::Instance) -> bool,
+) -> Option<Ref> {
+    let mut at = parent_of(dom, target);
+    while let Some(current) = at {
+        if dom.get(current).is_some_and(test) {
+            return Some(current);
+        }
+        at = parent_of(dom, current);
+    }
+    None
+}
+
 /// Copies a subtree under fresh referents, the way `Instance:Clone` does.
 pub(crate) fn deep_clone(dom: &mut WeakDom, source: Ref, parent: Option<Ref>) -> Option<Ref> {
     let (class, name, properties, children) = {

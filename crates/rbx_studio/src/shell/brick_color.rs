@@ -75,12 +75,39 @@ impl Shell {
             .content(move |_, _, cx| {
                 let picker = Picker {
                     shell: handle.clone(),
-                    popover: cx.entity(),
-                    row: row.clone(),
+                    popover: Some(cx.entity()),
+                    target: BrickTarget::Row(row.clone()),
                     current,
                 };
                 picker.render(cursor, &palette_focus)
             })
+    }
+
+    /// The palette on its own, inline rather than in a popover: a pick goes
+    /// to `target`. Call [`Shell::reset_brick_cursor`] when it first shows.
+    pub(super) fn brick_color_palette(
+        &mut self,
+        target: BrickTarget,
+        current: Option<u32>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + 'static {
+        let palette_focus = self
+            .edits
+            .brick_focus
+            .get_or_insert_with(|| cx.focus_handle())
+            .clone();
+        let picker = Picker {
+            shell: cx.entity(),
+            popover: None,
+            target,
+            current,
+        };
+        picker.render(self.edits.brick_cursor, &palette_focus)
+    }
+
+    /// Puts the palette's cursor on `current` (see [`opening_cell`]).
+    pub(super) fn reset_brick_cursor(&mut self, current: Option<u32>) {
+        self.edits.brick_cursor = opening_cell(current);
     }
 
     fn move_brick_cursor(&mut self, step: Step, cx: &mut Context<Self>) {
@@ -102,11 +129,24 @@ fn opening_cell(current: Option<u32>) -> usize {
         .unwrap_or(0)
 }
 
+/// Called with a picked colour's number.
+pub(super) type OnPick = std::rc::Rc<dyn Fn(&mut Shell, u32, &mut Context<Shell>)>;
+
+/// Where a pick goes.
+#[derive(Clone)]
+pub(super) enum BrickTarget {
+    /// Committed through this Properties row.
+    Row(String),
+    /// Handed the colour's number.
+    Prompt(OnPick),
+}
+
 /// What one render of the open picker needs.
 struct Picker {
     shell: Entity<Shell>,
-    popover: Entity<PopoverState>,
-    row: String,
+    /// The popover to close on a pick; `None` when shown inline.
+    popover: Option<Entity<PopoverState>>,
+    target: BrickTarget,
     current: Option<u32>,
 }
 
@@ -115,12 +155,22 @@ impl Picker {
         let Some(color) = BrickColor::from_palette(palette) else {
             return;
         };
-        let number = color.number.to_string();
-        let row = self.row.clone();
-        self.shell
-            .update(cx, |shell, cx| shell.commit_row(&row, &number, cx));
-        self.popover
-            .update(cx, |popover, cx| popover.dismiss(window, cx));
+        match &self.target {
+            BrickTarget::Row(row) => {
+                let number = color.number.to_string();
+                self.shell
+                    .update(cx, |shell, cx| shell.commit_row(row, &number, cx));
+            }
+            BrickTarget::Prompt(callback) => {
+                let callback = callback.clone();
+                let number = color.number;
+                self.shell
+                    .update(cx, |shell, cx| callback(shell, number, cx));
+            }
+        }
+        if let Some(popover) = &self.popover {
+            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+        }
     }
 
     fn render(self, cursor: usize, focus: &FocusHandle) -> impl IntoElement {

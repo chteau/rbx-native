@@ -1,7 +1,87 @@
 # Changelog
 
+## 2026-10-16
+
+- **Plugins: edits from timers can be undone.** Changes a plugin makes on
+  its own — from `task.delay`, `Heartbeat`, or a selection or change
+  handler — used to reach the place with no undo step, so Ctrl+Z skipped
+  them. They now gather into one step that ends at the plugin's next
+  `ChangeHistoryService:SetWaypoint`, the user's next action, or Ctrl+Z.
+  The plugin host copies the place only when a script first writes to it,
+  so ticking plugins that leave the place alone cost nothing extra.
+- **Plugins: most popular community plugins run.** Of the 30 most-voted free
+  plugins on the Creator Store, 28 now start and answer their toolbar
+  buttons without an error, F3X Building Tools among them: its tool dock,
+  panels and move handles draw over the 3D view, clicking selects, dragging
+  a handle moves the part and Ctrl+Z undoes it. An activated plugin
+  (`plugin:Activate`) now gets the 3D view's mouse (`PluginMouse` and
+  `UserInputService` events, with the cursor's position) instead of the
+  editor selecting, a press-to-release being one undo step. Scripts get
+  Roblox's environment rules — `getfenv(0)`, writable `_G`/`shared`,
+  `require("./Sibling")`, waits inside `coroutine.wrap` — and LocalScripts
+  run. Services a place lacks (`ScriptEditorService`, `ContentProvider`,
+  `ContextActionService`, `GuiService`, …) are made on demand; `Players`
+  name/thumbnail/friends lookups and `MarketplaceService:GetProductInfo` go
+  through Roblox's public web APIs; `typeof` names Roblox types; the
+  deprecated lowercase spellings (`part:findFirstChild`, `cf.p`, `c:lerp`,
+  `signal:connect`) answer; and many smaller members landed (tags,
+  remotes, GUI tweens, `Font.fromName`, `DateTime` formatting,
+  `utf8.graphemes`, int16 vectors, the `FindPartOnRay` family, …). Images
+  in plugin GUIs now appear once they finish downloading. Two plugins still
+  fail: one depends on script start order, the other needs its own GUI kit
+  in the place. — @chteau
+
 ## 2026-10-15
 
+- **Plugins: Archimedes runs.** Scriptos's Archimedes arc builder — a
+  Roact plugin from the Creator Store — now works from its plain `.rbxm`:
+  its window over the 3D view, direction buttons, **Render**, **Render
+  All** and undo. A `ScreenGui` a plugin parents to `CoreGui` is drawn as
+  a transparent layer over the 3D view; only buttons, text boxes and
+  `Active` objects take the pointer there. Widgets feed their real
+  `AbsoluteSize`/`AbsolutePosition`/`AbsoluteContentSize` back, render
+  without the game top-bar inset, and send presses on a button's label to
+  the button. Plugin scripts sit under a `Plugin` instance;
+  `SelectionChanged` reaches the plugin that set the selection; settings
+  store enum items and vectors the way Studio's own files do; the theme
+  is Studio's own Dark palette, read from Studio; `ArcHandles` are
+  coloured per axis like Studio's. Luau gained what Archimedes and the
+  usual plugin libraries reach for — most of `CFrame` (`lookAt`,
+  `fromMatrix`, `ToObjectSpace`, `Lerp`, …), the `Vector2`/`Vector3`/
+  `UDim2`/`Color3` helpers, `Random`, `Ray`, `TweenInfo`, `DateTime`,
+  `RaycastParams`, `Region3`, `Faces`/`Axes`, `UserInputService`,
+  `TextService`, `TweenService`, `Workspace:Raycast`, `Camera:
+  ScreenPointToRay`, the `FindFirstAncestor*`/`FindFirstChild*Of*`
+  finds — and now matches Roblox where it did not: an instance or enum
+  item is one value however it is reached (so it works as a table key),
+  a binding error reaches `pcall` as its message, `Text = 5` writes "5",
+  `AutomaticSize` grows to fit scale-sized children's content (measured
+  in Studio), and `typeof` names signals `RBXScriptSignal`. A Luau
+  rbx-native plugin without `dom.write` can no longer edit the place.
+  The colour pickers no longer trip a debug-build panic on duplicate
+  swatches. — @chteau
+- **Plugins.** Real Roblox Studio plugins now run inside the editor: the
+  `.lua`/`.rbxm`/`.rbxmx` files in rbx-native's plugins folder and in
+  Studio's own Plugins folder (the Vinegar prefix on Linux) each get a
+  sandboxed Luau VM with an allow-listed slice of the plugin API —
+  toolbars and buttons on the Plugins tab, `DockWidgetPluginGui`s drawn by
+  the editor's own GUI renderer in a Plugin Widgets dock (clicks and text
+  input reach the plugin), `Selection`, `ChangeHistoryService`,
+  `HttpService` (each new host asks first), `RunService`, signals and
+  `task`. A plugin's `Handles`/`ArcHandles` show in the 3D view and can be
+  dragged, firing `MouseDrag`. rbx-native's own plugins describe
+  themselves in a `plugin.toml` and are either Luau (with an `rbxnative`
+  global) or WebAssembly run under `wasmtime` with a fuel budget and
+  per-permission access to the place. Every plugin also gets
+  `plugin:PromptColor3`/`PromptBrickColor` (the editor's own pickers),
+  `plugin:CreateFloatingWidget`, and `plugin:GetDebuggerManager()` to set
+  breakpoints and watches and step the script debugger. Manage Plugins
+  switches each one on or off, and plugin output has its own **User
+  Plugin** context in the Output panel. Running a real plugin turned up
+  gaps the Command Bar shares, now closed: `Font.new` takes
+  `Enum.FontWeight`/`Enum.FontStyle` items, `UDim2.new` takes two `UDim`s,
+  an object property can be cleared with `nil`, a new `Handles` shows
+  every face, and `Vector3.FromNormalId`/`FromAxis` exist. — @chteau
 - **Game-printed tables as trees in the Output.** During Play, a table a
   game script prints or warns opens as the same expandable tree as a Command Bar
   print, and the row names the script and line that printed it (Show
