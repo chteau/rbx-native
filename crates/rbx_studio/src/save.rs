@@ -382,10 +382,7 @@ mod tests {
 
     #[test]
     fn ctrl_s_saves() {
-        let modifiers = Modifiers {
-            control: true,
-            ..Modifiers::none()
-        };
+        let modifiers = Modifiers::secondary_key();
         assert_eq!(action_for("s", modifiers), Some(Action::Save));
     }
 

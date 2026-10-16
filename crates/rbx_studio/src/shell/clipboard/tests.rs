@@ -8,10 +8,7 @@ fn database() -> ReflectionDatabase {
 }
 
 fn ctrl() -> Modifiers {
-    Modifiers {
-        control: true,
-        ..Modifiers::none()
-    }
+    Modifiers::secondary_key()
 }
 
 #[test]

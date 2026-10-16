@@ -263,25 +263,18 @@ mod tests {
 
     #[test]
     fn ctrl_z_undoes() {
-        let modifiers = Modifiers {
-            control: true,
-            ..Modifiers::none()
-        };
+        let modifiers = Modifiers::secondary_key();
         assert_eq!(action_for("z", modifiers), Some(Action::Undo));
     }
 
     #[test]
     fn ctrl_y_and_ctrl_shift_z_both_redo() {
-        let ctrl_y = Modifiers {
-            control: true,
-            ..Modifiers::none()
-        };
+        let ctrl_y = Modifiers::secondary_key();
         assert_eq!(action_for("y", ctrl_y), Some(Action::Redo));
 
         let ctrl_shift_z = Modifiers {
-            control: true,
             shift: true,
-            ..Modifiers::none()
+            ..Modifiers::secondary_key()
         };
         assert_eq!(action_for("z", ctrl_shift_z), Some(Action::Redo));
     }

@@ -339,7 +339,10 @@ mod tests {
 
     #[test]
     fn matches_displayed_key() {
-        let rows = filtered(&Store::default(), "shift+f11");
+        let rows = filtered(
+            &Store::default(),
+            &crate::shortcuts::display(&gpui_kit::Keystroke::parse("shift-f11").unwrap()),
+        );
         assert!(rows.iter().any(|spec| spec.command == Command::StepOut));
     }
 

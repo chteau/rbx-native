@@ -205,7 +205,7 @@ fn ribbon_hints_are_the_keys_their_handlers_answer() {
         local,
         crate::shortcuts::hint(crate::shortcuts::Command::ToggleLocal)
     );
-    let key = Keystroke::parse("ctrl-l").unwrap();
+    let key = Keystroke::parse("secondary-l").unwrap();
     assert_eq!(
         action_for(&key.key, key.modifiers),
         Some(Action::ToggleLocal)
@@ -321,7 +321,8 @@ fn an_option_tells_a_screen_reader_its_place_state_and_shortcut(cx: &mut gpui_ki
         let mut node = Node::new(Role::ListBoxOption);
         super::view::option(3, 40, undo, true).write_a11y_info(&mut node);
         assert_eq!(node.label(), Some("Edit: Undo"));
-        assert_eq!(node.keyboard_shortcut(), Some("Ctrl+Z"));
+        let undo_keys = crate::shortcuts::display(&Keystroke::parse("secondary-z").unwrap());
+        assert_eq!(node.keyboard_shortcut(), Some(undo_keys.as_str()));
         assert_eq!(node.is_selected(), Some(true));
         assert_eq!(node.position_in_set(), Some(4));
         assert_eq!(node.size_of_set(), Some(40));

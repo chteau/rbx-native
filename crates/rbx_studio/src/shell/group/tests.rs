@@ -172,14 +172,10 @@ fn ungrouping_the_workspace_itself_is_refused() {
 
 #[test]
 fn ctrl_g_groups_and_ctrl_shift_g_ungroups() {
-    let ctrl = Modifiers {
-        control: true,
-        ..Modifiers::none()
-    };
+    let ctrl = Modifiers::secondary_key();
     let ctrl_shift = Modifiers {
-        control: true,
         shift: true,
-        ..Modifiers::none()
+        ..Modifiers::secondary_key()
     };
     assert_eq!(action_for("g", ctrl), Some(Action::Group));
     assert_eq!(action_for("g", ctrl_shift), Some(Action::Ungroup));

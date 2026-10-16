@@ -12,14 +12,14 @@ fn delete_and_backspace_both_delete_with_no_modifiers_required() {
 
 #[test]
 fn ctrl_shift_p_and_f_insert_part_and_folder() {
-    assert_eq!(action("ctrl-shift-p"), Some(Action::InsertPart));
-    assert_eq!(action("ctrl-shift-f"), Some(Action::InsertFolder));
+    assert_eq!(action("secondary-shift-p"), Some(Action::InsertPart));
+    assert_eq!(action("secondary-shift-f"), Some(Action::InsertFolder));
 }
 
 #[test]
 fn ctrl_i_opens_the_insert_picker_and_ctrl_shift_i_does_not() {
-    assert_eq!(action("ctrl-i"), Some(Action::Insert));
-    assert_eq!(action("ctrl-shift-i"), None);
+    assert_eq!(action("secondary-i"), Some(Action::Insert));
+    assert_eq!(action("secondary-shift-i"), None);
     assert_eq!(action("i"), None);
 }
 
