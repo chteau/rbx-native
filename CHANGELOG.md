@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-17
+
+- **Server Authority places are supported in the editor.** Setting
+  `Workspace.AuthorityMode` to `Server` in the Properties panel now also
+  enables the five properties Studio sets with it (`NextGenerationReplication`,
+  `PlayerScriptsUseInputActionSystem`, `SignalBehavior` Deferred,
+  `UseFixedSimulation`, `StreamingEnabled`) in the same undo step; going back
+  to `Automatic` leaves them alone. On such a place the Attributes section
+  states the replication limits and flags attributes that predicted
+  instances will not replicate (past the first 64, names or string values over
+  50 characters), and Play writes one Output line saying that prediction and
+  rollback run in the real client and server. The sandbox's mirror now says
+  when an instance an edit targets may simply be streamed out. — @chteau
+
 ## 2026-10-16
 
 - **Hover states fade in and out.** Every hover highlight in the editor —

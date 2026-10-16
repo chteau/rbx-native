@@ -2,6 +2,8 @@
 //! buttons and the value control from [`super::attribute_value`]), plus the
 //! section's own "add attribute" row.
 
+use std::collections::BTreeMap;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::select::{SearchableVec, Select, SelectState};
@@ -10,7 +12,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 
-use crate::properties::attributes as attrs;
+use crate::properties::attributes::{self as attrs, replication};
 use crate::shell::chrome;
 use crate::shell::rows::{field_box, name_indent, row_frame, section_header, select_field};
 use crate::shell::Shell;
@@ -37,9 +39,20 @@ impl Shell {
         let current = attrs::attributes_matching(&self.dom, reference, filter);
         let error = self.attribute_edits.attribute_error.clone();
 
+        let server_authority = replication::is_server_authority(&self.dom);
+        let unreplicated: BTreeMap<String, &'static str> = if server_authority {
+            replication::unreplicated(&attrs::attributes(&self.dom, reference))
+                .into_iter()
+                .map(|(name, reason)| (name.to_owned(), reason))
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
+
         let mut rows = Vec::with_capacity(current.len() + 1);
         for (name, value) in &current {
-            rows.push(self.attribute_row(name, value, window, cx));
+            let warning = unreplicated.get(name).copied();
+            rows.push(self.attribute_row(name, value, warning, window, cx));
         }
         rows.push(self.add_attribute_row(reference, window, cx));
 
@@ -64,6 +77,16 @@ impl Shell {
                         .pt(tokens::section_gap())
                         .pb(tokens::group_gap())
                         .gap(tokens::row_gap())
+                        .when(server_authority, |this| {
+                            this.child(
+                                div()
+                                    .px(tokens::row_padding())
+                                    .text_size(tokens::text_sm())
+                                    .line_height(tokens::line_sm())
+                                    .text_color(tokens::text_muted())
+                                    .child(SharedString::from(replication::LIMITS_HELP)),
+                            )
+                        })
                         .children(rows)
                         .when_some(error, |this, message| {
                             this.child(
@@ -89,6 +112,7 @@ impl Shell {
         &mut self,
         name: &str,
         value: &rbx_dom::Variant,
+        warning: Option<&'static str>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -181,6 +205,15 @@ impl Shell {
             .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
             .child(header)
             .child(control)
+            .when_some(warning, |this, reason| {
+                this.child(
+                    div()
+                        .text_size(tokens::text_sm())
+                        .line_height(tokens::line_sm())
+                        .text_color(tokens::warning())
+                        .child(SharedString::from(reason)),
+                )
+            })
             .into_any_element()
     }
 

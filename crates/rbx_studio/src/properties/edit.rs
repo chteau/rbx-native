@@ -9,6 +9,7 @@ use rbx_dom::{
 };
 use rbx_reflection::ReflectionDatabase;
 
+mod authority;
 mod content;
 mod font;
 mod many;

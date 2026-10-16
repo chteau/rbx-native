@@ -45,6 +45,7 @@ pub(in crate::shell) mod cloudflared;
 pub(crate) mod copy_name;
 pub(crate) mod debug;
 pub(crate) mod live;
+mod server_authority;
 pub(crate) mod session;
 
 use std::rc::Rc;
@@ -487,6 +488,7 @@ impl Shell {
                 Ok(done) => done,
             };
             let _ = this.update(cx, |shell, cx| {
+                shell.note_server_authority(cx);
                 if let Some(warning) = restart {
                     shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
                 }
