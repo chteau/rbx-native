@@ -68,3 +68,36 @@ registry of where floating layers painted this frame. `popup.rs` and
 host carries `occlusion::probe()`; rbx_studio's own `deferred` popups do
 the same. During Play the editor reads `occlusion::rects` to cut those
 areas out of the embedded Roblox window (X Shape), so popups draw above it.
+
+## `gpui-pre` (0.3.4, Apache-2.0, `zed-industries/zed`'s GPUI as published)
+
+Unmodified crates.io 0.3.4 source (its `examples/`, `tests/` and `docs/`
+dropped, and their `[[example]]`/`[[test]]` entries with them), patched in
+through the root `Cargo.toml`'s `[patch.crates-io]`, plus hover styles that
+ease instead of snapping, each piece marked "rbx-native addition":
+
+- `src/hover_transition.rs` (new): the `HoverTransition` global (a
+  duration), `HoverFade` (one element's blend: which way it is heading and
+  since when, reversing from where it got to), `mix_colors` (premultiplied,
+  so a fill fading in from clear never passes through another hue) and
+  `blend_refinement` (a hover refinement's fill, border, text and shadow
+  colours blended toward the resting style; everything else in it applies
+  at once, while hovered).
+- `src/elements/div.rs`: `compute_style_internal` hands its `hover` and
+  `group_hover` refinements to `refine_hover` instead of refining with
+  them outright, and `InteractiveElementState` keeps the two `HoverFade`s.
+  A running fade asks for the next frame; a settled one asks for nothing.
+- `src/gpui.rs`: the module and its re-export.
+
+GPUI has no property transitions of its own, so this is what lets every
+`hover`/`group_hover` style in the editor — and in `gpui-base`'s widgets —
+fade without each call site animating a value by hand. With no
+`HoverTransition` set (or a zero duration, or `App::reduce_motion`), and for
+elements without an id (no element state to keep a blend in), hover snaps
+exactly as upstream's does. `rbx_studio` sets it in `scale::install`
+(`tokens::DURATION_HOVER`) and tests it in `scale/hover_tests.rs`, since
+this crate's own tests need fonts from outside it and do not build here.
+
+To upgrade GPUI: re-copy the matching `gpui-pre` from
+`~/.cargo/registry/src/*/`, drop the example and test targets from its
+`Cargo.toml`, re-apply the three marked pieces, and bump the version.

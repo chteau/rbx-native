@@ -53,3 +53,7 @@ unicode-linebreak = { opt-level = 3 }
 # `vendor/README.md`); drop this once upstream exposes an equivalent.
 [patch.crates-io]
 gpui-base = { path = "vendor/gpui-base" }
+# Hover states ease in and out instead of snapping: `vendor/gpui-pre` is
+# gpui-pre 0.3.4 unchanged but for the marked hover-transition addition (see
+# `vendor/README.md`).
+gpui-pre = { path = "vendor/gpui-pre" }

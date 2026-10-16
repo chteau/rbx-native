@@ -2,6 +2,15 @@
 
 ## 2026-10-16
 
+- **Hover states fade in and out.** Every hover highlight in the editor —
+  dock tabs, ribbon buttons, Explorer and Properties rows, toolbar icons,
+  settings and dialog controls, and the toolkit's own widgets — now eases
+  between its resting and hovered colours over 120 ms instead of switching
+  in one frame, and turns back from wherever it got to when the pointer
+  leaves early. Reduce motion (the desktop setting or the View menu)
+  restores the instant switch. GPUI has no property transitions, so this
+  lives in a small marked patch to the vendored GPUI (`vendor/README.md`)
+  rather than at each of the 140-odd call sites. — @chteau
 - **Plugins: edits from timers can be undone.** Changes a plugin makes on
   its own — from `task.delay`, `Heartbeat`, or a selection or change
   handler — used to reach the place with no undo step, so Ctrl+Z skipped

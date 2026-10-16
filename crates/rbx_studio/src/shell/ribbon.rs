@@ -915,17 +915,19 @@ fn base_tile(
 
 /// A ribbon button's icon, and its hover lift.
 ///
-/// The spec asks for a 120ms 1.06x scale. GPUI has no property transitions
-/// and no element transform, so the lift is instant and is a size change on
-/// the icon's own fixed box rather than a transform — the label below it
-/// doesn't move, because the box the icon fills is what grows. Being
-/// instant, it is not motion in WCAG 2.3.3's sense at all; it still checks
-/// `reduced_motion`, because a jump is a change and costs one line to
-/// honour, and the background hover carries the whole affordance without it.
-fn icon_zone(icon: IconName, size: Pixels) -> Div {
+/// The spec asks for a 120ms 1.06x scale. GPUI has no element transform, so
+/// the lift is a size change on the icon's own fixed box rather than a
+/// transform — the label below it doesn't move, because the box the icon
+/// fills is what grows. The vendored GPUI eases a hover's pixel sizes over
+/// `tokens::DURATION_HOVER` (the spec's 120ms), given an id to keep the blend
+/// in, and drops the easing under reduced motion; the lift itself is dropped
+/// there too, since a jump is still a change and the background hover
+/// carries the whole affordance without it.
+fn icon_zone(icon: IconName, size: Pixels) -> Stateful<Div> {
     let lifted = px(f32::from(size) * 1.06);
 
     div()
+        .id("icon-zone")
         .flex_none()
         .size(size)
         .flex()

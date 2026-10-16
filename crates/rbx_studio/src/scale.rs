@@ -6,7 +6,7 @@
 //! that reads them is a styling callback with no `App` in reach. This module
 //! owns the other half: where their values come from, and what changes them.
 
-use gpui_kit::{App, Keystroke, Modifiers};
+use gpui_kit::{App, HoverTransition, Keystroke, Modifiers};
 
 use crate::tokens;
 
@@ -88,6 +88,11 @@ pub(crate) fn install(cx: &mut App) {
     let reduced = detect_reduced_motion();
     cx.set_reduce_motion(reduced);
     tokens::set_reduced_motion(reduced);
+    // Hover fades read GPUI's flag above at every frame, so turning motion
+    // down later (the View menu) stops them without touching this.
+    cx.set_global(HoverTransition {
+        duration: tokens::DURATION_HOVER,
+    });
 }
 
 /// The environment variable if it is set, else the desktop's own setting,
@@ -121,6 +126,8 @@ pub(crate) fn detect_reduced_motion() -> bool {
     false
 }
 
+#[cfg(test)]
+mod hover_tests;
 #[cfg(test)]
 #[path = "scale/tests.rs"]
 mod tests;

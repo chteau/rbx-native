@@ -920,6 +920,9 @@ pub(super) fn seam_handle(
         .on_mouse_down(MouseButton::Left, on_down)
         .child(
             div()
+                // An id keeps the hover's fade between frames (see
+                // `HoverTransition`).
+                .id("resize-hairline")
                 .map(|this| {
                     if vertical {
                         this.w(px(1.)).h_full()
