@@ -15,6 +15,7 @@ mod clipboard;
 mod close_place;
 mod command;
 mod debugging;
+mod device_sim;
 mod discord;
 mod dock_drag;
 mod docks;
@@ -476,6 +477,8 @@ pub(crate) struct Shell {
     studio_presence: studio_presence::StudioPresence,
     /// Collaborators through the presence relay — see `shell::team_presence`.
     team_presence: team_presence::TeamPresence,
+    /// The Test ribbon's Device menu — see `shell::device_sim`.
+    device_sim: device_sim::DeviceSim,
     /// The code sign-in window, while open — see `shell::roblox_login`.
     roblox_login: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The page the next Settings window opens on; see `open_settings_on`.
@@ -543,6 +546,7 @@ impl Shell {
             play_copy_name,
             anim_sheet_height,
             anim_names_width,
+            device_custom,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -845,6 +849,7 @@ impl Shell {
             plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
+            device_sim: device_sim::DeviceSim::new(device_custom),
             roblox_login: None,
             settings_open_on: None,
             drag: None,
@@ -1726,6 +1731,7 @@ impl Shell {
             play_copy_name: self.play.copy_name.clone(),
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),
+            device_custom: self.device_sim.custom,
         };
         let _ = settings.save();
 

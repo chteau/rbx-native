@@ -142,6 +142,8 @@ pub(crate) struct Settings {
     pub(crate) anim_sheet_height: Option<f32>,
     /// The Animation Editor's channel-name column width, once dragged.
     pub(crate) anim_names_width: Option<f32>,
+    /// The Device Simulator's custom device (`shell::device_sim`).
+    pub(crate) device_custom: crate::device_sim::CustomDevice,
 }
 
 /// A dock layout saved under a name.
@@ -236,6 +238,7 @@ impl Default for Settings {
             play_copy_name: crate::shell::PLAY_COPY_NAME_DEFAULT.to_owned(),
             anim_sheet_height: None,
             anim_names_width: None,
+            device_custom: crate::device_sim::CustomDevice::default(),
         }
     }
 }
@@ -459,6 +462,7 @@ fn load_from(path: &Path) -> Settings {
             .to_owned(),
         anim_sheet_height: read_extent(&value, "anim_sheet_height"),
         anim_names_width: read_extent(&value, "anim_names_width"),
+        device_custom: crate::device_sim::CustomDevice::read(&value),
     }
 }
 
@@ -723,6 +727,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     });
     // Outside the literal: `json!` hits the macro recursion limit at this size.
     value["play_copy_name"] = settings.play_copy_name.clone().into();
+    value["device_custom"] = settings.device_custom.json();
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
     write_atomic(path, &bytes)

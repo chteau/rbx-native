@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-17
+
+- **Device Simulator.** The Test ribbon's Device menu previews a phone,
+  tablet, desktop, console or headset screen: the 3D view letterboxes to
+  the device in a bezel and lays every `ScreenGui` out at its logical size,
+  clear of an iPhone's notch and home indicator as `ScreenInsets` asks, and
+  Rotate swaps the orientation. In Play the embedded client takes the
+  device's size at 1:1, so `ViewportSize` is genuinely the device's, and
+  Sober starts in touch or console mode to match — not yet live-tested.
+  Pixel density is not simulated: Sober has no way to report one. — @chteau
+
 ## 2026-10-16
 
 - **Hover states fade in and out.** Every hover highlight in the editor —

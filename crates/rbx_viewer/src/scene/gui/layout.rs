@@ -127,6 +127,17 @@ pub(crate) struct Grouped {
     pub(crate) texture: Option<usize>,
 }
 
+/// The edges of a device's screen its cutouts and home indicator cover, in
+/// the same pixels as the viewport: what `ScreenInsets.DeviceSafeInsets`
+/// keeps a `ScreenGui` clear of. All zero for a desktop window.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SafeInsets {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+}
+
 /// Every element of every screen, in paint order: `DisplayOrder` first, then
 /// `ZIndex` among siblings, then tree order — and a child always over its
 /// parent, which is what `ZIndexBehavior.Sibling` (the default) means.
@@ -138,12 +149,33 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
     resolve_with(screens, viewport, &mut text::Unmeasured)
 }
 
+/// [`resolve`] on a device whose screen keeps `insets` clear.
+#[cfg(test)]
+pub(crate) fn resolve_on_device(
+    screens: &[Screen],
+    viewport: [f32; 2],
+    insets: SafeInsets,
+) -> Vec<Element> {
+    resolve_inset(screens, viewport, insets, &mut text::Unmeasured)
+}
+
 /// [`resolve`] with the text measured by `measure` — what the renderer calls,
 /// so `TextScaled` and an `AutomaticSize` text box come out at the size the
 /// glyphs will actually take.
+#[cfg(test)]
 pub(crate) fn resolve_with<'a>(
     screens: impl IntoIterator<Item = &'a Screen>,
     viewport: [f32; 2],
+    measure: &mut dyn TextMeasure,
+) -> Vec<Element> {
+    resolve_inset(screens, viewport, SafeInsets::default(), measure)
+}
+
+/// [`resolve_with`] on a device whose screen keeps `insets` clear.
+pub(crate) fn resolve_inset<'a>(
+    screens: impl IntoIterator<Item = &'a Screen>,
+    viewport: [f32; 2],
+    insets: SafeInsets,
     measure: &mut dyn TextMeasure,
 ) -> Vec<Element> {
     let mut order: Vec<&Screen> = screens.into_iter().collect();
@@ -153,7 +185,7 @@ pub(crate) fn resolve_with<'a>(
 
     let mut elements = Vec::new();
     for screen in order {
-        let frame = screen_frame(screen, viewport);
+        let frame = screen_frame(screen, viewport, insets);
         let start = elements.len();
         children(
             Scope {
@@ -185,13 +217,20 @@ pub(crate) fn resolve_with<'a>(
 }
 
 /// The box a screen's top-level children resolve against: `ScreenInsets`
-/// starts it below the top bar, and makes it that much shorter, so a
-/// `{1, 0}` child still reaches the bottom edge.
-pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2]) -> Rect {
+/// keeps it clear of the device's cutouts and starts it below the top bar,
+/// shrinking it by as much, so a `{1, 0}` child still ends at the safe
+/// area's far edges.
+pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2], insets: SafeInsets) -> Rect {
+    let device = match screen.device_safe {
+        true => insets,
+        false => SafeInsets::default(),
+    };
+    let top = device.top + screen.top_inset;
     Rect {
-        y: screen.top_inset,
-        height: (viewport[1] - screen.top_inset).max(0.0),
-        ..canvas(viewport)
+        x: device.left,
+        y: top,
+        width: (viewport[0] - device.left - device.right).max(0.0),
+        height: (viewport[1] - top - device.bottom).max(0.0),
     }
 }
 

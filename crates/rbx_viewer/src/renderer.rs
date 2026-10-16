@@ -520,6 +520,11 @@ impl Renderer {
         self.gui.set_screen(screen);
     }
 
+    /// See `Gui::set_safe_insets`.
+    pub(crate) fn set_gui_safe_insets(&mut self, insets: crate::SafeInsets) {
+        self.gui.set_safe_insets(insets);
+    }
+
     pub(crate) fn draw_gui_canvas(
         &mut self,
         device: &wgpu::Device,

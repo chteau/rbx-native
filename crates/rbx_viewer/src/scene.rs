@@ -48,10 +48,11 @@ pub(crate) use filemesh::{
 pub(crate) use gui::gui_image_placeholder;
 #[cfg(test)]
 pub(crate) use gui::{
-    plan as gui_plan, GroupTint as GuiGroupTint, StrokePx as GuiStroke, TextSpan as GuiTextSpan,
+    plan as gui_plan, resolve_with as gui_layout_with, GroupTint as GuiGroupTint,
+    StrokePx as GuiStroke, TextSpan as GuiTextSpan,
 };
 pub(crate) use gui::{
-    resolve_canvas_with as gui_canvas_layout_with, resolve_with as gui_layout_with,
+    resolve_canvas_with as gui_canvas_layout_with, resolve_inset as gui_layout_inset,
     screen_frame as gui_screen_frame, scroll_target as gui_scroll_target,
     span_face as gui_span_face, Align as GuiAlign, Anchor as GuiAnchor, Element as GuiElement,
     GradientKind as GuiGradientKind, GradientPx as GuiGradient, Grouped as GuiGroup,
@@ -60,7 +61,7 @@ pub(crate) use gui::{
     SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile,
     Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
-pub use gui::{shows_screen, ScrollTarget};
+pub use gui::{shows_screen, SafeInsets, ScrollTarget};
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
 pub use isolation::STAGE_REACH;

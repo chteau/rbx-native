@@ -290,6 +290,7 @@ impl Shell {
         self.play.pending_launcher = None;
         self.play.attempt += 1;
         self.play.phase = Phase::Idle;
+        self.device_play_changed(cx);
         cx.notify();
     }
 
@@ -604,6 +605,7 @@ impl Shell {
                     return;
                 }
                 shell.play.phase = Phase::Running;
+                shell.device_play_changed(cx);
                 shell.live_begin(cx);
                 shell.play_debug_begin(cx);
                 shell.play.poll = Some(shell.play_poll(cx));
@@ -630,17 +632,25 @@ impl Shell {
     /// pressed in, once that panel has been laid out.
     fn play_embed_target(&self, cx: &App) -> Option<EmbedTarget> {
         let window = self.play.main_window?;
-        let (x, y, width, height) = self.viewport.read(cx).panel_rect();
+        let view = self.viewport.read(cx);
+        let (x, y, width, height) = view.panel_rect();
         if width == 0 || height == 0 {
             return None;
         }
+        // A simulated device's screen at 1:1 rather than the whole panel.
+        let rect = view.play_rect(crate::device_sim::Rect {
+            x: i32::try_from(x).ok()?,
+            y: i32::try_from(y).ok()?,
+            width,
+            height,
+        });
         Some(EmbedTarget {
             window,
             rect: session::rbx_play_rect::Rect {
-                x: i32::try_from(x).ok()?,
-                y: i32::try_from(y).ok()?,
-                width,
-                height,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
             },
         })
     }
@@ -821,6 +831,7 @@ impl Shell {
         self.output
             .push(PLAY_SOURCE, Feedback::Output(reason.message()));
         self.play.phase = Phase::Idle;
+        self.device_play_changed(cx);
         cx.notify();
     }
 
