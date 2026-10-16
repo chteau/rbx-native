@@ -80,6 +80,17 @@ Roblox's own engine.
   customises or resets each class's starter, and lists the files the
   loader refused with the reason. The Model and Script menus follow the
   folder live, whether a template changed in the window or by hand.
+- [x] **Script debugging inside a Play session** (`rbx_play::instrument`,
+  the probe's `debug` module, `shell/play/debug.rs`): breakpoints stop
+  server and client scripts of a running test, with the Watch and Call
+  Stack docks, Continue / Step Into / Over / Out and watch expressions
+  evaluated in the game. Scripts with breakpoints are published with
+  same-line hooks that hand the probe their locals (game scripts have no
+  `debug.getlocal`); toggling breakpoints reaches the game at once, and
+  each breakpoint has Studio's Trigger At contexts (Client / Server /
+  Edit). Only the stopped thread waits, not the whole session; conditions
+  and log messages, and breakpoints in scripts that had none, apply from
+  the next Play. `docs/research/play-sandbox/debugging.md`.
 
 ### Plugins (`rbx_lua::plugin`, `rbx_wasm`, `shell::plugins`)
 - [x] rbx-native's own plugin API: a folder with a `plugin.toml` (name,
@@ -2545,6 +2556,124 @@ Roblox's own engine.
   element without an id, keep the instant switch; highlights a list
   moves by keyboard as well as pointer (menus, pickers) stay instant on
   purpose, and a `Div` still cannot be transformed.
+- [x] **What Studio Settings showed as `SOON`, now live.**
+  - **Name for test copies** (Files › Play): after Play publishes over the
+    sandbox it renames the sandbox place to the template (default
+    `{place} (Play)`, cut to Roblox's 50 characters) through Open Cloud's
+    place PATCH, once per name per session. An empty template leaves the
+    sandbox's own name; a refused rename (the key lacks
+    `universe.place:write`) is an Output warning, never a failed Play.
+  - **Several accounts** (Account › Accounts): every Open Cloud key saved
+    from Roblox publishing is kept under its own credential-store entry
+    (`key_store::accounts`), indexed in `accounts.json` by owner, key name
+    and a SHA-256 fingerprint, never the secret. Switch makes one active
+    without pasting it again, the trash removes one, and "Add another
+    account's key" opens Roblox publishing. The single-key setup migrates
+    itself on the first launch.
+  - **The colour popover's eyedropper** (`crates/rbx_eyedropper`): GPUI
+    cannot read the screen, so each platform asks its own. Linux uses the
+    desktop portal's `Screenshot.PickColor` (Wayland too), falling back on
+    X11 to a pointer grab and the root window's pixel. Windows uses a
+    low-level mouse hook and the screen DC. macOS uses `NSColorSampler`.
+    Escape or a right click cancels. The Windows and macOS back ends are
+    compile-checked here and have never run on those systems.
+  - **Customize Shortcuts** (`File › Customize Shortcuts…`, and the
+    Settings nav's Keyboard shortcuts), a window of its own as in Studio.
+    It lists every rebindable command (89, from Save to the Animation
+    Editor's keys) by category, with search. Click `+` or a key chip and
+    press the new key. Chips remove a key, and Reset or Reset all go back
+    to the defaults. A clash is shown ("Also runs: Copy (Edit)") but
+    allowed, as Studio allows it. Every key handler asks
+    `shortcuts::pressed` instead of matching keys itself, so a change
+    applies at once. Menu and palette hints follow it, and the
+    keymap-backed keys (Alt+S, Quick Open, the palette, Tab for handles)
+    are re-bound. Changes live in `shortcuts.json`. The defaults now use
+    Cmd on macOS where they used Ctrl.
+- [x] **Beta Features** (`File › Beta Features…`, Settings › Beta
+  features), matching Studio's `File > Beta Features`. A half-finished
+  feature is listed in `beta::FEATURES` and asks `beta::enabled("<id>")`
+  before showing itself. Each feature has its own switch, stored in
+  `beta.json` and applied after a restart: `enabled` answers from the
+  choices at launch. A banner counts the pending changes and offers
+  "Restart now", which asks to save unsaved work first, then relaunches
+  the editor on the same place. Nothing ships behind a switch yet, so the
+  page shows its empty state; `RBX_STUDIO_BETA_SAMPLE=1` lists a sample
+  feature to try the page.
+- [x] **More New templates on Home.** Home's New row now offers
+  Baseplate, Classic Baseplate and Flat Terrain, each with the parts,
+  Lighting (Sky and effects for the modern two) and camera zoom that real
+  Studio's own template holds, measured from Studio itself; Flat Terrain
+  writes its 2048×2048, 64-stud-deep grass through the `SmoothGrid`
+  writer the Terrain Editor brought. Studio's themed templates (Village,
+  Castle, Obby, …) are whole games built from Roblox's assets and are not
+  redrawn here. An account switcher (one key per Roblox account) would be
+  an rbx-native addition, not Studio parity — real Studio has none.
+
+### Play / Test (`rbx_play`, `shell::play`)
+- [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
+  Play publishes a probed copy of the place over a private sandbox
+  experience (Settings › Account), restarts its servers, opens it in the
+  Roblox client (Sober on Linux) and embeds that window frameless over the
+  3D view, following the editor window and taking the keyboard when
+  clicked. The probe reports back through a bundled cloudflared tunnel kept
+  open between sessions (a second Play is up in ~4 s). Stop, Roblox
+  closing and your player leaving end the session; a running Roblox is
+  closed after a confirmation (each client allows one instance); Invite
+  copies a link to the exact test server. Research and live results:
+  `docs/research/play-sandbox/`.
+- [x] Server and client `print`/`warn`/`error` reach the Output dock
+  during Play, tagged like Studio's context labels (Server blue, Client
+  green). An error shows the Luau message itself, its `Script:line`, and
+  its stack frames underneath; clicking any of them opens the place's
+  script at that line (`shell/output/game.rs`). Joins and leaves drive the
+  session but are not shown yet.
+- [x] **Client / Server views during Play** (`shell/play/live.rs`,
+  `rbx_play::{live, value}`, the probe's shared `live`/`codec` modules):
+  the Explorer and Properties show the running game's tree for the
+  tester's client or the server (ribbon toggle; tests open on Client), with
+  properties polled for the selection, and property edits, renames,
+  deletes, reparents and inserts made there go to the game in real time.
+  The edited place is stashed and comes back untouched on Stop. Tags
+  edit live too. Opening a script there opens the place's copy (Roblox's
+  join-time copies mapped back to their Starter containers); its edits
+  land in the place when the test stops.
+  `docs/research/play-sandbox/live-views.md`.
+- [x] Live stats on the Test ribbon: frame rate, ping and memory for the
+  client, heartbeat rate, players and memory for the server, every
+  reported number in the tooltip.
+- [x] Editor menus, dropdowns, tooltips and dialogs draw above the
+  embedded game (X Shape holes from `gpui_base::occlusion`).
+- [x] **"In Studio" on Roblox** (Settings › Account): the heartbeat real
+  Studio sends, signed in with Roblox's code sign-in (code + QR, no web
+  view); the session lives in the system keychain.
+- [x] The embedded game hides while another document (Scripts, UI
+  Editor, Animation) has the 3D view's room.
+- [x] **Test purchases (game passes, developer products, catalog items,
+  bundles, subscriptions)**
+  (`rbx_play::market`, the probe's `market`/`market_ui` modules): the
+  sandbox is a real published place, so `MarketplaceService`'s own prompts
+  would charge real Robux. Play rewrites every
+  `GetService("MarketplaceService")` in the published copy's scripts
+  (in place, so lines and breakpoints hold) into a proxy, and game code
+  needs no change. Every `Prompt…Purchase` (product, pass, `PromptPurchase`,
+  bundle, subscription; from the server or the client) opens a copy of
+  Roblox's test-purchase dialog, matched to the pixel against Roblox's own
+  (its layout, the 0.3 s slide and fade, the backdrop, the 0.65 s Buy
+  delay, hovers, "Get subscription", "Purchase completed", and the Error
+  view for an id with nothing behind it). A bought pass, catalog item,
+  bundle or subscription is owned for the session (`UserOwnsGamePassAsync`,
+  `PlayerOwnsAsset(Async)`, `PlayerOwnsBundle(Async)`,
+  `GetUserSubscriptionStatusAsync` on both sides); a product goes to the
+  game's `BindReceiptHandler` handlers or `ProcessReceipt` with a `DEV-`
+  receipt, retried on the next purchase until it is granted; every
+  `…PurchaseFinished` signal fires. No `IsStudio()` patch and no separate
+  DataStore scope are needed: game code is untouched and the sandbox
+  universe's DataStores are already apart from production. Not covered:
+  `Players.UserSubscriptionStatusChanged` (an engine event a script cannot
+  fire), bulk purchases and Roblox Plus/Premium prompts, which still go to
+  the real ones, and a service name built at runtime (not a string
+  literal), which is not rewritten. `examples/market_place.rs` writes the probed copy for a
+  check in real Studio.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2629,17 +2758,6 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [x] **Script debugging inside a Play session** (`rbx_play::instrument`,
-  the probe's `debug` module, `shell/play/debug.rs`): breakpoints stop
-  server and client scripts of a running test, with the Watch and Call
-  Stack docks, Continue / Step Into / Over / Out and watch expressions
-  evaluated in the game. Scripts with breakpoints are published with
-  same-line hooks that hand the probe their locals (game scripts have no
-  `debug.getlocal`); toggling breakpoints reaches the game at once, and
-  each breakpoint has Studio's Trigger At contexts (Client / Server /
-  Edit). Only the stopped thread waits, not the whole session; conditions
-  and log messages, and breakpoints in scripts that had none, apply from
-  the next Play. `docs/research/play-sandbox/debugging.md`.
 - [ ] ⚠️ **Inline AI code completion**, matching what real Studio calls
   **Code Assist** (`studio/script-editor.md`) — suggests a line/block of
   code inline as you type or pause, distinct from `luau-lsp`'s
@@ -2654,58 +2772,6 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 
 ### Editor
-- [x] **What Studio Settings showed as `SOON`, now live.**
-  - **Name for test copies** (Files › Play): after Play publishes over the
-    sandbox it renames the sandbox place to the template (default
-    `{place} (Play)`, cut to Roblox's 50 characters) through Open Cloud's
-    place PATCH, once per name per session. An empty template leaves the
-    sandbox's own name; a refused rename (the key lacks
-    `universe.place:write`) is an Output warning, never a failed Play.
-  - **Several accounts** (Account › Accounts): every Open Cloud key saved
-    from Roblox publishing is kept under its own credential-store entry
-    (`key_store::accounts`), indexed in `accounts.json` by owner, key name
-    and a SHA-256 fingerprint, never the secret. Switch makes one active
-    without pasting it again, the trash removes one, and "Add another
-    account's key" opens Roblox publishing. The single-key setup migrates
-    itself on the first launch.
-  - **The colour popover's eyedropper** (`crates/rbx_eyedropper`): GPUI
-    cannot read the screen, so each platform asks its own. Linux uses the
-    desktop portal's `Screenshot.PickColor` (Wayland too), falling back on
-    X11 to a pointer grab and the root window's pixel. Windows uses a
-    low-level mouse hook and the screen DC. macOS uses `NSColorSampler`.
-    Escape or a right click cancels. The Windows and macOS back ends are
-    compile-checked here and have never run on those systems.
-  - **Customize Shortcuts** (`File › Customize Shortcuts…`, and the
-    Settings nav's Keyboard shortcuts), a window of its own as in Studio.
-    It lists every rebindable command (89, from Save to the Animation
-    Editor's keys) by category, with search. Click `+` or a key chip and
-    press the new key. Chips remove a key, and Reset or Reset all go back
-    to the defaults. A clash is shown ("Also runs: Copy (Edit)") but
-    allowed, as Studio allows it. Every key handler asks
-    `shortcuts::pressed` instead of matching keys itself, so a change
-    applies at once. Menu and palette hints follow it, and the
-    keymap-backed keys (Alt+S, Quick Open, the palette, Tab for handles)
-    are re-bound. Changes live in `shortcuts.json`. The defaults now use
-    Cmd on macOS where they used Ctrl.
-- [x] **Beta Features** (`File › Beta Features…`, Settings › Beta
-  features), matching Studio's `File > Beta Features`. A half-finished
-  feature is listed in `beta::FEATURES` and asks `beta::enabled("<id>")`
-  before showing itself. Each feature has its own switch, stored in
-  `beta.json` and applied after a restart: `enabled` answers from the
-  choices at launch. A banner counts the pending changes and offers
-  "Restart now", which asks to save unsaved work first, then relaunches
-  the editor on the same place. Nothing ships behind a switch yet, so the
-  page shows its empty state; `RBX_STUDIO_BETA_SAMPLE=1` lists a sample
-  feature to try the page.
-- [x] **More New templates on Home.** Home's New row now offers
-  Baseplate, Classic Baseplate and Flat Terrain, each with the parts,
-  Lighting (Sky and effects for the modern two) and camera zoom that real
-  Studio's own template holds, measured from Studio itself; Flat Terrain
-  writes its 2048×2048, 64-stud-deep grass through the `SmoothGrid`
-  writer the Terrain Editor brought. Studio's themed templates (Village,
-  Castle, Obby, …) are whole games built from Roblox's assets and are not
-  redrawn here. An account switcher (one key per Roblox account) would be
-  an rbx-native addition, not Studio parity — real Studio has none.
 - [ ] 📋 **An MCP server exposing the live editor session**, matching the
   shape (not the exact tool surface) of Roblox's own built-in Studio MCP
   server (checked against `studio/mcp.md` rather than assumed — real,
@@ -2733,70 +2799,6 @@ Roblox's own engine.
   can't actually represent.
 
 ### Play / Test workflow
-- [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
-  Play publishes a probed copy of the place over a private sandbox
-  experience (Settings › Account), restarts its servers, opens it in the
-  Roblox client (Sober on Linux) and embeds that window frameless over the
-  3D view, following the editor window and taking the keyboard when
-  clicked. The probe reports back through a bundled cloudflared tunnel kept
-  open between sessions (a second Play is up in ~4 s). Stop, Roblox
-  closing and your player leaving end the session; a running Roblox is
-  closed after a confirmation (each client allows one instance); Invite
-  copies a link to the exact test server. Research and live results:
-  `docs/research/play-sandbox/`.
-- [x] Server and client `print`/`warn`/`error` reach the Output dock
-  during Play, tagged like Studio's context labels (Server blue, Client
-  green). An error shows the Luau message itself, its `Script:line`, and
-  its stack frames underneath; clicking any of them opens the place's
-  script at that line (`shell/output/game.rs`). Joins and leaves drive the
-  session but are not shown yet.
-- [x] **Client / Server views during Play** (`shell/play/live.rs`,
-  `rbx_play::{live, value}`, the probe's shared `live`/`codec` modules):
-  the Explorer and Properties show the running game's tree for the
-  tester's client or the server (ribbon toggle; tests open on Client), with
-  properties polled for the selection, and property edits, renames,
-  deletes, reparents and inserts made there go to the game in real time.
-  The edited place is stashed and comes back untouched on Stop. Tags
-  edit live too. Opening a script there opens the place's copy (Roblox's
-  join-time copies mapped back to their Starter containers); its edits
-  land in the place when the test stops.
-  `docs/research/play-sandbox/live-views.md`.
-- [x] Live stats on the Test ribbon: frame rate, ping and memory for the
-  client, heartbeat rate, players and memory for the server, every
-  reported number in the tooltip.
-- [x] Editor menus, dropdowns, tooltips and dialogs draw above the
-  embedded game (X Shape holes from `gpui_base::occlusion`).
-- [x] **"In Studio" on Roblox** (Settings › Account): the heartbeat real
-  Studio sends, signed in with Roblox's code sign-in (code + QR, no web
-  view); the session lives in the system keychain.
-- [x] The embedded game hides while another document (Scripts, UI
-  Editor, Animation) has the 3D view's room.
-- [x] **Test purchases (game passes, developer products, catalog items,
-  bundles, subscriptions)**
-  (`rbx_play::market`, the probe's `market`/`market_ui` modules): the
-  sandbox is a real published place, so `MarketplaceService`'s own prompts
-  would charge real Robux. Play rewrites every
-  `GetService("MarketplaceService")` in the published copy's scripts
-  (in place, so lines and breakpoints hold) into a proxy, and game code
-  needs no change. Every `Prompt…Purchase` (product, pass, `PromptPurchase`,
-  bundle, subscription; from the server or the client) opens a copy of
-  Roblox's test-purchase dialog, matched to the pixel against Roblox's own
-  (its layout, the 0.3 s slide and fade, the backdrop, the 0.65 s Buy
-  delay, hovers, "Get subscription", "Purchase completed", and the Error
-  view for an id with nothing behind it). A bought pass, catalog item,
-  bundle or subscription is owned for the session (`UserOwnsGamePassAsync`,
-  `PlayerOwnsAsset(Async)`, `PlayerOwnsBundle(Async)`,
-  `GetUserSubscriptionStatusAsync` on both sides); a product goes to the
-  game's `BindReceiptHandler` handlers or `ProcessReceipt` with a `DEV-`
-  receipt, retried on the next purchase until it is granted; every
-  `…PurchaseFinished` signal fires. No `IsStudio()` patch and no separate
-  DataStore scope are needed: game code is untouched and the sandbox
-  universe's DataStores are already apart from production. Not covered:
-  `Players.UserSubscriptionStatusChanged` (an engine event a script cannot
-  fire), bulk purchases and Roblox Plus/Premium prompts, which still go to
-  the real ones, and a service name built at runtime (not a string
-  literal), which is not rewritten. `examples/market_place.rs` writes the probed copy for a
-  check in real Studio.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
