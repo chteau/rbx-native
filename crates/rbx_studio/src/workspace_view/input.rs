@@ -6,8 +6,10 @@
 //! same physical mapping has to be rebuilt from that character plus the layout
 //! GPUI reports (see [`Layout`]).
 
-use gpui_kit::{Modifiers, ScrollDelta};
+use gpui_kit::{Keystroke, Modifiers, ScrollDelta};
 use rbx_viewer::CameraKey;
+
+use crate::shortcuts::{self, Command};
 
 // GPUI's Linux backends report one wheel notch as three "lines" (their own
 // `SCROLL_LINES`), not one, so notches have to be divided back out or a single
@@ -56,6 +58,28 @@ impl Layout {
 /// `key` is `Keystroke::key`: a single lowercase character for letters, a name
 /// like `"left"` for the arrows.
 pub(crate) fn camera_key(key: &str, layout: Layout) -> Option<CameraKey> {
+    const CAMERA: [(Command, CameraKey); 6] = [
+        (Command::CameraForward, CameraKey::Forward),
+        (Command::CameraBack, CameraKey::Back),
+        (Command::CameraLeft, CameraKey::Left),
+        (Command::CameraRight, CameraKey::Right),
+        (Command::CameraUp, CameraKey::Up),
+        (Command::CameraDown, CameraKey::Down),
+    ];
+    if !CAMERA
+        .iter()
+        .all(|(command, _)| shortcuts::is_default(*command))
+    {
+        let keystroke = Keystroke {
+            key: key.into(),
+            modifiers: Modifiers::none(),
+            key_char: None,
+        };
+        return CAMERA
+            .iter()
+            .find(|(command, _)| shortcuts::pressed(*command, &keystroke))
+            .map(|(_, camera)| *camera);
+    }
     let azerty = layout == Layout::Azerty;
     match key {
         "w" | "z" | "up" => Some(CameraKey::Forward),

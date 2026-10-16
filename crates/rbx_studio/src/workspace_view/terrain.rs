@@ -134,11 +134,17 @@ impl WorkspaceView {
     /// `B`'s state, from every key event over the view, and `Delete`
     /// while the Terrain Editor has the view. Whether the key was taken.
     pub(super) fn terrain_key(&mut self, key: &str, pressed: bool, cx: &mut Context<Self>) -> bool {
-        if key == "b" {
+        use crate::shortcuts::{self, Command};
+        let keystroke = gpui_kit::Keystroke {
+            key: key.into(),
+            modifiers: Modifiers::none(),
+            key_char: None,
+        };
+        if shortcuts::pressed(Command::TerrainBrush, &keystroke) {
             self.terrain_b = pressed;
         }
         let terrain = self.transform.tool == crate::transform::Tool::Terrain;
-        if terrain && pressed && matches!(key, "delete" | "backspace") {
+        if terrain && pressed && shortcuts::pressed(Command::TerrainDelete, &keystroke) {
             cx.emit(ViewportAction::Terrain(TerrainInput {
                 ray: None,
                 phase: TerrainPhase::Delete,

@@ -12,7 +12,12 @@ pub(crate) const MAX_CHARS: usize = 50;
 /// [`MAX_CHARS`] characters (never inside a character). `None` when the
 /// template is blank: Play then leaves the sandbox's name alone.
 pub(crate) fn render(template: &str, place: &str) -> Option<String> {
-    todo!()
+    if template.trim().is_empty() {
+        return None;
+    }
+    let replaced = template.replace("{place}", place);
+    let cut: String = replaced.trim().chars().take(MAX_CHARS).collect();
+    Some(cut.trim().to_owned())
 }
 
 #[cfg(test)]

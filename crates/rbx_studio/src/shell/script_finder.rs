@@ -21,6 +21,7 @@ use rbx_dom::Ref;
 use crate::script_editor::{find, outline, source, Finder, FinderMode};
 
 use super::Shell;
+use crate::shortcuts::Command;
 
 /// Past this many hits the list stops growing: a one-letter Find All over a
 /// few large scripts is thousands of rows nobody scrolls through, and each is
@@ -37,11 +38,12 @@ pub(super) struct Hit {
 
 /// The shortcut that opens the overlay in `mode`, if `keystroke` is one.
 pub(super) fn mode_for(keystroke: &Keystroke) -> Option<FinderMode> {
-    let m = keystroke.modifiers;
-    match keystroke.key.as_str() {
-        "f" if m.alt && !m.control && !m.shift && !m.platform => Some(FinderMode::Functions),
-        "f" | "h" if m.secondary() && m.shift && !m.alt => Some(FinderMode::FindAll),
-        _ => None,
+    if crate::shortcuts::pressed(Command::FindFunction, keystroke) {
+        Some(FinderMode::Functions)
+    } else if crate::shortcuts::pressed(Command::FindAll, keystroke) {
+        Some(FinderMode::FindAll)
+    } else {
+        None
     }
 }
 

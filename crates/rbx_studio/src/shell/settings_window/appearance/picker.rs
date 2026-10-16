@@ -6,8 +6,11 @@
 //! colour anyway, with a warning, when the only trouble is a hue close to a
 //! status colour.
 
+use std::cell::{Cell, RefCell};
+
 use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
 use crate::accent;
@@ -22,6 +25,13 @@ mod state;
 use parts::{button, check_row, gradient, measure, note, thumb};
 use state::Drag;
 pub(in crate::shell::settings_window) use state::{Picker, Target};
+
+thread_local! {
+    /// Whether a screen pick is running; one at a time, on the UI thread.
+    static PICKING: Cell<bool> = const { Cell::new(false) };
+    /// Why the last pick failed, shown as the pipette's tooltip until the next.
+    static PICK_NOTE: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 const WIDTH: f32 = 280.;
 const PADDING: f32 = 14.;
@@ -48,6 +58,49 @@ impl SettingsWindow {
         cx.notify();
     }
 
+    /// Starts a screen pick unless one is already running. The result comes
+    /// back over a channel because the picker may call `done` from any thread.
+    fn start_pick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if PICKING.with(Cell::get) {
+            return;
+        }
+        PICKING.with(|picking| picking.set(true));
+        PICK_NOTE.with_borrow_mut(|note| *note = None);
+        let (tx, rx) = std::sync::mpsc::channel();
+        rbx_eyedropper::pick(move |outcome| {
+            let _ = tx.send(outcome);
+        });
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let outcome = cx
+                .background_executor()
+                .spawn(async move { rx.recv() })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                PICKING.with(|picking| picking.set(false));
+                match outcome {
+                    Ok(Ok(Some([r, g, b]))) => {
+                        let color = rgb(u32::from_be_bytes([0, r, g, b]));
+                        let text = format!("#{r:02X}{g:02X}{b:02X}");
+                        if let Some(picker) = &mut this.picker {
+                            (picker.hue, picker.saturation, picker.value) = accent::hsv(color);
+                            picker
+                                .hex
+                                .update(cx, |state, cx| state.set_value(text, window, cx));
+                        }
+                    }
+                    Ok(Ok(None)) => {}
+                    Ok(Err(text)) => PICK_NOTE.with_borrow_mut(|note| *note = Some(text)),
+                    Err(_) => PICK_NOTE.with_borrow_mut(|note| {
+                        *note = Some("The colour pick ended unexpectedly".to_string());
+                    }),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn apply_picked(&mut self, color: Rgba, cx: &mut Context<Self>) {
         let Some(picker) = self.picker.take() else {
             return;
@@ -71,6 +124,11 @@ impl SettingsWindow {
         let status = picker.status();
         let applied = picker.applied();
         let app_accent = tokens::check_on();
+        let picking = PICKING.with(Cell::get);
+        let pipette_tip: SharedString = PICK_NOTE
+            .with_borrow(Clone::clone)
+            .unwrap_or_else(|| "Pick a colour from the screen".to_string())
+            .into();
 
         let square = div()
             .relative()
@@ -197,15 +255,23 @@ impl SettingsWindow {
                     .border_1()
                     .border_color(tokens::border2())
                     .rounded(px(6.))
-                    .bg(tokens::dock())
-                    .text_color(tokens::text3())
+                    .border_color(tokens::border2())
+                    .when(picking, |this| {
+                        this.bg(tokens::accent_soft())
+                            .text_color(tokens::check_on())
+                    })
+                    .when(!picking, |this| {
+                        this.bg(tokens::dock())
+                            .text_color(tokens::text3())
+                            .cursor_pointer()
+                            .hover(|style| style.bg(tokens::secondary_hover()))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.start_pick(window, cx);
+                            }))
+                    })
                     .child(icon("pipette", 14.))
-                    .tooltip(|window, cx| {
-                        super::super::super::tooltip::text(
-                            "Picking a colour from the screen isn\u{2019}t available yet",
-                            window,
-                            cx,
-                        )
+                    .tooltip(move |window, cx| {
+                        super::super::super::tooltip::text(pipette_tip.clone(), window, cx)
                     }),
             );
         let rows = v_flex()
@@ -329,6 +395,11 @@ impl SettingsWindow {
                 }),
             )
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                // A screen pick's own click lands outside the popover; the
+                // colour it brings back still needs somewhere to go.
+                if PICKING.with(Cell::get) {
+                    return;
+                }
                 this.picker = None;
                 cx.notify();
             }))

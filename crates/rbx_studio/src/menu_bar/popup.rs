@@ -59,6 +59,11 @@ pub(super) fn dropdown(
                             .or_else(|| {
                                 Kbd::binding_for_action(shortcut_action.as_ref(), None, window)
                             });
+                        let fallback = match hint {
+                            Some(_) => None,
+                            None => crate::shortcuts::command_for_action(shortcut_action.as_ref())
+                                .and_then(crate::shortcuts::hint),
+                        };
                         h_flex()
                             .debug_selector(|| format!("menu-row-{label}"))
                             .w_full()
@@ -70,6 +75,9 @@ pub(super) fn dropdown(
                             .children(
                                 hint.map(|kbd| kbd.p_0().border_0().bg(gpui::transparent_white())),
                             )
+                            .children(fallback.map(|text| {
+                                div().text_sm().text_color(tokens::text3()).child(text)
+                            }))
                     })
                     .action(action.boxed_clone())
                     .checked(*checked)

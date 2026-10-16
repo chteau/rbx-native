@@ -7,7 +7,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
-use super::kit::{self, icon, mono, soon_pill, text};
+use super::kit::{self, icon, mono, text};
 use super::SettingsWindow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,16 +68,13 @@ impl Page {
         }
     }
 
-    /// Whether the header offers "Reset page": not where nothing on the
-    /// page is live, and not on Account, whose one live control is a
-    /// window of its own.
+    /// Whether the header offers "Reset page": on Beta only while some
+    /// feature is listed to switch off.
     pub(super) fn has_reset(self) -> bool {
-        !matches!(self, Page::Beta)
-    }
-
-    /// Whether the whole page is on the roadmap.
-    fn soon(self) -> bool {
-        self == Page::Beta
+        match self {
+            Page::Beta => !crate::beta::features().is_empty(),
+            _ => true,
+        }
     }
 
     /// The page's h1 and the line under it.
@@ -148,9 +145,6 @@ impl SettingsWindow {
                     .text_color(tokens::text3())
                     .child(n.to_string())
             }))
-            .when(page.soon(), |this| {
-                this.child(soon_pill(("page-soon", page as usize)))
-            })
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.page = page;
                 cx.notify();
@@ -167,7 +161,10 @@ impl SettingsWindow {
                 12.,
                 16.,
             )
-            .child(soon_pill(("own-soon", 0usize))),
+            .on_click({
+                let shell = shell.clone();
+                move |_, _, cx| shell.update(cx, |shell, cx| shell.open_shortcuts(cx))
+            }),
             nav_item(
                 ("own", 1usize),
                 "sliders-horizontal",

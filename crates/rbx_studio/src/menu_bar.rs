@@ -58,6 +58,8 @@ actions!(
         MenuGameSettings,
         MenuOpenAutoSaves,
         MenuStudioSettings,
+        MenuCustomizeShortcuts,
+        MenuBetaFeatures,
         MenuScriptTemplates,
         MenuUndo,
         MenuRedo,
@@ -205,6 +207,9 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Open Auto Saves", MenuOpenAutoSaves),
                 MenuItem::separator(),
                 MenuItem::action("Studio Settings…", MenuStudioSettings),
+                // Studio keeps both of these under File as well.
+                MenuItem::action("Customize Shortcuts…", MenuCustomizeShortcuts),
+                MenuItem::action("Beta Features…", MenuBetaFeatures),
                 MenuItem::action("Script Templates…", MenuScriptTemplates),
             ])
             .owned(),

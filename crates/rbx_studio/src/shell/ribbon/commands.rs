@@ -147,7 +147,7 @@ impl RibbonCommand {
 /// already lists the same three inserts under their own names, and the
 /// palette lists that menu.
 pub(in crate::shell) fn palette_entries(
-) -> Vec<(&'static str, String, Option<&'static str>, RibbonCommand)> {
+) -> Vec<(&'static str, String, Option<String>, RibbonCommand)> {
     let mut entries = Vec::new();
     for item in &PART_INSERTS {
         entries.push((
@@ -166,12 +166,10 @@ pub(in crate::shell) fn palette_entries(
         ));
     }
     entries.extend([
-        // `transform::action_for`'s own chord, held to it by the palette's
-        // hint test.
         (
             "Tool",
             "Local Orientation".to_owned(),
-            Some("ctrl-l"),
+            crate::shortcuts::hint(crate::shortcuts::Command::ToggleLocal),
             RibbonCommand::Local,
         ),
         (

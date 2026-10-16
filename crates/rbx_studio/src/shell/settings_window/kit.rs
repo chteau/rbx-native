@@ -35,26 +35,6 @@ pub(in crate::shell) fn icon(name: &'static str, size: f32) -> Icon {
         .size(px(size))
 }
 
-/// The `SOON` pill, with its "On the roadmap" tooltip.
-pub(in crate::shell) fn soon_pill(id: impl Into<ElementId>) -> Stateful<Div> {
-    h_flex()
-        .id(id.into())
-        .flex_none()
-        .h(px(16.))
-        .px(px(5.))
-        .items_center()
-        .border_1()
-        .border_color(tokens::border2())
-        .rounded(px(4.))
-        .font_family(tokens::font_mono())
-        .text_size(px(9.5))
-        .line_height(px(12.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(tokens::text3())
-        .child("SOON")
-        .tooltip(|window, cx| super::super::tooltip::text("On the roadmap", window, cx))
-}
-
 /// A key cap: border2 with a 2 px bottom edge, mono 10.5.
 pub(in crate::shell) fn key_hint(keys: &'static str) -> Div {
     h_flex()

@@ -87,10 +87,12 @@ pub(crate) enum Action {
 /// pure-function shape for the same reason: the mapping is testable without a
 /// window, and `shell::save` only has to call it.
 pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    match key {
-        "s" if modifiers.control => Some(Action::Save),
-        _ => None,
-    }
+    let keystroke = gpui_kit::Keystroke {
+        key: key.into(),
+        modifiers,
+        key_char: None,
+    };
+    crate::shortcuts::pressed(crate::shortcuts::Command::Save, &keystroke).then_some(Action::Save)
 }
 
 /// Serializes `dom` in `format` and writes it atomically to `path`.

@@ -20,7 +20,9 @@
 //!    session id `play-<unix ms>`, and the tunnel URL; its warnings go to
 //!    Output as `Feedback::Warning`.
 //! 5. Publish with `rbx_cloud::Client::publish_place(…, Published)` (key
-//!    from `ApiKey::from_env_or_config`).
+//!    from `ApiKey::from_env_or_config`), then rename the sandbox place to
+//!    `copy_name::render(template, place name)` when that differs from the
+//!    name applied earlier this session; a failed rename only warns.
 //! 6. Launch `ClientProcess::spawn(launcher, &join_uri(place, session))`,
 //!    after reading `Embedded::existing_clients()` (Linux) to ignore.
 //! 7. Linux with an `embed_target`: `Embedded::attach(target.window,
@@ -47,7 +49,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui_kit::*;
-use rbx_cloud::{ApiKey, Client, PublishMode};
+use rbx_cloud::{ApiKey, Client, PlaceUpdate, PublishMode};
 use rbx_play::channel::{ChannelServer, DEFAULT_HOLD};
 use rbx_play::inject::ProbeConfig;
 use rbx_play::launch::{join_server_uri, join_uri, ClientProcess, Launcher};
@@ -126,6 +128,8 @@ pub(super) struct Play {
     /// The name template for the sandbox while it runs a test (see
     /// `copy_name`); persisted in settings.
     pub(super) copy_name: String,
+    /// The last test-copy name applied to the sandbox this session.
+    named: Option<String>,
     pub(super) phase: Phase,
     /// The "Roblox is already running" question is showing.
     pub(super) confirm_close: bool,
@@ -166,6 +170,7 @@ impl Play {
         Play {
             sandbox,
             copy_name,
+            named: None,
             phase: Phase::Idle,
             confirm_close: false,
             main_window: None,
@@ -321,6 +326,14 @@ impl Shell {
                 }
             },
         };
+        let template = self.play.copy_name.clone();
+        let named = self.play.named.clone().unwrap_or_default();
+        let title = self.title.to_string();
+        let place_name = [".rbxlx", ".rbxl", ".rbxm"]
+            .iter()
+            .find_map(|ext| title.strip_suffix(ext))
+            .unwrap_or(&title)
+            .to_owned();
         let dom = self.dom.clone();
         let debug_requests = self.play_debug_requests();
         cx.spawn(async move |this, cx| {
@@ -427,6 +440,7 @@ impl Shell {
                 return;
             }
             let (universe_id, place_id) = (sandbox.universe_id, sandbox.place_id);
+            let wanted = copy_name::render(&template, &place_name).filter(|name| *name != named);
             let published = cx
                 .background_spawn(async move {
                     let Some(key) = ApiKey::from_env_or_config() else {
@@ -444,24 +458,45 @@ impl Shell {
                     // A server from an earlier Play still runs the old probe,
                     // whose token no longer opens the channel; joining it
                     // would be a session that never reports.
-                    Ok(client.restart_servers(universe_id, true).err().map(|err| {
+                    let restart = client.restart_servers(universe_id, true).err().map(|err| {
                         format!(
                             "Old test servers could not be restarted ({err}); give your API key the \
                              universe:write scope so Play never lands in a stale server."
                         )
-                    }))
+                    });
+                    let rename = wanted.map(|name| {
+                        let update = PlaceUpdate {
+                            display_name: Some(name.clone()),
+                            ..Default::default()
+                        };
+                        match client.update_place_settings(universe_id, place_id, &update) {
+                            Ok(_) => Ok(name),
+                            Err(err) => Err(format!(
+                                "The sandbox could not be renamed to \u{201c}{name}\u{201d} ({err}); \
+                                 its API key needs the universe.place:write scope."
+                            )),
+                        }
+                    });
+                    Ok((restart, rename))
                 })
                 .await;
-            match published {
+            let (restart, rename) = match published {
                 Err(text) => return fail(&this, cx, attempt, text),
-                Ok(Some(warning)) => {
-                    let _ = this.update(cx, |shell, cx| {
-                        shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
-                        cx.notify();
-                    });
+                Ok(done) => done,
+            };
+            let _ = this.update(cx, |shell, cx| {
+                if let Some(warning) = restart {
+                    shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
                 }
-                Ok(None) => {}
-            }
+                match rename {
+                    Some(Ok(name)) => shell.play.named = Some(name),
+                    Some(Err(warning)) => {
+                        shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
+                    }
+                    None => {}
+                }
+                cx.notify();
+            });
 
             if !step(&this, cx, attempt, "Starting Roblox\u{2026}") {
                 return;
@@ -811,6 +846,17 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.play.sandbox = sandbox;
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Settings › Files › Play › Name for test copies: stores it and saves settings.
+    pub(in crate::shell) fn set_play_copy_name(
+        &mut self,
+        template: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.play.copy_name = template;
         self.save_settings();
         cx.notify();
     }

@@ -61,21 +61,22 @@ pub(super) enum Action {
 /// Command Bar, an open script) keeps its own copy/paste and this handler
 /// never sees the keystroke.
 pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    // The whole modifier set decides, not just Ctrl plus whichever other key
-    // one arm happens to check: Ctrl+Alt+V (AltGr on some layouts) is no
-    // paste, and Ctrl+Shift+D is not a duplicate. Shift is the one modifier
-    // that means something, and only on V.
-    if !modifiers.control || modifiers.alt || modifiers.platform || modifiers.function {
-        return None;
-    }
-    match (key, modifiers.shift) {
-        ("c", false) => Some(Action::Copy),
-        ("x", false) => Some(Action::Cut),
-        ("v", false) => Some(Action::Paste),
-        ("v", true) => Some(Action::PasteInto),
-        ("d", false) => Some(Action::Duplicate),
-        _ => None,
-    }
+    use crate::shortcuts::{pressed, Command};
+    let keystroke = Keystroke {
+        key: key.into(),
+        modifiers,
+        key_char: None,
+    };
+    [
+        (Command::Copy, Action::Copy),
+        (Command::Cut, Action::Cut),
+        (Command::Paste, Action::Paste),
+        (Command::PasteInto, Action::PasteInto),
+        (Command::Duplicate, Action::Duplicate),
+    ]
+    .into_iter()
+    .find(|&(command, _)| pressed(command, &keystroke))
+    .map(|(_, action)| action)
 }
 
 /// One instance as copied to the clipboard, together with every

@@ -139,8 +139,8 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
     assert!(live("Export as glTF\u{2026}", &MenuExportGltf));
 }
 
-/// The templates window opens from File, last, right under Studio
-/// Settings.
+/// The settings windows and the templates window open from File's tail,
+/// in that order, with Script Templates last.
 #[test]
 fn file_ends_with_script_templates_under_studio_settings() {
     let file = menus(&[])
@@ -156,8 +156,13 @@ fn file_ends_with_script_templates_under_studio_settings() {
         })
         .collect();
     assert_eq!(
-        names[names.len() - 2..],
-        ["Studio Settings\u{2026}", "Script Templates\u{2026}"]
+        names[names.len() - 4..],
+        [
+            "Studio Settings\u{2026}",
+            "Customize Shortcuts\u{2026}",
+            "Beta Features\u{2026}",
+            "Script Templates\u{2026}"
+        ]
     );
 }
 

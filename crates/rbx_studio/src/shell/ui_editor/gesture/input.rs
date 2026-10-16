@@ -7,6 +7,7 @@ use rbx_dom::Ref;
 use super::super::super::Shell;
 use super::super::draw::TOOL_KEYS;
 use super::super::order::Arrange;
+use crate::shortcuts::{pressed, Command};
 use crate::ui_canvas::{position_shift, shifted_in, udim2_text, View};
 
 /// Room left round the selection when the canvas zooms to it.
@@ -54,7 +55,7 @@ impl Shell {
             return false;
         }
         // Space held turns a drag on the canvas into a pan.
-        if keystroke.key == "space" {
+        if pressed(Command::UiPan, keystroke) {
             self.ui.panning = true;
             return true;
         }
@@ -64,12 +65,13 @@ impl Shell {
             || keystroke.modifiers.shift);
         if let Some(&(_, class)) = TOOL_KEYS
             .iter()
-            .find(|(key, _)| bare && *key == keystroke.key.as_str())
+            .find(|(command, _)| pressed(*command, keystroke))
         {
             self.arm_tool(class, cx);
             return true;
         }
-        if matches!(keystroke.key.as_str(), "escape" | "v") && bare && self.ui.tool.is_some() {
+        let disarm = (keystroke.key == "escape" && bare) || pressed(Command::UiDisarm, keystroke);
+        if disarm && self.ui.tool.is_some() {
             self.ui.tool = None;
             cx.notify();
             return true;
@@ -78,31 +80,31 @@ impl Shell {
             self.deselect(cx);
             return true;
         }
-        if keystroke.modifiers.control || keystroke.modifiers.platform {
-            let shift = keystroke.modifiers.shift;
-            let arrange = match keystroke.key.as_str() {
-                "]" | "}" if shift => Some(Arrange::Front),
-                "]" | "}" => Some(Arrange::Forward),
-                "[" | "{" if shift => Some(Arrange::Back),
-                "[" | "{" => Some(Arrange::Backward),
-                _ => None,
-            };
-            if let Some(arrange) = arrange {
-                self.arrange_gui(arrange, cx);
-                return true;
-            }
-            match keystroke.key.as_str() {
-                "0" => {
-                    self.ui.fitted = true;
-                    cx.notify();
-                    return true;
-                }
-                "1" => {
-                    self.zoom_to_selection(cx);
-                    return true;
-                }
-                _ => {}
-            }
+        let arrange = [
+            (Command::UiBringToFront, Arrange::Front),
+            (Command::UiBringForward, Arrange::Forward),
+            (Command::UiSendToBack, Arrange::Back),
+            (Command::UiSendBackward, Arrange::Backward),
+        ]
+        .into_iter()
+        .find(|(command, _)| pressed(*command, keystroke))
+        .map(|(_, arrange)| arrange);
+        if let Some(arrange) = arrange {
+            self.arrange_gui(arrange, cx);
+            return true;
+        }
+        if pressed(Command::UiZoomReset, keystroke) {
+            self.ui.fitted = true;
+            cx.notify();
+            return true;
+        }
+        if pressed(Command::UiZoomFit, keystroke) {
+            self.zoom_to_selection(cx);
+            return true;
+        }
+        if pressed(Command::UiDelete, keystroke) {
+            self.delete_selected(cx);
+            return true;
         }
         let step = if keystroke.modifiers.shift { 10.0 } else { 1.0 };
         let nudge = match keystroke.key.as_str() {
@@ -110,10 +112,6 @@ impl Shell {
             "right" => [step, 0.0],
             "up" => [0.0, -step],
             "down" => [0.0, step],
-            "delete" | "backspace" => {
-                self.delete_selected(cx);
-                return true;
-            }
             _ => return false,
         };
         let Some((root, boxes)) = self.canvas_boxes(cx) else {

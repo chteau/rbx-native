@@ -18,6 +18,7 @@ use super::{canvas, Gesture, Tool};
 mod edits;
 use crate::script_editor::graph::catalog::Wanted;
 use crate::script_editor::graph::layout::{self, Rect, Side};
+use crate::shortcuts::{pressed, Command};
 
 use super::super::Shell;
 
@@ -401,47 +402,55 @@ impl Shell {
             return false;
         }
         let m = keystroke.modifiers;
-        match keystroke.key.as_str() {
-            "space" => {
-                editor.space = true;
-                true
-            }
-            "a" if m.shift && !m.secondary() => {
-                let at = editor.pointer;
-                self.open_add_menu(reference, at, None, window, cx);
-                true
-            }
-            "a" if m.secondary() => {
-                editor.selection = editor.graph.nodes.iter().map(|node| node.id).collect();
-                cx.notify();
-                true
-            }
-            "delete" | "backspace" if editor.group.is_some() => {
+        let has_selection = !editor.selection.is_empty();
+        if pressed(Command::GraphPan, keystroke) {
+            editor.space = true;
+            return true;
+        }
+        if pressed(Command::GraphAddNode, keystroke) {
+            let at = editor.pointer;
+            self.open_add_menu(reference, at, None, window, cx);
+            return true;
+        }
+        if pressed(Command::GraphSelectAll, keystroke) {
+            editor.selection = editor.graph.nodes.iter().map(|node| node.id).collect();
+            cx.notify();
+            return true;
+        }
+        if pressed(Command::GraphDelete, keystroke) {
+            if editor.group.is_some() {
                 if let Some(index) = editor.group.take() {
                     editor.graph.groups.remove(index);
                 }
                 self.commit_graph(reference, cx);
-                true
+                return true;
             }
-            "delete" | "backspace" if !editor.selection.is_empty() => {
+            if has_selection {
                 let doomed = std::mem::take(&mut editor.selection);
                 editor.graph.remove(&doomed);
                 self.commit_graph(reference, cx);
-                true
+                return true;
             }
-            "d" if m.secondary() && !editor.selection.is_empty() => {
-                self.duplicate_graph_selection(reference, cx);
-                true
-            }
-            "g" if m.secondary() && !editor.selection.is_empty() => {
-                self.group_graph_selection(reference, cx);
-                true
-            }
-            "f" if !m.secondary() => {
-                canvas::fit_now(editor);
-                cx.notify();
-                true
-            }
+        }
+        if has_selection && pressed(Command::GraphDuplicate, keystroke) {
+            self.duplicate_graph_selection(reference, cx);
+            return true;
+        }
+        if has_selection && pressed(Command::GraphGroup, keystroke) {
+            self.group_graph_selection(reference, cx);
+            return true;
+        }
+        if pressed(Command::GraphFrame, keystroke) {
+            canvas::fit_now(editor);
+            cx.notify();
+            return true;
+        }
+        if pressed(Command::GraphMenu, keystroke) {
+            let at = editor.pointer;
+            self.open_context_menu(reference, at, window, cx);
+            return true;
+        }
+        match keystroke.key.as_str() {
             "tab" | "down" | "right" | "up" | "left" if !m.secondary() && !m.alt => {
                 let back = matches!(keystroke.key.as_str(), "up" | "left")
                     || (keystroke.key == "tab" && m.shift);
@@ -462,11 +471,6 @@ impl Shell {
                     }
                     None => false,
                 }
-            }
-            "f10" if m.shift => {
-                let at = editor.pointer;
-                self.open_context_menu(reference, at, window, cx);
-                true
             }
             "escape" if editor.context.is_some() => {
                 editor.context = None;

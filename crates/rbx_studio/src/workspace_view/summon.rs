@@ -50,12 +50,15 @@ pub(crate) const CONTEXT: &str = "RbxViewport";
 /// A binding rather than a key listener for the reason `shell::roving`
 /// gives: GPUI resolves `Tab` to an action before any listener sees it. The
 /// release still arrives as an ordinary key-up (see `WorkspaceView::key`).
-pub(crate) fn install(cx: &mut gpui_kit::App) {
-    cx.bind_keys([gpui_kit::KeyBinding::new(
-        "tab",
+///
+/// The key itself is the user's to rebind, so this only hands the action to
+/// `shortcuts`, which puts it in the keymap with whatever key is current.
+pub(crate) fn install(_cx: &mut gpui_kit::App) {
+    crate::shortcuts::register_keymap_action(
+        crate::shortcuts::Command::SummonHandles,
         SummonHandles,
         Some(CONTEXT),
-    )]);
+    );
 }
 
 /// How close to a face's edge or corner the cursor has to be for the

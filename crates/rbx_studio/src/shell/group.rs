@@ -30,10 +30,18 @@ pub(super) enum Action {
 /// focus the way `shell::keys`' quick-inserts are: grouping the selection is
 /// just as sensible from a viewport click as from the tree.
 pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    match key {
-        "g" if modifiers.control && modifiers.shift => Some(Action::Ungroup),
-        "g" if modifiers.control => Some(Action::Group),
-        _ => None,
+    use crate::shortcuts::{pressed, Command};
+    let keystroke = Keystroke {
+        key: key.into(),
+        modifiers,
+        key_char: None,
+    };
+    if pressed(Command::Ungroup, &keystroke) {
+        Some(Action::Ungroup)
+    } else if pressed(Command::Group, &keystroke) {
+        Some(Action::Group)
+    } else {
+        None
     }
 }
 

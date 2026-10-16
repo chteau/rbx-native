@@ -121,8 +121,8 @@ mod sequence_editor;
 mod sequence_window;
 mod settings;
 mod settle;
-mod shortcuts;
 mod shell;
+mod shortcuts;
 mod style_editor;
 mod sun;
 mod terrain;
@@ -286,6 +286,22 @@ pub(crate) fn open_home_again(cx: &mut App) {
         user,
     };
     launcher::open_home(Rc::new(RefCell::new(Some(boot))), cx);
+}
+
+/// Starts a fresh editor process on `place`, for settings that only take
+/// effect at launch. The child is not waited on, so it outlives this one.
+pub(crate) fn relaunch(place: &std::path::Path) {
+    let result = std::env::current_exe().and_then(|exe| {
+        std::process::Command::new(exe)
+            .arg(place)
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .spawn()
+    });
+    if let Err(err) = result {
+        eprintln!("could not restart: {err}");
+    }
 }
 
 /// What the editor window needs beyond its place: the resolved settings,

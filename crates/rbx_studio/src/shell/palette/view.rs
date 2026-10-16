@@ -19,13 +19,13 @@ use crate::tokens;
 
 use super::super::roving::Move;
 use super::super::Shell;
-use super::commands::{self, Command};
+use super::commands::Command;
 
 /// One option row: its text, its shortcut or path, and everything a
 /// screen reader is told about it. `pub(super)` so `tests` can read the
 /// accessibility node it writes.
 pub(super) fn option(row: usize, count: usize, command: &Command, selected: bool) -> Stateful<Div> {
-    let hint = command.hint.map(commands::display);
+    let hint = command.hint.clone();
     let aside = hint
         .clone()
         .map(SharedString::from)
