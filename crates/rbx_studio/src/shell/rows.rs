@@ -389,6 +389,8 @@ fn property_stack(
     error: Option<&str>,
 ) -> impl IntoElement {
     row_frame()
+        // An id keeps the hover's fade between frames (see `HoverTransition`).
+        .id(SharedString::from(format!("prop-stack-{}", row.name)))
         .gap(tokens::label_gap())
         .px(tokens::row_padding())
         .rounded(tokens::radius())
@@ -440,6 +442,7 @@ fn property_shell(
         .text_color(tokens::text_strong())
         .child(
             h_flex()
+                .id(SharedString::from(format!("prop-row-{}", row.name)))
                 .w_full()
                 // `min_h`, not `h`: a wrapped composite value (see
                 // `render_editor`) is two or three lines tall, and a fixed
@@ -551,6 +554,7 @@ pub(super) fn expander(
 /// rebuilds the row from what the DOM ended up with (see
 /// `shell::edit::Shell::commit_row`).
 pub(super) fn property_expandable(
+    name: &str,
     expander: impl IntoElement,
     summary: impl IntoElement,
     fields: Option<AnyElement>,
@@ -562,6 +566,7 @@ pub(super) fn property_expandable(
         .text_color(tokens::text_strong())
         .child(
             h_flex()
+                .id(SharedString::from(format!("prop-row-{name}")))
                 .w_full()
                 .min_h(tokens::row_height())
                 .flex_none()
@@ -1033,6 +1038,10 @@ fn number_fields(
                 .map(|(index, (field, input))| {
                     let draggable = field.kind.step_per_pixel().is_some();
                     h_flex()
+                        .id(SharedString::from(format!(
+                            "field-row-{}-{index}",
+                            field.label
+                        )))
                         .w_full()
                         .min_h(tokens::row_height())
                         .items_center()

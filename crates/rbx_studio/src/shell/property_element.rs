@@ -142,6 +142,7 @@ impl Shell {
                         cx,
                     );
                     return property_expandable(
+                        &row.name,
                         expander,
                         text_field(&summary, tab_index, cx),
                         fields,
@@ -274,6 +275,6 @@ impl Shell {
             }),
             cx,
         );
-        property_expandable(expander, div(), children, None).into_any_element()
+        property_expandable(&row.name, expander, div(), children, None).into_any_element()
     }
 }

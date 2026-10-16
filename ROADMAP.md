@@ -2533,6 +2533,18 @@ Roblox's own engine.
   Edits wait for Save. A refusal names the scope the key is missing
   (`universe:write`, `universe.place:write`), or reports that Team
   Create holds the place open.
+- [x] **Hover states fade** (what the visual pass left behind): every
+  `hover` and `group_hover` style eases between its resting and hovered
+  colours over 120 ms (`tokens::DURATION_HOVER`) and turns back from
+  wherever it got to, and a hover's pixel size eases too, so the ribbon's
+  icon lift is the spec's 120 ms grow rather than a jump. `gpui` has no
+  property transitions, so instead of animating each of the 140-odd call
+  sites by hand with `gpui_base::transition`, the vendored `gpui-pre`
+  blends the hover refinement where it applies it (`vendor/README.md`),
+  which covers `gpui-base`'s widgets as well. Reduce motion, and an
+  element without an id, keep the instant switch; highlights a list
+  moves by keyboard as well as pointer (menus, pickers) stay instant on
+  purpose, and a `Div` still cannot be transformed.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2719,11 +2731,6 @@ Roblox's own engine.
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
-- [ ] 📋 **What the visual pass left behind**, beyond the items that
-  already have their own bullets under "What's planned" → Editor: hover feedback is instant — `gpui` has no
-  CSS-style property transitions and cannot transform a `Div`;
-  `gpui_base::transition` animates one value explicitly (the ghost dock's
-  ease uses it), but putting it behind every hover state is a larger job.
 
 ### Play / Test workflow
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):

@@ -1342,6 +1342,12 @@ fn ring(color: Rgba, width: f32) -> BoxShadow {
 /// long enough to show where the menu came from.
 pub(crate) const DURATION_MENU: Duration = Duration::from_millis(160);
 
+/// How long a hover state takes to fade in, and out again: every `hover` and
+/// `group_hover` style's colours ease over it (the vendored GPUI's
+/// `HoverTransition`, installed by `scale::install`). Brief enough that a
+/// pointer sweeping across a list leaves a short trail rather than a smear.
+pub(crate) const DURATION_HOVER: Duration = Duration::from_millis(120);
+
 /// Fast out, slow in — the curve everything in this shell animates on.
 pub(crate) fn easing_soft(delta: f32) -> f32 {
     let t = delta.clamp(0., 1.);
