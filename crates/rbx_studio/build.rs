@@ -99,17 +99,27 @@ fn main() {
 }
 
 fn download(url: &str) -> Vec<u8> {
-    let failed = |error: &dyn std::fmt::Display| -> ! {
-        panic!("could not download {url}: {error} (set {LOCAL_VARIABLE} or {CLOUDFLARED_VARIABLE} to a local copy to build offline)")
-    };
-    let mut response = ureq::get(url).call().unwrap_or_else(|error| failed(&error));
+    // CI runners drop the odd connection; a few spaced retries ride it out.
+    const ATTEMPTS: u32 = 4;
+    let mut attempt = 1;
+    loop {
+        match fetch(url) {
+            Ok(bytes) => return bytes,
+            Err(error) if attempt < ATTEMPTS => {
+                println!("cargo:warning=download attempt {attempt} of {url} failed: {error}");
+                std::thread::sleep(std::time::Duration::from_secs(5 * u64::from(attempt)));
+                attempt += 1;
+            }
+            Err(error) => panic!("could not download {url}: {error} (set {LOCAL_VARIABLE} or {CLOUDFLARED_VARIABLE} to a local copy to build offline)"),
+        }
+    }
+}
+
+fn fetch(url: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut response = ureq::get(url).call()?;
     let mut bytes = Vec::new();
-    response
-        .body_mut()
-        .as_reader()
-        .read_to_end(&mut bytes)
-        .unwrap_or_else(|error| failed(&error));
-    bytes
+    response.body_mut().as_reader().read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {

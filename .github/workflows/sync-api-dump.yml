@@ -15,14 +15,29 @@ jobs:
       - name: Fetch latest Roblox Studio version
         id: get_version
         run: |
-          VERSION=$(curl -s https://setup.rbxcdn.com/versionQTStudio)
+          # versionQTStudio stopped tracking releases (it still names
+          # version-d0e8cfcd943d4ae2, whose dump lacks ~250 live classes);
+          # client-version is what the Studio bootstrapper itself reads.
+          VERSION=$(curl -fsS https://clientsettingscdn.roblox.com/v2/client-version/WindowsStudio64 | jq -r .clientVersionUpload)
+          [[ $VERSION == version-* ]] || { echo "::error::unexpected Studio version: $VERSION"; exit 1; }
           echo "rbx_version=$VERSION" >> $GITHUB_OUTPUT
           echo "Latest Roblox version: $VERSION"
 
       - name: Download latest API-Dump.json
         run: |
           VERSION="${{ steps.get_version.outputs.rbx_version }}"
-          curl -fsS "https://setup.rbxcdn.com/${VERSION}-API-Dump.json" -o assets/API-Dump.json
+          curl -fsS "https://setup.rbxcdn.com/${VERSION}-API-Dump.json" -o new-dump.json
+          # Releases add and retire a few classes at a time. A dump that loses
+          # a large share is a stale or stripped build, not an update: keep
+          # the current one and say so rather than failing the run.
+          before=$(jq '.Classes | length' assets/API-Dump.json)
+          after=$(jq '.Classes | length' new-dump.json)
+          if (( after * 100 < before * 95 )); then
+            echo "::warning::${VERSION} dump has $after classes against $before bundled; keeping the bundled dump"
+            rm new-dump.json
+          else
+            mv new-dump.json assets/API-Dump.json
+          fi
 
       - name: Check for changes
         id: git_status
