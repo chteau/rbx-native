@@ -316,6 +316,11 @@ pub struct Outcome {
     /// `*HandleAdornment`, `SelectionBox`…) changed: re-read
     /// [`PluginHost::adornments`].
     pub adornments_changed: bool,
+    /// The place as it stood before the dispatch first wrote to it through
+    /// a script (property, `Parent`, tags, `Destroy`…); `None` when no
+    /// script write reached the place. The editor's undo step for edits no
+    /// user input caused (timers, `Heartbeat`, change handlers).
+    pub before: Option<WeakDom>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

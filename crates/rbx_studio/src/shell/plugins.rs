@@ -19,6 +19,7 @@ mod overlays;
 mod prompts;
 mod render;
 mod ribbon;
+mod step;
 mod wasm;
 mod widgets;
 
@@ -26,7 +27,7 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use gpui_kit::*;
-use rbx_dom::{Change, Ref, WeakDom};
+use rbx_dom::{Change, Ref};
 use rbx_lua::plugin::{GuiEventKind, Input, MouseInput, PluginHost, Ui};
 
 use super::Shell;
@@ -57,10 +58,8 @@ pub(crate) struct Plugins {
     pub(super) handles: handles::Handles,
     /// The part under the cursor in the viewport and the world point hit.
     pub(super) mouse: Option<(Ref, [f32; 3])>,
-    /// The place as a left press handed to the activated plugin found it,
-    /// and whether the plugin has changed it since: the press-to-release
-    /// sequence is one undo step.
-    pub(super) mouse_before: Option<(WeakDom, bool)>,
+    /// The undo step plugin edits accumulate into (see `step`).
+    pub(super) step: Option<step::Step>,
     /// Where the cursor last was over the 3D view (logical pixels), for
     /// `Mouse.X`/`Y` and `UserInputService:GetMouseLocation`.
     pub(super) mouse_position: Option<[f32; 2]>,
@@ -151,55 +150,57 @@ impl Shell {
         self.plugins_start(cx);
     }
 
-    /// Runs one input through the host. User-initiated inputs (button,
-    /// action, prompt answer, widget GUI, handle, widget closed) are one
-    /// undo step when they change the place: the DOM is cloned first and
-    /// pushed with `push_history_snapshot` only if the outcome has
-    /// changes. Does nothing during Play (`live_shown`) or before start.
+    /// Runs one input through the host. Its place edits join the open
+    /// undo step (see `step`); a user input (button, action, prompt answer,
+    /// widget GUI press, handle, widget closed) commits the step before and
+    /// after it, so it is one step of its own, and a left press in the 3D
+    /// view commits before it, its release after it. Does nothing during
+    /// Play (`live_shown`) or before start.
     pub(super) fn plugin_input(&mut self, input: Input, cx: &mut Context<Self>) {
         if self.live_shown() || self.plugins.host.is_none() {
             return;
         }
-        // Pointer motion over a widget is not an edit, and cloning the
-        // place for it on every move would cost a full copy per event.
-        let undoable = match &input {
-            Input::Gui(event) => !matches!(
-                event.kind,
-                GuiEventKind::Enter { .. }
-                    | GuiEventKind::Leave { .. }
-                    | GuiEventKind::Move { .. }
-                    | GuiEventKind::Scroll { .. }
-            ),
+        let (commit_before, commit_after) = match &input {
+            Input::Gui(event) => {
+                let user = !matches!(
+                    event.kind,
+                    GuiEventKind::Enter { .. }
+                        | GuiEventKind::Leave { .. }
+                        | GuiEventKind::Move { .. }
+                        | GuiEventKind::Scroll { .. }
+                );
+                (user, user)
+            }
             Input::ButtonClicked(_)
             | Input::ActionTriggered(_)
             | Input::PromptAnswered(..)
             | Input::Handle(_)
-            | Input::WidgetClosed(_) => true,
-            _ => false,
+            | Input::WidgetClosed(_) => (true, true),
+            Input::Mouse(MouseInput::Down(1)) => (true, false),
+            Input::Mouse(MouseInput::Up(1)) => (false, true),
+            _ => (false, false),
         };
+        if commit_before {
+            self.commit_plugin_step();
+        }
         let context = self.plugin_context();
         // Everything logged so far was already reflected; the host reports
         // its own edits in the outcome.
         self.dom.take_changes();
-        let before = undoable.then(|| self.dom.clone());
         let Some(host) = self.plugins.host.as_mut() else {
             return;
         };
-        let outcome = host.dispatch(&mut self.dom, context, input);
+        let mut outcome = host.dispatch(&mut self.dom, context, input);
         self.dom.take_changes();
-        let snapshot = match before {
-            Some(before) if !outcome.changes.is_empty() => {
-                self.push_history_snapshot(before);
-                true
-            }
-            _ => false,
-        };
-        if !outcome.changes.is_empty() {
-            if let Some((_, dirty)) = self.plugins.mouse_before.as_mut() {
-                *dirty = true;
-            }
+        step::extend(
+            &mut self.plugins.step,
+            outcome.before.take(),
+            &outcome.changes,
+        );
+        self.apply_plugin_outcome(outcome, cx);
+        if commit_after {
+            self.commit_plugin_step();
         }
-        self.apply_plugin_outcome(outcome, snapshot, cx);
         self.plugins_arm_poll(cx);
         let owned = self
             .plugins
@@ -210,19 +211,20 @@ impl Shell {
             .update(cx, |view, _| view.set_plugin_mouse(owned));
     }
 
+    /// Pushes the open plugin undo step, if any (see `step`). Called before
+    /// every other history push, undo and redo too, so the step lands below
+    /// whatever comes after it.
+    pub(super) fn commit_plugin_step(&mut self) {
+        if step::commit(&mut self.plugins.step, &mut self.history) {
+            self.recovery.changed();
+        }
+    }
+
     /// The 3D view's mouse for the activated plugin; a left press through
     /// its release is one undo step when the plugin edited the place.
     pub(super) fn plugin_mouse(&mut self, input: MouseInput, at: [f32; 2], cx: &mut Context<Self>) {
         self.plugins.mouse_position = Some(at);
-        if input == MouseInput::Down(1) {
-            self.plugins.mouse_before = Some((self.dom.clone(), false));
-        }
         self.plugin_input(Input::Mouse(input), cx);
-        if input == MouseInput::Up(1) {
-            if let Some((before, true)) = self.plugins.mouse_before.take() {
-                self.push_history_snapshot(before);
-            }
-        }
     }
 
     /// From `selection_changed`: `Input::SelectionChanged` when the

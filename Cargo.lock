@@ -6503,6 +6503,7 @@ dependencies = [
  "rbx_xml",
  "serde_json",
  "toml 0.9.12+spec-1.1.0",
+ "unicode-segmentation",
  "ureq",
  "uuid",
 ]

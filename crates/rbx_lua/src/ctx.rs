@@ -23,6 +23,8 @@ pub(crate) struct Ctx {
     /// `output` for a plain run; the debugger drains `output` alone.
     printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
     guard: Option<WriteGuard>,
+    /// Told about every write before it is checked; see `WriteHook`.
+    on_write: Option<WriteHook>,
     /// Class and name of instances scripts destroyed: Roblox keeps a
     /// destroyed instance readable (`Parent` nil), so a handler that gets
     /// one late can still ask what it was.
@@ -32,14 +34,26 @@ pub(crate) struct Ctx {
 /// Decides whether a script may write to an instance; `Err` carries the reason.
 pub(crate) type WriteGuard = Rc<dyn Fn(&WeakDom, Ref) -> Result<(), String>>;
 
+/// Sees the DOM as it stands just before a write to an instance (the
+/// plugin host's undo point copies the place here, see `plugin::undo`).
+pub(crate) type WriteHook = Rc<dyn Fn(&WeakDom, Ref)>;
+
 impl Ctx {
     pub(crate) fn with_guard(mut self, guard: WriteGuard) -> Self {
         self.guard = Some(guard);
         self
     }
 
+    pub(crate) fn with_write_hook(mut self, hook: WriteHook) -> Self {
+        self.on_write = Some(hook);
+        self
+    }
+
     /// Borrows the DOM immutably, so call it before `dom_mut()`.
     pub(crate) fn check_write(&self, referent: Ref) -> mlua::Result<()> {
+        if let Some(hook) = &self.on_write {
+            hook(&self.dom.borrow(), referent);
+        }
         match &self.guard {
             Some(guard) => guard(&self.dom.borrow(), referent).map_err(mlua::Error::runtime),
             None => Ok(()),
@@ -58,6 +72,7 @@ impl Ctx {
             output,
             printed,
             guard: None,
+            on_write: None,
             tombstones: Rc::default(),
         }
     }

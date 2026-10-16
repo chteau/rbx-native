@@ -9,13 +9,11 @@ use crate::shell::Shell;
 
 impl Shell {
     /// Applies one dispatch's outcome: changes via `rebuild_explorer` +
-    /// `reflect_changes` (+ `record_history_change` when a snapshot was
-    /// pushed), selection via `reselect`, output lines, requests, and UI and
+    /// `reflect_changes` (the undo step is `plugin_input`'s), selection via `reselect`, output lines, requests, and UI and
     /// adornment refreshes.
     pub(in crate::shell) fn apply_plugin_outcome(
         &mut self,
         outcome: Outcome,
-        snapshot: bool,
         cx: &mut Context<Self>,
     ) {
         if !outcome.changes.is_empty() {
@@ -23,9 +21,6 @@ impl Shell {
             self.rebuild_explorer(cx);
             self.reflect_changes(&outcome.changes, cx);
             self.plugins.applying = false;
-            if snapshot {
-                self.record_history_change(outcome.changes);
-            }
         }
         if let Some(selection) = outcome.selection {
             // Recorded first so the resulting selection change is not echoed
@@ -61,8 +56,7 @@ impl Shell {
         match request {
             Request::Undo => self.undo(cx),
             Request::Redo => self.redo(cx),
-            // Every user input a plugin handles is already one undo step.
-            Request::Waypoint(_) => {}
+            Request::Waypoint(_) => self.commit_plugin_step(),
             Request::Prompt { id, plugin, kind } => self.plugin_prompt(id, plugin, kind, cx),
             Request::OpenScript { script, .. } => self.plugin_open_script(script, cx),
             Request::Debugger(request) => self.plugin_debugger_request(request, cx),

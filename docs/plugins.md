@@ -53,6 +53,15 @@ settings files use (`{"name": "Top", "serializedType": "NormalId"}`,
 `{"x", "y", "z", "serializedType": "Vector3"}`), and `SelectionChanged`
 also fires for the plugin that called `Selection:Set`, as in Studio.
 
+Every plugin edit can be undone. A user input a plugin handles (a button,
+a widget click, a handle drag, a prompt answer) is one undo step, and so is
+a press through its release in the 3D view. Edits a plugin makes on its own
+— from `task.delay`, `Heartbeat`, a selection or change handler — gather
+into one step that ends at the plugin's next
+`ChangeHistoryService:SetWaypoint`, the user's next action, or Ctrl+Z.
+
+![A timer edit and its two undo steps: painted and raised, then lowered by the first Ctrl+Z, then repainted by the second](plugins/timer-undo.png)
+
 ![Archimedes building an arc over the 3D view](plugins/archimedes.png)
 
 [Archimedes](https://create.roblox.com/store/asset/144938633) (Scriptos's

@@ -44,6 +44,7 @@ pub(super) fn run(
     };
     let merge = host.lot.merge(&mut host.dom.borrow_mut());
     let place_roots = merge.place_roots.clone();
+    host.undo.borrow_mut().arm(place_roots.clone());
 
     let mut seen = host.shared.borrow().context.selection.clone();
     handle(host, input, &debugger_before);
@@ -91,6 +92,7 @@ pub(super) fn run(
     overlays::sync(host);
     mark_views(host, &log, &place_roots);
     let changes = host.lot.split(&mut host.dom.borrow_mut(), merge, log);
+    let before = host.undo.borrow_mut().disarm();
     std::mem::swap(&mut *host.dom.borrow_mut(), dom);
 
     let mut shared = host.shared.borrow_mut();
@@ -104,6 +106,7 @@ pub(super) fn run(
         requests: std::mem::take(&mut shared.requests),
         ui_changed: std::mem::take(&mut shared.ui_changed),
         adornments_changed: std::mem::take(&mut shared.adornments_changed),
+        before,
     }
 }
 
@@ -326,7 +329,8 @@ fn start(host: &mut PluginHost, index: usize) {
         host.database.clone(),
         Rc::new(RefCell::new(Vec::new())),
         Rc::new(RefCell::new(Vec::new())),
-    );
+    )
+    .with_write_hook(crate::plugin::undo::hook(host.undo.clone()));
     if let Some(manifest) = &manifest {
         if !manifest.permissions.contains(&Permission::DomWrite) {
             ctx = ctx.with_guard(Rc::new(crate::plugin::guard::place_writes_denied(

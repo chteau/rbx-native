@@ -35,6 +35,7 @@ mod require;
 mod scheduler;
 mod services;
 mod signal;
+mod undo;
 mod vm;
 mod world;
 

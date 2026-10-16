@@ -2,6 +2,13 @@
 
 ## 2026-10-16
 
+- **Plugins: edits from timers can be undone.** Changes a plugin makes on
+  its own — from `task.delay`, `Heartbeat`, or a selection or change
+  handler — used to reach the place with no undo step, so Ctrl+Z skipped
+  them. They now gather into one step that ends at the plugin's next
+  `ChangeHistoryService:SetWaypoint`, the user's next action, or Ctrl+Z.
+  The plugin host copies the place only when a script first writes to it,
+  so ticking plugins that leave the place alone cost nothing extra.
 - **Plugins: most popular community plugins run.** Of the 30 most-voted free
   plugins on the Creator Store, 28 now start and answer their toolbar
   buttons without an error, F3X Building Tools among them: its tool dock,

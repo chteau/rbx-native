@@ -34,6 +34,8 @@ pub struct PluginHost {
     pub(crate) plugins: Vec<Loaded>,
     pub(crate) lot: Lot,
     pub(crate) last_tick: Option<f64>,
+    /// See `Outcome::before`.
+    pub(crate) undo: Rc<RefCell<super::undo::UndoPoint>>,
 }
 
 const FRAME_EVENTS: [&str; 3] = ["Heartbeat", "RenderStepped", "Stepped"];
@@ -50,6 +52,7 @@ impl PluginHost {
             plugins: Vec::new(),
             lot: Lot::default(),
             last_tick: None,
+            undo: Rc::default(),
         }
     }
 
