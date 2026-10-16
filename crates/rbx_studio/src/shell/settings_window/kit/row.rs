@@ -11,7 +11,7 @@ use gpui_kit::*;
 use crate::tokens;
 
 use super::super::super::Shell;
-use super::{card, ghost_icon, key_hint, soon_pill, text};
+use super::{card, ghost_icon, key_hint, text};
 
 /// Puts one setting back to its default.
 pub(in crate::shell) type Reset = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
@@ -28,13 +28,8 @@ pub(in crate::shell) struct Row {
     pub(in crate::shell) keys: &'static [&'static str],
     /// A setting that only means something under the one above it.
     pub(in crate::shell) indent: bool,
-    /// Dimmed and inert: on the roadmap.
-    pub(in crate::shell) soon: bool,
     /// A tag after the label: which Argon level a value is set at.
     pub(in crate::shell) chip: Option<SharedString>,
-    /// Whether the row wears its own `SOON` pill, rather than sharing its
-    /// section's.
-    pub(in crate::shell) pill: bool,
     /// A constant's name, set in mono.
     pub(in crate::shell) mono: bool,
     pub(in crate::shell) reset: Option<Reset>,
@@ -52,9 +47,7 @@ impl Row {
             description_mono: false,
             keys: &[],
             indent: false,
-            soon: false,
             chip: None,
-            pill: false,
             mono: false,
             reset: None,
             control: control.into_any_element(),
@@ -84,13 +77,6 @@ impl Row {
 
     pub(in crate::shell) fn indent(mut self) -> Self {
         self.indent = true;
-        self
-    }
-
-    /// On the roadmap: dimmed, inert, and marked `SOON`.
-    pub(in crate::shell) fn soon(mut self) -> Self {
-        self.soon = true;
-        self.pill = true;
         self
     }
 
@@ -213,11 +199,7 @@ fn render_row(
     query: Option<&str>,
 ) -> Stateful<Div> {
     let label_matched = query.is_some_and(|q| row.label.to_lowercase().contains(&q.to_lowercase()));
-    let (label_color, description_color) = if row.soon {
-        (tokens::text2(), tokens::text3())
-    } else {
-        (tokens::text(), tokens::text2())
-    };
+    let (label_color, description_color) = (tokens::text(), tokens::text2());
     let reset = row.reset.clone().map(|reset| {
         let shell = shell.clone();
         ghost_icon(
@@ -231,7 +213,6 @@ fn render_row(
         .flex_none()
         .items_center()
         .gap(px(8.))
-        .when(row.soon, |this| this.opacity(0.4))
         .child(row.control);
     div()
         .id(("row", id.0 * 100 + id.1))
@@ -289,10 +270,7 @@ fn render_row(
                                         .text_color(tokens::check_on())
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .child(chip)
-                                }))
-                                .when(row.pill, |this| {
-                                    this.child(soon_pill(("soon", id.0 * 100 + id.1)))
-                                }),
+                                })),
                         )
                         .children(row.description.map(|description| {
                             let line = text(11.5, 16.)
@@ -320,11 +298,8 @@ fn render_row(
                 .children(reset)
                 .child(control),
         )
-        .children(row.below.map(|below| {
-            div()
-                .pb(px(14.))
-                .px(px(16.))
-                .when(row.soon, |this| this.opacity(0.4))
-                .child(below)
-        }))
+        .children(
+            row.below
+                .map(|below| div().pb(px(14.)).px(px(16.)).child(below)),
+        )
 }

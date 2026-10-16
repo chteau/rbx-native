@@ -547,12 +547,26 @@ impl Shell {
     /// The Curve Editor's own keys, ahead of the dope sheet's: I adds keys
     /// at the playhead on the channels shown, X or Delete removes the
     /// selected keys, A selects every key shown, Escape none.
-    pub(super) fn curve_key_press(&mut self, key: &str, alt: bool) -> bool {
+    pub(super) fn curve_key_press(&mut self, key: &Keystroke) -> bool {
+        use crate::shortcuts::{pressed, Command};
         let Some(joint) = self.anim.editor.joint.clone() else {
             return false;
         };
-        match key {
-            "i" => {
+        let command = [
+            Command::AnimInsertKey,
+            Command::AnimDeleteKeys,
+            Command::AnimSelectNone,
+            Command::AnimSelectAll,
+        ]
+        .into_iter()
+        .find(|c| pressed(*c, key));
+        let command = match (command, key.key.as_str()) {
+            (Some(c), _) => Some(c),
+            (None, "escape") => Some(Command::AnimSelectNone),
+            _ => None,
+        };
+        match command {
+            Some(Command::AnimInsertKey) => {
                 for channel in self.curve_channels() {
                     self.anim.editor.insert_curve_key(&joint, channel);
                 }
@@ -567,11 +581,11 @@ impl Shell {
                     })
                     .collect();
             }
-            "x" | "delete" | "backspace" => {
+            Some(Command::AnimDeleteKeys) => {
                 self.anim.editor.delete_curve_keys();
             }
-            "a" if alt => self.anim.editor.curve_selected.clear(),
-            "a" => {
+            Some(Command::AnimSelectNone) => self.anim.editor.curve_selected.clear(),
+            Some(Command::AnimSelectAll) => {
                 let all = self
                     .shown_curves()
                     .map(|(_, curves)| {
@@ -594,7 +608,6 @@ impl Shell {
                     .unwrap_or_default();
                 self.anim.editor.curve_selected = all;
             }
-            "escape" => self.anim.editor.curve_selected.clear(),
             _ => return false,
         }
         true

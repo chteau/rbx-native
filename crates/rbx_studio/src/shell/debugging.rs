@@ -626,20 +626,30 @@ impl Shell {
         keystroke: &Keystroke,
         cx: &mut Context<Self>,
     ) -> bool {
-        let shift = keystroke.modifiers.shift;
+        use crate::shortcuts::{pressed, Command};
         let paused = self.debug_paused();
-        // F10 and F11 are only claimed while paused: F10 is also the
+        // Step keys are only claimed while paused: F10 is also the
         // window's own key for the menu bar (see `shell::save`).
-
-        match (keystroke.key.as_str(), shift) {
-            ("f5", false) if paused => self.resume_debugging(Resume::Continue, cx),
-            ("f5", false) if !self.debug_running() => self.start_debugging(cx),
-            ("f5", true) if self.debug_running() => self.stop_debugging(cx),
-            ("f10", false) if paused => self.resume_debugging(Resume::StepOver, cx),
-            ("f11", false) if paused => self.resume_debugging(Resume::StepInto, cx),
-            ("f11", true) if paused => self.resume_debugging(Resume::StepOut, cx),
-            ("f9", false) => self.toggle_breakpoint_at_cursor(cx),
-            _ => return false,
+        if pressed(Command::DebugContinue, keystroke) {
+            if paused {
+                self.resume_debugging(Resume::Continue, cx);
+            } else if !self.debug_running() {
+                self.start_debugging(cx);
+            } else {
+                return false;
+            }
+        } else if pressed(Command::DebugStop, keystroke) && self.debug_running() {
+            self.stop_debugging(cx);
+        } else if pressed(Command::StepOver, keystroke) && paused {
+            self.resume_debugging(Resume::StepOver, cx);
+        } else if pressed(Command::StepInto, keystroke) && paused {
+            self.resume_debugging(Resume::StepInto, cx);
+        } else if pressed(Command::StepOut, keystroke) && paused {
+            self.resume_debugging(Resume::StepOut, cx);
+        } else if pressed(Command::ToggleBreakpoint, keystroke) {
+            self.toggle_breakpoint_at_cursor(cx);
+        } else {
+            return false;
         }
         true
     }

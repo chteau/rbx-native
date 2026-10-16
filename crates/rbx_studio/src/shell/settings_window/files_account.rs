@@ -1,14 +1,16 @@
-//! The Files & recovery and Account pages. Auto-Recovery and Discord
-//! Rich Presence are live; the test-copy name waits on Play, and on
-//! Account the multi-account switcher is still on the roadmap.
+//! The Files & recovery and Account pages: Auto-Recovery, the name Play
+//! gives test copies, the stored Roblox accounts with their switcher,
+//! and Discord Rich Presence.
 
-use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
+use crate::key_store;
 use crate::launcher::{self, ui, KeyTag};
 use crate::recovery::{self, INTERVAL_DEFAULT, INTERVAL_MINUTES};
+use crate::shell::play::copy_name;
 use crate::tokens;
 
 use super::kit::{
@@ -22,6 +24,13 @@ pub(super) struct RecoveryControls {
     interval: Entity<SliderState>,
     sandbox: Entity<InputState>,
     sandbox_error: Option<SharedString>,
+    copy_name: Entity<InputState>,
+    /// The setting as the field last showed it, to notice a reset elsewhere.
+    copy_name_seen: String,
+    accounts_error: Option<SharedString>,
+    /// The owner and key name last written to the accounts index, so a
+    /// check is recorded once.
+    labelled: Option<(SharedString, SharedString)>,
 }
 
 impl RecoveryControls {
@@ -47,15 +56,45 @@ impl RecoveryControls {
                     .update(cx, |shell, cx| shell.set_recovery_minutes(minutes, cx));
             }
         });
+        let copy_name_seen = shell.read(cx).play.copy_name.clone();
+        let copy_name = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value(copy_name_seen.clone(), window, cx);
+            state
+        });
+        let commit = cx.subscribe(&copy_name, |this, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                let text = input.read(cx).value().to_string();
+                this.shell
+                    .update(cx, |shell, cx| shell.set_play_copy_name(text, cx));
+            }
+        });
         (
             RecoveryControls {
                 interval,
                 sandbox,
                 sandbox_error: None,
+                copy_name,
+                copy_name_seen,
+                accounts_error: None,
+                labelled: None,
             },
-            subscription,
+            Subscription::join(subscription, commit),
         )
     }
+}
+
+/// Opens Roblox's publishing page; a replaced or removed key is checked again.
+fn open_publishing(window: WeakEntity<SettingsWindow>, cx: &mut App) {
+    launcher::open_publishing(
+        move |cx| {
+            let _ = window.update(cx, |this, cx| {
+                this.key = None;
+                cx.notify();
+            });
+        },
+        cx,
+    );
 }
 
 impl SettingsWindow {
@@ -169,6 +208,15 @@ impl SettingsWindow {
             .map(|stop| (stop - low) as f32 / (high - low) as f32)
             .collect();
         let shown = recovery::folder().as_deref().map(tilde).unwrap_or_default();
+        let template = self.shell.read(cx).play.copy_name.clone();
+        if template != self.recovery.copy_name_seen {
+            self.recovery.copy_name_seen = template.clone();
+            let value = template.clone();
+            self.recovery
+                .copy_name
+                .update(cx, |state, cx| state.set_value(value, window, cx));
+        }
+        let copy_input = self.recovery.copy_name.clone();
         vec![
             Section::new(
                 "Auto-Recovery",
@@ -208,19 +256,12 @@ impl SettingsWindow {
                 "Play",
                 vec![Row::new(
                     "Name for test copies",
-                    h_flex()
-                        .w(px(200.))
-                        .h(px(30.))
-                        .px(px(10.))
-                        .items_center()
-                        .border_1()
-                        .border_color(tokens::border2())
-                        .rounded(px(6.))
-                        .bg(tokens::dock())
-                        .child(mono(11.5, 16.).child("{place} (Play)")),
+                    div().w(px(200.)).child(Input::new(&copy_input)),
                 )
-                .describe("What Play calls the copy it runs. {place} is the place\u{2019}s name.")
-                .soon()],
+                .describe("What Play names your sandbox while it runs a test. {place} is the place\u{2019}s name; leave it empty to keep the sandbox\u{2019}s own name.")
+                .changed(template != copy_name::DEFAULT, |shell, cx| {
+                    shell.set_play_copy_name(copy_name::DEFAULT.to_owned(), cx)
+                })],
             ),
         ]
     }
@@ -325,18 +366,9 @@ impl SettingsWindow {
                     .hover(|this| this.bg(tokens::secondary_hover()))
                     .child("Open Roblox publishing")
                     .child(icon("external-link", 12.))
-                    .on_click(move |_, _, cx| {
+                    .on_click({
                         let window = window.clone();
-                        // A replaced or removed key is checked again.
-                        launcher::open_publishing(
-                            move |cx| {
-                                let _ = window.update(cx, |this, cx| {
-                                    this.key = None;
-                                    cx.notify();
-                                });
-                            },
-                            cx,
-                        );
+                        move |_, _, cx| open_publishing(window.clone(), cx)
                     }),
             );
         let owner = summary.owner.clone().unwrap_or_else(|| "You".into());
@@ -347,25 +379,94 @@ impl SettingsWindow {
             .to_uppercase()
             .collect::<String>()
             .into();
-        let accounts = v_flex()
-            .gap(px(6.))
-            .child(
+        if let (Some(owner), Some(KeyTag::Ready)) = (&summary.owner, summary.tag) {
+            let labels = (owner.clone(), summary.name.clone());
+            if self.recovery.labelled.as_ref() != Some(&labels) {
+                key_store::label_active(&labels.0, &labels.1);
+                self.recovery.labelled = Some(labels);
+            }
+        }
+        let index = key_store::accounts();
+        let others: Vec<_> = index
+            .accounts
+            .iter()
+            .filter(|account| Some(account.id) != index.active)
+            .cloned()
+            .collect();
+        let mut accounts = v_flex().gap(px(6.));
+        accounts = accounts.child(
+            h_flex()
+                .h(px(40.))
+                .px(px(12.))
+                .gap(px(10.))
+                .items_center()
+                .border_1()
+                .border_color(tokens::accent_line())
+                .rounded(px(6.))
+                .bg(tokens::accent_soft())
+                .child(
+                    h_flex()
+                        .size(px(22.))
+                        .rounded_full()
+                        .items_center()
+                        .justify_center()
+                        .bg(tokens::avatar_on_accent())
+                        .text_color(tokens::check_on())
+                        .text_size(px(11.))
+                        .font_weight(FontWeight::BOLD)
+                        .child(initial),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(owner),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(11.5))
+                        .text_color(tokens::text2())
+                        .child(format!("Key \u{201c}{}\u{201d}", summary.name)),
+                )
+                .child(
+                    text(10.5, 14.)
+                        .px(px(6.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(tokens::check_on())
+                        .child("Active"),
+                ),
+        );
+        for account in others {
+            let id = account.id;
+            let owner: SharedString = if account.owner.is_empty() {
+                "Unnamed key".into()
+            } else {
+                account.owner.clone().into()
+            };
+            let initial: SharedString = owner
+                .chars()
+                .next()
+                .unwrap_or('?')
+                .to_uppercase()
+                .collect::<String>()
+                .into();
+            accounts = accounts.child(
                 h_flex()
                     .h(px(40.))
                     .px(px(12.))
                     .gap(px(10.))
                     .items_center()
                     .border_1()
-                    .border_color(tokens::accent_line())
+                    .border_color(tokens::border())
                     .rounded(px(6.))
-                    .bg(tokens::accent_soft())
                     .child(
                         h_flex()
                             .size(px(22.))
                             .rounded_full()
                             .items_center()
                             .justify_center()
-                            .bg(tokens::avatar_on_accent())
+                            .bg(tokens::accent_soft())
                             .text_color(tokens::check_on())
                             .text_size(px(11.))
                             .font_weight(FontWeight::BOLD)
@@ -382,31 +483,87 @@ impl SettingsWindow {
                             .flex_1()
                             .text_size(px(11.5))
                             .text_color(tokens::text2())
-                            .child(format!("Key \u{201c}{}\u{201d}", summary.name)),
+                            .child(if account.key_name.is_empty() {
+                                String::new()
+                            } else {
+                                format!("Key \u{201c}{}\u{201d}", account.key_name)
+                            }),
                     )
                     .child(
-                        text(10.5, 14.)
-                            .px(px(6.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(tokens::check_on())
-                            .child("Active"),
+                        secondary_button(("account-switch", id as usize), "repeat", "Switch")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.recovery.accounts_error = None;
+                                cx.spawn(async move |this, cx| {
+                                    let result = key_store::switch(id, cx).await;
+                                    let _ = this.update(cx, |this, cx| {
+                                        match result {
+                                            Ok(()) => this.key = None,
+                                            Err(error) => {
+                                                this.recovery.accounts_error =
+                                                    Some(error.to_string().into())
+                                            }
+                                        }
+                                        cx.notify();
+                                    });
+                                })
+                                .detach();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(("account-remove", id as usize))
+                            .flex_none()
+                            .cursor_pointer()
+                            .text_color(tokens::text2())
+                            .hover(|this| this.text_color(tokens::text_error()))
+                            .child(icon("trash-2", 14.))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.recovery.accounts_error = None;
+                                cx.spawn(async move |this, cx| {
+                                    let result = key_store::remove(id, cx).await;
+                                    let _ = this.update(cx, |this, cx| {
+                                        if let Err(error) = result {
+                                            this.recovery.accounts_error =
+                                                Some(error.to_string().into());
+                                        }
+                                        this.key = None;
+                                        cx.notify();
+                                    });
+                                })
+                                .detach();
+                            })),
                     ),
-            )
-            .child(
-                h_flex()
-                    .h(px(40.))
-                    .px(px(12.))
-                    .gap(px(10.))
-                    .items_center()
-                    .border_1()
-                    .border_dashed()
-                    .border_color(tokens::border2())
-                    .rounded(px(6.))
-                    .text_size(px(12.))
-                    .text_color(tokens::text2())
-                    .child(icon("plus", 13.))
-                    .child("Add another account\u{2019}s key"),
             );
+        }
+        accounts = accounts.child(
+            h_flex()
+                .id("account-add")
+                .h(px(40.))
+                .px(px(12.))
+                .gap(px(10.))
+                .items_center()
+                .border_1()
+                .border_dashed()
+                .border_color(tokens::border2())
+                .rounded(px(6.))
+                .text_size(px(12.))
+                .text_color(tokens::text2())
+                .cursor_pointer()
+                .hover(|this| this.bg(tokens::secondary_hover()))
+                .child(icon("plus", 13.))
+                .child("Add another account\u{2019}s key")
+                .on_click({
+                    let window = window.clone();
+                    move |_, _, cx| open_publishing(window.clone(), cx)
+                }),
+        );
+        if let Some(error) = &self.recovery.accounts_error {
+            accounts = accounts.child(
+                text(11.5, 16.)
+                    .text_color(tokens::text_error())
+                    .child(error.clone()),
+            );
+        }
         let signed_in = self.shell.read(cx).studio_presence.session.is_some();
         let user_id = self.shell.read(cx).studio_presence.user_id;
         let presence = self.shell.read(cx).studio_presence.enabled;
@@ -454,7 +611,6 @@ impl SettingsWindow {
                             .describe(
                                 "One key per Roblox account; switch without pasting keys again.",
                             )
-                            .soon()
                             .below(accounts),
                         Row::new("Roblox sign-in", sign_in_control).describe(
                             "Used only for \u{201c}In Studio\u{201d} on your profile. Stored in your system keychain.",

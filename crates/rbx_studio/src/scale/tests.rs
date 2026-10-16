@@ -2,10 +2,7 @@ use super::*;
 use crate::tokens::FONT_SCALE_RANGE;
 
 fn ctrl() -> Modifiers {
-    Modifiers {
-        control: true,
-        ..Modifiers::default()
-    }
+    Modifiers::secondary_key()
 }
 
 /// The scale is this app's whole answer to WCAG 1.4.4, so it has to be
@@ -33,9 +30,8 @@ fn an_unmodified_key_is_not_a_zoom_command() {
         action_for(
             "=",
             Modifiers {
-                control: true,
                 alt: true,
-                ..Modifiers::default()
+                ..Modifiers::secondary_key()
             }
         ),
         None,

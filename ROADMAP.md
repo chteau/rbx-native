@@ -1955,8 +1955,9 @@ Roblox's own engine.
   edited at Global, Game or Place scope, with inherited values and
   overrides shown per row. **Search** (`Ctrl F`) finds any row by label,
   description or `settings.json` key and shows it live. Keyboard shortcuts
-  stay a window of their own, as in Studio; what the screen still shows as
-  `SOON` is its own bullet under "What's planned".
+  stay a window of their own, as in Studio. Nothing on the screen is
+  marked `SOON` any more (see the next two bullets under Editor in
+  "What's planned").
 - [x] **Discord Rich Presence, switched on from Studio Settings** —
   an rbx-native addition, not Studio parity: real Studio has no built-in
   Discord presence, only third-party plugins and companion apps. A toggle
@@ -2641,23 +2642,49 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 
 ### Editor
-- [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
-  shipped (see "What's been implemented" → Editor); these rows are drawn
-  there, faded and inert, until what they stand for exists:
-  Play's **test-copy name**,
-  **several accounts**, the
-  eyedropper in the colour popover (GPUI has no way to sample the
-  screen), and
-  **Keyboard shortcuts** — real Studio's own separate
-  `File > Customize Shortcuts` screen (view and rebind any hotkey), listed
-  in the Settings nav as its own window rather than merged into the
-  dialog, as Studio keeps it.
-- [ ] 📋 **A "Beta Features" toggle**, matching real Studio's own
-  `File > Beta Features` (experimental features switched on individually,
-  applied after a restart). Directly useful for a fast-moving project like
-  this one: a real, in-app way to ship a half-finished feature switched
-  off by default instead of either blocking a merge on it being complete
-  or shipping it fully live before it's ready.
+- [x] **What Studio Settings showed as `SOON`, now live.**
+  - **Name for test copies** (Files › Play): after Play publishes over the
+    sandbox it renames the sandbox place to the template (default
+    `{place} (Play)`, cut to Roblox's 50 characters) through Open Cloud's
+    place PATCH, once per name per session. An empty template leaves the
+    sandbox's own name; a refused rename (the key lacks
+    `universe.place:write`) is an Output warning, never a failed Play.
+  - **Several accounts** (Account › Accounts): every Open Cloud key saved
+    from Roblox publishing is kept under its own credential-store entry
+    (`key_store::accounts`), indexed in `accounts.json` by owner, key name
+    and a SHA-256 fingerprint, never the secret. Switch makes one active
+    without pasting it again, the trash removes one, and "Add another
+    account's key" opens Roblox publishing. The single-key setup migrates
+    itself on the first launch.
+  - **The colour popover's eyedropper** (`crates/rbx_eyedropper`): GPUI
+    cannot read the screen, so each platform asks its own. Linux uses the
+    desktop portal's `Screenshot.PickColor` (Wayland too), falling back on
+    X11 to a pointer grab and the root window's pixel. Windows uses a
+    low-level mouse hook and the screen DC. macOS uses `NSColorSampler`.
+    Escape or a right click cancels. The Windows and macOS back ends are
+    compile-checked here and have never run on those systems.
+  - **Customize Shortcuts** (`File › Customize Shortcuts…`, and the
+    Settings nav's Keyboard shortcuts), a window of its own as in Studio.
+    It lists every rebindable command (89, from Save to the Animation
+    Editor's keys) by category, with search. Click `+` or a key chip and
+    press the new key. Chips remove a key, and Reset or Reset all go back
+    to the defaults. A clash is shown ("Also runs: Copy (Edit)") but
+    allowed, as Studio allows it. Every key handler asks
+    `shortcuts::pressed` instead of matching keys itself, so a change
+    applies at once. Menu and palette hints follow it, and the
+    keymap-backed keys (Alt+S, Quick Open, the palette, Tab for handles)
+    are re-bound. Changes live in `shortcuts.json`. The defaults now use
+    Cmd on macOS where they used Ctrl.
+- [x] **Beta Features** (`File › Beta Features…`, Settings › Beta
+  features), matching Studio's `File > Beta Features`. A half-finished
+  feature is listed in `beta::FEATURES` and asks `beta::enabled("<id>")`
+  before showing itself. Each feature has its own switch, stored in
+  `beta.json` and applied after a restart: `enabled` answers from the
+  choices at launch. A banner counts the pending changes and offers
+  "Restart now", which asks to save unsaved work first, then relaunches
+  the editor on the same place. Nothing ships behind a switch yet, so the
+  page shows its empty state; `RBX_STUDIO_BETA_SAMPLE=1` lists a sample
+  feature to try the page.
 - [x] **More New templates on Home.** Home's New row now offers
   Baseplate, Classic Baseplate and Flat Terrain, each with the parts,
   Lighting (Sky and effects for the modern two) and camera zoom that real

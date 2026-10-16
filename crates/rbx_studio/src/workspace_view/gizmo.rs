@@ -944,10 +944,17 @@ impl WorkspaceView {
         if modifiers.control || modifiers.platform || modifiers.shift {
             return false;
         }
-        match key {
-            "t" => self.turn(true, modifiers, cx),
-            "r" => self.turn(false, modifiers, cx),
-            _ => false,
+        let keystroke = gpui_kit::Keystroke {
+            key: key.into(),
+            modifiers,
+            key_char: None,
+        };
+        if crate::shortcuts::pressed(crate::shortcuts::Command::TurnTilt, &keystroke) {
+            self.turn(true, modifiers, cx)
+        } else if crate::shortcuts::pressed(crate::shortcuts::Command::TurnRotate, &keystroke) {
+            self.turn(false, modifiers, cx)
+        } else {
+            false
         }
     }
 

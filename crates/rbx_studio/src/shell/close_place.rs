@@ -24,13 +24,32 @@ impl Shell {
         }
     }
 
+    /// Restarts the editor on this place, asking first when there are
+    /// unsaved changes.
+    pub(crate) fn request_restart(&mut self, cx: &mut Context<Self>) {
+        if self.has_unsaved_changes() {
+            self.restart_after_close = true;
+            self.close_prompt = true;
+            cx.notify();
+        } else {
+            crate::relaunch(&self.path);
+            cx.quit();
+        }
+    }
+
     /// Escape's half of the prompt; returns whether it was open.
     pub(super) fn cancel_close_place(&mut self) -> bool {
+        self.restart_after_close = false;
         std::mem::take(&mut self.close_prompt)
     }
 
     fn leave_place(&mut self, cx: &mut Context<Self>) {
         self.close_prompt = false;
+        if std::mem::take(&mut self.restart_after_close) {
+            crate::relaunch(&self.path);
+            cx.quit();
+            return;
+        }
         let handle = self.window_handle;
         // Deferred: opening Home renders it, and this runs inside a `Shell`
         // update (a menu action or a click); removing the window from inside
@@ -55,9 +74,17 @@ impl Shell {
                 .child(ui::dialog(
                     440.,
                     ui::dialog_glyph("triangle-alert", ui::accent(), ui::wash()),
-                    format!("Save changes to {}?", self.title),
-                    "Your changes will be lost if you close the place without saving them."
-                        .to_string(),
+                    if self.restart_after_close {
+                        format!("Save changes to {} before restarting?", self.title)
+                    } else {
+                        format!("Save changes to {}?", self.title)
+                    },
+                    if self.restart_after_close {
+                        "RbxNative restarts to apply beta features. Unsaved changes are lost if you don\u{2019}t save them."
+                    } else {
+                        "Your changes will be lost if you close the place without saving them."
+                    }
+                    .to_string(),
                     None,
                     vec![
                         ui::button(
@@ -77,6 +104,7 @@ impl Shell {
                         ui::button("close-place-cancel", "Cancel", Weight::Secondary, false)
                             .on_click(cx.listener(|shell, _, _, cx| {
                                 shell.close_prompt = false;
+                                shell.restart_after_close = false;
                                 cx.notify();
                             }))
                             .into_any_element(),

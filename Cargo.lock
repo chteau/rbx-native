@@ -6467,6 +6467,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_eyedropper"
+version = "0.1.0"
+dependencies = [
+ "ashpd",
+ "block2 0.6.2",
+ "futures-lite",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "windows-sys 0.61.2",
+ "x11rb",
+]
+
+[[package]]
 name = "rbx_figma"
 version = "0.1.0"
 dependencies = [
@@ -6605,6 +6618,7 @@ dependencies = [
  "rbx_binary",
  "rbx_cloud",
  "rbx_dom",
+ "rbx_eyedropper",
  "rbx_figma",
  "rbx_import",
  "rbx_lua",

@@ -8,7 +8,7 @@
 //! screenshot, since nothing else can send a keystroke to the Explorer on
 //! the editor's behalf (see `AGENTS.md`'s safety rules).
 
-use gpui_kit::{Context, Keystroke, Modifiers, Window};
+use gpui_kit::{Context, Keystroke, Window};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -87,17 +87,17 @@ pub(super) enum Action {
 /// remove the selection: GPUI's Linux backend reports the two physical keys
 /// under those two different `Keystroke::key` names, and Studio itself binds
 /// both to the same command.
-pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    match key {
-        "delete" | "backspace" => Some(Action::Delete),
-        "p" if modifiers.control && modifiers.shift => Some(Action::InsertPart),
-        "f" if modifiers.control && modifiers.shift => Some(Action::InsertFolder),
-        // Ctrl alone, not Ctrl+Shift: the other two are this editor's own
-        // quick inserts, this one is the shortcut Studio documents.
-        "i" if modifiers.control && !modifiers.shift => Some(Action::Insert),
-        "f2" if !modifiers.modified() => Some(Action::Rename),
-        _ => None,
-    }
+pub(super) fn action_for(keystroke: &Keystroke) -> Option<Action> {
+    use crate::shortcuts::{pressed, Command};
+    [
+        (Command::Delete, Action::Delete),
+        (Command::InsertPart, Action::InsertPart),
+        (Command::InsertFolder, Action::InsertFolder),
+        (Command::InsertObject, Action::Insert),
+        (Command::Rename, Action::Rename),
+    ]
+    .into_iter()
+    .find_map(|(command, action)| pressed(command, keystroke).then_some(action))
 }
 
 /// Whether an instance can be removed at all. A service cannot: Roblox
@@ -132,7 +132,7 @@ impl Shell {
         if self.renaming_in_place() {
             return;
         }
-        match action_for(&keystroke.key, keystroke.modifiers) {
+        match action_for(keystroke) {
             Some(Action::Delete) => self.delete_selected(cx),
             Some(Action::InsertPart) => self.insert_instance("Part", cx),
             Some(Action::InsertFolder) => self.insert_instance("Folder", cx),

@@ -85,6 +85,7 @@ mod accent;
 mod align;
 mod anim_editor;
 mod argon_client;
+mod beta;
 mod camera;
 mod change_class;
 mod class_icons;
@@ -121,6 +122,7 @@ mod sequence_window;
 mod settings;
 mod settle;
 mod shell;
+mod shortcuts;
 mod style_editor;
 mod sun;
 mod terrain;
@@ -162,6 +164,8 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
 fn main() {
+    // Before anything can ask whether a beta feature is on.
+    beta::init();
     // Loaded once, up front: the CLI's `--quality` still wins when given (see
     // `parse`), and the Explorer's initial visibility set comes straight from
     // here since nothing on the command line can express it.
@@ -282,6 +286,22 @@ pub(crate) fn open_home_again(cx: &mut App) {
         user,
     };
     launcher::open_home(Rc::new(RefCell::new(Some(boot))), cx);
+}
+
+/// Starts a fresh editor process on `place`, for settings that only take
+/// effect at launch. The child is not waited on, so it outlives this one.
+pub(crate) fn relaunch(place: &std::path::Path) {
+    let result = std::env::current_exe().and_then(|exe| {
+        std::process::Command::new(exe)
+            .arg(place)
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .spawn()
+    });
+    if let Err(err) = result {
+        eprintln!("could not restart: {err}");
+    }
 }
 
 /// What the editor window needs beyond its place: the resolved settings,

@@ -4,8 +4,6 @@
 //! live in, never a second list of names. Quick Open's instance rows are
 //! built by `instances`.
 
-use std::any::TypeId;
-
 use gpui_kit::{Action, OwnedMenu, OwnedMenuItem, SharedString};
 use rbx_dom::Ref;
 
@@ -42,8 +40,8 @@ pub(in crate::shell) struct Command {
     pub(in crate::shell) name: SharedString,
     /// An instance's path, shown dimmed beside its name.
     pub(in crate::shell) detail: Option<SharedString>,
-    /// In `Keystroke::parse` form; see [`display`].
-    pub(in crate::shell) hint: Option<&'static str>,
+    /// Display text from `shortcuts::hint`, e.g. `Ctrl+S`.
+    pub(in crate::shell) hint: Option<String>,
     pub(in crate::shell) run: Run,
     /// `name` and `label` lower-cased and split into words once, here,
     /// rather than on every keystroke for every row: Quick Open ranks every
@@ -71,7 +69,7 @@ impl Command {
         label: SharedString,
         name: SharedString,
         detail: Option<SharedString>,
-        hint: Option<&'static str>,
+        hint: Option<String>,
         run: Run,
     ) -> Self {
         Self {
@@ -146,11 +144,10 @@ pub(in crate::shell) fn registry(
             ));
         }
     }
-    commands.extend(
-        Tool::TRANSFORM
-            .into_iter()
-            .map(|tool| command("Tool", tool.label(), tool.shortcut(), Run::Tool(tool))),
-    );
+    commands.extend(Tool::TRANSFORM.into_iter().map(|tool| {
+        let hint = tool_command(tool).and_then(crate::shortcuts::hint);
+        command("Tool", tool.label(), hint, Run::Tool(tool))
+    }));
     commands.extend(
         ribbon::palette_entries()
             .into_iter()
@@ -175,51 +172,22 @@ pub(in crate::shell) fn registry(
     commands
 }
 
-/// The shortcuts behind menu items. `shell::save`/`history`/`clipboard`/
-/// `group`/`keys` match keystrokes in code rather than through a keymap, so
-/// GPUI has no binding to report for them; `tests` holds each entry to the
-/// handler it names, so a changed shortcut cannot leave a stale hint here.
-pub(super) const HINTS: [(ActionType, &str); 14] = [
-    (TypeId::of::<MenuSave>, "ctrl-s"),
-    (TypeId::of::<MenuUndo>, "ctrl-z"),
-    (TypeId::of::<MenuRedo>, "ctrl-y"),
-    (TypeId::of::<MenuCutInstance>, "ctrl-x"),
-    (TypeId::of::<MenuCopyInstance>, "ctrl-c"),
-    (TypeId::of::<MenuPasteInstance>, "ctrl-v"),
-    (TypeId::of::<MenuPasteIntoInstance>, "ctrl-shift-v"),
-    (TypeId::of::<MenuDuplicateInstance>, "ctrl-d"),
-    (TypeId::of::<MenuDeleteInstance>, "delete"),
-    (TypeId::of::<MenuGroup>, "ctrl-g"),
-    (TypeId::of::<MenuUngroup>, "ctrl-shift-g"),
-    (TypeId::of::<MenuInsertPart>, "ctrl-shift-p"),
-    (TypeId::of::<MenuInsertFolder>, "ctrl-shift-f"),
-    (TypeId::of::<MenuStudioSettings>, "alt-s"),
-];
-
-/// `TypeId::of` for one menu action, called rather than stored because a
-/// `TypeId` cannot be built in a `const`.
-pub(super) type ActionType = fn() -> TypeId;
-
-fn hint(action: &dyn Action) -> Option<&'static str> {
-    let id = action.as_any().type_id();
-    HINTS
-        .iter()
-        .find(|(type_id, _)| type_id() == id)
-        .map(|(_, keys)| *keys)
+/// The display text of the shortcut bound to a menu action, as the
+/// shortcuts store currently has it.
+fn hint(action: &dyn Action) -> Option<String> {
+    crate::shortcuts::command_for_action(action).and_then(crate::shortcuts::hint)
 }
 
-/// `ctrl-shift-g` as a person reads it: `Ctrl+Shift+G`.
-pub(super) fn display(keys: &str) -> String {
-    keys.split('-')
-        .map(|part| match part {
-            "ctrl" => "Ctrl".to_owned(),
-            "shift" => "Shift".to_owned(),
-            "alt" => "Alt".to_owned(),
-            "delete" => "Del".to_owned(),
-            key => key.to_uppercase(),
-        })
-        .collect::<Vec<_>>()
-        .join("+")
+fn tool_command(tool: Tool) -> Option<crate::shortcuts::Command> {
+    use crate::shortcuts::Command;
+    match tool {
+        Tool::Select => Some(Command::ToolSelect),
+        Tool::Move => Some(Command::ToolMove),
+        Tool::Scale => Some(Command::ToolScale),
+        Tool::Rotate => Some(Command::ToolRotate),
+        Tool::Transform => Some(Command::ToolTransform),
+        Tool::Sun | Tool::Pivot | Tool::Terrain => None,
+    }
 }
 
 /// Whether `query` asks for commands rather than instances: Studio's Quick

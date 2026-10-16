@@ -34,11 +34,17 @@ pub(crate) enum Action {
 /// `shell::history` only has to call it. Both `Ctrl+Y` and `Ctrl+Shift+Z` redo
 /// — Studio uses the former, most other editors the latter.
 pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    match key {
-        "z" if modifiers.control && modifiers.shift => Some(Action::Redo),
-        "z" if modifiers.control => Some(Action::Undo),
-        "y" if modifiers.control => Some(Action::Redo),
-        _ => None,
+    let keystroke = gpui_kit::Keystroke {
+        key: key.into(),
+        modifiers,
+        key_char: None,
+    };
+    if crate::shortcuts::pressed(crate::shortcuts::Command::Redo, &keystroke) {
+        Some(Action::Redo)
+    } else if crate::shortcuts::pressed(crate::shortcuts::Command::Undo, &keystroke) {
+        Some(Action::Undo)
+    } else {
+        None
     }
 }
 
@@ -257,25 +263,18 @@ mod tests {
 
     #[test]
     fn ctrl_z_undoes() {
-        let modifiers = Modifiers {
-            control: true,
-            ..Modifiers::none()
-        };
+        let modifiers = Modifiers::secondary_key();
         assert_eq!(action_for("z", modifiers), Some(Action::Undo));
     }
 
     #[test]
     fn ctrl_y_and_ctrl_shift_z_both_redo() {
-        let ctrl_y = Modifiers {
-            control: true,
-            ..Modifiers::none()
-        };
+        let ctrl_y = Modifiers::secondary_key();
         assert_eq!(action_for("y", ctrl_y), Some(Action::Redo));
 
         let ctrl_shift_z = Modifiers {
-            control: true,
             shift: true,
-            ..Modifiers::none()
+            ..Modifiers::secondary_key()
         };
         assert_eq!(action_for("z", ctrl_shift_z), Some(Action::Redo));
     }

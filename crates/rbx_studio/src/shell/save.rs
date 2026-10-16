@@ -31,7 +31,7 @@ impl Shell {
             // F10 is the other, explicit way in — and out again. Handled here
             // rather than as a binding because the bar's own key context only
             // covers the bar, and F10 has to work from wherever focus is.
-            if keystroke.key == "f10" && !keystroke.modifiers.modified() {
+            if crate::shortcuts::pressed(crate::shortcuts::Command::MenuBar, keystroke) {
                 bar.toggle_entry(window, cx);
             }
         });

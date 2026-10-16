@@ -8,10 +8,7 @@ fn database() -> ReflectionDatabase {
 }
 
 fn ctrl() -> Modifiers {
-    Modifiers {
-        control: true,
-        ..Modifiers::none()
-    }
+    Modifiers::secondary_key()
 }
 
 #[test]
@@ -50,7 +47,11 @@ fn any_other_modifier_on_the_chord_is_not_a_clipboard_action() {
         modifiers
     };
     let alt = with(|m| m.alt = true);
-    let platform = with(|m| m.platform = true);
+    // Ctrl and Super/⌘ together, whichever of them is the secondary key.
+    let platform = with(|m| {
+        m.control = true;
+        m.platform = true;
+    });
     let shift = with(|m| m.shift = true);
     for key in ["c", "v", "d"] {
         assert_eq!(action_for(key, alt), None, "Ctrl+Alt+{key}");

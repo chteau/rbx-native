@@ -93,6 +93,18 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuCustomizeShortcuts, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_shortcuts(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuBetaFeatures, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_settings_on("beta", cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuScriptTemplates, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_script_templates(cx));
         }

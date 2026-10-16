@@ -112,12 +112,7 @@ impl RowMenu {
 /// Whether `keystroke` asks for the selected row's menu: Shift+F10, or the
 /// Menu key on keyboards that have one, the two every desktop shares.
 pub(in crate::shell) fn opens_row_menu(keystroke: &Keystroke) -> bool {
-    let m = keystroke.modifiers;
-    match keystroke.key.as_str() {
-        "f10" => m.shift && !m.control && !m.alt && !m.platform,
-        "menu" => !m.modified(),
-        _ => false,
-    }
+    crate::shortcuts::pressed(crate::shortcuts::Command::RowMenu, keystroke)
 }
 
 impl Shell {

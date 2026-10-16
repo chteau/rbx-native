@@ -1,10 +1,8 @@
 // Not `super::*`: that brings in `gpui_kit::*`, whose own `test` macro
 // would shadow the standard one.
-use std::any::TypeId;
-
 use gpui_kit::{Keystroke, SharedString};
 
-use super::commands::{display, filter, registry, wants_actions, Command, Run, HINTS};
+use super::commands::{filter, registry, wants_actions, Command, Run};
 use super::focus::{entry, Entry};
 use super::instances::instances;
 use crate::menu_bar::*;
@@ -67,7 +65,10 @@ fn tools_and_docks_are_rows_too() {
     let commands = all();
     let move_tool = find(&commands, "Tool: Move");
     assert!(matches!(move_tool.run, Run::Tool(Tool::Move)));
-    assert_eq!(move_tool.hint, Some("2"));
+    assert_eq!(
+        move_tool.hint,
+        crate::shortcuts::hint(crate::shortcuts::Command::ToolMove)
+    );
     for panel in Panel::ALL {
         let row = find(&commands, &format!("View: Focus {}", panel.key()));
         assert!(matches!(row.run, Run::Focus(listed) if listed == panel));
@@ -88,53 +89,6 @@ fn a_users_template_is_listed_under_model() {
     };
     let commands = registry(&menus(&[template]), []);
     find(&commands, "Model: Insert Service (ModuleScript)");
-}
-
-#[test]
-fn every_hint_is_the_key_its_handler_actually_answers() {
-    use crate::shell::{clipboard, group, keys};
-    for (type_id, keys_text) in HINTS {
-        let key = Keystroke::parse(keys_text).unwrap();
-        let (k, m) = (key.key.as_str(), key.modifiers);
-        let handled: Option<TypeId> =
-            if let Some(crate::save::Action::Save) = crate::save::action_for(k, m) {
-                Some(TypeId::of::<MenuSave>())
-            } else if let Some(action) = crate::history::action_for(k, m) {
-                Some(match action {
-                    crate::history::Action::Undo => TypeId::of::<MenuUndo>(),
-                    crate::history::Action::Redo => TypeId::of::<MenuRedo>(),
-                })
-            } else if let Some(action) = clipboard::action_for(k, m) {
-                Some(match action {
-                    clipboard::Action::Copy => TypeId::of::<MenuCopyInstance>(),
-                    clipboard::Action::Cut => TypeId::of::<MenuCutInstance>(),
-                    clipboard::Action::Paste => TypeId::of::<MenuPasteInstance>(),
-                    clipboard::Action::PasteInto => TypeId::of::<MenuPasteIntoInstance>(),
-                    clipboard::Action::Duplicate => TypeId::of::<MenuDuplicateInstance>(),
-                })
-            } else if let Some(action) = group::action_for(k, m) {
-                Some(match action {
-                    group::Action::Group => TypeId::of::<MenuGroup>(),
-                    group::Action::Ungroup => TypeId::of::<MenuUngroup>(),
-                })
-            } else if let Some(action) = keys::action_for(k, m) {
-                match action {
-                    keys::Action::Delete => Some(TypeId::of::<MenuDeleteInstance>()),
-                    keys::Action::InsertPart => Some(TypeId::of::<MenuInsertPart>()),
-                    keys::Action::InsertFolder => Some(TypeId::of::<MenuInsertFolder>()),
-                    keys::Action::Insert | keys::Action::Rename => None,
-                }
-            } else {
-                None
-            };
-        // Alt+S is a real keymap binding rather than a matcher, held to it
-        // by `the_keymap_binds_settings_and_the_palette` below.
-        if keys_text == "alt-s" {
-            assert_eq!(type_id(), TypeId::of::<MenuStudioSettings>());
-            continue;
-        }
-        assert_eq!(handled, Some(type_id()), "{keys_text}");
-    }
 }
 
 #[gpui_kit::test]
@@ -161,14 +115,6 @@ fn the_keymap_binds_settings_and_the_palette(cx: &mut gpui_kit::TestAppContext) 
         assert!(!answers(&MenuCommandPalette, "secondary-shift-p"));
         assert!(!answers(&MenuQuickOpen, "secondary-shift-p"));
     });
-}
-
-#[test]
-fn hints_read_the_way_menus_write_them() {
-    assert_eq!(display("ctrl-shift-g"), "Ctrl+Shift+G");
-    assert_eq!(display("ctrl-alt-p"), "Ctrl+Alt+P");
-    assert_eq!(display("delete"), "Del");
-    assert_eq!(display("2"), "2");
 }
 
 #[test]
@@ -254,8 +200,12 @@ fn every_live_ribbon_command_is_a_row() {
 #[test]
 fn ribbon_hints_are_the_keys_their_handlers_answer() {
     use crate::transform::{action_for, Action};
-    let local = find(&all(), "Tool: Local Orientation").hint.unwrap();
-    let key = Keystroke::parse(local).unwrap();
+    let local = find(&all(), "Tool: Local Orientation").hint.clone();
+    assert_eq!(
+        local,
+        crate::shortcuts::hint(crate::shortcuts::Command::ToggleLocal)
+    );
+    let key = Keystroke::parse("secondary-l").unwrap();
     assert_eq!(
         action_for(&key.key, key.modifiers),
         Some(Action::ToggleLocal)
@@ -371,7 +321,8 @@ fn an_option_tells_a_screen_reader_its_place_state_and_shortcut(cx: &mut gpui_ki
         let mut node = Node::new(Role::ListBoxOption);
         super::view::option(3, 40, undo, true).write_a11y_info(&mut node);
         assert_eq!(node.label(), Some("Edit: Undo"));
-        assert_eq!(node.keyboard_shortcut(), Some("Ctrl+Z"));
+        let undo_keys = crate::shortcuts::display(&Keystroke::parse("secondary-z").unwrap());
+        assert_eq!(node.keyboard_shortcut(), Some(undo_keys.as_str()));
         assert_eq!(node.is_selected(), Some(true));
         assert_eq!(node.position_in_set(), Some(4));
         assert_eq!(node.size_of_set(), Some(40));

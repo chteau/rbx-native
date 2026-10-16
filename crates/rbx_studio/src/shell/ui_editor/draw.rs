@@ -9,6 +9,7 @@ use rbx_dom::Ref;
 
 use super::Shell;
 use crate::explorer::insert::{gui_defaults, incremented_name};
+use crate::shortcuts::Command;
 use crate::ui_canvas::arrange::{place, Member};
 use crate::ui_canvas::{covers, rotate, udim2_text, Rect, Unit};
 
@@ -17,13 +18,13 @@ const CONTAINERS: [&str; 3] = ["Frame", "ScrollingFrame", "CanvasGroup"];
 
 /// The tools' keys — the set Roblox's Figma-style editors settled on, F and
 /// T being Figma's own.
-pub(super) const TOOL_KEYS: [(&str, &str); 6] = [
-    ("f", "Frame"),
-    ("t", "TextLabel"),
-    ("b", "TextButton"),
-    ("x", "TextBox"),
-    ("l", "ImageLabel"),
-    ("g", "ImageButton"),
+pub(super) const TOOL_KEYS: [(Command, &str); 6] = [
+    (Command::UiToolFrame, "Frame"),
+    (Command::UiToolTextLabel, "TextLabel"),
+    (Command::UiToolTextButton, "TextButton"),
+    (Command::UiToolTextBox, "TextBox"),
+    (Command::UiToolImageLabel, "ImageLabel"),
+    (Command::UiToolImageButton, "ImageButton"),
 ];
 
 impl Shell {

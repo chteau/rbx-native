@@ -15,8 +15,10 @@
 //! digits the other three already use is this editor's own choice, not a
 //! confirmed one.
 
-use gpui_kit::Modifiers;
+use gpui_kit::{Keystroke, Modifiers};
 use rbx_viewer::gizmo::Kind;
+
+use crate::shortcuts::{self, Command};
 use rbx_viewer::Gizmo;
 
 mod frame;
@@ -88,15 +90,16 @@ impl Tool {
     /// The Sun and Edit Pivot tools have none: any key over the 3D view past
     /// `5` is a camera key or an arbitrary pick nobody would guess, and
     /// `creator-docs` gives Edit Pivot no shortcut of its own.
-    pub(crate) fn shortcut(self) -> Option<&'static str> {
-        match self {
-            Tool::Select => Some("1"),
-            Tool::Move => Some("2"),
-            Tool::Scale => Some("3"),
-            Tool::Rotate => Some("4"),
-            Tool::Transform => Some("5"),
-            Tool::Sun | Tool::Pivot | Tool::Terrain => None,
-        }
+    pub(crate) fn shortcut(self) -> Option<String> {
+        let command = match self {
+            Tool::Select => Command::ToolSelect,
+            Tool::Move => Command::ToolMove,
+            Tool::Scale => Command::ToolScale,
+            Tool::Rotate => Command::ToolRotate,
+            Tool::Transform => Command::ToolTransform,
+            Tool::Sun | Tool::Pivot | Tool::Terrain => return None,
+        };
+        shortcuts::hint(command)
     }
 
     /// Which handles this tool puts over the selection, or `None` for Select
@@ -347,27 +350,47 @@ pub(crate) enum Action {
 ///
 /// `Alt`/`⌥`+`R` is the docs' own chord for the *rotate* increment field,
 /// the counterpart of `Shift`+`2`.
-pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    let plain = !modifiers.control && !modifiers.alt && !modifiers.shift && !modifiers.platform;
-    let only_shift = modifiers.shift && !modifiers.control && !modifiers.alt && !modifiers.platform;
-    let only_alt = modifiers.alt && !modifiers.control && !modifiers.shift && !modifiers.platform;
-    match key {
-        // `platform` is Cmd on a Mac, where creator-docs gives the toggle as
-        // ⌘L rather than Ctrl+L.
-        "l" if (modifiers.control || modifiers.platform) && !modifiers.shift => {
-            Some(Action::ToggleLocal)
-        }
-        "2" if only_shift => Some(Action::FocusIncrement(SnapKind::Translate)),
-        "r" if only_alt => Some(Action::FocusIncrement(SnapKind::Rotate)),
-        _ if !plain => None,
-        "r" => Some(Action::ToggleJoint),
-        "1" => Some(Action::Use(Tool::Select)),
-        "2" => Some(Action::Use(Tool::Move)),
-        "3" => Some(Action::Use(Tool::Scale)),
-        "4" => Some(Action::Use(Tool::Rotate)),
-        "5" => Some(Action::Use(Tool::Transform)),
-        _ => None,
-    }
+pub(crate) fn action_for(key: impl AsRef<str>, modifiers: Modifiers) -> Option<Action> {
+    let keystroke = Keystroke {
+        key: key.as_ref().into(),
+        modifiers,
+        key_char: None,
+    };
+    let bindings = [
+        (Command::ToggleLocal, Action::ToggleLocal),
+        (
+            Command::FocusMoveIncrement,
+            Action::FocusIncrement(SnapKind::Translate),
+        ),
+        (
+            Command::FocusRotateIncrement,
+            Action::FocusIncrement(SnapKind::Rotate),
+        ),
+        (Command::ToggleJoint, Action::ToggleJoint),
+        (Command::ToolSelect, Action::Use(Tool::Select)),
+        (Command::ToolMove, Action::Use(Tool::Move)),
+        (Command::ToolScale, Action::Use(Tool::Scale)),
+        (Command::ToolRotate, Action::Use(Tool::Rotate)),
+        (Command::ToolTransform, Action::Use(Tool::Transform)),
+    ];
+    // ⌘ and Ctrl are one chord to the docs' shortcuts, whichever the
+    // binding was recorded with: try the press with the two traded.
+    let swapped = Keystroke {
+        modifiers: Modifiers {
+            control: modifiers.platform,
+            platform: modifiers.control,
+            ..modifiers
+        },
+        ..keystroke.clone()
+    };
+    let one_of_them = modifiers.control != modifiers.platform;
+    bindings
+        .into_iter()
+        .find(|(command, _)| {
+            shortcuts::pressed(*command, &keystroke)
+                || (one_of_them && shortcuts::pressed(*command, &swapped))
+        })
+        .map(|(_, action)| action)
 }
 
 /// Reads an increment out of the toolbar's own field.

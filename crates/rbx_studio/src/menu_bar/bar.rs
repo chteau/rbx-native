@@ -34,16 +34,6 @@ pub(crate) const CONTEXT: &str = "RbxMenuBar";
 /// Binds the keys the bar answers, scoped to [`CONTEXT`] so they only mean
 /// anything while focus is inside the bar or the menu it has open.
 pub(crate) fn install_key_bindings(cx: &mut App) {
-    // Real Studio's own shortcut for its Settings dialog. Global, so it
-    // works from anywhere in the editor, and so the File menu shows it.
-    cx.bind_keys([KeyBinding::new("alt-s", super::MenuStudioSettings, None)]);
-    // Studio's Quick Open and Quick Open Actions keys (Cmd on a Mac);
-    // bindings rather than matchers so the View menu shows them beside
-    // their items.
-    cx.bind_keys([
-        KeyBinding::new("secondary-alt-p", super::MenuCommandPalette, None),
-        KeyBinding::new("secondary-p", super::MenuQuickOpen, None),
-    ]);
     cx.bind_keys([
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
         KeyBinding::new("left", SelectLeft, Some(CONTEXT)),
@@ -52,6 +42,10 @@ pub(crate) fn install_key_bindings(cx: &mut App) {
         KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
         KeyBinding::new("space", Confirm { secondary: false }, Some(CONTEXT)),
     ]);
+    // Studio Settings, Quick Open and the Command Palette are global keys
+    // the user can rebind, so the View and File menus show whatever is
+    // current beside their items.
+    crate::shortcuts::apply_bindings(cx);
 }
 
 /// Where Left/Right lands, given `len` titles. Wraps, for the same reason

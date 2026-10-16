@@ -21,6 +21,7 @@ use crate::script_editor::tabs::View;
 use crate::script_editor::{find, outline, source};
 
 use super::Shell;
+use crate::shortcuts::Command;
 
 impl Shell {
     /// The Script Editor panel. Reconciles every open tab against the DOM
@@ -114,11 +115,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let m = keystroke.modifiers;
-        let every = match keystroke.key.as_str() {
-            "d" if m.secondary() && !m.shift && !m.alt => false,
-            "l" if m.shift && m.alt && !m.control && !m.platform => true,
-            _ => return false,
+        let every = if crate::shortcuts::pressed(Command::SelectNextMatch, keystroke) {
+            false
+        } else if crate::shortcuts::pressed(Command::SelectAllMatches, keystroke) {
+            true
+        } else {
+            return false;
         };
         let Some(open) = self.scripts.open.get(&reference) else {
             return false;

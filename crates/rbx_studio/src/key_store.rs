@@ -15,6 +15,8 @@
 //! `Client` built afterwards — the viewer's asset fetches included — uses
 //! it. `RBX_API_KEY` still wins over it, for scripted launches.
 
+pub(crate) mod accounts;
+
 use gpui_kit::AsyncApp;
 use rbx_cloud::ApiKey;
 
@@ -27,7 +29,15 @@ const ACCOUNT: &str = "open-cloud-api-key";
 /// any key is available now — `false` sends a launch to the setup wizard.
 pub(crate) async fn restore(cx: &mut AsyncApp) -> bool {
     match read(cx).await {
-        Ok(Some(key)) => ApiKey::install(Some(key)),
+        Ok(Some(key)) => {
+            let known = accounts()
+                .find(&accounts::fingerprint(key.expose_secret()))
+                .is_some();
+            if !known {
+                record_active(key.expose_secret(), cx).await;
+            }
+            ApiKey::install(Some(key));
+        }
         Ok(None) => migrate_plaintext(cx).await,
         Err(err) => {
             eprintln!("rbxstudio: the OS credential store could not be read: {err}");
@@ -45,14 +55,111 @@ pub(crate) async fn save(key: ApiKey, cx: &mut AsyncApp) -> anyhow::Result<()> {
     let secret = key.expose_secret().as_bytes().to_vec();
     cx.update(|cx| cx.write_credentials(URL, ACCOUNT, &secret))
         .await?;
+    record_active(key.expose_secret(), cx).await;
     ApiKey::install(Some(key));
     Ok(())
 }
 
-/// Removes the stored key; the next launch opens the wizard again.
+/// Removes the stored key and the active account's slot; the next launch
+/// opens the wizard again.
 pub(crate) async fn forget(cx: &mut AsyncApp) -> anyhow::Result<()> {
     cx.update(|cx| cx.delete_credentials(URL)).await?;
+    let mut index = accounts();
+    if let Some(id) = index.active {
+        if let Err(err) = cx
+            .update(|cx| cx.delete_credentials(&accounts::slot_url(id)))
+            .await
+        {
+            eprintln!("rbxstudio: the account's keychain entry could not be deleted: {err}");
+        }
+        index.remove(id);
+        save_index(&index);
+    }
     ApiKey::install(None);
+    Ok(())
+}
+
+fn index_path() -> Option<std::path::PathBuf> {
+    crate::settings::default_config_dir().map(|dir| dir.join("accounts.json"))
+}
+
+fn save_index(index: &accounts::Accounts) {
+    let Some(path) = index_path() else {
+        return;
+    };
+    if let Err(err) = index.save(&path) {
+        eprintln!("rbxstudio: the accounts index could not be saved: {err}");
+    }
+}
+
+/// The index of stored accounts; empty when none exists or the config
+/// directory is unknown.
+pub(crate) fn accounts() -> accounts::Accounts {
+    index_path()
+        .map(|path| accounts::Accounts::load(&path))
+        .unwrap_or_default()
+}
+
+/// Names the active account after a successful key check, writing the
+/// index only when something changed.
+pub(crate) fn label_active(owner: &str, key_name: &str) {
+    let before = accounts();
+    let mut index = before.clone();
+    if index.label_active(owner, key_name) && index != before {
+        save_index(&index);
+    }
+}
+
+/// Makes `secret` the active account, adding it (and its credential-store
+/// slot) when new. Failures are logged: the main key must keep working.
+async fn record_active(secret: &str, cx: &mut AsyncApp) {
+    let mut index = accounts();
+    let (id, is_new) = index.add_active(&accounts::fingerprint(secret));
+    if is_new {
+        let bytes = secret.as_bytes().to_vec();
+        let url = accounts::slot_url(id);
+        if let Err(err) = cx
+            .update(|cx| cx.write_credentials(&url, ACCOUNT, &bytes))
+            .await
+        {
+            eprintln!("rbxstudio: the account's key could not be stored: {err}");
+            return;
+        }
+    }
+    save_index(&index);
+}
+
+/// Makes a stored account's key the one in use.
+pub(crate) async fn switch(id: u32, cx: &mut AsyncApp) -> anyhow::Result<()> {
+    let url = accounts::slot_url(id);
+    let stored = cx.update(|cx| cx.read_credentials(&url)).await?;
+    let secret = stored
+        .and_then(|(_, secret)| String::from_utf8(secret).ok())
+        .map(|secret| secret.trim().to_string())
+        .filter(|secret| !secret.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("That account's key is no longer in the system keychain.")
+        })?;
+    save(ApiKey::new(secret), cx).await?;
+    let mut index = accounts();
+    if index.set_active(id) {
+        save_index(&index);
+    }
+    Ok(())
+}
+
+/// Deletes an account's stored key; removing the active one also forgets
+/// the main entry.
+pub(crate) async fn remove(id: u32, cx: &mut AsyncApp) -> anyhow::Result<()> {
+    let url = accounts::slot_url(id);
+    cx.update(|cx| cx.delete_credentials(&url)).await?;
+    let mut index = accounts();
+    let was_active = index.active == Some(id);
+    index.remove(id);
+    save_index(&index);
+    if was_active {
+        forget(cx).await?;
+    }
     Ok(())
 }
 

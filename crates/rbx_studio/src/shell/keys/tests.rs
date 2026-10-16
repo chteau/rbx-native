@@ -1,63 +1,45 @@
 use super::*;
 
-fn ctrl_shift() -> Modifiers {
-    Modifiers {
-        control: true,
-        shift: true,
-        ..Modifiers::none()
-    }
+fn action(keys: &str) -> Option<Action> {
+    action_for(&Keystroke::parse(keys).unwrap())
 }
 
 #[test]
 fn delete_and_backspace_both_delete_with_no_modifiers_required() {
-    assert_eq!(
-        action_for("delete", Modifiers::none()),
-        Some(Action::Delete)
-    );
-    assert_eq!(
-        action_for("backspace", Modifiers::none()),
-        Some(Action::Delete)
-    );
+    assert_eq!(action("delete"), Some(Action::Delete));
+    assert_eq!(action("backspace"), Some(Action::Delete));
 }
 
 #[test]
 fn ctrl_shift_p_and_f_insert_part_and_folder() {
-    assert_eq!(action_for("p", ctrl_shift()), Some(Action::InsertPart));
-    assert_eq!(action_for("f", ctrl_shift()), Some(Action::InsertFolder));
+    assert_eq!(action("secondary-shift-p"), Some(Action::InsertPart));
+    assert_eq!(action("secondary-shift-f"), Some(Action::InsertFolder));
 }
 
 #[test]
 fn ctrl_i_opens_the_insert_picker_and_ctrl_shift_i_does_not() {
-    let ctrl = Modifiers {
-        control: true,
-        ..Modifiers::none()
-    };
-    assert_eq!(action_for("i", ctrl), Some(Action::Insert));
-    assert_eq!(action_for("i", ctrl_shift()), None);
-    assert_eq!(action_for("i", Modifiers::none()), None);
+    assert_eq!(action("secondary-i"), Some(Action::Insert));
+    assert_eq!(action("secondary-shift-i"), None);
+    assert_eq!(action("i"), None);
 }
 
 #[test]
 fn f2_renames_only_unmodified() {
-    assert_eq!(action_for("f2", Modifiers::none()), Some(Action::Rename));
-    assert_eq!(action_for("f2", ctrl_shift()), None);
+    assert_eq!(action("f2"), Some(Action::Rename));
+    assert_eq!(action("ctrl-shift-f2"), None);
 }
 
 #[test]
 fn p_and_f_without_both_modifiers_do_nothing() {
-    assert_eq!(action_for("p", Modifiers::none()), None);
-    assert_eq!(action_for("f", Modifiers::none()), None);
-    let shift_only = Modifiers {
-        shift: true,
-        ..Modifiers::none()
-    };
-    assert_eq!(action_for("p", shift_only), None);
+    assert_eq!(action("p"), None);
+    assert_eq!(action("f"), None);
+    assert_eq!(action("shift-p"), None);
 }
 
 #[test]
 fn any_other_key_does_nothing() {
-    assert_eq!(action_for("w", Modifiers::none()), None);
-    assert_eq!(action_for("enter", Modifiers::none()), None);
+    assert_eq!(action("w"), None);
+    assert_eq!(action("enter"), None);
 }
 
 #[test]

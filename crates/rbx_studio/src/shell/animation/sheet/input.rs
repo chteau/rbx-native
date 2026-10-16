@@ -186,55 +186,54 @@ impl Shell {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let m = &key.modifiers;
-        let ctrl = m.control || m.platform;
+        use crate::shortcuts::{pressed, Command};
         if self.anim.mode == super::super::Mode::Curves
             && self.anim.editor.curves.is_some()
-            && !ctrl
-            && self.curve_key_press(key.key.as_str(), m.alt)
+            && self.curve_key_press(key)
         {
             cx.notify();
             return true;
         }
         let e = &mut self.anim.editor;
-        match key.key.as_str() {
-            "space" => e.toggle_play(),
-            "i" if !ctrl => {
-                let joint = e.joint.clone();
-                self.key_joints(joint.as_deref(), cx);
-                return true;
-            }
-            "x" | "delete" | "backspace" if !ctrl => {
-                e.delete_selected();
-            }
-            "left" => e.step_frames(-1),
-            "right" => e.step_frames(1),
-            "up" => e.jump_key(true),
-            "down" => e.jump_key(false),
-            "home" => e.set_time(0.0),
-            "end" => {
-                let length = e.clip.length();
-                e.set_time(length);
-            }
-            "a" if m.alt => e.selected.clear(),
-            "a" if !ctrl => {
-                let all = e
-                    .clip
-                    .keyframes
-                    .iter()
-                    .flat_map(|k| k.poses.keys().map(move |j| (j.clone(), k.time)))
-                    .collect();
-                e.selected = all;
-            }
-            "escape" => e.selected.clear(),
-            "f" if !ctrl => self.fit_timeline(),
-            "c" if ctrl => {
-                e.copy();
-            }
-            "v" if ctrl => {
-                e.paste();
-            }
-            _ => return false,
+        if pressed(Command::AnimPlay, key) {
+            e.toggle_play();
+        } else if pressed(Command::AnimInsertKey, key) {
+            let joint = e.joint.clone();
+            self.key_joints(joint.as_deref(), cx);
+            return true;
+        } else if pressed(Command::AnimDeleteKeys, key) {
+            e.delete_selected();
+        } else if pressed(Command::AnimPrevFrame, key) {
+            e.step_frames(-1);
+        } else if pressed(Command::AnimNextFrame, key) {
+            e.step_frames(1);
+        } else if pressed(Command::AnimPrevKey, key) {
+            e.jump_key(true);
+        } else if pressed(Command::AnimNextKey, key) {
+            e.jump_key(false);
+        } else if pressed(Command::AnimStart, key) {
+            e.set_time(0.0);
+        } else if pressed(Command::AnimEnd, key) {
+            let length = e.clip.length();
+            e.set_time(length);
+        } else if pressed(Command::AnimSelectNone, key) || key.key == "escape" {
+            e.selected.clear();
+        } else if pressed(Command::AnimSelectAll, key) {
+            let all = e
+                .clip
+                .keyframes
+                .iter()
+                .flat_map(|k| k.poses.keys().map(move |j| (j.clone(), k.time)))
+                .collect();
+            e.selected = all;
+        } else if pressed(Command::AnimFit, key) {
+            self.fit_timeline();
+        } else if pressed(Command::AnimCopy, key) {
+            e.copy();
+        } else if pressed(Command::AnimPaste, key) {
+            e.paste();
+        } else {
+            return false;
         }
         cx.notify();
         true

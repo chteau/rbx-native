@@ -50,16 +50,25 @@ impl Scale {
 /// layout. Both spellings are accepted anyway, since a layout that puts `+`
 /// on its own key (or an AZERTY numeric row) reports the other one.
 pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Scale> {
-    if !modifiers.control || modifiers.alt || modifiers.function {
-        return None;
-    }
+    use crate::shortcuts::{pressed, Command};
 
-    match key {
-        "=" | "+" | "plus" | "equal" => Some(Scale::In),
-        "-" | "_" | "minus" => Some(Scale::Out),
-        "0" => Some(Scale::Reset),
-        _ => None,
-    }
+    let key = match key {
+        "plus" | "equal" | "+" => "=",
+        "minus" | "_" => "-",
+        other => other,
+    };
+    let keystroke = Keystroke {
+        key: key.into(),
+        modifiers,
+        key_char: None,
+    };
+    [
+        (Command::UiScaleIn, Scale::In),
+        (Command::UiScaleOut, Scale::Out),
+        (Command::UiScaleReset, Scale::Reset),
+    ]
+    .into_iter()
+    .find_map(|(command, scale)| pressed(command, &keystroke).then_some(scale))
 }
 
 pub(crate) fn action_for_keystroke(keystroke: &Keystroke) -> Option<Scale> {
