@@ -124,13 +124,16 @@ pub(crate) enum Panel {
     /// Who else is working on the place and where (`shell::team_presence`).
     /// Shut until asked for, like the Terrain Editor.
     Collaborators,
+    /// The plugins' dock widgets, one tab each. Shut until a plugin
+    /// enables a widget.
+    PluginWidgets,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 11] = [
+    pub(crate) const ALL: [Panel; 12] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -142,6 +145,7 @@ impl Panel {
         Panel::CallStack,
         Panel::TerrainEditor,
         Panel::Collaborators,
+        Panel::PluginWidgets,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
@@ -149,7 +153,7 @@ impl Panel {
     /// closing its torn-out window puts it back.
     pub(crate) fn home(self) -> Edge {
         match self {
-            Panel::Explorer | Panel::Collaborators => Edge::Right,
+            Panel::Explorer | Panel::Collaborators | Panel::PluginWidgets => Edge::Right,
             Panel::Properties | Panel::TerrainEditor => Edge::Left,
             Panel::Output
             | Panel::Viewport
@@ -176,6 +180,7 @@ impl Panel {
             Panel::CallStack => "Call Stack",
             Panel::TerrainEditor => "Terrain Editor",
             Panel::Collaborators => "Collaborators",
+            Panel::PluginWidgets => "Plugin Widgets",
         }
     }
 
@@ -183,7 +188,10 @@ impl Panel {
     /// leaves it shut: a tool opened from the ribbon, not a fixture of the
     /// window.
     pub(crate) fn starts_closed(self) -> bool {
-        matches!(self, Panel::TerrainEditor | Panel::Collaborators)
+        matches!(
+            self,
+            Panel::TerrainEditor | Panel::Collaborators | Panel::PluginWidgets
+        )
     }
 
     /// Whether its strip controls are a toolbar that takes the rest of the

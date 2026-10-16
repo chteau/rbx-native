@@ -1,0 +1,5 @@
+name = "Tint"
+version = "0.1.0"
+description = "Colours the selected parts with a colour you pick."
+entry = "init.luau"
+permissions = ["selection", "dom.write"]

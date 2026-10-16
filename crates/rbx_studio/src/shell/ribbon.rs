@@ -135,14 +135,7 @@ impl Shell {
                 file_tiles(),
             ],
             Tab::Test => vec![self.test_tiles(cx), viewport_tiles()],
-            Tab::Plugins => vec![placeholders(
-                "plugins",
-                &[
-                    (IconName::Wrench, "Manage"),
-                    (IconName::Package, "Folder"),
-                    (IconName::FilePlus, "Create"),
-                ],
-            )],
+            Tab::Plugins => self.plugin_ribbon_groups(cx),
         };
 
         // One separator between groups, none at either end — the frame's own

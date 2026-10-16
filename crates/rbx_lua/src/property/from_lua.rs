@@ -72,14 +72,18 @@ pub(crate) fn lua_to_variant(
     value: &Value,
 ) -> Result<Variant> {
     match value_type {
+        // `nil` reads as `false` (plugins such as F3X write `Visible = nil`).
         "bool" => match value {
             Value::Boolean(flag) => Ok(Variant::Bool(*flag)),
+            Value::Nil => Ok(Variant::Bool(false)),
             other => Err(type_error(name, "boolean", other)),
         },
         // A ContentId (`Decal.Texture`) is the asset URI as a plain string,
         // which is how a place file stores one too.
         "string" | "ProtectedString" | "BinaryString" | "ContentId" => match value {
             Value::String(text) => Ok(Variant::String(text.to_str()?.to_string())),
+            // Roblox coerces a number the way `tostring` would (`Text = 5`).
+            Value::Integer(_) | Value::Number(_) => Ok(Variant::String(value.to_string()?)),
             other => Err(type_error(name, "string", other)),
         },
         "float" => Ok(Variant::Float32(number(name, value)? as f32)),
@@ -177,7 +181,7 @@ fn reference(name: &str, class: &str, value: &Value) -> Result<Variant> {
             return Ok(Variant::Ref(instance.referent()));
         }
     }
-    // `Variant` has no null reference, so clearing an object property would have
-    // to erase the entry entirely, which `WeakDom::set_property` cannot express.
+    // `nil` never gets here: `property::set` clears the entry instead, since
+    // `Variant` has no null reference.
     Err(type_error(name, class, value))
 }

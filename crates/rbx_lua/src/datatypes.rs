@@ -6,11 +6,15 @@
 
 pub(crate) mod cframe;
 pub(crate) mod color3;
+pub(crate) mod extra;
 pub(crate) mod font;
+pub(crate) mod int16;
 pub(crate) mod misc;
+pub(crate) mod params;
 pub(crate) mod physical_properties;
 pub(crate) mod rect;
 pub(crate) mod sequence;
+pub(crate) mod udim;
 pub(crate) mod vector3;
 
 use mlua::{Lua, Result, Value};
@@ -63,5 +67,32 @@ pub(crate) fn register(lua: &Lua) -> Result<()> {
         "ColorSequenceKeypoint",
         sequence::color_sequence_keypoint(lua)?,
     )?;
+    extra::register(lua)?;
+    params::register(lua)?;
+    udim::register(lua)?;
+    int16::register(lua)?;
+    lowercase_constructors(lua)
+}
+
+/// `Vector3.fromNormalId`, `CFrame.fromAxisAngle`…: Roblox answers to the
+/// constructors' lowercase-first spellings too.
+fn lowercase_constructors(lua: &Lua) -> Result<()> {
+    for global in ["Vector3", "Vector2", "CFrame", "Color3", "UDim2"] {
+        let table: mlua::Table = lua.globals().get(global)?;
+        let mut aliases = Vec::new();
+        for pair in table.pairs::<String, Value>() {
+            let (key, value) = pair?;
+            let mut chars = key.chars();
+            if let Some(first) = chars.next().filter(char::is_ascii_uppercase) {
+                let alias: String = first.to_ascii_lowercase().to_string() + chars.as_str();
+                aliases.push((alias, value));
+            }
+        }
+        for (alias, value) in aliases {
+            if table.get::<Value>(alias.as_str())?.is_nil() {
+                table.set(alias, value)?;
+            }
+        }
+    }
     Ok(())
 }

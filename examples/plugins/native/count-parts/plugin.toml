@@ -1,0 +1,5 @@
+name = "Count parts"
+version = "0.1.0"
+description = "Logs how many BaseParts are under Workspace."
+entry = "count.wat"
+permissions = ["dom.read"]

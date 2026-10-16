@@ -33,6 +33,7 @@ impl LuaPhysicalProperties {
 
 impl UserData for LuaPhysicalProperties {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "PhysicalProperties");
         fields.add_field_method_get("Density", |_, this| Ok(this.fields().0));
         fields.add_field_method_get("Friction", |_, this| Ok(this.fields().1));
         fields.add_field_method_get("Elasticity", |_, this| Ok(this.fields().2));

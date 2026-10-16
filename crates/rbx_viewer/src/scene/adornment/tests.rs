@@ -316,7 +316,7 @@ fn handles_draw_one_handle_per_enabled_face() {
 }
 
 #[test]
-fn arc_handles_draw_one_ring_per_enabled_axis() {
+fn arc_handles_draw_one_coloured_ring_per_enabled_axis() {
     let planned = plan_of(
         "ArcHandles",
         vec![(
@@ -328,11 +328,20 @@ fn arc_handles_draw_one_ring_per_enabled_axis() {
             }),
         )],
     );
-    let rings = solids(&planned[0]);
-    assert_eq!(rings.len(), 2);
-    for ring in rings {
-        assert!(matches!(ring.mesh, Mesh::Arc { .. }));
-    }
+    // A ring and its grab sphere per enabled axis, each in its axis colour
+    // as Studio draws them: X red, Z blue.
+    let pieces = solids(&planned[0]);
+    let rings: Vec<_> = pieces
+        .iter()
+        .filter(|piece| matches!(piece.mesh, Mesh::Arc { .. }))
+        .collect();
+    let grips = pieces
+        .iter()
+        .filter(|piece| matches!(piece.mesh, Mesh::Sphere { .. }))
+        .count();
+    assert_eq!((rings.len(), grips), (2, 2));
+    assert!(rings[0].color[0] > rings[0].color[1] && rings[0].color[0] > rings[0].color[2]);
+    assert!(rings[1].color[2] > rings[1].color[0] && rings[1].color[2] > rings[1].color[1]);
 }
 
 /// Documented: "the sphere's geometry consists of a ring/outline in

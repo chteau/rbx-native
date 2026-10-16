@@ -244,6 +244,14 @@ fn display_uses_plus_separated_title_case_on_linux() {
     assert_eq!(display(&parsed("up")), "Up");
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn display_uses_modifier_glyphs_on_macos() {
+    assert_eq!(display(&parsed("cmd-shift-g")), "⇧⌘G");
+    assert_eq!(display(&parsed("f10")), "F10");
+    assert_eq!(display(&parsed("up")), "Up");
+}
+
 #[test]
 fn bindable_rejects_bare_modifier_keys() {
     assert!(!bindable(&key("shift", shift())));

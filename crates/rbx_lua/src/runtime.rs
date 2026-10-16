@@ -154,7 +154,7 @@ impl Runtime {
     }
 }
 
-fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
+pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
     let globals = lua.globals();
 
     let output_ctx = ctx.clone();
@@ -168,6 +168,11 @@ fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
             output_ctx.print(parts);
             Ok(())
         })?,
+    )?;
+
+    globals.set(
+        "version",
+        lua.create_function(|_, ()| Ok(env!("CARGO_PKG_VERSION")))?,
     )?;
 
     datatypes::register(lua)?;
@@ -187,5 +192,103 @@ fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
         globals.set("Workspace", LuaInstance::new(referent, ctx.clone()))?;
     }
 
-    Ok(())
+    install_graphemes(lua)?;
+    install_error_strings(lua)
+}
+
+/// `utf8.graphemes(s, i?, j?)`: iterates the grapheme clusters of `s`
+/// (bytes `i` to `j`), giving each one's first and last byte position.
+fn install_graphemes(lua: &Lua) -> Result<(), LuaError> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let ranges = lua.create_function(
+        |lua, (text, from, to): (mlua::LuaString, Option<i64>, Option<i64>)| {
+            let bytes = text.as_bytes();
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            let len = text.len() as i64;
+            let from = from.unwrap_or(1).max(1);
+            let to = to.unwrap_or(len).min(len);
+            let out = lua.create_table()?;
+            for (start, cluster) in text.grapheme_indices(true) {
+                let first = start as i64 + 1;
+                let last = start as i64 + cluster.len() as i64;
+                if first >= from && last <= to {
+                    out.push(lua.create_sequence_from([first, last])?)?;
+                }
+            }
+            Ok(out)
+        },
+    )?;
+    let graphemes: mlua::Function = lua
+        .load(
+            r#"
+            local ranges = ...
+            return function(s, i, j)
+                local list, k = ranges(s, i, j), 0
+                return function()
+                    k += 1
+                    local r = list[k]
+                    if r then return r[1], r[2] end
+                end
+            end
+            "#,
+        )
+        .set_name("=utf8")
+        .call(ranges)?;
+    lua.globals()
+        .get::<mlua::Table>("utf8")?
+        .set("graphemes", graphemes)
+}
+
+/// What a script sees of an error a binding raised: Roblox hands scripts
+/// the bare message ("Part is not a valid member of Workspace"), never an
+/// error object, and code such as Roact formats it with `%s`.
+fn error_text(error: &LuaError) -> String {
+    match error {
+        LuaError::CallbackError { cause, .. } => error_text(cause),
+        LuaError::RuntimeError(message) => message.clone(),
+        LuaError::SyntaxError { message, .. } => message.clone(),
+        LuaError::WithContext { cause, .. } => error_text(cause),
+        other => other.to_string(),
+    }
+}
+
+/// Wraps `pcall`, `xpcall` and `coroutine.resume` so a caught binding error
+/// comes back as its message string (see `error_text`); errors scripts
+/// raise themselves (strings, tables) pass through untouched.
+fn install_error_strings(lua: &Lua) -> Result<(), LuaError> {
+    let text = lua.create_function(|lua, value: Value| match value {
+        Value::Error(error) => Ok(Value::String(lua.create_string(error_text(&error))?)),
+        other => Ok(other),
+    })?;
+    lua.load(
+        r#"
+        local text, rawpcall, rawxpcall, resume = ...
+        local function caught(ok, ...)
+            if ok then
+                return true, ...
+            end
+            return false, text((...))
+        end
+        pcall = function(f, ...)
+            return caught(rawpcall(f, ...))
+        end
+        xpcall = function(f, handler, ...)
+            return rawxpcall(f, function(e)
+                return handler(text(e))
+            end, ...)
+        end
+        coroutine.resume = function(co, ...)
+            return caught(resume(co, ...))
+        end
+        "#,
+    )
+    .set_name("=errors")
+    .call::<()>((
+        text,
+        lua.globals().get::<Value>("pcall")?,
+        lua.globals().get::<Value>("xpcall")?,
+        lua.globals()
+            .get::<mlua::Table>("coroutine")?
+            .get::<Value>("resume")?,
+    ))
 }

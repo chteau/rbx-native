@@ -16,7 +16,7 @@ use glam::{Mat4, Vec3};
 use rbx_dom::Variant;
 use rbx_reflection::ReflectionDatabase;
 
-use super::{Adornee, Context, Mesh, Piece};
+use super::{Adornee, Context, Mesh, Piece, Solid};
 use crate::textures::NormalId;
 
 /// `Enum.HandlesStyle`, from the API dump: `Resize` draws spheres,
@@ -32,7 +32,18 @@ const GAP: f32 = 0.15;
 /// An arc's ring sits just outside the adornee, and its tube is a fraction
 /// of the ring.
 const ARC_CLEARANCE: f32 = 1.1;
-const ARC_TUBE: f32 = 0.04;
+const ARC_TUBE: f32 = 0.012;
+/// Each ring's grab sphere, as a fraction of the ring.
+const ARC_GRIP: f32 = 0.06;
+/// Studio colours each ring by its axis whatever `Color3` says — X red,
+/// Y green, Z blue (sampled from Studio, sRGB) — with one sphere on each
+/// ring to grab: X's toward the front, Y's to the left, Z's on top.
+const ARC_COLORS: [[f32; 3]; 3] = [
+    [178.0 / 255.0, 34.0 / 255.0, 42.0 / 255.0],
+    [28.0 / 255.0, 178.0 / 255.0, 44.0 / 255.0],
+    [26.0 / 255.0, 34.0 / 255.0, 186.0 / 255.0],
+];
+const ARC_GRIPS: [Vec3; 3] = [Vec3::NEG_Z, Vec3::NEG_X, Vec3::Y];
 
 pub(super) fn pieces(
     database: &ReflectionDatabase,
@@ -120,21 +131,39 @@ fn arc_handles(context: &Context<'_>) -> Vec<Piece> {
     [(0, axes.x), (1, axes.y), (2, axes.z)]
         .into_iter()
         .filter(|&(_, enabled)| enabled)
-        .map(|(axis, _)| {
+        .flat_map(|(axis, _)| {
             // The ring lies in the plane the axis is normal to, so it is
             // sized by the two extents it encircles.
             let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
             let radius = (half[a] * half[a] + half[b] * half[b]).sqrt() * ARC_CLEARANCE;
             let mut normal = Vec3::ZERO;
             normal[axis] = 1.0;
-            context.solid(
-                Mesh::Arc {
-                    radius,
-                    tube: radius * ARC_TUBE,
-                    sweep: 360.0,
-                },
-                adornee.frame * ring_plane(normal),
-            )
+            let color = ARC_COLORS[axis].map(crate::scene::srgb_to_linear);
+            let piece = |mesh, frame| {
+                Piece::Solid(Solid {
+                    mesh,
+                    frame,
+                    color,
+                    alpha: context.alpha,
+                })
+            };
+            let grip = Mat4::from_translation(ARC_GRIPS[axis] * radius);
+            [
+                piece(
+                    Mesh::Arc {
+                        radius,
+                        tube: radius * ARC_TUBE,
+                        sweep: 360.0,
+                    },
+                    adornee.frame * ring_plane(normal),
+                ),
+                piece(
+                    Mesh::Sphere {
+                        radius: radius * ARC_GRIP,
+                    },
+                    adornee.frame * grip,
+                ),
+            ]
         })
         .collect()
 }

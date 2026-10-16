@@ -70,6 +70,8 @@ impl Shell {
             ViewportAction::Joint { index, to, phase } => {
                 self.autorig_drag_joint(*index, *to, *phase, cx)
             }
+            ViewportAction::PluginHandle(event) => self.plugin_handle_event(event.clone(), cx),
+            ViewportAction::PluginMouse(input, at) => self.plugin_mouse(*input, *at, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {
@@ -102,6 +104,7 @@ impl Shell {
         let covered = self.covered.clone();
         let picking = self.edits.ref_pick.is_armed();
         let mut target = None;
+        let mut mouse = None;
         // Against the rig as it is drawn, posed (see `Shell::pose_in`).
         let posed = self.pose_in();
         let hovered: Vec<Selected> = ray
@@ -138,6 +141,11 @@ impl Shell {
                     let (frame, hit) = target::under(&surface, ray, grid)?;
                     Some((frame, hit, surface))
                 });
+                mouse = hits
+                    .first()
+                    .copied()
+                    .zip(target.as_ref())
+                    .map(|(part, t)| (part, t.1.to_array()));
                 selection::outlined(&self.dom, &self.database, &[referent])
                     .into_iter()
                     // A hover entirely inside the current selection adds only a
@@ -153,6 +161,7 @@ impl Shell {
             })
             .unwrap_or_default();
         self.pose_out(posed);
+        self.plugins.mouse = mouse;
 
         self.viewport
             .update(cx, |viewport, _| viewport.set_hover_target(target));

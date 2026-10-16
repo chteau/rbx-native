@@ -81,6 +81,59 @@ Roblox's own engine.
   loader refused with the reason. The Model and Script menus follow the
   folder live, whether a template changed in the window or by hand.
 
+### Plugins (`rbx_lua::plugin`, `rbx_wasm`, `shell::plugins`)
+- [x] rbx-native's own plugin API: a folder with a `plugin.toml` (name,
+  entry, permissions `dom.read`/`dom.write`/`selection`/`debugger`/
+  `http:<host>`) whose entry is either Luau — run in the same sandboxed
+  `mlua` host as Roblox plugins, plus an `rbxnative` global (`command`,
+  `notify`, `hasPermission`) — or a WebAssembly module run under
+  `wasmtime` with a fuel budget per call, a 64 MiB memory cap and one JSON
+  host call whose methods are gated by the manifest (`docs/plugins.md`
+  has the ABI). Distinct from Roblox plugin compatibility, below.
+- [x] An allow-listed subset of real Roblox plugin APIs, for the plugins
+  in Studio's own Plugins folder (found in the Vinegar prefix on Linux)
+  and rbx-native's: `Plugin` (`CreateToolbar`/`CreateButton` on the
+  Plugins tab, `CreatePluginAction`, `CreatePluginMenu`,
+  `CreateDockWidgetPluginGui`, `GetSetting`/`SetSetting`, `OpenScript`,
+  `Unloading`), `Selection`, `ChangeHistoryService`,
+  `HttpService:RequestAsync`/`GetAsync`/`PostAsync` (each new host asks
+  the user first), `RunService`, `CollectionService`, signals,
+  `task`/`wait`, instance events and attributes, `require` inside a
+  `.rbxm`. Each plugin runs in its own Luau VM that persists between
+  inputs; the place's DOM is lent to it per input, and its own instances
+  (script tree, widgets, `CoreGui` adornments) are parked outside the
+  place so they never reach the Explorer, the file or the undo history.
+  Widgets are drawn by the editor's own GUI renderer in a Plugin Widgets
+  dock — not pixel-faithful Studio chrome (see Explicitly impossible) —
+  with clicks, hover, wheel and `TextBox` input sent back. A Manage
+  Plugins dialog switches each plugin on or off.
+- [x] **Making those handles interactive.** A plugin's `Handles`,
+  `ArcHandles` and `*HandleAdornment`s are drawn in the 3D view through
+  the render thread's mirror, picked under the cursor before the editor's
+  own draggers, and fire `MouseButton1Down`/`MouseDrag(face, distance)`/
+  `MouseButton1Up` (`MouseDrag(axis, relativeAngle, deltaRadius)` for arcs)
+  at the plugin. A new `Handles` shows all six faces, as Roblox's does.
+- [x] **A floating, non-dockable plugin widget surface** —
+  `plugin:CreateFloatingWidget(id, {Size, Position?, LightDismiss?})`, an
+  rbx-native extension rather than Studio parity (from the devforum's
+  [`allow-floating-non-resizeable-widgets`](https://devforum.roblox.com/t/allow-floating-non-resizeable-widgets/4193893)):
+  its GUI is drawn above the editor at the cursor or a given point and
+  dismissed by a click outside it when `LightDismiss` is set.
+- [x] **The built-in colour pickers on the plugin API** —
+  `plugin:PromptColor3(initial?)` and `plugin:PromptBrickColor(initial?)`
+  open the Properties panel's own Color3 picker and BrickColor palette
+  and return the choice (or `nil`), from the devforum's
+  [`allow-plugins-to-use-color-picker`](https://devforum.roblox.com/t/allow-plugins-to-use-color-picker/63257);
+  an rbx-native addition, not Studio parity.
+- [x] **Debugger control on the plugin API** — `plugin:GetDebuggerManager()`
+  (and a `DebuggerManager()` global), shaped after Roblox's
+  `DebuggerManager`/`ScriptDebugger`: breakpoints with conditions,
+  watches, `Run`/`Resume`/`StepIn`/`StepOver`/`StepOut`/`Stop`, the call
+  stack, and `EncounteredBreak`/`Resuming`/`BreakpointAdded`… signals,
+  driving the Edit-context script debugger (from the devforum's
+  [`let-plugins-access-debuggermanager`](https://devforum.roblox.com/t/let-plugins-access-debuggermanager/193584)).
+  Breakpoints and watches stay in the editor session, never the file.
+
 ### Renderer (`rbx_viewer`)
 - [x] Lighting model reverse-engineered from Roblox's own decompiled
   shaders and calibrated pixel-by-pixel against real Studio captures: two
@@ -1854,6 +1907,10 @@ Roblox's own engine.
   a game `print` or `warn` now carries its `Script:line` for **Show
   Source**, and a click opens it. Only a call that skips the shadowed
   name (`getfenv().print`) still prints flat.
+- [x] **Output window: a User Plugin context.** What a plugin prints,
+  warns or errors is filed under its own **User Plugin** bucket in the
+  context filter (and no longer under **Edit**), each row named after
+  the plugin that said it (see Plugins above).
 - [x] **The viewport no longer goes black, with the render thread's stats
   frozen, after a scripted full reload**
   (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`). Fixed by `ab24e6e`, five hours after
@@ -2736,9 +2793,6 @@ Roblox's own engine.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
-- [ ] 📋 **Output window: a User Plugin context.** The context filter has
-  no **User Plugin** bucket, since this editor runs no plugins to produce
-  one. It belongs to whatever first runs plugin code in the editor.
 - [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/
@@ -2819,61 +2873,6 @@ Roblox's own engine.
   pick up as genuine hardware, similar in spirit to the OS-level mouse
   capture this project's own free camera already does) before assuming
   it's buildable at all, let alone to what fidelity.
-
-### Plugins
-- [ ] 📋 rbx-native's own plugin API (Luau via `mlua` sandbox, Rust
-  compiled to WASM and run under `wasmtime` for anything that needs to be
-  both native and actually sandboxed) — distinct from Roblox plugin
-  compatibility, see below.
-- [ ] 📋 A allow-listed subset of real Roblox plugin APIs
-  (`Plugin`/`PluginToolbar`, `Selection`, `ChangeHistoryService`,
-  `HttpService:RequestAsync`) for plugins that don't need Roblox's own UI
-  system — see [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)
-  for what a plugin fundamentally can't do here.
-- [ ] 📋 **Making those handles interactive.** The docs are explicit that
-  a `Handles`/`ArcHandles`/`*HandleAdornment` listens for input only under
-  a player's `PlayerGui` or the `CoreGui`, and firing `MouseButton1Down`/
-  `MouseDrag`/`MouseButton1Up` at a script is the plugin API's business
-  (the item above this one), not the renderer's — so what a place file
-  holds is drawn, and nothing is draggable yet.
-- [ ] 📋 **A floating, non-dockable plugin widget surface.** A real,
-  well-read devforum request
-  ([`allow-floating-non-resizeable-widgets`](https://devforum.roblox.com/t/allow-floating-non-resizeable-widgets/4193893),
-  read in full): real Roblox plugins are limited to `DockWidgetPluginGui`
-  panels docked into Studio's own layout, with no way to render a floating
-  overlay (a cursor-anchored context menu, a `MaterialPicker`-style
-  popover) the way Studio's own first-party UI can. Explicitly **not**
-  Studio parity — Roblox has never shipped this, so this would be an
-  rbx-native-only extension of the plugin API from the item above, not a
-  claim about matching real Studio's `Plugin`/`PluginGui` classes. Doesn't
-  touch the saved place file at all (this is plugin-rendered UI chrome,
-  not DOM data), so it carries none of this document's usual Roblox
-  -compatibility risk.
-- [ ] 📋 **Expose the built-in colour pickers to the plugin API** —
-  another well-read devforum request
-  ([`allow-plugins-to-use-color-picker`](https://devforum.roblox.com/t/allow-plugins-to-use-color-picker/63257),
-  24 replies, one of the higher-engagement threads in the whole category):
-  real Roblox plugins have to build their own `Color3`/`BrickColor` picker
-  UI from scratch today, duplicating a widget every user already knows
-  from the Properties panel. Since this project's own real Properties
-  panel already needs a `BrickColor` swatch-and-picker widget (see above),
-  exposing that same widget to the (also already-planned) plugin API as a
-  `plugin:PromptColor3()`/`plugin:PromptBrickColor()`-shaped call is
-  mostly reuse, not new UI work. Same caveat as the item above: Roblox
-  hasn't shipped this on its plugin API either, so frame it as this
-  project's own plugin-API addition, not asserted Studio-plugin parity.
-- [ ] 📋 **Expose debugger control to the plugin API.** A third well-read
-  devforum request
-  ([`let-plugins-access-debuggermanager`](https://devforum.roblox.com/t/let-plugins-access-debuggermanager/193584),
-  16 replies): real Roblox's `DebuggerManager` is reachable from the
-  Command Bar but not from ordinary plugins, which blocks a whole category
-  of plugin (the thread's own motivating case: a VS Code user wants a
-  plugin that mirrors external editor breakpoints into Studio's debugger
-  instead of maintaining two separate breakpoint sets). Builds on the
-  Edit-context script debugger (see "What's been implemented" → Editor) —
-  breakpoint/Watch/Call-Stack state lives in the editor session, never the
-  saved place file, so exposing it to a plugin carries the same "no file
-  -format risk" property as the two items above.
 
 ### From Roblox's own Creator Roadmap (2026 fall update)
 

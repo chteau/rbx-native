@@ -57,6 +57,8 @@ impl Shell {
     /// snapshot pushed for a write that never happened is a Ctrl+Z that
     /// reverts nothing, having cleared the redo stack to offer it.
     pub(super) fn push_history_snapshot(&mut self, before: WeakDom) {
+        // Plugin edits made before this one are a step of their own, below.
+        self.commit_plugin_step();
         // Every recorded edit lands here, including the ones (a script
         // editor's `Source` write) that never reach `reflect_changes`.
         self.recovery.changed();
@@ -87,6 +89,7 @@ impl Shell {
         // `shell::scripts`), so without this an undo moments after typing
         // would step over text that had not become a history entry yet, and
         // the pending write would then land on top of the undone DOM.
+        self.commit_plugin_step();
         self.flush_script_edits(cx);
         if let Some((previous, changes)) = self.history.undo(self.dom.clone()) {
             self.install(previous, &changes, cx);
@@ -100,6 +103,7 @@ impl Shell {
         if self.redo_animation(cx) {
             return;
         }
+        self.commit_plugin_step();
         self.flush_script_edits(cx);
         if let Some((next, changes)) = self.history.redo(self.dom.clone()) {
             self.install(next, &changes, cx);
@@ -117,7 +121,12 @@ impl Shell {
     /// the viewport is told, since what the viewport refreshes on this side
     /// depends on it.
     fn install(&mut self, dom: WeakDom, changes: &[Change], cx: &mut Context<Self>) {
+        // Instances allocated after `dom` was copied may live on outside it
+        // (a plugin's parked widgets, see `shell::plugins`): its allocator
+        // must never hand their referents out again.
+        let floor = self.dom.next_ref();
         self.dom = dom;
+        self.dom.raise_next_ref(floor);
         self.rebuild_explorer(cx);
         let kept: Vec<rbx_dom::Ref> = self
             .selected_all()

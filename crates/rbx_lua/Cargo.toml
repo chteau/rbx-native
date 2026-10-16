@@ -11,8 +11,18 @@ license.workspace = true
 mlua = { version = "0.12", features = ["luau"] }
 rbx_dom = { path = "../rbx_dom" }
 rbx_reflection = { path = "../rbx_reflection" }
+# Plugin host: plugins ship as .rbxm/.rbxmx models, keep settings as JSON,
+# describe themselves in plugin.toml and reach the web through HttpService.
+rbx_binary = { path = "../rbx_binary" }
+rbx_xml = { path = "../rbx_xml" }
+serde_json = "1"
+toml = "0.9"
+ureq = "3"
+uuid = { version = "1", features = ["v4"] }
+# `utf8.graphemes`, a Roblox addition to Luau's utf8 library; already in the
+# build through the editor's text widgets.
+unicode-segmentation = "1"
 
 [dev-dependencies]
 # Integration tests script a real place file and need the bundled API dump.
-rbx_binary = { path = "../rbx_binary" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }

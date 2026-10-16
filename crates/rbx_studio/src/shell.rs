@@ -39,6 +39,7 @@ mod panel_window;
 mod panels;
 mod pivot;
 mod play;
+mod plugins;
 mod property_element;
 mod quality;
 mod recovery;
@@ -469,6 +470,8 @@ pub(crate) struct Shell {
     discord_idle_check: Option<Task<()>>,
     /// Play/Test without Studio — see `shell::play`.
     play: play::Play,
+    /// Roblox Studio plugins and rbx-native's own — see `shell::plugins`.
+    plugins: plugins::Plugins,
     /// "In Studio" on Roblox — see `shell::studio_presence`.
     studio_presence: studio_presence::StudioPresence,
     /// Collaborators through the presence relay — see `shell::team_presence`.
@@ -839,6 +842,7 @@ impl Shell {
             discord_idle: false,
             discord_idle_check: None,
             play: play::Play::new(play_sandbox, play_copy_name),
+            plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
             roblox_login: None,
@@ -889,6 +893,8 @@ impl Shell {
         shell.restore_roblox_session(cx);
         // Team presence: the mock feed, or the relay when turned on.
         shell.init_team_presence(cx);
+        // Loads and starts the installed plugins (see `shell::plugins`).
+        shell.plugins_start(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -1143,6 +1149,7 @@ impl Shell {
     /// Properties editor belonged to the old selection, and the viewport's
     /// outline and draggers have to move to the new one.
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
+        self.plugins_selection_changed(cx);
         self.edits.clear();
         self.attribute_edits.clear();
         self.sync_viewport_pick(cx);
@@ -1728,8 +1735,17 @@ impl Shell {
     /// The 3D view itself. No border: Row D's panels are told apart from it
     /// by their own elevation and surface, not by a line (see
     /// `UX_GUIDELINES.md` §3).
-    pub(super) fn viewport(&self) -> impl IntoElement {
-        div().size_full().child(self.viewport.clone())
+    pub(super) fn viewport(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let bounds = self.plugins.view_bounds.clone();
+        let measure = canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
+            .absolute()
+            .inset_0();
+        div()
+            .relative()
+            .size_full()
+            .child(self.viewport.clone())
+            .child(measure)
+            .children(self.plugin_viewport_overlays(cx))
     }
 }
 
@@ -1899,6 +1915,7 @@ impl Render for Shell {
             .children(self.animation_id_prompt_overlay(cx))
             .children(self.publish_result_overlay(cx))
             .children(self.command_palette(cx))
+            .children(self.plugin_overlays(window, cx))
             .children(self.theme_background(true))
     }
 }
