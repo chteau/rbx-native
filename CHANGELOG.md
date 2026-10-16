@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-17
+
+- **Play: Network Simulator.** A Network tile in the Test ribbon opens a
+  "Network simulation" popover shaped like Studio's: a Preset menu with
+  Studio's five built-ins (Ideal Fiber to Bad Connection (3G)) and saved
+  customs, Inbound and Outbound latency, jitter and packet loss, and
+  Apply, Save and Reset (Delete for a saved preset). On Linux with Sober,
+  Play starts the client inside an unprivileged user + network namespace
+  (`unshare`, the bundled `slirp4netns` for internet, `tc netem` for the
+  delay), so the game's own UDP traffic is shaped and the game really
+  lags; Apply changes a running test at once. TCP downloads and this
+  editor's live view are not shaped, matching Studio's scope. The default
+  is Off rather than Studio's Ideal Fiber, since the test server is
+  already across the internet. Anything missing (namespaces turned off, no
+  `tc`) falls back to an unshaped launch with the reason in Output;
+  Windows and macOS say what they would need. — @chteau
+
 ## 2026-10-16
 
 - **Hover states fade in and out.** Every hover highlight in the editor —

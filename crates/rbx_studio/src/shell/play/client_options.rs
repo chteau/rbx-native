@@ -13,6 +13,8 @@ impl Shell {
         &mut self,
         _cx: &mut Context<Self>,
     ) -> ClientOptions {
-        ClientOptions::default()
+        let mut options = ClientOptions::default();
+        self.network_client_options(&mut options);
+        options
     }
 }

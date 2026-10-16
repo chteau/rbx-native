@@ -628,6 +628,7 @@ impl Shell {
             primary("ribbon-stop", stop).into_any_element(),
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),
+            self.network_tile(cx),
             disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
         ];
         tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
