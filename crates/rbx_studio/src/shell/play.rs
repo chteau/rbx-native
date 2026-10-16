@@ -23,7 +23,8 @@
 //!    from `ApiKey::from_env_or_config`), then rename the sandbox place to
 //!    `copy_name::render(template, place name)` when that differs from the
 //!    name applied earlier this session; a failed rename only warns.
-//! 6. Launch `ClientProcess::spawn(launcher, &join_uri(place, session))`,
+//! 6. Launch `ClientProcess::spawn_with(launcher, &join_uri(place, session),
+//!    &play_client_options())`,
 //!    after reading `Embedded::existing_clients()` (Linux) to ignore.
 //! 7. Linux with an `embed_target`: `Embedded::attach(target.window,
 //!    target.rect, &ignore, 90 s)` on a background task; on `NotFound` the
@@ -39,6 +40,7 @@
 //! writes `reason.message()` to Output, back to `Phase::Idle`. Any start
 //! step failing stops with `StopReason::Failed`.
 
+mod client_options;
 pub(in crate::shell) mod cloudflared;
 pub(crate) mod copy_name;
 pub(crate) mod debug;
@@ -502,13 +504,16 @@ impl Shell {
                 return;
             }
             let uri = join_uri(place_id, &session);
+            let Ok(options) = this.update(cx, |shell, cx| shell.play_client_options(cx)) else {
+                return;
+            };
             let launched = cx
                 .background_spawn(async move {
                     #[cfg(any(target_os = "linux", windows))]
                     let ignore = rbx_play::embed::Embedded::existing_clients().unwrap_or_default();
                     #[cfg(not(any(target_os = "linux", windows)))]
                     let ignore: Vec<crate::pointer_lock::WindowId> = Vec::new();
-                    ClientProcess::spawn(launcher, &uri).map(|client| (client, ignore))
+                    ClientProcess::spawn_with(launcher, &uri, &options).map(|client| (client, ignore))
                 })
                 .await;
             let (client, ignore) = match launched {

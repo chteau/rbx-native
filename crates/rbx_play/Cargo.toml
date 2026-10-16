@@ -43,6 +43,8 @@ mlua = { version = "0.12", features = ["luau"] }
 rbx_binary = { path = "../rbx_binary" }
 rbx_cloud = { path = "../rbx_cloud" }
 ureq = "3"
+# tests/sober_config.rs: a scratch Sober config directory; already in the lock.
+tempfile = "3"
 
 # examples/live_probe.rs falls back to the key rbxstudio stored in the keyring.
 [target.'cfg(target_os = "linux")'.dev-dependencies]
