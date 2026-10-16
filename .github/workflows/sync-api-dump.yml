@@ -8,6 +8,10 @@ on:
 jobs:
   update-api-dump:
     runs-on: ubuntu-latest
+    # dev only takes reviewed PRs, so the job proposes the dump on a branch.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -64,10 +68,23 @@ jobs:
         if: steps.git_status.outputs.changed == 'true'
         run: cargo test -p rbx_parser_cli -p rbx_reflection -p rbx_lua
 
-      - name: Commit and push update
+      - name: Propose the update on a branch
         if: steps.git_status.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.get_version.outputs.rbx_version }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore(deps): update Roblox API Dump to ${{ steps.get_version.outputs.rbx_version }}"
-          git push
+          git switch -c chore/api-dump
+          git commit -am "chore(deps): update Roblox API Dump to $VERSION"
+          git push --force origin chore/api-dump
+          # Opening the PR needs "Allow GitHub Actions to create pull
+          # requests" in the repo settings; without it, link the branch.
+          if [ -n "$(gh pr list --head chore/api-dump --state open --json number -q '.[].number')" ]; then
+            echo "::notice::Updated the open chore/api-dump PR to $VERSION"
+          elif ! gh pr create --base "${GITHUB_REF_NAME}" --head chore/api-dump \
+              --title "chore(deps): update Roblox API Dump to $VERSION" \
+              --body "Nightly sync: the bundled dump differs from $VERSION and the reference-dump tests pass with it."; then
+            echo "::notice::Dump $VERSION is on chore/api-dump; open a PR: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${GITHUB_REF_NAME}...chore/api-dump"
+          fi
