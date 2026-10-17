@@ -11,6 +11,7 @@
 
 mod canvas;
 mod changes;
+pub(crate) mod device;
 mod frame;
 mod gizmo;
 mod guides;
@@ -272,6 +273,10 @@ pub(crate) struct WorkspaceView {
     /// The device screen the view emulates, if any — see
     /// `frame::Viewport::letterboxed`.
     screen: Option<(u32, u32)>,
+    /// The device whose screen `screen` is, if it is one — see [`device`].
+    device: Option<device::Simulated>,
+    /// A Play client is embedded over the view — see [`device`].
+    playing: bool,
     /// The whole panel, in physical pixels: `viewport` less the letterbox
     /// while a screen is emulated, and what the frame is placed against.
     panel: Rc<Cell<Viewport>>,
@@ -490,6 +495,8 @@ impl WorkspaceView {
             sized: (0, 0),
             screen: None,
             panel: Rc::default(),
+            device: None,
+            playing: false,
             // Assumed visible until `advance` first has a chance to find out
             // otherwise: `render` runs once as part of mounting, ahead of the
             // first `advance` tick, in the ordinary case of an already-visible
@@ -923,6 +930,8 @@ impl WorkspaceView {
         }
         self.screen = screen;
         self.pump.gui_screen(screen);
+        // A screen typed or picked elsewhere is no longer the device's.
+        self.set_device(None, cx);
         cx.notify();
     }
 
@@ -1007,6 +1016,8 @@ impl Render for WorkspaceView {
         let panel = self.panel.clone();
         let screen = self.screen;
         let scale = window.scale_factor();
+        // Room for a simulated device's bezel around its letterboxed screen.
+        let margin = device_pixels(px(self.device_margin()), scale);
         // A frame larger than the window itself would be read back only to be
         // scaled down again.
         let cap = window.viewport_size();
@@ -1231,12 +1242,16 @@ impl Render for WorkspaceView {
                         });
                         viewport.set(Viewport::letterboxed(
                             (
-                                device_pixels(bounds.origin.x, scale),
-                                device_pixels(bounds.origin.y, scale),
+                                device_pixels(bounds.origin.x, scale) + margin,
+                                device_pixels(bounds.origin.y, scale) + margin,
                             ),
                             (
-                                device_pixels(bounds.size.width, scale).min(cap.0),
-                                device_pixels(bounds.size.height, scale).min(cap.1),
+                                device_pixels(bounds.size.width, scale)
+                                    .min(cap.0)
+                                    .saturating_sub(margin * 2),
+                                device_pixels(bounds.size.height, scale)
+                                    .min(cap.1)
+                                    .saturating_sub(margin * 2),
                             ),
                             screen,
                         ));
@@ -1253,6 +1268,7 @@ impl Render for WorkspaceView {
                 .left_0()
                 .size_full(),
             )
+            .children(self.device_overlay(scale))
             // Only for the moment after the wheel changes the speed: anything
             // that stays belongs in the Viewport dock, not over the scene.
             .when_some(

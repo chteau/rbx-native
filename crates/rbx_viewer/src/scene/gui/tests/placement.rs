@@ -90,6 +90,53 @@ fn ignore_gui_inset_gives_the_whole_viewport_back() {
     assert_eq!((rect.y, rect.height), (0.0, VIEWPORT[1]));
 }
 
+/// A landscape iPhone 15 Pro: 852x393 points, the Dynamic Island's 59 at
+/// either side and the home indicator's 21 below.
+const PHONE: [f32; 2] = [852.0, 393.0];
+const PHONE_INSETS: super::super::SafeInsets = super::super::SafeInsets {
+    left: 59.0,
+    top: 0.0,
+    right: 59.0,
+    bottom: 21.0,
+};
+
+fn on_phone(insets_mode: u32) -> Rect {
+    let (mut dom, gui) = screen_gui();
+    dom.set_property(gui, "ScreenInsets", Variant::Enum(insets_mode))
+        .unwrap();
+    frame(&mut dom, gui, udim2(0.0, 0, 0.0, 0), udim2(1.0, 0, 1.0, 0));
+    super::super::resolve_on_device(&screens(&dom), PHONE, PHONE_INSETS)[0].rect
+}
+
+#[test]
+fn a_full_size_frame_on_a_device_fills_its_safe_area_below_the_top_bar() {
+    // CoreUISafeInsets, the default: the device's cutouts, then the top bar.
+    let rect = on_phone(2);
+    assert_eq!((rect.x, rect.y), (59.0, 36.0));
+    assert_eq!(
+        (rect.width, rect.height),
+        (852.0 - 118.0, 393.0 - 36.0 - 21.0)
+    );
+}
+
+#[test]
+fn device_safe_insets_keep_clear_of_the_cutouts_but_not_the_top_bar() {
+    let rect = on_phone(1);
+    assert_eq!(
+        (rect.x, rect.y, rect.width, rect.height),
+        (59.0, 0.0, 734.0, 372.0)
+    );
+}
+
+#[test]
+fn no_screen_insets_is_the_whole_device_screen() {
+    let rect = on_phone(0);
+    assert_eq!(
+        (rect.x, rect.y, rect.width, rect.height),
+        (0.0, 0.0, 852.0, 393.0)
+    );
+}
+
 /// A frame reaching above the safe area, so the clip either bites or does not.
 fn spilling(dom: &mut WeakDom, gui: Ref) {
     dom.set_property(gui, "ScreenInsets", Variant::Enum(2))

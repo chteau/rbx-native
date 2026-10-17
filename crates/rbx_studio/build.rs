@@ -1,13 +1,16 @@
-//! Fetches the two programs this editor bundles for the target being built,
+//! Fetches the three programs this editor bundles for the target being built,
 //! checks each against a pinned SHA-256, and leaves them in `$OUT_DIR` for
 //! `include_bytes!`:
 //!
 //! - `luau-lsp.zip`, the `luau-lsp` release (see `src/luau_lsp`);
 //! - `cloudflared.zip`, the `cloudflared` binary Play tunnels through (see
 //!   `src/shell/play/cloudflared.rs`), re-packed deflated: the raw binary
-//!   is ~40 MB, ~19 MB this way.
+//!   is ~40 MB, ~19 MB this way;
+//! - `slirp4netns.zip`, the static `slirp4netns` binary behind Play's
+//!   network simulator (see `src/shell/play/slirp4netns.rs`), Linux only.
 //!
-//! Offline builds: set `RBX_LUAU_LSP_ZIP` / `RBX_CLOUDFLARED_ASSET` to an
+//! Offline builds: set `RBX_LUAU_LSP_ZIP` / `RBX_CLOUDFLARED_ASSET` /
+//! `RBX_SLIRP4NETNS_ASSET` to an
 //! already-downloaded copy of the same release asset; it is checked against
 //! the same hash. A target with no release asset embeds an empty file, and
 //! the editor falls back to the program on `PATH`.
@@ -62,6 +65,7 @@ const LOCAL_VARIABLE: &str = "RBX_LUAU_LSP_ZIP";
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     cloudflared();
+    slirp4netns();
     println!("cargo:rerun-if-env-changed={LOCAL_VARIABLE}");
     println!("cargo:rustc-env=LUAU_LSP_VERSION={VERSION}");
 
@@ -110,7 +114,7 @@ fn download(url: &str) -> Vec<u8> {
                 std::thread::sleep(std::time::Duration::from_secs(5 * u64::from(attempt)));
                 attempt += 1;
             }
-            Err(error) => panic!("could not download {url}: {error} (set {LOCAL_VARIABLE} or {CLOUDFLARED_VARIABLE} to a local copy to build offline)"),
+            Err(error) => panic!("could not download {url}: {error} (set {LOCAL_VARIABLE}, {CLOUDFLARED_VARIABLE} or {SLIRP4NETNS_VARIABLE} to a local copy to build offline)"),
         }
     }
 }
@@ -218,17 +222,83 @@ fn cloudflared() {
         bytes
     };
 
+    fs::write(&out, zip_one(CLOUDFLARED_ENTRY, &binary)).expect("OUT_DIR is writable");
+    fs::write(&marker, sha256).expect("OUT_DIR is writable");
+}
+
+/// A zip holding `bytes` as the single deflated entry `entry`.
+fn zip_one(entry: &str, bytes: &[u8]) -> Vec<u8> {
     let mut zipped = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .compression_level(Some(9))
         .large_file(false);
-    zipped
-        .start_file(CLOUDFLARED_ENTRY, options)
-        .expect("zip entry");
-    zipped.write_all(&binary).expect("zip write");
-    let zipped = zipped.finish().expect("zip finish").into_inner();
-    fs::write(&out, zipped).expect("OUT_DIR is writable");
+    zipped.start_file(entry, options).expect("zip entry");
+    zipped.write_all(bytes).expect("zip write");
+    zipped.finish().expect("zip finish").into_inner()
+}
+
+const SLIRP4NETNS_VERSION: &str = "1.3.6";
+
+/// `(target_os, target_arch, asset, sha256)`, from the release's `SHA256SUMS`.
+/// Linux only: the feature needs network namespaces.
+const SLIRP4NETNS_ASSETS: &[(&str, &str, &str, &str)] = &[
+    (
+        "linux",
+        "x86_64",
+        "slirp4netns-x86_64",
+        "411167abceff1fc8a7c562f53ed9f26d3ec8a17df4e2fe6eaa3bd53f1c1e1d48",
+    ),
+    (
+        "linux",
+        "aarch64",
+        "slirp4netns-aarch64",
+        "045f85dd0bc51a61b99cdfe6bd22282cbc308b73caa64fc8859c11d3775c5817",
+    ),
+];
+
+const SLIRP4NETNS_VARIABLE: &str = "RBX_SLIRP4NETNS_ASSET";
+
+/// The name the binary has inside `slirp4netns.zip`.
+const SLIRP4NETNS_ENTRY: &str = "slirp4netns";
+
+fn slirp4netns() {
+    println!("cargo:rerun-if-env-changed={SLIRP4NETNS_VARIABLE}");
+    println!("cargo:rustc-env=SLIRP4NETNS_VERSION={SLIRP4NETNS_VERSION}");
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
+    let out = out_dir.join("slirp4netns.zip");
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let Some(&(_, _, asset, sha256)) = SLIRP4NETNS_ASSETS
+        .iter()
+        .find(|(o, a, ..)| *o == os && *a == arch)
+    else {
+        fs::write(&out, []).expect("OUT_DIR is writable");
+        return;
+    };
+
+    let marker = out_dir.join("slirp4netns.sha256");
+    if out.exists() && fs::read_to_string(&marker).is_ok_and(|done| done == sha256) {
+        return;
+    }
+    let bytes = match env::var_os(SLIRP4NETNS_VARIABLE) {
+        Some(path) => fs::read(&path).unwrap_or_else(|error| {
+            panic!(
+                "{SLIRP4NETNS_VARIABLE}={}: {error}",
+                PathBuf::from(&path).display()
+            )
+        }),
+        None => download(&format!(
+            "https://github.com/rootless-containers/slirp4netns/releases/download/v{SLIRP4NETNS_VERSION}/{asset}"
+        )),
+    };
+    assert_eq!(
+        hex_sha256(&bytes),
+        sha256,
+        "{asset} does not match the pinned hash for slirp4netns {SLIRP4NETNS_VERSION}"
+    );
+    fs::write(&out, zip_one(SLIRP4NETNS_ENTRY, &bytes)).expect("OUT_DIR is writable");
     fs::write(&marker, sha256).expect("OUT_DIR is writable");
 }
 

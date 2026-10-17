@@ -13,7 +13,11 @@ impl Shell {
         &mut self,
         cx: &mut Context<Self>,
     ) -> ClientOptions {
-        let mut options = ClientOptions::default();
+        let mut options = ClientOptions {
+            sober_config: self.device_sober_config(cx),
+            ..ClientOptions::default()
+        };
+        self.network_client_options(&mut options);
         self.controller_client_options(&mut options, cx);
         options
     }

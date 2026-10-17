@@ -2674,6 +2674,37 @@ Roblox's own engine.
   the real ones, and a service name built at runtime (not a string
   literal), which is not rewritten. `examples/market_place.rs` writes the probed copy for a
   check in real Studio.
+- [x] **Network Simulator equivalent** — real Studio's tool
+  (`studio/network-simulator.md`): a **Network** tile in the Test ribbon
+  with the connection-type pill opens a **Network simulation** popover —
+  Preset (Studio's five built-ins plus saved customs, which persist in
+  settings), **Inbound** and **Outbound** groups with **Latency**,
+  **Jitter** and **Packet loss** in Studio's ranges, and **Apply** /
+  **Save** (Replace & Apply for an existing name) / **Reset** (**Delete**
+  for a saved preset). The relay idea this bullet first had would only
+  have delayed the editor's view; instead, on Linux with Sober, Play runs
+  the real client inside an unprivileged user + network namespace with
+  the bundled `slirp4netns` for internet and `tc netem` on its UDP in each
+  direction (`rbx_play::netsim`), so the game itself lags and Apply
+  changes a running test. TCP (asset downloads) and the editor's live view
+  are not shaped, as in Studio. Default is Off, not Studio's Ideal Fiber.
+  Shaping is measured by a UDP-echo integration test through the
+  namespace; **not yet live-tested against a real Sober session.**
+- [x] **Device Simulator** — a Device menu in the Test ribbon: phones
+  (flagship, mid-range, entry level), tablets, desktops, consoles and a
+  headset with real logical resolutions and iPhone safe-area insets, a
+  Custom device (size and platform, kept in settings), Rotate for phones
+  and tablets, and "Current device" for none. In Edit the 3D view shows
+  the device's screen letterboxed in a bezel, with every `ScreenGui` laid
+  out at its size and kept clear of its notch and home indicator per
+  `ScreenInsets`; a badge names the device and orientation. In Play the
+  embedded client is sized to the device at 1:1, centred on a plain
+  backdrop and resized live on rotate, and Sober is launched in the
+  device's input mode (touch for phones and tablets, the console
+  experience for consoles), with a restart prompt when the class changes
+  mid-test. Nothing is faked: a script cannot override what the client
+  reports, so the real client reports the device's values. The Play half
+  is not yet live-tested.
 - [x] **Controller Emulator** (`rbx_play::gamepad`,
   `shell/controller_emulator`; Test › Controller): Studio's widget —
   Generic Gamepad, PS4, PS5, Xbox and Generic Handheld — drawn with the
@@ -2819,45 +2850,20 @@ Roblox's own engine.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
-- [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
-  (`studio/device-simulator.md`, itself currently in beta on Roblox's
-  side) previews an experience's UI at a chosen phone/desktop/console/
-  headset screen size, pixel density, and input mode. The sandbox
-  probe's mirror `LocalScript` (see
-  [Play / Test workflow](#play--test-workflow))
-  already reports real client state back over a `RemoteEvent`, which is
-  the right channel for something like this in principle — but whether a
-  `LocalScript` can *legitimately* override what the real client reports
-  for its own viewport size/platform (as opposed to merely reading
-  `Class.Workspace.CurrentCamera.ViewportSize` and similar, which reflect
-  the actual window) is genuinely unverified, not assumed here as
-  working. Needs an actual doc/API check on what, if anything, a script
-  can override versus only observe before this is more than an idea; real
-  Studio's own simulator works by substituting the whole render surface at
-  the engine level, which this project has no access to.
-- [ ] ⚠️ **Network Simulator equivalent** — real Studio's tool
-  (`studio/network-simulator.md`) adds configurable latency/jitter/packet
-  loss independently to inbound and outbound playtest traffic. More
-  directly reachable than Device Simulator above: the sandbox's own
-  Cloudflare-tunnel relay (see
-  [Play / Test workflow](#play--test-workflow)) is
-  already the one chokepoint all probe traffic passes through, so
-  delaying/dropping batched diffs and long-poll responses there
-  approximates the same effect without needing any Roblox-side cooperation
-  at all — this project already owns the transport real Network Simulator
-  is throttling a lower-level equivalent of.
-  The current Studio UI is a **Network** button in the playtest toolbar
-  (a Wi-Fi icon and a dropdown) opening a **Network simulation** panel:
-  a **Preset** dropdown (or Custom), then **Inbound** and **Outbound**
-  groups that each carry **Latency** (ms), **Packet loss** (a percent
-  slider) and **Jitter** (ms), and **Apply** / **Save** / **Reset**
-  buttons. That is the shape to copy. One honest limit, which the paragraph
-  above glosses over: the relay only carries the probe's own traffic, not
-  the replication between the real Roblox client and server that Studio's
-  simulator throttles. So this would delay this editor's view of the
-  session, and would not make the *game* feel lag. It cannot test a
-  game's lag handling, and it matters more now that Server Authority
-  (below) is built around exactly that.
+- [ ] 📋 **Device Simulator: what is still open** — live-test the Play
+  half through Sober (the client sized to the device so `ViewportSize`
+  reads the device's logical size, rotation resizing it live, and
+  `touch_mode`/`use_console_experience` giving `TouchEnabled`, the mobile
+  UI and `IsTenFootInterface`); input modes on Windows, where
+  RobloxPlayerBeta has no equivalent switch; pixel density (Sober's
+  `enable_hidpi` scales the window, it reports no DPI); a headset in Play
+  (Sober has no VR); Studio's on-screen keyboard cover and Android back
+  button; a Play client larger than the 3D view (a foreign window can be
+  sized, not scaled, so it is refused).
+- [ ] 📋 **Network Simulator on Windows and macOS** — the tile says why it
+  is unavailable there: Windows needs a packet-filter driver such as
+  WinDivert run as administrator, macOS needs dummynet (`dnctl` and
+  `pfctl`) as root.
 - [ ] ⚠️ **Server Authority (Studio Beta, announced 2026)**, checked
   against the Creator Hub's `projects/server-authority` page. It is a
   workspace mode, not an editor feature: `Workspace.AuthorityMode = Server`

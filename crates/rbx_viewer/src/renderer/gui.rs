@@ -35,8 +35,8 @@ use crate::fonts::Library;
 use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{
-    gui_layout_with, gui_screen_frame, gui_scroll_target, GuiRect, GuiScreen, GuiScrollWindow,
-    ScrollTarget, SpaceGui,
+    gui_layout_inset, gui_screen_frame, gui_scroll_target, GuiRect, GuiScreen, GuiScrollWindow,
+    SafeInsets, ScrollTarget, SpaceGui,
 };
 use atlas::Atlas;
 use group::Baked;
@@ -84,6 +84,8 @@ pub(super) struct Gui {
     /// The screen the overlay is laid out as, when it is not the frame: a
     /// device emulated in a smaller view (see [`Gui::set_screen`]).
     screen_size: Option<(u32, u32)>,
+    /// The emulated device's safe-area insets, in the layout's pixels.
+    safe_insets: SafeInsets,
     /// The frame the overlay last drew onto, for taking a point on it back
     /// into the layout's pixels.
     drawn: (u32, u32),
@@ -155,6 +157,7 @@ impl Gui {
             screens: Vec::new(),
             built: None,
             screen_size: None,
+            safe_insets: SafeInsets::default(),
             drawn: (0, 0),
             boxes: Vec::new(),
             space_canvases: Vec::new(),
@@ -315,6 +318,15 @@ impl Gui {
         }
     }
 
+    /// Keeps every `ScreenGui` that asks for it clear of `insets`: the
+    /// cutouts of the device [`Gui::set_screen`] emulates.
+    pub(super) fn set_safe_insets(&mut self, insets: SafeInsets) {
+        if insets != self.safe_insets {
+            self.safe_insets = insets;
+            self.built = None;
+        }
+    }
+
     /// The pixel size [`Gui::draw_canvas`] draws `only` at: `requested` for
     /// a `ScreenGui`, whose size is the device's to choose; a
     /// `BillboardGui`/`SurfaceGui`'s own canvas otherwise — the one the scene
@@ -423,8 +435,12 @@ impl Gui {
                 Some(referent) => screen.referent == referent,
                 None => on_overlay(screen),
             });
-            let mut elements =
-                gui_layout_with(screens, [size.0 as f32, size.1 as f32], &mut self.text);
+            let mut elements = gui_layout_inset(
+                screens,
+                [size.0 as f32, size.1 as f32],
+                self.safe_insets,
+                &mut self.text,
+            );
             // Before the flatten below as well, for the same reason: a
             // `CanvasGroup`'s children are still things to click on. A
             // canvas leads with the screen's own box: the frame its
@@ -436,7 +452,7 @@ impl Gui {
                 .iter()
                 .find(|screen| only == Some(screen.referent))
                 .map(|screen| {
-                    let frame = gui_screen_frame(screen, viewport);
+                    let frame = gui_screen_frame(screen, viewport, self.safe_insets);
                     GuiBox {
                         referent: screen.referent,
                         rect: corners(&frame),

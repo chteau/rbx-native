@@ -10,6 +10,28 @@
   the matching kernel driver gives the genuine pad, while the window is
   open during Play, and lets Sober see it for that session. Whether Sober
   picks it up is not yet live-tested. — @chteau
+- **Device Simulator.** The Test ribbon's Device menu previews a phone,
+  tablet, desktop, console or headset screen: the 3D view letterboxes to
+  the device in a bezel and lays every `ScreenGui` out at its logical size,
+  clear of an iPhone's notch and home indicator as `ScreenInsets` asks, and
+  Rotate swaps the orientation. In Play the embedded client takes the
+  device's size at 1:1, so `ViewportSize` is genuinely the device's, and
+  Sober starts in touch or console mode to match — not yet live-tested.
+  Pixel density is not simulated: Sober has no way to report one. — @chteau
+- **Play: Network Simulator.** A Network tile in the Test ribbon opens a
+  "Network simulation" popover shaped like Studio's: a Preset menu with
+  Studio's five built-ins (Ideal Fiber to Bad Connection (3G)) and saved
+  customs, Inbound and Outbound latency, jitter and packet loss, and
+  Apply, Save and Reset (Delete for a saved preset). On Linux with Sober,
+  Play starts the client inside an unprivileged user + network namespace
+  (`unshare`, the bundled `slirp4netns` for internet, `tc netem` for the
+  delay), so the game's own UDP traffic is shaped and the game really
+  lags; Apply changes a running test at once. TCP downloads and this
+  editor's live view are not shaped, matching Studio's scope. The default
+  is Off rather than Studio's Ideal Fiber, since the test server is
+  already across the internet. Anything missing (namespaces turned off, no
+  `tc`) falls back to an unshaped launch with the reason in Output;
+  Windows and macOS say what they would need. — @chteau
 
 ## 2026-10-16
 
