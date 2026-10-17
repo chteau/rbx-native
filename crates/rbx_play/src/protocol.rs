@@ -209,6 +209,33 @@ pub enum Uplink {
         #[serde(default)]
         tags: Option<Vec<String>>,
     },
+    /// What the client says about its own screen and input, once at start
+    /// and whenever any of it changes (`probe/client.luau`): the record a
+    /// Device Simulator live test is checked against.
+    Device(DeviceReport),
+}
+
+/// The client's view of the device it runs on. Every field is read-only to
+/// game scripts, so these are the engine's own values, not ours.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeviceReport {
+    /// `Camera.ViewportSize`, in Roblox UI offset units.
+    pub viewport_width: f64,
+    pub viewport_height: f64,
+    /// `UserInputService.TouchEnabled` / `KeyboardEnabled` / `GamepadEnabled`.
+    pub touch_enabled: bool,
+    pub keyboard_enabled: bool,
+    pub gamepad_enabled: bool,
+    /// `GuiService:IsTenFootInterface()`.
+    pub ten_foot: bool,
+    /// `UserInputService.PreferredInput`'s name, where the client has it.
+    pub preferred_input: Option<String>,
+    /// `UserInputService.OnScreenKeyboardVisible`.
+    pub on_screen_keyboard_visible: bool,
+    /// A `TextBox` has the keyboard (`TextBoxFocused` until
+    /// `TextBoxFocusReleased`).
+    pub text_focus: bool,
 }
 
 /// A side's performance numbers, read from Roblox's `Stats` service and

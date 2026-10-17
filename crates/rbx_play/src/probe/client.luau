@@ -119,6 +119,93 @@ task.spawn(function()
 	end
 end)
 
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+
+local textFocus = false
+local lastDeviceKey = nil
+
+local function readDevice()
+	local width, height = 0, 0
+	pcall(function()
+		local camera = workspace.CurrentCamera
+		if camera then
+			width = camera.ViewportSize.X
+			height = camera.ViewportSize.Y
+		end
+	end)
+	local function flag(f)
+		local okRead, value = pcall(f)
+		return okRead and value == true
+	end
+	local m = {
+		type = "device",
+		viewport_width = width,
+		viewport_height = height,
+		touch_enabled = flag(function()
+			return UserInputService.TouchEnabled
+		end),
+		keyboard_enabled = flag(function()
+			return UserInputService.KeyboardEnabled
+		end),
+		gamepad_enabled = flag(function()
+			return UserInputService.GamepadEnabled
+		end),
+		ten_foot = flag(function()
+			return GuiService:IsTenFootInterface()
+		end),
+		on_screen_keyboard_visible = flag(function()
+			return UserInputService.OnScreenKeyboardVisible
+		end),
+		text_focus = textFocus,
+	}
+	local okPref, pref = pcall(function()
+		return UserInputService.PreferredInput.Name
+	end)
+	if okPref and type(pref) == "string" then
+		m.preferred_input = pref
+	end
+	return m
+end
+
+local function reportDevice()
+	local m = readDevice()
+	local key = table.concat({
+		m.viewport_width,
+		m.viewport_height,
+		tostring(m.touch_enabled),
+		tostring(m.keyboard_enabled),
+		tostring(m.gamepad_enabled),
+		tostring(m.ten_foot),
+		m.preferred_input or "",
+		tostring(m.on_screen_keyboard_visible),
+		tostring(m.text_focus),
+	}, "|")
+	if key ~= lastDeviceKey then
+		lastDeviceKey = key
+		table.insert(outgoing, m)
+	end
+end
+
+pcall(function()
+	UserInputService.TextBoxFocused:Connect(function()
+		textFocus = true
+		reportDevice()
+	end)
+	UserInputService.TextBoxFocusReleased:Connect(function()
+		textFocus = false
+		reportDevice()
+	end)
+end)
+
+-- Polled: ViewportSize/CurrentCamera/PreferredInput change signals vary by client.
+task.spawn(function()
+	while true do
+		pcall(reportDevice)
+		task.wait(0.25)
+	end
+end)
+
 -- At most one FireServer per tick: 20 calls/s.
 local FIRE_PERIOD = 0.05
 

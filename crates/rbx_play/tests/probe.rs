@@ -22,6 +22,22 @@ fn client_probe_compiles() {
 }
 
 #[test]
+fn client_probe_reports_the_device() {
+    for needle in [
+        "\"device\"",
+        "ViewportSize",
+        "TouchEnabled",
+        "IsTenFootInterface",
+        "PreferredInput",
+        "OnScreenKeyboardVisible",
+        "TextBoxFocused",
+        "TextBoxFocusReleased",
+    ] {
+        assert!(CLIENT.contains(needle), "client.luau lacks {needle}");
+    }
+}
+
+#[test]
 fn live_modules_compile() {
     compiles("codec.luau", include_str!("../src/probe/codec.luau"));
     compiles("live.luau", include_str!("../src/probe/live.luau"));
