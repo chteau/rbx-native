@@ -2674,6 +2674,23 @@ Roblox's own engine.
   the real ones, and a service name built at runtime (not a string
   literal), which is not rewritten. `examples/market_place.rs` writes the probed copy for a
   check in real Studio.
+- [x] **Controller Emulator** (`rbx_play::gamepad`,
+  `shell/controller_emulator`; Test › Controller): Studio's widget —
+  Generic Gamepad, PS4, PS5, Xbox and Generic Handheld — drawn with the
+  editor's own shapes, with clickable buttons, draggable analog sticks and
+  triggers, keyboard forwarding while the window has focus (WASD / IJKL
+  sticks, arrows D-pad, Space/F/R/T face buttons, Q/E bumpers, Z/C
+  triggers), and a per-device mapping editor (Save, Restore Defaults,
+  taken keys moved with a warning) persisted in
+  `controller_emulator.json`. No script API can fabricate gamepad input,
+  so the pad is a Linux uinput device carrying the kernel drivers' own
+  names, USB ids and evdev layouts (`xpad` 045e:028e, `hid-playstation`
+  054c:09cc and 054c:0ce6), connected while the window is open during
+  Play; a Play started with it open (or "Prepare every Play" on) sets
+  Sober's `allow_gamepad_permission` and runs it with `--device=input`.
+  When `/dev/uinput` isn't writable the window says why and gives the
+  udev rule. Linux only; live pickup by Sober not yet tested (see the
+  planned item).
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2869,19 +2886,16 @@ Roblox's own engine.
     the real client's. The Network Simulator item above is the one that
     would matter most for these places, and is the one the relay cannot
     fully serve.
-- [ ] ⚠️ **Controller Emulator equivalent** — real Studio's tool
-  (`studio/controller-emulator.md`) emulates gamepads, VR controllers,
-  handhelds, and TV remotes, injecting real input events into a playtest.
-  Genuinely uncertain, flagged rather than assumed: unlike the two above,
-  this needs synthetic input to reach `Class.UserInputService` *inside the
-  real Roblox client process* the sandbox launches — there's no confirmed
-  public API for a script (probe or otherwise) to fabricate a gamepad
-  `InputBegan`/`InputChanged` event the same way the engine does for real
-  hardware. Needs its own investigation pass (is there *any* legitimate
-  injection point, e.g. an OS-level virtual gamepad the real client would
-  pick up as genuine hardware, similar in spirit to the OS-level mouse
-  capture this project's own free camera already does) before assuming
-  it's buildable at all, let alone to what fidelity.
+- [ ] 📋 **Controller Emulator: confirm Sober picks up the virtual pad, and
+  the devices still missing** — the emulator below has not yet been run
+  against a live Play: whether Sober, with its gamepad permission on and
+  `/dev/input` opened to its sandbox, sees the uinput pad, and which
+  `Enum.GamepadType` / button images the experience then gets per
+  device, is unverified. Also open: Quest2/Quest3 (Sober has no VR
+  runtime), the TV Remote (the desktop client reads a remote's keys as a
+  keyboard; Roblox maps them to gamepad keycodes only on Android TV),
+  Windows (needs the ViGEmBus driver installed) and macOS (a DriverKit HID
+  extension), and lighting the picture from a real plugged-in controller.
 
 ### From Roblox's own Creator Roadmap (2026 fall update)
 

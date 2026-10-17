@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-17
+
+- **Controller Emulator.** Test › Controller opens Studio's emulator for
+  a Generic Gamepad, PS4, PS5, Xbox or Generic Handheld: click and drag
+  the drawn pad, or drive it from the keyboard with per-device mappings
+  you can edit. Since no script can fake gamepad input, it plugs in a
+  real virtual controller through Linux's uinput, with the ids and layout
+  the matching kernel driver gives the genuine pad, while the window is
+  open during Play, and lets Sober see it for that session. Whether Sober
+  picks it up is not yet live-tested. — @chteau
+
 ## 2026-10-16
 
 - **Hover states fade in and out.** Every hover highlight in the editor —

@@ -14,6 +14,7 @@ pub(crate) mod chrome;
 mod clipboard;
 mod close_place;
 mod command;
+mod controller_emulator;
 mod debugging;
 mod discord;
 mod dock_drag;
@@ -237,6 +238,8 @@ pub(crate) struct Shell {
     templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Customize Shortcuts, while open — see `shortcuts_window`.
     shortcuts_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// The Controller Emulator, while open — see `controller_emulator`.
+    controller_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Version History, while open — see `roblox_publish::history`.
     version_history: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Game Settings, while open — see `game_settings`.
@@ -746,6 +749,7 @@ impl Shell {
             settings_window: None,
             templates_window: None,
             shortcuts_window: None,
+            controller_window: None,
             version_history: None,
             game_settings: None,
             theme_install: settings_window::ThemeInstall::Idle,
@@ -1012,6 +1016,11 @@ impl Shell {
         // for Customize Shortcuts.
         if std::env::var_os(shortcuts_window::OPEN_VARIABLE).is_some() {
             shell.open_shortcuts(cx);
+        }
+        // `RBX_STUDIO_CONTROLLER_EMULATOR`: the same, for the Controller
+        // Emulator.
+        if std::env::var_os(controller_emulator::OPEN_VARIABLE).is_some() {
+            shell.open_controller_emulator(cx);
         }
 
         // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the
