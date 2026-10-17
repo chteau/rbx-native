@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use rbx_play::channel::{ChannelServer, MAX_BODY};
 use rbx_play::protocol::{Command, CommandBody, LogLevel, Side, Token, Uplink, TOKEN_HEADER};
 
-const HOLD: Duration = Duration::from_millis(300);
+/// Long enough that a slow CI runner's scheduling noise (macOS runners have
+/// taken 250 ms to answer an early return) stays far from the hold.
+const HOLD: Duration = Duration::from_millis(1500);
 
 /// Sends one HTTP/1.1 request on a fresh connection and returns the status
 /// code and the body. Write errors are ignored so that a server which
@@ -128,7 +130,7 @@ fn poll_with_nothing_queued_answers_204_after_hold() {
     let elapsed = started.elapsed();
     assert_eq!(status, 204);
     assert!(
-        elapsed >= Duration::from_millis(250),
+        elapsed >= HOLD - Duration::from_millis(50),
         "poll returned after {elapsed:?}, expected roughly the hold"
     );
 }
@@ -175,7 +177,7 @@ fn poll_started_before_send_returns_early() {
     assert_eq!(status, 200);
     assert!(body.contains("\"id\":1"), "body was {body}");
     assert!(
-        elapsed < Duration::from_millis(250),
+        elapsed < HOLD / 2,
         "poll took {elapsed:?}, expected an early return well before the hold"
     );
 }
@@ -263,7 +265,7 @@ fn rotate_token_wakes_held_poll_with_204() {
     let (status, elapsed) = poller.join().expect("poller thread");
     assert_eq!(status, 204);
     assert!(
-        elapsed < Duration::from_millis(250),
+        elapsed < HOLD / 2,
         "poll took {elapsed:?}, expected an early return well before the hold"
     );
 }
