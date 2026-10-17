@@ -525,6 +525,14 @@ impl Headless {
             .with_renderer(|renderer, _, _| renderer.set_gui_screen(screen));
     }
 
+    /// The safe-area insets of the device [`Headless::set_gui_screen`]
+    /// emulates, in its pixels: every `ScreenGui` whose `ScreenInsets` is
+    /// not `None` lays its children out clear of them.
+    pub fn set_gui_safe_insets(&mut self, insets: crate::SafeInsets) {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.set_gui_safe_insets(insets));
+    }
+
     pub fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.view.set_gizmo(gizmo);
         self.offscreen.set_gizmo(gizmo);

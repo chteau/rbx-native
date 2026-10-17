@@ -11,8 +11,14 @@ impl Shell {
     /// that shape the client (device, network, controller).
     pub(in crate::shell) fn play_client_options(
         &mut self,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> ClientOptions {
-        ClientOptions::default()
+        let mut options = ClientOptions {
+            sober_config: self.device_sober_config(cx),
+            ..ClientOptions::default()
+        };
+        self.network_client_options(&mut options);
+        self.controller_client_options(&mut options, cx);
+        options
     }
 }

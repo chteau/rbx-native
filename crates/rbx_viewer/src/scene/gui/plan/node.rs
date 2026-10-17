@@ -178,6 +178,9 @@ pub(crate) struct Screen {
     /// `ScreenInsets`: pixels of the viewport's top edge the canvas gives up
     /// to Roblox's top bar.
     pub(in crate::scene::gui) top_inset: f32,
+    /// Whether the device's safe-area insets (a phone's notch and home
+    /// indicator) apply: every `ScreenInsets` mode but `None` adds them.
+    pub(in crate::scene::gui) device_safe: bool,
     /// `ZIndexBehavior.Global`, where `ZIndex` orders every descendant of the
     /// screen against every other rather than only its own siblings.
     pub(in crate::scene::gui) global_z_index: bool,

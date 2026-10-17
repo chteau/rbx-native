@@ -14,7 +14,9 @@ pub(crate) mod chrome;
 mod clipboard;
 mod close_place;
 mod command;
+mod controller_emulator;
 mod debugging;
+mod device_sim;
 mod discord;
 mod dock_drag;
 mod docks;
@@ -237,6 +239,8 @@ pub(crate) struct Shell {
     templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Customize Shortcuts, while open — see `shortcuts_window`.
     shortcuts_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// The Controller Emulator, while open — see `controller_emulator`.
+    controller_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Version History, while open — see `roblox_publish::history`.
     version_history: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Game Settings, while open — see `game_settings`.
@@ -476,6 +480,8 @@ pub(crate) struct Shell {
     studio_presence: studio_presence::StudioPresence,
     /// Collaborators through the presence relay — see `shell::team_presence`.
     team_presence: team_presence::TeamPresence,
+    /// The Test ribbon's Device menu — see `shell::device_sim`.
+    device_sim: device_sim::DeviceSim,
     /// The code sign-in window, while open — see `shell::roblox_login`.
     roblox_login: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The page the next Settings window opens on; see `open_settings_on`.
@@ -541,8 +547,10 @@ impl Shell {
             team_presence: team_presence_settings,
             play_sandbox,
             play_copy_name,
+            network_presets,
             anim_sheet_height,
             anim_names_width,
+            device_custom,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -746,6 +754,7 @@ impl Shell {
             settings_window: None,
             templates_window: None,
             shortcuts_window: None,
+            controller_window: None,
             version_history: None,
             game_settings: None,
             theme_install: settings_window::ThemeInstall::Idle,
@@ -841,10 +850,11 @@ impl Shell {
             discord_started: 0,
             discord_idle: false,
             discord_idle_check: None,
-            play: play::Play::new(play_sandbox, play_copy_name),
+            play: play::Play::new(play_sandbox, play_copy_name, network_presets),
             plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
+            device_sim: device_sim::DeviceSim::new(device_custom),
             roblox_login: None,
             settings_open_on: None,
             drag: None,
@@ -980,6 +990,18 @@ impl Shell {
             shell.apply_debug_edit(&spec, window, cx);
         }
 
+        // `RBX_STUDIO_NETWORK` (see `shell::play::network`): a preset applied
+        // and the Test ribbon shown, for a screenshot of the Network tile.
+        if let Ok(spec) = std::env::var(play::network::NETWORK_VARIABLE) {
+            shell.apply_debug_network(&spec, window, cx);
+        }
+
+        // `RBX_STUDIO_DEVICE` (see `shell::device_sim`): a device picked and
+        // the Test ribbon shown, for a screenshot of the simulated screen.
+        if let Ok(spec) = std::env::var(device_sim::DEVICE_VARIABLE) {
+            shell.apply_debug_device(&spec, cx);
+        }
+
         // Explorer delete/insert debug aids (see `shell::keys`): applied
         // last, so an insert can parent under whatever is already selected.
         shell.apply_debug_explorer_action(cx);
@@ -1012,6 +1034,11 @@ impl Shell {
         // for Customize Shortcuts.
         if std::env::var_os(shortcuts_window::OPEN_VARIABLE).is_some() {
             shell.open_shortcuts(cx);
+        }
+        // `RBX_STUDIO_CONTROLLER_EMULATOR`: the same, for the Controller
+        // Emulator.
+        if std::env::var_os(controller_emulator::OPEN_VARIABLE).is_some() {
+            shell.open_controller_emulator(cx);
         }
 
         // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the
@@ -1724,8 +1751,10 @@ impl Shell {
             team_presence: self.team_presence.settings.clone(),
             play_sandbox: self.play.sandbox,
             play_copy_name: self.play.copy_name.clone(),
+            network_presets: self.play.network.saved.clone(),
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),
+            device_custom: self.device_sim.custom,
         };
         let _ = settings.save();
 

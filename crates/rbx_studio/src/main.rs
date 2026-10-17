@@ -92,6 +92,7 @@ mod class_icons;
 mod cli;
 mod command_bar;
 mod debugger;
+mod device_sim;
 mod discord_presence;
 mod display;
 mod dragger;
