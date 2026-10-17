@@ -291,7 +291,31 @@ impl VirtualPad {
         match self._never {}
     }
 
+    pub fn state(&self) -> PadState {
+        match self._never {}
+    }
+
     pub fn send(&mut self, _next: PadState) -> std::io::Result<()> {
+        match self._never {}
+    }
+
+    pub fn press(&mut self, _button: Button) -> std::io::Result<()> {
+        match self._never {}
+    }
+
+    pub fn release(&mut self, _button: Button) -> std::io::Result<()> {
+        match self._never {}
+    }
+
+    pub fn stick(&mut self, _side: Side, _x: f32, _y: f32) -> std::io::Result<()> {
+        match self._never {}
+    }
+
+    pub fn trigger(&mut self, _side: Side, _value: f32) -> std::io::Result<()> {
+        match self._never {}
+    }
+
+    pub fn event_node(&self) -> Option<std::path::PathBuf> {
         match self._never {}
     }
 }
