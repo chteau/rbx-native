@@ -2865,19 +2865,20 @@ Roblox's own engine.
   `ViewportSize`, `TouchEnabled`, `IsTenFootInterface`, input kinds and
   TextBox focus; the badge shows them and turns to a warning with the
   expected size when the viewport does not match, and the first report
-  goes to Output, so any Play is a live test. Research, verdicts and
-  measurements: `docs/research/play-sandbox/device-simulator.md`.
-- [ ] 📋 **Device Simulator: what is still open** — run the Play half
-  through Sober once and read the badge (the device size, rotation
-  resizing it live, `TouchEnabled`, the mobile UI and
-  `IsTenFootInterface`), and which key Sober maps to Android Back;
-  input modes on Windows, where RobloxPlayerBeta has no switch and no
-  allowlisted FFlag gives one (whether injected synthetic touch makes
-  `TouchEnabled` true is untested); a headset in Play (Sober has no VR;
-  on Windows an OpenXR runtime such as Meta's XR Simulator might stand in,
-  untested); a Play client larger than the 3D view, still refused: an
-  XComposite capture of the client works under Mutter but costs 7 ms a
-  frame at 1920×1044 and its input cannot be forwarded cleanly.
+  goes to Output, so any Play is a live test. Run live through Sober: the
+  client reports the device's size, follows rotation live, gives
+  `TouchEnabled` for phones and `IsTenFootInterface` for consoles, Escape
+  through the back button opens Roblox's menu, and the cover follows a
+  focused TextBox. Research, verdicts and measurements:
+  `docs/research/play-sandbox/device-simulator.md`.
+- [ ] 📋 **Device Simulator: what is still open** — input modes on
+  Windows, where RobloxPlayerBeta has no switch and no allowlisted FFlag
+  gives one (whether injected synthetic touch makes `TouchEnabled` true is
+  untested); a headset in Play (Sober has no VR; on Windows an OpenXR
+  runtime such as Meta's XR Simulator might stand in, untested); a Play
+  client larger than the 3D view, still refused: an XComposite capture of
+  the client works under Mutter but costs 7 ms a frame at 1920×1044 and its
+  input cannot be forwarded cleanly.
 - [ ] 📋 **Network Simulator on Windows and macOS** — the tile says why it
   is unavailable there: Windows needs a packet-filter driver such as
   WinDivert run as administrator, macOS needs dummynet (`dnctl` and

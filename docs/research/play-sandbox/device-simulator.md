@@ -15,8 +15,10 @@ from vinegarhq.org's Configuration, Tips and Tricks and FAQ pages
 
 ## 1. Live test of the Play half — built: the client reports itself
 
-**Verdict:** this needs a person to press Play. Each Play now leaves a record
-in Output, so the result of a live test can be read back afterwards.
+**Verdict:** done — run live on 2026-10-17 (Linux, Sober 1.8.0 embedded in
+the editor on a nested Xephyr display, results under "Live run" below).
+Every claim of the Play half holds; each Play also leaves a record in
+Output, so a later run can be read back the same way.
 
 `probe/client.luau` sends `{type = "device", ...}` (`Uplink::Device`) once at
 start and again whenever a value changes. It checks every 0.25 s, and also
@@ -44,16 +46,49 @@ Steps for a live test (Linux, Sober, X11):
 3. Read the Output line. Expected: `ViewportSize 852×393`, `TouchEnabled
    true` (Sober `touch_mode: "on"`) and `IsTenFootInterface false`.
    `ViewportSize` should equal the client window. Sober reports no safe-area
-   insets, so the whole window is the viewport. **Unknown** until this run.
+   insets, so the whole window is the viewport. **Verified** (live run).
 4. **Rotate to Portrait**. The client window resizes live. The badge should
    read `client 393×852` with no warning.
 5. Stop. Pick **Xbox Series X**. Play again; Sober reads its input mode at
    launch only. Expected: `IsTenFootInterface true`
-   (`use_console_experience`). **Unknown**: the Sober docs say only that
-   "games may register you as a console user".
+   (`use_console_experience`). **Verified** (live run): `ten_foot` true,
+   `TouchEnabled` false.
 6. Focus a TextBox in the game. The badge's report flips `text_focus`, and
    the keyboard cover appears (item 5). `OnScreenKeyboardVisible` is
-   expected to stay `false`, because Sober has no Android IME (**Unknown**).
+   expected to stay `false`, because Sober has no Android IME. **Verified**
+   (live run).
+
+### Live run (2026-10-17)
+
+Read from the client's own `Uplink::Device` reports (`RBX_PLAY_TRACE=1`) and
+the badge, with the sandbox place published by Play:
+
+| Device, action | Client reported |
+| --- | --- |
+| iPhone 15 Pro, landscape | `ViewportSize` 852×393, `TouchEnabled` true, `KeyboardEnabled` true, `IsTenFootInterface` false, `PreferredInput` KeyboardAndMouse |
+| Rotate to Portrait (view tall enough) | 393×852, live, no restart |
+| Rotate to Portrait (view too short) | the client takes the whole panel, 1027×554; the badge says it does not fit |
+| Pixel 8 picked mid-test | 915×412, live (same input class, no restart) |
+| iPad Pro 12.9″ (larger than the view) | 1027×954 with the badge's warning `expected 1366×1024`, drawn above the client |
+| Xbox Series X (new Play) | `IsTenFootInterface` true, `TouchEnabled` false |
+| Xbox + Controller Emulator open | `GamepadEnabled` true, `PreferredInput` Gamepad |
+| Pixel 8, a TextBox tapped | `text_focus` true, the keyboard cover appears; `OnScreenKeyboardVisible` false |
+| Pixel 8, Android back button | Roblox's in-game menu opens; pressed again, it closes |
+
+Two notes from the run:
+
+- With touch on, `PreferredInput` stays `KeyboardAndMouse` (the desktop's
+  keyboard is present), so experiences that key their controls off
+  `PreferredInput` show the desktop hotbar labels, not the thumbstick, until
+  a touch arrives. `TouchEnabled` itself is true, as on a phone.
+- The Network Simulator shaped the same client: `Players.LocalPlayer:
+  GetNetworkPing()` read 502–506 ms with **Bad Connection (3G)** against
+  101 ms with Off on the same server, i.e. +405 ms against the preset's mean
+  added round trip of 410 ms (185 ms in + 225 ms out).
+
+Screenshots: `device-simulator/play-iphone15pro-portrait.png`,
+`play-pixel8-textbox-keyboard.png`, `play-pixel8-back.png`,
+`play-ipadpro-doesnt-fit.png`.
 
 ## 2. Input modes on Windows — not possible from outside the client
 
@@ -160,12 +195,17 @@ Xephyr at scale 1. The 852-point screen is drawn 533 px wide
 - **Device → Android back button** is enabled while an Android device's
   client is embedded and shown, which is Studio's rule ("Enabled while the
   client view is active").
-- When pressed, it focuses the embedded client and types Escape with XTest
-  (`rbx_play::embed::x11`, `Embedded::press_escape`). XTest is used because
-  clients drop `SendEvent` keys.
-- Back in a running Android game opens Roblox's menu, and so does Escape.
-  Which key Sober maps to Android's `KEYCODE_BACK` is not documented
-  (**Unknown**: test live).
+- When pressed, it puts the pointer over the embedded client, focuses it
+  and types Escape with XTest (`rbx_play::embed::x11`,
+  `Embedded::press_escape`), then puts the pointer back 150 ms later. XTest
+  is used because clients drop `SendEvent` keys.
+- Measured live: Sober reads the keyboard only while the pointer is over
+  its window. Focus alone, even 0.4 s before the key, lost it; so did moving
+  the pointer back at once. 100 ms over the window was enough.
+- Back in a running Android game opens Roblox's menu, and Escape does the
+  same in Sober. **Verified** (live run): the menu opens, and a second press
+  closes it. Which key Sober maps to Android's `KEYCODE_BACK` internally is
+  still undocumented, but Escape gives Back's effect.
 - Linux only. The item is disabled with a hint elsewhere.
 
 ## 6. A Play client larger than the 3D view — measured: not viable for Play
