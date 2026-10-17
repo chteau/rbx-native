@@ -11,7 +11,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
-use super::NetConditions;
+use super::{NetConditions, ShaperError};
 use crate::tunnel::end_with_parent;
 
 const HOLDER: &str = include_str!("holder.sh");
@@ -19,18 +19,6 @@ const HOLDER: &str = include_str!("holder.sh");
 /// the holder itself gives up after 10 s.
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const ACK_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Why the shaper is unavailable or failed, worded for the Output panel.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShaperError(pub String);
-
-impl std::fmt::Display for ShaperError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ShaperError {}
 
 fn fail<T>(reason: impl Into<String>) -> Result<T, ShaperError> {
     Err(ShaperError(reason.into()))

@@ -27,12 +27,26 @@ x11rb = { version = "0.13", features = ["xinput", "shape"] }
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-# Embedding RobloxPlayerBeta's window; same version rbx_studio uses.
+# Embedding RobloxPlayerBeta's window; same version rbx_studio uses. The
+# network simulator adds: WinDivert.dll loaded at runtime (LibraryLoader),
+# the elevated helper (Shell, Registry for SHELLEXECUTEINFOW, Pipes,
+# FileSystem, IO, Security), the client's UDP ports (IpHelper, WinSock) and
+# a 1 ms timer (Media).
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_Media",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
