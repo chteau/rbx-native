@@ -1,7 +1,9 @@
 //! Device Simulator data: the device catalog, orientation and insets, the
-//! Sober input-mode keys, the Play fit math and the persisted custom device.
+//! Sober input-mode keys, the Play fit math, display scaling and the
+//! persisted custom device.
 
 mod catalog;
+pub(crate) mod report;
 
 use serde_json::{json, Value};
 
@@ -91,17 +93,41 @@ pub(crate) struct Insets {
     pub(crate) bottom: u32,
 }
 
+/// The operating system a device runs, for what only one of them has (the
+/// Android back button).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Os {
+    Ios,
+    Android,
+    Other,
+}
+
+/// A screen's physical density, for Physical size display scaling.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Density {
+    /// Physical pixels per inch.
+    pub(crate) ppi: u32,
+    /// Physical pixels per point (iOS) or dp (Android).
+    pub(crate) scale: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Device {
     pub(crate) name: &'static str,
     pub(crate) platform: Platform,
     pub(crate) tier: Option<Tier>,
+    pub(crate) os: Os,
     /// Logical size in the device's natural orientation (portrait for
     /// phones/tablets, landscape for the rest), in points/dp — what Roblox
     /// reports as `Camera.ViewportSize`.
     pub(crate) size: (u32, u32),
     pub(crate) portrait_insets: Insets,
     pub(crate) landscape_insets: Insets,
+    /// `None` for screens of no fixed size: monitors, TVs, headsets.
+    pub(crate) density: Option<Density>,
+    /// The system keyboard's height in portrait and in landscape, in
+    /// points/dp; 0 for devices without an on-screen keyboard.
+    pub(crate) keyboard: (u32, u32),
 }
 
 impl Device {
@@ -130,6 +156,14 @@ impl Device {
         match o {
             Orientation::Portrait => self.portrait_insets,
             Orientation::Landscape => self.landscape_insets,
+        }
+    }
+
+    /// The on-screen keyboard's height in `o`, in points/dp.
+    pub(crate) fn keyboard_height(&self, o: Orientation) -> u32 {
+        match (self.platform.rotates(), o) {
+            (true, Orientation::Portrait) => self.keyboard.0,
+            _ => self.keyboard.1,
         }
     }
 
@@ -168,6 +202,64 @@ pub(crate) fn needs_restart(launched: Option<Platform>, now: Option<Platform>) -
         (None, None) => false,
         (Some(a), Some(b)) => sober_keys(a) != sober_keys(b),
         _ => true,
+    }
+}
+
+/// How big the simulated screen is drawn in Edit — Studio's three
+/// Display scaling modes. Play is always 1:1: the client is a foreign
+/// window that can be sized, never scaled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum DisplayScaling {
+    /// As large as the 3D view allows.
+    #[default]
+    Fit,
+    /// One device point/dp to one editor logical pixel, as Play shows it.
+    Actual,
+    /// The device's real size on the monitor.
+    Physical,
+}
+
+impl DisplayScaling {
+    pub(crate) const ALL: [DisplayScaling; 3] = [
+        DisplayScaling::Fit,
+        DisplayScaling::Actual,
+        DisplayScaling::Physical,
+    ];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            DisplayScaling::Fit => "Fit to window",
+            DisplayScaling::Actual => "Actual resolution",
+            DisplayScaling::Physical => "Physical size",
+        }
+    }
+
+    /// The settings value, and what `RBX_STUDIO_DEVICE` takes.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            DisplayScaling::Fit => "fit",
+            DisplayScaling::Actual => "actual",
+            DisplayScaling::Physical => "physical",
+        }
+    }
+
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.key() == key)
+    }
+
+    /// Editor logical pixels per device point/dp, `None` to fit the view;
+    /// the view still shrinks a screen that does not fit. Physical size
+    /// takes the monitor as 96 logical pixels per inch, as Studio's
+    /// auto-detect does from the OS scale factor, and falls back to Fit for
+    /// a screen with no density.
+    pub(crate) fn logical_per_point(self, device: &Device) -> Option<f32> {
+        match self {
+            DisplayScaling::Fit => None,
+            DisplayScaling::Actual => Some(1.0),
+            DisplayScaling::Physical => {
+                device.density.map(|d| 96.0 * d.scale / d.ppi.max(1) as f32)
+            }
+        }
     }
 }
 
@@ -230,9 +322,17 @@ impl CustomDevice {
             name: "Custom",
             platform: self.platform,
             tier: None,
+            // Sober runs the Android client, so a touch Play is Android's.
+            os: match self.platform {
+                Platform::Phone | Platform::Tablet => Os::Android,
+                _ => Os::Other,
+            },
             size: (self.width, self.height),
             portrait_insets: Insets::default(),
             landscape_insets: Insets::default(),
+            density: None,
+            // Studio's Custom device default: no keyboard cover.
+            keyboard: (0, 0),
         }
     }
 
