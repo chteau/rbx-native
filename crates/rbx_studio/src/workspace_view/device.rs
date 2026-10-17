@@ -44,6 +44,15 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// How far the letterboxed screen stays off the panel's edges in Edit,
+    /// in logical pixels: room for the bezel.
+    pub(super) fn device_margin(&self) -> f32 {
+        match self.device.is_some() && self.screen.is_some() {
+            true => BEZEL * 2.0,
+            false => 0.0,
+        }
+    }
+
     /// Whether a Play client is embedded in the view, which then shows the
     /// device's screen at 1:1 rather than scaled.
     pub(crate) fn set_playing(&mut self, playing: bool, cx: &mut Context<Self>) {
@@ -97,7 +106,7 @@ impl WorkspaceView {
                 .w(local(i64::from(rect.width)) + px(BEZEL * 2.0))
                 .h(local(i64::from(rect.height)) + px(BEZEL * 2.0))
                 .border_2()
-                .border_color(tokens::border())
+                .border_color(tokens::check_off_border())
                 .rounded(px(BEZEL * 3.0))
         });
         let label = match note {

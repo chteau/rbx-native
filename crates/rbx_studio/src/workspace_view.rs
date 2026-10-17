@@ -1016,6 +1016,8 @@ impl Render for WorkspaceView {
         let panel = self.panel.clone();
         let screen = self.screen;
         let scale = window.scale_factor();
+        // Room for a simulated device's bezel around its letterboxed screen.
+        let margin = device_pixels(px(self.device_margin()), scale);
         // A frame larger than the window itself would be read back only to be
         // scaled down again.
         let cap = window.viewport_size();
@@ -1240,12 +1242,16 @@ impl Render for WorkspaceView {
                         });
                         viewport.set(Viewport::letterboxed(
                             (
-                                device_pixels(bounds.origin.x, scale),
-                                device_pixels(bounds.origin.y, scale),
+                                device_pixels(bounds.origin.x, scale) + margin,
+                                device_pixels(bounds.origin.y, scale) + margin,
                             ),
                             (
-                                device_pixels(bounds.size.width, scale).min(cap.0),
-                                device_pixels(bounds.size.height, scale).min(cap.1),
+                                device_pixels(bounds.size.width, scale)
+                                    .min(cap.0)
+                                    .saturating_sub(margin * 2),
+                                device_pixels(bounds.size.height, scale)
+                                    .min(cap.1)
+                                    .saturating_sub(margin * 2),
                             ),
                             screen,
                         ));

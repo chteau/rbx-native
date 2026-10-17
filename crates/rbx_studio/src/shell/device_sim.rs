@@ -182,6 +182,21 @@ impl Shell {
             .hint("No simulation: the 3D view and the Play client at their own size and input.")
             .checked(current.is_none())
             .on_click(|shell, cx| shell.pick_device(None, cx))];
+        // Near the top, where it is reached for most, not below a long list.
+        let rotates = current.is_some()
+            && self
+                .device_sim
+                .device()
+                .is_some_and(|device| device.platform.rotates());
+        let rotate = menu::item(format!(
+            "Rotate to {}",
+            self.device_sim.orientation.rotated().label()
+        ))
+        .icon(IconName::RotateCw);
+        items.push(match rotates {
+            true => rotate.on_click(|shell, cx| shell.rotate_device(cx)),
+            false => rotate.disabled(),
+        });
         let mut group = None;
         for (index, device) in device_sim::devices().iter().enumerate() {
             let heading = (device.platform, device.tier);
@@ -201,27 +216,12 @@ impl Shell {
             items.push(item);
         }
         items.extend(self.custom_items(current, cx));
-        let rotates = current.is_some()
-            && self
-                .device_sim
-                .device()
-                .is_some_and(|device| device.platform.rotates());
-        items.push(menu::separator());
-        let rotate = menu::item(format!(
-            "Rotate to {}",
-            self.device_sim.orientation.rotated().label()
-        ))
-        .icon(IconName::RotateCw);
-        items.push(match rotates {
-            true => rotate.on_click(|shell, cx| shell.rotate_device(cx)),
-            false => rotate.disabled(),
-        });
         items
     }
 
     /// The custom device: picked as is, its size taken from the screen the
     /// view shows (typed into the Viewport dock's Screen row), and its
-    /// platform chosen from the four Play can launch.
+    /// platform cycled through the five.
     fn custom_items(&self, current: Option<Choice>, cx: &App) -> Vec<menu::Item> {
         let custom = self.device_sim.custom;
         let mut items = vec![
@@ -246,19 +246,21 @@ impl Shell {
             }),
             None => take.disabled(),
         });
-        for platform in Platform::ALL {
-            items.push(
-                menu::item(format!("Custom platform: {}", platform.label()))
-                    .checked(custom.platform == platform)
-                    .on_click(move |shell, cx| {
-                        let custom = shell.device_sim.custom;
-                        shell.set_custom_device(
-                            CustomDevice::new(custom.width, custom.height, platform),
-                            cx,
-                        );
-                    }),
-            );
-        }
+        // One row cycling the platform keeps the menu within a window's
+        // height.
+        let at = Platform::ALL.iter().position(|&p| p == custom.platform);
+        let next = Platform::ALL[at.map_or(0, |at| (at + 1) % Platform::ALL.len())];
+        items.push(
+            menu::item(format!(
+                "Custom platform: {} \u{2192} {}",
+                custom.platform.label(),
+                next.label()
+            ))
+            .on_click(move |shell, cx| {
+                let custom = shell.device_sim.custom;
+                shell.set_custom_device(CustomDevice::new(custom.width, custom.height, next), cx);
+            }),
+        );
         items
     }
 }

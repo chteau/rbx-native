@@ -660,11 +660,7 @@ fn test_tiles() -> Vec<AnyElement> {
 fn viewport_tiles() -> Vec<AnyElement> {
     placeholders(
         "viewport",
-        &[
-            (IconName::Settings, "Settings"),
-            (IconName::Smartphone, "Device"),
-            (IconName::Eye, "Show UI"),
-        ],
+        &[(IconName::Settings, "Settings"), (IconName::Eye, "Show UI")],
     )
 }
 
