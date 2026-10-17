@@ -22,11 +22,13 @@ use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) mod argon;
 mod controls;
 mod dragger;
+mod network_presets;
 mod output_display;
 mod team_presence;
 
 pub(crate) use controls::{Controls, FEEL_SCALE_RANGE};
 pub(crate) use dragger::DraggerSettings;
+pub(crate) use network_presets::SavedNetworkPreset;
 pub(crate) use output_display::OutputDisplay;
 pub(crate) use team_presence::TeamPresenceSettings;
 
@@ -137,6 +139,8 @@ pub(crate) struct Settings {
     /// What Play names the sandbox while it runs a test; see
     /// `shell::play::copy_name`. Empty leaves the sandbox's name alone.
     pub(crate) play_copy_name: String,
+    /// The Network Simulator's saved presets; see `shell::play::network`.
+    pub(crate) network_presets: Vec<SavedNetworkPreset>,
     /// The Animation Editor's bottom panel height, once its seam has been
     /// dragged; `None` keeps the default share of the room.
     pub(crate) anim_sheet_height: Option<f32>,
@@ -236,6 +240,7 @@ impl Default for Settings {
             team_presence: TeamPresenceSettings::default(),
             play_sandbox: None,
             play_copy_name: crate::shell::PLAY_COPY_NAME_DEFAULT.to_owned(),
+            network_presets: Vec::new(),
             anim_sheet_height: None,
             anim_names_width: None,
             device_custom: crate::device_sim::CustomDevice::default(),
@@ -460,6 +465,7 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_str())
             .unwrap_or(crate::shell::PLAY_COPY_NAME_DEFAULT)
             .to_owned(),
+        network_presets: network_presets::read(&value),
         anim_sheet_height: read_extent(&value, "anim_sheet_height"),
         anim_names_width: read_extent(&value, "anim_names_width"),
         device_custom: crate::device_sim::CustomDevice::read(&value),
@@ -727,6 +733,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     });
     // Outside the literal: `json!` hits the macro recursion limit at this size.
     value["play_copy_name"] = settings.play_copy_name.clone().into();
+    value["network_presets"] = network_presets::json(&settings.network_presets);
     value["device_custom"] = settings.device_custom.json();
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");

@@ -45,7 +45,10 @@ pub(in crate::shell) mod cloudflared;
 pub(crate) mod copy_name;
 pub(crate) mod debug;
 pub(crate) mod live;
+pub(in crate::shell) mod network;
 pub(crate) mod session;
+#[cfg(target_os = "linux")]
+mod slirp4netns;
 
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -146,6 +149,8 @@ pub(super) struct Play {
     pub(super) live: live::Live,
     /// The scripts debugged in this test (`play::debug`).
     pub(super) debug: debug::PlayDebug,
+    /// The Network Simulator (`play::network`).
+    pub(super) network: network::NetworkSim,
     /// The window Play was pressed in, for work that needs a `Window` from
     /// the poll (opening a script where the game paused).
     window_handle: Option<AnyWindowHandle>,
@@ -168,8 +173,13 @@ pub(super) struct Play {
 }
 
 impl Play {
-    pub(super) fn new(sandbox: Option<PlaySandbox>, copy_name: String) -> Self {
+    pub(super) fn new(
+        sandbox: Option<PlaySandbox>,
+        copy_name: String,
+        network_presets: Vec<crate::settings::SavedNetworkPreset>,
+    ) -> Self {
         Play {
+            network: network::NetworkSim::new(network_presets),
             sandbox,
             copy_name,
             named: None,

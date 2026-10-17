@@ -35,13 +35,21 @@ pub(crate) fn program() -> io::Result<PathBuf> {
         .unwrap_or_else(std::env::temp_dir)
         .join("cloudflared")
         .join(VERSION);
-    unpack(ZIP, &dir)
+    unpack(ZIP, &dir, ENTRY, EXECUTABLE, LICENSE)
 }
 
-fn unpack(zip: &[u8], dir: &Path) -> io::Result<PathBuf> {
-    let path = dir.join(EXECUTABLE);
+/// Writes zip entry `entry` into `dir` as the executable `executable`, with
+/// `license` beside it as `LICENSE.txt`.
+pub(super) fn unpack(
+    zip: &[u8],
+    dir: &Path,
+    entry: &str,
+    executable: &str,
+    license: &str,
+) -> io::Result<PathBuf> {
+    let path = dir.join(executable);
     let mut archive = zip::ZipArchive::new(io::Cursor::new(zip)).map_err(io::Error::other)?;
-    let mut entry = archive.by_name(ENTRY).map_err(io::Error::other)?;
+    let mut entry = archive.by_name(entry).map_err(io::Error::other)?;
     if fs::metadata(&path).is_ok_and(|meta| meta.len() == entry.size()) {
         return Ok(path);
     }
@@ -49,7 +57,7 @@ fn unpack(zip: &[u8], dir: &Path) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let mut bytes = Vec::with_capacity(entry.size() as usize);
     entry.read_to_end(&mut bytes)?;
-    let partial = dir.join(format!("{EXECUTABLE}.{}.partial", std::process::id()));
+    let partial = dir.join(format!("{executable}.{}.partial", std::process::id()));
     fs::write(&partial, bytes)?;
     #[cfg(unix)]
     {
@@ -57,7 +65,7 @@ fn unpack(zip: &[u8], dir: &Path) -> io::Result<PathBuf> {
         fs::set_permissions(&partial, fs::Permissions::from_mode(0o755))?;
     }
     fs::rename(&partial, &path)?;
-    fs::write(dir.join("LICENSE.txt"), LICENSE)?;
+    fs::write(dir.join("LICENSE.txt"), license)?;
     Ok(path)
 }
 
@@ -72,7 +80,14 @@ mod tests {
             return;
         }
         let dir = std::env::temp_dir().join(format!("rbx-cloudflared-test-{}", std::process::id()));
-        let path = super::unpack(super::ZIP, &dir).expect("unpacks");
+        let path = super::unpack(
+            super::ZIP,
+            &dir,
+            super::ENTRY,
+            super::EXECUTABLE,
+            super::LICENSE,
+        )
+        .expect("unpacks");
         let output = Command::new(&path).arg("--version").output().expect("runs");
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains(super::VERSION), "{text}");
