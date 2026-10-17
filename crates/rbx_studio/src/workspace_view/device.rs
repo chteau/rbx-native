@@ -14,7 +14,7 @@
 
 mod keyboard;
 
-pub(crate) use keyboard::Page as KeyboardPage;
+pub(crate) use keyboard::{KeyTap, Page as KeyboardPage, Style as KeyboardStyle};
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -46,6 +46,8 @@ pub(crate) struct Simulated {
     pub(crate) keyboard: u32,
     /// The keys the cover shows.
     pub(crate) keyboard_layout: device_sim::KeyboardLayout,
+    /// Whose system keyboard the cover draws.
+    pub(crate) keyboard_style: KeyboardStyle,
     /// What the Play client reports (`device_sim::report::summary`), and
     /// whether its viewport differs from the screen.
     pub(crate) client: Option<(SharedString, bool)>,
@@ -166,6 +168,7 @@ impl WorkspaceView {
                         height: local(height),
                         points: device.keyboard,
                     },
+                    device.keyboard_style,
                     device.keyboard_layout,
                     self.keyboard_page,
                     self.playing,

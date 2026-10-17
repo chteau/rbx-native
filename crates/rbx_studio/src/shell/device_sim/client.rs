@@ -8,6 +8,7 @@ use super::super::play::session::PLAY_SOURCE;
 use super::super::Shell;
 use crate::command_bar::Feedback;
 use crate::device_sim::{self, Os};
+use crate::workspace_view::device::KeyTap;
 
 impl Shell {
     /// An `Uplink::Device`: kept for the badge and the keyboard cover; the
@@ -46,6 +47,34 @@ impl Shell {
     /// Escape into the embedded client: what Back does in a running
     /// Android game is open Roblox's menu, which Escape opens too. Which key
     /// Sober itself maps to Android's Back is not documented.
+    /// A key typed on the keyboard cover, into the embedded client: nothing
+    /// outside Play, where no client takes it.
+    pub(in crate::shell) fn type_into_client(&mut self, tap: &KeyTap) {
+        #[cfg(target_os = "linux")]
+        {
+            use rbx_play::embed::Key;
+            let keys: Vec<Key> = match tap {
+                // A variation selector has no key; the character alone
+                // still types the emoji.
+                KeyTap::Text(text) => text
+                    .chars()
+                    .filter(|&c| c != '\u{fe0f}')
+                    .map(Key::Char)
+                    .collect(),
+                KeyTap::Backspace => vec![Key::Backspace],
+                KeyTap::Return => vec![Key::Return],
+            };
+            if let Some(Err(e)) = self.play_embedded().map(|client| client.type_keys(&keys)) {
+                self.output.push(
+                    PLAY_SOURCE,
+                    Feedback::Warning(format!("Keyboard cover: {e}")),
+                );
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = tap;
+    }
+
     pub(super) fn press_back(&mut self) {
         #[cfg(target_os = "linux")]
         if let Some(Err(e)) = self.play_embedded().map(|client| client.press_escape()) {

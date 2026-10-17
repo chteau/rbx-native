@@ -23,6 +23,9 @@ pub(crate) fn summary(report: &DeviceReport) -> String {
     if report.on_screen_keyboard_visible {
         line.push_str(" \u{b7} keyboard shown");
     }
+    if let Some(last) = &report.last_input {
+        line.push_str(&format!(" \u{b7} last input {last}"));
+    }
     line
 }
 

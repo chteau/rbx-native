@@ -63,7 +63,7 @@ fn stats_uplink_with_empty_metrics_is_all_none() {
 #[test]
 fn device_uplink_with_full_report_deserializes() {
     let uplink: Uplink = serde_json::from_str(
-        r#"{"type":"device","viewport_width":852,"viewport_height":393,"touch_enabled":true,"keyboard_enabled":false,"gamepad_enabled":false,"ten_foot":false,"preferred_input":"Touch","on_screen_keyboard_visible":false,"text_focus":true}"#,
+        r#"{"type":"device","viewport_width":852,"viewport_height":393,"touch_enabled":true,"keyboard_enabled":false,"gamepad_enabled":false,"ten_foot":false,"preferred_input":"Touch","on_screen_keyboard_visible":false,"text_focus":true,"last_input":"Touch"}"#,
     )
     .expect("deserialize device");
 
@@ -79,6 +79,7 @@ fn device_uplink_with_full_report_deserializes() {
             preferred_input: Some("Touch".into()),
             on_screen_keyboard_visible: false,
             text_focus: true,
+            last_input: Some("Touch".into()),
         })
     );
 }
@@ -103,6 +104,7 @@ fn device_report_round_trips_flat_with_type_tag() {
         preferred_input: Some("Gamepad".into()),
         on_screen_keyboard_visible: true,
         text_focus: true,
+        last_input: Some("Gamepad1".into()),
     };
     let value = serde_json::to_value(Uplink::Device(report)).expect("serialize device");
     assert_eq!(value["type"], "device");
@@ -122,6 +124,7 @@ fn device_report_round_trips_flat_with_type_tag() {
             preferred_input: Some("Gamepad".into()),
             on_screen_keyboard_visible: true,
             text_focus: true,
+            last_input: Some("Gamepad1".into()),
         })
     );
 }

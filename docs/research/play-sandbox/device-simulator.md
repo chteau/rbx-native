@@ -75,6 +75,9 @@ the badge, with the sandbox place published by Play:
 | Pixel 8, a TextBox tapped | `text_focus` true, the keyboard cover appears; `OnScreenKeyboardVisible` false |
 | iPhone 15 Pro, the chat bar tapped | the cover appears; tapping the scene drops it. `TextBoxFocused` does not fire for the CoreGui chat bar, so the probe also polls `TextChatService.ChatInputBarConfiguration.IsFocused` |
 | Pixel 8, Android back button | Roblox's in-game menu opens; pressed again, it closes |
+| iPhone 15 Pro, chat focused, "Sa😂🙏€" tapped on the cover, then return | the message arrives as typed, emoji and € included |
+| iPhone 15 Pro, a click on the client | `GetLastInputType` MouseButton1: a click reaches the game as a mouse click, not a touch, though `TouchEnabled` is true |
+| Controller Emulator open at Play, A held (Xbox, then Generic Gamepad) | the pad sends `BTN_SOUTH` on its `/dev/input` node and `GamepadEnabled` is true, but `GetLastInputType` stays Touch and the character does not jump, Sober focused or not, with `SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1` or without: Sober sees the pad but passes none of its input on |
 
 Two notes from the run:
 
@@ -173,12 +176,24 @@ screen looks, so that is what was built.
 - The catalog gives each phone and tablet an **approximate** system-keyboard
   height in points or dp. Neither Apple nor Google publishes one, and it
   varies with the keyboard app and its suggestion strip. Custom is 0.
-- **Device → On-screen keyboard** draws a picture of the iPhone's dark
-  system keyboard over the bottom of the screen: the letters, 123, #+= and
-  emoji pages (Twemoji images, `assets/twemoji/`), shift, and a globe key
-  that switches between QWERTY and AZERTY. The layout is also in the
-  Device menu and saved; until one is picked it follows the locale (French
-  gets AZERTY, with "espace" and "retour"). The keys type nothing.
+- **Device → On-screen keyboard** draws the device's own dark system
+  keyboard over the bottom of the screen: the iPhone's (with the globe and
+  dictation beside the keys in landscape), the iPad's (delete and return on
+  the top rows, a shift at each end, a hide key) or Gboard (flat keys,
+  `?123`, comma and full stop by the space bar, a round return, the
+  navigation bar below). Each has letters, 123, #+= and emoji pages
+  (Twemoji images, `assets/twemoji/`) and shift. The globe (Gboard: the
+  keyboard switcher) switches between QWERTY and AZERTY; the layout is also
+  in the Device menu and saved, and until one is picked it follows the
+  locale (French gets AZERTY, with "espace"/"retour", or "Français" on
+  Gboard's space bar).
+- During Play the character keys, space, delete and return type into the
+  client (`Embedded::type_keys`, XTest on a thread of its own). A character
+  the X keymap has no key for (€, ’, an emoji) gets a spare keycode mapped
+  to it for the rest of the Play, and its first press waits 0.3 s for
+  Sober to take the new keymap: a key sent 40 ms after the change was
+  lost, one sent 100 ms after typed. The focus is taken again before each
+  key, because the press on the cover gives it back to the editor.
   - In Edit it shows while the toggle is on, as a preview.
   - In Play it follows the client only, as the real keyboard does: up
     while a TextBox or the chat bar has focus, down otherwise. There it is
@@ -198,9 +213,11 @@ screen looks, so that is what was built.
 
 ![Play: the chat bar focused raises the cover](device-simulator/play-iphone15pro-chat-keyboard.png)
 
-Edit mode, `RBX_STUDIO_DEVICE='iPhone 15 Pro,keyboard,physical'`, captured on
-Xephyr at scale 1. The 852-point screen is drawn 533 px wide
-(852 × 96 × 3 / 460).
+![iPhone landscape, iPad and Pixel 8 keyboards](device-simulator/keyboard-styles.png)
+
+![Pixel 8, portrait](device-simulator/keyboard-pixel8-portrait.png)
+
+![Play: "Sa😂🙏€" typed on the cover and sent](device-simulator/play-typed-from-cover.png)
 
 ### Android back button
 

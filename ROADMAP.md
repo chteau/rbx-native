@@ -2927,12 +2927,16 @@ Roblox's own engine.
   and resimulation are engine behaviour, the same wall as physics, listed
   under "Explicitly impossible". What remains of the item is the Network
   Simulator above, which is what would matter most for these places.
-- [ ] 📋 **Controller Emulator: confirm Sober picks up the virtual pad, and
-  the devices still missing** — the emulator below has not yet been run
-  against a live Play: whether Sober, with its gamepad permission on and
-  `/dev/input` opened to its sandbox, sees the uinput pad, and which
-  `Enum.GamepadType` / button images the experience then gets per
-  device, is unverified. Also open: Quest2/Quest3 (Sober has no VR
+- [ ] 📋 **Controller Emulator: make Sober take the virtual pad's input, and
+  the devices still missing** — run against a live Play (2026-10-18), Sober
+  sees the uinput pad (`GamepadEnabled` true) but passes none of its input
+  on: A held on the drawing sends `BTN_SOUTH` on the pad's `/dev/input`
+  node, yet `GetLastInputType` stays Touch and the character does not jump,
+  with Sober focused, with SDL's background-joystick switch, and as Xbox or
+  Generic Gamepad alike (`docs/research/play-sandbox/device-simulator.md`).
+  Whether a real controller works through Sober here is the next thing to
+  check. Which `Enum.GamepadType` / button images the experience gets per
+  device follows from that. Also open: Quest2/Quest3 (Sober has no VR
   runtime), the TV Remote (the desktop client reads a remote's keys as a
   keyboard; Roblox maps them to gamepad keycodes only on Android TV),
   Windows (needs the ViGEmBus driver installed) and macOS (a DriverKit HID

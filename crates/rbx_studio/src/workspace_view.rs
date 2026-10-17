@@ -209,6 +209,9 @@ pub(crate) enum ViewportAction {
     /// The device keyboard cover's globe key: switch the cover to this
     /// layout, which `Shell` persists (see `device::keyboard`).
     KeyboardLayout(crate::device_sim::KeyboardLayout),
+    /// A key on the keyboard cover that types: `Shell` sends it to the Play
+    /// client, if one runs.
+    KeyboardTap(device::KeyTap),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}

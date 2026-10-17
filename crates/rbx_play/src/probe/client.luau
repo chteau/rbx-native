@@ -174,6 +174,12 @@ local function readDevice()
 	if okPref and type(pref) == "string" then
 		m.preferred_input = pref
 	end
+	local okLast, last = pcall(function()
+		return UserInputService:GetLastInputType().Name
+	end)
+	if okLast and type(last) == "string" then
+		m.last_input = last
+	end
 	return m
 end
 
@@ -189,6 +195,7 @@ local function reportDevice()
 		m.preferred_input or "",
 		tostring(m.on_screen_keyboard_visible),
 		tostring(m.text_focus),
+		m.last_input or "",
 	}, "|")
 	if key ~= lastDeviceKey then
 		lastDeviceKey = key

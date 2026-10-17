@@ -4,8 +4,9 @@
 
 - **Device Simulator: keyboard cover, Android back button and display
   scaling.** The Device menu can show an on-screen keyboard over the
-  simulated screen, drawn like the iPhone's with QWERTY or AZERTY keys
-  and an emoji page (and in Play it rises on its own while a TextBox or
+  simulated screen, drawn like the iPhone's, the iPad's or Gboard with
+  QWERTY or AZERTY keys and an emoji page, whose keys type into the Play
+  client (and in Play it rises on its own while a TextBox or
   the chat bar has focus), send Android's back button to the Play client, and scale the
   Edit preview to fit, to actual resolution or to the device's physical
   size. During Play the badge now shows what the real client reports —

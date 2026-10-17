@@ -237,6 +237,10 @@ pub struct DeviceReport {
     /// `TextBoxFocusReleased`), or the chat bar does
     /// (`ChatInputBarConfiguration.IsFocused`).
     pub text_focus: bool,
+    /// `UserInputService:GetLastInputType()`'s name: whether the editor's
+    /// clicks reach the game as `Touch` or `MouseButton1`, and the
+    /// Controller Emulator's presses as `Gamepad1`.
+    pub last_input: Option<String>,
 }
 
 /// A side's performance numbers, read from Roblox's `Stats` service and

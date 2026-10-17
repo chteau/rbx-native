@@ -46,10 +46,10 @@ use super::play::Phase;
 use super::Shell;
 use crate::command_bar::Feedback;
 use crate::device_sim::{
-    self, CustomDevice, Device, DisplayScaling, KeyboardLayout, Orientation, Platform, Tier,
+    self, CustomDevice, Device, DisplayScaling, KeyboardLayout, Orientation, Os, Platform, Tier,
 };
 use crate::tokens;
-use crate::workspace_view::device::Simulated;
+use crate::workspace_view::device::{KeyboardStyle, Simulated};
 
 /// Which device the menu has picked: one of `device_sim::devices`, or the
 /// custom one from settings.
@@ -229,6 +229,11 @@ impl Shell {
                 false => 0,
             },
             keyboard_layout: self.device_sim.layout,
+            keyboard_style: match (device.os, device.platform) {
+                (Os::Android, _) => KeyboardStyle::Android,
+                (_, Platform::Tablet) => KeyboardStyle::Ipad,
+                _ => KeyboardStyle::Iphone,
+            },
             client: client.map(|report| {
                 let screen = device.screen(orientation);
                 (

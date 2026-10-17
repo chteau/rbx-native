@@ -9,6 +9,8 @@
 
 mod keys;
 
+pub use keys::Key;
+
 use super::{visible_parts, EmbedError, Rect};
 use std::time::{Duration, Instant};
 
@@ -328,9 +330,11 @@ impl Embedded {
 }
 
 impl Drop for Embedded {
-    /// If still alive, reparents the window back to the root so it is not
-    /// destroyed with the editor's parent window.
+    /// Gives back the keycodes typing borrowed, and if still alive,
+    /// reparents the window back to the root so it is not destroyed with
+    /// the editor's parent window.
     fn drop(&mut self) {
+        self.return_borrowed();
         if self.alive() {
             let _ = self.conn.reparent_window(self.window, self.root, 0, 0);
             let _ = self.conn.flush();
