@@ -7,6 +7,8 @@
 //! Flatpak gives the client its own PID namespace, so windows are found by
 //! `WM_CLASS`, not `_NET_WM_PID`.
 
+mod keys;
+
 use super::{visible_parts, EmbedError, Rect};
 use std::time::{Duration, Instant};
 
