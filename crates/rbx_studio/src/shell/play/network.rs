@@ -148,7 +148,7 @@ impl NetworkSim {
             applied: Setting::OFF,
             staged: None,
             shaped_client: false,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos", windows))]
             shaper: None,
             popover: None,
             closed_at: None,
