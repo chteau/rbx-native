@@ -7,17 +7,28 @@ use gpui_kit::*;
 
 use crate::tokens;
 
-/// Keys per row for the three letter rows.
-const LETTER_ROWS: [usize; 3] = [10, 9, 9];
+/// The three letter rows of a plain QWERTY layout, shift and delete
+/// included, so the cover reads as a keyboard at a glance.
+const LETTER_ROWS: [&[&str]; 3] = [
+    &["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+    &["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+    &["\u{21e7}", "z", "x", "c", "v", "b", "n", "m", "\u{232b}"],
+];
 
-fn key() -> Div {
+fn key(label: &'static str) -> Div {
     // `tile` is the dock colour, so it would vanish on `chrome`: a white
     // wash reads as a key on any surface.
     div()
         .flex_1()
         .h_full()
+        .flex()
+        .items_center()
+        .justify_center()
         .bg(tokens::border2())
         .rounded(px(3.))
+        .text_size(tokens::viewport_text(12.))
+        .text_color(tokens::text2())
+        .child(label)
 }
 
 fn row() -> Div {
@@ -36,11 +47,11 @@ pub(super) fn cover(
 ) -> Div {
     let letters = LETTER_ROWS
         .iter()
-        .map(|&count| row().children((0..count).map(|_| key())));
+        .map(|labels| row().children(labels.iter().map(|&label| key(label))));
     let bottom = row()
-        .child(key().flex_none().w_1_5())
-        .child(key())
-        .child(key().flex_none().w_1_5());
+        .child(key("123").flex_none().w_1_5())
+        .child(key("space"))
+        .child(key("return").flex_none().w_1_5());
     div()
         .absolute()
         .left(left)

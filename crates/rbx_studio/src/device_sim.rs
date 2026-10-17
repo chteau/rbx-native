@@ -287,6 +287,39 @@ pub(crate) fn centred(panel: Rect, screen: (u32, u32)) -> Option<Rect> {
     })
 }
 
+/// The simulated screen's corner radius, in logical pixels: the bezel's
+/// outline (`workspace_view::device`) curves concentrically around it.
+pub(crate) const SCREEN_RADIUS: f32 = 12.0;
+
+/// The strips to cut out of a `width`×`height` window so its corners are
+/// rounded at `radius` pixels: one pixel row per strip, as wide as the
+/// part of that row outside the arc. The Play client is a foreign window,
+/// so its corners can only be cut, not painted over.
+pub(crate) fn corner_holes(width: u32, height: u32, radius: u32) -> Vec<Rect> {
+    let radius = radius.min(width / 2).min(height / 2);
+    let r = radius as f32;
+    let mut holes = Vec::new();
+    for row in 0..radius {
+        // Distance from the arc's centre to this row's middle.
+        let dy = r - row as f32 - 0.5;
+        let cut = (r - (r * r - dy * dy).max(0.0).sqrt()).round() as u32;
+        if cut == 0 {
+            continue;
+        }
+        let (top, bottom) = (row as i32, (height - 1 - row) as i32);
+        let right = (width - cut) as i32;
+        for (x, y) in [(0, top), (right, top), (0, bottom), (right, bottom)] {
+            holes.push(Rect {
+                x,
+                y,
+                width: cut,
+                height: 1,
+            });
+        }
+    }
+    holes
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CustomDevice {
     pub(crate) width: u32,

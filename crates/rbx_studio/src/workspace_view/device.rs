@@ -25,6 +25,8 @@ use crate::tokens;
 
 /// How far the bezel outline stands off the screen, in logical pixels.
 const BEZEL: f32 = 6.0;
+/// The corner ring's width (`border_4`), inside the bezel's 2-pixel outline.
+const MASK: f32 = 4.0;
 
 /// What `Shell` tells the view about the simulated device.
 #[derive(Debug, Clone, PartialEq)]
@@ -123,6 +125,22 @@ impl WorkspaceView {
                 .border_color(tokens::check_off_border())
                 .rounded(px(BEZEL * 3.0))
         });
+        // The screen's own rounded corners, concentric with the bezel: a
+        // ring of the backdrop colour whose inner edge has the screen's
+        // radius, painted over the scene's (and the cover's) square corners.
+        // During Play the client window's corners are cut to match
+        // (`device_sim::corner_holes`), so this ring shows through there.
+        let corners = screen.map(|rect| {
+            div()
+                .absolute()
+                .left(local(i64::from(rect.x) - i64::from(panel.origin.0)) - px(MASK))
+                .top(local(i64::from(rect.y) - i64::from(panel.origin.1)) - px(MASK))
+                .w(local(i64::from(rect.width)) + px(MASK * 2.0))
+                .h(local(i64::from(rect.height)) + px(MASK * 2.0))
+                .border_4()
+                .border_color(tokens::viewport_background())
+                .rounded(px(device_sim::SCREEN_RADIUS + MASK))
+        });
         let cover = match (screen, self.screen) {
             (Some(rect), Some(points)) if device.keyboard > 0 && points.1 > 0 => {
                 let height = (i64::from(device.keyboard) * i64::from(rect.height)
@@ -172,6 +190,7 @@ impl WorkspaceView {
                 })
                 .children(bezel)
                 .children(cover)
+                .children(corners)
                 .child(
                     div()
                         .absolute()

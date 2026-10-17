@@ -209,3 +209,26 @@ fn display_scaling_keys_and_factors() {
     let custom = CustomDevice::new(800, 600, Platform::Phone).device();
     assert_eq!(DisplayScaling::Physical.logical_per_point(&custom), None);
 }
+
+#[test]
+fn corner_holes_round_each_corner_symmetrically() {
+    let holes = corner_holes(100, 50, 4);
+    // Four strips per row whose cut is not zero; the first row cuts most.
+    assert_eq!(holes.len() % 4, 0);
+    let top_left: Vec<_> = holes.iter().filter(|h| h.x == 0 && h.y < 4).collect();
+    assert!(top_left.windows(2).all(|w| w[0].width >= w[1].width));
+    assert!(top_left[0].width >= 2 && top_left[0].width < 4);
+    for hole in &holes {
+        assert_eq!(hole.height, 1);
+        assert!(hole.x == 0 || hole.x + hole.width as i32 == 100);
+        assert!(hole.y < 4 || hole.y > 45);
+    }
+}
+
+#[test]
+fn corner_holes_need_a_radius_and_stay_inside_small_windows() {
+    assert!(corner_holes(100, 50, 0).is_empty());
+    assert!(corner_holes(6, 6, 40)
+        .iter()
+        .all(|h| h.width <= 3 && h.y < 6));
+}

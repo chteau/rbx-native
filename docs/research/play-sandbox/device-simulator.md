@@ -87,7 +87,7 @@ Two notes from the run:
   added round trip of 410 ms (185 ms in + 225 ms out).
 
 Screenshots: `device-simulator/play-iphone15pro-portrait.png`,
-`play-pixel8-textbox-keyboard.png`, `play-pixel8-back.png`,
+`play-pixel8-keyboard.png`, `play-pixel8-back.png`,
 `play-ipadpro-doesnt-fit.png`.
 
 ## 2. Input modes on Windows — not possible from outside the client
