@@ -23,17 +23,16 @@
 
 mod menu;
 mod popover;
+mod shaper;
 
 use gpui_kit::*;
-use rbx_play::launch::ClientOptions;
 use rbx_play::netsim::{is_reserved_name, NetConditions, OneWay, PRESETS};
 
-use super::session::PLAY_SOURCE;
-use crate::command_bar::Feedback;
 use crate::settings::SavedNetworkPreset;
 use crate::shell::Shell;
 
 pub(in crate::shell) use popover::Popover;
+use shaper::{prerequisite, unsupported};
 
 /// What the Preset menu shows as chosen.
 #[derive(Debug, Clone, PartialEq)]
@@ -134,7 +133,7 @@ pub(in crate::shell) struct NetworkSim {
     shaped_client: bool,
     /// Started by the first shaped Play and kept for later ones, like the
     /// tunnel; ended when the editor quits.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     shaper: Option<rbx_play::netsim::Shaper>,
     pub(in crate::shell) popover: Option<Popover>,
     /// When the popover last closed, so the tile click that closed it from
@@ -295,88 +294,6 @@ impl Shell {
             popover.status = status;
         }
         cx.notify();
-    }
-
-    /// Sends `conditions` to the shaper the running client is in; the
-    /// reason when that failed.
-    #[cfg(target_os = "linux")]
-    fn network_push(&mut self, conditions: &NetConditions) -> Option<String> {
-        let shaper = self.play.network.shaper.as_mut()?;
-        let error = shaper.apply(conditions).err()?;
-        let text = format!("Network simulation could not change: {error}.");
-        self.output
-            .push(PLAY_SOURCE, Feedback::Warning(text.clone()));
-        Some(text)
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn network_push(&mut self, _conditions: &NetConditions) -> Option<String> {
-        None
-    }
-
-    /// The Play start's network part: with a preset applied and Sober as the
-    /// launcher, the client runs inside the shaper. Anything missing leaves
-    /// the launch unshaped, with the reason in Output.
-    pub(in crate::shell) fn network_client_options(&mut self, options: &mut ClientOptions) {
-        self.play.network.shaped_client = false;
-        if self.play.network.applied.choice == Choice::Off {
-            return;
-        }
-        match self.network_wrapper() {
-            Ok(wrapper) => {
-                options.wrapper = wrapper;
-                self.play.network.shaped_client = true;
-            }
-            Err(reason) => self.output.push(
-                PLAY_SOURCE,
-                Feedback::Warning(format!(
-                    "Network simulation is off for this test: {reason}."
-                )),
-            ),
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    fn network_wrapper(&mut self) -> Result<Vec<String>, String> {
-        use rbx_play::launch::Launcher;
-        use rbx_play::netsim::Shaper;
-        if Launcher::detect() != Launcher::Sober {
-            return Err("it needs the Sober client (flatpak), which was not found".to_owned());
-        }
-        let network = &mut self.play.network;
-        if !network.shaper.as_mut().is_some_and(Shaper::alive) {
-            // Dropped first, so its namespace is gone before the next starts.
-            network.shaper = None;
-            let program = super::slirp4netns::program()
-                .map_err(|err| format!("slirp4netns could not be unpacked ({err})"))?;
-            // On the UI thread on purpose: its helpers end with the thread
-            // that started them (`PR_SET_PDEATHSIG`).
-            network.shaper = Some(Shaper::start(&program, false).map_err(|err| err.to_string())?);
-        }
-        let shaper = network.shaper.as_mut().expect("started above");
-        shaper
-            .apply(&network.applied.conditions)
-            .map_err(|err| err.to_string())?;
-        Ok(shaper.wrapper())
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn network_wrapper(&mut self) -> Result<Vec<String>, String> {
-        Err(unsupported().unwrap_or("not supported here").to_owned())
-    }
-}
-
-/// Why this platform has no Network Simulator, for the tile's tooltip.
-pub(in crate::shell) fn unsupported() -> Option<&'static str> {
-    if cfg!(windows) {
-        Some(
-            "not on Windows yet: shaping the client's UDP needs a packet-filter \
-             driver such as WinDivert, run as administrator",
-        )
-    } else if cfg!(target_os = "macos") {
-        Some("not on macOS: shaping needs dummynet (dnctl and pfctl), which needs root")
-    } else {
-        None
     }
 }
 

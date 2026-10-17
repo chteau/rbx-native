@@ -165,6 +165,14 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
 fn main() {
+    // The Network Simulator's elevated helper is this same executable,
+    // relaunched by `rbx_play::netsim::Shaper::start`; it needs none of the
+    // editor, so it branches off before anything else loads.
+    #[cfg(windows)]
+    if std::env::args().nth(1).as_deref() == Some(rbx_play::netsim::windivert::HELPER_FLAG) {
+        let arguments: Vec<String> = std::env::args().skip(2).collect();
+        std::process::exit(rbx_play::netsim::windivert::run_helper(&arguments));
+    }
     // Before anything can ask whether a beta feature is on.
     beta::init();
     // Loaded once, up front: the CLI's `--quality` still wins when given (see
