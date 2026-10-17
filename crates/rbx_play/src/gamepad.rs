@@ -14,6 +14,10 @@
 //! need ViGEmBus (a kernel driver the user installs), macOS a DriverKit
 //! HID extension. [`VirtualPad::create`] reports that rather than trying.
 
+// Only the Linux back end reads the layouts and identities; elsewhere they
+// stay compiled (and unit-tested) so the model is the same on every platform.
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
+
 mod layout;
 #[cfg(target_os = "linux")]
 mod uinput;
