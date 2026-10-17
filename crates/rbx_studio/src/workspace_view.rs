@@ -206,6 +206,9 @@ pub(crate) enum ViewportAction {
     /// The view's mouse while a plugin is activated (see `plugin_mouse`).
     /// With where the cursor is, in the view's logical pixels.
     PluginMouse(rbx_lua::plugin::MouseInput, [f32; 2]),
+    /// The device keyboard cover's globe key: switch the cover to this
+    /// layout, which `Shell` persists (see `device::keyboard`).
+    KeyboardLayout(crate::device_sim::KeyboardLayout),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -277,6 +280,8 @@ pub(crate) struct WorkspaceView {
     device: Option<device::Simulated>,
     /// A Play client is embedded over the view — see [`device`].
     playing: bool,
+    /// Which page of the device's keyboard cover shows, and its shift.
+    keyboard_page: device::KeyboardPage,
     /// The whole panel, in physical pixels: `viewport` less the letterbox
     /// while a screen is emulated, and what the frame is placed against.
     panel: Rc<Cell<Viewport>>,
@@ -497,6 +502,7 @@ impl WorkspaceView {
             panel: Rc::default(),
             device: None,
             playing: false,
+            keyboard_page: device::KeyboardPage::default(),
             // Assumed visible until `advance` first has a chance to find out
             // otherwise: `render` runs once as part of mounting, ahead of the
             // first `advance` tick, in the ordinary case of an already-visible
@@ -1275,7 +1281,7 @@ impl Render for WorkspaceView {
                 .left_0()
                 .size_full(),
             )
-            .children(self.device_overlay(scale))
+            .children(self.device_overlay(scale, cx))
             // Only for the moment after the wheel changes the speed: anything
             // that stays belongs in the Viewport dock, not over the scene.
             .when_some(

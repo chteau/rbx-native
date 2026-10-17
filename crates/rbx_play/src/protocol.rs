@@ -234,7 +234,8 @@ pub struct DeviceReport {
     /// `UserInputService.OnScreenKeyboardVisible`.
     pub on_screen_keyboard_visible: bool,
     /// A `TextBox` has the keyboard (`TextBoxFocused` until
-    /// `TextBoxFocusReleased`).
+    /// `TextBoxFocusReleased`), or the chat bar does
+    /// (`ChatInputBarConfiguration.IsFocused`).
     pub text_focus: bool,
 }
 

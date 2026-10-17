@@ -73,6 +73,7 @@ the badge, with the sandbox place published by Play:
 | Xbox Series X (new Play) | `IsTenFootInterface` true, `TouchEnabled` false |
 | Xbox + Controller Emulator open | `GamepadEnabled` true, `PreferredInput` Gamepad |
 | Pixel 8, a TextBox tapped | `text_focus` true, the keyboard cover appears; `OnScreenKeyboardVisible` false |
+| iPhone 15 Pro, the chat bar tapped | the cover appears; tapping the scene drops it. `TextBoxFocused` does not fire for the CoreGui chat bar, so the probe also polls `TextChatService.ChatInputBarConfiguration.IsFocused` |
 | Pixel 8, Android back button | Roblox's in-game menu opens; pressed again, it closes |
 
 Two notes from the run:
@@ -87,7 +88,8 @@ Two notes from the run:
   added round trip of 410 ms (185 ms in + 225 ms out).
 
 Screenshots: `device-simulator/play-iphone15pro-portrait.png`,
-`play-pixel8-keyboard.png`, `play-pixel8-back.png`,
+`play-pixel8-keyboard.png`, `play-iphone15pro-chat-keyboard.png`,
+`play-pixel8-back.png`,
 `play-ipadpro-doesnt-fit.png`.
 
 ## 2. Input modes on Windows — not possible from outside the client
@@ -171,18 +173,30 @@ screen looks, so that is what was built.
 - The catalog gives each phone and tablet an **approximate** system-keyboard
   height in points or dp. Neither Apple nor Google publishes one, and it
   varies with the keyboard app and its suggestion strip. Custom is 0.
-- **Device → On-screen keyboard** draws a key grid of our own over the
-  bottom of the screen.
-  - In Edit it shows while the toggle is on.
-  - In Play it shows while the toggle is on, and also whenever the client
-    reports that a TextBox has focus. There it is cut out of the client
-    window (`gpui_base::occlusion::probe`), so it sits above the game.
+- **Device → On-screen keyboard** draws a picture of the iPhone's dark
+  system keyboard over the bottom of the screen: the letters, 123, #+= and
+  emoji pages (Twemoji images, `assets/twemoji/`), shift, and a globe key
+  that switches between QWERTY and AZERTY. The layout is also in the
+  Device menu and saved; until one is picked it follows the locale (French
+  gets AZERTY, with "espace" and "retour"). The keys type nothing.
+  - In Edit it shows while the toggle is on, as a preview.
+  - In Play it follows the client only, as the real keyboard does: up
+    while a TextBox or the chat bar has focus, down otherwise. There it is
+    cut out of the client window (`gpui_base::occlusion::probe`), so it
+    sits above the game.
+- Emoji are images because GPUI on Linux reaches the colour emoji font only
+  through cosmic-text's fallback list, where DejaVu Sans, FreeSans and Noto
+  Sans Symbols2 come first and draw many faces as monochrome outlines.
+  Naming Noto Color Emoji does not help: GPUI drops any font without an
+  "m" glyph from its database when loading it by name.
 - **Limit:** the game is never told. `OnScreenKeyboardSize` stays (0, 0) and
   `OnScreenKeyboardVisible` stays false, because both are read-only and no
   API sets them. The cover shows what a keyboard would hide. It does not
   move the game's own UI the way a real keyboard can.
 
-![iPhone 15 Pro, landscape, keyboard cover, Physical size](device-simulator/iphone15pro-keyboard-physical.png)
+![Keyboard cover: AZERTY letters, 123 and emoji pages](device-simulator/keyboard-pages.png)
+
+![Play: the chat bar focused raises the cover](device-simulator/play-iphone15pro-chat-keyboard.png)
 
 Edit mode, `RBX_STUDIO_DEVICE='iPhone 15 Pro,keyboard,physical'`, captured on
 Xephyr at scale 1. The 852-point screen is drawn 533 px wide

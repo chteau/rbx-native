@@ -212,10 +212,16 @@ impl TileCache {
 /// action-icon kit (`assets/icons/actions`) — same 16x16 canvas, same
 /// premultiplied-alpha fixup, no reason for a second copy of either.
 pub(crate) fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
+    rasterize_at(svg, RENDER_SIZE)
+}
+
+/// [`rasterize`] onto a `side`-pixel square tile: also the device keyboard
+/// cover's Twemoji.
+pub(crate) fn rasterize_at(svg: &[u8], side: u32) -> Option<Arc<RenderImage>> {
     let tree = Tree::from_data(svg, &Options::default()).ok()?;
-    let mut pixmap = Pixmap::new(RENDER_SIZE, RENDER_SIZE)?;
+    let mut pixmap = Pixmap::new(side, side)?;
     let size = tree.size();
-    let tile = RENDER_SIZE as f32;
+    let tile = side as f32;
     let scale = tile / size.width().max(size.height());
     let (x, y) = (
         (tile - size.width() * scale) / 2.0,
@@ -244,7 +250,7 @@ pub(crate) fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
         })
         .collect();
 
-    to_render_image(straight, RENDER_SIZE, RENDER_SIZE)
+    to_render_image(straight, side, side)
 }
 
 #[cfg(test)]

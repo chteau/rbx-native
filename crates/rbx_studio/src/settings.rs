@@ -150,6 +150,9 @@ pub(crate) struct Settings {
     pub(crate) device_custom: crate::device_sim::CustomDevice,
     /// The Device Simulator's Display scaling (`shell::device_sim`).
     pub(crate) device_scaling: crate::device_sim::DisplayScaling,
+    /// The Device Simulator's keyboard cover layout; the system locale's
+    /// until one is picked.
+    pub(crate) device_keyboard_layout: crate::device_sim::KeyboardLayout,
 }
 
 /// A dock layout saved under a name.
@@ -247,6 +250,7 @@ impl Default for Settings {
             anim_names_width: None,
             device_custom: crate::device_sim::CustomDevice::default(),
             device_scaling: crate::device_sim::DisplayScaling::default(),
+            device_keyboard_layout: crate::device_sim::KeyboardLayout::system(),
         }
     }
 }
@@ -476,6 +480,10 @@ fn load_from(path: &Path) -> Settings {
             .as_str()
             .and_then(crate::device_sim::DisplayScaling::from_key)
             .unwrap_or_default(),
+        device_keyboard_layout: value["device_keyboard_layout"]
+            .as_str()
+            .and_then(crate::device_sim::KeyboardLayout::from_key)
+            .unwrap_or_else(crate::device_sim::KeyboardLayout::system),
     }
 }
 
@@ -743,6 +751,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     value["network_presets"] = network_presets::json(&settings.network_presets);
     value["device_custom"] = settings.device_custom.json();
     value["device_scaling"] = settings.device_scaling.key().into();
+    value["device_keyboard_layout"] = settings.device_keyboard_layout.key().into();
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
     write_atomic(path, &bytes)

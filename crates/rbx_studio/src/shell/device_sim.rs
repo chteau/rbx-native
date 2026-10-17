@@ -19,8 +19,10 @@
 //! window can be sized, never scaled — so a device larger than the 3D view
 //! is refused there.
 //!
-//! The on-screen keyboard is a cover we draw over the bottom of the screen,
-//! in Play too (cut out of the client window); the client is never told,
+//! The on-screen keyboard is a cover we draw over the bottom of the screen:
+//! in Edit when the menu's toggle asks for it, in Play only while the client
+//! reports a focused TextBox (cut out of the client window); the client is
+//! never told,
 //! so `OnScreenKeyboardSize` stays 0 — no API sets it. The Android back
 //! button sends Escape to the embedded client (Linux only, `client`).
 //!
@@ -43,7 +45,9 @@ use super::play::session::PLAY_SOURCE;
 use super::play::Phase;
 use super::Shell;
 use crate::command_bar::Feedback;
-use crate::device_sim::{self, CustomDevice, Device, DisplayScaling, Orientation, Platform, Tier};
+use crate::device_sim::{
+    self, CustomDevice, Device, DisplayScaling, KeyboardLayout, Orientation, Platform, Tier,
+};
 use crate::tokens;
 use crate::workspace_view::device::Simulated;
 
@@ -68,6 +72,8 @@ pub(super) struct DeviceSim {
     keyboard: bool,
     /// Persisted in settings as `device_scaling`.
     pub(super) scaling: DisplayScaling,
+    /// The keyboard cover's layout; persisted as `device_keyboard_layout`.
+    pub(super) layout: KeyboardLayout,
     /// The running Play client's latest self-report.
     client: Option<rbx_play::protocol::DeviceReport>,
     /// The device was on the view when the Animation Editor took its
@@ -76,7 +82,11 @@ pub(super) struct DeviceSim {
 }
 
 impl DeviceSim {
-    pub(super) fn new(custom: CustomDevice, scaling: DisplayScaling) -> Self {
+    pub(super) fn new(
+        custom: CustomDevice,
+        scaling: DisplayScaling,
+        layout: KeyboardLayout,
+    ) -> Self {
         DeviceSim {
             choice: None,
             orientation: Orientation::Landscape,
@@ -84,6 +94,7 @@ impl DeviceSim {
             launched: None,
             keyboard: false,
             scaling,
+            layout,
             client: None,
             suspended: false,
         }
@@ -177,6 +188,13 @@ impl Shell {
 
     /// Re-tells the view about the device after a change that keeps its
     /// screen: the keyboard, the scaling, a client report.
+    /// The keyboard cover's globe key, or the Device menu, picked `layout`.
+    pub(super) fn set_keyboard_layout(&mut self, layout: KeyboardLayout, cx: &mut Context<Self>) {
+        self.device_sim.layout = layout;
+        self.save_settings();
+        self.refresh_device_view(cx);
+    }
+
     fn refresh_device_view(&mut self, cx: &mut Context<Self>) {
         if let Some(device) = self.simulated_device(cx) {
             let simulated = self.simulated(&device);
@@ -189,9 +207,13 @@ impl Shell {
         let orientation = self.device_sim.orientation;
         let insets = device.insets(orientation);
         let client = self.device_sim.client.as_ref();
-        // In Play a focused TextBox raises it too, as the real keyboard would.
-        let keyboard_shown =
-            self.device_sim.keyboard || client.is_some_and(|report| report.text_focus);
+        // In Play it follows the client, as the real keyboard does: up while
+        // a TextBox (the chat bar included) has focus, down otherwise. The
+        // menu's toggle previews it in Edit, where nothing takes input.
+        let keyboard_shown = match self.device_sim.launched {
+            Some(_) => client.is_some_and(|report| report.text_focus),
+            None => self.device_sim.keyboard,
+        };
         Simulated {
             label: device.label(orientation).into(),
             insets: SafeInsets {
@@ -206,6 +228,7 @@ impl Shell {
                 true => device.keyboard_height(orientation),
                 false => 0,
             },
+            keyboard_layout: self.device_sim.layout,
             client: client.map(|report| {
                 let screen = device.screen(orientation);
                 (

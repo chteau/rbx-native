@@ -232,3 +232,29 @@ fn corner_holes_need_a_radius_and_stay_inside_small_windows() {
         .iter()
         .all(|h| h.width <= 3 && h.y < 6));
 }
+
+#[test]
+fn french_locales_type_azerty() {
+    assert_eq!(
+        KeyboardLayout::for_locale("fr_FR.UTF-8"),
+        KeyboardLayout::Azerty
+    );
+    assert_eq!(KeyboardLayout::for_locale("fr_BE"), KeyboardLayout::Azerty);
+    assert_eq!(KeyboardLayout::for_locale("fr"), KeyboardLayout::Azerty);
+    assert_eq!(
+        KeyboardLayout::for_locale("en_US.UTF-8"),
+        KeyboardLayout::Qwerty
+    );
+    assert_eq!(KeyboardLayout::for_locale("C"), KeyboardLayout::Qwerty);
+    assert_eq!(KeyboardLayout::for_locale(""), KeyboardLayout::Qwerty);
+}
+
+#[test]
+fn keyboard_layouts_round_trip_and_cycle() {
+    for layout in KeyboardLayout::ALL {
+        assert_eq!(KeyboardLayout::from_key(layout.key()), Some(layout));
+        assert_eq!(layout.next().next(), layout);
+        assert_ne!(layout.next(), layout);
+    }
+    assert_eq!(KeyboardLayout::from_key("dvorak"), None);
+}

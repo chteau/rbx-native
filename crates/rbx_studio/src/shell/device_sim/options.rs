@@ -1,11 +1,11 @@
-//! The Device menu's options for the picked device: the on-screen keyboard,
-//! the Android back button and Display scaling.
+//! The Device menu's options for the picked device: the on-screen keyboard
+//! and its layout, the Android back button and Display scaling.
 
 use gpui_kit::*;
 
 use super::super::menu;
 use super::super::Shell;
-use crate::device_sim::DisplayScaling;
+use crate::device_sim::{DisplayScaling, KeyboardLayout};
 
 impl Shell {
     pub(super) fn device_option_items(&self, cx: &App) -> Vec<menu::Item> {
@@ -15,9 +15,9 @@ impl Shell {
         let keyboard = menu::item("On-screen keyboard")
             .checked(has_keyboard && self.device_sim.keyboard)
             .hint(
-                "Covers the bottom of the screen like the system keyboard, and in Play also \
-                 while a TextBox is focused. Drawn by the editor only: the game is not told \
-                 (OnScreenKeyboardSize stays 0).",
+                "Previews the system keyboard over the bottom of the screen. In Play it \
+                 rises on its own while a TextBox or the chat bar has focus. Drawn by the \
+                 editor only: the game is not told (OnScreenKeyboardSize stays 0).",
             );
         let back_hint = if cfg!(target_os = "linux") {
             "Android devices, during Play: sends Escape to the client, which opens \
@@ -26,6 +26,13 @@ impl Shell {
             "Linux only: the client takes the key through Sober\u{2019}s window."
         };
         let back = menu::item("Android back button").hint(back_hint);
+        let layouts = KeyboardLayout::ALL.into_iter().map(|layout| {
+            let item = menu::item(layout.label()).checked(self.device_sim.layout == layout);
+            match has_keyboard {
+                true => item.on_click(move |shell, cx| shell.set_keyboard_layout(layout, cx)),
+                false => item.disabled(),
+            }
+        });
         let mut items = vec![
             match has_keyboard {
                 true => keyboard.on_click(|shell, cx| {
@@ -39,8 +46,11 @@ impl Shell {
                 false => back.disabled(),
             },
             menu::separator(),
-            menu::item("Display scaling").disabled(),
+            menu::item("Keyboard layout").disabled(),
         ];
+        items.extend(layouts);
+        items.push(menu::separator());
+        items.push(menu::item("Display scaling").disabled());
         for scaling in DisplayScaling::ALL {
             items.push(
                 menu::item(scaling.label())

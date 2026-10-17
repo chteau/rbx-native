@@ -14,6 +14,8 @@
 
 mod keyboard;
 
+pub(crate) use keyboard::Page as KeyboardPage;
+
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_viewer::SafeInsets;
@@ -42,6 +44,8 @@ pub(crate) struct Simulated {
     pub(crate) logical_per_point: Option<f32>,
     /// The on-screen keyboard cover's height in device points; 0 hides it.
     pub(crate) keyboard: u32,
+    /// The keys the cover shows.
+    pub(crate) keyboard_layout: device_sim::KeyboardLayout,
     /// What the Play client reports (`device_sim::report::summary`), and
     /// whether its viewport differs from the screen.
     pub(crate) client: Option<(SharedString, bool)>,
@@ -56,6 +60,10 @@ impl WorkspaceView {
         }
         self.pump
             .gui_safe_insets(device.as_ref().map(|d| d.insets).unwrap_or_default());
+        // A keyboard raised again opens on its letters, as iOS's does.
+        if device.as_ref().is_none_or(|d| d.keyboard == 0) {
+            self.keyboard_page = KeyboardPage::default();
+        }
         self.device = device;
         cx.notify();
     }
@@ -95,7 +103,7 @@ impl WorkspaceView {
 
     /// The backdrop, bezel and badge over the panel, in its own logical
     /// pixels; nothing while no device is simulated.
-    pub(super) fn device_overlay(&self, scale: f32) -> Option<AnyElement> {
+    pub(super) fn device_overlay(&self, scale: f32, cx: &mut Context<Self>) -> Option<AnyElement> {
         let device = self.device.as_ref()?;
         let panel = self.panel.get();
         let local = |device_px: i64| px(device_px as f32 / scale);
@@ -147,15 +155,21 @@ impl WorkspaceView {
                     / i64::from(points.1))
                 .min(i64::from(rect.height));
                 Some(keyboard::cover(
-                    local(i64::from(rect.x) - i64::from(panel.origin.0)),
-                    local(
-                        i64::from(rect.y) + i64::from(rect.height)
-                            - height
-                            - i64::from(panel.origin.1),
-                    ),
-                    local(i64::from(rect.width)),
-                    local(height),
+                    keyboard::Placement {
+                        left: local(i64::from(rect.x) - i64::from(panel.origin.0)),
+                        top: local(
+                            i64::from(rect.y) + i64::from(rect.height)
+                                - height
+                                - i64::from(panel.origin.1),
+                        ),
+                        width: local(i64::from(rect.width)),
+                        height: local(height),
+                        points: device.keyboard,
+                    },
+                    device.keyboard_layout,
+                    self.keyboard_page,
                     self.playing,
+                    cx,
                 ))
             }
             _ => None,

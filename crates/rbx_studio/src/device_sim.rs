@@ -263,6 +263,64 @@ impl DisplayScaling {
     }
 }
 
+/// The key layout the keyboard cover shows: the cover is a picture of the
+/// system keyboard, so it follows the user's own, AZERTY for French.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeyboardLayout {
+    Qwerty,
+    Azerty,
+}
+
+impl KeyboardLayout {
+    pub(crate) const ALL: [KeyboardLayout; 2] = [KeyboardLayout::Qwerty, KeyboardLayout::Azerty];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            KeyboardLayout::Qwerty => "QWERTY",
+            KeyboardLayout::Azerty => "AZERTY (fran\u{e7}ais)",
+        }
+    }
+
+    /// The settings value.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            KeyboardLayout::Qwerty => "qwerty",
+            KeyboardLayout::Azerty => "azerty",
+        }
+    }
+
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|l| l.key() == key)
+    }
+
+    /// The layout a locale such as `fr_FR.UTF-8` suggests: AZERTY for
+    /// French, QWERTY otherwise.
+    pub(crate) fn for_locale(locale: &str) -> Self {
+        let lang = locale.split(['_', '.', '@', '-']).next().unwrap_or("");
+        match lang.eq_ignore_ascii_case("fr") {
+            true => KeyboardLayout::Azerty,
+            false => KeyboardLayout::Qwerty,
+        }
+    }
+
+    /// The system locale's layout (`LC_ALL`, then `LC_MESSAGES`, then
+    /// `LANG`), until one is picked in the Device menu.
+    pub(crate) fn system() -> Self {
+        ["LC_ALL", "LC_MESSAGES", "LANG"]
+            .into_iter()
+            .find_map(|key| std::env::var(key).ok().filter(|v| !v.is_empty()))
+            .map_or(KeyboardLayout::Qwerty, |locale| Self::for_locale(&locale))
+    }
+
+    /// The globe key's next layout.
+    pub(crate) fn next(self) -> Self {
+        match self {
+            KeyboardLayout::Qwerty => KeyboardLayout::Azerty,
+            KeyboardLayout::Azerty => KeyboardLayout::Qwerty,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Rect {
     pub(crate) x: i32,

@@ -125,6 +125,15 @@ local GuiService = game:GetService("GuiService")
 local textFocus = false
 local lastDeviceKey = nil
 
+-- TextBoxFocused never fires for the CoreGui chat bar: TextChatService
+-- reports its focus itself. Polled with the rest of the report.
+local function chatFocused()
+	local okRead, focused = pcall(function()
+		return game:GetService("TextChatService").ChatInputBarConfiguration.IsFocused
+	end)
+	return okRead and focused == true
+end
+
 local function readDevice()
 	local width, height = 0, 0
 	pcall(function()
@@ -157,7 +166,7 @@ local function readDevice()
 		on_screen_keyboard_visible = flag(function()
 			return UserInputService.OnScreenKeyboardVisible
 		end),
-		text_focus = textFocus,
+		text_focus = textFocus or chatFocused(),
 	}
 	local okPref, pref = pcall(function()
 		return UserInputService.PreferredInput.Name
