@@ -10,6 +10,10 @@
 //! launched in the device's input mode (`device_sim::sober_keys`), so the
 //! client reports genuine values. Pixel density cannot be simulated either
 //! way: Sober's `enable_hidpi` scales the window, it does not report a DPI.
+//!
+//! `RBX_STUDIO_DEVICE=<device name>[,rotate]` picks a device at startup and
+//! shows the Test ribbon — a screenshot aid, since nothing else can open the
+//! Device menu on the editor's behalf (see `AGENTS.md`'s safety rules).
 
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -62,7 +66,26 @@ impl DeviceSim {
     }
 }
 
+/// Read once at startup by `Shell::new`; documented in this module's doc.
+pub(crate) const DEVICE_VARIABLE: &str = "RBX_STUDIO_DEVICE";
+
 impl Shell {
+    /// [`DEVICE_VARIABLE`]'s startup pick.
+    pub(super) fn apply_debug_device(&mut self, spec: &str, cx: &mut Context<Self>) {
+        let mut parts = spec.split(',').map(str::trim);
+        let name = parts.next().unwrap_or_default();
+        if let Some(index) = device_sim::devices()
+            .iter()
+            .position(|device| device.name.eq_ignore_ascii_case(name))
+        {
+            self.pick_device(Some(Choice::Builtin(index)), cx);
+            if parts.any(|part| part == "rotate") {
+                self.rotate_device(cx);
+            }
+        }
+        self.ribbon_tab = super::ribbon::Tab::Test;
+    }
+
     /// The picked device, while the 3D view still shows its screen: a size
     /// typed into the Screen row or the UI Editor replaces it.
     fn simulated_device(&self, cx: &App) -> Option<Device> {
