@@ -2,6 +2,14 @@
 
 ## 2026-10-17
 
+- **Device Simulator: keyboard cover, Android back button and display
+  scaling.** The Device menu can show an on-screen keyboard over the
+  simulated screen (and does on its own in Play while a TextBox has
+  focus), send Android's back button to the Play client, and scale the
+  Edit preview to fit, to actual resolution or to the device's physical
+  size. During Play the badge now shows what the real client reports —
+  its viewport size, touch and ten-foot state — and warns when the size
+  differs from the device's, so the simulation checks itself. — @chteau
 - **Server Authority places are supported in the editor.** Setting
   `Workspace.AuthorityMode` to `Server` in the Properties panel now also
   enables the five properties Studio sets with it (`NextGenerationReplication`,
