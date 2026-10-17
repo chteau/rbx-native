@@ -981,6 +981,12 @@ impl Shell {
             shell.apply_debug_edit(&spec, window, cx);
         }
 
+        // `RBX_STUDIO_NETWORK` (see `shell::play::network`): a preset applied
+        // and the Test ribbon shown, for a screenshot of the Network tile.
+        if let Ok(spec) = std::env::var(play::network::NETWORK_VARIABLE) {
+            shell.apply_debug_network(&spec, window, cx);
+        }
+
         // Explorer delete/insert debug aids (see `shell::keys`): applied
         // last, so an insert can parent under whatever is already selected.
         shell.apply_debug_explorer_action(cx);

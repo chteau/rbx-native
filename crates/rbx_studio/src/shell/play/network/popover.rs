@@ -10,7 +10,7 @@ use gpui_kit::*;
 
 use super::{Choice, Field, Way};
 use crate::launcher::ui::{self, Weight};
-use crate::shell::ribbon::{tile, unavailable_tile};
+use crate::shell::ribbon::{tile_with_badge, unavailable_tile};
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -44,7 +44,7 @@ fn format(field: Field, value: f64) -> String {
 }
 
 impl Shell {
-    fn network_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn network_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let shown = self.play.network.shown().conditions;
         let mut inputs = Vec::new();
         let mut subscriptions = Vec::new();
@@ -127,11 +127,12 @@ impl Shell {
         }
         let network = &self.play.network;
         let pill = network.shown().pill();
-        tile(
+        tile_with_badge(
             &self.ribbon_nav,
             "ribbon-network",
             IconName::Wifi,
             "Network",
+            ui::pill(pill, None, pill != "Off"),
             cx,
         )
         .tooltip({
@@ -155,11 +156,6 @@ impl Shell {
                 shell.network_open(window, cx);
             }
         }))
-        .child(div().absolute().top(px(2.)).right(px(2.)).child(ui::pill(
-            pill,
-            None,
-            pill != "Off",
-        )))
         .when_some(network.popover.as_ref(), |this, popover| {
             this.child(div().absolute().left_0().top_full().child(deferred(
                 anchored().child(self.network_popover(popover, cx)),

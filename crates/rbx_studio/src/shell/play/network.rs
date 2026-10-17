@@ -15,6 +15,11 @@
 //! launches the client as it always did, and only an applied preset puts
 //! it in the shaped network. Applied values last until the editor quits;
 //! saved presets are kept in settings.
+//!
+//! `RBX_STUDIO_NETWORK=<preset>[,open]` applies a built-in preset (by its
+//! pill or its name) at startup and shows the Test ribbon, with the popover
+//! open under `,open` — a screenshot aid, since nothing else can click the
+//! ribbon on the editor's behalf (see `AGENTS.md`'s safety rules).
 
 mod menu;
 mod popover;
@@ -247,7 +252,33 @@ impl NetworkSim {
     }
 }
 
+/// Read once at startup by `Shell::new`; documented in this module's doc.
+pub(crate) const NETWORK_VARIABLE: &str = "RBX_STUDIO_NETWORK";
+
 impl Shell {
+    /// [`NETWORK_VARIABLE`]'s startup edit.
+    pub(in crate::shell) fn apply_debug_network(
+        &mut self,
+        spec: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (name, open) = match spec.split_once(',') {
+            Some((name, flag)) => (name.trim(), flag.trim() == "open"),
+            None => (spec.trim(), false),
+        };
+        if let Some(index) = PRESETS.iter().position(|preset| {
+            preset.pill.eq_ignore_ascii_case(name) || preset.name.eq_ignore_ascii_case(name)
+        }) {
+            self.play.network.stage(Choice::BuiltIn(index));
+            self.network_apply(cx);
+        }
+        self.ribbon_tab = crate::shell::ribbon::Tab::Test;
+        if open {
+            self.network_open(window, cx);
+        }
+    }
+
     /// Apply: the staged values become the applied ones and, when the
     /// running client is in the shaper, take effect on it at once.
     pub(in crate::shell) fn network_apply(&mut self, cx: &mut Context<Self>) {

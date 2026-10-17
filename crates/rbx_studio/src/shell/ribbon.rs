@@ -875,6 +875,40 @@ fn base_tile(
     label: &'static str,
     enabled: bool,
 ) -> Stateful<Div> {
+    tile_frame(id, icon_zone(icon, px(20.)), label, enabled)
+}
+
+/// [`tile`] with a badge beside its icon (the Network tile's connection
+/// pill). The tile grows past the usual width to fit it, so the badge never
+/// covers the icon whatever its text.
+pub(super) fn tile_with_badge(
+    nav: &Roving,
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: &'static str,
+    badge: impl IntoElement,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let row = h_flex()
+        .flex_none()
+        .gap(px(3.))
+        .items_center()
+        .child(icon_zone(icon, px(20.)))
+        .child(badge);
+    let tile = tile_frame(id, row, label, true)
+        .w_auto()
+        .min_w(tokens::tile_width())
+        .px(px(6.));
+    nav.claim(tile, cx)
+}
+
+/// A tile's box, states and label, under `top` (its icon).
+fn tile_frame(
+    id: impl Into<ElementId>,
+    top: impl IntoElement,
+    label: &'static str,
+    enabled: bool,
+) -> Stateful<Div> {
     v_flex()
         .id(id.into())
         .relative()
@@ -910,7 +944,7 @@ fn base_tile(
             }
         })
         .group("ribbon-tile")
-        .child(icon_zone(icon, px(20.)))
+        .child(top)
         .child(div().w_full().text_center().truncate().child(label))
 }
 
