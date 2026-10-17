@@ -18,6 +18,7 @@ impl Shell {
             ..ClientOptions::default()
         };
         self.network_client_options(&mut options);
+        self.controller_client_options(&mut options, cx);
         options
     }
 }

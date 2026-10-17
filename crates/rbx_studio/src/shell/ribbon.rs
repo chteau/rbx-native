@@ -631,9 +631,24 @@ impl Shell {
             self.network_tile(cx),
             self.device_tile(cx),
             disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
+            self.controller_tile(cx).into_any_element(),
         ];
         tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
         tiles
+    }
+}
+
+impl Shell {
+    /// Test › Controller: the Controller Emulator window.
+    fn controller_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        tile(
+            &self.ribbon_nav,
+            "ribbon-controller",
+            IconName::Gamepad2,
+            "Controller",
+            cx,
+        )
+        .on_click(cx.listener(|shell, _, _, cx| shell.open_controller_emulator(cx)))
     }
 }
 
