@@ -629,6 +629,7 @@ impl Shell {
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),
             self.network_tile(cx),
+            self.device_tile(cx),
             disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
         ];
         tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
@@ -660,11 +661,7 @@ fn test_tiles() -> Vec<AnyElement> {
 fn viewport_tiles() -> Vec<AnyElement> {
     placeholders(
         "viewport",
-        &[
-            (IconName::Settings, "Settings"),
-            (IconName::Smartphone, "Device"),
-            (IconName::Eye, "Show UI"),
-        ],
+        &[(IconName::Settings, "Settings"), (IconName::Eye, "Show UI")],
     )
 }
 

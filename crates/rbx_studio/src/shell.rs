@@ -15,6 +15,7 @@ mod clipboard;
 mod close_place;
 mod command;
 mod debugging;
+mod device_sim;
 mod discord;
 mod dock_drag;
 mod docks;
@@ -476,6 +477,8 @@ pub(crate) struct Shell {
     studio_presence: studio_presence::StudioPresence,
     /// Collaborators through the presence relay — see `shell::team_presence`.
     team_presence: team_presence::TeamPresence,
+    /// The Test ribbon's Device menu — see `shell::device_sim`.
+    device_sim: device_sim::DeviceSim,
     /// The code sign-in window, while open — see `shell::roblox_login`.
     roblox_login: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The page the next Settings window opens on; see `open_settings_on`.
@@ -544,6 +547,7 @@ impl Shell {
             network_presets,
             anim_sheet_height,
             anim_names_width,
+            device_custom,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -846,6 +850,7 @@ impl Shell {
             plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
+            device_sim: device_sim::DeviceSim::new(device_custom),
             roblox_login: None,
             settings_open_on: None,
             drag: None,
@@ -985,6 +990,12 @@ impl Shell {
         // and the Test ribbon shown, for a screenshot of the Network tile.
         if let Ok(spec) = std::env::var(play::network::NETWORK_VARIABLE) {
             shell.apply_debug_network(&spec, window, cx);
+        }
+
+        // `RBX_STUDIO_DEVICE` (see `shell::device_sim`): a device picked and
+        // the Test ribbon shown, for a screenshot of the simulated screen.
+        if let Ok(spec) = std::env::var(device_sim::DEVICE_VARIABLE) {
+            shell.apply_debug_device(&spec, cx);
         }
 
         // Explorer delete/insert debug aids (see `shell::keys`): applied
@@ -1734,6 +1745,7 @@ impl Shell {
             network_presets: self.play.network.saved.clone(),
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),
+            device_custom: self.device_sim.custom,
         };
         let _ = settings.save();
 

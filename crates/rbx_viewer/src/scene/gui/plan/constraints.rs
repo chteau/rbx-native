@@ -267,6 +267,17 @@ pub(in crate::scene::gui) fn top_bar_inset(properties: &BTreeMap<String, Variant
     }
 }
 
+/// `ScreenGui.ScreenInsets`: whether the device's own safe-area insets apply.
+///
+/// `DeviceSafeInsets` adds them, and `CoreUISafeInsets`/`TopbarSafeInsets` are
+/// "added to the `DeviceSafeInsets` area" (`Enum.ScreenInsets`); only `None`
+/// draws under the cutouts. `IgnoreGuiInset` moves a screen to
+/// `DeviceSafeInsets`, so it keeps them too.
+pub(in crate::scene::gui) fn device_safe(properties: &BTreeMap<String, Variant>) -> bool {
+    super::props::flag(properties, "IgnoreGuiInset", false)
+        || enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS) != NO_INSETS
+}
+
 /// `Enum.ScreenInsets.CoreUISafeInsets`, the property's own default, and
 /// `TopbarSafeInsets`.
 const CORE_UI_SAFE_INSETS: u32 = 2;

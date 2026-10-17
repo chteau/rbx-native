@@ -2,6 +2,14 @@
 
 ## 2026-10-17
 
+- **Device Simulator.** The Test ribbon's Device menu previews a phone,
+  tablet, desktop, console or headset screen: the 3D view letterboxes to
+  the device in a bezel and lays every `ScreenGui` out at its logical size,
+  clear of an iPhone's notch and home indicator as `ScreenInsets` asks, and
+  Rotate swaps the orientation. In Play the embedded client takes the
+  device's size at 1:1, so `ViewportSize` is genuinely the device's, and
+  Sober starts in touch or console mode to match — not yet live-tested.
+  Pixel density is not simulated: Sober has no way to report one. — @chteau
 - **Play: Network Simulator.** A Network tile in the Test ribbon opens a
   "Network simulation" popover shaped like Studio's: a Preset menu with
   Studio's five built-ins (Ideal Fiber to Bad Connection (3G)) and saved
