@@ -1018,6 +1018,12 @@ impl Render for WorkspaceView {
         let scale = window.scale_factor();
         // Room for a simulated device's bezel around its letterboxed screen.
         let margin = device_pixels(px(self.device_margin()), scale);
+        // Display scaling: device points to physical pixels, in Edit only.
+        let max_scale = self
+            .device
+            .as_ref()
+            .and_then(|device| device.logical_per_point)
+            .map(|per_point| f64::from(per_point * scale));
         // A frame larger than the window itself would be read back only to be
         // scaled down again.
         let cap = window.viewport_size();
@@ -1254,6 +1260,7 @@ impl Render for WorkspaceView {
                                     .saturating_sub(margin * 2),
                             ),
                             screen,
+                            max_scale,
                         ));
                     },
                     |_, _: (), _, _| {},

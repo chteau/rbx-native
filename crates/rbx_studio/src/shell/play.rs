@@ -680,6 +680,10 @@ impl Shell {
             if self.live_apply(&event, cx) || self.play_debug_event(&event, cx) {
                 continue;
             }
+            if let Uplink::Device(report) = event {
+                self.device_client_report(report, cx);
+                continue;
+            }
             if let Uplink::Stats { side, metrics } = event {
                 let slot = match side {
                     Side::Server => &mut self.play.stats.server,
@@ -768,6 +772,13 @@ impl Shell {
             cx.notify();
         }
         true
+    }
+
+    /// The embedded client while it is shown over the 3D view.
+    #[cfg(target_os = "linux")]
+    pub(in crate::shell) fn play_embedded(&self) -> Option<&rbx_play::embed::Embedded> {
+        let running = self.play.session.as_ref()?;
+        running.embedded.as_ref().filter(|_| !running.hidden)
     }
 
     /// Cuts the editor's popups out of the embedded game window, so they

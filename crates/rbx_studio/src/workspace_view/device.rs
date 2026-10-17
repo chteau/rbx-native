@@ -7,6 +7,12 @@
 //! can be sized but never scaled, so the screen is the device's own size at
 //! 1:1 centred in the panel (`device_sim::centred`), with a plain backdrop
 //! around it — the same rect `Shell::play_embed_target` gives the client.
+//! Display scaling applies to Edit only; Play stays 1:1.
+//!
+//! A keyboard cover (`keyboard`) can sit over the bottom of the screen, and
+//! during Play the badge also carries what the client reports about itself.
+
+mod keyboard;
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -29,6 +35,14 @@ pub(crate) struct Simulated {
     /// Whether the Play client can take the device's shape at all (a
     /// headset cannot: Sober has no VR).
     pub(crate) plays: bool,
+    /// Editor logical pixels per device point in Edit
+    /// (`device_sim::DisplayScaling`); `None` fits the panel.
+    pub(crate) logical_per_point: Option<f32>,
+    /// The on-screen keyboard cover's height in device points; 0 hides it.
+    pub(crate) keyboard: u32,
+    /// What the Play client reports (`device_sim::report::summary`), and
+    /// whether its viewport differs from the screen.
+    pub(crate) client: Option<(SharedString, bool)>,
 }
 
 impl WorkspaceView {
@@ -109,9 +123,41 @@ impl WorkspaceView {
                 .border_color(tokens::check_off_border())
                 .rounded(px(BEZEL * 3.0))
         });
-        let label = match note {
+        let cover = match (screen, self.screen) {
+            (Some(rect), Some(points)) if device.keyboard > 0 && points.1 > 0 => {
+                let height = (i64::from(device.keyboard) * i64::from(rect.height)
+                    / i64::from(points.1))
+                .min(i64::from(rect.height));
+                Some(keyboard::cover(
+                    local(i64::from(rect.x) - i64::from(panel.origin.0)),
+                    local(
+                        i64::from(rect.y) + i64::from(rect.height)
+                            - height
+                            - i64::from(panel.origin.1),
+                    ),
+                    local(i64::from(rect.width)),
+                    local(height),
+                    self.playing,
+                ))
+            }
+            _ => None,
+        };
+        let mut label = match note {
             Some(note) => format!("{} \u{b7} {note}", device.label),
             None => device.label.to_string(),
+        };
+        let mut mismatch = false;
+        if let Some((summary, differs)) = &device.client {
+            label.push_str(&format!(" \u{b7} {summary}"));
+            mismatch = *differs;
+            if let (true, Some((w, h))) = (mismatch, self.screen) {
+                label.push_str(&format!(" \u{b7} expected {w}\u{d7}{h}"));
+            }
+        }
+        let badge_text = if mismatch {
+            tokens::warning()
+        } else {
+            tokens::viewport_badge_text()
         };
         Some(
             div()
@@ -125,6 +171,7 @@ impl WorkspaceView {
                     this.bg(tokens::viewport_background())
                 })
                 .children(bezel)
+                .children(cover)
                 .child(
                     div()
                         .absolute()
@@ -134,7 +181,7 @@ impl WorkspaceView {
                         .py_0p5()
                         .bg(tokens::viewport_badge())
                         .text_size(tokens::viewport_text(12.))
-                        .text_color(tokens::viewport_badge_text())
+                        .text_color(badge_text)
                         .child(label),
                 )
                 .into_any_element(),
