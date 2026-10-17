@@ -255,8 +255,10 @@ impl Shell {
         }
         if self.document == Document::Animation && document != Document::Animation {
             self.leave_animation(cx);
+            self.resume_device(cx);
         }
         if document == Document::Animation && self.document != Document::Animation {
+            self.suspend_device(cx);
             // The stage fills the room the Animation panel leaves it: a
             // phone screen the UI Editor left emulated would letterbox it.
             self.viewport

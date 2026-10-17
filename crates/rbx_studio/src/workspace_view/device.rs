@@ -182,7 +182,11 @@ impl WorkspaceView {
                         .bg(tokens::viewport_badge())
                         .text_size(tokens::viewport_text(12.))
                         .text_color(badge_text)
-                        .child(label),
+                        .child(label)
+                        // Cut out of the Play client, which covers the badge
+                        // whenever it fills the panel (a device that does
+                        // not fit, a headset).
+                        .child(gpui_base::occlusion::probe()),
                 )
                 .into_any_element(),
         )

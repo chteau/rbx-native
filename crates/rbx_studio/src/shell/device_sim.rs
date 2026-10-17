@@ -70,6 +70,9 @@ pub(super) struct DeviceSim {
     pub(super) scaling: DisplayScaling,
     /// The running Play client's latest self-report.
     client: Option<rbx_play::protocol::DeviceReport>,
+    /// The device was on the view when the Animation Editor took its
+    /// screen away, and comes back when it is left.
+    suspended: bool,
 }
 
 impl DeviceSim {
@@ -82,6 +85,7 @@ impl DeviceSim {
             keyboard: false,
             scaling,
             client: None,
+            suspended: false,
         }
     }
 
@@ -128,6 +132,19 @@ impl Shell {
         let device = self.device_sim.device()?;
         let screen = device.screen(self.device_sim.orientation);
         (self.viewport.read(cx).emulated_screen() == Some(screen)).then_some(device)
+    }
+
+    /// The Animation Editor clears the view's screen for its stage; a
+    /// simulated device is remembered rather than lost.
+    pub(super) fn suspend_device(&mut self, cx: &App) {
+        self.device_sim.suspended = self.simulated_device(cx).is_some();
+    }
+
+    /// Back from the Animation Editor: the device it set aside, if any.
+    pub(super) fn resume_device(&mut self, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.device_sim.suspended) {
+            self.apply_device(cx);
+        }
     }
 
     pub(super) fn pick_device(&mut self, choice: Option<Choice>, cx: &mut Context<Self>) {
