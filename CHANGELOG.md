@@ -2,6 +2,17 @@
 
 ## 2026-10-17
 
+- **Server Authority places are supported in the editor.** Setting
+  `Workspace.AuthorityMode` to `Server` in the Properties panel now also
+  enables the five properties Studio sets with it (`NextGenerationReplication`,
+  `PlayerScriptsUseInputActionSystem`, `SignalBehavior` Deferred,
+  `UseFixedSimulation`, `StreamingEnabled`) in the same undo step; going back
+  to `Automatic` leaves them alone. On such a place the Attributes section
+  states the replication limits and flags attributes that predicted
+  instances will not replicate (past the first 64, names or string values over
+  50 characters), and Play writes one Output line saying that prediction and
+  rollback run in the real client and server. The sandbox's mirror now says
+  when an instance an edit targets may simply be streamed out. — @chteau
 - **Controller Emulator.** Test › Controller opens Studio's emulator for
   a Generic Gamepad, PS4, PS5, Xbox or Generic Handheld: click and drag
   the drawn pad, or drive it from the keyboard with per-device mappings

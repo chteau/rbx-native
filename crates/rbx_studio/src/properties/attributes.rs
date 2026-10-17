@@ -20,6 +20,8 @@ use rbx_dom::{
 };
 use rbx_reflection::ReflectionDatabase;
 
+pub(crate) mod replication;
+
 use super::{value_edit_kind, EditKind};
 
 pub(crate) const ATTRIBUTES_PROPERTY: &str = "AttributesSerialize";

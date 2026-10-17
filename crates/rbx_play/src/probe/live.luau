@@ -303,7 +303,10 @@ function Live.new(side, send, codec)
 	local function target(id)
 		local inst = byId[id]
 		if inst == nil then
-			error("instance " .. tostring(id) .. " is not in the " .. side .. " tree", 0)
+			-- With StreamingEnabled (on for every Server Authority place) the
+			-- client tree holds only what streamed in; the instance may be out.
+			local why = if side == "client" then " (it may be streamed out)" else ""
+			error("instance " .. tostring(id) .. " is not in the " .. side .. " tree" .. why, 0)
 		end
 		return inst
 	end

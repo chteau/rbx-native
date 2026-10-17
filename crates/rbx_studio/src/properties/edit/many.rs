@@ -4,7 +4,7 @@
 use rbx_dom::{BrickColor, Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::{commit, edit_text, parse, pivot, NAME_PROPERTY};
+use super::{authority, commit, edit_text, parse, pivot, NAME_PROPERTY};
 use crate::properties::{material_colors, value_edit_kind, EditKind};
 
 const BRICK_COLOR: &str = "BrickColor";
@@ -102,8 +102,12 @@ pub(crate) fn commit_all(
             writes.push((reference, text));
         }
     }
+    let written = !writes.is_empty();
     for (reference, text) in writes {
         commit(dom, db, reference, name, &text)?;
+    }
+    if written {
+        authority::follow(dom, db, selection, name, text)?;
     }
     Ok(())
 }

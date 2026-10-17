@@ -2864,34 +2864,50 @@ Roblox's own engine.
   is unavailable there: Windows needs a packet-filter driver such as
   WinDivert run as administrator, macOS needs dummynet (`dnctl` and
   `pfctl`) as root.
-- [ ] ⚠️ **Server Authority (Studio Beta, announced 2026)**, checked
-  against the Creator Hub's `projects/server-authority` page. It is a
-  workspace mode, not an editor feature: `Workspace.AuthorityMode = Server`
-  turns on client prediction, misprediction detection, and rollback with
-  resimulation, and sets five companion `Workspace` properties in one go
-  (`NextGenerationReplication`, `PlayerScriptsUseInputActionSystem`,
-  `SignalBehavior = Deferred`, `UseFixedSimulation`, `StreamingEnabled`).
-  It adds `RunService:BindToSimulation()` and `SetPredictionMode()`, makes
-  the Input Action System the way clients affect state, and syncs custom
-  data on predicted instances through Attributes (64 per instance, names
-  and string values of 50 characters at most). Effect on this project, in
-  three parts:
-  - **Editing is unaffected.** No place format or DOM change. The reachable
-    part is small: once the daily API-dump sync brings the new `Workspace`
-    properties in (only `SignalBehavior` and `StreamingEnabled` are in the
-    embedded dump today), the Properties panel shows them, and setting
-    `AuthorityMode` could flip the five companions together, the way
-    Studio does. Worth a line in the Attributes editor's limits too.
-  - **Running it is impossible.** Prediction, rollback and resimulation
-    are engine behaviour. This is the same wall as physics, listed under
-    "Explicitly impossible".
-  - **The sandbox is affected.** A place using it needs its probe and
-    mirror scripts to obey the same rules (shared `ModuleScript`s
-    initialised from `ReplicatedStorage`, no reliance on `Heartbeat`
-    ordering), and playtest results for such a place are only as good as
-    the real client's. The Network Simulator item above is the one that
-    would matter most for these places, and is the one the relay cannot
-    fully serve.
+- [x] **Server Authority, editor side (Studio Beta, announced 2026)**,
+  checked against the Creator Hub's `projects/server-authority` page. It is
+  a workspace mode, not an editor feature: `Workspace.AuthorityMode = Server`
+  turns on client prediction, misprediction detection and rollback with
+  resimulation, and sets five companion `Workspace` properties in one go.
+  The embedded API dump already carries all of them (`AuthorityMode`,
+  `NextGenerationReplication`, `PlayerScriptsUseInputActionSystem`,
+  `UseFixedSimulation`, `StreamingEnabled`, and `SignalBehavior`, which a
+  file saves as `SignalBehavior2`), and the Properties panel lists them
+  under their dump categories (`NotScriptable` hides nothing). Shipped:
+  - Setting `AuthorityMode` to `Server` writes the five companions
+    (`NextGenerationReplication`, `PlayerScriptsUseInputActionSystem`,
+    `UseFixedSimulation` Enabled, `SignalBehavior` Deferred,
+    `StreamingEnabled` on) in the same undo step. Switching back to
+    `Automatic` leaves them as they are; the docs do not say Studio reverts
+    them.
+  - On a `Server` place the Attributes section states the replication
+    limits (first 64 attributes, names and string values of 50 characters
+    at most) and flags each attribute a predicted instance will not
+    replicate, with a warning line.
+  - Play on such a place writes one Output info line: prediction and
+    rollback run in the real client and server, so playtest results are the
+    real engine's, and the Network Simulator shapes real UDP traffic.
+  - Sandbox audit of the probe and mirror Luau: the mirror batches
+    `DescendantAdded`/`DescendantRemoving`/`Changed` into sets flushed on a
+    timer and re-checks the tree at flush time, so `SignalBehavior =
+    Deferred` (handlers run late, possibly after the instance moved again)
+    changes nothing; the editor-side `LiveTree` already tolerates a child
+    before its parent and an unknown id. Under `StreamingEnabled` the
+    client tree holds only what streamed in, the mirror never assumes a
+    part exists (it walks `GetChildren` and listens for additions), and an
+    edit aimed at an instance that has streamed out now fails with "(it may
+    be streamed out)" rather than a bare "not in the client tree". The
+    probe's own modules live in `ReplicatedStorage`, which is not streamed.
+    Nothing in the probe depends on `Heartbeat` ordering (it only counts
+    beats for the server FPS metric).
+  - Not yet live-tested: Play on an `AuthorityMode = Server` place through
+    Sober (the probe, live tree, stats and the new Output line). Whether
+    the server `fps` metric (a `Heartbeat` count) stays meaningful under
+    `UseFixedSimulation` is likewise unchecked.
+- [ ] ⚠️ **Running Server Authority is impossible.** Prediction, rollback
+  and resimulation are engine behaviour, the same wall as physics, listed
+  under "Explicitly impossible". What remains of the item is the Network
+  Simulator above, which is what would matter most for these places.
 - [ ] 📋 **Controller Emulator: confirm Sober picks up the virtual pad, and
   the devices still missing** — the emulator below has not yet been run
   against a live Play: whether Sober, with its gamepad permission on and

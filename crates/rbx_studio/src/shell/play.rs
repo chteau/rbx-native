@@ -46,6 +46,7 @@ pub(crate) mod copy_name;
 pub(crate) mod debug;
 pub(crate) mod live;
 pub(in crate::shell) mod network;
+mod server_authority;
 pub(crate) mod session;
 #[cfg(target_os = "linux")]
 mod slirp4netns;
@@ -498,6 +499,7 @@ impl Shell {
                 Ok(done) => done,
             };
             let _ = this.update(cx, |shell, cx| {
+                shell.note_server_authority(cx);
                 if let Some(warning) = restart {
                     shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
                 }
