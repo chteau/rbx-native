@@ -2860,10 +2860,29 @@ Roblox's own engine.
   (Sober has no VR); Studio's on-screen keyboard cover and Android back
   button; a Play client larger than the 3D view (a foreign window can be
   sized, not scaled, so it is refused).
-- [ ] 📋 **Network Simulator on Windows and macOS** — the tile says why it
-  is unavailable there: Windows needs a packet-filter driver such as
-  WinDivert run as administrator, macOS needs dummynet (`dnctl` and
-  `pfctl`) as root.
+- [x] **Network Simulator on Windows and macOS** (`rbx_play::netsim`
+  `windivert` and `dummynet`): the Network tile works on both. Windows
+  relaunches the editor once as an elevated helper (a UAC prompt) that
+  loads WinDivert 2.2 at runtime (`WinDivert.dll` and `WinDivert64.sys`
+  beside the exe, not bundled), finds RobloxPlayerBeta's UDP ports with
+  `GetExtendedUdpTable` without ever opening the client's process, and
+  delays, jitters and drops them in its own delay line, in order. macOS
+  asks for an administrator password once and runs a root script that
+  loads pf `dummynet` rules into the `com.apple/rbxnative` anchor for the
+  client's UDP ports (found with `lsof`), takes and releases its own
+  `pfctl -E` token and removes only its own pipes; macOS dummynet has no
+  jitter, so jitter is spread over four pipes when pf accepts
+  `probability` on those rules, and Output says so when it does not.
+  Research and a live-test checklist for each:
+  `docs/research/play-sandbox/network-simulator-windows-macos.md`.
+- [ ] 📋 **Network Simulator on Windows and macOS: never run** — neither
+  shaper has run on a real Windows PC or Mac (only their platform-free
+  parts are unit-tested, and a scripted pf/dnctl stand-in on Linux):
+  WinDivert's address bit layout, driver loading under Secure Boot or
+  Memory Integrity, the elevated helper reaching the editor's pipe, pf
+  accepting `probability` and port lists on dummynet rules in the
+  `com.apple/*` sub-anchor, and whether Roblox's anti-cheat reacts to
+  either.
 - [x] **Server Authority, editor side (Studio Beta, announced 2026)**,
   checked against the Creator Hub's `projects/server-authority` page. It is
   a workspace mode, not an editor feature: `Workspace.AuthorityMode = Server`

@@ -2,6 +2,14 @@
 
 ## 2026-10-17
 
+- **Network Simulator on Windows and macOS.** The Network tile is no
+  longer Linux-only. On Windows the first shaped Play asks for
+  administrator approval and shapes RobloxPlayerBeta's UDP traffic through
+  WinDivert (its two files go next to the editor); on macOS it asks for an
+  administrator password and uses pf's dummynet, with jitter spread over
+  several pipes since dummynet has none. Neither has run on a real
+  Windows PC or Mac yet; the research note has a test checklist for
+  each. — @chteau
 - **Server Authority places are supported in the editor.** Setting
   `Workspace.AuthorityMode` to `Server` in the Properties panel now also
   enables the five properties Studio sets with it (`NextGenerationReplication`,
