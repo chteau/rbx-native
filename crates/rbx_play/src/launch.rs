@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
+use crate::sober_config::SoberConfigOverlay;
+
 /// Everything outside `A-Z a-z 0-9 - _ . ~` is escaped.
 const LAUNCH_DATA_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -59,7 +61,7 @@ fn command_for(program: &str) -> Command {
     cmd
 }
 
-const SOBER_APP_ID: &str = "org.vinegarhq.Sober";
+pub(crate) const SOBER_APP_ID: &str = "org.vinegarhq.Sober";
 const CLIENT_EXE: &str = "RobloxPlayerBeta.exe";
 
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -91,10 +93,26 @@ impl Launcher {
 
     /// The command that opens `uri`; not spawned.
     pub fn command(self, uri: &str) -> Command {
+        self.command_with(uri, &ClientOptions::default())
+    }
+
+    /// [`Launcher::command`] with `options` applied: Sober runs under
+    /// `options.wrapper` with `options.flatpak_args` before its app id. The
+    /// other launchers hand the URI to the OS and take no options.
+    pub fn command_with(self, uri: &str, options: &ClientOptions) -> Command {
         match self {
             Launcher::Sober => {
-                let mut cmd = command_for("flatpak");
-                cmd.args(["run", SOBER_APP_ID, uri]);
+                let mut cmd = match options.wrapper.split_first() {
+                    Some((program, args)) => {
+                        let mut cmd = command_for(program);
+                        cmd.args(args).arg("flatpak");
+                        cmd
+                    }
+                    None => command_for("flatpak"),
+                };
+                cmd.arg("run")
+                    .args(&options.flatpak_args)
+                    .args([SOBER_APP_ID, uri]);
                 cmd
             }
             Launcher::XdgOpen => {
@@ -180,23 +198,58 @@ impl Launcher {
     }
 }
 
+/// How one Play session's client is started, beyond the URI. Only Sober
+/// honours these; see [`Launcher::command_with`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ClientOptions {
+    /// Keys set in Sober's `config.json` for this session only.
+    pub sober_config: Vec<(String, serde_json::Value)>,
+    /// `flatpak run` sandbox options, such as `--device=input`.
+    pub flatpak_args: Vec<String>,
+    /// A program and its arguments that `flatpak` runs under, such as an
+    /// `nsenter` into a shaped network namespace.
+    pub wrapper: Vec<String>,
+}
+
 /// A launched client. The editor polls `exited` (e.g. every 500 ms) and
 /// stops the Play session when it returns true; dropping it kills the
 /// process when the launcher tracks the client.
 pub struct ClientProcess {
     pub launcher: Launcher,
     pub child: std::process::Child,
+    overlay: Option<SoberConfigOverlay>,
 }
 
 impl ClientProcess {
     /// Spawns `launcher.command(uri)` with stdin null and stdout/stderr null.
     pub fn spawn(launcher: Launcher, uri: &str) -> std::io::Result<Self> {
-        let mut cmd = launcher.command(uri);
+        Self::spawn_with(launcher, uri, &ClientOptions::default())
+    }
+
+    /// [`ClientProcess::spawn`] with `options`. Sober's config changes are
+    /// written first and put back after the client exits; a failed spawn
+    /// puts them back at once.
+    pub fn spawn_with(
+        launcher: Launcher,
+        uri: &str,
+        options: &ClientOptions,
+    ) -> std::io::Result<Self> {
+        let overlay = match (launcher, crate::sober_config::default_path()) {
+            (Launcher::Sober, Some(path)) => {
+                SoberConfigOverlay::apply(&path, &options.sober_config)?
+            }
+            _ => None,
+        };
+        let mut cmd = launcher.command_with(uri, options);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         let child = cmd.spawn()?;
-        Ok(ClientProcess { launcher, child })
+        Ok(ClientProcess {
+            launcher,
+            child,
+            overlay,
+        })
     }
 
     /// `try_wait` reports an exit and the launcher tracks the client.
@@ -227,6 +280,9 @@ impl Drop for ClientProcess {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn();
+        }
+        if let Some(overlay) = self.overlay.take() {
+            overlay.restore_after_exit();
         }
     }
 }

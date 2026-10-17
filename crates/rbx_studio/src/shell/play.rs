@@ -23,7 +23,8 @@
 //!    from `ApiKey::from_env_or_config`), then rename the sandbox place to
 //!    `copy_name::render(template, place name)` when that differs from the
 //!    name applied earlier this session; a failed rename only warns.
-//! 6. Launch `ClientProcess::spawn(launcher, &join_uri(place, session))`,
+//! 6. Launch `ClientProcess::spawn_with(launcher, &join_uri(place, session),
+//!    &play_client_options())`,
 //!    after reading `Embedded::existing_clients()` (Linux) to ignore.
 //! 7. Linux with an `embed_target`: `Embedded::attach(target.window,
 //!    target.rect, &ignore, 90 s)` on a background task; on `NotFound` the
@@ -39,11 +40,15 @@
 //! writes `reason.message()` to Output, back to `Phase::Idle`. Any start
 //! step failing stops with `StopReason::Failed`.
 
+mod client_options;
 pub(in crate::shell) mod cloudflared;
 pub(crate) mod copy_name;
 pub(crate) mod debug;
 pub(crate) mod live;
+pub(in crate::shell) mod network;
 pub(crate) mod session;
+#[cfg(target_os = "linux")]
+mod slirp4netns;
 
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -144,6 +149,8 @@ pub(super) struct Play {
     pub(super) live: live::Live,
     /// The scripts debugged in this test (`play::debug`).
     pub(super) debug: debug::PlayDebug,
+    /// The Network Simulator (`play::network`).
+    pub(super) network: network::NetworkSim,
     /// The window Play was pressed in, for work that needs a `Window` from
     /// the poll (opening a script where the game paused).
     window_handle: Option<AnyWindowHandle>,
@@ -166,8 +173,13 @@ pub(super) struct Play {
 }
 
 impl Play {
-    pub(super) fn new(sandbox: Option<PlaySandbox>, copy_name: String) -> Self {
+    pub(super) fn new(
+        sandbox: Option<PlaySandbox>,
+        copy_name: String,
+        network_presets: Vec<crate::settings::SavedNetworkPreset>,
+    ) -> Self {
         Play {
+            network: network::NetworkSim::new(network_presets),
             sandbox,
             copy_name,
             named: None,
@@ -502,13 +514,16 @@ impl Shell {
                 return;
             }
             let uri = join_uri(place_id, &session);
+            let Ok(options) = this.update(cx, |shell, cx| shell.play_client_options(cx)) else {
+                return;
+            };
             let launched = cx
                 .background_spawn(async move {
                     #[cfg(any(target_os = "linux", windows))]
                     let ignore = rbx_play::embed::Embedded::existing_clients().unwrap_or_default();
                     #[cfg(not(any(target_os = "linux", windows)))]
                     let ignore: Vec<crate::pointer_lock::WindowId> = Vec::new();
-                    ClientProcess::spawn(launcher, &uri).map(|client| (client, ignore))
+                    ClientProcess::spawn_with(launcher, &uri, &options).map(|client| (client, ignore))
                 })
                 .await;
             let (client, ignore) = match launched {

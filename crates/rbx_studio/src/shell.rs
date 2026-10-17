@@ -541,6 +541,7 @@ impl Shell {
             team_presence: team_presence_settings,
             play_sandbox,
             play_copy_name,
+            network_presets,
             anim_sheet_height,
             anim_names_width,
         } = settings;
@@ -841,7 +842,7 @@ impl Shell {
             discord_started: 0,
             discord_idle: false,
             discord_idle_check: None,
-            play: play::Play::new(play_sandbox, play_copy_name),
+            play: play::Play::new(play_sandbox, play_copy_name, network_presets),
             plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
@@ -978,6 +979,12 @@ impl Shell {
         // above selected.
         if let Ok(spec) = std::env::var(edit::EDIT_VARIABLE) {
             shell.apply_debug_edit(&spec, window, cx);
+        }
+
+        // `RBX_STUDIO_NETWORK` (see `shell::play::network`): a preset applied
+        // and the Test ribbon shown, for a screenshot of the Network tile.
+        if let Ok(spec) = std::env::var(play::network::NETWORK_VARIABLE) {
+            shell.apply_debug_network(&spec, window, cx);
         }
 
         // Explorer delete/insert debug aids (see `shell::keys`): applied
@@ -1724,6 +1731,7 @@ impl Shell {
             team_presence: self.team_presence.settings.clone(),
             play_sandbox: self.play.sandbox,
             play_copy_name: self.play.copy_name.clone(),
+            network_presets: self.play.network.saved.clone(),
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),
         };

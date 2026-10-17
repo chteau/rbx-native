@@ -70,7 +70,7 @@ pub enum TunnelProvider {
 /// run on a thread that lives as long as the tunnel (the UI thread or a
 /// long-lived worker pool, as the editor's background executor is).
 #[cfg(target_os = "linux")]
-fn end_with_parent(command: &mut Command) {
+pub(crate) fn end_with_parent(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     let parent = std::process::id();
     // SAFETY: `prctl` and `getppid` are async-signal-safe, as `pre_exec`
@@ -91,7 +91,7 @@ fn end_with_parent(command: &mut Command) {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn end_with_parent(_command: &mut Command) {}
+pub(crate) fn end_with_parent(_command: &mut Command) {}
 
 impl TunnelProvider {
     /// Starts the child with stdout+stderr piped, reads both on threads,
