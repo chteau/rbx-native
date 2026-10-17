@@ -112,7 +112,9 @@ impl NetConditions {
     }
 
     /// The lines sent to the holder's stdin: a direction and three
-    /// integers each, nothing it would have to parse as a command.
+    /// integers each, nothing it would have to parse as a command. Only the
+    /// Linux shaper sends them.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub(crate) fn holder_lines(self) -> String {
         let line = |dir: &str, way: OneWay| {
             let [delay, spread, loss] = way.netem_numbers();
