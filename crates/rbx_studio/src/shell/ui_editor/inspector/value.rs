@@ -18,7 +18,7 @@ pub(super) fn numbers_of(value: &Variant) -> Option<Vec<f32>> {
 /// The field's reading of a value whose numbers are `numbers`.
 pub(super) fn read(form: Form, part: usize, numbers: &[f32]) -> Option<Vec<f32>> {
     match form {
-        Form::Number { .. } => Some(vec![*numbers.get(part)?]),
+        Form::Number { .. } | Form::Floored { .. } => Some(vec![*numbers.get(part)?]),
         Form::Percent => Some(vec![((1.0 - numbers.get(part)?) * 100.0).round()]),
         Form::Hex => numbers.get(..3).map(<[f32]>::to_vec),
     }
@@ -40,6 +40,7 @@ pub(super) fn write(spec: Spec, mut numbers: Vec<f32>, value: &[f32]) -> String 
     }
     let stored = match spec.form {
         Form::Percent => 1.0 - first.clamp(0.0, 100.0) / 100.0,
+        Form::Floored { floor, .. } => first.max(floor),
         _ => first,
     };
     for &part in spec.parts {
