@@ -352,7 +352,9 @@ pub(crate) const SCREEN_RADIUS: f32 = 12.0;
 /// The strips to cut out of a `width`×`height` window so its corners are
 /// rounded at `radius` pixels: one pixel row per strip, as wide as the
 /// part of that row outside the arc. The Play client is a foreign window,
-/// so its corners can only be cut, not painted over.
+/// so its corners can only be cut, not painted over (Linux and Windows,
+/// where it is embedded).
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) fn corner_holes(width: u32, height: u32, radius: u32) -> Vec<Rect> {
     let radius = radius.min(width / 2).min(height / 2);
     let r = radius as f32;

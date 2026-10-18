@@ -118,7 +118,9 @@ struct Session {
     client: ClientProcess,
     own_user: Option<u64>,
     last_rect: Option<session::rbx_play_rect::Rect>,
-    /// `EmbedTarget::corner` of `last_rect`.
+    /// `EmbedTarget::corner` of `last_rect`. Only an embedded client has
+    /// corners to cut.
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     corner: u32,
     /// The embedded window is hidden because another document (Scripts,
     /// UI Editor, Animation) took the room the 3D view had.
