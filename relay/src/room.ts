@@ -9,11 +9,17 @@ import {
   MAX_USERS,
   RATE_BURST,
   RATE_PER_SECOND,
+  type Client,
   type JournalEntry,
   type Refusal,
-  type Snapshot,
-  type UserState,
+  type Sealed,
+  type SealedSnapshot,
 } from "./contracts.js";
+
+interface Held {
+  tag: string;
+  entry: JournalEntry;
+}
 
 interface Bucket {
   tokens: number;
@@ -24,12 +30,12 @@ export class Room {
   key: string | null = null;
   cursor = 0;
   /** Keyed by {@link senderKey}: one user can be in Studio and rbx-native at once. */
-  private users = new Map<string, UserState>();
+  private users = new Map<string, Sealed>();
   private buckets = new Map<number, Bucket>();
   private lastTs = new Map<number, number>();
-  private journal: JournalEntry[] = [];
+  private journal: Held[] = [];
 
-  put(state: UserState, now: number): Refusal | null {
+  put(state: Sealed, now: number): Refusal | null {
     if (!this.take(state.userId, now)) return { status: 429, error: "rate" };
     const key = senderKey(state.userId, state.client);
     if (!this.users.has(key) && this.users.size >= MAX_USERS) {
@@ -38,28 +44,19 @@ export class Room {
     this.users.set(key, { ...state, seen: now });
     this.cursor++;
     // Clients re-send their recent edits on every heartbeat, so the journal
-    // keys on the client's own edit time and skips an edit it already holds;
-    // otherwise re-sends would flood the cap and evict real history in
-    // seconds. The value is never stored.
-    for (const edit of state.edits) {
-      const at = edit.at;
-      const seen = this.journal.some(
-        (e) =>
-          e.userId === state.userId &&
-          e.at === at &&
-          e.path === edit.path &&
-          e.property === edit.property,
+    // dedupes on (userId, tag); otherwise re-sends would flood the cap and
+    // evict real history in seconds.
+    for (const edit of state.j) {
+      const held = this.journal.some(
+        (h) => h.entry.userId === state.userId && h.tag === edit.tag,
       );
-      if (seen) continue;
+      if (held) continue;
       this.journal.push({
-        userId: state.userId,
-        name: state.name,
-        path: edit.path,
-        property: edit.property,
-        at,
+        tag: edit.tag,
+        entry: { userId: state.userId, at: edit.at, ct: edit.ct },
       });
     }
-    this.journal = this.journal.filter((e) => e.at >= now - JOURNAL_TTL_MS);
+    this.journal = this.journal.filter((h) => h.entry.at >= now - JOURNAL_TTL_MS);
     if (this.journal.length > JOURNAL_CAP) {
       this.journal = this.journal.slice(-JOURNAL_CAP);
     }
@@ -68,12 +65,13 @@ export class Room {
 
   journalSince(since: number, now: number): JournalEntry[] {
     return this.journal
+      .map((h) => h.entry)
       .filter((e) => e.at > since && e.at >= now - JOURNAL_TTL_MS)
       .sort((a, b) => a.at - b.at);
   }
 
   /** Drops one editor's state; the user's rate and replay state go with their last one. */
-  remove(userId: number, client: UserState["client"]): boolean {
+  remove(userId: number, client: Client): boolean {
     const had = this.users.delete(senderKey(userId, client));
     if (!this.hasUser(userId)) {
       this.buckets.delete(userId);
@@ -99,8 +97,13 @@ export class Room {
     return dropped;
   }
 
-  snapshot(): Snapshot {
-    return { cursor: this.cursor, users: [...this.users.values()] };
+  snapshot(): SealedSnapshot {
+    const users = [...this.users.values()].sort(
+      (a, b) =>
+        a.userId - b.userId ||
+        Number(a.client === "rbx-native") - Number(b.client === "rbx-native"),
+    );
+    return { cursor: this.cursor, users };
   }
 
   checkTime(
@@ -146,6 +149,6 @@ export class Room {
 }
 
 /** One sender: a user in one editor. */
-export function senderKey(userId: number, client: UserState["client"]): string {
+export function senderKey(userId: number, client: Client): string {
   return `${userId}/${client}`;
 }

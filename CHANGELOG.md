@@ -2,6 +2,27 @@
 
 ## 2026-10-18
 
+- **Team Presence is end-to-end encrypted, and live co-editing is in beta.**
+  Presence, its journal and ntfy messages are now sealed with
+  ChaCha20-Poly1305 under a key derived from the place secret, so the relay
+  and a public ntfy topic see only ciphertext; old cleartext clients are
+  refused with a version error instead of being ignored. The plugin's own
+  Luau cipher matches the Rust one on shared test vectors, checked inside
+  Studio itself. On top of that, Beta Features › Live co-editing shares
+  edits through the hosted relay: property changes, inserts, deletes,
+  reparenting, renames and script text, between rbx-native editors and
+  with Studio through the plugin's Co-edit toggle. Remote edits are undo
+  steps of their own, concurrent script edits merge (conflicts kept side
+  by side), and a late joiner catches up from the relay's log. — @chteau
+
+- **Branch and merge place files.** A three-way merge of place DOMs
+  (`rbx_dom::merge`), matching instances by `UniqueId` and merging every
+  property, attribute, tag and script line on its own, with structured
+  conflicts instead of conflict markers. `rbxmerge` plugs it into git as a
+  merge driver, and File › Merge Place… plus a resolver window in the
+  editor settle what it could not, because a place here is a local file
+  that people branch like any other. — @chteau
+
 - **UI Editor: gradient shape, tiling and scale.** A gradient in the
   design panel's Fill section can now be made radial or conical as well
   as linear, set to clamp, repeat or mirror past its ends, and scaled —

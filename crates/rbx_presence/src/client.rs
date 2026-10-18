@@ -21,8 +21,25 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Error as WsError, Message, WebSocket};
 
 use crate::relay::{self, RelayKind};
-use crate::schema::{self, Client as Editor, Snapshot, UserState, EXPIRY_MS, HEARTBEAT_MS};
-use crate::{announce, auth, host, ntfy};
+use crate::schema::{
+    self, Client as Editor, SealedSnapshot, Snapshot, UserState, EXPIRY_MS, HEARTBEAT_MS,
+};
+use crate::{announce, auth, host, ntfy, seal};
+
+/// What a client reports when the relay refuses its wire version.
+pub const VERSION_MISMATCH: &str = "The relay runs a different Team Presence version; update rbx-native, the plugin and the relay together.";
+
+/// Opens every user of a relay snapshot, dropping those that fail to open.
+pub fn open_snapshot(enc_key: &[u8; 32], room: &str, sealed: &SealedSnapshot) -> Snapshot {
+    Snapshot {
+        cursor: sealed.cursor,
+        users: sealed
+            .users
+            .iter()
+            .filter_map(|user| seal::open_state(enc_key, room, user))
+            .collect(),
+    }
+}
 
 /// How long a read blocks before the loop checks for something to send.
 const READ_TIMEOUT: Duration = Duration::from_millis(200);
@@ -81,6 +98,8 @@ pub struct Config {
     pub room: String,
     /// [`crate::auth::derive_key`] for the place.
     pub key: String,
+    /// [`crate::crypt::enc_key`] for the place; never sent anywhere.
+    pub enc_key: [u8; 32],
     pub user_id: u64,
     /// [`RelayKind::Hosted`] only: lets this client host the room.
     pub hosting: Option<Hosting>,
@@ -395,6 +414,15 @@ impl Worker {
             Err(WsError::Http(response)) if matches!(response.status().as_u16(), 401 | 403) => {
                 return Outcome::Rejected(format!("relay refused us: HTTP {}", response.status()));
             }
+            Err(WsError::Http(response))
+                if response.status().as_u16() == 400
+                    && response
+                        .body()
+                        .as_deref()
+                        .is_some_and(|b| String::from_utf8_lossy(b).contains("version")) =>
+            {
+                return Outcome::Rejected(VERSION_MISMATCH.into());
+            }
             Err(error) => return Outcome::Failed(error.to_string()),
         };
         *delay = BACKOFF_START;
@@ -423,7 +451,8 @@ impl Worker {
                     let mut state = state.clone();
                     state.clamp();
                     state.user_id = self.config.user_id;
-                    let Ok(json) = serde_json::to_string(&state) else {
+                    let sealed = seal::seal_state(&self.config.enc_key, &self.config.room, &state);
+                    let Ok(json) = serde_json::to_string(&sealed) else {
                         return Outcome::Failed("cannot encode state".into());
                     };
                     if let Err(error) = socket.send(Message::text(json)) {
@@ -435,7 +464,9 @@ impl Worker {
             }
             match socket.read() {
                 Ok(Message::Text(text)) => {
-                    if let Ok(snapshot) = serde_json::from_str::<Snapshot>(text.as_str()) {
+                    if let Ok(sealed) = serde_json::from_str::<SealedSnapshot>(text.as_str()) {
+                        let snapshot =
+                            open_snapshot(&self.config.enc_key, &self.config.room, &sealed);
                         if self.events.send(Event::Snapshot(snapshot)).is_err() {
                             return Outcome::Stopped;
                         }
@@ -493,6 +524,9 @@ impl Worker {
                     state.clamp();
                     state.user_id = self.config.user_id;
                     if let Err(why) = self.ntfy_publish(&agent, &base, &topic, &state) {
+                        if why == VERSION_MISMATCH {
+                            return Outcome::Rejected(why);
+                        }
                         return Outcome::Failed(why);
                     }
                     last_sent = Instant::now();
@@ -517,6 +551,8 @@ impl Worker {
     ) -> Result<(), String> {
         let body = ntfy::fit_encode(
             &self.config.key,
+            &self.config.enc_key,
+            &self.config.room,
             topic,
             self.config.user_id,
             unix_ms(),
@@ -529,7 +565,10 @@ impl Worker {
             .send(body.as_str())
             .map_err(|e| e.to_string())?;
         let status = resp.status().as_u16();
-        let _ = resp.body_mut().read_to_string();
+        let text = resp.body_mut().read_to_string().unwrap_or_default();
+        if status == 400 && text.contains("version") {
+            return Err(VERSION_MISMATCH.into());
+        }
         if !(200..300).contains(&status) {
             return Err(format!("ntfy publish: HTTP {status}"));
         }
@@ -574,7 +613,14 @@ impl Worker {
             let Some(body) = message.get("message").and_then(|m| m.as_str()) else {
                 continue;
             };
-            if let Some(mut state) = ntfy::decode(&self.config.key, topic, now, body) {
+            if let Some(mut state) = ntfy::decode(
+                &self.config.key,
+                &self.config.enc_key,
+                &self.config.room,
+                topic,
+                now,
+                body,
+            ) {
                 if schema::is_own(&state, self.config.user_id) {
                     continue;
                 }
@@ -773,11 +819,15 @@ mod tests {
             let Message::Text(text) = ws.read().unwrap() else {
                 panic!("expected text");
             };
-            let got: UserState = serde_json::from_str(text.as_str()).unwrap();
+            let enc_key = crate::crypt::enc_key("s", 1);
+            let sealed: schema::Sealed = serde_json::from_str(text.as_str()).unwrap();
+            let got = seal::open_state(&enc_key, "room1", &sealed).unwrap();
             got_tx.send(got).unwrap();
-            let snapshot = Snapshot {
+            let mut forged = seal::seal_state(&crate::crypt::enc_key("s", 2), "room1", &state(8));
+            forged.seen = 1;
+            let snapshot = SealedSnapshot {
                 cursor: 3,
-                users: vec![state(9)],
+                users: vec![seal::seal_state(&enc_key, "room1", &state(9)), forged],
             };
             ws.send(Message::text(serde_json::to_string(&snapshot).unwrap()))
                 .unwrap();
@@ -789,6 +839,7 @@ mod tests {
             relay_url: format!("http://127.0.0.1:{port}"),
             room: "room1".into(),
             key: key.clone(),
+            enc_key: crate::crypt::enc_key("s", 1),
             user_id: 42,
             hosting: None,
         });
@@ -810,7 +861,10 @@ mod tests {
         let got = got_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(got.user_id, 42);
         match events.recv_timeout(Duration::from_secs(5)).unwrap() {
-            Event::Snapshot(s) => assert_eq!(s.cursor, 3),
+            Event::Snapshot(s) => {
+                assert_eq!(s.cursor, 3);
+                assert_eq!(s.users, vec![state(9)]);
+            }
             other => panic!("unexpected {other:?}"),
         }
     }

@@ -106,7 +106,7 @@ pub fn summarize(entries: &[JournalEntry]) -> Summary {
 /// The relay's reply to `GET /journal`.
 #[derive(Debug, Deserialize)]
 struct JournalReply {
-    entries: Vec<JournalEntry>,
+    entries: Vec<crate::schema::SealedJournalEntry>,
 }
 
 /// How far back a reconnecting client asks a dumb pub/sub server to replay.
@@ -172,7 +172,12 @@ pub fn from_worker(config: &Config, since_ms: u64) -> Result<Summary, String> {
     }
     let reply: JournalReply =
         serde_json::from_str(&text).map_err(|e| format!("journal reply: {e}"))?;
-    Ok(summarize(&reply.entries))
+    let entries: Vec<JournalEntry> = reply
+        .entries
+        .iter()
+        .filter_map(|entry| crate::seal::open_journal(&config.enc_key, &config.room, entry))
+        .collect();
+    Ok(summarize(&entries))
 }
 
 /// Re-reads the ntfy topic's retained messages and summarises the value-less
@@ -219,7 +224,14 @@ pub fn from_ntfy(config: &Config, since_ms: u64) -> Result<Summary, String> {
         // the signing skew, so verify with the message's own time.
         let signed = message.get("time").and_then(|t| t.as_u64());
         let check_at = signed.map_or(now, |secs| secs * 1000);
-        let Some(state) = ntfy::decode(&config.key, &topic, check_at, body) else {
+        let Some(state) = ntfy::decode(
+            &config.key,
+            &config.enc_key,
+            &config.room,
+            &topic,
+            check_at,
+            body,
+        ) else {
             continue;
         };
         for edit in &state.edits {
@@ -316,6 +328,7 @@ mod tests {
             relay_url: url,
             room: "room1".into(),
             key: "k".repeat(64),
+            enc_key: crate::crypt::enc_key("s", 1),
             user_id: 42,
             hosting: None,
         }
@@ -323,13 +336,42 @@ mod tests {
 
     #[test]
     fn from_worker_summarises_journal() {
-        let body = serde_json::json!({
-            "entries": [
-                {"userId": 7, "name": "Ada", "path": "Workspace.Part", "property": "Size", "at": 5},
-                {"userId": 7, "name": "Ada", "path": "Workspace.Part", "property": "Pos", "at": 6},
-            ]
-        })
-        .to_string();
+        use crate::schema::{Client, Edit, SealedJournalEntry, UserState, SCHEMA_VERSION};
+        let enc_key = crate::crypt::enc_key("s", 1);
+        let edit = |property: &str, at| Edit {
+            path: "Workspace.Part".into(),
+            property: property.into(),
+            value: "1".into(),
+            at,
+        };
+        let state = UserState {
+            v: SCHEMA_VERSION,
+            user_id: 7,
+            name: "Ada".into(),
+            color: "#1c7ed6".into(),
+            client: Client::Studio,
+            camera: None,
+            selection: vec![],
+            script: None,
+            edits: vec![edit("Size", 5), edit("Pos", 6)],
+            seen: 0,
+        };
+        let sealed = crate::seal::seal_state(&enc_key, "room1", &state);
+        let mut entries: Vec<SealedJournalEntry> = sealed
+            .j
+            .iter()
+            .map(|e| SealedJournalEntry {
+                user_id: 7,
+                at: e.at,
+                ct: e.ct.clone(),
+            })
+            .collect();
+        entries.push(SealedJournalEntry {
+            user_id: 7,
+            at: 99,
+            ct: sealed.j[0].ct.clone(),
+        });
+        let body = serde_json::json!({ "entries": entries }).to_string();
         let (url, handle) = serve_once(body, "application/json");
         let summary = from_worker(&config(url, RelayKind::Worker), 0).unwrap();
         handle.join().unwrap();
@@ -361,7 +403,8 @@ mod tests {
             seen: 0,
         };
         let now = crate::now_ms();
-        let envelope = ntfy::encode(&key, &topic, 9, now, &state).unwrap();
+        let enc_key = crate::crypt::enc_key("s", 1);
+        let envelope = ntfy::encode(&key, &enc_key, "room1", &topic, 9, now, &state).unwrap();
         // ntfy's own ndjson: event/message/time wrapping our envelope.
         let line = serde_json::json!({
             "id": "abc", "event": "message", "time": now / 1000, "message": envelope

@@ -9,8 +9,11 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The `v` every message carries; a relay or client drops other versions.
-pub const SCHEMA_VERSION: u32 = 1;
+/// The `v` every message carries, sealed envelope and the state inside it
+/// alike. A relay refuses any other version with `400 {"error":"version"}`,
+/// so a client from before encryption fails loudly instead of being ignored.
+/// Version 1 was the cleartext wire.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Largest request or WebSocket message body the relay accepts, in bytes.
 pub const MAX_BODY_BYTES: usize = 16 * 1024;
@@ -97,6 +100,85 @@ pub struct Snapshot {
     /// cursor past the one it names.
     pub cursor: u64,
     pub users: Vec<UserState>,
+}
+
+/// One user's state as it crosses the relay: sealed with
+/// [`crate::crypt`], plus what the relay needs to route, rate-limit and
+/// journal it without the place secret (see [`crate::seal`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sealed {
+    /// Always [`SCHEMA_VERSION`].
+    pub v: u32,
+    pub user_id: u64,
+    pub client: Client,
+    /// base64(nonce ‖ ciphertext ‖ tag) of the [`UserState`] JSON, AAD
+    /// [`crate::crypt::state_aad`].
+    pub ct: String,
+    /// The state's edits, each sealed on its own for the relay's journal.
+    #[serde(default)]
+    pub j: Vec<SealedEdit>,
+    /// Written by the relay, 0 from a sender.
+    #[serde(default)]
+    pub seen: u64,
+}
+
+/// One edit, sealed for the journal ([`crate::seal::JournalPlain`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SealedEdit {
+    pub at: u64,
+    /// [`crate::crypt::journal_tag`]: what the relay dedupes on.
+    pub tag: String,
+    /// AAD [`crate::crypt::journal_aad`].
+    pub ct: String,
+}
+
+/// What the relay sends: [`Snapshot`] before it is opened.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SealedSnapshot {
+    pub cursor: u64,
+    pub users: Vec<Sealed>,
+}
+
+/// One entry of the relay's journal reply (`{"entries": [...]}`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SealedJournalEntry {
+    pub user_id: u64,
+    pub at: u64,
+    pub ct: String,
+}
+
+/// One co-editing log entry as a client posts it (`POST …/ops`): a sealed
+/// chunk ([`crate::coedit::chunk::Chunk`] JSON, AAD [`crate::crypt::ops_aad`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SealedOp {
+    /// Always [`SCHEMA_VERSION`].
+    pub v: u32,
+    pub user_id: u64,
+    pub client: Client,
+    pub ct: String,
+}
+
+/// One entry of the relay's op log, as `GET …/ops?since=N` returns it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoggedOp {
+    pub seq: u64,
+    pub user_id: u64,
+    pub client: Client,
+    pub ct: String,
+}
+
+/// `GET …/ops?since=N`: entries after `since`, oldest first. `head` is the
+/// newest seq logged (0 for none); `floor` the oldest still held (entries
+/// below it were trimmed, so a reader behind it has missed some).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpsReply {
+    pub head: u64,
+    pub floor: u64,
+    pub entries: Vec<LoggedOp>,
 }
 
 /// The colours users are drawn in. A receiver assigns them from who is in

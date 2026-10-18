@@ -2,12 +2,12 @@
   "snapshot": {
     "cursor": 1,
     "users": [
-      {"v": 1, "userId": 1234567, "name": "Ana", "color": "#e8590c", "client": "studio",
+      {"v": 2, "userId": 1234567, "name": "Ana", "color": "#e8590c", "client": "studio",
        "camera": [40, 20, 30, 0.6, -0.2971, 0.7428, 0.0, 0.9285, 0.3714, -0.8, -0.2228, 0.5571],
        "selection": ["Workspace.Baseplate"], "script": "ServerScriptService.Script",
        "edits": [{"path": "Workspace.Baseplate", "property": "Transparency", "value": "0.25", "at": 0}],
        "seen": 0},
-      {"v": 1, "userId": 3, "name": "Cleo", "color": "#2f9e44", "client": "studio",
+      {"v": 2, "userId": 3, "name": "Cleo", "color": "#2f9e44", "client": "studio",
        "camera": [-35, 25, -20, -0.4961, 0.4576, -0.7379, 0.0, 0.8498, 0.527, 0.8682, 0.2615, -0.4216],
        "selection": ["Workspace.SpawnLocation"], "edits": [], "seen": 0}
     ]

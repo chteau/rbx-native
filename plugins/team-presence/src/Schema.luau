@@ -3,10 +3,11 @@
 --! limits the relay enforces so a state is never rejected for being too big.
 
 local Json = require(script.Parent.Json)
+local Crypto = require(script.Parent.Crypto)
 
 local Schema = {}
 
-Schema.VERSION = 1
+Schema.VERSION = 2
 Schema.MAX_SELECTION = 100
 Schema.MAX_EDITS = 20
 Schema.MAX_TEXT = 512
@@ -174,6 +175,99 @@ function Schema.decodeSnapshot(text: string): any
 		end
 	end
 	return { cursor = obj.cursor or 0, users = users }
+end
+
+-- The state as the relay sees it: `ct` is the state JSON, `j` one sealed
+-- journal entry per edit (value left out). `nonceFor` returns 12 raw bytes
+-- and is called once per ciphertext.
+function Schema.sealState(encKey: string, room: string, state: any, nonceFor: () -> string): string
+	local client: string = state.client
+	local ct = Crypto.sealB64(encKey, nonceFor(), Crypto.stateAad(room, state.userId, client), Schema.encode(state))
+	local name = clampText(state.name)
+	local j = Json.array()
+	local edits: {any} = state.edits or {}
+	for i = 1, math.min(#edits, Schema.MAX_EDITS) do
+		local edit = edits[i]
+		local path, property = clampText(edit.path), clampText(edit.property)
+		local plain = Json.encode({ name = name, path = path, property = property })
+		table.insert(j, {
+			at = edit.at,
+			tag = Crypto.journalTag(encKey, path, property, edit.at),
+			ct = Crypto.sealB64(encKey, nonceFor(), Crypto.journalAad(room, state.userId, edit.at), plain),
+		})
+	end
+	return Json.encode({
+		v = Schema.VERSION,
+		userId = state.userId,
+		client = client,
+		ct = ct,
+		j = j,
+		seen = 0,
+	})
+end
+
+function Schema.openState(encKey: string, room: string, sealed: any): any?
+	if type(sealed) ~= "table" then
+		return nil
+	end
+	local userId, client, ct = sealed.userId, sealed.client, sealed.ct
+	if type(userId) ~= "number" or type(client) ~= "string" or type(ct) ~= "string" then
+		return nil
+	end
+	local plain = Crypto.openB64(encKey, Crypto.stateAad(room, userId, client), ct)
+	if plain == nil then
+		return nil
+	end
+	local ok, state = pcall(Schema.decodeState, plain)
+	if not ok or type(state) ~= "table" then
+		return nil
+	end
+	if state.v ~= Schema.VERSION or state.userId ~= userId or state.client ~= client then
+		return nil
+	end
+	local seen = sealed.seen
+	state.seen = if type(seen) == "number" then seen else 0
+	return state
+end
+
+function Schema.openSnapshot(encKey: string, room: string, text: string): any
+	local obj = Json.decode(text)
+	if type(obj) ~= "table" then
+		error("snapshot must be an object")
+	end
+	local users: {any} = {}
+	local list = present(obj.users)
+	if list then
+		for _, sealed in ipairs(list) do
+			local state = Schema.openState(encKey, room, sealed)
+			if state ~= nil then
+				table.insert(users, state)
+			end
+		end
+	end
+	return { cursor = obj.cursor or 0, users = users }
+end
+
+function Schema.openJournal(encKey: string, room: string, entry: any): any?
+	if type(entry) ~= "table" then
+		return nil
+	end
+	local userId, at, ct = entry.userId, entry.at, entry.ct
+	if type(userId) ~= "number" or type(at) ~= "number" or type(ct) ~= "string" then
+		return nil
+	end
+	local plain = Crypto.openB64(encKey, Crypto.journalAad(room, userId, at), ct)
+	if plain == nil then
+		return nil
+	end
+	local ok, obj = pcall(Json.decode, plain)
+	if not ok or type(obj) ~= "table" then
+		return nil
+	end
+	if type(obj.name) ~= "string" or type(obj.path) ~= "string" or type(obj.property) ~= "string" then
+		return nil
+	end
+	return { userId = userId, name = obj.name, path = obj.path, property = obj.property, at = at }
 end
 
 return Schema
