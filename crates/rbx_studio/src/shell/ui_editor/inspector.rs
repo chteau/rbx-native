@@ -16,6 +16,7 @@
 mod actions;
 mod effects;
 mod frame_lighting;
+mod gradient;
 mod sections;
 mod spec;
 mod value;
@@ -297,6 +298,9 @@ impl Shell {
             // To the step: a field that moves by tenths reads in tenths,
             // not in whatever a fractional pointer position left over.
             Form::Number { step, .. } => round_scale(round_to(drag.start + moved * step, step)),
+            Form::Floored { step, floor } => {
+                round_scale(round_to(drag.start + moved * step, step)).max(floor)
+            }
             Form::Percent => (drag.start + moved).round().clamp(0.0, 100.0),
             Form::Hex => return,
         };

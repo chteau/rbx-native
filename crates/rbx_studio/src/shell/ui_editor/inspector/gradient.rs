@@ -108,9 +108,9 @@ impl Shell {
                     label,
                     current.as_deref() == Some(item),
                 )
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.set_gradient_item(choice, item, cx)
-                }))
+                .on_click(
+                    cx.listener(move |shell, _, _, cx| shell.set_gradient_item(choice, item, cx)),
+                )
                 .into_any_element()
             })
             .collect()
