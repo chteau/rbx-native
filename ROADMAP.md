@@ -2630,6 +2630,28 @@ Roblox's own engine.
   temporary repository, and screenshots of the resolver
   (`docs/screenshots/place-merge/`). Roblox's version is cloud-side; this
   one is local.
+- [x] **Input action manager** (Creator Roadmap, Late 2026). View ›
+  Input Actions (also a Home ribbon tile) opens a dock with every
+  `InputContext` as a section, its `InputAction`s as rows and their
+  `InputBinding`s sorted into Keyboard & Mouse, Gamepad and Touch columns
+  (plus Other for scriptable or unbound ones), by the `KeyCode` items and
+  `UIButton` the dump defines. Contexts, actions and bindings are created,
+  renamed and deleted in place; an inspector beside the table edits every
+  property the dump saves for the class (enum dropdowns, searchable for
+  `KeyCode`; toggles; `GuiButton` references from the selection), and it
+  follows the selection, Explorer included. Every write is an ordinary
+  undoable DOM edit. Check mode marks actions with no binding for a family
+  their type expects, the same input bound twice in one context or in two
+  enabled contexts at the same priority, and properties the action's type
+  ignores or that contradict each other (thresholds, response curve,
+  per-axis scales, a 2D input on a Bool action). Verified by unit tests of
+  the reader and the checker, a round trip of every binding property
+  through the binary and XML formats, a place built and saved by real
+  Studio (read back with the values Studio was given, and re-saved through
+  both formats; `RBX_INPUT_ACTIONS_FIXTURE`, not committed), and
+  screenshots of adding a binding, picking its key and undoing it
+  (`docs/screenshots/input-actions/`). Studio has no such editor yet, so
+  the layout is this project's own.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -3097,15 +3119,6 @@ clear they were considered and not missed.
   share) is the natural choice for which set of hints to draw.
 
 #### Editor
-- [ ] 📋 **Input action manager** (Late 2026): a visual editor for building
-  and checking cross-platform control mappings. Unlike most of this list,
-  what it edits already exists. The Input Action System's
-  `InputContext`/`InputAction`/`InputBinding` are ordinary instances that
-  Roblox has already shipped. That makes a contexts × actions × bindings
-  table, one column per device, that writes real properties through the undo
-  history, buildable now. It is the one item here that does not wait on
-  Roblox. The embedded API dump now carries those classes (it was refreshed
-  for `UIShadow`).
 - [ ] ⚠️ **Package overrides** (Late 2026): inspect, diff, selectively
   revert or publish deliberate edits to a package copy, from the Properties
   panel. The diff itself is local: a `PackageLink`'s subtree compared,

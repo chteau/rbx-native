@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-19
+
+- **Input action manager.** A new Input Actions dock (View menu and Home
+  ribbon) lays out the place's `InputContext`s, `InputAction`s and
+  `InputBinding`s as a table with one column per device family, edits
+  every saved property through the undo history, follows the selection,
+  and has a Check mode that flags missing device coverage, duplicate
+  bindings and properties the action's type ignores. Built from the API
+  dump's classes and checked against a place saved by real Studio, since
+  the Input Action System has no visual editor of its own yet. — @chteau
+
 ## 2026-10-18
 
 - **Team Presence is end-to-end encrypted, and live co-editing is in beta.**
