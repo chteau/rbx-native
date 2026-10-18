@@ -58,14 +58,19 @@ pub(super) fn format_properties(shell: &Shell, node: &DiffNode) -> Vec<Formatted
 /// The Properties panel writes an enum as `0 (Automatic)`, the ordinal
 /// kept so a stale value still shows; a chip has room for the name alone.
 fn cell(shell: &Shell, node: &DiffNode, property: &PropertyChange, value: &Variant) -> Cell {
+    format_value(shell, &node.class, &property.name, value)
+}
+
+/// `value` of `class`'s `property` as a chip shows it.
+pub(super) fn format_value(shell: &Shell, class: &str, property: &str, value: &Variant) -> Cell {
     let text = match value {
         Variant::Enum(raw) => shell
             .properties
-            .enum_item(&node.class, &property.name, *raw)
+            .enum_item(class, property, *raw)
             .map(str::to_owned),
         _ => None,
     }
-    .unwrap_or_else(|| shell.format_property(&node.class, &property.name, value));
+    .unwrap_or_else(|| shell.format_property(class, property, value));
     Cell {
         text: SharedString::from(text),
         swatch: swatch_colour(value),

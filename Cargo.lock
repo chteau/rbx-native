@@ -6461,6 +6461,7 @@ name = "rbx_dom"
 version = "0.1.0"
 dependencies = [
  "rbx_binary",
+ "rbx_xml",
  "thiserror 2.0.20",
 ]
 
@@ -6538,11 +6539,13 @@ dependencies = [
 name = "rbx_parser_cli"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "rbx_binary",
  "rbx_dom",
  "rbx_lua",
  "rbx_reflection",
  "rbx_xml",
+ "serde_json",
  "tempfile",
 ]
 
@@ -6602,6 +6605,7 @@ name = "rbx_studio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "flate2",
  "full_moon",

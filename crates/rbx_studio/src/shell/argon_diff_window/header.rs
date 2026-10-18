@@ -24,7 +24,9 @@ impl ArgonDiffWindow {
         cx: &mut Context<Self>,
     ) -> Div {
         let total = counts[0];
-        let subtitle = if matches!(self.provider, super::Provider::Presence(_)) {
+        let subtitle = if let super::Provider::Merge(session) = &self.provider {
+            format!("Conflicts merging {}", session.borrow().theirs_label)
+        } else if matches!(self.provider, super::Provider::Presence(_)) {
             let plural = if total == 1 { "change" } else { "changes" };
             format!("{total} {plural} since you were last here")
         } else if narrow {
@@ -241,7 +243,7 @@ impl ArgonDiffWindow {
 
 /// 96×34, radius 5, 12.5/17: `accent` with a `bg` label at 700, or
 /// `panel2` on `border2` with a `text` label at 600.
-fn button(id: &'static str, label: &'static str, primary: bool) -> Stateful<Div> {
+pub(super) fn button(id: &'static str, label: &'static str, primary: bool) -> Stateful<Div> {
     h_flex()
         .id(id)
         .tab_index(0)

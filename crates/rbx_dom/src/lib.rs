@@ -10,6 +10,7 @@ pub mod diff;
 mod dom;
 mod error;
 mod instance;
+pub mod merge;
 mod reference;
 pub mod rotation;
 mod variant;
