@@ -2850,6 +2850,39 @@ Roblox's own engine.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
+- [ ] 📋 **Device Simulator: what is still open** — live-test the Play
+  half through Sober (the client sized to the device so `ViewportSize`
+  reads the device's logical size, rotation resizing it live, and
+  `touch_mode`/`use_console_experience` giving `TouchEnabled`, the mobile
+  UI and `IsTenFootInterface`); input modes on Windows, where
+  RobloxPlayerBeta has no equivalent switch; pixel density (Sober's
+  `enable_hidpi` scales the window, it reports no DPI); a headset in Play
+  (Sober has no VR); Studio's on-screen keyboard cover and Android back
+  button; a Play client larger than the 3D view (a foreign window can be
+  sized, not scaled, so it is refused).
+- [x] **Network Simulator on Windows and macOS** (`rbx_play::netsim`
+  `windivert` and `dummynet`): the Network tile works on both. Windows
+  relaunches the editor once as an elevated helper (a UAC prompt) that
+  loads WinDivert 2.2 at runtime (`WinDivert.dll` and `WinDivert64.sys`
+  beside the exe, not bundled), finds RobloxPlayerBeta's UDP ports with
+  `GetExtendedUdpTable` without ever opening the client's process, and
+  delays, jitters and drops them in its own delay line, in order. macOS
+  asks for an administrator password once and runs a root script that
+  loads pf `dummynet` rules into the `com.apple/rbxnative` anchor for the
+  client's UDP ports (found with `lsof`), takes and releases its own
+  `pfctl -E` token and removes only its own pipes; macOS dummynet has no
+  jitter, so jitter is spread over four pipes when pf accepts
+  `probability` on those rules, and Output says so when it does not.
+  Research and a live-test checklist for each:
+  `docs/research/play-sandbox/network-simulator-windows-macos.md`.
+- [ ] 📋 **Network Simulator on Windows and macOS: never run** — neither
+  shaper has run on a real Windows PC or Mac (only their platform-free
+  parts are unit-tested, and a scripted pf/dnctl stand-in on Linux):
+  WinDivert's address bit layout, driver loading under Secure Boot or
+  Memory Integrity, the elevated helper reaching the editor's pipe, pf
+  accepting `probability` and port lists on dummynet rules in the
+  `com.apple/*` sub-anchor, and whether Roblox's anti-cheat reacts to
+  either.
 - [x] **Device Simulator: keyboard cover, Android back, display scaling
   and a client self-report** — the Device menu gains an **On-screen
   keyboard** toggle (our own key grid at each phone's and tablet's

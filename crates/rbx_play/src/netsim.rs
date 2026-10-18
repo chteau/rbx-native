@@ -8,14 +8,51 @@
 //! the probe reaches the editor from the game server through the tunnel,
 //! outside the client's network.
 //!
-//! [`NetConditions`] and the presets are plain data on every platform; the
-//! [`Shaper`] that applies them is Linux-only (a user + network namespace,
-//! `slirp4netns` for internet, `tc netem` for the shaping).
+//! [`NetConditions`] and the presets are plain data on every platform. The
+//! `Shaper` that applies them differs per platform:
+//! - Linux: a user + network namespace, `slirp4netns` for internet, `tc
+//!   netem` for the shaping; the client is started inside it.
+//! - macOS (`dummynet`): pf `dummynet` rules on the client's UDP ports,
+//!   driven by a root helper script started once with an administrator
+//!   prompt.
+//! - Windows (`windivert`): an elevated copy of the editor diverts the
+//!   client's UDP ports through WinDivert and delays them in user space.
+//!
+//! The pure parts of the macOS and Windows shapers (rule and filter text,
+//! output parsing, the delay line) compile everywhere so they are tested
+//! on every platform.
 
+// The pure parts below are only called by one platform's shaper; elsewhere
+// they are built for their tests alone.
+#[cfg_attr(not(windows), allow(dead_code))]
+mod delay;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub mod dummynet;
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+mod lines;
 #[cfg(target_os = "linux")]
 mod shaper;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod windivert;
+
+#[cfg(target_os = "macos")]
+pub use dummynet::Shaper;
 #[cfg(target_os = "linux")]
-pub use shaper::{probe, Shaper, ShaperError};
+pub use shaper::{probe, Shaper};
+#[cfg(windows)]
+pub use windivert::Shaper;
+
+/// Why the shaper is unavailable or failed, worded for the Output panel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShaperError(pub String);
+
+impl std::fmt::Display for ShaperError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ShaperError {}
 
 /// Studio's ranges (`studio/network-simulator.md`, "Configure custom
 /// conditions"): 0–1000 ms in 0.1 ms steps, loss 0.00–0.50 % in 0.01 steps.

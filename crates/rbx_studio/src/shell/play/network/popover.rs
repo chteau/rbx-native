@@ -138,7 +138,11 @@ impl Shell {
         .tooltip({
             let name = network.shown().name();
             move |window, cx| {
-                crate::shell::tooltip::text(format!("Network simulation: {name}"), window, cx)
+                let text = match super::prerequisite() {
+                    Some(needs) => format!("Network simulation: {name} ({needs})"),
+                    None => format!("Network simulation: {name}"),
+                };
+                crate::shell::tooltip::text(text, window, cx)
             }
         })
         .on_click(cx.listener(|shell, _, window, cx| {

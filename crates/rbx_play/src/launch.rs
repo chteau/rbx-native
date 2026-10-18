@@ -48,7 +48,7 @@ pub enum Launcher {
 
 /// `Command::new(program)`, without the console window Windows would flash
 /// for a console program (`cmd`, `tasklist`, `taskkill`) started from a GUI.
-fn command_for(program: &str) -> Command {
+pub(crate) fn command_for(program: &str) -> Command {
     #[allow(unused_mut)]
     let mut cmd = Command::new(program);
     #[cfg(windows)]
