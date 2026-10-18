@@ -10,6 +10,8 @@ path = "src/bin/build_presence_plugin.rs"
 
 [dependencies]
 rbx_dom = { path = "../rbx_dom" }
+# File-name <-> scripting-name aliases for properties on the wire.
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 # The plugin ships as a `.rbxmx`, written by the editor's own XML encoder.
 rbx_xml = { path = "../rbx_xml" }
 serde = { version = "1", features = ["derive"] }

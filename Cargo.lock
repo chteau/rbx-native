@@ -6644,6 +6644,7 @@ dependencies = [
  "hmac",
  "mlua",
  "rbx_dom",
+ "rbx_reflection",
  "rbx_xml",
  "serde",
  "serde_json",

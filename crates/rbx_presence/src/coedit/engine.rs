@@ -8,7 +8,10 @@ use rbx_dom::{Ref, Variant, WeakDom};
 use serde_json::Value;
 
 use super::ids::{parse_unique, IdMap};
+use rbx_reflection::ReflectionDatabase;
+
 use super::merge::{merge3, text_hash};
+use super::names;
 use super::{value, Batch, Clock, Op, Target};
 use crate::paths;
 
@@ -169,10 +172,23 @@ impl Ctx<'_> {
                 };
                 self.reparent(r, parent)
             }
-            _ if v.is_null() => matches!(self.dom.remove_property(r, n), Ok(Some(_))),
             _ => {
+                let Some(inst) = self.dom.get(r) else {
+                    return false;
+                };
+                let stored = names::stored_name(inst, n);
+                let n = stored.as_str();
+                if v.is_null() {
+                    return matches!(self.dom.remove_property(r, n), Ok(Some(_)));
+                }
+                let existing = inst.properties().get(n).cloned().or_else(|| {
+                    ReflectionDatabase::shared()
+                        .default_value(inst.class(), n)
+                        .cloned()
+                });
                 let (dom, ids) = (&*self.dom, &*self.ids);
-                let decoded = value::decode(v, &|t| lookup(dom, ids, t));
+                let decoded = value::decode(v, &|t| lookup(dom, ids, t))
+                    .map(|val| names::coerce(existing.as_ref(), val));
                 match decoded {
                     Some(val)
                         if self

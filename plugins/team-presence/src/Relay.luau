@@ -379,6 +379,37 @@ function Relay:journal(sinceMs: number): (any?, string?)
 	return opened, nil
 end
 
+local NEEDS_HOSTED = "Co-editing needs the hosted relay"
+
+function Relay:postOps(body: string): (boolean, string?)
+	if self.kind ~= "hosted" and self.kind ~= "worker" then
+		return false, NEEDS_HOSTED
+	end
+	local res, err = self:_send("POST", "/ops", body)
+	if res == nil then
+		return false, err
+	end
+	return true, nil
+end
+
+function Relay:pollOps(since: number): (any?, string?)
+	if self.kind ~= "hosted" and self.kind ~= "worker" then
+		return nil, NEEDS_HOSTED
+	end
+	local res, err = self:_send("GET", string.format("/ops?since=%.0f", since), "")
+	if res == nil then
+		return nil, err
+	end
+	local parsed
+	local ok = pcall(function()
+		parsed = HttpService:JSONDecode(res.Body)
+	end)
+	if not ok or type(parsed) ~= "table" then
+		return nil, "ops reply"
+	end
+	return parsed, nil
+end
+
 function Relay:leave()
 	if self.kind == "ntfy" or self:waiting() then
 		-- Nothing to delete on a dumb pub/sub (peers expire us), or no host.

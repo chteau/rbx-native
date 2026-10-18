@@ -10,6 +10,7 @@ use serde_json::{json, Map, Value};
 
 use super::engine::Engine;
 use super::ids::IdMap;
+use super::names;
 use super::value;
 use super::{Op, Target};
 use crate::paths;
@@ -142,7 +143,7 @@ pub fn local_ops(
             map.insert("Name".to_string(), string_value(&name));
             for (k, v) in &props {
                 if let Some(e) = encode_prop(current, ids, v) {
-                    map.insert(k.clone(), e);
+                    map.insert(names::wire_name(&class, k), e);
                 }
             }
             ops.push(Op::Add {
@@ -197,7 +198,7 @@ pub fn local_ops(
             if let Some(e) = encode_prop(current, ids, v) {
                 ops.push(Op::Set {
                     at: at.clone(),
-                    n: k.clone(),
+                    n: names::wire_name(&class, k),
                     v: e,
                     c: engine.tick(),
                 });
@@ -217,7 +218,7 @@ pub fn local_ops(
             if sendable {
                 ops.push(Op::Set {
                     at: at.clone(),
-                    n: k.clone(),
+                    n: names::wire_name(&class, k),
                     v: Value::Null,
                     c: engine.tick(),
                 });

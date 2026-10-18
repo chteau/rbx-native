@@ -24,6 +24,7 @@ pub mod diff;
 pub mod engine;
 pub mod ids;
 pub mod merge;
+pub mod names;
 pub mod op;
 pub mod value;
 
