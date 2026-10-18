@@ -1,8 +1,30 @@
 {
-  "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "topic": "rbxnp-0123456789abcdef0123456789abcdef",
-  "u": 1234567,
+  "d": "{\"v\":2,\"userId\":1234567,\"client\":\"studio\",\"ct\":\"U5Ze608a2q46Pgb3Jjd3eEU41W8tBsoxxQyoOS7ohNe5+bD6SvRSeerwzL+LUUt2U3xBQ9G0gnqL/4QiBj3sasc+csyo9FKamuhuqy7Yrp3QAddyDdnGvBL3oH37tbRxgPaw+p3YVWZD6pwJJstqi3wYJoFNYMSHP5MB3TGpnWUWDP2uAQ71xLbMXtTdWek8NML+UiIaPLpCqVnBo4/IVnjinHMSigUWzujnnkmobm0MLaOFGAIq8RLtuDND26Kvz2ESMLBLnfVQXqkm27ZWgNmWK4ERzKLu64iDCy66SwexucXqBrypQA==\",\"j\":[{\"at\":1699999999500,\"tag\":\"3b3f1c29baa814fc\",\"ct\":\"moq0T+AR5b9gljrC/F1hAu2AcGe4qW7awTwOGntphojoe2CQ3mq/7AhgW9Ia8iltAJi7LutwxFVP3XuxDlwb2pY8XNpb4dfTkNuhtAOy3XkXmb7q\"}],\"seen\":0}",
+  "key": "36261fbf20bc9b5bb944d1c2930154a2c338e17342666deb2d60de5872780769",
+  "place_id": 104688317714596,
+  "room": "aa39d09bf66fc4dbc949556cb50fe847",
+  "s": "6fd1a355e79a0c28c7f0bf3e6c4f9e5edc9c880137d13b671df9d966d224da54",
+  "secret": "correct horse battery staple",
+  "state": {
+    "client": "studio",
+    "color": "#e8590c",
+    "edits": [
+      {
+        "at": 1699999999500,
+        "path": "Workspace.Part",
+        "property": "Size",
+        "value": "1, 2, 3"
+      }
+    ],
+    "name": "Ana",
+    "seen": 0,
+    "selection": [
+      "Workspace.Part"
+    ],
+    "userId": 1234567,
+    "v": 2
+  },
   "t": 1700000000000,
-  "d": "{\"v\":1,\"userId\":1234567,\"name\":\"Ana\",\"color\":\"#e8590c\",\"client\":\"studio\",\"selection\":[],\"edits\":[],\"seen\":0}",
-  "s": "f97e2775c4f43f6eeaf58f9b062718d6da1db7f9597802128a2d84f26e91f2b8"
+  "topic": "rbxnp-aa39d09bf66fc4dbc949556cb50fe847",
+  "u": 1234567
 }

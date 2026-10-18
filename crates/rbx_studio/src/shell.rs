@@ -13,6 +13,7 @@ mod change_class;
 pub(crate) mod chrome;
 mod clipboard;
 mod close_place;
+mod coedit;
 mod command;
 mod controller_emulator;
 mod debugging;
@@ -40,6 +41,7 @@ mod palette;
 mod panel_window;
 mod panels;
 mod pivot;
+mod place_merge;
 mod play;
 mod plugins;
 mod property_element;
@@ -56,6 +58,7 @@ mod studio_presence;
 mod team_presence;
 
 pub(crate) use chrome::panel_topbar;
+pub(crate) use coedit::BETA_ID as COEDIT_BETA_ID;
 pub(crate) use export::Export;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
@@ -1095,6 +1098,7 @@ impl Shell {
         shell.apply_debug_save(cx);
         shell.apply_debug_roblox(cx);
 
+        shell.offer_merge_sidecar(cx);
         shell.watch_theme(cx);
         shell.watch_recovery(cx);
         shell.watch_script_templates(cx);

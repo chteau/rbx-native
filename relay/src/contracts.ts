@@ -3,7 +3,7 @@
 // plugins/team-presence/src/Schema.luau; the golden files in
 // plugins/team-presence/fixtures/ pin all three.
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const MAX_BODY_BYTES = 16 * 1024;
 export const MAX_SELECTION = 100;
 export const MAX_EDITS = 20;
@@ -23,13 +23,11 @@ export const JOURNAL_CAP = 256;
 /** Journal entries older than this are dropped. */
 export const JOURNAL_TTL_MS = 12 * 60 * 60 * 1000;
 
-/** A value-less record of one property edit; the value is never stored. */
+/** One sealed journal entry as the relay replays it; it cannot read `ct`. */
 export interface JournalEntry {
   userId: number;
-  name: string;
-  path: string;
-  property: string;
   at: number;
+  ct: string;
 }
 
 export const USER_HEADER = "X-Presence-User";
@@ -37,29 +35,34 @@ export const TIME_HEADER = "X-Presence-Time";
 export const SIG_HEADER = "X-Presence-Sig";
 export const KEY_HEADER = "X-Presence-Key";
 
-export interface Edit {
-  path: string;
-  property: string;
-  value: string;
+export type Client = "studio" | "rbx-native";
+
+/** One edit sealed for the journal; `tag` is what the relay dedupes on. */
+export interface SealedEdit {
   at: number;
+  tag: string;
+  ct: string;
 }
 
-export interface UserState {
+/** A user's state, encrypted; the relay never reads `ct`. */
+export interface Sealed {
   v: number;
   userId: number;
-  name: string;
-  color: string;
-  client: "studio" | "rbx-native";
-  camera?: number[];
-  selection: string[];
-  script?: string;
-  edits: Edit[];
+  client: Client;
+  ct: string;
+  j: SealedEdit[];
   seen: number;
 }
 
-export interface Snapshot {
+export interface SealedSnapshot {
   cursor: number;
-  users: UserState[];
+  users: Sealed[];
+}
+
+export interface SealedJournalEntry {
+  userId: number;
+  at: number;
+  ct: string;
 }
 
 /** Why a request was refused; `status` is the HTTP status to answer with. */

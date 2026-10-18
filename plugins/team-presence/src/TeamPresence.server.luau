@@ -2,9 +2,11 @@
 -- Plugin entry point: wires the toolbar button, settings and the publish/poll loops.
 
 local Auth = require(script.Auth)
+local Coedit = require(script.Coedit)
 local Capture = require(script.Capture)
 local Catchup = require(script.Catchup)
-local Defaults = require(script.Defaults)
+local Crypto = require(script.Crypto)
+local Defaults =require(script.Defaults)
 local DiffWindow = require(script.DiffWindow)
 local Markers = require(script.Markers)
 local Relay = require(script.Relay)
@@ -25,8 +27,12 @@ local BACKOFF_MAX = 30
 local toolbar = plugin:CreateToolbar("rbx-native")
 local button = toolbar:CreateButton("Presence", "Show rbx-native team presence", "")
 button.ClickableWhenViewportHidden = true
+local coeditButton = toolbar:CreateButton("Co-edit", "Live co-editing (beta): share edits with rbx-native", "")
+coeditButton.ClickableWhenViewportHidden = true
 
 local generation = 0
+local coedit: any = nil
+local coeditEnabled = plugin:GetSetting("coeditEnabled") == true
 local capture: any = nil
 local markers: any = nil
 local relay: any = nil
@@ -63,6 +69,10 @@ local function stop()
 		saveLastSeen()
 	end
 	generation += 1
+	if coedit then
+		coedit:stop()
+		coedit = nil
+	end
 	if relay then
 		relay:leave()
 		relay = nil
@@ -110,14 +120,40 @@ local function start()
 	widget:setRelay(kind, url, placeRelay == nil)
 
 	local key = Auth.deriveKey(secret :: string, game.PlaceId)
+	local encKey = Crypto.encKey(secret :: string, game.PlaceId)
 	local ownId = userId()
-	local myRelay = Relay.new({ kind = kind, url = url, key = key, room = Auth.roomId(key), userId = ownId })
+	local myRelay = Relay.new({
+		kind = kind,
+		url = url,
+		key = key,
+		encKey = encKey,
+		room = Auth.roomId(key),
+		userId = ownId,
+	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
 	relay, capture, markers = myRelay, myCapture, myMarkers
 	generation += 1
 	local myGen = generation
 	widget:setStatus("Connecting…")
+
+	if coeditEnabled then
+		local myCoedit = Coedit.new({
+			relay = myRelay,
+			userId = ownId,
+			room = Auth.roomId(key),
+			encKey = encKey,
+			name = if Players.LocalPlayer then Players.LocalPlayer.Name else tostring(ownId),
+			onNote = function(note: string)
+				warn("[Co-edit] " .. note)
+				if generation == myGen then
+					widget:setStatus("Co-edit: " .. note)
+				end
+			end,
+		})
+		coedit = myCoedit
+		myCoedit:start()
+	end
 
 	-- "While you were away": fetch the value-less journal once, scoped to
 	-- edits since this client last left this place (kept in plugin settings
@@ -250,6 +286,19 @@ widget = Widget.new(plugin, {
 
 button.Click:Connect(function()
 	widget.gui.Enabled = not widget.gui.Enabled
+end)
+
+coeditButton:SetActive(coeditEnabled)
+coeditButton.Click:Connect(function()
+	coeditEnabled = not coeditEnabled
+	plugin:SetSetting("coeditEnabled", coeditEnabled)
+	coeditButton:SetActive(coeditEnabled)
+	if coeditEnabled and enabled then
+		start()
+	elseif coedit then
+		coedit:stop()
+		coedit = nil
+	end
 end)
 
 widget.gui:GetPropertyChangedSignal("Enabled"):Connect(function()

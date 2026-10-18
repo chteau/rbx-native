@@ -33,6 +33,31 @@ its `OnUndo` signal).
 - Whether Studio's own Properties and dragger edits raise
   `OnRecordingStarted` is not verified.
 
+## Live co-editing (beta)
+
+The **Co-edit** toolbar button (a setting, off by default) shares edits with
+rbx-native users through the relay's op log. It runs only while presence is
+on, and only on the hosted (or worker) relay.
+
+- **What syncs:** instances and their properties (by Roblox scripting name),
+  additions, deletions, reparenting and script `Source`, under Workspace,
+  Lighting, ReplicatedFirst, ReplicatedStorage, ServerScriptService,
+  ServerStorage, StarterGui, StarterPack, StarterPlayer, SoundService, Teams,
+  Chat, TextChatService and MaterialService. The presence secret is never
+  synced.
+- **Identity:** plugins cannot read an instance's `UniqueId`, so Studio
+  identifies instances by path, remembering the id of any instance it has
+  seen or created.
+- **Conflicts:** properties are last-writer-wins (Lamport clock, ties broken
+  by actor). Script sources are three-way merged; a conflicted merge keeps
+  its markers and is reported.
+- **Undo:** remote changes are applied inside one `ChangeHistoryService`
+  recording ("Co-edit from <name>"), so Ctrl+Z takes one batch back; the
+  resulting changes are sent like any edit.
+- **Limits:** attributes and tags are not synced from Studio; properties
+  without a scripting name are skipped; the other relay kinds (ntfy) are not
+  supported.
+
 ## Colours
 
 Colours are assigned per room from the user ids, so every client shows the

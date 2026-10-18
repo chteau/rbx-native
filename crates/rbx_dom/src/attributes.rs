@@ -457,6 +457,32 @@ pub fn remap_refs(value: &Variant, map: impl Fn(Ref) -> Option<Ref>) -> Option<V
     })
 }
 
+/// Each entry of the blob `value`: its name, its decoded value and its raw
+/// bytes (name, type id and value, exactly as stored), for code that mixes
+/// entries of two blobs without re-encoding them — an enum's type name,
+/// which [`decode`] does not keep, survives that way. `None` when the blob
+/// cannot be read whole.
+pub(crate) fn split_entries(value: &Variant) -> Option<Vec<(String, Variant, Vec<u8>)>> {
+    let bytes = match value {
+        Variant::String(text) => text.as_bytes(),
+        Variant::Unknown { raw, .. } => raw.as_slice(),
+        _ => return None,
+    };
+    if bytes.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut cursor = Cursor(bytes);
+    let mut entries = Vec::new();
+    for _ in 0..cursor.u32()? {
+        let start = bytes.len() - cursor.0.len();
+        let name = cursor.string()?;
+        let value = cursor.value()?;
+        let end = bytes.len() - cursor.0.len();
+        entries.push((name, value, bytes[start..end].to_vec()));
+    }
+    cursor.0.is_empty().then_some(entries)
+}
+
 /// The `CollectionService` tags of an instance: the `Tags` property is the tag
 /// names run together, separated by NUL bytes.
 pub fn tags(value: Option<&Variant>) -> Vec<&str> {

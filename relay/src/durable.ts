@@ -10,12 +10,12 @@ import {
   SIG_HEADER,
   TIME_HEADER,
   USER_HEADER,
+  type Client,
   type Env,
   type Refusal,
-  type UserState,
 } from "./contracts.js";
 import { Room } from "./room.js";
-import { parseState } from "./validate.js";
+import { parseSealed } from "./validate.js";
 
 const SWEEP_MS = 5_000;
 const ROUTE = /^\/v1\/rooms\/([0-9a-f]{32})\/(state|poll|ws|journal)$/;
@@ -43,7 +43,7 @@ function isRefusal(value: unknown): value is Refusal {
 export class RoomObject implements DurableObject {
   private readonly room = new Room();
   /** Each socket's user, and its editor once its first state names it. */
-  private readonly sockets = new Map<WebSocket, { userId: number; client?: UserState["client"] }>();
+  private readonly sockets = new Map<WebSocket, { userId: number; client?: Client }>();
   private polls = new Set<Poll>();
 
   constructor(
@@ -109,7 +109,7 @@ export class RoomObject implements DurableObject {
   }
 
   private handlePost(body: string, userId: number, now: number): Response {
-    const parsed = parseState(body, userId);
+    const parsed = parseSealed(body, userId);
     if (isRefusal(parsed)) return refuse(parsed);
     const fault = this.room.put(parsed, now);
     if (fault) return refuse(fault);
@@ -160,12 +160,12 @@ export class RoomObject implements DurableObject {
     const client = pair[0];
     const server = pair[1];
     server.accept();
-    const entry: { userId: number; client?: UserState["client"] } = { userId };
+    const entry: { userId: number; client?: Client } = { userId };
     this.sockets.set(server, entry);
 
     server.addEventListener("message", (event) => {
       const data = event.data;
-      const parsed = typeof data === "string" ? parseState(data, userId) : null;
+      const parsed = typeof data === "string" ? parseSealed(data, userId) : null;
       if (parsed === null || isRefusal(parsed)) {
         server.close(1008, "invalid state");
         return;

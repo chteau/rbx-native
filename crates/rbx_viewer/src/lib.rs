@@ -78,7 +78,7 @@ pub use lighting::light_guides;
 // sun model the renderer lights with.
 pub use lighting::sun;
 pub use lighting::Calibration;
-pub use load::read_place;
+pub use load::{parse_place, read_place};
 pub use quality::{valid_band_ends, FrameRateManager, QualityLevel, TUNED_BAND_ENDS};
 pub use renderer::{GuiBox, OverlayColors, Segment, ISOLATION_BACKDROP};
 pub use scene::{resolved_shape_label, shows_screen, SafeInsets, ScrollTarget, STAGE_REACH};
