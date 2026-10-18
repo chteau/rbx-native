@@ -3041,14 +3041,24 @@ clear they were considered and not missed.
   question is how its operation tree stores the mesh operand.
 
 #### GUI (renderer and UI Editor)
-- [ ] 📋 **Upgraded UI gradients** (Late 2026): radial and conic
-  gradients, tile modes and scale controls. **Already drawn**: the GUI
-  renderer reads `UIGradient.Type` (`Linear`/`Radial`/`Conical`),
-  `TileMode` and `Scale` (see "What's been implemented" → Renderer). Two
-  things are left. The UI Editor design panel's Fill gradient has no type or
-  tile choice. And the property names should be checked against the dump
-  once Roblox ships them, since the renderer reads them ahead of the
-  embedded dump.
+- [x] **Upgraded UI gradients** (Late 2026): radial and conic
+  gradients, tile modes and scale controls. The GUI renderer reads
+  `UIGradient.Type` (`Linear`/`Radial`/`Conical`), `TileMode` and `Scale`
+  (see "What's been implemented" → Renderer), and the UI Editor design
+  panel's Fill gradient now picks all three: a Shape row (Linear, Radial,
+  Conical), a Tile row (Clamp, Repeat, Mirror) and a Scale field written no
+  lower than the 0.001 Roblox clamps it to, each one undo step across the
+  selection. The names are checked against the embedded dump and
+  creator-docs: `Type` is `GradientType`, `TileMode` is `GradientTileMode`
+  (`Clamp`/`Repeat`/`Mirror`, 0–2), `Scale` a `float`, all three still
+  tagged `NotBrowsable` there, and a test pins the ordinals to the ones the
+  renderer draws.
+- [ ] 📋 **`GradientType.Elliptical`**: the dump and creator-docs carry a
+  fourth gradient shape (3), an ellipse fitted to the element's bounds whose
+  axes `Rotation` turns. The GUI renderer draws it as a linear ramp, and the
+  UI Editor does not offer it for that reason. An ellipse needs the origin,
+  both radii and the rotation in the shader, one value more than the four
+  floats a GUI vertex carries for its gradient today.
 - [ ] 📋 **UI backdrop blur** (Early 2027): blur whatever is behind a GUI
   element, at a chosen strength or colour. The 3D `BlurEffect` pass already
   exists. A backdrop blur is that pass run over the region under the element

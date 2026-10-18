@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-18
+
+- **UI Editor: gradient shape, tiling and scale.** A gradient in the
+  design panel's Fill section can now be made radial or conical as well
+  as linear, set to clamp, repeat or mirror past its ends, and scaled —
+  the three upgraded `UIGradient` controls the canvas already drew but
+  only the Properties panel could set. Elliptical, a fourth shape in
+  Roblox's API, is not offered yet because the canvas cannot draw it. —
+  @Vikmanou
+
 ## 2026-10-17
 
 - **Network Simulator on Windows and macOS.** The Network tile is no
