@@ -4,8 +4,9 @@ use rbx_play::inject::{
     MAX_PUBLISH_BYTES, MIRROR_NAME, PROBE_CLIENT, PROBE_CODEC, PROBE_DEBUG, PROBE_LIVE, PROBE_NAME,
     PROBE_SERVER, REMOTE_NAME,
 };
-use rbx_play::inject::{PROBE_MARKET, PROBE_MARKET_UI, PROBE_TOUCH, TOUCH_NAME};
+use rbx_play::inject::{PROBE_MARKET, PROBE_MARKET_UI, PROBE_TOUCH, PROBE_TOUCH_INPUT, TOUCH_NAME};
 use rbx_play::market::{MARKET_NAME, MARKET_UI_NAME};
+use rbx_play::touch::TOUCH_INPUT_NAME;
 
 fn config() -> ProbeConfig {
     ProbeConfig {
@@ -183,6 +184,8 @@ fn injecting_twice_leaves_one_of_each() {
     assert_eq!(market_uis, vec![second.market_ui]);
     let touches = children_matching(&dom, rs, |i| i.name() == TOUCH_NAME);
     assert_eq!(touches, vec![second.touch]);
+    let touch_inputs = children_matching(&dom, rs, |i| i.name() == TOUCH_INPUT_NAME);
+    assert_eq!(touch_inputs, vec![second.touch_input]);
 }
 
 #[test]
@@ -194,6 +197,7 @@ fn market_modules_are_placed_in_replicated_storage() {
         (injected.market, MARKET_NAME, PROBE_MARKET),
         (injected.market_ui, MARKET_UI_NAME, PROBE_MARKET_UI),
         (injected.touch, TOUCH_NAME, PROBE_TOUCH),
+        (injected.touch_input, TOUCH_INPUT_NAME, PROBE_TOUCH_INPUT),
     ] {
         assert_eq!(dom.parent(r), Some(rs));
         assert_eq!(dom.get(r).unwrap().class(), "ModuleScript");

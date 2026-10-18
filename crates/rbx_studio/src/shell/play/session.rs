@@ -165,6 +165,56 @@ pub(crate) fn structured_prints(copy: &mut WeakDom) -> Vec<String> {
     warnings
 }
 
+/// Game scripts' UserInputService goes through the probe's touch stand-in,
+/// so a game's own touch code runs on a simulated touch device (see
+/// `rbx_play::touch`). Scripts inside a forked PlayerModule are left alone.
+/// A script that cannot be rewritten keeps its source and is reported in
+/// the returned warnings.
+pub(crate) fn simulated_touches(copy: &mut WeakDom) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for (script, name) in game_scripts(copy) {
+        if in_skipped_subtree(copy, script) {
+            continue;
+        }
+        let Some(source) = crate::script_editor::source::read(copy, script) else {
+            continue;
+        };
+        let result = rbx_play::touch::rewrite(&source).and_then(|rewritten| match rewritten {
+            Some(new) => {
+                rbx_lua::compile_check(&new, &name).map_err(|err| err.to_string())?;
+                Ok(Some(new))
+            }
+            None => Ok(None),
+        });
+        match result {
+            Ok(Some(new)) => {
+                crate::script_editor::source::write(copy, script, &new);
+            }
+            Ok(None) => {}
+            Err(err) => warnings.push(format!(
+                "{name} uses UserInputService but could not be prepared for simulated touches \
+                 ({err}); on a simulated touch device it sees the mouse in this test."
+            )),
+        }
+    }
+    warnings
+}
+
+/// True when `script` is, or sits inside, one of `touch::SKIPPED_SUBTREES`.
+fn in_skipped_subtree(copy: &WeakDom, script: Ref) -> bool {
+    let mut at = Some(script);
+    while let Some(r) = at {
+        let Some(inst) = copy.get(r) else {
+            return false;
+        };
+        if rbx_play::touch::SKIPPED_SUBTREES.contains(&inst.name()) {
+            return true;
+        }
+        at = copy.parent(r);
+    }
+    false
+}
+
 /// Clones `dom`, instruments `debug`'s scripts, injects the probe, encodes
 /// it as a binary place with `crate::save::Format::Binary.encode`, and runs
 /// `preflight`. A `TooLarge` finding is an `Err` (its `preflight_text`); the
@@ -177,6 +227,7 @@ pub(crate) fn prepare(
     let mut copy = dom.clone();
     let mut warnings = mock_purchases(&mut copy);
     warnings.extend(structured_prints(&mut copy));
+    warnings.extend(simulated_touches(&mut copy));
     let (debug, instrument_warnings) = instrument_scripts(&mut copy, debug);
     warnings.extend(instrument_warnings);
     rbx_play::inject::inject(&mut copy, probe).map_err(|err| match err {

@@ -7,6 +7,8 @@
 //! - `inject`: adds the probe and the flags it needs to the DOM before publish.
 //! - `instrument`: rewrites a script with debugger hooks for Play.
 //! - `market`: rewrites a script's `MarketplaceService` lookups to the mock.
+//! - `touch`: rewrites a script's `UserInputService` lookups to the touch stand-in.
+//! - `service_wrap`: the lookup-wrapping rewrite `market` and `touch` share.
 //! - `launch`: the `roblox://` join URI and the program that opens it.
 //! - `sober_config`: session-only changes to Sober's `config.json`.
 //! - `netsim`: latency, jitter and loss on the client's UDP game traffic.
@@ -28,6 +30,8 @@ pub mod market;
 pub mod netsim;
 pub mod print;
 pub mod protocol;
+pub mod service_wrap;
 pub mod sober_config;
+pub mod touch;
 pub mod tunnel;
 pub mod value;

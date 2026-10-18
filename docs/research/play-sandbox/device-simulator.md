@@ -131,10 +131,57 @@ from outside, not of the probe.
   the stick walks the character with Roblox's knob and trail, the button
   jumps it, and the layout follows rotation
   (`play-touch-controls-landscape.png`, `play-touch-controls-portrait.png`).
-  Still not simulated: game code that listens for touches itself
-  (`TouchStarted`, `TouchTap`, `InputBegan` with `Touch`, pinch and swipe)
-  and UI chosen by `PreferredInput`, such as the hotbar's desktop number
-  labels.
+  Roblox's own UI still picks by the real `PreferredInput`, such as the
+  hotbar's desktop number labels.
+- **Game code that listens for touches never hears one.** **Built: a
+  touch stand-in for game scripts** (`rbx_play::touch`,
+  `probe/touch_input.luau`). Play wraps every
+  `GetService("UserInputService")` in the published copy's game scripts,
+  on its own line, the way test purchases wrap `MarketplaceService`. On a
+  simulated touch device the client gets a proxy:
+  - the left button is one finger. Press, drag and release are one Touch
+    `InputObject` (the same table for the whole touch) on
+    `InputBegan`/`InputChanged`/`InputEnded` and
+    `TouchStarted`/`TouchMoved`/`TouchEnded`, with the `gameProcessedEvent`
+    of the click. Mouse motion with no button down, and the other buttons,
+    are dropped;
+  - the finger's gestures fire `TouchTap` (under 0.5 s and under 10 px),
+    `TouchLongPress` (0.5 s held still), `TouchPan` (past 10 px) and
+    `TouchSwipe` (released at 400 px/s or more after 40 px or more);
+  - the wheel is two fingers 100 px apart around the cursor, with their
+    own touches. A notch scales their span by 1.1 for `TouchPinch`, or
+    turns them 15° for `TouchRotate` with Ctrl held (Shift would toggle
+    Roblox's Shift Lock). The gesture ends 0.3 s after the last notch;
+  - `TouchEnabled` reads true, `MouseEnabled` and `KeyboardEnabled` false,
+    `PreferredInput` and `GetLastInputType` Touch.
+
+  Keyboard, gamepad and text input pass through. The server, other
+  devices, and a forked `PlayerModule` (so it keeps driving the stand-in
+  thumbstick) get the real service.
+
+  **Verified** live on Xephyr with a LocalScript that logs each event:
+  - a click gives `TouchStarted`, `TouchEnded` and `TouchTap`;
+  - a hold gives a long press `Begin`, then `End`;
+  - a fast left flick gives `TouchPan` `Begin` and `End` with −160,0, then
+    `TouchSwipe Left`;
+  - four wheel notches pinch to a scale of 1.46;
+  - three Ctrl notches rotate to 45°;
+  - a press on the stand-in thumbstick reads `InputBegan Touch gp=true`,
+    as on a phone.
+
+  See `play-touch-input-events.png`: the demo's log, newest event first.
+
+  Limits:
+  - a script that reaches the service another way (`game.UserInputService`,
+    or a variable service name) gets the real one;
+  - a touch `InputObject` is a table (`typeof` says so) and cannot be
+    passed to engine APIs;
+  - a `GuiObject`'s own `InputBegan` still reports `MouseButton1`;
+  - the real camera still zooms on the wheel. Sober reads the wheel even
+    while the pointer is over the editor's panels, so scrolling the Output
+    during Play zooms the game and pinches;
+  - in first person or Shift Lock, Roblox pins the mouse to the centre, so
+    every finger lands there.
 - **The Controller Emulator's pad does nothing in game.** Sober sees it
   (`GamepadEnabled` true) but passes none of its input on (row above).
 - **The keyboard cover is ours, not the device's.** The game is not told:
