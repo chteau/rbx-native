@@ -27,14 +27,29 @@ fn driver_command() -> Result<String, String> {
     let exe = std::env::current_exe()
         .and_then(std::fs::canonicalize)
         .map_err(|err| format!("failed to locate rbxmerge: {err}"))?;
-    let exe = exe.to_string_lossy();
-    // Git runs the driver through a shell, which splits on spaces.
-    let exe = if exe.contains(' ') {
-        format!("\"{exe}\"")
+    Ok(format!(
+        "{} %O %A %B %P",
+        shell_path(&exe.to_string_lossy())
+    ))
+}
+
+/// `exe` as a word for the POSIX shell git runs the driver through (Git for
+/// Windows' bundled `sh` too). That shell eats backslashes and splits on
+/// spaces, and it cannot run Windows' verbatim `\\?\` paths that
+/// `canonicalize` returns, so the prefix goes, separators become `/` and the
+/// whole path is single-quoted.
+fn shell_path(exe: &str) -> String {
+    let exe = if let Some(unc) = exe.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
     } else {
-        exe.into_owned()
+        exe.strip_prefix(r"\\?\").unwrap_or(exe).to_string()
     };
-    Ok(format!("{exe} %O %A %B %P"))
+    let exe = if cfg!(windows) {
+        exe.replace('\\', "/")
+    } else {
+        exe
+    };
+    format!("'{}'", exe.replace('\'', r"'\''"))
 }
 
 pub fn run() -> Result<(), String> {
@@ -74,4 +89,28 @@ pub fn run() -> Result<(), String> {
         attributes.display()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_path;
+
+    #[test]
+    fn quotes_and_escapes_for_sh() {
+        assert_eq!(shell_path("/usr/bin/rbxmerge"), "'/usr/bin/rbxmerge'");
+        assert_eq!(shell_path("/a b/it's"), r"'/a b/it'\''s'");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn drops_the_verbatim_prefix_and_backslashes() {
+        assert_eq!(
+            shell_path(r"\\?\D:\a\rbx native\target\debug\rbxmerge.exe"),
+            "'D:/a/rbx native/target/debug/rbxmerge.exe'"
+        );
+        assert_eq!(
+            shell_path(r"\\?\UNC\srv\share\rbxmerge.exe"),
+            "'//srv/share/rbxmerge.exe'"
+        );
+    }
 }
