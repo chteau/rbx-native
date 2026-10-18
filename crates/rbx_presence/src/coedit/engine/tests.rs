@@ -269,11 +269,14 @@ fn src_fast_forward_and_stale_rejected() {
 }
 
 #[test]
-fn own_rejected_src_resends_merged() {
+fn own_rejected_src_resends_the_merged_text_once() {
     let (mut dom, mut ids, _, script) = world();
     let sid = id(&ids, script);
     let mut e = Engine::new("1:studio".into());
     let h0 = e.log_text_hash(&sid, "a\nb\nc\n");
+    // This editor's edit is on screen and in flight when another lands first.
+    dom.set_property(script, "Source", Variant::String("a\nb\nC\n".into()))
+        .unwrap();
     e.apply(
         &mut dom,
         &mut ids,

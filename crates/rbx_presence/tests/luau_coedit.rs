@@ -200,7 +200,8 @@ fn log_src_rules() {
         local oh = o:hash("s", base)
         r = o:src("s", base, { base = oh, text = "a\nb\nc\nD\ne\n" }, false)
         assert(r.accepted)
-        r = o:src("s", "a\nB\nc\nd\ne\n", { base = oh, text = "a\nB\nc\nd\ne\n" }, true)
+        -- our in-flight edit was already merged into the editor's text when theirs landed
+        r = o:src("s", "a\nB\nc\nD\ne\n", { base = oh, text = "a\nB\nc\nd\ne\n" }, true)
         assert(not r.accepted and r.resend == "a\nB\nc\nD\ne\n" and not r.conflicted)
 
         base = "a\nb\nc\n"

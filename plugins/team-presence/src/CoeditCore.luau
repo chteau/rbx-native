@@ -307,14 +307,12 @@ export type SrcResult = { accepted: boolean, write: string?, conflicted: boolean
 function Log.src(self: any, key: string, current: string, op: { base: string, text: string }, own: boolean): SrcResult
 	local old = logText(self, key, current)
 	if op.base ~= CoeditCore.textHash(old) then
+		-- Our own op on text the log has moved past. What moved it was merged
+		-- into the editor's text when it arrived (or was our own earlier op),
+		-- so the editor already holds both: resend that, never merge twice.
 		if own then
-			local baseText = self.known[key][op.base] or old
-			local merged = CoeditCore.merge3(baseText, op.text, old)
-			local resend: string? = nil
-			if merged.text ~= old then
-				resend = merged.text
-			end
-			return { accepted = false, write = nil, conflicted = merged.conflicted, resend = resend }
+			local resend: string? = if current ~= old then current else nil
+			return { accepted = false, write = nil, conflicted = false, resend = resend }
 		end
 		return { accepted = false, write = nil, conflicted = false, resend = nil }
 	end

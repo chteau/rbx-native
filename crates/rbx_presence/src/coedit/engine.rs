@@ -32,39 +32,15 @@ pub struct Report {
 #[derive(Debug, Default, Clone)]
 struct ScriptLog {
     text: String,
-    /// Texts the log has held, by hash, so a stale base can still be merged
-    /// from (bounded to the 64 most recent).
-    seen: Vec<(String, String)>,
 }
 
-const SEEN_MAX: usize = 64;
 const EXISTS: &str = "\u{0}exists";
 
 impl ScriptLog {
     fn seeded(text: &str) -> ScriptLog {
-        let mut log = ScriptLog {
+        ScriptLog {
             text: text.to_string(),
-            seen: Vec::new(),
-        };
-        log.remember(text);
-        log
-    }
-
-    fn remember(&mut self, text: &str) {
-        let hash = text_hash(text);
-        self.seen.retain(|(h, _)| *h != hash);
-        self.seen.push((hash, text.to_string()));
-        if self.seen.len() > SEEN_MAX {
-            let excess = self.seen.len() - SEEN_MAX;
-            self.seen.drain(..excess);
         }
-    }
-
-    fn lookup(&self, hash: &str) -> Option<&str> {
-        self.seen
-            .iter()
-            .find(|(h, _)| h == hash)
-            .map(|(_, t)| t.as_str())
     }
 }
 
@@ -274,8 +250,8 @@ impl Engine {
     /// `base` is the log text's hash (then the log text moves); the DOM's
     /// `Source` follows: unchanged local text takes the new text, local text
     /// ahead of the log is merged three ways ([`super::merge::merge3`]) unless
-    /// the op is this editor's own; a rejected own op is merged against the
-    /// current log text and put in `resend`. Every clock seen raises `counter`.
+    /// the op is this editor's own; for a rejected own op the DOM's text
+    /// (which already folded in whatever moved the log) goes in `resend`. Every clock seen raises `counter`.
     pub fn apply(&mut self, dom: &mut WeakDom, ids: &mut IdMap, batch: &Batch) -> Report {
         let mut cx = Ctx {
             dom,
@@ -422,7 +398,6 @@ impl Engine {
 
         if base == text_hash(&log.text) {
             let old = std::mem::replace(&mut log.text, text.to_string());
-            log.remember(text);
             let Some(r) = r else { return false };
             if own || current == text {
                 return false;
@@ -444,31 +419,23 @@ impl Engine {
                 .is_ok();
         }
 
-        if !own || text == log.text {
+        // This editor's own op, written on text the log has since moved past.
+        // Whatever moved it was merged into the DOM's text when it arrived
+        // (or was this editor's own earlier op), so the DOM already holds
+        // both: send that, on the current log text. Merging again here would
+        // fold the same change in twice.
+        if !own || r.is_none() || current == log.text {
             return false;
         }
-        let base_text = log.lookup(base).unwrap_or(&log.text).to_string();
-        let log_text = log.text.clone();
-        let m = merge3(&base_text, text, &log_text);
-        if m.conflicted {
-            cx.report.notes.push(format!(
-                "{path}: your edit and someone else's overlapped; both were kept between conflict markers."
-            ));
-        }
+        let base = text_hash(&log.text);
         let clock = self.tick();
         cx.report.resend.push(Op::Src {
             at: at.clone(),
-            base: text_hash(&log_text),
-            text: m.text.clone(),
+            base,
+            text: current,
             c: clock,
         });
-        match r {
-            Some(r) if current != m.text => cx
-                .dom
-                .set_property(r, "Source", Variant::String(m.text))
-                .is_ok(),
-            _ => false,
-        }
+        false
     }
 }
 

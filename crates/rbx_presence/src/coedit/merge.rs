@@ -18,23 +18,74 @@ pub struct Merged {
     pub conflicted: bool,
 }
 
-/// Line-based three-way merge of `ours` and `theirs` against `base`.
+/// Three-way merge of `ours` and `theirs` against `base`: by line, and
+/// where lines collide (two people typing on neighbouring lines is the
+/// common case) by character, so only changes to the same characters keep
+/// markers.
 pub fn merge3(base: &str, ours: &str, theirs: &str) -> Merged {
     match diffy::merge(base, ours, theirs) {
         Ok(text) => Merged {
             text,
             conflicted: false,
         },
-        Err(text) => Merged {
-            text,
-            conflicted: true,
+        Err(lines) => match diffy::merge(&chars(base), &chars(ours), &chars(theirs)) {
+            Ok(text) => Merged {
+                text: unchars(&text),
+                conflicted: false,
+            },
+            Err(_) => Merged {
+                text: lines,
+                conflicted: true,
+            },
         },
     }
+}
+
+/// One character per line, a newline written as an escape, so a line merge
+/// of the result merges characters.
+fn chars(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 2);
+    for c in text.chars() {
+        match c {
+            '\n' => out.push_str("\\n\n"),
+            '\r' => out.push_str("\\r\n"),
+            '\\' => out.push_str("\\\\\n"),
+            c => {
+                out.push(c);
+                out.push('\n');
+            }
+        }
+    }
+    out
+}
+
+fn unchars(text: &str) -> String {
+    text.lines()
+        .map(|line| match line {
+            "\\n" => "\n",
+            "\\r" => "\r",
+            "\\\\" => "\\",
+            other => other,
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neighbouring_lines_merge_by_character() {
+        let m = merge3("a = 1\nb = 2\n", "a = 1 AAA\nb = 2\n", "a = 1\nb = 2 BBB\n");
+        assert_eq!(m.text, "a = 1 AAA\nb = 2 BBB\n");
+        assert!(!m.conflicted);
+    }
+
+    #[test]
+    fn character_escapes_round_trip() {
+        let text = "x\\n\\\\y\n\r\nz";
+        assert_eq!(unchars(&chars(text)), text);
+    }
 
     #[test]
     fn hash_is_sixteen_hex_of_sha256() {
