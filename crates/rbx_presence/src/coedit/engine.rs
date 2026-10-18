@@ -111,6 +111,9 @@ struct Ctx<'a> {
     ids: &'a mut IdMap,
     report: Report,
     pending: Vec<Pending>,
+    /// The batch came from the Studio plugin, which sends scripting
+    /// properties a place file never holds (`BrickColor` beside `Color`).
+    from_studio: bool,
 }
 
 impl Ctx<'_> {
@@ -162,6 +165,15 @@ impl Ctx<'_> {
                         .default_value(inst.class(), n)
                         .cloned()
                 });
+                // A scripting property no file stores: writing it would give
+                // some instances of the class a value the binary format
+                // needs on all of them or none.
+                let unsaved = ReflectionDatabase::shared()
+                    .resolve_property(inst.class(), n)
+                    .is_some_and(|p| !p.can_save);
+                if existing.is_none() && unsaved && self.from_studio {
+                    return false;
+                }
                 let (dom, ids) = (&*self.dom, &*self.ids);
                 let decoded = value::decode(v, &|t| lookup(dom, ids, t))
                     .map(|val| names::coerce(existing.as_ref(), val));
@@ -258,6 +270,7 @@ impl Engine {
             ids,
             report: Report::default(),
             pending: Vec::new(),
+            from_studio: batch.a.split(':').nth(1) == Some("studio"),
         };
         for op in &batch.ops {
             self.counter = self.counter.max(op.clock().0);

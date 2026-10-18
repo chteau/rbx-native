@@ -368,3 +368,24 @@ fn replay_is_idempotent_and_tick_exceeds() {
     assert_eq!((dom.root_refs().to_vec(), prop(&dom, part, "Tag")), once);
     assert!(e.tick().0 > 41);
 }
+
+#[test]
+fn a_studio_only_property_is_not_stored() {
+    let (mut dom, mut ids, part, _) = world();
+    let pid = id(&ids, part);
+    let mut e = Engine::new("1:rbx-native:aa".into());
+    e.apply(
+        &mut dom,
+        &mut ids,
+        &batch(
+            "1:studio:bb",
+            vec![set(
+                t(&pid, ""),
+                "BrickColor",
+                json!({"t": "BrickColor", "v": 21}),
+                Clock(1, "1:studio:bb".into()),
+            )],
+        ),
+    );
+    assert_eq!(prop(&dom, part, "BrickColor"), None);
+}
