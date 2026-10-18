@@ -98,8 +98,20 @@ from outside, not of the probe.
 - **Clicks are mouse clicks, not touches.** A click on the client reaches
   the game as `MouseButton1`; `GetLastInputType` never turns to Touch from a
   click, and there is no multi-touch (no pinch, no two-finger camera).
-  `TouchEnabled` is still true. A virtual uinput touchscreen, made the way
-  the Controller Emulator's pad is, is the untried way round it.
+  `TouchEnabled` is still true. A virtual uinput touchscreen does not get
+  round it either (tried live 2026-10-18 on a GNOME X11 desktop: Xorg takes
+  the device as a direct-touch pointer, touches land at the right root
+  coordinates, and Sober's window holds the XInput2 touch selection, yet a
+  touch tap on Roblox's open menu leaves it open and a probe LocalScript
+  sees neither `InputBegan` nor `TouchStarted`, where a mouse click on the
+  same button closes the menu and reads `MouseButton1`). Sober drops X11
+  touch input. A uinput device cannot be tested in the nested Xephyr
+  either, since Xephyr takes its input from the host's core events.
+- **A second Play in one editor session crashed GNOME Shell on X11**
+  (mutter 46.2, `clutter_actor_add_child: assertion 'child->priv->parent ==
+  NULL' failed`, then a trap) the moment the second Sober window was
+  reparented into the editor; the first embed was fine. Not seen under
+  Xephyr, which has no window manager.
 - **No on-screen thumbstick or jump button.** The mobile top bar (Roblox
   button, menu and chat pills) does show, but since no touch ever arrives
   and `PreferredInput` stays `KeyboardAndMouse`, the default touch controls

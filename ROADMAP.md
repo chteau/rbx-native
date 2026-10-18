@@ -2875,7 +2875,11 @@ Roblox's own engine.
   through Sober, measured live: a click reaches the game as `MouseButton1`,
   never a touch (no multi-touch), so the default thumbstick and jump button
   never appear though the mobile top bar does (`PreferredInput` stays
-  `KeyboardAndMouse`); a virtual uinput touchscreen is the untried fix. The
+  `KeyboardAndMouse`); a virtual uinput touchscreen does not help either,
+  Sober drops X11 touch input (tried live). A second Play in one editor
+  session crashed GNOME Shell on X11 when the second client was reparented
+  (mutter 46.2 assertion), untested whether withdrawing it first avoids
+  that. The
   keyboard cover is not reported to the game (`OnScreenKeyboardVisible`
   false, `OnScreenKeyboardSize` 0), and the Android back button arrives as
   `KeyCode.Escape`. Also open: input modes on
