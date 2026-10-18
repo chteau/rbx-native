@@ -29,6 +29,10 @@ pub struct WeakDom {
     // referent that ever entered the DOM, however it got in, raises this floor.
     next_ref: u32,
     changes: Vec<Change>,
+    // Counts every logged change, drained or not: a reader polling for "did
+    // anything change since I last looked" compares one number instead of
+    // racing the other consumers of `changes` for the log itself.
+    mutations: u64,
 }
 
 impl WeakDom {
@@ -41,7 +45,7 @@ impl WeakDom {
         self.next_ref = self.next_ref.max(referent.value().saturating_add(1));
         self.instances.insert(referent, instance);
         self.root_refs.push(referent);
-        self.changes.push(Change::Added(referent));
+        self.log(Change::Added(referent));
     }
 
     /// Allocates a brand new instance, unique against every referent this DOM has
@@ -73,7 +77,7 @@ impl WeakDom {
             .get_mut(&referent)
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.properties_mut().insert(name.to_string(), value);
-        self.changes.push(Change::Property {
+        self.log(Change::Property {
             referent,
             name: name.to_string(),
         });
@@ -96,7 +100,7 @@ impl WeakDom {
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.properties_mut().remove(name);
         if old.is_some() {
-            self.changes.push(Change::Property {
+            self.log(Change::Property {
                 referent,
                 name: name.to_string(),
             });
@@ -114,7 +118,7 @@ impl WeakDom {
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.name().to_string();
         instance.set_name(name);
-        self.changes.push(Change::Property {
+        self.log(Change::Property {
             referent,
             name: "Name".to_string(),
         });
@@ -134,7 +138,7 @@ impl WeakDom {
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.class().to_string();
         instance.set_class(class);
-        self.changes.push(Change::Class(referent));
+        self.log(Change::Class(referent));
         Ok(old)
     }
 
@@ -154,7 +158,7 @@ impl WeakDom {
                 stack.extend_from_slice(instance.children());
                 self.parents.remove(&current);
                 removed.push(current);
-                self.changes.push(Change::Removed(current));
+                self.log(Change::Removed(current));
             }
         }
         removed
@@ -208,6 +212,18 @@ impl WeakDom {
         self.next_ref = self.next_ref.max(floor);
     }
 
+    fn log(&mut self, change: Change) {
+        self.mutations += 1;
+        self.changes.push(change);
+    }
+
+    /// How many changes this DOM has logged in its life (a clone carries the
+    /// count along). Grows on every logged mutation; edits made through
+    /// [`WeakDom::get_mut`] do not count, as they do not log.
+    pub fn mutations(&self) -> u64 {
+        self.mutations
+    }
+
     /// Drains and returns every change recorded since the last call, in the order
     /// the mutations happened.
     pub fn take_changes(&mut self) -> Vec<Change> {
@@ -258,7 +274,7 @@ impl WeakDom {
             None => self.root_refs.push(child),
         }
 
-        self.changes.push(Change::Parent {
+        self.log(Change::Parent {
             referent: child,
             old,
             new: parent,

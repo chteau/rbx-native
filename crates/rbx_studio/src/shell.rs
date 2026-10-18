@@ -13,6 +13,7 @@ mod change_class;
 pub(crate) mod chrome;
 mod clipboard;
 mod close_place;
+mod coedit;
 mod command;
 mod controller_emulator;
 mod debugging;
@@ -56,6 +57,7 @@ mod studio_presence;
 mod team_presence;
 
 pub(crate) use chrome::panel_topbar;
+pub(crate) use coedit::BETA_ID as COEDIT_BETA_ID;
 pub(crate) use export::Export;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;

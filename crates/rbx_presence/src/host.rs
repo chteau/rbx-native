@@ -9,6 +9,7 @@
 //! HTTP reply. The room lives in memory only and is gone when the host
 //! stops; payloads are never logged.
 
+mod ops;
 mod room;
 mod validate;
 
@@ -25,8 +26,9 @@ use tungstenite::{Message, WebSocket};
 
 use crate::auth;
 use crate::schema::{Client, MAX_BODY_BYTES};
+pub use ops::{OpLog, OPS_LOG_BYTES, OPS_REPLY_BYTES};
 pub use room::{Refusal, Room};
-pub use validate::parse_sealed;
+pub use validate::{parse_sealed, parse_sealed_op};
 
 /// A long-poll answers after this long even when nothing changed.
 pub const POLL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -42,6 +44,8 @@ struct Shared {
     room_id: String,
     room: Mutex<Room>,
     changed: Condvar,
+    ops: Mutex<OpLog>,
+    ops_changed: Condvar,
     stop: AtomicBool,
     /// Live sockets per sender, so the last one closing removes the state.
     sockets: Mutex<Vec<(u64, Client)>>,
@@ -92,6 +96,8 @@ impl Host {
             room_id: auth::room_id(key),
             room: Mutex::new(Room::default()),
             changed: Condvar::new(),
+            ops: Mutex::new(OpLog::default()),
+            ops_changed: Condvar::new(),
             stop: AtomicBool::new(false),
             sockets: Mutex::new(Vec::new()),
             outboxes: Mutex::new(Vec::new()),
@@ -143,6 +149,7 @@ impl Drop for Host {
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::SeqCst);
         self.shared.changed.notify_all();
+        self.shared.ops_changed.notify_all();
         // Unblocks `incoming()`.
         let _ = TcpStream::connect(self.addr);
     }
@@ -316,7 +323,7 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
     let method = request.method.as_str();
     let allowed = matches!(
         (route.as_str(), method),
-        ("state", "POST" | "DELETE") | ("poll" | "journal" | "ws", "GET")
+        ("state", "POST" | "DELETE") | ("poll" | "journal" | "ws", "GET") | ("ops", "POST" | "GET")
     );
     if !allowed {
         return respond(&mut stream, 405, "\"method not allowed\"");
@@ -371,6 +378,43 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
                 }
                 Err(fault) => refuse(&mut stream, fault),
             }
+        }
+        ("ops", "POST") => {
+            let body = String::from_utf8_lossy(&request.body);
+            let result =
+                parse_sealed_op(&body, user_id).and_then(|op| lock(&shared.ops).append(op, now));
+            match result {
+                Ok(seq) => {
+                    shared.ops_changed.notify_all();
+                    respond(
+                        &mut stream,
+                        200,
+                        &serde_json::json!({ "seq": seq }).to_string(),
+                    );
+                }
+                Err(fault) => refuse(&mut stream, fault),
+            }
+        }
+        ("ops", _) => {
+            let Some(since) = number_query(&request, "since") else {
+                return refuse(&mut stream, Refusal::new(400, "schema"));
+            };
+            let deadline = Instant::now() + POLL_TIMEOUT;
+            let mut log = lock(&shared.ops);
+            while log.head() <= since && !shared.stop.load(Ordering::SeqCst) {
+                let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+                    break;
+                };
+                log = shared
+                    .ops_changed
+                    .wait_timeout(log, left)
+                    .unwrap_or_else(|e| e.into_inner())
+                    .0;
+            }
+            let body =
+                serde_json::to_string(&log.since(since, OPS_REPLY_BYTES)).unwrap_or_default();
+            drop(log);
+            respond(&mut stream, 200, &body);
         }
         ("state", _) => {
             // Only the plugin deletes over HTTP; `?client=` names the editor.

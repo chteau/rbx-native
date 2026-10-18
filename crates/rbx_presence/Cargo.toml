@@ -33,6 +33,9 @@ tungstenite = { version = "0.28", default-features = false, features = ["handsha
 # version rbx_cloud uses, so nothing new in Cargo.lock.
 ureq = { version = "3", features = ["gzip"] }
 
+# Three-way text merge for a script edited against stale text.
+diffy = "0.4"
+
 [dev-dependencies]
 # Runs the plugin's own Luau modules against the shared golden fixtures.
 mlua = { version = "0.12", features = ["luau"] }

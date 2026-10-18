@@ -130,6 +130,8 @@ pub(super) struct TeamPresence {
     /// The open "View changes" window (the catch-up diff), if any.
     pub(super) presence_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     pub(super) scroll: ScrollHandle,
+    /// Live co-editing, while connected with the beta switched on.
+    pub(super) coedit: Option<super::coedit::Coedit>,
 }
 
 impl TeamPresence {
@@ -172,6 +174,7 @@ impl TeamPresence {
             last_saved: None,
             presence_diff: None,
             scroll: ScrollHandle::new(),
+            coedit: None,
         }
     }
 }
@@ -436,6 +439,7 @@ impl Shell {
 
     fn disconnect_presence(&mut self, cx: &mut Context<Self>) {
         let presence = &mut self.team_presence;
+        presence.coedit = None;
         presence.client = None;
         presence.route = None;
         presence.watch = None;
@@ -523,7 +527,15 @@ impl Shell {
         self.team_presence.place_id = Some(place);
         self.team_presence.last_saved = None;
         self.fetch_catchup(client_config.clone(), since, cx);
+        let seed = super::coedit::Seed {
+            kind: config.kind,
+            room: client_config.room.clone(),
+            key: client_config.key.clone(),
+            enc_key: client_config.enc_key,
+            user_id,
+        };
         let (client, events) = Client::start(client_config);
+        self.coedit_start(seed);
         self.team_presence.client = Some(client);
         self.team_presence.connection = Connection::Connecting;
         if self.team_presence.own_name.is_none() {
@@ -700,7 +712,10 @@ impl Shell {
                     presence.snapshot = Some(next);
                 }
                 Event::Disconnected(why) => presence.connection = Connection::Retrying(why),
-                Event::Route(route) => presence.route = Some(route),
+                Event::Route(route) => {
+                    presence.route = Some(route.clone());
+                    self.coedit_route(&route);
+                }
                 Event::Rejected(why) => presence.connection = Connection::Rejected(why),
             }
             changed = true;
@@ -722,6 +737,7 @@ impl Shell {
             presence.last_sent = Some((state, Instant::now()));
         }
 
+        self.coedit_tick(cx);
         changed |= self.refresh_collaborators(cx);
         if changed {
             cx.notify();
