@@ -2608,6 +2608,28 @@ Roblox's own engine.
   Castle, Obby, …) are whole games built from Roblox's assets and are not
   redrawn here. An account switcher (one key per Roblox account) would be
   an rbx-native addition, not Studio parity — real Studio has none.
+- [x] **Branch and merge place files**, with conflict resolution at the
+  property and script level. `rbx_dom::merge` merges a base and two
+  descendants of it three-way: instances added, removed or reparented,
+  each property, attribute and the tag set on its own, a script's `Source`
+  line by line, `Ref` properties compared by the instance they name.
+  Instances are matched by `UniqueId`, falling back to class, name and
+  position under matched parents when a file has none (so there a
+  renamed instance reads as removed and re-added). What both sides
+  edited differently is a structured conflict (name, class, property,
+  attribute, source hunk, parent, or removed-versus-changed) with base,
+  ours and theirs values and a resolution API; nothing is written as
+  conflict markers. `rbxmerge` is a git merge driver for `.rbxl`, `.rbxm`,
+  `.rbxlx` and `.rbxmx` (`rbxmerge install` sets it up): a clean merge
+  exits 0; on conflicts it keeps our side, leaves a `<file>.merge.json`
+  beside the file and exits 1. In the editor, File › Merge Place… merges
+  another copy against a common base, and opening a place with a sidecar
+  reopens the driver's conflicts, in the diff window's merge mode with a
+  pick per side; Apply is one undoable edit. Verified by unit tests, round
+  trips through the binary and XML formats, real `git merge` runs in a
+  temporary repository, and screenshots of the resolver
+  (`docs/screenshots/place-merge/`). Roblox's version is cloud-side; this
+  one is local.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -3084,14 +3106,6 @@ clear they were considered and not missed.
   history, buildable now. It is the one item here that does not wait on
   Roblox. The embedded API dump now carries those classes (it was refreshed
   for `UIShadow`).
-- [ ] 📋 **Branch and merge place files** (Early 2027), with conflict
-  resolution at the property and script level. This project is better
-  placed for this than most, because a place here is already a local file.
-  The core is a three-way DOM merge: instances added, removed or reparented,
-  properties changed, and a script's `Source` merged as text. Instances
-  would be matched by `UniqueId`, which Roblox writes for exactly this kind
-  of identity, rather than by file-local referents. Roblox's version is
-  cloud-side; this one would be local.
 - [ ] ⚠️ **Package overrides** (Late 2026): inspect, diff, selectively
   revert or publish deliberate edits to a package copy, from the Properties
   panel. The diff itself is local: a `PackageLink`'s subtree compared,

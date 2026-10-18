@@ -12,6 +12,10 @@ path = "src/main.rs"
 name = "rbxlua"
 path = "src/lua/main.rs"
 
+[[bin]]
+name = "rbxmerge"
+path = "src/merge/main.rs"
+
 [dependencies]
 rbx_dom = { path = "../rbx_dom" }
 rbx_binary = { path = "../rbx_binary" }
@@ -20,6 +24,10 @@ rbx_xml = { path = "../rbx_xml" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 # rbxlua only: runs a Luau script against the loaded DOM.
 rbx_lua = { path = "../rbx_lua" }
+# rbxmerge only: the sidecar conflict file it leaves for the editor; both
+# already in Cargo.lock via other crates.
+serde_json = "1"
+base64 = "0.22"
 
 [dev-dependencies]
 # rbxlua's integration tests write scripts and `--out` targets to disk;

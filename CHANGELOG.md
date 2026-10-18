@@ -15,6 +15,14 @@
   steps of their own, concurrent script edits merge (conflicts kept side
   by side), and a late joiner catches up from the relay's log. — @chteau
 
+- **Branch and merge place files.** A three-way merge of place DOMs
+  (`rbx_dom::merge`), matching instances by `UniqueId` and merging every
+  property, attribute, tag and script line on its own, with structured
+  conflicts instead of conflict markers. `rbxmerge` plugs it into git as a
+  merge driver, and File › Merge Place… plus a resolver window in the
+  editor settle what it could not, because a place here is a local file
+  that people branch like any other. — @chteau
+
 ## 2026-10-17
 
 - **Network Simulator on Windows and macOS.** The Network tile is no

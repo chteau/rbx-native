@@ -11,3 +11,5 @@ thiserror = "2"
 [dev-dependencies]
 # Loads assets/tests/TestPlace.rbxl to test fresh-Ref uniqueness against a real file.
 rbx_binary = { path = "../rbx_binary" }
+# Round-trips merged DOMs through the XML formats in the merge tests.
+rbx_xml = { path = "../rbx_xml" }

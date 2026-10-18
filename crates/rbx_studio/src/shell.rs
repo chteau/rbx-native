@@ -41,6 +41,7 @@ mod palette;
 mod panel_window;
 mod panels;
 mod pivot;
+mod place_merge;
 mod play;
 mod plugins;
 mod property_element;
@@ -1097,6 +1098,7 @@ impl Shell {
         shell.apply_debug_save(cx);
         shell.apply_debug_roblox(cx);
 
+        shell.offer_merge_sidecar(cx);
         shell.watch_theme(cx);
         shell.watch_recovery(cx);
         shell.watch_script_templates(cx);

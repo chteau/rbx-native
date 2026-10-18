@@ -34,7 +34,7 @@ pub fn read_place(path: &Path) -> Result<WeakDom, String> {
 /// [`read_place`] for bytes already in memory — what a browser, which has a
 /// dropped file's contents but no path to read, starts from. `path` only
 /// names the file in an error.
-pub(crate) fn parse_place(bytes: &[u8], path: &Path) -> Result<WeakDom, String> {
+pub fn parse_place(bytes: &[u8], path: &Path) -> Result<WeakDom, String> {
     let database = ReflectionDatabase::shared();
     // Both parsers keep a property under whatever name the file used, and a
     // hand-written place may say `Color` or `Size` where Studio saves
