@@ -9,6 +9,15 @@ local Print = require(ReplicatedStorage:WaitForChild("__rbxnative_print"))
 -- (test purchases); start it before any of them prompts.
 require(ReplicatedStorage:WaitForChild("__rbxnative_market")).start()
 local remote = ReplicatedStorage:WaitForChild("__rbxnative_remote")
+-- Touch controls for a simulated touch device (see the module).
+task.spawn(function()
+	local ok, err = pcall(function()
+		require(ReplicatedStorage:WaitForChild("__rbxnative_touch")).start()
+	end)
+	if not ok then
+		warn("[rbx-native] touch controls: " .. tostring(err))
+	end
+end)
 
 local t0 = os.clock()
 local buffer = {}

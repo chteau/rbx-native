@@ -2873,10 +2873,11 @@ Roblox's own engine.
   `docs/research/play-sandbox/device-simulator.md`.
 - [ ] 📋 **Device Simulator: what is still open** — known caveats of Play
   through Sober, measured live: a click reaches the game as `MouseButton1`,
-  never a touch (no multi-touch), so the default thumbstick and jump button
-  never appear though the mobile top bar does (`PreferredInput` stays
-  `KeyboardAndMouse`); a virtual uinput touchscreen does not help either,
-  Sober drops X11 touch input (tried live). A second Play in one editor
+  never a touch (no multi-touch), so game code that listens for touches
+  and UI chosen by `PreferredInput` (which stays `KeyboardAndMouse`) are
+  not simulated; a virtual uinput touchscreen does not help, Sober drops
+  X11 touch input (tried live). Roblox's thumbstick and jump button are
+  stood in for by the probe's own, mouse-driven copies. A second Play in one editor
   session crashed GNOME Shell on X11 when the second client was reparented
   (mutter 46.2 assertion), untested whether withdrawing it first avoids
   that. The

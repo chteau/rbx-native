@@ -11,7 +11,9 @@
   Edit preview to fit, to actual resolution or to the device's physical
   size. During Play the badge now shows what the real client reports —
   its viewport size, touch and ten-foot state — and warns when the size
-  differs from the device's, so the simulation checks itself. — @chteau
+  differs from the device's, so the simulation checks itself. Phones and
+  tablets get Roblox's thumbstick and jump button in Play, worked with
+  the mouse, since the client never receives real touches. — @chteau
 - **Server Authority places are supported in the editor.** Setting
   `Workspace.AuthorityMode` to `Server` in the Properties panel now also
   enables the five properties Studio sets with it (`NextGenerationReplication`,

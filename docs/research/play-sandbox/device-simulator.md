@@ -112,12 +112,29 @@ from outside, not of the probe.
   NULL' failed`, then a trap) the moment the second Sober window was
   reparented into the editor; the first embed was fine. Not seen under
   Xephyr, which has no window manager.
-- **No on-screen thumbstick or jump button.** The mobile top bar (Roblox
-  button, menu and chat pills) does show, but since no touch ever arrives
-  and `PreferredInput` stays `KeyboardAndMouse`, the default touch controls
-  never appear and the hotbar keeps its desktop number labels
-  (`play-iphone15pro-portrait.png`). Moving still works with the desktop
-  keys.
+- **Roblox's own thumbstick and jump button never appear**, since no touch
+  ever arrives and `PreferredInput` stays `KeyboardAndMouse` (the
+  PlayerModule shows its TouchGui only on `PreferredInput == Touch`).
+  **Built: stand-in controls in the probe** (`probe/touch.luau`). On a
+  client with `TouchEnabled` and no touch preference, the probe draws the
+  PlayerModule's dynamic thumbstick and jump button with its sizes,
+  positions and `TouchControlsSheetV2.png` images (taken from the
+  PlayerModule source in the Roblox Client Tracker, May 2026), driven by
+  the mouse: press in the stick region and drag to walk, click the jump
+  button to jump. They keep Roblox's names (`TouchGui` >
+  `TouchControlFrame` > `JumpButton`, `DynamicThumbstickFrame`) so a game
+  script that moves or hides them finds them, follow
+  `GuiService.TouchControlsEnabled`, `ModalEnabled`, `DevTouchMovementMode`
+  (none for Scriptable and ClickToMove) and the humanoid's jump settings,
+  leave presses on the game's own buttons alone, and stand down if a real
+  touch ever makes `PreferredInput` Touch. **Verified** (live, Xephyr):
+  the stick walks the character with Roblox's knob and trail, the button
+  jumps it, and the layout follows rotation
+  (`play-touch-controls-landscape.png`, `play-touch-controls-portrait.png`).
+  Still not simulated: game code that listens for touches itself
+  (`TouchStarted`, `TouchTap`, `InputBegan` with `Touch`, pinch and swipe)
+  and UI chosen by `PreferredInput`, such as the hotbar's desktop number
+  labels.
 - **The Controller Emulator's pad does nothing in game.** Sober sees it
   (`GamepadEnabled` true) but passes none of its input on (row above).
 - **The keyboard cover is ours, not the device's.** The game is not told:
