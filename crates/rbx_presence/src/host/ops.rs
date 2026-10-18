@@ -26,6 +26,8 @@ pub struct OpLog {
     floor: u64,
     head: u64,
     buckets: HashMap<u64, Bucket>,
+    /// Signatures of posts taken within the clock-skew window, and when.
+    seen: HashMap<String, u64>,
 }
 
 impl Default for OpLog {
@@ -43,6 +45,7 @@ impl OpLog {
             floor: 1,
             head: 0,
             buckets: HashMap::new(),
+            seen: HashMap::new(),
         }
     }
 
@@ -63,6 +66,18 @@ impl OpLog {
         }
         bucket.tokens -= 1.0;
         true
+    }
+
+    /// Refuses a post whose signature was already taken: a captured request
+    /// sent again. Anything older than the clock-skew window is refused on
+    /// its timestamp already, so only that window is remembered.
+    pub fn fresh(&mut self, sig: &str, now: u64) -> Result<(), Refusal> {
+        let window = 2 * super::room::CLOCK_SKEW_MS;
+        self.seen.retain(|_, at| now.saturating_sub(*at) <= window);
+        if self.seen.insert(sig.to_owned(), now).is_some() {
+            return Err(Refusal::new(401, "replay"));
+        }
+        Ok(())
     }
 
     /// Logs `op` and returns its seq; refused when the user is over their rate.
@@ -114,6 +129,16 @@ impl OpLog {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_signature_is_taken_once() {
+        let mut log = OpLog::default();
+        assert!(log.fresh("abc", 1_000).is_ok());
+        assert_eq!(log.fresh("abc", 2_000), Err(Refusal::new(401, "replay")));
+        assert!(log
+            .fresh("abc", 1_000 + 3 * super::super::room::CLOCK_SKEW_MS)
+            .is_ok());
+    }
+
     use super::*;
     use crate::schema::{Client, SCHEMA_VERSION};
 

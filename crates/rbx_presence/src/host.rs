@@ -354,7 +354,10 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
     if !constant_eq(&auth::sign(&shared.key, &canonical), sig) {
         return refuse(&mut stream, Refusal::new(401, "sig"));
     }
-    if method != "GET" {
+    // The op log takes posts from several editors of one user at once, which
+    // a strictly rising timestamp would turn away; it refuses a request it
+    // has already seen instead (`OpLog::fresh`).
+    if method != "GET" && route != "ops" {
         // After the signature, so an unsigned request cannot advance it.
         if let Err(fault) = shared.room().check_time(user_id, ts, now, true) {
             return refuse(&mut stream, fault);
@@ -381,8 +384,11 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
         }
         ("ops", "POST") => {
             let body = String::from_utf8_lossy(&request.body);
-            let result =
-                parse_sealed_op(&body, user_id).and_then(|op| lock(&shared.ops).append(op, now));
+            let result = parse_sealed_op(&body, user_id).and_then(|op| {
+                let mut ops = lock(&shared.ops);
+                ops.fresh(sig, now)?;
+                ops.append(op, now)
+            });
             match result {
                 Ok(seq) => {
                     shared.ops_changed.notify_all();
