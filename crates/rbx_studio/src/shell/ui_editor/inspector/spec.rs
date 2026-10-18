@@ -41,6 +41,7 @@ pub(in crate::shell::ui_editor) enum Key {
     PadLeft,
     PadRight,
     GradientRotation,
+    GradientScale,
     Aspect,
     MinW,
     MinH,
@@ -100,6 +101,9 @@ pub(super) enum Form {
     /// The number itself: a drag moves it `step` a pixel, whole numbers
     /// only when `whole`.
     Number { step: f32, whole: bool },
+    /// A number Roblox clamps to `floor` on write, written no lower so the
+    /// file holds what the engine would.
+    Floored { step: f32, floor: f32 },
     /// A transparency, as the opacity percentage Figma shows.
     Percent,
     /// A `Color3`, as six hex digits.
@@ -241,6 +245,16 @@ impl Shell {
                 Form::Number {
                     step: 1.0,
                     whole: false,
+                },
+            ),
+            // The docs floor `Scale` at 0.001 "to avoid degenerate gradients".
+            Key::GradientScale => child(
+                "UIGradient",
+                &["Scale"],
+                &[0],
+                Form::Floored {
+                    step: 0.01,
+                    floor: 0.001,
                 },
             ),
             Key::Aspect => child("UIAspectRatioConstraint", &["AspectRatio"], &[0], FINE),

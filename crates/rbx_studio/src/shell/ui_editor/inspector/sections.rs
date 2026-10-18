@@ -259,23 +259,7 @@ impl Shell {
             rows.push(line(paint));
         }
         if gradient {
-            let rotation = self.field(
-                Key::GradientRotation,
-                Label::Icon(IconName::RotateCw),
-                Some("°"),
-                window,
-                cx,
-            );
-            rows.push(line(vec![
-                caption("Gradient"),
-                rotation,
-                edit_button(
-                    "ui-inspect-gradient-edit",
-                    "Edit its colours",
-                    "UIGradient",
-                    cx,
-                ),
-            ]));
+            rows.extend(self.gradient_rows(window, cx));
         }
         section("Fill", actions, rows).into_any_element()
     }

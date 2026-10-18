@@ -4,7 +4,8 @@
 //! gradient or a constraint put on or taken off.
 
 use gpui_kit::*;
-use rbx_dom::{Ref, Variant};
+use rbx_dom::{Ref, Variant, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
 use super::super::tree::Writes;
 use super::spec::SHADOW;
@@ -45,22 +46,31 @@ pub(super) fn seed(class: &str) -> impl Iterator<Item = (&'static str, String)> 
         .map(|&(property, text)| (property, text.to_owned()))
 }
 
+/// The name of the `enum_name` item `referent`'s `property` holds, its class
+/// default where it stores none.
+pub(super) fn enum_item<'a>(
+    dom: &WeakDom,
+    database: &'a ReflectionDatabase,
+    referent: Ref,
+    property: &str,
+    enum_name: &str,
+) -> Option<&'a str> {
+    let instance = dom.get(referent)?;
+    match database.stored_or_default(instance, property)? {
+        (_, Variant::Enum(value)) => database.enum_name(enum_name, *value),
+        _ => None,
+    }
+}
+
 impl Shell {
-    fn write_all(&mut self, writes: Writes, cx: &mut Context<Self>) {
+    pub(super) fn write_all(&mut self, writes: Writes, cx: &mut Context<Self>) {
         if !writes.is_empty() {
             self.write_drag(true, &writes, cx);
         }
     }
 
     fn enum_name(&self, referent: Ref, property: &str, enum_name: &str) -> Option<String> {
-        let instance = self.dom.get(referent)?;
-        match self.database.stored_or_default(instance, property)? {
-            (_, Variant::Enum(value)) => self
-                .database
-                .enum_name(enum_name, *value)
-                .map(str::to_owned),
-            _ => None,
-        }
+        enum_item(&self.dom, &self.database, referent, property, enum_name).map(str::to_owned)
     }
 
     /// Whether `property` is on for every inspected element — `None` where

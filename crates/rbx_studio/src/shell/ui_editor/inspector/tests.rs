@@ -29,6 +29,22 @@ fn a_transparency_reads_and_writes_as_the_opacity_figma_shows() {
 }
 
 #[test]
+fn a_floored_number_is_never_written_below_its_floor() {
+    let floored = spec(
+        Form::Floored {
+            step: 0.01,
+            floor: 0.001,
+        },
+        &[0],
+    );
+    assert_eq!(write(floored, vec![1.0], &[2.5]), "2.5");
+    // What Roblox would clamp a `UIGradient.Scale` of 0 or less to.
+    assert_eq!(write(floored, vec![1.0], &[0.0]), "0.001");
+    assert_eq!(write(floored, vec![1.0], &[-3.0]), "0.001");
+    assert_eq!(read(floored.form, 0, &[0.25]), Some(vec![0.25]));
+}
+
+#[test]
 fn a_udim2_field_writes_only_its_own_number() {
     let offset_x = spec(NUMBER, &[1]);
     assert_eq!(
