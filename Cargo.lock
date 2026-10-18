@@ -6461,6 +6461,7 @@ name = "rbx_dom"
 version = "0.1.0"
 dependencies = [
  "rbx_binary",
+ "rbx_xml",
  "thiserror 2.0.20",
 ]
 
