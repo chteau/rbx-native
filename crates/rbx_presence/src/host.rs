@@ -26,7 +26,7 @@ use tungstenite::{Message, WebSocket};
 use crate::auth;
 use crate::schema::{Client, MAX_BODY_BYTES};
 pub use room::{Refusal, Room};
-pub use validate::parse_state;
+pub use validate::parse_sealed;
 
 /// A long-poll answers after this long even when nothing changed.
 pub const POLL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -358,7 +358,7 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
         ("state", "POST") => {
             let body = String::from_utf8_lossy(&request.body);
             let result =
-                parse_state(&body, user_id).and_then(|state| shared.room().put(state, now));
+                parse_sealed(&body, user_id).and_then(|sealed| shared.room().put(sealed, now));
             match result {
                 Ok(()) => {
                     shared.changed();
@@ -485,9 +485,9 @@ fn socket(shared: &Arc<Shared>, mut stream: TcpStream, request: &Request, user_i
             }
             match ws.read() {
                 Ok(Message::Text(text)) => {
-                    let result = parse_state(text.as_str(), user_id).and_then(|state| {
-                        let editor = state.client;
-                        shared.room().put(state, crate::now_ms()).map(|()| editor)
+                    let result = parse_sealed(text.as_str(), user_id).and_then(|sealed| {
+                        let editor = sealed.client;
+                        shared.room().put(sealed, crate::now_ms()).map(|()| editor)
                     });
                     match result {
                         Ok(editor) => {

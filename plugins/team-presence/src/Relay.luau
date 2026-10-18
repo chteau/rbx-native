@@ -18,7 +18,24 @@ local Auth = require(script.Parent.Auth)
 local Ntfy = require(script.Parent.Ntfy)
 local Schema = require(script.Parent.Schema)
 
-export type Config = { kind: string, url: string, key: string, room: string, userId: number }
+export type Config = { kind: string, url: string, key: string, encKey: string, room: string, userId: number }
+
+local VERSION_MISMATCH =
+	"The relay runs a different Team Presence version; update the plugin, rbx-native and the relay together."
+
+-- Plugins have no CSPRNG API. A v4 GUID is 122 random bits, so 12 of its 16
+-- bytes, mixed with a Random stream, make a nonce that does not repeat.
+local rng = Random.new()
+
+local function nonceFor(): string
+	local hex = string.gsub(HttpService:GenerateGUID(false), "[^%x]", "")
+	local bytes = table.create(12)
+	for i = 1, 12 do
+		local guidByte = tonumber(string.sub(hex, i * 2 - 1, i * 2), 16) or 0
+		bytes[i] = string.char(bit32.bxor(guidByte, rng:NextInteger(0, 255)))
+	end
+	return table.concat(bytes)
+end
 
 local EXPIRY_MS = 15000
 -- How often a hosted room looks for its host while it has none.
@@ -39,6 +56,7 @@ function Relay.new(config: Config)
 		base = if hosted then nil else url,
 		lastResolve = -math.huge,
 		key = config.key,
+		encKey = config.encKey,
 		room = config.room,
 		topic = Ntfy.topic(config.room),
 		userId = config.userId,
@@ -136,6 +154,9 @@ function Relay:_request(method: string, suffix: string, body: string): (any?, st
 		return nil, tostring(res)
 	end
 	if not res.Success then
+		if res.StatusCode == 400 and string.find(res.Body or "", "version", 1, true) then
+			return nil, VERSION_MISMATCH, res
+		end
 		return nil, string.format("HTTP %d: %s", res.StatusCode, string.sub(res.Body or "", 1, 120)), res
 	end
 	self.sendKey = false
@@ -181,7 +202,7 @@ end
 -- ===== ntfy (plain pub/sub) =====
 
 function Relay:_ntfyPublish(state: any): (boolean, string?)
-	local body = Ntfy.fitEncode(self.key, self.topic, self.userId, nowMs(), state)
+	local body = Ntfy.fitEncode(self.key, self.encKey, self.room, self.topic, self.userId, nowMs(), state, nonceFor)
 	local ok, res = pcall(function()
 		return HttpService:RequestAsync({
 			Url = self.base .. "/" .. self.topic,
@@ -223,7 +244,7 @@ function Relay:_ntfyPoll(): (any?, string?)
 				self.lastId = parsed.id
 			end
 			if parsed.event == "message" and type(parsed.message) == "string" then
-				local state = Ntfy.decode(self.key, self.topic, now, parsed.message)
+				local state = Ntfy.decode(self.key, self.encKey, self.room, self.topic, now, parsed.message)
 				-- Our own echo is this user in Studio; the same user in
 				-- rbx-native is another sender, keyed apart.
 				if state and not (state.userId == self.userId and state.client == "studio") then
@@ -256,7 +277,7 @@ function Relay:publish(state: any): (boolean, string?)
 	if self.kind == "ntfy" then
 		return self:_ntfyPublish(state)
 	end
-	local res, err = self:_send("POST", "/state", Schema.encode(state))
+	local res, err = self:_send("POST", "/state", Schema.sealState(self.encKey, self.room, state, nonceFor))
 	if res == nil then
 		return false, err
 	end
@@ -271,7 +292,7 @@ function Relay:poll(cursor: number): (any?, string?)
 	if res == nil then
 		return nil, err
 	end
-	local ok, snapshot = pcall(Schema.decodeSnapshot, res.Body)
+	local ok, snapshot = pcall(Schema.openSnapshot, self.encKey, self.room, res.Body)
 	if not ok then
 		return nil, tostring(snapshot)
 	end
@@ -311,7 +332,7 @@ function Relay:journal(sinceMs: number): (any?, string?)
 				and type(parsed.message) == "string"
 			then
 				local checkAt = if type(parsed.time) == "number" then parsed.time * 1000 else now
-				local state = Ntfy.decode(self.key, self.topic, checkAt, parsed.message)
+				local state = Ntfy.decode(self.key, self.encKey, self.room, self.topic, checkAt, parsed.message)
 				if state then
 					for _, edit in state.edits or {} do
 						if edit.at > sinceMs then
@@ -345,7 +366,17 @@ function Relay:journal(sinceMs: number): (any?, string?)
 	if not ok or type(parsed) ~= "table" then
 		return nil, "journal reply"
 	end
-	return parsed.entries or {}, nil
+	local opened = {}
+	local raw = parsed.entries
+	if type(raw) == "table" then
+		for _, entry in raw do
+			local plain = Schema.openJournal(self.encKey, self.room, entry)
+			if plain ~= nil then
+				table.insert(opened, plain)
+			end
+		end
+	end
+	return opened, nil
 end
 
 function Relay:leave()

@@ -21,8 +21,17 @@ function Ntfy.signPath(topic: string): string
 end
 
 -- A signed envelope string for `state` published to `topic`.
-function Ntfy.encode(key: string, topic: string, userId: number, ts: number, state: any): string
-	local d = Schema.encode(state)
+function Ntfy.encode(
+	key: string,
+	encKey: string,
+	room: string,
+	topic: string,
+	userId: number,
+	ts: number,
+	state: any,
+	nonceFor: () -> string
+): string
+	local d = Schema.sealState(encKey, room, state, nonceFor)
 	local sig = Auth.sign(key, Auth.canonical("POST", Ntfy.signPath(topic), userId, ts, d))
 	return Json.encode({ u = userId, t = ts, s = sig, d = d })
 end
@@ -32,12 +41,21 @@ Ntfy.MAX_BODY = 4096
 -- Like encode, but sheds detail until the envelope fits MAX_BODY: oldest
 -- edits, then selection, then camera, then script. If even the identity is
 -- too big, the smallest encoding is returned.
-function Ntfy.fitEncode(key: string, topic: string, userId: number, ts: number, state: any): string
+function Ntfy.fitEncode(
+	key: string,
+	encKey: string,
+	room: string,
+	topic: string,
+	userId: number,
+	ts: number,
+	state: any,
+	nonceFor: () -> string
+): string
 	local copy = table.clone(state)
 	copy.edits = table.clone(state.edits or {})
 	copy.selection = table.clone(state.selection or {})
 	while true do
-		local body = Ntfy.encode(key, topic, userId, ts, copy)
+		local body = Ntfy.encode(key, encKey, room, topic, userId, ts, copy, nonceFor)
 		if #body <= Ntfy.MAX_BODY then
 			return body
 		end
@@ -57,7 +75,7 @@ end
 
 -- Verifies and decodes `body`, returning the UserState or nil for anything
 -- that fails a check (bad JSON, stale time, bad signature, id mismatch).
-function Ntfy.decode(key: string, topic: string, nowMs: number, body: string): any?
+function Ntfy.decode(key: string, encKey: string, room: string, topic: string, nowMs: number, body: string): any?
 	local ok, envelope = pcall(Json.decode, body)
 	if not ok or type(envelope) ~= "table" then
 		return nil
@@ -75,9 +93,13 @@ function Ntfy.decode(key: string, topic: string, nowMs: number, body: string): a
 	if Auth.sign(key, Auth.canonical("POST", Ntfy.signPath(topic), u, t, d)) ~= s then
 		return nil
 	end
-	local decoded
-	ok, decoded = pcall(Schema.decodeState, d)
-	if not ok or type(decoded) ~= "table" or decoded.userId ~= u then
+	local sealed
+	ok, sealed = pcall(Json.decode, d)
+	if not ok then
+		return nil
+	end
+	local decoded = Schema.openState(encKey, room, sealed)
+	if decoded == nil or decoded.userId ~= u then
 		return nil
 	end
 	return decoded

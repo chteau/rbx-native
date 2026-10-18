@@ -18,6 +18,12 @@ serde_json = "1"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# RustCrypto AEAD for the ChaCha20-Poly1305 payload encryption.
+chacha20poly1305 = "0.10"
+# Derives the encryption key from the place secret; already in Cargo.lock.
+hkdf = "0.12"
+# Sealed bytes travel as base64 text; already in Cargo.lock.
+base64 = "0.22"
 # The per-place secret; same version `rbx_cloud` uses.
 getrandom = "0.3"
 # The relay's WebSocket: a small blocking client over the rustls already in

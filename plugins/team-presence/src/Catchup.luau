@@ -10,6 +10,8 @@
 --! add/remove: a worker journal returns the entries directly, while ntfy's
 --! retained messages are the peers' states, whose edits are lifted out here.
 
+local Schema = require(script.Parent.Schema)
+
 local Catchup = {}
 
 export type JournalEntry = {
@@ -126,6 +128,19 @@ function Catchup.fromStates(states: { any }): { JournalEntry }
 		end
 	end
 	return entries
+end
+
+-- The journal entries a relay's sealed journal reply holds, opened; entries
+-- that fail to authenticate are dropped.
+function Catchup.fromSealed(encKey: string, room: string, entries: { any }): { JournalEntry }
+	local opened: { JournalEntry } = {}
+	for _, entry in entries do
+		local plain = Schema.openJournal(encKey, room, entry)
+		if plain ~= nil then
+			table.insert(opened, plain)
+		end
+	end
+	return opened
 end
 
 -- One author's line: "Ada made 3 edits to 2 properties across 1 instance",

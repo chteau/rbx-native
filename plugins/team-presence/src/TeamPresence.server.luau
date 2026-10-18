@@ -4,7 +4,8 @@
 local Auth = require(script.Auth)
 local Capture = require(script.Capture)
 local Catchup = require(script.Catchup)
-local Defaults = require(script.Defaults)
+local Crypto = require(script.Crypto)
+local Defaults =require(script.Defaults)
 local DiffWindow = require(script.DiffWindow)
 local Markers = require(script.Markers)
 local Relay = require(script.Relay)
@@ -110,8 +111,16 @@ local function start()
 	widget:setRelay(kind, url, placeRelay == nil)
 
 	local key = Auth.deriveKey(secret :: string, game.PlaceId)
+	local encKey = Crypto.encKey(secret :: string, game.PlaceId)
 	local ownId = userId()
-	local myRelay = Relay.new({ kind = kind, url = url, key = key, room = Auth.roomId(key), userId = ownId })
+	local myRelay = Relay.new({
+		kind = kind,
+		url = url,
+		key = key,
+		encKey = encKey,
+		room = Auth.roomId(key),
+		userId = ownId,
+	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
 	relay, capture, markers = myRelay, myCapture, myMarkers

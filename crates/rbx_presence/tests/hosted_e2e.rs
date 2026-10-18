@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use rbx_presence::client::{Client, Config, Event, Hosting, Route, Tunnel};
 use rbx_presence::relay::RelayKind;
 use rbx_presence::schema::{Client as Editor, UserState, SCHEMA_VERSION};
-use rbx_presence::{announce, auth, secret};
+use rbx_presence::{announce, auth, crypt, secret};
 
 type Topics = Arc<Mutex<HashMap<String, Vec<String>>>>;
 
@@ -107,7 +107,13 @@ fn state(user_id: u64, selection: &str) -> UserState {
     }
 }
 
-fn start(ntfy: &str, key: &str, user_id: u64, can_host: bool) -> (Client, Receiver<Event>) {
+fn start(
+    ntfy: &str,
+    key: &str,
+    enc_key: [u8; 32],
+    user_id: u64,
+    can_host: bool,
+) -> (Client, Receiver<Event>) {
     let hosting = can_host.then(|| {
         Hosting(Arc::new(|port: u16| {
             Ok((
@@ -121,6 +127,7 @@ fn start(ntfy: &str, key: &str, user_id: u64, can_host: bool) -> (Client, Receiv
         relay_url: ntfy.to_owned(),
         room: auth::room_id(key),
         key: key.to_owned(),
+        enc_key,
         user_id,
         hosting,
     })
@@ -154,10 +161,12 @@ fn route_and_sees(events: &Receiver<Event>, other: u64, selection: &str) -> (Opt
 #[test]
 fn the_first_hosts_the_second_joins_and_the_host_says_goodbye() {
     let (ntfy, topics) = fake_ntfy();
-    let key = auth::derive_key(&secret::generate(), 4567);
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
     let room = auth::room_id(&key);
 
-    let (ana, ana_events) = start(&ntfy, &key, 1, true);
+    let (ana, ana_events) = start(&ntfy, &key, enc, 1, true);
     ana.publish(state(1, "Workspace.Baseplate"));
     // Ana hosts before Ben looks.
     let hosting = loop {
@@ -172,7 +181,7 @@ fn the_first_hosts_the_second_joins_and_the_host_says_goodbye() {
     };
 
     // Ben may not host: he must find Ana's announcement.
-    let (ben, ben_events) = start(&ntfy, &key, 2, false);
+    let (ben, ben_events) = start(&ntfy, &key, enc, 2, false);
     ben.publish(state(2, "Workspace.SpawnLocation"));
     let (ben_route, ben_sees) = route_and_sees(&ben_events, 1, "Workspace.Baseplate");
     assert_eq!(ben_route, Some(Route::Joined(hosting.clone())));
@@ -210,8 +219,9 @@ fn the_first_hosts_the_second_joins_and_the_host_says_goodbye() {
 #[test]
 fn nobody_hosting_and_no_way_to_host_is_waiting() {
     let (ntfy, _topics) = fake_ntfy();
-    let key = auth::derive_key(&secret::generate(), 4567);
-    let (_ben, events) = start(&ntfy, &key, 2, false);
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let (_ben, events) = start(&ntfy, &key, crypt::enc_key(&secret, 4567), 2, false);
     let waiting = loop {
         match events.recv_timeout(Duration::from_secs(10)) {
             Ok(Event::Route(Route::Waiting)) => break true,
@@ -233,15 +243,16 @@ fn the_plugin_waits_then_finds_the_rbx_native_host() {
     let key = auth::derive_key(&secret, 4567);
 
     let lua = common::new_lua();
-    common::studio::stubs(&lua);
+    common::studio_stubs(&lua);
     let setup = format!(
         r##"
         local Auth = script.Parent.Auth
+        local Crypto = script.Parent.Crypto
         local Relay = script.Parent.Relay
         local key = Auth.deriveKey("{secret}", 4567)
-        relay = Relay.new({{ kind = "hosted", url = "{ntfy}", key = key, room = Auth.roomId(key), userId = 7 }})
+        relay = Relay.new({{ kind = "hosted", url = "{ntfy}", key = key, encKey = Crypto.encKey("{secret}", 4567), room = Auth.roomId(key), userId = 7 }})
         local ok, err = relay:publish({{
-            v = 1, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
+            v = 2, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
             selection = {{ "Workspace.Baseplate" }}, edits = {{}}, seen = 0,
         }})
         return ok, err, relay:waiting()
@@ -252,7 +263,7 @@ fn the_plugin_waits_then_finds_the_rbx_native_host() {
     let err = err.unwrap_or_default();
     assert!(err.contains("Waiting"), "{err}");
 
-    let (host, host_events) = start(&ntfy, &key, 8, true);
+    let (host, host_events) = start(&ntfy, &key, crypt::enc_key(&secret, 4567), 8, true);
     host.publish(state(8, "Workspace.SpawnLocation"));
     loop {
         match host_events
@@ -270,7 +281,7 @@ fn the_plugin_waits_then_finds_the_rbx_native_host() {
             r##"
             relay.lastResolve = -math.huge -- skip the 15 s wait between looks
             local ok, err = relay:publish({
-                v = 1, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
+                v = 2, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
                 selection = { "Workspace.Baseplate" }, edits = {}, seen = 0,
             })
             assert(ok, err)

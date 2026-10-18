@@ -4,8 +4,7 @@
 
 use std::collections::HashMap;
 
-use crate::catchup::JournalEntry;
-use crate::schema::{Client, Snapshot, UserState, EXPIRY_MS};
+use crate::schema::{Client, Sealed, SealedJournalEntry, SealedSnapshot, EXPIRY_MS};
 
 /// Most senders in one room.
 pub const MAX_USERS: usize = 32;
@@ -37,20 +36,26 @@ struct Bucket {
     at: u64,
 }
 
+/// A journal entry plus the tag the relay dedupes on (not sent to readers).
+struct Held {
+    tag: String,
+    entry: SealedJournalEntry,
+}
+
 #[derive(Default)]
 pub struct Room {
     pub cursor: u64,
-    users: HashMap<(u64, Client), UserState>,
+    users: HashMap<(u64, Client), Sealed>,
     buckets: HashMap<u64, Bucket>,
     last_ts: HashMap<u64, u64>,
-    journal: Vec<JournalEntry>,
+    journal: Vec<Held>,
 }
 
 impl Room {
     /// Stores `state` (stamping `seen`), journals its edits once each, and
     /// advances the cursor; refused when the user is over their rate or the
     /// room is full.
-    pub fn put(&mut self, state: UserState, now: u64) -> Result<(), Refusal> {
+    pub fn put(&mut self, state: Sealed, now: u64) -> Result<(), Refusal> {
         if !self.take(state.user_id, now) {
             return Err(Refusal::new(429, "rate"));
         }
@@ -59,41 +64,40 @@ impl Room {
             return Err(Refusal::new(403, "full"));
         }
         // Clients re-send their recent edits on every heartbeat, so the
-        // journal keys on the client's own edit time and skips one it
-        // already holds. The value is never stored.
-        for edit in &state.edits {
-            let seen = self.journal.iter().any(|e| {
-                e.user_id == state.user_id
-                    && e.at == edit.at
-                    && e.path == edit.path
-                    && e.property == edit.property
-            });
+        // journal dedupes on the sender's tag and skips one it already holds.
+        for edit in &state.j {
+            let seen = self
+                .journal
+                .iter()
+                .any(|h| h.entry.user_id == state.user_id && h.tag == edit.tag);
             if !seen {
-                self.journal.push(JournalEntry {
-                    user_id: state.user_id,
-                    name: state.name.clone(),
-                    path: edit.path.clone(),
-                    property: edit.property.clone(),
-                    at: edit.at,
+                self.journal.push(Held {
+                    tag: edit.tag.clone(),
+                    entry: SealedJournalEntry {
+                        user_id: state.user_id,
+                        at: edit.at,
+                        ct: edit.ct.clone(),
+                    },
                 });
             }
         }
         self.journal
-            .retain(|e| e.at >= now.saturating_sub(JOURNAL_TTL_MS));
+            .retain(|h| h.entry.at >= now.saturating_sub(JOURNAL_TTL_MS));
         if self.journal.len() > JOURNAL_CAP {
             let drop = self.journal.len() - JOURNAL_CAP;
             self.journal.drain(..drop);
         }
-        self.users.insert(key, UserState { seen: now, ..state });
+        self.users.insert(key, Sealed { seen: now, ..state });
         self.cursor += 1;
         Ok(())
     }
 
     /// Journal entries after `since` and within the TTL, oldest first.
-    pub fn journal_since(&self, since: u64, now: u64) -> Vec<JournalEntry> {
-        let mut out: Vec<JournalEntry> = self
+    pub fn journal_since(&self, since: u64, now: u64) -> Vec<SealedJournalEntry> {
+        let mut out: Vec<SealedJournalEntry> = self
             .journal
             .iter()
+            .map(|h| &h.entry)
             .filter(|e| e.at > since && e.at >= now.saturating_sub(JOURNAL_TTL_MS))
             .cloned()
             .collect();
@@ -130,10 +134,10 @@ impl Room {
         !stale.is_empty()
     }
 
-    pub fn snapshot(&self) -> Snapshot {
-        let mut users: Vec<UserState> = self.users.values().cloned().collect();
+    pub fn snapshot(&self) -> SealedSnapshot {
+        let mut users: Vec<Sealed> = self.users.values().cloned().collect();
         users.sort_by_key(|u| (u.user_id, u.client as u8));
-        Snapshot {
+        SealedSnapshot {
             cursor: self.cursor,
             users,
         }
@@ -191,31 +195,26 @@ impl Room {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{Edit, SCHEMA_VERSION};
+    use crate::schema::{SealedEdit, SCHEMA_VERSION};
 
-    fn user(user_id: u64) -> UserState {
-        UserState {
+    fn user(user_id: u64) -> Sealed {
+        Sealed {
             v: SCHEMA_VERSION,
             user_id,
-            name: format!("u{user_id}"),
-            color: "#e8590c".into(),
             client: Client::Studio,
-            camera: None,
-            selection: Vec::new(),
-            script: None,
-            edits: Vec::new(),
+            ct: "AAAA".into(),
+            j: Vec::new(),
             seen: 0,
         }
     }
 
-    fn with_edits(user_id: u64, n: u64, base_at: u64) -> UserState {
-        UserState {
-            edits: (0..n)
-                .map(|i| Edit {
-                    path: format!("Workspace.P{i}"),
-                    property: "Size".into(),
-                    value: "secret".into(),
+    fn with_edits(user_id: u64, n: u64, base_at: u64) -> Sealed {
+        Sealed {
+            j: (0..n)
+                .map(|i| SealedEdit {
                     at: base_at + i,
+                    tag: format!("{:016x}", base_at + i),
+                    ct: "BBBB".into(),
                 })
                 .collect(),
             ..user(user_id)
@@ -234,14 +233,18 @@ mod tests {
     }
 
     #[test]
-    fn journals_each_edit_once_and_never_its_value() {
+    fn journals_each_tag_once_per_user() {
         let mut room = Room::default();
         room.put(with_edits(7, 2, 5), 1000).unwrap();
         room.put(with_edits(7, 2, 5), 6000).unwrap();
         let journal = room.journal_since(0, 6000);
         assert_eq!(journal.len(), 2);
-        assert!(!serde_json::to_string(&journal).unwrap().contains("secret"));
-        assert_eq!(room.journal_since(5, 6000).len(), 1);
+        assert_eq!(journal[0].ct, "BBBB");
+        room.put(with_edits(8, 2, 5), 11000).unwrap();
+        assert_eq!(room.journal_since(0, 11000).len(), 4);
+        room.put(with_edits(7, 2, 5), 16000).unwrap();
+        assert_eq!(room.journal_since(0, 16000).len(), 4);
+        assert_eq!(room.journal_since(5, 6000).len(), 2);
     }
 
     #[test]
@@ -287,7 +290,7 @@ mod tests {
         let mut room = Room::default();
         room.put(user(1), 0).unwrap();
         room.put(
-            UserState {
+            Sealed {
                 client: Client::RbxNative,
                 ..user(1)
             },

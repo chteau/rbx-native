@@ -501,6 +501,7 @@ impl Shell {
             relay_url: config.trimmed_url().to_owned(),
             room,
             key,
+            enc_key: rbx_presence::crypt::enc_key(&secret, place),
             user_id,
             // A hosted room: this editor may host it, through the bundled
             // cloudflared, when nobody else does.
