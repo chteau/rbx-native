@@ -25,7 +25,8 @@ use crate::command_bar::Feedback;
 pub(crate) struct MergeSession {
     pub(crate) merge: Merge,
     /// What the window lists: one `ChangeKind::Updated` node per conflicted
-    /// instance (first-conflict order; `id` = index; `name`/`class` from the
+    /// instance (`Removed` for a removed-versus-changed one; first-conflict
+    /// order; `id` = index; `name`/`class` from the
     /// conflict; `path` = the parent's full name, `game` for a root), with
     /// one `PropertyChange` per conflict (`name` = [`target_label`],
     /// `before` = ours, `after` = theirs) and no `source` or children.
@@ -52,7 +53,13 @@ impl MergeSession {
                     .to_string();
                 nodes.push(DiffNode {
                     id: nodes.len(),
-                    kind: ChangeKind::Updated,
+                    // A removed-versus-changed instance sits with the removals,
+                    // where the filter chips count it.
+                    kind: if matches!(conflict.target, Target::Existence { .. }) {
+                        ChangeKind::Removed
+                    } else {
+                        ChangeKind::Updated
+                    },
                     name: conflict.name.clone(),
                     class: conflict.class.clone(),
                     path,
