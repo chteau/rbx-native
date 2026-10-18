@@ -295,6 +295,14 @@ local LIVE_COMMANDS = {
 
 local function handle(cmd)
 	local kind = cmd.type
+	if kind == "pointer" then
+		-- Only the latest matters, and only to a client that is playing.
+		if tester then
+			remote:FireClient(tester, { kind = "cmd", command = cmd })
+		end
+		ack(cmd.id, true, "pointer")
+		return
+	end
 	if LIVE_COMMANDS[kind] then
 		if cmd.side == "client" then
 			if tester then

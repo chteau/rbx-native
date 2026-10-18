@@ -72,6 +72,8 @@ impl Shell {
             }
             ViewportAction::PluginHandle(event) => self.plugin_handle_event(event.clone(), cx),
             ViewportAction::PluginMouse(input, at) => self.plugin_mouse(*input, *at, cx),
+            ViewportAction::KeyboardLayout(layout) => self.set_keyboard_layout(*layout, cx),
+            ViewportAction::KeyboardTap(tap) => self.type_into_client(tap),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {

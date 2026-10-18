@@ -551,6 +551,8 @@ impl Shell {
             anim_sheet_height,
             anim_names_width,
             device_custom,
+            device_scaling,
+            device_keyboard_layout,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -854,7 +856,11 @@ impl Shell {
             plugins: plugins::Plugins::default(),
             studio_presence: studio_presence::StudioPresence::new(studio_presence_enabled),
             team_presence: team_presence::TeamPresence::new(team_presence_settings, window, cx),
-            device_sim: device_sim::DeviceSim::new(device_custom),
+            device_sim: device_sim::DeviceSim::new(
+                device_custom,
+                device_scaling,
+                device_keyboard_layout,
+            ),
             roblox_login: None,
             settings_open_on: None,
             drag: None,
@@ -1755,6 +1761,8 @@ impl Shell {
             anim_sheet_height: self.anim.sheet_height,
             anim_names_width: Some(self.anim.names_width),
             device_custom: self.device_sim.custom,
+            device_scaling: self.device_sim.scaling,
+            device_keyboard_layout: self.device_sim.layout,
         };
         let _ = settings.save();
 

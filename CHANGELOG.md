@@ -10,6 +10,26 @@
   several pipes since dummynet has none. Neither has run on a real
   Windows PC or Mac yet; the research note has a test checklist for
   each. — @chteau
+- **Device Simulator: keyboard cover, Android back button and display
+  scaling.** The Device menu can show an on-screen keyboard over the
+  simulated screen, drawn like the iPhone's, the iPad's or Gboard with
+  QWERTY or AZERTY keys and an emoji page, whose keys type into the Play
+  client (and in Play it rises on its own while a TextBox or
+  the chat bar has focus), send Android's back button to the Play client, and scale the
+  Edit preview to fit, to actual resolution or to the device's physical
+  size. During Play the badge now shows what the real client reports —
+  its viewport size, touch and ten-foot state — and warns when the size
+  differs from the device's, so the simulation checks itself. Phones and
+  tablets get Roblox's thumbstick and jump button in Play, worked with
+  the mouse, since the client never receives real touches. The game's own
+  touch code runs too: its scripts see the mouse as a finger
+  (`TouchStarted`, `InputBegan` with `Touch`, tap, long press, pan and
+  swipe, on the service and on its buttons and frames), the wheel as a
+  two-finger pinch (Ctrl for a rotation), and a touch device in
+  `TouchEnabled`, `MouseEnabled`, `KeyboardEnabled` and `PreferredInput`.
+  Dragging over the world turns the camera, as a finger does. Scrolling
+  the editor's panels during Play no longer zooms the game.
+  — @chteau
 - **Server Authority places are supported in the editor.** Setting
   `Workspace.AuthorityMode` to `Server` in the Properties panel now also
   enables the five properties Studio sets with it (`NextGenerationReplication`,

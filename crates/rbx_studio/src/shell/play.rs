@@ -86,6 +86,9 @@ const EMBED_TIMEOUT: Duration = Duration::from_secs(90);
 pub(crate) struct EmbedTarget {
     pub(crate) window: crate::pointer_lock::WindowId,
     pub(crate) rect: session::rbx_play_rect::Rect,
+    /// Corner radius to cut, in physical pixels: a simulated device's
+    /// rounded screen, 0 for the whole panel.
+    pub(crate) corner: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +118,13 @@ struct Session {
     client: ClientProcess,
     own_user: Option<u64>,
     last_rect: Option<session::rbx_play_rect::Rect>,
+    /// The last `CommandBody::Pointer` sent.
+    #[cfg(any(target_os = "linux", windows))]
+    pointer_inside: Option<bool>,
+    /// `EmbedTarget::corner` of `last_rect`. Only an embedded client has
+    /// corners to cut.
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+    corner: u32,
     /// The embedded window is hidden because another document (Scripts,
     /// UI Editor, Animation) took the room the 3D view had.
     #[cfg(any(target_os = "linux", windows))]
@@ -553,6 +563,9 @@ impl Shell {
                     client,
                     own_user: None,
                     last_rect: None,
+                    corner: 0,
+                    #[cfg(any(target_os = "linux", windows))]
+                    pointer_inside: None,
                     #[cfg(any(target_os = "linux", windows))]
                     hidden: false,
                 });
@@ -599,6 +612,7 @@ impl Shell {
                                 running.embedded = Some(embedded);
                                 running.focus = focus.ok();
                                 running.last_rect = Some(target.rect);
+                                running.corner = target.corner;
                             }
                         }
                         Err(err) => shell.output.push(
@@ -650,12 +664,17 @@ impl Shell {
             return None;
         }
         // A simulated device's screen at 1:1 rather than the whole panel.
-        let rect = view.play_rect(crate::device_sim::Rect {
+        let panel = crate::device_sim::Rect {
             x: i32::try_from(x).ok()?,
             y: i32::try_from(y).ok()?,
             width,
             height,
-        });
+        };
+        let rect = view.play_rect(panel);
+        let corner = match rect == panel {
+            true => 0,
+            false => (crate::device_sim::SCREEN_RADIUS * self.play.scale).round() as u32,
+        };
         Some(EmbedTarget {
             window,
             rect: session::rbx_play_rect::Rect {
@@ -664,6 +683,7 @@ impl Shell {
                 width: rect.width,
                 height: rect.height,
             },
+            corner,
         })
     }
 
@@ -678,6 +698,10 @@ impl Shell {
         while let Ok(event) = channel.events().try_recv() {
             changed = true;
             if self.live_apply(&event, cx) || self.play_debug_event(&event, cx) {
+                continue;
+            }
+            if let Uplink::Device(report) = event {
+                self.device_client_report(report, cx);
                 continue;
             }
             if let Uplink::Stats { side, metrics } = event {
@@ -748,11 +772,21 @@ impl Shell {
                         let _ = embedded.set_rect(target.rect);
                         running.last_rect = Some(target.rect);
                     }
+                    running.corner = target.corner;
                     if running.hidden {
                         embedded.show();
                         running.hidden = false;
                     }
                 }
+            }
+        }
+        // Sober reads the wheel wherever the pointer is; the client ignores
+        // it while the pointer is elsewhere in the editor.
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(inside) = running.focus.as_ref().and_then(|f| f.pointer_inside()) {
+            if running.pointer_inside != Some(inside) {
+                running.pointer_inside = Some(inside);
+                channel.send(rbx_play::protocol::CommandBody::Pointer { inside });
             }
         }
         #[cfg(not(any(target_os = "linux", windows)))]
@@ -768,6 +802,13 @@ impl Shell {
             cx.notify();
         }
         true
+    }
+
+    /// The embedded client while it is shown over the 3D view.
+    #[cfg(target_os = "linux")]
+    pub(in crate::shell) fn play_embedded(&self) -> Option<&rbx_play::embed::Embedded> {
+        let running = self.play.session.as_ref()?;
+        running.embedded.as_ref().filter(|_| !running.hidden)
     }
 
     /// Cuts the editor's popups out of the embedded game window, so they
@@ -786,7 +827,7 @@ impl Shell {
             return;
         }
         let scale = self.play.scale;
-        let holes: Vec<rbx_play::embed::Rect> = gpui_base::occlusion::rects(window)
+        let mut holes: Vec<rbx_play::embed::Rect> = gpui_base::occlusion::rects(window)
             .into_iter()
             .filter_map(|bounds| {
                 let left = (f32::from(bounds.origin.x) * scale).floor() as i32 - rect.x;
@@ -804,6 +845,16 @@ impl Shell {
                 })
             })
             .collect();
+        holes.extend(
+            crate::device_sim::corner_holes(rect.width, rect.height, running.corner)
+                .into_iter()
+                .map(|hole| rbx_play::embed::Rect {
+                    x: hole.x,
+                    y: hole.y,
+                    width: hole.width,
+                    height: hole.height,
+                }),
+        );
         if holes != self.play.holes && embedded.set_holes(&holes).is_ok() {
             self.play.holes = holes;
         }

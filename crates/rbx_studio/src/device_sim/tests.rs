@@ -136,3 +136,125 @@ fn labels() {
         "Desktop 1080p · 1920×1080"
     );
 }
+
+#[test]
+fn phones_and_tablets_have_density_and_a_sane_keyboard() {
+    for d in devices() {
+        if matches!(d.platform, Platform::Phone | Platform::Tablet) {
+            assert!(d.density.is_some(), "{}", d.name);
+            for o in [Orientation::Portrait, Orientation::Landscape] {
+                let k = d.keyboard_height(o);
+                assert!(k > 0, "{} {o:?}", d.name);
+                assert!(k < d.screen(o).1, "{} {o:?}", d.name);
+            }
+        } else {
+            assert!(d.density.is_none(), "{}", d.name);
+            assert_eq!(d.keyboard, (0, 0), "{}", d.name);
+            assert_eq!(d.os, Os::Other, "{}", d.name);
+        }
+    }
+}
+
+#[test]
+fn os_follows_the_device_name() {
+    for d in devices() {
+        if d.name.starts_with("iP") {
+            assert_eq!(d.os, Os::Ios, "{}", d.name);
+        }
+        if d.name.starts_with("Pixel") || d.name.starts_with("Galaxy") {
+            assert_eq!(d.os, Os::Android, "{}", d.name);
+        }
+    }
+}
+
+#[test]
+fn keyboard_height_picks_the_orientation() {
+    let d = Device {
+        keyboard: (300, 200),
+        ..*named("iPhone 15 Pro")
+    };
+    assert_eq!(d.keyboard_height(Orientation::Portrait), 300);
+    assert_eq!(d.keyboard_height(Orientation::Landscape), 200);
+}
+
+#[test]
+fn custom_devices_map_to_os_and_have_no_keyboard() {
+    for (p, os) in [
+        (Platform::Phone, Os::Android),
+        (Platform::Tablet, Os::Android),
+        (Platform::Desktop, Os::Other),
+    ] {
+        let d = CustomDevice::new(800, 600, p).device();
+        assert_eq!(d.os, os);
+        assert_eq!(d.keyboard, (0, 0));
+        assert!(d.density.is_none());
+    }
+}
+
+#[test]
+fn display_scaling_keys_and_factors() {
+    for s in DisplayScaling::ALL.iter().copied() {
+        assert_eq!(DisplayScaling::from_key(s.key()), Some(s));
+    }
+    assert_eq!(DisplayScaling::from_key("x"), None);
+    let phone = named("iPhone 15 Pro");
+    assert_eq!(DisplayScaling::Fit.logical_per_point(phone), None);
+    assert_eq!(DisplayScaling::Actual.logical_per_point(phone), Some(1.0));
+    let physical = DisplayScaling::Physical.logical_per_point(phone).unwrap();
+    assert!((physical - 96.0 * 3.0 / 460.0).abs() < 1e-4);
+    assert_eq!(
+        DisplayScaling::Physical.logical_per_point(named("Desktop 1080p")),
+        None
+    );
+    let custom = CustomDevice::new(800, 600, Platform::Phone).device();
+    assert_eq!(DisplayScaling::Physical.logical_per_point(&custom), None);
+}
+
+#[test]
+fn corner_holes_round_each_corner_symmetrically() {
+    let holes = corner_holes(100, 50, 4);
+    // Four strips per row whose cut is not zero; the first row cuts most.
+    assert_eq!(holes.len() % 4, 0);
+    let top_left: Vec<_> = holes.iter().filter(|h| h.x == 0 && h.y < 4).collect();
+    assert!(top_left.windows(2).all(|w| w[0].width >= w[1].width));
+    assert!(top_left[0].width >= 2 && top_left[0].width < 4);
+    for hole in &holes {
+        assert_eq!(hole.height, 1);
+        assert!(hole.x == 0 || hole.x + hole.width as i32 == 100);
+        assert!(hole.y < 4 || hole.y > 45);
+    }
+}
+
+#[test]
+fn corner_holes_need_a_radius_and_stay_inside_small_windows() {
+    assert!(corner_holes(100, 50, 0).is_empty());
+    assert!(corner_holes(6, 6, 40)
+        .iter()
+        .all(|h| h.width <= 3 && h.y < 6));
+}
+
+#[test]
+fn french_locales_type_azerty() {
+    assert_eq!(
+        KeyboardLayout::for_locale("fr_FR.UTF-8"),
+        KeyboardLayout::Azerty
+    );
+    assert_eq!(KeyboardLayout::for_locale("fr_BE"), KeyboardLayout::Azerty);
+    assert_eq!(KeyboardLayout::for_locale("fr"), KeyboardLayout::Azerty);
+    assert_eq!(
+        KeyboardLayout::for_locale("en_US.UTF-8"),
+        KeyboardLayout::Qwerty
+    );
+    assert_eq!(KeyboardLayout::for_locale("C"), KeyboardLayout::Qwerty);
+    assert_eq!(KeyboardLayout::for_locale(""), KeyboardLayout::Qwerty);
+}
+
+#[test]
+fn keyboard_layouts_round_trip_and_cycle() {
+    for layout in KeyboardLayout::ALL {
+        assert_eq!(KeyboardLayout::from_key(layout.key()), Some(layout));
+        assert_eq!(layout.next().next(), layout);
+        assert_ne!(layout.next(), layout);
+    }
+    assert_eq!(KeyboardLayout::from_key("dvorak"), None);
+}

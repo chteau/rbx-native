@@ -7,6 +7,10 @@
 //! Flatpak gives the client its own PID namespace, so windows are found by
 //! `WM_CLASS`, not `_NET_WM_PID`.
 
+mod keys;
+
+pub use keys::Key;
+
 use super::{visible_parts, EmbedError, Rect};
 use std::time::{Duration, Instant};
 
@@ -326,9 +330,11 @@ impl Embedded {
 }
 
 impl Drop for Embedded {
-    /// If still alive, reparents the window back to the root so it is not
-    /// destroyed with the editor's parent window.
+    /// Gives back the keycodes typing borrowed, and if still alive,
+    /// reparents the window back to the root so it is not destroyed with
+    /// the editor's parent window.
     fn drop(&mut self) {
+        self.return_borrowed();
         if self.alive() {
             let _ = self.conn.reparent_window(self.window, self.root, 0, 0);
             let _ = self.conn.flush();
@@ -340,12 +346,21 @@ impl Drop for Embedded {
 /// from the window manager, so this watches every pointer press (XInput2
 /// raw events on the root, which every client may select) and moves X
 /// focus itself: a press over the client gives it the keyboard, a press
-/// anywhere else in the editor window takes it back. Runs on its own thread
-/// and connection; dropping it stops the thread within ~50 ms.
+/// anywhere else in the editor window takes it back. It also follows raw
+/// motion, to tell whether the pointer is over the client
+/// (`pointer_inside`): Sober reads the wheel wherever the pointer is.
+/// Runs on its own thread and connection; dropping it stops the thread
+/// within ~50 ms.
 pub struct FocusFollow {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// `POINTER_*`.
+    pointer: std::sync::Arc<std::sync::atomic::AtomicU8>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
+
+const POINTER_UNKNOWN: u8 = 0;
+const POINTER_INSIDE: u8 = 1;
+const POINTER_OUTSIDE: u8 = 2;
 
 /// XI2's `XIAllMasterDevices`.
 const ALL_MASTER_DEVICES: u16 = 1;
@@ -365,7 +380,7 @@ impl FocusFollow {
             root,
             &[xinput::EventMask {
                 deviceid: ALL_MASTER_DEVICES,
-                mask: vec![xinput::XIEventMask::RAW_BUTTON_PRESS],
+                mask: vec![xinput::XIEventMask::RAW_BUTTON_PRESS | xinput::XIEventMask::RAW_MOTION],
             }],
         )
         .map_err(x11)?;
@@ -375,15 +390,34 @@ impl FocusFollow {
 
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stopping = stop.clone();
+        let pointer = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(POINTER_UNKNOWN));
+        let pointing = pointer.clone();
         let thread = std::thread::Builder::new()
             .name("embed-focus".into())
             .spawn(move || {
                 use std::sync::atomic::Ordering;
+                let mut moved = true;
                 while !stopping.load(Ordering::Relaxed) {
                     let mut pressed = false;
                     while let Ok(Some(event)) = conn.poll_for_event() {
-                        if matches!(event, x11rb::protocol::Event::XinputRawButtonPress(_)) {
-                            pressed = true;
+                        match event {
+                            x11rb::protocol::Event::XinputRawButtonPress(_) => pressed = true,
+                            x11rb::protocol::Event::XinputRawMotion(_) => moved = true,
+                            _ => {}
+                        }
+                    }
+                    if moved || pressed {
+                        moved = false;
+                        if let Ok(path) = pointer_path(&conn, root) {
+                            let inside = path.contains(&client);
+                            pointing.store(
+                                if inside {
+                                    POINTER_INSIDE
+                                } else {
+                                    POINTER_OUTSIDE
+                                },
+                                Ordering::Relaxed,
+                            );
                         }
                     }
                     if pressed {
@@ -398,8 +432,37 @@ impl FocusFollow {
             .map_err(|e| EmbedError::X11(e.to_string()))?;
         Ok(FocusFollow {
             stop,
+            pointer,
             thread: Some(thread),
         })
+    }
+
+    /// Whether the pointer was over the client at its last move; `None`
+    /// before the first reading.
+    pub fn pointer_inside(&self) -> Option<bool> {
+        match self.pointer.load(std::sync::atomic::Ordering::Relaxed) {
+            POINTER_INSIDE => Some(true),
+            POINTER_OUTSIDE => Some(false),
+            _ => None,
+        }
+    }
+}
+
+/// The windows under the pointer, outermost first, below `root`.
+fn pointer_path(conn: &RustConnection, root: u32) -> Result<Vec<u32>, EmbedError> {
+    let mut window = root;
+    let mut path = Vec::new();
+    loop {
+        let reply = conn
+            .query_pointer(window)
+            .map_err(x11)?
+            .reply()
+            .map_err(x11)?;
+        if reply.child == x11rb::NONE {
+            return Ok(path);
+        }
+        window = reply.child;
+        path.push(window);
     }
 }
 
@@ -411,20 +474,7 @@ fn route_focus(
     editor: u32,
     client: u32,
 ) -> Result<(), EmbedError> {
-    let mut window = root;
-    let mut path = Vec::new();
-    loop {
-        let reply = conn
-            .query_pointer(window)
-            .map_err(x11)?
-            .reply()
-            .map_err(x11)?;
-        if reply.child == x11rb::NONE {
-            break;
-        }
-        window = reply.child;
-        path.push(window);
-    }
+    let path = pointer_path(conn, root)?;
     let target = if path.contains(&client) {
         client
     } else if path.contains(&editor) || path.iter().any(|&w| is_ancestor(conn, w, editor)) {

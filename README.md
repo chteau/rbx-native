@@ -408,6 +408,9 @@ the autonomous-contribution workflow specifically.
   definitions, and Roblox's API reference text from
   [Roblox-Client-Tracker](https://github.com/MaximumADHD/Roblox-Client-Tracker),
   are fetched at run time, not shipped.
+- **Twitter and jdecked** — [Twemoji](https://github.com/jdecked/twemoji)
+  graphics (CC-BY 4.0), the emoji on the Device Simulator's keyboard
+  cover, shipped unmodified in `assets/twemoji/` with their licence.
 
 ## License
 

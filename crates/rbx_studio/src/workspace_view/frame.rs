@@ -23,16 +23,20 @@ impl Viewport {
     /// panel can show it. The scene renders at this box's size, 1:1 with
     /// the pixels it is shown in, so every pointer mapping stays as it was;
     /// only the GUI is laid out at the screen's own size (see
-    /// `Headless::set_gui_screen`).
+    /// `Headless::set_gui_screen`). `max_scale`, in physical pixels per
+    /// screen unit, caps the box for display scaling; it still shrinks to
+    /// fit.
     pub(super) fn letterboxed(
         origin: (u32, u32),
         size: (u32, u32),
         screen: Option<(u32, u32)>,
+        max_scale: Option<f64>,
     ) -> Viewport {
         let Some((w, h)) = screen.filter(|&(w, h)| w > 0 && h > 0) else {
             return Viewport { origin, size };
         };
-        let scale = (size.0 as f64 / w as f64).min(size.1 as f64 / h as f64);
+        let fit = (size.0 as f64 / w as f64).min(size.1 as f64 / h as f64);
+        let scale = max_scale.map_or(fit, |cap| fit.min(cap));
         let fitted = (
             ((w as f64 * scale).round() as u32).clamp(1, size.0.max(1)),
             ((h as f64 * scale).round() as u32).clamp(1, size.1.max(1)),
@@ -122,7 +126,7 @@ mod letterbox_tests {
 
     #[test]
     fn an_emulated_screen_is_the_largest_box_of_its_shape_centred_in_the_panel() {
-        let native = Viewport::letterboxed((10, 20), (1000, 800), None);
+        let native = Viewport::letterboxed((10, 20), (1000, 800), None, None);
         assert_eq!(
             native,
             Viewport {
@@ -131,7 +135,7 @@ mod letterbox_tests {
             }
         );
         // 16:9 in a taller panel: full width, bars above and below.
-        let wide = Viewport::letterboxed((10, 20), (1000, 800), Some((1920, 1080)));
+        let wide = Viewport::letterboxed((10, 20), (1000, 800), Some((1920, 1080)), None);
         assert_eq!(
             wide,
             Viewport {
@@ -140,8 +144,26 @@ mod letterbox_tests {
             }
         );
         // A portrait phone: full height, bars at the sides.
-        let tall = Viewport::letterboxed((0, 0), (1000, 800), Some((390, 844)));
+        let tall = Viewport::letterboxed((0, 0), (1000, 800), Some((390, 844)), None);
         assert_eq!(tall.size.1, 800);
         assert_eq!(tall.origin.0, (1000 - tall.size.0) / 2);
+    }
+
+    #[test]
+    fn a_scale_cap_below_the_fit_shrinks_the_box_and_centres_it() {
+        let v = Viewport::letterboxed((0, 0), (1000, 800), Some((100, 50)), Some(2.0));
+        assert_eq!(
+            v,
+            Viewport {
+                origin: (400, 350),
+                size: (200, 100)
+            }
+        );
+    }
+
+    #[test]
+    fn a_scale_cap_above_the_fit_still_fits() {
+        let v = Viewport::letterboxed((0, 0), (1000, 800), Some((100, 50)), Some(50.0));
+        assert_eq!(v.size, (1000, 500));
     }
 }
