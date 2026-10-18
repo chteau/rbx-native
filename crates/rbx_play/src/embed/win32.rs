@@ -347,4 +347,10 @@ impl FocusFollow {
         let _ = focus_window(client);
         Ok(FocusFollow)
     }
+
+    /// Not followed on Windows, where it is untested whether the client
+    /// reads the wheel while the pointer is elsewhere.
+    pub fn pointer_inside(&self) -> Option<bool> {
+        None
+    }
 }

@@ -8,12 +8,32 @@
 //! logical size and safe area. In Play the real client is sized to the
 //! device's logical resolution (see `workspace_view::device`), and Sober is
 //! launched in the device's input mode (`device_sim::sober_keys`), so the
-//! client reports genuine values. Pixel density cannot be simulated either
-//! way: Sober's `enable_hidpi` scales the window, it does not report a DPI.
+//! client reports genuine values, which the client probe sends back
+//! (`Uplink::Device`): the badge shows them during Play, and the first
+//! report of each Play goes to Output as a record of the live test.
 //!
-//! `RBX_STUDIO_DEVICE=<device name>[,rotate]` picks a device at startup and
-//! shows the Test ribbon — a screenshot aid, since nothing else can open the
-//! Device menu on the editor's behalf (see `AGENTS.md`'s safety rules).
+//! Pixel density reaches no script (Roblox exposes no DPI, and Sober's
+//! `enable_hidpi` scales the window without reporting one), so its only
+//! observable effect is how big the screen looks: Display scaling draws the
+//! Edit screen at fit, 1:1 or physical size. Play stays 1:1 — a foreign
+//! window can be sized, never scaled — so a device larger than the 3D view
+//! is refused there.
+//!
+//! The on-screen keyboard is a cover we draw over the bottom of the screen:
+//! in Edit when the menu's toggle asks for it, in Play only while the client
+//! reports a focused TextBox (cut out of the client window); the client is
+//! never told,
+//! so `OnScreenKeyboardSize` stays 0 — no API sets it. The Android back
+//! button sends Escape to the embedded client (Linux only, `client`).
+//!
+//! `RBX_STUDIO_DEVICE=<device name>[,rotate][,keyboard][,fit|actual|physical]`
+//! picks a device at startup, with the keyboard cover shown and a display
+//! scaling for this run only, and shows the Test ribbon — a screenshot aid,
+//! since nothing else can open the Device menu on the editor's behalf (see
+//! `AGENTS.md`'s safety rules).
+
+mod client;
+mod options;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -25,9 +45,11 @@ use super::play::session::PLAY_SOURCE;
 use super::play::Phase;
 use super::Shell;
 use crate::command_bar::Feedback;
-use crate::device_sim::{self, CustomDevice, Device, Orientation, Platform, Tier};
+use crate::device_sim::{
+    self, CustomDevice, Device, DisplayScaling, KeyboardLayout, Orientation, Os, Platform, Tier,
+};
 use crate::tokens;
-use crate::workspace_view::device::Simulated;
+use crate::workspace_view::device::{KeyboardStyle, Simulated};
 
 /// Which device the menu has picked: one of `device_sim::devices`, or the
 /// custom one from settings.
@@ -46,15 +68,35 @@ pub(super) struct DeviceSim {
     /// launched without simulation), `None` while no client runs. Sober reads
     /// its input mode at launch only, so a change of class needs a restart.
     launched: Option<Option<Platform>>,
+    /// The on-screen keyboard cover is shown (the menu's toggle).
+    keyboard: bool,
+    /// Persisted in settings as `device_scaling`.
+    pub(super) scaling: DisplayScaling,
+    /// The keyboard cover's layout; persisted as `device_keyboard_layout`.
+    pub(super) layout: KeyboardLayout,
+    /// The running Play client's latest self-report.
+    client: Option<rbx_play::protocol::DeviceReport>,
+    /// The device was on the view when the Animation Editor took its
+    /// screen away, and comes back when it is left.
+    suspended: bool,
 }
 
 impl DeviceSim {
-    pub(super) fn new(custom: CustomDevice) -> Self {
+    pub(super) fn new(
+        custom: CustomDevice,
+        scaling: DisplayScaling,
+        layout: KeyboardLayout,
+    ) -> Self {
         DeviceSim {
             choice: None,
             orientation: Orientation::Landscape,
             custom,
             launched: None,
+            keyboard: false,
+            scaling,
+            layout,
+            client: None,
+            suspended: false,
         }
     }
 
@@ -79,9 +121,18 @@ impl Shell {
             .position(|device| device.name.eq_ignore_ascii_case(name))
         {
             self.pick_device(Some(Choice::Builtin(index)), cx);
-            if parts.any(|part| part == "rotate") {
-                self.rotate_device(cx);
+            for part in parts {
+                match part {
+                    "rotate" => self.rotate_device(cx),
+                    "keyboard" => self.device_sim.keyboard = true,
+                    _ => {
+                        if let Some(scaling) = DisplayScaling::from_key(part) {
+                            self.device_sim.scaling = scaling;
+                        }
+                    }
+                }
             }
+            self.refresh_device_view(cx);
         }
         self.ribbon_tab = super::ribbon::Tab::Test;
     }
@@ -92,6 +143,19 @@ impl Shell {
         let device = self.device_sim.device()?;
         let screen = device.screen(self.device_sim.orientation);
         (self.viewport.read(cx).emulated_screen() == Some(screen)).then_some(device)
+    }
+
+    /// The Animation Editor clears the view's screen for its stage; a
+    /// simulated device is remembered rather than lost.
+    pub(super) fn suspend_device(&mut self, cx: &App) {
+        self.device_sim.suspended = self.simulated_device(cx).is_some();
+    }
+
+    /// Back from the Animation Editor: the device it set aside, if any.
+    pub(super) fn resume_device(&mut self, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.device_sim.suspended) {
+            self.apply_device(cx);
+        }
     }
 
     pub(super) fn pick_device(&mut self, choice: Option<Choice>, cx: &mut Context<Self>) {
@@ -115,10 +179,42 @@ impl Shell {
             self.device_restart_note(None);
             return;
         };
+        self.set_resolution(device.screen(self.device_sim.orientation), cx);
+        let simulated = self.simulated(&device);
+        self.viewport
+            .update(cx, |view, cx| view.set_device(Some(simulated), cx));
+        self.device_restart_note(Some(device.platform));
+    }
+
+    /// Re-tells the view about the device after a change that keeps its
+    /// screen: the keyboard, the scaling, a client report.
+    /// The keyboard cover's globe key, or the Device menu, picked `layout`.
+    pub(super) fn set_keyboard_layout(&mut self, layout: KeyboardLayout, cx: &mut Context<Self>) {
+        self.device_sim.layout = layout;
+        self.save_settings();
+        self.refresh_device_view(cx);
+    }
+
+    fn refresh_device_view(&mut self, cx: &mut Context<Self>) {
+        if let Some(device) = self.simulated_device(cx) {
+            let simulated = self.simulated(&device);
+            self.viewport
+                .update(cx, |view, cx| view.set_device(Some(simulated), cx));
+        }
+    }
+
+    fn simulated(&self, device: &Device) -> Simulated {
         let orientation = self.device_sim.orientation;
-        self.set_resolution(device.screen(orientation), cx);
         let insets = device.insets(orientation);
-        let simulated = Simulated {
+        let client = self.device_sim.client.as_ref();
+        // In Play it follows the client, as the real keyboard does: up while
+        // a TextBox (the chat bar included) has focus, down otherwise. The
+        // menu's toggle previews it in Edit, where nothing takes input.
+        let keyboard_shown = match self.device_sim.launched {
+            Some(_) => client.is_some_and(|report| report.text_focus),
+            None => self.device_sim.keyboard,
+        };
+        Simulated {
             label: device.label(orientation).into(),
             insets: SafeInsets {
                 left: insets.left as f32,
@@ -127,10 +223,25 @@ impl Shell {
                 bottom: insets.bottom as f32,
             },
             plays: device.platform.plays(),
-        };
-        self.viewport
-            .update(cx, |view, cx| view.set_device(Some(simulated), cx));
-        self.device_restart_note(Some(device.platform));
+            logical_per_point: self.device_sim.scaling.logical_per_point(device),
+            keyboard: match keyboard_shown {
+                true => device.keyboard_height(orientation),
+                false => 0,
+            },
+            keyboard_layout: self.device_sim.layout,
+            keyboard_style: match (device.os, device.platform) {
+                (Os::Android, _) => KeyboardStyle::Android,
+                (_, Platform::Tablet) => KeyboardStyle::Ipad,
+                _ => KeyboardStyle::Iphone,
+            },
+            client: client.map(|report| {
+                let screen = device.screen(orientation);
+                (
+                    device_sim::report::summary(report).into(),
+                    device_sim::report::mismatch(report, screen),
+                )
+            }),
+        }
     }
 
     /// Size and orientation follow live; the input mode does not.
@@ -164,9 +275,11 @@ impl Shell {
         let playing = self.play.phase == Phase::Running;
         if self.play.phase == Phase::Idle {
             self.device_sim.launched = None;
+            self.device_sim.client = None;
         }
         self.viewport
             .update(cx, |view, cx| view.set_playing(playing, cx));
+        self.refresh_device_view(cx);
     }
 
     fn set_custom_device(&mut self, custom: CustomDevice, cx: &mut Context<Self>) {
@@ -220,6 +333,7 @@ impl Shell {
             true => rotate.on_click(|shell, cx| shell.rotate_device(cx)),
             false => rotate.disabled(),
         });
+        items.extend(self.device_option_items(cx));
         let mut group = None;
         for (index, device) in device_sim::devices().iter().enumerate() {
             let heading = (device.platform, device.tier);

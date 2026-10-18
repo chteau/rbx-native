@@ -209,6 +209,38 @@ pub enum Uplink {
         #[serde(default)]
         tags: Option<Vec<String>>,
     },
+    /// What the client says about its own screen and input, once at start
+    /// and whenever any of it changes (`probe/client.luau`): the record a
+    /// Device Simulator live test is checked against.
+    Device(DeviceReport),
+}
+
+/// The client's view of the device it runs on. Every field is read-only to
+/// game scripts, so these are the engine's own values, not ours.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeviceReport {
+    /// `Camera.ViewportSize`, in Roblox UI offset units.
+    pub viewport_width: f64,
+    pub viewport_height: f64,
+    /// `UserInputService.TouchEnabled` / `KeyboardEnabled` / `GamepadEnabled`.
+    pub touch_enabled: bool,
+    pub keyboard_enabled: bool,
+    pub gamepad_enabled: bool,
+    /// `GuiService:IsTenFootInterface()`.
+    pub ten_foot: bool,
+    /// `UserInputService.PreferredInput`'s name, where the client has it.
+    pub preferred_input: Option<String>,
+    /// `UserInputService.OnScreenKeyboardVisible`.
+    pub on_screen_keyboard_visible: bool,
+    /// A `TextBox` has the keyboard (`TextBoxFocused` until
+    /// `TextBoxFocusReleased`), or the chat bar does
+    /// (`ChatInputBarConfiguration.IsFocused`).
+    pub text_focus: bool,
+    /// `UserInputService:GetLastInputType()`'s name: whether the editor's
+    /// clicks reach the game as `Touch` or `MouseButton1`, and the
+    /// Controller Emulator's presses as `Gamepad1`.
+    pub last_input: Option<String>,
 }
 
 /// A side's performance numbers, read from Roblox's `Stats` service and
@@ -385,6 +417,10 @@ pub enum CommandBody {
         target: u64,
         tags: Vec<String>,
     },
+    /// Whether the pointer is over the embedded client. Sober reads the
+    /// wheel wherever the pointer is, so the client sinks it while the
+    /// pointer is outside (`probe/touch_input.luau`).
+    Pointer { inside: bool },
     /// Send `side`'s whole tree again (`Tree` with `reset`).
     Resync { side: Side },
     /// Debugger: replaces `side`'s active breakpoints. Every line of every

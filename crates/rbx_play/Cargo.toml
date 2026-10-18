@@ -22,7 +22,7 @@ full_moon = { version = "3", features = ["luau"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Embedding the client window; same version rbx_studio uses.
-x11rb = { version = "0.13", features = ["xinput", "shape"] }
+x11rb = { version = "0.13", features = ["xinput", "shape", "xtest"] }
 # `PR_SET_PDEATHSIG` for the tunnel child (`tunnel`); already in the tree.
 libc = "0.2"
 

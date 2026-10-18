@@ -206,6 +206,12 @@ pub(crate) enum ViewportAction {
     /// The view's mouse while a plugin is activated (see `plugin_mouse`).
     /// With where the cursor is, in the view's logical pixels.
     PluginMouse(rbx_lua::plugin::MouseInput, [f32; 2]),
+    /// The device keyboard cover's globe key: switch the cover to this
+    /// layout, which `Shell` persists (see `device::keyboard`).
+    KeyboardLayout(crate::device_sim::KeyboardLayout),
+    /// A key on the keyboard cover that types: `Shell` sends it to the Play
+    /// client, if one runs.
+    KeyboardTap(device::KeyTap),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -277,6 +283,8 @@ pub(crate) struct WorkspaceView {
     device: Option<device::Simulated>,
     /// A Play client is embedded over the view — see [`device`].
     playing: bool,
+    /// Which page of the device's keyboard cover shows, and its shift.
+    keyboard_page: device::KeyboardPage,
     /// The whole panel, in physical pixels: `viewport` less the letterbox
     /// while a screen is emulated, and what the frame is placed against.
     panel: Rc<Cell<Viewport>>,
@@ -497,6 +505,7 @@ impl WorkspaceView {
             panel: Rc::default(),
             device: None,
             playing: false,
+            keyboard_page: device::KeyboardPage::default(),
             // Assumed visible until `advance` first has a chance to find out
             // otherwise: `render` runs once as part of mounting, ahead of the
             // first `advance` tick, in the ordinary case of an already-visible
@@ -1018,6 +1027,12 @@ impl Render for WorkspaceView {
         let scale = window.scale_factor();
         // Room for a simulated device's bezel around its letterboxed screen.
         let margin = device_pixels(px(self.device_margin()), scale);
+        // Display scaling: device points to physical pixels, in Edit only.
+        let max_scale = self
+            .device
+            .as_ref()
+            .and_then(|device| device.logical_per_point)
+            .map(|per_point| f64::from(per_point * scale));
         // A frame larger than the window itself would be read back only to be
         // scaled down again.
         let cap = window.viewport_size();
@@ -1254,6 +1269,7 @@ impl Render for WorkspaceView {
                                     .saturating_sub(margin * 2),
                             ),
                             screen,
+                            max_scale,
                         ));
                     },
                     |_, _: (), _, _| {},
@@ -1268,7 +1284,7 @@ impl Render for WorkspaceView {
                 .left_0()
                 .size_full(),
             )
-            .children(self.device_overlay(scale))
+            .children(self.device_overlay(scale, cx))
             // Only for the moment after the wheel changes the speed: anything
             // that stays belongs in the Viewport dock, not over the scene.
             .when_some(

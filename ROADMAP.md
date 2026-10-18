@@ -2850,16 +2850,50 @@ Roblox's own engine.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
-- [ ] 📋 **Device Simulator: what is still open** — live-test the Play
-  half through Sober (the client sized to the device so `ViewportSize`
-  reads the device's logical size, rotation resizing it live, and
-  `touch_mode`/`use_console_experience` giving `TouchEnabled`, the mobile
-  UI and `IsTenFootInterface`); input modes on Windows, where
-  RobloxPlayerBeta has no equivalent switch; pixel density (Sober's
-  `enable_hidpi` scales the window, it reports no DPI); a headset in Play
-  (Sober has no VR); Studio's on-screen keyboard cover and Android back
-  button; a Play client larger than the 3D view (a foreign window can be
-  sized, not scaled, so it is refused).
+- [x] **Device Simulator: keyboard cover, Android back, display scaling
+  and a client self-report** — the Device menu gains an **On-screen
+  keyboard** toggle (our own key grid at each phone's and tablet's
+  approximate keyboard height per orientation, cut out of the Play client
+  and also shown while the game has a TextBox focused; the game is not
+  told, `OnScreenKeyboardSize` stays 0), Studio's **Android back button**
+  for Android devices during Play (Escape sent to the embedded client
+  through XTest, Linux only), and **Display scaling** — Fit to window,
+  Actual resolution or Physical size (each device's PPI against 96 dpi ×
+  the window scale, as Studio's auto-detect does) — for Edit; Roblox
+  exposes no DPI to scripts, so how big the screen looks is the only
+  effect pixel density has. During Play the client probe reports its
+  `ViewportSize`, `TouchEnabled`, `IsTenFootInterface`, input kinds and
+  TextBox focus; the badge shows them and turns to a warning with the
+  expected size when the viewport does not match, and the first report
+  goes to Output, so any Play is a live test. Run live through Sober: the
+  client reports the device's size, follows rotation live, gives
+  `TouchEnabled` for phones and `IsTenFootInterface` for consoles, Escape
+  through the back button opens Roblox's menu, and the cover follows a
+  focused TextBox. Research, verdicts and measurements:
+  `docs/research/play-sandbox/device-simulator.md`.
+- [ ] 📋 **Device Simulator: what is still open** — known caveats of Play
+  through Sober, measured live: a click reaches the game as `MouseButton1`,
+  never a touch (no multi-touch), and Roblox's own UI chosen by
+  `PreferredInput` (which stays `KeyboardAndMouse`) is not simulated; a
+  virtual uinput touchscreen does not help, Sober drops X11 touch input
+  (tried live). Roblox's thumbstick and jump button are stood in for by
+  the probe's own, mouse-driven copies, and game scripts see the mouse as
+  a finger (gestures included, on the service and on GuiObjects) and the
+  wheel as a pinch or rotation, and a drag over the world turns the
+  camera. A second Play in one editor
+  session crashed GNOME Shell on X11 when the second client was reparented
+  (mutter 46.2 assertion), untested whether withdrawing it first avoids
+  that. The
+  keyboard cover is not reported to the game (`OnScreenKeyboardVisible`
+  false, `OnScreenKeyboardSize` 0), and the Android back button arrives as
+  `KeyCode.Escape`. Also open: input modes on
+  Windows, where RobloxPlayerBeta has no switch and no allowlisted FFlag
+  gives one (whether injected synthetic touch makes `TouchEnabled` true is
+  untested); a headset in Play (Sober has no VR; on Windows an OpenXR
+  runtime such as Meta's XR Simulator might stand in, untested); a Play
+  client larger than the 3D view, still refused: an XComposite capture of
+  the client works under Mutter but costs 7 ms a frame at 1920×1044 and its
+  input cannot be forwarded cleanly.
 - [ ] 📋 **Network Simulator on Windows and macOS** — the tile says why it
   is unavailable there: Windows needs a packet-filter driver such as
   WinDivert run as administrator, macOS needs dummynet (`dnctl` and
@@ -2908,12 +2942,16 @@ Roblox's own engine.
   and resimulation are engine behaviour, the same wall as physics, listed
   under "Explicitly impossible". What remains of the item is the Network
   Simulator above, which is what would matter most for these places.
-- [ ] 📋 **Controller Emulator: confirm Sober picks up the virtual pad, and
-  the devices still missing** — the emulator below has not yet been run
-  against a live Play: whether Sober, with its gamepad permission on and
-  `/dev/input` opened to its sandbox, sees the uinput pad, and which
-  `Enum.GamepadType` / button images the experience then gets per
-  device, is unverified. Also open: Quest2/Quest3 (Sober has no VR
+- [ ] 📋 **Controller Emulator: make Sober take the virtual pad's input, and
+  the devices still missing** — run against a live Play (2026-10-18), Sober
+  sees the uinput pad (`GamepadEnabled` true) but passes none of its input
+  on: A held on the drawing sends `BTN_SOUTH` on the pad's `/dev/input`
+  node, yet `GetLastInputType` stays Touch and the character does not jump,
+  with Sober focused, with SDL's background-joystick switch, and as Xbox or
+  Generic Gamepad alike (`docs/research/play-sandbox/device-simulator.md`).
+  Whether a real controller works through Sober here is the next thing to
+  check. Which `Enum.GamepadType` / button images the experience gets per
+  device follows from that. Also open: Quest2/Quest3 (Sober has no VR
   runtime), the TV Remote (the desktop client reads a remote's keys as a
   keyboard; Roblox maps them to gamepad keycodes only on Android TV),
   Windows (needs the ViGEmBus driver installed) and macOS (a DriverKit HID

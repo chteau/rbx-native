@@ -7,6 +7,14 @@
 //! can be sized but never scaled, so the screen is the device's own size at
 //! 1:1 centred in the panel (`device_sim::centred`), with a plain backdrop
 //! around it — the same rect `Shell::play_embed_target` gives the client.
+//! Display scaling applies to Edit only; Play stays 1:1.
+//!
+//! A keyboard cover (`keyboard`) can sit over the bottom of the screen, and
+//! during Play the badge also carries what the client reports about itself.
+
+mod keyboard;
+
+pub(crate) use keyboard::{KeyTap, Page as KeyboardPage, Style as KeyboardStyle};
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -19,6 +27,8 @@ use crate::tokens;
 
 /// How far the bezel outline stands off the screen, in logical pixels.
 const BEZEL: f32 = 6.0;
+/// The corner ring's width (`border_4`), inside the bezel's 2-pixel outline.
+const MASK: f32 = 4.0;
 
 /// What `Shell` tells the view about the simulated device.
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +39,18 @@ pub(crate) struct Simulated {
     /// Whether the Play client can take the device's shape at all (a
     /// headset cannot: Sober has no VR).
     pub(crate) plays: bool,
+    /// Editor logical pixels per device point in Edit
+    /// (`device_sim::DisplayScaling`); `None` fits the panel.
+    pub(crate) logical_per_point: Option<f32>,
+    /// The on-screen keyboard cover's height in device points; 0 hides it.
+    pub(crate) keyboard: u32,
+    /// The keys the cover shows.
+    pub(crate) keyboard_layout: device_sim::KeyboardLayout,
+    /// Whose system keyboard the cover draws.
+    pub(crate) keyboard_style: KeyboardStyle,
+    /// What the Play client reports (`device_sim::report::summary`), and
+    /// whether its viewport differs from the screen.
+    pub(crate) client: Option<(SharedString, bool)>,
 }
 
 impl WorkspaceView {
@@ -40,6 +62,10 @@ impl WorkspaceView {
         }
         self.pump
             .gui_safe_insets(device.as_ref().map(|d| d.insets).unwrap_or_default());
+        // A keyboard raised again opens on its letters, as iOS's does.
+        if device.as_ref().is_none_or(|d| d.keyboard == 0) {
+            self.keyboard_page = KeyboardPage::default();
+        }
         self.device = device;
         cx.notify();
     }
@@ -79,7 +105,7 @@ impl WorkspaceView {
 
     /// The backdrop, bezel and badge over the panel, in its own logical
     /// pixels; nothing while no device is simulated.
-    pub(super) fn device_overlay(&self, scale: f32) -> Option<AnyElement> {
+    pub(super) fn device_overlay(&self, scale: f32, cx: &mut Context<Self>) -> Option<AnyElement> {
         let device = self.device.as_ref()?;
         let panel = self.panel.get();
         let local = |device_px: i64| px(device_px as f32 / scale);
@@ -109,9 +135,64 @@ impl WorkspaceView {
                 .border_color(tokens::check_off_border())
                 .rounded(px(BEZEL * 3.0))
         });
-        let label = match note {
+        // The screen's own rounded corners, concentric with the bezel: a
+        // ring of the backdrop colour whose inner edge has the screen's
+        // radius, painted over the scene's (and the cover's) square corners.
+        // During Play the client window's corners are cut to match
+        // (`device_sim::corner_holes`), so this ring shows through there.
+        let corners = screen.map(|rect| {
+            div()
+                .absolute()
+                .left(local(i64::from(rect.x) - i64::from(panel.origin.0)) - px(MASK))
+                .top(local(i64::from(rect.y) - i64::from(panel.origin.1)) - px(MASK))
+                .w(local(i64::from(rect.width)) + px(MASK * 2.0))
+                .h(local(i64::from(rect.height)) + px(MASK * 2.0))
+                .border_4()
+                .border_color(tokens::viewport_background())
+                .rounded(px(device_sim::SCREEN_RADIUS + MASK))
+        });
+        let cover = match (screen, self.screen) {
+            (Some(rect), Some(points)) if device.keyboard > 0 && points.1 > 0 => {
+                let height = (i64::from(device.keyboard) * i64::from(rect.height)
+                    / i64::from(points.1))
+                .min(i64::from(rect.height));
+                Some(keyboard::cover(
+                    keyboard::Placement {
+                        left: local(i64::from(rect.x) - i64::from(panel.origin.0)),
+                        top: local(
+                            i64::from(rect.y) + i64::from(rect.height)
+                                - height
+                                - i64::from(panel.origin.1),
+                        ),
+                        width: local(i64::from(rect.width)),
+                        height: local(height),
+                        points: device.keyboard,
+                    },
+                    device.keyboard_style,
+                    device.keyboard_layout,
+                    self.keyboard_page,
+                    self.playing,
+                    cx,
+                ))
+            }
+            _ => None,
+        };
+        let mut label = match note {
             Some(note) => format!("{} \u{b7} {note}", device.label),
             None => device.label.to_string(),
+        };
+        let mut mismatch = false;
+        if let Some((summary, differs)) = &device.client {
+            label.push_str(&format!(" \u{b7} {summary}"));
+            mismatch = *differs;
+            if let (true, Some((w, h))) = (mismatch, self.screen) {
+                label.push_str(&format!(" \u{b7} expected {w}\u{d7}{h}"));
+            }
+        }
+        let badge_text = if mismatch {
+            tokens::warning()
+        } else {
+            tokens::viewport_badge_text()
         };
         Some(
             div()
@@ -125,6 +206,8 @@ impl WorkspaceView {
                     this.bg(tokens::viewport_background())
                 })
                 .children(bezel)
+                .children(cover)
+                .children(corners)
                 .child(
                     div()
                         .absolute()
@@ -134,8 +217,12 @@ impl WorkspaceView {
                         .py_0p5()
                         .bg(tokens::viewport_badge())
                         .text_size(tokens::viewport_text(12.))
-                        .text_color(tokens::viewport_badge_text())
-                        .child(label),
+                        .text_color(badge_text)
+                        .child(label)
+                        // Cut out of the Play client, which covers the badge
+                        // whenever it fills the panel (a device that does
+                        // not fit, a headset).
+                        .child(gpui_base::occlusion::probe()),
                 )
                 .into_any_element(),
         )

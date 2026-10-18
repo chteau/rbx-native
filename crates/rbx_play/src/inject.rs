@@ -22,6 +22,13 @@ pub const PROBE_MARKET: &str = include_str!("probe/market.luau");
 pub const PROBE_MARKET_UI: &str = include_str!("probe/market_ui.luau");
 /// `__rbxnative_print`: game scripts' structured `print` (see `crate::print`).
 pub const PROBE_PRINT: &str = include_str!("probe/print.luau");
+/// Stand-in touch controls for a simulated touch device (ModuleScript in
+/// ReplicatedStorage, started by the client mirror).
+pub const PROBE_TOUCH: &str = include_str!("probe/touch.luau");
+pub const TOUCH_NAME: &str = "__rbxnative_touch";
+/// `__rbxnative_touch_input`: game scripts' UserInputService on a simulated
+/// touch device (see `crate::touch`).
+pub const PROBE_TOUCH_INPUT: &str = include_str!("probe/touch_input.luau");
 pub const DEBUG_NAME: &str = "__rbxnative_debug";
 pub const CODEC_NAME: &str = "__rbxnative_codec";
 pub const LIVE_NAME: &str = "__rbxnative_live";
@@ -56,6 +63,8 @@ pub struct Injected {
     pub market: Ref,
     pub market_ui: Ref,
     pub print: Ref,
+    pub touch: Ref,
+    pub touch_input: Ref,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,7 +85,9 @@ pub enum InjectError {
 ///   attributes BASE/TOKEN/SESSION as strings), `RemoteEvent` `REMOTE_NAME` in
 ///   ReplicatedStorage, `LocalScript` `MIRROR_NAME` (Source = `PROBE_CLIENT`).
 /// - Replaces the ReplicatedStorage `ModuleScript`s `MARKET_NAME`
-///   (Source = `PROBE_MARKET`) and `MARKET_UI_NAME` (Source = `PROBE_MARKET_UI`).
+///   (Source = `PROBE_MARKET`), `MARKET_UI_NAME` (Source = `PROBE_MARKET_UI`)
+///   `TOUCH_NAME` (Source = `PROBE_TOUCH`) and `touch::TOUCH_INPUT_NAME`
+///   (Source = `PROBE_TOUCH_INPUT`).
 pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, InjectError> {
     if dom.root_refs().is_empty() {
         return Err(InjectError::NoDataModel);
@@ -105,6 +116,8 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, rs, crate::market::MARKET_NAME);
     remove_named(dom, rs, crate::market::MARKET_UI_NAME);
     remove_named(dom, rs, crate::print::PRINT_NAME);
+    remove_named(dom, rs, TOUCH_NAME);
+    remove_named(dom, rs, crate::touch::TOUCH_INPUT_NAME);
 
     let market = dom.new_instance("ModuleScript", crate::market::MARKET_NAME, Some(rs));
     set_prop(
@@ -127,6 +140,21 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         print,
         "Source",
         Variant::String(PROBE_PRINT.to_owned()),
+    );
+
+    let touch = dom.new_instance("ModuleScript", TOUCH_NAME, Some(rs));
+    set_prop(
+        dom,
+        touch,
+        "Source",
+        Variant::String(PROBE_TOUCH.to_owned()),
+    );
+    let touch_input = dom.new_instance("ModuleScript", crate::touch::TOUCH_INPUT_NAME, Some(rs));
+    set_prop(
+        dom,
+        touch_input,
+        "Source",
+        Variant::String(PROBE_TOUCH_INPUT.to_owned()),
     );
 
     let codec = dom.new_instance("ModuleScript", CODEC_NAME, Some(rs));
@@ -188,6 +216,8 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         market,
         market_ui,
         print,
+        touch,
+        touch_input,
     })
 }
 

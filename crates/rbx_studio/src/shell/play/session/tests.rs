@@ -259,3 +259,33 @@ fn printing_scripts_shadow_print_on_their_first_line_in_the_copy_only() {
     assert_eq!(source_named(&dom, "Main").as_deref(), Some(src));
     assert!(source_named(&back, rbx_play::print::PRINT_NAME).is_some());
 }
+
+#[test]
+fn input_scripts_go_through_the_touch_stand_in_except_a_forked_player_module() {
+    let mut dom = WeakDom::new();
+    let starter = dom.new_instance("StarterPlayer", "StarterPlayer", None);
+    let scripts = dom.new_instance(
+        "StarterPlayerScripts",
+        "StarterPlayerScripts",
+        Some(starter),
+    );
+    let controls = dom.new_instance("LocalScript", "Controls", Some(scripts));
+    let module = dom.new_instance("ModuleScript", "PlayerModule", Some(scripts));
+    let keyboard = dom.new_instance("ModuleScript", "Keyboard", Some(module));
+    let src = "local UIS = game:GetService(\"UserInputService\")\n";
+    for script in [controls, keyboard] {
+        assert!(crate::script_editor::source::write(&mut dom, script, src));
+    }
+    let prepared = prepare(&dom, &config(), &[]).unwrap();
+    let back = rbx_binary::deserialize(prepared.bytes.as_slice()).unwrap();
+    assert_eq!(
+        source_named(&back, "Controls").unwrap(),
+        format!(
+            "local UIS = {}game:GetService(\"UserInputService\"))\n",
+            rbx_play::touch::WRAP_OPEN
+        )
+    );
+    assert_eq!(source_named(&back, "Keyboard").as_deref(), Some(src));
+    assert_eq!(source_named(&dom, "Controls").as_deref(), Some(src));
+    assert!(source_named(&back, rbx_play::touch::TOUCH_INPUT_NAME).is_some());
+}
