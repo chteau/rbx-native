@@ -1,7 +1,7 @@
 use gpui_kit::{Action, OwnedMenuItem};
 
 use super::{
-    menus, MenuClosePlace, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace,
+    menus, MenuClosePlace, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace, MenuMergePlace,
     MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox, MenuSave, MenuSaveToFile,
     MenuSaveToRoblox, MenuVersionHistory,
 };
@@ -132,6 +132,7 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
     assert!(live("Publish to Roblox", &MenuPublishToRoblox));
     assert!(live("Link to Roblox Place\u{2026}", &MenuLinkRobloxPlace));
     assert!(live("Version History\u{2026}", &MenuVersionHistory));
+    assert!(live("Merge Place\u{2026}", &MenuMergePlace));
     // The whole place to a local file of the user's naming, and as glTF:
     // live, and neither one Ctrl+S's own Save.
     assert!(live("Save to File", &MenuSave));

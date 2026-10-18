@@ -55,6 +55,7 @@ actions!(
         MenuPublishToRoblox,
         MenuLinkRobloxPlace,
         MenuVersionHistory,
+        MenuMergePlace,
         MenuGameSettings,
         MenuOpenAutoSaves,
         MenuStudioSettings,
@@ -198,6 +199,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 // Studio's lives under Window; this bar has none, and it
                 // belongs with the uploads it browses and restores.
                 MenuItem::action("Version History…", MenuVersionHistory),
+                MenuItem::action("Merge Place\u{2026}", MenuMergePlace),
                 // Studio's own File › Experience Settings; Home has it too.
                 MenuItem::action("Game Settings…", MenuGameSettings),
                 MenuItem::separator(),

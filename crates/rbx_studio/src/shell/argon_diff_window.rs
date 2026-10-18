@@ -15,7 +15,7 @@
 //! [`super::argon_sync::DIFF_VARIABLE`], never ran) there is nothing left
 //! to show, so the window closes itself rather than sit there empty.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -26,6 +26,7 @@ use gpui_kit::*;
 use crate::tokens;
 
 use super::argon_sync::{ChangeKind, DiffNode};
+use super::place_merge::MergeSession;
 use super::Shell;
 
 mod code;
@@ -33,6 +34,7 @@ mod detail;
 mod diff;
 mod header;
 mod list;
+mod merge;
 mod model;
 mod state;
 mod values;
@@ -75,9 +77,13 @@ pub(crate) enum Provider {
     /// it is now). It does not track the live DOM: it is a snapshot of what
     /// changed while the user was away.
     Presence(Rc<Vec<DiffNode>>),
+    /// A three-way place merge being resolved (File › Merge Place…, or a
+    /// `rbxmerge` sidecar): the rows are its conflicted instances, the
+    /// detail its conflicts with a pick per side, Apply lands it.
+    Merge(Rc<RefCell<MergeSession>>),
 }
 
-/// The constant serial a presence diff caches its script line-diffs under
+/// The constant serial a presence diff (or a merge) caches its script line-diffs under
 /// (its rows never change, unlike an Argon review's).
 pub(super) const PRESENCE_SERIAL: u64 = u64::MAX;
 
@@ -111,6 +117,10 @@ pub(super) fn window_title(provider: &Provider, project: &str) -> SharedString {
     match provider {
         Provider::Argon => SharedString::from(format!("Argon Diff \u{2014} {project}")),
         Provider::Presence(_) => SharedString::from("Changes while you were away"),
+        Provider::Merge(session) => SharedString::from(format!(
+            "Merge Place \u{2014} {}",
+            session.borrow().theirs_label
+        )),
     }
 }
 
@@ -128,6 +138,15 @@ impl ArgonDiffWindow {
         cx: &mut App,
     ) -> Option<WindowHandle<Root>> {
         Self::open_with(shell, Provider::Presence(Rc::new(nodes)), cx)
+    }
+
+    /// The place-merge resolver for `session`.
+    pub(super) fn open_merge(
+        shell: Entity<Shell>,
+        session: MergeSession,
+        cx: &mut App,
+    ) -> Option<WindowHandle<Root>> {
+        Self::open_with(shell, Provider::Merge(Rc::new(RefCell::new(session))), cx)
     }
 
     fn open_with(
@@ -257,12 +276,20 @@ impl Render for ArgonDiffWindow {
         let title = window_title(&self.provider, &project);
 
         let header = self.header(&project, counts, narrow, cx);
-        let footer = self.footer(narrow, cx);
-        let properties = selected
-            .as_ref()
-            .map(|node| values::format_properties(self.shell.read(cx), node))
-            .unwrap_or_default();
-        let detail = self.detail_pane(selected.as_ref(), &properties, pack, narrow, cx);
+        let (footer, detail) = if let Provider::Merge(session) = &self.provider {
+            let session = session.clone();
+            let footer = self.merge_footer(session.clone(), narrow, cx);
+            let detail = self.merge_detail(session, selected.as_ref(), pack, narrow, cx);
+            (footer, detail)
+        } else {
+            let footer = self.footer(narrow, cx);
+            let properties = selected
+                .as_ref()
+                .map(|node| values::format_properties(self.shell.read(cx), node))
+                .unwrap_or_default();
+            let detail = self.detail_pane(selected.as_ref(), &properties, pack, narrow, cx);
+            (footer, detail)
+        };
 
         let body: AnyElement = if narrow {
             let picker = self.picker_bar(&nodes, &rows, pack, cx);
