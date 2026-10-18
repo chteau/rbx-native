@@ -118,6 +118,9 @@ struct Session {
     client: ClientProcess,
     own_user: Option<u64>,
     last_rect: Option<session::rbx_play_rect::Rect>,
+    /// The last `CommandBody::Pointer` sent.
+    #[cfg(any(target_os = "linux", windows))]
+    pointer_inside: Option<bool>,
     /// `EmbedTarget::corner` of `last_rect`. Only an embedded client has
     /// corners to cut.
     #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
@@ -562,6 +565,8 @@ impl Shell {
                     last_rect: None,
                     corner: 0,
                     #[cfg(any(target_os = "linux", windows))]
+                    pointer_inside: None,
+                    #[cfg(any(target_os = "linux", windows))]
                     hidden: false,
                 });
                 Ok(shell.play_embed_target(cx))
@@ -773,6 +778,15 @@ impl Shell {
                         running.hidden = false;
                     }
                 }
+            }
+        }
+        // Sober reads the wheel wherever the pointer is; the client ignores
+        // it while the pointer is elsewhere in the editor.
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(inside) = running.focus.as_ref().and_then(|f| f.pointer_inside()) {
+            if running.pointer_inside != Some(inside) {
+                running.pointer_inside = Some(inside);
+                channel.send(rbx_play::protocol::CommandBody::Pointer { inside });
             }
         }
         #[cfg(not(any(target_os = "linux", windows)))]

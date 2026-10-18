@@ -131,3 +131,56 @@ fn signal_connects_disconnects_and_fires_once() {
         .unwrap();
     assert_eq!(seen.as_string().unwrap().to_str().unwrap(), "a1,o1|false");
 }
+
+#[test]
+fn stand_in_touch_reports_changes_like_an_input_object() {
+    let (lua, m) = load_module();
+    lua.globals().set("M", m).unwrap();
+    // Roblox's typeof, for the fallback.
+    lua.load("typeof = function(v) return type(v) end")
+        .exec()
+        .unwrap();
+    let seen: String = lua
+        .load(
+            r#"
+            local touch = M.newTouch({ UserInputState = "Begin", Position = 1 })
+            local seen = {}
+            touch.Changed:Connect(function(p) table.insert(seen, p) end)
+            touch:GetPropertyChangedSignal("UserInputState"):Connect(function()
+                table.insert(seen, "state=" .. touch.UserInputState)
+            end)
+            M.setTouch(touch, "Position", 2)
+            M.setTouch(touch, "Position", 2) -- no change, no signal
+            M.setTouch(touch, "UserInputState", "End")
+            table.insert(seen, touch.ClassName)
+            table.insert(seen, tostring(touch:IsA("InputObject")) .. "/" .. tostring(touch:IsA("Part")))
+            table.insert(seen, M.typeof(touch) .. "/" .. M.typeof(1))
+            table.insert(seen, tostring(touch))
+            return table.concat(seen, ",")
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert_eq!(
+        seen,
+        "Position,UserInputState,state=End,InputObject,true/false,Instance/number,InputObject"
+    );
+}
+
+#[test]
+fn touch_rotation_matches_camera_input() {
+    let (_lua, m) = load_module();
+    let one = 1f64.to_radians();
+    // Level camera: a degree per pixel across, 0.66 down.
+    let (yaw, pitch): (f64, f64) = call(&m, "touchRotation", (10, 10, 0.0));
+    assert!((yaw - 10.0 * one).abs() < 1e-12 && (pitch - 6.6 * one).abs() < 1e-12);
+    // Looking up and dragging up (away from the horizon): slowed.
+    let (_, slowed): (f64, f64) = call(&m, "touchRotation", (0, -10, 0.5));
+    assert!(slowed.abs() < 6.6 * one && slowed < 0.0);
+    // Dragging back towards the horizon: full speed.
+    let (_, full): (f64, f64) = call(&m, "touchRotation", (0, 10, 0.5));
+    assert!((full - 6.6 * one).abs() < 1e-12);
+    // BaseCamera's ±80° limit.
+    let clamped: f64 = call(&m, "clampPitch", (2.0, 0.0));
+    assert!((clamped - 80f64.to_radians()).abs() < 1e-12);
+}

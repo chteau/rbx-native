@@ -13,6 +13,7 @@ local remote = ReplicatedStorage:WaitForChild("__rbxnative_remote")
 task.spawn(function()
 	local ok, err = pcall(function()
 		require(ReplicatedStorage:WaitForChild("__rbxnative_touch")).start()
+		require(ReplicatedStorage:WaitForChild("__rbxnative_touch_input")).start()
 	end)
 	if not ok then
 		warn("[rbx-native] touch controls: " .. tostring(err))
@@ -80,6 +81,13 @@ remote.OnClientEvent:Connect(function(payload)
 		live.resync()
 	elseif kind == "debug_set" or kind == "debug_resume" or kind == "debug_watch" then
 		Debug.command(cmd)
+	elseif kind == "pointer" then
+		local ok, err = pcall(function()
+			require(ReplicatedStorage:WaitForChild("__rbxnative_touch_input")).setPointerInside(cmd.inside == true)
+		end)
+		if not ok then
+			warn("[rbx-native] pointer: " .. tostring(err))
+		end
 	end
 end)
 

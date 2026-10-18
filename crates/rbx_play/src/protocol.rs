@@ -417,6 +417,10 @@ pub enum CommandBody {
         target: u64,
         tags: Vec<String>,
     },
+    /// Whether the pointer is over the embedded client. Sober reads the
+    /// wheel wherever the pointer is, so the client sinks it while the
+    /// pointer is outside (`probe/touch_input.luau`).
+    Pointer { inside: bool },
     /// Send `side`'s whole tree again (`Tree` with `reset`).
     Resync { side: Side },
     /// Debugger: replaces `side`'s active breakpoints. Every line of every

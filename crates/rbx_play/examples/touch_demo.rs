@@ -46,6 +46,37 @@ UIS.TouchPan:Connect(function(ps, tr, v, s) if s ~= Enum.UserInputState.Change t
 UIS.TouchSwipe:Connect(function(d, n) log("TouchSwipe " .. d.Name .. " x" .. n) end)
 UIS.TouchPinch:Connect(function(ps, sc, v, s) log(string.format("TouchPinch %s scale=%.2f fingers=%d", s.Name, sc, #ps)) end)
 UIS.TouchRotate:Connect(function(ps, r, v, s) log(string.format("TouchRotate %s %.0f deg", s.Name, r)) end)
+
+-- The other ways in: the service by index, a button's and a frame's own events.
+local IndexUIS = game.UserInputService
+log("game.UserInputService: Mouse=" .. tostring(IndexUIS.MouseEnabled))
+local button = Instance.new("TextButton")
+button.Name = "DemoButton"
+button.Size = UDim2.new(0, 120, 0, 50)
+button.Position = UDim2.new(1, -330, 1, -70)
+button.Text = "Button"
+button.Parent = gui
+button.InputBegan:Connect(function(input)
+	log("Button.InputBegan " .. input.UserInputType.Name .. " typeof=" .. typeof(input))
+	if input.UserInputType == Enum.UserInputType.Touch then
+		input.Changed:Connect(function(property)
+			if property == "UserInputState" and input.UserInputState == Enum.UserInputState.End then
+				log("Button touch Changed -> End")
+			end
+		end)
+	end
+end)
+button.Activated:Connect(function(input) log("Button.Activated " .. input.UserInputType.Name) end)
+button.TouchTap:Connect(function() log("Button.TouchTap") end)
+local pad = Instance.new("Frame")
+pad.Name = "DemoPad"
+pad.Size = UDim2.new(0, 160, 0, 90)
+pad.Position = UDim2.new(1, -170, 1, -230)
+pad.BackgroundColor3 = Color3.fromRGB(40, 90, 160)
+pad.Active = true
+pad.Parent = gui
+pad.TouchPan:Connect(function(ps, tr, v, s) if s ~= Enum.UserInputState.Change then log("Pad.TouchPan " .. s.Name .. " " .. p(tr)) end end)
+pad.TouchPinch:Connect(function(ps, sc, v, s) if s == Enum.UserInputState.End then log(string.format("Pad.TouchPinch End %.2f", sc)) end end)
 "#;
 
 fn main() {

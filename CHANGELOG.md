@@ -16,9 +16,12 @@
   the mouse, since the client never receives real touches. The game's own
   touch code runs too: its scripts see the mouse as a finger
   (`TouchStarted`, `InputBegan` with `Touch`, tap, long press, pan and
-  swipe), the wheel as a two-finger pinch (Ctrl for a rotation), and a
-  touch device in `TouchEnabled`, `MouseEnabled`, `KeyboardEnabled` and
-  `PreferredInput`. — @chteau
+  swipe, on the service and on its buttons and frames), the wheel as a
+  two-finger pinch (Ctrl for a rotation), and a touch device in
+  `TouchEnabled`, `MouseEnabled`, `KeyboardEnabled` and `PreferredInput`.
+  Dragging over the world turns the camera, as a finger does. Scrolling
+  the editor's panels during Play no longer zooms the game.
+  — @chteau
 - **Server Authority places are supported in the editor.** Setting
   `Workspace.AuthorityMode` to `Server` in the Properties panel now also
   enables the five properties Studio sets with it (`NextGenerationReplication`,

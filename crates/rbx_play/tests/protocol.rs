@@ -139,3 +139,9 @@ fn command_with_set_tags_round_trips() {
     let parsed: Command = serde_json::from_str(&text).expect("deserialize Command");
     assert_eq!(parsed, original);
 }
+
+#[test]
+fn pointer_body_serializes_to_wire_shape() {
+    let value = serde_json::to_value(CommandBody::Pointer { inside: false }).expect("serialize");
+    assert_eq!(value, json!({ "type": "pointer", "inside": false }));
+}

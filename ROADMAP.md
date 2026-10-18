@@ -2877,10 +2877,10 @@ Roblox's own engine.
   `PreferredInput` (which stays `KeyboardAndMouse`) is not simulated; a
   virtual uinput touchscreen does not help, Sober drops X11 touch input
   (tried live). Roblox's thumbstick and jump button are stood in for by
-  the probe's own, mouse-driven copies, and game scripts' UserInputService
-  is a proxy that turns the mouse into a finger (gestures included) and
-  the wheel into a pinch or rotation. It misses `game.UserInputService`
-  and a `GuiObject`'s own `InputBegan`. A second Play in one editor
+  the probe's own, mouse-driven copies, and game scripts see the mouse as
+  a finger (gestures included, on the service and on GuiObjects) and the
+  wheel as a pinch or rotation, and a drag over the world turns the
+  camera. A second Play in one editor
   session crashed GNOME Shell on X11 when the second client was reparented
   (mutter 46.2 assertion), untested whether withdrawing it first avoids
   that. The

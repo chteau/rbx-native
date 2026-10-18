@@ -135,23 +135,51 @@ from outside, not of the probe.
   hotbar's desktop number labels.
 - **Game code that listens for touches never hears one.** **Built: a
   touch stand-in for game scripts** (`rbx_play::touch`,
-  `probe/touch_input.luau`). Play wraps every
-  `GetService("UserInputService")` in the published copy's game scripts,
-  on its own line, the way test purchases wrap `MarketplaceService`. On a
-  simulated touch device the client gets a proxy:
-  - the left button is one finger. Press, drag and release are one Touch
-    `InputObject` (the same table for the whole touch) on
+  `probe/touch_input.luau`). Play rewrites the published copy's game
+  scripts in place, never across a line, the way test purchases wrap
+  `MarketplaceService`:
+  - every way to the input service goes through `wrap`:
+    `GetService`/`FindService`/`FindFirstChild`/`FindFirstChildOfClass`/
+    `WaitForChild` of `"UserInputService"`, a `GetService` with a computed
+    name, and `.UserInputService` or `["UserInputService"]` on anything.
+    `wrap` checks at run time that it was handed the service, so anything
+    else passes through untouched;
+  - every read of an input event (`.InputBegan`, `.InputChanged`,
+    `.InputEnded`, `.TouchTap`, `.TouchLongPress`, `.TouchPan`,
+    `.TouchSwipe`, `.TouchPinch`, `.TouchRotate`, `.Activated`) goes
+    through `event`, so a GuiObject's own events get touches too;
+  - a script that says `typeof` gets a `typeof` that reads a stand-in
+    touch as `Instance`.
+
+  Assignment targets (`self.InputBegan = signal`) are left alone. On a
+  simulated touch device the client then sees:
+  - the left button as one finger. Press, drag and release are one Touch
+    `InputObject` for the whole touch, on
     `InputBegan`/`InputChanged`/`InputEnded` and
     `TouchStarted`/`TouchMoved`/`TouchEnded`, with the `gameProcessedEvent`
     of the click. Mouse motion with no button down, and the other buttons,
-    are dropped;
-  - the finger's gestures fire `TouchTap` (under 0.5 s and under 10 px),
+    are dropped. The touch is a stand-in whose properties, `Changed`,
+    `GetPropertyChangedSignal` and `IsA` work, so a drag script that waits
+    for `input.Changed` to reach `End` works;
+  - the finger's gestures: `TouchTap` (under 0.5 s and under 10 px),
     `TouchLongPress` (0.5 s held still), `TouchPan` (past 10 px) and
     `TouchSwipe` (released at 400 px/s or more after 40 px or more);
-  - the wheel is two fingers 100 px apart around the cursor, with their
+  - the wheel as two fingers 100 px apart around the cursor, with their
     own touches. A notch scales their span by 1.1 for `TouchPinch`, or
     turns them 15° for `TouchRotate` with Ctrl held (Shift would toggle
     Roblox's Shift Lock). The gesture ends 0.3 s after the last notch;
+  - a GuiObject's `InputBegan`/`InputChanged`/`InputEnded` and a
+    GuiButton's `Activated` hand over the same touch, and its gesture
+    events fire for a gesture that starts on it;
+  - a finger the game did not take turns the camera, as on a phone, at
+    the PlayerModule's touch speed (`ROTATION_SPEED_TOUCH`, slowed towards
+    the poles, ±80° pitch, from `CameraInput` and `BaseCamera`). The turn
+    is applied right after the camera's own update, and the camera starts
+    from it next frame. The camera zooms on a pinch over the world; a
+    rotation, or a pinch over the game's active UI, leaves it still;
+  - `MouseBehavior` has no hold on the finger: the real mouse stays free
+    in first person and Shift Lock, as touches do on a phone, and the game
+    reads back what it set;
   - `TouchEnabled` reads true, `MouseEnabled` and `KeyboardEnabled` false,
     `PreferredInput` and `GetLastInputType` Touch.
 
@@ -159,7 +187,16 @@ from outside, not of the probe.
   devices, and a forked `PlayerModule` (so it keeps driving the stand-in
   thumbstick) get the real service.
 
-  **Verified** live on Xephyr with a LocalScript that logs each event:
+  Sober reads the wheel even while the pointer is over the editor's
+  panels: scrolling the Output during Play zoomed the game, though no
+  pointer grab was held and the editor had the keyboard. So the editor's
+  focus thread follows raw pointer motion too, and sends a `pointer`
+  command when the pointer enters or leaves the client. The client sinks
+  the wheel while the pointer is outside, on every device (not followed on
+  Windows, untested there).
+
+  **Verified** live on Xephyr with `examples/touch_demo.rs`, a LocalScript
+  that logs each event:
   - a click gives `TouchStarted`, `TouchEnded` and `TouchTap`;
   - a hold gives a long press `Begin`, then `End`;
   - a fast left flick gives `TouchPan` `Begin` and `End` with −160,0, then
@@ -167,21 +204,29 @@ from outside, not of the probe.
   - four wheel notches pinch to a scale of 1.46;
   - three Ctrl notches rotate to 45°;
   - a press on the stand-in thumbstick reads `InputBegan Touch gp=true`,
-    as on a phone.
+    as on a phone;
+  - `game.UserInputService` reads `MouseEnabled` false;
+  - a click on a TextButton gives its `InputBegan` a Touch
+    (`typeof` `Instance`), its `input.Changed` reaches `End`, then come
+    `TouchTap`, the button's `TouchTap` and `Activated` with the Touch;
+  - a drag on a Frame fires its `TouchPan`;
+  - a drag over the world turns the camera, and it stays turned;
+  - a pinch over the Frame fires its `TouchPinch`, with the camera still;
+  - a Ctrl rotation leaves the camera still;
+  - a pinch over the world zooms it;
+  - five wheel notches over the Output do nothing in the game;
+  - under Shift Lock and in first person, a click lands where it was
+    clicked, not at the centre.
 
-  See `play-touch-input-events.png`: the demo's log, newest event first.
+  See `play-touch-input-events.png` and `play-touch-input-gui.png` for the
+  demo's log, newest event first.
 
   Limits:
-  - a script that reaches the service another way (`game.UserInputService`,
-    or a variable service name) gets the real one;
-  - a touch `InputObject` is a table (`typeof` says so) and cannot be
-    passed to engine APIs;
-  - a `GuiObject`'s own `InputBegan` still reports `MouseButton1`;
-  - the real camera still zooms on the wheel. Sober reads the wheel even
-    while the pointer is over the editor's panels, so scrolling the Output
-    during Play zooms the game and pinches;
-  - in first person or Shift Lock, Roblox pins the mouse to the centre, so
-    every finger lands there.
+  - a stand-in touch is a table. `type` says so, and an engine function
+    that takes an Instance rejects it (none of the input APIs take one);
+  - the first wheel notch after the pointer comes back from the editor's
+    panels can be lost, since the `pointer` command takes a round trip
+    through the tunnel.
 - **The Controller Emulator's pad does nothing in game.** Sober sees it
   (`GamepadEnabled` true) but passes none of its input on (row above).
 - **The keyboard cover is ours, not the device's.** The game is not told:
