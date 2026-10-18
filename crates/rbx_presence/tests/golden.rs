@@ -3,7 +3,7 @@
 
 use rbx_presence::schema::{
     assign_colors, color_for, color_slot, Client, Edit, Snapshot, UserState, MAX_EDITS,
-    MAX_SELECTION, MAX_TEXT, PALETTE,
+    MAX_SELECTION, MAX_TEXT, PALETTE, SCHEMA_VERSION,
 };
 use serde_json::Value;
 
@@ -38,7 +38,7 @@ fn normalize(value: Value) -> Value {
 
 fn base_state() -> UserState {
     UserState {
-        v: 1,
+        v: SCHEMA_VERSION,
         user_id: 1,
         name: "Ana".to_owned(),
         color: "#e8590c".to_owned(),
@@ -83,7 +83,7 @@ fn snapshot_round_trips_the_golden_file() {
 
 #[test]
 fn null_camera_and_missing_optional_keys_read_with_defaults() {
-    let text = r##"{"v":1,"userId":5,"name":"Dee","color":"#1c7ed6","client":"rbx-native","camera":null}"##;
+    let text = r##"{"v":2,"userId":5,"name":"Dee","color":"#1c7ed6","client":"rbx-native","camera":null}"##;
     let state: UserState = serde_json::from_str(text).expect("decode");
     assert!(state.camera.is_none());
     assert!(state.script.is_none());

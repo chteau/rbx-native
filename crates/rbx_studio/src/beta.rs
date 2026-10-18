@@ -42,7 +42,11 @@ pub(crate) struct Feature {
 }
 
 /// What ships behind a switch today.
-pub(crate) const FEATURES: &[Feature] = &[];
+pub(crate) const FEATURES: &[Feature] = &[Feature {
+    id: crate::shell::COEDIT_BETA_ID,
+    name: "Live co-editing",
+    description: "Shares edits live with others in the place's Team Presence room (hosted relay only). Remote edits are undo steps of their own; concurrent script edits are merged, with conflicts kept side by side.",
+}];
 
 /// `RBX_STUDIO_BETA_SAMPLE=1` lists this one too, so the page can be
 /// exercised (and captured) while [`FEATURES`] is empty. It gates nothing.

@@ -2,6 +2,19 @@
 
 ## 2026-10-18
 
+- **Team Presence is end-to-end encrypted, and live co-editing is in beta.**
+  Presence, its journal and ntfy messages are now sealed with
+  ChaCha20-Poly1305 under a key derived from the place secret, so the relay
+  and a public ntfy topic see only ciphertext; old cleartext clients are
+  refused with a version error instead of being ignored. The plugin's own
+  Luau cipher matches the Rust one on shared test vectors, checked inside
+  Studio itself. On top of that, Beta Features › Live co-editing shares
+  edits through the hosted relay: property changes, inserts, deletes,
+  reparenting, renames and script text, between rbx-native editors and
+  with Studio through the plugin's Co-edit toggle. Remote edits are undo
+  steps of their own, concurrent script edits merge (conflicts kept side
+  by side), and a late joiner catches up from the relay's log. — @chteau
+
 - **Branch and merge place files.** A three-way merge of place DOMs
   (`rbx_dom::merge`), matching instances by `UniqueId` and merging every
   property, attribute, tag and script line on its own, with structured

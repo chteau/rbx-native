@@ -10,6 +10,8 @@ path = "src/bin/build_presence_plugin.rs"
 
 [dependencies]
 rbx_dom = { path = "../rbx_dom" }
+# File-name <-> scripting-name aliases for properties on the wire.
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 # The plugin ships as a `.rbxmx`, written by the editor's own XML encoder.
 rbx_xml = { path = "../rbx_xml" }
 serde = { version = "1", features = ["derive"] }
@@ -18,6 +20,12 @@ serde_json = "1"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# RustCrypto AEAD for the ChaCha20-Poly1305 payload encryption.
+chacha20poly1305 = "0.10"
+# Derives the encryption key from the place secret; already in Cargo.lock.
+hkdf = "0.12"
+# Sealed bytes travel as base64 text; already in Cargo.lock.
+base64 = "0.22"
 # The per-place secret; same version `rbx_cloud` uses.
 getrandom = "0.3"
 # The relay's WebSocket: a small blocking client over the rustls already in
@@ -26,6 +34,9 @@ tungstenite = { version = "0.28", default-features = false, features = ["handsha
 # The ntfy transport: a blocking HTTP client (publish + poll), the same
 # version rbx_cloud uses, so nothing new in Cargo.lock.
 ureq = { version = "3", features = ["gzip"] }
+
+# Three-way text merge for a script edited against stale text.
+diffy = "0.4"
 
 [dev-dependencies]
 # Runs the plugin's own Luau modules against the shared golden fixtures.

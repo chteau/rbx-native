@@ -340,12 +340,43 @@ fn ntfy_signature_and_round_trip() {
     let sig: String = sign.call((key, canon)).unwrap();
     assert_eq!(sig, str_field(&vectors, "s"));
 
+    // The golden envelope opens in the plugin and yields the golden state.
+    let room = str_field(&vectors, "room");
+    let enc = luau_enc_key(
+        &lua,
+        str_field(&vectors, "secret"),
+        num_field(&vectors, "place_id"),
+    );
+    let decode = func(&lua, "Ntfy", "decode");
+    let envelope = serde_json::json!({ "u": vectors["u"], "t": vectors["t"], "s": vectors["s"], "d": vectors["d"] });
+    let golden: Table = decode
+        .call((key, enc.clone(), room, topic, t, envelope.to_string()))
+        .unwrap();
+    let want = &vectors["state"];
+    assert_eq!(
+        golden.get::<f64>("userId").unwrap(),
+        num_field(want, "userId")
+    );
+    assert_eq!(
+        golden.get::<String>("name").unwrap(),
+        str_field(want, "name")
+    );
+    assert_eq!(
+        golden.get::<String>("client").unwrap(),
+        str_field(want, "client")
+    );
+    assert_eq!(
+        golden.get::<String>("color").unwrap(),
+        str_field(want, "color")
+    );
+    assert_eq!(golden.get::<f64>("v").unwrap(), num_field(want, "v"));
+
     // A state encoded and decoded by the plugin round-trips, and a wrong key
     // or a stale clock is rejected.
     let encode = func(&lua, "Ntfy", "encode");
-    let decode = func(&lua, "Ntfy", "decode");
+    let nonce = nonce_fn(&lua);
     let state = lua.create_table().unwrap();
-    state.set("v", 1).unwrap();
+    state.set("v", 2).unwrap();
     state.set("userId", 4242.0).unwrap();
     state.set("name", "Ann").unwrap();
     state.set("color", "#e8590c").unwrap();
@@ -353,15 +384,103 @@ fn ntfy_signature_and_round_trip() {
     state.set("selection", lua.create_table().unwrap()).unwrap();
     state.set("edits", lua.create_table().unwrap()).unwrap();
     state.set("seen", 0).unwrap();
-    let body: String = encode.call((key, topic, 4242.0, t, state)).unwrap();
-    let got: Table = decode.call((key, topic, t, body.clone())).unwrap();
+    let body: String = encode
+        .call((key, enc.clone(), room, topic, 4242.0, t, state, nonce))
+        .unwrap();
+    let got: Table = decode
+        .call((key, enc.clone(), room, topic, t, body.clone()))
+        .unwrap();
     assert_eq!(got.get::<f64>("userId").unwrap(), 4242.0);
     let bad: Value = decode
-        .call(("z".repeat(64), topic, t, body.clone()))
+        .call(("z".repeat(64), enc.clone(), room, topic, t, body.clone()))
         .unwrap();
     assert!(matches!(bad, Value::Nil));
-    let stale: Value = decode.call((key, topic, t + 1_000_000.0, body)).unwrap();
+    let wrong_enc: Value = decode
+        .call((key, "x".repeat(32), room, topic, t, body.clone()))
+        .unwrap();
+    assert!(matches!(wrong_enc, Value::Nil));
+    let stale: Value = decode
+        .call((key, enc, room, topic, t + 1_000_000.0, body))
+        .unwrap();
     assert!(matches!(stale, Value::Nil));
+}
+
+fn luau_enc_key(lua: &Lua, secret: &str, place_id: f64) -> mlua::LuaString {
+    func(lua, "Crypto", "encKey")
+        .call((secret, place_id))
+        .unwrap()
+}
+
+fn nonce_fn(lua: &Lua) -> Function {
+    lua.load("return function() return string.rep('n', 12) end")
+        .eval()
+        .unwrap()
+}
+
+fn sample_luau_state(lua: &Lua) -> Table {
+    lua.load(
+        r##"return {
+            v = 2, userId = 7, name = "Ada", color = "#e8590c", client = "studio",
+            selection = { "Workspace.Part" },
+            edits = { { path = "Workspace.Part", property = "Size", value = "1, 2, 3", at = 1000 } },
+            seen = 0,
+        }"##,
+    )
+    .eval()
+    .unwrap()
+}
+
+/// A state sealed by Rust opens in the plugin, and one sealed by the plugin
+/// opens in Rust.
+#[test]
+fn sealed_state_interoperates_with_rust() {
+    use rbx_presence::schema::{Client, Edit, Sealed, UserState, SCHEMA_VERSION};
+    use rbx_presence::{crypt, seal};
+
+    let lua = new_lua();
+    let room = "room";
+    let rust_key = crypt::enc_key("s", 1);
+    let enc = luau_enc_key(&lua, "s", 1.0);
+    assert_eq!(&*enc.as_bytes(), &rust_key[..]);
+
+    let rust_state = UserState {
+        v: SCHEMA_VERSION,
+        user_id: 7,
+        name: "Ada".into(),
+        color: "#e8590c".into(),
+        client: Client::RbxNative,
+        camera: None,
+        selection: vec!["Workspace.Part".into()],
+        script: None,
+        edits: vec![Edit {
+            path: "Workspace.Part".into(),
+            property: "Size".into(),
+            value: "1, 2, 3".into(),
+            at: 1000,
+        }],
+        seen: 0,
+    };
+    let sealed = seal::seal_state(&rust_key, room, &rust_state);
+    let text = serde_json::to_string(&sealed).unwrap();
+    let decode = func(&lua, "Json", "decode");
+    let obj: Value = decode.call(text).unwrap();
+    let open = func(&lua, "Schema", "openState");
+    let opened: Table = open.call((enc.clone(), room, obj)).unwrap();
+    assert_eq!(opened.get::<f64>("userId").unwrap(), 7.0);
+    assert_eq!(opened.get::<String>("name").unwrap(), "Ada");
+    assert_eq!(opened.get::<String>("client").unwrap(), "rbx-native");
+
+    let seal_luau = func(&lua, "Schema", "sealState");
+    let luau_text: String = seal_luau
+        .call((enc, room, sample_luau_state(&lua), nonce_fn(&lua)))
+        .unwrap();
+    let luau_sealed: Sealed = serde_json::from_str(&luau_text).unwrap();
+    assert_eq!(luau_sealed.j.len(), 1);
+    let state = seal::open_state(&rust_key, room, &luau_sealed).expect("Rust opens Luau's seal");
+    assert_eq!(state.user_id, 7);
+    assert_eq!(state.name, "Ada");
+    assert_eq!(state.client, Client::Studio);
+    assert_eq!(state.edits[0].value, "1, 2, 3");
 }
 
 /// The plugin's `Catchup.summarize` agrees with the golden fixture (and so
@@ -429,8 +548,8 @@ fn data_catchup() {
 /// two shedding paths cannot drift.
 #[test]
 fn ntfy_fit_sheds_to_a_fitting_interoperable_body() {
-    use rbx_presence::ntfy;
-    use rbx_presence::schema::{Client, Edit, UserState, SCHEMA_VERSION};
+    use rbx_presence::schema::Sealed;
+    use rbx_presence::{crypt, seal};
 
     let lua = new_lua();
     let key = "k".repeat(64);
@@ -438,18 +557,20 @@ fn ntfy_fit_sheds_to_a_fitting_interoperable_body() {
     let selection: Vec<String> = (0..100)
         .map(|i| format!("{i}{}", "a".repeat(400)))
         .collect();
-    let edits: Vec<Edit> = (0..20)
-        .map(|i| Edit {
-            path: "Workspace.Part".into(),
-            property: "Size".into(),
-            value: "1, 2, 3".into(),
-            at: i,
+    let edits: Vec<(String, String, String, u64)> = (0..20)
+        .map(|i| {
+            (
+                "Workspace.Part".to_owned(),
+                "Size".to_owned(),
+                "1, 2, 3".to_owned(),
+                i,
+            )
         })
         .collect();
 
     // Luau `fitEncode` over the same state.
     let state = lua.create_table().unwrap();
-    state.set("v", 1).unwrap();
+    state.set("v", 2).unwrap();
     state.set("userId", 42.0).unwrap();
     state.set("name", "Ann").unwrap();
     state.set("color", "#e8590c").unwrap();
@@ -460,12 +581,12 @@ fn ntfy_fit_sheds_to_a_fitting_interoperable_body() {
     }
     state.set("selection", sel).unwrap();
     let ed = lua.create_table().unwrap();
-    for (i, edit) in edits.iter().enumerate() {
+    for (i, (path, property, value, at)) in edits.iter().enumerate() {
         let row = lua.create_table().unwrap();
-        row.set("path", edit.path.clone()).unwrap();
-        row.set("property", edit.property.clone()).unwrap();
-        row.set("value", edit.value.clone()).unwrap();
-        row.set("at", edit.at as f64).unwrap();
+        row.set("path", path.clone()).unwrap();
+        row.set("property", property.clone()).unwrap();
+        row.set("value", value.clone()).unwrap();
+        row.set("at", *at as f64).unwrap();
         ed.set(i + 1, row).unwrap();
     }
     state.set("edits", ed).unwrap();
@@ -473,36 +594,36 @@ fn ntfy_fit_sheds_to_a_fitting_interoperable_body() {
 
     let max: f64 = load_module(&lua, "Ntfy").unwrap().get("MAX_BODY").unwrap();
     let fit = func(&lua, "Ntfy", "fitEncode");
-    let luau_body: String = fit.call((key.clone(), topic, 42.0, 1000.0, state)).unwrap();
+    let room = "room";
+    let enc = luau_enc_key(&lua, "s", 1.0);
+    let luau_body: String = fit
+        .call((
+            key.clone(),
+            enc.clone(),
+            room,
+            topic,
+            42.0,
+            1000.0,
+            state,
+            nonce_fn(&lua),
+        ))
+        .unwrap();
     assert!(
         luau_body.len() as f64 <= max,
         "Luau fitEncode must fit MAX_BODY"
     );
-    // The Luau-shed body verifies and decodes under the Rust receiver.
-    assert_eq!(
-        ntfy::decode(&key, topic, 1000, &luau_body).unwrap().user_id,
-        42
-    );
-
-    // The Rust side sheds the same inputs to a body that also fits and that
-    // the plugin's decoder accepts.
-    let rust_state = UserState {
-        v: SCHEMA_VERSION,
-        user_id: 42,
-        name: "Ann".into(),
-        color: "#e8590c".into(),
-        client: Client::RbxNative,
-        camera: None,
-        selection,
-        script: None,
-        edits,
-        seen: 0,
-    };
-    let rust_body = ntfy::fit_encode(&key, topic, 42, 1000, &rust_state).unwrap();
-    assert!(rust_body.len() <= ntfy::NTFY_MAX_BODY);
+    // The shed body verifies and opens in the plugin, and its sealed state
+    // opens under the Rust receiver.
     let decode = func(&lua, "Ntfy", "decode");
-    let got: Table = decode.call((key, topic, 1000.0, rust_body)).unwrap();
+    let got: Table = decode
+        .call((key, enc, room, topic, 1000.0, luau_body.clone()))
+        .unwrap();
     assert_eq!(got.get::<f64>("userId").unwrap(), 42.0);
+    let envelope: Json = serde_json::from_str(&luau_body).unwrap();
+    let sealed: Sealed = serde_json::from_str(str_field(&envelope, "d")).unwrap();
+    let rust_key = crypt::enc_key("s", 1);
+    let opened = seal::open_state(&rust_key, room, &sealed).expect("Rust opens the shed body");
+    assert_eq!(opened.user_id, 42);
 }
 
 #[test]

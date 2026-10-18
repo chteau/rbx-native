@@ -1,0 +1,127 @@
+{
+  "aead": [
+    {
+      "aad_hex": "50515253c0c1c2c3c4c5c6c7",
+      "key_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+      "nonce_hex": "070000004041424344454647",
+      "plaintext": "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.",
+      "sealed_b64": "BwAAAEBBQkNERUZH0xqNNGSOYNt7hq+8U+9+wqSt7VEpbgj+qeK1pzbuYtY9vqRejKlnEoL6+2naknKLGnHeCp4GCykF1qW2fs07NpLdvX8td4uMmAOu4ygJG1j6syTk+tZ1lFWFgItIMde8P/Te8I5Lep3ldtJlhs7GS2EWGuELWU8J4mp+kC7L0GAGkQ=="
+    },
+    {
+      "aad": "",
+      "aad_hex": "",
+      "key_hex": "47c5bbe5d38ff85ee5734663dbdbba5e4b24b48663b32270e1135ca1da619001",
+      "nonce_hex": "070707070707070707070707",
+      "plaintext": "",
+      "sealed_b64": "BwcHBwcHBwcHBwcHPb9rS898Q8P5PQLygT0a3A=="
+    },
+    {
+      "aad": "aad",
+      "aad_hex": "616164",
+      "key_hex": "47c5bbe5d38ff85ee5734663dbdbba5e4b24b48663b32270e1135ca1da619001",
+      "nonce_hex": "090909090909090909090909",
+      "plaintext": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij",
+      "sealed_b64": "CQkJCQkJCQkJCQkJMYYJRSwVWanMFhR5ixppUtb3Mz3w0LZJcZ8fmQSirGLPVQrPTbx5QmTx4qeHgf7jlhxbc0IMfRjX5OaO/GHJJL7jrL4jZIfwDZWn+i/i4AIJExl7Rs36lcYKcBVjV8igDO9TiPRKWxY09HyRhGK64qHHfJZKdqrMeRZAv1teWUcnFhu71c5i1VJwTFCNKDGA4rvPjLJQLLL57Ovv5z6O/6m7FwiMiqO4LAynWxmoaq21CQv9D+I5HanihrJ0JiQbxczLAZvmYxK8km7oqBbTSZrMw6VxC/TYkrScAjWrX00VwNTUygkGLmv5nGPuH3g5bL6eXayOcupDFEQYMdI4kuUWbY3Qi0jSrmGHarupax0yO2MHoVh5o9uvPZIQ8By2N9SQpFbodoJoD3twy+2BegN15qfZHdghXXXEhgKdOqe+d5oz8tbX61+C0672mSGzXEbL2XAxI8C3J+8Q502D4FB4d65RGUDBfP0VMGLCu//E9+c7pS/poyCvUxqAk0jFXzw/potMCzua/D6HYLUMTWjuS/WgSCGLXTEEQTLOZrJ79bdKrzbmWk0eCYzjNymJ5zAmO852j+e2wG6+BDNu3gDDIo6WD7YF601z5kOoBfnHZXdrW9QMEmeGwfb2p/gq5UV01BhyATNgUo/1b/9Q9un7fy9vYRozVlFMBPVC5MFyvqfTohH9rjASsA6uHFJla5VXlQflUv6sznVnqQ/6bV3/4vQM11I/dJvq1tVQ9PRQGmWo4xoA6EHQYT3ladUWhY9f41Yp2q0YcmlV5PVYzCPbSL90oz+N79MM+n0Os7m5Bir0eZIb9PePgihqH+lCXiAmAb9zEMDn95RnyEPSy7n30ON5qesX05N+SRyEnbpmhh/lOoeVKaScOyQL4EMkrnTlVu5AaqqETT2zpnXfDQtfBwjx42uXfoJdvHP8ZmuP3mf933OXlpzEVtHCVvmnxQN6sDby3F5dr5+glofHO5MwO4MK2PO+cS8OLfjmomQrnBFuCE+c0wDRf60W3XqSKaZSxm6zK0iVlTh5u3E71MK8H1vnYTVyJ4eWx615pEHE/S5ftcPVFsuieSJb+n5AlvNF3zXwb+q8cyKJpoA+q35jJID5K79PGUZ/b43/DKFf9smwnM1exAlNJ0K9uQs+DJDT3swAD+ZstS7BGKu4taPbhZKe2hKsxi/7MvTw3qVtC17FGlHuVhMMuUVal9HQdi5/oXEAcG+WLLwAfFg5W5Z5QrErJTpixRl4jc5sSGVAEpjj4ha80cKIQO4TQATkL5aTxYLulG2aPu8CHEH+KTL4z5Jg0OPsy4mV7V8vdZ3k6ygkcdjzGIUwuFQs4ZtkK+Abx9uqjY4="
+    },
+    {
+      "aad": "ä\n✓",
+      "aad_hex": "c3a40ae29c93",
+      "key_hex": "47c5bbe5d38ff85ee5734663dbdbba5e4b24b48663b32270e1135ca1da619001",
+      "nonce_hex": "010101010101010101010101",
+      "plaintext": "héllo wörld ✓ 日本語 🎲",
+      "sealed_b64": "AQEBAQEBAQEBAQEBfHCkepK6jruSg/6/UA8dQszUZYV6qnoeKI+m0L6YvoeE2DkM33TlKg7CX31g6oEN"
+    }
+  ],
+  "base64": [
+    {
+      "b64": "",
+      "hex": ""
+    },
+    {
+      "b64": "+g==",
+      "hex": "fa"
+    },
+    {
+      "b64": "+h8=",
+      "hex": "fa1f"
+    },
+    {
+      "b64": "+h9E",
+      "hex": "fa1f44"
+    },
+    {
+      "b64": "+h9EaQ==",
+      "hex": "fa1f4469"
+    },
+    {
+      "b64": "+h9EaY4=",
+      "hex": "fa1f44698e"
+    }
+  ],
+  "enc_key": [
+    {
+      "key_hex": "47c5bbe5d38ff85ee5734663dbdbba5e4b24b48663b32270e1135ca1da619001",
+      "place_id": 42,
+      "secret": "secret"
+    },
+    {
+      "key_hex": "9c049856a34a9003bffe32bf9f6739d571a2f4905feaaa5edd3214ad71832042",
+      "place_id": 1,
+      "secret": ""
+    },
+    {
+      "key_hex": "be025911083e9f234b8b5ceb3332a0eebd78fabbeffeb246acbf273738b27971",
+      "place_id": 104688317714596,
+      "secret": "pässwörd ✓"
+    }
+  ],
+  "hkdf": [
+    {
+      "ikm_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "info": "",
+      "okm_hex": "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
+    },
+    {
+      "ikm_hex": "736563726574",
+      "info": "rbx-presence/enc/v1/42",
+      "okm_hex": "47c5bbe5d38ff85ee5734663dbdbba5e4b24b48663b32270e1135ca1da619001"
+    },
+    {
+      "ikm_hex": "0102030405060708090a0b0c0d0e0f10",
+      "info": "rbx-presence/enc/v1/1",
+      "okm_hex": "e0e9c4da010ed1a961e0f8cc990f2504a6209bfc60950234ba72750106111382"
+    }
+  ],
+  "journal_tag": [
+    {
+      "at": 1000,
+      "key_hex": "47c5bbe5d38ff85ee5734663dbdbba5e4b24b48663b32270e1135ca1da619001",
+      "path": "Workspace.Part",
+      "property": "Size",
+      "tag": "609058fbb65f43f8"
+    },
+    {
+      "at": 0,
+      "key_hex": "4c40a005d00b34c67e008fc8bbcaad2b2e8f89ceab657c3925375a3e1bd025c2",
+      "path": "A.B.C",
+      "property": "CFrame",
+      "tag": "804f37e7e069131c"
+    },
+    {
+      "at": 1700000000123,
+      "key_hex": "47c5bbe5d38ff85ee5734663dbdbba5e4b24b48663b32270e1135ca1da619001",
+      "path": "Workspace.Ünï",
+      "property": "Name ✓",
+      "tag": "ce9348ff32940369"
+    }
+  ],
+  "state": {
+    "aad": "rbx-presence/state/v2\n0123456789abcdef0123456789abcdef\n7\nrbx-native",
+    "nonce_hex": "030303030303030303030303",
+    "place_id": 42,
+    "plaintext": "{\"v\":2,\"userId\":7,\"name\":\"Ada\",\"color\":\"#e8590c\",\"client\":\"rbx-native\",\"selection\":[\"Workspace.Part\"],\"edits\":[],\"seen\":0}",
+    "room": "0123456789abcdef0123456789abcdef",
+    "sealed_b64": "AwMDAwMDAwMDAwMDVgqy0KM6laO28xF3seWTty+8sNxZbFsA3JU4i8bgz6yteI8rqPz5t+a2p01yez8d2dpK94eutu5NPlOfG7YYCVU3n89c+rYZLPxtysaNvcthWPZTfo4/GC4F5nM1R6ijwK+07xnHXb+QyDWthWRpb6wNwsdEAULzzzpqjh+tklL4tNiDk0pksRnB",
+    "secret": "secret"
+  }
+}

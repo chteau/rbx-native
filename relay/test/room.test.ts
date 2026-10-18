@@ -6,52 +6,55 @@ import {
   JOURNAL_TTL_MS,
   MAX_USERS,
   RATE_BURST,
-  type UserState,
+  type Sealed,
 } from "../src/contracts.js";
 import { Room } from "../src/room.js";
 
-const user = (userId: number): UserState => ({
-  v: 1,
+const user = (userId: number): Sealed => ({
+  v: 2,
   userId,
-  name: `u${userId}`,
-  color: "#e8590c",
   client: "studio",
-  selection: [],
-  edits: [],
+  ct: "AAEC",
+  j: [],
   seen: 0,
 });
 
-// Edits carry the client's own edit time; entry `i` happened at `baseAt + i`.
-const withEdits = (userId: number, n: number, baseAt: number): UserState => ({
+const tag = (n: number): string => n.toString(16).padStart(16, "0");
+
+// Entry `i` happened at `baseAt + i`.
+const withEdits = (userId: number, n: number, baseAt: number): Sealed => ({
   ...user(userId),
-  edits: Array.from({ length: n }, (_, i) => ({
-    path: `Workspace.P${i}`,
-    property: "Size",
-    value: "secret",
+  j: Array.from({ length: n }, (_, i) => ({
     at: baseAt + i,
+    tag: tag(baseAt + i),
+    ct: `ct${i}`,
   })),
 });
 
 describe("journal", () => {
-  it("records value-less entries, keyed on the client's edit time", () => {
+  it("records opaque entries", () => {
     const room = new Room();
     room.put(withEdits(7, 2, 5), 1000);
-    const entries = room.journalSince(4, 1000);
-    expect(entries).toEqual([
-      { userId: 7, name: "u7", path: "Workspace.P0", property: "Size", at: 5 },
-      { userId: 7, name: "u7", path: "Workspace.P1", property: "Size", at: 6 },
+    expect(room.journalSince(4, 1000)).toEqual([
+      { userId: 7, at: 5, ct: "ct0" },
+      { userId: 7, at: 6, ct: "ct1" },
     ]);
-    for (const e of entries) expect("value" in e).toBe(false);
-    // `since` is exclusive on the edit time.
-    expect(room.journalSince(6, 1000).map((e) => e.at)).toEqual([]);
+    expect(room.journalSince(6, 1000)).toEqual([]);
   });
 
-  it("does not duplicate an edit re-sent on later heartbeats", () => {
+  it("does not duplicate an entry re-sent on later heartbeats", () => {
     const room = new Room();
     room.put(withEdits(7, 2, 5), 1000);
     room.put(withEdits(7, 2, 5), 6000);
     room.put(withEdits(7, 2, 5), 11000);
     expect(room.journalSince(0, 11000)).toHaveLength(2);
+  });
+
+  it("dedupes per user, not across users", () => {
+    const room = new Room();
+    room.put(withEdits(1, 1, 5), 1000);
+    room.put(withEdits(2, 1, 5), 1000);
+    expect(room.journalSince(0, 1000)).toHaveLength(2);
   });
 
   it("drops entries older than the TTL", () => {
@@ -65,12 +68,9 @@ describe("journal", () => {
 
   it("keeps only the last JOURNAL_CAP distinct entries", () => {
     const room = new Room();
-    // One put with more distinct edits than the cap; MAX_EDITS bounds a real
-    // message, but the cap must hold regardless.
     room.put(withEdits(1, JOURNAL_CAP + 50, 1), JOURNAL_CAP + 100);
     const entries = room.journalSince(0, JOURNAL_CAP + 100);
     expect(entries).toHaveLength(JOURNAL_CAP);
-    // The newest edits are the ones kept.
     expect(entries[entries.length - 1]?.at).toBe(JOURNAL_CAP + 50);
   });
 });
@@ -125,14 +125,15 @@ describe("Room", () => {
     expect(room.cursor).toBe(c + 1);
   });
 
-  it("keeps one user's Studio and rbx-native states apart", () => {
+  it("keeps one user's states apart and sorts the snapshot", () => {
     const room = new Room();
+    room.put({ ...user(2) }, 0);
+    room.put({ ...user(1), client: "rbx-native" }, 100);
     room.put(user(1), 0);
-    room.put({ ...user(1), client: "rbx-native", selection: ["Workspace.A"] }, 100);
     const clients = room.snapshot().users.map((u) => `${u.userId}/${u.client}`);
-    expect(clients.sort()).toEqual(["1/rbx-native", "1/studio"]);
+    expect(clients).toEqual(["1/studio", "1/rbx-native", "2/studio"]);
     expect(room.remove(1, "rbx-native")).toBe(true);
-    expect(room.snapshot().users.map((u) => u.client)).toEqual(["studio"]);
+    expect(room.snapshot().users.map((u) => u.client)).toEqual(["studio", "studio"]);
   });
 
   it("checks clock skew", () => {

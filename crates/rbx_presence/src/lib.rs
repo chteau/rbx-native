@@ -10,9 +10,11 @@
 //!
 //! - [`schema`]: the one JSON shape both directions use.
 //! - [`auth`]: the per-place key, room id and request signatures.
+//! - [`crypt`] / [`seal`]: payload encryption; the relay sees only ciphertext.
 //! - [`paths`]: instances named by their full path from `game`.
 //! - [`secret`]: where the per-place secret lives inside the place.
 //! - [`relay`]: the default endpoint both sides connect to with no config.
+//! - [`coedit`]: live co-editing, ops through the relay's op log.
 //! - [`client`]: the relay WebSocket, on a worker thread.
 //! - [`host`]: the relay itself, run by rbx-native behind a Cloudflare quick tunnel.
 //! - [`announce`]: where the room's host is, posted through ntfy.
@@ -30,10 +32,13 @@ pub mod announce;
 pub mod auth;
 pub mod catchup;
 pub mod client;
+pub mod coedit;
+pub mod crypt;
 pub mod host;
 pub mod lastseen;
 pub mod ntfy;
 pub mod paths;
 pub mod relay;
 pub mod schema;
+pub mod seal;
 pub mod secret;
