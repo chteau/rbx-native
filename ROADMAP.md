@@ -2871,7 +2871,14 @@ Roblox's own engine.
   through the back button opens Roblox's menu, and the cover follows a
   focused TextBox. Research, verdicts and measurements:
   `docs/research/play-sandbox/device-simulator.md`.
-- [ ] 📋 **Device Simulator: what is still open** — input modes on
+- [ ] 📋 **Device Simulator: what is still open** — known caveats of Play
+  through Sober, measured live: a click reaches the game as `MouseButton1`,
+  never a touch (no multi-touch), so the default thumbstick and jump button
+  never appear though the mobile top bar does (`PreferredInput` stays
+  `KeyboardAndMouse`); a virtual uinput touchscreen is the untried fix. The
+  keyboard cover is not reported to the game (`OnScreenKeyboardVisible`
+  false, `OnScreenKeyboardSize` 0), and the Android back button arrives as
+  `KeyCode.Escape`. Also open: input modes on
   Windows, where RobloxPlayerBeta has no switch and no allowlisted FFlag
   gives one (whether injected synthetic touch makes `TouchEnabled` true is
   untested); a headset in Play (Sober has no VR; on Windows an OpenXR

@@ -90,6 +90,32 @@ Two notes from the run:
   101 ms with Off on the same server, i.e. +405 ms against the preset's mean
   added round trip of 410 ms (185 ms in + 225 ms out).
 
+### Known caveats of Play through Sober
+
+Measured in the live run above; each is a limit of Sober or of driving it
+from outside, not of the probe.
+
+- **Clicks are mouse clicks, not touches.** A click on the client reaches
+  the game as `MouseButton1`; `GetLastInputType` never turns to Touch from a
+  click, and there is no multi-touch (no pinch, no two-finger camera).
+  `TouchEnabled` is still true. A virtual uinput touchscreen, made the way
+  the Controller Emulator's pad is, is the untried way round it.
+- **No on-screen thumbstick or jump button.** The mobile top bar (Roblox
+  button, menu and chat pills) does show, but since no touch ever arrives
+  and `PreferredInput` stays `KeyboardAndMouse`, the default touch controls
+  never appear and the hotbar keeps its desktop number labels
+  (`play-iphone15pro-portrait.png`). Moving still works with the desktop
+  keys.
+- **The Controller Emulator's pad does nothing in game.** Sober sees it
+  (`GamepadEnabled` true) but passes none of its input on (row above).
+- **The keyboard cover is ours, not the device's.** The game is not told:
+  `OnScreenKeyboardVisible` stays false and `OnScreenKeyboardSize` 0, so UI
+  that moves out of the keyboard's way does not. Its keys type through XTest
+  (Linux only); the first use of a character missing from the X keymap
+  (€, emoji) waits 0.3 s while Sober picks up the remapped key.
+- **Android back is Escape.** It opens Roblox's menu, as on a phone, but a
+  game sees it as `KeyCode.Escape`, not a distinct back key.
+
 Screenshots: `device-simulator/play-iphone15pro-portrait.png`,
 `play-pixel8-keyboard.png`, `play-iphone15pro-chat-keyboard.png`,
 `play-pixel8-back.png`,
