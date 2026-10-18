@@ -31,6 +31,7 @@ mod group;
 mod guides;
 mod history;
 pub(crate) mod import3d;
+mod input_panel;
 mod keys;
 mod layout;
 mod light_guides;
@@ -315,6 +316,7 @@ pub(crate) struct Shell {
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
     style_edits: style_panel::StyleEdits,
+    input_edits: input_panel::InputEdits,
     style_scroll: ScrollHandle,
     /// The UI Editor document's own state — its sub-tab, the screen on the
     /// canvas, the pan and zoom, the gesture in flight. See
@@ -788,6 +790,7 @@ impl Shell {
             lsp: luau_lsp::Session::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
+            input_edits: input_panel::InputEdits::default(),
             style_scroll: ScrollHandle::new(),
             ui,
             anim: animation::Animation::new(cx).with_seams(anim_sheet_height, anim_names_width),
@@ -1054,6 +1057,7 @@ impl Shell {
         // selection blocks above, so the edit it may carry lands on whatever
         // `StyleRule` they selected.
         shell.apply_debug_style_editor(cx);
+        shell.apply_debug_input_actions(cx);
 
         // `RBX_STUDIO_UI_EDITOR` (see `shell::ui_editor`): after the selection
         // blocks, so the screen they selected into is the one on the canvas.
