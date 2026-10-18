@@ -59,15 +59,13 @@ the ntfy **topic name is unguessable** without the secret.
 treated as a collaborator. The relay operator is **not** trusted for
 confidentiality or integrity of identity — see below.
 
-- **Confidentiality (OPEN — see "Encryption" below).** Signing proves
-  authenticity, not secrecy. Presence payloads are currently sent in the clear.
-  On the Worker relay the operator can read every payload; on a **public ntfy
-  instance the topic is world-readable to anyone who learns or guesses the topic
-  string**. The unguessable topic is obscurity, not encryption. Leaked today:
-  display names, selection instance paths, the open script's path, the *names
-  and short display values* of recent property edits, and camera pose. This is
-  the one unresolved item in the security review and the encryption design below
-  closes it.
+- **Confidentiality (closed by encryption, see below).** Every payload —
+  presence states, journal entries, ntfy messages, co-editing ops — is
+  sealed with a key derived from the place secret. The relay operator and
+  anyone reading a public ntfy topic see only the signature envelope
+  (user id, editor kind, timestamps, sizes, edit times and opaque journal
+  tags) and ciphertext. What still shows: who is in the room and when, and
+  how much they send.
 - **Impersonation (residual, inherent to a shared secret).** The key is shared
   per place, so any collaborator who holds the secret can sign presence or edits
   as *any* `userId` — the relay checks that the header, signature and
@@ -104,31 +102,33 @@ Because the derivation strings are versioned (`.../key/v1/...`,
 `.../room/v1/...`), a future wire-level key-version bump can be added without
 colliding with existing rooms.
 
-### Encryption (DESIGNED — not yet on the wire)
+### Encryption (wire v2)
 
-The confidentiality gap above is closed by encrypting the payload with a key
-only holders of the place secret can derive. The agreed construction, to be
-implemented identically in Rust, TypeScript (WebCrypto) and Luau and pinned by a
-new golden fixture, is:
-
-- `encKey = HKDF-SHA256(ikm = utf8(secret), salt = "", info = "rbx-presence/enc/v1/" + placeId)` → 32 bytes.
-  HKDF is `HMAC-SHA256`-based, so it reuses primitives all three already have.
-- AEAD over the `UserState` JSON (and over each value-less journal entry):
-  a 96-/192-bit random nonce prefixed to the ciphertext, authenticated tag
-  appended. The existing per-request HMAC signature stays as the relay-layer
-  room-auth (it is what lets the Worker route and rate-limit without decrypting),
-  so this is encryption *in addition to* signing, not instead of it.
-- The ntfy envelope's `d` becomes base64(nonce ‖ ciphertext ‖ tag) instead of
-  cleartext JSON; the Worker body likewise. Peers/relay without the secret see
-  only opaque bytes.
-
-**Why it is not landed in this pass:** AEAD must be byte-for-byte identical in
-hand-written Luau (the plugin has no crypto library beyond the SHA-256/HMAC it
-ships) and verified against *real* Roblox Studio over a live relay before it can
-replace the working plaintext wire. Landing it in Rust alone would break
-interop. It is therefore specified here and left for a coordinated, live-tested
-change. **Do not flip the wire to encrypted until all three implementations pass
-a shared golden fixture and a live Studio round trip.**
+- `encKey = HKDF-SHA256(ikm = utf8(secret), salt = "", info = "rbx-presence/enc/v1/" + placeId)`
+  → 32 bytes (`crypt::enc_key`, `Crypto.encKey`). The relay key is offered
+  to the relay in a header, so it is never the encryption key.
+- ChaCha20-Poly1305 (RFC 8439) with a random 96-bit nonce; the wire carries
+  base64(nonce ‖ ciphertext ‖ tag). The AAD binds each payload to its room,
+  sender and editor (`crypt::state_aad`, `journal_aad`, `ops_aad`), so a
+  relay cannot move a ciphertext to another user.
+- A state crosses the relay as `schema::Sealed` (`v`, `userId`, `client`,
+  `ct`, plus one sealed entry per edit for the journal, deduped on an HMAC
+  tag the relay cannot invert); the ntfy envelope's `d` is that JSON. The
+  per-request HMAC signature stays as room authentication, so the relay
+  routes, rate-limits and journals without decrypting.
+- Rust uses RustCrypto (`chacha20poly1305`, `hkdf`); the plugin carries its
+  own pure-Luau ChaCha20-Poly1305 (`Crypto.luau`, `bit32` only). Both, and
+  the Worker's validation, are pinned by
+  `plugins/team-presence/fixtures/crypto_vectors.json` (RFC 8439 §2.8.2 and
+  RFC 5869 case 3 among them). The Luau module was run against every vector
+  inside Roblox Studio 0.743 itself, not only in the test runner; all
+  passed, and a 16 KiB seal+open took about 17 ms there.
+- The plugin's nonces come from `HttpService:GenerateGUID` (v4, random)
+  mixed with a `Random` stream: plugins have no CSPRNG API.
+- Versioning: bodies carry `v: 2`; a relay answers a v1 (cleartext) body
+  with `400 {"error":"version"}` and both clients turn that into "update
+  the plugin, rbx-native and the relay together", so an old client fails
+  loudly rather than being ignored.
 
 ## Hosted rooms (the default): no account, no server
 
