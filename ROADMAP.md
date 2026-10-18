@@ -3273,19 +3273,27 @@ engine, just as an escape hatch.
 
 ### Collaboration
 
-Two rbx-native instances editing the same place concurrently (CRDT/OT over
-the DOM — a real, unbuilt project of its own) covers Linux-to-Linux
-collaboration, i.e. **collaborators** in this project's own editor.
-**Reflecting live edits between this editor and real Roblox Studio** — a
-separate ask — is the other half: an official Studio-side plugin, in the
-two-way-sync mode real Rojo's own plugin already offers
-([`rojo-rbx/rojo`](https://github.com/rojo-rbx/rojo)), talking to a small
-local server this project would run, the same shape Rojo/Argon already use
-to keep an external editor and Studio's own DOM in sync. Neither replaces
-**Team Create**, Roblox's actual real-time multi-user editing — that stays
-proprietary with no public protocol to build against (see
-[Explicitly impossible](#explicitly-impossible-without-robloxs-engine)) —
-the sandbox above covers testing as a team instead of editing as one.
+- [x] **Live co-editing between rbx-native editors, and with Studio
+  through the Team Presence plugin (beta)** — edits travel as operations
+  through the hosted presence relay's op log, end-to-end encrypted like
+  presence itself (HKDF from the place secret → ChaCha20-Poly1305; the
+  plugin's Luau implementation was checked against the shared test vectors
+  inside Studio 0.743). Instances by `UniqueId` (paths for Studio, which
+  cannot read it), last-writer-wins per property on a Lamport clock, script
+  text merged three ways, remote edits undoable as steps of their own, and
+  a late joiner replays the log. Live-tested between two rbx-native editors
+  and between Studio and rbx-native on a real place; see
+  `crates/rbx_presence/README.md` for what was and was not verified.
+- [ ] 📋 **Co-editing without an rbx-native host, and at scale** — only the
+  hosted relay (an rbx-native user's own) keeps the op log, so Studio users
+  alone cannot co-edit, and a new host starts with an empty log. Attributes
+  and tags are not sent from Studio, and large places (tens of thousands of
+  instances) are untested.
+
+Neither replaces **Team Create**, Roblox's actual real-time multi-user
+editing — that stays proprietary with no public protocol to build against
+(see [Explicitly impossible](#explicitly-impossible-without-robloxs-engine))
+— the sandbox above covers testing as a team instead of editing as one.
 
 ---
 

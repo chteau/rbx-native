@@ -186,3 +186,46 @@ substitute for the place's own save history.
 `catchup::summarize` turns a value-less journal (from either source) into a
 per-author summary (distinct instances, distinct properties, edit count), sorted
 by edit count. It is pinned by `plugins/team-presence/fixtures/catchup.json`.
+
+## Live co-editing (beta)
+
+Behind Beta Features › Live co-editing in rbx-native and the plugin's
+Co-edit toolbar toggle in Studio. Design in `coedit.rs`; in short:
+
+- **Op log.** Only the hosted relay keeps one (`POST`/`GET
+  /v1/rooms/<room>/ops`): numbered, sealed entries the relay cannot read,
+  at most 64 MiB, trimmed oldest first. Batches are cut into chunks of 7000
+  bytes so no entry passes the 16 KiB body limit. Every editor applies every
+  batch, its own included, in log order; a late joiner replays the log from
+  the start, and a reader the trim has passed is told it missed edits. A
+  new host starts a new, empty log. The Worker and ntfy relays carry no ops.
+- **Identity.** `UniqueId` (32 hex); a file instance without one gets an id
+  from its path when the session starts, the same on every peer that opened
+  the same file. Studio plugins cannot read `UniqueId`, so every op carries
+  the path as well and the plugin resolves by path, remembering the ids it
+  learns.
+- **Conflicts.** Properties are last-writer-wins per (instance, property)
+  on a Lamport clock. Script `Source` ops name the hash of the log text
+  they were written on; a stale one is rejected by every peer alike, and
+  text that lands while an editor has its own edits on screen is merged
+  three ways (by line, then by character), keeping both sides between
+  markers when the same characters changed, and saying so in Output.
+- **Undo.** A remote batch is an undo step of its own, in rbx-native and
+  (one ChangeHistory recording) in Studio. What an undo changes is sent
+  like any edit, so undoing a collaborator's edit undoes it for everyone.
+- **Names.** Ops use Roblox's scripting property names (`Size`, `Color`);
+  rbx-native maps them to the names files store (`size`, `Color3uint8`).
+  Scripting-only properties a file never stores (`BrickColor` beside
+  `Color`) are not written into rbx-native's place.
+
+Verified live (2026-10-18): two rbx-native editors over the hosted relay
+(property, insert, delete, undo of a remote edit, script text, late
+joiner), and Studio 0.743 ↔ rbx-native on the test place (property and
+insert both ways, delete, echo-free, undo in Studio, script text both
+ways). Edits in those runs were made through each editor's command bar and
+Explorer rather than typing into Studio's Properties widget, which the
+X11 test driver could not reach. Not verified: concurrent typing in one
+script after the character-merge fix, attributes and tags from Studio
+(not sent), places with tens of thousands of instances (the plugin
+connects `Changed` on every tracked instance; rbx-native diffs the whole
+DOM when it changes).
