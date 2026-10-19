@@ -69,6 +69,17 @@ impl Recovery {
         }
     }
 
+    /// The state for the same session once it is `place` (File › Save to
+    /// File As…): unclaimed, so the copy and lock of the old place are
+    /// dropped. `saves` carries over, so a copy of the old place still being
+    /// written knows a save landed and deletes itself.
+    fn moved_to(&self, place: &Path) -> Self {
+        Recovery {
+            saves: self.saves,
+            ..Recovery::new(self.enabled, self.minutes, place)
+        }
+    }
+
     pub(super) fn enabled(&self) -> bool {
         self.enabled
     }
@@ -133,8 +144,8 @@ impl Shell {
         if std::fs::canonicalize(&folder).is_ok_and(|folder| state.place.starts_with(folder)) {
             self.output.push_warning(
                 "This place is in the Auto-Recovery folder, so no recovery copies are written \
-                 of it, and Ctrl+S saves it there. To keep working on it, copy it out of that \
-                 folder and open it from there.",
+                 of it, and Ctrl+S saves it there. To keep working on it, use File › Save to File As… \
+                 to save it outside that folder.",
             );
             return;
         }
@@ -187,6 +198,14 @@ impl Shell {
                 )),
             }
         }
+    }
+
+    /// After Save As: the session is a different place, so its copies take
+    /// that place's name and hash, claimed and swept like a place opening.
+    /// The old place's copy went with the save (see [`Self::saved`]).
+    pub(super) fn repoint_recovery(&mut self) {
+        self.recovery = self.recovery.moved_to(&self.path);
+        self.open_recovery();
     }
 
     /// Writes a copy if one is due. The DOM is cloned here, on the UI thread
@@ -310,4 +329,27 @@ fn keep_aside(copy: &Path) -> std::io::Result<PathBuf> {
     }
     std::fs::rename(copy, &kept)?;
     Ok(kept)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::Recovery;
+    use crate::recovery;
+
+    #[test]
+    fn save_as_moves_the_state_to_the_new_places_copies() {
+        let mut old = Recovery::new(true, 7, Path::new("/games/Obby.rbxl"));
+        old.saves = 3;
+        old.unsaved = true;
+        let moved = old.moved_to(Path::new("/games/Tower.rbxlx"));
+        assert_eq!((moved.enabled, moved.minutes, moved.saves), (true, 7, 3));
+        assert!(!moved.unsaved && moved.copy.is_none());
+        let folder = Path::new("/r");
+        assert_ne!(
+            recovery::copy_path(folder, &moved.place, 1),
+            recovery::copy_path(folder, Path::new("/games/Obby.rbxl"), 1)
+        );
+    }
 }

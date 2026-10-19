@@ -142,6 +142,7 @@ impl Shell {
                 .push_warning(&format!("Could not update the Recent list: {err}"));
         }
         self.saved();
+        self.repoint_recovery();
         cx.notify();
     }
 
