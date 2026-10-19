@@ -372,6 +372,12 @@ pub(crate) fn open_editor(
     let options = window_options(&title, cx);
     cx.open_window(options, |window, cx| {
         let shell = cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));
+        let closing = shell.downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            closing
+                .update(cx, |shell, cx| shell.request_quit(cx))
+                .unwrap_or(true)
+        });
         cx.new(|cx| Root::new(shell, window, cx))
     })
     .expect("failed to open the main window");

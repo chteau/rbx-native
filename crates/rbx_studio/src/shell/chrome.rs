@@ -168,13 +168,17 @@ impl Shell {
                     false,
                     |window| window.zoom_window(),
                 ))
-                .child(window_button(
-                    &self.tab_order.claim(cx),
+                .child(titlebar_button(
+                    Some(&self.tab_order.claim(cx)),
                     "window-close",
                     IconName::X,
                     "Close",
                     true,
-                    |window| window.remove_window(),
+                    cx.listener(|shell, _, window, cx| {
+                        if shell.request_quit(cx) {
+                            window.remove_window();
+                        }
+                    }),
                 )),
         )
     }

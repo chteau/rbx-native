@@ -8,6 +8,18 @@ use crate::launcher::ui::{self, Weight};
 
 use super::Shell;
 
+/// Where the editor goes once the unsaved-changes prompt is answered.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(super) enum AfterClose {
+    /// File › Close Place: back to Home.
+    #[default]
+    Home,
+    /// Settings › Beta features' Restart now.
+    Restart,
+    /// The titlebar's Close button or the window manager's close.
+    Quit,
+}
+
 impl Shell {
     /// Edits since the last save, including typing still on the script
     /// editor's debounce.
@@ -28,7 +40,7 @@ impl Shell {
     /// unsaved changes.
     pub(crate) fn request_restart(&mut self, cx: &mut Context<Self>) {
         if self.has_unsaved_changes() {
-            self.restart_after_close = true;
+            self.after_close = AfterClose::Restart;
             self.close_prompt = true;
             cx.notify();
         } else {
@@ -37,20 +49,42 @@ impl Shell {
         }
     }
 
+    /// Closes the editor window, asking first when there are unsaved
+    /// changes; answers whether it may close right now (the window manager's
+    /// close asks through `on_window_should_close`).
+    pub(crate) fn request_quit(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.has_unsaved_changes() {
+            return true;
+        }
+        self.after_close = AfterClose::Quit;
+        self.close_prompt = true;
+        cx.notify();
+        false
+    }
+
     /// Escape's half of the prompt; returns whether it was open.
     pub(super) fn cancel_close_place(&mut self) -> bool {
-        self.restart_after_close = false;
+        self.after_close = AfterClose::Home;
         std::mem::take(&mut self.close_prompt)
     }
 
     fn leave_place(&mut self, cx: &mut Context<Self>) {
         self.close_prompt = false;
-        if std::mem::take(&mut self.restart_after_close) {
-            crate::relaunch(&self.path);
-            cx.quit();
-            return;
-        }
         let handle = self.window_handle;
+        match std::mem::take(&mut self.after_close) {
+            AfterClose::Restart => {
+                crate::relaunch(&self.path);
+                cx.quit();
+                return;
+            }
+            AfterClose::Quit => {
+                cx.defer(move |cx| {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                });
+                return;
+            }
+            AfterClose::Home => {}
+        }
         // Deferred: opening Home renders it, and this runs inside a `Shell`
         // update (a menu action or a click); removing the window from inside
         // its own handler is refused the same way.
@@ -74,12 +108,12 @@ impl Shell {
                 .child(ui::dialog(
                     440.,
                     ui::dialog_glyph("triangle-alert", ui::accent(), ui::wash()),
-                    if self.restart_after_close {
+                    if self.after_close == AfterClose::Restart {
                         format!("Save changes to {} before restarting?", self.title)
                     } else {
                         format!("Save changes to {}?", self.title)
                     },
-                    if self.restart_after_close {
+                    if self.after_close == AfterClose::Restart {
                         "RbxNative restarts to apply beta features. Unsaved changes are lost if you don\u{2019}t save them."
                     } else {
                         "Your changes will be lost if you close the place without saving them."
@@ -104,7 +138,7 @@ impl Shell {
                         ui::button("close-place-cancel", "Cancel", Weight::Secondary, false)
                             .on_click(cx.listener(|shell, _, _, cx| {
                                 shell.close_prompt = false;
-                                shell.restart_after_close = false;
+                                shell.after_close = AfterClose::Home;
                                 cx.notify();
                             }))
                             .into_any_element(),

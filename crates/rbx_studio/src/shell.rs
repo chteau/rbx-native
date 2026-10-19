@@ -399,9 +399,9 @@ pub(crate) struct Shell {
     /// File › Close Place's unsaved-changes prompt is up; see
     /// `shell::close_place`.
     close_prompt: bool,
-    /// The close prompt above is for a restart (Settings › Beta features'
-    /// Restart now), not for going back to Home — see `close_place`.
-    restart_after_close: bool,
+    /// Where the close prompt above leads once answered — see
+    /// `close_place`.
+    after_close: close_place::AfterClose,
     /// Held by the prompt while it is up, so Escape reaches the window's
     /// key handler rather than whatever panel had focus.
     close_focus: FocusHandle,
@@ -812,7 +812,7 @@ impl Shell {
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             roblox: roblox_publish::RobloxPublish::new(cx),
             close_prompt: false,
-            restart_after_close: false,
+            after_close: Default::default(),
             close_focus: cx.focus_handle(),
             rig_dialog: None,
             rig_focus: cx.focus_handle(),
