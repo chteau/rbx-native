@@ -447,22 +447,40 @@ impl Shell {
     }
 
     fn settings_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        vec![tile(
-            &self.ribbon_nav,
-            "ribbon-game-settings",
-            IconName::Settings,
-            "Game Settings",
-            cx,
-        )
-        .tooltip(|window, cx| {
-            super::tooltip::text(
-                "Game Settings — the experience's settings and this place's own",
-                window,
+        vec![
+            tile(
+                &self.ribbon_nav,
+                "ribbon-game-settings",
+                IconName::Settings,
+                "Game Settings",
                 cx,
             )
-        })
-        .on_click(cx.listener(|shell, _, _, cx| RibbonCommand::GameSettings.run(shell, cx)))
-        .into_any_element()]
+            .tooltip(|window, cx| {
+                super::tooltip::text(
+                    "Game Settings — the experience's settings and this place's own",
+                    window,
+                    cx,
+                )
+            })
+            .on_click(cx.listener(|shell, _, _, cx| RibbonCommand::GameSettings.run(shell, cx)))
+            .into_any_element(),
+            tile(
+                &self.ribbon_nav,
+                "ribbon-data-stores",
+                IconName::Database,
+                "Data Stores",
+                cx,
+            )
+            .tooltip(|window, cx| {
+                super::tooltip::text(
+                    "Data Stores — browse and edit the experience's data stores",
+                    window,
+                    cx,
+                )
+            })
+            .on_click(cx.listener(|shell, _, _, cx| RibbonCommand::DataStores.run(shell, cx)))
+            .into_any_element(),
+        ]
     }
 
     /// One toggle per dock, and the reason they exist: a dock closed from

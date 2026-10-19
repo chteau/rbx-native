@@ -61,6 +61,7 @@ actions!(
         MenuVersionHistory,
         MenuMergePlace,
         MenuGameSettings,
+        MenuDataStores,
         MenuOpenAutoSaves,
         MenuStudioSettings,
         MenuCustomizeShortcuts,
@@ -207,6 +208,8 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Merge Place\u{2026}", MenuMergePlace),
                 // Studio's own File › Experience Settings; Home has it too.
                 MenuItem::action("Game Settings…", MenuGameSettings),
+                // Creator Hub keeps these beside the experience's settings.
+                MenuItem::action("Data Stores…", MenuDataStores),
                 MenuItem::separator(),
                 // Studio files this under File › Advanced; this bar draws
                 // no submenus (`popup`), so it sits flat, under Studio's

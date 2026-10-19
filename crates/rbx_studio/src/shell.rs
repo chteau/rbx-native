@@ -69,6 +69,7 @@ pub(crate) use roving::install as install_key_bindings;
 mod tree_keys;
 
 mod argon_dock;
+mod datastores;
 mod game_settings;
 mod rows;
 mod save;
@@ -254,6 +255,8 @@ pub(crate) struct Shell {
     version_history: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Game Settings, while open — see `game_settings`.
     game_settings: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Data Stores, while open — see `datastores`.
+    data_stores: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Install from GitHub's progress, kept here so it outlives Settings.
     theme_install: settings_window::ThemeInstall,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
@@ -777,6 +780,7 @@ impl Shell {
             controller_window: None,
             version_history: None,
             game_settings: None,
+            data_stores: None,
             theme_install: settings_window::ThemeInstall::Idle,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),

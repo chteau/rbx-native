@@ -112,6 +112,8 @@ pub(in crate::shell) enum RibbonCommand {
     AnimationEditor,
     /// Home › Game Settings: opens (or raises) the Game Settings window.
     GameSettings,
+    /// Home › Data Stores: opens (or raises) the Data Stores window.
+    DataStores,
 }
 
 impl RibbonCommand {
@@ -138,6 +140,7 @@ impl RibbonCommand {
                 shell.set_document(super::super::chrome::Document::Animation, cx)
             }
             RibbonCommand::GameSettings => shell.open_game_settings(cx),
+            RibbonCommand::DataStores => shell.open_data_stores(cx),
         }
     }
 }
@@ -231,6 +234,12 @@ pub(in crate::shell) fn palette_entries(
         "Game Settings".to_owned(),
         None,
         RibbonCommand::GameSettings,
+    ));
+    entries.push((
+        "Home",
+        "Data Stores".to_owned(),
+        None,
+        RibbonCommand::DataStores,
     ));
     entries.push((
         "Avatar",

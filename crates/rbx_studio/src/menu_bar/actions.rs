@@ -117,6 +117,12 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuDataStores, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_data_stores(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuStudioSettings, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_settings(cx));
         }

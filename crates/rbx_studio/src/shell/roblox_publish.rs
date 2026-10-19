@@ -202,6 +202,7 @@ impl Shell {
             Ok("publish") => self.upload_to_roblox(PublishMode::Published, cx),
             Ok("history") => self.open_version_history(cx),
             Ok("game-settings") => self.open_game_settings(cx),
+            Ok("datastores") => self.open_data_stores(cx),
             _ => {}
         }
     }
