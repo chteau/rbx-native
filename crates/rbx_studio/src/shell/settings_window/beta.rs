@@ -12,7 +12,8 @@ use super::kit::{card, icon, text, toggle};
 use super::SettingsWindow;
 
 impl SettingsWindow {
-    /// Beta features: the listed switches, or an empty state.
+    /// Beta features: the listed switches, or an empty state when nothing is
+    /// listed.
     pub(super) fn beta_body(&self) -> AnyElement {
         let features = beta::features();
         let pending = beta::pending();
@@ -153,7 +154,7 @@ fn empty_state() -> Div {
         .child(
             text(14., 19.)
                 .font_weight(FontWeight::BOLD)
-                .child("No beta features yet"),
+                .child("No beta features right now"),
         )
         .child(
             text(12.5, 19.)
@@ -161,8 +162,8 @@ fn empty_state() -> Div {
                 .text_center()
                 .text_color(tokens::text2())
                 .child(
-                    "Nothing is in beta right now. Experimental features show up here, each \
-                     with its own switch; they apply after a restart.",
+                    "Features still being built show up here when there are any, each with \
+                     its own switch; a switch applies after a restart.",
                 ),
         )
 }

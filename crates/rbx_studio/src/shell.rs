@@ -171,6 +171,9 @@ pub(crate) struct Shell {
     /// Whether a part in front of the selection hides its outline box.
     /// Persisted the same way `orthographic` is (see `settings`).
     selection_occluded: bool,
+    /// Whether the viewport draws its `ScreenGui`s: the ribbon's Show UI.
+    /// Per session, not persisted, as Studio's View > UI is.
+    show_screen_gui: bool,
     /// Whether a selected light draws its guide — Studio's `Show Light
     /// Guides`. Persisted the same way `orthographic` is (see `settings`).
     light_guides: bool,
@@ -736,6 +739,7 @@ impl Shell {
             orthographic,
             axis_indicator,
             selection_occluded,
+            show_screen_gui: true,
             light_guides,
             light_guides_sent: Vec::new(),
             icon_pack,
@@ -1620,6 +1624,18 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
         self.save_settings();
+        cx.notify();
+    }
+
+    /// Shows or hides the `ScreenGui` overlay over the 3D view.
+    fn set_screen_gui_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.show_screen_gui {
+            return;
+        }
+
+        self.show_screen_gui = shown;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_screen_gui_shown(shown, cx));
         cx.notify();
     }
 

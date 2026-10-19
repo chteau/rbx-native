@@ -26,7 +26,6 @@ pub(crate) enum Setting {
     AutoReconnect,
     Https,
     InitialSyncPriority,
-    LiveHydrate,
     KeepUnknowns,
     OverridePackages,
     TwoWaySync,
@@ -49,12 +48,11 @@ pub(crate) enum Value {
 }
 
 impl Setting {
-    pub(crate) const ALL: [Setting; 15] = [
+    pub(crate) const ALL: [Setting; 14] = [
         Setting::AutoConnect,
         Setting::AutoReconnect,
         Setting::Https,
         Setting::InitialSyncPriority,
-        Setting::LiveHydrate,
         Setting::KeepUnknowns,
         Setting::OverridePackages,
         Setting::TwoWaySync,
@@ -75,7 +73,6 @@ impl Setting {
             Setting::AutoReconnect => "AutoReconnect",
             Setting::Https => "Https",
             Setting::InitialSyncPriority => "InitialSyncPriority",
-            Setting::LiveHydrate => "LiveHydrate",
             Setting::KeepUnknowns => "KeepUnknowns",
             Setting::OverridePackages => "OverridePackages",
             Setting::TwoWaySync => "TwoWaySync",
@@ -96,7 +93,6 @@ impl Setting {
             Setting::AutoReconnect => Value::Bool(false),
             Setting::Https => Value::Bool(false),
             Setting::InitialSyncPriority => Value::Choice("Server"),
-            Setting::LiveHydrate => Value::Bool(true),
             Setting::KeepUnknowns => Value::Bool(false),
             Setting::OverridePackages => Value::Bool(true),
             Setting::TwoWaySync => Value::Bool(false),

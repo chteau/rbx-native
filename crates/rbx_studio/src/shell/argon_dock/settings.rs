@@ -25,7 +25,6 @@ pub(in crate::shell) const SECTIONS: [(&str, &[Setting]); 4] = [
         "SYNC",
         &[
             Setting::InitialSyncPriority,
-            Setting::LiveHydrate,
             Setting::KeepUnknowns,
             Setting::OverridePackages,
         ],
@@ -63,7 +62,6 @@ pub(in crate::shell) fn copy(setting: Setting) -> (&'static str, &'static str) {
             "Initial Sync Priority",
             "Which side wins when you first connect.",
         ),
-        Setting::LiveHydrate => ("Live Hydrate", "Fetch missing instances from the server."),
         Setting::KeepUnknowns => (
             "Keep Unknowns",
             "Keep instances the file system doesn\u{2019}t have.",

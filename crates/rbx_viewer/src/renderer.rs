@@ -210,6 +210,9 @@ pub(crate) struct Renderer {
     /// straight onto the display target so no post effect touches it, and the
     /// `BillboardGui`/`SurfaceGui` canvases, drawn inside the scene.
     gui: Gui,
+    /// Whether the `ScreenGui` overlay is drawn (Studio's View > UI). The
+    /// canvases inside the scene are scene content and stay.
+    screen_gui_shown: bool,
     camera: Camera,
     /// The scene's extent, which is what the shadow map's depth range and its
     /// recentring are fitted against every frame.
@@ -423,6 +426,7 @@ impl Renderer {
             lines: Lines::default(),
             draggers,
             gizmo: None,
+            screen_gui_shown: true,
             gui: Gui::new(
                 device,
                 queue,
@@ -510,7 +514,9 @@ impl Renderer {
     /// pixels of the last frame drawn) would scroll along `axis` — see
     /// `scene::gui::scroll_target`.
     pub(crate) fn gui_scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
-        self.gui.scroll_target(point, axis)
+        self.screen_gui_shown
+            .then(|| self.gui.scroll_target(point, axis))
+            .flatten()
     }
 
     /// Draws one `ScreenGui` alone over `backdrop` into `target`, with no
@@ -518,6 +524,10 @@ impl Renderer {
     /// See `Gui::set_screen`.
     pub(crate) fn set_gui_screen(&mut self, screen: Option<(u32, u32)>) {
         self.gui.set_screen(screen);
+    }
+
+    pub(crate) fn set_screen_gui_shown(&mut self, shown: bool) {
+        self.screen_gui_shown = shown;
     }
 
     /// See `Gui::set_safe_insets`.
@@ -979,7 +989,7 @@ impl Renderer {
         // the texture rather than a view because it composites through a
         // non-sRGB one of its own (see `renderer::gui::pipeline::encoded`).
         // Not over an isolated view, which shows the rig and nothing else.
-        if drawn.screen_gui {
+        if drawn.screen_gui && self.screen_gui_shown {
             self.gui.draw(
                 device,
                 queue,
