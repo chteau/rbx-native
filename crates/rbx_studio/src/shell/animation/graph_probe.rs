@@ -327,7 +327,7 @@ fn the_steps_name_every_graph_and_the_fallback() {
 #[test]
 fn the_place_saves_and_every_graph_has_a_valid_output() {
     let dom = build();
-    let path = std::env::temp_dir().join("graph_probe_unit.rbxl");
+    let path = std::env::temp_dir().join(format!("graph_probe_unit_{}.rbxl", std::process::id()));
     save(&dom, Format::Binary, &path).unwrap();
     assert!(std::fs::metadata(&path).unwrap().len() > 1000);
     let _ = std::fs::remove_file(&path);

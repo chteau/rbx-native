@@ -2,6 +2,11 @@
 
 ## 2026-10-19
 
+- **Two tests no longer collide when suites run side by side.** The
+  viewer's XML sniffing test and the graph probe's save test wrote a fixed
+  file in the system temp directory, so two concurrent runs could delete
+  each other's file mid-test; the names are now per process. — @chteau
+
 - **Input Actions bindings get Studio's default Deadzone, and corrupt
   terrain is rejected cleanly.** A binding added from the dock now starts
   at `0.1, 1` like Studio's, instead of an empty field that saved nothing;
@@ -2396,7 +2401,6 @@
   mouse wheel over a `ScrollingFrame` in the viewport scrolls it, as Studio's
   edit view does, without entering the undo stack; the wheel anywhere else
   still moves the camera. — @chteau
-
 
 ## 2026-09-16
 
