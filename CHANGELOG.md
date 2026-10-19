@@ -7,6 +7,12 @@
   file in the system temp directory, so two concurrent runs could delete
   each other's file mid-test; the names are now per process. — @chteau
 
+- **rbxmerge no longer pairs unrelated new instances.** Two parts added
+  independently on each side of a merge both carried the all-zero
+  `UniqueId` our binary writer gives script- and editor-created instances,
+  so the merge treated them as one and reported a spurious conflict. An
+  all-zero id now counts as no identity. — @chteau
+
 - **Input Actions bindings get Studio's default Deadzone, and corrupt
   terrain is rejected cleanly.** A binding added from the dock now starts
   at `0.1, 1` like Studio's, instead of an empty field that saved nothing;
