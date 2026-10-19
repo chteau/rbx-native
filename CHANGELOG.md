@@ -2,6 +2,12 @@
 
 ## 2026-10-19
 
+- **rbxmerge no longer pairs unrelated new instances.** Two parts added
+  independently on each side of a merge both carried the all-zero
+  `UniqueId` our binary writer gives script- and editor-created instances,
+  so the merge treated them as one and reported a spurious conflict. An
+  all-zero id now counts as no identity. — @chteau
+
 - **Input action manager.** A new Input Actions dock (View menu and Home
   ribbon) lays out the place's `InputContext`s, `InputAction`s and
   `InputBinding`s as a table with one column per device family, edits
