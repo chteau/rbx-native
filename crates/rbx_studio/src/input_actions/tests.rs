@@ -436,3 +436,20 @@ fn value_of_returns_reflection_default_when_unstored() {
         Some(Variant::Int32(1000))
     ));
 }
+
+#[test]
+fn a_new_binding_holds_studios_deadzone() {
+    let mut dom = WeakDom::new();
+    let action = dom.new_instance(ACTION_CLASS, "Jump", None);
+    let binding = new_binding(&mut dom, "KeyboardBinding", action);
+    let instance = dom.get(binding).unwrap();
+    assert_eq!(instance.class(), BINDING_CLASS);
+    assert_eq!(dom.parent(binding), Some(action));
+    assert_eq!(
+        instance.properties().get("Deadzone"),
+        Some(&Variant::NumberRange(rbx_dom::NumberRange {
+            min: 0.1,
+            max: 1.0
+        }))
+    );
+}
