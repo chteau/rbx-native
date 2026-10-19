@@ -30,6 +30,17 @@
   after a selection change mid-drag, Save As to `Place.RBXLX` wrote binary,
   and autosave kept the old name after Save As. — @chteau
 
+- **Every ribbon tile does something or says why it can't.** Material,
+  Color, Lock and Anchor apply to the selection in one undo step (locked
+  parts are no longer picked in the viewport), Import opens the importer,
+  Show UI hides ScreenGuis in the viewport, the viewport Settings tile opens
+  its Settings page, and the Script tab's Find, Replace and Analysis tiles
+  work. Toolbox and Team Test stay disabled with the real reason — other
+  creators' assets and Team Create need Roblox's own servers. Beta Features'
+  Reset page works, and Argon's never-read Live Hydrate setting is gone.
+  Also fixed: a Properties dropdown didn't refresh when its value changed
+  from elsewhere, such as an undo. — @chteau
+
 - **Input action manager.** A new Input Actions dock (View menu and Home
   ribbon) lays out the place's `InputContext`s, `InputAction`s and
   `InputBinding`s as a table with one column per device family, edits

@@ -1,7 +1,7 @@
 use gpui_kit::component::h_flex;
 use gpui_kit::{px, ParentElement as _, Styled as _};
 
-use super::{test_tiles, tokens};
+use super::{show_ui_tooltip, test_tiles, tokens};
 use crate::probe::assert_primary;
 
 /// WCAG 2.5.5 on the tiles for the controls a person reaches for in a hurry,
@@ -15,4 +15,11 @@ fn the_play_and_stop_tiles_lay_out_at_least_44_by_44(cx: &mut gpui_kit::TestAppC
             h_flex().h(px(area)).items_stretch().children(test_tiles())
         });
     }
+}
+
+/// The Show UI tile says what the next click does, not what is showing now.
+#[test]
+fn the_show_ui_tooltip_names_the_next_state() {
+    assert!(show_ui_tooltip(true).contains("hide"));
+    assert!(show_ui_tooltip(false).contains("again"));
 }

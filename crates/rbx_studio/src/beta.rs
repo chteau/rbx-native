@@ -115,6 +115,14 @@ impl Choices {
         }
     }
 
+    /// Every listed feature back to its default, which is off. Ids stored
+    /// for features that are no longer listed are left alone.
+    pub(crate) fn reset(&mut self, listed: &[Feature]) {
+        for feature in listed {
+            self.set(feature.id, false);
+        }
+    }
+
     /// Ids of `listed` whose state differs between `self` and `other`.
     pub(crate) fn differences(&self, other: &Choices, listed: &[Feature]) -> Vec<&'static str> {
         listed
@@ -159,6 +167,16 @@ pub(crate) fn choose(id: &str, on: bool) -> std::io::Result<()> {
         stored_path().ok_or_else(|| std::io::Error::other("no config directory for beta.json"))?;
     with_stored(|choices| {
         choices.set(id, on);
+        choices.save(&path)
+    })
+}
+
+/// Switches every listed feature back off, saved the way [`choose`] saves.
+pub(crate) fn reset_all() -> std::io::Result<()> {
+    let path =
+        stored_path().ok_or_else(|| std::io::Error::other("no config directory for beta.json"))?;
+    with_stored(|choices| {
+        choices.reset(&features());
         choices.save(&path)
     })
 }

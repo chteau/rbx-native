@@ -83,6 +83,48 @@ impl Shell {
             })
     }
 
+    /// The palette in a popover under `trigger` (a ribbon tile, say) rather
+    /// than behind a Properties row: a pick is handed to `on_pick`, and the
+    /// popover closes.
+    pub(super) fn brick_color_popover(
+        &mut self,
+        id: &'static str,
+        trigger: Stateful<Div>,
+        on_pick: OnPick,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + 'static {
+        let palette_focus = self
+            .edits
+            .brick_focus
+            .get_or_insert_with(|| cx.focus_handle())
+            .clone();
+        let cursor = self.edits.brick_cursor;
+        let handle = cx.entity();
+        Popover::new(id)
+            .trigger(Trigger::new(trigger))
+            .track_focus(&palette_focus)
+            .on_open_change({
+                let handle = handle.clone();
+                move |open, _, cx| {
+                    if *open {
+                        handle.update(cx, |shell, cx| {
+                            shell.edits.brick_cursor = opening_cell(None);
+                            cx.notify();
+                        });
+                    }
+                }
+            })
+            .content(move |_, _, cx| {
+                let picker = Picker {
+                    shell: handle.clone(),
+                    popover: Some(cx.entity()),
+                    target: BrickTarget::Prompt(on_pick.clone()),
+                    current: None,
+                };
+                picker.render(cursor, &palette_focus)
+            })
+    }
+
     /// The palette on its own, inline rather than in a popover: a pick goes
     /// to `target`. Call [`Shell::reset_brick_cursor`] when it first shows.
     pub(super) fn brick_color_palette(

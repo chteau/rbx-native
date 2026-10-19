@@ -63,7 +63,12 @@ impl Shell {
         true
     }
 
-    fn open_finder(&mut self, mode: FinderMode, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_finder(
+        &mut self,
+        mode: FinderMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(active) = self.scripts.tabs.active() else {
             return;
         };

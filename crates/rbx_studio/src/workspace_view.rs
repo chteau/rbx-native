@@ -918,6 +918,12 @@ impl WorkspaceView {
     /// being depth-tested against the scene, the same way `set_orthographic`
     /// above switches projection: the render thread owns the viewer, so the
     /// switch happens there, between two frames.
+    /// Shows or hides the `ScreenGui` overlay on the render thread.
+    pub(crate) fn set_screen_gui_shown(&self, shown: bool, cx: &mut Context<Self>) {
+        self.pump.screen_gui_shown(shown);
+        cx.notify();
+    }
+
     pub(crate) fn set_selection_occluded(&mut self, occluded: bool, cx: &mut Context<Self>) {
         if occluded == self.selection_occluded {
             return;
