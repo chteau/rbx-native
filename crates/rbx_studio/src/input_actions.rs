@@ -6,8 +6,8 @@
 //!
 //! Property and enum names are the API dump's; values the place does not
 //! hold read as the reflection defaults, the same way the Properties panel
-//! shows them. Nothing here writes: the dock edits through
-//! `properties::edit::commit` like any other panel.
+//! shows them. Apart from [`new_binding`], nothing here writes: the dock
+//! edits through `properties::edit::commit` like any other panel.
 
 pub(crate) mod check;
 
@@ -383,6 +383,20 @@ pub(crate) fn value_of<'a>(
 ) -> Option<&'a Variant> {
     let instance = dom.get(referent)?;
     db.stored_or_default(instance, property).map(|(_, v)| v)
+}
+
+/// A new `InputBinding` named `name` under `action`, holding the `Deadzone`
+/// Studio writes on one (`0.1, 1`): the defaults file has none, so a binding
+/// left without it would save without the property.
+pub(crate) fn new_binding(dom: &mut WeakDom, name: &str, action: Ref) -> Ref {
+    let binding = dom.new_instance(BINDING_CLASS, name, Some(action));
+    dom.set_property(
+        binding,
+        "Deadzone",
+        Variant::NumberRange(rbx_dom::NumberRange { min: 0.1, max: 1.0 }),
+    )
+    .expect("a binding just inserted exists");
+    binding
 }
 
 #[cfg(test)]

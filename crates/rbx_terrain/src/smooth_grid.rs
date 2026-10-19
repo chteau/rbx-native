@@ -85,7 +85,7 @@ pub fn index(bytes: &[u8]) -> Result<Index, SmoothGridError> {
         for axis in 0..3 {
             key[axis] = key[axis].wrapping_add(delta[axis] as i32);
         }
-        if key.iter().any(|v| v.abs() > FARTHEST_CHUNK) {
+        if key.iter().any(|v| v.unsigned_abs() > FARTHEST_CHUNK as u32) {
             return Err(SmoothGridError::ChunkRange(key[0], key[1], key[2]));
         }
         if !seen.insert(key) {
