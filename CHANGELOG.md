@@ -2,6 +2,11 @@
 
 ## 2026-10-19
 
+- **Two tests no longer collide when suites run side by side.** The
+  viewer's XML sniffing test and the graph probe's save test wrote a fixed
+  file in the system temp directory, so two concurrent runs could delete
+  each other's file mid-test; the names are now per process. — @chteau
+
 - **Input action manager.** A new Input Actions dock (View menu and Home
   ribbon) lays out the place's `InputContext`s, `InputAction`s and
   `InputBinding`s as a table with one column per device family, edits
