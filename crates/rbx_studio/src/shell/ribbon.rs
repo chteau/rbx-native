@@ -34,11 +34,13 @@ use super::play::{session::StopReason, Phase};
 use super::Shell;
 
 mod commands;
+mod model_tiles;
 
 pub(super) use commands::{
     palette_entries, RibbonCommand, GUI_INSERTS, PART_INSERTS, SUN_BODIES, SUN_MODES,
 };
 use commands::{Insert, SCRIPT_INSERTS};
+pub(super) use model_tiles::is_locked;
 
 /// The ribbon's category tabs. The frame names six; this editor has real
 /// commands for Home, UI and Model, a page of its own for running a place
@@ -82,7 +84,7 @@ impl Tab {
 }
 
 impl Shell {
-    pub(super) fn ribbon(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn ribbon(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         // The ribbon is one Tab stop whose control count depends on the
         // open page, so the group is opened here and closed once the page
         // has actually been built (see `shell::roving`).
@@ -132,7 +134,7 @@ impl Shell {
                 self.edit_tiles(cx),
                 self.pivot_tiles(cx),
                 self.sun_tiles(cx),
-                file_tiles(),
+                self.import_tiles(cx),
             ],
             Tab::Test => vec![self.test_tiles(cx), viewport_tiles()],
             Tab::Plugins => self.plugin_ribbon_groups(cx),
@@ -382,10 +384,8 @@ impl Shell {
     }
 
     /// Group/Ungroup are live (`shell::group`, the same Ctrl+G/Ctrl+Shift+G
-    /// handlers the Model menu calls). Material/Colour/Lock/Anchor are all
-    /// reachable through the Properties panel today; a one-click ribbon
-    /// version has to apply across a whole selection, which is real new
-    /// plumbing rather than a second button on an existing path.
+    /// handlers the Model menu calls). Material, Color, Lock and Anchor live
+    /// in `model_tiles`, and act on the whole selection's parts.
     /// Cut/Copy/Paste/Duplicate run the same `shell::clipboard` entry points
     /// as `menu_bar`'s Edit menu and `Ctrl+X`/`C`/`V`/`D`.
     ///
@@ -452,7 +452,7 @@ impl Shell {
     /// `ungroup_selected` return early on, so a live tile always has work to
     /// do. Group needs one common, reparentable parent; Ungroup needs one
     /// `Model` among the selection and ignores whatever else is there.
-    fn edit_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn edit_tiles(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let nav = &self.ribbon_nav;
         let selected = self.selected_all();
         let group = if super::group::has_groupable(&self.dom, &self.database, selected) {
@@ -481,17 +481,12 @@ impl Shell {
         vec![
             group.into_any_element(),
             ungroup.into_any_element(),
-            disabled_tile("ribbon-material", IconName::Layers, "Material").into_any_element(),
-            disabled_tile("ribbon-color", IconName::Droplet, "Color").into_any_element(),
-            disabled_tile("ribbon-lock", IconName::Lock, "Lock").into_any_element(),
-            disabled_tile("ribbon-anchor", IconName::Anchor, "Anchor").into_any_element(),
+            self.material_tile(cx),
+            self.color_tile(cx),
+            self.flag_tile(model_tiles::Flag::Locked, cx),
+            self.flag_tile(model_tiles::Flag::Anchored, cx),
         ]
     }
-}
-
-/// Importing meshes and models off disk isn't implemented.
-fn file_tiles() -> Vec<AnyElement> {
-    vec![disabled_tile("ribbon-import", IconName::Import, "Import").into_any_element()]
 }
 
 /// A primary or destructive tile's 44x44 floor (WCAG 2.5.5), whatever the
