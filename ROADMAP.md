@@ -10,7 +10,7 @@ landed and why.
 
 Feasibility legend: ✅ done · 📋 planned, not
 started · ⚠️ possible only via a workaround · ❌ not possible without
-Roblox's own engine.
+Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
 
 ## What's been implemented
 
@@ -3005,11 +3005,18 @@ Roblox's own engine.
   universe, with a desktop notification when it's applied ("New icon
   applied on 3 places"). It needs a sidebar of the user's experiences with
   per-experience status. Timer edits apply to future updates only, never to
-  one already started. Open questions:
-  - whether Open Cloud can set an experience's icon with an API key, or
-    only the cookie-authenticated web endpoint can;
-  - how a step fires while the editor is closed: a background agent, a
-    hosted runner, or the original's "Send to phone".
+  one already started. Still open: whether Open Cloud can set an
+  experience's icon with an API key, or only the cookie-authenticated web
+  endpoint can.
+
+  Steps are written as "set the icon the plan says is due now", so a late
+  run catches up and any number of runners can't conflict. They fire while
+  the editor is open. **Start update** also registers a small background
+  helper with the OS, so steps keep firing after the editor is closed as
+  long as the PC is on and someone is logged in: a systemd user timer on
+  Linux, Task Scheduler on Windows, launchd on macOS. The helper is
+  removed when the plan finishes or is cancelled. Firing with the PC off
+  is under [Maybe](#maybe).
 
   Later, the same plan could also restart servers onto the new version and
   send an in-game announcement through MessagingService.
@@ -3250,6 +3257,28 @@ clear they were considered and not missed.
   - **Free trials for passes** is one more case for Play's test purchases
     (see [Play / Test workflow](#play--test-workflow)), whose passes already
     last exactly one session.
+
+## Maybe
+
+Ideas worth keeping that aren't committed to. Each one has a cost (an extra
+account, a second app, a service to run) that most Roblox developers
+wouldn't want to pay.
+
+- [ ] 🤔 **Update planning with the PC off**: a cloud runner for the
+  countdown-icon steps above. The images are uploaded and approved before
+  the plan starts, so a step is one small "set the icon" request, and any
+  free scheduler could send it. The candidates:
+  - **Cloudflare Workers.** Free cron triggers, or Durable Object alarms
+    for an exact minute, but it needs a Cloudflare account and a token.
+  - **GitHub Actions** in the user's own private repo. Free, but the
+    scheduled runs can start 5–30 minutes late, and most Roblox developers
+    don't use GitHub.
+  - **A phone companion** (the original's "Send to phone"), which would be
+    a second app to build and keep alive through battery savers.
+
+  All of them depend on Roblox letting an Open Cloud API key with narrow
+  scopes set an experience's icon. If only the account cookie can, no
+  third-party runner should ever hold it.
 
 ## Explicitly impossible without Roblox's engine
 
