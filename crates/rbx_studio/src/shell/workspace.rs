@@ -142,6 +142,7 @@ impl Shell {
             Panel::TerrainEditor => self.terrain_dock(window, cx),
             Panel::Collaborators => self.collaborators_dock(window, cx),
             Panel::PluginWidgets => self.plugin_widgets_dock(window, cx),
+            Panel::InputActions => self.input_actions_dock(window, cx),
         }
     }
 

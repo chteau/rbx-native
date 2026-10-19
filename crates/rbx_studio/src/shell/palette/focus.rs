@@ -38,7 +38,8 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::CallStack
         | Panel::TerrainEditor
         | Panel::Collaborators
-        | Panel::PluginWidgets => None,
+        | Panel::PluginWidgets
+        | Panel::InputActions => None,
     }
 }
 

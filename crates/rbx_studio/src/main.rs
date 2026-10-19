@@ -102,6 +102,7 @@ mod folder_colors;
 mod freeze;
 mod history;
 mod home;
+mod input_actions;
 mod key_store;
 mod launcher;
 mod luau_lsp;

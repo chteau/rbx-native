@@ -127,13 +127,16 @@ pub(crate) enum Panel {
     /// The plugins' dock widgets, one tab each. Shut until a plugin
     /// enables a widget.
     PluginWidgets,
+    /// The place's `InputContext`s, actions and bindings as one table
+    /// (`shell::input_panel`). Shut until asked for.
+    InputActions,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 12] = [
+    pub(crate) const ALL: [Panel; 13] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -146,6 +149,7 @@ impl Panel {
         Panel::TerrainEditor,
         Panel::Collaborators,
         Panel::PluginWidgets,
+        Panel::InputActions,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
@@ -161,7 +165,8 @@ impl Panel {
             | Panel::Wally
             | Panel::ScriptAnalysis
             | Panel::Watch
-            | Panel::CallStack => Edge::Bottom,
+            | Panel::CallStack
+            | Panel::InputActions => Edge::Bottom,
         }
     }
 
@@ -181,6 +186,7 @@ impl Panel {
             Panel::TerrainEditor => "Terrain Editor",
             Panel::Collaborators => "Collaborators",
             Panel::PluginWidgets => "Plugin Widgets",
+            Panel::InputActions => "Input Actions",
         }
     }
 
@@ -190,7 +196,10 @@ impl Panel {
     pub(crate) fn starts_closed(self) -> bool {
         matches!(
             self,
-            Panel::TerrainEditor | Panel::Collaborators | Panel::PluginWidgets
+            Panel::TerrainEditor
+                | Panel::Collaborators
+                | Panel::PluginWidgets
+                | Panel::InputActions
         )
     }
 
