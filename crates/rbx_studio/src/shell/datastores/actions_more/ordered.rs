@@ -48,6 +48,16 @@ impl DataStoresWindow {
     }
 
     pub(in super::super) fn load_ordered(&mut self, more: bool, cx: &mut Context<Self>) {
+        self.load_ordered_then(more, None, cx);
+    }
+
+    /// Loads, then selects the row whose key is `reselect`, if it arrived.
+    pub(in super::super) fn load_ordered_then(
+        &mut self,
+        more: bool,
+        reselect: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(at) = self.ordered.at.clone() else {
             return;
         };
@@ -90,6 +100,12 @@ impl DataStoresWindow {
                 }
                 if fill(&mut this.ordered.list, reply, more) {
                     this.debug_step(cx);
+                }
+                if let Some(key) = reselect {
+                    let found = this.ordered.list.items.iter().position(|e| e.key == key);
+                    if let Some(index) = found {
+                        this.select_ordered(index, cx);
+                    }
                 }
                 cx.notify();
             },

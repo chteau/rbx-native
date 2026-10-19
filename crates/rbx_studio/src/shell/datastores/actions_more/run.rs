@@ -2,7 +2,7 @@
 
 use gpui_kit::*;
 
-use super::super::state::Pending;
+use super::super::state::{Load, Pending};
 use super::super::{fetch, DataStoresWindow, Field};
 
 impl DataStoresWindow {
@@ -34,6 +34,7 @@ impl DataStoresWindow {
             } => {
                 let verb = if creating { "Created" } else { "Saved" };
                 let done = format!("{verb} \u{201c}{key}\u{201d}.");
+                let reselect = key.clone();
                 self.more_write(
                     done,
                     move || {
@@ -47,11 +48,12 @@ impl DataStoresWindow {
                         .map_err(|e| fetch::problem(&e))
                     },
                     cx,
-                    |this, (), cx| this.load_ordered(false, cx),
+                    move |this, (), cx| this.load_ordered_then(false, Some(reselect), cx),
                 );
             }
             Pending::IncrementOrdered { at, key, amount } => {
                 let done = format!("Incremented \u{201c}{key}\u{201d} by {amount}.");
+                let reselect = key.clone();
                 self.more_write(
                     done,
                     move || {
@@ -61,7 +63,7 @@ impl DataStoresWindow {
                             .map_err(|e| fetch::problem(&e))
                     },
                     cx,
-                    |this, (), cx| this.load_ordered(false, cx),
+                    move |this, (), cx| this.load_ordered_then(false, Some(reselect), cx),
                 );
             }
             Pending::DeleteOrdered { at, key } => {
@@ -75,6 +77,7 @@ impl DataStoresWindow {
                     },
                     cx,
                     |this, (), cx| {
+                        this.ordered.list.selected = None;
                         this.fill(Field::OrderedKey, "");
                         this.fill(Field::OrderedValue, "");
                         this.load_ordered(false, cx);
@@ -148,24 +151,37 @@ impl DataStoresWindow {
                 count,
                 invisibility_seconds,
             } => {
-                self.more_write(
-                    "Read the queue.".to_string(),
+                self.queue.load = Load::Busy;
+                self.writing += 1;
+                cx.notify();
+                self.more_request(
                     move || {
                         fetch::client()?
                             .read_queue(universe, &queue, count, invisibility_seconds)
                             .map_err(|e| fetch::problem(&e))
                     },
                     cx,
-                    |this, read, cx| {
-                        let n = read.items.len();
-                        let text = if n == 1 {
-                            "Read 1 item.".to_string()
-                        } else {
-                            format!("Read {n} items.")
-                        };
-                        this.more_say(true, text);
-                        this.queue.read = Some(read);
-                        this.debug_step(cx);
+                    |this, reply, cx| {
+                        this.writing = this.writing.saturating_sub(1);
+                        match reply {
+                            Ok(read) => {
+                                let n = read.items.len();
+                                let text = if n == 1 {
+                                    "Read 1 item.".to_string()
+                                } else {
+                                    format!("Read {n} items.")
+                                };
+                                this.more_say(true, text);
+                                this.queue.load = Load::Idle;
+                                this.queue.read = Some(read);
+                                this.debug_step(cx);
+                            }
+                            Err(problem) => {
+                                this.more_say(false, fetch::describe(&problem));
+                                this.queue.load = Load::Failed(problem);
+                            }
+                        }
+                        cx.notify();
                     },
                 );
             }

@@ -14,7 +14,7 @@ use crate::tokens;
 use super::super::json_tree;
 use super::super::state::{EntryTab, Load, TreeTarget, ValueView};
 use super::super::DataStoresWindow;
-use super::common::{json_area, problem_panel, time_label, value_view};
+use super::common::{json_area_rows, problem_panel, time_label, value_view};
 
 mod versions;
 
@@ -96,6 +96,30 @@ impl DataStoresWindow {
     fn entry_content(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if let Load::Failed(problem) = self.pane.load.clone() {
             return problem_panel(&problem, cx);
+        }
+        if self.pane.editing.as_ref().is_some_and(|d| d.creating) {
+            let store = self.store.clone().unwrap_or_default();
+            let scope = self.inputs.scope.read(cx).value().to_string();
+            let editor = self.editor(cx);
+            return v_flex()
+                .gap(px(12.))
+                .child(
+                    v_flex()
+                        .gap(px(2.))
+                        .child(
+                            div()
+                                .text_size(px(15.))
+                                .font_weight(FontWeight::BOLD)
+                                .child("New entry"),
+                        )
+                        .child(
+                            div()
+                                .text_color(tokens::text3())
+                                .child(format!("{store} \u{203a} {scope}")),
+                        ),
+                )
+                .child(editor)
+                .into_any_element();
         }
         let Some(entry) = self.pane.entry.clone() else {
             if self.pane.load == Load::Busy {
@@ -322,15 +346,15 @@ impl DataStoresWindow {
                 let scope = self.inputs.scope.read(cx).value().to_string();
                 d.child(label("Key"))
                     .child(boxed(&self.inputs.new_key, 320.))
-                    .child(label("Scope").child(format!(": {scope}")))
+                    .child(label("").child(format!("Scope: {scope}")))
             })
             .child(label("Value (JSON)"))
-            .child(json_area(&self.inputs.value))
+            .child(json_area_rows(&self.inputs.value, 14))
             .child(label("").child(format!("{size} of 4 MB")))
             .child(label("UserIds"))
             .child(boxed(&self.inputs.users, 320.))
             .child(label("Attributes (JSON object, 300 characters max)"))
-            .child(json_area(&self.inputs.attributes))
+            .child(json_area_rows(&self.inputs.attributes, 3))
             .children(
                 draft
                     .error

@@ -122,7 +122,14 @@ impl Inputs {
         let queue_priority = line(Field::QueuePriority, "0", "0");
         let queue_ttl = line(Field::QueueTtl, "Seconds", "3600");
         let mut area = |field: Field, rows: usize| {
-            let input = cx.new(|cx| TextareaState::new(window, cx).rows(rows));
+            let input = cx.new(|cx| {
+                let mut state = TextareaState::new(window, cx).rows(rows);
+                // The field draws its own frame; the editor's current-line
+                // band inside it read as a second box.
+                let fill = crate::tokens::field_select().into();
+                state.set_surface_colors(fill, fill, cx);
+                state
+            });
             subscriptions.push(
                 cx.subscribe(&input, move |this, _, event: &InputEvent, cx| {
                     this.on_input(field, event, cx)

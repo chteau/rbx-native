@@ -13,6 +13,8 @@ mod ordered;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_entries;
+#[cfg(test)]
 mod tests_errors;
 #[cfg(test)]
 mod tests_memory;

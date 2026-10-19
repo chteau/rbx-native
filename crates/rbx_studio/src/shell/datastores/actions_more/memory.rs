@@ -229,6 +229,7 @@ impl DataStoresWindow {
         remember(&mut self.queue.recent, &name);
         self.queue.name = Some(name);
         self.queue.read = None;
+        self.queue.load = Load::Idle;
         self.queue.adding = false;
         self.queue.error = None;
         self.queue.generation += 1;

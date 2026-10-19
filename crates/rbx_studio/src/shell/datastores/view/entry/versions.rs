@@ -26,18 +26,37 @@ impl DataStoresWindow {
                     .items_center()
                     .child(
                         div()
+                            .flex_none()
                             .text_color(tokens::text3())
                             .child(ui::icon("clock", 13.)),
                     )
-                    .child(time_label(rev.revision_create_time.as_deref()))
-                    .child(mono(rev.revision_id.clone()).text_color(tokens::text3()))
+                    .child(
+                        div()
+                            .flex_none()
+                            .child(time_label(rev.revision_create_time.as_deref())),
+                    )
+                    .child(
+                        mono(rev.revision_id.clone())
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_ellipsis()
+                            .text_color(tokens::text3()),
+                    )
                     .when(i == 0, |d| {
-                        d.child(ui::tag("Current", ui::green(), ui::green_soft()))
+                        d.child(div().flex_none().child(ui::tag(
+                            "Current",
+                            ui::green(),
+                            ui::green_soft(),
+                        )))
                     })
                     .when(rev.deleted, |d| {
-                        d.child(ui::tag("Deleted", tokens::text3(), tokens::hover()))
+                        d.child(div().flex_none().child(ui::tag(
+                            "Deleted",
+                            tokens::text3(),
+                            tokens::hover(),
+                        )))
                     })
-                    .child(div().flex_1())
                     .child(
                         ui::button(
                             SharedString::from(format!("ds-rev-view-{i}")),
@@ -45,6 +64,7 @@ impl DataStoresWindow {
                             Weight::Ghost,
                             true,
                         )
+                        .flex_none()
                         .on_click(
                             cx.listener(move |this, _, _, cx| this.view_revision(id.clone(), cx)),
                         ),
@@ -57,6 +77,7 @@ impl DataStoresWindow {
                                 Weight::Ghost,
                                 true,
                             )
+                            .flex_none()
                             .on_click(cx.listener(
                                 move |this, _, _, cx| this.ask_rollback(for_rollback.clone(), cx),
                             )),

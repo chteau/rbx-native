@@ -183,9 +183,14 @@ pub(super) fn search_field(input: &Entity<InputState>, glyph: &'static str) -> A
 }
 
 pub(super) fn json_area(input: &Entity<TextareaState>) -> AnyElement {
+    json_area_rows(input, 8)
+}
+
+/// A single-bordered mono multi-line field about `rows` lines tall.
+pub(super) fn json_area_rows(input: &Entity<TextareaState>, rows: usize) -> AnyElement {
     div()
         .w_full()
-        .h(px(150.))
+        .h(px(rows as f32 * 18. + 14.))
         .p(px(6.))
         .rounded(tokens::radius())
         .border_1()
@@ -193,7 +198,13 @@ pub(super) fn json_area(input: &Entity<TextareaState>) -> AnyElement {
         .bg(tokens::field_select())
         .font_family(tokens::font_mono())
         .text_size(px(12.))
-        .child(Textarea::new(input))
+        .child(
+            Textarea::new(input)
+                .appearance(false)
+                .text_size(px(12.))
+                .h_full()
+                .w_full(),
+        )
         .into_any_element()
 }
 

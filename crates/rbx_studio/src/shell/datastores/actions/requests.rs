@@ -13,6 +13,35 @@ use super::super::{DataStoresWindow, Field};
 
 const POLL_EVERY: Duration = Duration::from_millis(300);
 
+/// Items worth showing at once; below this a short page is followed up.
+const WANTED_ITEMS: usize = 50;
+const MAX_PAGE_REQUESTS: usize = 8;
+
+/// Roblox often answers a list with one item and a token, or ends on a
+/// token that yields nothing; asking on until a screenful has arrived keeps
+/// the user from paging by hand through near-empty pages.
+pub(super) fn gather<T, E>(
+    first: impl Fn(Option<&str>) -> Result<rbx_cloud::Page<T>, E>,
+    token: Option<String>,
+) -> Result<rbx_cloud::Page<T>, E> {
+    let mut items = Vec::new();
+    let mut token = token;
+    let mut requests = 0;
+    loop {
+        let page = first(token.as_deref())?;
+        requests += 1;
+        items.extend(page.items);
+        token = page.next_page_token;
+        if items.len() >= WANTED_ITEMS || token.is_none() || requests >= MAX_PAGE_REQUESTS {
+            break;
+        }
+    }
+    Ok(rbx_cloud::Page {
+        items,
+        next_page_token: token,
+    })
+}
+
 impl DataStoresWindow {
     /// Runs `job` off the UI thread, then `done` with its result.
     pub(in super::super) fn request<T: Send + 'static>(

@@ -111,11 +111,34 @@ impl DataStoresWindow {
         cx.notify();
         let prefix = self.inputs.get(Field::StoreSearch, cx);
         let deleted = self.show_deleted;
+        if !more && self.universe.as_ref().is_some_and(|u| u.name.is_none()) {
+            self.request(
+                move || {
+                    let info = fetch::client()?
+                        .universe(universe)
+                        .map_err(|e| fetch::problem(&e))?;
+                    let name: Option<String> = info.display_name.into();
+                    Ok(name)
+                },
+                cx,
+                move |this, reply, cx| {
+                    if let (Ok(Some(name)), Some(u)) = (reply, this.universe.as_mut()) {
+                        if u.id == universe && u.name.is_none() {
+                            u.name = Some(name);
+                            cx.notify();
+                        }
+                    }
+                },
+            );
+        }
         self.request(
             move || {
-                fetch::client()?
-                    .list_data_stores(universe, &prefix, deleted, token.as_deref())
-                    .map_err(|e| fetch::problem(&e))
+                let client = fetch::client()?;
+                requests::gather(
+                    |t| client.list_data_stores(universe, &prefix, deleted, t),
+                    token,
+                )
+                .map_err(|e| fetch::problem(&e))
             },
             cx,
             move |this, reply, cx| {
@@ -180,8 +203,8 @@ impl DataStoresWindow {
         let prefix = self.inputs.get(Field::KeySearch, cx).trim().to_string();
         self.request(
             move || {
-                fetch::client()?
-                    .list_entries(&at, &prefix, token.as_deref())
+                let client = fetch::client()?;
+                requests::gather(|t| client.list_entries(&at, &prefix, t), token)
                     .map_err(|e| fetch::problem(&e))
             },
             cx,
@@ -278,8 +301,8 @@ impl DataStoresWindow {
         cx.notify();
         self.request(
             move || {
-                fetch::client()?
-                    .list_revisions(&at, &key, token.as_deref())
+                let client = fetch::client()?;
+                requests::gather(|t| client.list_revisions(&at, &key, t), token)
                     .map_err(|e| fetch::problem(&e))
             },
             cx,

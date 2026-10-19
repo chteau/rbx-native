@@ -216,8 +216,10 @@ impl State {
             let level = 1 + rng.below(80);
             let xp = rng.below(10_000);
             let count = 1 + rng.below(4);
+            // Distinct items: a real inventory stacks duplicates into qty.
+            let first = rng.below(ITEMS.len() as u64);
             let inventory: Vec<(u64, u64)> = (0..count)
-                .map(|_| (rng.below(ITEMS.len() as u64), 1 + rng.below(20)))
+                .map(|k| ((first + k) % ITEMS.len() as u64, 1 + rng.below(20)))
                 .collect();
             let music = rng.below(2) == 0;
             let sensitivity = rng.below(100);
