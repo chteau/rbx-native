@@ -257,9 +257,16 @@ fn resync_row_widget(
                 state.update(cx, |state, cx| state.set_value(value, window, cx));
             }
         }
-        // An `Enum` row has nothing outside its own widget that writes to an
-        // already-selected instance repeatedly the way
-        // `Shell::sync_camera_pose` does.
+        // An undo, a script or the ribbon's Material menu can change an
+        // `Enum` value while its row is already built.
+        (RowEditor::Enum(state), EditKind::Enum { current, .. }) if !mixed => {
+            let current = SharedString::from(current.as_str());
+            if state.read(cx).selected_value() != Some(&current) {
+                state.update(cx, |state, cx| {
+                    state.set_selected_value(&current, window, cx)
+                });
+            }
+        }
         _ => {}
     }
 }
