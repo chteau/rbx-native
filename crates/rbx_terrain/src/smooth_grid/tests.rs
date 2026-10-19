@@ -106,6 +106,11 @@ fn far_chunks_and_repeats_are_refused() {
     far.extend([0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0]);
     far.extend(full_air_chunk_runs());
     assert!(matches!(decode(&far), Err(SmoothGridError::ChunkRange(..))));
+    // A delta landing on i32::MIN, whose `abs` overflows.
+    let mut min = vec![1, 5];
+    min.extend([0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    min.extend(full_air_chunk_runs());
+    assert!(matches!(decode(&min), Err(SmoothGridError::ChunkRange(..))));
     let mut twice = vec![1, 5];
     twice.extend([0; 12]);
     twice.extend(full_air_chunk_runs());

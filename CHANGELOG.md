@@ -13,6 +13,12 @@
   so the merge treated them as one and reported a spurious conflict. An
   all-zero id now counts as no identity. — @chteau
 
+- **Input Actions bindings get Studio's default Deadzone, and corrupt
+  terrain is rejected cleanly.** A binding added from the dock now starts
+  at `0.1, 1` like Studio's, instead of an empty field that saved nothing;
+  a terrain blob with an out-of-range chunk key is refused as malformed
+  instead of panicking in debug builds. — @chteau
+
 - **Input action manager.** A new Input Actions dock (View menu and Home
   ribbon) lays out the place's `InputContext`s, `InputAction`s and
   `InputBinding`s as a table with one column per device family, edits
