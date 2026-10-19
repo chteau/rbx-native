@@ -295,9 +295,16 @@ pub(crate) struct Layout {
     /// `restore` can tell "this file predates the panel" — put it back —
     /// from "the user closed it" — leave it shut.
     closed: Vec<Panel>,
+    /// View › Command Bar turned off. Not a [`Panel`] (it is a strip under
+    /// the docks), so the settings file keeps it as [`COMMAND_BAR_KEY`] in
+    /// `closed`, which leaves that file's shape alone.
+    command_bar_hidden: bool,
     /// Per edge, its size across its own axis.
     size: [f32; 3],
 }
+
+/// The name the hidden command bar goes by in [`SavedLayout::closed`].
+const COMMAND_BAR_KEY: &str = "command_bar";
 
 impl Default for Layout {
     fn default() -> Self {
@@ -305,6 +312,7 @@ impl Default for Layout {
             edges: Default::default(),
             floating: Vec::new(),
             closed: Vec::new(),
+            command_bar_hidden: false,
             size: Edge::ALL.map(Edge::default_size),
         };
         for panel in Panel::ALL {
@@ -319,6 +327,14 @@ impl Default for Layout {
 }
 
 impl Layout {
+    pub(crate) fn command_bar_hidden(&self) -> bool {
+        self.command_bar_hidden
+    }
+
+    pub(crate) fn set_command_bar_hidden(&mut self, hidden: bool) {
+        self.command_bar_hidden = hidden;
+    }
+
     /// The docks stacked on one edge. Empty for an edge nobody has put
     /// anything on, which is what lets the document take its room.
     pub(crate) fn groups(&self, edge: Edge) -> &[Group] {
@@ -594,6 +610,7 @@ impl Layout {
             }
         }
 
+        layout.command_bar_hidden = saved.closed.iter().any(|name| name == COMMAND_BAR_KEY);
         for name in &saved.closed {
             if let Some(panel) = layout.unclaimed(name) {
                 layout.closed.push(panel);
@@ -647,7 +664,12 @@ impl Layout {
                 })
                 .collect(),
             floating: self.floating.iter().map(|p| p.key().to_owned()).collect(),
-            closed: self.closed.iter().map(|p| p.key().to_owned()).collect(),
+            closed: self
+                .closed
+                .iter()
+                .map(|p| p.key().to_owned())
+                .chain(self.command_bar_hidden.then(|| COMMAND_BAR_KEY.to_owned()))
+                .collect(),
         }
     }
 }

@@ -158,6 +158,7 @@ impl HomeWindow {
                     .child(Self::section_head("New", None))
                     .child(self.new_tiles(grid, cx)),
             )
+            .children(self.recovered_section(cx))
             .when(!recent.is_empty(), |this| {
                 let see_all = self.see_all("recent-see-all", Page::Recent, cx);
                 this.child(

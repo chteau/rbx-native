@@ -83,6 +83,8 @@ pub(crate) struct HomeWindow {
     pub(super) games: Games,
     pub(super) icons: HashMap<u64, Arc<RenderImage>>,
     pub(super) recent: Vec<RecentPlace>,
+    /// Auto-Recovery copies no editor owns, read as Home opens.
+    pub(super) recovered: Vec<crate::recovery::Leftover>,
     pub(super) search: Entity<InputState>,
     pub(super) link: Entity<InputState>,
     pub(super) link_state: LinkState,
@@ -195,6 +197,9 @@ impl HomeWindow {
             games: Games::Loading,
             icons: HashMap::new(),
             recent: home::recent(),
+            recovered: crate::recovery::folder()
+                .map(|folder| crate::recovery::leftovers(&folder))
+                .unwrap_or_default(),
             search,
             link,
             link_state: LinkState::Idle,
