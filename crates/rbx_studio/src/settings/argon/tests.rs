@@ -99,6 +99,12 @@ fn a_file_from_before_argon_settings_existed_reads_as_all_defaults() {
 }
 
 #[test]
+fn a_stored_live_hydrate_from_an_older_build_is_ignored() {
+    let file = serde_json::json!({ "argon": { "global": { "LiveHydrate": false } }});
+    assert_eq!(ArgonSettings::read(&file), ArgonSettings::default());
+}
+
+#[test]
 fn malformed_and_unknown_entries_keep_their_defaults() {
     let file = serde_json::json!({ "argon": {
         "global": { "LogLevel": "Loud", "ChangesThreshold": -3, "AutoConnect": "yes", "Nope": 1 },
@@ -214,13 +220,13 @@ fn restore_defaults_empties_only_the_level_asked_for() {
     let mut settings = ArgonSettings::default();
     let keys = keys();
     settings.set(
-        Setting::LiveHydrate,
+        Setting::OverridePackages,
         Value::Bool(false),
         Level::Global,
         &keys,
     );
     settings.set(
-        Setting::LiveHydrate,
+        Setting::OverridePackages,
         Value::Bool(false),
         Level::Place,
         &keys,
@@ -233,7 +239,7 @@ fn restore_defaults_empties_only_the_level_asked_for() {
     );
     assert!(settings.restore_defaults(Level::Place, &keys));
     assert_eq!(
-        settings.exact(Setting::LiveHydrate, Level::Place, &keys),
+        settings.exact(Setting::OverridePackages, Level::Place, &keys),
         None
     );
     assert_eq!(
@@ -241,7 +247,7 @@ fn restore_defaults_empties_only_the_level_asked_for() {
         None
     );
     assert_eq!(
-        settings.exact(Setting::LiveHydrate, Level::Global, &keys),
+        settings.exact(Setting::OverridePackages, Level::Global, &keys),
         Some(Value::Bool(false))
     );
     assert!(!settings.restore_defaults(Level::Place, &keys));
