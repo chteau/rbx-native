@@ -184,6 +184,11 @@ pub(super) struct Edits {
     /// first of them, doubles as "is this the step that opens the undo
     /// entry" (see `Shell::slide_row`).
     sliding: Option<String>,
+    /// Whether the gesture `sliding` names has pushed its undo entry yet: a
+    /// first frame that wrote nothing (an unchanged value) leaves the next
+    /// one to open it, or that next frame would rewrite the previous,
+    /// unrelated entry's log and a single undo would revert both.
+    slide_pushed: bool,
     /// The open BrickColor picker's keyboard cursor, a cell of
     /// `shell::brick_color`'s honeycomb, and the handle its palette takes
     /// focus through — kept here because the popover's content is rebuilt
@@ -199,7 +204,26 @@ impl Edits {
     /// per-instance, so it deliberately survives this.
     pub(super) fn clear(&mut self) {
         self.rows.clear();
+        // The slider holding a gesture goes with its row and never sends
+        // `Release`, so the gesture ends here too.
+        self.end_slide();
         self.ref_pick = Default::default();
+    }
+
+    /// Starts or continues the slider gesture on row `name`, and answers
+    /// whether this frame still has to open its undo entry. A gesture on
+    /// another row means the previous one's `Release` never arrived.
+    fn slide(&mut self, name: &str) -> bool {
+        if self.sliding.as_deref() != Some(name) {
+            self.sliding = Some(name.to_owned());
+            self.slide_pushed = false;
+        }
+        !self.slide_pushed
+    }
+
+    fn end_slide(&mut self) {
+        self.sliding = None;
+        self.slide_pushed = false;
     }
 }
 
@@ -531,7 +555,7 @@ impl Shell {
             // DOM made of the last value, and let the next drag open its
             // own undo entry.
             SliderEvent::Release(_) => {
-                shell.edits.sliding = None;
+                shell.edits.end_slide();
                 shell.edits.rows.remove(&name);
                 cx.notify();
             }
@@ -544,11 +568,12 @@ impl Shell {
     /// takes, spelled the way the field beside the rail prints it.
     fn slide_row(&mut self, name: &str, value: f32, cx: &mut Context<Self>) {
         let text = super::scrub::format(value, FieldKind::Decimal);
-        let opening = self.edits.sliding.is_none();
-        if opening {
-            self.edits.sliding = Some(name.to_owned());
-        }
+        let opening = self.edits.slide(name);
+        let revision = self.history.revision();
         self.commit_row_step(name, &text, opening, cx);
+        if opening {
+            self.edits.slide_pushed = self.history.revision() != revision;
+        }
     }
 
     /// Reads every `Input` making up row `name` (one for `Text`, several for
@@ -776,6 +801,33 @@ pub(super) fn hsla_to_rgb(color: Hsla) -> (u8, u8, u8) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_slide_cut_short_by_a_selection_change_does_not_join_the_next() {
+        let mut edits = super::Edits::default();
+        assert!(edits.slide("Transparency"));
+        edits.slide_pushed = true;
+        assert!(!edits.slide("Transparency"));
+        // The row's slider is dropped mid-drag: no `Release` ever comes.
+        edits.clear();
+        assert!(edits.slide("Transparency"));
+    }
+
+    #[test]
+    fn a_slide_on_another_row_opens_its_own_undo_entry() {
+        let mut edits = super::Edits::default();
+        assert!(edits.slide("Transparency"));
+        edits.slide_pushed = true;
+        assert!(edits.slide("Reflectance"));
+    }
+
+    #[test]
+    fn a_first_frame_that_wrote_nothing_leaves_the_entry_to_the_next() {
+        let mut edits = super::Edits::default();
+        assert!(edits.slide("Transparency"));
+        // `slide_pushed` stays false: the frame pushed nothing.
+        assert!(edits.slide("Transparency"));
+    }
+
     use super::{hsla_to_rgb, rgb_to_hsla};
 
     #[test]
