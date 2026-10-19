@@ -100,6 +100,24 @@ pub const PERMISSIONS: &[Permission] = &[
         "Edit ordered data stores",
     ),
     optional(
+        "universe-datastores.versions:list",
+        "Data store version history",
+    ),
+    optional(
+        "memory-store.sorted-map:read",
+        "Read memory store sorted maps",
+    ),
+    optional(
+        "memory-store.sorted-map:write",
+        "Edit memory store sorted maps",
+    ),
+    optional("memory-store.queue:add", "Add to memory store queues"),
+    optional("memory-store.queue:dequeue", "Read memory store queues"),
+    optional(
+        "memory-store.queue:discard",
+        "Discard memory store queue items",
+    ),
+    optional(
         "universe.place.luau-execution-session:read",
         "Read cloud Luau results",
     ),
@@ -265,6 +283,40 @@ mod tests {
         assert_eq!(grant(&report, "game-pass:write"), Grant::Missing);
         // legacy-asset:manage is required and absent.
         assert!(!report.ready());
+    }
+
+    #[test]
+    fn datastore_key_reports_versions_granted_and_memory_store_missing() {
+        let report = check(&info(vec![
+            scope(
+                "universe-datastores.objects",
+                &["create", "delete", "list", "read", "update"],
+                &[],
+            ),
+            scope("universe-datastores.versions", &["list", "read"], &[]),
+        ]));
+        assert_eq!(
+            grant(&report, "universe-datastores.versions:list"),
+            Grant::Everywhere
+        );
+        assert_eq!(
+            grant(&report, "memory-store.sorted-map:read"),
+            Grant::Missing
+        );
+        assert_eq!(grant(&report, "memory-store.queue:add"), Grant::Missing);
+    }
+
+    #[test]
+    fn a_universe_restricted_datastore_scope_yields_universes() {
+        let raw: crate::introspect::ScopeRaw = serde_json::from_str(
+            r#"{"name":"universe-datastores.versions","operations":["list"],"universeDatastores":[{"universeId":"9"}]}"#,
+        )
+        .unwrap();
+        let report = check(&info(vec![raw.into()]));
+        assert_eq!(
+            grant(&report, "universe-datastores.versions:list"),
+            Grant::Universes(vec![9])
+        );
     }
 
     #[test]

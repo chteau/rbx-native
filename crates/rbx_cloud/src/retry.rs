@@ -16,6 +16,7 @@
 //! request — leaves a scattering of them undecoded whenever a load crosses the
 //! quota, and which ones varies run to run.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::client::RawResponse;
@@ -43,7 +44,25 @@ pub(crate) fn idempotent(
     what: &str,
     attempt: impl FnMut() -> Result<RawResponse, CloudError>,
 ) -> Result<RawResponse, CloudError> {
-    drive(what, attempt, std::thread::sleep)
+    drive(what, attempt, std::thread::sleep, false)
+}
+
+/// Like [`idempotent`] but re-sends only on HTTP 429: a throttled request was
+/// never applied, so repeating a write is safe, while a 5xx or a dropped
+/// connection may have been applied.
+pub(crate) fn rate_limited(
+    what: &str,
+    attempt: impl FnMut() -> Result<RawResponse, CloudError>,
+) -> Result<RawResponse, CloudError> {
+    drive(what, attempt, std::thread::sleep, true)
+}
+
+static RATE_LIMIT_WAITS: AtomicU64 = AtomicU64::new(0);
+
+/// How many times a request has slept because of a 429, process-wide; a UI
+/// polls it to tell the user Roblox is throttling.
+pub fn rate_limit_waits() -> u64 {
+    RATE_LIMIT_WAITS.load(Ordering::Relaxed)
 }
 
 /// [`idempotent`] with the sleeping split out, so a test can run the whole
@@ -52,11 +71,17 @@ fn drive(
     what: &str,
     mut attempt: impl FnMut() -> Result<RawResponse, CloudError>,
     mut sleep: impl FnMut(Duration),
+    only_rate_limits: bool,
 ) -> Result<RawResponse, CloudError> {
     for retry in 1..ATTEMPTS {
         let outcome = attempt();
-        match backoff(&outcome, retry) {
-            Some(delay) => sleep(delay),
+        match backoff(&outcome, retry, only_rate_limits) {
+            Some(delay) => {
+                if matches!(&outcome, Ok(response) if response.status == 429) {
+                    RATE_LIMIT_WAITS.fetch_add(1, Ordering::Relaxed);
+                }
+                sleep(delay)
+            }
             None => return outcome,
         }
     }
@@ -72,11 +97,19 @@ fn drive(
 
 /// How long to wait before retry number `retry` (1 for the first), or `None`
 /// if this outcome is the answer and asking again cannot improve it.
-fn backoff(outcome: &Result<RawResponse, CloudError>, retry: u32) -> Option<Duration> {
+fn backoff(
+    outcome: &Result<RawResponse, CloudError>,
+    retry: u32,
+    only_rate_limits: bool,
+) -> Option<Duration> {
     let exponential = FIRST_BACKOFF * 2u32.pow(retry - 1);
     let delay = match outcome {
         // A connection that dropped mid-burst says nothing about the asset.
-        Err(CloudError::Transport(_)) => exponential,
+        Err(CloudError::Transport(_)) if !only_rate_limits => exponential,
+        Ok(response) if only_rate_limits && response.status == 429 => retry_after(response)
+            .unwrap_or(exponential)
+            .max(exponential),
+        _ if only_rate_limits => return None,
         // A rate limit, or the load balancer having a moment. `error_for_status`
         // has not run yet, so these are still raw statuses here; the service's
         // own `retry-after` beats our guess, but only upwards — a second refusal
@@ -134,14 +167,44 @@ mod tests {
     fn run(
         outcomes: Vec<Result<RawResponse, CloudError>>,
     ) -> (Result<RawResponse, CloudError>, Vec<Duration>) {
+        run_with(outcomes, false)
+    }
+
+    fn run_with(
+        outcomes: Vec<Result<RawResponse, CloudError>>,
+        only_rate_limits: bool,
+    ) -> (Result<RawResponse, CloudError>, Vec<Duration>) {
         let queue = RefCell::new(outcomes.into_iter());
         let waited = RefCell::new(Vec::new());
         let result = drive(
             "test request",
             || queue.borrow_mut().next().expect("one attempt too many"),
             |delay| waited.borrow_mut().push(delay),
+            only_rate_limits,
         );
         (result, waited.into_inner())
+    }
+
+    #[test]
+    fn rate_limited_retries_a_429_and_counts_the_wait() {
+        let before = rate_limit_waits();
+        let (result, waited) =
+            run_with(vec![Ok(response(429, None)), Ok(response(200, None))], true);
+        assert_eq!(result.unwrap().status, 200);
+        assert_eq!(waited, [Duration::from_millis(500)]);
+        assert!(rate_limit_waits() > before);
+    }
+
+    #[test]
+    fn rate_limited_does_not_retry_a_gateway_error_or_a_dropped_connection() {
+        let (result, waited) = run_with(vec![Ok(response(502, None))], true);
+        assert_eq!(result.unwrap().status, 502);
+        assert!(waited.is_empty());
+
+        let (result, waited) =
+            run_with(vec![Err(CloudError::Transport("reset".to_string()))], true);
+        assert!(result.is_err());
+        assert!(waited.is_empty());
     }
 
     #[test]

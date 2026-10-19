@@ -41,11 +41,20 @@ struct KeyInfoRaw {
 }
 
 #[derive(Deserialize)]
-struct ScopeRaw {
+pub(crate) struct ScopeRaw {
     name: String,
     operations: Vec<String>,
     #[serde(rename = "universeIds", default)]
     universe_ids: Vec<String>,
+    /// Data store scopes carry their restriction here instead of `universeIds`.
+    #[serde(rename = "universeDatastores", default)]
+    universe_datastores: Vec<DatastoreUniverseRaw>,
+}
+
+#[derive(Deserialize)]
+struct DatastoreUniverseRaw {
+    #[serde(rename = "universeId")]
+    universe_id: String,
 }
 
 #[derive(Serialize)]
@@ -78,6 +87,7 @@ impl From<ScopeRaw> for Scope {
             universe_ids: raw
                 .universe_ids
                 .iter()
+                .chain(raw.universe_datastores.iter().map(|d| &d.universe_id))
                 .filter_map(|s| s.parse().ok())
                 .collect(),
         }
@@ -155,8 +165,24 @@ mod tests {
             name: "universe-places".to_string(),
             operations: vec!["write".to_string()],
             universe_ids: vec!["123".to_string(), "not-a-number".to_string()],
+            universe_datastores: Vec::new(),
         };
         let scope: Scope = raw.into();
         assert_eq!(scope.universe_ids, vec![123]);
+    }
+
+    #[test]
+    fn universe_datastores_merge_into_universe_ids_and_star_is_dropped() {
+        let everywhere: ScopeRaw = serde_json::from_str(
+            r#"{"name":"universe-datastores.objects","operations":["create","delete","list","read","update"],"universeDatastores":[{"universeId":"*"}]}"#,
+        )
+        .unwrap();
+        assert!(Scope::from(everywhere).universe_ids.is_empty());
+
+        let restricted: ScopeRaw = serde_json::from_str(
+            r#"{"name":"universe-datastores.versions","operations":["list"],"universeDatastores":[{"universeId":"77"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(Scope::from(restricted).universe_ids, vec![77]);
     }
 }

@@ -20,6 +20,16 @@ pub struct Client {
     /// server.
     #[cfg(test)]
     pub(crate) asset_roots: Option<(String, String)>,
+    apis_root: String,
+}
+
+/// Verbs `send_json` supports; GETs go through `get_with`, which retries them.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Method {
+    Post,
+    Patch,
+    Delete,
 }
 
 /// A response reduced to what every endpoint needs to make its own success/
@@ -46,7 +56,48 @@ impl Client {
             api_key,
             #[cfg(test)]
             asset_roots: None,
+            apis_root: "https://apis.roblox.com".to_string(),
         }
+    }
+
+    /// Points the `apis.roblox.com` calls at another server (a local mock).
+    pub fn with_apis_root(mut self, root: impl Into<String>) -> Self {
+        self.apis_root = root.into();
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn apis_url(&self, path: &str) -> String {
+        format!("{}{}", self.apis_root, path)
+    }
+
+    /// A keyed write. Only a 429 is re-sent: a throttled write was not
+    /// applied, whereas any other failure may have been.
+    #[allow(dead_code)]
+    pub(crate) fn send_json(
+        &self,
+        method: Method,
+        url: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<RawResponse, CloudError> {
+        let what = url.split('?').next().unwrap_or(url);
+        retry::rate_limited(what, || {
+            let key = self.require_api_key()?.as_str();
+            let result = match (method, body) {
+                (Method::Delete, _) => self.agent.delete(url).header("x-api-key", key).call(),
+                (Method::Post, Some(b)) => {
+                    self.agent.post(url).header("x-api-key", key).send_json(b)
+                }
+                (Method::Post, None) => self.agent.post(url).header("x-api-key", key).send_empty(),
+                (Method::Patch, Some(b)) => {
+                    self.agent.patch(url).header("x-api-key", key).send_json(b)
+                }
+                (Method::Patch, None) => {
+                    self.agent.patch(url).header("x-api-key", key).send_empty()
+                }
+            };
+            run(result)
+        })
     }
 
     pub(crate) fn require_api_key(&self) -> Result<&ApiKey, CloudError> {

@@ -32,6 +32,12 @@ pub enum CloudError {
     #[error("Roblox refused it ({status}): {message}")]
     Refused { status: u16, message: String },
 
+    #[error("the API key lacks the {scope} permission ({message})")]
+    MissingScope { scope: String, message: String },
+
+    #[error("changed since it was read: {message}")]
+    Conflict { message: String },
+
     #[error("network error: {0}")]
     Transport(String),
 
