@@ -2,6 +2,11 @@
 
 ## 2026-10-19
 
+- **Two tests no longer collide when suites run side by side.** The
+  viewer's XML sniffing test and the graph probe's save test wrote a fixed
+  file in the system temp directory, so two concurrent runs could delete
+  each other's file mid-test; the names are now per process. — @chteau
+
 - **File › New, File › Open…, recovered places, and no more lost work on
   close.** New (Ctrl+N) makes a Baseplate place and Open… (Ctrl+O) picks a
   place file, both behind the same unsaved-changes prompt as closing; the
@@ -2401,7 +2406,6 @@
   mouse wheel over a `ScrollingFrame` in the viewport scrolls it, as Studio's
   edit view does, without entering the undo stack; the wheel anywhere else
   still moves the camera. — @chteau
-
 
 ## 2026-09-16
 
