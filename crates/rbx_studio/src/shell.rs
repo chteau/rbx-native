@@ -1477,6 +1477,14 @@ impl Shell {
         cx.notify();
     }
 
+    /// View › Command Bar: shows or hides the strip under the docks.
+    pub(crate) fn toggle_command_bar(&mut self, cx: &mut Context<Self>) {
+        let hidden = self.layout.command_bar_hidden();
+        self.layout.set_command_bar_hidden(!hidden);
+        self.save_settings();
+        cx.notify();
+    }
+
     /// Docks one panel on one edge — from a drop, or from the dock menu's
     /// "Move to" entry.
     ///
@@ -1945,10 +1953,10 @@ impl Render for Shell {
             .child(self.ribbon_tabs(cx))
             .child(self.ribbon(cx))
             .child(self.workspace(window, cx))
-            .child(
+            .children((!self.layout.command_bar_hidden()).then(|| {
                 self.command_bar
-                    .render(self.tab_order.next(), self.output_collapsed, cx),
-            )
+                    .render(self.tab_order.next(), self.output_collapsed, cx)
+            }))
             // Painted at the window's root rather than inside the Explorer:
             // a popup nested in the tree's own scrolled, virtualised list
             // is clipped by it.

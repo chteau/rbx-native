@@ -49,6 +49,7 @@ actions!(
     [
         MenuNewPlace,
         MenuOpenPlace,
+        MenuToggleCommandBar,
         MenuSave,
         MenuSaveToFile,
         MenuClosePlace,
@@ -239,7 +240,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Properties", MenuToggleProperties),
                 MenuItem::action("Output", MenuToggleOutput),
                 MenuItem::action("Viewport", MenuToggleViewport),
-                MenuItem::action("Command Bar", MenuPlaceholder).disabled(true),
+                MenuItem::action("Command Bar", MenuToggleCommandBar),
                 MenuItem::separator(),
                 MenuItem::action("Style Editor", MenuStyleEditor),
                 // Team presence: who else is in the place, from Studio or
