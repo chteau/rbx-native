@@ -1,83 +1,125 @@
 //! The scripting entry point.
 
+mod globals;
+mod host;
+mod resume;
+#[cfg(test)]
+mod tests;
+
 use std::cell::{Ref as CellRef, RefCell};
+use std::fmt;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mlua::chunk::Compiler;
-use mlua::{Lua, Value, Variadic, VmState};
+use mlua::Lua;
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
 use crate::ctx::Ctx;
 use crate::debugger::{self, Breakpoint, Paused, Resume};
-use crate::game::LuaGame;
-use crate::instance::LuaInstance;
-use crate::lua_enum::LuaEnums;
-use crate::printed::{self, PrintPart};
-use crate::{datatypes, instance, LuaError};
+use crate::engine::{self, Engine};
+use crate::hooks::HookSlot;
+use crate::output::{LineKind, Output};
+use crate::LuaError;
 
-/// Everything a script printed, in order.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Output {
-    lines: Vec<String>,
-    printed: Vec<Vec<PrintPart>>,
+pub(crate) use globals::install_globals;
+use host::{CommandBar, CommandBarHooks};
+
+/// How long [`Runtime::run`] waits on a script's sleeping threads before
+/// abandoning them.
+const RUN_LIMIT: Duration = Duration::from_secs(30);
+
+/// What one [`Runtime::resume`] did: the lines printed during it, and where
+/// the runtime stands.
+#[derive(Debug, Clone)]
+pub struct Step {
+    pub output: Output,
+    pub state: RunState,
 }
 
-impl Output {
-    pub fn lines(&self) -> &[String] {
-        &self.lines
-    }
+#[derive(Debug, Clone)]
+pub enum RunState {
+    /// Nothing is left to run: every thread returned, or waits on a signal
+    /// that only another run could fire.
+    Finished,
+    /// A thread sleeps (`task.wait`, `task.delay`) or was deferred: resume
+    /// again once `wake_in` has passed.
+    Pending { wake_in: Duration },
+    /// A run's main chunk raised this error; every other thread was
+    /// cancelled with it.
+    Failed(LuaError),
+}
 
-    /// Each `print` call's arguments, tables kept as trees, one per line of
-    /// [`Output::lines`] — or empty for a debugger run, which hands its
-    /// lines over as they are printed and keeps only the text.
-    pub fn printed(&self) -> &[Vec<PrintPart>] {
-        &self.printed
-    }
+/// A script that failed, with everything it printed before it did (boxed
+/// to keep `Result`s small).
+#[derive(Debug, Clone)]
+pub struct RunError {
+    pub output: Box<Output>,
+    pub error: LuaError,
+}
 
-    pub fn text(&self) -> String {
-        self.lines.join("\n")
+impl fmt::Display for RunError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.error.fmt(f)
     }
 }
 
-/// A sandboxed Luau VM bound to one DOM.
+impl std::error::Error for RunError {}
+
+/// A sandboxed Luau VM bound to one DOM, run the way Studio's command bar
+/// runs code: each chunk in a thread of its own that may yield, with
+/// `task`, signals, instance events and `require` working as in Roblox.
 ///
-/// The runtime owns the DOM while scripts run: bindings are mlua userdata, which
-/// must own their state, so the tree is shared with them through
-/// `Rc<RefCell<WeakDom>>`. Nothing here is `Send` (mlua is built without its
-/// `send` feature), which keeps the borrow discipline a single-threaded one.
+/// Bindings are mlua userdata, which must own their state, so the tree is
+/// shared with them through `Rc<RefCell<WeakDom>>`. The runtime either owns
+/// it ([`Runtime::new`], [`Runtime::run`]) or is lent the host's for each
+/// step ([`Runtime::lent`], [`Runtime::resume_in`]), so the editor keeps
+/// the tree between steps; it is the same tree each time, so every `Ref`
+/// stays valid. Nothing here is `Send` (mlua is built without its `send`
+/// feature), which keeps the borrow discipline a single-threaded one.
 pub struct Runtime {
     lua: Lua,
     dom: Rc<RefCell<WeakDom>>,
-    output: Rc<RefCell<Vec<String>>>,
-    printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
-    /// How long [`Runtime::run`] lets a script go before it errors, so a
-    /// `while true do end` cannot freeze the editor for good.
+    output: Rc<RefCell<Output>>,
+    host: Rc<CommandBar>,
+    /// How long one resume lets scripts go before the running thread
+    /// errors, so a `while true do end` cannot freeze the editor for good.
     budget: Duration,
 }
 
 impl Runtime {
     pub fn new(dom: WeakDom, database: ReflectionDatabase) -> Result<Self, LuaError> {
-        let dom = Rc::new(RefCell::new(dom));
-        let output = Rc::new(RefCell::new(Vec::new()));
-        let printed = Rc::new(RefCell::new(Vec::new()));
-        let ctx = Ctx::new(
-            dom.clone(),
-            Rc::new(database),
-            output.clone(),
-            printed.clone(),
-        );
+        Self::build(Rc::new(RefCell::new(dom)), database)
+    }
+
+    /// A runtime over a DOM the host keeps: `dom` is read while the VM is
+    /// built (for `workspace`) and left with the caller, who lends it to
+    /// each [`Runtime::resume_in`].
+    pub fn lent(dom: &mut WeakDom, database: ReflectionDatabase) -> Result<Self, LuaError> {
+        let slot = Rc::new(RefCell::new(std::mem::take(dom)));
+        let built = Self::build(slot.clone(), database);
+        std::mem::swap(dom, &mut slot.borrow_mut());
+        built
+    }
+
+    fn build(dom: Rc<RefCell<WeakDom>>, database: ReflectionDatabase) -> Result<Self, LuaError> {
+        let output = Rc::new(RefCell::new(Output::default()));
+        let ctx = Ctx::new(dom.clone(), Rc::new(database), output.clone());
+        let host = Rc::new(CommandBar::new(output.clone()));
         let lua = Lua::new();
         // Luau's import optimization resolves and caches `a.b.c` chains rooted at a
         // global once per chunk, which would make `workspace.Part.Size` return a
         // stale value after a script wrote to it. Declaring the DOM-backed globals
         // mutable turns that caching off for them, exactly as Roblox does.
         lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
+        lua.set_app_data(HookSlot(Rc::new(CommandBarHooks)));
 
         install_globals(&lua, &ctx)?;
+        engine::install(&lua, Engine::new(ctx, host.clone()))?;
+        host::install_require(&lua)?;
         // Globals must be installed first: sandboxing freezes them, which is the
         // point — one command-bar script cannot reshape the next one's environment.
         lua.sandbox(true)?;
@@ -86,35 +128,58 @@ impl Runtime {
             lua,
             dom,
             output,
-            printed,
+            host,
             budget: Duration::from_secs(10),
         })
     }
 
-    /// Runs a script to completion. Scripts are synchronous: there is no
-    /// scheduler, so nothing can yield and no event can fire.
-    pub fn run(&mut self, source: &str) -> Result<Output, LuaError> {
-        self.output.borrow_mut().clear();
-        self.printed.borrow_mut().clear();
-        // Without a name mlua calls the chunk by the Rust line that loaded it,
-        // so every error read `crates/rbx_lua/src/runtime.rs:94:1: boom`.
-        let deadline = Instant::now() + self.budget;
-        self.lua.set_interrupt(move |_| {
-            if Instant::now() >= deadline {
-                Err(mlua::Error::runtime(
-                    "Script timeout: exhausted allowed execution time",
-                ))
-            } else {
-                Ok(VmState::Continue)
+    /// Replaces the clock timers and `time()` read: the time since the
+    /// runtime was made, by default.
+    pub fn set_clock(&mut self, clock: impl Fn() -> Duration + 'static) {
+        self.host.set_clock(Box::new(clock));
+    }
+
+    /// Runs a script and every thread it starts to completion, sleeping
+    /// while they wait, on the runtime's own DOM. Threads still waiting
+    /// after 30 seconds are abandoned, with a warning in the output.
+    pub fn run(&mut self, source: &str) -> Result<Output, RunError> {
+        self.run_for(source, RUN_LIMIT)
+    }
+
+    /// [`Runtime::run`], abandoning threads that would still wait after
+    /// `limit` (counted on the wall clock).
+    pub fn run_for(&mut self, source: &str, limit: Duration) -> Result<Output, RunError> {
+        let started = Instant::now();
+        self.start(source);
+        let mut output = Output::default();
+        loop {
+            let step = self.resume();
+            output.extend(step.output);
+            match step.state {
+                RunState::Finished => return Ok(output),
+                RunState::Failed(error) => {
+                    return Err(RunError {
+                        output: Box::new(output),
+                        error,
+                    })
+                }
+                RunState::Pending { wake_in } => {
+                    if started.elapsed() + wake_in > limit {
+                        let left = engine::engine(&self.lua).scheduler.borrow().pending();
+                        self.cancel();
+                        output.push_text(
+                            LineKind::Warn,
+                            format!(
+                                "{left} thread(s) still waiting after {:.0} s were abandoned",
+                                limit.as_secs_f64()
+                            ),
+                        );
+                        return Ok(output);
+                    }
+                    std::thread::sleep(wake_in);
+                }
             }
-        });
-        let ran = self.lua.load(source).set_name("=Command bar").exec();
-        self.lua.remove_interrupt();
-        ran?;
-        Ok(Output {
-            lines: std::mem::take(&mut self.output.borrow_mut()),
-            printed: std::mem::take(&mut self.printed.borrow_mut()),
-        })
+        }
     }
 
     /// Runs a script with the debugger attached: `on_pause` is called, on this
@@ -122,6 +187,7 @@ impl Runtime {
     /// request stops it, and says how to carry on. `name` is what the call
     /// stack and error messages call the chunk. Setting `stop`, from any
     /// thread, stops the script as [`Resume::Stop`] would, paused or not.
+    /// The chunk runs synchronously: it cannot yield.
     pub fn debug(
         &mut self,
         source: &str,
@@ -129,9 +195,9 @@ impl Runtime {
         breakpoints: &[Breakpoint],
         stop: Arc<AtomicBool>,
         on_pause: impl FnMut(&Paused) -> Resume + 'static,
-    ) -> Result<Output, LuaError> {
-        self.output.borrow_mut().clear();
-        debugger::run(
+    ) -> Result<Output, RunError> {
+        *self.output.borrow_mut() = Output::default();
+        let ran = debugger::run(
             &self.lua,
             source,
             name,
@@ -139,12 +205,15 @@ impl Runtime {
             self.output.clone(),
             stop,
             on_pause,
-        )?;
-        self.printed.borrow_mut().clear();
-        Ok(Output {
-            lines: std::mem::take(&mut self.output.borrow_mut()),
-            printed: Vec::new(),
-        })
+        );
+        let output = std::mem::take(&mut *self.output.borrow_mut());
+        match ran {
+            Ok(()) => Ok(output),
+            Err(error) => Err(RunError {
+                output: Box::new(output),
+                error,
+            }),
+        }
     }
 
     /// Borrows the DOM the scripts have been mutating.
@@ -160,171 +229,16 @@ impl Runtime {
             lua,
             dom,
             output,
-            printed,
+            host,
             budget: _,
         } = self;
         // Closing the VM drops every userdata still holding a handle on the DOM,
         // which is what makes the unwrap below the normal path.
         drop(lua);
         drop(output);
-        drop(printed);
+        drop(host);
         Rc::try_unwrap(dom)
             .map(RefCell::into_inner)
             .unwrap_or_else(|shared| shared.borrow().clone())
-    }
-}
-
-pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
-    let globals = lua.globals();
-
-    let output_ctx = ctx.clone();
-    globals.set(
-        "print",
-        lua.create_function(move |_, args: Variadic<Value>| {
-            let mut parts = Vec::with_capacity(args.len());
-            for value in args.iter() {
-                parts.push(printed::part(value)?);
-            }
-            output_ctx.print(parts);
-            Ok(())
-        })?,
-    )?;
-
-    globals.set(
-        "version",
-        lua.create_function(|_, ()| Ok(env!("CARGO_PKG_VERSION")))?,
-    )?;
-
-    datatypes::register(lua)?;
-    globals.set("Instance", instance::constructors(lua, ctx.clone())?)?;
-    globals.set("Enum", LuaEnums::new(ctx.clone()))?;
-    globals.set("game", LuaGame::new(ctx.clone()))?;
-
-    let workspace = {
-        let dom = ctx.dom();
-        dom.root_refs()
-            .iter()
-            .copied()
-            .find(|referent| dom.get(*referent).is_some_and(|i| i.class() == "Workspace"))
-    };
-    if let Some(referent) = workspace {
-        globals.set("workspace", LuaInstance::new(referent, ctx.clone()))?;
-        globals.set("Workspace", LuaInstance::new(referent, ctx.clone()))?;
-    }
-
-    install_graphemes(lua)?;
-    install_error_strings(lua)
-}
-
-/// `utf8.graphemes(s, i?, j?)`: iterates the grapheme clusters of `s`
-/// (bytes `i` to `j`), giving each one's first and last byte position.
-fn install_graphemes(lua: &Lua) -> Result<(), LuaError> {
-    use unicode_segmentation::UnicodeSegmentation;
-    let ranges = lua.create_function(
-        |lua, (text, from, to): (mlua::LuaString, Option<i64>, Option<i64>)| {
-            let bytes = text.as_bytes();
-            let text = String::from_utf8_lossy(&bytes).into_owned();
-            let len = text.len() as i64;
-            let from = from.unwrap_or(1).max(1);
-            let to = to.unwrap_or(len).min(len);
-            let out = lua.create_table()?;
-            for (start, cluster) in text.grapheme_indices(true) {
-                let first = start as i64 + 1;
-                let last = start as i64 + cluster.len() as i64;
-                if first >= from && last <= to {
-                    out.push(lua.create_sequence_from([first, last])?)?;
-                }
-            }
-            Ok(out)
-        },
-    )?;
-    let graphemes: mlua::Function = lua
-        .load(
-            r#"
-            local ranges = ...
-            return function(s, i, j)
-                local list, k = ranges(s, i, j), 0
-                return function()
-                    k += 1
-                    local r = list[k]
-                    if r then return r[1], r[2] end
-                end
-            end
-            "#,
-        )
-        .set_name("=utf8")
-        .call(ranges)?;
-    lua.globals()
-        .get::<mlua::Table>("utf8")?
-        .set("graphemes", graphemes)
-}
-
-/// What a script sees of an error a binding raised: Roblox hands scripts
-/// the bare message ("Part is not a valid member of Workspace"), never an
-/// error object, and code such as Roact formats it with `%s`.
-fn error_text(error: &LuaError) -> String {
-    match error {
-        LuaError::CallbackError { cause, .. } => error_text(cause),
-        LuaError::RuntimeError(message) => message.clone(),
-        LuaError::SyntaxError { message, .. } => message.clone(),
-        LuaError::WithContext { cause, .. } => error_text(cause),
-        other => other.to_string(),
-    }
-}
-
-/// Wraps `pcall`, `xpcall` and `coroutine.resume` so a caught binding error
-/// comes back as its message string (see `error_text`); errors scripts
-/// raise themselves (strings, tables) pass through untouched.
-fn install_error_strings(lua: &Lua) -> Result<(), LuaError> {
-    let text = lua.create_function(|lua, value: Value| match value {
-        Value::Error(error) => Ok(Value::String(lua.create_string(error_text(&error))?)),
-        other => Ok(other),
-    })?;
-    lua.load(
-        r#"
-        local text, rawpcall, rawxpcall, resume = ...
-        local function caught(ok, ...)
-            if ok then
-                return true, ...
-            end
-            return false, text((...))
-        end
-        pcall = function(f, ...)
-            return caught(rawpcall(f, ...))
-        end
-        xpcall = function(f, handler, ...)
-            return rawxpcall(f, function(e)
-                return handler(text(e))
-            end, ...)
-        end
-        coroutine.resume = function(co, ...)
-            return caught(resume(co, ...))
-        end
-        "#,
-    )
-    .set_name("=errors")
-    .call::<()>((
-        text,
-        lua.globals().get::<Value>("pcall")?,
-        lua.globals().get::<Value>("xpcall")?,
-        lua.globals()
-            .get::<mlua::Table>("coroutine")?
-            .get::<Value>("resume")?,
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_script_that_never_ends_times_out() {
-        let mut runtime = Runtime::new(WeakDom::new(), ReflectionDatabase::embedded()).unwrap();
-        runtime.budget = Duration::from_millis(100);
-
-        let error = runtime.run("while true do end").expect_err("it must stop");
-
-        assert!(error.to_string().contains("Script timeout"), "{error}");
-        assert!(runtime.run("print(1)").is_ok(), "the runtime stays usable");
     }
 }

@@ -11,7 +11,8 @@ use rbx_dom::{Ref, Variant};
 use super::api::OutputKind;
 use super::env::{env, Env};
 use super::events::PluginHooks;
-use super::{debugger_api, native, plugin_object, scheduler, services};
+use super::{debugger_api, native, plugin_object, services};
+use crate::engine::scheduler;
 use crate::hooks::HookSlot;
 use crate::instance::tree::full_name;
 use crate::instance::LuaInstance;
@@ -23,7 +24,7 @@ const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
 /// (`runtime::install_globals` — `print` there is replaced so output goes
 /// to `Shared::output` as the plugin's `Print` lines), plus `warn`
 /// (`Warn`), `require`, `typeof`-compatible datatypes,
-/// `scheduler::install`, `plugin_object::install`,
+/// `engine::install`, `plugin_object::install`,
 /// `services::install_settings`, `debugger_api::install`,
 /// `native::install`; `Env` as app data and `crate::hooks::HookSlot(
 /// PluginHooks)`; compiled with `game`/`workspace`/`Workspace`/`script`
@@ -45,11 +46,12 @@ pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
     let globals = lua.globals();
     globals.set("print", output_function(&lua, OutputKind::Print)?)?;
     globals.set("warn", output_function(&lua, OutputKind::Warn)?)?;
+    super::require::install(&lua)?;
     globals.set("require", super::require::require_for(&lua, Value::Nil)?)?;
     // Deprecated spellings Roblox still answers to.
     globals.set("Game", globals.get::<Value>("game")?)?;
 
-    scheduler::install(&lua)?;
+    crate::engine::install(&lua, env.engine.clone())?;
     plugin_object::install(&lua)?;
     services::install_settings(&lua)?;
     debugger_api::install(&lua)?;

@@ -18,10 +18,10 @@
 //! the saved file or the undo history, while `Adornee`/`Value` references
 //! across the two still resolve.
 
-mod api;
-mod arg;
+pub(crate) mod api;
+pub(crate) mod arg;
 mod debugger_api;
-mod env;
+pub(crate) mod env;
 mod events;
 mod guard;
 mod host;
@@ -32,15 +32,13 @@ mod lot;
 mod native;
 mod plugin_object;
 mod require;
-mod scheduler;
 mod services;
-mod signal;
 mod undo;
 mod vm;
 mod world;
 
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 
 pub use api::*;
 pub use host::PluginHost;

@@ -1,10 +1,8 @@
 //! `require` for plugin scripts, and the per-script globals Roblox gives
 //! every script (`_G`, `shared`).
 //!
-//! Each script gets its own `require`, built in Lua around a few Rust
-//! pieces, so a module body runs in a Lua frame: it may yield (`task.wait`,
-//! an HTTP call) as in Roblox, which a module called from Rust could not.
-//! A string argument is resolved against the requiring script the way
+//! Each script gets its own `require` (see `engine::require`). A string
+//! argument is resolved against the requiring script the way
 //! Luau's require-by-string does in Roblox: `./Name` is a sibling, `../`
 //! climbs one more level, `@self/Name` is a child of the script itself and
 //! `@game/Service/…` starts at a service.
@@ -14,18 +12,14 @@ use rbx_dom::Ref;
 
 use super::env::env;
 use super::vm;
+use crate::engine::require;
 use crate::instance::LuaInstance;
 
-const FACTORY: &str = "rbxn.require_factory";
 const GLOBALS: &str = "rbxn.script_globals";
 
 /// What `require` got: a `ModuleScript`, or a path from `script`.
 fn resolve(lua: &Lua, script: Option<Ref>, target: &Value) -> Result<Ref> {
     match target {
-        Value::UserData(data) => data
-            .borrow::<LuaInstance>()
-            .map(|instance| instance.referent())
-            .map_err(|_| mlua::Error::runtime("require expects a ModuleScript")),
         Value::Integer(_) | Value::Number(_) => {
             Err(mlua::Error::runtime("require by asset id is not supported"))
         }
@@ -34,9 +28,11 @@ fn resolve(lua: &Lua, script: Option<Ref>, target: &Value) -> Result<Ref> {
             let script = script.ok_or_else(|| {
                 mlua::Error::runtime(format!("cannot require '{path}' outside a script"))
             })?;
-            resolve_path(lua, script, &path)
+            let module = resolve_path(lua, script, &path)?;
+            let instance = LuaInstance::new(module, env(lua).ctx.clone()).into_lua(lua)?;
+            require::module_ref(lua, &instance)
         }
-        _ => Err(mlua::Error::runtime("require expects a ModuleScript")),
+        other => require::module_ref(lua, other),
     }
 }
 
@@ -72,10 +68,10 @@ fn resolve_path(lua: &Lua, script: Ref, path: &str) -> Result<Ref> {
     Ok(at)
 }
 
-fn factory(lua: &Lua) -> Result<Function> {
-    if let Some(found) = lua.named_registry_value::<Option<Function>>(FACTORY)? {
-        return Ok(found);
-    }
+/// Installs the plugin VM's `require` (see `engine::require`): paths are
+/// resolved against the requiring script, a module compiles as a script
+/// does (`vm::compile`).
+pub(crate) fn install(lua: &Lua) -> Result<()> {
     let resolve = lua.create_function(|lua, (script, target): (Value, Value)| {
         let script = match &script {
             Value::UserData(data) => data.borrow::<LuaInstance>().ok().map(|i| i.referent()),
@@ -84,62 +80,16 @@ fn factory(lua: &Lua) -> Result<Function> {
         let module = resolve(lua, script, &target)?;
         LuaInstance::new(module, env(lua).ctx.clone()).into_lua(lua)
     })?;
-    let cached = lua.create_function(|lua, module: Value| {
-        let module = module_ref(&module)?;
-        Ok(match env(lua).modules.borrow().get(&module) {
-            Some(value) => (true, value.clone()),
-            None => (false, Value::Nil),
-        })
-    })?;
     let compile = lua.create_function(|lua, module: Value| {
-        let module = module_ref(&module)?;
-        vm::compile(lua, module)?
-            .ok_or_else(|| mlua::Error::runtime("require expects a ModuleScript"))
+        let module = require::module_ref(lua, &module)?;
+        vm::compile(lua, module)?.ok_or_else(|| mlua::Error::runtime(require::INVALID))
     })?;
-    let store = lua.create_function(|lua, (module, value): (Value, Value)| {
-        env(lua)
-            .modules
-            .borrow_mut()
-            .insert(module_ref(&module)?, value);
-        Ok(())
-    })?;
-    let made: Function = lua
-        .load(
-            r#"
-            local resolve, cached, compile, store = ...
-            return function(script)
-                return function(target)
-                    local module = resolve(script, target)
-                    local hit, value = cached(module)
-                    if hit then
-                        return value
-                    end
-                    local results = table.pack(compile(module)())
-                    if results.n ~= 1 then
-                        error("Module code did not return exactly one value", 2)
-                    end
-                    store(module, results[1])
-                    return results[1]
-                end
-            end
-            "#,
-        )
-        .set_name("=require")
-        .call((resolve, cached, compile, store))?;
-    lua.set_named_registry_value(FACTORY, made.clone())?;
-    Ok(made)
-}
-
-fn module_ref(value: &Value) -> Result<Ref> {
-    match value {
-        Value::UserData(data) => Ok(data.borrow::<LuaInstance>()?.referent()),
-        _ => Err(mlua::Error::runtime("require expects a ModuleScript")),
-    }
+    require::install(lua, resolve, compile)
 }
 
 /// A `require` bound to `script` (`nil` for one with no script).
 pub(crate) fn require_for(lua: &Lua, script: Value) -> Result<Function> {
-    factory(lua)?.call(script)
+    require::require_for(lua, script)
 }
 
 /// A `getfenv` for one script: level 0 (the thread's environment) is the

@@ -181,8 +181,7 @@ mod tests {
         let ctx = Ctx::new(
             Rc::new(RefCell::new(dom)),
             Rc::new(ReflectionDatabase::embedded()),
-            Rc::new(RefCell::new(Vec::new())),
-            Rc::new(RefCell::new(Vec::new())),
+            Rc::default(),
         );
         (Lua::new(), ctx, workspace)
     }

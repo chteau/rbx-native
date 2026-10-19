@@ -15,8 +15,8 @@ use rbx_reflection::ReflectionDatabase;
 use super::api::{Context, Input, Outcome, PluginId, PluginInfo, PluginSource, Ui, UiId};
 use super::env::{Env, Shared};
 use super::lot::Lot;
-use super::scheduler;
-use super::signal::{Owner, SignalKey};
+use crate::engine::scheduler;
+use crate::engine::signal::{Owner, SignalKey};
 
 pub(crate) struct Loaded {
     pub(crate) info: PluginInfo,
@@ -106,11 +106,11 @@ impl PluginHost {
             return true;
         }
         self.envs().any(|env| {
-            let queue = env.scheduler.borrow();
+            let queue = env.engine.scheduler.borrow();
             // A timer not yet due still counts: the editor only keeps ticking
             // while this says so, so a sleeping `task.wait` would never wake.
             !queue.timers.is_empty() || scheduler::wants_tick(&queue, now) || {
-                let signals = env.signals.borrow();
+                let signals = env.engine.signals.borrow();
                 FRAME_EVENTS
                     .iter()
                     .any(|event| signals.has(&SignalKey::new(Owner::Service("RunService"), *event)))
@@ -134,7 +134,7 @@ impl PluginHost {
             }
         }
         self.envs().any(|env| {
-            let signals = env.signals.borrow();
+            let signals = env.engine.signals.borrow();
             // Descendant signals fire on ancestors this method cannot see
             // (the place is not in the slot between dispatches).
             let any_descendant = signals.connections.iter().any(|(key, list)| {

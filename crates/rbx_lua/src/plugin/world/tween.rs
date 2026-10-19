@@ -12,8 +12,8 @@ use mlua::{
 };
 use rbx_dom::Ref;
 
+use crate::engine::signal::{fire_values, LuaSignal, Owner, SignalKey};
 use crate::plugin::env::env;
-use crate::plugin::signal::{fire_values, LuaSignal, Owner, SignalKey};
 
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 

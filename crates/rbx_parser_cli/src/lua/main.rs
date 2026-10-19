@@ -6,7 +6,7 @@ mod dom_io;
 
 use std::process::ExitCode;
 
-use rbx_lua::Runtime;
+use rbx_lua::{LineKind, Runtime};
 
 fn main() -> ExitCode {
     let mut argv = std::env::args();
@@ -38,11 +38,22 @@ fn run(args: &args::Args) -> Result<(), String> {
     let database = rbx_parser_cli::default_reflection_database();
     let mut runtime = Runtime::new(dom, database).map_err(|err| format!("error: {err}"))?;
 
-    let output = runtime
-        .run(&script)
-        .map_err(|err| format!("error: {err}"))?;
-    for line in output.lines() {
-        println!("{line}");
+    // `run` drives the scheduler until no thread is left waiting (or
+    // abandons them, warning, after its limit), so the save below sees
+    // everything the script's threads did.
+    let (output, failure) = match runtime.run(&script) {
+        Ok(output) => (output, None),
+        Err(err) => (*err.output, Some(err.error)),
+    };
+    // Lines printed before an error still reach the terminal.
+    for (line, kind) in output.lines().iter().zip(output.kinds()) {
+        match kind {
+            LineKind::Print => println!("{line}"),
+            LineKind::Warn | LineKind::Error => eprintln!("{line}"),
+        }
+    }
+    if let Some(error) = failure {
+        return Err(format!("error: {error}"));
     }
 
     let mut dom = runtime.into_dom();

@@ -6,7 +6,8 @@ use std::rc::Rc;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use crate::printed::{self, PrintPart};
+use crate::output::{LineKind, Output};
+use crate::printed::PrintPart;
 
 /// Handle to the DOM, the reflection data and the captured output.
 ///
@@ -18,10 +19,7 @@ use crate::printed::{self, PrintPart};
 pub(crate) struct Ctx {
     dom: Rc<RefCell<WeakDom>>,
     database: Rc<ReflectionDatabase>,
-    output: Rc<RefCell<Vec<String>>>,
-    /// Each `print` call's arguments, structured — see `printed`. Parallel to
-    /// `output` for a plain run; the debugger drains `output` alone.
-    printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
+    output: Rc<RefCell<Output>>,
     guard: Option<WriteGuard>,
     /// Told about every write before it is checked; see `WriteHook`.
     on_write: Option<WriteHook>,
@@ -63,14 +61,12 @@ impl Ctx {
     pub(crate) fn new(
         dom: Rc<RefCell<WeakDom>>,
         database: Rc<ReflectionDatabase>,
-        output: Rc<RefCell<Vec<String>>>,
-        printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
+        output: Rc<RefCell<Output>>,
     ) -> Self {
         Ctx {
             dom,
             database,
             output,
-            printed,
             guard: None,
             on_write: None,
             tombstones: Rc::default(),
@@ -106,8 +102,7 @@ impl Ctx {
         &self.database
     }
 
-    pub(crate) fn print(&self, parts: Vec<PrintPart>) {
-        self.output.borrow_mut().push(printed::text(&parts));
-        self.printed.borrow_mut().push(parts);
+    pub(crate) fn print(&self, kind: LineKind, parts: Vec<PrintPart>) {
+        self.output.borrow_mut().push(kind, parts);
     }
 }

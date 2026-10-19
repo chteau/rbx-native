@@ -50,11 +50,11 @@ pub(super) fn index(
         // Signals an instance has; a handle never fires them.
         "Destroying" | "Changed" | "AncestryChanged" | "ChildAdded" | "ChildRemoved"
         | "AttributeChanged" => {
-            let key = crate::plugin::signal::SignalKey::new(
-                crate::plugin::signal::Owner::Plugin,
+            let key = crate::engine::signal::SignalKey::new(
+                crate::engine::signal::Owner::Plugin,
                 format!("{handle}.{key}"),
             );
-            Value::UserData(lua.create_userdata(crate::plugin::signal::LuaSignal(key))?)
+            Value::UserData(lua.create_userdata(crate::engine::signal::LuaSignal(key))?)
         }
         // No children: a handle is a leaf as far as scripts can tell.
         "FindFirstChild" | "FindFirstChildOfClass" | "FindFirstChildWhichIsA" | "WaitForChild" => {

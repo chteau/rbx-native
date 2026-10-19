@@ -17,8 +17,8 @@ use super::api::{Answer, Arg, Button, PromptKind, Request, Toolbar, UiId};
 use super::arg;
 use super::debugger_api;
 use super::env::env;
-use super::scheduler;
-use super::signal::{LuaSignal, Owner, SignalKey};
+use crate::engine::scheduler;
+use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
 
 /// The `plugin` object. Members:
@@ -590,7 +590,11 @@ impl UserData for LuaPlugin {
                 mine
             };
             if was {
-                super::signal::fire(lua, &SignalKey::new(Owner::Plugin, "Deactivation"), &[])?;
+                crate::engine::signal::fire(
+                    lua,
+                    &SignalKey::new(Owner::Plugin, "Deactivation"),
+                    &[],
+                )?;
             }
             Ok(())
         });
