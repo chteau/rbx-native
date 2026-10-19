@@ -2652,6 +2652,33 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
   screenshots of adding a binding, picking its key and undoing it
   (`docs/screenshots/input-actions/`). Studio has no such editor yet, so
   the layout is this project's own.
+- [x] **Native DataStore browser** (File › Data Stores…, Home's ribbon,
+  the palette): browse, search and edit a universe's DataStores from the
+  editor, without a plugin or the Creator Hub page, through Open Cloud's
+  v2 data store, ordered data store and memory store APIs
+  (`rbx_cloud::datastores`). Data stores with search and soft-deleted
+  ones on request; scopes (one, or all at once); keys by prefix, a page at
+  a time; the entry as a foldable tree or raw JSON with its size, version,
+  etag, times, UserIds and attributes; create, edit (JSON and size checked
+  before sending), increment and delete; the version history with any
+  version viewable and rollback (its value, UserIds and attributes written
+  as a new version). `OrderedDataStore` entries sorted by value either way
+  with a range filter, edited, incremented and deleted. MemoryStore sorted
+  maps (items with sort key and expiry, edited and deleted) and queues
+  (read with the invisibility window explained, add, discard) in the same
+  window; ordered stores and memory structures are opened by name, since
+  Open Cloud lists neither. Every write is confirmed in a dialog naming the
+  key and the experience; anything but the Play sandbox wears a LIVE badge
+  and needs "I know this is live player data" ticked. Edits carry the
+  entry's etag, and a conflict shows Roblox's newer copy beside the edit
+  with Keep theirs / Overwrite. A missing permission names the scope to add
+  and opens the key check, which now lists the version-history and memory
+  store scopes; a throttled request says so while it retries. Verified by
+  unit tests of every call's request and parsing, a loopback mock Open
+  Cloud with a fake universe (`RBX_STUDIO_DATASTORE_MOCK`) driven by the
+  real client, an ignored live round trip (`tests/datastores_live.rs`), and
+  the window driven against a real sandbox universe; screenshots in
+  `docs/screenshots/datastore-browser/`.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -2979,16 +3006,6 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
   does, not a shortcut that could write something a saved place file
   can't actually represent.
 
-- [ ] 📋 **Native DataStore browser**: browse, search and edit a
-  universe's DataStores from the editor, without a plugin or the Creator
-  Hub page. Open Cloud's DataStores API covers it: list stores and scopes,
-  list, read, write and delete entries, version history with rollback to an
-  older version, and `OrderedDataStore` entries sorted by value.
-  MemoryStore sorted maps and queues could follow in the same panel. It
-  needs the API key's DataStore scopes, so the key wizard's scope check has
-  to grow. Destructive edits (write, delete, rollback) need a confirm step,
-  plus a clear production/sandbox badge so nobody edits live player data by
-  accident.
 - [ ] 📋 **Update planning: countdown icons on autopilot** (concept by
   [@MiniDev](https://vm.tiktok.com/ZN8AFbRwp/), see Acknowledgements).
   Per experience, a set of reusable **timers** (say H-12, H-6, H-3, H-1),

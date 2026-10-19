@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-20
+
+- **A Data Stores window.** File › Data Stores… (also on Home's ribbon
+  and in the palette) browses and edits the experience's data stores
+  through Open Cloud: stores, scopes and keys, each entry with its
+  metadata and version history, create, edit, increment, delete and
+  rollback; ordered data stores sorted by value; and the memory store's
+  sorted maps and queues. Every write is confirmed by name, live
+  experiences need an explicit tick, a stale edit shows the newer copy
+  instead of overwriting it, and a missing key permission names the scope
+  to add. — @chteau
+
 ## 2026-10-19
 
 - **Two tests no longer collide when suites run side by side.** The
