@@ -17,7 +17,7 @@
 
 use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 /// The Interval row's stops, in minutes. Studio's own range runs from a
 /// minute or two up to ten.
@@ -138,6 +138,67 @@ pub(crate) fn kept_path(copy: &Path, stamp: &str) -> PathBuf {
     copy.with_file_name(name)
 }
 
+/// A recovery copy no running editor owns: what Home offers to reopen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Leftover {
+    pub(crate) path: PathBuf,
+    /// The original place's name (the copy's stem before " (recovery ").
+    pub(crate) name: String,
+    pub(crate) modified: SystemTime,
+}
+
+/// The copies in `folder` that nothing is writing, newest first: those
+/// moved aside under a timestamped name, and live-named ones whose lock is
+/// free (or was never made). Lock files, save temp files and copies a
+/// running editor holds are skipped.
+pub(crate) fn leftovers(folder: &Path) -> Vec<Leftover> {
+    let mut found: Vec<Leftover> = std::fs::read_dir(folder)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let file = entry.file_name().to_string_lossy().into_owned();
+            let (name, _) = file.split_once(" (recovery ")?;
+            if file.ends_with(".lock") || is_temp(&file) || is_held(&path) {
+                return None;
+            }
+            let meta = entry.metadata().ok().filter(|meta| meta.is_file())?;
+            Some(Leftover {
+                name: name.to_string(),
+                modified: meta.modified().ok()?,
+                path,
+            })
+        })
+        .collect();
+    found.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    found
+}
+
+/// Whether a running editor holds `copy`'s lock. The lock is taken only to
+/// find out and dropped at once.
+fn is_held(copy: &Path) -> bool {
+    File::options()
+        .write(true)
+        .open(lock_path(copy))
+        .is_ok_and(|lock| matches!(lock.try_lock(), Err(TryLockError::WouldBlock)))
+}
+
+/// Deletes a leftover copy, and its lock file when it is a live-named one
+/// that no editor holds. A copy an editor has since claimed is left alone.
+pub(crate) fn discard(copy: &Path) -> std::io::Result<()> {
+    if is_held(copy) {
+        return Ok(());
+    }
+    std::fs::remove_file(copy)?;
+    let _ = std::fs::remove_file(lock_path(copy));
+    Ok(())
+}
+
 /// A temp file `save::save` left behind (`<name>.tmp-<pid>`), when the
 /// process writing it died before the rename.
 pub(crate) fn is_temp(name: &str) -> bool {
@@ -248,6 +309,46 @@ mod tests {
             .map(|(copy, _)| copy)
             .collect();
         assert_eq!(found, [second]);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn leftovers_list_unheld_copies_newest_first_and_discard_removes_them() {
+        let folder =
+            std::env::temp_dir().join(format!("rbx-recovery-leftovers-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        let obby = Path::new("/games/Obby.rbxl");
+        let (live, _held) = claim(&folder, obby).unwrap();
+        std::fs::write(&live, b"running").unwrap();
+        let (crashed, crashed_lock) = claim(&folder, obby).unwrap();
+        std::fs::write(&crashed, b"crashed").unwrap();
+        drop(crashed_lock);
+        let kept = kept_path(
+            &copy_path(&folder, Path::new("/g/Tower.rbxlx"), 1),
+            "2026-10-02 14-03-11",
+        );
+        std::fs::write(&kept, b"kept").unwrap();
+        std::fs::write(folder.join("Obby (recovery 0a1b2c3d).rbxl.tmp-42"), b"t").unwrap();
+        std::fs::write(folder.join("notes.txt"), b"n").unwrap();
+        let time = SystemTime::now() + Duration::from_secs(60);
+        File::options()
+            .write(true)
+            .open(&kept)
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
+
+        let found = leftovers(&folder);
+        let paths: Vec<_> = found.iter().map(|left| left.path.clone()).collect();
+        assert_eq!(paths, [kept.clone(), crashed.clone()]);
+        assert_eq!(found[0].name, "Tower");
+        assert_eq!(found[1].name, "Obby");
+
+        discard(&crashed).unwrap();
+        assert!(!crashed.exists() && !lock_path(&crashed).exists());
+        discard(&live).unwrap();
+        assert!(live.exists(), "a held copy survives");
+        assert_eq!(leftovers(&folder).len(), 1);
         let _ = std::fs::remove_dir_all(&folder);
     }
 

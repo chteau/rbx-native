@@ -66,6 +66,8 @@ macro_rules! commands {
 }
 
 commands! {
+    NewPlace, "new_place", "New", File, ["secondary-n"];
+    OpenPlace, "open_place", "Open…", File, ["secondary-o"];
     Save, "save", "Save to File", File, ["secondary-s"];
     StudioSettings, "studio_settings", "Studio Settings", File, ["alt-s"];
     Undo, "undo", "Undo", Edit, ["secondary-z"];
@@ -529,12 +531,15 @@ pub(crate) fn replace(store: Store, cx: &mut App) {
 pub(crate) fn command_for_action(action: &dyn Action) -> Option<Command> {
     use crate::menu_bar::{
         MenuCommandPalette, MenuCopyInstance, MenuCutInstance, MenuDeleteInstance,
-        MenuDuplicateInstance, MenuGroup, MenuInsertFolder, MenuInsertPart, MenuPasteInstance,
-        MenuPasteIntoInstance, MenuQuickOpen, MenuRedo, MenuSave, MenuStudioSettings, MenuUndo,
-        MenuUngroup,
+        MenuDuplicateInstance, MenuGroup, MenuInsertFolder, MenuInsertObject, MenuInsertPart,
+        MenuNewPlace, MenuOpenPlace, MenuPasteInstance, MenuPasteIntoInstance, MenuQuickOpen,
+        MenuRedo, MenuSave, MenuStudioSettings, MenuUndo, MenuUngroup,
     };
     let id = action.as_any().type_id();
-    let table: [(TypeId, Command); 16] = [
+    let table: [(TypeId, Command); 19] = [
+        (TypeId::of::<MenuNewPlace>(), Command::NewPlace),
+        (TypeId::of::<MenuOpenPlace>(), Command::OpenPlace),
+        (TypeId::of::<MenuInsertObject>(), Command::InsertObject),
         (TypeId::of::<MenuSave>(), Command::Save),
         (TypeId::of::<MenuUndo>(), Command::Undo),
         (TypeId::of::<MenuRedo>(), Command::Redo),

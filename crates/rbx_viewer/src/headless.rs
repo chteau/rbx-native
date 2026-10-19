@@ -533,6 +533,13 @@ impl Headless {
             .with_renderer(|renderer, _, _| renderer.set_gui_safe_insets(insets));
     }
 
+    /// Shows or hides the `ScreenGui` overlay (Studio's View > UI); the
+    /// `BillboardGui`/`SurfaceGui` canvases are scene content and stay.
+    pub fn set_screen_gui_shown(&mut self, shown: bool) {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.set_screen_gui_shown(shown));
+    }
+
     pub fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.view.set_gizmo(gizmo);
         self.offscreen.set_gizmo(gizmo);

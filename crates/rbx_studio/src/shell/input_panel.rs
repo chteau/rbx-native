@@ -395,7 +395,7 @@ impl Shell {
         self.apply_input_edit(
             move |dom, _| {
                 let name = explorer::insert::incremented_name(dom, Some(action), base);
-                Ok(Some(dom.new_instance(BINDING_CLASS, &name, Some(action))))
+                Ok(Some(input_actions::new_binding(dom, &name, action)))
             },
             cx,
         );

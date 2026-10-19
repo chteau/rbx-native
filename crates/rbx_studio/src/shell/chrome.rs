@@ -168,13 +168,17 @@ impl Shell {
                     false,
                     |window| window.zoom_window(),
                 ))
-                .child(window_button(
-                    &self.tab_order.claim(cx),
+                .child(titlebar_button(
+                    Some(&self.tab_order.claim(cx)),
                     "window-close",
                     IconName::X,
                     "Close",
                     true,
-                    |window| window.remove_window(),
+                    cx.listener(|shell, _, window, cx| {
+                        if shell.request_quit(cx) {
+                            window.remove_window();
+                        }
+                    }),
                 )),
         )
     }
@@ -227,25 +231,32 @@ impl Shell {
                         )
                     }),
             )
-            // The frame's "+" opens a new document, which this editor has no
-            // notion of — its three documents are fixed. Left visibly
-            // disabled rather than removed: the strip's shape is part of the
-            // design, and a button that says "not yet" beats one that lies.
-            .child(
-                h_flex()
-                    .id("document-tab-add")
-                    .flex_none()
-                    .w(tokens::tab_add_width())
-                    .h_full()
-                    .items_center()
-                    .justify_center()
-                    .cursor_not_allowed()
-                    .text_color(tokens::text_disabled())
-                    .tooltip(|window, cx| {
-                        super::tooltip::text("New document — not implemented", window, cx)
-                    })
-                    .child(Icon::new(IconName::Plus).size(px(10.))),
-            )
+            // The frame's "+": this editor's three documents are fixed, so
+            // what it adds is another place — a new Baseplate or a file,
+            // the same as File › New and Open….
+            .child(super::menu::dropdown(
+                self,
+                super::menu::MenuId::DocumentAdd,
+                Trigger::new(
+                    h_flex()
+                        .id("document-tab-add")
+                        .flex_none()
+                        .w(tokens::tab_add_width())
+                        .h_full()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer()
+                        .text_color(tokens::text3())
+                        .hover(|this| this.text_color(tokens::text()))
+                        .child(Icon::new(IconName::Plus).size(px(10.))),
+                )
+                .tooltip("New place or open a file"),
+                vec![
+                    super::menu::item("New Place").on_click(|shell, cx| shell.request_new(cx)),
+                    super::menu::item("Open…").on_click(|shell, cx| shell.open_place_dialog(cx)),
+                ],
+                cx,
+            ))
     }
 
     /// **Row B** — the ribbon's category tabs, in the black strip above it.

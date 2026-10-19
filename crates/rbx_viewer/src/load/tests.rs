@@ -216,8 +216,11 @@ fn a_landing_for_an_asset_the_place_never_named_is_ignored() {
 fn read_place_sniffs_xml_and_builds_a_part() {
     let xml = r#"<roblox version="4"><Item class="Workspace" referent="RBX0"><Properties><string name="Name">Workspace</string></Properties><Item class="Part" referent="RBX1"><Properties><string name="Name">P</string><Vector3 name="size"><X>4</X><Y>1</Y><Z>2</Z></Vector3><CoordinateFrame name="CFrame"><X>0</X><Y>0</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame></Properties></Item></Item></roblox>"#;
 
-    let dir = std::env::temp_dir();
-    let path = dir.join("rbx_viewer_read_place_test.rbxlx");
+    // Per-process name: concurrent test runs (parallel worktrees) share /tmp.
+    let path = std::env::temp_dir().join(format!(
+        "rbx_viewer_read_place_test_{}.rbxlx",
+        std::process::id()
+    ));
     std::fs::write(&path, xml).expect("write temp fixture");
 
     let dom = read_place(&path).expect("xml place should parse");

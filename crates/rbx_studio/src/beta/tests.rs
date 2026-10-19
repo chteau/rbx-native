@@ -126,3 +126,10 @@ fn save_then_load_round_trips() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn reset_switches_listed_features_off_and_keeps_unlisted_ids() {
+    let mut stored = choices(&["alpha", "beta", "gamma"]);
+    stored.reset(&[ALPHA, BETA]);
+    assert_eq!(stored, choices(&["gamma"]));
+}

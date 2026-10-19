@@ -2,6 +2,45 @@
 
 ## 2026-10-19
 
+- **Two tests no longer collide when suites run side by side.** The
+  viewer's XML sniffing test and the graph probe's save test wrote a fixed
+  file in the system temp directory, so two concurrent runs could delete
+  each other's file mid-test; the names are now per process. — @chteau
+
+- **rbxmerge no longer pairs unrelated new instances.** Two parts added
+  independently on each side of a merge both carried the all-zero
+  `UniqueId` our binary writer gives script- and editor-created instances,
+  so the merge treated them as one and reported a spurious conflict. An
+  all-zero id now counts as no identity. — @chteau
+
+- **Input Actions bindings get Studio's default Deadzone, and corrupt
+  terrain is rejected cleanly.** A binding added from the dock now starts
+  at `0.1, 1` like Studio's, instead of an empty field that saved nothing;
+  a terrain blob with an out-of-range chunk key is refused as malformed
+  instead of panicking in debug builds. — @chteau
+
+- **File › New, File › Open…, recovered places, and no more lost work on
+  close.** New (Ctrl+N) makes a Baseplate place and Open… (Ctrl+O) picks a
+  place file, both behind the same unsaved-changes prompt as closing; the
+  document tab's + offers both. View › Command Bar now toggles the bar and
+  remembers it, Model › Insert Object… does what Ctrl+I does, and Home
+  lists autosaved copies no running editor holds, with Open and Discard.
+  Fixed on the way: the titlebar X and the window manager's close dropped
+  unsaved work without asking, one Ctrl+Z could undo two Properties edits
+  after a selection change mid-drag, Save As to `Place.RBXLX` wrote binary,
+  and autosave kept the old name after Save As. — @chteau
+
+- **Every ribbon tile does something or says why it can't.** Material,
+  Color, Lock and Anchor apply to the selection in one undo step (locked
+  parts are no longer picked in the viewport), Import opens the importer,
+  Show UI hides ScreenGuis in the viewport, the viewport Settings tile opens
+  its Settings page, and the Script tab's Find, Replace and Analysis tiles
+  work. Toolbox and Team Test stay disabled with the real reason — other
+  creators' assets and Team Create need Roblox's own servers. Beta Features'
+  Reset page works, and Argon's never-read Live Hydrate setting is gone.
+  Also fixed: a Properties dropdown didn't refresh when its value changed
+  from elsewhere, such as an undo. — @chteau
+
 - **The Command Bar runs real scripts.** It now yields: `task.wait`,
   `spawn`, `delay` and friends resume on later frames with the editor still
   usable, each resume capped at 10 s of CPU instead of hanging forever.
@@ -2402,7 +2441,6 @@
   mouse wheel over a `ScrollingFrame` in the viewport scrolls it, as Studio's
   edit view does, without entering the undo stack; the wheel anywhere else
   still moves the camera. — @chteau
-
 
 ## 2026-09-16
 

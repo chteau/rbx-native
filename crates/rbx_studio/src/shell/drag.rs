@@ -20,7 +20,7 @@ use crate::settle::{self, Settle};
 use crate::transform;
 use crate::workspace_view::ViewportAction;
 
-use super::{selection, Shell};
+use super::{ribbon, selection, Shell};
 
 /// `RBX_STUDIO_DRAG` / `RBX_STUDIO_RESIZE`: one drag step, applied at startup
 /// through the same entry points a real gesture ends with.
@@ -214,6 +214,12 @@ impl Shell {
             }
             return;
         }
+        // Studio: a locked part can't be clicked or dragged in the viewport,
+        // only selected from the Explorer.
+        let hits: Vec<Ref> = hits
+            .into_iter()
+            .filter(|&hit| !ribbon::is_locked(&self.dom, hit))
+            .collect();
         if held {
             let posed = self.pose_in();
             let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());

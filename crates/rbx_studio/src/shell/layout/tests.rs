@@ -811,3 +811,29 @@ fn only_one_matching_named_layout_is_active() {
     );
     assert_eq!(active_layout(&[], Some("Script")), None);
 }
+
+#[test]
+fn the_command_bar_is_shown_by_default_and_hidden_through_the_closed_list() {
+    let mut layout = Layout::default();
+    assert!(!layout.command_bar_hidden());
+    assert!(!layout.saved().closed.contains(&"command_bar".to_owned()));
+
+    layout.set_command_bar_hidden(true);
+    let saved = layout.saved();
+    assert!(saved.closed.contains(&"command_bar".to_owned()));
+    let restored = Layout::restore(&saved);
+    assert!(restored.command_bar_hidden());
+    assert_eq!(restored, layout);
+}
+
+#[test]
+fn a_file_without_the_command_bar_key_shows_it() {
+    assert!(!Layout::restore(&SavedLayout::default()).command_bar_hidden());
+}
+
+#[test]
+fn the_default_layout_shows_the_command_bar_again() {
+    let mut layout = Layout::default();
+    layout.set_command_bar_hidden(true);
+    assert!(!Layout::default().command_bar_hidden());
+}

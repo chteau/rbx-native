@@ -22,6 +22,7 @@ impl HomeWindow {
         v_flex()
             .gap(px(20.))
             .child(self.page_head("Recent", grid, true, cx))
+            .children(self.recovered_section(cx))
             .child(if rows.is_empty() {
                 ui::text(12.5, 19.)
                     .text_color(tokens::text2())

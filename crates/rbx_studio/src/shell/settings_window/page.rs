@@ -7,6 +7,8 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use std::rc::Rc;
+
 use crate::tokens;
 
 use super::kit::{self, text};
@@ -26,7 +28,7 @@ impl SettingsWindow {
     ) -> impl IntoElement {
         let sections = self.sections(window, cx);
         let body = self.body();
-        let resets: Vec<_> = sections
+        let mut resets: Vec<kit::Reset> = sections
             .iter()
             .flat_map(|section| {
                 section
@@ -36,6 +38,14 @@ impl SettingsWindow {
                     .chain(section.resets.iter().cloned())
             })
             .collect();
+        if self.page == Page::Beta {
+            resets.push(Rc::new(|_, cx| {
+                if let Err(error) = crate::beta::reset_all() {
+                    eprintln!("could not save beta.json: {error}");
+                }
+                cx.notify();
+            }));
+        }
         let shell = self.shell.clone();
         let reset_page = kit::header_button(
             "reset-page",

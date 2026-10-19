@@ -51,9 +51,11 @@ impl Format {
     /// The format a file of this name is written in: XML for `.rbxlx` and
     /// `.rbxmx`, binary otherwise.
     pub(crate) fn of_path(path: &Path) -> Self {
-        match path.extension().and_then(|ext| ext.to_str()) {
-            Some("rbxlx" | "rbxmx") => Format::Xml,
-            _ => Format::Binary,
+        let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        if ext.eq_ignore_ascii_case("rbxlx") || ext.eq_ignore_ascii_case("rbxmx") {
+            Format::Xml
+        } else {
+            Format::Binary
         }
     }
 
@@ -408,5 +410,11 @@ mod tests {
         assert_eq!(Format::of_path(Path::new("x.rbxlx")), Format::Xml);
         assert_eq!(Format::of_path(Path::new("x.rbxmx")), Format::Xml);
         assert_eq!(Format::of_path(Path::new("x")), Format::Binary);
+    }
+    /// Windows names files `Place.RBXLX` as readily as `place.rbxlx`.
+    #[test]
+    fn an_uppercase_extension_still_picks_xml() {
+        assert_eq!(Format::of_path(Path::new("x.RBXLX")), Format::Xml);
+        assert_eq!(Format::of_path(Path::new("x.RbxMx")), Format::Xml);
     }
 }

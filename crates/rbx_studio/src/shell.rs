@@ -38,6 +38,7 @@ mod layout;
 mod light_guides;
 mod luau_lsp;
 mod menu;
+mod open_place;
 mod output;
 mod palette;
 mod panel_window;
@@ -172,6 +173,9 @@ pub(crate) struct Shell {
     /// Whether a part in front of the selection hides its outline box.
     /// Persisted the same way `orthographic` is (see `settings`).
     selection_occluded: bool,
+    /// Whether the viewport draws its `ScreenGui`s: the ribbon's Show UI.
+    /// Per session, not persisted, as Studio's View > UI is.
+    show_screen_gui: bool,
     /// Whether a selected light draws its guide — Studio's `Show Light
     /// Guides`. Persisted the same way `orthographic` is (see `settings`).
     light_guides: bool,
@@ -403,9 +407,9 @@ pub(crate) struct Shell {
     /// File › Close Place's unsaved-changes prompt is up; see
     /// `shell::close_place`.
     close_prompt: bool,
-    /// The close prompt above is for a restart (Settings › Beta features'
-    /// Restart now), not for going back to Home — see `close_place`.
-    restart_after_close: bool,
+    /// Where the close prompt above leads once answered — see
+    /// `close_place`.
+    after_close: close_place::AfterClose,
     /// Held by the prompt while it is up, so Escape reaches the window's
     /// key handler rather than whatever panel had focus.
     close_focus: FocusHandle,
@@ -744,6 +748,7 @@ impl Shell {
             orthographic,
             axis_indicator,
             selection_occluded,
+            show_screen_gui: true,
             light_guides,
             light_guides_sent: Vec::new(),
             icon_pack,
@@ -821,7 +826,7 @@ impl Shell {
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             roblox: roblox_publish::RobloxPublish::new(cx),
             close_prompt: false,
-            restart_after_close: false,
+            after_close: Default::default(),
             close_focus: cx.focus_handle(),
             rig_dialog: None,
             rig_focus: cx.focus_handle(),
@@ -1485,6 +1490,14 @@ impl Shell {
         cx.notify();
     }
 
+    /// View › Command Bar: shows or hides the strip under the docks.
+    pub(crate) fn toggle_command_bar(&mut self, cx: &mut Context<Self>) {
+        let hidden = self.layout.command_bar_hidden();
+        self.layout.set_command_bar_hidden(!hidden);
+        self.save_settings();
+        cx.notify();
+    }
+
     /// Docks one panel on one edge — from a drop, or from the dock menu's
     /// "Move to" entry.
     ///
@@ -1629,6 +1642,18 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
         self.save_settings();
+        cx.notify();
+    }
+
+    /// Shows or hides the `ScreenGui` overlay over the 3D view.
+    fn set_screen_gui_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.show_screen_gui {
+            return;
+        }
+
+        self.show_screen_gui = shown;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_screen_gui_shown(shown, cx));
         cx.notify();
     }
 
@@ -1953,7 +1978,7 @@ impl Render for Shell {
             .child(self.ribbon_tabs(cx))
             .child(self.ribbon(cx))
             .child(self.workspace(window, cx))
-            .child(
+            .children((!self.layout.command_bar_hidden()).then(|| {
                 div()
                     // Captured so the input's own Up/Down (a no-op on one
                     // line) never gets them: they walk the submitted commands.
@@ -1969,8 +1994,8 @@ impl Render for Shell {
                         self.tab_order.next(),
                         self.output_collapsed,
                         cx,
-                    )),
-            )
+                    ))
+            }))
             // Painted at the window's root rather than inside the Explorer:
             // a popup nested in the tree's own scrolled, virtualised list
             // is clipped by it.
