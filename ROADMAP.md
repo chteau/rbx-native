@@ -2979,6 +2979,27 @@ Roblox's own engine.
   does, not a shortcut that could write something a saved place file
   can't actually represent.
 
+- [ ] 📋 **Native DataStore browser**: browse, search and edit a
+  universe's DataStores from the editor, without a plugin or the Creator
+  Hub page. Open Cloud's DataStores API covers it: list stores and scopes,
+  list, read, write and delete entries, version history with rollback to an
+  older version, and `OrderedDataStore` entries sorted by value.
+  MemoryStore sorted maps and queues could follow in the same panel. It
+  needs the API key's DataStore scopes, so the key wizard's scope check has
+  to grow. Destructive edits (write, delete, rollback) need a confirm step,
+  plus a clear production/sandbox badge so nobody edits live player data by
+  accident.
+- [ ] 📋 **Update planning**: prepare and ship a place update as one
+  planned step instead of a bare Publish. That means a staged version with
+  release notes kept in the version history, publishing at a scheduled
+  time, and then rolling servers onto it with Open Cloud's restart-servers
+  call (all at once, or only outdated servers). An optional in-game
+  announcement goes out beforehand through Open Cloud's MessagingService
+  publish. It also needs a view of what changed since the last published
+  version, using the place diff this project already has. Scheduling only
+  holds while the editor is running unless a hosted runner is added, so the
+  first version should say so plainly.
+
 ### Play / Test workflow
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
