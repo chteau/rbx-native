@@ -74,9 +74,18 @@ pub(crate) fn match_doms(a: &WeakDom, b: &WeakDom, by_position: bool) -> HashMap
     pairs
 }
 
+const ZERO_ID: UniqueId = UniqueId {
+    index: 0,
+    time: 0,
+    random: 0,
+};
+
 fn unique_id(dom: &WeakDom, r: Ref) -> Option<UniqueId> {
     match dom.get(r)?.properties().get("UniqueId") {
-        Some(Variant::UniqueId(id)) => Some(*id),
+        // All-zero is the binary writer's fill for an instance that never had
+        // one (created by a script or the editor): every such instance would
+        // otherwise pair with every other one.
+        Some(Variant::UniqueId(id)) if *id != ZERO_ID => Some(*id),
         _ => None,
     }
 }
@@ -144,6 +153,19 @@ mod tests {
         let rb = add(&mut b, 101, "Y", None, Some(5));
         let m = match_doms(&a, &b, false);
         assert_eq!(m.get(&ra), Some(&rb));
+    }
+
+    #[test]
+    fn all_zero_ids_never_pair() {
+        let mut a = WeakDom::new();
+        let mut b = WeakDom::new();
+        let zero = Variant::UniqueId(ZERO_ID);
+        for (dom, r) in [(&mut a, 1), (&mut b, 101)] {
+            let mut i = Instance::new(Ref::new(r), "Part", "New");
+            i.properties_mut().insert("UniqueId".into(), zero.clone());
+            dom.insert(i);
+        }
+        assert!(match_doms(&a, &b, false).is_empty());
     }
 
     #[test]
