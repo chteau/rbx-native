@@ -41,6 +41,18 @@
   Also fixed: a Properties dropdown didn't refresh when its value changed
   from elsewhere, such as an undo. — @chteau
 
+- **The Command Bar runs real scripts.** It now yields: `task.wait`,
+  `spawn`, `delay` and friends resume on later frames with the editor still
+  usable, each resume capped at 10 s of CPU instead of hanging forever.
+  Attributes, `.Changed`, `GetPropertyChangedSignal`, Bindable events and
+  functions, the two-argument CollectionService calls, HttpService JSON,
+  `require(ModuleScript)` and `GetService` creating a missing service all
+  work, sharing one engine with the plugin host. Output printed before an
+  error is kept, errors name the script rather than a Rust file, Up/Down
+  walk the history, and a run is one undo step even across frames. Plugin
+  `Changed` now names the property by its API name, and late listeners no
+  longer receive changes made before they connected. — @chteau
+
 - **Input action manager.** A new Input Actions dock (View menu and Home
   ribbon) lays out the place's `InputContext`s, `InputAction`s and
   `InputBinding`s as a table with one column per device family, edits

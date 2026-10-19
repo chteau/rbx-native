@@ -12,13 +12,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use mlua::thread::ThreadStatus;
 use mlua::{Function, Lua, MultiValue, Result, Thread, Value};
 
-use super::api::OutputKind;
-use super::env::env;
+use super::engine;
+use crate::output::LineKind;
 
 pub(crate) type AwaitId = u32;
 
-const YIELDING_KEY: &str = "__plugin_yielding";
-const RUNNER_KEY: &str = "__plugin_runner";
+const YIELDING_KEY: &str = "__rbxn_yielding";
+const RUNNER_KEY: &str = "__rbxn_runner";
 
 /// The running thread parks itself under its await id before yielding
 /// (`park` hands back the result at once when it is already there), so a
@@ -68,13 +68,30 @@ pub(crate) struct Scheduler {
     pub(crate) early: HashMap<AwaitId, std::result::Result<MultiValue, String>>,
 }
 
+impl Scheduler {
+    /// When something is next due, on the host's clock: now for a deferred
+    /// thread, else the earliest timer. `None` when nothing will ever wake
+    /// on its own (threads waiting on a signal only wake when it fires).
+    pub(crate) fn next_due(&self, now: f64) -> Option<f64> {
+        if !self.deferred.is_empty() {
+            return Some(now);
+        }
+        self.timers.iter().map(|(due, _, _)| *due).reduce(f64::min)
+    }
+
+    /// How many threads and callbacks are waiting to run.
+    pub(crate) fn pending(&self) -> usize {
+        self.waiting.len() + self.deferred.len() + self.delayed.len()
+    }
+}
+
 /// Installs `task` (`spawn`, `defer`, `delay`, `wait`, `cancel`), `wait`,
 /// `delay`, `spawn`, `tick`, `time`, `elapsedTime` as globals, and the
 /// registry function [`yielding`] uses. Call before sandboxing.
 pub(crate) fn install(lua: &Lua) -> Result<()> {
     let park = lua.create_function(|lua, (id, thread): (AwaitId, Thread)| {
-        let env = env(lua);
-        let mut scheduler = env.scheduler.borrow_mut();
+        let engine = engine(lua);
+        let mut scheduler = engine.scheduler.borrow_mut();
         match scheduler.early.remove(&id) {
             Some(result) => {
                 drop(scheduler);
@@ -115,7 +132,7 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
         "defer",
         lua.create_function(|lua, (target, args): (Value, MultiValue)| {
             let (thread, args) = prepare(lua, target, args)?;
-            env(lua)
+            engine(lua)
                 .scheduler
                 .borrow_mut()
                 .deferred
@@ -128,8 +145,8 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
         lua.create_function(|lua, (seconds, func, args): (f64, Function, MultiValue)| {
             let thread = lua.create_thread(runner(lua)?)?;
             let id = sleep(lua, seconds);
-            let env = env(lua);
-            let mut scheduler = env.scheduler.borrow_mut();
+            let engine = engine(lua);
+            let mut scheduler = engine.scheduler.borrow_mut();
             scheduler.delayed.insert(id, (func, args));
             scheduler.delay_threads.push((thread.clone(), id));
             Ok(thread)
@@ -140,8 +157,8 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
     task.set(
         "cancel",
         lua.create_function(|lua, thread: Thread| {
-            let env = env(lua);
-            let mut scheduler = env.scheduler.borrow_mut();
+            let engine = engine(lua);
+            let mut scheduler = engine.scheduler.borrow_mut();
             scheduler.waiting.retain(|_, t| *t != thread);
             scheduler.deferred.retain(|(t, _)| *t != thread);
             if let Some(index) = scheduler
@@ -167,7 +184,7 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
                 .unwrap_or(0.0))
         })?,
     )?;
-    let time = lua.create_function(|lua, ()| Ok(env(lua).shared.borrow().context.now))?;
+    let time = lua.create_function(|lua, ()| Ok(engine(lua).host.now()))?;
     globals.set("time", time.clone())?;
     globals.set("elapsedTime", time)?;
     Ok(())
@@ -209,18 +226,14 @@ pub(crate) fn yielding(lua: &Lua, start: Function) -> Result<Function> {
     maker.call(start)
 }
 
-/// Runs `func(args)` in a new thread now. An error is reported to the
-/// Output as the plugin's (`OutputKind::Error`, message plus traceback),
-/// never returned.
+/// Runs `func(args)` in a new thread now. An error goes to the host's
+/// output (`LineKind::Error`, message plus traceback), never returned.
 pub(crate) fn spawn(lua: &Lua, func: Function, args: MultiValue) -> Result<()> {
     start_thread(lua, Value::Function(func), args).map(|_| ())
 }
 
 fn report(lua: &Lua, text: String) {
-    let env = env(lua);
-    env.shared
-        .borrow_mut()
-        .push_output(&env.name, OutputKind::Error, text);
+    engine(lua).host.output(LineKind::Error, text);
 }
 
 /// Resumes `thread` with `args` and files it by what it yields. Never
@@ -234,7 +247,7 @@ pub(crate) fn resume(lua: &Lua, thread: Thread, args: MultiValue) -> Result<()> 
         let values = match thread.resume::<MultiValue>(args) {
             Ok(values) => values,
             Err(error) => {
-                report(lua, error.to_string());
+                engine(lua).host.thread_failed(&thread, error);
                 return Ok(());
             }
         };
@@ -259,8 +272,8 @@ pub(crate) fn resume(lua: &Lua, thread: Thread, args: MultiValue) -> Result<()> 
             },
             _ => None,
         };
-        let env = env(lua);
-        let mut scheduler = env.scheduler.borrow_mut();
+        let engine = engine(lua);
+        let mut scheduler = engine.scheduler.borrow_mut();
         match awaited {
             Some(id) => match scheduler.early.remove(&id) {
                 Some(result) => {
@@ -293,9 +306,9 @@ fn resolution(lua: &Lua, result: std::result::Result<MultiValue, String>) -> Res
     })
 }
 
-/// A fresh await id (from `Shared::next_id`).
+/// A fresh await id (from `Host::next_id`).
 pub(crate) fn new_await(lua: &Lua) -> AwaitId {
-    env(lua).shared.borrow_mut().next_id()
+    engine(lua).host.next_id()
 }
 
 /// Resumes the thread waiting on `id` (if any) with `(true, values…)` or
@@ -305,9 +318,9 @@ pub(crate) fn resolve(
     id: AwaitId,
     result: std::result::Result<MultiValue, String>,
 ) -> Result<()> {
-    let env = env(lua);
+    let engine = engine(lua);
     let thread = {
-        let mut scheduler = env.scheduler.borrow_mut();
+        let mut scheduler = engine.scheduler.borrow_mut();
         match scheduler.waiting.remove(&id) {
             Some(thread) => thread,
             None => {
@@ -324,14 +337,15 @@ pub(crate) fn resolve(
 /// passed, with the elapsed time.
 pub(crate) fn sleep(lua: &Lua, seconds: f64) -> AwaitId {
     let id = new_await(lua);
-    let env = env(lua);
-    let now = env.shared.borrow().context.now;
+    let engine = engine(lua);
+    let now = engine.host.now();
     let seconds = if seconds.is_finite() {
         seconds.max(0.0)
     } else {
         0.0
     };
-    env.scheduler
+    engine
+        .scheduler
         .borrow_mut()
         .timers
         .push((now + seconds, id, now));
@@ -341,10 +355,10 @@ pub(crate) fn sleep(lua: &Lua, seconds: f64) -> AwaitId {
 /// Resolves due timers, runs `task.delay` functions whose time came, then
 /// the deferred queue (only what was queued before this call).
 pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
-    let env = env(lua);
-    env.shared.borrow_mut().context.now = now;
+    let engine = engine(lua);
+    engine.host.set_now(now);
     let (mut due, deferred) = {
-        let mut scheduler = env.scheduler.borrow_mut();
+        let mut scheduler = engine.scheduler.borrow_mut();
         let (due, rest): (Vec<_>, Vec<_>) = scheduler
             .timers
             .drain(..)
@@ -356,7 +370,7 @@ pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
     due.sort_by(|a, b| a.0.total_cmp(&b.0));
     for (_, id, started) in due {
         let delayed = {
-            let mut scheduler = env.scheduler.borrow_mut();
+            let mut scheduler = engine.scheduler.borrow_mut();
             scheduler.delayed.remove(&id).map(|call| {
                 let thread = scheduler
                     .delay_threads
@@ -397,94 +411,4 @@ pub(crate) fn wants_tick(scheduler: &Scheduler, now: f64) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use rbx_dom::WeakDom;
-
-    use super::*;
-    use crate::plugin::testing::test_vm;
-
-    fn run(lua: &Lua, src: &str) {
-        spawn(
-            lua,
-            lua.load(src).into_function().unwrap(),
-            MultiValue::new(),
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn wait_resolves_only_after_time_passes() {
-        let (lua, _env, _) = test_vm(WeakDom::new(), false);
-        run(
-            &lua,
-            "done = false local e = task.wait(1) done = true elapsed = e",
-        );
-        assert!(!lua.globals().get::<bool>("done").unwrap());
-        tick(&lua, 0.5).unwrap();
-        assert!(!lua.globals().get::<bool>("done").unwrap());
-        tick(&lua, 1.25).unwrap();
-        assert!(lua.globals().get::<bool>("done").unwrap());
-        assert_eq!(lua.globals().get::<f64>("elapsed").unwrap(), 1.25);
-    }
-
-    #[test]
-    fn delay_runs_function_with_args() {
-        let (lua, _env, _) = test_vm(WeakDom::new(), false);
-        run(&lua, "task.delay(1, function(x) got = x end, 5)");
-        tick(&lua, 0.5).unwrap();
-        assert!(lua.globals().get::<Option<f64>>("got").unwrap().is_none());
-        tick(&lua, 2.0).unwrap();
-        assert_eq!(lua.globals().get::<f64>("got").unwrap(), 5.0);
-    }
-
-    #[test]
-    fn cancel_stops_delay() {
-        let (lua, _env, _) = test_vm(WeakDom::new(), false);
-        run(
-            &lua,
-            "task.cancel(task.delay(1, function() got = true end))",
-        );
-        tick(&lua, 2.0).unwrap();
-        assert!(lua.globals().get::<Option<bool>>("got").unwrap().is_none());
-    }
-
-    #[test]
-    fn defer_runs_on_next_tick() {
-        let (lua, env, _) = test_vm(WeakDom::new(), false);
-        run(&lua, "task.defer(function() d = true end)");
-        assert!(lua.globals().get::<Option<bool>>("d").unwrap().is_none());
-        assert!(wants_tick(&env.scheduler.borrow(), 0.0));
-        tick(&lua, 0.0).unwrap();
-        assert!(lua.globals().get::<bool>("d").unwrap());
-    }
-
-    #[test]
-    fn errors_become_output() {
-        let (lua, env, _) = test_vm(WeakDom::new(), false);
-        run(&lua, "error('boom')");
-        let shared = env.shared.borrow();
-        assert_eq!(shared.output.len(), 1);
-        assert_eq!(shared.output[0].kind, OutputKind::Error);
-        assert_eq!(shared.output[0].source, "Test");
-        assert!(shared.output[0].text.contains("boom"));
-    }
-
-    #[test]
-    fn resolve_error_raises_in_thread() {
-        let (lua, env, _) = test_vm(WeakDom::new(), false);
-        let f = yielding(
-            &lua,
-            lua.create_function(|lua, ()| Ok(new_await(lua))).unwrap(),
-        )
-        .unwrap();
-        lua.globals().set("op", f).unwrap();
-        run(&lua, "local ok, e = pcall(op) result = e");
-        let id = *env.scheduler.borrow().waiting.keys().next().unwrap();
-        resolve(&lua, id, Err("nope".into())).unwrap();
-        assert!(lua
-            .globals()
-            .get::<String>("result")
-            .unwrap()
-            .contains("nope"));
-    }
-}
+mod tests;

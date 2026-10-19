@@ -8,9 +8,9 @@ use mlua::{IntoLua, Lua, MultiValue, Result, Value};
 use rbx_dom::{Ref, Variant};
 
 use crate::ctx::Ctx;
+use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
 use crate::plugin::env::env;
-use crate::plugin::signal::{LuaSignal, Owner, SignalKey};
 
 /// The stand-in for service `name`, made on first use; `None` when `name`
 /// is no service or the place already has one.

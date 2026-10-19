@@ -1,38 +1,24 @@
 //! Instance events and the plugin-only members of instances, through
 //! `crate::hooks`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
-use mlua::{Function, Lua, MultiValue, Result, Table, Value};
-use rbx_dom::{Change, Ref, Variant, WeakDom};
-use rbx_dom::{Color3Data, Vector2Data, Vector3Data};
+use mlua::{Function, Lua, MultiValue, Result, Value};
+use rbx_dom::{Ref, Vector2Data};
 use rbx_reflection::ReflectionDatabase;
 
 use super::api::{Arg, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, OutputKind};
 use super::arg;
 use super::env::env;
-use super::signal::{self, LuaSignal, Owner, SignalKey};
 use crate::ctx::Ctx;
 use crate::datatypes::misc::LuaVector2;
+use crate::engine::changes;
+use crate::engine::events::{self, instance_key, ref_key, registry_table};
+use crate::engine::signal::{self, LuaSignal, Owner, SignalKey};
 use crate::hooks::Hooks;
 
-/// Where the place files keep the attribute blob.
-const ATTRIBUTES: &str = "AttributesSerialize";
-/// The binary format's string type id, which the attribute blob travels as.
-const STRING_TYPE_ID: u8 = 0x01;
-const ON_INVOKE_KEY: &str = "__plugin_on_invoke";
 const BIND_TO_CLOSE_KEY: &str = "__plugin_bind_to_close";
 
-const INSTANCE_SIGNALS: &[&str] = &[
-    "Changed",
-    "ChildAdded",
-    "ChildRemoved",
-    "DescendantAdded",
-    "DescendantRemoving",
-    "AncestryChanged",
-    "Destroying",
-    "AttributeChanged",
-];
 const GUI_OBJECT_SIGNALS: &[&str] = &[
     "MouseEnter",
     "MouseLeave",
@@ -233,15 +219,11 @@ fn with_state<R>(lua: &Lua, f: impl FnOnce(&mut EventState) -> R) -> R {
 
 /// The hooks every plugin VM installs.
 ///
-/// `index` answers, by class (`Ctx::database().is_subclass_of`):
-/// - every instance: `Changed`, `ChildAdded`, `ChildRemoved`,
-///   `DescendantAdded`, `DescendantRemoving`, `AncestryChanged`,
-///   `Destroying`, `AttributeChanged` signals; `GetPropertyChangedSignal(
-///   name)` and `GetAttributeChangedSignal(name)` functions;
-///   `GetAttribute`, `SetAttribute`, `GetAttributes` (over the
-///   `Attributes` property via `rbx_dom::attributes`);
-///   `WaitForChild(name, timeout?)` (the child, or nil after a warning —
-///   nothing loads later in the editor);
+/// `index` answers what `engine::events::index` does (instance signals,
+/// attributes, bindables, remotes), then, by class
+/// (`Ctx::database().is_subclass_of`):
+/// - every instance: `WaitForChild(name, timeout?)` (the child, or nil
+///   after a warning — nothing loads later in the editor);
 /// - `GuiObject`: `MouseEnter`, `MouseLeave`, `MouseMoved`,
 ///   `MouseButton1Down`, `MouseButton1Up`, `MouseButton2Down`,
 ///   `MouseButton2Up`, `MouseWheelForward`, `MouseWheelBackward`,
@@ -253,14 +235,12 @@ fn with_state<R>(lua: &Lua, f: impl FnOnce(&mut EventState) -> R) -> R {
 ///   `MouseButton1Up`, `MouseDrag`, `MouseEnter`, `MouseLeave`;
 ///   `HandleAdornment`: `MouseButton1Down`, `MouseButton1Up`,
 ///   `MouseEnter`, `MouseLeave`;
-/// - `BindableEvent`: `Event`, `Fire(...)`; `BindableFunction`:
-///   `Invoke(...)` (calls `OnInvoke` synchronously);
 /// - `PluginGui` / `DockWidgetPluginGui` roots: `BindToClose(fn?)`,
 ///   `WindowFocused`, `WindowFocusReleased`, `GetRelativeMousePosition()`,
 ///   `HostWidgetWasRestored` (false).
 ///
-/// `new_index` handles `OnInvoke` on a `BindableFunction` (stored in the
-/// Lua registry), and for a widget root keeps `Ui` in step with `Title`
+/// `new_index` handles the invoke callbacks (`engine::events::new_index`),
+/// and for a widget root keeps `Ui` in step with `Title`
 /// and `Enabled` (returning false so the property is written too).
 /// `service` delegates to `services::service`.
 pub(crate) struct PluginHooks;
@@ -269,130 +249,23 @@ fn is_handles(db: &ReflectionDatabase, class: &str) -> bool {
     matches!(class, "Handles" | "ArcHandles") || db.is_subclass_of(class, "HandlesBase")
 }
 
-fn is_signal(db: &ReflectionDatabase, class: &str, key: &str) -> bool {
+/// The signals only plugin VMs give instances: GUI input, focus and
+/// handles (the shared ones are `engine::events::is_signal`).
+fn is_plugin_signal(db: &ReflectionDatabase, class: &str, key: &str) -> bool {
     let has = |list: &[&str], base: &str| list.contains(&key) && db.is_subclass_of(class, base);
-    INSTANCE_SIGNALS.contains(&key)
-        || has(GUI_OBJECT_SIGNALS, "GuiObject")
+    has(GUI_OBJECT_SIGNALS, "GuiObject")
         || has(GUI_BUTTON_SIGNALS, "GuiButton")
         || has(TEXT_BOX_SIGNALS, "TextBox")
         || (HANDLES_SIGNALS.contains(&key) && is_handles(db, class))
         || has(HANDLE_ADORNMENT_SIGNALS, "HandleAdornment")
         || has(PLUGIN_GUI_SIGNALS, "PluginGui")
-        || has(&["Event"], "BindableEvent")
-        || has(&["OnServerEvent", "OnClientEvent"], "RemoteEvent")
 }
 
-fn instance_key(referent: Ref, event: impl Into<String>) -> SignalKey {
-    SignalKey::new(Owner::Instance(referent), event)
-}
-
-fn registry_table(lua: &Lua, name: &str) -> Result<Table> {
-    if let Some(table) = lua.named_registry_value::<Option<Table>>(name)? {
-        return Ok(table);
-    }
-    let table = lua.create_table()?;
-    lua.set_named_registry_value(name, table.clone())?;
-    Ok(table)
-}
-
-fn ref_key(referent: Ref) -> String {
-    format!("{referent:?}")
-}
-
-fn read_attributes(ctx: &Ctx, referent: Ref) -> BTreeMap<String, Variant> {
-    let dom = ctx.dom();
-    let blob = dom
-        .get(referent)
-        .and_then(|i| i.properties().get(ATTRIBUTES));
-    rbx_dom::attributes::decode(blob)
-}
-
-fn variant_to_arg(variant: &Variant) -> Arg {
-    match variant {
-        Variant::String(s) => Arg::String(s.clone()),
-        Variant::Bool(b) => Arg::Bool(*b),
-        Variant::Int32(n) => Arg::Number(f64::from(*n)),
-        Variant::Int64(n) => Arg::Number(*n as f64),
-        Variant::Float32(n) => Arg::Number(f64::from(*n)),
-        Variant::Float64(n) => Arg::Number(*n),
-        Variant::Vector2(v) => Arg::Vector2([v.x, v.y]),
-        Variant::Vector3(v) => Arg::Vector3([v.x, v.y, v.z]),
-        Variant::Color3(c) => Arg::Color3([c.r, c.g, c.b]),
-        Variant::BrickColor(n) => Arg::BrickColor(*n),
-        _ => Arg::Nil,
-    }
-}
-
-fn arg_to_variant(name: &str, value: Arg) -> Result<Option<Variant>> {
-    Ok(Some(match value {
-        Arg::Nil => return Ok(None),
-        Arg::String(s) => Variant::String(s),
-        Arg::Bool(b) => Variant::Bool(b),
-        Arg::Number(n) => Variant::Float64(n),
-        Arg::Vector2([x, y]) => Variant::Vector2(Vector2Data { x, y }),
-        Arg::Vector3([x, y, z]) => Variant::Vector3(Vector3Data { x, y, z }),
-        Arg::Color3([r, g, b]) => Variant::Color3(Color3Data { r, g, b }),
-        Arg::BrickColor(n) => Variant::BrickColor(n),
-        _ => {
-            return Err(mlua::Error::runtime(format!(
-                "attribute '{name}' cannot hold a value of this type"
-            )))
-        }
-    }))
-}
-
-fn set_attribute(ctx: &Ctx, referent: Ref, name: &str, value: Option<Variant>) -> Result<()> {
-    ctx.check_write(referent)?;
-    let mut attributes = read_attributes(ctx, referent);
-    match value {
-        Some(value) => attributes.insert(name.to_string(), value),
-        None => attributes.remove(name),
-    };
-    let raw = rbx_dom::attributes::encode(&attributes, |_| None)
-        .ok_or_else(|| mlua::Error::runtime("these attributes cannot be written back"))?;
-    ctx.dom_mut()
-        .set_property(
-            referent,
-            ATTRIBUTES,
-            Variant::Unknown {
-                type_id: STRING_TYPE_ID,
-                raw,
-            },
-        )
-        .map_err(|e| mlua::Error::runtime(e.to_string()))?;
-    Ok(())
-}
-
-fn signal_getter(lua: &Lua, referent: Ref, prefix: &'static str) -> Result<Value> {
-    lua.create_function(move |_, (_this, name): (Value, String)| {
-        Ok(LuaSignal(instance_key(
-            referent,
-            format!("{prefix}:{name}"),
-        )))
-    })
-    .map(Value::Function)
-}
-
+/// `WaitForChild(name, timeout?)`: the child, or nil after a warning —
+/// nothing loads later in the editor.
 fn instance_function(lua: &Lua, ctx: &Ctx, referent: Ref, key: &str) -> Result<Option<Value>> {
     let ctx = ctx.clone();
     let f = match key {
-        "GetPropertyChangedSignal" => return signal_getter(lua, referent, "Changed").map(Some),
-        "GetAttributeChangedSignal" => return signal_getter(lua, referent, "AttributeChanged").map(Some),
-        "GetAttribute" => lua.create_function(move |lua, (_this, name): (Value, String)| {
-            let value = read_attributes(&ctx, referent).get(&name).map(variant_to_arg);
-            arg::to_lua(lua, &ctx, &value.unwrap_or(Arg::Nil))
-        })?,
-        "SetAttribute" => lua.create_function(move |_, (_this, name, value): (Value, String, Value)| {
-            let variant = arg_to_variant(&name, arg::from_lua(&value))?;
-            set_attribute(&ctx, referent, &name, variant)
-        })?,
-        "GetAttributes" => lua.create_function(move |lua, _this: Value| {
-            let table = lua.create_table()?;
-            for (name, value) in read_attributes(&ctx, referent) {
-                table.set(name, arg::to_lua(lua, &ctx, &variant_to_arg(&value))?)?;
-            }
-            Ok(table)
-        })?,
         "WaitForChild" => lua.create_function(
             move |lua, (_this, name, timeout): (Value, String, Option<f64>)| {
                 let (found, parent_name) = {
@@ -459,58 +332,6 @@ fn class_function(
         "IsFocused" if is("TextBox") => lua.create_function(move |lua, _this: Value| {
             Ok(with_state(lua, |s| s.focused == Some(referent)))
         })?,
-        "Fire" if is("BindableEvent") => {
-            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-                signal::fire_values(lua, &instance_key(referent, "Event"), args)
-            })?
-        }
-        "Invoke" if is("BindableFunction") => {
-            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-                let callback: Option<Function> =
-                    registry_table(lua, ON_INVOKE_KEY)?.get(ref_key(referent))?;
-                match callback {
-                    Some(callback) => callback.call::<MultiValue>(args),
-                    None => Err(mlua::Error::runtime(
-                        "OnInvoke is not set on this BindableFunction",
-                    )),
-                }
-            })?
-        }
-        // Inside a plugin there is no network: a remote is a bindable with
-        // a player argument. `…Server` calls pass `nil` for the player the
-        // server would see; `…Client` calls drop the player they name.
-        "FireServer" if is("RemoteEvent") => {
-            lua.create_function(move |lua, (_this, mut args): (Value, MultiValue)| {
-                args.push_front(Value::Nil);
-                signal::fire_values(lua, &instance_key(referent, "OnServerEvent"), args)
-            })?
-        }
-        "FireClient" | "FireAllClients" if is("RemoteEvent") => {
-            let skip = usize::from(key == "FireClient");
-            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-                let args: MultiValue = args.into_iter().skip(skip).collect();
-                signal::fire_values(lua, &instance_key(referent, "OnClientEvent"), args)
-            })?
-        }
-        "InvokeServer" | "InvokeClient" if is("RemoteFunction") => {
-            let server = key == "InvokeServer";
-            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-                let side = if server { "server" } else { "client" };
-                let callback: Option<Function> = registry_table(lua, ON_INVOKE_KEY)?
-                    .get(format!("{side}:{}", ref_key(referent)))?;
-                let mut args: MultiValue = args.into_iter().skip(usize::from(!server)).collect();
-                if server {
-                    args.push_front(Value::Nil);
-                }
-                match callback {
-                    Some(callback) => callback.call::<MultiValue>(args),
-                    None => Err(mlua::Error::runtime(format!(
-                        "On{}Invoke is not set on this RemoteFunction",
-                        if server { "Server" } else { "Client" }
-                    ))),
-                }
-            })?
-        }
         "BindToClose" if is("PluginGui") => {
             lua.create_function(move |lua, (_this, callback): (Value, Option<Function>)| {
                 registry_table(lua, BIND_TO_CLOSE_KEY)?.set(ref_key(referent), callback)
@@ -549,27 +370,9 @@ fn plugin_member(lua: &Lua, key: &str) -> Result<Value> {
     }
 }
 
-/// `game`'s own signals, keyed under `Owner::Service("DataModel")`;
-/// `DescendantAdded`/`DescendantRemoving` fire for the place's instances
-/// (see `fire_parent`), the others are there to connect to.
-fn game_signal(event: impl Into<String>) -> LuaSignal {
-    LuaSignal(SignalKey::new(Owner::Service("DataModel"), event))
-}
-
 impl Hooks for PluginHooks {
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
-        Ok(Some(match key {
-            "Changed" | "ChildAdded" | "ChildRemoved" | "DescendantAdded"
-            | "DescendantRemoving" | "ItemChanged" | "Close" | "AncestryChanged" => {
-                Value::UserData(lua.create_userdata(game_signal(key))?)
-            }
-            "GetPropertyChangedSignal" => {
-                Value::Function(lua.create_function(|_, (_this, name): (Value, String)| {
-                    Ok(game_signal(format!("Changed:{name}")))
-                })?)
-            }
-            _ => return Ok(None),
-        }))
+        events::game_member(lua, key)
     }
 
     fn index(
@@ -594,8 +397,11 @@ impl Hooks for PluginHooks {
                     .map(|u| Some(Value::UserData(u)));
             }
         }
+        if let Some(value) = events::index(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
         let db = ctx.database();
-        if is_signal(db, class, key) {
+        if is_plugin_signal(db, class, key) {
             return lua
                 .create_userdata(LuaSignal(instance_key(referent, key)))
                 .map(|u| Some(Value::UserData(u)));
@@ -618,37 +424,10 @@ impl Hooks for PluginHooks {
         key: &str,
         value: &Value,
     ) -> Result<bool> {
+        if events::new_index(lua, ctx, referent, class, key, value)? {
+            return Ok(true);
+        }
         let db = ctx.database();
-        if key == "OnInvoke" && db.is_subclass_of(class, "BindableFunction") {
-            let callback = match value {
-                Value::Function(f) => Some(f.clone()),
-                Value::Nil => None,
-                other => {
-                    return Err(mlua::Error::runtime(format!(
-                        "OnInvoke must be a function, got {}",
-                        other.type_name()
-                    )))
-                }
-            };
-            registry_table(lua, ON_INVOKE_KEY)?.set(ref_key(referent), callback)?;
-            return Ok(true);
-        }
-        if matches!(key, "OnServerInvoke" | "OnClientInvoke")
-            && db.is_subclass_of(class, "RemoteFunction")
-        {
-            let side = if key == "OnServerInvoke" {
-                "server"
-            } else {
-                "client"
-            };
-            let callback = match value {
-                Value::Function(f) => Some(f.clone()),
-                _ => None,
-            };
-            registry_table(lua, ON_INVOKE_KEY)?
-                .set(format!("{side}:{}", ref_key(referent)), callback)?;
-            return Ok(true);
-        }
         if matches!(key, "Title" | "Enabled") && db.is_subclass_of(class, "PluginGui") {
             let env = env(lua);
             let mut shared = env.shared.borrow_mut();
@@ -678,161 +457,14 @@ impl Hooks for PluginHooks {
     }
 }
 
-/// `start` and every ancestor above it, nearest first.
-fn chain(dom: &WeakDom, start: Option<Ref>) -> Vec<Ref> {
-    let mut out = Vec::new();
-    let mut at = start;
-    while let Some(r) = at {
-        if dom.get(r).is_none() {
-            break;
-        }
-        out.push(r);
-        at = dom.parent(r);
-    }
-    out
-}
-
-/// `root` and everything under it.
-fn subtree(dom: &WeakDom, root: Ref) -> Vec<Ref> {
-    let mut out = vec![root];
-    let mut i = 0;
-    while i < out.len() {
-        if let Some(instance) = dom.get(out[i]) {
-            out.extend_from_slice(instance.children());
-        }
-        i += 1;
-    }
-    out
-}
-
 fn emit(lua: &Lua, referent: Ref, event: &str, args: &[Arg]) -> Result<()> {
     signal::fire(lua, &instance_key(referent, event), args)
-}
-
-fn fire_parent(lua: &Lua, referent: Ref, old: Option<Ref>, new: Option<Ref>) -> Result<()> {
-    let (moved, old_chain, new_chain) = {
-        let dom = lua_ctx_dom(lua);
-        let dom = dom.dom();
-        (subtree(&dom, referent), chain(&dom, old), chain(&dom, new))
-    };
-    let parent = new.map_or(Arg::Nil, Arg::Instance);
-    for r in moved {
-        emit(
-            lua,
-            r,
-            "AncestryChanged",
-            &[Arg::Instance(referent), parent.clone()],
-        )?;
-    }
-    let child = [Arg::Instance(referent)];
-    if let Some(old) = old {
-        emit(lua, old, "ChildRemoved", &child)?;
-    }
-    if !old_chain.is_empty() && in_place(lua, &old_chain) {
-        signal::fire(lua, &game_signal("DescendantRemoving").0, &child)?;
-    }
-    for r in old_chain {
-        emit(lua, r, "DescendantRemoving", &child)?;
-    }
-    if let Some(new) = new {
-        emit(lua, new, "ChildAdded", &child)?;
-    }
-    if !new_chain.is_empty() && in_place(lua, &new_chain) {
-        signal::fire(lua, &game_signal("DescendantAdded").0, &child)?;
-    }
-    for r in new_chain {
-        emit(lua, r, "DescendantAdded", &child)?;
-    }
-    Ok(())
-}
-
-/// Whether an ancestor chain (nearest first) ends at one of the place's
-/// services rather than at the plugin's own parked instances.
-fn in_place(lua: &Lua, chain: &[Ref]) -> bool {
-    let Some(&top) = chain.last() else {
-        return false;
-    };
-    let ctx = lua_ctx_dom(lua);
-    let service = ctx
-        .dom()
-        .get(top)
-        .is_some_and(|i| ctx.database().is_service(i.class()));
-    service && !env(lua).roots.borrow().contains(&top)
-}
-
-fn lua_ctx_dom(lua: &Lua) -> Ctx {
-    env(lua).ctx.clone()
-}
-
-/// Fires this VM's instance signals for a change log, reading the DOM as it
-/// is now: `Property` → `Changed(name)` and `Changed:<name>` (and
-/// `AttributeChanged`/`AttributeChanged:<n>` for `Attributes`, comparing
-/// nothing — every attribute name present fires); `Parent` → the child's
-/// `AncestryChanged(child, parent)` (and its descendants'), the old
-/// parent's `ChildRemoved`, the new one's `ChildAdded`, and
-/// `DescendantRemoving`/`DescendantAdded` up both ancestor chains;
-/// `Added` with a parent → as a `Parent` change from nil; `Removed` →
-/// `Destroying` on the instance. Only connected signals cost anything.
-pub(crate) fn fire_changes(lua: &Lua, changes: &[Change]) -> Result<()> {
-    let ctx = lua_ctx_dom(lua);
-    for change in changes {
-        match change {
-            Change::Property { referent, name } => {
-                // A value object's `Changed` passes the new `Value` instead
-                // of a property name, and fires for nothing else.
-                let value_object = ctx
-                    .dom()
-                    .get(*referent)
-                    .is_some_and(|i| ctx.database().is_subclass_of(i.class(), "ValueBase"));
-                if value_object {
-                    if name == "Value" {
-                        let value = crate::property::get(lua, &ctx, *referent, "Value")?
-                            .unwrap_or(Value::Nil);
-                        signal::fire_values(
-                            lua,
-                            &instance_key(*referent, "Changed"),
-                            MultiValue::from_vec(vec![value]),
-                        )?;
-                    }
-                } else {
-                    emit(lua, *referent, "Changed", &[Arg::String(name.clone())])?;
-                }
-                emit(lua, *referent, &format!("Changed:{name}"), &[])?;
-                if name == ATTRIBUTES || name == "Attributes" {
-                    for attribute in read_attributes(&ctx, *referent).into_keys() {
-                        emit(
-                            lua,
-                            *referent,
-                            "AttributeChanged",
-                            &[Arg::String(attribute.clone())],
-                        )?;
-                        emit(
-                            lua,
-                            *referent,
-                            &format!("AttributeChanged:{attribute}"),
-                            &[],
-                        )?;
-                    }
-                }
-            }
-            Change::Parent { referent, old, new } => fire_parent(lua, *referent, *old, *new)?,
-            Change::Added(referent) => {
-                let parent = ctx.dom().parent(*referent);
-                if parent.is_some() {
-                    fire_parent(lua, *referent, None, parent)?;
-                }
-            }
-            Change::Removed(referent) => emit(lua, *referent, "Destroying", &[])?,
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 /// Remembers the pointer for `referent` and for the widget root above it.
 fn remember_pointer(lua: &Lua, referent: Ref, x: f32, y: f32) {
     let env = env(lua);
-    let ancestors = chain(&env.ctx.dom(), Some(referent));
+    let ancestors = changes::chain(&env.ctx.dom(), Some(referent));
     let root = {
         let shared = env.shared.borrow();
         ancestors
@@ -857,7 +489,7 @@ fn remember_pointer(lua: &Lua, referent: Ref, x: f32, y: f32) {
 /// pointer position per widget for `GetRelativeMousePosition`.
 pub(crate) fn fire_gui(lua: &Lua, event: &GuiEvent) -> Result<()> {
     let r = event.referent;
-    let ctx = lua_ctx_dom(lua);
+    let ctx = env(lua).ctx.clone();
     let class = match ctx.dom().get(r) {
         Some(instance) => instance.class().to_string(),
         None => return Ok(()),
@@ -997,9 +629,11 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    use rbx_dom::{Variant, WeakDom};
+
     use super::*;
+    use crate::engine::scheduler;
     use crate::instance::LuaInstance;
-    use crate::plugin::scheduler;
     use crate::plugin::testing::test_vm;
 
     struct Vm {
@@ -1027,8 +661,9 @@ mod tests {
         }
 
         fn flush(&self) {
-            let changes = self.slot.borrow_mut().take_changes();
-            fire_changes(&self.lua, &changes).unwrap();
+            let (changes, first) = changes::take_changes(&mut self.slot.borrow_mut());
+            changes::fire_changes(&self.lua, &changes, first).unwrap();
+            env(&self.lua).engine.signals.borrow_mut().settle();
         }
 
         fn get<T: mlua::FromLua>(&self, name: &str) -> T {
@@ -1047,6 +682,23 @@ mod tests {
         vm.flush();
         assert_eq!(vm.get::<String>("changed"), "Name");
         assert!(vm.get::<bool>("named"));
+    }
+
+    #[test]
+    fn changed_names_the_property_not_its_stored_spelling() {
+        let vm = setup(|dom| vec![("p", dom.new_instance("Part", "P", None))]);
+        vm.run(
+            "seen = {} \
+             p.Changed:Connect(function(k) table.insert(seen, k) end) \
+             p:GetPropertyChangedSignal('Size'):Connect(function() sized = true end) \
+             p.Size = Vector3.new(2, 2, 2) \
+             p.Color = Color3.new(1, 0, 0)",
+        );
+        vm.flush();
+        assert!(vm.get::<bool>("sized"));
+        let seen: Vec<String> = vm.get("seen");
+        assert!(seen.contains(&"Size".to_owned()), "{seen:?}");
+        assert!(seen.contains(&"Color".to_owned()), "{seen:?}");
     }
 
     #[test]
@@ -1087,6 +739,32 @@ mod tests {
         let vm = setup(|dom| vec![("b", dom.new_instance("BindableEvent", "B", None))]);
         vm.run("b.Event:Connect(function(a, c) got = a + c end) b:Fire(2, 5)");
         assert_eq!(vm.get::<f64>("got"), 7.0);
+    }
+
+    #[test]
+    fn a_listener_connected_after_a_change_does_not_hear_it() {
+        let vm = setup(|dom| {
+            let ws = dom.new_instance("Workspace", "Workspace", None);
+            vec![("ws", ws)]
+        });
+        vm.run(
+            "n, added = 0, 0 \
+             p = Instance.new('Part') \
+             p.Changed:Connect(function() n += 1 end) \
+             p.Name = 'A' \
+             p.Parent = ws \
+             ws.DescendantAdded:Connect(function() added += 1 end)",
+        );
+        vm.flush();
+        // Of the part's own changes, only the rename came after the
+        // connection; the parenting came before `DescendantAdded`'s.
+        assert_eq!(vm.get::<f64>("n"), 1.0);
+        assert_eq!(vm.get::<f64>("added"), 0.0);
+
+        vm.run("p.Name = 'Later' Instance.new('Folder', ws)");
+        vm.flush();
+        assert_eq!(vm.get::<f64>("n"), 2.0);
+        assert_eq!(vm.get::<f64>("added"), 1.0);
     }
 
     #[test]

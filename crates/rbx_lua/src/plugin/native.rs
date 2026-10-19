@@ -5,7 +5,7 @@ use mlua::{Function, Lua, Result};
 use super::api::{Permission, Request};
 use super::env::env;
 use super::plugin_object;
-use super::signal::{Connection, Owner, SignalKey};
+use crate::engine::signal::{Owner, SignalKey};
 
 /// Installs `rbxnative` when the VM's `Env::manifest` is set:
 /// `version` (this crate's), `manifest` (`{name, version, description,
@@ -72,18 +72,11 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
                     &text,
                 )?;
                 let key = SignalKey::new(Owner::Ui(button), "Click");
-                let mut signals = env.signals.borrow_mut();
-                signals.next += 1;
-                let conn_id = signals.next;
-                signals
-                    .connections
-                    .entry(key)
-                    .or_default()
-                    .push(Connection {
-                        id: conn_id,
-                        func: callback,
-                        once: false,
-                    });
+                // Not stamped: no DOM change can be fired at a button.
+                env.engine
+                    .signals
+                    .borrow_mut()
+                    .connect(&key, callback, false, None);
                 Ok(())
             },
         )?,

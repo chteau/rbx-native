@@ -98,6 +98,7 @@ impl Shell {
 
     fn leave_place(&mut self, cx: &mut Context<Self>) {
         self.close_prompt = false;
+        self.cancel_command_run();
         let handle = self.window_handle;
         match std::mem::take(&mut self.after_close) {
             AfterClose::Restart => {

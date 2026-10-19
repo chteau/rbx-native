@@ -1,10 +1,11 @@
 //! Studio's Command Bar: one line at the bottom of the window that runs
 //! whatever Luau it is given against the open place with `rbx_lua::Runtime`.
 //!
-//! Running a script is [`Shell`]'s job (see `Shell::run_command`), because it
+//! Running a script is [`Shell`]'s job (see `shell::command_run`), because it
 //! is the one holding the DOM, the Explorer and the viewport; this module only
-//! owns the input widget and the label above it that shows what the last run
-//! did.
+//! owns the input widget, the label above it that shows what the last run
+//! did, the Up/Down history of what was submitted, and the pure rules the
+//! shell's run loop applies (`stream`, `undo`).
 //!
 //! `RBX_STUDIO_RUN=<source>` runs one chunk exactly as pressing Enter would,
 //! once, right after the window opens — a debugging aid for a screenshot that
@@ -13,7 +14,9 @@
 //! `RBX_STUDIO_RUN='workspace.Baseplate.Transparency = 0.5' rbxstudio place.rbxl`.
 
 mod feedback;
-mod run;
+mod recall;
+pub(crate) mod stream;
+mod undo;
 
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::{h_flex, v_flex, Sizable};
@@ -22,8 +25,10 @@ use gpui_kit::*;
 
 use crate::tokens;
 
+use recall::Recall;
+
 pub(crate) use feedback::Feedback;
-pub(crate) use run::run;
+pub(crate) use undo::RunUndo;
 
 /// Read once at startup by `main`; documented in this module's doc comment.
 pub(crate) const RUN_VARIABLE: &str = "RBX_STUDIO_RUN";
@@ -31,6 +36,7 @@ pub(crate) const RUN_VARIABLE: &str = "RBX_STUDIO_RUN";
 pub(crate) struct CommandBar {
     input: Entity<InputState>,
     feedback: Feedback,
+    recall: Recall,
 }
 
 impl CommandBar {
@@ -40,11 +46,27 @@ impl CommandBar {
                 InputState::new(window, cx).placeholder("Command Bar — Luau, Enter to run")
             }),
             feedback: Feedback::default(),
+            recall: Recall::default(),
         }
     }
 
     pub(crate) fn input(&self) -> &Entity<InputState> {
         &self.input
+    }
+
+    /// Remembers a submitted command for Up/Down.
+    pub(crate) fn remember(&mut self, source: &str) {
+        self.recall.submit(source);
+    }
+
+    /// Up: the older command to show in place of `current`, if any.
+    pub(crate) fn recall_older(&mut self, current: &str) -> Option<String> {
+        self.recall.older(current).map(str::to_owned)
+    }
+
+    /// Down: the newer command, or the line Up started from.
+    pub(crate) fn recall_newer(&mut self) -> Option<String> {
+        self.recall.newer().map(str::to_owned)
     }
 
     pub(crate) fn set_feedback(&mut self, feedback: Feedback) {

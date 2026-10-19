@@ -32,6 +32,8 @@ use std::sync::Arc;
 use mlua::chunk::Compiler;
 use mlua::Lua;
 
+use crate::output::Output;
+
 pub use frame::{Frame, Paused, Variable};
 
 /// One line breakpoint, configured the way Studio's Edit Breakpoint window
@@ -78,7 +80,7 @@ pub(crate) fn run(
     source: &str,
     name: &str,
     breakpoints: &[Breakpoint],
-    output: Rc<RefCell<Vec<String>>>,
+    output: Rc<RefCell<Output>>,
     stop: Arc<AtomicBool>,
     on_pause: impl FnMut(&Paused) -> Resume + 'static,
 ) -> mlua::Result<()> {

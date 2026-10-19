@@ -7,10 +7,9 @@ use std::rc::Rc;
 
 use gpui_kit::component::tree::TreeItem;
 use gpui_kit::{Context, ScrollStrategy, SharedString};
-use rbx_dom::{Change, Ref, WeakDom};
+use rbx_dom::{Change, Ref};
 
 use crate::cli::Launch;
-use crate::command_bar::{self, Feedback};
 use crate::explorer::{self, Explorer};
 use crate::transform::Targets;
 
@@ -219,47 +218,7 @@ impl Shell {
         }
     }
 
-    /// Enter in the Command Bar: reads the input's current text and runs it.
-    pub(super) fn run_typed_command(&mut self, cx: &mut Context<Self>) {
-        let source = self.command_bar.input().read(cx).value().to_string();
-        self.run_command(&source, cx);
-    }
-
-    /// Runs `source` against the place, the way the Command Bar always does:
-    /// the DOM is swapped into a throwaway `rbx_lua::Runtime` (which has to own
-    /// it while the script runs) and swapped back out, mutated or not, once it
-    /// returns.
-    pub(super) fn run_command(&mut self, source: &str, cx: &mut Context<Self>) {
-        // Snapshotted before the swap below, whether or not the script ends
-        // up mutating anything — see `shell::history`. Also drains the
-        // change log: everything logged so far was already reflected as it
-        // happened (a Properties panel commit, say), so only what this
-        // script itself does is of interest to `rebuild_after_script`.
-        self.push_history();
-        // `WeakDom::new()` is only ever seen back if `run` itself could not be
-        // built (an engine fault, not a script one) — see `command_bar::run`.
-        let dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let (dom, result) = command_bar::run(dom, &self.database, source);
-        self.dom = dom;
-
-        let succeeded = result.is_ok();
-        let printed = result
-            .as_ref()
-            .map(|output| output.printed().to_vec())
-            .unwrap_or_default();
-        let feedback = Feedback::from_run(result.map(|output| output.lines().to_vec()));
-        // Logged before the Command Bar's own label is overwritten below: the
-        // Output panel is the only place a run's outcome survives past the
-        // next one (see `shell::output`).
-        self.output.push_run(source, feedback.clone(), printed);
-        self.command_bar.set_feedback(feedback);
-        if succeeded {
-            self.rebuild_after_script(cx);
-        }
-        cx.notify();
-    }
-
-    /// Reflects a successful script in everything that was built from the old
+    /// Reflects a script's changes in everything that was built from the old
     /// DOM: the Explorer's rows and the viewport's scene. The Properties panel
     /// reads `self.dom` itself, so the re-render is all it needs.
     ///

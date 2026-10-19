@@ -2,23 +2,20 @@
 //! `vm::build` for the real one).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use mlua::Lua;
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
-use super::env::{Env, Shared};
+use super::env::{engine_for, Env, Shared};
 use super::events::PluginHooks;
-use super::scheduler::{self, Scheduler};
-use super::signal::Signals;
 use crate::ctx::Ctx;
 use crate::hooks::HookSlot;
 
 /// A VM over `dom` with the command bar's globals, `Env` app data (plugin
 /// 1, named "Test", its `CoreGui`/`PluginGuiService` folders created as
-/// roots of `dom`), `scheduler::install`, and — when `hooks` — the
+/// roots of `dom`), `engine::install`, and — when `hooks` — the
 /// `events::PluginHooks` hook slot. Not sandboxed. Returns the VM, its
 /// `Env`, and the DOM slot (borrow it to inspect what scripts did).
 pub(crate) fn test_vm(mut dom: WeakDom, hooks: bool) -> (Lua, Rc<Env>, Rc<RefCell<WeakDom>>) {
@@ -28,19 +25,18 @@ pub(crate) fn test_vm(mut dom: WeakDom, hooks: bool) -> (Lua, Rc<Env>, Rc<RefCel
     let ctx = Ctx::new(
         slot.clone(),
         Rc::new(ReflectionDatabase::embedded()),
-        Rc::new(RefCell::new(Vec::new())),
-        Rc::new(RefCell::new(Vec::new())),
+        Rc::default(),
     );
+    let shared = Rc::new(RefCell::new(Shared::default()));
+    let roots = Rc::new(RefCell::new(vec![core_gui, plugin_gui_service]));
     let env = Rc::new(Env {
         plugin: 1,
         name: "Test".to_string(),
+        engine: engine_for("Test", &ctx, &shared, &roots),
         ctx: ctx.clone(),
-        shared: Rc::new(RefCell::new(Shared::default())),
-        signals: RefCell::new(Signals::default()),
-        scheduler: RefCell::new(Scheduler::default()),
+        shared,
         manifest: None,
-        roots: RefCell::new(vec![core_gui, plugin_gui_service]),
-        modules: RefCell::new(HashMap::new()),
+        roots,
         core_gui,
         plugin_gui_service,
     });
@@ -50,6 +46,6 @@ pub(crate) fn test_vm(mut dom: WeakDom, hooks: bool) -> (Lua, Rc<Env>, Rc<RefCel
     }
     lua.set_app_data(env.clone());
     crate::runtime::install_globals(&lua, &ctx).expect("install globals");
-    scheduler::install(&lua).expect("install scheduler");
+    crate::engine::install(&lua, env.engine.clone()).expect("install engine");
     (lua, env, slot)
 }

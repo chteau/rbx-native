@@ -71,17 +71,23 @@ impl UserData for LuaGame {
                     return Ok(service);
                 }
             }
-            if this.ctx.database().class(&class).is_none() {
-                return Err(mlua::Error::runtime(format!(
-                    "{class} is not a valid Service name"
-                )));
-            }
-            // Unlike Roblox, a missing service is not created on demand: services
-            // carry state this crate cannot invent, and the file is the authority.
-            let found = LuaGame::service(&this.ctx.dom(), &class).ok_or_else(|| {
-                mlua::Error::runtime(format!("{class} is not present in this DataModel"))
-            })?;
-            LuaInstance::new(found, this.ctx.clone()).into_lua(lua)
+            let found = LuaGame::service(&this.ctx.dom(), &class);
+            let referent = match found {
+                Some(referent) => referent,
+                // As in Roblox, a service the place lacks is created under
+                // `game` on first request.
+                None if this.ctx.database().is_service(&class) => {
+                    let referent = this.ctx.dom_mut().new_instance(&class, &class, None);
+                    crate::defaults::apply(&this.ctx, &class, referent);
+                    referent
+                }
+                None => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{class} is not a valid Service name"
+                    )))
+                }
+            };
+            LuaInstance::new(referent, this.ctx.clone()).into_lua(lua)
         });
         either(
             methods,

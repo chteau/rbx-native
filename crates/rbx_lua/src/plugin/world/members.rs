@@ -6,7 +6,7 @@ use mlua::{Lua, MultiValue, Result, Table, Value};
 use rbx_dom::Ref;
 
 use crate::ctx::Ctx;
-use crate::plugin::signal::{LuaSignal, Owner, SignalKey};
+use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 
 pub(super) fn member(
     lua: &Lua,

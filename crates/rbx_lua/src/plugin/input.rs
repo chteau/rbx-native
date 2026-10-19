@@ -97,10 +97,10 @@ mod tests {
     use mlua::MultiValue;
     use rbx_dom::WeakDom;
 
+    use crate::engine::scheduler;
     use crate::instance::LuaInstance;
     use crate::plugin::api::{GuiEvent, GuiEventKind};
     use crate::plugin::events::fire_gui;
-    use crate::plugin::scheduler;
     use crate::plugin::testing::test_vm;
 
     #[test]

@@ -14,14 +14,14 @@ use mlua::{
     FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, Result, Table, UserData, UserDataFields,
     UserDataMethods, Value,
 };
-use rbx_dom::{Ref, Variant};
+use rbx_dom::Ref;
 
 use super::api::{Answer, Request, UiId};
 use super::env::env;
 use super::http::HttpRequest;
-use super::scheduler::AwaitId;
-use super::signal::{LuaSignal, Owner, SignalKey};
 use crate::datatypes::color3::LuaColor3;
+use crate::engine::scheduler::AwaitId;
+use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
 
 const SERVICES: [&str; 9] = [
@@ -156,7 +156,8 @@ fn index(lua: &Lua, service: &'static str, key: &str) -> Result<Value> {
         "RunService" => run_service(lua, key),
         "StudioService" => studio_service(lua, key),
         "UserInputService" => user_input_service(lua, key),
-        _ => collection_service(lua, key),
+        _ => crate::engine::collection::member(lua, key)?
+            .ok_or_else(|| no_member("CollectionService", key)),
     }
 }
 
@@ -337,16 +338,6 @@ fn change_history(lua: &Lua, key: &str) -> Result<Value> {
 
 type MultiValueRest = mlua::Variadic<Value>;
 
-/// Fires `GetInstanceAddedSignal(tag)` / `GetInstanceRemovedSignal(tag)`
-/// for a tag a plugin changed through `CollectionService`.
-fn tag_signal(lua: &Lua, event: &str, tag: &str, r: Ref) -> Result<()> {
-    let key = SignalKey::new(
-        Owner::Service("CollectionService"),
-        format!("{event}:{tag}"),
-    );
-    super::signal::fire(lua, &key, &[super::api::Arg::Instance(r)])
-}
-
 /// `BindToRenderStep(name, priority, fn)` / `UnbindFromRenderStep(name)`:
 /// named `RenderStepped` connections (priority is not ordered).
 fn render_step(lua: &Lua, unbind: bool) -> Result<Value> {
@@ -416,99 +407,6 @@ fn studio_service(lua: &Lua, key: &str) -> Result<Value> {
             Ok(icon)
         }),
         _ => Err(no_member("StudioService", key)),
-    }
-}
-
-fn tags_of(lua: &Lua, r: Ref) -> Vec<String> {
-    let env = env(lua);
-    let dom = env.ctx.dom();
-    dom.get(r)
-        .map(|i| {
-            rbx_dom::attributes::tags(i.properties().get("Tags"))
-                .into_iter()
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn write_tags(lua: &Lua, r: Ref, tags: &[String]) -> Result<()> {
-    env(lua).ctx.check_write(r)?;
-    let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
-    let text = rbx_dom::attributes::encode_tags(&refs);
-    env(lua)
-        .ctx
-        .dom_mut()
-        .set_property(r, "Tags", Variant::String(text))
-        .map(|_| ())
-        .map_err(mlua::Error::external)
-}
-
-fn collection_service(lua: &Lua, key: &str) -> Result<Value> {
-    match key {
-        "GetTagged" => func(lua, |lua, (_, tag): (Value, String)| {
-            let env = env(lua);
-            let parked = env.roots.borrow().clone();
-            let found: Vec<Ref> = {
-                let dom = env.ctx.dom();
-                let mut stack: Vec<Ref> = dom
-                    .root_refs()
-                    .iter()
-                    .filter(|r| !parked.contains(r))
-                    .copied()
-                    .collect();
-                let mut found = Vec::new();
-                while let Some(r) = stack.pop() {
-                    let Some(instance) = dom.get(r) else { continue };
-                    if rbx_dom::attributes::tags(instance.properties().get("Tags"))
-                        .contains(&tag.as_str())
-                    {
-                        found.push(r);
-                    }
-                    stack.extend(instance.children().iter().rev());
-                }
-                found
-            };
-            instances_table(lua, &found)
-        }),
-        "HasTag" => func(lua, |lua, (_, inst, tag): (Value, Value, String)| {
-            Ok(tags_of(lua, instance_ref(&inst)?).contains(&tag))
-        }),
-        "GetTags" => func(lua, |lua, (_, inst): (Value, Value)| {
-            let tags = tags_of(lua, instance_ref(&inst)?);
-            lua.create_sequence_from(tags)
-        }),
-        "AddTag" => func(lua, |lua, (_, inst, tag): (Value, Value, String)| {
-            let r = instance_ref(&inst)?;
-            let mut tags = tags_of(lua, r);
-            if !tags.contains(&tag) {
-                tags.push(tag.clone());
-                write_tags(lua, r, &tags)?;
-                tag_signal(lua, "InstanceAdded", &tag, r)?;
-            }
-            Ok(())
-        }),
-        "RemoveTag" => func(lua, |lua, (_, inst, tag): (Value, Value, String)| {
-            let r = instance_ref(&inst)?;
-            let mut tags = tags_of(lua, r);
-            if tags.contains(&tag) {
-                tags.retain(|t| *t != tag);
-                write_tags(lua, r, &tags)?;
-                tag_signal(lua, "InstanceRemoved", &tag, r)?;
-            }
-            Ok(())
-        }),
-        "GetInstanceAddedSignal" | "GetInstanceRemovedSignal" => {
-            let event = &key[3..key.len() - 6];
-            let event = event.to_string();
-            func(lua, move |_, (_, tag): (Value, String)| {
-                Ok(LuaSignal(SignalKey::new(
-                    Owner::Service("CollectionService"),
-                    format!("{event}:{tag}"),
-                )))
-            })
-        }
-        _ => Err(no_member("CollectionService", key)),
     }
 }
 
@@ -595,8 +493,8 @@ mod tests {
     use rbx_dom::WeakDom;
 
     use super::*;
+    use crate::engine::scheduler;
     use crate::plugin::api::OutputKind;
-    use crate::plugin::scheduler;
     use crate::plugin::testing::test_vm;
 
     fn vm(dom: WeakDom) -> (Lua, Rc<crate::plugin::env::Env>) {

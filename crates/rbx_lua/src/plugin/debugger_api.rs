@@ -11,7 +11,7 @@ use rbx_dom::Ref;
 use super::api::{Arg, DebuggerRequest, DebuggerView, Permission, Request};
 use super::env::env;
 use super::native;
-use super::signal::{fire, fire_values, LuaSignal, Owner, SignalKey};
+use crate::engine::signal::{fire, fire_values, LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
 
 const DENIED: &str = "this plugin lacks the 'debugger' permission";
@@ -399,7 +399,7 @@ mod tests {
     use rbx_dom::WeakDom;
 
     use super::*;
-    use crate::plugin::scheduler;
+    use crate::engine::scheduler;
     use crate::plugin::testing::test_vm;
 
     fn setup() -> (Lua, std::rc::Rc<crate::plugin::env::Env>, Ref) {

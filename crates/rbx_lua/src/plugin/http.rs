@@ -4,7 +4,7 @@
 use std::sync::mpsc::{Receiver, Sender};
 
 use super::api::PluginId;
-use super::scheduler::AwaitId;
+use crate::engine::scheduler::AwaitId;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct HttpRequest {

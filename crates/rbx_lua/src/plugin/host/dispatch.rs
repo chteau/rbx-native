@@ -11,13 +11,13 @@ use rbx_dom::{Change, Ref, Variant, Vector2Data, WeakDom};
 
 use super::{Loaded, PluginHost};
 use crate::ctx::Ctx;
+use crate::engine::signal::{self, Owner, SignalKey};
+use crate::engine::{changes, scheduler};
 use crate::plugin::api::{
     Arg, Context, DebuggerView, Input, LayoutBox, MouseInput, Origin, Outcome, OutputKind,
     Permission, SourceBody,
 };
-use crate::plugin::env::Env;
-use crate::plugin::scheduler::{self, Scheduler};
-use crate::plugin::signal::{self, Owner, SignalKey, Signals};
+use crate::plugin::env::{engine_for, Env};
 use crate::plugin::{debugger_api, events, loader, plugin_object, services, vm};
 
 #[path = "overlays.rs"]
@@ -75,19 +75,22 @@ pub(super) fn run(
 
     let mut log = Vec::new();
     for _ in 0..ROUNDS {
-        let changes = host.dom.borrow_mut().take_changes();
+        let (changes, first) = changes::take_changes(&mut host.dom.borrow_mut());
         if changes.is_empty() {
             break;
         }
         for loaded in &host.plugins {
             if let (Some(lua), Some(env)) = (&loaded.lua, &loaded.env) {
                 fresh_budget(env);
-                report(env, events::fire_changes(lua, &changes));
+                report(env, changes::fire_changes(lua, &changes, first));
             }
         }
         log.extend(changes);
     }
     log.extend(host.dom.borrow_mut().take_changes());
+    for (_, env) in vms(host) {
+        env.engine.signals.borrow_mut().settle();
+    }
 
     overlays::sync(host);
     mark_views(host, &log, &place_roots);
@@ -174,7 +177,7 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
         ),
         Input::DomChanged(changes) => {
             for (lua, env) in vms(host) {
-                report(&env, events::fire_changes(&lua, &changes));
+                report(&env, changes::fire_changes(&lua, &changes, None));
             }
         }
         Input::PromptAnswered(id, answer) => {
@@ -324,13 +327,8 @@ fn start(host: &mut PluginHost, index: usize) {
         Origin::Native { manifest, .. } => Some(manifest.clone()),
         Origin::Roblox { .. } => None,
     };
-    let mut ctx = Ctx::new(
-        host.dom.clone(),
-        host.database.clone(),
-        Rc::new(RefCell::new(Vec::new())),
-        Rc::new(RefCell::new(Vec::new())),
-    )
-    .with_write_hook(crate::plugin::undo::hook(host.undo.clone()));
+    let mut ctx = Ctx::new(host.dom.clone(), host.database.clone(), Rc::default())
+        .with_write_hook(crate::plugin::undo::hook(host.undo.clone()));
     if let Some(manifest) = &manifest {
         if !manifest.permissions.contains(&Permission::DomWrite) {
             ctx = ctx.with_guard(Rc::new(crate::plugin::guard::place_writes_denied(
@@ -338,16 +336,15 @@ fn start(host: &mut PluginHost, index: usize) {
             )));
         }
     }
+    let roots = Rc::new(RefCell::new(vec![folder, core_gui, plugin_gui_service]));
     let env = Rc::new(Env {
         plugin: id,
         name: source.name.clone(),
+        engine: engine_for(&source.name, &ctx, &host.shared, &roots),
         ctx,
         shared: host.shared.clone(),
-        signals: RefCell::new(Signals::default()),
-        scheduler: RefCell::new(Scheduler::default()),
         manifest,
-        roots: RefCell::new(vec![folder, core_gui, plugin_gui_service]),
-        modules: RefCell::new(HashMap::new()),
+        roots,
         core_gui,
         plugin_gui_service,
     });

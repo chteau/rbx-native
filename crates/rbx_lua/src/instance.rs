@@ -1,11 +1,12 @@
 //! `Instance` userdata: one DOM node seen from Luau.
 
 mod bounds;
-mod tags;
+pub(crate) mod tags;
 pub(crate) mod tree;
 
 use mlua::{
-    IntoLua, Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMethods, Value,
+    FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, MultiValue, Result, Table, UserData,
+    UserDataFields, UserDataMethods, Value,
 };
 use rbx_dom::Ref;
 
@@ -332,17 +333,42 @@ impl UserData for LuaInstance {
             dom.remove(this.referent);
             Ok(())
         });
-        methods.add_method("AddTag", |_, this, tag: String| {
-            tags::set(&this.ctx, this.referent, &tag, true).map(|_| ())
+        methods.add_method("AddTag", |lua, this, args: MultiValue| {
+            if let Some(answer) =
+                tags::service_call(lua, &this.ctx, this.referent, "AddTag", &args)?
+            {
+                return Ok(answer);
+            }
+            let tag = String::from_lua_multi(args, lua)?;
+            tags::set(&this.ctx, this.referent, &tag, true).map(|_| MultiValue::new())
         });
-        methods.add_method("RemoveTag", |_, this, tag: String| {
-            tags::set(&this.ctx, this.referent, &tag, false).map(|_| ())
+        methods.add_method("RemoveTag", |lua, this, args: MultiValue| {
+            if let Some(answer) =
+                tags::service_call(lua, &this.ctx, this.referent, "RemoveTag", &args)?
+            {
+                return Ok(answer);
+            }
+            let tag = String::from_lua_multi(args, lua)?;
+            tags::set(&this.ctx, this.referent, &tag, false).map(|_| MultiValue::new())
         });
-        methods.add_method("HasTag", |_, this, tag: String| {
-            Ok(tags::get(&this.ctx, this.referent).contains(&tag))
+        methods.add_method("HasTag", |lua, this, args: MultiValue| {
+            if let Some(answer) =
+                tags::service_call(lua, &this.ctx, this.referent, "HasTag", &args)?
+            {
+                return Ok(answer);
+            }
+            let tag = String::from_lua_multi(args, lua)?;
+            tags::get(&this.ctx, this.referent)
+                .contains(&tag)
+                .into_lua_multi(lua)
         });
-        methods.add_method("GetTags", |_, this, ()| {
-            Ok(tags::get(&this.ctx, this.referent))
+        methods.add_method("GetTags", |lua, this, args: MultiValue| {
+            if let Some(answer) =
+                tags::service_call(lua, &this.ctx, this.referent, "GetTags", &args)?
+            {
+                return Ok(answer);
+            }
+            tags::get(&this.ctx, this.referent).into_lua_multi(lua)
         });
         // Deprecated: parents the instance to nil, children and all.
         methods.add_method("Remove", |_, this, ()| {

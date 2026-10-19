@@ -224,6 +224,13 @@ impl WeakDom {
         self.mutations
     }
 
+    /// The changes recorded since the log was last drained, without draining
+    /// it: for a reader that must react to edits while another consumer (the
+    /// editor's undo history) still owns the log.
+    pub fn changes(&self) -> &[Change] {
+        &self.changes
+    }
+
     /// Drains and returns every change recorded since the last call, in the order
     /// the mutations happened.
     pub fn take_changes(&mut self) -> Vec<Change> {

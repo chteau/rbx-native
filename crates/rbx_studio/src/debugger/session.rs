@@ -156,7 +156,7 @@ fn run(
     };
     let (output, result) = match runtime.debug(source, name, breakpoints, stop, on_pause) {
         Ok(output) => (output.lines().to_vec(), Ok(())),
-        Err(err) => (Vec::new(), Err(err.to_string())),
+        Err(err) => (err.output.lines().to_vec(), Err(err.to_string())),
     };
     Finished {
         dom: Some(runtime.into_dom()),

@@ -1,9 +1,10 @@
 //! Extension points for a host that adds members to the core bindings.
 //!
-//! The command bar's `Runtime` installs none. The plugin host installs one
-//! per VM (as mlua app data) to give instances their events and
-//! class-specific plugin members, and `game:GetService` the services that
-//! have no instance in a place file (`Selection`, `HttpService`, …).
+//! Each VM installs one (as mlua app data). The command bar's gives
+//! instances their events, attributes and bindables, plus `HttpService`'s
+//! JSON and `CollectionService`; the plugin host's adds class-specific
+//! plugin members, and `game:GetService` the services that have no
+//! instance in a place file (`Selection`, `HttpService`, …).
 
 use std::rc::Rc;
 

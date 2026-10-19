@@ -36,6 +36,7 @@ use mlua::{ffi, Function, Lua};
 
 use super::frame::Compiled;
 use super::{Breakpoint, Paused, Resume, STOPPED};
+use crate::output::{LineKind, Output};
 
 /// Where the chunk being debugged is kept, so a callback can patch its
 /// lines. mlua's named registry values are plain string keys.
@@ -76,7 +77,7 @@ struct Session {
     /// The line last seen at each call depth; only kept while tracking.
     lines: Vec<c_int>,
     watches: Vec<Watch>,
-    output: Rc<RefCell<Vec<String>>>,
+    output: Rc<RefCell<Output>>,
     compiled: Rc<Compiled>,
 }
 
@@ -99,7 +100,7 @@ pub(super) fn attach<'a>(
     lua: &'a Lua,
     chunk: &Function,
     breakpoints: &[Breakpoint],
-    output: Rc<RefCell<Vec<String>>>,
+    output: Rc<RefCell<Output>>,
     stop: Arc<AtomicBool>,
     on_pause: Box<dyn FnMut(&Paused) -> Resume>,
 ) -> mlua::Result<Attached<'a>> {
@@ -403,21 +404,22 @@ unsafe fn coverage(state: *mut ffi::lua_State, line: c_int) -> c_int {
 }
 
 /// Whether `breakpoint` pauses here, logging its message on the way.
-fn activate(paused: &Paused, breakpoint: &Breakpoint, output: &RefCell<Vec<String>>) -> bool {
+fn activate(paused: &Paused, breakpoint: &Breakpoint, output: &RefCell<Output>) -> bool {
     if let Some(condition) = &breakpoint.condition {
         match paused.truthy(condition) {
             Ok(false) => return false,
             Ok(true) => {}
-            Err(err) => output
-                .borrow_mut()
-                .push(format!("Breakpoint condition `{condition}` failed: {err}")),
+            Err(err) => output.borrow_mut().push_text(
+                LineKind::Error,
+                format!("Breakpoint condition `{condition}` failed: {err}"),
+            ),
         }
     }
     if let Some(message) = &breakpoint.log_message {
         let line = paused
             .print_line(message)
             .unwrap_or_else(|err| format!("Logpoint `{message}` failed: {err}"));
-        output.borrow_mut().push(line);
+        output.borrow_mut().push_text(LineKind::Print, line);
     }
     !breakpoint.continue_execution
 }

@@ -15,9 +15,9 @@ use rbx_dom::Ref;
 
 use super::api::{Context, Manifest, OutputKind, OutputLine, PluginId, Request, Ui, UiId};
 use super::http::Http;
-use super::scheduler::Scheduler;
-use super::signal::Signals;
 use crate::ctx::Ctx;
+use crate::engine::{Engine, Host};
+use crate::output::LineKind;
 
 /// One plugin's VM-side state.
 pub(crate) struct Env {
@@ -26,17 +26,13 @@ pub(crate) struct Env {
     /// Bound to the host's shared DOM slot (see `PluginHost`).
     pub(crate) ctx: Ctx,
     pub(crate) shared: Rc<RefCell<Shared>>,
-    /// This VM's signal connections.
-    pub(crate) signals: RefCell<Signals>,
-    /// This VM's suspended threads.
-    pub(crate) scheduler: RefCell<Scheduler>,
+    /// This VM's threads, connections and loaded modules.
+    pub(crate) engine: Rc<Engine>,
     /// Some for an rbx-native plugin (`plugin.toml`).
     pub(crate) manifest: Option<Manifest>,
     /// The plugin's own root instances (its script tree, its widgets, its
     /// `CoreGui` folder): parked between dispatches.
-    pub(crate) roots: RefCell<Vec<Ref>>,
-    /// `require` results, by `ModuleScript`.
-    pub(crate) modules: RefCell<HashMap<Ref, mlua::Value>>,
+    pub(crate) roots: Rc<RefCell<Vec<Ref>>>,
     /// The plugin's `CoreGui` stand-in (a `Folder` named `CoreGui`, one per
     /// plugin, parked with its roots).
     pub(crate) core_gui: Ref,
@@ -100,4 +96,55 @@ impl Shared {
             text: text.into(),
         });
     }
+}
+
+/// What the shared engine asks of a plugin VM's host: time and ids come
+/// from [`Shared`], output is the plugin's, and its parked roots are not
+/// part of the place.
+struct PluginThreads {
+    name: String,
+    shared: Rc<RefCell<Shared>>,
+    roots: Rc<RefCell<Vec<Ref>>>,
+}
+
+impl Host for PluginThreads {
+    fn now(&self) -> f64 {
+        self.shared.borrow().context.now
+    }
+
+    fn set_now(&self, now: f64) {
+        self.shared.borrow_mut().context.now = now;
+    }
+
+    fn next_id(&self) -> u32 {
+        self.shared.borrow_mut().next_id()
+    }
+
+    fn output(&self, kind: LineKind, text: String) {
+        let kind = match kind {
+            LineKind::Print => OutputKind::Print,
+            LineKind::Warn => OutputKind::Warn,
+            LineKind::Error => OutputKind::Error,
+        };
+        self.shared.borrow_mut().push_output(&self.name, kind, text);
+    }
+
+    fn is_parked(&self, root: Ref) -> bool {
+        self.roots.borrow().contains(&root)
+    }
+}
+
+/// The engine for a plugin VM named `name` over `ctx`.
+pub(crate) fn engine_for(
+    name: &str,
+    ctx: &Ctx,
+    shared: &Rc<RefCell<Shared>>,
+    roots: &Rc<RefCell<Vec<Ref>>>,
+) -> Rc<Engine> {
+    let host = PluginThreads {
+        name: name.to_string(),
+        shared: shared.clone(),
+        roots: roots.clone(),
+    };
+    Engine::new(ctx.clone(), Rc::new(host))
 }

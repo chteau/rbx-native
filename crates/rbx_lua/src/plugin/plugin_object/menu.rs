@@ -5,10 +5,10 @@ use mlua::{
 };
 
 use super::{with_state, Pending};
+use crate::engine::scheduler;
+use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 use crate::plugin::api::{Action, MenuItem, PromptKind, Request, UiId};
 use crate::plugin::env::env;
-use crate::plugin::scheduler;
-use crate::plugin::signal::{LuaSignal, Owner, SignalKey};
 
 const SHOW_KEY: &str = "__plugin_menu_show";
 

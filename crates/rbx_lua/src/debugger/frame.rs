@@ -9,6 +9,8 @@ use std::collections::HashMap;
 
 use mlua::{ffi, Function, Lua, MultiValue, Table, Value};
 
+use crate::output::Output;
+
 /// One row of the Call Stack: a Luau function and the line it is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
@@ -34,7 +36,7 @@ pub struct Paused<'a> {
     /// protected call, which may add a frame on this same thread; the depth
     /// is what finds the paused function again from under it.
     depth: c_int,
-    output: &'a RefCell<Vec<String>>,
+    output: &'a RefCell<Output>,
     compiled: &'a Compiled,
 }
 
@@ -53,7 +55,7 @@ impl<'a> Paused<'a> {
         lua: &'a Lua,
         state: *mut ffi::lua_State,
         line: u32,
-        output: &'a RefCell<Vec<String>>,
+        output: &'a RefCell<Output>,
         compiled: &'a Compiled,
     ) -> Self {
         // SAFETY: only reads the thread's call-info count.
@@ -76,7 +78,7 @@ impl<'a> Paused<'a> {
     /// Everything printed since the run started or this was last called, so
     /// a paused script's output can be shown before the run is over.
     pub fn take_output(&self) -> Vec<String> {
-        std::mem::take(&mut self.output.borrow_mut())
+        self.output.borrow_mut().take_lines()
     }
 
     /// Innermost first; native functions (Rust bindings, `pcall`) are left

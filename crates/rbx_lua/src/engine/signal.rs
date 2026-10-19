@@ -8,12 +8,11 @@ use mlua::{
 };
 use rbx_dom::Ref;
 
-use super::api::{Arg, UiId};
-use super::arg;
-use super::env::env;
-use super::scheduler;
+use super::{engine, scheduler};
+use crate::plugin::api::{Arg, UiId};
+use crate::plugin::arg;
 
-const WAIT_KEY: &str = "__plugin_signal_wait";
+const WAIT_KEY: &str = "__rbxn_signal_wait";
 
 /// Who a signal belongs to.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -51,6 +50,11 @@ pub(crate) struct Connection {
     pub(crate) id: u32,
     pub(crate) func: Function,
     pub(crate) once: bool,
+    /// The DOM's mutation count when it was made, until [`Signals::settle`]:
+    /// events replayed from the change log (see [`fire_at`]) skip the
+    /// changes logged before it, which Roblox would have fired before the
+    /// connection existed.
+    pub(crate) since: Option<u64>,
 }
 
 /// One VM's connections.
@@ -73,14 +77,33 @@ impl Signals {
             .any(|(key, c)| key.owner == Owner::Instance(referent) && !c.is_empty())
     }
 
-    fn connect(&mut self, key: &SignalKey, func: Function, once: bool) -> u32 {
+    pub(crate) fn connect(
+        &mut self,
+        key: &SignalKey,
+        func: Function,
+        once: bool,
+        since: Option<u64>,
+    ) -> u32 {
         self.next += 1;
         let id = self.next;
         self.connections
             .entry(key.clone())
             .or_default()
-            .push(Connection { id, func, once });
+            .push(Connection {
+                id,
+                func,
+                once,
+                since,
+            });
         id
+    }
+
+    /// Once the change log a run made has been fired, every connection
+    /// hears whatever comes next.
+    pub(crate) fn settle(&mut self) {
+        for connection in self.connections.values_mut().flatten() {
+            connection.since = None;
+        }
     }
 
     fn disconnect(&mut self, key: &SignalKey, id: u32) {
@@ -109,7 +132,7 @@ pub(crate) struct LuaConnection {
 }
 
 fn connect(lua: &Lua, key: &SignalKey, func: Function, once: bool) -> LuaConnection {
-    let id = env(lua).signals.borrow_mut().connect(key, func, once);
+    let id = connect_now(lua, key, func, once);
     LuaConnection {
         key: key.clone(),
         id,
@@ -125,7 +148,7 @@ fn wait_function(lua: &Lua) -> Result<Function> {
         let id = scheduler::new_await(lua);
         let resolver = lua
             .create_function(move |lua, args: MultiValue| scheduler::resolve(lua, id, Ok(args)))?;
-        env(lua).signals.borrow_mut().connect(&key, resolver, true);
+        connect_now(lua, &key, resolver, true);
         Ok(id)
     })?;
     let f = scheduler::yielding(lua, start)?;
@@ -174,14 +197,17 @@ impl UserData for LuaConnection {
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("Disconnect", |lua, this, ()| {
-            env(lua).signals.borrow_mut().disconnect(&this.key, this.id);
+            engine(lua)
+                .signals
+                .borrow_mut()
+                .disconnect(&this.key, this.id);
             Ok(())
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
             match key.as_str() {
                 "Connected" | "connected" => {
-                    let env = env(lua);
-                    let signals = env.signals.borrow();
+                    let engine = engine(lua);
+                    let signals = engine.signals.borrow();
                     Ok(Value::Boolean(
                         signals
                             .connections
@@ -203,28 +229,61 @@ impl UserData for LuaConnection {
 }
 
 /// Fires `key` in this VM: every connected function runs in its own thread
-/// (`scheduler::spawn`) with `args` converted on the VM's `Env::ctx`;
+/// (`scheduler::spawn`) with `args` converted on the VM's `Engine::ctx`;
 /// `Once` connections are removed before they run. A missing key is a
 /// no-op.
 pub(crate) fn fire(lua: &Lua, key: &SignalKey, args: &[Arg]) -> Result<()> {
-    let env = env(lua);
-    if !env.signals.borrow().has(key) {
+    fire_args(lua, key, args, None)
+}
+
+/// [`fire`] for a change replayed from the DOM's change log: with its
+/// number in the DOM's mutation count, only connections made before that
+/// change hear it; `None` (a change made outside any run) reaches all.
+pub(crate) fn fire_at(lua: &Lua, key: &SignalKey, args: &[Arg], change: Option<u64>) -> Result<()> {
+    fire_args(lua, key, args, change)
+}
+
+fn fire_args(lua: &Lua, key: &SignalKey, args: &[Arg], change: Option<u64>) -> Result<()> {
+    let engine = engine(lua);
+    if !engine.signals.borrow().has(key) {
         return Ok(());
     }
-    let values = arg::to_lua_multi(lua, &env.ctx, args)?;
-    fire_values(lua, key, values)
+    let values = arg::to_lua_multi(lua, &engine.ctx, args)?;
+    deliver(lua, key, values, change)
 }
 
 /// [`fire`] with Luau values already in hand (`BindableEvent:Fire`).
 pub(crate) fn fire_values(lua: &Lua, key: &SignalKey, args: MultiValue) -> Result<()> {
-    let env = env(lua);
+    deliver(lua, key, args, None)
+}
+
+/// [`fire_at`] with Luau values already in hand.
+pub(crate) fn fire_values_at(
+    lua: &Lua,
+    key: &SignalKey,
+    args: MultiValue,
+    change: Option<u64>,
+) -> Result<()> {
+    deliver(lua, key, args, change)
+}
+
+fn deliver(lua: &Lua, key: &SignalKey, args: MultiValue, change: Option<u64>) -> Result<()> {
+    let hears = |c: &Connection| match (change, c.since) {
+        (Some(change), Some(since)) => since < change,
+        _ => true,
+    };
+    let engine = engine(lua);
     let funcs: Vec<Function> = {
-        let mut signals = env.signals.borrow_mut();
+        let mut signals = engine.signals.borrow_mut();
         let Some(list) = signals.connections.get_mut(key) else {
             return Ok(());
         };
-        let funcs = list.iter().map(|c| c.func.clone()).collect();
-        list.retain(|c| !c.once);
+        let funcs = list
+            .iter()
+            .filter(|c| hears(c))
+            .map(|c| c.func.clone())
+            .collect();
+        list.retain(|c| !(c.once && hears(c)));
         if list.is_empty() {
             signals.connections.remove(key);
         }
@@ -236,9 +295,17 @@ pub(crate) fn fire_values(lua: &Lua, key: &SignalKey, args: MultiValue) -> Resul
     Ok(())
 }
 
-/// Drops every connection (plugin unload).
+/// Connects `func` to `key`, stamped with the DOM's mutation count.
+pub(crate) fn connect_now(lua: &Lua, key: &SignalKey, func: Function, once: bool) -> u32 {
+    let engine = engine(lua);
+    let since = engine.ctx.dom().mutations();
+    let mut signals = engine.signals.borrow_mut();
+    signals.connect(key, func, once, Some(since))
+}
+
+/// Drops every connection (plugin unload, a cancelled command-bar run).
 pub(crate) fn disconnect_all(lua: &Lua) {
-    env(lua).signals.borrow_mut().connections.clear();
+    engine(lua).signals.borrow_mut().connections.clear();
 }
 
 #[cfg(test)]
@@ -288,7 +355,7 @@ mod tests {
         fire(&lua, &key, &[]).unwrap();
         fire(&lua, &key, &[]).unwrap();
         assert_eq!(num(&lua, "n"), Some(1.0));
-        assert!(!env.signals.borrow().has(&key));
+        assert!(!env.engine.signals.borrow().has(&key));
     }
 
     #[test]
@@ -331,8 +398,8 @@ mod tests {
     fn disconnect_all_clears() {
         let (lua, env, key) = setup();
         run(&lua, "sig:Connect(function() end)");
-        assert!(env.signals.borrow().has(&key));
+        assert!(env.engine.signals.borrow().has(&key));
         disconnect_all(&lua);
-        assert!(!env.signals.borrow().has(&key));
+        assert!(!env.engine.signals.borrow().has(&key));
     }
 }
