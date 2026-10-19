@@ -2,6 +2,8 @@
 //! changes (Save / Don't Save / Cancel, in the launcher's dialog chrome like
 //! the Roblox upload prompts).
 
+use std::path::PathBuf;
+
 use gpui_kit::*;
 
 use crate::launcher::ui::{self, Weight};
@@ -9,7 +11,7 @@ use crate::launcher::ui::{self, Weight};
 use super::Shell;
 
 /// Where the editor goes once the unsaved-changes prompt is answered.
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub(super) enum AfterClose {
     /// File › Close Place: back to Home.
     #[default]
@@ -18,6 +20,11 @@ pub(super) enum AfterClose {
     Restart,
     /// The titlebar's Close button or the window manager's close.
     Quit,
+    /// File › New: a fresh Baseplate, created once the prompt is answered
+    /// so Cancel leaves no stray file.
+    New,
+    /// File › Open…: a window on this place instead of Home.
+    Open(PathBuf),
 }
 
 impl Shell {
@@ -28,6 +35,27 @@ impl Shell {
     }
 
     pub(crate) fn close_place(&mut self, cx: &mut Context<Self>) {
+        if self.has_unsaved_changes() {
+            self.close_prompt = true;
+            cx.notify();
+        } else {
+            self.leave_place(cx);
+        }
+    }
+
+    /// File › New: a new Baseplate in a window of its own, replacing this
+    /// one once any unsaved changes are dealt with.
+    pub(crate) fn request_new(&mut self, cx: &mut Context<Self>) {
+        self.leave_for(AfterClose::New, cx);
+    }
+
+    /// File › Open…, with the file already picked.
+    pub(super) fn request_open(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.leave_for(AfterClose::Open(path), cx);
+    }
+
+    fn leave_for(&mut self, after: AfterClose, cx: &mut Context<Self>) {
+        self.after_close = after;
         if self.has_unsaved_changes() {
             self.close_prompt = true;
             cx.notify();
@@ -83,6 +111,11 @@ impl Shell {
                 });
                 return;
             }
+            AfterClose::New => match super::open_place::create_baseplate() {
+                Ok(path) => return self.open_other(path, cx),
+                Err(err) => return self.warn(format!("New: {err}"), cx),
+            },
+            AfterClose::Open(path) => return self.open_other(path, cx),
             AfterClose::Home => {}
         }
         // Deferred: opening Home renders it, and this runs inside a `Shell`
@@ -91,6 +124,23 @@ impl Shell {
         cx.defer(move |cx| {
             crate::open_home_again(cx);
             let _ = handle.update(cx, |_, window, _| window.remove_window());
+        });
+    }
+
+    /// Opens `path` in a new editor window, and only once that worked closes
+    /// this one; a place that cannot be read leaves this window as it was.
+    fn open_other(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let handle = self.window_handle;
+        let this = cx.weak_entity();
+        // Deferred like Home above: opening renders, and this window cannot
+        // be removed from inside its own handler.
+        cx.defer(move |cx| match crate::open_place(&path, cx) {
+            Ok(()) => {
+                let _ = handle.update(cx, |_, window, _| window.remove_window());
+            }
+            Err(err) => {
+                let _ = this.update(cx, |shell, cx| shell.warn(format!("Open: {err}"), cx));
+            }
         });
     }
 
@@ -108,15 +158,19 @@ impl Shell {
                 .child(ui::dialog(
                     440.,
                     ui::dialog_glyph("triangle-alert", ui::accent(), ui::wash()),
-                    if self.after_close == AfterClose::Restart {
-                        format!("Save changes to {} before restarting?", self.title)
-                    } else {
-                        format!("Save changes to {}?", self.title)
+                    match self.after_close {
+                        AfterClose::Restart => {
+                            format!("Save changes to {} before restarting?", self.title)
+                        }
+                        AfterClose::New | AfterClose::Open(_) => {
+                            format!("Save changes to {} before opening another place?", self.title)
+                        }
+                        _ => format!("Save changes to {}?", self.title),
                     },
-                    if self.after_close == AfterClose::Restart {
-                        "RbxNative restarts to apply beta features. Unsaved changes are lost if you don\u{2019}t save them."
-                    } else {
-                        "Your changes will be lost if you close the place without saving them."
+                    match self.after_close {
+                        AfterClose::Restart => "RbxNative restarts to apply beta features. Unsaved changes are lost if you don\u{2019}t save them.",
+                        AfterClose::New | AfterClose::Open(_) => "Your changes will be lost if you open another place without saving them.",
+                        _ => "Your changes will be lost if you close the place without saving them.",
                     }
                     .to_string(),
                     None,

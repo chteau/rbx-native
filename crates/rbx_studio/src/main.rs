@@ -298,6 +298,20 @@ pub(crate) fn open_home_again(cx: &mut App) {
     launcher::open_home(Rc::new(RefCell::new(Some(boot))), cx);
 }
 
+/// File › New / Open…: a new editor window on `path`, with the boot read
+/// from disk as [`open_home_again`] reads it. The error is the message for
+/// the Output dock; the caller keeps its own window then.
+pub(crate) fn open_place(path: &Path, cx: &mut App) -> Result<(), String> {
+    let user = packs::UserContent::load();
+    let settings = themed(Settings::load(), user.theme.palette.mode);
+    let boot = EditorBoot {
+        settings,
+        launch: Launch::default(),
+        user,
+    };
+    open_editor(path, boot, cx).map_err(|failed| failed.0)
+}
+
 /// Starts a fresh editor process on `place`, for settings that only take
 /// effect at launch. The child is not waited on, so it outlives this one.
 pub(crate) fn relaunch(place: &std::path::Path) {

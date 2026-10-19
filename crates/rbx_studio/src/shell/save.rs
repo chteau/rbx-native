@@ -35,6 +35,12 @@ impl Shell {
                 bar.toggle_entry(window, cx);
             }
         });
+        if crate::shortcuts::pressed(crate::shortcuts::Command::NewPlace, keystroke) {
+            self.request_new(cx);
+        }
+        if crate::shortcuts::pressed(crate::shortcuts::Command::OpenPlace, keystroke) {
+            self.open_place_dialog(cx);
+        }
         if let Some(Action::Save) = save::action_for(&keystroke.key, keystroke.modifiers) {
             self.save(cx);
         }

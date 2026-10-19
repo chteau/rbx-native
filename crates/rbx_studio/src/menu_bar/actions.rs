@@ -29,6 +29,18 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuNewPlace, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.request_new(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuOpenPlace, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_place_dialog(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuSave, cx| {
             let _ = shell.update(cx, |shell, cx| shell.save(cx));
         }

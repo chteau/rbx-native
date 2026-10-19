@@ -37,6 +37,7 @@ mod layout;
 mod light_guides;
 mod luau_lsp;
 mod menu;
+mod open_place;
 mod output;
 mod palette;
 mod panel_window;

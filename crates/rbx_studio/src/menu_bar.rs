@@ -24,10 +24,10 @@
 //! already has for Ctrl+S/Z/Y/G/C/V/D (a command must fire no matter what
 //! currently has focus).
 //!
-//! Everything this editor cannot do yet — New, Open…, Insert Object… —
-//! stays a visibly disabled item rather than
-//! a click that silently does nothing while looking live. The one live View
-//! item is Style Editor: Roblox puts that panel under `Window` ⟩ UI
+//! Anything this editor cannot do yet stays a visibly disabled item
+//! ([`MenuPlaceholder`]) rather than a click that silently does nothing
+//! while looking live. Style Editor is a View item because Roblox puts that
+//! panel under `Window` ⟩ UI
 //! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
 //! so it goes under View.
 
@@ -47,6 +47,8 @@ pub(crate) use bar::{install_key_bindings, MenuBar};
 actions!(
     menu_bar,
     [
+        MenuNewPlace,
+        MenuOpenPlace,
         MenuSave,
         MenuSaveToFile,
         MenuClosePlace,
@@ -137,8 +139,8 @@ pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut Ap
 /// `Script`/`LocalScript`/`ModuleScript` as distinct inserts, so this matches
 /// that rather than collapsing them into one generic "Insert Script" — and
 /// Group/Ungroup (`shell::group`, Ctrl+G/Ctrl+Shift+G). View's Explorer,
-/// Properties and Command Bar items stay placeholders — those panels have no
-/// show/hide command to wire them to yet — while Style Editor brings its own
+/// Properties and Command Bar items show and hide their panels, and Style
+/// Editor brings its own
 /// Style Editor document to the front (see `shell::style_panel`). The
 /// user's own script templates close Model, after a separator, named the way
 /// the ribbon's Script menu names them, so the two menus list the same
@@ -179,8 +181,8 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
     vec![
         Menu::new("File")
             .items(vec![
-                MenuItem::action("New", MenuPlaceholder).disabled(true),
-                MenuItem::action("Open…", MenuPlaceholder).disabled(true),
+                MenuItem::action("New", MenuNewPlace),
+                MenuItem::action("Open…", MenuOpenPlace),
                 // Studio's place for it, under Open. Back to Home; asks
                 // first when there are unsaved changes (`shell::close_place`).
                 MenuItem::action("Close Place", MenuClosePlace),
