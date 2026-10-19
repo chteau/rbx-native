@@ -778,6 +778,14 @@ pub(crate) fn fire_changes(lua: &Lua, changes: &[Change]) -> Result<()> {
     for change in changes {
         match change {
             Change::Property { referent, name } => {
+                // The log holds the spelling a file stores (`size`,
+                // `Color3uint8`); a script hears `Size`, `Color`.
+                let raw = name;
+                let canonical = ctx
+                    .dom()
+                    .get(*referent)
+                    .map(|i| ctx.database().canonical_name(i.class(), raw).to_owned());
+                let name = canonical.as_ref().unwrap_or(raw);
                 // A value object's `Changed` passes the new `Value` instead
                 // of a property name, and fires for nothing else.
                 let value_object = ctx
@@ -1047,6 +1055,23 @@ mod tests {
         vm.flush();
         assert_eq!(vm.get::<String>("changed"), "Name");
         assert!(vm.get::<bool>("named"));
+    }
+
+    #[test]
+    fn changed_names_the_property_not_its_stored_spelling() {
+        let vm = setup(|dom| vec![("p", dom.new_instance("Part", "P", None))]);
+        vm.run(
+            "seen = {} \
+             p.Changed:Connect(function(k) table.insert(seen, k) end) \
+             p:GetPropertyChangedSignal('Size'):Connect(function() sized = true end) \
+             p.Size = Vector3.new(2, 2, 2) \
+             p.Color = Color3.new(1, 0, 0)",
+        );
+        vm.flush();
+        assert!(vm.get::<bool>("sized"));
+        let seen: Vec<String> = vm.get("seen");
+        assert!(seen.contains(&"Size".to_owned()), "{seen:?}");
+        assert!(seen.contains(&"Color".to_owned()), "{seen:?}");
     }
 
     #[test]

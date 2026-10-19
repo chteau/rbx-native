@@ -4,9 +4,10 @@ use std::cell::{Ref as CellRef, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use mlua::chunk::Compiler;
-use mlua::{Lua, Value, Variadic};
+use mlua::{Lua, Value, Variadic, VmState};
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
@@ -53,6 +54,9 @@ pub struct Runtime {
     dom: Rc<RefCell<WeakDom>>,
     output: Rc<RefCell<Vec<String>>>,
     printed: Rc<RefCell<Vec<Vec<PrintPart>>>>,
+    /// How long [`Runtime::run`] lets a script go before it errors, so a
+    /// `while true do end` cannot freeze the editor for good.
+    budget: Duration,
 }
 
 impl Runtime {
@@ -83,6 +87,7 @@ impl Runtime {
             dom,
             output,
             printed,
+            budget: Duration::from_secs(10),
         })
     }
 
@@ -91,7 +96,21 @@ impl Runtime {
     pub fn run(&mut self, source: &str) -> Result<Output, LuaError> {
         self.output.borrow_mut().clear();
         self.printed.borrow_mut().clear();
-        self.lua.load(source).exec()?;
+        // Without a name mlua calls the chunk by the Rust line that loaded it,
+        // so every error read `crates/rbx_lua/src/runtime.rs:94:1: boom`.
+        let deadline = Instant::now() + self.budget;
+        self.lua.set_interrupt(move |_| {
+            if Instant::now() >= deadline {
+                Err(mlua::Error::runtime(
+                    "Script timeout: exhausted allowed execution time",
+                ))
+            } else {
+                Ok(VmState::Continue)
+            }
+        });
+        let ran = self.lua.load(source).set_name("=Command bar").exec();
+        self.lua.remove_interrupt();
+        ran?;
         Ok(Output {
             lines: std::mem::take(&mut self.output.borrow_mut()),
             printed: std::mem::take(&mut self.printed.borrow_mut()),
@@ -142,6 +161,7 @@ impl Runtime {
             dom,
             output,
             printed,
+            budget: _,
         } = self;
         // Closing the VM drops every userdata still holding a handle on the DOM,
         // which is what makes the unwrap below the normal path.
@@ -291,4 +311,20 @@ fn install_error_strings(lua: &Lua) -> Result<(), LuaError> {
             .get::<mlua::Table>("coroutine")?
             .get::<Value>("resume")?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_script_that_never_ends_times_out() {
+        let mut runtime = Runtime::new(WeakDom::new(), ReflectionDatabase::embedded()).unwrap();
+        runtime.budget = Duration::from_millis(100);
+
+        let error = runtime.run("while true do end").expect_err("it must stop");
+
+        assert!(error.to_string().contains("Script timeout"), "{error}");
+        assert!(runtime.run("print(1)").is_ok(), "the runtime stays usable");
+    }
 }

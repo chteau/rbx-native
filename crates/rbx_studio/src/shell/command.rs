@@ -242,7 +242,6 @@ impl Shell {
         let (dom, result) = command_bar::run(dom, &self.database, source);
         self.dom = dom;
 
-        let succeeded = result.is_ok();
         let printed = result
             .as_ref()
             .map(|output| output.printed().to_vec())
@@ -253,13 +252,13 @@ impl Shell {
         // next one (see `shell::output`).
         self.output.push_run(source, feedback.clone(), printed);
         self.command_bar.set_feedback(feedback);
-        if succeeded {
-            self.rebuild_after_script(cx);
-        }
+        // Also after an error: what the script did before it failed is in
+        // the DOM (and kept), so the Explorer and viewport must show it.
+        self.rebuild_after_script(cx);
         cx.notify();
     }
 
-    /// Reflects a successful script in everything that was built from the old
+    /// Reflects a script's changes in everything that was built from the old
     /// DOM: the Explorer's rows and the viewport's scene. The Properties panel
     /// reads `self.dom` itself, so the re-render is all it needs.
     ///

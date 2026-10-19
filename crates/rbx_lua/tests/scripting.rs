@@ -391,3 +391,16 @@ fn minimal_datatypes_expose_their_fields() {
         ]
     );
 }
+
+#[test]
+fn an_error_names_the_chunk_not_a_rust_source_line() {
+    let mut runtime = runtime();
+
+    let error = runtime
+        .run("local x = 1\nerror('boom')")
+        .expect_err("the script errors");
+
+    let message = error.to_string();
+    assert!(message.contains("Command bar:2: boom"), "{message}");
+    assert!(!message.contains("runtime.rs"), "{message}");
+}
