@@ -82,6 +82,8 @@ pub(crate) enum MenuId {
     /// A state machine's n-th transition's From and To pickers.
     AnimTransitionFrom(usize),
     AnimTransitionTo(usize),
+    /// The document strip's "+".
+    DocumentAdd,
 }
 
 impl MenuId {
@@ -127,6 +129,7 @@ impl MenuId {
             MenuId::AnimAutorigJoint => "menu-anim-autorig-joint",
             MenuId::AnimTransitionFrom(_) => "menu-anim-transition-from",
             MenuId::AnimTransitionTo(_) => "menu-anim-transition-to",
+            MenuId::DocumentAdd => "menu-document-add",
         }
     }
 

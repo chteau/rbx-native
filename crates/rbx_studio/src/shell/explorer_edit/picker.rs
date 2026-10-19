@@ -121,6 +121,20 @@ impl Shell {
         }
     }
 
+    /// Model › Insert Object…: Ctrl+I's picker, from a menu click. A menu
+    /// action runs outside the window, so the picker opens in the next turn.
+    pub(crate) fn insert_object_from_menu(&self, cx: &mut Context<Self>) {
+        let handle = self.window_handle;
+        let this = cx.entity();
+        cx.defer(move |cx| {
+            let _ = handle.update(cx, |_, window, cx| {
+                this.update(cx, |shell, cx| {
+                    shell.open_insert_picker_on_selection(window, cx)
+                })
+            });
+        });
+    }
+
     /// The same picker, to change the class of every one of `targets`.
     pub(super) fn open_change_class_picker(
         &mut self,

@@ -19,6 +19,17 @@
   a terrain blob with an out-of-range chunk key is refused as malformed
   instead of panicking in debug builds. — @chteau
 
+- **File › New, File › Open…, recovered places, and no more lost work on
+  close.** New (Ctrl+N) makes a Baseplate place and Open… (Ctrl+O) picks a
+  place file, both behind the same unsaved-changes prompt as closing; the
+  document tab's + offers both. View › Command Bar now toggles the bar and
+  remembers it, Model › Insert Object… does what Ctrl+I does, and Home
+  lists autosaved copies no running editor holds, with Open and Discard.
+  Fixed on the way: the titlebar X and the window manager's close dropped
+  unsaved work without asking, one Ctrl+Z could undo two Properties edits
+  after a selection change mid-drag, Save As to `Place.RBXLX` wrote binary,
+  and autosave kept the old name after Save As. — @chteau
+
 - **Input action manager.** A new Input Actions dock (View menu and Home
   ribbon) lays out the place's `InputContext`s, `InputAction`s and
   `InputBinding`s as a table with one column per device family, edits
