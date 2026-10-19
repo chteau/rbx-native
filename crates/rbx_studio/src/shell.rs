@@ -15,6 +15,7 @@ mod clipboard;
 mod close_place;
 mod coedit;
 mod command;
+mod command_run;
 mod controller_emulator;
 mod debugging;
 mod device_sim;
@@ -99,7 +100,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
 use gpui_kit::component::{v_flex, IndexPath};
@@ -332,6 +333,9 @@ pub(crate) struct Shell {
     history: History,
     database: ReflectionDatabase,
     command_bar: CommandBar,
+    /// The Command Bar's persistent runtime and its in-flight run; see
+    /// `shell::command_run`.
+    command_run: command_run::CommandRun,
     /// Every Command Bar run, success or failure; see `shell::output`.
     output: output::OutputLog,
     /// Which levels the Output panel currently shows; see `shell::output`.
@@ -651,11 +655,15 @@ impl Shell {
         });
 
         let command_bar = CommandBar::new(window, cx);
-        let entered = cx.subscribe(command_bar.input(), |shell, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::PressEnter { .. }) {
-                shell.run_typed_command(cx);
-            }
-        });
+        let entered = cx.subscribe_in(
+            command_bar.input(),
+            window,
+            |shell, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    shell.run_typed_command(window, cx);
+                }
+            },
+        );
 
         let initial_outline = outlined(&dom, &database, &Vec::from_iter(selected));
         let mut transform = Transform::default();
@@ -799,6 +807,7 @@ impl Shell {
             history: History::new(DEFAULT_CAP),
             database,
             command_bar,
+            command_run: command_run::CommandRun::default(),
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
@@ -1945,8 +1954,22 @@ impl Render for Shell {
             .child(self.ribbon(cx))
             .child(self.workspace(window, cx))
             .child(
-                self.command_bar
-                    .render(self.tab_order.next(), self.output_collapsed, cx),
+                div()
+                    // Captured so the input's own Up/Down (a no-op on one
+                    // line) never gets them: they walk the submitted commands.
+                    .capture_action(cx.listener(|shell, _: &MoveUp, window, cx| {
+                        shell.walk_command_history(true, window, cx);
+                        cx.stop_propagation();
+                    }))
+                    .capture_action(cx.listener(|shell, _: &MoveDown, window, cx| {
+                        shell.walk_command_history(false, window, cx);
+                        cx.stop_propagation();
+                    }))
+                    .child(self.command_bar.render(
+                        self.tab_order.next(),
+                        self.output_collapsed,
+                        cx,
+                    )),
             )
             // Painted at the window's root rather than inside the Explorer:
             // a popup nested in the tree's own scrolled, virtualised list

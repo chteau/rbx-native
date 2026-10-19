@@ -26,9 +26,12 @@ pub(crate) enum Feedback {
 }
 
 impl Feedback {
-    /// Turns one run's outcome into feedback. A successful run with nothing
+    /// Turns one run's outcome into feedback; the live Command Bar builds its
+    /// feedback per step (see `stream`), so only tests assemble one this way.
+    /// A successful run with nothing
     /// printed is kept distinct from [`Feedback::Idle`] — it did run, it just
     /// had nothing to say — which is why the label still changes.
+    #[cfg(test)]
     pub(crate) fn from_run(result: Result<Vec<String>, String>) -> Self {
         match result {
             Ok(lines) => Feedback::Output(lines.join("\n")),

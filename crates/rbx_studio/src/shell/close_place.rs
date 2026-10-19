@@ -45,6 +45,7 @@ impl Shell {
 
     fn leave_place(&mut self, cx: &mut Context<Self>) {
         self.close_prompt = false;
+        self.cancel_command_run();
         if std::mem::take(&mut self.restart_after_close) {
             crate::relaunch(&self.path);
             cx.quit();
