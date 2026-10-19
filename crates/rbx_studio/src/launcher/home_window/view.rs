@@ -6,6 +6,7 @@ mod games;
 mod notes;
 mod pages;
 mod recent;
+mod recovered;
 mod sidebar;
 
 use std::sync::Arc;
