@@ -93,6 +93,9 @@ enum Command {
     /// The device screen the `ScreenGui` overlay is laid out as — see
     /// `Headless::set_gui_screen`.
     GuiScreen(Option<(u32, u32)>),
+    /// Whether the `ScreenGui` overlay is drawn — see
+    /// `Headless::set_screen_gui_shown`.
+    ScreenGuiShown(bool),
     /// That device's safe-area insets — see `Headless::set_gui_safe_insets`.
     GuiSafeInsets(rbx_viewer::SafeInsets),
     /// Where a tool being configured would put the selection — the Align
@@ -304,6 +307,10 @@ impl Pump {
     /// frame's own size with `None`.
     pub(super) fn gui_screen(&self, screen: Option<(u32, u32)>) {
         let _ = self.commands.send(Command::GuiScreen(screen));
+    }
+
+    pub(super) fn screen_gui_shown(&self, shown: bool) {
+        let _ = self.commands.send(Command::ScreenGuiShown(shown));
     }
 
     pub(super) fn gui_safe_insets(&self, insets: rbx_viewer::SafeInsets) {
@@ -792,6 +799,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::TerrainPreview(chunks) => rendering.viewer.preview_terrain(chunks),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::GuiScreen(screen) => rendering.viewer.set_gui_screen(screen),
+        Command::ScreenGuiShown(shown) => rendering.viewer.set_screen_gui_shown(shown),
         Command::GuiSafeInsets(insets) => rendering.viewer.set_gui_safe_insets(insets),
         Command::Changes(snapshots, changes) => {
             rendering.canvas.touch();

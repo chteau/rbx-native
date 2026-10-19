@@ -25,6 +25,7 @@ use super::chrome::Document;
 use super::layout::Panel;
 use super::roving::Roving;
 
+use crate::script_editor::FinderMode;
 use crate::script_templates::ScriptTemplates;
 use crate::tokens;
 use crate::transform::Tool;
@@ -42,9 +43,9 @@ use commands::{Insert, SCRIPT_INSERTS};
 
 /// The ribbon's category tabs. The frame names six; this editor has real
 /// commands for Home, UI and Model, a page of its own for running a place
-/// (Test, which the frame has no tab for), and placeholders for the rest —
-/// an empty-looking page is how a ribbon says "this exists, not yet", and
-/// it is the same answer the menu bar's greyed items give.
+/// (Test, which the frame has no tab for). A tile with nothing behind it
+/// stays on the page, greyed, with the reason on hover, the same answer the
+/// menu bar's greyed items give.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Tab {
     #[default]
@@ -99,42 +100,54 @@ impl Shell {
             Tab::Avatar => {
                 let mut tiles = self.rig_tiles(cx);
                 tiles.push(self.animation_tile(cx));
-                tiles.extend(placeholders(
-                    "avatar",
-                    &[
-                        (IconName::Package, "Accessory"),
-                        (IconName::Settings, "Avatar Setup"),
-                    ],
-                ));
+                tiles.push(
+                    unavailable_tile(
+                        "ribbon-accessory",
+                        IconName::Package,
+                        "Accessory",
+                        "attaching accessories to a rig isn't built",
+                    )
+                    .into_any_element(),
+                );
+                tiles.push(self.avatar_setup_tile(cx));
                 vec![tiles]
             }
             Tab::Ui => vec![
                 vec![self.insert_gui(cx).into_any_element()],
-                placeholders(
-                    "ui",
-                    &[
-                        (IconName::Anchor, "Anchor"),
-                        (IconName::AlignHorizontalJustifyCenter, "Align"),
-                        (IconName::Scaling, "Auto Scale"),
-                    ],
-                ),
-            ],
-            Tab::Script => vec![placeholders(
-                "script",
-                &[
-                    (IconName::Search, "Find"),
-                    (IconName::Type, "Replace"),
-                    (IconName::Code, "Format"),
-                    (IconName::Bug, "Analysis"),
+                vec![
+                    unavailable_tile(
+                        "ribbon-ui-anchor",
+                        IconName::Anchor,
+                        "Anchor",
+                        "setting AnchorPoint from the ribbon isn't built; edit it in Properties",
+                    )
+                    .into_any_element(),
+                    // The Align tool moves parts by `CFrame`; a GuiObject has
+                    // `Position` and `Size` instead, which it doesn't write.
+                    unavailable_tile(
+                        "ribbon-ui-align",
+                        IconName::AlignHorizontalJustifyCenter,
+                        "Align",
+                        "the Align tool moves parts, not GUI objects",
+                    )
+                    .into_any_element(),
+                    unavailable_tile(
+                        "ribbon-ui-auto-scale",
+                        IconName::Scaling,
+                        "Auto Scale",
+                        "converting Offset sizes to Scale isn't built",
+                    )
+                    .into_any_element(),
                 ],
-            )],
+            ],
+            Tab::Script => vec![self.script_tiles(cx)],
             Tab::Model => vec![
                 self.edit_tiles(cx),
                 self.pivot_tiles(cx),
                 self.sun_tiles(cx),
                 file_tiles(),
             ],
-            Tab::Test => vec![self.test_tiles(cx), viewport_tiles()],
+            Tab::Test => vec![self.test_tiles(cx), self.viewport_tiles(cx)],
             Tab::Plugins => self.plugin_ribbon_groups(cx),
         };
 
@@ -288,13 +301,149 @@ impl Shell {
             part.into_any_element(),
             script.into_any_element(),
             self.insert_gui(cx).into_any_element(),
-            // Roblox's Creator Store catalog — out of reach without Roblox's
-            // own engine (see `ROADMAP.md`).
-            disabled_tile("ribbon-toolbox", IconName::Package, "Toolbox").into_any_element(),
+            // The Creator Store catalog: other creators' assets can't be
+            // inserted through Roblox's public APIs (see `ROADMAP.md`), and
+            // nothing here lists the user's own assets to insert instead.
+            unavailable_tile(
+                "ribbon-toolbox",
+                IconName::Package,
+                "Toolbox",
+                "inserting other creators' assets needs Roblox's Toolbox",
+            )
+            .into_any_element(),
         ]
     }
 
     /// Home's Settings group, Studio's own: Game Settings.
+    /// The viewport's own real controls — quality, orthographic, the axis
+    /// indicator — are mostly in the viewport dock's settings menu, because
+    /// they belong to the open document rather than to a Studio-named ribbon
+    /// group; Settings opens the same page, and Show UI is the one switch
+    /// Studio keeps on its ribbon.
+    fn viewport_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let shown = self.show_screen_gui;
+        vec![
+            tile(
+                &self.ribbon_nav,
+                "ribbon-viewport-settings",
+                IconName::Settings,
+                "Settings",
+                cx,
+            )
+            .tooltip(|window, cx| {
+                super::tooltip::text("Settings \u{2014} the viewport's settings", window, cx)
+            })
+            .on_click(cx.listener(|shell, _, _, cx| shell.open_settings_on("viewport", cx)))
+            .into_any_element(),
+            tile(
+                &self.ribbon_nav,
+                "ribbon-show-ui",
+                IconName::Eye,
+                "Show UI",
+                cx,
+            )
+            .when(shown, |this| {
+                this.bg(tokens::accent_soft())
+                    .text_color(tokens::check_on())
+            })
+            .tooltip(move |window, cx| super::tooltip::text(show_ui_tooltip(shown), window, cx))
+            .on_click(
+                cx.listener(|shell, _, _, cx| {
+                    shell.set_screen_gui_shown(!shell.show_screen_gui, cx)
+                }),
+            )
+            .into_any_element(),
+        ]
+    }
+
+    /// Avatar's Avatar Setup tile: Studio's tool turns a character mesh into
+    /// a rig, which is what the auto-rigger does.
+    fn avatar_setup_tile(&self, cx: &mut Context<Self>) -> AnyElement {
+        tile(
+            &self.ribbon_nav,
+            "ribbon-avatar-setup",
+            IconName::Settings,
+            "Avatar Setup",
+            cx,
+        )
+        .tooltip(|window, cx| {
+            super::tooltip::text(
+                "Avatar Setup \u{2014} auto-rig a character mesh into an R15 rig",
+                window,
+                cx,
+            )
+        })
+        .on_click(cx.listener(|shell, _, _, cx| shell.choose_autorig(cx)))
+        .into_any_element()
+    }
+
+    /// The Script tab: Find and Replace open the script editor's finder
+    /// overlay (its Find All / Replace All), Analysis toggles the Script
+    /// Analysis panel. Format has nothing behind it.
+    fn script_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let can_find = self.document == Document::Scripts && self.scripts.tabs.active().is_some();
+        let finder = |id: &'static str,
+                      icon,
+                      label: &'static str,
+                      tip: &'static str,
+                      cx: &mut Context<Self>| {
+            if can_find {
+                tile(&self.ribbon_nav, id, icon, label, cx)
+                    .tooltip(move |window, cx| {
+                        super::tooltip::text(format!("{label} \u{2014} {tip}"), window, cx)
+                    })
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.open_finder(FinderMode::FindAll, window, cx)
+                    }))
+                    .into_any_element()
+            } else {
+                unavailable_tile(id, icon, label, "open a script first").into_any_element()
+            }
+        };
+        let analysis = self.is_panel_showing(Panel::ScriptAnalysis);
+        vec![
+            finder(
+                "ribbon-script-find",
+                IconName::Search,
+                "Find",
+                "search every open script",
+                cx,
+            ),
+            finder(
+                "ribbon-script-replace",
+                IconName::Type,
+                "Replace",
+                "replace across every open script",
+                cx,
+            ),
+            unavailable_tile(
+                "ribbon-script-format",
+                IconName::Code,
+                "Format",
+                "a Luau formatter isn't bundled",
+            )
+            .into_any_element(),
+            tile(
+                &self.ribbon_nav,
+                "ribbon-script-analysis",
+                IconName::Bug,
+                "Analysis",
+                cx,
+            )
+            .when(analysis, |this| {
+                this.bg(tokens::accent_soft())
+                    .text_color(tokens::check_on())
+            })
+            .tooltip(|window, cx| {
+                super::tooltip::text("Analysis \u{2014} the Script Analysis panel", window, cx)
+            })
+            .on_click(cx.listener(move |shell, _, _, cx| {
+                shell.set_panel_open(Panel::ScriptAnalysis, !analysis, cx);
+            }))
+            .into_any_element(),
+        ]
+    }
+
     fn settings_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         vec![tile(
             &self.ribbon_nav,
@@ -489,7 +638,7 @@ impl Shell {
     }
 }
 
-/// Importing meshes and models off disk isn't implemented.
+/// Importing meshes and models off disk has no tile behind it yet.
 fn file_tiles() -> Vec<AnyElement> {
     vec![disabled_tile("ribbon-import", IconName::Import, "Import").into_any_element()]
 }
@@ -622,8 +771,18 @@ impl Shell {
             // rows in an 80px ribbon are ~25px each, and Stop is the control a
             // person reaches for in a hurry.
             stack(vec![
-                stack_row("ribbon-run", IconName::SquarePlay, "Run"),
-                stack_row("ribbon-pause", IconName::Pause, "Pause"),
+                unavailable_row(
+                    "ribbon-run",
+                    IconName::SquarePlay,
+                    "Run",
+                    "a server-only run needs Roblox's engine; Play runs the place on Roblox",
+                ),
+                unavailable_row(
+                    "ribbon-pause",
+                    IconName::Pause,
+                    "Pause",
+                    "there is no local run to pause",
+                ),
             ])
             .into_any_element(),
             primary("ribbon-stop", stop).into_any_element(),
@@ -631,7 +790,13 @@ impl Shell {
             self.view_tile(cx).into_any_element(),
             self.network_tile(cx),
             self.device_tile(cx),
-            disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
+            unavailable_tile(
+                "ribbon-team",
+                IconName::Users,
+                "Team Test",
+                "it needs Roblox's Team Create servers",
+            )
+            .into_any_element(),
             self.controller_tile(cx).into_any_element(),
         ];
         tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
@@ -670,24 +835,13 @@ fn test_tiles() -> Vec<AnyElement> {
     ]
 }
 
-/// The viewport's own real controls — quality, orthographic, the axis
-/// indicator — are not here: they live in the viewport dock's own settings
-/// menu, because they belong to the open document rather than to a
-/// Studio-named ribbon group.
-fn viewport_tiles() -> Vec<AnyElement> {
-    placeholders(
-        "viewport",
-        &[(IconName::Settings, "Settings"), (IconName::Eye, "Show UI")],
-    )
-}
-
-/// A whole group this editor has nothing behind yet.
-fn placeholders(page: &'static str, tiles: &[(IconName, &'static str)]) -> Vec<AnyElement> {
-    tiles
-        .iter()
-        .enumerate()
-        .map(|(index, &(icon, label))| disabled_tile((page, index), icon, label).into_any_element())
-        .collect()
+/// The tooltip of the Show UI tile for the overlay's current state.
+fn show_ui_tooltip(shown: bool) -> &'static str {
+    if shown {
+        "Show UI \u{2014} hide the ScreenGuis drawn over the 3D view"
+    } else {
+        "Show UI \u{2014} draw the ScreenGuis over the 3D view again"
+    }
 }
 
 /// One insert-menu row, running the same [`RibbonCommand`] the command
@@ -861,17 +1015,16 @@ pub(super) fn disabled_tile(
     icon: IconName,
     label: &'static str,
 ) -> Stateful<Div> {
-    unavailable_tile(id, icon, label, "not implemented")
+    unavailable_tile(id, icon, label, "not available in this editor yet")
 }
 
-/// The same greyed, unclaimed tile for a command this editor *does* have
-/// that cannot act right now — nothing selected, an empty clipboard.
+/// The same greyed, unclaimed tile with a reason on hover: either a command
+/// that cannot act right now (nothing selected, an empty clipboard), which
+/// the person at the keyboard can fix in a second, or one this editor can't
+/// offer at all, where the reason names what is missing.
 ///
-/// The reason replaces "not implemented" because the two are different
-/// answers: one is a gap in this editor, the other is something the person
-/// at the keyboard can fix in a second. Offering the click instead and
-/// doing nothing is the worst of the three, which is what this exists to
-/// stop.
+/// Offering the click and doing nothing is the worst of the options, which
+/// is what this exists to stop.
 pub(super) fn unavailable_tile(
     id: impl Into<ElementId>,
     icon: IconName,
@@ -997,12 +1150,6 @@ pub(super) fn stack(rows: Vec<Stateful<Div>>) -> Div {
         .children(rows)
 }
 
-/// One of its rows, for a command this editor doesn't have yet: greyed, not
-/// clickable and left out of the roving group, exactly as [`disabled_tile`].
-pub(super) fn stack_row(id: &'static str, icon: IconName, label: &'static str) -> Stateful<Div> {
-    unavailable_row(id, icon, label, "not implemented")
-}
-
 /// [`unavailable_tile`]'s stack row: the same reason, the same reasoning.
 pub(super) fn unavailable_row(
     id: &'static str,
@@ -1016,7 +1163,7 @@ pub(super) fn unavailable_row(
         .tooltip(move |window, cx| super::tooltip::text(format!("{label} — {reason}"), window, cx))
 }
 
-/// A stack row that does something: the same geometry as [`stack_row`] with
+/// A stack row that does something: the same geometry as [`unavailable_row`] with
 /// [`base_tile`]'s enabled styling (hover wash, pressed wash, keyboard focus
 /// ring) and a place in the ribbon's roving group.
 pub(super) fn live_stack_row(
