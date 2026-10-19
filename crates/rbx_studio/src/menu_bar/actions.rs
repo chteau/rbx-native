@@ -41,6 +41,12 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuInsertObject, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.insert_object_from_menu(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuToggleCommandBar, cx| {
             let _ = shell.update(cx, |shell, cx| shell.toggle_command_bar(cx));
         }

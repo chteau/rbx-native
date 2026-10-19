@@ -49,6 +49,7 @@ actions!(
     [
         MenuNewPlace,
         MenuOpenPlace,
+        MenuInsertObject,
         MenuToggleCommandBar,
         MenuSave,
         MenuSaveToFile,
@@ -160,7 +161,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::action("Insert ModuleScript", MenuInsertModuleScript),
         MenuItem::action("Insert ModuleScript (Class)", MenuInsertModuleScriptClass),
         MenuItem::separator(),
-        MenuItem::action("Insert Object…", MenuPlaceholder).disabled(true),
+        MenuItem::action("Insert Object…", MenuInsertObject),
         MenuItem::action("Insert Mesh…", MenuInsertMesh),
         MenuItem::action("Insert Rig…", MenuInsertRig),
         MenuItem::action("Import 3D Model…", MenuImportModel),
