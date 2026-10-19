@@ -18,6 +18,7 @@ mod other;
 mod standard;
 
 #[cfg(test)]
+#[cfg(test)]
 pub(super) use dialogs::{confirm_text, ConfirmText};
 
 impl Render for DataStoresWindow {

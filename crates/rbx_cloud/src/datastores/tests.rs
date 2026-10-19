@@ -7,21 +7,21 @@ use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
-struct Captured {
-    method: String,
+pub(super) struct Captured {
+    pub(super) method: String,
     target: String,
-    api_key: Option<String>,
+    pub(super) api_key: Option<String>,
     body: String,
 }
 
 impl Captured {
-    fn path(&self) -> &str {
+    pub(super) fn path(&self) -> &str {
         self.target.split('?').next().unwrap()
     }
-    fn query(&self) -> String {
+    pub(super) fn query(&self) -> String {
         decode(self.target.split_once('?').map_or("", |(_, q)| q))
     }
-    fn json(&self) -> Value {
+    pub(super) fn json(&self) -> Value {
         serde_json::from_str(&self.body).unwrap()
     }
 }
@@ -50,9 +50,9 @@ fn decode(s: &str) -> String {
     String::from_utf8(out).unwrap()
 }
 
-type Log = Arc<Mutex<Vec<Captured>>>;
+pub(super) type Log = Arc<Mutex<Vec<Captured>>>;
 
-fn serve(replies: Vec<(u16, &str)>) -> (String, Log) {
+pub(super) fn serve(replies: Vec<(u16, &str)>) -> (String, Log) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let root = format!("http://{}", listener.local_addr().unwrap());
     let log: Log = Arc::default();
@@ -122,11 +122,18 @@ fn serve(replies: Vec<(u16, &str)>) -> (String, Log) {
     (root, log)
 }
 
-fn client(root: &str) -> Client {
+pub(super) fn client(root: &str) -> Client {
     Client::new(Some(ApiKey::new("k"))).with_apis_root(root)
 }
 
-fn at() -> StoreRef {
+pub(super) fn missing_scope(err: CloudError) -> String {
+    match err {
+        CloudError::MissingScope { scope, .. } => scope,
+        other => panic!("expected MissingScope, got {other:?}"),
+    }
+}
+
+pub(super) fn at() -> StoreRef {
     StoreRef {
         universe_id: 7,
         store: "Players".into(),
@@ -134,11 +141,11 @@ fn at() -> StoreRef {
     }
 }
 
-const BASE: &str = "/cloud/v2/universes/7/data-stores/Players/scopes/global/entries";
+pub(super) const BASE: &str = "/cloud/v2/universes/7/data-stores/Players/scopes/global/entries";
 
-const ENTRY: &str = r#"{"path":"universes/7/data-stores/Players/scopes/global/entries/k","createTime":"2026-01-01T00:00:00Z","revisionId":"REV1","revisionCreateTime":"2026-01-02T00:00:00Z","state":"ACTIVE","etag":"E1","value":{"coins":5},"id":"k","users":["users/925308243"],"attributes":{"a":"b"}}"#;
+pub(super) const ENTRY: &str = r#"{"path":"universes/7/data-stores/Players/scopes/global/entries/k","createTime":"2026-01-01T00:00:00Z","revisionId":"REV1","revisionCreateTime":"2026-01-02T00:00:00Z","state":"ACTIVE","etag":"E1","value":{"coins":5},"id":"k","users":["users/925308243"],"attributes":{"a":"b"}}"#;
 
-fn one(log: &Log) -> Captured {
+pub(super) fn one(log: &Log) -> Captured {
     let log = log.lock().unwrap();
     assert_eq!(log.len(), 1, "{log:?}");
     log[0].clone()
@@ -379,21 +386,6 @@ fn increment_entry_posts_amount() {
 }
 
 #[test]
-fn increment_entry_non_numeric_is_refused() {
-    let (root, _log) = serve(vec![(
-        400,
-        r#"{"code":3,"message":"The existing value is not numeric."}"#,
-    )]);
-    let err = client(&root)
-        .increment_entry(&at(), "k", 1, &[], &Map::new())
-        .unwrap_err();
-    assert!(matches!(
-        err,
-        CloudError::Refused { status: 400, ref message } if message == "The existing value is not numeric."
-    ));
-}
-
-#[test]
 fn delete_entry_sends_delete() {
     let (root, log) = serve(vec![(200, "{}")]);
     client(&root).delete_entry(&at(), "a b").unwrap();
@@ -401,82 +393,6 @@ fn delete_entry_sends_delete() {
     assert_eq!(c.method, "DELETE");
     assert_eq!(c.path(), format!("{BASE}/a%20b"));
     assert_eq!(c.api_key.as_deref(), Some("k"));
-}
-
-#[test]
-fn missing_entry_is_refused_with_message() {
-    let (root, _log) = serve(vec![(404, r#"{"code":5,"message":"Entry not found."}"#)]);
-    let err = client(&root).get_entry(&at(), "k").unwrap_err();
-    assert!(matches!(
-        err,
-        CloudError::Refused { status: 404, ref message } if message == "Entry not found."
-    ));
-}
-
-#[test]
-fn gateway_403_is_missing_scope() {
-    let (root, _log) = serve(vec![(
-        403,
-        r#"{"errors":[{"code":0,"message":"Scope not authorized."}]}"#,
-    )]);
-    let err = client(&root).get_entry(&at(), "k").unwrap_err();
-    match err {
-        CloudError::MissingScope { scope, message } => {
-            assert_eq!(scope, "universe-datastores.objects:read");
-            assert!(message.contains("Scope not authorized"), "{message}");
-        }
-        other => panic!("expected MissingScope, got {other:?}"),
-    }
-}
-
-#[test]
-fn delete_403_names_delete_scope() {
-    let (root, _log) = serve(vec![(403, r#"{"code":7,"message":"nope"}"#)]);
-    let err = client(&root).delete_entry(&at(), "k").unwrap_err();
-    assert!(matches!(
-        err,
-        CloudError::MissingScope { ref scope, .. } if scope == "universe-datastores.objects:delete"
-    ));
-}
-
-#[test]
-fn stale_etag_409_is_conflict() {
-    let (root, _log) = serve(vec![(
-        409,
-        r#"{"code":10,"message":"Requested aborted because the provided etag does not match the latest version of the entry."}"#,
-    )]);
-    let write = EntryWrite {
-        value: json!(1),
-        etag: Some("old".into()),
-        ..EntryWrite::default()
-    };
-    let err = client(&root).update_entry(&at(), "k", &write).unwrap_err();
-    match err {
-        CloudError::Conflict { message } => assert!(message.contains("etag"), "{message}"),
-        other => panic!("expected Conflict, got {other:?}"),
-    }
-}
-
-#[test]
-fn get_retries_after_two_throttles() {
-    let (root, log) = serve(vec![(429, "{}"), (429, "{}"), (200, ENTRY)]);
-    let e = client(&root).get_entry(&at(), "k").unwrap();
-    assert_eq!(e.etag, "E1");
-    assert_eq!(log.lock().unwrap().len(), 3);
-}
-
-#[test]
-fn patch_retries_after_two_throttles() {
-    let (root, log) = serve(vec![(429, "{}"), (429, "{}"), (200, ENTRY)]);
-    let write = EntryWrite {
-        value: json!(1),
-        ..EntryWrite::default()
-    };
-    let e = client(&root).update_entry(&at(), "k", &write).unwrap();
-    assert_eq!(e.revision_id, "REV1");
-    let log = log.lock().unwrap();
-    assert_eq!(log.len(), 3);
-    assert!(log.iter().all(|c| c.method == "PATCH"));
 }
 
 #[test]

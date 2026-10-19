@@ -325,9 +325,11 @@ impl State {
     fn seed_memory(&mut self, rng: &mut Lcg) {
         const MODES: [&str; 3] = ["duos", "squads", "ranked"];
         const REGIONS: [&str; 3] = ["eu-west", "us-east", "ap-south"];
+        // Map items expire after every queue item (24 h) and well after the
+        // fixture clock, so a capture never shows an item that should be gone.
         let mut matchmaking = BTreeMap::new();
         for i in 0..25usize {
-            let ttl = 3600 * (1 + rng.below(12));
+            let ttl = 3600 * (25 + rng.below(24));
             let item = MapItem {
                 value: json!({"mode": MODES[i % 3], "region": REGIONS[i % 3],
                               "players": 2 + rng.below(6)}),
@@ -346,8 +348,8 @@ impl State {
                 value: json!({"item": ITEMS[i % ITEMS.len()], "bid": 100 + rng.below(900),
                               "seller": NAMES[i]}),
                 etag: self.new_id(),
-                ttl: 86_400,
-                expire_at: self.clock + 86_400,
+                ttl: 129_600,
+                expire_at: self.clock + 129_600,
                 sort: Some(Sort::Text(format!(
                     "{}-{i:02}",
                     NAMES[(i * 5) % NAMES.len()]

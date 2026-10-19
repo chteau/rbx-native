@@ -13,6 +13,10 @@ mod ordered;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_errors;
+#[cfg(test)]
+mod tests_memory;
+#[cfg(test)]
 mod tests_more;
 
 pub use memory::*;
