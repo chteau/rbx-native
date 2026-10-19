@@ -2989,16 +2989,30 @@ Roblox's own engine.
   to grow. Destructive edits (write, delete, rollback) need a confirm step,
   plus a clear production/sandbox badge so nobody edits live player data by
   accident.
-- [ ] 📋 **Update planning**: prepare and ship a place update as one
-  planned step instead of a bare Publish. That means a staged version with
-  release notes kept in the version history, publishing at a scheduled
-  time, and then rolling servers onto it with Open Cloud's restart-servers
-  call (all at once, or only outdated servers). An optional in-game
-  announcement goes out beforehand through Open Cloud's MessagingService
-  publish. It also needs a view of what changed since the last published
-  version, using the place diff this project already has. Scheduling only
-  holds while the editor is running unless a hosted runner is added, so the
-  first version should say so plainly.
+- [ ] 📋 **Update planning: countdown icons on autopilot** (concept by
+  [@MiniDev](https://vm.tiktok.com/ZN8AFbRwp/), see Acknowledgements).
+  Per experience, a set of reusable **timers** (say H-12, H-6, H-3, H-1),
+  each a transparent 512×512 PNG overlay such as an hourglass with
+  "6 Hours". To **plan an update** you pick the current icon (a file, or
+  fetched from Roblox) as the base for the timers, the new icon to apply at
+  update time, and the update's date and time. A **timeline** then
+  previews every step: each overlay composited on the current icon at its
+  time, then the new icon at T. **Start update** uploads every composited
+  image straight away, so each is moderated and approved hours early. A
+  steps view shows each one as Uploaded, Approved and then Upcoming or
+  Applied, with a live "update in" countdown and a Cancel. At each step
+  the experience icon is swapped automatically on every place in the
+  universe, with a desktop notification when it's applied ("New icon
+  applied on 3 places"). It needs a sidebar of the user's experiences with
+  per-experience status. Timer edits apply to future updates only, never to
+  one already started. Open questions:
+  - whether Open Cloud can set an experience's icon with an API key, or
+    only the cookie-authenticated web endpoint can;
+  - how a step fires while the editor is closed: a background agent, a
+    hosted runner, or the original's "Send to phone".
+
+  Later, the same plan could also restart servers onto the new version and
+  send an in-game announcement through MessagingService.
 
 ### Play / Test workflow
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows

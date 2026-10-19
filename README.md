@@ -411,6 +411,11 @@ the autonomous-contribution workflow specifically.
 - **Twitter and jdecked** — [Twemoji](https://github.com/jdecked/twemoji)
   graphics (CC-BY 4.0), the emoji on the Device Simulator's keyboard
   cover, shipped unmodified in `assets/twemoji/` with their licence.
+- **MiniDev** ([TikTok](https://vm.tiktok.com/ZN8AFbRwp/)), whose Icon
+  Updater concept (timer overlays composited onto an experience's icon,
+  uploaded and approved ahead of time, then swapped on a schedule up to the
+  update going live) is the design the roadmap's update-planning item
+  follows. No code or assets from it are used.
 
 ## License
 
