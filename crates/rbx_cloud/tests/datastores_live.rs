@@ -245,6 +245,24 @@ fn memory_store_round_trip_or_named_scope() {
                 .list_map_items(universe_id, &store, false, None, None)
                 .expect("list map");
             assert!(listed.items.iter().any(|i| i.key == key));
+            let got = client
+                .get_map_item(universe_id, &store, &key)
+                .expect("get map item");
+            assert_eq!(got.sort_key, Some(SortKey::Number(4.0)));
+            let updated = client
+                .update_map_item(
+                    universe_id,
+                    &store,
+                    &key,
+                    &MapItemWrite {
+                        value: json!({"party": [1, 2, 3]}),
+                        sort_key: Some(SortKey::Text("b".into())),
+                        etag: Some(got.etag.clone()),
+                        ..write.clone()
+                    },
+                )
+                .expect("update map item");
+            assert_eq!(updated.value, json!({"party": [1, 2, 3]}));
             client
                 .delete_map_item(universe_id, &store, &key)
                 .expect("delete map item");

@@ -334,8 +334,10 @@ fn queue_read(st: &mut State, req: &Request, r: &Route) -> Reply {
         .unwrap_or(30);
     let now = Instant::now();
     let read_id = st.new_id();
+    // Shaped like the live service, not its OpenAPI document: an empty
+    // read is a 404, a read is `queueItems` + `id`.
     let Some(queue) = st.queues.get_mut(&r.store) else {
-        return ok(json!({}));
+        return fail(404, 5, "Queue items not found.");
     };
     let mut visible: Vec<usize> = (0..queue.len())
         .filter(|&i| queue[i].hidden_until.is_none_or(|t| t <= now))
@@ -348,7 +350,7 @@ fn queue_read(st: &mut State, req: &Request, r: &Route) -> Reply {
     });
     visible.truncate(count);
     if visible.is_empty() {
-        return ok(json!({}));
+        return fail(404, 5, "Queue items not found.");
     }
     let items: Vec<Value> = visible
         .iter()
@@ -359,7 +361,7 @@ fn queue_read(st: &mut State, req: &Request, r: &Route) -> Reply {
             queue_item_json(&req.universe, &r.store, item)
         })
         .collect();
-    ok(json!({"readId": read_id, "items": items}))
+    ok(json!({"id": read_id, "queueItems": items}))
 }
 
 fn queue_discard(st: &mut State, req: &Request, r: &Route) -> Reply {

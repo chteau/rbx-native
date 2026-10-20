@@ -161,6 +161,30 @@ fn read_queue_sends_window_and_parses_items() {
 }
 
 #[test]
+fn read_queue_parses_the_live_shape() {
+    // As apis.roblox.com answered on 2026-10-20.
+    let body = r#"{"queueItems":[{"path":"cloud/v2/universes/1/memory-store/queues/q/items/400fffffffffffff0000000000000007","data":{"n":2},"priority":1,"expireTime":"2026-10-20T06:22:12.642354Z"}],"id":"6c3b438185034917a93e502725e35cdc"}"#;
+    let (root, _log) = serve(vec![(200, body)]);
+    let read = client(&root).read_queue(7, "q", 10, 5).unwrap();
+    assert_eq!(
+        read.read_id.as_deref(),
+        Some("6c3b438185034917a93e502725e35cdc")
+    );
+    assert_eq!(read.items.len(), 1);
+    assert_eq!(read.items[0].id, "400fffffffffffff0000000000000007");
+    assert_eq!(read.items[0].data, json!({"n": 2}));
+}
+
+#[test]
+fn read_queue_of_an_empty_queue_is_an_empty_read() {
+    let body = r#"{"error":"NOT_FOUND","message":"Queue items not found."}"#;
+    let (root, _log) = serve(vec![(404, body)]);
+    let read = client(&root).read_queue(7, "q", 10, 5).unwrap();
+    assert_eq!(read.read_id, None);
+    assert!(read.items.is_empty());
+}
+
+#[test]
 fn read_queue_empty_has_no_read_id() {
     let (root, _log) = serve(vec![(200, "{}")]);
     let read = client(&root).read_queue(7, "q", 1, 5).unwrap();

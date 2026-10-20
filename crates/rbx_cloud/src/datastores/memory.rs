@@ -70,7 +70,10 @@ fn parse_map_item(value: &Value, fallback_key: &str) -> MapItem {
 
 fn parse_queue_item(value: &Value) -> QueueItem {
     QueueItem {
-        id: text(value, "id").unwrap_or_default(),
+        // Live reads carry no `id`; the path's last segment is the item's.
+        id: text(value, "id")
+            .or_else(|| text(value, "path")?.rsplit('/').next().map(str::to_string))
+            .unwrap_or_default(),
         data: value.get("data").cloned().unwrap_or(Value::Null),
         priority: value.get("priority").and_then(Value::as_f64).unwrap_or(0.0),
         expire_time: text(value, "expireTime"),
@@ -211,10 +214,22 @@ impl Client {
                 .query("allOrNothing", "false")
                 .query("invisibilityWindow", format!("{invisibility_seconds}s"))
         })?;
-        let body = answer(&url, response, QUEUE_READ)?;
+        // What Roblox actually answers differs from its OpenAPI document:
+        // `queueItems` and `id` rather than `items` and `readId`, and an
+        // empty queue is a 404 "Queue items not found." rather than an empty
+        // list. Both spellings are read; the 404 is an empty read.
+        let body = match answer(&url, response, QUEUE_READ) {
+            Err(CloudError::Refused { status: 404, .. } | CloudError::Http { status: 404, .. }) => {
+                return Ok(QueueRead {
+                    read_id: None,
+                    items: Vec::new(),
+                })
+            }
+            other => other?,
+        };
         Ok(QueueRead {
-            read_id: text(&body, "readId"),
-            items: list_of(&body, &["items"])
+            read_id: text(&body, "readId").or_else(|| text(&body, "id")),
+            items: list_of(&body, &["queueItems", "items"])
                 .iter()
                 .map(parse_queue_item)
                 .collect(),
