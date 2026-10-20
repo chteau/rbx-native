@@ -45,8 +45,21 @@ pub(crate) fn wash() -> Rgba {
 pub(crate) fn wash_faint() -> Rgba {
     tokens::wash_faint()
 }
+/// Whether the kit's catalogue has `icons/{name}.svg`; a missing file draws
+/// nothing yet still takes its slot, which shows as an off-centre label.
+pub(crate) fn icon_exists(name: &str) -> bool {
+    gpui_kit::assets::AllAssets::get(&format!("icons/{name}.svg")).is_some()
+}
+
+#[cfg(test)]
+mod icon_names;
+
 /// A Lucide icon from the kit's full catalogue, by file name.
 pub(crate) fn icon(name: &'static str, size: f32) -> Icon {
+    debug_assert!(
+        icon_exists(name),
+        "no icon named {name} in the kit's catalogue"
+    );
     Icon::empty()
         .path(SharedString::from(format!("icons/{name}.svg")))
         .size(px(size))

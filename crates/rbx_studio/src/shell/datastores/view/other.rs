@@ -291,7 +291,7 @@ impl DataStoresWindow {
                             ),
                     )
                     .child(
-                        ui::icon_button("ds-ord-del", "trash-2", "Delete", Weight::Danger, true)
+                        ui::icon_button("ds-ord-del", "trash", "Delete", Weight::Danger, true)
                             .on_click(cx.listener(|this, _, _, cx| this.ask_ordered_delete(cx))),
                     )
             })

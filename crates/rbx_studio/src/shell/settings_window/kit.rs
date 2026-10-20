@@ -30,6 +30,10 @@ pub(in crate::shell) fn mono(size: f32, line: f32) -> Div {
 
 /// A Lucide glyph from the kit's catalogue, by file name.
 pub(in crate::shell) fn icon(name: &'static str, size: f32) -> Icon {
+    debug_assert!(
+        crate::launcher::ui::icon_exists(name),
+        "no icon named {name} in the kit's catalogue"
+    );
     Icon::empty()
         .path(SharedString::from(format!("icons/{name}.svg")))
         .size(px(size))

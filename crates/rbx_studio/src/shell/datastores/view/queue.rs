@@ -103,7 +103,11 @@ impl DataStoresWindow {
                 d.child(
                     ui::button(
                         "ds-queue-discard",
-                        SharedString::from(format!("Discard these {count} items\u{2026}")),
+                        SharedString::from(if count == 1 {
+                            "Discard this item\u{2026}".to_string()
+                        } else {
+                            format!("Discard these {count} items\u{2026}")
+                        }),
                         Weight::Danger,
                         true,
                     )

@@ -35,7 +35,7 @@ fn confirm_glyph(pending: &Pending) -> (&'static str, Rgba, Rgba) {
         Pending::DeleteEntry { .. }
         | Pending::DeleteOrdered { .. }
         | Pending::DeleteMapItem { .. }
-        | Pending::DiscardQueue { .. } => ("trash-2", true),
+        | Pending::DiscardQueue { .. } => ("trash", true),
         Pending::SaveEntry { creating, .. }
         | Pending::SaveOrdered { creating, .. }
         | Pending::SaveMapItem { creating, .. } => {

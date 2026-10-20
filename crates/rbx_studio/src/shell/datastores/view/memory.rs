@@ -273,7 +273,7 @@ impl DataStoresWindow {
                         .on_click(cx.listener(|this, _, _, cx| this.start_map_edit(false, cx))),
                 )
                 .child(
-                    ui::icon_button("ds-map-del", "trash-2", "Delete", Weight::Danger, true)
+                    ui::icon_button("ds-map-del", "trash", "Delete", Weight::Danger, true)
                         .on_click(cx.listener(|this, _, _, cx| this.ask_map_delete(cx))),
                 ),
         )

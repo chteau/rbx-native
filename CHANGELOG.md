@@ -12,6 +12,13 @@
   instead of overwriting it, and a missing key permission names the scope
   to add. — @chteau
 
+- **Delete buttons are centred again, and a wrong icon name can no longer
+  hide.** Several Delete buttons asked for a `trash-2` icon the kit's
+  catalogue doesn't have, which drew nothing but kept its space, pushing
+  the label off centre. They use `trash` now; a debug build asserts every
+  icon it draws exists, and a test checks every icon name written in the
+  editor's source. — @chteau
+
 ## 2026-10-19
 
 - **Two tests no longer collide when suites run side by side.** The

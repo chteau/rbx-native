@@ -163,7 +163,7 @@ impl DataStoresWindow {
                             .on_click(cx.listener(|this, _, _, cx| this.start_edit(false, cx))),
                     )
                     .child(
-                        ui::icon_button("ds-delete", "trash-2", "Delete", Weight::Danger, true)
+                        ui::icon_button("ds-delete", "trash", "Delete", Weight::Danger, true)
                             .on_click(cx.listener(|this, _, _, cx| this.ask_delete(cx))),
                     ),
             )

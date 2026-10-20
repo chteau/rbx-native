@@ -204,10 +204,16 @@ pub(in crate::shell::datastores) fn confirm_text(
             details.push(("Queue", queue.clone()));
             details.push((
                 "Value",
-                format!("{count} items, hidden for {invisibility_seconds} s"),
+                format!(
+                    "{}, hidden for {invisibility_seconds} s",
+                    plural(*count as usize, "item", "items")
+                ),
             ));
             (
-                format!("Read {count} items from “{queue}”?"),
+                format!(
+                    "Read {} from “{queue}”?",
+                    plural(*count as usize, "item", "items")
+                ),
                 format!(
                     "Reading hides the items from game servers for {invisibility_seconds} seconds in {of}. Unless you discard them, they come back when that ends."
                 ),

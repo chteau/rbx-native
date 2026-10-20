@@ -516,7 +516,7 @@ impl SettingsWindow {
                             .cursor_pointer()
                             .text_color(tokens::text2())
                             .hover(|this| this.text_color(tokens::text_error()))
-                            .child(icon("trash-2", 14.))
+                            .child(icon("trash", 14.))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.recovery.accounts_error = None;
                                 cx.spawn(async move |this, cx| {
