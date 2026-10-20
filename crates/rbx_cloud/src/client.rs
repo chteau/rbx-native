@@ -264,11 +264,31 @@ mod tests {
         let root = format!("http://{}", listener.local_addr().unwrap());
         let seen = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            // Read the whole request (head and body) before replying: closing a
+            // socket with unread bytes makes Windows reset the connection.
+            let mut request = Vec::new();
             let mut buf = [0u8; 4096];
-            let n = stream.read(&mut buf).unwrap();
+            loop {
+                let n = stream.read(&mut buf).unwrap();
+                request.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&request).to_lowercase();
+                if let Some(end) = text.find("\r\n\r\n") {
+                    let length = text[..end]
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length:"))
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+                if n == 0 {
+                    break;
+                }
+            }
             let _ = stream
                 .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}");
-            String::from_utf8_lossy(&buf[..n]).to_lowercase()
+            String::from_utf8_lossy(&request).to_lowercase()
         });
         let client = Client::new(Some(ApiKey::new("k"))).with_apis_root(root.clone());
         let body = serde_json::json!({"data": 1});
