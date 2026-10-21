@@ -1,0 +1,15 @@
+Screen reader on.
+op_a_test.rbxl frame
+left control
+Command Palette dialog
+Command Palette editable combo box
+Commands List with 98 items
+File: New.
+p
+a
+Edit: Paste.
+r
+t
+Part: Block.
+Part: Sphere.
+Part: Wedge.
