@@ -5,15 +5,18 @@
 //! its `RotationOrder`), each holding `FloatCurve`s X, Y and Z. Face channels
 //! are `FloatCurve`s in a `FaceControls` folder under the head's folder.
 //! Keyframe names travel as a `MarkerCurve` named "NamedKeyframeEvent";
-//! any other `MarkerCurve` is a marker named after the curve.
+//! any other `MarkerCurve` is a marker named after the curve, wherever in
+//! the tree it sits. A quaternion `RotationCurve` reads as Euler channels
+//! sampled from it (see [`rotation`](super::rotation)), and is written back
+//! as an `EulerRotationCurve`.
 
 use std::collections::BTreeMap;
 
 use rbx_dom::{Ref, Variant, WeakDom};
 
 use super::values::{self, seconds};
-use super::RotationOrder;
 use super::{bake_times, to_clip, CurveClip, FloatCurve, Interpolation, JointCurves};
+use super::{rotation, RotationOrder};
 use crate::clip::{Clip, Marker, Priority};
 use crate::easing::Style;
 use crate::facs::FaceKey;
@@ -90,16 +93,34 @@ fn folder(dom: &WeakDom, of: Ref, out: &mut CurveAnimation) -> Result<(), String
                 axes(dom, child, &mut joint.rotation)?;
             }
             "RotationCurve" => {
-                return Err(format!(
-                    "{} uses a quaternion RotationCurve, which the editor cannot read yet",
-                    instance.name()
-                ))
+                if let Some(b) = bytes(dom, child) {
+                    joint.order = RotationOrder::XYZ;
+                    joint.rotation = rotation::to_euler(&values::read_rotation(b)?);
+                }
             }
+            "MarkerCurve" => markers(dom, child, out)?,
             _ => {}
         }
     }
     if !joint.is_empty() {
         out.curves.joints.insert(instance.name().to_owned(), joint);
+    }
+    Ok(())
+}
+
+fn markers(dom: &WeakDom, curve: Ref, out: &mut CurveAnimation) -> Result<(), String> {
+    let (Some(c), Some(b)) = (dom.get(curve), bytes(dom, curve)) else {
+        return Ok(());
+    };
+    for m in values::read_markers(b)? {
+        let value = String::from_utf8_lossy(&m.value).into_owned();
+        let time = seconds(m.ticks);
+        if c.name() == KEYFRAME_NAMES {
+            out.keyframe_names.push((time, value));
+        } else {
+            let name = c.name().to_owned();
+            out.curves.add_marker(time, Marker { name, value });
+        }
     }
     Ok(())
 }
@@ -123,19 +144,7 @@ pub fn read(dom: &WeakDom, animation: Ref) -> Result<CurveAnimation, String> {
         let Some(c) = dom.get(child) else { continue };
         match c.class() {
             "Folder" => folder(dom, child, &mut out)?,
-            "MarkerCurve" => {
-                let Some(b) = bytes(dom, child) else { continue };
-                for m in values::read_markers(b)? {
-                    let value = String::from_utf8_lossy(&m.value).into_owned();
-                    let time = seconds(m.ticks);
-                    if c.name() == KEYFRAME_NAMES {
-                        out.keyframe_names.push((time, value));
-                    } else {
-                        let name = c.name().to_owned();
-                        out.curves.add_marker(time, Marker { name, value });
-                    }
-                }
-            }
+            "MarkerCurve" => markers(dom, child, &mut out)?,
             _ => {}
         }
     }

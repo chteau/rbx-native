@@ -22,6 +22,9 @@ use writer::Writer;
 // and Roblox's own Studio always writes this Meta tag with this value.
 const EXPLICIT_AUTO_JOINTS: (&str, &str) = ("ExplicitAutoJoints", "true");
 
+/// The binary type id of Terrain's `VoxelGridAssetContentMap`.
+const CONTENT_MAP_TYPE_ID: u8 = 0x23;
+
 /// Serializes a DOM tree into a Roblox XML place/model file (`.rbxlx`/`.rbxmx`).
 ///
 /// The output is a fresh encoding, not a byte-for-byte replica of any file the DOM
@@ -90,6 +93,15 @@ fn write_item<'a>(
                 writer.leaf("SharedString", &[("name", name)], &key);
                 shared.insert(key, raw);
             }
+            // Terrain's `VoxelGridAssetContentMap`, which every place Studio
+            // 0.744 saves carries, is a binary-only kind with no XML tag we
+            // know, and refusing it would fail every such save. Studio opens
+            // the place without it and writes it back itself. Any other
+            // unknown kind still refuses (see `value::encode`).
+            Variant::Unknown {
+                type_id: CONTENT_MAP_TYPE_ID,
+                ..
+            } => {}
             _ => value::encode(
                 writer,
                 name,

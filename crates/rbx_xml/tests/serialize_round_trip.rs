@@ -188,3 +188,75 @@ fn unknown_blob_with_other_type_id_is_rejected_instead_of_corrupted() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn a_binary_only_kind_is_left_out_rather_than_failing_the_save() {
+    let mut dom = WeakDom::new();
+    let terrain = dom.new_instance("Terrain", "Terrain", None);
+    // The value Studio 0.744 saves on an empty place's Terrain.
+    let map = Variant::Unknown {
+        type_id: 0x23,
+        raw: vec![2, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    dom.set_property(terrain, "VoxelGridAssetContentMap", map)
+        .unwrap();
+    dom.set_property(terrain, "WaterWaveSize", Variant::Float32(0.25))
+        .unwrap();
+
+    let xml = rbx_xml::serialize(&dom).unwrap();
+    let back = rbx_xml::deserialize(&xml).unwrap();
+    let props = back.get(back.root_refs()[0]).unwrap().properties();
+    assert!(!props.contains_key("VoxelGridAssetContentMap"));
+    assert_eq!(props.get("WaterWaveSize"), Some(&Variant::Float32(0.25)));
+}
+
+#[test]
+fn a_studio_saved_terrain_reads_and_saves_again() {
+    // Shaped like Studio 0.744's own `.rbxlx`: long Base64 wrapped across
+    // lines, and the content map it writes on every Terrain.
+    let blob: Vec<u8> = (0..=255).collect();
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &blob);
+    let wrapped = encoded
+        .as_bytes()
+        .chunks(72)
+        .map(|line| std::str::from_utf8(line).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let xml = format!(
+        r#"<roblox version="4">
+  <Item class="Terrain" referent="RBX1">
+    <Properties>
+      <BinaryString name="SmoothGrid">{wrapped}</BinaryString>
+      <SharedString name="Materials">key</SharedString>
+      <AssetContentMap name="VoxelGridAssetContentMap">[]</AssetContentMap>
+    </Properties>
+  </Item>
+  <SharedStrings>
+    <SharedString md5="key">{wrapped}</SharedString>
+  </SharedStrings>
+</roblox>"#
+    );
+
+    let dom = rbx_xml::deserialize(&xml).unwrap();
+    let props = dom.get(dom.root_refs()[0]).unwrap().properties();
+    let raw = |name: &str| match &props[name] {
+        Variant::Unknown { raw, .. } => raw.clone(),
+        other => panic!("{name}: {other:?}"),
+    };
+    assert_eq!(raw("SmoothGrid"), blob);
+    assert_eq!(raw("Materials"), blob);
+    assert!(!props.contains_key("VoxelGridAssetContentMap"));
+    rbx_xml::serialize(&dom).unwrap();
+}
+
+#[test]
+fn a_studio_int_team_color_reads_as_a_brick_color() {
+    let xml = r#"<roblox version="4">
+  <Item class="SpawnLocation" referent="RBX1">
+    <Properties><int name="TeamColor">194</int></Properties>
+  </Item>
+</roblox>"#;
+    let dom = rbx_xml::deserialize(xml).unwrap();
+    let props = dom.get(dom.root_refs()[0]).unwrap().properties();
+    assert_eq!(props.get("TeamColor"), Some(&Variant::BrickColor(194)));
+}

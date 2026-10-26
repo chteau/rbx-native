@@ -45,6 +45,12 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
   # The one real `null` is an absent `OptionalCFrame`: no CFrame at all.
   def exact: has("OptionalCFrame") or ([.[] | .. | nulls] | length == 0);
   def saved: . == "Serializes" or (type == "object" and has("SerializesAs"));
+  # Properties rbx-dom still records under a legacy saved name that current
+  # Studio no longer writes: a place Studio 0.744 saves holds, for a `Sound`,
+  # `RollOffMinDistance` and `RollOffMaxDistance` (the API dump marks both
+  # CanSave), not `EmitterSize` and `xmlRead_MaxDistance_3`. The legacy names
+  # stay aliases, so a file holding them still reads.
+  def saved_as_own_name: {Sound: ["RollOffMinDistance", "RollOffMaxDistance"]};
   {
     Source: ("rojo-rbx/rbx-dom@" + $rev),
     License: "MIT, Copyright (c) 2018-2025 The Rojo Developers",
@@ -62,7 +68,13 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
         | unique),
       SerializesAs: (.Properties
         | with_entries(select(.value.Kind.Canonical.Serialization | type == "object" and has("SerializesAs")))
-        | map_values(.Kind.Canonical.Serialization.SerializesAs)),
+        | map_values(.Kind.Canonical.Serialization.SerializesAs)
+        # Another property saved under one of those legacy names
+        # (`MaxDistance`) now saves under the property that took it back.
+        | (with_entries(select(.key | IN(saved_as_own_name[$class][]?)))
+            | with_entries({key: .value, value: .key})) as $moved
+        | map_values($moved[.] // .)
+        | delpaths([saved_as_own_name[$class][]? | [.]])),
       Defaults: ((.DefaultProperties // {})
         | with_entries(if [.value | .. | nulls] | length > 0
             then .value = (infinite[$class][.key] // .value) else . end)

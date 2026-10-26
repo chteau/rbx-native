@@ -41,8 +41,6 @@ pub fn deserialize(input: &str) -> Result<WeakDom, XmlError> {
 }
 
 fn shared_strings(root: &Node) -> HashMap<String, Vec<u8>> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-
     let Some(table) = root.child("SharedStrings") else {
         return HashMap::new();
     };
@@ -51,7 +49,7 @@ fn shared_strings(root: &Node) -> HashMap<String, Vec<u8>> {
         .children_named("SharedString")
         .filter_map(|node| {
             let md5 = node.attr("md5")?.to_owned();
-            let bytes = STANDARD.decode(node.text_trim()).ok()?;
+            let bytes = value::base64(&node.text)?;
             Some((md5, bytes))
         })
         .collect()
@@ -134,6 +132,12 @@ fn apply_properties(
                     Content::Uri(uri) => uri,
                     _ => String::new(),
                 })
+            }
+            // Studio writes a `BrickColor` (`SpawnLocation.TeamColor`) as an
+            // `int`; kept as one, a binary save would type it Int32, and
+            // Studio refuses that whole file.
+            Variant::Int32(number) if db.saved_type(class, name) == Some("BrickColor") => {
+                Variant::BrickColor(number as u32)
             }
             value => value,
         };

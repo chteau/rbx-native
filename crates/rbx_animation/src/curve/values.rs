@@ -18,6 +18,11 @@
 //! n × u32               times, in ticks of 1/2400 s
 //! ```
 //!
+//! A `RotationCurve` (quaternion) has values section version 1 and 25-byte
+//! keys: u8 interpolation in the low two bits (Studio sets 0x0C above them
+//! whatever the key's tangents, meaning unknown), the rotation as f32 x, y,
+//! z, w, then f32 left and right tangents. Read off curves Studio saved.
+//!
 //! Tangent flag bit 0 marks a set left tangent and bit 1 a set right one: a
 //! first key only ever carries 0, 2 or 3 and a last key 0, 1 or 3. Both
 //! slopes are stored even when unset (the engine's own auto slope, often the
@@ -30,6 +35,7 @@ use super::{FloatCurve, FloatKey, Interpolation};
 pub const TICKS_PER_SECOND: f32 = 2400.;
 
 const VALUES_VERSION: u32 = 2;
+const ROTATION_VERSION: u32 = 1;
 const TIMES_VERSION: u32 = 1;
 const LEFT_SET: u8 = 1;
 const RIGHT_SET: u8 = 2;
@@ -41,6 +47,16 @@ pub struct RawKey {
     pub interpolation: u8,
     pub flags: u8,
     pub value: f32,
+    pub left: f32,
+    pub right: f32,
+}
+
+/// One `RotationCurve` key exactly as stored, `rotation` as x, y, z, w.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RawRotationKey {
+    pub ticks: u32,
+    pub interpolation: u8,
+    pub rotation: [f32; 4],
     pub left: f32,
     pub right: f32,
 }
@@ -99,8 +115,8 @@ impl Reader<'_> {
         Ok(times)
     }
 
-    fn count(&mut self) -> Result<usize, String> {
-        self.expect("values version", VALUES_VERSION)?;
+    fn count(&mut self, version: u32) -> Result<usize, String> {
+        self.expect("values version", version)?;
         let n = self.u32()? as usize;
         // Each key takes at least five bytes, which bounds a corrupt count.
         if n > self.bytes.len() / 5 {
@@ -112,7 +128,7 @@ impl Reader<'_> {
 
 pub fn read_float(bytes: &[u8]) -> Result<Vec<RawKey>, String> {
     let mut r = Reader { bytes, at: 0 };
-    let n = r.count()?;
+    let n = r.count(VALUES_VERSION)?;
     let mut keys = Vec::with_capacity(n);
     for _ in 0..n {
         keys.push(RawKey {
@@ -130,9 +146,28 @@ pub fn read_float(bytes: &[u8]) -> Result<Vec<RawKey>, String> {
     Ok(keys)
 }
 
+pub fn read_rotation(bytes: &[u8]) -> Result<Vec<RawRotationKey>, String> {
+    let mut r = Reader { bytes, at: 0 };
+    let n = r.count(ROTATION_VERSION)?;
+    let mut keys = Vec::with_capacity(n);
+    for _ in 0..n {
+        keys.push(RawRotationKey {
+            ticks: 0,
+            interpolation: r.u8()? & 3,
+            rotation: [r.f32()?, r.f32()?, r.f32()?, r.f32()?],
+            left: r.f32()?,
+            right: r.f32()?,
+        });
+    }
+    for (key, ticks) in keys.iter_mut().zip(r.times(n)?) {
+        key.ticks = ticks;
+    }
+    Ok(keys)
+}
+
 pub fn read_markers(bytes: &[u8]) -> Result<Vec<RawMarker>, String> {
     let mut r = Reader { bytes, at: 0 };
-    let n = r.count()?;
+    let n = r.count(VALUES_VERSION)?;
     let mut markers = Vec::with_capacity(n);
     for _ in 0..n {
         let rest = &r.bytes[r.at..];

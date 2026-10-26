@@ -36,6 +36,14 @@ pub(crate) const SHARED_STRING_TYPE_ID: u8 = 0x1C;
 
 /// Referent and shared-string lookup tables threaded through every decoder that
 /// needs to resolve a `Ref`, a `Content`'s `Ref` child, or a `SharedString`/`NetAssetRef`.
+/// Studio wraps long Base64 payloads (`BinaryString`, the `SharedStrings`
+/// table) across lines, which a strict decoder refuses.
+pub(crate) fn base64(text: &str) -> Option<Vec<u8>> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let packed: String = text.split_ascii_whitespace().collect();
+    STANDARD.decode(packed).ok()
+}
+
 pub(crate) struct Ctx<'a> {
     pub(crate) referents: &'a HashMap<String, Ref>,
     pub(crate) shared: &'a HashMap<String, Vec<u8>>,
@@ -45,12 +53,19 @@ pub(crate) struct Ctx<'a> {
 ///
 /// Returns `None` when the property has no value to store (a null `Ref`, or a
 /// `Ref` pointing at a referent this document never defines), mirroring how the
-/// binary decoder represents "no value" for the same cases.
+/// binary decoder represents "no value" for the same cases, or one that is
+/// left out on purpose (`AssetContentMap`).
 pub(crate) fn decode(node: &Node, ctx: &Ctx<'_>) -> Option<Variant> {
     // `Ref` is the one type whose absence is meaningful (a null or dangling
     // referent), so it is resolved before the rest, which always produce a value.
     if node.tag == "Ref" {
         return refs::reference(node.text_trim(), ctx);
+    }
+    // Terrain's `VoxelGridAssetContentMap`, which every place Studio 0.744
+    // saves carries (`[]` when empty). Its binary form is not known, so it
+    // could be written to neither format; Studio rebuilds it on load.
+    if node.tag == "AssetContentMap" {
+        return None;
     }
 
     Some(match node.tag.as_str() {

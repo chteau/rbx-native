@@ -25,6 +25,20 @@
   Output instead of vanishing. `RBX_NO_KEYRING=1` keeps rbxstudio and
   rbxcloud away from the OS keyring (for test runs), and rbxcloud checks its
   arguments before touching the keyring. (@chteau)
+- **Studio-saved files read and save right.** A CurveAnimation with a
+  quaternion `RotationCurve` opened as an error; now it reads as Euler
+  curves sampled the way Studio plays it (slerp, cubic tangents measured
+  in Studio), and `MarkerCurve`s inside joint folders aren't dropped
+  anymore. Sounds save `RollOffMinDistance`/`RollOffMaxDistance` like
+  Studio does instead of the legacy `EmitterSize`/`xmlRead_MaxDistance_3`
+  (Studio still loads the old ones). Every place Studio 0.744 writes
+  carries Terrain's `VoxelGridAssetContentMap`, which made any `.rbxlx`
+  save of it fail; it's left out now and Studio rebuilds it. Opening a
+  Studio `.rbxlx` was broken too: Studio wraps long Base64 across lines,
+  so terrain, attributes and shared strings read as garbage, and an
+  `int` `TeamColor` turned the `.rbxl` we saved from it into a file Studio
+  refused. Smooth terrain and saved CurveAnimations checked in real
+  Studio both ways. (@chteau)
 
 ## 2026-10-25
 

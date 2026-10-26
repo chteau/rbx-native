@@ -17,6 +17,7 @@ mod convert;
 mod euler;
 pub mod file;
 mod joint;
+mod rotation;
 pub mod values;
 
 pub use convert::{from_clip, from_clip_in_order, to_clip};

@@ -1,10 +1,9 @@
 //! Decoders for scalar leaf types: string, BinaryString, bool, int, int64,
 //! float, double, token, BrickColor.
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rbx_dom::Variant;
 
-use super::STRING_TYPE_ID;
+use super::{base64, STRING_TYPE_ID};
 use crate::xml_tree::Node;
 
 /// `string`/`ProtectedString` are always valid UTF-8 here, since the XML tree
@@ -22,11 +21,11 @@ pub(crate) fn string_value(bytes: &[u8]) -> Variant {
 }
 
 pub(crate) fn binary_string(node: &Node) -> Variant {
-    match STANDARD.decode(node.text_trim()) {
-        Ok(bytes) => string_value(&bytes),
+    match base64(&node.text) {
+        Some(bytes) => string_value(&bytes),
         // A malformed Base64 payload keeps the still-encoded text instead of
         // losing the property entirely.
-        Err(_) => Variant::Unknown {
+        None => Variant::Unknown {
             type_id: STRING_TYPE_ID,
             raw: node.text_trim().as_bytes().to_vec(),
         },

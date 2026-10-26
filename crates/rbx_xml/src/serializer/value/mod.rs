@@ -26,7 +26,8 @@ use crate::value::STRING_TYPE_ID;
 /// `BinaryString` (the only case `scalar::binary_string` round-trips losslessly,
 /// since XML's `BinaryString` carries no side channel for a wire type id, see
 /// its doc comment). A SharedString (`type_id` 0x1C) never gets here: the
-/// caller writes it into the `SharedStrings` table. Any other `type_id`
+/// caller writes it into the `SharedStrings` table, and leaves out Terrain's
+/// binary-only content map. Any other `type_id`
 /// returns `Unsupported("Unknown")` rather than silently writing a blob that
 /// would read back tagged `STRING_TYPE_ID`.
 ///

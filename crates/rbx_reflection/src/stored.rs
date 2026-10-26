@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn two_spellings_of_one_saved_name_keep_the_current_ones_value() {
-        // Both save as `xmlRead_MaxDistance_3`; `MaxDistance` is deprecated.
+        // Both save as `RollOffMaxDistance`; `MaxDistance` is deprecated.
         for _ in 0..4 {
             let mut dom = one(
                 "Sound",
@@ -295,12 +295,27 @@ mod tests {
             database().normalize_names(&mut dom);
 
             let sound = dom.get(Ref::new(1)).unwrap();
-            assert_eq!(keys(&dom), ["xmlRead_MaxDistance_3"]);
+            assert_eq!(keys(&dom), ["RollOffMaxDistance"]);
             assert_eq!(
-                sound.properties()["xmlRead_MaxDistance_3"],
+                sound.properties()["RollOffMaxDistance"],
                 Variant::Float32(2.0)
             );
         }
+    }
+
+    #[test]
+    fn legacy_sound_distances_become_the_names_studio_saves() {
+        let mut dom = one(
+            "Sound",
+            &[
+                ("EmitterSize", Variant::Float32(7.0)),
+                ("xmlRead_MaxDistance_3", Variant::Float32(345.0)),
+            ],
+        );
+
+        database().normalize_names(&mut dom);
+
+        assert_eq!(keys(&dom), ["RollOffMaxDistance", "RollOffMinDistance"]);
     }
 
     #[test]
