@@ -2,6 +2,16 @@
 
 ## 2026-10-28
 
+- **Pre-alpha fixes**: skipping the API key wizard is remembered, so a
+  launch without a key goes to Home (Manage key adds one later) and only
+  `--setup` brings the wizard back. `--select` names an instance with a dot
+  in it (`Workspace.Smoke.spec`): the longest child name that fits wins at
+  each step, backing off if the rest of the path then fails. The soft-snap
+  search takes its time budget as an argument, which stops its test failing
+  on slow CI runners, and the Device Simulator's touch stand-in is split
+  into four modules instead of one 1000-line script, behaving the same.
+  (@chteau)
+
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds
   `rbxstudio` in release for Windows, macOS (Apple Silicon) and Linux and
   uploads one zip per OS, with a `README-ALPHA.txt` on opening an unsigned
