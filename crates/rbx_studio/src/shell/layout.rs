@@ -148,13 +148,16 @@ pub(crate) enum Panel {
     /// The place's avatar rules, Studio's Avatar › Settings
     /// (`shell::avatar_dock`). Shut until asked for.
     AvatarSettings,
+    /// The pseudo-localization preview and string extraction
+    /// (`shell::localization`), a beta. Shut until asked for.
+    Localization,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 19] = [
+    pub(crate) const ALL: [Panel; 20] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -174,6 +177,7 @@ impl Panel {
         Panel::Layers,
         Panel::Loren,
         Panel::AvatarSettings,
+        Panel::Localization,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged, also
@@ -197,7 +201,8 @@ impl Panel {
             | Panel::Playtests
             | Panel::Tests
             | Panel::Loren
-            | Panel::AvatarSettings => Edge::Bottom,
+            | Panel::AvatarSettings
+            | Panel::Localization => Edge::Bottom,
         }
     }
 
@@ -224,6 +229,7 @@ impl Panel {
             Panel::Layers => "Layers",
             Panel::Loren => "Loren",
             Panel::AvatarSettings => "Avatar Settings",
+            Panel::Localization => "Localization",
         }
     }
 
@@ -243,6 +249,7 @@ impl Panel {
                 | Panel::Layers
                 | Panel::Loren
                 | Panel::AvatarSettings
+                | Panel::Localization
         )
     }
 

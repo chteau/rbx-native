@@ -419,6 +419,8 @@ pub(crate) struct WorkspaceView {
     /// The UI editor's canvas: the request last forwarded, and the last
     /// frame drawn for it, see [`canvas`].
     canvas_request: Option<CanvasRequest>,
+    /// See [`WorkspaceView::overflows`].
+    overflows: Vec<rbx_dom::Ref>,
     canvas: Option<Canvas>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
@@ -562,6 +564,7 @@ impl WorkspaceView {
             summon: summon::Summon::default(),
             snapped: None,
             canvas_request: None,
+            overflows: Vec::new(),
             canvas: None,
             _subscriptions: [blur, deactivated],
         }
@@ -686,6 +689,10 @@ impl WorkspaceView {
             scrolls.extend(ready.scrolls);
             if ready.canvas.is_some() {
                 drawn = ready.canvas;
+            }
+            if let Some(overflows) = ready.overflows {
+                self.overflows = overflows;
+                cx.emit(CanvasUpdated);
             }
         }
         if let Some(drawn) = drawn {
@@ -980,6 +987,22 @@ impl WorkspaceView {
     /// being depth-tested against the scene, the same way `set_orthographic`
     /// above switches projection: the render thread owns the viewer, so the
     /// switch happens there, between two frames.
+    /// Draws GUI text pseudo-localized on the render thread, overlay and
+    /// canvas both; `None` for text as written.
+    pub(crate) fn set_pseudo_locale(
+        &self,
+        locale: Option<rbx_viewer::PseudoLocale>,
+        cx: &mut Context<Self>,
+    ) {
+        self.pump.pseudo_locale(locale);
+        cx.notify();
+    }
+
+    /// The overlay's text objects that overflow under the pseudo locale.
+    pub(crate) fn overflows(&self) -> &[rbx_dom::Ref] {
+        &self.overflows
+    }
+
     /// Shows or hides the `ScreenGui` overlay on the render thread.
     pub(crate) fn set_screen_gui_shown(&self, shown: bool, cx: &mut Context<Self>) {
         self.pump.screen_gui_shown(shown);

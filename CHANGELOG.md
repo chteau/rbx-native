@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-29
+
+- **Pseudo-localization preview and string extraction** (beta, behind
+  File › Beta Features): a Pseudo-loc tile beside Show UI draws every GUI
+  text longer, bracketed and accented, or right to left, in the 3D view and
+  the UI Editor, and outlines each text object that no longer fits. Nothing
+  is written to the place, so save and undo are untouched. A new
+  Localization dock lists those overflows to jump to, and the place's
+  user-facing strings, GUI text with `AutoLocalize` on and literals client
+  scripts set on `.Text`, which it writes into a `LocalizationTable` in
+  Studio's own format as one undo step, skipping strings already in a
+  table. Catching a layout that only fits English before a translator ever
+  sees the game is the point. (@chteau)
+
 ## 2026-10-28
 
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds

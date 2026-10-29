@@ -149,6 +149,7 @@ impl Shell {
             Panel::Layers => self.layers_dock(window, cx),
             Panel::Loren => self.loren_dock(window, cx),
             Panel::AvatarSettings => self.avatar_dock(window, cx),
+            Panel::Localization => self.localization_dock(cx),
         }
     }
 
