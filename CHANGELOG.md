@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-29
+
+- **Performance heatmap totals and a model ranking (beta).** Behind
+  File › Beta Features, the Viewport dock's Performance view gains Total
+  and Physics. Total weighs every factor a part costs into one score:
+  triangles, decoded texture memory, instances, simulated parts and
+  physics constraints, `PreciseConvexDecomposition` (or `Default` on a
+  dense mesh), dense meshes casting shadows, lights with `Shadows` on,
+  and translucent or Glass overdraw. Both also rank the 20 costliest
+  models, each row giving what drives it, its raw figures on hover, and a
+  click that selects the model and frames it. The weights are a
+  documented estimate for comparing parts of one place, not Roblox's own
+  costs. (@chteau)
+
+- **Module require graph (beta).** View › Require Graph, behind File ›
+  Beta Features, draws every script and ModuleScript with an edge for
+  each `require(...)` the security audit's resolver can follow (services,
+  `WaitForChild`, `FindFirstChild`, dot chains, `script.Parent`, locals,
+  and require-by-string paths). A require it can't follow (a dynamic
+  path, an asset id) is a dashed edge to a box with its text and line.
+  Cycles are drawn red, a client script requiring something in
+  `ServerScriptService` or `ServerStorage` (which fails at run time)
+  amber, and a column beside the graph lists both, the unknown requires
+  and the modules nothing requires. A box opens its script; an edge's
+  line badge opens the require. (@chteau)
+
 ## 2026-10-28
 
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds

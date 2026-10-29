@@ -2789,6 +2789,19 @@ both the plain fetch failure and the silent fall back to a default
   `segment_mesh` and `generate_texture` take the selection when
   `instance_path` is left out, as Studio does. The Play capture on
   Windows and the Win32 input have not been run on a real Windows PC.
+- [x] **Performance heatmap: totals and models (beta)**, behind the
+  `perf-models` switch. The Performance view gains Total and Physics:
+  `rbx_viewer::perf::models` weighs triangles, texture memory, instances,
+  simulated parts, constraints, costly collision fidelities, dense meshes
+  casting shadows, shadowed lights and blended overdraw into points, a
+  documented estimate rather than Roblox's own costs. The 20 costliest
+  models are ranked with a breakdown, and a click selects and frames one.
+- [x] **Module require graph (beta)**, behind the `require-graph`
+  switch: View › Require Graph, built on `rbx_audit::require_graph`,
+  draws scripts and modules with their statically resolved requires,
+  dashed unknown ones with their line, red cycles, amber client-to-server
+  requires, and lists those with the unused modules. Clicks open the
+  script or the require line.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
