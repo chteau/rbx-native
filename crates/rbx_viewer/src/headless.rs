@@ -39,6 +39,9 @@ pub struct GuiCanvas {
     /// against, below any top-bar inset, then every element as laid out,
     /// in paint order: what the canvas is hit-tested against.
     pub boxes: Vec<GuiBox>,
+    /// The text objects whose text overflows their box, in paint order,
+    /// while a pseudo locale is set (see [`Headless::set_pseudo_locale`]).
+    pub overflows: Vec<Ref>,
 }
 
 /// A loaded place that renders frames on demand, flown with the very same
@@ -607,6 +610,21 @@ impl Headless {
     pub fn set_gui_safe_insets(&mut self, insets: crate::SafeInsets) {
         self.offscreen
             .with_renderer(|renderer, _, _| renderer.set_gui_safe_insets(insets));
+    }
+
+    /// Draws every GUI text pseudo-localized, on the overlay and on every
+    /// canvas, each text object that no longer fits marked; `None` draws the
+    /// text as written. Display-only, nothing reaches the place.
+    pub fn set_pseudo_locale(&mut self, locale: Option<crate::PseudoLocale>) {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.set_pseudo_locale(locale));
+    }
+
+    /// The overlay's text objects that overflow under the pseudo locale, as
+    /// last drawn, in paint order.
+    pub fn gui_overflows(&mut self) -> Vec<Ref> {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.gui_overflows(false).to_vec())
     }
 
     /// Shows or hides the `ScreenGui` overlay (Studio's View > UI); the

@@ -48,7 +48,6 @@ pub(super) use starter::hides_contents;
 pub use starter::shows_screen;
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
-#[cfg(test)]
 pub(crate) use text::Span as TextSpan;
 pub(crate) use text::{span_face, Text};
 pub(super) use viewport::each_part as each_viewport_part;
@@ -150,6 +149,7 @@ fn gather(
         into.push(Screen {
             referent,
             enabled: flag(properties, "Enabled", true),
+            auto_localize: flag(properties, "AutoLocalize", true),
             space: None,
             display_order: integer(properties, "DisplayOrder", 0),
             top_inset: constraints::top_bar_inset(properties),
@@ -179,6 +179,7 @@ fn gather(
         into.push(Screen {
             referent,
             enabled: flag(properties, "Enabled", true),
+            auto_localize: flag(properties, "AutoLocalize", true),
             space: Some(canvas),
             display_order: 0,
             top_inset: 0.0,
@@ -268,6 +269,7 @@ fn element(
     Some(Node {
         referent,
         name: instance.name().to_string(),
+        auto_localize: flag(properties, "AutoLocalize", true),
         layout_order: integer(properties, "LayoutOrder", 0),
         position: span(properties, "Position"),
         size: span(properties, "Size"),

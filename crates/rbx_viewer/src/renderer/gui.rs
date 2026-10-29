@@ -21,6 +21,7 @@ mod gradient;
 mod group;
 mod paint;
 mod pipeline;
+mod pseudo;
 mod quads;
 mod space;
 mod text;
@@ -36,7 +37,7 @@ use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{
     gui_layout_inset, gui_screen_frame, gui_scroll_target, GuiRect, GuiScreen, GuiScrollWindow,
-    SafeInsets, ScrollTarget, SpaceGui,
+    PseudoLocale, SafeInsets, ScrollTarget, SpaceGui,
 };
 use atlas::Atlas;
 use group::Baked;
@@ -76,7 +77,16 @@ pub(super) struct Gui {
     /// The display format the overlay paints in, and so the format every
     /// `CanvasGroup` is flattened in, since the same painter does both.
     format: wgpu::TextureFormat,
+    /// The trees as the scene planned them, and as they are drawn: the
+    /// same, or pseudo-localized copies (see [`Gui::set_pseudo_locale`]).
+    planned: Vec<GuiScreen>,
     screens: Vec<GuiScreen>,
+    pseudo: Option<PseudoLocale>,
+    /// The text objects whose pseudo-localized text overflows, as the
+    /// overlay and as the last canvas were laid out. Empty without a
+    /// pseudo locale.
+    overlay_overflows: Vec<Ref>,
+    canvas_overflows: Vec<Ref>,
     /// The viewport the overlay was laid out for, and which screen it holds
     /// every enabled one, or the one [`Gui::draw_canvas`] asked for; a
     /// different answer to either rebuilds it.
@@ -154,7 +164,11 @@ impl Gui {
             text,
             screen: screen_painter,
             format,
+            planned: Vec::new(),
             screens: Vec::new(),
+            pseudo: None,
+            overlay_overflows: Vec::new(),
+            canvas_overflows: Vec::new(),
             built: None,
             screen_size: None,
             safe_insets: SafeInsets::default(),
@@ -229,7 +243,8 @@ impl Gui {
         }
         self.text.adopt(fonts, &faces);
 
-        self.screens = screens.to_vec();
+        self.planned = screens.to_vec();
+        self.screens = pseudo::localized(&self.planned, self.pseudo);
         self.space_canvases = spaces
             .iter()
             .map(|gui| (gui.referent, gui.canvas))
@@ -327,6 +342,26 @@ impl Gui {
         if screen != self.screen_size {
             self.screen_size = screen;
             self.built = None;
+        }
+    }
+
+    /// Draws every text pseudo-localized in `locale`, overflowing boxes
+    /// marked, or as written with `None`. Display-only: the trees are
+    /// copies, the DOM never hears of it.
+    pub(super) fn set_pseudo_locale(&mut self, locale: Option<PseudoLocale>) {
+        if locale != self.pseudo {
+            self.pseudo = locale;
+            self.screens = pseudo::localized(&self.planned, locale);
+            self.built = None;
+        }
+    }
+
+    /// The overflowing text objects of the overlay (`canvas` false) or of
+    /// the last canvas, in paint order.
+    pub(super) fn overflows(&self, canvas: bool) -> &[Ref] {
+        match canvas {
+            true => &self.canvas_overflows,
+            false => &self.overlay_overflows,
         }
     }
 
@@ -453,6 +488,14 @@ impl Gui {
                 self.safe_insets,
                 &mut self.text,
             );
+            let overflows = match self.pseudo {
+                Some(_) => pseudo::mark_overflows(&mut elements, &mut self.text),
+                None => Vec::new(),
+            };
+            match only {
+                Some(_) => self.canvas_overflows = overflows,
+                None => self.overlay_overflows = overflows,
+            }
             // Before the flatten below as well, for the same reason: a
             // `CanvasGroup`'s children are still things to click on. A
             // canvas leads with the screen's own box: the frame its

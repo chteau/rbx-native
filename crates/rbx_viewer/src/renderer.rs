@@ -530,6 +530,16 @@ impl Renderer {
         self.screen_gui_shown = shown;
     }
 
+    /// See `Gui::set_pseudo_locale`.
+    pub(crate) fn set_pseudo_locale(&mut self, locale: Option<crate::PseudoLocale>) {
+        self.gui.set_pseudo_locale(locale);
+    }
+
+    /// See `Gui::overflows`.
+    pub(crate) fn gui_overflows(&self, canvas: bool) -> &[rbx_dom::Ref] {
+        self.gui.overflows(canvas)
+    }
+
     /// See `Gui::set_safe_insets`.
     pub(crate) fn set_gui_safe_insets(&mut self, insets: crate::SafeInsets) {
         self.gui.set_safe_insets(insets);

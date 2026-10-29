@@ -364,6 +364,7 @@ impl Offscreen {
             pixels,
             size,
             boxes: self.renderer.gui_boxes().to_vec(),
+            overflows: self.renderer.gui_overflows(true).to_vec(),
         })
     }
 

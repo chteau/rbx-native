@@ -26,7 +26,7 @@ fn text_of(dom: &WeakDom) -> Text {
 
 /// Every character `size / 2` wide and every line `size * LineHeight` tall,
 /// wrapping as many whole characters per line as `max_width` holds.
-struct Fixed;
+pub(super) struct Fixed;
 
 impl TextMeasure for Fixed {
     fn measure(&mut self, text: &Text, size: f32, max_width: Option<f32>) -> [f32; 2] {

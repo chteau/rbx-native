@@ -73,6 +73,16 @@ pub(super) fn typeset(text: &Text, rect: &mut Rect, measure: &mut dyn TextMeasur
     }
 }
 
+/// Whether `typeset` no longer fits `rect` as drawn: wider or taller than the
+/// box at the size it settled on, wrapped where it wraps. A `TextScaled` text
+/// overflows only once even its smallest size is too big; an `AutomaticSize`
+/// axis has already grown to hold it; a truncated text counts, since its
+/// ellipsis hides what does not fit.
+pub(crate) fn overflows(typeset: &Typeset, rect: &Rect, measure: &mut dyn TextMeasure) -> bool {
+    let bounds = measure.measure(&typeset.text, typeset.size, wrap_width(&typeset.text, rect));
+    bounds[0] > rect.width + 0.5 || bounds[1] > rect.height + 0.5
+}
+
 /// The largest whole pixel size in `min..=max` at which the wrapped text still
 /// fits the box. Bounds only grow with size, so a binary search finds it in a
 /// handful of measurements, each of which shapes the whole string.

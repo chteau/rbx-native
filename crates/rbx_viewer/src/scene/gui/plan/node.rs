@@ -39,6 +39,9 @@ pub(in crate::scene::gui) struct Node {
     /// rather than describing the instance itself, `UIPageLayout.CurrentPage`
     /// can be matched back to the node it points at.
     pub(in crate::scene::gui) referent: Ref,
+    /// `AutoLocalize`, which turns localization off for the whole subtree,
+    /// so the pseudo-localization preview leaves it as written too.
+    pub(in crate::scene::gui) auto_localize: bool,
     /// Only read for `SortOrder.Name` under a [`List`].
     pub(in crate::scene::gui) name: String,
     pub(in crate::scene::gui) layout_order: i32,
@@ -174,6 +177,8 @@ pub(crate) struct Screen {
     /// does not place it on a part, see `super::gather`. Never drawn by the
     /// overlay: the scene draws these in the world (`super::super::space`).
     pub(crate) space: Option<[f32; 2]>,
+    /// See [`Node::auto_localize`].
+    pub(in crate::scene::gui) auto_localize: bool,
     pub(in crate::scene::gui) display_order: i32,
     /// `ScreenInsets`: pixels of the viewport's top edge the canvas gives up
     /// to Roblox's top bar.
