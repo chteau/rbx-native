@@ -78,6 +78,7 @@ pub(crate) use coedit::BETA_ID as COEDIT_BETA_ID;
 pub(crate) use export::Export;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
+pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
 pub(crate) use roving::install as install_key_bindings;
@@ -1097,8 +1098,10 @@ impl Shell {
         // `shell::perf_view`): turns the Performance view on, a screenshot
         // aid, since its dropdown can't be clicked from outside.
         if let Ok(name) = std::env::var("RBX_STUDIO_PERF") {
+            let beta = crate::beta::enabled(PERF_BETA_ID);
             let metric = rbx_viewer::perf::Metric::ALL
                 .into_iter()
+                .chain(rbx_viewer::perf::Metric::BETA.into_iter().filter(|_| beta))
                 .find(|metric| metric.label().to_lowercase().contains(&name.to_lowercase()));
             shell.set_perf_metric(metric, cx);
         }

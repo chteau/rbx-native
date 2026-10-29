@@ -1,10 +1,12 @@
 //! The Performance view's section: which measure tints the viewport, the
-//! colour ramp's legend, the place's total, and the costliest parts,
-//! each a row that selects its part and puts the camera on it.
+//! colour ramp's legend, the place's total, and the costliest parts (and,
+//! for the `perf-models` beta's measures, models), each a row that selects
+//! its part or model and puts the camera on it.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::*;
+use rbx_dom::Ref;
 use rbx_viewer::perf::Metric;
 
 use crate::tokens;
@@ -14,6 +16,17 @@ use super::super::rows::select_box;
 use super::super::{chrome, Shell};
 use super::rows::{row, CONTROL_HEIGHT, CONTROL_WIDTH};
 
+/// The dropdown's measures; the beta's two round the shipped five.
+fn metrics() -> Vec<Metric> {
+    if !crate::beta::enabled(super::super::PERF_BETA_ID) {
+        return Metric::ALL.to_vec();
+    }
+    std::iter::once(Metric::Total)
+        .chain(Metric::ALL)
+        .chain([Metric::Physics])
+        .collect()
+}
+
 impl Shell {
     pub(super) fn perf_section(&mut self, cx: &mut Context<Self>) -> Div {
         let current = self.perf.as_ref().map(|perf| perf.metric);
@@ -22,7 +35,7 @@ impl Shell {
                 .checked(current.is_none())
                 .on_click(|shell, cx| shell.set_perf_metric(None, cx)),
         )
-        .chain(Metric::ALL.into_iter().map(|metric| {
+        .chain(metrics().into_iter().map(|metric| {
             menu::item(metric.label())
                 .checked(current == Some(metric))
                 .on_click(move |shell, cx| shell.set_perf_metric(Some(metric), cx))
@@ -73,79 +86,127 @@ impl Shell {
                 None => note("Measuring…"),
                 Some(report) => {
                     let handle = cx.entity();
+                    let focus = |target: Ref| {
+                        let handle = handle.clone();
+                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                            handle.update(cx, |shell, cx| shell.perf_focus(target, cx));
+                        }
+                    };
                     let worst = report.worst.iter().enumerate().filter_map(|(rank, &part)| {
                         let readout = report.readout(part)?;
-                        let handle = handle.clone();
                         Some(
-                            h_flex()
-                                .id(SharedString::from(format!("perf-worst-{rank}")))
-                                .h(px(22.))
-                                .mx(px(-8.))
-                                .px(px(8.))
-                                .gap(px(10.))
-                                .items_center()
-                                .rounded(tokens::radius_badge())
-                                .cursor_pointer()
-                                .hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
-                                .on_click(move |_, _, cx| {
-                                    handle.update(cx, |shell, cx| shell.perf_focus(part, cx));
-                                })
-                                .child(
-                                    div()
-                                        .w(px(18.))
-                                        .flex_none()
-                                        .text_color(tokens::text3())
-                                        .child(format!("{}", rank + 1)),
-                                )
-                                .child(
-                                    div()
-                                        .w(px(180.))
-                                        .flex_none()
-                                        .truncate()
-                                        .text_color(tokens::text())
-                                        .child(readout.name.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .w(px(150.))
-                                        .flex_none()
-                                        .font_family(tokens::font_mono())
-                                        .text_color(tokens::text())
-                                        .child(perf.metric.format(readout.value)),
-                                )
-                                .child(
-                                    div()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_color(tokens::text3())
-                                        .child(readout.detail.clone()),
-                                ),
+                            ranked_row(
+                                SharedString::from(format!("perf-worst-{rank}")),
+                                rank,
+                                &readout.name,
+                                perf.metric.format(readout.value),
+                                readout.detail.clone(),
+                            )
+                            .on_click(focus(part)),
                         )
                     });
-                    v_flex()
+                    let models = report.models.iter().enumerate().map(|(rank, model)| {
+                        let score = match perf.metric {
+                            Metric::Physics => model.cost.physics(),
+                            _ => model.cost.total(),
+                        };
+                        let figures = SharedString::from(model.cost.figures());
+                        ranked_row(
+                            SharedString::from(format!("perf-model-{rank}")),
+                            rank,
+                            &model.name,
+                            perf.metric.format(score),
+                            model.cost.leading(),
+                        )
+                        .tooltip(move |window, cx| {
+                            super::super::tooltip::text(figures.clone(), window, cx)
+                        })
+                        .on_click(focus(model.referent))
+                    });
+                    let mut lists = v_flex()
                         .gap(px(8.))
                         .pt(px(4.))
                         .child(note(&report.summary))
-                        .child(legend(&report.legend))
-                        .child(
-                            div()
-                                .text_size(tokens::text_xxs())
-                                .font_weight(tokens::WEIGHT_BOLD)
-                                .text_color(tokens::text3())
-                                .child(format!("COSTLIEST {}", report.worst.len())),
-                        )
-                        .child(
-                            v_flex()
-                                .text_size(tokens::text_sm())
-                                .line_height(tokens::line_sm())
-                                .children(worst),
-                        )
+                        .child(legend(&report.legend));
+                    if !report.models.is_empty() {
+                        lists = lists
+                            .child(heading(format!("COSTLIEST MODELS {}", report.models.len())))
+                            .child(list(models));
+                    }
+                    lists
+                        .child(heading(format!("COSTLIEST {}", report.worst.len())))
+                        .child(list(worst))
                         .into_any_element()
                 }
             });
         }
         super::rows::section("PERFORMANCE", vec![body.into_any_element()])
     }
+}
+
+fn heading(text: String) -> Div {
+    div()
+        .text_size(tokens::text_xxs())
+        .font_weight(tokens::WEIGHT_BOLD)
+        .text_color(tokens::text3())
+        .child(text)
+}
+
+fn list(rows: impl Iterator<Item = Stateful<Div>>) -> Div {
+    v_flex()
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
+        .children(rows)
+}
+
+/// One row of a costliest list: rank, name, value, and what drives it.
+fn ranked_row(
+    id: SharedString,
+    rank: usize,
+    name: &str,
+    value: String,
+    detail: String,
+) -> Stateful<Div> {
+    h_flex()
+        .id(id)
+        .h(px(22.))
+        .mx(px(-8.))
+        .px(px(8.))
+        .gap(px(10.))
+        .items_center()
+        .rounded(tokens::radius_badge())
+        .cursor_pointer()
+        .hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
+        .child(
+            div()
+                .w(px(18.))
+                .flex_none()
+                .text_color(tokens::text3())
+                .child(format!("{}", rank + 1)),
+        )
+        .child(
+            div()
+                .w(px(180.))
+                .flex_none()
+                .truncate()
+                .text_color(tokens::text())
+                .child(name.to_string()),
+        )
+        .child(
+            div()
+                .w(px(150.))
+                .flex_none()
+                .font_family(tokens::font_mono())
+                .text_color(tokens::text())
+                .child(value),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_color(tokens::text3())
+                .child(detail),
+        )
 }
 
 fn note(text: &str) -> AnyElement {

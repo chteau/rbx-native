@@ -27,6 +27,10 @@ use rbx_viewer::perf::{Metric, Metrics, Report};
 
 use super::Shell;
 
+/// The beta switch for the Total and Physics measures and the model
+/// ranking (`rbx_viewer::perf`'s `models`).
+pub(crate) const BETA_ID: &str = "perf-models";
+
 /// How long the thread waits for an edit before looking for assets that had
 /// not downloaded yet.
 const RETRY: Duration = Duration::from_secs(2);
@@ -301,24 +305,34 @@ impl Shell {
         )))
     }
 
-    /// Selects `part` and puts the camera on it: a click on the dock's
-    /// worst-parts list.
-    pub(super) fn perf_focus(&mut self, part: Ref, cx: &mut Context<Self>) {
-        self.select(part, cx);
-        let Some(properties) = self.dom.get(part).map(|p| p.properties()) else {
-            return;
-        };
-        let centre = match properties.get("CFrame") {
-            Some(Variant::CFrame(cframe)) => {
-                glam::Vec3::new(cframe.position.x, cframe.position.y, cframe.position.z)
-            }
-            _ => return,
-        };
-        let reach = match properties.get("size") {
-            Some(Variant::Vector3(size)) => glam::Vec3::new(size.x, size.y, size.z).length() * 0.5,
-            _ => 2.0,
+    /// Selects `target`, a part or a model, and puts the camera on the box
+    /// round its parts: a click on one of the dock's costliest lists.
+    pub(super) fn perf_focus(&mut self, target: Ref, cx: &mut Context<Self>) {
+        self.select(target, cx);
+        let (mut low, mut high) = (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
+        let mut pending = vec![target];
+        while let Some(at) = pending.pop() {
+            let Some(instance) = self.dom.get(at) else {
+                continue;
+            };
+            pending.extend_from_slice(instance.children());
+            let properties = instance.properties();
+            let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
+                continue;
+            };
+            let centre = glam::Vec3::new(cframe.position.x, cframe.position.y, cframe.position.z);
+            let half = match properties.get("size") {
+                Some(Variant::Vector3(size)) => glam::Vec3::new(size.x, size.y, size.z) * 0.5,
+                _ => glam::Vec3::splat(0.5),
+            };
+            low = low.min(centre - half);
+            high = high.max(centre + half);
         }
-        .max(2.0);
+        if low.x > high.x {
+            return;
+        }
+        let centre = (low + high) * 0.5;
+        let reach = ((high - low).length() * 0.5).max(2.0);
         let eye = centre + glam::Vec3::new(-0.55, 0.45, -1.0).normalize() * reach * 3.0;
         self.viewport
             .read(cx)
