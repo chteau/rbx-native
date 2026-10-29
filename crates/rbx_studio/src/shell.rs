@@ -81,6 +81,7 @@ pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
 pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
+pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use view_snap::PresetView;
 mod tree_keys;
@@ -88,6 +89,7 @@ mod tree_keys;
 mod argon_dock;
 mod datastores;
 mod game_settings;
+mod require_graph;
 mod rows;
 mod save;
 mod script_analysis;
@@ -275,6 +277,8 @@ pub(crate) struct Shell {
     templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Customize Shortcuts, while open, see `shortcuts_window`.
     shortcuts_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// The Require Graph, while open, see `require_graph`.
+    require_graph_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Controller Emulator, while open, see `controller_emulator`.
     controller_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Version History, while open, see `roblox_publish::history`.
@@ -865,6 +869,7 @@ impl Shell {
             settings_window: None,
             templates_window: None,
             shortcuts_window: None,
+            require_graph_window: None,
             controller_window: None,
             version_history: None,
             game_settings: None,
@@ -1230,6 +1235,11 @@ impl Shell {
         // for Customize Shortcuts.
         if std::env::var_os(shortcuts_window::OPEN_VARIABLE).is_some() {
             shell.open_shortcuts(cx);
+        }
+        // `RBX_STUDIO_REQUIRE_GRAPH` (see `shell::require_graph`): the same,
+        // for the Require Graph, with its beta on.
+        if std::env::var_os(require_graph::OPEN_VARIABLE).is_some() {
+            shell.open_require_graph(cx);
         }
         // `RBX_STUDIO_CONTROLLER_EMULATOR`: the same, for the Controller
         // Emulator.
