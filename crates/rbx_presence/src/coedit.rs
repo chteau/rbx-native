@@ -20,6 +20,10 @@
 //!   [`crate::crypt::ops_aad`] and appended to the relay's op log
 //!   (`/v1/rooms/<room>/ops`). A late joiner replays the log from the start;
 //!   every op is idempotent, so replaying onto a newer save converges.
+//! - Log authority: the relay numbers the log, and is the only one that
+//!   does. The Worker keeps it in its Durable Object's storage, so it
+//!   outlives everyone leaving; a hosted relay keeps it in memory, and the
+//!   next host is handed the log by the peers that read it ([`keep`]).
 
 pub mod attrs;
 pub mod channel;
@@ -27,6 +31,7 @@ pub mod chunk;
 pub mod diff;
 pub mod engine;
 pub mod ids;
+pub mod keep;
 pub mod merge;
 pub mod names;
 pub mod op;

@@ -17,6 +17,9 @@ pub const SCHEMA_VERSION: u32 = 2;
 
 /// Largest request or WebSocket message body the relay accepts, in bytes.
 pub const MAX_BODY_BYTES: usize = 16 * 1024;
+/// Largest `POST …/ops` or `…/ops/fill` body: many sealed chunks per
+/// request, since Studio allows a plugin 500 HTTP requests a minute.
+pub const OPS_BODY_BYTES: usize = 1024 * 1024;
 /// Most selection paths one message carries; extra ones are dropped by the
 /// sender (the relay rejects the message instead).
 pub const MAX_SELECTION: usize = 100;
@@ -149,8 +152,8 @@ pub struct SealedJournalEntry {
     pub ct: String,
 }
 
-/// One co-editing log entry as a client posts it (`POST …/ops`): a sealed
-/// chunk ([`crate::coedit::chunk::Chunk`] JSON, AAD [`crate::crypt::ops_aad`]).
+/// One co-editing log entry as a client posts it: a sealed chunk
+/// ([`crate::coedit::chunk::Chunk`] JSON, AAD [`crate::crypt::ops_aad`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SealedOp {
@@ -159,6 +162,37 @@ pub struct SealedOp {
     pub user_id: u64,
     pub client: Client,
     pub ct: String,
+}
+
+/// `POST …/ops`: one sender's sealed chunks, logged in order under
+/// consecutive seqs (a lone `ct` instead of `cts` is accepted too).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SealedOps {
+    /// Always [`SCHEMA_VERSION`].
+    pub v: u32,
+    pub user_id: u64,
+    pub client: Client,
+    pub cts: Vec<String>,
+}
+
+/// `POST …/ops` answers the seq of the last chunk and the log it went to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpsPosted {
+    pub seq: u64,
+    pub log: String,
+}
+
+/// `POST …/ops/fill`: entries of log `log` a peer read earlier, handed to a
+/// relay that lacks them: the whole log for one that holds none yet, or
+/// the entries right after its head. Seqs, senders and `ct` are kept as
+/// they were, so every peer's position in the log stays valid.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpsFill {
+    /// Always [`SCHEMA_VERSION`].
+    pub v: u32,
+    pub log: String,
+    pub entries: Vec<LoggedOp>,
 }
 
 /// One entry of the relay's op log, as `GET …/ops?since=N` returns it.
@@ -173,11 +207,16 @@ pub struct LoggedOp {
 
 /// `GET …/ops?since=N`: entries after `since`, oldest first. `head` is the
 /// newest seq logged (0 for none); `floor` the oldest still held (entries
-/// below it were trimmed, so a reader behind it has missed some).
+/// below it were trimmed, so a reader behind it has missed some). `log`
+/// names the log (random, minted when its first entry lands; empty while
+/// it holds none), so a reader can tell a relay that carries on the log it
+/// was reading from one that started another.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpsReply {
     pub head: u64,
     pub floor: u64,
+    #[serde(default)]
+    pub log: String,
     pub entries: Vec<LoggedOp>,
 }
 
