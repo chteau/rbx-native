@@ -6,23 +6,75 @@ import { canonical, roomId, verify } from "./auth.js";
 import {
   EXPIRY_MS,
   KEY_HEADER,
+  OPS_REPLY_BYTES,
   POLL_TIMEOUT_MS,
   SIG_HEADER,
   TIME_HEADER,
   USER_HEADER,
   type Client,
   type Env,
+  type LoggedOp,
   type Refusal,
 } from "./contracts.js";
+import { OpLog, type OpStore, type OpsMeta } from "./ops.js";
 import { Room } from "./room.js";
-import { parseSealed } from "./validate.js";
+import { parseFill, parseSealed, parseSealedOps } from "./validate.js";
 
 const SWEEP_MS = 5_000;
-const ROUTE = /^\/v1\/rooms\/([0-9a-f]{32})\/(state|poll|ws|journal)$/;
+const ROUTE = /^\/v1\/rooms\/([0-9a-f]{32})\/(state|poll|ws|journal|ops|ops\/fill)$/;
 
 interface Poll {
   since: number;
   finish: () => void;
+}
+
+/** The op log in the Durable Object's SQLite storage. */
+function sqlStore(storage: DurableObjectStorage): OpStore {
+  const sql = storage.sql;
+  sql.exec(
+    "CREATE TABLE IF NOT EXISTS ops (seq INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, client TEXT NOT NULL, ct TEXT NOT NULL)",
+  );
+  sql.exec(
+    "CREATE TABLE IF NOT EXISTS ops_meta (id INTEGER PRIMARY KEY CHECK (id = 1), log TEXT NOT NULL, head INTEGER NOT NULL, floor INTEGER NOT NULL, bytes INTEGER NOT NULL)",
+  );
+  const row = (r: Record<string, SqlStorageValue>): LoggedOp => ({
+    seq: r.seq as number,
+    userId: r.user_id as number,
+    client: r.client as Client,
+    ct: r.ct as string,
+  });
+  return {
+    loadMeta(): OpsMeta {
+      const [m] = sql.exec("SELECT log, head, floor, bytes FROM ops_meta WHERE id = 1").toArray();
+      if (!m) return { log: "", head: 0, floor: 1, bytes: 0 };
+      return { log: m.log as string, head: m.head as number, floor: m.floor as number, bytes: m.bytes as number };
+    },
+    saveMeta(m) {
+      sql.exec(
+        "INSERT OR REPLACE INTO ops_meta (id, log, head, floor, bytes) VALUES (1, ?, ?, ?, ?)",
+        m.log,
+        m.head,
+        m.floor,
+        m.bytes,
+      );
+    },
+    insert(e) {
+      sql.exec("INSERT INTO ops (seq, user_id, client, ct) VALUES (?, ?, ?, ?)", e.seq, e.userId, e.client, e.ct);
+    },
+    oldest() {
+      const [r] = sql.exec("SELECT seq, user_id, client, ct FROM ops ORDER BY seq LIMIT 1").toArray();
+      return r ? row(r) : null;
+    },
+    deleteOldest() {
+      sql.exec("DELETE FROM ops WHERE seq = (SELECT MIN(seq) FROM ops)");
+    },
+    *after(n) {
+      for (const r of sql.exec("SELECT seq, user_id, client, ct FROM ops WHERE seq > ? ORDER BY seq", n)) {
+        yield row(r);
+      }
+    },
+    transaction: (fn) => storage.transactionSync(fn),
+  };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -45,11 +97,16 @@ export class RoomObject implements DurableObject {
   /** Each socket's user, and its editor once its first state names it. */
   private readonly sockets = new Map<WebSocket, { userId: number; client?: Client }>();
   private polls = new Set<Poll>();
+  private readonly ops: OpLog;
+  /** Long-polls on the op log, woken by the next post or fill. */
+  private opsPolls = new Set<Poll>();
 
   constructor(
     private readonly state: DurableObjectState,
     _env: Env,
-  ) {}
+  ) {
+    this.ops = new OpLog(sqlStore(state.storage));
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -62,6 +119,8 @@ export class RoomObject implements DurableObject {
       (route === "state" && (method === "POST" || method === "DELETE")) ||
       (route === "poll" && method === "GET") ||
       (route === "journal" && method === "GET") ||
+      (route === "ops" && (method === "POST" || method === "GET")) ||
+      (route === "ops/fill" && method === "POST") ||
       (route === "ws" && method === "GET");
     if (!allowed) return new Response("method not allowed", { status: 405 });
 
@@ -90,6 +149,10 @@ export class RoomObject implements DurableObject {
     const text = await canonical(method, url.pathname + url.search, userId, ts, body);
     if (!(await verify(key, text, sig))) return refuse({ status: 401, error: "sig" });
 
+    if (route === "ops/fill") return this.handleFill(body, userId, sig, now);
+    if (route === "ops" && method === "POST") return this.handleOpsPost(body, userId, sig, now);
+    if (route === "ops") return this.handleOpsPoll(url);
+
     if (method !== "GET") {
       // Checked after the signature so an unsigned request cannot advance it.
       const replay = this.room.checkTime(userId, ts, now, true);
@@ -106,6 +169,52 @@ export class RoomObject implements DurableObject {
   async alarm(): Promise<void> {
     if (this.room.expire(Date.now())) this.notify();
     await this.scheduleSweep();
+  }
+
+  private handleOpsPost(body: string, userId: number, sig: string, now: number): Response {
+    const sealed = parseSealedOps(body, userId);
+    if (isRefusal(sealed)) return refuse(sealed);
+    const stale = this.ops.fresh(sig, now);
+    if (stale) return refuse(stale);
+    return this.opsPosted(this.ops.append(userId, sealed.client, sealed.cts, now));
+  }
+
+  private handleFill(body: string, userId: number, sig: string, now: number): Response {
+    const fill = parseFill(body);
+    if (isRefusal(fill)) return refuse(fill);
+    const stale = this.ops.fresh(sig, now);
+    if (stale) return refuse(stale);
+    return this.opsPosted(this.ops.fill(userId, fill.log, fill.entries, now));
+  }
+
+  private opsPosted(result: number | Refusal): Response {
+    if (isRefusal(result)) return refuse(result);
+    for (const poll of [...this.opsPolls]) {
+      if (poll.since !== this.ops.head) poll.finish();
+    }
+    return json({ seq: result, log: this.ops.log });
+  }
+
+  /** Answers at once unless the reader is level with the head; then waits. */
+  private handleOpsPoll(url: URL): Promise<Response> | Response {
+    const since = Number(url.searchParams.get("since"));
+    if (!Number.isSafeInteger(since) || since < 0 || !url.searchParams.has("since")) {
+      return refuse({ status: 400, error: "schema" });
+    }
+    const reply = () => json(this.ops.since(since, OPS_REPLY_BYTES));
+    if (this.ops.head !== since) return reply();
+    return new Promise<Response>((resolve) => {
+      const poll: Poll = {
+        since,
+        finish: () => {
+          clearTimeout(timer);
+          this.opsPolls.delete(poll);
+          resolve(reply());
+        },
+      };
+      const timer = setTimeout(poll.finish, POLL_TIMEOUT_MS);
+      this.opsPolls.add(poll);
+    });
   }
 
   private handlePost(body: string, userId: number, now: number): Response {

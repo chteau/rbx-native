@@ -287,10 +287,11 @@ fn attributes_and_tags_apply_one_by_one() {
     assert_eq!(result.3, "nil,true");
 }
 
-/// When the room's host changes (a new rbx-native hosts it), the plugin
-/// reads the new log from its start instead of from where the old one was.
+/// When the room's host changes, the plugin hands a new host that holds no
+/// log the one it read (same seqs), and reads a host running another log
+/// from its start.
 #[test]
-fn a_new_host_is_read_from_the_start() {
+fn a_new_host_is_handed_the_log_or_read_from_the_start() {
     let lua = new_lua();
     common::studio_stubs(&lua);
     lua.load("__modules.CoeditClasses = {}").exec().unwrap();
@@ -300,22 +301,44 @@ fn a_new_host_is_read_from_the_start() {
             r##"
             local Coedit = ...
             local asked = {}
-            local relay = { base = "https://old" }
-            function relay.pollOps(self, since)
-                table.insert(asked, self.base .. "@" .. since)
-                return { entries = {}, head = 57 }
+            local replies = {
+                { log = "abc", head = 2, floor = 1, entries = {
+                    { seq = 1, userId = 5, client = "studio", ct = "AAAA" },
+                    { seq = 2, userId = 6, client = "rbx-native", ct = "BBBB" } } },
+                { log = "", head = 0, floor = 1, entries = {} },
+                { log = "zzz", head = 1, floor = 1, entries = {} },
+                { log = "zzz", head = 1, floor = 1, entries = {} },
+            }
+            local relay = {}
+            function relay.pollOps(_, since)
+                table.insert(asked, "poll@" .. since)
+                return table.remove(replies, 1)
+            end
+            function relay.postOps(_, body, fill)
+                local sent = __modules.Json.decode(body)
+                local seqs = {}
+                for _, e in sent.entries do table.insert(seqs, e.seq .. "/" .. e.userId .. "/" .. e.client) end
+                table.insert(asked, (if fill then "fill " else "post ") .. sent.log .. ":" .. table.concat(seqs, ","))
+                return true
             end
             local c = Coedit.new({ relay = relay, userId = 1, room = "r", encKey = string.rep("k", 32), name = "n", onNote = function() end })
+            c.running = true
             c.reassembler = __modules.CoeditCore.Reassembler.new()
-            c:poll()
-            c:poll()
-            relay.base = "https://new"
-            c:poll()
+            for _ = 1, 4 do c:poll() end
             return asked
             "##,
         )
         .call(coedit)
         .unwrap();
     let asked: Vec<String> = asked.sequence_values().map(|v| v.unwrap()).collect();
-    assert_eq!(asked, ["https://old@0", "https://old@57", "https://new@0"]);
+    assert_eq!(
+        asked,
+        [
+            "poll@0",
+            "poll@2",
+            "fill abc:1/5/studio,2/6/rbx-native",
+            "poll@2",
+            "poll@0"
+        ]
+    );
 }
