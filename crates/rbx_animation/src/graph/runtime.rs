@@ -10,9 +10,10 @@
 //! The semantics follow Roblox's documentation, and where it is silent,
 //! what real Studio was measured doing (Blend2D's weights, the layering
 //! maths, RandomSequence's generator and seeding, the transition curves, an
-//! interrupted blend; `docs/research/animation-graph-measured.md`). What is
-//! still a reading rather than a measurement is marked UNVERIFIED on the
-//! code that makes it. Transitions are always
+//! interrupted blend, how long a trigger lasts, events across a transition,
+//! state-machine ties and "(Any)", Priority Select with its Triggers off, a
+//! Mask naming no mask, phase sync;
+//! `docs/research/animation-graph-measured.md`). Transitions are always
 //! crossfades: `AnimationNodeTransitionType`'s InertialBlend and DeadBlend
 //! exist in the API but nothing sets them. Root motion (`Animator.RootMotion`,
 //! hidden and undocumented) is not extracted.
@@ -103,6 +104,8 @@ pub(crate) struct State {
     pub rng: Option<Mt19937>,
     /// PingPong clips: true while playing backwards.
     pub backwards: bool,
+    /// State machine: how the active state's last step ended.
+    pub last: Option<Status>,
 }
 
 /// How a node's evaluation ended this step.
@@ -120,10 +123,9 @@ pub struct Player {
     states: Vec<State>,
     /// Values `set` since the graph loaded; the rest read their defaults.
     params: BTreeMap<String, Value>,
-    /// Trigger parameters set since the last step, reset after it.
-    fired: Vec<String>,
-    /// Draws ties between state-machine transitions and seeds Random
-    /// Sequences whose `Seed` is -1.
+    /// Trigger parameters the last step saw on, cleared as the next begins.
+    consumed: Vec<String>,
+    /// Seeds Random Sequences whose `Seed` is -1.
     rng: Mt19937,
     /// This step's events and node evaluations, each with the weight the
     /// nodes above have scaled it by so far.
@@ -150,7 +152,7 @@ impl Player {
             graph,
             clips,
             params: BTreeMap::new(),
-            fired: Vec::new(),
+            consumed: Vec::new(),
             rng: Mt19937::new(RandomState::new().hash_one(0u8) as u32),
             emitted: Vec::new(),
             visits: Vec::new(),
@@ -202,11 +204,13 @@ impl Player {
             .collect()
     }
 
-    /// Sets a trigger parameter for exactly the next evaluation. UNVERIFIED:
-    /// Roblox says "one frame"; one step of this player is taken to be that.
+    /// Turns a trigger parameter on for exactly one evaluation, as real
+    /// Studio does: the next step sees it and the one after clears it
+    /// before evaluating, so it still reads true between the two, and
+    /// firing it again in that gap is lost. Only steps count, a zero-length
+    /// one included; frames without a step do not.
     pub fn fire(&mut self, name: &str) {
         self.params.insert(name.to_owned(), Value::Bool(true));
-        self.fired.push(name.to_owned());
     }
 
     /// The input a Select, PrioritySelect, Sequence, RandomSequence or state
@@ -227,13 +231,21 @@ impl Player {
     pub fn step(&mut self, dt: f32) -> BTreeMap<String, Frame> {
         self.emitted.clear();
         self.visits.clear();
+        for name in std::mem::take(&mut self.consumed) {
+            self.params.insert(name, Value::Bool(false));
+        }
+        self.consumed = self
+            .graph
+            .params
+            .iter()
+            .filter(|p| p.kind == ParamKind::Trigger)
+            .filter(|p| self.params.get(&p.name).is_some_and(Value::truthy))
+            .map(|p| p.name.clone())
+            .collect();
         let pose = match self.graph.output() {
             Some(out) => self.eval(out, dt).0,
             None => Pose::new(),
         };
-        for name in std::mem::take(&mut self.fired) {
-            self.params.insert(name, Value::Bool(false));
-        }
         self.settle();
         pose::resolve(&pose)
     }

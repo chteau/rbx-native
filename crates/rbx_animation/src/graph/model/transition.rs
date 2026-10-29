@@ -36,8 +36,8 @@ pub struct Transition {
     pub to: usize,
     pub wait_for: WaitFor,
     pub expression: String,
-    /// Higher wins when several are ready at once (0–65535); ties are drawn
-    /// at random.
+    /// Higher wins when several are ready at once (0–65535); on a tie a
+    /// state's own transitions beat "(Any)" ones, then the first listed.
     pub priority: u32,
     /// The editor's "Length", in seconds.
     pub duration: f32,

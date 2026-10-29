@@ -146,10 +146,10 @@ impl Player {
     /// With PhaseSync Synced (the default) every input advances the same
     /// fraction of its cycle per step: the node's virtual duration is the
     /// weighted mean of its inputs' cycles, `D = Σ wᵢ·Dᵢ`, and input i is
-    /// stepped by `dt·Dᵢ/D`. Synced inputs all run, so they stay in phase
-    /// while weightless; Unsynced ones run at their own rate, and only while
-    /// they count. UNVERIFIED beyond Roblox's description of the virtual
-    /// duration.
+    /// stepped by `dt·Dᵢ/D`; Unsynced inputs run at their own rate. Either
+    /// way every input runs, weightless ones included, so a Synced one stays
+    /// in phase and an Unsynced one keeps its own clock (both measured in
+    /// real Studio, `D` at 1:1 and 3:1 weights too).
     pub(super) fn blend(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let weights = self.blend_weights(n);
         let synced = self.text(n, "PhaseSync") != "Unsynced";
@@ -166,9 +166,6 @@ impl Player {
         let mut lead = (f32::NEG_INFINITY, Status::default());
         let mut logged = Vec::new();
         for (&(i, w), &d) in weights.iter().zip(&cycles) {
-            if !synced && w == 0. {
-                continue;
-            }
             let step = if synced && virtual_duration > 1e-6 && d > 1e-6 {
                 dt * d / virtual_duration
             } else {
@@ -185,10 +182,12 @@ impl Player {
                 parts.push((pose, w));
             }
         }
-        // Only the heaviest input's events go on, scaled by its weight.
+        // Only the heaviest input's events go on, scaled by its weight; of
+        // equals the first, as in real Studio (`max_by` keeps the last).
         let heaviest = logged
             .iter()
             .enumerate()
+            .rev()
             .max_by(|a, b| a.1 .2.total_cmp(&b.1 .2))
             .map(|(k, _)| k);
         for (k, &(from, to, w)) in logged.iter().enumerate() {

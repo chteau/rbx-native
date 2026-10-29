@@ -2572,6 +2572,11 @@ both the plain fetch failure and the silent fall back to a default
     picks match);
   - CubicV2 transitions, interrupted blends, a Select or Priority Select
     with nothing chosen, masks, backwards trims and re-triggered One Shots;
+  - a trigger lasting exactly one step, markers on both sides of a
+    transition, "(Any)" never re-entering the playing state, deterministic
+    transition ties, Priority Select once its Triggers turn off (and
+    Interruptible guarding only moves up), a Mask naming no mask, and
+    Synced/Unsynced phase sync;
   - an Instance-typed attribute (`EntryState`) in both formats: a
     referent inside `AttributesSerialize` in a binary file, a
     `__attrRef_EntryState` Ref property in an XML one, each checked

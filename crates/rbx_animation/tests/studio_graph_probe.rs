@@ -17,6 +17,8 @@ const JOINTS: usize = 4;
 
 #[path = "studio_graph_probe/cases.rs"]
 mod cases;
+#[path = "studio_graph_probe/unknowns.rs"]
+mod unknowns;
 use cases::{cases, Case, Read, PICKS};
 /// A KeyframeSequence with a key per `(time, positions)`, one position per
 /// joint `P0..`.
@@ -26,7 +28,7 @@ fn sequence(
     name: &str,
     looped: bool,
     keys: &[(f32, [Vec3; JOINTS])],
-) {
+) -> Ref {
     let ks = dom.new_instance("KeyframeSequence", name, Some(parent));
     dom.set_property(ks, "Loop", Variant::Bool(looped)).unwrap();
     dom.set_property(ks, "Priority", Variant::Enum(2)).unwrap();
@@ -46,6 +48,24 @@ fn sequence(
             dom.set_property(pose, "Weight", Variant::Float32(1.))
                 .unwrap();
         }
+    }
+    ks
+}
+
+/// A one-second loop holding joint `joint` at x = 1, with an `Ev` marker
+/// `{prefix}{k}` at each of `times`.
+fn marked(dom: &mut WeakDom, folder: Ref, name: &str, joint: usize, times: [f32; 4]) {
+    let mut at = [Vec3::ZERO; JOINTS];
+    at[joint] = Vec3::X;
+    let mut keys: Vec<(f32, [Vec3; JOINTS])> = times.iter().map(|&t| (t, at)).collect();
+    keys.push((1., at));
+    let ks = sequence(dom, folder, name, true, &keys);
+    let frames = dom.get(ks).unwrap().children().to_vec();
+    for (k, kf) in frames.into_iter().take(times.len()).enumerate() {
+        let marker = dom.new_instance("KeyframeMarker", "Ev", Some(kf));
+        let value = format!("{}{k}", &name[1..]);
+        dom.set_property(marker, "Value", Variant::String(value))
+            .unwrap();
     }
 }
 
@@ -71,6 +91,14 @@ fn write_clips(dom: &mut WeakDom, folder: Ref) {
     }
     let both = [Vec3::X, Vec3::X, Vec3::ZERO, Vec3::ZERO];
     sequence(dom, folder, "Both", true, &[(0., both), (1., both)]);
+    marked(dom, folder, "MA", 0, [0., 0.25, 0.5, 0.75]);
+    marked(dom, folder, "MB", 1, [0.1, 0.35, 0.6, 0.85]);
+    for (joint, length) in [(0, 1.), (1, 2.)] {
+        let mut end = [Vec3::ZERO; JOINTS];
+        end[joint] = Vec3::X;
+        let keys = [(0., [Vec3::ZERO; JOINTS]), (length, end)];
+        sequence(dom, folder, &format!("L{}", joint + 1), true, &keys);
+    }
 }
 
 fn lua_value(v: &Value) -> String {
@@ -113,7 +141,20 @@ for _, ks in workspace.ProbeClips:GetChildren() do ids[ks.Name] = KSP:RegisterKe
 for _, d in workspace.ProbeDefs:GetDescendants() do
   if d:IsA("AnimationNodeDefinition") and ids[d:GetAttribute("AnimationId")] then d:SetAttribute("AnimationId", ids[d:GetAttribute("AnimationId")]) end
 end
+-- Studio does not resolve the EntryState Instance attribute in a file this
+-- crate wrote (it loads as an unresolved handle), so name each entry again.
+for _, d in workspace.ProbeDefs:GetDescendants() do
+  if d.Name == "StateMachineNode" and d:FindFirstChild("Clip") then d:SetAttribute("EntryState", d.Clip) end
+end
 local function f(x) return string.format("%.5f", x) end
+local function params(track)
+  local names = {{}}
+  for k in track:GetParameterDefaults() do table.insert(names, k) end
+  table.sort(names)
+  local c = {{}}
+  for _, k in names do table.insert(c, k .. "=" .. tostring(track:GetParameter(k))) end
+  return table.concat(c, ",")
+end
 local function row()
   local c = {{}}
   for _, j in joints do local p = j.Transform.Position table.insert(c, f(p.X)) table.insert(c, f(p.Y)) table.insert(c, f(p.Z)) end
@@ -122,15 +163,18 @@ end
 local cases = {{
 {list}}}
 for _, case in cases do
+ local ok, err = pcall(function()
   for _, t in animator:GetPlayingAnimationTracks() do t:Stop(0) end
   animator:StepAnimations(0)
   local anim = Instance.new("Animation")
   anim.AnimationId = KSP:RegisterKeyframeSequence(workspace.ProbeDefs[case.g])
   local track = animator:LoadAnimation(anim)
+  local evs, step = {{}}, 0
+  track:GetMarkerReachedSignal("Ev"):Connect(function(v) table.insert(evs, v .. "@" .. step) end)
   track:Play(0)
   task.wait(1)
   if case.picks then
-    local picks, lastx, lasty, step = {{}}, nil, nil, 0
+    local picks, lastx, lasty = {{}}, nil, nil
     while #picks < case.picks and step < case.picks * 20 do
       animator:StepAnimations({DT})
       step += 1
@@ -142,12 +186,22 @@ for _, case in cases do
     print("GP|" .. case.g .. "|picks|" .. table.concat(picks, " "))
   else
     for i, s in case.s do
-      for k, v in s.p do track:SetParameter(k, v) end
-      for _ = 1, s.n do animator:StepAnimations({DT}) end
-      print("GP|" .. case.g .. "|" .. (i - 1) .. "|" .. row())
+      for k, v in s.p do if string.sub(k, 1, 1) ~= "_" then track:SetParameter(k, v) end end
+      if s.p._zero then animator:StepAnimations(0) end
+      if s.p._wait then task.wait() end
+      for _ = 1, s.n do
+        step += 1
+        animator:StepAnimations({DT})
+        -- Marker handlers are deferred: let them run before the next step.
+        if string.sub(case.g, 1, 2) == "Ev" then task.wait() end
+      end
+      print("GP|" .. case.g .. "|" .. (i - 1) .. "|" .. row() .. "|" .. table.concat(evs, " ") .. "|" .. params(track))
+      table.clear(evs)
     end
   end
   track:Stop(0)
+ end)
+ if not ok then print("GP|" .. case.g .. "|error|" .. tostring(err)) end
 end
 print("GP|done")
 "#,
@@ -204,6 +258,12 @@ fn write_probe_for_studio() {
         graph::dom::write(&mut dom, Some(defs), &case.graph);
     }
 
+    let lua = studio_lua(&cases);
+    // The command bar then only needs `require(workspace.ProbeRun)()`.
+    let run = dom.new_instance("ModuleScript", "ProbeRun", Some(workspace));
+    let source = format!("return function()\n{lua}end\n");
+    dom.set_property(run, "Source", Variant::String(source))
+        .unwrap();
     std::fs::write(dir.join("probe.rbxl"), rbx_binary::serialize(&dom).unwrap()).unwrap();
-    std::fs::write(dir.join("probe.lua"), studio_lua(&cases)).unwrap();
+    std::fs::write(dir.join("probe.lua"), lua).unwrap();
 }
