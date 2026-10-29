@@ -51,7 +51,7 @@ pub fn split(id: &str, batch_json: &str) -> Vec<Chunk> {
 type Pending = (u64, Vec<Option<Vec<u8>>>);
 
 /// Collects chunks per (sender, batch id) in log order.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Reassembler {
     pending: HashMap<(String, String), Pending>,
 }

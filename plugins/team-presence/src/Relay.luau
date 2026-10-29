@@ -379,13 +379,14 @@ function Relay:journal(sinceMs: number): (any?, string?)
 	return opened, nil
 end
 
-local NEEDS_HOSTED = "Co-editing needs the hosted relay"
+local NEEDS_HOSTED = "Co-editing needs the hosted relay or a Worker"
 
-function Relay:postOps(body: string): (boolean, string?)
+-- `fill`: entries of the log handed to a relay that lacks them.
+function Relay:postOps(body: string, fill: boolean?): (boolean, string?)
 	if self.kind ~= "hosted" and self.kind ~= "worker" then
 		return false, NEEDS_HOSTED
 	end
-	local res, err = self:_send("POST", "/ops", body)
+	local res, err = self:_send("POST", if fill then "/ops/fill" else "/ops", body)
 	if res == nil then
 		return false, err
 	end

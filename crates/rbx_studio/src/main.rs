@@ -319,6 +319,7 @@ fn main() {
             let plan = match check {
                 Some(check) => {
                     let (key, session) = check.await;
+                    let key = launcher::setup::remembering_skip(key, home::key_skipped(), setup);
                     launcher::setup::plan(key, session, setup)
                 }
                 None => None,

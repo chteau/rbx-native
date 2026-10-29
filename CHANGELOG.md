@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-29
+
+- **Performance heatmap totals and a model ranking (beta).** Behind
+  File › Beta Features, the Viewport dock's Performance view gains Total
+  and Physics. Total weighs every factor a part costs into one score:
+  triangles, decoded texture memory, instances, simulated parts and
+  physics constraints, `PreciseConvexDecomposition` (or `Default` on a
+  dense mesh), dense meshes casting shadows, lights with `Shadows` on,
+  and translucent or Glass overdraw. Both also rank the 20 costliest
+  models, each row giving what drives it, its raw figures on hover, and a
+  click that selects the model and frames it. The weights are a
+  documented estimate for comparing parts of one place, not Roblox's own
+  costs. (@chteau)
+
+- **Module require graph (beta).** View › Require Graph, behind File ›
+  Beta Features, draws every script and ModuleScript with an edge for
+  each `require(...)` the security audit's resolver can follow (services,
+  `WaitForChild`, `FindFirstChild`, dot chains, `script.Parent`, locals,
+  and require-by-string paths). A require it can't follow (a dynamic
+  path, an asset id) is a dashed edge to a box with its text and line.
+  Cycles are drawn red, a client script requiring something in
+  `ServerScriptService` or `ServerStorage` (which fails at run time)
+  amber, and a column beside the graph lists both, the unknown requires
+  and the modules nothing requires. A box opens its script; an edge's
+  line badge opens the require. (@chteau)
+
 ## 2026-10-28
 
 - **Update planning (beta)**: countdown icons on autopilot, MiniDev's
@@ -18,6 +44,26 @@
   Scheduler task), removed when nothing is left. None of it has been sent
   to Roblox yet; the findings are in
   `docs/research/update-planning-icon-api.md`. (@chteau)
+- **Co-editing with no rbx-native host, and a faster first sync**: the
+  Worker relay now keeps the co-editing op log in its Durable Object
+  storage, ciphertext only, so a team of Studio users can co-edit with
+  nobody running rbx-native. A new host no longer starts from an empty log:
+  every peer keeps the entries it read, and hands them to a relay that lost
+  them (the hosted relay waits 30 s for that before taking new edits). The
+  plugin now seals a big change first and posts it in 512 KiB groups
+  instead of one request per 7 KB chunk: 12,000 parts went from 632 POSTs
+  over 29 s to 16 POSTs, landing in the log in 2.3 s, measured against
+  real Studio on a local relay. Numbers and the design are in
+  `docs/research/coedit-hostless.md`. (@chteau)
+- **Pre-alpha fixes**: skipping the API key wizard is remembered, so a
+  launch without a key goes to Home (Manage key adds one later) and only
+  `--setup` brings the wizard back. `--select` names an instance with a dot
+  in it (`Workspace.Smoke.spec`): the longest child name that fits wins at
+  each step, backing off if the rest of the path then fails. The soft-snap
+  search takes its time budget as an argument, which stops its test failing
+  on slow CI runners, and the Device Simulator's touch stand-in is split
+  into four modules instead of one 1000-line script, behaving the same.
+  (@chteau)
 
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds
   `rbxstudio` in release for Windows, macOS (Apple Silicon) and Linux and

@@ -35,7 +35,7 @@ const GLANCING: f32 = 0.3;
 /// Two contacts nearer than this along the axis are the same contact.
 const TIE: f32 = 1e-4;
 /// Studio's time budget for the whole search, `os.clock() - t > 0.01`.
-const BUDGET: Duration = Duration::from_millis(10);
+pub(crate) const BUDGET: Duration = Duration::from_millis(10);
 
 /// A handle drag's threshold without a grid, in handle scales at the snap.
 const REACH: f32 = 0.4;
@@ -113,13 +113,14 @@ pub(crate) struct SoftSnap {
 
 /// Every face `slab` sweeps into among `candidates`, as snaps for each of
 /// `offsets` (see [`offsets`]): at most `max_count / 2` near faces in each
-/// direction, and never past `budget` from `started`.
+/// direction, and never past `deadline`
+/// (Studio's [`BUDGET`] after the search began).
 pub(crate) fn soft_snaps(
     slab: &Slab,
     offsets: &[f32],
     candidates: &[Mat4],
     max_count: usize,
-    started: Instant,
+    deadline: Instant,
     pose: Pose,
     orthographic: bool,
 ) -> Vec<SoftSnap> {
@@ -142,7 +143,7 @@ pub(crate) fn soft_snaps(
             }
         }
     };
-    let spent = || started.elapsed() > BUDGET;
+    let spent = || Instant::now() > deadline;
 
     for direction in [-1.0f32, 1.0] {
         // Along `direction`, a span is entered at `near` and left at `far`.

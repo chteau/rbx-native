@@ -1,7 +1,10 @@
 //! The op log over HTTP, on worker threads: sends batches (chunked, sealed,
-//! one signed `POST /v1/rooms/<room>/ops` per chunk, in order, retrying with
-//! backoff) and long-polls `GET /v1/rooms/<room>/ops?since=N` from 0, so a
-//! late joiner replays the whole log.
+//! as many chunks per signed `POST /v1/rooms/<room>/ops` as fit, in order,
+//! retrying with backoff) and long-polls `GET /v1/rooms/<room>/ops?since=N`,
+//! from 0 for a late joiner, so it replays the whole log. What it reads is
+//! kept ([`Kept`]) across relays: a relay that lacks the log is handed it.
+
+mod http;
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,11 +13,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::chunk::{self, Chunk, Reassembler};
+use super::chunk::{self, Chunk};
+use super::keep::{groups, Kept, Step, REQUEST_CT_BYTES};
 use super::Batch;
 use crate::crypt;
-use crate::schema::{Client as Editor, LoggedOp, OpsReply, SealedOp, SCHEMA_VERSION};
-use crate::{auth, now_ms};
+use crate::schema::{Client as Editor, LoggedOp};
+use http::{agent, fetch, fill, post, seal};
 
 const BACKOFF_START: Duration = Duration::from_millis(250);
 const BACKOFF_MAX: Duration = Duration::from_secs(5);
@@ -29,6 +33,8 @@ pub struct Config {
     pub enc_key: [u8; 32],
     pub user_id: u64,
     pub client: Editor,
+    /// The log as read so far; outlives this relay's channel.
+    pub kept: Arc<Mutex<Kept>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,15 +64,6 @@ pub struct Channel {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
-fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(30)))
-        .build()
-        .into()
-}
-
 /// Sleeps `total`, waking early when `stop` is set.
 fn nap(stop: &AtomicBool, total: Duration) {
     let end = Instant::now() + total;
@@ -76,74 +73,6 @@ fn nap(stop: &AtomicBool, total: Duration) {
         };
         thread::sleep(left.min(STOP_TICK));
     }
-}
-
-fn base(config: &Config) -> &str {
-    config.relay_url.trim_end_matches('/')
-}
-
-fn ops_path(config: &Config) -> String {
-    format!("/v1/rooms/{}/ops", config.room)
-}
-
-fn post(agent: &ureq::Agent, config: &Config, chunk: &Chunk) -> Result<(), String> {
-    let plain = serde_json::to_vec(chunk).map_err(|e| e.to_string())?;
-    let aad = crypt::ops_aad(&config.room, config.user_id, config.client);
-    let sealed = SealedOp {
-        v: SCHEMA_VERSION,
-        user_id: config.user_id,
-        client: config.client,
-        ct: crypt::b64_encode(&crypt::seal(&config.enc_key, &aad, &plain)),
-    };
-    let body = serde_json::to_string(&sealed).map_err(|e| e.to_string())?;
-    let path = ops_path(config);
-    let mut req = agent
-        .post(format!("{}{path}", base(config)))
-        .header("Content-Type", "application/json");
-    for (name, value) in auth::headers(
-        &config.key,
-        "POST",
-        &path,
-        config.user_id,
-        now_ms(),
-        body.as_bytes(),
-        true,
-    ) {
-        req = req.header(name, &value);
-    }
-    let resp = req.send(body.as_str()).map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    if (200..300).contains(&status) {
-        Ok(())
-    } else {
-        Err(format!("ops post: HTTP {status}"))
-    }
-}
-
-fn fetch(agent: &ureq::Agent, config: &Config, since: u64) -> Result<OpsReply, String> {
-    let path = format!("{}?since={since}", ops_path(config));
-    let mut req = agent.get(format!("{}{path}", base(config)));
-    for (name, value) in auth::headers(
-        &config.key,
-        "GET",
-        &path,
-        config.user_id,
-        now_ms(),
-        b"",
-        true,
-    ) {
-        req = req.header(name, &value);
-    }
-    let mut resp = req.call().map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    let text = resp
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| e.to_string())?;
-    if !(200..300).contains(&status) {
-        return Err(format!("ops poll: HTTP {status}"));
-    }
-    serde_json::from_str(&text).map_err(|e| format!("ops reply: {e}"))
 }
 
 fn batch_id() -> String {
@@ -171,12 +100,20 @@ fn send_loop(config: Config, unsent: Unsent, events: Sender<Event>, stop: Arc<At
             pop(&unsent);
             continue;
         };
-        for piece in chunk::split(&batch_id(), &json) {
+        let sealed: Result<Vec<String>, String> = chunk::split(&batch_id(), &json)
+            .iter()
+            .map(|piece| seal(&config, piece))
+            .collect();
+        let Ok(sealed) = sealed else {
+            pop(&unsent);
+            continue;
+        };
+        for group in groups(sealed, REQUEST_CT_BYTES, String::len) {
             loop {
                 if stop.load(Ordering::SeqCst) {
                     return;
                 }
-                match post(&agent, &config, &piece) {
+                match post(&agent, &config, group.clone()) {
                     Ok(()) => {
                         failing = false;
                         backoff = BACKOFF_START;
@@ -197,12 +134,7 @@ fn send_loop(config: Config, unsent: Unsent, events: Sender<Event>, stop: Arc<At
     }
 }
 
-fn deliver(
-    entry: &LoggedOp,
-    config: &Config,
-    reassembler: &mut Reassembler,
-    events: &Sender<Event>,
-) {
+fn deliver(entry: &LoggedOp, config: &Config, kept: &mut Kept, events: &Sender<Event>) {
     let aad = crypt::ops_aad(&config.room, entry.user_id, entry.client);
     let Some(plain) =
         crypt::b64_decode(&entry.ct).and_then(|ct| crypt::open(&config.enc_key, &aad, &ct))
@@ -213,7 +145,7 @@ fn deliver(
         return;
     };
     let sender = format!("{}:{}", entry.user_id, crypt::client_word(entry.client));
-    let Some(json) = reassembler.push(entry.seq, &sender, piece) else {
+    let Some(json) = kept.reassembler.push(entry.seq, &sender, piece) else {
         return;
     };
     if let Ok(batch) = serde_json::from_str::<Batch>(&json) {
@@ -226,15 +158,44 @@ fn deliver(
     }
 }
 
+/// Hands the relay `entries` of `log`, a request per group.
+fn hand_over(
+    agent: &ureq::Agent,
+    config: &Config,
+    log: &str,
+    entries: Vec<LoggedOp>,
+) -> Result<(), String> {
+    for group in groups(entries, REQUEST_CT_BYTES, |e| e.ct.len()) {
+        fill(agent, config, log, group)?;
+    }
+    Ok(())
+}
+
 fn poll_loop(config: Config, events: Sender<Event>, stop: Arc<AtomicBool>) {
     let agent = agent();
-    let mut reassembler = Reassembler::default();
-    let mut since = 0u64;
+    // Where this editor was in the log, if the relay carries on with it.
+    let mut since = lock(&config.kept).head();
     let mut failing = false;
     let mut backoff = BACKOFF_START;
     while !stop.load(Ordering::SeqCst) {
-        let reply = match fetch(&agent, &config, since) {
-            Ok(reply) => reply,
+        let fetched = fetch(&agent, &config, since).and_then(|reply| {
+            let step = lock(&config.kept).step(&reply);
+            match step {
+                Step::Fill(entries) => {
+                    let log = lock(&config.kept).log().to_owned();
+                    hand_over(&agent, &config, &log, entries).map(|()| None)
+                }
+                Step::Restart => {
+                    lock(&config.kept).restart(&reply.log);
+                    since = 0;
+                    Ok(None)
+                }
+                Step::Read => Ok(Some(reply)),
+            }
+        });
+        let reply = match fetched {
+            Ok(Some(reply)) => reply,
+            Ok(None) => continue,
             Err(why) => {
                 if !failing {
                     failing = true;
@@ -251,6 +212,7 @@ fn poll_loop(config: Config, events: Sender<Event>, stop: Arc<AtomicBool>) {
             let _ = events.send(Event::Gap);
             since = reply.floor - 1;
         }
+        let mut kept = lock(&config.kept);
         for entry in &reply.entries {
             if stop.load(Ordering::SeqCst) {
                 return;
@@ -259,12 +221,18 @@ fn poll_loop(config: Config, events: Sender<Event>, stop: Arc<AtomicBool>) {
                 continue;
             }
             since = entry.seq;
-            deliver(entry, &config, &mut reassembler, &events);
+            kept.record(&reply.log, entry);
+            deliver(entry, &config, &mut kept, &events);
         }
+        drop(kept);
         if reply.entries.is_empty() {
             nap(&stop, Duration::from_millis(50));
         }
     }
+}
+
+fn lock(kept: &Mutex<Kept>) -> std::sync::MutexGuard<'_, Kept> {
+    kept.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 impl Channel {
@@ -328,6 +296,7 @@ mod tests {
             enc_key: [7; 32],
             user_id: 1,
             client: Editor::RbxNative,
+            kept: Arc::default(),
         });
         let batch = Batch {
             a: "1:rbx-native:x".into(),

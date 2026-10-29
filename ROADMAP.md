@@ -2789,6 +2789,19 @@ both the plain fetch failure and the silent fall back to a default
   `segment_mesh` and `generate_texture` take the selection when
   `instance_path` is left out, as Studio does. The Play capture on
   Windows and the Win32 input have not been run on a real Windows PC.
+- [x] **Performance heatmap: totals and models (beta)**, behind the
+  `perf-models` switch. The Performance view gains Total and Physics:
+  `rbx_viewer::perf::models` weighs triangles, texture memory, instances,
+  simulated parts, constraints, costly collision fidelities, dense meshes
+  casting shadows, shadowed lights and blended overdraw into points, a
+  documented estimate rather than Roblox's own costs. The 20 costliest
+  models are ranked with a breakdown, and a click selects and frames one.
+- [x] **Module require graph (beta)**, behind the `require-graph`
+  switch: View › Require Graph, built on `rbx_audit::require_graph`,
+  draws scripts and modules with their statically resolved requires,
+  dashed unknown ones with their line, red cycles, amber client-to-server
+  requires, and lists those with the unused modules. Clicks open the
+  script or the require line.
 
 - [x] **Update planning: countdown icons on autopilot** (beta, concept by
   [@MiniDev](https://vm.tiktok.com/ZN8AFbRwp/), see Acknowledgements).
@@ -3543,12 +3556,16 @@ engine, just as an escape hatch.
 
 ### Collaboration
 
-- [ ] 📋 **Co-editing without an rbx-native host, and at scale**, only the
-  hosted relay (an rbx-native user's own) keeps the op log, so Studio users
-  alone cannot co-edit, and a new host starts with an empty log (peers read
-  it from the start, and unsent edits move to it). Attributes and tags go
-  both ways; a 12,000 part place was tested live against Studio (the adds
-  land in about a minute, single edits in under 2 s).
+- [x] **Co-editing without an rbx-native host, and at scale**: the Worker
+  relay keeps the op log (ciphertext only), so Studio users alone can
+  co-edit; a new host is handed the log by the peers that read it instead of
+  starting empty; a 12,000 part change is posted in 16 requests instead of
+  632 (see [the measurements](docs/research/coedit-hostless.md)).
+- [ ] 📋 **Co-editing hostless, still unproven live**: Studio-only
+  co-editing ran against a local `wrangler dev`, not a deployed Worker, and
+  the handover between two real hosted relays is covered by tests over
+  HTTP, not run live. The 12,000 part sync still spends about 10 s in the
+  plugin collecting and sealing in Luau before anything is sent.
 
 Neither replaces **Team Create**, Roblox's actual real-time multi-user
 editing, that stays proprietary with no public protocol to build against

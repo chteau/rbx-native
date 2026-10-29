@@ -58,6 +58,16 @@ pub(crate) const FEATURES: &[Feature] = &[
         name: "MCP server",
         description: "Lets an AI client drive the open place over MCP: point the client at `rbxstudio --mcp`. It can read and edit scripts, run Luau, start and stop Play, read the Output, capture the viewport, simulate player input and insert assets. Several open editors are told apart by studio ID. Edits are undo steps of their own; `http_get` and `skill` serve Roblox documentation and best-practice guides.",
     },
+    Feature {
+        id: crate::shell::PERF_BETA_ID,
+        name: "Performance heatmap: totals and models",
+        description: "Adds Total and Physics to the Viewport dock's Performance view and ranks the costliest models with a breakdown of what each costs: triangles, texture memory, instances, physics, shadows and overdraw. The weights are an estimate, not Roblox's own costs.",
+    },
+    Feature {
+        id: crate::shell::REQUIRE_GRAPH_BETA_ID,
+        name: "Module require graph",
+        description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
+    },
 ];
 
 /// `RBX_STUDIO_BETA_SAMPLE=1` lists this one too, so the page can be

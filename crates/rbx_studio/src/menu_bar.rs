@@ -118,6 +118,7 @@ actions!(
         MenuToggleCollaborators,
         MenuToggleInputActions,
         MenuToggleSecurityAudit,
+        MenuRequireGraph,
         MenuTogglePlaytests,
         MenuToggleLayers,
         MenuToggleLoren,
@@ -291,43 +292,55 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
             .owned(),
         Menu::new("Model").items(model).owned(),
         Menu::new("View")
-            .items(vec![
-                MenuItem::action("Explorer", MenuToggleExplorer),
-                MenuItem::action("Properties", MenuToggleProperties),
-                MenuItem::action("Output", MenuToggleOutput),
-                MenuItem::action("Viewport", MenuToggleViewport),
-                MenuItem::action("Command Bar", MenuToggleCommandBar),
-                MenuItem::separator(),
-                // Fixed camera views, the same snap a click on the
-                // orientation indicator's cube does.
-                MenuItem::action("Top View", MenuTopView),
-                MenuItem::action("Front View", MenuFrontView),
-                MenuItem::action("Right View", MenuRightView),
-                MenuItem::separator(),
-                MenuItem::action("Style Editor", MenuStyleEditor),
-                // Team presence: who else is in the place, from Studio or
-                // rbx-native. Shut by default, so it needs a way in.
-                MenuItem::action("Collaborators", MenuToggleCollaborators),
-                MenuItem::action("Input Actions", MenuToggleInputActions),
-                MenuItem::action("Security Audit", MenuToggleSecurityAudit),
-                MenuItem::action("Playtests", MenuTogglePlaytests),
-                MenuItem::action("Layers", MenuToggleLayers),
-                MenuItem::action("Loren", MenuToggleLoren),
-                MenuItem::action("Avatar Settings", MenuToggleAvatarSettings),
-                MenuItem::separator(),
-                // The accessibility settings the reference guidance calls
-                // for a native app to expose itself rather than inherit
-                // silently. The UI scale is here too, as its shortcuts.
-                MenuItem::action("Reduce Motion", MenuReduceMotion),
-                MenuItem::action("Large Click Targets", MenuLargeTargets),
-                MenuItem::separator(),
-                MenuItem::action("Reset Layout", MenuResetLayout),
-                // The palette is a keyboard tool, but a shortcut nobody can
-                // find is recall, not recognition: the menu is where its
-                // name and its keys are on show.
-                MenuItem::action("Quick Open…", MenuQuickOpen),
-                MenuItem::action("Command Palette…", MenuCommandPalette),
-            ])
+            .items(
+                vec![
+                    MenuItem::action("Explorer", MenuToggleExplorer),
+                    MenuItem::action("Properties", MenuToggleProperties),
+                    MenuItem::action("Output", MenuToggleOutput),
+                    MenuItem::action("Viewport", MenuToggleViewport),
+                    MenuItem::action("Command Bar", MenuToggleCommandBar),
+                    MenuItem::separator(),
+                    // Fixed camera views, the same snap a click on the
+                    // orientation indicator's cube does.
+                    MenuItem::action("Top View", MenuTopView),
+                    MenuItem::action("Front View", MenuFrontView),
+                    MenuItem::action("Right View", MenuRightView),
+                    MenuItem::separator(),
+                    MenuItem::action("Style Editor", MenuStyleEditor),
+                    // Team presence: who else is in the place, from Studio or
+                    // rbx-native. Shut by default, so it needs a way in.
+                    MenuItem::action("Collaborators", MenuToggleCollaborators),
+                    MenuItem::action("Input Actions", MenuToggleInputActions),
+                    MenuItem::action("Security Audit", MenuToggleSecurityAudit),
+                ]
+                .into_iter()
+                // A window rather than a dock, listed with the docks that read
+                // the place's scripts. Behind its beta switch.
+                .chain(
+                    crate::beta::enabled(crate::shell::REQUIRE_GRAPH_BETA_ID)
+                        .then(|| MenuItem::action("Require Graph", MenuRequireGraph)),
+                )
+                .chain(vec![
+                    MenuItem::action("Playtests", MenuTogglePlaytests),
+                    MenuItem::action("Layers", MenuToggleLayers),
+                    MenuItem::action("Loren", MenuToggleLoren),
+                    MenuItem::action("Avatar Settings", MenuToggleAvatarSettings),
+                    MenuItem::separator(),
+                    // The accessibility settings the reference guidance calls
+                    // for a native app to expose itself rather than inherit
+                    // silently. The UI scale is here too, as its shortcuts.
+                    MenuItem::action("Reduce Motion", MenuReduceMotion),
+                    MenuItem::action("Large Click Targets", MenuLargeTargets),
+                    MenuItem::separator(),
+                    MenuItem::action("Reset Layout", MenuResetLayout),
+                    // The palette is a keyboard tool, but a shortcut nobody can
+                    // find is recall, not recognition: the menu is where its
+                    // name and its keys are on show.
+                    MenuItem::action("Quick Open…", MenuQuickOpen),
+                    MenuItem::action("Command Palette…", MenuCommandPalette),
+                ])
+                .collect::<Vec<_>>(),
+            )
             .owned(),
     ]
 }
