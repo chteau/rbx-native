@@ -136,18 +136,15 @@ impl Node {
         self.inputs.last().map(|i| i.pin.as_str())
     }
 
-    /// Adds a pin; on a state machine whose EntryState names no state, the
-    /// new state becomes the entry, since Studio plays nothing without one.
+    /// Adds a pin; a state machine's first state becomes its entry, since
+    /// Studio plays nothing without one. Later states never take over, even
+    /// once the entry is gone: Studio does not reassign it either.
     pub(super) fn push_pin(&mut self, name: &str) {
-        self.inputs.push(Input::new(self.kind, name));
-        let entry = match self.props.get("EntryState") {
-            Some(Prop::Value(Value::Text(entry))) => Some(entry.as_str()),
-            _ => None,
-        };
-        if self.kind == NodeKind::StateMachine && !entry.is_some_and(|e| self.has_pin(e)) {
+        if self.kind == NodeKind::StateMachine && self.inputs.is_empty() {
             self.props
                 .insert("EntryState".into(), Prop::Value(Value::Text(name.into())));
         }
+        self.inputs.push(Input::new(self.kind, name));
     }
 
     fn has_pin(&self, name: &str) -> bool {
@@ -155,7 +152,7 @@ impl Node {
     }
 
     /// Removes a dynamic pin, and on a state machine every transition to or
-    /// from that state.
+    /// from that state, and the entry if it was that state.
     pub fn remove_pin(&mut self, pin: &str) -> bool {
         let Some(at) = self
             .inputs
@@ -166,6 +163,12 @@ impl Node {
             return false;
         };
         self.inputs.remove(at);
+        // In Studio the entry still points at the deleted state, so a new
+        // state of the same name is not the entry.
+        if self.props.get("EntryState") == Some(&Prop::Value(Value::Text(pin.into()))) {
+            self.props
+                .insert("EntryState".into(), Prop::Value(Value::Text(String::new())));
+        }
         let shift = |i: usize| if i > at { i - 1 } else { i };
         self.transitions
             .retain(|t| t.to != at && t.from != Some(at));

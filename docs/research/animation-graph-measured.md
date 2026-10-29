@@ -243,7 +243,54 @@ mask passes everything through at full weight (P0 = P1 = 1 from `Both`).
   wrapped). If it had paused, it would read 0.633. Before this, we
   paused weightless Unsynced inputs.
 
+## Entry state: our saves in Studio, and deleting it
+
+Measured 2026-10-29 in the same Studio, with the probe place.
+
+**Our saves.** A graph built in our editor's Animation Graph panel
+(a state machine with states "New State" ← clip T0 and "New State1" ←
+T3, a Bool `go` and a "New State" → "New State1" transition on `go`)
+was saved with the panel's Save, then Ctrl+S to `.rbxl` and File › Save
+As to `.rbxlx`. In Studio, both files gave `GetAttribute("EntryState")`
+an `InstanceHandle` whose `:Get()` is the "New State" `ObjectValue`.
+Played on the Animator, P0 sat at x = 1 (T0) for five steps, and after
+`SetParameter("go", true)` P1 sat at x = 1 (T3).
+
+**Deleting the entry.** From the command bar, on that machine:
+
+- `Parent = nil` or `Destroy()` on the entry state: `GetAttribute` still
+  returns an `InstanceHandle`, and `:Get()` returns the detached state
+  (Parent nil). The machine plays nothing, before and after `go`. Putting
+  the state back under the machine (before a `Destroy`) makes it play
+  again.
+- Adding a state then (an `ObjectValue` under the machine) does not make
+  it the entry, and the machine still plays nothing.
+- Ctrl+S and reopening: `:Get()` is nil (the binary file holds a
+  referent that no instance has), the machine plays nothing, and Studio
+  logs "StateMachine 'StateMachineNode': no EntryState, so it has no
+  state to start in". The transition out of the deleted state comes back
+  with `From` nil, so it reads as an "(Any)" transition. In an XML save,
+  Studio still writes `__attrRef_EntryState` naming the deleted state's
+  old referent.
+
+Studio's own Graph Editor (Avatar › Graph Editor) does not set an entry
+either: after Insert Node › State Machine and Create State, the machine
+has a `State` and no `EntryState` attribute.
+
+Our editor now matches the deletion half. Removing the entry state
+clears `EntryState`, and a later state does not take over, even one that
+reuses the deleted name. Our reader turns both Studio saves above into
+an empty `EntryState`, and the runtime plays nothing and reports no
+active state. One difference is kept on purpose: our editor still makes
+a new machine's first state its entry, because Studio's editor leaves
+that machine playing nothing until an entry is chosen.
+
 ## Still not measured
+
+- What Studio's Graph Editor does when its entry state is deleted from
+  the canvas. Only the engine side (`Destroy`/`Parent = nil` from the
+  command bar) was measured. Choosing the entry in that editor was not
+  driven either.
 
 - Whether the incoming clip gains a step as a transition completes (see
   Events; the `Handover` cases are ready to run).

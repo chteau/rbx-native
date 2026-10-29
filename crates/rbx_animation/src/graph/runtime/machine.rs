@@ -19,6 +19,7 @@ impl Player {
         // nothing, and not even an "(Any)" transition starts a state.
         let entry = self.text(n, "EntryState");
         let Some(first) = self.pin_index(n, &entry) else {
+            self.state(n).active = NONE;
             return self.child(n, NONE, dt);
         };
         self.begin(n, first);

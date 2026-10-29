@@ -9,9 +9,13 @@
   chunk came later loaded as a dead `InstanceHandle`, so the machine played
   nothing. Every INST chunk is now written first, as Studio does. The
   editor also sets `EntryState` to a state machine's first state (it stays
-  editable), the preview plays nothing without one as Studio does, even on
-  an "(Any)" transition, and `GetParameter` returns the parameter's default
-  before it is set. (@chteau)
+  editable). Removing the entry state leaves the machine without one, as
+  Studio does, so a later state does not take over. The preview plays
+  nothing without an entry as Studio does, even on an "(Any)" transition,
+  and lights no state. `GetParameter` returns the parameter's default
+  before it is set. Adding a parameter with the Number/Bool/Trigger/Text
+  buttons now works: clicking one used to wipe the typed name first.
+  (@chteau)
 
 - **Pseudo-localization preview and string extraction** (beta, behind
   File › Beta Features): a Pseudo-loc tile beside Show UI draws every GUI
