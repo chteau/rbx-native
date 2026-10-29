@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
 
@@ -28,18 +28,15 @@ fn crate_slab() -> Slab {
     )
 }
 
+/// Runs the search with no time limit, so a slow runner cannot cut it short.
 fn search(candidates: &[Mat4]) -> Vec<SoftSnap> {
+    search_until(candidates, Instant::now() + Duration::from_secs(3600))
+}
+
+fn search_until(candidates: &[Mat4], deadline: Instant) -> Vec<SoftSnap> {
     let slab = crate_slab();
     let offsets = offsets(&slab, &[part(Vec3::ZERO, Vec3::new(2.0, 1.0, 2.0))]);
-    soft_snaps(
-        &slab,
-        &offsets,
-        candidates,
-        32,
-        Instant::now(),
-        pose(),
-        false,
-    )
+    soft_snaps(&slab, &offsets, candidates, 32, deadline, pose(), false)
 }
 
 fn distances(snaps: &[SoftSnap]) -> Vec<f32> {
@@ -118,6 +115,17 @@ fn a_direction_stops_after_half_the_maximum_near_faces() {
     assert_eq!(points.len(), 16 + 15);
     let furthest = points.iter().copied().fold(0.0, f32::max);
     assert!((furthest - 52.3).abs() < 1e-3, "{furthest}");
+}
+
+#[test]
+fn a_spent_budget_cuts_the_search_short() {
+    let row: Vec<Mat4> = (1..=30)
+        .map(|i| part(Vec3::new(i as f32 * 3.3, 0.0, 0.0), Vec3::ONE))
+        .collect();
+    assert!(!search(&row).is_empty());
+    let deadline = Instant::now();
+    std::thread::sleep(Duration::from_millis(2));
+    assert!(search_until(&row, deadline).is_empty());
 }
 
 #[test]
@@ -267,7 +275,15 @@ fn soft_snap_budget_on_a_real_place() {
             let slab = Slab::new(dragged.w_axis.truncate(), basis, axis, size);
             let offsets = offsets(&slab, &[*dragged]);
             let started = Instant::now();
-            soft_snaps(&slab, &offsets, &others, 32, started, pose(), false);
+            soft_snaps(
+                &slab,
+                &offsets,
+                &others,
+                32,
+                started + BUDGET,
+                pose(),
+                false,
+            );
             worst = worst.max(started.elapsed());
         }
     }

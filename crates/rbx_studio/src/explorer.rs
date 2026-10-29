@@ -277,8 +277,9 @@ pub(crate) fn item_ref(id: &SharedString) -> Option<Ref> {
 /// called that.
 ///
 /// Trying the path first and falling back, rather than branching on whether
-/// `target` contains a `.`, is what keeps an instance whose own name has a dot
-/// in it (`Config.v2`) reachable, it fails as a path, then matches as a name.
+/// `target` contains a `.`, keeps an instance whose own name has a dot in it
+/// (`Config.v2`) reachable: inside a path the longest matching name wins,
+/// and a bare dotted name falls back to matching as a name.
 pub(crate) fn resolve(dom: &WeakDom, target: &str) -> Option<Ref> {
     find_by_path(dom, target).or_else(|| find_by_name(dom, target))
 }
@@ -287,20 +288,28 @@ pub(crate) fn resolve(dom: &WeakDom, target: &str) -> Option<Ref> {
 /// and the first naming a root, the spelling [`crate::folder_colors::path_of`]
 /// produces (`Workspace.Nested.MyFolder`). `None` unless every segment
 /// matches: this is an exact lookup, not [`find_by_name`]'s search.
+///
+/// A name with a dot in it (`Smoke.spec`) is read by taking the longest run
+/// of dotted pieces that names a child at each step, backing off to a shorter
+/// run when the rest of the path then fails, so `Workspace.Smoke.spec` finds
+/// the child called `Smoke.spec` and needs no quoting.
 fn find_by_path(dom: &WeakDom, path: &str) -> Option<Ref> {
-    let mut segments = path.split('.');
-    let mut current = child_named(dom, dom.root_refs(), segments.next()?)?;
-    for segment in segments {
-        current = child_named(dom, dom.get(current)?.children(), segment)?;
-    }
-    Some(current)
+    let pieces: Vec<&str> = path.split('.').collect();
+    descend(dom, dom.root_refs(), &pieces)
 }
 
-fn child_named(dom: &WeakDom, references: &[Ref], name: &str) -> Option<Ref> {
-    references
-        .iter()
-        .copied()
-        .find(|&reference| dom.get(reference).is_some_and(|child| child.name() == name))
+fn descend(dom: &WeakDom, siblings: &[Ref], pieces: &[&str]) -> Option<Ref> {
+    (1..=pieces.len()).rev().find_map(|take| {
+        let name = pieces[..take].join(".");
+        siblings.iter().copied().find_map(|reference| {
+            let child = dom.get(reference).filter(|child| child.name() == name)?;
+            if take == pieces.len() {
+                Some(reference)
+            } else {
+                descend(dom, child.children(), &pieces[take..])
+            }
+        })
+    })
 }
 
 /// The first instance called `name`, depth-first in file order. A debugging

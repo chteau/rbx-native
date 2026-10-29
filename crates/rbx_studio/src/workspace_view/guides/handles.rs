@@ -74,7 +74,7 @@ impl WorkspaceView {
             &offsets,
             &self.neighbours,
             MAX_SOFT_SNAPS,
-            started,
+            started + sweep::BUDGET,
             pose,
             self.orthographic,
         );
