@@ -3171,6 +3171,13 @@ both the plain fetch failure and the silent fall back to a default
   not a default this project should ship opinionated about.
 
 ### Editor
+- [ ] 📋 **`EditableMesh` and `EditableImage` in the Luau runtime**: right
+  now scripts can't make them at all. Needs `AssetService:CreateEditableMesh`,
+  `CreateEditableImage` and `CreateMeshPartAsync`, the vertex/face/UV
+  methods, and the viewport drawing the result live, in Edit and in Play.
+  Found while porting OpenArena: its player and weapon models are
+  vertex-animated MD3s that get rebuilt every frame through `EditableMesh`,
+  so none of them show up in our editor yet (real Roblox runs them fine).
 - [ ] 📋 **The MCP server's AI generation tools and the package flag**:
   `generate_mesh`, `generate_material`, `generate_procedural_model`,
   `segment_mesh` and `generate_texture` are listed with Studio's schemas
