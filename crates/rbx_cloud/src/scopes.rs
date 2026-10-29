@@ -69,6 +69,7 @@ pub const PERMISSIONS: &[Permission] = &[
     optional("universe:write", "Game settings"),
     optional("universe.thumbnail:read", "Game settings thumbnails"),
     optional("legacy-group:manage", "Group experiences on Home"),
+    optional("legacy-universe:manage", "Update planning: swap the icon"),
     optional("game-pass:read", "View game passes"),
     optional("game-pass:write", "Edit game passes"),
     optional("developer-product:read", "View developer products"),

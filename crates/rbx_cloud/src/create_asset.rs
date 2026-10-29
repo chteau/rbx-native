@@ -101,7 +101,7 @@ impl Client {
     }
 
     /// Unknown bytes go up as PNG and Roblox's own check names the problem.
-    fn image_kind(bytes: &[u8]) -> (&'static str, &'static str) {
+    pub(crate) fn image_kind(bytes: &[u8]) -> (&'static str, &'static str) {
         match bytes {
             [0xFF, 0xD8, 0xFF, ..] => ("image.jpg", "image/jpeg"),
             [b'B', b'M', ..] => ("image.bmp", "image/bmp"),
@@ -109,7 +109,7 @@ impl Client {
         }
     }
 
-    fn create_asset(
+    pub(crate) fn create_asset(
         &self,
         asset_type: &str,
         display_name: &str,
@@ -272,7 +272,7 @@ fn multipart(
 }
 
 /// A boundary that does not occur in `bytes`, as RFC 2046 requires.
-fn boundary(bytes: &[u8]) -> String {
+pub(crate) fn boundary(bytes: &[u8]) -> String {
     (0u32..)
         .map(|n| format!("rbx-native-{n:08x}"))
         .find(|candidate| {

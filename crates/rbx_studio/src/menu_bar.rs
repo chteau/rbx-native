@@ -71,6 +71,7 @@ actions!(
         MenuMergePlace,
         MenuGameSettings,
         MenuDataStores,
+        MenuUpdatePlanning,
         MenuOpenAutoSaves,
         MenuStudioSettings,
         MenuCustomizeShortcuts,
@@ -207,61 +208,70 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         )
     }));
 
+    let mut file = vec![
+        MenuItem::action("New", MenuNewPlace),
+        MenuItem::action("Open…", MenuOpenPlace),
+        // Studio's place for it, under Open. Back to Home; asks
+        // first when there are unsaved changes (`shell::close_place`).
+        MenuItem::action("Close Place", MenuClosePlace),
+        // Every place of a game in one window (`shell::game`).
+        MenuItem::action("Open Game…", MenuOpenGame),
+        MenuItem::separator(),
+        // Studio's names: Save to File writes back to the file
+        // being edited (Ctrl+S), Save to File As… asks for a new one
+        // and switches to it (see `shell::save`).
+        MenuItem::action("Save to File", MenuSave),
+        MenuItem::action("Save to File As…", MenuSaveToFile),
+        MenuItem::action("Export as glTF…", MenuExportGltf),
+        // A folder Argon or Rojo syncs from; File › Open reads one
+        // back (a `*.project.json`).
+        MenuItem::action("Export as Project…", MenuExportProject),
+        // A copy without layers and 3D notes (`crate::strip`).
+        MenuItem::action("Export Clean Copy…", MenuExportClean),
+        MenuItem::separator(),
+        // A game window's own: every place at once.
+        MenuItem::action("Find in Game…", MenuFindInGame),
+        MenuItem::action("Sync Shared…", MenuSyncShared),
+        MenuItem::action("Save All", MenuSaveAll),
+        MenuItem::action("Publish All…", MenuPublishAll),
+        MenuItem::separator(),
+        // Uploads, not local saves: see `shell::roblox_publish`. An
+        // unlinked file asks for its place on first use.
+        MenuItem::action("Save to Roblox", MenuSaveToRoblox),
+        MenuItem::action("Publish to Roblox", MenuPublishToRoblox),
+        MenuItem::action("Link to Roblox Place…", MenuLinkRobloxPlace),
+        // Studio's lives under Window; this bar has none, and it
+        // belongs with the uploads it browses and restores.
+        MenuItem::action("Version History…", MenuVersionHistory),
+        MenuItem::action("Merge Place\u{2026}", MenuMergePlace),
+        // Studio's own File › Experience Settings; Home has it too.
+        MenuItem::action("Game Settings…", MenuGameSettings),
+        // Creator Hub keeps these beside the experience's settings.
+        MenuItem::action("Data Stores…", MenuDataStores),
+        MenuItem::separator(),
+        // Studio files this under File › Advanced; this bar draws
+        // no submenus (`popup`), so it sits flat, under Studio's
+        // own name for it.
+        MenuItem::action("Open Auto Saves", MenuOpenAutoSaves),
+        MenuItem::separator(),
+        MenuItem::action("Studio Settings…", MenuStudioSettings),
+        // Studio keeps both of these under File as well.
+        MenuItem::action("Customize Shortcuts…", MenuCustomizeShortcuts),
+        MenuItem::action("Beta Features…", MenuBetaFeatures),
+        MenuItem::action("Script Templates…", MenuScriptTemplates),
+    ];
+    if crate::beta::enabled(crate::update_planning::BETA_ID) {
+        // Experience-level, so beside Game Settings and Data Stores.
+        let at = file.iter().position(
+            |item| matches!(item, MenuItem::Action { name, .. } if name.as_ref() == "Data Stores…"),
+        );
+        file.insert(
+            at.map_or(file.len(), |at| at + 1),
+            MenuItem::action("Update Planning…", MenuUpdatePlanning),
+        );
+    }
     vec![
-        Menu::new("File")
-            .items(vec![
-                MenuItem::action("New", MenuNewPlace),
-                MenuItem::action("Open…", MenuOpenPlace),
-                // Studio's place for it, under Open. Back to Home; asks
-                // first when there are unsaved changes (`shell::close_place`).
-                MenuItem::action("Close Place", MenuClosePlace),
-                // Every place of a game in one window (`shell::game`).
-                MenuItem::action("Open Game…", MenuOpenGame),
-                MenuItem::separator(),
-                // Studio's names: Save to File writes back to the file
-                // being edited (Ctrl+S), Save to File As… asks for a new one
-                // and switches to it (see `shell::save`).
-                MenuItem::action("Save to File", MenuSave),
-                MenuItem::action("Save to File As…", MenuSaveToFile),
-                MenuItem::action("Export as glTF…", MenuExportGltf),
-                // A folder Argon or Rojo syncs from; File › Open reads one
-                // back (a `*.project.json`).
-                MenuItem::action("Export as Project…", MenuExportProject),
-                // A copy without layers and 3D notes (`crate::strip`).
-                MenuItem::action("Export Clean Copy…", MenuExportClean),
-                MenuItem::separator(),
-                // A game window's own: every place at once.
-                MenuItem::action("Find in Game…", MenuFindInGame),
-                MenuItem::action("Sync Shared…", MenuSyncShared),
-                MenuItem::action("Save All", MenuSaveAll),
-                MenuItem::action("Publish All…", MenuPublishAll),
-                MenuItem::separator(),
-                // Uploads, not local saves: see `shell::roblox_publish`. An
-                // unlinked file asks for its place on first use.
-                MenuItem::action("Save to Roblox", MenuSaveToRoblox),
-                MenuItem::action("Publish to Roblox", MenuPublishToRoblox),
-                MenuItem::action("Link to Roblox Place…", MenuLinkRobloxPlace),
-                // Studio's lives under Window; this bar has none, and it
-                // belongs with the uploads it browses and restores.
-                MenuItem::action("Version History…", MenuVersionHistory),
-                MenuItem::action("Merge Place\u{2026}", MenuMergePlace),
-                // Studio's own File › Experience Settings; Home has it too.
-                MenuItem::action("Game Settings…", MenuGameSettings),
-                // Creator Hub keeps these beside the experience's settings.
-                MenuItem::action("Data Stores…", MenuDataStores),
-                MenuItem::separator(),
-                // Studio files this under File › Advanced; this bar draws
-                // no submenus (`popup`), so it sits flat, under Studio's
-                // own name for it.
-                MenuItem::action("Open Auto Saves", MenuOpenAutoSaves),
-                MenuItem::separator(),
-                MenuItem::action("Studio Settings…", MenuStudioSettings),
-                // Studio keeps both of these under File as well.
-                MenuItem::action("Customize Shortcuts…", MenuCustomizeShortcuts),
-                MenuItem::action("Beta Features…", MenuBetaFeatures),
-                MenuItem::action("Script Templates…", MenuScriptTemplates),
-            ])
-            .owned(),
+        Menu::new("File").items(file).owned(),
         Menu::new("Edit")
             .items(vec![
                 MenuItem::action("Undo", MenuUndo),

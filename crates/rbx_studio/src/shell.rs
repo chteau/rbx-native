@@ -115,6 +115,7 @@ mod toolbar;
 pub(crate) mod tooltip;
 mod ugc;
 mod ui_editor;
+mod update_planning;
 mod view_snap;
 mod viewport_dock;
 mod wally_dock;
@@ -287,6 +288,7 @@ pub(crate) struct Shell {
     game_settings: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Data Stores, while open, see `datastores`.
     data_stores: Option<WindowHandle<gpui_kit::component::Root>>,
+    update_planning: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Check Avatar Item and Upload Avatar Item, while open, see `ugc`.
     ugc_validator: Option<WindowHandle<gpui_kit::component::Root>>,
     ugc_face: Option<WindowHandle<gpui_kit::component::Root>>,
@@ -874,6 +876,7 @@ impl Shell {
             version_history: None,
             game_settings: None,
             data_stores: None,
+            update_planning: None,
             ugc_validator: None,
             ugc_face: None,
             ugc_upload: None,
