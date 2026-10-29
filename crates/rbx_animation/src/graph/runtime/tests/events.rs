@@ -157,11 +157,12 @@ fn a_transition_passes_both_sides_by_their_share() {
 }
 
 #[test]
-fn parameters_read_nil_until_set_and_keep_their_defaults() {
+fn parameters_read_their_defaults_until_set() {
     let mut g = Graph::default();
     g.add_param(ParamKind::Number);
     let mut p = Player::new(g, &resolve);
-    assert_eq!(p.get("NumberParameter"), None);
+    assert_eq!(p.get("NumberParameter"), Some(&Value::Number(0.)));
+    assert_eq!(p.get("Missing"), None);
     assert_eq!(p.defaults()["NumberParameter"], Value::Number(0.));
     p.set("NumberParameter", Value::Number(3.));
     assert_eq!(p.get("NumberParameter"), Some(&Value::Number(3.)));

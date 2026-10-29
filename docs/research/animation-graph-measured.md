@@ -113,7 +113,7 @@ x = 0 to 1 over one and two seconds, so a joint's x is its clip's phase.
 Each sample now also prints the markers reached, as `value@step`, and every
 parameter's `GetParameter` value.
 
-Three things about the harness:
+Four things about the harness:
 
 - Marker handlers are deferred, and `Workspace.SignalBehavior` cannot be
   read or set from the command bar. The event cases call `task.wait()`
@@ -121,14 +121,22 @@ Three things about the harness:
   no step changes nothing in the graph; sample 4 of the trigger case
   checks this.
 - A state machine with no `EntryState` plays nothing.
-- Studio does not resolve the `EntryState` attribute in a place file
-  this crate wrote. It loads as an unresolved `InstanceHandle`, and so
-  plays nothing. The bytes match the ones Studio wrote for the same
-  instance, and Studio's own save of the place reloads fine. Adding
-  `UniqueId`s to every instance did not help. The cause is still open,
-  and it means that state machines written by rbx-native do not play
-  when the place is opened in Studio. The probe sets the attribute again
-  from Lua before it plays anything.
+- Studio resolves an `Instance` attribute (type `0x25`) while it reads
+  the holder's PROP chunk, against the instances whose INST chunks it has
+  read so far. A target whose INST chunk comes later stays an unresolved
+  `InstanceHandle` (`:Get()` returns nil, and Studio saves it back as
+  referent `0xFFFFFFFF`), and the state machine plays nothing. Studio
+  writes every INST chunk before the first PROP. `rbx_binary` used to
+  write each class's PROPs right after its INST, and `AnimationNodeDefinition`
+  is seen before `ObjectValue`, so every `EntryState` it wrote was lost.
+  The referent numbers, the blob bytes and the PRNT order were not the
+  cause: a file written with Studio's postorder PRNT still failed, and the
+  same file with INST chunks first resolved all 32 state machines
+  (measured 2026-10-29, Studio 0.745). `GetAttribute` returns an
+  `InstanceHandle` for any `Instance` attribute, set from Lua or not;
+  `:Get()` gives the instance.
+- With no `EntryState`, an "(Any)" transition whose condition holds does
+  not start a state either (`NoEntry`, three steps then `Go` on).
 
 The whole run was done twice and gave identical output.
 
@@ -152,9 +160,9 @@ while it still reads true, the second fire is lost. In the samples below,
 | 12 | fire again, 1 step | T2 | false |
 
 A Bool held on takes one hop per step. Before any `SetParameter`,
-`GetParameter` returned each parameter's default (`false`, `""`, `0`).
-The docs say it returns nil. Our `Player::get` still returns nil for an
-unset parameter.
+`GetParameter` returned each parameter's default (`false`, `""`, `0`,
+and `2` for `NoEntry`'s `N`). The docs say it returns nil. `Player::get`
+returns the default too.
 
 **Transitions take effect within the step.** Setting the condition and
 stepping once shows the new state, already blended. On a state
@@ -241,4 +249,3 @@ mask passes everything through at full weight (P0 = P1 = 1 from `Both`).
   Events; the `Handover` cases are ready to run).
 - Blend2D phase sync was not probed. It is taken to follow the same rule
   as Blend1D.
-- The cause of the unresolved `EntryState` in our written files (above).

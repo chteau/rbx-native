@@ -238,7 +238,7 @@ impl NodeKind {
                 ("TransitionOutCurve", text("Linear")),
                 ("TransitionOutWhen", text("Finished")),
             ],
-            // The entry state's pin name; empty plays the first state.
+            // The entry state's pin name; one naming no state plays nothing.
             NodeKind::StateMachine => vec![("EntryState", text(""))],
             NodeKind::GraphOutput => vec![],
         }

@@ -136,8 +136,18 @@ impl Node {
         self.inputs.last().map(|i| i.pin.as_str())
     }
 
+    /// Adds a pin; on a state machine whose EntryState names no state, the
+    /// new state becomes the entry, since Studio plays nothing without one.
     pub(super) fn push_pin(&mut self, name: &str) {
         self.inputs.push(Input::new(self.kind, name));
+        let entry = match self.props.get("EntryState") {
+            Some(Prop::Value(Value::Text(entry))) => Some(entry.as_str()),
+            _ => None,
+        };
+        if self.kind == NodeKind::StateMachine && !entry.is_some_and(|e| self.has_pin(e)) {
+            self.props
+                .insert("EntryState".into(), Prop::Value(Value::Text(name.into())));
+        }
     }
 
     fn has_pin(&self, name: &str) -> bool {

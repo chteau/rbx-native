@@ -111,9 +111,14 @@ pub fn serialize_with_defaults(
     out.extend_from_slice(&file_header(&plan));
     out.extend(chunk::write_chunk(b"SSTR", &table.write()));
 
+    // Every INST before any PROP, as Studio writes them: Studio resolves an
+    // `Instance` attribute (`AttributesSerialize` type `0x25`) as it reads the
+    // PROP chunk, and a target whose INST chunk has not been read yet stays an
+    // unresolved `InstanceHandle` for good.
     for class in &plan.classes {
         out.extend(chunk::write_chunk(b"INST", &inst::write(class)));
-
+    }
+    for class in &plan.classes {
         for name in property_names(dom, class) {
             let values = collect_values(dom, class, &name, &default);
             let (type_id, payload) = prop::encode(&class.class_name, &name, &values, &table)?;

@@ -260,8 +260,9 @@ fn a_finished_transition_can_start_before_the_end() {
     let idle = clip_node(&mut g, "idle", "OnceAndHold");
     let run = clip_node(&mut g, "run", "Loop");
     let sm = g.add(NodeKind::StateMachine);
-    g.connect_new(idle, sm);
+    let entry = g.connect_new(idle, sm).unwrap();
     g.connect_new(run, sm);
+    set(&mut g, sm, "EntryState", Value::Text(entry));
     let mut t = Transition::new(Some(0), 1);
     t.wait_for = WaitFor::Finished;
     t.when = When::BeforeFinished;

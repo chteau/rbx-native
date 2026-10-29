@@ -141,11 +141,6 @@ for _, ks in workspace.ProbeClips:GetChildren() do ids[ks.Name] = KSP:RegisterKe
 for _, d in workspace.ProbeDefs:GetDescendants() do
   if d:IsA("AnimationNodeDefinition") and ids[d:GetAttribute("AnimationId")] then d:SetAttribute("AnimationId", ids[d:GetAttribute("AnimationId")]) end
 end
--- Studio does not resolve the EntryState Instance attribute in a file this
--- crate wrote (it loads as an unresolved handle), so name each entry again.
-for _, d in workspace.ProbeDefs:GetDescendants() do
-  if d.Name == "StateMachineNode" and d:FindFirstChild("Clip") then d:SetAttribute("EntryState", d.Clip) end
-end
 local function f(x) return string.format("%.5f", x) end
 local function params(track)
   local names = {{}}

@@ -191,9 +191,13 @@ impl Player {
         self.params.insert(name.to_owned(), value);
     }
 
-    /// `AnimationTrack:GetParameter`: nil until the parameter is set.
+    /// `AnimationTrack:GetParameter`: the parameter's default until it is
+    /// set, as real Studio returns (the docs say nil), and nil for a name
+    /// the graph does not have.
     pub fn get(&self, name: &str) -> Option<&Value> {
-        self.params.get(name)
+        self.params
+            .get(name)
+            .or_else(|| self.graph.param(name).map(|p| &p.default))
     }
 
     /// `GetParameterDefaults`: every parameter's default, as the graph's
