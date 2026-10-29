@@ -98,7 +98,7 @@ fn priority(rule: &str) -> (Player, usize) {
     set_pin(
         &mut g,
         ps,
-        0,
+        1,
         "InterruptibleTrigger",
         Prop::Param("c".into()),
     );
@@ -119,27 +119,25 @@ fn priority_select_takes_the_first_trigger_when_interruptible() {
     assert_eq!(p.active(ps), Some(0), "higher up wins at once");
 
     let (mut p, ps) = priority("Finished");
-    p.set("a", Value::Bool(true));
-    p.step(0.1);
-    assert_eq!(p.active(ps), Some(0), "the first pick is never held back");
-    p.set("a", Value::Bool(false));
     p.set("b", Value::Bool(true));
     p.step(0.1);
-    assert_eq!(p.active(ps), Some(0), "waits for the loop to end");
+    assert_eq!(p.active(ps), Some(1), "the first pick is never held back");
+    p.set("a", Value::Bool(true));
+    p.step(0.1);
+    assert_eq!(p.active(ps), Some(1), "waits for the loop to end");
     p.step(0.85);
     p.step(0.);
-    assert_eq!(p.active(ps), Some(1));
+    assert_eq!(p.active(ps), Some(0));
 
     let (mut p, ps) = priority("Trigger");
-    p.set("a", Value::Bool(true));
-    p.step(0.1);
-    p.set("a", Value::Bool(false));
     p.set("b", Value::Bool(true));
+    p.step(0.1);
+    p.set("a", Value::Bool(true));
     p.step(1.5);
-    assert_eq!(p.active(ps), Some(0));
+    assert_eq!(p.active(ps), Some(1));
     p.set("c", Value::Bool(true));
     p.step(0.);
-    assert_eq!(p.active(ps), Some(1), "InterruptibleTrigger lets it go");
+    assert_eq!(p.active(ps), Some(0), "InterruptibleTrigger lets it go");
 }
 
 fn sequence(configure: impl Fn(&mut Graph, usize)) -> (Player, usize) {
@@ -256,36 +254,6 @@ fn an_uninterruptible_shot_ignores_new_triggers() {
     }
 }
 
-fn fork(second_priority: u32, seed: u64) -> usize {
-    let mut g = Graph::default();
-    let idle = clip_node(&mut g, "idle", "Loop");
-    let run = clip_node(&mut g, "run", "Loop");
-    let jog = clip_node(&mut g, "jog", "Loop");
-    let sm = g.add(NodeKind::StateMachine);
-    for n in [idle, run, jog] {
-        g.connect_new(n, sm);
-    }
-    let mut a = Transition::new(Some(0), 1);
-    a.expression = "true".into();
-    let mut b = Transition::new(Some(0), 2);
-    b.expression = "true".into();
-    b.priority = second_priority;
-    g.nodes[sm].transitions = vec![a, b];
-    output(&mut g, sm);
-    let mut p = Player::new(g, &resolve);
-    p.set_seed(seed);
-    p.step(0.);
-    p.active(sm).unwrap()
-}
-
-#[test]
-fn state_machine_ties_are_drawn_at_random_and_priority_wins() {
-    let picks: Vec<usize> = (0..32).map(|seed| fork(1, seed)).collect();
-    assert!(picks.contains(&1) && picks.contains(&2), "{picks:?}");
-    assert_eq!(fork(1, 7), fork(1, 7), "a seed replays");
-    assert!((0..8).all(|seed| fork(2, seed) == 2));
-}
-
 #[test]
 fn a_finished_transition_can_start_before_the_end() {
     let mut g = Graph::default();
@@ -302,9 +270,11 @@ fn a_finished_transition_can_start_before_the_end() {
     output(&mut g, sm);
     let mut p = Player::new(g, &resolve);
     p.step(0.6);
+    p.step(0.);
     assert_eq!(p.active(sm), Some(0));
     p.step(0.15);
-    assert_eq!(p.active(sm), Some(1));
+    p.step(0.);
+    assert_eq!(p.active(sm), Some(1), "0.25 s left of a 0.3 s blend");
 }
 
 #[test]

@@ -10,8 +10,10 @@ use rbx_animation::graph::{Graph, NodeKind, Prop, Value};
 const SEEDS: [f64; 8] = [0., 1., 2., 3., 7., 42., 1000., 123_456.];
 pub(crate) const PICKS: usize = 40;
 
-/// How a case is read: `Blend` prints every joint's position after each
-/// parameter set, `Picks` prints the order RandomSequence played its inputs.
+/// How a case is read: `Blend` prints every joint's position, the markers
+/// reached and every parameter after each parameter set (a `_wait` key
+/// waits one engine frame and `_zero` steps by 0 before stepping), `Picks`
+/// prints the order RandomSequence played its inputs.
 pub(crate) enum Read {
     Blend(Vec<(Vec<(&'static str, Value)>, usize)>),
     Picks,
@@ -22,15 +24,15 @@ pub(crate) struct Case {
     pub read: Read,
 }
 
-fn set(g: &mut Graph, node: usize, key: &str, prop: Prop) {
+pub(crate) fn set(g: &mut Graph, node: usize, key: &str, prop: Prop) {
     g.nodes[node].props.insert(key.into(), prop);
 }
 
-fn value(g: &mut Graph, node: usize, key: &str, v: Value) {
+pub(crate) fn value(g: &mut Graph, node: usize, key: &str, v: Value) {
     set(g, node, key, Prop::Value(v));
 }
 
-fn param(g: &mut Graph, name: &str, kind: ParamKind, default: Value) {
+pub(crate) fn param(g: &mut Graph, name: &str, kind: ParamKind, default: Value) {
     g.params.push(Param {
         name: name.into(),
         kind,
@@ -38,20 +40,20 @@ fn param(g: &mut Graph, name: &str, kind: ParamKind, default: Value) {
     });
 }
 
-fn graph(name: &str) -> Graph {
+pub(crate) fn graph(name: &str) -> Graph {
     Graph {
         name: name.into(),
         ..Graph::default()
     }
 }
 
-fn clip(g: &mut Graph, id: &str) -> usize {
+pub(crate) fn clip(g: &mut Graph, id: &str) -> usize {
     let n = g.add(NodeKind::Clip);
     value(g, n, "AnimationId", Value::Text(id.into()));
     n
 }
 
-fn finish(g: &mut Graph, node: usize) {
+pub(crate) fn finish(g: &mut Graph, node: usize) {
     let out = g.output().unwrap();
     g.connect(node, out, "Pose");
 }
@@ -302,6 +304,27 @@ fn misc() -> Vec<Case> {
         });
     }
 
+    // A Select whose Selection names nothing from the start, then a pin.
+    let mut g = graph("SelectFromNone");
+    param(&mut g, "S", ParamKind::Text, Value::Text(String::new()));
+    let node = g.add(NodeKind::Select);
+    value(
+        &mut g,
+        node,
+        "DefaultTransitionDuration",
+        Value::Number(0.3),
+    );
+    let c = clip(&mut g, "T0");
+    let pin = g.connect_new(c, node).unwrap();
+    set(&mut g, node, "Selection", Prop::Param("S".into()));
+    finish(&mut g, node);
+    let mut s = vec![(vec![], 3), (vec![("S", Value::Text(pin))], 1)];
+    s.extend((0..4).map(|_| (vec![], 1)));
+    out.push(Case {
+        graph: g,
+        read: Read::Blend(s),
+    });
+
     // A Select whose Selection names nothing from the start.
     let mut g = graph("SelectEmpty");
     let node = g.add(NodeKind::Select);
@@ -348,5 +371,6 @@ pub(crate) fn cases() -> Vec<Case> {
     let mut out = blends();
     out.extend(misc());
     out.extend(randoms());
+    out.extend(super::unknowns::cases());
     out
 }

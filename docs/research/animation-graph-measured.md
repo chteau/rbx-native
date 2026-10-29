@@ -102,15 +102,143 @@ The graph subtree of that save is
 `tests/fixtures/studio_state_machine.rbxmx`. `rbx_xml` now folds
 `__attrRef_*` into the blob on reading and splits it back out on writing.
 
-## Still not measured (UNVERIFIED in the code)
+## Second pass: triggers, events, state machines, phase sync
 
-- Whether a trigger parameter lasts exactly one step.
-- How events split across a transition.
-- Whether an "(Any)" transition can re-enter the playing state, and which
-  generator breaks ties between transitions.
-- What a Priority Select does when every Trigger turns off after one fired,
-  and whether Interruptible guards moves to lower inputs.
-- What a Mask naming no shared mask does.
-- Blend phase-sync beyond the documented virtual duration.
+Measured 2026-10-28/29 in the same Studio, with the same harness. The
+graphs are in `crates/rbx_animation/tests/studio_graph_probe/unknowns.rs`.
+Two clip sets were added: `MA`/`MB` hold P0/P1 at x = 1 for a one-second
+loop, with `KeyframeMarker`s `Ev` "A0".."A3" at 0, 0.25, 0.5 and 0.75 s
+and "B0".."B3" at 0.1, 0.35, 0.6 and 0.85 s. `L1`/`L2` loop P0/P1 from
+x = 0 to 1 over one and two seconds, so a joint's x is its clip's phase.
+Each sample now also prints the markers reached, as `value@step`, and every
+parameter's `GetParameter` value.
 
-None of these was in scope for this pass. Each needs its own probe.
+Three things about the harness:
+
+- Marker handlers are deferred, and `Workspace.SignalBehavior` cannot be
+  read or set from the command bar. The event cases call `task.wait()`
+  after each step so the handlers run before the next one. A frame with
+  no step changes nothing in the graph; sample 4 of the trigger case
+  checks this.
+- A state machine with no `EntryState` plays nothing.
+- Studio does not resolve the `EntryState` attribute in a place file
+  this crate wrote. It loads as an unresolved `InstanceHandle`, and so
+  plays nothing. The bytes match the ones Studio wrote for the same
+  instance, and Studio's own save of the place reloads fine. Adding
+  `UniqueId`s to every instance did not help. The cause is still open,
+  and it means that state machines written by rbx-native do not play
+  when the place is opened in Studio. The probe sets the attribute again
+  from Lua before it plays anything.
+
+The whole run was done twice and gave identical output.
+
+**Triggers.** A trigger state machine cycles T0 → T1 → T2 → T0, with one
+hop per evaluation that sees `Go`. A trigger is seen by exactly one
+evaluation, whether that is a `StepAnimations(1/30)` or a
+`StepAnimations(0)`. `GetParameter` still reads true after that step, and
+the next step clears it before it evaluates. If the trigger is fired again
+while it still reads true, the second fire is lost. In the samples below,
+"Go after" is what `GetParameter` returned:
+
+| sample | action | state | Go after |
+|---|---|---|---|
+| 1 | fire, no step | T0 | true |
+| 2 | 1 step | T1 | true |
+| 3 | 1 step | T1 | false |
+| 7 | fire, `StepAnimations(0)` | T0 | true |
+| 8 | 1 step | T0 | false |
+| 10 | fire, 2 steps | T1 | false |
+| 11 | fire, 1 step | T2 | true |
+| 12 | fire again, 1 step | T2 | false |
+
+A Bool held on takes one hop per step. Before any `SetParameter`,
+`GetParameter` returned each parameter's default (`false`, `""`, `0`).
+The docs say it returns nil. Our `Player::get` still returns nil for an
+unset parameter.
+
+**Transitions take effect within the step.** Setting the condition and
+stepping once shows the new state, already blended. On a state
+machine's 1 s switch from MA to MB, the first step shows P0 0.96667 and
+P1 0.03333, the same as a Select's switch. `Player` used to take a
+state-machine transition after the step that saw it.
+
+**Events.** Studio fires both sides' markers during a 1 s transition, for
+its whole length and however small a side's share. MA → MB, switched at
+step 31, with Select and with a state machine:
+`A0@1 A1@8 A2@16 A3@23 | A0@31 B0@34 A1@38 B1@41 A2@46 B2@49 A3@53 B3@56`.
+A marker is taken where a step starts, not where it ends. The marker at
+0.5 s fires on step 16 rather than step 15, which lands on it. A looping
+clip's marker at 0 fires on the step after the wrap. A Blend1D at an
+exact tie (0.5) passes the first input's events (MA's).
+
+Once the blend ended, MB's next markers came one step earlier than a
+steady clock gives: `B0@63 B1@70`, where 64 and 71 were expected. It
+looks as if the incoming clip gains one extra step when the transition
+completes. Nothing else we measured can confirm it, because every clip
+that was blended into is either constant or had already reached its end.
+The `Handover` and `EvHandover` cases in the probe (T1 → L1 and MA → MB
+over 0.5 s, read every step) would pin it down. They are written but
+have not been run yet: the Studio lock was held for hours by other work.
+Until they run, our incoming clip keeps a steady clock (UNVERIFIED in
+`nodes/pick.rs`).
+
+**State machines.** In each case T0 plays, then both transitions out of it
+become ready in the same step:
+
+| case | transitions, in list order (priority) | Studio took |
+|---|---|---|
+| TieBC | T0→T1 (1), T0→T2 (1) | T1 |
+| TieCB | T0→T2 (1), T0→T1 (1) | T2 |
+| TieAny | (Any)→T2 (1), T0→T1 (1) | T1 |
+| PrioUp | T0→T1 (1), T0→T2 (2) | T2 |
+| PrioDown | T0→T1 (2), T0→T2 (1) | T1 |
+| PrioAny | (Any)→T2 (2), T0→T1 (1) | T2 |
+
+There is no randomness: eight runs of each tie, each with fresh GUIDs,
+came out alike. The higher Priority wins. On a tie, the state's own
+transition beats "(Any)", then the first listed wins. An "(Any)"
+transition to the state already playing does nothing: with R0 at 0.2 s,
+`Go` on, off and held left it running (y 0.46667, 0.53333, … 1.0). From
+T1 the same transition restarts R0 (y 0.06667 after a step), and holding
+`Go` on afterwards does not restart it again. With a 0.5 s length, the
+blend from T1 reads x 0.06667 and y 0.93778 after one step.
+
+**Priority Select.** Every input is OnceAndHold. The default transition is
+0.3 s for T0/T1 and 0 for the R0/R1 ramps.
+
+- When every Trigger turns off, the node fades to rest over the default
+  transition: x 1 → 0.88889 → … → 0.11111 → 0.
+- From rest, a newly triggered input cuts in with no fade. A Select
+  switching from nothing to a pin also cuts in, with x 1 after one step
+  despite its 0.3 s transition.
+- The current input's Interruptible setting holds back only a move to a
+  higher input. When R1 (below, Finished) was playing and A turned on,
+  the node stayed on R1 until it finished: y 0.2 … 0.99997, then R0 at
+  0.06667. It stayed even when B was turned off in the same step.
+- When the current input's own Trigger turns off, a move down or to
+  rest happens at once, whether it is set to Finished or to Trigger.
+
+**Mask naming no mask.** A Mask whose `Mask` is empty or names no shared
+mask passes everything through at full weight (P0 = P1 = 1 from `Both`).
+`Invert` changes nothing. We used to zero every joint under Invert.
+
+**Phase sync.** Blend1D over L1 (at 0) and L2 (at 1):
+
+- Synced, at 0.5 / 0.5: both clips advance 1/1.5 of a cycle per second.
+  After one step, P0 = P1 = 0.01111, which is half of phase 0.02222.
+- Synced, at 0.75 / 0.25: both advance 1/1.25 of a cycle per second.
+  So the virtual duration is the weighted arithmetic mean `Σ wᵢ·Dᵢ`.
+- Synced, at weight 0: L2 kept L1's phase, and at 0.5 again both read
+  0.33889.
+- Unsynced: each clip runs at its own rate, and a weightless one keeps
+  running. L2 read phase 0.05 at sample 22, after 63 steps (63/60
+  wrapped). If it had paused, it would read 0.633. Before this, we
+  paused weightless Unsynced inputs.
+
+## Still not measured
+
+- Whether the incoming clip gains a step as a transition completes (see
+  Events; the `Handover` cases are ready to run).
+- Blend2D phase sync was not probed. It is taken to follow the same rule
+  as Blend1D.
+- The cause of the unresolved `EntryState` in our written files (above).

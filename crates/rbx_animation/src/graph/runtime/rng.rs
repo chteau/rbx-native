@@ -61,11 +61,6 @@ impl Mt19937 {
     pub fn unit(&mut self) -> f64 {
         f64::from(self.next_u32()) / 4_294_967_296.
     }
-
-    /// Uniform in 0..n (n > 0).
-    pub fn below(&mut self, n: usize) -> usize {
-        ((self.unit() * n as f64) as usize).min(n.saturating_sub(1))
-    }
 }
 
 #[cfg(test)]
