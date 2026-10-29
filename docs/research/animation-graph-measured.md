@@ -171,7 +171,16 @@ A marker is taken where a step starts, not where it ends. The marker at
 clip's marker at 0 fires on the step after the wrap. A Blend1D at an
 exact tie (0.5) passes the first input's events (MA's).
 
-HANDOVER
+Once the blend ended, MB's next markers came one step earlier than a
+steady clock gives: `B0@63 B1@70`, where 64 and 71 were expected. It
+looks as if the incoming clip gains one extra step when the transition
+completes. Nothing else we measured can confirm it, because every clip
+that was blended into is either constant or had already reached its end.
+The `Handover` and `EvHandover` cases in the probe (T1 → L1 and MA → MB
+over 0.5 s, read every step) would pin it down. They are written but
+have not been run yet: the Studio lock was held for hours by other work.
+Until they run, our incoming clip keeps a steady clock (UNVERIFIED in
+`nodes/pick.rs`).
 
 **State machines.** In each case T0 plays, then both transitions out of it
 become ready in the same step:
@@ -228,6 +237,8 @@ mask passes everything through at full weight (P0 = P1 = 1 from `Both`).
 
 ## Still not measured
 
+- Whether the incoming clip gains a step as a transition completes (see
+  Events; the `Handover` cases are ready to run).
 - Blend2D phase sync was not probed. It is taken to follow the same rule
   as Blend1D.
 - The cause of the unresolved `EntryState` in our written files (above).

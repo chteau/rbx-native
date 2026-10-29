@@ -13,7 +13,9 @@
 //! interrupted blend, how long a trigger lasts, events across a transition,
 //! state-machine ties and "(Any)", Priority Select with its Triggers off, a
 //! Mask naming no mask, phase sync;
-//! `docs/research/animation-graph-measured.md`). Transitions are always
+//! `docs/research/animation-graph-measured.md`). What is still a reading
+//! rather than a measurement is marked UNVERIFIED on the code that makes
+//! it. Transitions are always
 //! crossfades: `AnimationNodeTransitionType`'s InertialBlend and DeadBlend
 //! exist in the API but nothing sets them. Root motion (`Animator.RootMotion`,
 //! hidden and undocumented) is not extracted.

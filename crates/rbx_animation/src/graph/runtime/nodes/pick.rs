@@ -68,7 +68,10 @@ impl Player {
     /// Only the inputs in play pass events on; during a fade both do, each
     /// scaled by its share of the blend. Real Studio fires every marker of
     /// both sides for the whole transition, the outgoing side's from the
-    /// switching step on, however small its share.
+    /// switching step on, however small its share. UNVERIFIED: after a 1 s
+    /// blend Studio's incoming markers ran one step early, as if the clip
+    /// gained a step as the blend ended; the incoming clock here stays
+    /// steady until the probe's `Handover` cases are run.
     pub(in crate::graph::runtime) fn current(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let active = self.states[n].active;
         let start = self.mark();
