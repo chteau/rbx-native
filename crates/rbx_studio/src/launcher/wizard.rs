@@ -173,6 +173,15 @@ impl Wizard {
         window.remove_window();
     }
 
+    /// "Skip for now" past the key steps: remembered, so the next launch
+    /// without a key goes to Home instead of back here.
+    pub(super) fn skip_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.plan.key {
+            let _ = crate::home::skip_key();
+        }
+        self.finish(window, cx);
+    }
+
     pub(super) fn save_and_continue(&mut self, cx: &mut Context<Self>) {
         let Some(key) = self.check.read(cx).key() else {
             return;

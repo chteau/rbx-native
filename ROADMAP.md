@@ -2794,6 +2794,38 @@ both the plain fetch failure and the silent fall back to a default
   `segment_mesh` and `generate_texture` take the selection when
   `instance_path` is left out, as Studio does. The Play capture on
   Windows and the Win32 input have not been run on a real Windows PC.
+- [x] **Performance heatmap: totals and models (beta)**, behind the
+  `perf-models` switch. The Performance view gains Total and Physics:
+  `rbx_viewer::perf::models` weighs triangles, texture memory, instances,
+  simulated parts, constraints, costly collision fidelities, dense meshes
+  casting shadows, shadowed lights and blended overdraw into points, a
+  documented estimate rather than Roblox's own costs. The 20 costliest
+  models are ranked with a breakdown, and a click selects and frames one.
+- [x] **Module require graph (beta)**, behind the `require-graph`
+  switch: View › Require Graph, built on `rbx_audit::require_graph`,
+  draws scripts and modules with their statically resolved requires,
+  dashed unknown ones with their line, red cycles, amber client-to-server
+  requires, and lists those with the unused modules. Clicks open the
+  script or the require line.
+
+- [x] **Update planning: countdown icons on autopilot** (beta, concept by
+  [@MiniDev](https://vm.tiktok.com/ZN8AFbRwp/), see Acknowledgements).
+  File › Update Planning… lists the user's experiences with each one's
+  status. Per experience, reusable **timers** (12, 6, 3 and 1 hours to
+  start with), each a 512×512 overlay in one of three built-in styles or
+  the user's own PNG. A plan takes the current icon (fetched from Roblox
+  or a file), the new icon and the update time; the timeline previews
+  every composite at its time, then the new icon. **Start update** uploads
+  every image as a decal so it is reviewed early; the steps view shows each
+  as Uploaded, Approved and Upcoming or Applied, with the "update in"
+  countdown and Cancel. Steps are "set the icon the plan says is due now",
+  so a late run catches up; they fire while the editor is open and from
+  `rbxstudio --update-planning-tick`, which Start registers with the OS (a
+  systemd user timer, a launchd agent, a Task Scheduler task) and the last
+  run removes. Open Cloud can set the icon with an API key, through the
+  `legacy-universe:manage` game-icon route
+  (`docs/research/update-planning-icon-api.md`). Timer edits apply to the
+  next update only.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -3133,37 +3165,15 @@ both the plain fetch failure and the silent fall back to a default
   `insert_asset` always answers `isPackage: false`, since Open Cloud does
   not say whether an asset is a package.
 
-- [ ] 📋 **Update planning: countdown icons on autopilot** (concept by
-  [@MiniDev](https://vm.tiktok.com/ZN8AFbRwp/), see Acknowledgements).
-  Per experience, a set of reusable **timers** (say H-12, H-6, H-3, H-1),
-  each a transparent 512×512 PNG overlay such as an hourglass with
-  "6 Hours". To **plan an update** you pick the current icon (a file, or
-  fetched from Roblox) as the base for the timers, the new icon to apply at
-  update time, and the update's date and time. A **timeline** then
-  previews every step: each overlay composited on the current icon at its
-  time, then the new icon at T. **Start update** uploads every composited
-  image straight away, so each is moderated and approved hours early. A
-  steps view shows each one as Uploaded, Approved and then Upcoming or
-  Applied, with a live "update in" countdown and a Cancel. At each step
-  the experience icon is swapped automatically on every place in the
-  universe, with a desktop notification when it's applied ("New icon
-  applied on 3 places"). It needs a sidebar of the user's experiences with
-  per-experience status. Timer edits apply to future updates only, never to
-  one already started. Still open: whether Open Cloud can set an
-  experience's icon with an API key, or only the cookie-authenticated web
-  endpoint can.
-
-  Steps are written as "set the icon the plan says is due now", so a late
-  run catches up and any number of runners can't conflict. They fire while
-  the editor is open. **Start update** also registers a small background
-  helper with the OS, so steps keep firing after the editor is closed as
-  long as the PC is on and someone is logged in: a systemd user timer on
-  Linux, Task Scheduler on Windows, launchd on macOS. The helper is
-  removed when the plan finishes or is cancelled. Firing with the PC off
-  is under [Maybe](#maybe).
-
-  Later, the same plan could also restart servers onto the new version and
-  send an in-game announcement through MessagingService.
+- [ ] 📋 **Update planning: live check and what's left**: the shipped beta
+  has never talked to Roblox. Still to prove with a real key: that the
+  `legacy-universe:manage` icon route accepts the experience's source
+  language (its documented error 26 says it may not), that an image
+  approved as a decal ahead of time makes the swap skip review, and that
+  the OS helper fires and removes itself on Windows and macOS. Windows has
+  no desktop notification yet. Later, the same plan could also restart
+  servers onto the new version and send an in-game announcement through
+  MessagingService.
 
 - [x] **Accessory Fitting Tool** (Avatar › Accessory): pick a `MeshPart` or
   `Model`, Accessory or Clothing, the asset type and body scale, fit it on
@@ -3551,12 +3561,16 @@ engine, just as an escape hatch.
 
 ### Collaboration
 
-- [ ] 📋 **Co-editing without an rbx-native host, and at scale**, only the
-  hosted relay (an rbx-native user's own) keeps the op log, so Studio users
-  alone cannot co-edit, and a new host starts with an empty log (peers read
-  it from the start, and unsent edits move to it). Attributes and tags go
-  both ways; a 12,000 part place was tested live against Studio (the adds
-  land in about a minute, single edits in under 2 s).
+- [x] **Co-editing without an rbx-native host, and at scale**: the Worker
+  relay keeps the op log (ciphertext only), so Studio users alone can
+  co-edit; a new host is handed the log by the peers that read it instead of
+  starting empty; a 12,000 part change is posted in 16 requests instead of
+  632 (see [the measurements](docs/research/coedit-hostless.md)).
+- [ ] 📋 **Co-editing hostless, still unproven live**: Studio-only
+  co-editing ran against a local `wrangler dev`, not a deployed Worker, and
+  the handover between two real hosted relays is covered by tests over
+  HTTP, not run live. The 12,000 part sync still spends about 10 s in the
+  plugin collecting and sealing in Luau before anything is sent.
 
 Neither replaces **Team Create**, Roblox's actual real-time multi-user
 editing, that stays proprietary with no public protocol to build against

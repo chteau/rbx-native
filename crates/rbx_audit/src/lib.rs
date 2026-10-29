@@ -42,6 +42,7 @@
 //! missing, except a name some script assigns to `.Name`, which is assumed
 //! to be created at run time and never reported missing.
 
+mod requires;
 mod resolve;
 mod walk;
 
@@ -49,6 +50,8 @@ use std::collections::{HashMap, HashSet};
 
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_loren::graph::Route;
+
+pub use requires::{require_graph, Edge, Node, RequireGraph, Target};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Severity {
@@ -143,6 +146,20 @@ pub(crate) struct Usage {
     unresolved_listeners: usize,
     client_calls: HashSet<Ref>,
     server_calls: HashSet<Ref>,
+    /// Every `require(...)` call, in walk order; see `requires`.
+    requires: Vec<RequireSite>,
+}
+
+/// One `require(...)` call as the walk saw it.
+pub(crate) struct RequireSite {
+    from: Ref,
+    /// 1-based.
+    line: usize,
+    target: resolve::Val,
+    /// The argument when it is a string literal (require-by-string).
+    literal: Option<String>,
+    /// The argument's source text.
+    text: String,
 }
 
 const REMOTES: [&str; 3] = ["RemoteEvent", "UnreliableRemoteEvent", "RemoteFunction"];
@@ -150,40 +167,8 @@ const REMOTES: [&str; 3] = ["RemoteEvent", "UnreliableRemoteEvent", "RemoteFunct
 /// Audits every script in `dom`. Findings come sorted by severity, then
 /// path, then line.
 pub fn audit(dom: &WeakDom) -> Vec<Finding> {
-    let mut scripts = Vec::new();
-    let mut remotes = Vec::new();
-    let mut stack: Vec<Ref> = dom.root_refs().to_vec();
-    while let Some(r) = stack.pop() {
-        let Some(instance) = dom.get(r) else { continue };
-        stack.extend(instance.children().iter().rev());
-        if REMOTES.contains(&instance.class()) {
-            remotes.push(r);
-        }
-        let Some(side) = side(dom, r) else { continue };
-        if let Some(Variant::String(source)) = instance.properties().get("Source") {
-            let ast = full_moon::parse_fallible(source, full_moon::LuaVersion::luau()).into_ast();
-            scripts.push((r, side, ast));
-        }
-    }
-
-    let loren = loren_services(dom);
-    let runtime_names: HashSet<String> = scripts
-        .iter()
-        .flat_map(|(_, _, ast)| walk::runtime_names(ast))
-        .collect();
-    let mut usage = Usage::default();
-    let mut findings = Vec::new();
-    for (script, side, ast) in &scripts {
-        findings.extend(walk::script(
-            dom,
-            *script,
-            *side,
-            ast,
-            &runtime_names,
-            loren.get(script),
-            &mut usage,
-        ));
-    }
+    let (scripts, remotes) = parse(dom);
+    let (mut findings, usage) = walk_all(dom, &scripts);
 
     for remote in remotes {
         if usage.listened.contains(&remote) {
@@ -296,6 +281,53 @@ fn child(dom: &WeakDom, parent: Ref, name: &str) -> Option<Ref> {
         .iter()
         .copied()
         .find(|c| dom.get(*c).is_some_and(|i| i.name() == name))
+}
+
+type Parsed = Vec<(Ref, Side, full_moon::ast::Ast)>;
+
+/// Every script in `dom` with the side it runs on and its parse, and every
+/// remote.
+fn parse(dom: &WeakDom) -> (Parsed, Vec<Ref>) {
+    let mut scripts = Vec::new();
+    let mut remotes = Vec::new();
+    let mut stack: Vec<Ref> = dom.root_refs().to_vec();
+    while let Some(r) = stack.pop() {
+        let Some(instance) = dom.get(r) else { continue };
+        stack.extend(instance.children().iter().rev());
+        if REMOTES.contains(&instance.class()) {
+            remotes.push(r);
+        }
+        let Some(side) = side(dom, r) else { continue };
+        if let Some(Variant::String(source)) = instance.properties().get("Source") {
+            let ast = full_moon::parse_fallible(source, full_moon::LuaVersion::luau()).into_ast();
+            scripts.push((r, side, ast));
+        }
+    }
+    (scripts, remotes)
+}
+
+/// Walks every script once: the line findings and what was learned about
+/// remotes and requires along the way.
+fn walk_all(dom: &WeakDom, scripts: &Parsed) -> (Vec<Finding>, Usage) {
+    let loren = loren_services(dom);
+    let runtime_names: HashSet<String> = scripts
+        .iter()
+        .flat_map(|(_, _, ast)| walk::runtime_names(ast))
+        .collect();
+    let mut usage = Usage::default();
+    let mut findings = Vec::new();
+    for (script, side, ast) in scripts {
+        findings.extend(walk::script(
+            dom,
+            *script,
+            *side,
+            ast,
+            &runtime_names,
+            loren.get(script),
+            &mut usage,
+        ));
+    }
+    (findings, usage)
 }
 
 /// A copy of `dom` with only what [`audit`] reads (the tree, classes, names,

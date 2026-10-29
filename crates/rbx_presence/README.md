@@ -45,7 +45,8 @@ the ntfy **topic name is unguessable** without the secret.
   clock is rejected (`CLOCK_SKEW_MS`, both transports).
 - **Rate + user caps (Worker)**: a per-user token bucket (burst 8, 4/s) and a
   32-user room cap (`room.ts`). ntfy relies on the ntfy server's own limits.
-- **Message size**: the relay refuses bodies over 16 KiB (`MAX_BODY_BYTES`).
+- **Message size**: the relay refuses bodies over 16 KiB (`MAX_BODY_BYTES`),
+  1 MiB on the op log routes (`OPS_BODY_BYTES`).
   **ntfy.sh additionally caps a message at ~4 KiB**, below our 16 KiB, so the
   ntfy sender shrinks each envelope to fit `NTFY_MAX_BODY` (4096) before signing
   (`ntfy::fit_encode` / `Ntfy.fitEncode`): it sheds the oldest edits, then
@@ -192,13 +193,23 @@ by edit count. It is pinned by `plugins/team-presence/fixtures/catchup.json`.
 Behind Beta Features › Live co-editing in rbx-native and the plugin's
 Co-edit toolbar toggle in Studio. Design in `coedit.rs`; in short:
 
-- **Op log.** Only the hosted relay keeps one (`POST`/`GET
-  /v1/rooms/<room>/ops`): numbered, sealed entries the relay cannot read,
-  at most 64 MiB, trimmed oldest first. Batches are cut into chunks of 7000
-  bytes so no entry passes the 16 KiB body limit. Every editor applies every
-  batch, its own included, in log order; a late joiner replays the log from
-  the start, and a reader the trim has passed is told it missed edits. A
-  new host starts a new, empty log. The Worker and ntfy relays carry no ops.
+- **Op log.** The relay numbers it and is its only authority: `POST`
+  `/v1/rooms/<room>/ops` (a sender's sealed chunks, as many per request as
+  fit in 1 MiB), `GET …/ops?since=N`. Entries are sealed, the relay cannot
+  read them; at most 64 MiB, trimmed oldest first. Every editor applies
+  every batch, its own included, in log order; a late joiner replays the
+  log from the start, and a reader the trim has passed is told it missed
+  edits. A log is named by a random id minted with its first entry.
+- **Where the log lives.** On a Worker relay (`relay/`) it is in the
+  Durable Object's SQLite storage, so it outlives everyone leaving and
+  needs no rbx-native at all: Studio users with only the plugin co-edit
+  through it. On the hosted relay it is in the host's memory; every peer,
+  Studio included, keeps what it read of it (`coedit::keep`,
+  `CoeditKept.luau`), and when the room moves to a new host the peers hand
+  the log over (`POST …/ops/fill`, same seqs, senders and ciphertext), so
+  everyone carries on where they were. A new host's empty log refuses new
+  posts (`409 log`) for 30 s after its first request, the time for the
+  peer holding the log to reach it. ntfy rooms carry no ops.
 - **Identity.** `UniqueId` (32 hex); a file instance without one gets an id
   from its path when the session starts, the same on every peer that opened
   the same file. Studio plugins cannot read `UniqueId`, so every op carries
@@ -225,7 +236,4 @@ insert both ways, delete, echo-free, undo in Studio, script text both
 ways). Edits in those runs were made through each editor's command bar and
 Explorer rather than typing into Studio's Properties widget, which the
 X11 test driver could not reach. Not verified: concurrent typing in one
-script after the character-merge fix, attributes and tags from Studio
-(not sent), places with tens of thousands of instances (the plugin
-connects `Changed` on every tracked instance; rbx-native diffs the whole
-DOM when it changes).
+script after the character-merge fix.

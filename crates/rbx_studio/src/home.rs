@@ -5,7 +5,9 @@
 //! The order is fixed: a launch that needs setup (no or expired key or
 //! sign-in, or `--setup`) → the setup wizard → Home; otherwise Home; a
 //! place picked or created on Home → the editor. A place path on the
-//! command line skips both, as it always has.
+//! command line skips both, as it always has. "Skip for now" in the wizard
+//! is remembered ([`skip_key`]): a launch with no key then goes straight to
+//! Home, which offers Manage key; `--setup` still forces the wizard.
 
 use std::path::{Path, PathBuf};
 
@@ -30,6 +32,21 @@ pub(crate) fn route(path: Option<PathBuf>, setup: Option<SetupPlan>) -> Route {
         (None, Some(plan)) => Route::Wizard(plan),
         (None, None) => Route::Home,
     }
+}
+
+/// Whether the user skipped the key steps of the setup wizard.
+pub(crate) fn key_skipped() -> bool {
+    key_skipped_path().is_some_and(|path| path.exists())
+}
+
+/// Remembers that the key steps were skipped, so the wizard stops coming back.
+pub(crate) fn skip_key() -> Result<(), SettingsError> {
+    let path = key_skipped_path().ok_or(SettingsError::NoConfigDir)?;
+    write_atomic(&path, b"")
+}
+
+fn key_skipped_path() -> Option<PathBuf> {
+    default_config_dir().map(|dir| dir.join("key_skipped"))
 }
 
 /// How many places Recent keeps.

@@ -230,7 +230,7 @@ pub(crate) async fn remove(id: u32, cx: &mut AsyncApp) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn read(cx: &mut AsyncApp) -> anyhow::Result<Option<ApiKey>> {
+pub(crate) async fn read(cx: &mut AsyncApp) -> anyhow::Result<Option<ApiKey>> {
     let stored = read_credentials(URL, cx).await?;
     Ok(stored
         .and_then(|(_, secret)| String::from_utf8(secret).ok())

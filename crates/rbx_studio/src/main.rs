@@ -154,6 +154,7 @@ mod timeline;
 mod tokens;
 mod transform;
 mod ui_canvas;
+mod update_planning;
 mod viewport_frame;
 mod wally_client;
 mod workspace_view;
@@ -207,6 +208,10 @@ fn main() {
             &arguments,
             rbx_loren::cli::Overrides::default(),
         ));
+    }
+    // The update-planning helper the OS runs every minute: no window.
+    if std::env::args().nth(1).as_deref() == Some(update_planning::helper::TICK_FLAG) {
+        std::process::exit(update_planning::tick_main());
     }
     // Before anything can ask whether a beta feature is on.
     beta::init();
@@ -314,6 +319,7 @@ fn main() {
             let plan = match check {
                 Some(check) => {
                     let (key, session) = check.await;
+                    let key = launcher::setup::remembering_skip(key, home::key_skipped(), setup);
                     launcher::setup::plan(key, session, setup)
                 }
                 None => None,
