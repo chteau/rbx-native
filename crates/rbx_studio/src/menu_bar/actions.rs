@@ -205,6 +205,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuRequireGraph, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_require_graph(cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuScriptTemplates, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_script_templates(cx));
         }
