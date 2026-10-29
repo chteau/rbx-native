@@ -1,18 +1,34 @@
-//! The hosted relay's co-editing op log: an append-only, numbered list of
-//! sealed entries that readers fetch by `since`. The relay never opens `ct`.
+//! The co-editing op log: an append-only, numbered list of sealed entries
+//! that readers fetch by `since`. The relay never opens `ct`.
+//!
+//! A log is named by a random id minted when its first entry lands. A
+//! relay that starts with no log, a new host after the old one left, can
+//! instead be handed one by a peer that read it (`fill`): the entries keep
+//! their seqs, senders and ciphertext, so every peer carries on from where
+//! it was. To give such a peer the chance, a host's empty log refuses new
+//! posts for [`CLAIM_GRACE_MS`] after its first request (`409 log`, which
+//! clients retry); the first fill or, after that, the first post claims it.
 
 use std::collections::{HashMap, VecDeque};
 
 use super::room::Refusal;
-use crate::schema::{LoggedOp, OpsReply, SealedOp};
+use crate::schema::{Client, LoggedOp, OpsReply};
 
 /// The log keeps at most this many bytes of `ct`, trimming the oldest.
 pub const OPS_LOG_BYTES: usize = 64 * 1024 * 1024;
 /// One reply carries at most this many bytes of `ct` (the reader loops).
 pub const OPS_REPLY_BYTES: usize = 512 * 1024;
-/// Token bucket per user: burst size and refill per second.
+/// Token bucket per user, one token per request: burst size and refill per
+/// second.
 pub const OPS_RATE_BURST: f64 = 64.0;
 pub const OPS_RATE_PER_SECOND: f64 = 32.0;
+/// How long a host's empty log waits, from its first request, for a peer to
+/// hand it the log the room was using. Peers find a new host within seconds
+/// of its announcement, and this only delays the first edit of a room
+/// nobody has a log for.
+pub const CLAIM_GRACE_MS: u64 = 30_000;
+
+const REFUSED_LOG: Refusal = Refusal::new(409, "log");
 
 struct Bucket {
     tokens: f64,
@@ -25,6 +41,10 @@ pub struct OpLog {
     cap: usize,
     floor: u64,
     head: u64,
+    /// Empty until the first entry lands.
+    log: String,
+    grace: u64,
+    opened: Option<u64>,
     buckets: HashMap<u64, Bucket>,
     /// Signatures of posts taken within the clock-skew window, and when.
     seen: HashMap<String, u64>,
@@ -32,18 +52,28 @@ pub struct OpLog {
 
 impl Default for OpLog {
     fn default() -> Self {
-        OpLog::with_cap(OPS_LOG_BYTES)
+        OpLog::new(OPS_LOG_BYTES, 0)
     }
 }
 
+fn new_log_id() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).expect("the OS random source is available");
+    hex::encode(bytes)
+}
+
 impl OpLog {
-    pub fn with_cap(cap: usize) -> Self {
+    /// A log of at most `cap` bytes whose first post waits `grace` ms.
+    pub fn new(cap: usize, grace: u64) -> Self {
         OpLog {
             entries: VecDeque::new(),
             bytes: 0,
             cap,
             floor: 1,
             head: 0,
+            log: String::new(),
+            grace,
+            opened: None,
             buckets: HashMap::new(),
             seen: HashMap::new(),
         }
@@ -53,7 +83,17 @@ impl OpLog {
         self.head
     }
 
-    fn take(&mut self, user_id: u64, now: u64) -> bool {
+    /// The log's id; empty while it holds nothing.
+    pub fn log(&self) -> &str {
+        &self.log
+    }
+
+    /// Notes a request at `now`; the claim grace runs from the first.
+    pub fn opened(&mut self, now: u64) {
+        self.opened.get_or_insert(now);
+    }
+
+    fn take(&mut self, user_id: u64, now: u64) -> Result<(), Refusal> {
         let bucket = self.buckets.entry(user_id).or_insert(Bucket {
             tokens: OPS_RATE_BURST,
             at: now,
@@ -62,10 +102,10 @@ impl OpLog {
         bucket.tokens = (bucket.tokens + elapsed * OPS_RATE_PER_SECOND).min(OPS_RATE_BURST);
         bucket.at = now;
         if bucket.tokens < 1.0 {
-            return false;
+            return Err(Refusal::new(429, "rate"));
         }
         bucket.tokens -= 1.0;
-        true
+        Ok(())
     }
 
     /// Refuses a post whose signature was already taken: a captured request
@@ -80,19 +120,10 @@ impl OpLog {
         Ok(())
     }
 
-    /// Logs `op` and returns its seq; refused when the user is over their rate.
-    pub fn append(&mut self, op: SealedOp, now: u64) -> Result<u64, Refusal> {
-        if !self.take(op.user_id, now) {
-            return Err(Refusal::new(429, "rate"));
-        }
-        self.head += 1;
-        self.bytes += op.ct.len();
-        self.entries.push_back(LoggedOp {
-            seq: self.head,
-            user_id: op.user_id,
-            client: op.client,
-            ct: op.ct,
-        });
+    fn push(&mut self, entry: LoggedOp) {
+        self.head = entry.seq;
+        self.bytes += entry.ct.len();
+        self.entries.push_back(entry);
         while self.bytes > self.cap {
             let Some(old) = self.entries.pop_front() else {
                 break;
@@ -100,6 +131,67 @@ impl OpLog {
             self.bytes -= old.ct.len();
         }
         self.floor = self.entries.front().map_or(self.head + 1, |e| e.seq);
+    }
+
+    /// Logs `cts` from one sender under consecutive seqs and returns the
+    /// last; refused over the sender's rate, or while an empty log is still
+    /// waiting to be filled.
+    pub fn append(
+        &mut self,
+        user_id: u64,
+        client: Client,
+        cts: Vec<String>,
+        now: u64,
+    ) -> Result<u64, Refusal> {
+        self.opened(now);
+        if self.log.is_empty() {
+            if self.opened.is_some_and(|at| now < at + self.grace) {
+                return Err(REFUSED_LOG);
+            }
+            self.log = new_log_id();
+        }
+        self.take(user_id, now)?;
+        for ct in cts {
+            self.push(LoggedOp {
+                seq: self.head + 1,
+                user_id,
+                client,
+                ct,
+            });
+        }
+        Ok(self.head)
+    }
+
+    /// Takes entries of log `log` a peer read earlier (consecutive seqs,
+    /// checked by the caller): the whole log when this one holds nothing
+    /// yet, otherwise those past the head of the same log. Entries already
+    /// held are skipped, so two peers filling the same tail is harmless.
+    /// Answers the new head; `409 log` for another log or a gap.
+    pub fn fill(
+        &mut self,
+        user_id: u64,
+        log: &str,
+        entries: Vec<LoggedOp>,
+        now: u64,
+    ) -> Result<u64, Refusal> {
+        let Some(first) = entries.first().map(|e| e.seq) else {
+            return Ok(self.head);
+        };
+        if self.log.is_empty() && self.head == 0 {
+            self.take(user_id, now)?;
+            self.log = log.to_owned();
+            self.head = first - 1;
+            self.floor = first;
+        } else if self.log != log || first > self.head + 1 {
+            return Err(REFUSED_LOG);
+        } else {
+            self.take(user_id, now)?;
+        }
+        for entry in entries {
+            if entry.seq > self.head {
+                self.push(entry);
+            }
+        }
         Ok(self.head)
     }
 
@@ -122,100 +214,11 @@ impl OpLog {
         OpsReply {
             head: self.head,
             floor: self.floor,
+            log: self.log.clone(),
             entries,
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn a_signature_is_taken_once() {
-        let mut log = OpLog::default();
-        assert!(log.fresh("abc", 1_000).is_ok());
-        assert_eq!(log.fresh("abc", 2_000), Err(Refusal::new(401, "replay")));
-        assert!(log
-            .fresh("abc", 1_000 + 3 * super::super::room::CLOCK_SKEW_MS)
-            .is_ok());
-    }
-
-    use super::*;
-    use crate::schema::{Client, SCHEMA_VERSION};
-
-    fn op(user_id: u64, ct: &str) -> SealedOp {
-        SealedOp {
-            v: SCHEMA_VERSION,
-            user_id,
-            client: Client::Studio,
-            ct: ct.to_owned(),
-        }
-    }
-
-    #[test]
-    fn seqs_start_at_one_and_follow_append_order() {
-        let mut log = OpLog::default();
-        assert_eq!(log.append(op(1, "AA"), 0), Ok(1));
-        assert_eq!(log.append(op(2, "BB"), 0), Ok(2));
-        let reply = log.since(0, OPS_REPLY_BYTES);
-        assert_eq!((reply.head, reply.floor), (2, 1));
-        let seqs: Vec<u64> = reply.entries.iter().map(|e| e.seq).collect();
-        assert_eq!(seqs, [1, 2]);
-        assert_eq!(log.since(1, OPS_REPLY_BYTES).entries[0].ct, "BB");
-    }
-
-    #[test]
-    fn trimming_at_the_cap_moves_the_floor() {
-        let mut log = OpLog::with_cap(8);
-        for _ in 0..4 {
-            log.append(op(1, "AAAA"), 0).unwrap();
-        }
-        let reply = log.since(0, OPS_REPLY_BYTES);
-        assert_eq!((reply.head, reply.floor), (4, 3));
-        assert_eq!(reply.entries.len(), 2);
-        assert_eq!(reply.entries[0].seq, 3);
-        assert_eq!(log.since(2, OPS_REPLY_BYTES).entries.len(), 2);
-    }
-
-    #[test]
-    fn an_entry_over_the_cap_empties_the_log() {
-        let mut log = OpLog::with_cap(2);
-        log.append(op(1, "AAAA"), 0).unwrap();
-        let reply = log.since(0, OPS_REPLY_BYTES);
-        assert_eq!((reply.head, reply.floor), (1, 2));
-        assert!(reply.entries.is_empty());
-    }
-
-    #[test]
-    fn since_past_head_is_empty() {
-        let mut log = OpLog::default();
-        log.append(op(1, "AA"), 0).unwrap();
-        let reply = log.since(5, OPS_REPLY_BYTES);
-        assert!(reply.entries.is_empty());
-        assert_eq!(reply.head, 1);
-        assert!(log.since(1, OPS_REPLY_BYTES).entries.is_empty());
-    }
-
-    #[test]
-    fn a_reply_stops_at_its_byte_cap_but_never_empty() {
-        let mut log = OpLog::default();
-        for _ in 0..3 {
-            log.append(op(1, "AAAA"), 0).unwrap();
-        }
-        assert_eq!(log.since(0, 8).entries.len(), 2);
-        assert_eq!(log.since(0, 1).entries.len(), 1);
-    }
-
-    #[test]
-    fn the_rate_limit_refuses_past_the_burst_and_refills() {
-        let mut log = OpLog::default();
-        for _ in 0..64 {
-            log.append(op(1, "AA"), 1000).unwrap();
-        }
-        assert_eq!(
-            log.append(op(1, "AA"), 1000),
-            Err(Refusal::new(429, "rate"))
-        );
-        assert!(log.append(op(2, "AA"), 1000).is_ok());
-        assert!(log.append(op(1, "AA"), 1100).is_ok());
-    }
-}
+mod tests;

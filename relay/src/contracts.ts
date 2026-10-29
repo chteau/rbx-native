@@ -5,6 +5,15 @@
 
 export const SCHEMA_VERSION = 2;
 export const MAX_BODY_BYTES = 16 * 1024;
+/** Op log routes accept bodies up to this size. */
+export const OPS_BODY_BYTES = 1024 * 1024;
+/** The op log keeps at most this many bytes of `ct`, trimming the oldest. */
+export const OPS_LOG_BYTES = 64 * 1024 * 1024;
+/** One op log reply carries at most this many bytes of `ct`. */
+export const OPS_REPLY_BYTES = 512 * 1024;
+/** Op log token bucket per user, one token per request. */
+export const OPS_RATE_BURST = 64;
+export const OPS_RATE_PER_SECOND = 32;
 export const MAX_SELECTION = 100;
 export const MAX_EDITS = 20;
 /** Longest path/property/value/name/script string, in UTF-8 bytes. */
@@ -54,6 +63,43 @@ export interface Sealed {
   seen: number;
 }
 
+/** `POST /ops`: one or more chunks from one sender for the op log. */
+export interface SealedOps {
+  v: number;
+  userId: number;
+  client: Client;
+  cts: string[];
+}
+
+/** One entry of the op log, as `GET /ops` returns it. */
+export interface LoggedOp {
+  seq: number;
+  userId: number;
+  client: Client;
+  ct: string;
+}
+
+/** `GET /ops?since=N`: entries after `since`, oldest first. */
+export interface OpsReply {
+  head: number;
+  floor: number;
+  log: string;
+  entries: LoggedOp[];
+}
+
+/** `POST /ops/fill`: entries of log `log` a peer read earlier. */
+export interface OpsFill {
+  v: number;
+  log: string;
+  entries: LoggedOp[];
+}
+
+/** `POST /ops` answers the seq of the last chunk and the log it went to. */
+export interface OpsPosted {
+  seq: number;
+  log: string;
+}
+
 export interface SealedSnapshot {
   cursor: number;
   users: Sealed[];
@@ -67,9 +113,9 @@ export interface SealedJournalEntry {
 
 /** Why a request was refused; `status` is the HTTP status to answer with. */
 export interface Refusal {
-  status: 400 | 401 | 403 | 413 | 429;
+  status: 400 | 401 | 403 | 409 | 413 | 429;
   /** Short machine word: "key" (room unknown, resend with the key),
-   * "sig", "time", "replay", "size", "rate", "full", "schema". */
+   * "sig", "time", "replay", "size", "rate", "full", "schema", "log". */
   error: string;
 }
 
@@ -91,6 +137,30 @@ export interface Refusal {
 //   finite numbers, color /^#[0-9a-f]{6}$/), unknown keys dropped; returns a
 //   fresh object with seen = 0.
 
+// parseSealedOps(body: string, userId: number): SealedOps | Refusal
+//   body over OPS_BODY_BYTES 413 size; v !== SCHEMA_VERSION 400 version;
+//   userId mismatch 403 user; `cts` non-empty array or a lone `ct`, each
+//   non-empty base64; anything else 400 schema.
+// parseFill(body: string): OpsFill | Refusal
+//   log 1..64 lowercase hex; entries non-empty, seq integer >= 1 and
+//   consecutive, each with userId, client and ct.
+
+// ---- src/ops.ts (pure, no Workers APIs; `now` always passed in) ----
+// interface OpStore: synchronous storage (SQLite in the Durable Object, a
+//   map in tests) for the entries and the log's meta (id, head, floor, bytes).
+// class OpLog {
+//   head, log                         // log is "" until the first entry lands
+//   fresh(sig, now): Refusal | null   // replay guard, in memory
+//   append(userId, client, cts, now): number | Refusal
+//       // rate limit (one token per request), mints the log id on the first
+//       // post (no claim grace: the log is persistent), trims the oldest
+//       // entries past OPS_LOG_BYTES
+//   fill(userId, log, entries, now): number | Refusal
+//       // whole log onto an empty one, or entries past head of the same log
+//       // (held ones skipped); else 409 log
+//   since(n, maxBytes): OpsReply      // at least one entry when any is due
+// }
+
 // ---- src/room.ts (pure, no Workers APIs; `now` always passed in) ----
 // class Room {
 //   key: string | null              // learnt from the first KEY_HEADER that matches the room id
@@ -111,7 +181,11 @@ export interface Refusal {
 // fetch(request): routes by URL pathname suffix after /v1/rooms/<room>:
 //   POST /state, DELETE /state, GET /poll?since=N, GET /ws (upgrade),
 //   GET /journal?since=N → { entries: JournalEntry[] } (value-less edits
-//   recorded since the unix-ms time N, oldest first).
+//   recorded since the unix-ms time N, oldest first),
+//   POST /ops → OpsPosted, GET /ops?since=N → OpsReply (long-poll while
+//   head === N), POST /ops/fill → OpsPosted. The op log lives in the
+//   Durable Object's SQLite storage; ops routes skip the increasing-time
+//   check and use OpLog.fresh(sig) instead.
 // Authentication (key learning, signature, time) is done here, before
 // any route, from the four headers. Every change resolves waiting polls and
 // sends the snapshot to every socket. An alarm every 5 s while the room is
