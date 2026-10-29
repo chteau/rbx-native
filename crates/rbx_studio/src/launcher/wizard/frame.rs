@@ -161,7 +161,7 @@ impl Wizard {
                             if this.step == Step::SignIn {
                                 this.advance(window, cx);
                             } else {
-                                this.finish(window, cx);
+                                this.skip_key(window, cx);
                             }
                         }),
                     ),
