@@ -2,6 +2,23 @@
 
 ## 2026-10-28
 
+- **Update planning (beta)**: countdown icons on autopilot, MiniDev's
+  idea. File › Update Planning… (switch it on under Beta features) lists
+  your experiences; for one, pick the current icon (fetched from Roblox or
+  a file), the new icon and the update time, and its reusable timers (12,
+  6, 3 and 1 hours to start with, each a 512×512 overlay in one of three
+  styles we drew, or your own PNG) show on a timeline of what the icon will
+  be when. Start update uploads every image at once so Roblox reviews it
+  early, then a steps view shows each one in review, approved, upcoming or
+  applied, with the "update in" countdown and Cancel. Each step swaps the
+  icon through the key's `legacy-universe:manage` route and sends a
+  desktop notification; a late run applies whatever is due now and skips
+  the rest. Steps fire while the editor is open and from a helper the OS
+  runs every minute (a systemd user timer, a launchd agent or a Task
+  Scheduler task), removed when nothing is left. None of it has been sent
+  to Roblox yet; the findings are in
+  `docs/research/update-planning-icon-api.md`. (@chteau)
+
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds
   `rbxstudio` in release for Windows, macOS (Apple Silicon) and Linux and
   uploads one zip per OS, with a `README-ALPHA.txt` on opening an unsigned
