@@ -49,6 +49,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Shares edits live with others in the place's Team Presence room (hosted relay only). Remote edits are undo steps of their own; concurrent script edits are merged, with conflicts kept side by side.",
     },
     Feature {
+        id: crate::update_planning::BETA_ID,
+        name: "Update planning",
+        description: "Countdown icons on autopilot: timers over the current icon, uploaded for review early, swapped in at their time by the editor or a background helper the OS runs while the PC is on. Not yet tried against Roblox: the icon swap needs the key's legacy-universe:manage permission.",
+    },
+    Feature {
         id: crate::shell::MCP_BETA_ID,
         name: "MCP server",
         description: "Lets an AI client drive the open place over MCP: point the client at `rbxstudio --mcp`. It can read and edit scripts, run Luau, start and stop Play, read the Output, capture the viewport, simulate player input and insert assets. Several open editors are told apart by studio ID. Edits are undo steps of their own; `http_get` and `skill` serve Roblox documentation and best-practice guides.",

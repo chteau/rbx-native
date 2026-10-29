@@ -114,6 +114,8 @@ pub(in crate::shell) enum RibbonCommand {
     GameSettings,
     /// Home › Data Stores: opens (or raises) the Data Stores window.
     DataStores,
+    /// Home › Update Planning (beta): opens (or raises) its window.
+    UpdatePlanning,
 }
 
 impl RibbonCommand {
@@ -141,6 +143,7 @@ impl RibbonCommand {
             }
             RibbonCommand::GameSettings => shell.open_game_settings(cx),
             RibbonCommand::DataStores => shell.open_data_stores(cx),
+            RibbonCommand::UpdatePlanning => shell.open_update_planning(cx),
         }
     }
 }
@@ -241,6 +244,14 @@ pub(in crate::shell) fn palette_entries(
         None,
         RibbonCommand::DataStores,
     ));
+    if crate::beta::enabled(crate::update_planning::BETA_ID) {
+        entries.push((
+            "Home",
+            "Update Planning".to_owned(),
+            None,
+            RibbonCommand::UpdatePlanning,
+        ));
+    }
     entries.push((
         "Avatar",
         "Rig Builder".to_owned(),
