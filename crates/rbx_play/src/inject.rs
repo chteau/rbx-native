@@ -29,6 +29,21 @@ pub const TOUCH_NAME: &str = "__rbxnative_touch";
 /// `__rbxnative_touch_input`: game scripts' UserInputService on a simulated
 /// touch device (see `crate::touch`).
 pub const PROBE_TOUCH_INPUT: &str = include_str!("probe/touch_input.luau");
+/// The modules `touch_input` requires, by name (ModuleScripts in ReplicatedStorage).
+pub const TOUCH_PARTS: [(&str, &str); 3] = [
+    (
+        "__rbxnative_touch_gesture",
+        include_str!("probe/touch_gesture.luau"),
+    ),
+    (
+        "__rbxnative_touch_proxy",
+        include_str!("probe/touch_proxy.luau"),
+    ),
+    (
+        "__rbxnative_touch_fingers",
+        include_str!("probe/touch_fingers.luau"),
+    ),
+];
 /// `__rbxnative_record`: playtest sampling and `shared.rbxnative` (see `crate::record`).
 pub const PROBE_RECORD: &str = include_str!("probe/record.luau");
 /// `__rbxnative_input`: the client's half of the MCP input tools.
@@ -73,6 +88,8 @@ pub struct Injected {
     pub print: Ref,
     pub touch: Ref,
     pub touch_input: Ref,
+    /// One per [`TOUCH_PARTS`] entry, in order.
+    pub touch_parts: Vec<Ref>,
     pub record: Ref,
     pub input: Ref,
 }
@@ -97,7 +114,7 @@ pub enum InjectError {
 /// - Replaces the ReplicatedStorage `ModuleScript`s `MARKET_NAME`
 ///   (Source = `PROBE_MARKET`), `MARKET_UI_NAME` (Source = `PROBE_MARKET_UI`)
 ///   `TOUCH_NAME` (Source = `PROBE_TOUCH`) and `touch::TOUCH_INPUT_NAME`
-///   (Source = `PROBE_TOUCH_INPUT`).
+///   (Source = `PROBE_TOUCH_INPUT`), plus the `TOUCH_PARTS` it requires.
 pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, InjectError> {
     if dom.root_refs().is_empty() {
         return Err(InjectError::NoDataModel);
@@ -128,6 +145,9 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, rs, crate::print::PRINT_NAME);
     remove_named(dom, rs, TOUCH_NAME);
     remove_named(dom, rs, crate::touch::TOUCH_INPUT_NAME);
+    for (name, _) in TOUCH_PARTS {
+        remove_named(dom, rs, name);
+    }
     remove_named(dom, rs, crate::record::RECORD_NAME);
     remove_named(dom, rs, crate::exec::SERIALIZE_NAME);
     remove_named(dom, rs, crate::exec::FIU_NAME);
@@ -192,6 +212,14 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         "Source",
         Variant::String(PROBE_TOUCH_INPUT.to_owned()),
     );
+    let touch_parts = TOUCH_PARTS
+        .iter()
+        .map(|(name, source)| {
+            let part = dom.new_instance("ModuleScript", name, Some(rs));
+            set_prop(dom, part, "Source", Variant::String((*source).to_owned()));
+            part
+        })
+        .collect();
 
     let input = dom.new_instance("ModuleScript", INPUT_NAME, Some(rs));
     set_prop(
@@ -262,6 +290,7 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         print,
         touch,
         touch_input,
+        touch_parts,
         record,
         input,
     })

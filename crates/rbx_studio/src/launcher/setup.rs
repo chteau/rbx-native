@@ -55,6 +55,16 @@ impl SetupPlan {
     }
 }
 
+/// The key as routing sees it: a missing key the user already skipped past
+/// counts as `Present`, unless `--setup` (`forced`) asks for the wizard.
+pub(crate) fn remembering_skip(key: Cred, skipped: bool, forced: bool) -> Cred {
+    if key == Cred::Missing && skipped && !forced {
+        Cred::Present
+    } else {
+        key
+    }
+}
+
 /// The setup a launch without a place path needs, or `None` for Home.
 /// `forced` is `--setup`. Rules: a missing or expired key, or `forced`,
 /// shows the key steps, with the sign-in step too unless the session is
@@ -86,6 +96,24 @@ pub(crate) fn plan(key: Cred, session: Cred, forced: bool) -> Option<SetupPlan> 
 mod tests {
     use super::*;
     use Cred::{EnvRefused, Expired, Missing, Present};
+
+    #[test]
+    fn a_skipped_missing_key_goes_home_unless_forced() {
+        let key = remembering_skip(Missing, true, false);
+        assert_eq!(plan(key, Missing, false), None);
+        assert_eq!(plan(key, Present, false), None);
+        let forced = plan(remembering_skip(Missing, true, true), Present, true).unwrap();
+        assert!(forced.key);
+        assert!(plan(remembering_skip(Missing, false, false), Present, false).is_some());
+    }
+
+    #[test]
+    fn a_skip_does_not_hide_an_expired_key_or_session() {
+        assert_eq!(remembering_skip(Expired, true, false), Expired);
+        let key = remembering_skip(Missing, true, false);
+        let sign_in = plan(key, Expired, false).unwrap();
+        assert!(sign_in.sign_in && !sign_in.key);
+    }
 
     #[test]
     fn a_present_key_needs_nothing_unless_the_session_expired() {

@@ -13,6 +13,15 @@
   over 29 s to 16 POSTs, landing in the log in 2.3 s, measured against
   real Studio on a local relay. Numbers and the design are in
   `docs/research/coedit-hostless.md`. (@chteau)
+- **Pre-alpha fixes**: skipping the API key wizard is remembered, so a
+  launch without a key goes to Home (Manage key adds one later) and only
+  `--setup` brings the wizard back. `--select` names an instance with a dot
+  in it (`Workspace.Smoke.spec`): the longest child name that fits wins at
+  each step, backing off if the rest of the path then fails. The soft-snap
+  search takes its time budget as an argument, which stops its test failing
+  on slow CI runners, and the Device Simulator's touch stand-in is split
+  into four modules instead of one 1000-line script, behaving the same.
+  (@chteau)
 
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds
   `rbxstudio` in release for Windows, macOS (Apple Silicon) and Linux and

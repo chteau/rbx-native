@@ -4,7 +4,9 @@ use rbx_play::inject::{
     MAX_PUBLISH_BYTES, MIRROR_NAME, PROBE_CLIENT, PROBE_CODEC, PROBE_DEBUG, PROBE_LIVE, PROBE_NAME,
     PROBE_SERVER, REMOTE_NAME,
 };
-use rbx_play::inject::{PROBE_MARKET, PROBE_MARKET_UI, PROBE_TOUCH, PROBE_TOUCH_INPUT, TOUCH_NAME};
+use rbx_play::inject::{
+    PROBE_MARKET, PROBE_MARKET_UI, PROBE_TOUCH, PROBE_TOUCH_INPUT, TOUCH_NAME, TOUCH_PARTS,
+};
 use rbx_play::market::{MARKET_NAME, MARKET_UI_NAME};
 use rbx_play::touch::TOUCH_INPUT_NAME;
 
@@ -141,6 +143,12 @@ fn remote_and_mirror_are_placed_in_their_services() {
         assert_eq!(dom.get(r).unwrap().name(), name);
         assert_eq!(string_prop(&dom, r, "Source").as_deref(), Some(src));
     }
+    assert_eq!(injected.touch_parts.len(), TOUCH_PARTS.len());
+    for (r, (name, src)) in injected.touch_parts.iter().zip(TOUCH_PARTS) {
+        assert_eq!(dom.parent(*r), Some(rs));
+        assert_eq!(dom.get(*r).unwrap().name(), name);
+        assert_eq!(string_prop(&dom, *r, "Source").as_deref(), Some(src));
+    }
 }
 
 #[test]
@@ -186,6 +194,10 @@ fn injecting_twice_leaves_one_of_each() {
     assert_eq!(touches, vec![second.touch]);
     let touch_inputs = children_matching(&dom, rs, |i| i.name() == TOUCH_INPUT_NAME);
     assert_eq!(touch_inputs, vec![second.touch_input]);
+    for ((name, _), part) in TOUCH_PARTS.iter().zip(&second.touch_parts) {
+        let found = children_matching(&dom, rs, |i| i.name() == *name);
+        assert_eq!(found, vec![*part]);
+    }
 }
 
 #[test]

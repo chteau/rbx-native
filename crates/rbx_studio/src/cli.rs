@@ -29,7 +29,9 @@ options:
         own, each further one added the way a Shift-click would. A target is
         either an Explorer path anchored at a root (Workspace.Model.Part) or
         a bare name, which matches the first instance called that anywhere
-        in the tree.
+        in the tree. Names may contain dots (Workspace.Smoke.spec finds the
+        child called Smoke.spec): at each step the longest child name that
+        fits wins, and a shorter one is tried only if the rest then fails.
   --run <script.luau>
         Run this file against the place once the window is up, exactly as
         pasting it into the Command Bar and pressing Ctrl+Enter would.
