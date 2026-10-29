@@ -2,6 +2,18 @@
 
 ## 2026-10-28
 
+- **Co-editing with no rbx-native host, and a faster first sync**: the
+  Worker relay now keeps the co-editing op log in its Durable Object
+  storage, ciphertext only, so a team of Studio users can co-edit with
+  nobody running rbx-native. A new host no longer starts from an empty log:
+  every peer keeps the entries it read, and hands them to a relay that lost
+  them (the hosted relay waits 30 s for that before taking new edits). The
+  plugin now seals a big change first and posts it in 512 KiB groups
+  instead of one request per 7 KB chunk: 12,000 parts went from 632 POSTs
+  over 29 s to 16 POSTs, landing in the log in 2.3 s, measured against
+  real Studio on a local relay. Numbers and the design are in
+  `docs/research/coedit-hostless.md`. (@chteau)
+
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds
   `rbxstudio` in release for Windows, macOS (Apple Silicon) and Linux and
   uploads one zip per OS, with a `README-ALPHA.txt` on opening an unsigned

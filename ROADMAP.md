@@ -3546,12 +3546,16 @@ engine, just as an escape hatch.
 
 ### Collaboration
 
-- [ ] 📋 **Co-editing without an rbx-native host, and at scale**, only the
-  hosted relay (an rbx-native user's own) keeps the op log, so Studio users
-  alone cannot co-edit, and a new host starts with an empty log (peers read
-  it from the start, and unsent edits move to it). Attributes and tags go
-  both ways; a 12,000 part place was tested live against Studio (the adds
-  land in about a minute, single edits in under 2 s).
+- [x] **Co-editing without an rbx-native host, and at scale**: the Worker
+  relay keeps the op log (ciphertext only), so Studio users alone can
+  co-edit; a new host is handed the log by the peers that read it instead of
+  starting empty; a 12,000 part change is posted in 16 requests instead of
+  632 (see [the measurements](docs/research/coedit-hostless.md)).
+- [ ] 📋 **Co-editing hostless, still unproven live**: Studio-only
+  co-editing ran against a local `wrangler dev`, not a deployed Worker, and
+  the handover between two real hosted relays is covered by tests over
+  HTTP, not run live. The 12,000 part sync still spends about 10 s in the
+  plugin collecting and sealing in Luau before anything is sent.
 
 Neither replaces **Team Create**, Roblox's actual real-time multi-user
 editing, that stays proprietary with no public protocol to build against
