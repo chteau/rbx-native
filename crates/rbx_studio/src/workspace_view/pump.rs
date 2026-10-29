@@ -112,6 +112,9 @@ enum Command {
     /// Whether the `ScreenGui` overlay is drawn, see
     /// `Headless::set_screen_gui_shown`.
     ScreenGuiShown(bool),
+    /// The pseudo-localization preview's locale, `None` for text as written,
+    /// see `Headless::set_pseudo_locale`.
+    PseudoLocale(Option<rbx_viewer::PseudoLocale>),
     /// That device's safe-area insets, see `Headless::set_gui_safe_insets`.
     GuiSafeInsets(rbx_viewer::SafeInsets),
     /// Where a tool being configured would put the selection, the Align
@@ -183,6 +186,9 @@ pub(super) struct Ready {
     pub(super) scrolls: Vec<Scroll>,
     /// The UI editor's canvas, on the tick it was redrawn, see [`canvas`].
     pub(super) canvas: Option<canvas::Drawn>,
+    /// The overlay's text objects that overflow under the pseudo locale,
+    /// on the tick that list changed, see `Headless::gui_overflows`.
+    pub(super) overflows: Option<Vec<Ref>>,
 }
 
 pub(super) struct Pump {
@@ -350,6 +356,10 @@ impl Pump {
         let _ = self.commands.send(Command::ScreenGuiShown(shown));
     }
 
+    pub(super) fn pseudo_locale(&self, locale: Option<rbx_viewer::PseudoLocale>) {
+        let _ = self.commands.send(Command::PseudoLocale(locale));
+    }
+
     pub(super) fn gui_safe_insets(&self, insets: rbx_viewer::SafeInsets) {
         let _ = self.commands.send(Command::GuiSafeInsets(insets));
     }
@@ -477,6 +487,8 @@ fn run(
     let mut overlay: Option<rbx_viewer::OverlayColors> = None;
     let mut plugin_adornments = Vec::new();
     let mut park = false;
+    let mut pseudo = None;
+    let mut overflows_sent = Vec::new();
     // Commands that arrived while parked, applied once the viewer is back.
     let mut held = Vec::new();
 
@@ -498,6 +510,7 @@ fn run(
                 owed: &mut owed,
                 plugin_adornments: &mut plugin_adornments,
                 park: &mut park,
+                pseudo: &mut pseudo,
             },
             wait,
             std::mem::take(&mut held),
@@ -508,6 +521,7 @@ fn run(
             match parked(viewer.park(), &mirror, commands, resting) {
                 Some((resumed, waiting)) => {
                     viewer = resumed;
+                    viewer.set_pseudo_locale(pseudo);
                     held = waiting;
                     rebuilt = true;
                     owed = true;
@@ -574,6 +588,10 @@ fn run(
         }
         let drawn = canvas.draw(&mut viewer);
         let scrolled = std::mem::take(&mut scrolls);
+        let overflows = Some(viewer.gui_overflows()).filter(|now| *now != overflows_sent);
+        if let Some(now) = &overflows {
+            overflows_sent.clone_from(now);
+        }
 
         if (frame.is_some()
             || told
@@ -581,7 +599,8 @@ fn run(
             || !warnings.is_empty()
             || meshes.is_some()
             || !scrolled.is_empty()
-            || drawn.is_some())
+            || drawn.is_some()
+            || overflows.is_some())
             && frames
                 .send(Ready {
                     pixels: frame.map(|frame| frame.pixels),
@@ -594,6 +613,7 @@ fn run(
                     warnings,
                     scrolls: scrolled,
                     canvas: drawn,
+                    overflows,
                 })
                 .is_err()
         {
@@ -750,6 +770,8 @@ struct Rendering<'a> {
     plugin_adornments: &'a mut Vec<Ref>,
     /// Set by [`Command::Park`]; `run` parks once the batch is through.
     park: &'a mut bool,
+    /// What [`Command::PseudoLocale`] last set, put back after a park.
+    pseudo: &'a mut Option<rbx_viewer::PseudoLocale>,
 }
 
 /// Applies everything the UI thread has asked for, blocking for up to `idle`
@@ -922,6 +944,11 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::GuiScreen(screen) => rendering.viewer.set_gui_screen(screen),
         Command::ScreenGuiShown(shown) => rendering.viewer.set_screen_gui_shown(shown),
+        Command::PseudoLocale(locale) => {
+            *rendering.pseudo = locale;
+            rendering.viewer.set_pseudo_locale(locale);
+            rendering.canvas.touch();
+        }
         Command::GuiSafeInsets(insets) => rendering.viewer.set_gui_safe_insets(insets),
         Command::Changes(snapshots, changes) => {
             rendering.canvas.touch();

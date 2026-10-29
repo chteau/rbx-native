@@ -58,6 +58,9 @@
 //! `RBX_STUDIO_UI_EDITOR=1|<width>x<height>` opens the UI Editor on its
 //! canvas at startup, at that simulated resolution when one is given, the
 //! same aid, for the canvas (see `shell::ui_editor`).
+//! `RBX_STUDIO_PSEUDO_LOC=1|rtl|strings` turns the pseudo-localization
+//! preview on and opens the Localization dock, the same aid, for that beta
+//! (see `shell::localization`).
 //! `RBX_STUDIO_FRAME_SHEET=1|picker|picker:<query>|fit` then opens the
 //! `ViewportFrame` sheet on the selected frame, with the Workspace picker
 //! (searching for `<query>`) or the Fit menu up, the same aid, for the
@@ -119,6 +122,7 @@ mod input_actions;
 mod key_store;
 mod launcher;
 mod layers;
+mod localization;
 mod login_flow;
 mod luau_lsp;
 mod mcp;

@@ -47,22 +47,23 @@ pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
 pub(crate) use gui::gui_image_placeholder;
+pub(crate) use gui::{
+    overflows as gui_text_overflows, resolve_canvas_with as gui_canvas_layout_with,
+    resolve_inset as gui_layout_inset, screen_frame as gui_screen_frame,
+    scroll_target as gui_scroll_target, span_face as gui_span_face, Align as GuiAlign,
+    Anchor as GuiAnchor, Element as GuiElement, GradientKind as GuiGradientKind,
+    GradientPx as GuiGradient, Grouped as GuiGroup, ImageScale as GuiImageScale, Join as GuiJoin,
+    Painted, PixelRect as GuiPixelRect, Rect as GuiRect, Screen as GuiScreen,
+    ScrollWindow as GuiScrollWindow, ShadowPx as GuiShadow, SpaceGui, StrokePx as GuiStroke,
+    Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile, Typeset as GuiTypeset,
+    ViewCamera as GuiViewCamera, Viewport as GuiViewport,
+};
 #[cfg(test)]
 pub(crate) use gui::{
     plan as gui_plan, resolve_with as gui_layout_with, GroupTint as GuiGroupTint,
-    StrokePx as GuiStroke, TextSpan as GuiTextSpan,
+    TextSpan as GuiTextSpan,
 };
-pub(crate) use gui::{
-    resolve_canvas_with as gui_canvas_layout_with, resolve_inset as gui_layout_inset,
-    screen_frame as gui_screen_frame, scroll_target as gui_scroll_target,
-    span_face as gui_span_face, Align as GuiAlign, Anchor as GuiAnchor, Element as GuiElement,
-    GradientKind as GuiGradientKind, GradientPx as GuiGradient, Grouped as GuiGroup,
-    ImageScale as GuiImageScale, Join as GuiJoin, Painted, PixelRect as GuiPixelRect,
-    Rect as GuiRect, Screen as GuiScreen, ScrollWindow as GuiScrollWindow, ShadowPx as GuiShadow,
-    SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile,
-    Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
-};
-pub use gui::{shows_screen, SafeInsets, ScrollTarget};
+pub use gui::{pseudo_localize, shows_screen, PseudoLocale, SafeInsets, ScrollTarget};
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
 pub use isolation::STAGE_REACH;

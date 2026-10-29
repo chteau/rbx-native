@@ -35,7 +35,7 @@ use image::painted;
 pub(crate) use image::{ImageScale, Painted};
 pub(crate) use modifiers::{GradientPx, ShadowPx, StrokePx};
 pub(crate) use rect::Rect;
-pub(crate) use text::{TextMeasure, Typeset};
+pub(crate) use text::{overflows, TextMeasure, Typeset};
 pub(in crate::scene::gui) use walk::{children, Context, Scope};
 
 /// One `GuiObject` at its final pixel position, ready to be drawn on its own.

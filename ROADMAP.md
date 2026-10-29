@@ -2794,6 +2794,21 @@ both the plain fetch failure and the silent fall back to a default
   `segment_mesh` and `generate_texture` take the selection when
   `instance_path` is left out, as Studio does. The Play capture on
   Windows and the Win32 input have not been run on a real Windows PC.
+- [x] **Pseudo-localization preview and string extraction (beta)**: View's
+  Pseudo-loc tile draws every TextLabel, TextButton and TextBox about 40%
+  longer, bracketed and accented (`[!! Ţĥé … !!]`), optionally right to
+  left, on the 3D view's overlay and the UI Editor's canvas. It is display
+  only: the renderer draws copies, so the DOM, save and undo never see it.
+  Rich-text tags, `%d`-style specifiers and `{placeholders}` stay whole.
+  Every text object the longer text no longer fits, given its size,
+  `TextWrapped`, `TextScaled` and `AutomaticSize` and measured by the
+  renderer's own typesetter, is outlined red and listed in the
+  Localization dock, a click away. The dock's Strings tab lists the
+  `Text` of every object `AutoLocalize` leaves on and every literal a
+  client script assigns to `.Text` (parsed with `full_moon`), and writes
+  the new ones into a `LocalizationTable` under `LocalizationService` as
+  one undo step, in the `Contents` JSON Studio keeps, skipping strings a
+  table already holds.
 - [x] **Performance heatmap: totals and models (beta)**, behind the
   `perf-models` switch. The Performance view gains Total and Physics:
   `rbx_viewer::perf::models` weighs triangles, texture memory, instances,

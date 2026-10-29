@@ -42,6 +42,7 @@ mod layers;
 mod layers_panel;
 mod layout;
 mod light_guides;
+mod localization;
 mod loren_panel;
 mod luau_lsp;
 mod mcp;
@@ -77,6 +78,7 @@ pub(crate) use chrome::panel_topbar;
 pub(crate) use coedit::BETA_ID as COEDIT_BETA_ID;
 pub(crate) use export::Export;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
+pub(crate) use localization::BETA_ID as PSEUDO_LOC_BETA_ID;
 pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
 pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
@@ -377,6 +379,9 @@ pub(crate) struct Shell {
     input_edits: input_panel::InputEdits,
     /// The Security Audit dock's cached findings; see `shell::security_audit`.
     audit: security_audit::AuditState,
+    /// The Localization dock's preview switch and strings; see
+    /// `shell::localization`.
+    localization: localization::LocalizationState,
     loren: loren_panel::LorenState,
     avatar: avatar_dock::AvatarDock,
     style_scroll: ScrollHandle,
@@ -914,6 +919,7 @@ impl Shell {
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
             audit: Default::default(),
+            localization: Default::default(),
             layers: layers::LayerState::load(&path),
             loren: loren_panel::LorenState::default(),
             avatar: avatar_dock::AvatarDock::default(),
@@ -1256,6 +1262,7 @@ impl Shell {
         shell.apply_debug_style_editor(cx);
         shell.apply_debug_input_actions(cx);
         shell.apply_debug_security_audit(cx);
+        shell.apply_debug_pseudo_locale(cx);
         if std::env::var_os(playtests::DEBUG_VARIABLE).is_some() {
             shell.set_panel_open(layout::Panel::Playtests, true, cx);
         }

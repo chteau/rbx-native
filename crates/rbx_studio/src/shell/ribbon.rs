@@ -384,38 +384,69 @@ impl Shell {
     /// Studio keeps on its ribbon.
     fn viewport_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let shown = self.show_screen_gui;
-        vec![
-            tile(
-                &self.ribbon_nav,
-                "ribbon-viewport-settings",
-                IconName::Settings,
-                "Settings",
-                cx,
-            )
-            .tooltip(|window, cx| {
-                super::tooltip::text("Settings \u{2014} the viewport's settings", window, cx)
-            })
-            .on_click(cx.listener(|shell, _, _, cx| shell.open_settings_on("viewport", cx)))
-            .into_any_element(),
-            tile(
-                &self.ribbon_nav,
-                "ribbon-show-ui",
-                IconName::Eye,
-                "Show UI",
-                cx,
-            )
-            .when(shown, |this| {
-                this.bg(tokens::accent_soft())
-                    .text_color(tokens::check_on())
-            })
-            .tooltip(move |window, cx| super::tooltip::text(show_ui_tooltip(shown), window, cx))
-            .on_click(
-                cx.listener(|shell, _, _, cx| {
+        let mut tiles =
+            vec![
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-viewport-settings",
+                    IconName::Settings,
+                    "Settings",
+                    cx,
+                )
+                .tooltip(|window, cx| {
+                    super::tooltip::text("Settings \u{2014} the viewport's settings", window, cx)
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.open_settings_on("viewport", cx)))
+                .into_any_element(),
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-show-ui",
+                    IconName::Eye,
+                    "Show UI",
+                    cx,
+                )
+                .when(shown, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .tooltip(move |window, cx| super::tooltip::text(show_ui_tooltip(shown), window, cx))
+                .on_click(cx.listener(|shell, _, _, cx| {
                     shell.set_screen_gui_shown(!shell.show_screen_gui, cx)
-                }),
-            )
-            .into_any_element(),
-        ]
+                }))
+                .into_any_element(),
+            ];
+        if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
+            let on = self.pseudo_locale().is_some();
+            tiles.push(
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-pseudo-loc",
+                    IconName::Globe,
+                    "Pseudo-loc",
+                    cx,
+                )
+                .when(on, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Pseudo-localize \u{2014} draw every GUI text longer and accented, and mark what no longer fits",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    let locale = (!on).then(rbx_viewer::PseudoLocale::default);
+                    shell.set_pseudo_locale(locale, cx);
+                    if locale.is_some() {
+                        shell.set_panel_open(Panel::Localization, true, cx);
+                    }
+                }))
+                .into_any_element(),
+            );
+        }
+        tiles
     }
 
     /// Avatar's Avatar Setup tile: Studio's tool turns a character mesh into
@@ -629,6 +660,9 @@ impl Shell {
             (Panel::Layers, IconName::Layers, "Layers"),
             (Panel::Loren, IconName::Layers, "Loren"),
         ];
+        if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
+            tiles.push((Panel::Localization, IconName::Globe, "Localization"));
+        }
         // Argon and Wally have no tab of their own to reopen from outside
         // the Script Editor, because they're nowhere to be seen outside it
         // either, see `Shell::hidden_panels`.

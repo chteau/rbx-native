@@ -347,12 +347,17 @@ impl Shell {
     /// The docks the current document leaves out whatever is asked,
     /// unlike the canvas's set-asides, which asking for one by name undoes.
     pub(super) fn document_hides(&self) -> Vec<Panel> {
-        match self.document {
+        let mut hides = match self.document {
             Document::Scripts => vec![Panel::Viewport],
             // The 3D view is part of this document's own layout.
             Document::Animation => [Panel::Viewport].into_iter().chain(SCRIPT_TOOLS).collect(),
             _ => SCRIPT_TOOLS.to_vec(),
+        };
+        // A beta's dock stays out of a saved layout while its switch is off.
+        if !crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
+            hides.push(Panel::Localization);
         }
+        hides
     }
 
     /// A dock asked back by name while the canvas has it set aside.

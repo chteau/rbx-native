@@ -27,19 +27,18 @@
 
 mod layout;
 mod plan;
+mod pseudo;
 mod space;
 mod style;
 mod wheel;
 
 pub use layout::SafeInsets;
-#[cfg(test)]
-pub(crate) use layout::StrokePx;
+pub(crate) use layout::{
+    overflows, resolve_canvas_with, resolve_inset, screen_frame, Element, GradientPx, Grouped,
+    ImageScale, Painted, PixelRect, Rect, ShadowPx, StrokePx, TextMeasure, Typeset,
+};
 #[cfg(test)]
 pub(crate) use layout::{resolve, resolve_canvas, resolve_on_device, resolve_with};
-pub(crate) use layout::{
-    resolve_canvas_with, resolve_inset, screen_frame, Element, GradientPx, Grouped, ImageScale,
-    Painted, PixelRect, Rect, ShadowPx, TextMeasure, Typeset,
-};
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
 pub use plan::shows_screen;
 #[cfg(test)]
@@ -49,6 +48,7 @@ pub(crate) use plan::TextSpan;
 pub(crate) use plan::{
     plan, plan_root, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
 };
+pub use pseudo::{pseudo_localize, PseudoLocale};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 pub use wheel::ScrollTarget;
 pub(crate) use wheel::{scroll_target, ScrollWindow};

@@ -68,6 +68,9 @@ pub(crate) struct Drawn {
     pub(crate) size: (u32, u32),
     pub(crate) pixels: Vec<u8>,
     pub(crate) boxes: Vec<GuiBox>,
+    /// The text objects overflowing under the pseudo locale, see
+    /// `rbx_viewer::GuiCanvas::overflows`.
+    pub(crate) overflows: Vec<Ref>,
     /// The frame drawn alone, when one was asked for and could be.
     pub(crate) frame: Option<(FrameRequest, Vec<u8>)>,
 }
@@ -127,6 +130,7 @@ impl Canvas {
                 size: canvas.size,
                 pixels: canvas.pixels,
                 boxes: canvas.boxes,
+                overflows: canvas.overflows,
                 frame: request.frame.and_then(|frame| {
                     let backdrop = frame.backdrop.map(|channel| f32::from(channel) / 255.0);
                     viewer

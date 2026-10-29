@@ -26,6 +26,8 @@ pub(crate) struct Canvas {
     pub(crate) size: (u32, u32),
     pub(crate) image: Arc<RenderImage>,
     pub(crate) boxes: Vec<GuiBox>,
+    /// The text objects overflowing under the pseudo locale.
+    pub(crate) overflows: Vec<rbx_dom::Ref>,
     /// The `ViewportFrame` the frame sheet shows, drawn alone.
     pub(crate) frame: Option<(FrameRequest, Arc<RenderImage>)>,
 }
@@ -72,6 +74,7 @@ impl WorkspaceView {
             size: drawn.size,
             image,
             boxes: drawn.boxes,
+            overflows: drawn.overflows,
             frame,
         });
         cx.emit(CanvasUpdated);

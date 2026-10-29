@@ -45,7 +45,8 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::Tests
         | Panel::Layers
         | Panel::Loren
-        | Panel::AvatarSettings => None,
+        | Panel::AvatarSettings
+        | Panel::Localization => None,
     }
 }
 

@@ -59,6 +59,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Lets an AI client drive the open place over MCP: point the client at `rbxstudio --mcp`. It can read and edit scripts, run Luau, start and stop Play, read the Output, capture the viewport, simulate player input and insert assets. Several open editors are told apart by studio ID. Edits are undo steps of their own; `http_get` and `skill` serve Roblox documentation and best-practice guides.",
     },
     Feature {
+        id: crate::shell::PSEUDO_LOC_BETA_ID,
+        name: "Pseudo-localization",
+        description: "Previews every GUI text longer and accented (and optionally right to left) in the 3D view and the UI Editor, lists what no longer fits, and writes the place's user-facing strings into a LocalizationTable. The preview never touches the place; overflow is measured, not yet suggested fixes.",
+    },
+    Feature {
         id: crate::shell::PERF_BETA_ID,
         name: "Performance heatmap: totals and models",
         description: "Adds Total and Physics to the Viewport dock's Performance view and ranks the costliest models with a breakdown of what each costs: triangles, texture memory, instances, physics, shadows and overdraw. The weights are an estimate, not Roblox's own costs.",
