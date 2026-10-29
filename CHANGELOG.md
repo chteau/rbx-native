@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-30
+
+- **`require("./x")` works in Edit.** `execute_luau`, the command bar and
+  plugins resolve require-by-string paths the way Roblox does: `./`,
+  `../`, `@self` and `@game`, walked like Luau's own require navigator,
+  with its error reasons. Modules from Rojo-style projects can finally be
+  checked in Edit. `multi_edit` also stops refusing a script whose name
+  differs from a sibling's only in case (`G_main` next to `g_main`). It
+  creates or edits that exact name, since Roblox names are case-sensitive.
+  I couldn't run these next to real Studio this time, so the exact error
+  text is still unconfirmed live. (@chteau)
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**

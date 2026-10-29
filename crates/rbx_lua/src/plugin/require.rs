@@ -1,11 +1,9 @@
 //! `require` for plugin scripts, and the per-script globals Roblox gives
 //! every script (`_G`, `shared`).
 //!
-//! Each script gets its own `require` (see `engine::require`). A string
-//! argument is resolved against the requiring script the way
-//! Luau's require-by-string does in Roblox: `./Name` is a sibling, `../`
-//! climbs one more level, `@self/Name` is a child of the script itself and
-//! `@game/Service/…` starts at a service.
+//! Each script gets its own `require` (see `engine::require`), which
+//! resolves a string path against the requiring script
+//! (`require::by_string`).
 
 use mlua::{Function, IntoLua, Lua, Result, Table, Value};
 use rbx_dom::Ref;
@@ -25,47 +23,10 @@ fn resolve(lua: &Lua, script: Option<Ref>, target: &Value) -> Result<Ref> {
         }
         Value::String(path) => {
             let path = path.to_str()?.to_string();
-            let script = script.ok_or_else(|| {
-                mlua::Error::runtime(format!("cannot require '{path}' outside a script"))
-            })?;
-            let module = resolve_path(lua, script, &path)?;
-            let instance = LuaInstance::new(module, env(lua).ctx.clone()).into_lua(lua)?;
-            require::module_ref(lua, &instance)
+            require::by_string(&env(lua).ctx.dom(), script, &path)
         }
         other => require::module_ref(lua, other),
     }
-}
-
-fn resolve_path(lua: &Lua, script: Ref, path: &str) -> Result<Ref> {
-    let env = env(lua);
-    let dom = env.ctx.dom();
-    let fail = || mlua::Error::runtime(format!("could not resolve require path '{path}'"));
-    let mut parts = path.split('/').filter(|p| !p.is_empty()).peekable();
-    let mut at = match parts.next().ok_or_else(fail)? {
-        "." => dom.parent(script).ok_or_else(fail)?,
-        ".." => {
-            let parent = dom.parent(script).ok_or_else(fail)?;
-            dom.parent(parent).ok_or_else(fail)?
-        }
-        "@self" => script,
-        "@game" => {
-            let service = parts.next().ok_or_else(fail)?;
-            dom.root_refs()
-                .iter()
-                .copied()
-                .find(|r| dom.get(*r).is_some_and(|i| i.name() == service))
-                .ok_or_else(fail)?
-        }
-        _ => return Err(fail()),
-    };
-    for part in parts {
-        at = match part {
-            "." => at,
-            ".." => dom.parent(at).ok_or_else(fail)?,
-            name => crate::instance::tree::find_child(&dom, at, name, false).ok_or_else(fail)?,
-        };
-    }
-    Ok(at)
 }
 
 /// Installs the plugin VM's `require` (see `engine::require`): paths are

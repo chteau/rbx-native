@@ -105,6 +105,89 @@ pub(crate) fn require_for(lua: &Lua, script: Value) -> Result<Function> {
     lua.named_registry_value::<Function>(FACTORY)?.call(script)
 }
 
+/// Where require-by-string's walk stands: the data model itself (`@game`,
+/// or a service's parent) or an instance in it.
+#[derive(Clone, Copy)]
+enum At {
+    Game,
+    Instance(Ref),
+}
+
+/// The instance a require-by-string `path` names from `script`, walked the
+/// way Luau's `Require` navigator (the library Roblox links) walks it:
+/// `./` starts at `script.Parent`, `../` at `script.Parent.Parent`,
+/// `@self` at `script` and `@game` at the data model; each other component
+/// is a child by exact name, `..` a parent and `.` stays put. A failed step
+/// gives the navigator's reason inside Roblox's `error requiring "…": …`.
+pub(crate) fn by_string(dom: &rbx_dom::WeakDom, script: Option<Ref>, path: &str) -> Result<Ref> {
+    let path = path.replace('\\', "/");
+    let fail =
+        |reason: String| mlua::Error::runtime(format!("error requiring \"{path}\": {reason}"));
+    let parent = |at: At| match at {
+        At::Instance(r) => Some(dom.parent(r).map_or(At::Game, At::Instance)),
+        At::Game => None,
+    };
+    let requirer = || {
+        script
+            .map(At::Instance)
+            .ok_or_else(|| fail("could not reset to requiring context".to_owned()))
+    };
+    let (mut at, rest) = if let Some(aliased) = path.strip_prefix('@') {
+        let (alias, rest) = aliased.split_once('/').unwrap_or((aliased, ""));
+        let start = match alias.to_ascii_lowercase().as_str() {
+            "self" => requirer()?,
+            "game" => {
+                requirer()?;
+                At::Game
+            }
+            other => return Err(fail(format!("@{other} is not a valid alias"))),
+        };
+        (start, rest)
+    } else if path.starts_with("./") || path.starts_with("../") {
+        let start = parent(requirer()?)
+            .ok_or_else(|| fail("could not get parent of requiring context".to_owned()))?;
+        (start, path.as_str())
+    } else {
+        return Err(fail(
+            "require path must start with a valid prefix: ./, ../, or @".to_owned(),
+        ));
+    };
+    let mut previous: Option<&str> = None;
+    for component in rest.split('/') {
+        match component {
+            "" | "." => continue,
+            ".." => {
+                at = parent(at).ok_or_else(|| {
+                    fail(match previous {
+                        Some(name) => format!("could not get parent of component \"{name}\""),
+                        None => "could not get parent of requiring context".to_owned(),
+                    })
+                })?;
+            }
+            name => {
+                let child = match at {
+                    At::Game => dom
+                        .root_refs()
+                        .iter()
+                        .copied()
+                        .find(|&r| dom.get(r).is_some_and(|i| i.name() == name)),
+                    At::Instance(r) => crate::instance::tree::find_child(dom, r, name, false),
+                };
+                at = At::Instance(child.ok_or_else(|| {
+                    fail(format!("could not resolve child component \"{name}\""))
+                })?);
+            }
+        }
+        previous = Some(component);
+    }
+    match at {
+        At::Instance(found) if dom.get(found).is_some_and(|i| i.class() == "ModuleScript") => {
+            Ok(found)
+        }
+        _ => Err(mlua::Error::runtime(INVALID)),
+    }
+}
+
 /// The `ModuleScript` `value` is, or [`INVALID`].
 pub(crate) fn module_ref(lua: &Lua, value: &Value) -> Result<Ref> {
     let invalid = || mlua::Error::runtime(INVALID);

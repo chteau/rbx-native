@@ -2794,6 +2794,23 @@ both the plain fetch failure and the silent fall back to a default
   `segment_mesh` and `generate_texture` take the selection when
   `instance_path` is left out, as Studio does. The Play capture on
   Windows and the Win32 input have not been run on a real Windows PC.
+- [x] **Require-by-string and case-only script names over MCP.** Edit's
+  `execute_luau`, the command bar and plugins now take
+  `require("./Sibling")`, `require("../Up")`, `require("@self/Child")` and
+  `require("@game/ReplicatedStorage/Shared/X")`. The walk follows Luau's
+  own `Require` navigator, the library Studio links: exact names, `..`
+  and `.` anywhere, `@Game` in any case, and the navigator's own reasons
+  inside Roblox's `error requiring "path": reason`. A path that lands on
+  something other than a `ModuleScript` gives Roblox's usual invalid
+  argument error. `multi_edit` no longer refuses `G_main` beside `g_main`:
+  Roblox names are case-sensitive, so it's a script of its own, created
+  and edited by its own spelling. Not run side by side with real Studio:
+  Chee's account was moderated, so Vinegar couldn't start Studio. Still
+  owed: those runs, plus `MeshId`/`MeshContent` writes (Studio's dump says
+  `NotAccessibleSecurity`, we still allow them), what Studio says to a
+  string `require` in the command bar, and what its `character_navigation`
+  does without a Humanoid (its bytecode waits on `CharacterAdded` and
+  `WaitForChild("Humanoid")`, ours errors at once).
 - [x] **Pseudo-localization preview and string extraction (beta)**: View's
   Pseudo-loc tile draws every TextLabel, TextButton and TextBox about 40%
   longer, bracketed and accented (`[!! Ţĥé … !!]`), optionally right to

@@ -430,6 +430,90 @@ fn require_reports_cycles_and_invalid_arguments() {
     );
 }
 
+/// Require-by-string, walked as Luau's navigator walks it (see
+/// `require::by_string`): `./`, `../`, `@self`, `@game` and the
+/// navigator's own failure reasons.
+#[test]
+fn require_by_string_walks_the_tree_from_the_requiring_module() {
+    let mut dom = place_with_modules(&[
+        ("Other", "return 'other'"),
+        (
+            "Lib",
+            "return require('./Other') .. '+' .. require('@self/Util') .. '+' .. require('@self/Sub/Deep')",
+        ),
+        ("GameAlias", "return require('@Game/Workspace/Other')"),
+        ("Missing", "return require('./Nope')"),
+        ("NoPrefix", "return require('Other')"),
+        ("Unknown", "return require('@foo/Other')"),
+        ("Folder", "return require('./Plain')"),
+        ("TooHigh", "return require('@game/..')"),
+    ]);
+    let workspace = dom.root_refs()[0];
+    dom.new_instance("Folder", "Plain", Some(workspace));
+    let lib = dom
+        .get(workspace)
+        .unwrap()
+        .children()
+        .iter()
+        .copied()
+        .find(|&r| dom.get(r).unwrap().name() == "Lib")
+        .unwrap();
+    let module = |dom: &mut WeakDom, name: &str, parent, source: &str| {
+        let made = dom.new_instance("ModuleScript", name, Some(parent));
+        dom.set_property(made, "Source", Variant::String(source.to_owned()))
+            .unwrap();
+        made
+    };
+    module(&mut dom, "Util", lib, "return 'util'");
+    let sub = dom.new_instance("Folder", "Sub", Some(lib));
+    module(
+        &mut dom,
+        "Deep",
+        sub,
+        "return require('../../Other') .. require('../Util') .. require('./Sib')",
+    );
+    module(&mut dom, "Sib", sub, "return 'sib'");
+    let mut runtime = Runtime::new(dom, ReflectionDatabase::embedded()).unwrap();
+    let output = runtime
+        .run("print(require(workspace.Lib)) print(require(workspace.GameAlias))")
+        .unwrap();
+    assert_eq!(output.lines(), ["other+util+otherutilsib", "other"]);
+    for (module, error) in [
+        (
+            "Missing",
+            r#"error requiring "./Nope": could not resolve child component "Nope""#,
+        ),
+        (
+            "NoPrefix",
+            r#"error requiring "Other": require path must start with a valid prefix: ./, ../, or @"#,
+        ),
+        (
+            "Unknown",
+            r#"error requiring "@foo/Other": @foo is not a valid alias"#,
+        ),
+        (
+            "Folder",
+            "Attempted to call require with invalid argument(s).",
+        ),
+        (
+            "TooHigh",
+            r#"error requiring "@game/..": could not get parent of requiring context"#,
+        ),
+    ] {
+        let failed = runtime
+            .run(&format!("require(workspace.{module})"))
+            .unwrap_err();
+        assert!(failed.to_string().contains(error), "{module}: {failed}");
+    }
+    let failed = runtime.run("require('./Other')").unwrap_err();
+    assert!(
+        failed
+            .to_string()
+            .contains(r#"error requiring "./Other": could not reset to requiring context"#),
+        "{failed}"
+    );
+}
+
 #[test]
 fn get_service_creates_a_missing_service() {
     let mut runtime = runtime();
