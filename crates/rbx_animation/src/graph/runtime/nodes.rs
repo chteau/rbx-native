@@ -68,19 +68,19 @@ impl Player {
             t0 + dt * rate * direction
         };
         // The stretches of the span played this step, for its markers: from
-        // (exclusive, unless playback starts or wraps there) to (inclusive).
-        let mut played = vec![(t0, t.clamp(0., span.max(0.)), fresh)];
+        // (inclusive) to (exclusive, unless playback stops or wraps there).
+        let mut played = vec![(t0, t.clamp(0., span.max(0.)), false)];
         let mut finished = state.done;
         if span > 0. && !state.done {
             match mode.as_str() {
                 "PingPong" => {
                     if t > span {
-                        played = vec![(t0, span, fresh), (span, 2. * span - t, false)];
+                        played = vec![(t0, span, false), (span, 2. * span - t, false)];
                         t = 2. * span - t;
                         state.backwards = !state.backwards;
                         finished = rate < 0.;
                     } else if t < 0. {
-                        played = vec![(t0, 0., fresh), (0., -t, false)];
+                        played = vec![(t0, 0., false), (0., -t, false)];
                         t = -t;
                         state.backwards = !state.backwards;
                         finished = rate > 0.;
@@ -91,6 +91,7 @@ impl Player {
                     finished = if rate < 0. { t <= 0. } else { t >= span };
                     t = t.clamp(0., span);
                     if finished {
+                        played[0].2 = true;
                         state.done = true;
                         // OnceAndReset snaps back to where playback began.
                         if mode == "OnceAndReset" {
@@ -103,9 +104,9 @@ impl Player {
                         finished = true;
                         let wrapped = t.rem_euclid(span);
                         played = if t >= span {
-                            vec![(t0, span, fresh), (0., wrapped, true)]
+                            vec![(t0, span, true), (0., wrapped, false)]
                         } else {
-                            vec![(t0, 0., fresh), (span, wrapped, true)]
+                            vec![(t0, 0., true), (span, wrapped, false)]
                         };
                         t = wrapped;
                     }
@@ -172,9 +173,9 @@ impl Player {
     }
 
     /// Weights each joint by the shared mask the node names (`1 − w` when
-    /// inverted). A joint the mask does not list counts as weight 0, as in
-    /// real Studio. UNVERIFIED: a Mask naming no shared mask passes
-    /// everything through; that case was not measured.
+    /// inverted). As in real Studio, a joint the mask does not list counts
+    /// as weight 0, and a Mask naming no shared mask (or none at all) passes
+    /// everything through at full weight, Invert or not.
     pub(super) fn mask(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let invert = self.flag(n, "Invert");
         let name = self.text(n, "Mask");
@@ -185,11 +186,11 @@ impl Player {
                 .collect()
         });
         let (mut pose, status) = self.child(n, 0, dt);
+        let Some(weights) = weights else {
+            return (pose, status);
+        };
         for (joint, posed) in pose.iter_mut() {
-            let w = weights
-                .as_ref()
-                .map_or(1., |m| m.get(joint).copied().unwrap_or(0.))
-                .clamp(0., 1.);
+            let w = weights.get(joint).copied().unwrap_or(0.).clamp(0., 1.);
             posed.weight *= if invert { 1. - w } else { w };
         }
         (pose, status)
@@ -262,17 +263,22 @@ impl Player {
 
 /// The markers on `clip` within [start, end] (inclusive, as Roblox trims
 /// them) that the `played` stretches of the span passed, in playing order.
+/// A stretch takes a marker at its start but not at its end unless it is
+/// closed there (playback stopped or wrapped): real Studio, stepped by
+/// 1/30 s, fires a marker at 0.5 s on the 16th step, not the 15th that
+/// lands on it, and a looping clip's marker at 0 on the step after the
+/// wrap.
 fn markers(clip: &Clip, n: usize, start: f32, end: f32, played: &[(f32, f32, bool)]) -> Vec<Event> {
     let inside = |k: &&Keyframe| (start - TIME_EPSILON..=end + TIME_EPSILON).contains(&k.time);
     let mut out = Vec::new();
-    for &(a, b, from_inclusive) in played {
+    for &(a, b, closed) in played {
         let crossed = |k: &&Keyframe| {
             let m = k.time - start;
-            let opened = from_inclusive && (m - a).abs() <= TIME_EPSILON;
+            let e = TIME_EPSILON;
             if a <= b {
-                (m > a || opened) && m <= b
+                m >= a - e && (m < b - e || closed && m <= b + e)
             } else {
-                (m < a || opened) && m >= b
+                m <= a + e && (m > b + e || closed && m >= b - e)
             }
         };
         let mut hit: Vec<&Keyframe> = clip

@@ -224,6 +224,7 @@ impl Shell {
             Ok("history") => self.open_version_history(cx),
             Ok("game-settings") => self.open_game_settings(cx),
             Ok("datastores") => self.open_data_stores(cx),
+            Ok("update-planning") => self.open_update_planning(cx),
             _ => {}
         }
     }

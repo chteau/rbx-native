@@ -1,15 +1,72 @@
 use mlua::{Function, Lua, Table, Value};
 
+const GESTURE: &str = include_str!("../src/probe/touch_gesture.luau");
+const PROXY: &str = include_str!("../src/probe/touch_proxy.luau");
+const FINGERS: &str = include_str!("../src/probe/touch_fingers.luau");
 const TOUCH_INPUT: &str = include_str!("../src/probe/touch_input.luau");
 
+/// The pure half, which the gesture tests below drive.
 fn load_module() -> (Lua, Table) {
     let lua = Lua::new();
     let module: Table = lua
-        .load(TOUCH_INPUT)
-        .set_name("touch_input.luau")
+        .load(GESTURE)
+        .set_name("touch_gesture.luau")
         .eval()
-        .expect("touch_input.luau loads");
+        .expect("touch_gesture.luau loads");
     (lua, module)
+}
+
+/// The four modules the way Roblox wires them: each `require`s its siblings
+/// by name through `script.Parent:WaitForChild`.
+fn load_wired(name: &str) -> (Lua, Value) {
+    let lua = Lua::new();
+    lua.load("script = { Parent = { WaitForChild = function(_, name) return name end } }")
+        .exec()
+        .expect("script stub installs");
+    let require = lua
+        .create_function(|lua, name: String| {
+            let source = match name.as_str() {
+                "__rbxnative_touch_gesture" => GESTURE,
+                "__rbxnative_touch_proxy" => PROXY,
+                "__rbxnative_touch_fingers" => FINGERS,
+                "__rbxnative_touch_input" => TOUCH_INPUT,
+                other => panic!("unexpected require of {other}"),
+            };
+            lua.load(source).set_name(name).eval::<Value>()
+        })
+        .expect("require builds");
+    lua.globals()
+        .set("require", &require)
+        .expect("require installs");
+    let module = require.call(name).expect("module loads with its siblings");
+    (lua, module)
+}
+
+#[test]
+fn the_split_modules_wire_together() {
+    let (_lua, Value::Table(input)) = load_wired("__rbxnative_touch_input") else {
+        panic!("touch_input returns its table");
+    };
+    for name in [
+        "start",
+        "wrap",
+        "event",
+        "typeof",
+        "setKeyboard",
+        "setPointerInside",
+    ] {
+        input
+            .get::<Function>(name)
+            .unwrap_or_else(|_| panic!("{name} is exported"));
+    }
+    let (_lua, Value::Table(proxy)) = load_wired("__rbxnative_touch_proxy") else {
+        panic!("touch_proxy returns its table");
+    };
+    proxy
+        .get::<Function>("makeProxy")
+        .expect("makeProxy is exported");
+    let (_lua, fingers) = load_wired("__rbxnative_touch_fingers");
+    assert!(matches!(fingers, Value::Function(_)));
 }
 
 fn call<R: mlua::FromLuaMulti>(module: &Table, name: &str, args: impl mlua::IntoLuaMulti) -> R {

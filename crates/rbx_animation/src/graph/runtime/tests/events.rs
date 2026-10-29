@@ -47,7 +47,7 @@ fn a_looping_clip_raises_its_markers_each_pass() {
     assert_eq!(p.events()[0].node, clip);
     p.step(0.2);
     assert!(p.events().is_empty());
-    p.step(0.7);
+    p.step(0.75);
     assert_eq!(names(&p), [("Step".into(), 1.)], "across the wrap");
 }
 

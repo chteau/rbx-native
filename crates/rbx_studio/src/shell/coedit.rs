@@ -13,10 +13,12 @@
 //!   Ctrl+Z takes back the last thing that happened to the place, whoever
 //!   did it. Whatever an undo or redo changes is then sent like any other
 //!   edit, so taking back a collaborator's edit takes it back for everyone.
-//! - **Transport.** Only the hosted relay keeps an op log; on a Worker or
-//!   ntfy room co-editing stays off and says so once.
+//! - **Transport.** The op log lives on the hosted relay or on a Worker; on
+//!   an ntfy room co-editing stays off and says so once. What this editor
+//!   read of the log is kept across relays, so a new host is handed it.
 
 use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 
 use gpui_kit::Context;
 use rbx_dom::WeakDom;
@@ -24,6 +26,7 @@ use rbx_presence::client::Route;
 use rbx_presence::coedit::channel::{self, Channel, Event};
 use rbx_presence::coedit::engine::Engine;
 use rbx_presence::coedit::ids::IdMap;
+use rbx_presence::coedit::keep::Kept;
 use rbx_presence::coedit::{diff, Batch};
 use rbx_presence::relay::RelayKind;
 use rbx_presence::schema::Client as Editor;
@@ -36,6 +39,8 @@ pub(crate) const BETA_ID: &str = "coedit";
 /// Where the room is and who this editor is in it.
 pub(super) struct Seed {
     pub(super) kind: RelayKind,
+    /// The place's relay: a Worker's address, or the announce server.
+    pub(super) url: String,
     pub(super) room: String,
     pub(super) key: String,
     pub(super) enc_key: [u8; 32],
@@ -60,6 +65,8 @@ pub(super) struct Coedit {
     link: Option<Link>,
     /// Batches a relay we left never got, for the next one.
     held: Vec<rbx_presence::coedit::Batch>,
+    /// The log as read so far, whichever relay it came from.
+    kept: Arc<Mutex<Kept>>,
     /// The warnings said once per session.
     told_gap: bool,
     told_transport: bool,
@@ -77,7 +84,7 @@ impl Shell {
             std::hash::BuildHasher::hash_one(&std::collections::hash_map::RandomState::new(), 0u8)
                 as u32;
         let actor = format!("{}:rbx-native:{session:08x}", seed.user_id);
-        let coedit = Coedit {
+        let mut coedit = Coedit {
             engine: Engine::new(actor.clone()),
             actor,
             seed,
@@ -86,14 +93,20 @@ impl Shell {
             trigger: (self.history.revision(), self.dom.mutations()),
             link: None,
             held: Vec::new(),
+            kept: Arc::default(),
             told_gap: false,
             told_transport: false,
         };
+        // A Worker is always there; a hosted room says where with a route.
+        if coedit.seed.kind == RelayKind::Worker {
+            let url = coedit.seed.url.trim_end_matches('/').to_owned();
+            coedit.link(url);
+        }
         self.team_presence.coedit = Some(coedit);
     }
 
-    /// Follows the hosted room to wherever its relay is now: a new address
-    /// is a new log, read from its start.
+    /// Follows the hosted room to wherever its relay is now, which carries
+    /// on the log or is handed it.
     pub(super) fn coedit_route(&mut self, route: &Route) {
         let Some(coedit) = self.team_presence.coedit.as_mut() else {
             return;
@@ -110,26 +123,7 @@ impl Shell {
         if coedit.link.as_ref().is_some_and(|link| link.url == url) {
             return;
         }
-        // What the old relay never got goes to the new one.
-        if let Some(link) = coedit.link.take() {
-            coedit.held.extend(link.channel.close());
-        }
-        let (channel, events) = Channel::start(channel::Config {
-            relay_url: url.clone(),
-            room: coedit.seed.room.clone(),
-            key: coedit.seed.key.clone(),
-            enc_key: coedit.seed.enc_key,
-            user_id: coedit.seed.user_id,
-            client: Editor::RbxNative,
-        });
-        for batch in coedit.held.drain(..) {
-            channel.send(batch);
-        }
-        coedit.link = Some(Link {
-            url,
-            channel,
-            events,
-        });
+        coedit.link(url);
     }
 
     /// Sends what changed here, then applies what arrived, every presence
@@ -142,10 +136,10 @@ impl Shell {
         let Some(mut coedit) = self.team_presence.coedit.take() else {
             return;
         };
-        if coedit.seed.kind != RelayKind::Hosted && !coedit.told_transport {
+        if coedit.seed.kind == RelayKind::Ntfy && !coedit.told_transport {
             coedit.told_transport = true;
             self.output.push_warning(
-                "Live co-editing needs the hosted relay (the default); this place names another, so edits are not shared.",
+                "Live co-editing needs the hosted relay (the default) or a Worker; this place names an ntfy server, so edits are not shared.",
             );
         }
         let mut incoming = Vec::new();
@@ -216,6 +210,30 @@ impl Shell {
 }
 
 impl Coedit {
+    /// Moves to the relay at `url`; what the old one never got goes to it.
+    fn link(&mut self, url: String) {
+        if let Some(link) = self.link.take() {
+            self.held.extend(link.channel.close());
+        }
+        let (channel, events) = Channel::start(channel::Config {
+            relay_url: url.clone(),
+            room: self.seed.room.clone(),
+            key: self.seed.key.clone(),
+            enc_key: self.seed.enc_key,
+            user_id: self.seed.user_id,
+            client: Editor::RbxNative,
+            kept: Arc::clone(&self.kept),
+        });
+        for batch in self.held.drain(..) {
+            channel.send(batch);
+        }
+        self.link = Some(Link {
+            url,
+            channel,
+            events,
+        });
+    }
+
     fn send(&self, ops: Vec<rbx_presence::coedit::Op>) {
         if ops.is_empty() {
             return;

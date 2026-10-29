@@ -7,7 +7,8 @@ use serde_json::Value;
 
 use super::room::Refusal;
 use crate::schema::{
-    Client, Sealed, SealedEdit, SealedOp, MAX_BODY_BYTES, MAX_EDITS, SCHEMA_VERSION,
+    Client, LoggedOp, OpsFill, Sealed, SealedEdit, SealedOps, MAX_BODY_BYTES, MAX_EDITS,
+    OPS_BODY_BYTES, SCHEMA_VERSION,
 };
 
 const BAD: Refusal = Refusal::new(400, "schema");
@@ -86,34 +87,98 @@ pub fn parse_sealed(body: &str, user_id: u64) -> Result<Sealed, Refusal> {
     })
 }
 
-/// `body` as `user_id`'s op log entry: [`parse_sealed`] without `j`.
-pub fn parse_sealed_op(body: &str, user_id: u64) -> Result<SealedOp, Refusal> {
-    if body.len() > MAX_BODY_BYTES {
-        return Err(Refusal::new(413, "size"));
-    }
-    let raw: Value = serde_json::from_str(body).map_err(|_| BAD)?;
-    let raw = raw.as_object().ok_or(BAD)?;
+fn version(raw: &serde_json::Map<String, Value>) -> Result<(), Refusal> {
     if raw.get("v").and_then(Value::as_u64) != Some(u64::from(SCHEMA_VERSION)) {
         return Err(Refusal::new(400, "version"));
     }
+    Ok(())
+}
+
+fn client(value: Option<&Value>) -> Option<Client> {
+    match value.and_then(Value::as_str) {
+        Some("studio") => Some(Client::Studio),
+        Some("rbx-native") => Some(Client::RbxNative),
+        _ => None,
+    }
+}
+
+fn object(body: &str) -> Result<serde_json::Map<String, Value>, Refusal> {
+    if body.len() > OPS_BODY_BYTES {
+        return Err(Refusal::new(413, "size"));
+    }
+    match serde_json::from_str(body) {
+        Ok(Value::Object(raw)) => Ok(raw),
+        _ => Err(BAD),
+    }
+}
+
+fn ct(value: &Value) -> Option<String> {
+    base64_text(value).filter(|c| !c.is_empty())
+}
+
+/// `body` as `user_id`'s chunks for the op log: `cts`, or a lone `ct`.
+pub fn parse_sealed_ops(body: &str, user_id: u64) -> Result<SealedOps, Refusal> {
+    let raw = object(body)?;
+    version(&raw)?;
     if raw.get("userId").and_then(Value::as_u64) != Some(user_id) {
         return Err(Refusal::new(403, "user"));
     }
-    let client = match raw.get("client").and_then(Value::as_str) {
-        Some("studio") => Client::Studio,
-        Some("rbx-native") => Client::RbxNative,
-        _ => return Err(BAD),
-    };
-    let ct = raw
-        .get("ct")
-        .and_then(base64_text)
-        .filter(|c| !c.is_empty())
-        .ok_or(BAD)?;
-    Ok(SealedOp {
+    let client = client(raw.get("client")).ok_or(BAD)?;
+    let cts = match (raw.get("cts"), raw.get("ct")) {
+        (Some(Value::Array(cts)), None) if !cts.is_empty() => {
+            cts.iter().map(ct).collect::<Option<Vec<_>>>()
+        }
+        (None, Some(one)) => ct(one).map(|c| vec![c]),
+        _ => None,
+    }
+    .ok_or(BAD)?;
+    Ok(SealedOps {
         v: SCHEMA_VERSION,
         user_id,
         client,
-        ct,
+        cts,
+    })
+}
+
+/// `body` as a fill (`POST …/ops/fill`): a named log's entries, at
+/// consecutive seqs from 1 up. Any key holder may hand over anyone's
+/// entries; each stays bound to its sender by its AAD.
+pub fn parse_fill(body: &str) -> Result<OpsFill, Refusal> {
+    let raw = object(body)?;
+    version(&raw)?;
+    let log = raw
+        .get("log")
+        .and_then(Value::as_str)
+        .filter(|l| {
+            (1..=64).contains(&l.len())
+                && l.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+        .ok_or(BAD)?
+        .to_owned();
+    let entries = raw
+        .get("entries")
+        .and_then(Value::as_array)
+        .filter(|e| !e.is_empty())
+        .ok_or(BAD)?
+        .iter()
+        .map(|e| {
+            Some(LoggedOp {
+                seq: e.get("seq")?.as_u64().filter(|s| *s >= 1)?,
+                user_id: e.get("userId")?.as_u64()?,
+                client: client(e.get("client"))?,
+                ct: ct(e.get("ct")?)?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or(BAD)?;
+    if entries.windows(2).any(|w| w[1].seq != w[0].seq + 1) {
+        return Err(BAD);
+    }
+    Ok(OpsFill {
+        v: SCHEMA_VERSION,
+        log,
+        entries,
     })
 }
 
@@ -122,29 +187,67 @@ mod tests {
     use super::*;
 
     const OP: &str = r#"{"v":2,"userId":5,"client":"rbx-native","ct":"AAAA","x":1}"#;
+    const OPS: &str = r#"{"v":2,"userId":5,"client":"studio","cts":["AAAA","BBBB"]}"#;
 
     #[test]
-    fn a_good_op_parses() {
-        let op = parse_sealed_op(OP, 5).unwrap();
-        assert_eq!(op.ct, "AAAA");
-        assert_eq!(op.client, Client::RbxNative);
+    fn good_ops_parse_one_or_many() {
+        let one = parse_sealed_ops(OP, 5).unwrap();
+        assert_eq!(
+            (one.cts, one.client),
+            (vec!["AAAA".into()], Client::RbxNative)
+        );
+        let many = parse_sealed_ops(OPS, 5).unwrap();
+        assert_eq!(many.cts, ["AAAA", "BBBB"]);
     }
 
     #[test]
-    fn a_bad_op_is_refused() {
-        assert_eq!(parse_sealed_op(OP, 6), Err(Refusal::new(403, "user")));
+    fn bad_ops_are_refused() {
+        let bad = |body: &str| parse_sealed_ops(body, 5).unwrap_err();
+        assert_eq!(parse_sealed_ops(OP, 6), Err(Refusal::new(403, "user")));
         assert_eq!(
-            parse_sealed_op(&OP.replace(r#""v":2"#, r#""v":1"#), 5),
+            bad(&OP.replace(r#""v":2"#, r#""v":1"#)),
+            Refusal::new(400, "version")
+        );
+        assert_eq!(bad(&OP.replace("rbx-native", "x")), BAD);
+        assert_eq!(bad(&OP.replace("AAAA", "")), BAD);
+        assert_eq!(bad(&OP.replace("AAAA", "A!")), BAD);
+        assert_eq!(bad(&OPS.replace("BBBB", "B!")), BAD);
+        assert_eq!(bad(&OPS.replace(r#"["AAAA","BBBB"]"#, "[]")), BAD);
+        assert_eq!(bad("[]"), BAD);
+        assert_eq!(
+            bad(&format!("{OP}{}", " ".repeat(OPS_BODY_BYTES))),
+            Refusal::new(413, "size")
+        );
+    }
+
+    const FILL: &str = r#"{"v":2,"log":"ab12","entries":[{"seq":4,"userId":5,"client":"studio","ct":"AAAA"},{"seq":5,"userId":6,"client":"rbx-native","ct":"BBBB"}]}"#;
+
+    #[test]
+    fn a_fill_parses_and_keeps_each_sender() {
+        let fill = parse_fill(FILL).unwrap();
+        assert_eq!(fill.log, "ab12");
+        assert_eq!(fill.entries[1].seq, 5);
+        assert_eq!(fill.entries[1].user_id, 6);
+        assert_eq!(fill.entries[1].client, Client::RbxNative);
+    }
+
+    #[test]
+    fn a_bad_fill_is_refused() {
+        assert_eq!(
+            parse_fill(&FILL.replace(r#""seq":5"#, r#""seq":6"#)),
+            Err(BAD)
+        );
+        assert_eq!(parse_fill(&FILL.replace("ab12", "AB12")), Err(BAD));
+        assert_eq!(
+            parse_fill(&FILL.replace(r#""seq":4"#, r#""seq":0"#)),
+            Err(BAD)
+        );
+        assert_eq!(parse_fill(&FILL.replace("BBBB", "B B")), Err(BAD));
+        assert_eq!(
+            parse_fill(&FILL.replace(r#""v":2"#, r#""v":1"#)),
             Err(Refusal::new(400, "version"))
         );
-        assert_eq!(parse_sealed_op(&OP.replace("rbx-native", "x"), 5), Err(BAD));
-        assert_eq!(parse_sealed_op(&OP.replace("AAAA", ""), 5), Err(BAD));
-        assert_eq!(parse_sealed_op(&OP.replace("AAAA", "A!"), 5), Err(BAD));
-        assert_eq!(parse_sealed_op("[]", 5), Err(BAD));
-        assert_eq!(
-            parse_sealed_op(&format!("{OP}{}", " ".repeat(MAX_BODY_BYTES)), 5),
-            Err(Refusal::new(413, "size"))
-        );
+        assert_eq!(parse_fill(r#"{"v":2,"log":"ab","entries":[]}"#), Err(BAD));
     }
 
     const OK: &str = r#"{"v":2,"userId":5,"client":"studio","ct":"AAAA","j":[{"at":10,"tag":"0123456789abcdef","ct":"BBBB"}],"seen":9,"extra":true}"#;

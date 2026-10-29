@@ -190,6 +190,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuUpdatePlanning, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_update_planning(cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuStudioSettings, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_settings(cx));
         }
@@ -202,6 +207,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     cx.on_action({
         move |_: &MenuBetaFeatures, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_settings_on("beta", cx));
+        }
+    });
+    cx.on_action({
+        move |_: &MenuRequireGraph, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_require_graph(cx));
         }
     });
     cx.on_action({

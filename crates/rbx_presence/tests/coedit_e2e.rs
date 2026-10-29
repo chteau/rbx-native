@@ -1,16 +1,28 @@
-//! Co-editing channels meeting in rbx-native's own relay host, in-process.
+//! Co-editing channels meeting in rbx-native's own relay host, in-process,
+//! and the log moving to the next host when the first one leaves.
 
 use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rbx_presence::coedit::channel::{Channel, Config, Event};
+use rbx_presence::coedit::keep::Kept;
 use rbx_presence::coedit::{Batch, Clock, Op, Target};
+use rbx_presence::host::Host;
 use rbx_presence::schema::Client as Editor;
 use rbx_presence::{auth, crypt};
 
 const KEY: &str = "coedit-e2e-key";
 
-fn config(host: &rbx_presence::host::Host, enc_key: [u8; 32], user_id: u64) -> Config {
+fn host() -> Host {
+    Host::with_claim_grace(KEY, 0).expect("host starts")
+}
+
+fn config(host: &Host, enc_key: [u8; 32], user_id: u64) -> Config {
+    kept_config(host, enc_key, user_id, Arc::default())
+}
+
+fn kept_config(host: &Host, enc_key: [u8; 32], user_id: u64, kept: Arc<Mutex<Kept>>) -> Config {
     Config {
         relay_url: host.local_url(),
         room: auth::room_id(KEY),
@@ -18,6 +30,7 @@ fn config(host: &rbx_presence::host::Host, enc_key: [u8; 32], user_id: u64) -> C
         enc_key,
         user_id,
         client: Editor::RbxNative,
+        kept,
     }
 }
 
@@ -44,7 +57,9 @@ fn batches(events: &Receiver<Event>, count: usize) -> Vec<(u64, Batch)> {
         match events.recv_timeout(left) {
             Ok(Event::Batch { seq, batch, .. }) => got.push((seq, batch)),
             Ok(Event::Gap) => panic!("unexpected gap"),
-            Ok(Event::Error(why)) => panic!("channel error: {why}"),
+            // A new host's empty log turns posts away until it is handed the
+            // old one; the channel retries.
+            Ok(Event::Error(_)) => {}
             Err(_) => panic!("only {} of {count} batches arrived", got.len()),
         }
     }
@@ -53,7 +68,7 @@ fn batches(events: &Receiver<Event>, count: usize) -> Vec<(u64, Batch)> {
 
 #[test]
 fn two_channels_see_the_same_order() {
-    let host = rbx_presence::host::Host::start(KEY).expect("host starts");
+    let host = host();
     let enc = crypt::enc_key("secret", 1);
     let (a, a_events) = Channel::start(config(&host, enc, 1));
     let (b, b_events) = Channel::start(config(&host, enc, 2));
@@ -68,7 +83,7 @@ fn two_channels_see_the_same_order() {
 
 #[test]
 fn large_source_batch_arrives_whole() {
-    let host = rbx_presence::host::Host::start(KEY).expect("host starts");
+    let host = host();
     let enc = crypt::enc_key("secret", 1);
     let (a, a_events) = Channel::start(config(&host, enc, 1));
     let text: String = (0..60 * 1024)
@@ -93,7 +108,7 @@ fn large_source_batch_arrives_whole() {
 
 #[test]
 fn other_enc_key_receives_nothing() {
-    let host = rbx_presence::host::Host::start(KEY).expect("host starts");
+    let host = host();
     let (a, a_events) = Channel::start(config(&host, crypt::enc_key("secret", 1), 1));
     let (_b, b_events) = Channel::start(config(&host, crypt::enc_key("other", 1), 2));
     a.send(del_batch(1, 1));
@@ -108,7 +123,7 @@ fn other_enc_key_receives_nothing() {
 
 #[test]
 fn late_channel_replays_the_log() {
-    let host = rbx_presence::host::Host::start(KEY).expect("host starts");
+    let host = host();
     let enc = crypt::enc_key("secret", 1);
     let (a, a_events) = Channel::start(config(&host, enc, 1));
     for n in 1..=3 {
@@ -117,4 +132,60 @@ fn late_channel_replays_the_log() {
     let first = batches(&a_events, 3);
     let (_late, late_events) = Channel::start(config(&host, enc, 2));
     assert_eq!(batches(&late_events, 3), first);
+}
+
+/// The first host leaves; the next starts empty and is handed the log by a
+/// peer that read it, so a late joiner still replays all of it, at the same
+/// seqs, and new edits carry on after it.
+#[test]
+fn the_next_host_takes_over_the_log() {
+    let enc = crypt::enc_key("secret", 1);
+    let kept = Arc::new(Mutex::new(Kept::default()));
+    let first = host();
+    let (a, a_events) = Channel::start(kept_config(&first, enc, 1, Arc::clone(&kept)));
+    for n in 1..=3 {
+        a.send(del_batch(1, n));
+    }
+    let before = batches(&a_events, 3);
+    drop(a);
+    drop(first);
+
+    let next = Host::with_claim_grace(KEY, 10_000).expect("host starts");
+    let (a, a_events) = Channel::start(kept_config(&next, enc, 1, kept));
+    a.send(del_batch(1, 4));
+    let after = batches(&a_events, 1);
+    assert_eq!(
+        after[0].0, 4,
+        "new edits carry on after the handed-over log"
+    );
+
+    let (_late, late_events) = Channel::start(config(&next, enc, 2));
+    let replayed = batches(&late_events, 4);
+    assert_eq!(replayed[..3], before[..]);
+    assert_eq!(replayed[3], after[0]);
+}
+
+/// A peer with nothing kept that reaches the new host first cannot start a
+/// log of its own while the grace lasts, so the peer holding the old log
+/// still hands it over.
+#[test]
+fn an_empty_host_waits_for_the_peer_that_holds_the_log() {
+    let enc = crypt::enc_key("secret", 1);
+    let kept = Arc::new(Mutex::new(Kept::default()));
+    let first = host();
+    let (a, a_events) = Channel::start(kept_config(&first, enc, 1, Arc::clone(&kept)));
+    a.send(del_batch(1, 1));
+    batches(&a_events, 1);
+    drop(a);
+    drop(first);
+
+    let next = Host::with_claim_grace(KEY, 10_000).expect("host starts");
+    let (fresh, fresh_events) = Channel::start(config(&next, enc, 2));
+    fresh.send(del_batch(2, 2));
+    std::thread::sleep(Duration::from_millis(500));
+    let (_a, _a_events) = Channel::start(kept_config(&next, enc, 1, kept));
+    let got = batches(&fresh_events, 2);
+    let seqs: Vec<u64> = got.iter().map(|(seq, _)| *seq).collect();
+    assert_eq!(seqs, [1, 2]);
+    assert_eq!(got[0].1, del_batch(1, 1));
 }

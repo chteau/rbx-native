@@ -54,7 +54,9 @@ impl Player {
         let state = self.state(n);
         let from = state.active;
         state.active = to;
-        state.fade = (duration > 0.).then_some(Fade {
+        // From the rest pose the new input cuts in, as real Studio's Select
+        // and Priority Select do; only a fade out to rest is blended.
+        state.fade = (duration > 0. && from != NONE).then_some(Fade {
             from,
             elapsed: 0.,
             duration,
@@ -64,8 +66,12 @@ impl Player {
 
     /// The active input, blended from the previous one while a fade runs.
     /// Only the inputs in play pass events on; during a fade both do, each
-    /// scaled by its share of the blend. UNVERIFIED: that this is what
-    /// Roblox's "global event rules" mean for a transition.
+    /// scaled by its share of the blend. Real Studio fires every marker of
+    /// both sides for the whole transition, the outgoing side's from the
+    /// switching step on, however small its share. UNVERIFIED: after a 1 s
+    /// blend Studio's incoming markers ran one step early, as if the clip
+    /// gained a step as the blend ended; the incoming clock here stays
+    /// steady until the probe's `Handover` cases are run.
     pub(in crate::graph::runtime) fn current(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let active = self.states[n].active;
         let start = self.mark();
@@ -115,12 +121,13 @@ impl Player {
         self.current(n, dt)
     }
 
-    /// Plays the first input, top down, whose Trigger is on. Leaving the
-    /// current input follows its Interruptible setting: Always, once it has
-    /// Finished, or while its InterruptibleTrigger is on. Until a Trigger
-    /// fires none plays, as in real Studio. UNVERIFIED: once one has, turning
-    /// every Trigger off keeps it playing, and the Interruptible rule guards
-    /// every change, not only one to a higher input; neither was measured.
+    /// Plays the first input, top down, whose Trigger is on, and none (the
+    /// rest pose, faded to over the default transition) while every Trigger
+    /// is off. As measured in real Studio, the current input's Interruptible
+    /// setting (Always, once it has Finished, or while its
+    /// InterruptibleTrigger is on) guards only a move to a higher input,
+    /// even after its own Trigger turned off; once its Trigger is off, a
+    /// move down or to none happens at once.
     pub(in crate::graph::runtime) fn priority_select(
         &mut self,
         n: usize,
@@ -133,9 +140,12 @@ impl Player {
             .find(|&i| self.input_prop(n, i, "Trigger").is_some_and(|v| v.truthy()));
         self.begin(n, wanted.unwrap_or(NONE));
         let active = self.states[n].active;
-        if let Some(to) = wanted.filter(|&to| to != active) {
+        let rank = |i: usize| connected.iter().position(|&c| c == i).unwrap_or(usize::MAX);
+        let to = wanted.unwrap_or(NONE);
+        if to != active {
             let rule = self.setting(n, active, "Interruptible").map(|v| v.text());
             let allowed = active == NONE
+                || rank(to) > rank(active)
                 || match rule {
                     Some(rule) if rule == "Finished" => self.states[n].done,
                     Some(rule) if rule == "Trigger" => self

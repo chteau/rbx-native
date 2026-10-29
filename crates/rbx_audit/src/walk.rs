@@ -13,7 +13,7 @@ use full_moon::visitors::Visitor;
 use rbx_dom::{Ref, WeakDom};
 
 use crate::resolve::{args, dotted, first_string, ident, string, Resolver, Val};
-use crate::{full_name, Check, Finding, LorenService, Severity, Side, Usage};
+use crate::{full_name, Check, Finding, LorenService, RequireSite, Severity, Side, Usage};
 use rbx_loren::graph::RouteKind;
 
 /// Names a script assigns to `.Name` from a string literal: instances it
@@ -704,7 +704,15 @@ impl Walker<'_> {
     }
 
     fn require(&mut self, target: &Expression, line: usize) {
-        match self.resolver.expr(target) {
+        let val = self.resolver.expr(target);
+        self.usage.requires.push(RequireSite {
+            from: self.resolver.script,
+            line,
+            target: val.clone(),
+            literal: string(target).map(str::to_owned),
+            text: target.to_string().trim().to_owned(),
+        });
+        match val {
             Val::Inst(r) => {
                 let class = self.resolver.dom.get(r).map_or("", |i| i.class());
                 if class != "ModuleScript" {

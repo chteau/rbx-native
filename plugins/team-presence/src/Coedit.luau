@@ -1,16 +1,17 @@
--- Live co-editing in Studio: captures local edits under the tracked roots,
--- sends them to the relay op log as sealed chunks, and applies every batch of
--- the log (our own included) in log order through CoeditApply.
+-- Live co-editing in Studio: captures local edits under the tracked roots
+-- (CoeditCollect turns them into ops), sends them to the relay op log and
+-- applies every batch of the log, our own included, in log order through
+-- CoeditApply (CoeditSync does the traffic).
 
 local Apply = require(script.Parent.CoeditApply)
+local Collect = require(script.Parent.CoeditCollect)
 local CoeditCore = require(script.Parent.CoeditCore)
-local Crypto = require(script.Parent.Crypto)
-local Json = require(script.Parent.Json)
+local Kept = require(script.Parent.CoeditKept)
 local Paths = require(script.Parent.Paths)
+local Sync = require(script.Parent.CoeditSync)
 
 local FLUSH_EVERY = 0.3
 local POLL_EVERY = 0.5
-local POST_TRIES = 5
 
 local ROOTS = {
 	"Workspace",
@@ -38,26 +39,13 @@ export type Options = {
 	onNote: (string) -> (),
 }
 
-local rng = Random.new()
-
--- Plugins have no CSPRNG; a v4 GUID mixed with a Random stream gives a nonce
--- that does not repeat.
-local function nonceFor(): string
-	local hex = string.gsub(game:GetService("HttpService"):GenerateGUID(false), "[^%x]", "")
-	local bytes = table.create(12)
-	for i = 1, 12 do
-		local guidByte = tonumber(string.sub(hex, i * 2 - 1, i * 2), 16) or 0
-		bytes[i] = string.char(bit32.bxor(guidByte, rng:NextInteger(0, 255)))
-	end
-	return table.concat(bytes)
-end
-
-local function freshId(): string
-	return string.lower((string.gsub(game:GetService("HttpService"):GenerateGUID(false), "-", "")))
-end
-
 local Coedit = {}
 Coedit.__index = Coedit
+Coedit.collect = Collect.collect
+Coedit.send = Sync.send
+Coedit.flush = Sync.flush
+Coedit.authorOf = Sync.authorOf
+Coedit.poll = Sync.poll
 
 function Coedit.new(options: Options)
 	local actor = string.format("%.0f", options.userId) .. ":studio:" .. CoeditCore.session()
@@ -89,6 +77,7 @@ function Coedit.new(options: Options)
 		paths = setmetatable({}, { __mode = "k" }),
 		moved = setmetatable({}, { __mode = "k" }),
 		since = 0,
+		kept = Kept.new(),
 		batchCount = 0,
 	}, Coedit)
 end
@@ -236,303 +225,6 @@ end
 function Coedit.clock(self: any): { any }
 	self.state.counter += 1
 	return { self.state.counter, self.actor }
-end
-
-local function depth(inst: Instance): number
-	local n = 0
-	local current = inst.Parent
-	while current ~= nil do
-		n += 1
-		current = current.Parent
-	end
-	return n
-end
-
--- Each class's scripting properties as a fresh `Instance.new` has them
--- (encoded), so an add only carries what differs: a part is a handful of
--- properties instead of a hundred, which matters when thousands are added.
-local defaults: { [string]: { [string]: string } } = {}
-
-local function defaultsOf(state: any, className: string): { [string]: string }
-	local found = defaults[className]
-	if found ~= nil then
-		return found
-	end
-	local made: { [string]: string } = {}
-	local ok, fresh = pcall(Instance.new, className)
-	if ok then
-		for prop in Apply.propsOf(className) do
-			local okEnc, encoded = pcall(Apply.encodeProp, state, fresh, prop)
-			if okEnc and encoded ~= nil then
-				made[prop] = encoded
-			end
-		end
-		fresh:Destroy()
-	end
-	defaults[className] = made
-	return made
-end
-
-function Coedit.collect(self: any): { any }
-	local state = self.state
-	local ops: { any } = {}
-	local targetOf = function(i: Instance)
-		return Apply.targetOf(state, i)
-	end
-
-	for _, entry in self.removed do
-		local inst = entry.inst
-		if inst.Parent ~= nil and self:isTracked(inst) then
-			-- Moved between tracked roots: a reparent, not a delete.
-			self:watch(inst)
-			local props = self.dirty[inst] or {}
-			props.Parent = true
-			self.dirty[inst] = props
-		else
-			table.insert(ops, { k = "del", id = entry.id, p = entry.p, c = self:clock() })
-		end
-	end
-	self.removed = {}
-
-	local adds: { Instance } = {}
-	for inst in self.added do
-		if inst.Parent ~= nil and self:isTracked(inst) then
-			table.insert(adds, inst)
-		end
-	end
-	self.added = {}
-	table.sort(adds, function(a, b)
-		return depth(a) < depth(b)
-	end)
-	for _, inst in adds do
-		local id = state.idOf[inst]
-		if id == nil then
-			id = freshId()
-			state.idOf[inst] = id
-			state.byId[id] = inst
-		end
-		local props = {}
-		local default = defaultsOf(state, inst.ClassName)
-		for prop in Apply.propsOf(inst.ClassName) do
-			if prop ~= "Parent" then
-				local okEnc, encoded = pcall(Apply.encodeProp, state, inst, prop)
-				if okEnc and encoded ~= nil and encoded ~= default[prop] then
-					props[prop] = Json.decode(encoded)
-				end
-			end
-		end
-		for name in inst:GetAttributes() do
-			local encoded = Apply.encodeProp(state, inst, "@" .. name)
-			if encoded ~= nil and encoded ~= "null" then
-				props["@" .. name] = Json.decode(encoded)
-			end
-		end
-		for _, tag in inst:GetTags() do
-			props["#" .. tag] = { t = "Bool", v = true }
-		end
-		props.Name = { t = "String", v = inst.Name }
-		if inst:IsA("LuaSourceContainer") then
-			local text = Apply.editorSource(inst)
-			props.Source = { t = "String", v = text }
-			state.log:hash(id, text)
-		end
-		self.dirty[inst] = nil
-		self.dirtySrc[inst] = nil
-		self.paths[inst] = Paths.pathOf(inst)
-		table.insert(ops, {
-			k = "add",
-			id = id,
-			p = Paths.pathOf(inst) or "",
-			cls = inst.ClassName,
-			parent = targetOf(inst.Parent :: Instance),
-			props = props,
-			c = self:clock(),
-		})
-	end
-
-	for inst, props in self.dirty do
-		if inst.Parent == nil or not self:isTracked(inst) then
-			continue
-		end
-		local at = targetOf(inst)
-		local function emit(prop: string, path: string)
-			local encoded = Apply.encodeProp(state, inst, prop)
-			if encoded ~= nil then
-				table.insert(ops, { k = "set", id = at.id, p = path, n = prop, v = Json.decode(encoded), c = self:clock() })
-			end
-		end
-		-- Name, then Parent, each at the path the peers still have.
-		local before = self.moved[inst]
-		if before ~= nil then
-			if props.Name then
-				props.Name = nil
-				emit("Name", before)
-				local names = Paths.split(before)
-				if names ~= nil and #names > 0 then
-					names[#names] = inst.Name
-					before = Paths.join(names)
-				end
-			end
-			if props.Parent then
-				props.Parent = nil
-				emit("Parent", before)
-			end
-		end
-		for prop in props do
-			emit(prop, at.p)
-		end
-	end
-	self.dirty = {}
-	self.moved = setmetatable({}, { __mode = "k" })
-
-	for inst in self.dirtySrc do
-		if inst.Parent == nil or not self:isTracked(inst) then
-			continue
-		end
-		local text = Apply.editorSource(inst)
-		local marks = state.marks[inst]
-		if marks ~= nil and marks.Source ~= nil then
-			local mark = marks.Source
-			marks.Source = nil
-			if mark == text then
-				continue
-			end
-		end
-		local at = targetOf(inst)
-		local key = Apply.keyOf(at)
-		local logged = state.log.texts[key]
-		if logged ~= nil and logged == text then
-			continue
-		end
-		local base = state.log:hash(key, text)
-		table.insert(ops, { k = "src", id = at.id, p = at.p, base = base, text = text, c = self:clock() })
-	end
-	self.dirtySrc = {}
-
-	for _, op in self.resend do
-		op.c = self:clock()
-		table.insert(ops, op)
-	end
-	self.resend = {}
-	return ops
-end
-
-function Coedit.send(self: any, ops: { any }): boolean
-	local options = self.options
-	local okJson, batchJson = pcall(Json.encode, { a = self.actor, ops = ops })
-	if not okJson then
-		self:note("Co-edit: could not encode an edit batch")
-		return false
-	end
-	self.batchCount += 1
-	local id = CoeditCore.session() .. string.format("%x", self.batchCount)
-	local aad = Crypto.opsAad(options.room, options.userId, "studio")
-	for _, chunk in CoeditCore.split(id, batchJson) do
-		local sealed = Crypto.sealB64(options.encKey, nonceFor(), aad, Json.encode(chunk))
-		local body = Json.encode({ v = 2, userId = options.userId, client = "studio", ct = sealed })
-		local sent = false
-		local lastError: string? = nil
-		for attempt = 1, POST_TRIES do
-			if not self.running then
-				return false
-			end
-			local okPost, ok, err = pcall(options.relay.postOps, options.relay, body)
-			if okPost and ok then
-				sent = true
-				break
-			end
-			lastError = if okPost then err else tostring(ok)
-			task.wait(0.5 * 2 ^ (attempt - 1))
-		end
-		if not sent then
-			self:note("Co-edit: could not send edits (" .. tostring(lastError) .. ")")
-			return false
-		end
-	end
-	return true
-end
-
-function Coedit.flush(self: any)
-	local ops = self:collect()
-	-- Unsent edits go out again with the next flush, to whichever host the
-	-- room has by then.
-	if #ops > 0 and not self:send(ops) then
-		for _, op in ops do
-			table.insert(self.resend, op)
-		end
-	end
-end
-
-function Coedit.authorOf(_self: any, actor: any): string
-	if type(actor) ~= "string" then
-		return "a collaborator"
-	end
-	local userId, client = string.match(actor, "^(%d+):([^:]+)")
-	if userId == nil then
-		return actor
-	end
-	return "user " .. userId .. " (" .. client .. ")"
-end
-
-function Coedit.poll(self: any)
-	local options = self.options
-	-- A new host is a new log, read from its start; what the old one
-	-- decided (last writer per property) is already in the place.
-	local base = options.relay.base
-	if base ~= nil and base ~= self.base then
-		if self.base ~= nil then
-			self.since = 0
-			self.reassembler = CoeditCore.Reassembler.new()
-			self.state.registers = CoeditCore.Registers.new()
-		end
-		self.base = base
-	end
-	local okPoll, result, err = pcall(options.relay.pollOps, options.relay, self.since)
-	if not okPoll or result == nil then
-		if not okPoll or err ~= nil then
-			self:note("Co-edit: could not read edits (" .. tostring(if okPoll then err else result) .. ")")
-		end
-		return
-	end
-	local entries = type(result.entries) == "table" and result.entries or {}
-	table.sort(entries, function(a, b)
-		return (a.seq or 0) < (b.seq or 0)
-	end)
-	if type(result.floor) == "number" and result.floor > self.since and self.since > 0 then
-		self:note("Co-edit: the relay dropped older edits; some changes may be missing")
-	end
-	for _, entry in entries do
-		if type(entry) ~= "table" or type(entry.seq) ~= "number" or type(entry.ct) ~= "string" then
-			continue
-		end
-		local client = tostring(entry.client)
-		local userId = tonumber(entry.userId) or 0
-		local plain = Crypto.openB64(options.encKey, Crypto.opsAad(options.room, userId, client), entry.ct)
-		if plain == nil then
-			continue
-		end
-		local okChunk, chunk = pcall(Json.decode, plain)
-		if not okChunk or type(chunk) ~= "table" then
-			continue
-		end
-		local text = self.reassembler:push(entry.seq, string.format("%.0f", userId) .. ":" .. client, chunk)
-		if text == nil then
-			continue
-		end
-		local okBatch, batch = pcall(Json.decode, text)
-		if okBatch and type(batch) == "table" then
-			local outcome = self.apply:batch(batch, batch.a == self.actor, self:authorOf(batch.a))
-			for _, line in outcome.notes do
-				self:note(line)
-			end
-			for _, op in outcome.resend do
-				table.insert(self.resend, op)
-			end
-		end
-	end
-	if type(result.head) == "number" then
-		self.since = math.max(self.since, result.head)
-	end
 end
 
 function Coedit.start(self: any)

@@ -494,7 +494,46 @@ fn a_name_containing_a_dot_still_resolves_once_the_path_fails() {
     dom.set_parent(dotted, Some(workspace));
 
     assert_eq!(resolve(&dom, "Config.v2"), Some(dotted));
-    assert_eq!(resolve(&dom, "Workspace.Config.v2"), None);
+    assert_eq!(resolve(&dom, "Workspace.Config.v2"), Some(dotted));
+}
+
+#[test]
+fn the_longest_child_name_wins_inside_a_path() {
+    let mut dom = WeakDom::new();
+    let workspace = insert(&mut dom, 1, "Workspace", "Workspace");
+    let spec = insert(&mut dom, 2, "ModuleScript", "Smoke.spec");
+    let smoke = insert(&mut dom, 3, "Folder", "Smoke");
+    let nested = insert(&mut dom, 4, "ModuleScript", "spec");
+    let dotted_folder = insert(&mut dom, 5, "Folder", "Tests.unit");
+    let inside = insert(&mut dom, 6, "ModuleScript", "Smoke.spec");
+    dom.set_parent(spec, Some(workspace));
+    dom.set_parent(smoke, Some(workspace));
+    dom.set_parent(nested, Some(smoke));
+    dom.set_parent(dotted_folder, Some(workspace));
+    dom.set_parent(inside, Some(dotted_folder));
+
+    // `Smoke.spec` the script beats `Smoke` the folder's child `spec`.
+    assert_eq!(resolve(&dom, "Workspace.Smoke.spec"), Some(spec));
+    assert_eq!(
+        resolve(&dom, "Workspace.Tests.unit.Smoke.spec"),
+        Some(inside)
+    );
+    assert_eq!(resolve(&dom, "Smoke.spec"), Some(spec));
+}
+
+#[test]
+fn a_shorter_name_is_tried_when_the_longest_dead_ends() {
+    let mut dom = WeakDom::new();
+    let workspace = insert(&mut dom, 1, "Workspace", "Workspace");
+    let dotted = insert(&mut dom, 2, "Folder", "A.B");
+    let plain = insert(&mut dom, 3, "Folder", "A");
+    let leaf = insert(&mut dom, 4, "Part", "B.C");
+    dom.set_parent(dotted, Some(workspace));
+    dom.set_parent(plain, Some(workspace));
+    dom.set_parent(leaf, Some(plain));
+
+    // `A.B` matches first but has no `C` under it; `A` then `B.C` does.
+    assert_eq!(resolve(&dom, "Workspace.A.B.C"), Some(leaf));
 }
 
 #[test]

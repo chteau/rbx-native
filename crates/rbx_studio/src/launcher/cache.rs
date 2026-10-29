@@ -72,7 +72,22 @@ impl GamesCache {
     }
 }
 
-pub(super) fn read_icon(universe_id: u64) -> Option<Vec<u8>> {
+/// The games Home last listed for the last account it showed, personal
+/// first, then each group's; for windows that pick an experience without
+/// waiting on Roblox.
+pub(crate) fn cached_games() -> Vec<Experience> {
+    let Some(cache) = GamesCache::last_user().and_then(GamesCache::load) else {
+        return Vec::new();
+    };
+    let mut groups: Vec<_> = cache.group_games.into_iter().collect();
+    groups.sort_by_key(|(id, _)| *id);
+    let mut games = cache.listing.experiences;
+    games.extend(groups.into_iter().flat_map(|(_, games)| games));
+    games.dedup_by_key(|game| game.universe_id);
+    games
+}
+
+pub(crate) fn read_icon(universe_id: u64) -> Option<Vec<u8>> {
     std::fs::read(icon_file(universe_id)?).ok()
 }
 

@@ -20,6 +20,7 @@ mod error;
 mod experience_settings;
 mod experiences;
 pub mod expiry;
+mod game_icon;
 mod games;
 pub mod heartbeats;
 mod introspect;
@@ -53,6 +54,7 @@ pub use datastores::{
 pub use error::{CloudError, KeyedRefusal};
 pub use experience_settings::{ExperienceSettings, ExperienceUpdate, PlaceSettings, PlaceUpdate};
 pub use experiences::{Experience, Experiences, Group};
+pub use game_icon::{GameIcon, Moderation};
 pub use games::{Creator, CreatorKind, GameSummary};
 pub use introspect::{KeyInfo, Scope};
 pub use inventory::{InventoryAsset, InventoryPage};

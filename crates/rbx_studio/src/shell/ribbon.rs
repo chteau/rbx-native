@@ -581,7 +581,7 @@ impl Shell {
     }
 
     fn settings_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        vec![
+        let mut tiles = vec![
             tile(
                 &self.ribbon_nav,
                 "ribbon-game-settings",
@@ -614,7 +614,30 @@ impl Shell {
             })
             .on_click(cx.listener(|shell, _, _, cx| RibbonCommand::DataStores.run(shell, cx)))
             .into_any_element(),
-        ]
+        ];
+        if crate::beta::enabled(crate::update_planning::BETA_ID) {
+            tiles.push(
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-update-planning",
+                    IconName::CalendarClock,
+                    "Update Planning",
+                    cx,
+                )
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Update Planning \u{2014} countdown icons swapped in on schedule",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(
+                    cx.listener(|shell, _, _, cx| RibbonCommand::UpdatePlanning.run(shell, cx)),
+                )
+                .into_any_element(),
+            );
+        }
+        tiles
     }
 
     /// One toggle per dock, and the reason they exist: a dock closed from

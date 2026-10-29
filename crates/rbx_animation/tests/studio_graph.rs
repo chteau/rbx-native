@@ -3,8 +3,9 @@
 //! question (Blend2D weights, Over/Add/Subtract, a seeded RandomSequence),
 //! the command-bar Lua that plays each graph on Studio's Animator and stores
 //! the joint's `Transform` per sample in `Workspace.GraphDump`, and what our
-//! `Player` gives for the same samples. `studio_matches_our_graphs` reads the
-//! place back after Studio saved it and diffs the two. Both need Studio.
+//! `Player` gives for the same samples. `studio_matches_our_graphs` diffs
+//! ours against `fixtures/studio_graph_dump.txt`, the `GraphDump.Value` of
+//! the place Studio saved after running that Lua (Studio 0.745, 2026-10-28).
 
 use std::collections::BTreeMap;
 use std::f32::consts::FRAC_PI_2;
@@ -485,18 +486,8 @@ fn parse(text: &str) -> BTreeMap<(String, usize), Vec<f32>> {
 }
 
 #[test]
-#[ignore = "needs RBX_GRAPH_OUT/graph180_studio.rbxl, saved by real Studio"]
 fn studio_matches_our_graphs() {
-    let saved = std::fs::read(out_dir().join("graph180_studio.rbxl")).unwrap();
-    let dom = rbx_binary::deserialize(&saved).unwrap();
-    let dump = (0..dom.next_ref())
-        .filter_map(|r| dom.get(Ref::new(r)))
-        .find(|i| i.name() == "GraphDump")
-        .expect("run graph180.lua in Studio first");
-    let Some(Variant::String(text)) = dump.properties().get("Value") else {
-        panic!("GraphDump.Value is not a string");
-    };
-    let studio = parse(text);
+    let studio = parse(include_str!("fixtures/studio_graph_dump.txt"));
     let ours = parse(&all_ours().join("\n"));
     let mut worst: BTreeMap<String, f32> = BTreeMap::new();
     for (key, theirs) in &studio {

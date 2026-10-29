@@ -49,6 +49,10 @@ use super::{is_drawable, srgb_to_linear, union_triangles, WORKSPACE_CLASS};
 use crate::textures::asset_uri;
 use crate::textures::clothing::{Limb, Wardrobe};
 
+mod models;
+
+pub use models::{Breakdown, ModelCost};
+
 /// Reads an asset's bytes out of a local cache, `None` when it is not there.
 pub type Fetch<'a> = dyn FnMut(&AssetRef) -> Option<Vec<u8>> + 'a;
 
@@ -104,6 +108,10 @@ pub enum Metric {
     TextureMemory,
     Collision,
     DrawCost,
+    /// Every factor of [`ModelCost`] weighed into one score, see `models`.
+    Total,
+    /// Simulated parts, constraints and costly collision fidelities.
+    Physics,
 }
 
 impl Metric {
@@ -115,6 +123,9 @@ impl Metric {
         Metric::DrawCost,
     ];
 
+    /// The measures behind the `perf-models` beta switch.
+    pub const BETA: [Metric; 2] = [Metric::Total, Metric::Physics];
+
     pub fn label(self) -> &'static str {
         match self {
             Metric::Density => "Part density",
@@ -122,6 +133,8 @@ impl Metric {
             Metric::TextureMemory => "Texture memory",
             Metric::Collision => "Collision cost",
             Metric::DrawCost => "Draw cost",
+            Metric::Total => "Total (estimate)",
+            Metric::Physics => "Physics",
         }
     }
 
@@ -131,7 +144,7 @@ impl Metric {
     fn logarithmic(self) -> bool {
         matches!(
             self,
-            Metric::Density | Metric::Triangles | Metric::TextureMemory
+            Metric::Density | Metric::Triangles | Metric::TextureMemory | Metric::Total
         )
     }
 
@@ -142,6 +155,7 @@ impl Metric {
             Metric::Triangles => format!("{} triangles", grouped(value.round() as u64)),
             Metric::Collision => format!("score {value:.2}"),
             Metric::DrawCost => format!("{value:.3} of a batch"),
+            Metric::Total | Metric::Physics => format!("{value:.1} pts"),
             Metric::TextureMemory => self.short(value),
         }
     }
@@ -153,6 +167,7 @@ impl Metric {
             Metric::TextureMemory => bytes(value as u64),
             Metric::Collision => format!("{value:.2}"),
             Metric::DrawCost => format!("{value:.3}"),
+            Metric::Total | Metric::Physics => format!("{value:.1}"),
         }
     }
 }
@@ -186,6 +201,8 @@ pub struct Report {
     /// The [`WORST`] costliest parts, costliest first; a part costing nothing
     /// is never listed.
     pub worst: Vec<Ref>,
+    /// The [`WORST`] costliest models, see `models`.
+    pub models: Vec<ModelCost>,
     readouts: HashMap<Ref, Readout>,
 }
 
@@ -262,6 +279,9 @@ struct Entry {
     queried: bool,
     anchored: bool,
     batch: u64,
+    /// The outermost `Model` the part sits in, below the `Workspace`.
+    model: Option<Ref>,
+    extra: models::Extra,
 }
 
 /// Every part's record, kept in step with the DOM.
@@ -281,6 +301,11 @@ pub struct Metrics {
     materials: Service,
     /// Every garment in the `Workspace`, by the model it dresses.
     garments: HashMap<Ref, Ref>,
+    /// Every physics constraint in the `Workspace`, as the parts its
+    /// attachments sit on.
+    constraints: HashMap<Ref, Vec<Ref>>,
+    /// Every `Model` in the `Workspace`, by name.
+    models: HashMap<Ref, String>,
 }
 
 impl Metrics {
@@ -296,6 +321,8 @@ impl Metrics {
             unions: HashMap::new(),
             materials: material_service(dom, database),
             garments: HashMap::new(),
+            constraints: HashMap::new(),
+            models: HashMap::new(),
         };
         let all: Vec<Ref> = super::workspace_descendants(dom, metrics.database).collect();
         for referent in all {
@@ -351,6 +378,8 @@ impl Metrics {
                 Change::Removed(referent) => {
                     self.entries.remove(referent);
                     self.joints.remove(referent);
+                    self.constraints.remove(referent);
+                    self.models.remove(referent);
                 }
             }
         }
@@ -358,6 +387,10 @@ impl Metrics {
         self.entries
             .retain(|referent, _| dom.get(*referent).is_some());
         self.joints
+            .retain(|referent, _| dom.get(*referent).is_some());
+        self.constraints
+            .retain(|referent, _| dom.get(*referent).is_some());
+        self.models
             .retain(|referent, _| dom.get(*referent).is_some());
 
         let mut owners = HashSet::new();
@@ -413,6 +446,8 @@ impl Metrics {
             Metric::TextureMemory => self.texture_memory(),
             Metric::Collision => self.collision(),
             Metric::DrawCost => self.draw_cost(),
+            Metric::Total => self.total(),
+            Metric::Physics => self.physics(),
         };
         let max = values.values().copied().fold(0.0_f32, f32::max);
         let scale = |value: f32| -> f32 {
@@ -483,6 +518,7 @@ impl Metrics {
             legend,
             bins,
             worst,
+            models: self.models_ranked(metric),
             readouts,
         }
     }
@@ -756,6 +792,8 @@ impl Metrics {
         let Some(instance) = dom.get(referent) else {
             self.entries.remove(&referent);
             self.joints.remove(&referent);
+            self.constraints.remove(&referent);
+            self.models.remove(&referent);
             return;
         };
         let inside = inside || self.in_workspace(dom, referent);
@@ -776,6 +814,7 @@ impl Metrics {
                 _ => self.garments.remove(&referent),
             };
         }
+        self.read_extra(dom, referent, inside);
         if inside && is_drawable(dom, self.database, referent) {
             let entry = self.entry(dom, referent, fetch);
             self.entries.insert(referent, entry);
@@ -796,6 +835,7 @@ impl Metrics {
         let cell = (position / CELL_STUDS).floor().as_ivec3().to_array();
 
         let mut instances = 1;
+        let mut extra = models::Extra::of(properties, size);
         let mut textures = Vec::new();
         let mut pending: Vec<Ref> = instance.children().to_vec();
         while let Some(child) = pending.pop() {
@@ -806,6 +846,7 @@ impl Metrics {
                 continue;
             }
             instances += 1;
+            extra.count_light(child);
             pending.extend_from_slice(child.children());
             if matches!(child.class(), "Decal" | "Texture") {
                 textures.extend(child.properties().get("Texture").and_then(reference));
@@ -893,6 +934,8 @@ impl Metrics {
             queried,
             anchored: bool_or(properties, "Anchored", false),
             batch: hasher.finish(),
+            model: self.outer_model(dom, referent),
+            extra,
         }
     }
 }

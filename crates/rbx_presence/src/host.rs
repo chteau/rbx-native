@@ -9,11 +9,13 @@
 //! HTTP reply. The room lives in memory only and is gone when the host
 //! stops; payloads are never logged.
 
+mod http;
 mod ops;
+mod ops_route;
 mod room;
 mod validate;
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufReader, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -25,10 +27,11 @@ use tungstenite::protocol::Role;
 use tungstenite::{Message, WebSocket};
 
 use crate::auth;
-use crate::schema::{Client, MAX_BODY_BYTES};
-pub use ops::{OpLog, OPS_LOG_BYTES, OPS_REPLY_BYTES};
+use crate::schema::{Client, MAX_BODY_BYTES, OPS_BODY_BYTES};
+use http::{constant_eq, number_query, read_request, refuse, respond, Incoming, Request};
+pub use ops::{OpLog, CLAIM_GRACE_MS, OPS_LOG_BYTES, OPS_REPLY_BYTES};
 pub use room::{Refusal, Room};
-pub use validate::{parse_sealed, parse_sealed_op};
+pub use validate::{parse_fill, parse_sealed, parse_sealed_ops};
 
 /// A long-poll answers after this long even when nothing changed.
 pub const POLL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -36,7 +39,6 @@ pub const POLL_TIMEOUT: Duration = Duration::from_secs(20);
 const SWEEP: Duration = Duration::from_secs(5);
 /// How often a socket thread checks for a newer snapshot to push.
 const SOCKET_TICK: Duration = Duration::from_millis(100);
-const MAX_HEAD: usize = 16 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct Shared {
@@ -89,6 +91,12 @@ pub struct Host {
 impl Host {
     /// Binds `127.0.0.1:0` for the room of `key` and starts serving.
     pub fn start(key: &str) -> std::io::Result<Host> {
+        Host::with_claim_grace(key, CLAIM_GRACE_MS)
+    }
+
+    /// [`Host::start`] whose empty op log waits `grace` ms for a peer to
+    /// hand it the room's log before taking new posts.
+    pub fn with_claim_grace(key: &str, grace: u64) -> std::io::Result<Host> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         let addr = listener.local_addr()?;
         let shared = Arc::new(Shared {
@@ -96,7 +104,7 @@ impl Host {
             room_id: auth::room_id(key),
             room: Mutex::new(Room::default()),
             changed: Condvar::new(),
-            ops: Mutex::new(OpLog::default()),
+            ops: Mutex::new(OpLog::new(OPS_LOG_BYTES, grace)),
             ops_changed: Condvar::new(),
             stop: AtomicBool::new(false),
             sockets: Mutex::new(Vec::new()),
@@ -155,142 +163,14 @@ impl Drop for Host {
     }
 }
 
-struct Request {
-    method: String,
-    target: String,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
-}
-
-impl Request {
-    fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
+/// The op log takes many chunks per request; everything else is small.
+fn body_limit(target: &str) -> usize {
+    let path = target.split('?').next().unwrap_or("");
+    if path.ends_with("/ops") || path.ends_with("/ops/fill") {
+        OPS_BODY_BYTES
+    } else {
+        MAX_BODY_BYTES
     }
-
-    fn path(&self) -> &str {
-        self.target.split('?').next().unwrap_or("")
-    }
-
-    fn query(&self, name: &str) -> Option<&str> {
-        let query = self.target.split_once('?')?.1;
-        query.split('&').find_map(|pair| {
-            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
-            (k == name).then_some(v)
-        })
-    }
-}
-
-enum Incoming {
-    Request(Request),
-    TooLarge,
-    Bad,
-}
-
-fn read_request(reader: &mut BufReader<TcpStream>) -> Incoming {
-    let mut line = String::new();
-    if reader.read_line(&mut line).unwrap_or(0) == 0 {
-        return Incoming::Bad;
-    }
-    let mut parts = line.split_whitespace();
-    let (Some(method), Some(target)) = (parts.next(), parts.next()) else {
-        return Incoming::Bad;
-    };
-    let (method, target) = (method.to_owned(), target.to_owned());
-    let mut headers = Vec::new();
-    let mut head = line.len();
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            return Incoming::Bad;
-        }
-        head += line.len();
-        if head > MAX_HEAD {
-            return Incoming::TooLarge;
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            break;
-        }
-        if let Some((k, v)) = line.split_once(':') {
-            headers.push((k.trim().to_owned(), v.trim().to_owned()));
-        }
-    }
-    let mut request = Request {
-        method,
-        target,
-        headers,
-        body: Vec::new(),
-    };
-    if request
-        .header("transfer-encoding")
-        .is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
-    {
-        loop {
-            let mut size = String::new();
-            if reader.read_line(&mut size).unwrap_or(0) == 0 {
-                return Incoming::Bad;
-            }
-            let Ok(n) = usize::from_str_radix(size.trim().split(';').next().unwrap_or(""), 16)
-            else {
-                return Incoming::Bad;
-            };
-            if request.body.len() + n > MAX_BODY_BYTES {
-                return Incoming::TooLarge;
-            }
-            let mut chunk = vec![0; n + 2];
-            if reader.read_exact(&mut chunk).is_err() {
-                return Incoming::Bad;
-            }
-            if n == 0 {
-                break;
-            }
-            request.body.extend_from_slice(&chunk[..n]);
-        }
-    } else if let Some(len) = request.header("content-length") {
-        let Ok(len) = len.parse::<usize>() else {
-            return Incoming::Bad;
-        };
-        if len > MAX_BODY_BYTES {
-            return Incoming::TooLarge;
-        }
-        request.body = vec![0; len];
-        if reader.read_exact(&mut request.body).is_err() {
-            return Incoming::Bad;
-        }
-    }
-    Incoming::Request(request)
-}
-
-fn respond(stream: &mut TcpStream, status: u16, body: &str) {
-    let reason = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        413 => "Payload Too Large",
-        426 => "Upgrade Required",
-        429 => "Too Many Requests",
-        _ => "Error",
-    };
-    let _ = write!(
-        stream,
-        "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _ = stream.flush();
-}
-
-fn refuse(stream: &mut TcpStream, refusal: Refusal) {
-    respond(
-        stream,
-        refusal.status,
-        &serde_json::json!({ "error": refusal.error }).to_string(),
-    );
 }
 
 fn handle(shared: &Arc<Shared>, stream: TcpStream) {
@@ -301,7 +181,7 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
     };
     let mut reader = BufReader::new(clone);
     let mut stream = stream;
-    let request = match read_request(&mut reader) {
+    let request = match read_request(&mut reader, body_limit) {
         Incoming::Request(request) => request,
         Incoming::TooLarge => return refuse(&mut stream, Refusal::new(413, "size")),
         Incoming::Bad => return,
@@ -323,7 +203,10 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
     let method = request.method.as_str();
     let allowed = matches!(
         (route.as_str(), method),
-        ("state", "POST" | "DELETE") | ("poll" | "journal" | "ws", "GET") | ("ops", "POST" | "GET")
+        ("state", "POST" | "DELETE")
+            | ("poll" | "journal" | "ws", "GET")
+            | ("ops", "POST" | "GET")
+            | ("ops/fill", "POST")
     );
     if !allowed {
         return respond(&mut stream, 405, "\"method not allowed\"");
@@ -357,7 +240,7 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
     // The op log takes posts from several editors of one user at once, which
     // a strictly rising timestamp would turn away; it refuses a request it
     // has already seen instead (`OpLog::fresh`).
-    if method != "GET" && route != "ops" {
+    if method != "GET" && !route.starts_with("ops") {
         // After the signature, so an unsigned request cannot advance it.
         if let Err(fault) = shared.room().check_time(user_id, ts, now, true) {
             return refuse(&mut stream, fault);
@@ -382,45 +265,8 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
                 Err(fault) => refuse(&mut stream, fault),
             }
         }
-        ("ops", "POST") => {
-            let body = String::from_utf8_lossy(&request.body);
-            let result = parse_sealed_op(&body, user_id).and_then(|op| {
-                let mut ops = lock(&shared.ops);
-                ops.fresh(sig, now)?;
-                ops.append(op, now)
-            });
-            match result {
-                Ok(seq) => {
-                    shared.ops_changed.notify_all();
-                    respond(
-                        &mut stream,
-                        200,
-                        &serde_json::json!({ "seq": seq }).to_string(),
-                    );
-                }
-                Err(fault) => refuse(&mut stream, fault),
-            }
-        }
-        ("ops", _) => {
-            let Some(since) = number_query(&request, "since") else {
-                return refuse(&mut stream, Refusal::new(400, "schema"));
-            };
-            let deadline = Instant::now() + POLL_TIMEOUT;
-            let mut log = lock(&shared.ops);
-            while log.head() <= since && !shared.stop.load(Ordering::SeqCst) {
-                let Some(left) = deadline.checked_duration_since(Instant::now()) else {
-                    break;
-                };
-                log = shared
-                    .ops_changed
-                    .wait_timeout(log, left)
-                    .unwrap_or_else(|e| e.into_inner())
-                    .0;
-            }
-            let body =
-                serde_json::to_string(&log.since(since, OPS_REPLY_BYTES)).unwrap_or_default();
-            drop(log);
-            respond(&mut stream, 200, &body);
+        ("ops" | "ops/fill", _) => {
+            ops_route::serve(shared, &route, &request, user_id, sig, now, &mut stream)
         }
         ("state", _) => {
             // Only the plugin deletes over HTTP; `?client=` names the editor.
@@ -473,25 +319,6 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
         }
         _ => socket(shared, stream, &request, user_id),
     }
-}
-
-fn number_query(request: &Request, name: &str) -> Option<u64> {
-    match request.query(name) {
-        None => Some(0),
-        Some(v) => v
-            .parse::<f64>()
-            .ok()
-            .filter(|n| n.is_finite() && *n >= 0.0)
-            .map(|n| n as u64),
-    }
-}
-
-fn constant_eq(a: &str, b: &str) -> bool {
-    a.len() == b.len()
-        && a.bytes()
-            .zip(b.bytes())
-            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-            == 0
 }
 
 /// The WebSocket route: answers the upgrade itself, sends the snapshot,

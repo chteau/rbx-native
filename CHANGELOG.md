@@ -13,8 +13,68 @@
   Studio's own format as one undo step, skipping strings already in a
   table. Catching a layout that only fits English before a translator ever
   sees the game is the point. (@chteau)
+- **Performance heatmap totals and a model ranking (beta).** Behind
+  File › Beta Features, the Viewport dock's Performance view gains Total
+  and Physics. Total weighs every factor a part costs into one score:
+  triangles, decoded texture memory, instances, simulated parts and
+  physics constraints, `PreciseConvexDecomposition` (or `Default` on a
+  dense mesh), dense meshes casting shadows, lights with `Shadows` on,
+  and translucent or Glass overdraw. Both also rank the 20 costliest
+  models, each row giving what drives it, its raw figures on hover, and a
+  click that selects the model and frames it. The weights are a
+  documented estimate for comparing parts of one place, not Roblox's own
+  costs. (@chteau)
+
+- **Module require graph (beta).** View › Require Graph, behind File ›
+  Beta Features, draws every script and ModuleScript with an edge for
+  each `require(...)` the security audit's resolver can follow (services,
+  `WaitForChild`, `FindFirstChild`, dot chains, `script.Parent`, locals,
+  and require-by-string paths). A require it can't follow (a dynamic
+  path, an asset id) is a dashed edge to a box with its text and line.
+  Cycles are drawn red, a client script requiring something in
+  `ServerScriptService` or `ServerStorage` (which fails at run time)
+  amber, and a column beside the graph lists both, the unknown requires
+  and the modules nothing requires. A box opens its script; an edge's
+  line badge opens the require. (@chteau)
 
 ## 2026-10-28
+
+- **Update planning (beta)**: countdown icons on autopilot, MiniDev's
+  idea. File › Update Planning… (switch it on under Beta features) lists
+  your experiences; for one, pick the current icon (fetched from Roblox or
+  a file), the new icon and the update time, and its reusable timers (12,
+  6, 3 and 1 hours to start with, each a 512×512 overlay in one of three
+  styles we drew, or your own PNG) show on a timeline of what the icon will
+  be when. Start update uploads every image at once so Roblox reviews it
+  early, then a steps view shows each one in review, approved, upcoming or
+  applied, with the "update in" countdown and Cancel. Each step swaps the
+  icon through the key's `legacy-universe:manage` route and sends a
+  desktop notification; a late run applies whatever is due now and skips
+  the rest. Steps fire while the editor is open and from a helper the OS
+  runs every minute (a systemd user timer, a launchd agent or a Task
+  Scheduler task), removed when nothing is left. None of it has been sent
+  to Roblox yet; the findings are in
+  `docs/research/update-planning-icon-api.md`. (@chteau)
+- **Co-editing with no rbx-native host, and a faster first sync**: the
+  Worker relay now keeps the co-editing op log in its Durable Object
+  storage, ciphertext only, so a team of Studio users can co-edit with
+  nobody running rbx-native. A new host no longer starts from an empty log:
+  every peer keeps the entries it read, and hands them to a relay that lost
+  them (the hosted relay waits 30 s for that before taking new edits). The
+  plugin now seals a big change first and posts it in 512 KiB groups
+  instead of one request per 7 KB chunk: 12,000 parts went from 632 POSTs
+  over 29 s to 16 POSTs, landing in the log in 2.3 s, measured against
+  real Studio on a local relay. Numbers and the design are in
+  `docs/research/coedit-hostless.md`. (@chteau)
+- **Pre-alpha fixes**: skipping the API key wizard is remembered, so a
+  launch without a key goes to Home (Manage key adds one later) and only
+  `--setup` brings the wizard back. `--select` names an instance with a dot
+  in it (`Workspace.Smoke.spec`): the longest child name that fits wins at
+  each step, backing off if the rest of the path then fails. The soft-snap
+  search takes its time budget as an argument, which stops its test failing
+  on slow CI runners, and the Device Simulator's touch stand-in is split
+  into four modules instead of one 1000-line script, behaving the same.
+  (@chteau)
 
 - **Alpha test builds**: a hand-dispatched `Test build` workflow builds
   `rbxstudio` in release for Windows, macOS (Apple Silicon) and Linux and
@@ -45,6 +105,22 @@
   `ViGEmClient.dll` you put next to the editor (not shipped, and not yet
   tried on Windows). `examples/gamepad_demo.rs` makes a place that logs
   what a game script sees from the pad. (@chteau)
+- **The rest of the Animation Graph guesses, measured**: the runtime's
+  last UNVERIFIED behaviours were measured in real Studio, and the runtime
+  now matches them. A trigger is seen by exactly one step and reads true
+  until the next one clears it. A state-machine transition takes effect
+  within the step that sees it. Ties between transitions are no longer
+  random: a state's own transition beats "(Any)", then the first listed
+  wins. During a transition both sides fire their markers. A marker is
+  taken at the start of the step that passes it, not at the end. A
+  Priority Select fades to rest once every Trigger is off. Its
+  Interruptible setting only holds back a move to a higher input. A pick
+  from rest cuts in with no fade. A Mask naming no mask passes everything
+  through, Invert or not, and Unsynced blend inputs keep running while
+  weightless. `studio_graph.rs` now checks against a committed text dump
+  of Studio's numbers, so it runs without Studio. Found along the way, and
+  not fixed: Studio ignores the `EntryState` our writer saves, so our state
+  machines play nothing there. (@chteau)
 - **Animation Graphs play as real Studio does**: the guesses the graph
   runtime made where Roblox's docs are silent were measured in real Studio
   and fixed to match. RandomSequence now picks what Studio picks for the

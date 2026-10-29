@@ -533,6 +533,7 @@ impl Shell {
         self.fetch_catchup(client_config.clone(), since, cx);
         let seed = super::coedit::Seed {
             kind: config.kind,
+            url: config.url.clone(),
             room: client_config.room.clone(),
             key: client_config.key.clone(),
             enc_key: client_config.enc_key,
