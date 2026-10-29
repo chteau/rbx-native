@@ -82,6 +82,7 @@ fn state_machine_crossfades_on_an_expression() {
     let sm = g.add(NodeKind::StateMachine);
     g.connect(idle, sm, "State1");
     g.connect(run, sm, "State2");
+    semantics::set(&mut g, sm, "EntryState", Value::Text("State1".into()));
     let mut t = Transition::new(Some(0), 1);
     t.expression = "speed > 5".into();
     t.duration = 0.5;

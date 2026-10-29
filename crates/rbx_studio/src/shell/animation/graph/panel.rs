@@ -223,7 +223,16 @@ impl Shell {
                     }),
             );
         }
-        let new_name = self.anim_graph_input("new-param", "", window, cx);
+        // Seeded with its own text: clicking a kind button blurs the field,
+        // and an empty seed would wipe the name before the click lands.
+        let typed = self
+            .anim
+            .graph
+            .inputs
+            .get("new-param")
+            .map(|i| i.read(cx).value().to_string())
+            .unwrap_or_default();
+        let new_name = self.anim_graph_input("new-param", &typed, window, cx);
         out.child(field_row_owned("New", &new_name)).child(
             h_flex()
                 .gap(px(4.))

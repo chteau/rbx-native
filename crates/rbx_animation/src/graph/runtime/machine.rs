@@ -4,7 +4,7 @@
 use crate::graph::model::{WaitFor, When};
 use crate::graph::pose::Pose;
 
-use super::{Player, Status};
+use super::{Player, Status, NONE};
 
 impl Player {
     /// An Expression transition is ready while its expression is truthy, a
@@ -15,8 +15,13 @@ impl Player {
     /// randomness); and an "(Any)" transition never re-enters the state
     /// already playing, so holding its condition on does not restart it.
     pub(super) fn state_machine(&mut self, n: usize, dt: f32) -> (Pose, Status) {
+        // With no EntryState (or one naming no state) real Studio plays
+        // nothing, and not even an "(Any)" transition starts a state.
         let entry = self.text(n, "EntryState");
-        let first = self.pin_index(n, &entry).unwrap_or(0);
+        let Some(first) = self.pin_index(n, &entry) else {
+            self.state(n).active = NONE;
+            return self.child(n, NONE, dt);
+        };
         self.begin(n, first);
         // Transitions are taken as the step begins, so the new state plays
         // in the same step, as in real Studio; Finished ones read how the

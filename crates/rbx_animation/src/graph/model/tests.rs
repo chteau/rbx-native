@@ -79,6 +79,29 @@ fn new_pins_follow_the_placeholder_names() {
 }
 
 #[test]
+fn the_first_state_becomes_the_entry_and_a_deleted_entry_stays_unset() {
+    let mut g = Graph::default();
+    let sm = g.add(NodeKind::StateMachine);
+    let clip = g.add(NodeKind::Clip);
+    let entry = |g: &Graph| g.nodes[sm].props["EntryState"].clone();
+    let text = |s: &str| Prop::Value(Value::Text(s.into()));
+    let first = g.connect_new(clip, sm).unwrap();
+    g.nodes[sm].add_pin();
+    assert_eq!(entry(&g), text(&first));
+    g.nodes[sm]
+        .props
+        .insert("EntryState".into(), text("New State"));
+    g.nodes[sm].add_pin();
+    assert_eq!(entry(&g), text("New State"));
+    // Studio (measured) keeps a deleted entry dead: no new state takes over,
+    // not even one that reuses its name.
+    g.nodes[sm].remove_pin("New State");
+    assert_eq!(entry(&g), text(""));
+    assert_eq!(g.nodes[sm].add_pin(), Some("New State"));
+    assert_eq!(entry(&g), text(""));
+}
+
+#[test]
 fn removing_a_state_drops_its_transitions() {
     let mut g = Graph::default();
     let sm = g.add(NodeKind::StateMachine);

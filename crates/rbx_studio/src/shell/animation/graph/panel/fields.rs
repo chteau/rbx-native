@@ -147,6 +147,8 @@ impl Shell {
                     default,
                 })
             });
+            // Made again, empty, on the next render.
+            doc.inputs.remove("new-param");
         }
         cx.notify();
     }

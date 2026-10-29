@@ -238,6 +238,20 @@ fn machines() -> Vec<Case> {
         let g = machine(name, &[("Go", ParamKind::Bool)], &loops, &ts);
         out.push(case(g, tie.clone()));
     }
+    // No EntryState: whether anything plays, and whether an "(Any)"
+    // transition still enters a state. `N` shows GetParameter's value
+    // before any SetParameter.
+    let mut g = machine(
+        "NoEntry",
+        &[("Go", ParamKind::Bool)],
+        &loops,
+        &[(None, 1, "Go", 1, 0.)],
+    );
+    param(&mut g, "N", ParamKind::Number, Value::Number(2.));
+    for node in &mut g.nodes {
+        node.props.remove("EntryState");
+    }
+    out.push(case(g, tie.clone()));
     out
 }
 

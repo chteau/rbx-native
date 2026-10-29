@@ -113,7 +113,7 @@ x = 0 to 1 over one and two seconds, so a joint's x is its clip's phase.
 Each sample now also prints the markers reached, as `value@step`, and every
 parameter's `GetParameter` value.
 
-Three things about the harness:
+Four things about the harness:
 
 - Marker handlers are deferred, and `Workspace.SignalBehavior` cannot be
   read or set from the command bar. The event cases call `task.wait()`
@@ -121,14 +121,22 @@ Three things about the harness:
   no step changes nothing in the graph; sample 4 of the trigger case
   checks this.
 - A state machine with no `EntryState` plays nothing.
-- Studio does not resolve the `EntryState` attribute in a place file
-  this crate wrote. It loads as an unresolved `InstanceHandle`, and so
-  plays nothing. The bytes match the ones Studio wrote for the same
-  instance, and Studio's own save of the place reloads fine. Adding
-  `UniqueId`s to every instance did not help. The cause is still open,
-  and it means that state machines written by rbx-native do not play
-  when the place is opened in Studio. The probe sets the attribute again
-  from Lua before it plays anything.
+- Studio resolves an `Instance` attribute (type `0x25`) while it reads
+  the holder's PROP chunk, against the instances whose INST chunks it has
+  read so far. A target whose INST chunk comes later stays an unresolved
+  `InstanceHandle` (`:Get()` returns nil, and Studio saves it back as
+  referent `0xFFFFFFFF`), and the state machine plays nothing. Studio
+  writes every INST chunk before the first PROP. `rbx_binary` used to
+  write each class's PROPs right after its INST, and `AnimationNodeDefinition`
+  is seen before `ObjectValue`, so every `EntryState` it wrote was lost.
+  The referent numbers, the blob bytes and the PRNT order were not the
+  cause: a file written with Studio's postorder PRNT still failed, and the
+  same file with INST chunks first resolved all 32 state machines
+  (measured 2026-10-29, Studio 0.745). `GetAttribute` returns an
+  `InstanceHandle` for any `Instance` attribute, set from Lua or not;
+  `:Get()` gives the instance.
+- With no `EntryState`, an "(Any)" transition whose condition holds does
+  not start a state either (`NoEntry`, three steps then `Go` on).
 
 The whole run was done twice and gave identical output.
 
@@ -152,9 +160,9 @@ while it still reads true, the second fire is lost. In the samples below,
 | 12 | fire again, 1 step | T2 | false |
 
 A Bool held on takes one hop per step. Before any `SetParameter`,
-`GetParameter` returned each parameter's default (`false`, `""`, `0`).
-The docs say it returns nil. Our `Player::get` still returns nil for an
-unset parameter.
+`GetParameter` returned each parameter's default (`false`, `""`, `0`,
+and `2` for `NoEntry`'s `N`). The docs say it returns nil. `Player::get`
+returns the default too.
 
 **Transitions take effect within the step.** Setting the condition and
 stepping once shows the new state, already blended. On a state
@@ -235,10 +243,56 @@ mask passes everything through at full weight (P0 = P1 = 1 from `Both`).
   wrapped). If it had paused, it would read 0.633. Before this, we
   paused weightless Unsynced inputs.
 
+## Entry state: our saves in Studio, and deleting it
+
+Measured 2026-10-29 in the same Studio, with the probe place.
+
+**Our saves.** A graph built in our editor's Animation Graph panel
+(a state machine with states "New State" ← clip T0 and "New State1" ←
+T3, a Bool `go` and a "New State" → "New State1" transition on `go`)
+was saved with the panel's Save, then Ctrl+S to `.rbxl` and File › Save
+As to `.rbxlx`. In Studio, both files gave `GetAttribute("EntryState")`
+an `InstanceHandle` whose `:Get()` is the "New State" `ObjectValue`.
+Played on the Animator, P0 sat at x = 1 (T0) for five steps, and after
+`SetParameter("go", true)` P1 sat at x = 1 (T3).
+
+**Deleting the entry.** From the command bar, on that machine:
+
+- `Parent = nil` or `Destroy()` on the entry state: `GetAttribute` still
+  returns an `InstanceHandle`, and `:Get()` returns the detached state
+  (Parent nil). The machine plays nothing, before and after `go`. Putting
+  the state back under the machine (before a `Destroy`) makes it play
+  again.
+- Adding a state then (an `ObjectValue` under the machine) does not make
+  it the entry, and the machine still plays nothing.
+- Ctrl+S and reopening: `:Get()` is nil (the binary file holds a
+  referent that no instance has), the machine plays nothing, and Studio
+  logs "StateMachine 'StateMachineNode': no EntryState, so it has no
+  state to start in". The transition out of the deleted state comes back
+  with `From` nil, so it reads as an "(Any)" transition. In an XML save,
+  Studio still writes `__attrRef_EntryState` naming the deleted state's
+  old referent.
+
+Studio's own Graph Editor (Avatar › Graph Editor) does not set an entry
+either: after Insert Node › State Machine and Create State, the machine
+has a `State` and no `EntryState` attribute.
+
+Our editor now matches the deletion half. Removing the entry state
+clears `EntryState`, and a later state does not take over, even one that
+reuses the deleted name. Our reader turns both Studio saves above into
+an empty `EntryState`, and the runtime plays nothing and reports no
+active state. One difference is kept on purpose: our editor still makes
+a new machine's first state its entry, because Studio's editor leaves
+that machine playing nothing until an entry is chosen.
+
 ## Still not measured
+
+- What Studio's Graph Editor does when its entry state is deleted from
+  the canvas. Only the engine side (`Destroy`/`Parent = nil` from the
+  command bar) was measured. Choosing the entry in that editor was not
+  driven either.
 
 - Whether the incoming clip gains a step as a transition completes (see
   Events; the `Handover` cases are ready to run).
 - Blend2D phase sync was not probed. It is taken to follow the same rule
   as Blend1D.
-- The cause of the unresolved `EntryState` in our written files (above).

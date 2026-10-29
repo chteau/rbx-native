@@ -2,6 +2,21 @@
 
 ## 2026-10-29
 
+- **Animation Graph state machines play when the place opens in Studio.**
+  Our binary writer put each class's PROP chunks right after its own INST
+  chunk, and Studio resolves an `Instance` attribute as it reads the PROP:
+  a state machine's `EntryState` pointing at an `ObjectValue` whose INST
+  chunk came later loaded as a dead `InstanceHandle`, so the machine played
+  nothing. Every INST chunk is now written first, as Studio does. The
+  editor also sets `EntryState` to a state machine's first state (it stays
+  editable). Removing the entry state leaves the machine without one, as
+  Studio does, so a later state does not take over. The preview plays
+  nothing without an entry as Studio does, even on an "(Any)" transition,
+  and lights no state. `GetParameter` returns the parameter's default
+  before it is set. Adding a parameter with the Number/Bool/Trigger/Text
+  buttons now works: clicking one used to wipe the typed name first.
+  (@chteau)
+
 - **Pseudo-localization preview and string extraction** (beta, behind
   File › Beta Features): a Pseudo-loc tile beside Show UI draws every GUI
   text longer, bracketed and accented, or right to left, in the 3D view and

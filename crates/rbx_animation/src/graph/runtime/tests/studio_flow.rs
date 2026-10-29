@@ -274,3 +274,30 @@ fn any_never_re_enters_the_playing_state() {
         close(y(&pose), y8, "held");
     }
 }
+
+#[test]
+fn a_machine_without_an_entry_state_plays_nothing() {
+    // Studio's NoEntry: the rest pose, before and after the "(Any)"
+    // transition's condition turns on.
+    let (p, _) = machine(
+        &[("Go", ParamKind::Bool)],
+        &LOOPS,
+        &[(None, 1, "Go", 1, 0.)],
+    );
+    let mut g = p.graph().clone();
+    for node in &mut g.nodes {
+        node.props.remove("EntryState");
+    }
+    let mut p = Player::new(g, &probe_clip);
+    assert_eq!(at(&steps(&mut p, 3), "P0"), Vec3::ZERO);
+    // So the editor lights no state either.
+    let sm = p
+        .graph()
+        .nodes
+        .iter()
+        .position(|n| n.kind == NodeKind::StateMachine);
+    assert_eq!(p.active(sm.unwrap()), None);
+    p.set("Go", Value::Bool(true));
+    assert_eq!(at(&steps(&mut p, 1), "P0"), Vec3::ZERO);
+    assert_eq!(at(&steps(&mut p, 1), "P0"), Vec3::ZERO);
+}
