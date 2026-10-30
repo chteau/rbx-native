@@ -93,6 +93,17 @@ impl ReflectionDatabase {
         self.defaults.classes.get(class)?.values.get(property)
     }
 
+    /// Every default [`Self::default_value`] answers for `class`, which is
+    /// what Roblox reads a property a file leaves out as.
+    pub fn default_values(&self, class: &str) -> impl Iterator<Item = (&str, &Variant)> {
+        self.defaults
+            .classes
+            .get(class)
+            .into_iter()
+            .flat_map(|defaults| &defaults.values)
+            .map(|(name, value)| (name.as_str(), value))
+    }
+
     /// The property `name` is a spelling of: `Size` for a stored `size`,
     /// `Color` for `Color3uint8`. Any other name is its own.
     pub fn canonical_name<'a>(&'a self, class: &str, name: &'a str) -> &'a str {

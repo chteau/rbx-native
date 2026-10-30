@@ -287,9 +287,15 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
     `DominantAxis`), `UISizeConstraint`, `UITextSizeConstraint`,
     `AutomaticSize` (children extent, a layout's `AbsoluteContentSize`,
     a text object's own bounds), `SizeConstraint`, `BorderMode`
-    (`Middle`/`Inset`), `ScreenGui.ScreenInsets`/`IgnoreGuiInset` (the top
-    bar reserved at 36 px, no Roblox page states the number, it is one
-    named constant) and `ZIndexBehavior.Global`.
+    (`Middle`/`Inset`), `ScreenGui.ScreenInsets`/`IgnoreGuiInset` (the
+    device's cutouts only: Studio's edit view keeps no top bar clear,
+    `GetGuiInset()` reads 0 there, so neither does ours) and
+    `ZIndexBehavior.Global`.
+  - A property a file leaves out reads as its class default, what Studio
+    loads it as (grey `BackgroundColor3`, `Legacy` font at `TextSize` 8,
+    `ZIndexBehavior.Global`, a white scroll bar, a `FixedSize` 800x600
+    `SurfaceGui`), not what Studio's Insert gives a new one. Checked by
+    saving a place of bare `GuiObject`s back out of Studio.
   - `StyleSheet`/`StyleRule`/`StyleLink`/`StyleDerive`: the selector
     engine (class, `.Tag`, `#Name`, `>` and `>>` combinators, `,` lists,
     nested rules merged into their parent's selector), `Priority` then
@@ -307,10 +313,11 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
     re-rendering on every edit; sheet tokens and `StyleQuery` are not
     editable there yet.
   - Text metrics match Studio: `TextSize` is the *line box* height (the
-    docs: "line height equal to the `TextSize`"), the glyph em a fixed
-    1/1.2 of it, measured against Studio captures of three families
-    (Source Sans Pro, Gotham SSm, Fredoka One) to the pixel, which no font
-    table combination reproduced. A family that lacks the requested
+    docs: "line height equal to the `TextSize`"), and the line box is the
+    face's own hhea ascent plus descent, measured with `GetTextSize`
+    against eight families' advances (within 1%, the rest is Roblox
+    rounding each advance to a pixel). `Legacy` draws as Arimo at 1.5
+    times its `TextSize`. A family that lacks the requested
     weight shapes in its closest face rather than falling back to a
     system font (cosmic-text only matches an exact weight). Studio's
     synthetic bold for a weight the family lacks is not reproduced.
@@ -324,7 +331,8 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
     has one and exempt from its siblings' layout.
   - `ScrollingFrame` (canvas, `CanvasPosition`, `AutomaticCanvasSize`, the
     scroll bars from their three images with every inset/position/
-    direction property), `CanvasGroup` (`GroupTransparency`/`GroupColor3`
+    direction property, and the border line Studio draws between the
+    window and the bar), `CanvasGroup` (`GroupTransparency`/`GroupColor3`
     over the subtree flattened to a texture, one blend for overlapping
     children), `ViewportFrame` (its parts under `CurrentCamera`: or the
     saved camera pose, with `Ambient`/`LightColor`/`LightDirection`, a

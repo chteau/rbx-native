@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-30
+
+- **GUI from a hand-written place looks like Studio now.** A `.rbxlx` that
+  leaves properties out got our own fallbacks, which were what Studio's
+  Insert gives a new object: white boxes, Source Sans, no `Legacy`. Roblox
+  loads a missing property as the class default, so I fill every
+  `GuiObject`/`LayerCollector` property a file skips from the reflection
+  defaults before the GUI is planned. That's grey (163,162,165), `Legacy`
+  at `TextSize` 8, `ZIndexBehavior.Global`, a white scroll bar and so on.
+  I saved a place of bare objects back out of Studio and every value
+  matched. (@chteau)
+- **Text is sized off each font's own metrics.** The em was a flat 1/1.2 of
+  `TextSize`. I measured `GetTextSize` in Studio for eight families and the
+  line box is the face's hhea ascent plus descent, so Arimo was drawing
+  about 9% too small. `Legacy` is Arimo at 1.5 times the `TextSize`, which
+  is why "Click me" at 24 looked so much bigger in Studio. (@chteau)
+- **No top bar inset in the edit view.** We pushed every `ScreenGui` down
+  36 px. Studio's edit view doesn't: `GetGuiInset()` reads 0 and a default
+  screen sits at (0, 0). The running game does inset it, but that's the
+  real client in Play, not us. (@chteau)
+- **ScrollingFrame draws the line between the canvas and the bar.** Studio
+  outlines the bar's strip with the frame's border, so you get a
+  `BorderColor3` line at the window's edge. We only drew the thumb.
+  Screenshots in `docs/screenshots/gui-defaults/`. (@chteau)
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**

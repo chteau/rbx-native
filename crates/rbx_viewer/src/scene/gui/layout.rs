@@ -217,15 +217,18 @@ pub(crate) fn resolve_inset<'a>(
 }
 
 /// The box a screen's top-level children resolve against: `ScreenInsets`
-/// keeps it clear of the device's cutouts and starts it below the top bar,
-/// shrinking it by as much, so a `{1, 0}` child still ends at the safe
-/// area's far edges.
+/// keeps it clear of the device's cutouts, shrinking it by as much, so a
+/// `{1, 0}` child still ends at the safe area's far edges.
+///
+/// No top bar is kept clear of: that is the running game's, and Studio's edit
+/// view has none, `GuiService:GetGuiInset()` reads zero there and a
+/// `ScreenGui` with `IgnoreGuiInset` off sits at (0, 0).
 pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2], insets: SafeInsets) -> Rect {
     let device = match screen.device_safe {
         true => insets,
         false => SafeInsets::default(),
     };
-    let top = device.top + screen.top_inset;
+    let top = device.top;
     Rect {
         x: device.left,
         y: top,

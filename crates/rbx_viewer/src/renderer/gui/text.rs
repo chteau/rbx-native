@@ -7,6 +7,7 @@
 //! so `TextScaled` settles on the size the glyphs really take.
 
 mod atlas;
+mod em;
 
 use std::collections::{HashMap, HashSet};
 
@@ -22,20 +23,6 @@ pub(super) use atlas::{Glyph, GlyphAtlas};
 
 use crate::fonts::{Face, Family, Library};
 use crate::scene::{gui_span_face, GuiText, GuiTextMeasure};
-
-/// How many ems tall a line box is: `TextSize` is a line height, not an em
-/// (Roblox's docs on `Font`: each font renders "with the line height equal
-/// to the `TextSize` property"), and the em is this much smaller.
-///
-/// Roblox does not say where the ratio comes from, and it is not the face's
-/// own ascent plus descent: against Studio captures of the fixtures, Source
-/// Sans Pro at `TextSize` 24 draws "Button" 53 px wide with a 13 px cap
-/// height, which is a 20 px em, 1.2, where its hhea metrics (1.257) give
-/// 51 px and 12 px and its typographic ones (1.0) a fifth too much. Gotham
-/// SSm (hhea 1.2) lands on Studio's 14 px x-height at 29 and its `TextScaled`
-/// sizes with the same 1.2; Fredoka One's hhea 1.21 is too close to tell
-/// apart at the sizes the fixtures draw it. One constant fits all three.
-const LINE_EM: f32 = 1.2;
 
 /// `Enum.FontWeight.SemiBold`: from here up a face is bold, Roblox's docs on
 /// `Font.Bold` say it "becomes `true` if the weight is `SemiBold` or thicker"
@@ -67,6 +54,8 @@ pub(super) struct Typesetter {
     /// family name fontdb filed them by, which is the name inside the face
     /// file, not the JSON's `name`.
     families: HashMap<AssetRef, Family>,
+    /// Face file → its line box in ems (see [`em`]).
+    ems: HashMap<AssetRef, f32>,
     /// Every face file already handed to the font system.
     loaded: HashSet<AssetRef>,
     /// Bounds already measured, by what decides them (see [`measure_key`]).
@@ -121,6 +110,7 @@ impl Typesetter {
             scaler: ScaleContext::new(),
             atlas: GlyphAtlas::new(),
             families: HashMap::new(),
+            ems: HashMap::new(),
             loaded: HashSet::new(),
             measured: HashMap::new(),
             shaped: HashMap::new(),
@@ -150,6 +140,9 @@ impl Typesetter {
                 .filter(|info| !known.contains(&info.id))
                 .cloned()
                 .collect();
+            if let (false, Some(ems)) = (fresh.is_empty(), em::line_ems(bytes)) {
+                self.ems.insert(entry.asset.clone(), ems);
+            }
             for mut info in fresh {
                 // The family JSON, not the face's own OS/2 table, says what a
                 // face weighs: Roblox's `GothamSSm-Bold.otf` calls itself
@@ -199,7 +192,8 @@ impl Typesetter {
     /// line themselves, which is the only way an unwrapped line, one with no
     /// box width to align inside, can be centred.
     ///
-    /// `size` is a line box, `LINE_EM` ems tall, and `LineHeight` scales the
+    /// `size` is a line box, the face's own ascent plus descent tall (see
+    /// [`em`]), and `LineHeight` scales the
     /// spacing between lines on top of that (the docs' "multiple of the
     /// font's em square" read as a multiple of `TextSize`, since 1.0 has to
     /// give lines `TextSize` tall). cosmic-text centres a face's ascent plus
@@ -212,18 +206,28 @@ impl Typesetter {
         ellipsize: Option<Ellipsize>,
     ) -> Buffer {
         let Typesetter {
-            system, families, ..
+            system,
+            families,
+            ems,
+            ..
         } = self;
+        let metrics_of = |face: &Face, size: f32| {
+            let line = em::line_box(face, size);
+            Metrics::new(
+                line / em::line_em(families, ems, face),
+                line * text.line_height,
+            )
+        };
         // No face at all: a browser has no system fonts to fall back on, and
         // until the place's own faces stream in cosmic-text would panic
         // looking for a default. The text lays out empty and is shaped
         // again once they land (see `Typesetter::adopt`).
         if system.db().faces().next().is_none() {
-            return Buffer::new_empty(metrics(size, text.line_height));
+            return Buffer::new_empty(metrics_of(&text.face, size));
         }
         // A `<font size>` scales with `TextScaled` like the base size does.
         let scale = size / text.size.max(1.0);
-        let mut buffer = Buffer::new(system, metrics(size, text.line_height));
+        let mut buffer = Buffer::new(system, metrics_of(&text.face, size));
         buffer.set_size(width, None);
         buffer.set_wrap(match text.wrapped || text.scaled {
             true => Wrap::WordOrGlyph,
@@ -239,9 +243,12 @@ impl Typesetter {
             .iter()
             .enumerate()
             .map(|(index, span)| {
-                let mut attrs = attrs(families, &gui_span_face(&text.face, span)).metadata(index);
-                if let Some(size) = span.size {
-                    attrs = attrs.metrics(metrics(size * scale, text.line_height));
+                let face = gui_span_face(&text.face, span);
+                let mut attrs = attrs(families, &face).metadata(index);
+                // A span in another face, or at a `<font size>`, takes that
+                // face's own em at its own line box.
+                if span.size.is_some() || face != text.face {
+                    attrs = attrs.metrics(metrics_of(&face, span.size.map_or(size, |s| s * scale)));
                 }
                 // Only decorations read this colour (glyphs go by `metadata`,
                 // which keeps the full-precision one): a byte per channel is
@@ -352,11 +359,6 @@ pub(super) fn bounds(buffer: &Buffer) -> [f32; 2] {
     buffer.layout_runs().fold([0.0f32, 0.0], |bounds, run| {
         [bounds[0].max(run.line_w), bounds[1] + run.line_height]
     })
-}
-
-/// The em and line spacing of a `size`-pixel line box.
-fn metrics(size: f32, line_height: f32) -> Metrics {
-    Metrics::new(size / LINE_EM, size * line_height)
 }
 
 /// The attributes one face shapes with: the family by the name fontdb knows

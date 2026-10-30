@@ -91,7 +91,7 @@ pub(crate) fn plan(
     database: &ReflectionDatabase,
     materials: &mut Catalog,
 ) -> Vec<Screen> {
-    let styles = Styled::new(dom);
+    let styles = Styled::new(dom, database);
     let mut screens = Vec::new();
     for &root in dom.root_refs() {
         gather(dom, database, &styles, materials, root, &mut screens);
@@ -116,7 +116,7 @@ pub(crate) fn plan_root(
         }
         up = dom.parent(ancestor);
     }
-    let styles = Styled::for_tree(dom, root);
+    let styles = Styled::for_tree(dom, database, root);
     let mut found = Vec::new();
     gather(dom, database, &styles, materials, root, &mut found);
     found.into_iter().find(|screen| screen.referent == root)
@@ -152,7 +152,6 @@ fn gather(
             auto_localize: flag(properties, "AutoLocalize", true),
             space: None,
             display_order: integer(properties, "DisplayOrder", 0),
-            top_inset: constraints::top_bar_inset(properties),
             device_safe: constraints::device_safe(properties),
             global_z_index: constraints::global_z_index(properties),
             clip_to_safe_area: constraints::clip_to_safe_area(properties),
@@ -182,7 +181,6 @@ fn gather(
             auto_localize: flag(properties, "AutoLocalize", true),
             space: Some(canvas),
             display_order: 0,
-            top_inset: 0.0,
             device_safe: false,
             global_z_index: constraints::global_z_index(properties),
             clip_to_safe_area: false,

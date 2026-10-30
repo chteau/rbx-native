@@ -132,9 +132,11 @@ fn scale_mode(properties: &BTreeMap<String, Variant>) -> ScaleMode {
     }
 }
 
+/// `None` for an empty rect as much as for none at all: a Studio-saved
+/// place stores the all-zero class default for a `SliceCenter` never set.
 fn slice_center(properties: &BTreeMap<String, Variant>) -> Option<PixelRect> {
     match properties.get("SliceCenter") {
-        Some(Variant::Rect(value)) => Some(PixelRect {
+        Some(Variant::Rect(value)) if value.max != value.min => Some(PixelRect {
             min: [value.min.x, value.min.y],
             max: [value.max.x, value.max.y],
         }),
