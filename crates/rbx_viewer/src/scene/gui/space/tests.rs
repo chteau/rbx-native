@@ -594,6 +594,15 @@ fn a_canvas_reaches_the_elements_under_a_folder() {
     assert_eq!(elements[0].rect.height, 600.0);
 }
 
+#[test]
+fn a_canvas_holding_only_elements_under_a_script_is_not_drawn() {
+    let (mut dom, gui, placements) = fixture("SurfaceGui", Vec3::ONE);
+    let script = dom.new_instance("Script", "Script", Some(gui));
+    filled(&mut dom, script);
+
+    assert!(planned(&dom, &placements).is_empty());
+}
+
 /// "Determines whether the contents of `StarterGui` is visible in Studio"
 /// (`StarterGui.ShowDevelopmentGui`), its contents being the canvases too,
 /// not just the screens, and nothing outside the service.

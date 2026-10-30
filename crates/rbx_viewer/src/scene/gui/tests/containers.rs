@@ -1,6 +1,6 @@
-//! Non-`GuiObject` instances inside a GUI tree: a `Folder` (or anything else
-//! that is not drawable) is walked through rather than ending the tree, and
-//! its contents behave as the container's own children, see
+//! Non-`GuiObject` instances inside a GUI tree: a `Folder` is walked through
+//! rather than ending the tree, and its contents behave as the container's
+//! own children; anything else ends the tree, see
 //! [`super::super::plan::elements`].
 
 use super::*;
@@ -255,4 +255,61 @@ fn a_non_gui_leaf_contributes_nothing() {
     dom.new_instance("StringValue", "StringValue", Some(gui));
 
     assert!(resolve(&screens(&dom), VIEWPORT).is_empty());
+}
+
+/// Every class Studio was seen not to draw through, a `ValueBase` among them.
+const BLOCKERS: [&str; 7] = [
+    "Script",
+    "LocalScript",
+    "ModuleScript",
+    "Configuration",
+    "StringValue",
+    "Model",
+    "Part",
+];
+
+fn square(dom: &mut WeakDom, parent: Ref) -> Ref {
+    frame(
+        dom,
+        parent,
+        udim2(0.0, 10, 0.0, 10),
+        udim2(0.0, 50, 0.0, 50),
+    )
+}
+
+#[test]
+fn a_frame_under_anything_but_a_folder_is_not_drawn() {
+    for class in BLOCKERS {
+        let (mut dom, gui) = screen_gui();
+        let holder = dom.new_instance(class, class, Some(gui));
+        square(&mut dom, holder);
+
+        assert!(rects(&dom).is_empty(), "drawn under a {class}");
+    }
+}
+
+#[test]
+fn a_folder_does_not_carry_a_frame_past_a_script() {
+    let (mut dom, gui) = screen_gui();
+    let script = dom.new_instance("Script", "Script", Some(gui));
+    let inside = folder(&mut dom, script, "Inside");
+    square(&mut dom, inside);
+    let outside = folder(&mut dom, gui, "Outside");
+    let under = dom.new_instance("Script", "Script", Some(outside));
+    square(&mut dom, under);
+
+    assert!(rects(&dom).is_empty());
+}
+
+#[test]
+fn a_script_inside_a_frame_hides_what_hangs_off_it() {
+    let (mut dom, gui) = screen_gui();
+    let outer = square(&mut dom, gui);
+    let script = dom.new_instance("Script", "Script", Some(outer));
+    square(&mut dom, script);
+    let kept = folder(&mut dom, outer, "Kept");
+    square(&mut dom, kept);
+
+    // The outer frame and the one under the folder, not the script's.
+    assert_eq!(rects(&dom).len(), 2);
 }
