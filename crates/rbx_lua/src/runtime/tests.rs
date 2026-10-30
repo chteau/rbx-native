@@ -418,8 +418,16 @@ fn require_reports_cycles_and_invalid_arguments() {
     assert!(
         error
             .to_string()
-            .contains("Requested module was required recursively"),
+            .contains("Requested module experienced an error while loading"),
         "{error}"
+    );
+    assert_eq!(
+        error.output.lines(),
+        [
+            "Requested module was required recursively",
+            "Requested module experienced an error while loading"
+        ],
+        "B's error, then A's"
     );
     let error = runtime.run("require(workspace)").unwrap_err();
     assert!(
@@ -493,25 +501,95 @@ fn require_by_string_walks_the_tree_from_the_requiring_module() {
         ),
         (
             "Folder",
-            "Attempted to call require with invalid argument(s).",
+            "Unable to require module from given path './Plain'",
         ),
         (
             "TooHigh",
             r#"error requiring "@game/..": could not get parent of requiring context"#,
         ),
     ] {
+        // The module's own error goes to Output; its requirer gets Roblox's
+        // generic one.
         let failed = runtime
             .run(&format!("require(workspace.{module})"))
             .unwrap_err();
-        assert!(failed.to_string().contains(error), "{module}: {failed}");
+        assert!(
+            failed
+                .to_string()
+                .contains("Requested module experienced an error while loading"),
+            "{module}: {failed}"
+        );
+        assert_eq!(failed.output.lines(), [error], "{module}");
     }
-    let failed = runtime.run("require('./Other')").unwrap_err();
-    assert!(
-        failed
-            .to_string()
-            .contains(r#"error requiring "./Other": could not reset to requiring context"#),
-        "{failed}"
+}
+
+/// The command bar's own context has no parent and no children, so only
+/// `@game` leads anywhere from it, as in Studio.
+#[test]
+fn the_command_bar_requires_by_string_from_a_context_of_its_own() {
+    let mut runtime = Runtime::new(
+        place_with_modules(&[("Other", "return 'other'")]),
+        ReflectionDatabase::embedded(),
+    )
+    .unwrap();
+    let output = runtime
+        .run(
+            r#"
+            print(require("@game/Workspace/Other"))
+            for _, path in { "./Other", "../Other", "@self/Other", "@game", "@game/.." } do
+                print(select(2, pcall(require, path)))
+            end
+            "#,
+        )
+        .unwrap();
+    assert_eq!(
+        output.lines(),
+        [
+            "other",
+            r#"error requiring "./Other": could not get parent of requiring context"#,
+            r#"error requiring "../Other": could not get parent of requiring context"#,
+            r#"error requiring "@self/Other": could not resolve child component "Other""#,
+            "Unable to require module from given path '@game'",
+            r#"error requiring "@game/..": could not get parent of requiring context"#,
+        ]
     );
+}
+
+/// Roblox runs a failed module's body once: its error reaches Output that
+/// time, and every later `require` of it gets the generic error.
+#[test]
+fn a_failed_module_is_not_run_again() {
+    let mut runtime = Runtime::new(
+        place_with_modules(&[("Boom", "error('boom', 0)"), ("Two", "return 1, 2")]),
+        ReflectionDatabase::embedded(),
+    )
+    .unwrap();
+    let output = runtime
+        .run(
+            r#"
+            print(pcall(require, workspace.Boom))
+            print(pcall(require, workspace.Boom))
+            print(pcall(require, workspace.Two))
+            "#,
+        )
+        .unwrap();
+    assert_eq!(
+        output.lines(),
+        [
+            "boom",
+            "false Requested module experienced an error while loading",
+            "false Requested module experienced an error while loading",
+            "false Module code did not return exactly one value",
+        ]
+    );
+}
+
+#[test]
+fn printidentity_says_the_command_bars_identity() {
+    let output = runtime()
+        .run("printidentity() printidentity('at')")
+        .unwrap();
+    assert_eq!(output.lines(), ["Current identity is 4", "at 4"]);
 }
 
 #[test]

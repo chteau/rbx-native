@@ -9,8 +9,23 @@
   checked in Edit. `multi_edit` also stops refusing a script whose name
   differs from a sibling's only in case (`G_main` next to `g_main`). It
   creates or edits that exact name, since Roblox names are case-sensitive.
-  I couldn't run these next to real Studio this time, so the exact error
-  text is still unconfirmed live. (@chteau)
+  I ran all of it next to real Studio (0.745) and matched what it says.
+  The command bar's `require` starts from a context of its own, so
+  `require("@game/...")` works there and `require("./x")` says "could not
+  get parent of requiring context", while `execute_luau` has no context
+  at all ("could not reset to requiring context"). A path that lands on
+  something that isn't a ModuleScript says `Unable to require module from
+  given path './x'`. A module that errors prints its error once and its
+  requirer gets "Requested module experienced an error while loading",
+  then and every later time, without running it again. Writing `MeshId`
+  or `MeshContent` from a script, the command bar or MCP now fails like
+  Studio's: "The current thread cannot write 'MeshId' (lacking capability
+  NotAccessible)". `printidentity()` exists now (4 in the command bar, 10
+  over MCP), and "not a valid member" errors name the instance too, as in
+  `Nope is not a valid member of MeshPart "Workspace.Mesh"`.
+  `character_navigation` waits for a character and its Humanoid like
+  Studio's does, instead of failing at once, and a walk longer than 30 s
+  no longer times out on the way. (@chteau)
 
 ## 2026-10-29
 

@@ -10,20 +10,20 @@ use rbx_dom::Ref;
 
 use super::env::env;
 use super::vm;
-use crate::engine::require;
+use crate::engine::require::{self, Requirer};
 use crate::instance::LuaInstance;
 
 const GLOBALS: &str = "rbxn.script_globals";
 
 /// What `require` got: a `ModuleScript`, or a path from `script`.
-fn resolve(lua: &Lua, script: Option<Ref>, target: &Value) -> Result<Ref> {
+fn resolve(lua: &Lua, requirer: Requirer, target: &Value) -> Result<Ref> {
     match target {
         Value::Integer(_) | Value::Number(_) => {
             Err(mlua::Error::runtime("require by asset id is not supported"))
         }
         Value::String(path) => {
             let path = path.to_str()?.to_string();
-            require::by_string(&env(lua).ctx.dom(), script, &path)
+            require::by_string(&env(lua).ctx.dom(), requirer, &path)
         }
         other => require::module_ref(lua, other),
     }
@@ -34,11 +34,7 @@ fn resolve(lua: &Lua, script: Option<Ref>, target: &Value) -> Result<Ref> {
 /// does (`vm::compile`).
 pub(crate) fn install(lua: &Lua) -> Result<()> {
     let resolve = lua.create_function(|lua, (script, target): (Value, Value)| {
-        let script = match &script {
-            Value::UserData(data) => data.borrow::<LuaInstance>().ok().map(|i| i.referent()),
-            _ => None,
-        };
-        let module = resolve(lua, script, &target)?;
+        let module = resolve(lua, Requirer::of(&script), &target)?;
         LuaInstance::new(module, env(lua).ctx.clone()).into_lua(lua)
     })?;
     let compile = lua.create_function(|lua, module: Value| {

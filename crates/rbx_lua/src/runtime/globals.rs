@@ -151,6 +151,21 @@ fn install_error_strings(lua: &Lua) -> Result<(), LuaError> {
 
 /// `print` or `warn`: each argument through `printed::part`, so tables keep
 /// their tree for the Output's expandable rows.
+/// Roblox's `printidentity` for code that runs at security `identity`
+/// (the command bar's 4, MCP's 10): prints `Current identity is 4`, or
+/// `<prefix> 4` when given one.
+pub(crate) fn printidentity(lua: &Lua, ctx: &Ctx, identity: u8) -> mlua::Result<mlua::Function> {
+    let ctx = ctx.clone();
+    lua.create_function(move |_, prefix: Option<String>| {
+        let prefix = prefix.unwrap_or_else(|| "Current identity is".to_owned());
+        ctx.print(
+            LineKind::Print,
+            vec![printed::PrintPart::Text(format!("{prefix} {identity}"))],
+        );
+        Ok(())
+    })
+}
+
 fn output_function(lua: &Lua, ctx: &Ctx, kind: LineKind) -> Result<mlua::Function, LuaError> {
     let ctx = ctx.clone();
     lua.create_function(move |_, args: Variadic<Value>| {
