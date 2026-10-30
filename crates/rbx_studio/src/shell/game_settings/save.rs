@@ -1,5 +1,5 @@
 //! Save and Cancel: the local edits land in the place as one undo step,
-//! the cloud ones and the Team Create switch go to Roblox together.
+//! the cloud ones and the sign-in switches go to Roblox together.
 
 use gpui_kit::*;
 
@@ -85,9 +85,7 @@ impl GameSettingsWindow {
                                 pending.map(|(link, remote, updates)| {
                                     fetch::save(&link, &remote, &updates)
                                 }),
-                                team_create.map(|(web, universe, on)| {
-                                    team_create::save(&web, universe, on)
-                                }),
+                                team_create.as_ref().map(team_create::save),
                             )
                         })
                         .await;
@@ -107,10 +105,8 @@ impl GameSettingsWindow {
                             }
                             None => {}
                         }
-                        match team_create {
-                            Some(Ok(on)) => this.team_create.draft.rebase(on),
-                            Some(Err(text)) => refusals.push(text),
-                            None => {}
+                        if let Some(saved) = team_create {
+                            this.team_create.saved(saved, &mut refusals);
                         }
                         let refusals = refusals.join(" ");
                         this.notice = Some(save_notice(
@@ -132,7 +128,7 @@ impl GameSettingsWindow {
         if let Some(remote) = self.cloud.remote.clone() {
             self.cloud.reset(remote);
         }
-        self.team_create.draft.revert();
+        self.team_create.revert();
         let local = {
             let s = self.shell.read(cx);
             LocalDraft::read(&s.dom, &s.database)

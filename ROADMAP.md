@@ -2610,6 +2610,16 @@ both the plain fetch failure and the silent fall back to a default
   Edits wait for Save. A refusal names the scope the key is missing
   (`universe:write`, `universe.place:write`), or reports that Team
   Create holds the place open.
+- [x] **Allow Mesh / Image APIs in Game Settings › Security.** Studio's
+  plugin keeps it as `isMeshTextureApiAccessAllowed` on
+  `develop.roblox.com/v2/universes/{id}/configuration` (seen in Studio's
+  own HTTP trace), but v2 only answers Studio, so we read and patch the
+  same field on v1 like the Creator Hub does. It runs as the Roblox
+  sign-in like Team Create, with Studio's label and text, and greys out
+  for a group game you don't own. The row sits in its own sign-in group
+  at the top of Security, not between Third Party Teleports and Third
+  Party Assets like in Studio, because the page groups rows by where
+  they're saved.
 - [x] **Hover states fade** (what the visual pass left behind): every
   `hover` and `group_hover` style eases between its resting and hovered
   colours over 120 ms (`tokens::DURATION_HOVER`) and turns back from
@@ -2825,6 +2835,67 @@ both the plain fetch failure and the silent fall back to a default
   - Still flaky: on a busy desktop some of our clicks never reach Sober
     at all, even a raw XTest click sent by hand, while Chee was using the
     PC. That's delivery, not mapping, and I haven't pinned it down.
+
+- [x] **Require-by-string and case-only script names over MCP.** Edit's
+  `execute_luau`, the command bar and plugins now take
+  `require("./Sibling")`, `require("../Up")`, `require("@self/Child")` and
+  `require("@game/ReplicatedStorage/Shared/X")`. The walk follows Luau's
+  own `Require` navigator, the library Studio links: exact names, `..`
+  and `.` anywhere, `@Game` in any case, and the navigator's own reasons
+  inside Roblox's `error requiring "path": reason`. A path that lands on
+  something other than a `ModuleScript` gives Roblox's usual invalid
+  argument error. `multi_edit` no longer refuses `G_main` beside `g_main`:
+  Roblox names are case-sensitive, so it's a script of its own, created
+  and edited by its own spelling. Run side by side with real Studio 0.745
+  (Vinegar, `version-7062aec9dbe74b14`), same calls on both, now matching:
+  - `multi_edit` creating `ServerScriptService.G_main` next to `g_main`:
+    Studio `Created G_main (Script) with 1 edits applied`, then
+    `Modified G_main (Script) with 1 edits applied` and `Modified g_main
+    ...` for each spelling, two scripts left. Ours says the same.
+  - `require` straight from `execute_luau`: `error requiring "./A": could
+    not reset to requiring context`, the same for `@game/...` and
+    `@self/...`. From the command bar: `could not get parent of requiring
+    context` for `./A` and `../A`, `could not resolve child component "A"`
+    for `@self/A`, and `@game/ReplicatedStorage/C` loads. Ours used to
+    give the `execute_luau` answer in the bar too.
+  - A path ending on a Script or a Folder: `Unable to require module
+    from given path './NotModule'` (ours said `Attempted to call require
+    with invalid argument(s).`).
+  - A module that errors, for example `require("./Missing")` inside it:
+    Output gets `error requiring "./Missing": could not resolve child
+    component "Missing"`, and the requirer gets `Requested module
+    experienced an error while loading`, also on every later `require`
+    of it, which doesn't run it again. Ours used to pass the module's
+    error straight through and rerun it. A cycle prints `Requested module
+    was required recursively`, then the generic error, on both.
+  - `MeshId` and `MeshContent` writes, from `execute_luau` and the
+    command bar: `The current thread cannot write 'MeshId' (lacking
+    capability NotAccessible)`, whatever the value. Ours wrote them. The
+    check is the dump's `NotAccessibleSecurity` write, so the 13 other
+    properties marked that way fail too. `TextureID` writes on both.
+    `InitialSize`: `InitialSize is not a valid member of MeshPart
+    "Workspace.Mesh"` on both now (ours had no `"Workspace.Mesh"` part,
+    for any instance).
+  - `printidentity()`: `Current identity is 10` over MCP, `Current
+    identity is 4` in the command bar, `printidentity("tag")` gives
+    `tag 10`. Ours had none.
+  - `character_navigation` with `CharacterAutoLoads` off: Studio never
+    answers, it waits for `CharacterAdded`. Given a Model with no
+    Humanoid as `Character`, it warns `Infinite yield possible on
+    'Workspace.Bot:WaitForChild("Humanoid")'` and keeps waiting; add a
+    Humanoid and it walks and answers `Success`. Ours errored `The
+    character has not spawned` at once. It waits now too, prints the same
+    infinite yield warning, and with a server script spawning the
+    character 40 s in, answered `Success` after 43.7 s. The bridge also
+    gave up on any walk after 30 s; it waits 11 minutes now, past the
+    editor's own 10. One gap left: our bridge serves one call at a time,
+    so while a walk waits nothing else gets through, where Studio's other
+    tools keep answering.
+  Still different: we have no `Content` datatype yet, so
+  `MeshPart.MeshContent` reads as a string and `Content.fromUri` is nil
+  (Studio: `Content{SourceType=None}`); a missing member of `game` says
+  `of DataModel` without Studio's `"Verify.rbxlx"`; and `require` of an
+  asset id isn't supported.
 - [x] **Pseudo-localization preview and string extraction (beta)**: View's
   Pseudo-loc tile draws every TextLabel, TextButton and TextBox about 40%
   longer, bracketed and accented (`[!! Ţĥé … !!]`), optionally right to
@@ -2885,6 +2956,9 @@ both the plain fetch failure and the silent fall back to a default
   closed after a confirmation (each client allows one instance); Invite
   copies a link to the exact test server. Research and live results:
   `docs/research/play-sandbox/`.
+- [x] Play publishes places up to 150 MiB, what Open Cloud really takes
+  (measured to the byte). It used to stop at 10 MiB because the OpenAPI
+  spec still says so.
 - [x] Server and client `print`/`warn`/`error` reach the Output dock
   during Play, tagged like Studio's context labels (Server blue, Client
   green). An error shows the Luau message itself, its `Script:line`, and
@@ -3202,6 +3276,13 @@ both the plain fetch failure and the silent fall back to a default
   not a default this project should ship opinionated about.
 
 ### Editor
+- [ ] 📋 **`EditableMesh` and `EditableImage` in the Luau runtime**: right
+  now scripts can't make them at all. Needs `AssetService:CreateEditableMesh`,
+  `CreateEditableImage` and `CreateMeshPartAsync`, the vertex/face/UV
+  methods, and the viewport drawing the result live, in Edit and in Play.
+  Found while porting OpenArena: its player and weapon models are
+  vertex-animated MD3s that get rebuilt every frame through `EditableMesh`,
+  so none of them show up in our editor yet (real Roblox runs them fine).
 - [ ] 📋 **The MCP server's AI generation tools and the package flag**:
   `generate_mesh`, `generate_material`, `generate_procedural_model`,
   `segment_mesh` and `generate_texture` are listed with Studio's schemas

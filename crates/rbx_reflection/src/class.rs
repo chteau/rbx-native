@@ -17,6 +17,9 @@ pub struct PropertyDescriptor {
     /// member in the dump, no `Option` needed.
     pub can_load: bool,
     pub can_save: bool,
+    /// False when the dump's write security is `NotAccessibleSecurity`
+    /// (`MeshPart.MeshId`): no script, plugin or command bar may set it.
+    pub script_writable: bool,
 }
 
 impl PropertyDescriptor {

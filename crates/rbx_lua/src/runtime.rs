@@ -121,6 +121,8 @@ impl Runtime {
         lua.set_app_data(HookSlot(Rc::new(CommandBarHooks)));
 
         install_globals(&lua, &ctx)?;
+        lua.globals()
+            .set("printidentity", globals::printidentity(&lua, &ctx, 4)?)?;
         engine::install(&lua, Engine::new(ctx, host.clone()))?;
         host::install_require(&lua)?;
         // Globals must be installed first: sandboxing freezes them, which is the

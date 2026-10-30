@@ -28,6 +28,57 @@
   Play started could hide the new one until the 90 s wait ran out.
   (@chteau)
 
+- **`require("./x")` works in Edit.** `execute_luau`, the command bar and
+  plugins resolve require-by-string paths the way Roblox does: `./`,
+  `../`, `@self` and `@game`, walked like Luau's own require navigator,
+  with its error reasons. Modules from Rojo-style projects can finally be
+  checked in Edit. `multi_edit` also stops refusing a script whose name
+  differs from a sibling's only in case (`G_main` next to `g_main`). It
+  creates or edits that exact name, since Roblox names are case-sensitive.
+  I ran all of it next to real Studio (0.745) and matched what it says.
+  The command bar's `require` starts from a context of its own, so
+  `require("@game/...")` works there and `require("./x")` says "could not
+  get parent of requiring context", while `execute_luau` has no context
+  at all ("could not reset to requiring context"). A path that lands on
+  something that isn't a ModuleScript says `Unable to require module from
+  given path './x'`. A module that errors prints its error once and its
+  requirer gets "Requested module experienced an error while loading",
+  then and every later time, without running it again. Writing `MeshId`
+  or `MeshContent` from a script, the command bar or MCP now fails like
+  Studio's: "The current thread cannot write 'MeshId' (lacking capability
+  NotAccessible)". `printidentity()` exists now (4 in the command bar, 10
+  over MCP), and "not a valid member" errors name the instance too, as in
+  `Nope is not a valid member of MeshPart "Workspace.Mesh"`.
+  `character_navigation` waits for a character and its Humanoid like
+  Studio's does, instead of failing at once, and a walk longer than 30 s
+  no longer times out on the way. (@chteau)
+
+- **Game Settings › Security has Allow Mesh / Image APIs.** It's the switch
+  that lets a published game create `EditableMesh` and `EditableImage`;
+  with it off the client says "EditableMesh is not accessible". I watched
+  real Studio's traffic with its HTTP trace logging on: opening Security
+  reads `develop.roblox.com/v2/universes/{id}/configuration`, and its
+  Game Settings plugin keeps the switch there as
+  `isMeshTextureApiAccessAllowed`. That v2 endpoint says 403 "Not allowed"
+  to anything that isn't Studio though, so we use the v1 `configuration`,
+  which has the same field and is what the Creator Hub patches. Open Cloud
+  has nothing for it, so like Team Create it runs as your Roblox sign-in,
+  waits for Save, and is read back after the write. Label, description and
+  Terms of Use link are Studio's own strings. A group game greys it out
+  unless you own the group, like Studio. Turned it on for the Play sandbox
+  this way: the "EditableMesh is not accessible" errors went away in Play,
+  and real Studio's Security tab shows it on. (@chteau)
+
+- **Play takes places up to 150 MB.** The cap was 10 MiB because the place
+  publishing OpenAPI spec says `x-roblox-size-limit: 10485760`. That number
+  is stale: Roblox raised the API to 100 MB back in 2021. So I measured it
+  against the Play sandbox: exactly 157,286,400 bytes (150 MiB) publishes,
+  one byte more gets cut off mid-upload, 200 MiB gets a 413. The cap is
+  that now, and the error says 150 MB. The OpenArena port's 92.9 MB place
+  got refused before this; it publishes fine. Heads up, Studio's own save
+  limit is 100 MB, so a place between the two plays here but won't save
+  from Studio. (@chteau)
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**

@@ -2,8 +2,9 @@
 //! file's own, on one set of pages shaped like Studio's Experience
 //! Settings, each row saying where its value lives (see `catalog`). Edits
 //! wait for Save: the cloud ones go to Roblox, the local ones land in the
-//! place as one undo step. Team Create's switch and session list, on
-//! Permissions, run as the editor's Roblox sign-in instead (`team_create`).
+//! place as one undo step. Team Create's switch and session list, and
+//! Security's Allow Mesh / Image APIs, run as the editor's Roblox sign-in
+//! instead (`team_create`).
 //!
 //! Like Version History, the window keeps no copy of the link: it reads it
 //! from `links.json` when it opens and whenever `roblox.changes` moves.
@@ -276,6 +277,6 @@ impl GameSettingsWindow {
     }
 
     fn is_dirty(&self) -> bool {
-        self.cloud.is_dirty() || self.local.is_dirty() || self.team_create.draft.pending().is_some()
+        self.cloud.is_dirty() || self.local.is_dirty() || self.team_create.is_dirty()
     }
 }

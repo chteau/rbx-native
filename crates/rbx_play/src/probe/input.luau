@@ -177,9 +177,12 @@ local function navigate(cmd)
 	else
 		destination = Vector3.new(cmd.x or 0, cmd.y or 0, cmd.z or 0)
 	end
-	local character = service("Players").LocalPlayer.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local root = humanoid and humanoid.RootPart
+	-- Studio's waits for a character and then for its Humanoid, however
+	-- long that takes (WaitForChild warns of an infinite yield after 5 s).
+	local player = service("Players").LocalPlayer
+	local character = player.Character or player.CharacterAdded:Wait()
+	local humanoid = character:WaitForChild("Humanoid")
+	local root = humanoid.RootPart
 	if not root then
 		error("The character has not spawned", 0)
 	end

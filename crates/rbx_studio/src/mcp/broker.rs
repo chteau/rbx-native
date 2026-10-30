@@ -36,6 +36,9 @@ pub(super) fn answer_timeout(tool: &str) -> Duration {
         "execute_luau" => Duration::from_secs(120),
         "start_stop_play" => Duration::from_secs(240),
         "screen_capture" => Duration::from_secs(60),
+        // A walk first waits, like Studio's, for a character with a
+        // Humanoid; the editor gives up on it after 10 minutes.
+        "character_navigation" => Duration::from_secs(11 * 60),
         _ => ANSWER_TIMEOUT,
     }
 }
