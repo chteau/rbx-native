@@ -97,22 +97,92 @@ fn acks_show_only_failures() {
     assert!(matches!(row, Feedback::Error(_)));
 }
 
+fn left(user_id: u64, teleport: bool) -> Uplink {
+    Uplink::Left { user_id, teleport }
+}
+
+fn bye(job_id: &str) -> Uplink {
+    Uplink::Bye {
+        job_id: job_id.to_owned(),
+    }
+}
+
+fn hello_from(job_id: &str) -> Uplink {
+    Uplink::Hello {
+        session: "s".to_owned(),
+        place_version: 1,
+        http_enabled: true,
+        loadstring_enabled: true,
+        is_studio: false,
+        job_id: job_id.to_owned(),
+    }
+}
+
 #[test]
 fn stop_follows_the_developers_player() {
-    let mut own = None;
-    assert_eq!(stop_for(&Uplink::Joined { user_id: 5 }, &mut own), None);
-    assert_eq!(stop_for(&Uplink::Left { user_id: 7 }, &mut own), None);
+    let mut p = Presence::default();
+    assert_eq!(follow(&Uplink::Joined { user_id: 5 }, &mut p), None);
+    assert_eq!(follow(&left(7, false), &mut p), None);
     assert_eq!(
-        stop_for(&Uplink::Left { user_id: 5 }, &mut own),
-        Some(StopReason::PlayerLeft)
+        follow(&left(5, false), &mut p),
+        Some(Follow::Stop(StopReason::PlayerLeft))
     );
     assert_eq!(
-        stop_for(&Uplink::Bye, &mut None),
-        Some(StopReason::ServerClosed)
+        follow(&bye(""), &mut Presence::default()),
+        Some(Follow::Stop(StopReason::ServerClosed))
     );
     assert_eq!(
-        stop_for(&Uplink::Left { user_id: 9 }, &mut None),
-        Some(StopReason::PlayerLeft)
+        follow(&left(9, false), &mut Presence::default()),
+        Some(Follow::Stop(StopReason::PlayerLeft))
+    );
+}
+
+#[test]
+fn a_teleport_is_followed_into_the_next_server() {
+    let mut p = Presence::default();
+    follow(&hello_from("old"), &mut p);
+    follow(&Uplink::Joined { user_id: 5 }, &mut p);
+    assert_eq!(follow(&left(5, true), &mut p), Some(Follow::Leaving));
+    // The emptied server closes while the player is between servers…
+    assert_eq!(follow(&bye("old"), &mut p), None);
+    assert_eq!(follow(&hello_from("new"), &mut p), None);
+    assert_eq!(
+        follow(&Uplink::Joined { user_id: 5 }, &mut p),
+        Some(Follow::Arrived)
+    );
+    // …or after it arrived.
+    assert_eq!(follow(&bye("old"), &mut p), None);
+    assert_eq!(
+        follow(&bye("new"), &mut p),
+        Some(Follow::Stop(StopReason::ServerClosed))
+    );
+}
+
+#[test]
+fn a_reserved_server_seen_first_still_counts_as_arrival() {
+    let mut p = Presence::default();
+    follow(&hello_from("old"), &mut p);
+    follow(&Uplink::Joined { user_id: 5 }, &mut p);
+    follow(&hello_from("reserved"), &mut p);
+    assert_eq!(follow(&Uplink::Joined { user_id: 5 }, &mut p), None);
+    // The old server's leave lands after the join, flagged or not.
+    assert_eq!(follow(&left(5, false), &mut p), Some(Follow::Arrived));
+    assert_eq!(follow(&bye("old"), &mut p), None);
+    assert_eq!(
+        follow(&left(5, false), &mut p),
+        Some(Follow::Stop(StopReason::PlayerLeft))
+    );
+}
+
+#[test]
+fn leaving_after_a_teleport_still_ends_the_play() {
+    let mut p = Presence::default();
+    follow(&Uplink::Joined { user_id: 5 }, &mut p);
+    follow(&left(5, true), &mut p);
+    follow(&Uplink::Joined { user_id: 5 }, &mut p);
+    assert_eq!(
+        follow(&left(5, false), &mut p),
+        Some(Follow::Stop(StopReason::PlayerLeft))
     );
 }
 

@@ -189,6 +189,12 @@ impl Live {
         }
     }
 
+    /// Makes `live_tick` send the next `Watch` even for an unchanged
+    /// selection.
+    pub(in crate::shell) fn forget_watch(&mut self) {
+        self.watched = None;
+    }
+
     fn tree(&self, view: View) -> &LiveTree {
         match view {
             View::Client => &self.client,

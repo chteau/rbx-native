@@ -396,21 +396,68 @@ impl StopReason {
     }
 }
 
-/// Follows the session's players: the first `Joined` after launch is the
-/// developer's own (stored in `own_user`); a `Left` of that user →
-/// `Some(PlayerLeft)`; `Bye` → `Some(ServerClosed)`; else `None`. A `Left`
-/// before any `Joined` stops too (the probe may miss the join).
-pub(crate) fn stop_for(event: &Uplink, own_user: &mut Option<u64>) -> Option<StopReason> {
+/// What a player event means for the session (`follow`).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Follow {
+    Stop(StopReason),
+    /// The developer's player is teleporting out of its server: the Play
+    /// waits for it to turn up in the next one.
+    Leaving,
+    /// It is in another server now, and the one it left has gone quiet.
+    Arrived,
+}
+
+/// Where the developer's player is, as the probes of every server it
+/// passes through report it.
+#[derive(Debug, Default)]
+pub(crate) struct Presence {
+    /// The first `Joined` after launch.
+    own_user: Option<u64>,
+    /// Its joins minus its leaves: 2 while a teleport's new server sees it
+    /// before the old one reports it gone.
+    servers: u32,
+    /// A teleport `Left` came and no `Joined` yet.
+    leaving: bool,
+    /// The newest `Hello`'s job: the server the player is in or heading to.
+    job_id: String,
+}
+
+/// Follows the developer's player across servers: a `Left` of it ends the
+/// Play (`PlayerLeft`) unless it is still in another server (`Arrived`) or
+/// left by teleport (`Leaving`, until its next `Joined` → `Arrived`). A
+/// `Left` before any `Joined` counts as its own (the probe may miss the
+/// join). `Bye` → `ServerClosed`, except from a server it already left.
+pub(crate) fn follow(event: &Uplink, presence: &mut Presence) -> Option<Follow> {
     match event {
-        Uplink::Joined { user_id } => {
-            own_user.get_or_insert(*user_id);
+        Uplink::Hello { job_id, .. } => {
+            presence.job_id.clone_from(job_id);
             None
         }
-        Uplink::Left { user_id } => match *own_user {
-            Some(own) if own != *user_id => None,
-            _ => Some(StopReason::PlayerLeft),
-        },
-        Uplink::Bye => Some(StopReason::ServerClosed),
+        Uplink::Joined { user_id } => {
+            if *presence.own_user.get_or_insert(*user_id) != *user_id {
+                return None;
+            }
+            presence.servers += 1;
+            std::mem::take(&mut presence.leaving).then_some(Follow::Arrived)
+        }
+        Uplink::Left { user_id, teleport } => {
+            if presence.own_user.is_some_and(|own| own != *user_id) {
+                return None;
+            }
+            presence.servers = presence.servers.saturating_sub(1);
+            Some(if presence.servers > 0 {
+                Follow::Arrived
+            } else if *teleport {
+                presence.leaving = true;
+                Follow::Leaving
+            } else {
+                Follow::Stop(StopReason::PlayerLeft)
+            })
+        }
+        Uplink::Bye { job_id } => {
+            let current = job_id.is_empty() || *job_id == presence.job_id;
+            (current && !presence.leaving).then_some(Follow::Stop(StopReason::ServerClosed))
+        }
         _ => None,
     }
 }

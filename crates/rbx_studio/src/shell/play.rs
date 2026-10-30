@@ -31,7 +31,8 @@
 //!    client simply stays in its own window (Output warning).
 //! 8. `Phase::Running`; a poll task every `POLL` drains `channel.events()`
 //!    into Output via `session::feedback_for`, records `job_id` from
-//!    `Hello`, applies `session::stop_for`, checks `client.exited()` and
+//!    `Hello`, applies `session::follow` (a teleport keeps the Play and
+//!    resyncs the views in the next server), checks `client.exited()` and
 //!    `embedded.alive()`, and moves the embedded window when the
 //!    `embed_target` rect changed.
 //!
@@ -116,7 +117,7 @@ struct Session {
     #[cfg(any(target_os = "linux", windows))]
     focus: Option<rbx_play::embed::FocusFollow>,
     client: ClientProcess,
-    own_user: Option<u64>,
+    presence: session::Presence,
     last_rect: Option<session::rbx_play_rect::Rect>,
     /// The last `CommandBody::Pointer` sent.
     #[cfg(any(target_os = "linux", windows))]
@@ -563,7 +564,7 @@ impl Shell {
                     #[cfg(any(target_os = "linux", windows))]
                     focus: None,
                     client,
-                    own_user: None,
+                    presence: session::Presence::default(),
                     last_rect: None,
                     corner: 0,
                     #[cfg(any(target_os = "linux", windows))]
@@ -748,10 +749,21 @@ impl Shell {
                     self.play.job_id = Some(job_id.clone());
                 }
             }
-            if let Some(running) = self.play.session.as_mut() {
-                if stop.is_none() {
-                    stop = session::stop_for(&event, &mut running.own_user);
+            let follow = self
+                .play
+                .session
+                .as_mut()
+                .and_then(|running| session::follow(&event, &mut running.presence));
+            match follow {
+                Some(session::Follow::Stop(reason)) => {
+                    stop.get_or_insert(reason);
                 }
+                Some(session::Follow::Leaving) => self.output.push(
+                    PLAY_SOURCE,
+                    Feedback::Output("Teleporting: following you to the next server.".to_owned()),
+                ),
+                Some(session::Follow::Arrived) => self.play_arrived(),
+                None => {}
             }
         }
         // The game replaces the 3D view only: another document hides it.
@@ -808,6 +820,19 @@ impl Shell {
             cx.notify();
         }
         true
+    }
+
+    /// The player is in a new server whose probe took over the link: its
+    /// views start over and the shown instances are watched again.
+    fn play_arrived(&mut self) {
+        self.output.push(
+            PLAY_SOURCE,
+            Feedback::Output("Followed you into the new server.".to_owned()),
+        );
+        self.play.live.forget_watch();
+        for side in [Side::Server, Side::Client] {
+            self.play_send(rbx_play::protocol::CommandBody::Resync { side });
+        }
     }
 
     /// Sends `body` down the open link; its command id, or `None` with no

@@ -167,10 +167,20 @@ pub enum Uplink {
     /// already in when the probe starts).
     Joined { user_id: u64 },
     /// A player left the server (`Players.PlayerRemoving`). The editor stops
-    /// the Play session when the developer's own player leaves.
-    Left { user_id: u64 },
-    /// Server is shutting down (`game:BindToClose`).
-    Bye,
+    /// the Play session when the developer's own player leaves, unless
+    /// `teleport`: it left for another server (`Player.OnTeleport` had
+    /// started), which the Play follows.
+    Left {
+        user_id: u64,
+        #[serde(default)]
+        teleport: bool,
+    },
+    /// Server is shutting down (`game:BindToClose`). `job_id` tells a server
+    /// the player teleported out of from the one it is in.
+    Bye {
+        #[serde(default)]
+        job_id: String,
+    },
     /// A chunk of one side's whole instance tree, sent after the probe
     /// starts and on `Resync`. `reset` on the first chunk (drop the editor's
     /// copy), `done` on the last. Parents come before their children.

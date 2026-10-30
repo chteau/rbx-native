@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-30
+
+- **Play follows a teleport instead of ending.** A game that sent the
+  player to another server (TeleportService, a reserved server included)
+  ended the Play with "you left the game" and closed Roblox. The probe now
+  marks a leave that `Player.OnTeleport` started, the server it left goes
+  quiet, and the editor waits for the player in the next server: the link,
+  Output, Invite and the live Client/Server views carry on there. A real
+  leave still ends the Play. — @chteau
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**
