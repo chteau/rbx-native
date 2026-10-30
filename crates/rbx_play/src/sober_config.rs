@@ -164,6 +164,52 @@ pub fn recover(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Below this, Play warns that the game itself is turned down.
+pub const QUIET_MASTER_VOLUME: f32 = 0.3;
+
+/// The Roblox client's own volume (the in-game Settings › Volume slider,
+/// 0 to 1), from the newest `GlobalBasicSettings_<n>.xml` in Sober's data.
+/// It is kept across runs and applies on top of the system mixer, so a low
+/// one makes Play quiet whatever launched the client.
+pub fn master_volume() -> Option<f32> {
+    let home = std::env::var_os("HOME")?;
+    let dir = Path::new(&home)
+        .join(".var/app")
+        .join(SOBER_APP_ID)
+        .join("data/sober/appData");
+    let newest = fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|entry| {
+            let name = entry.ok()?.file_name().into_string().ok()?;
+            let n: u32 = name
+                .strip_prefix("GlobalBasicSettings_")?
+                .strip_suffix(".xml")?
+                .parse()
+                .ok()?;
+            Some((n, name))
+        })
+        .max()?;
+    master_volume_in(&fs::read_to_string(dir.join(newest.1)).ok()?)
+}
+
+/// `MasterVolume` from a `GlobalBasicSettings` file's text.
+pub fn master_volume_in(xml: &str) -> Option<f32> {
+    const KEY: &str = "<float name=\"MasterVolume\">";
+    let start = xml.find(KEY)? + KEY.len();
+    let rest = &xml[start..];
+    rest[..rest.find('<')?].trim().parse().ok()
+}
+
+/// The Output line for a quiet client, or `None` when it is loud enough.
+pub fn quiet_volume_notice(volume: f32) -> Option<String> {
+    (volume < QUIET_MASTER_VOLUME).then(|| {
+        format!(
+            "Roblox's own volume is at {}% (Esc › Settings › Volume in the game), so Play may sound silent.",
+            (volume * 100.0).round() as i32
+        )
+    })
+}
+
 fn sober_running() -> bool {
     Command::new("flatpak")
         .args(["ps", "--columns=application"])

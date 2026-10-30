@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-30
+
+- **Play tells you when Roblox itself is turned down.** I couldn't hear
+  anything in Play, turns out our launch was fine (Sober's stream plays,
+  not muted, same as running Sober alone) but Roblox's own volume slider
+  was at 10%, and Sober keeps that between runs. Play now drops a warning
+  in Output when it's under 30% so you know to bump it in Esc › Settings.
+  (@chteau)
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**

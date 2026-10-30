@@ -128,3 +128,46 @@ fn default_options_keep_the_plain_command() {
         .collect();
     assert_eq!(args, ["run", "org.vinegarhq.Sober", "roblox://x"]);
 }
+
+#[test]
+fn master_volume_reads_the_in_game_slider() {
+    use rbx_play::sober_config::master_volume_in;
+    let xml = r#"<Item class="UserGameSettings"><Properties>
+			<float name="MasterVolume">0.100000001</float>
+			<float name="MasterVolumeStudio">1</float>
+		</Properties></Item>"#;
+    assert_eq!(master_volume_in(xml), Some(0.1));
+    assert_eq!(
+        master_volume_in("<float name=\"MasterVolumeStudio\">1</float>"),
+        None
+    );
+    assert_eq!(master_volume_in(""), None);
+}
+
+#[test]
+fn a_quiet_client_gets_a_notice_and_a_loud_one_does_not() {
+    use rbx_play::sober_config::quiet_volume_notice;
+    let text = quiet_volume_notice(0.1).expect("10% is quiet");
+    assert!(text.contains("10%"), "{text}");
+    assert!(text.contains("Settings"), "{text}");
+    assert_eq!(
+        quiet_volume_notice(0.0).map(|t| t.contains("0%")),
+        Some(true)
+    );
+    assert_eq!(quiet_volume_notice(0.5), None);
+    assert_eq!(quiet_volume_notice(1.0), None);
+}
+
+/// Play's Sober launch adds nothing that cuts the client off from the
+/// sound server: no env, no `--nosocket`, no socket or filesystem override.
+#[test]
+fn the_sober_launch_keeps_the_sound_socket() {
+    let cmd = Launcher::Sober.command_with("roblox://placeId=1", &ClientOptions::default());
+    assert_eq!(cmd.get_program(), "flatpak");
+    let args: Vec<_> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(args, ["run", "org.vinegarhq.Sober", "roblox://placeId=1"]);
+    assert_eq!(cmd.get_envs().count(), 0);
+}
