@@ -271,7 +271,7 @@ pub(super) fn plain_row() -> Div {
 
 pub(super) fn row(
     label: &'static str,
-    description: &'static str,
+    description: impl IntoElement,
     scope: Option<&'static str>,
     edited: bool,
     control: AnyElement,

@@ -19,7 +19,7 @@ No new research was done for it. Each confidence tag comes from the note the cla
 
 | Item | Verdict | Why (one line) |
 |---|---|---|
-| 1. Private place + `publish_place` | **Possible with caveats** | Publishing to an existing place works with an API key alone [Verified]. Creating the place via API is impossible, so it is created by hand. The body cap is 10 MiB. `PartOperation`, `SurfaceAppearance`, `EditableImage`, `EditableMesh` and `BaseWrap` are not updated by the API [Verified]. |
+| 1. Private place + `publish_place` | **Possible with caveats** | Publishing to an existing place works with an API key alone [Verified]. Creating the place via API is impossible, so it is created by hand. The body cap is 150 MiB, measured (the spec's 10 MiB is stale, see `open-cloud-place.md`). `PartOperation`, `SurfaceAppearance`, `EditableImage`, `EditableMesh` and `BaseWrap` are not updated by the API [Verified]. |
 | 2. Launch the client via `roblox://placeId=` | **Possible with caveats** | The documented (though deprecated) deep link uses the client's own login [Verified]. Sober's URI handling is untested [Inferred]. Embedding: X11 reparenting only, untested. Wayland would need a nested compositor. Windows `SetParent` carries Hyperion risk. |
 | 3. Inject `HttpEnabled`/`LoadStringEnabled` + probe | **Unknown** | Both properties are serialised in the place [Verified], but nothing documents whether an API publish preserves them. A live test is needed. The fallback is a one-time manual "Allow HTTP Requests" toggle. |
 | 4. Tunnel + HTTP server, batched diffs, long-poll | **Possible with caveats** | HttpService request/response works from published servers, capped at ~500 requests/min [Verified]. WebSocket/SSE is Studio-only [Verified]. Whether Roblox accepts tunnel domains is untested. |
@@ -32,7 +32,7 @@ No new research was done for it. Each confidence tag comes from the note the cla
 | On-device engine / headless local run | **Not possible** | No local Roblox engine exists. Luau Execution runs on Roblox servers as batch jobs only [Verified]. |
 
 ## Possible
-- [Verified] `POST /universes/v1/{u}/places/{p}/versions?versionType=Published` with scope `universe-places:write`, API key only, body ≤ 10 MiB. https://create.roblox.com/docs/cloud/guides/usage-place-publishing
+- [Verified] `POST /universes/v1/{u}/places/{p}/versions?versionType=Published` with scope `universe-places:write`, API key only, body ≤ 150 MiB (measured; the spec still says 10 MiB). https://create.roblox.com/docs/cloud/guides/usage-place-publishing
 - [Verified] `PATCH` on the place (`displayName`, `description`) and on the universe (`visibility`). `:restartServers` with `closeAllVersions`. Local OpenAPI `cloud.docs.json`; https://create.roblox.com/docs/projects/update-games
 - [Verified] A publish does not stop old servers. Without a restart, the client could land on a stale version. https://create.roblox.com/docs/projects/update-games
 - [Verified] The documented launch link is `roblox://placeId=<id>&launchData=<≤200 bytes>`, read in game via `Player:GetJoinData()`. https://create.roblox.com/docs/production/promotion/deeplinks
@@ -79,7 +79,7 @@ All of these are covered by the prioritized list below. Two have no test there:
    - Set `HttpService.HttpEnabled = true` and `ServerScriptService.LoadStringEnabled = true`.
    - Add a probe `Script`. Its attributes, on a server-only container, carry `BASE` (the tunnel URL), `TOKEN` (128+ random bits, new for each Play) and `SESSION`.
    - Add a fixed mirror `LocalScript` and a `RemoteEvent`.
-   - Pre-flight checks: warn on the classes the API cannot publish, check that the serialized `.rbxl` is ≤ 10 MiB, and optionally compile-check the probe with a version-pinned Luau Execution task.
+   - Pre-flight checks: warn on the classes the API cannot publish, check that the serialized `.rbxl` is ≤ 150 MiB, and optionally compile-check the probe with a version-pinned Luau Execution task.
 5. **Publish and restart.** Call `publish_place(..., Published)`, then `:restartServers` with `closeAllVersions=true`.
 6. **Launch.**
    - First show a confirmation: "This will disconnect you from any Roblox game you're in with this account."
@@ -150,7 +150,7 @@ All of these are covered by the prioritized list below. Two have no test there:
 - **Step 1:**
   - Manual creation plus a wizard. A separate scoped key.
   - `Published` + `:restartServers`.
-  - Pre-flight checks: classes the API cannot publish, and the 10 MiB cap.
+  - Pre-flight checks: classes the API cannot publish, and the 150 MiB cap.
   - The playing account must have access to the place.
 - **Step 2:**
   - Launch with `roblox://placeId=…&launchData=<session>`.
