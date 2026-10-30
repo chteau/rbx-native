@@ -5,7 +5,8 @@
 //! X11 only. Sober must run under X11/XWayland for this; on a pure Wayland
 //! client the window is never found and the caller leaves it standalone.
 //! Flatpak gives the client its own PID namespace, so windows are found by
-//! `WM_CLASS`, not `_NET_WM_PID`.
+//! `WM_CLASS`, not `_NET_WM_PID`, among those created after Play started
+//! ([`Before`]).
 
 mod focus;
 mod input;
@@ -19,8 +20,10 @@ use std::time::{Duration, Instant};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConfigureWindowAux, ConnectionExt, InputFocus, MapState, PropMode,
+    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, EventMask, InputFocus,
+    MapState, PropMode,
 };
+use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
@@ -146,11 +149,99 @@ fn withdraw(conn: &RustConnection, root: u32, window: u32) -> Result<(), EmbedEr
     }
 }
 
+/// Gives the client the keyboard however the desktop is arranged: the X
+/// focus, which XTest's keys go to, and an `EnterNotify`. Sober drops key
+/// presses (not releases) while it believes the pointer is elsewhere, as it
+/// is whenever another window covers the editor or is active; a synthetic
+/// crossing is enough for it (measured), so the pointer is never moved.
+/// Placed where the pointer is when that is over the window, else in its
+/// middle.
+fn claim_keyboard(conn: &RustConnection, root: u32, window: u32) -> Result<(), EmbedError> {
+    use x11rb::protocol::xproto::{EnterNotifyEvent, NotifyDetail, NotifyMode, ENTER_NOTIFY_EVENT};
+
+    conn.set_input_focus(InputFocus::PARENT, window, x11rb::CURRENT_TIME)
+        .map_err(x11)?;
+    let size = conn
+        .get_geometry(window)
+        .map_err(x11)?
+        .reply()
+        .map_err(x11)?;
+    let pointer = conn
+        .query_pointer(window)
+        .map_err(x11)?
+        .reply()
+        .map_err(x11)?;
+    let within = |at: i16, extent: u16| {
+        if (0..i32::from(extent)).contains(&i32::from(at)) {
+            at
+        } else {
+            i16::try_from(extent / 2).unwrap_or(0)
+        }
+    };
+    let enter = EnterNotifyEvent {
+        response_type: ENTER_NOTIFY_EVENT,
+        detail: NotifyDetail::NONLINEAR,
+        sequence: 0,
+        time: x11rb::CURRENT_TIME,
+        root,
+        event: window,
+        child: x11rb::NONE,
+        root_x: pointer.root_x,
+        root_y: pointer.root_y,
+        event_x: within(pointer.win_x, size.width),
+        event_y: within(pointer.win_y, size.height),
+        state: 0u16.into(),
+        mode: NotifyMode::NORMAL,
+        // `same-screen` and `focus`.
+        same_screen_focus: 3,
+    };
+    conn.send_event(false, window, EventMask::ENTER_WINDOW, enter)
+        .map_err(x11)?;
+    Ok(())
+}
+
 fn parent_of(conn: &RustConnection, window: u32) -> Option<u32> {
     conn.query_tree(window)
         .ok()
         .and_then(|c| c.reply().ok())
         .map(|t| t.parent)
+}
+
+/// The screen as it was before the client started, so only a window
+/// created since counts as the new client's. Window ids cannot tell: the X
+/// server hands a closed client's ids to the next one (every Sober run here
+/// got the same window id), so a Sober window still on screen when Play
+/// started, one closing down or left over, used to put the new client's id
+/// on the ignore list and the 90 s wait ran out with the game open.
+/// Default: no watch, any client window counts.
+#[derive(Default)]
+pub struct Before {
+    watch: Option<(RustConnection, u32)>,
+}
+
+impl Before {
+    /// Every window created as a top-level since the watch began and not
+    /// destroyed since, added to `fresh`.
+    fn note_created(&self, fresh: &mut std::collections::HashSet<u32>) {
+        let Some((conn, root)) = &self.watch else {
+            return;
+        };
+        while let Ok(Some(event)) = conn.poll_for_event() {
+            match event {
+                Event::CreateNotify(e) if e.parent == *root => {
+                    fresh.insert(e.window);
+                }
+                Event::DestroyNotify(e) => {
+                    fresh.remove(&e.window);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn is_new(&self, window: u32, fresh: &std::collections::HashSet<u32>) -> bool {
+        self.watch.is_none() || fresh.contains(&window)
+    }
 }
 
 /// A client window living inside the editor.
@@ -163,7 +254,7 @@ pub struct Embedded {
 impl Embedded {
     /// Opens its own X connection, polls the root window's children (and
     /// one level below, for reparenting WMs) every 100 ms until a viewable
-    /// window with a client `WM_CLASS` that was not in `ignore` exists, or
+    /// window with a client `WM_CLASS` created after `before` exists, or
     /// `timeout` passes. Then: sets `_MOTIF_WM_HINTS` to
     /// `motif_no_decorations()`, withdraws it from the window manager
     /// (`withdraw`), reparents it under `parent`
@@ -171,13 +262,18 @@ impl Embedded {
     pub fn attach(
         parent: u32,
         rect: Rect,
-        ignore: &[u32],
+        before: &Before,
         timeout: Duration,
     ) -> Result<Self, EmbedError> {
         let (conn, root) = connect()?;
         let deadline = Instant::now() + timeout;
+        let mut fresh = std::collections::HashSet::new();
         let window = loop {
-            if let Some(w) = scan(&conn, root).into_iter().find(|w| !ignore.contains(w)) {
+            before.note_created(&mut fresh);
+            if let Some(w) = scan(&conn, root)
+                .into_iter()
+                .find(|&w| before.is_new(w, &fresh))
+            {
                 break w;
             }
             if Instant::now() >= deadline {
@@ -220,11 +316,20 @@ impl Embedded {
         Ok(this)
     }
 
-    /// Top-level client windows already on screen, to pass as `ignore` so a
-    /// Roblox window opened before Play is not the one grabbed.
-    pub fn existing_clients() -> Result<Vec<u32>, EmbedError> {
+    /// Starts watching for new top-level windows, before the client is
+    /// started, so a Roblox window opened before Play is not the one
+    /// grabbed ([`Before`]).
+    pub fn existing_clients() -> Result<Before, EmbedError> {
         let (conn, root) = connect()?;
-        Ok(scan(&conn, root))
+        conn.change_window_attributes(
+            root,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
+        )
+        .map_err(x11)?;
+        conn.sync().map_err(x11)?;
+        Ok(Before {
+            watch: Some((conn, root)),
+        })
     }
 
     /// The embedded window id.

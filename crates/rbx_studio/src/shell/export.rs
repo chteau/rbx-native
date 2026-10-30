@@ -209,7 +209,7 @@ impl Shell {
 
     fn export_to(&mut self, kind: Export, roots: &[Ref], path: &Path, cx: &mut Context<Self>) {
         if kind == Export::Place {
-            self.save_as(path, cx);
+            let _ = self.save_as(path, cx);
             return;
         }
         if kind == Export::Project {

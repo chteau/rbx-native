@@ -294,11 +294,12 @@ fn applying_to_a_script_deleted_meanwhile_writes_nothing() {
     assert_eq!(apply(&mut dom, &planned.unwrap()), None);
 }
 
+/// Roblox names are case-sensitive, and so is the path here: a script
+/// whose name differs from a sibling's only in case (`G_main` beside
+/// `g_main`) is its own script, created and edited by its own spelling.
 #[test]
-fn a_new_script_is_refused_beside_one_that_differs_only_in_case() {
-    let dom = place();
-    // `inspect_instance` answers this spelling for GameLoop, so a client
-    // may well edit by it.
+fn a_name_that_differs_only_in_case_is_a_script_of_its_own() {
+    let mut dom = place();
     let (failed, result, planned) = edit(
         &dom,
         json!({
@@ -307,13 +308,18 @@ fn a_new_script_is_refused_beside_one_that_differs_only_in_case() {
             "edits": [replacement("", "print(1)")],
         }),
     );
-    assert!(failed);
-    assert!(
-        result
-            .as_str()
-            .unwrap()
-            .contains("ServerScriptService.GameLoop differs only in case"),
-        "{result}"
+    assert!(!failed, "{result}");
+    assert_eq!(result, "Created gameloop (Script) with 1 edits applied");
+    let twin = apply(&mut dom, &planned.unwrap()).unwrap();
+    assert_ne!(Some(twin), resolve(&dom, GAME_LOOP));
+    assert_eq!(
+        resolve(&dom, "game.ServerScriptService.gameloop"),
+        Some(twin)
     );
-    assert_eq!(planned, None);
+    let (failed, result, _) = edit(
+        &dom,
+        json!({ "file_path": GAME_LOOP, "edits": [replacement("rounds = 0", "rounds = 1")] }),
+    );
+    assert!(!failed, "{result}");
+    assert_eq!(result, "Modified GameLoop (Script) with 1 edits applied");
 }

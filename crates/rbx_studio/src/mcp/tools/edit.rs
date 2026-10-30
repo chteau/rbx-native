@@ -96,7 +96,6 @@ pub(super) fn multi_edit(arguments: &Value, session: &mut Session) -> Outcome {
         }
         None => {
             let (parent, name) = new_place(dom, path)?;
-            refuse_case_twin(dom, parent, &name)?;
             let class = new_class(arguments, path)?;
             let target = Target::New {
                 parent,
@@ -212,27 +211,6 @@ fn new_place(dom: &WeakDom, path: &str) -> Result<(Ref, String), String> {
     parent.ok_or_else(|| {
         format!("nothing in the place is at {path}, nor at the parent a new script would need")
     })
-}
-
-/// `inspect_instance` reads paths ignoring case, so a path taken from its
-/// answer may differ from the real name in case alone. Creating a script
-/// under that spelling would put a second one beside the one meant.
-fn refuse_case_twin(dom: &WeakDom, parent: Ref, name: &str) -> Result<(), String> {
-    let wanted = name.to_lowercase();
-    let twin = dom.get(parent).and_then(|parent| {
-        parent.children().iter().find(|&&child| {
-            dom.get(child)
-                .is_some_and(|child| child.name().to_lowercase() == wanted)
-        })
-    });
-    match twin {
-        Some(&twin) => Err(format!(
-            "nothing is named {name} here, but {} differs only in case; use its path to edit it, \
-             or a name that differs by more than case for a new script",
-            path_of(dom, twin)
-        )),
-        None => Ok(()),
-    }
 }
 
 /// The class a new script is created as. Studio asks for it rather than

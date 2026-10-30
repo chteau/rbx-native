@@ -50,6 +50,9 @@ struct RawMember {
     // before a PropertyDescriptor is built).
     #[serde(rename = "Serialization", default)]
     serialization: RawSerialization,
+    // `{Read, Write}` on a property, a plain string on other members.
+    #[serde(rename = "Security", default)]
+    security: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -111,6 +114,7 @@ fn convert_class(raw: RawClass) -> ClassDescriptor {
                 tags: member.tags,
                 can_load: member.serialization.can_load,
                 can_save: member.serialization.can_save,
+                script_writable: member.security["Write"] != "NotAccessibleSecurity",
             })
         })
         .collect();

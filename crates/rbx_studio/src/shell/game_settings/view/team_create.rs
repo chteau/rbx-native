@@ -1,5 +1,6 @@
-//! Basic Info's Team Create rows: the switch and who is in the
-//! place's live session.
+//! The rows that run as the Roblox sign-in: Basic Info's Team Create
+//! switch and who is in the place's live session, and Security's Allow
+//! Mesh / Image APIs.
 
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
@@ -14,6 +15,15 @@ const LABEL: &str = "Team Create";
 const DESCRIPTION: &str = "Enables collaboration and autosave to cloud.";
 const SIGNED_OUT: &str =
     "Turning Team Create on or off needs a Roblox sign-in: Settings \u{203a} Account \u{203a} Roblox sign-in";
+
+// Studio's own strings (Studio.GameSettings.Security.EnableMeshTextureApis*).
+const MESH_LABEL: &str = "Allow Mesh / Image APIs";
+const MESH_DESCRIPTION: &str = "This experience can access EditableMesh and EditableImage APIs. Using these APIs must comply with the";
+const MESH_NOT_OWNER: &str = "Only the group owner can edit this setting.";
+const MESH_POLICY: &str =
+    "https://help.roblox.com/hc/articles/115004647846-Roblox-Terms-of-Use#creators-restrictions-on-use";
+const MESH_SIGNED_OUT: &str =
+    "Turning the Mesh / Image APIs on or off needs a Roblox sign-in: Settings \u{203a} Account \u{203a} Roblox sign-in";
 
 impl GameSettingsWindow {
     /// Empty when the file isn't linked: the cloud section already says so.
@@ -67,6 +77,77 @@ impl GameSettingsWindow {
             ),
             self.members_row(),
         ]
+    }
+
+    /// Security's Allow Mesh / Image APIs; empty when the file isn't linked.
+    pub(super) fn mesh_apis_rows(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        if self.link.is_none() {
+            return Vec::new();
+        }
+        let tc = &self.team_create;
+        let description = |owner: bool| {
+            if !owner {
+                return kit::text(11.5, 16.)
+                    .text_color(tokens::text2())
+                    .child(MESH_NOT_OWNER)
+                    .into_any_element();
+            }
+            v_flex()
+                .child(MESH_DESCRIPTION)
+                .child(
+                    h_flex()
+                        .child(
+                            div()
+                                .id("gs-mesh-apis-terms")
+                                .text_color(tokens::accent_line())
+                                .cursor_pointer()
+                                .child("Terms of Use")
+                                .on_click(|_, _, cx| cx.open_url(MESH_POLICY)),
+                        )
+                        .child("."),
+                )
+                .into_any_element()
+        };
+        let disabled = |id: &'static str, on: bool, why: &'static str| {
+            kit::toggle(id, on, |_, _, _| {})
+                .opacity(0.4)
+                .cursor_not_allowed()
+                .tooltip(move |window, cx| crate::shell::tooltip::text(why, window, cx))
+                .into_any_element()
+        };
+        if tc.web.is_none() {
+            let off = disabled("gs-mesh-apis-off", false, MESH_SIGNED_OUT);
+            return vec![row(MESH_LABEL, description(true), None, false, off, None)];
+        }
+        let control = match (&tc.mesh_apis_loading, tc.mesh_apis.value()) {
+            (Loading::Busy, _) | (Loading::Idle, None) => ui::spinner("gs-mesh-apis-loading", 16.),
+            (Loading::Failed(_), _) => {
+                ui::button("gs-mesh-apis-retry", "Try again", Weight::Secondary, true)
+                    .on_click(cx.listener(|this, _, _, cx| this.load_team_create(cx)))
+                    .into_any_element()
+            }
+            (Loading::Idle, Some(on)) if !tc.mesh_apis_editable => {
+                disabled("gs-mesh-apis", on, MESH_NOT_OWNER)
+            }
+            (Loading::Idle, Some(on)) => kit::toggle(
+                "gs-mesh-apis",
+                on,
+                cx.listener(move |this, _, _, cx| this.set_mesh_apis(!on, cx)),
+            )
+            .into_any_element(),
+        };
+        let error = match &tc.mesh_apis_loading {
+            Loading::Failed(message) => Some(message.clone()),
+            _ => None,
+        };
+        vec![row(
+            MESH_LABEL,
+            description(tc.mesh_apis_editable),
+            None,
+            tc.mesh_apis.pending().is_some(),
+            control,
+            error,
+        )]
     }
 
     fn members_row(&self) -> AnyElement {

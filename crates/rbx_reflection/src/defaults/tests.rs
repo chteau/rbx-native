@@ -177,3 +177,21 @@ fn a_ui_shadow_is_typed_and_starts_as_studio_inserts_one() {
         Some(&Variant::Float32(0.0))
     );
 }
+
+// Every default of a class, the ones `default_value` answers one at a time:
+// a `TextButton` a file says nothing about loads grey, in `Legacy`, at 8.
+#[test]
+fn every_default_of_a_class_is_listed() {
+    let db = database();
+    let defaults: HashMap<&str, &Variant> = db.default_values("TextButton").collect();
+
+    assert_eq!(defaults.get("TextSize"), Some(&&Variant::Float32(8.0)));
+    assert_eq!(
+        defaults.get("BackgroundColor3"),
+        db.default_value("TextButton", "BackgroundColor3").as_ref()
+    );
+    let Some(Variant::Font(font)) = defaults.get("FontFace") else {
+        panic!("a TextButton has a default FontFace");
+    };
+    assert_eq!(font.family, "rbxasset://fonts/families/LegacyArial.json");
+}

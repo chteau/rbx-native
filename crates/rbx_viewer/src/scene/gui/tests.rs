@@ -46,10 +46,14 @@ fn udim2(sx: f32, ox: i32, sy: f32, oy: i32) -> Variant {
 /// property's own default reserves the top bar's pixels, which is right for a
 /// place but only obscures what these tests are measuring. The tests that care
 /// set it themselves.
+/// A `ScreenGui` with `ScreenInsets.None` and `ZIndexBehavior.Sibling`, the
+/// mode Studio's Insert gives (its class default is `Global`).
 fn screen_gui() -> (WeakDom, Ref) {
     let mut dom = WeakDom::new();
     let gui = dom.new_instance("ScreenGui", "ScreenGui", None);
     dom.set_property(gui, "ScreenInsets", Variant::Enum(0))
+        .unwrap();
+    dom.set_property(gui, "ZIndexBehavior", Variant::Enum(1))
         .unwrap();
     (dom, gui)
 }

@@ -192,6 +192,12 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
 fn main() {
+    // Before any thread starts: Play runs Sober, a user Flatpak, and an
+    // isolated `XDG_DATA_HOME` would hide it from `flatpak`.
+    #[cfg(target_os = "linux")]
+    if let Some(dir) = rbx_play::launch::missed_user_flatpaks() {
+        std::env::set_var("FLATPAK_USER_DIR", dir);
+    }
     // The Network Simulator's elevated helper is this same executable,
     // relaunched by `rbx_play::netsim::Shaper::start`; it needs none of the
     // editor, so it branches off before anything else loads.

@@ -246,11 +246,6 @@ pub(in crate::shell::game_settings) const UNREACHABLE: &[Unreachable] = &[
         reason: NO_FIELD,
     },
     Unreachable {
-        tab: Tab::Security,
-        label: "Allow Mesh / Image APIs",
-        reason: COOKIE_ONLY,
-    },
-    Unreachable {
         tab: Tab::Places,
         label: "Server fill and Allow Copying",
         reason: COOKIE_ONLY,

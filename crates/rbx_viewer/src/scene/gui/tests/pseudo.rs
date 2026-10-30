@@ -60,6 +60,8 @@ fn label(dom: &mut WeakDom, parent: Ref, text: &str, size: (i32, i32)) -> Ref {
         .unwrap();
     dom.set_property(referent, "Size", udim2(0.0, size.0, 0.0, size.1))
         .unwrap();
+    dom.set_property(referent, "TextSize", Variant::Float32(14.0))
+        .unwrap();
     referent
 }
 

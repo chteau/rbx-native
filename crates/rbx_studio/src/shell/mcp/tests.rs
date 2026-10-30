@@ -16,18 +16,29 @@ fn console_joins_every_row() {
     assert_eq!(console_text(&log), "one\ntwo\nthree");
 }
 
+/// Studio's rule, measured on it: 400 printed lines of 50 characters all
+/// fit (the line breaks don't count), one more line of 50 drops the
+/// oldest, and a single line over the cap leaves only the marker.
 #[test]
-fn console_keeps_the_tail_behind_the_marker() {
+fn console_keeps_whole_rows_behind_the_marker() {
     let mut log = OutputLog::default();
-    log.push("a", Feedback::Output("x".repeat(CONSOLE_CAP)));
-    log.push("b", Feedback::Output("end".to_owned()));
+    let run: Vec<String> = (0..400)
+        .map(|i| format!("{i:04}{}", "y".repeat(46)))
+        .collect();
+    log.push("a", Feedback::Output(run.join("\n")));
     let text = console_text(&log);
-    assert!(text.starts_with(TRUNCATED));
-    assert!(text.ends_with("x\nend"));
-    assert_eq!(
-        text.chars().count(),
-        TRUNCATED.chars().count() + CONSOLE_CAP
-    );
+    assert_eq!(text.lines().count(), 400);
+    assert!(!text.starts_with(TRUNCATED));
+    log.push("b", Feedback::Output(format!("0400{}", "y".repeat(46))));
+    let text = console_text(&log);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 401);
+    assert_eq!(lines[0], TRUNCATED);
+    assert!(lines[1].starts_with("0001"));
+    assert!(lines[400].starts_with("0400"));
+    let mut log = OutputLog::default();
+    log.push("a", Feedback::Output("z".repeat(CONSOLE_CAP + 1)));
+    assert_eq!(console_text(&log), TRUNCATED);
 }
 
 #[test]

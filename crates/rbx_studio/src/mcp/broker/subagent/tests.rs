@@ -171,6 +171,10 @@ fn each_tool_waits_as_long_as_it_needs() {
     assert_eq!(answer_timeout("execute_luau"), Duration::from_secs(120));
     assert_eq!(answer_timeout("start_stop_play"), Duration::from_secs(240));
     assert_eq!(answer_timeout("screen_capture"), Duration::from_secs(60));
+    assert_eq!(
+        answer_timeout("character_navigation"),
+        Duration::from_secs(660)
+    );
     assert_eq!(answer_timeout("script_read"), Duration::from_secs(30));
 }
 

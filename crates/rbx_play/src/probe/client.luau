@@ -156,6 +156,12 @@ task.spawn(function()
 	end
 end)
 
+-- The server marks this player's leaving as a teleport, so the editor
+-- follows it to the next server instead of ending the test.
+Players.LocalPlayer.OnTeleport:Connect(function(state)
+	remote:FireServer({ kind = "teleport", started = state ~= Enum.TeleportState.Failed })
+end)
+
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 

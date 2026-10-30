@@ -15,6 +15,8 @@ pub(super) const EXECUTE_LUAU: &str = "execute_luau";
 pub(super) const START_STOP_PLAY: &str = "start_stop_play";
 pub(super) const CONSOLE_OUTPUT: &str = "get_console_output";
 pub(super) const SCREEN_CAPTURE: &str = "screen_capture";
+/// Not one of Studio's tools: its MCP has no way to save the place.
+pub(super) const SAVE_PLACE: &str = "save_place";
 
 const CAMERA_POSITION: &str = "camera_position";
 const LOOK_AT_POSITION: &str = "look_at_position";
@@ -47,6 +49,15 @@ pub(super) fn start_stop(arguments: &Value, session: &mut Session) -> Outcome {
 
 pub(super) fn console(session: &mut Session) -> Outcome {
     leave(session, Job::Console)
+}
+
+pub(super) fn save(arguments: &Value, session: &mut Session) -> Outcome {
+    let path = match arguments.get("path") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(path)) if !path.trim().is_empty() => Some(path.trim().into()),
+        Some(_) => return Err("path must be a file path".to_owned()),
+    };
+    leave(session, Job::Save { path })
 }
 
 pub(super) fn capture(arguments: &Value, session: &mut Session) -> Outcome {

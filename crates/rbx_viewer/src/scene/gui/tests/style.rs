@@ -101,6 +101,12 @@ fn tag(dom: &mut WeakDom, referent: Ref, tags: &str) {
         .unwrap();
 }
 
+/// A `Frame`'s own `BackgroundColor3` where nothing restyles it: the class
+/// default, linear.
+fn unstyled() -> [f32; 3] {
+    [163.0, 162.0, 165.0].map(|channel: f32| crate::scene::srgb_to_linear(channel / 255.0))
+}
+
 /// One `Frame` under a styled `ScreenGui`, and the sheet that styles it.
 fn one_frame(selector: &str, properties: &[(&str, Variant)]) -> Vec<Element> {
     let (mut dom, gui) = screen_gui();
@@ -120,7 +126,7 @@ fn a_class_selector_restyles_the_instances_of_that_class() {
 
     // The docs do not say a class selector reaches subclasses, so it does not.
     let missed = one_frame("GuiObject", &[("BackgroundColor3", colour(RED))]);
-    assert_eq!(missed[0].background, [1.0, 1.0, 1.0]);
+    assert_eq!(missed[0].background, unstyled());
 }
 
 #[test]
@@ -166,7 +172,7 @@ fn a_rule_reaches_a_ui_component_like_any_other_instance() {
 fn a_state_selector_never_matches_in_a_still_frame() {
     let styled = one_frame("Frame:Hover", &[("BackgroundColor3", colour(RED))]);
 
-    assert_eq!(styled[0].background, [1.0, 1.0, 1.0]);
+    assert_eq!(styled[0].background, unstyled());
 }
 
 #[test]
@@ -188,7 +194,7 @@ fn a_tag_selector_reaches_only_the_tagged_instance() {
     let styled = resolve(&screens(&dom), VIEWPORT);
 
     assert_eq!(styled[0].background, RED);
-    assert_eq!(styled[1].background, [1.0, 1.0, 1.0]);
+    assert_eq!(styled[1].background, unstyled());
 }
 
 #[test]
@@ -211,7 +217,7 @@ fn a_child_combinator_stops_where_a_descendant_one_carries_on() {
     };
 
     // A parent paints before its child, so the inner frame is the second.
-    assert_eq!(build("ScreenGui > Frame")[1].background, [1.0, 1.0, 1.0]);
+    assert_eq!(build("ScreenGui > Frame")[1].background, unstyled());
     assert_eq!(build("ScreenGui >> Frame")[1].background, RED);
 }
 
@@ -331,7 +337,7 @@ fn a_token_that_stands_for_nothing_leaves_the_property_alone() {
         &[("BackgroundColor3", Variant::String("$Missing".into()))],
     );
 
-    assert_eq!(styled[0].background, [1.0, 1.0, 1.0]);
+    assert_eq!(styled[0].background, unstyled());
 }
 
 #[test]
@@ -353,7 +359,7 @@ fn a_nested_rule_merges_its_selector_into_its_parents() {
 
     let styled = resolve(&screens(&dom), VIEWPORT);
 
-    assert_eq!(styled[0].background, [1.0, 1.0, 1.0]);
+    assert_eq!(styled[0].background, unstyled());
     assert_eq!(styled[1].background, RED);
 }
 
@@ -376,7 +382,7 @@ fn a_sheet_reaches_no_further_than_the_tree_its_link_sits_in() {
     let styled = resolve(&screens(&dom), VIEWPORT);
 
     assert_eq!(styled[0].background, RED);
-    assert_eq!(styled[1].background, [1.0, 1.0, 1.0]);
+    assert_eq!(styled[1].background, unstyled());
 }
 
 #[test]
@@ -392,10 +398,7 @@ fn a_place_with_no_style_link_is_untouched() {
         &[("BackgroundColor3", colour(RED))],
     );
 
-    assert_eq!(
-        resolve(&screens(&dom), VIEWPORT)[0].background,
-        [1.0, 1.0, 1.0]
-    );
+    assert_eq!(resolve(&screens(&dom), VIEWPORT)[0].background, unstyled());
 }
 
 // One tree planned on its own, what an editor's drag re-plans every step,

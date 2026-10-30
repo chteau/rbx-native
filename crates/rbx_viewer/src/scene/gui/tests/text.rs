@@ -6,6 +6,7 @@ use rbx_dom::{Font, FontStyle};
 use super::*;
 use crate::fonts::Face;
 use crate::scene::gui::{resolve_with, Align, Text, TextMeasure};
+use crate::scene::srgb_to_linear;
 
 fn label(dom: &mut WeakDom, parent: Ref, class: &str, text: &str) -> Ref {
     let referent = dom.new_instance(class, class, Some(parent));
@@ -120,16 +121,39 @@ fn a_text_object_with_nothing_set_takes_roblox_defaults() {
 
     let text = text_of(&dom);
 
-    assert_eq!(text.size, 14.0);
+    // What Studio loads a `TextButton` a file says nothing else about as,
+    // read back off it in the command bar: `TextSize` 8 in `Legacy`, dark
+    // text on the grey background, not what Studio's Insert gives a new one.
+    assert_eq!(text.size, 8.0);
     assert_eq!(text.alpha, 1.0);
     assert_eq!((text.x_align, text.y_align), (Align::Center, Align::Center));
-    assert_eq!(text.face, Face::named("SourceSansPro", 400, false));
+    assert_eq!(text.face, Face::named("LegacyArial", 400, false));
     assert!(!text.scaled && !text.wrapped && !text.truncate);
     assert_eq!(text.stroke, None);
     assert_eq!(text.line_height, 1.0);
     assert_eq!(text.max_graphemes, None);
     assert_eq!(text.automatic, [false, false]);
     assert!(text.visible());
+    let close = |got: [f32; 3], srgb: [f32; 3]| {
+        let want = srgb.map(|channel| srgb_to_linear(channel / 255.0));
+        got.iter()
+            .zip(want)
+            .all(|(got, want)| (got - want).abs() < 1e-3)
+    };
+    assert!(close(text.color, [27.0, 42.0, 53.0]), "{:?}", text.color);
+    let element = resolve(&screens(&dom), VIEWPORT).remove(0);
+    assert!(close(element.background, [163.0, 162.0, 165.0]));
+}
+
+#[test]
+fn an_old_font_enum_outvotes_the_default_font_face() {
+    let (mut dom, gui) = screen_gui();
+    let referent = label(&mut dom, gui, "TextLabel", "Hi");
+    // `Enum.Font.SourceSans`, all a place older than `FontFace` holds.
+    dom.set_property(referent, "Font", Variant::Enum(3))
+        .unwrap();
+
+    assert_eq!(text_of(&dom).face, Face::named("SourceSansPro", 400, false));
 }
 
 #[test]
@@ -244,7 +268,10 @@ fn markup_is_parsed_only_with_rich_text_on() {
     rich.faces(&mut faces);
     assert_eq!(
         faces,
-        vec![Face::default(), Face::named("SourceSansPro", 700, false)]
+        vec![
+            Face::named("LegacyArial", 400, false),
+            Face::named("LegacyArial", 700, false)
+        ]
     );
 }
 
@@ -306,6 +333,8 @@ fn size_bounds_clamp_both_a_scaled_and_a_plain_size() {
     let (mut dom, gui) = screen_gui();
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
+        .unwrap();
+    dom.set_property(referent, "TextSize", Variant::Float32(14.0))
         .unwrap();
     let mut screens = screens(&dom);
     let text = screens[0].roots[0].text.as_mut().unwrap();
