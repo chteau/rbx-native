@@ -2800,12 +2800,31 @@ both the plain fetch failure and the silent fall back to a default
   can be built start to finish over MCP. `user_keyboard_input` sends keys
   by their US-keyboard place (evdev codes on Linux, set-1 scan codes on
   Windows), as a `KeyCode` means, and on Linux reaches the client whatever
-  window is active or on top. `user_mouse_input` keeps the pointer between
-  calls for the playtest. Play finds a user-installed Sober with an
+  window is active or on top. Play finds a user-installed Sober with an
   isolated `XDG_DATA_HOME`, and picks the client window by creation time
-  instead of an id list. `get_console_output` still keeps the newest
-  20000 characters: I couldn't get Studio's MCP to answer this time to
-  recheck its cap. The Windows scan codes haven't been run on a real PC.
+  instead of an id list. The Windows scan codes haven't been run on a
+  real PC.
+  Checked on real Studio (2026-10-30):
+  - Pointer across calls. Studio doesn't keep it: a click with no
+    position in a new call answers `Either x and y, instance_path, or a
+    prior action that establishes mouse position is required`. I had
+    made ours keep it, so I took that back out. Ours gives the same
+    error now and only reuses a position inside one call.
+  - Console cap. Studio keeps whole lines, newest first, while they add
+    up to 20000 characters (newlines don't count), and puts
+    `[TRUNCATED DUE TO LENGTH LIMIT]` on the line above. 400 lines of 101
+    characters gave the marker and 200 lines, 600 lines of 50 gave the
+    marker and 400, one 25000 character line gave just the marker. Ours
+    kept the last 20000 characters cut mid line; it gives those three
+    answers exactly now.
+  - Mapping. Studio's `Input.Position` is always the x,y asked for:
+    (300,200), ClickMe (200,130), (600,50), right click (40,300), with
+    ClickMe's AbsolutePosition at 100,100 and a 0,58 inset. Ours gave the
+    same four, and the button printed `clicked 1`. The reported
+    (300,200) to (481,168.5) didn't come back.
+  - Still flaky: on a busy desktop some of our clicks never reach Sober
+    at all, even a raw XTest click sent by hand, while Chee was using the
+    PC. That's delivery, not mapping, and I haven't pinned it down.
 - [x] **Pseudo-localization preview and string extraction (beta)**: View's
   Pseudo-loc tile draws every TextLabel, TextButton and TextBox about 40%
   longer, bracketed and accented (`[!! Ţĥé … !!]`), optionally right to

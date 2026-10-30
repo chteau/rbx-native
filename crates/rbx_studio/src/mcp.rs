@@ -82,13 +82,7 @@ pub(crate) struct PlayInput {
     /// while it is not embedded or another document hides the 3D view.
     #[cfg(any(target_os = "linux", windows))]
     pub(crate) window: Option<rbx_play::embed::WindowId>,
-    /// Where `user_mouse_input` left the pointer this playtest, in GUI
-    /// coordinates, for the next call to start from.
-    pub(crate) pointer: Pointer,
 }
-
-/// [`PlayInput::pointer`]: one per playtest, shared by every call.
-pub(crate) type Pointer = std::sync::Arc<std::sync::Mutex<Option<(f64, f64)>>>;
 
 /// One of the trees a tool can reach, named as Studio's `datamodel_type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

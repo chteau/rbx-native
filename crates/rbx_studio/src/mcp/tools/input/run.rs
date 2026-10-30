@@ -64,31 +64,17 @@ pub(super) fn navigate(client: &mut dyn Client, arguments: &Value) -> Result<Str
     Ok(SUCCESS.to_owned())
 }
 
-/// `last` is where the pointer was left, in GUI coordinates: Studio keeps
-/// it between calls, so a call may start with a step that has no position.
-/// The pointer is put back there first, since the desktop's own mouse may
-/// have moved it since.
-pub(super) fn mouse(
-    client: &mut dyn Client,
-    steps: &[Value],
-    last: &mut Option<(f64, f64)>,
-) -> Result<String, String> {
+pub(super) fn mouse(client: &mut dyn Client, steps: &[Value]) -> Result<String, String> {
     let mut screen = Screen::default();
-    let mut placed = false;
+    let mut position: Option<(f64, f64)> = None;
     for step in steps {
         let action = text(step, "action").unwrap_or_default();
         if action != "wait" {
-            let at = match aim(client, &mut screen, step)? {
-                Some(at) => Some(at),
-                None if !placed => *last,
-                None => None,
-            };
-            if let Some(at) = at {
+            if let Some(at) = aim(client, &mut screen, step)? {
                 let (x, y) = screen.pixel(client, at)?;
                 client.move_to(x, y)?;
-                *last = Some(at);
-                placed = true;
-            } else if !placed {
+                position = Some(at);
+            } else if position.is_none() {
                 return Err(
                     "Either x and y, instance_path, or a prior action that establishes \
                             mouse position is required"

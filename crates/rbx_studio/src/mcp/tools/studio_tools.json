@@ -266,7 +266,7 @@
   {
     "name": "user_mouse_input",
     "title": "User Mouse Input",
-    "description": "Plays mouse steps into the running playtest's client as real OS input to its window. A step moves the pointer (moveTo), presses, releases or clicks a button (mouse_button says which), turns the wheel (scrollUp, scrollDown) or pauses (wait). A step without a position reuses the last one given, kept from an earlier call in the same playtest too. Steps run one by one, so a bad step stops the call after the earlier ones have happened.",
+    "description": "Plays mouse steps into the running playtest's client as real OS input to its window. A step moves the pointer (moveTo), presses, releases or clicks a button (mouse_button says which), turns the wheel (scrollUp, scrollDown) or pauses (wait). A step without a position reuses the last one given in the same call. Steps run one by one, so a bad step stops the call after the earlier ones have happened.",
     "inputSchema": {
       "properties": {
         "actions": {

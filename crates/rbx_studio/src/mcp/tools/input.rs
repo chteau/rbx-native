@@ -62,9 +62,7 @@ pub(super) fn mouse(arguments: &Value, session: &mut Session) -> Outcome {
     let steps = steps(arguments)?;
     let play = playtest(arguments, session)?;
     session.deferred = Some(Box::new(move || {
-        let pointer = play.pointer.clone();
-        let mut last = pointer.lock().unwrap_or_else(|e| e.into_inner());
-        run::mouse(&mut run::Live::new(play), &steps, &mut last).map(Value::String)
+        run::mouse(&mut run::Live::new(play), &steps).map(Value::String)
     }));
     Ok(Value::Null)
 }

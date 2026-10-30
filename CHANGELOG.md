@@ -15,11 +15,14 @@
   client dropped presses unless it thought the pointer was over it, so it
   now gets a crossing event and the focus, nothing moves the pointer, and
   the focus goes back when the call ends with no key held.
-  `user_mouse_input` remembers the pointer between calls during a
-  playtest, so a click can come in its own call after a `moveTo`. Play
+  `user_mouse_input` forgets the pointer when a call ends, like Studio's:
+  a click with no position in a new call errors with Studio's own text.
+  `get_console_output` cuts like Studio's now: whole lines, newest kept,
+  up to 20000 characters, behind `[TRUNCATED DUE TO LENGTH LIMIT]`. Play
   also finds Sober when `XDG_DATA_HOME` points somewhere else (an
   isolated test home): the editor points `flatpak` at
-  `~/.local/share/flatpak`. And the client window is now picked by being
+  `~/.local/share/flatpak`, and an empty flatpak folder left in that home
+  no longer hides it. And the client window is now picked by being
   created after Play started, not by id: the X server gives a closed
   client's window id to the next one, so a Sober window still around when
   Play started could hide the new one until the 90 s wait ran out.
