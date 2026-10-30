@@ -2,6 +2,32 @@
 
 ## 2026-10-30
 
+- **MCP: build a place end to end, and play it on any keyboard.** Fixes
+  from an agent that built and played a whole game through the MCP server.
+  Studio's MCP can't save, and its `game:SavePlace()` only errors on a
+  local file, so there's a new tool of ours, `save_place`: it saves like
+  File › Save, or does a Save As when you give it a `.rbxl` or `.rbxlx`
+  path. Its description says it's ours, not Studio's.
+  `user_keyboard_input` now sends a key by where it sits on a US keyboard,
+  which is what a `KeyCode` means: `W` walks forward on AZERTY too (it
+  used to arrive as `Z`), and `Hash` is Shift+3 instead of failing. Keys
+  also land when another window is active or covers the editor. The
+  client dropped presses unless it thought the pointer was over it, so it
+  now gets a crossing event and the focus, nothing moves the pointer, and
+  the focus goes back when the call ends with no key held.
+  `user_mouse_input` forgets the pointer when a call ends, like Studio's:
+  a click with no position in a new call errors with Studio's own text.
+  `get_console_output` cuts like Studio's now: whole lines, newest kept,
+  up to 20000 characters, behind `[TRUNCATED DUE TO LENGTH LIMIT]`. Play
+  also finds Sober when `XDG_DATA_HOME` points somewhere else (an
+  isolated test home): the editor points `flatpak` at
+  `~/.local/share/flatpak`, and an empty flatpak folder left in that home
+  no longer hides it. And the client window is now picked by being
+  created after Play started, not by id: the X server gives a closed
+  client's window id to the next one, so a Sober window still around when
+  Play started could hide the new one until the 90 s wait ran out.
+  (@chteau)
+
 - **`require("./x")` works in Edit.** `execute_luau`, the command bar and
   plugins resolve require-by-string paths the way Roblox does: `./`,
   `../`, `@self` and `@game`, walked like Luau's own require navigator,

@@ -23,9 +23,10 @@ const LUAU_DEADLINE: Duration = Duration::from_secs(100);
 const PLAY_DEADLINE: Duration = Duration::from_secs(200);
 pub(super) const CAPTURE_DEADLINE: Duration = Duration::from_secs(20);
 
-/// get_console_output keeps this many trailing characters.
+/// get_console_output keeps the newest rows whose lengths add up to at
+/// most this many characters, as Studio's does.
 pub(super) const CONSOLE_CAP: usize = 20_000;
-pub(super) const TRUNCATED: &str = "[TRUNCATED DUE TO LENGTH LIMIT]\n";
+pub(super) const TRUNCATED: &str = "[TRUNCATED DUE TO LENGTH LIMIT]";
 
 /// What a waiting call is waiting on.
 pub(super) enum Wait {
@@ -97,23 +98,40 @@ fn feedback_text(feedback: &Feedback) -> Option<&str> {
     }
 }
 
-/// get_console_output's text: every Output row, the newest `CONSOLE_CAP`
-/// characters kept behind the truncation marker.
+/// get_console_output's text, one printed line per line. Like Studio's, it
+/// keeps whole lines, newest first, while their lengths (not the line
+/// breaks) add up to at most `CONSOLE_CAP`, and puts the truncation marker
+/// on a line of its own in front when that left any out: a single line
+/// longer than the cap leaves only the marker. A run's prints share one
+/// Output row here, so rows are split into the lines Studio keeps apart.
 pub(super) fn console_text(log: &OutputLog) -> String {
-    let text = log
+    let rows: Vec<&str> = log
         .entries()
         .iter()
         .filter_map(|entry| feedback_text(entry.feedback()))
         // A silent Command Bar run leaves an empty row; Studio has none.
         .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let count = text.chars().count();
-    if count <= CONSOLE_CAP {
-        return text;
+        .flat_map(str::lines)
+        .collect();
+    let mut budget = CONSOLE_CAP;
+    let kept = rows
+        .iter()
+        .rev()
+        .take_while(|row| {
+            let length = row.chars().count();
+            let fits = length <= budget;
+            budget = budget.saturating_sub(length);
+            fits
+        })
+        .count();
+    let tail = &rows[rows.len() - kept..];
+    if kept == rows.len() {
+        return tail.join("\n");
     }
-    let tail: String = text.chars().skip(count - CONSOLE_CAP).collect();
-    format!("{TRUNCATED}{tail}")
+    std::iter::once(TRUNCATED)
+        .chain(tail.iter().copied())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The newest Play error in Output, why a start fell back to Idle.
@@ -145,6 +163,10 @@ impl Shell {
             Job::Console => {
                 let text = console_text(&self.output);
                 return request.answer(Some(job_reply(id, Ok(vec![text_content(&text)]))));
+            }
+            Job::Save { path } => {
+                let saved = self.save_for_mcp(path.as_deref(), cx);
+                return request.answer(Some(job_reply(id, text_outcome(saved))));
             }
             Job::Luau { code, datamodel } => {
                 let wait = match datamodel {

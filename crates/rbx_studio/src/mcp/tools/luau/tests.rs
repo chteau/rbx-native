@@ -155,3 +155,25 @@ fn screen_capture_takes_both_camera_points_or_neither() {
         Err("camera_position and look_at_position must be numbers".to_owned())
     );
 }
+
+#[test]
+fn save_place_saves_or_saves_as() {
+    assert_eq!(
+        run(PlayState::Edit, "save_place", json!({})),
+        Ok(Job::Save { path: None })
+    );
+    assert_eq!(
+        run(
+            PlayState::Playing,
+            "save_place",
+            json!({ "path": " Copy.rbxlx " })
+        ),
+        Ok(Job::Save {
+            path: Some("Copy.rbxlx".into())
+        })
+    );
+    assert_eq!(
+        run(PlayState::Edit, "save_place", json!({ "path": 3 })),
+        Err("path must be a file path".to_owned())
+    );
+}
