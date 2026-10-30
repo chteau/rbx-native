@@ -61,8 +61,12 @@ pub const PROBE_NAME: &str = "__rbxnative_probe";
 pub const MIRROR_NAME: &str = "__rbxnative_mirror";
 pub const REMOTE_NAME: &str = "__rbxnative_remote";
 
-/// Roblox's limit for a place published through Open Cloud.
-pub const MAX_PUBLISH_BYTES: usize = 10 * 1024 * 1024;
+/// The biggest body Open Cloud's place publishing takes: 150 MiB. Measured
+/// on 2026-10-30: 157,286,400 bytes publish, one byte more is cut off
+/// mid-upload, 200 MiB gets a 413. The OpenAPI spec's
+/// `x-roblox-size-limit` still says 10 MiB and the publishing guide says
+/// 100 MB (Studio's own save limit); neither is what the API enforces.
+pub const MAX_PUBLISH_BYTES: usize = 150 * 1024 * 1024;
 
 /// What the probe needs to call home; stored as attributes on the probe Script.
 #[derive(Debug, Clone)]

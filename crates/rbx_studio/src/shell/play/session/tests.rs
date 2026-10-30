@@ -289,3 +289,14 @@ fn input_scripts_go_through_the_touch_stand_in_except_a_forked_player_module() {
     assert_eq!(source_named(&dom, "Controls").as_deref(), Some(src));
     assert!(source_named(&back, rbx_play::touch::TOUCH_INPUT_NAME).is_some());
 }
+
+#[test]
+fn too_large_names_open_cloud_s_150_mb() {
+    let text = preflight_text(&Preflight::TooLarge {
+        bytes: 160 * 1024 * 1024,
+    });
+    assert_eq!(
+        text,
+        "The place is 160.0 MB; Roblox accepts at most 150 MB through Open Cloud."
+    );
+}
