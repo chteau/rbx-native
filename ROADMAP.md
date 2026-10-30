@@ -2610,6 +2610,16 @@ both the plain fetch failure and the silent fall back to a default
   Edits wait for Save. A refusal names the scope the key is missing
   (`universe:write`, `universe.place:write`), or reports that Team
   Create holds the place open.
+- [x] **Allow Mesh / Image APIs in Game Settings › Security.** Studio's
+  plugin keeps it as `isMeshTextureApiAccessAllowed` on
+  `develop.roblox.com/v2/universes/{id}/configuration` (seen in Studio's
+  own HTTP trace), but v2 only answers Studio, so we read and patch the
+  same field on v1 like the Creator Hub does. It runs as the Roblox
+  sign-in like Team Create, with Studio's label and text, and greys out
+  for a group game you don't own. The row sits in its own sign-in group
+  at the top of Security, not between Third Party Teleports and Third
+  Party Assets like in Studio, because the page groups rows by where
+  they're saved.
 - [x] **Hover states fade** (what the visual pass left behind): every
   `hover` and `group_hover` style eases between its resting and hovered
   colours over 120 ms (`tokens::DURATION_HOVER`) and turns back from
@@ -2914,6 +2924,9 @@ both the plain fetch failure and the silent fall back to a default
   closed after a confirmation (each client allows one instance); Invite
   copies a link to the exact test server. Research and live results:
   `docs/research/play-sandbox/`.
+- [x] Play publishes places up to 150 MiB, what Open Cloud really takes
+  (measured to the byte). It used to stop at 10 MiB because the OpenAPI
+  spec still says so.
 - [x] Server and client `print`/`warn`/`error` reach the Output dock
   during Play, tagged like Studio's context labels (Server blue, Client
   green). An error shows the Luau message itself, its `Script:line`, and
@@ -3231,6 +3244,13 @@ both the plain fetch failure and the silent fall back to a default
   not a default this project should ship opinionated about.
 
 ### Editor
+- [ ] 📋 **`EditableMesh` and `EditableImage` in the Luau runtime**: right
+  now scripts can't make them at all. Needs `AssetService:CreateEditableMesh`,
+  `CreateEditableImage` and `CreateMeshPartAsync`, the vertex/face/UV
+  methods, and the viewport drawing the result live, in Edit and in Play.
+  Found while porting OpenArena: its player and weapon models are
+  vertex-animated MD3s that get rebuilt every frame through `EditableMesh`,
+  so none of them show up in our editor yet (real Roblox runs them fine).
 - [ ] 📋 **The MCP server's AI generation tools and the package flag**:
   `generate_mesh`, `generate_material`, `generate_procedural_model`,
   `segment_mesh` and `generate_texture` are listed with Studio's schemas

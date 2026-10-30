@@ -282,15 +282,17 @@ pub(crate) fn prepare(
     })
 }
 
-/// One sentence per finding, e.g. "The place is 12.4 MB; Roblox accepts at
-/// most 10 MB through Open Cloud." / "3 UnionOperation instances may publish
+/// One sentence per finding, e.g. "The place is 162.4 MB; Roblox accepts at
+/// most 150 MB through Open Cloud." / "3 UnionOperation instances may publish
 /// incomplete through Open Cloud."
 pub(crate) fn preflight_text(finding: &Preflight) -> String {
+    // Roblox's MB: its docs write 100 MB for 104,857,600 bytes.
+    const MB: usize = 1024 * 1024;
     match finding {
         Preflight::TooLarge { bytes } => format!(
-            "The place is {:.1} MB; Roblox accepts at most {:.1} MB through Open Cloud.",
-            *bytes as f64 / 1_000_000.0,
-            rbx_play::inject::MAX_PUBLISH_BYTES as f64 / 1_000_000.0
+            "The place is {:.1} MB; Roblox accepts at most {} MB through Open Cloud.",
+            *bytes as f64 / MB as f64,
+            rbx_play::inject::MAX_PUBLISH_BYTES / MB
         ),
         Preflight::Incomplete { class, count } => format!(
             "{count} {class} instance{} may publish incomplete through Open Cloud.",
