@@ -120,6 +120,8 @@ pub(crate) enum Job {
     Play { start: bool },
     /// `get_console_output`.
     Console,
+    /// `save_place`, ours: Save, or Save As to the path given.
+    Save { path: Option<PathBuf> },
     /// `screen_capture`: an eye and the point it looks at, in studs.
     Capture {
         camera: Option<([f32; 3], [f32; 3])>,

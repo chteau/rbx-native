@@ -148,7 +148,7 @@ pub(crate) fn plan(
 ) -> Vec<SpaceGui> {
     let parents = ParentMap::build(dom);
     let kinds = RefCell::new(HashMap::new());
-    let styles = Styled::new(dom);
+    let styles = Styled::new(dom, database);
     let context = Context {
         dom,
         database,
@@ -170,7 +170,7 @@ pub(crate) fn plan(
 struct Context<'a> {
     dom: &'a WeakDom,
     database: &'a ReflectionDatabase,
-    styles: &'a Styled,
+    styles: &'a Styled<'a>,
     parents: &'a ParentMap<'a>,
     placements: &'a HashMap<Ref, Placement>,
     /// Each class met so far, as `(billboard, surface)`: the walk asks the

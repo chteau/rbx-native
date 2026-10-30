@@ -1,7 +1,16 @@
 //! Roblox `Enum.KeyCode` names and the operating-system key each one is
-//! typed with: an X11 keysym (XTest on Linux) and a Win32 virtual-key code
-//! (`SendInput` on Windows). The list is every name Studio's own
-//! `user_keyboard_input` accepts, in its order.
+//! typed with. The list is every name Studio's own `user_keyboard_input`
+//! accepts, in its order.
+//!
+//! A `KeyCode` names a key by where it sits on a US keyboard, whatever the
+//! layout types there (`UserInputService:GetStringForKeyCode` exists to say
+//! what `Q` types on AZERTY: `A`), and the client reads keys that way too:
+//! the key at W's place walks forward on any layout. So a key is sent by
+//! its place ([`KeyCode::physical`]): an evdev code (an X11 keycode is that
+//! plus 8) and a Windows set-1 scan code. Only the names no US key has on
+//! its own (the shifted symbols) add Shift, and the few with no place at all
+//! (`World0`.., `Euro`) fall back to the layout: an X11 keysym, a Win32
+//! virtual-key code.
 //!
 //! A name with no key on a keyboard (gamepad buttons, mouse buttons and
 //! axes, touch, Power) has `0` for both: Studio feeds those into the engine
@@ -24,13 +33,189 @@ pub struct KeyCode {
 }
 
 impl KeyCode {
+    /// The US keyboard key it names; `None` for the names no key has a
+    /// place for (`World0`.., `Euro`, `Undo`, gamepad and mouse names).
+    pub fn physical(&self) -> Option<Physical> {
+        physical(self.name)
+    }
+
     /// Whether this platform's keyboard input can type it.
     pub fn typeable(&self) -> bool {
+        if self.physical().is_some() {
+            return true;
+        }
         if cfg!(windows) {
             self.vk != 0
         } else {
             self.keysym != 0
         }
+    }
+}
+
+/// Where a US keyboard has a key: its Linux evdev code (`KEY_*` in
+/// `input-event-codes.h`), and whether Shift goes with it, as for `Hash`
+/// (Shift+3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Physical {
+    pub evdev: u16,
+    pub shift: bool,
+}
+
+/// `KEY_LEFTSHIFT`.
+pub const LEFT_SHIFT: u16 = 42;
+
+impl Physical {
+    /// The X11 keycode: evdev's plus 8, as the X server's evdev keymap
+    /// numbers them.
+    pub fn x11(self) -> u8 {
+        u8::try_from(self.evdev + 8).unwrap_or(0)
+    }
+
+    /// The Windows set-1 scan code and whether it is an extended (`E0`)
+    /// one; `None` for the few keys that have none `SendInput` can send
+    /// (Pause, Help).
+    pub fn scancode(self) -> Option<(u16, bool)> {
+        set1(self.evdev)
+    }
+}
+
+/// evdev numbers its first 88 keys by their set-1 scan codes; the rest are
+/// mapped one by one.
+fn set1(evdev: u16) -> Option<(u16, bool)> {
+    Some(match evdev {
+        1..=88 => (evdev, false),
+        96 => (0x1c, true),
+        97 => (0x1d, true),
+        98 => (0x35, true),
+        99 => (0x37, true),
+        100 => (0x38, true),
+        102 => (0x47, true),
+        103 => (0x48, true),
+        104 => (0x49, true),
+        105 => (0x4b, true),
+        106 => (0x4d, true),
+        107 => (0x4f, true),
+        108 => (0x50, true),
+        109 => (0x51, true),
+        110 => (0x52, true),
+        111 => (0x53, true),
+        117 => (0x59, false),
+        125 => (0x5b, true),
+        126 => (0x5c, true),
+        127 => (0x5d, true),
+        183..=185 => (evdev - 183 + 0x64, false),
+        _ => return None,
+    })
+}
+
+/// The US keyboard key Roblox reads as `name`.
+fn physical(name: &str) -> Option<Physical> {
+    let plain = |evdev| {
+        Some(Physical {
+            evdev,
+            shift: false,
+        })
+    };
+    let shifted = |evdev| Some(Physical { evdev, shift: true });
+    if let [letter @ b'A'..=b'Z'] = name.as_bytes() {
+        const LETTERS: [u16; 26] = [
+            30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22, 47,
+            17, 45, 21, 44,
+        ];
+        return plain(LETTERS[usize::from(letter - b'A')]);
+    }
+    if let Some(n) = name.strip_prefix('F').and_then(|n| n.parse::<u16>().ok()) {
+        return match n {
+            1..=10 => plain(58 + n),
+            11 | 12 => plain(76 + n),
+            13..=15 => plain(170 + n),
+            _ => None,
+        };
+    }
+    const DIGITS: [&str; 10] = [
+        "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    ];
+    if let Some(n) = DIGITS.iter().position(|d| *d == name) {
+        // 1..9 are evdev 2..10, 0 is 11.
+        return plain(if n == 0 { 11 } else { n as u16 + 1 });
+    }
+    if let Some(n) = name
+        .strip_prefix("Keypad")
+        .and_then(|d| DIGITS.iter().position(|digit| *digit == d))
+    {
+        const KEYPAD: [u16; 10] = [82, 79, 80, 81, 75, 76, 77, 71, 72, 73];
+        return plain(KEYPAD[n]);
+    }
+    match name {
+        "Backspace" => plain(14),
+        "Tab" => plain(15),
+        "Return" => plain(28),
+        "Pause" | "Break" => plain(119),
+        "Escape" => plain(1),
+        "Space" => plain(57),
+        "Quote" => plain(40),
+        "Comma" => plain(51),
+        "Minus" => plain(12),
+        "Period" => plain(52),
+        "Slash" => plain(53),
+        "Semicolon" => plain(39),
+        "Equals" => plain(13),
+        "LeftBracket" => plain(26),
+        "BackSlash" => plain(43),
+        "RightBracket" => plain(27),
+        "Backquote" => plain(41),
+        "Delete" => plain(111),
+        "KeypadPeriod" => plain(83),
+        "KeypadDivide" => plain(98),
+        "KeypadMultiply" => plain(55),
+        "KeypadMinus" => plain(74),
+        "KeypadPlus" => plain(78),
+        "KeypadEnter" => plain(96),
+        "KeypadEquals" => plain(117),
+        "Up" => plain(103),
+        "Down" => plain(108),
+        "Right" => plain(106),
+        "Left" => plain(105),
+        "Insert" => plain(110),
+        "Home" => plain(102),
+        "End" => plain(107),
+        "PageUp" => plain(104),
+        "PageDown" => plain(109),
+        "NumLock" => plain(69),
+        "CapsLock" => plain(58),
+        "ScrollLock" => plain(70),
+        "RightShift" => plain(54),
+        "LeftShift" => plain(LEFT_SHIFT),
+        "RightControl" => plain(97),
+        "LeftControl" => plain(29),
+        "RightAlt" => plain(100),
+        "LeftAlt" => plain(56),
+        "LeftMeta" | "LeftSuper" => plain(125),
+        "RightMeta" | "RightSuper" => plain(126),
+        "Menu" | "Compose" => plain(127),
+        "Print" | "SysReq" => plain(99),
+        "Help" => plain(138),
+        "QuotedDouble" => shifted(40),
+        "Hash" => shifted(4),
+        "Dollar" => shifted(5),
+        "Percent" => shifted(6),
+        "Ampersand" => shifted(8),
+        "LeftParenthesis" => shifted(10),
+        "RightParenthesis" => shifted(11),
+        "Asterisk" => shifted(9),
+        "Plus" => shifted(13),
+        "Colon" => shifted(39),
+        "LessThan" => shifted(51),
+        "GreaterThan" => shifted(52),
+        "Question" => shifted(53),
+        "At" => shifted(3),
+        "Caret" => shifted(7),
+        "Underscore" => shifted(12),
+        "LeftCurly" => shifted(26),
+        "Pipe" => shifted(43),
+        "RightCurly" => shifted(27),
+        "Tilde" => shifted(41),
+        _ => None,
     }
 }
 

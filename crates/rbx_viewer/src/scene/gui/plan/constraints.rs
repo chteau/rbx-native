@@ -237,36 +237,6 @@ fn bound(properties: &BTreeMap<String, Variant>, name: &str) -> [f32; 2] {
     }
 }
 
-/// The pixels a `ScreenGui` gives up at the top of the screen to Roblox's own
-/// top bar.
-///
-/// The docs describe this inset only indirectly: `GuiService:GetGuiInset()`
-/// and `GuiService.TopbarInset` hand it back at runtime and are explicitly
-/// dynamic, and no page states a number. 36 is the height the desktop top bar
-/// occupies at a 1:1 scale, which is what a place authored on a PC is drawn
-/// against.
-pub(in crate::scene::gui) const TOP_BAR_INSET: f32 = 36.0;
-
-/// `ScreenGui.ScreenInsets`/`IgnoreGuiInset`: whether the canvas starts below
-/// the top bar.
-///
-/// Only the core-UI modes reserve anything here. `DeviceSafeInsets` insets for
-/// screen cutouts, "no inset is added for Roblox core UI elements", and a
-/// desktop window has none, so it comes to nothing; `TopbarSafeInsets` is
-/// measured against the top bar area itself, so its contents still start below
-/// the bar.
-pub(in crate::scene::gui) fn top_bar_inset(properties: &BTreeMap<String, Variant>) -> f32 {
-    // `IgnoreGuiInset` is the legacy spelling older places serialize: setting
-    // it moves `ScreenInsets` from `CoreUISafeInsets` to `DeviceSafeInsets`.
-    if super::props::flag(properties, "IgnoreGuiInset", false) {
-        return 0.0;
-    }
-    match enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS) {
-        CORE_UI_SAFE_INSETS | TOPBAR_SAFE_INSETS => TOP_BAR_INSET,
-        _ => 0.0,
-    }
-}
-
 /// `ScreenGui.ScreenInsets`: whether the device's own safe-area insets apply.
 ///
 /// `DeviceSafeInsets` adds them, and `CoreUISafeInsets`/`TopbarSafeInsets` are
@@ -278,10 +248,8 @@ pub(in crate::scene::gui) fn device_safe(properties: &BTreeMap<String, Variant>)
         || enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS) != NO_INSETS
 }
 
-/// `Enum.ScreenInsets.CoreUISafeInsets`, the property's own default, and
-/// `TopbarSafeInsets`.
+/// `Enum.ScreenInsets.CoreUISafeInsets`, the property's own default.
 const CORE_UI_SAFE_INSETS: u32 = 2;
-const TOPBAR_SAFE_INSETS: u32 = 3;
 /// `Enum.ScreenInsets.None`.
 const NO_INSETS: u32 = 0;
 
@@ -293,7 +261,7 @@ const NO_INSETS: u32 = 0;
 /// be ignored if you set `ScreenInsets` to `None`, as doing so implies that
 /// you intentionally want to disregard the device's safe insets"
 /// (`ScreenGui.ClipToDeviceSafeArea`). `IgnoreGuiInset` is the legacy spelling
-/// of that same opt-out (see [`top_bar_inset`]).
+/// of that same opt-out.
 pub(in crate::scene::gui) fn clip_to_safe_area(properties: &BTreeMap<String, Variant>) -> bool {
     if super::props::flag(properties, "IgnoreGuiInset", false)
         || enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS) == NO_INSETS

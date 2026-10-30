@@ -93,6 +93,29 @@ pub(super) fn scroll(
         let Some(thumb) = thumb(axis, scrolling, frame, &window) else {
             continue;
         };
+        if let Some(line) = separator(axis, node, scrolling, frame) {
+            into.push(Element {
+                referent: node.referent,
+                editable: super::Editable::default(),
+                viewport: None,
+                rect: context.carried(line),
+                clip: context.clip,
+                rotation: context.angle,
+                background: node.border_color,
+                background_alpha: node.background_alpha,
+                border: None,
+                border_inset: 0.0,
+                z_index: node.z_index,
+                image: None,
+                corner_radii: [0.0; 4],
+                strokes: Vec::new(),
+                shadows: Vec::new(),
+                gradient: None,
+                text: None,
+                group: None,
+                scroll: None,
+            });
+        }
         let images = &scrolling.images;
         for (segment, asset) in
             thumb
@@ -148,6 +171,39 @@ pub(super) fn scroll(
         }
     }
     window
+}
+
+/// The line between the window and the bar along `axis`: Roblox outlines the
+/// bar's strip with the frame's own border, and the strip's other three
+/// sides fall on the frame's outline, so only this side shows. It goes with
+/// the background like the outline does (see `quads`), and a rounded frame,
+/// which draws no outline, draws none either.
+fn separator(axis: usize, node: &Node, scrolling: &Scrolling, frame: &Rect) -> Option<Rect> {
+    let width = node.border;
+    if width <= 0.0 || node.corner.is_some() {
+        return None;
+    }
+    // Grown outward from the strip by `width`, less what `BorderMode` pulls
+    // the outline in by.
+    let inset = node.border_mode.inset(width);
+    let thickness = scrolling.thickness;
+    Some(match axis {
+        0 => Rect {
+            x: frame.x,
+            y: frame.y + frame.height - thickness - width + inset,
+            width: frame.width,
+            height: width,
+        },
+        _ => Rect {
+            x: match scrolling.bar_left {
+                true => frame.x + thickness - inset,
+                false => frame.x + frame.width - thickness - width + inset,
+            },
+            y: frame.y,
+            width,
+            height: frame.height,
+        },
+    })
 }
 
 /// Settles the window against the frame.

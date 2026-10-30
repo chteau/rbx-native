@@ -71,3 +71,20 @@ fn a_syntax_error_fails_the_run_like_the_command_bar() {
     let _slot = runtime.start_reported("local = ", PLAIN);
     assert!(matches!(runtime.resume().state, RunState::Failed(_)));
 }
+
+/// Studio runs MCP code with no requiring context, at identity 10.
+#[test]
+fn mcp_code_has_no_requiring_context_and_identity_10() {
+    assert_eq!(
+        reported("return select(2, pcall(require, '@game/Workspace'))"),
+        Ok(
+            r#"error requiring "@game/Workspace": could not reset to requiring context"#
+                .to_string()
+        )
+    );
+    let mut runtime = runtime();
+    let slot = runtime.start_reported("printidentity() printidentity('at')", PLAIN);
+    let step = runtime.resume();
+    assert!(slot.borrow().is_some());
+    assert_eq!(step.output.lines(), ["Current identity is 10", "at 10"]);
+}

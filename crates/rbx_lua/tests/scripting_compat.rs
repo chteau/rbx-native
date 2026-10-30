@@ -59,7 +59,7 @@ fn a_binding_error_reaches_pcall_as_its_message() {
     assert_eq!(
         out,
         [
-            "false string Nope is not a valid member of Workspace",
+            "false string Nope is not a valid member of Workspace \"Workspace\"",
             "string"
         ]
     );
@@ -170,4 +170,27 @@ fn graphemes_dates_and_fonts() {
     );
     assert_eq!(out[0], "5 1970-01-01 00:00 1970");
     assert_eq!(out[1], "rbxasset://fonts/families/Ubuntu.json true");
+}
+
+/// What Studio answers code run over MCP or in the command bar: `MeshId`
+/// is `NotAccessibleSecurity` for writes, `TextureID` is open, and
+/// `InitialSize` is no member a script sees.
+#[test]
+fn a_not_accessible_property_cannot_be_written() {
+    let out = lines(
+        r#"
+        local mesh = Instance.new("MeshPart")
+        print(pcall(function() mesh.MeshId = "rbxassetid://1" end))
+        print(pcall(function() mesh.TextureID = "rbxassetid://2" end), mesh.TextureID)
+        print(pcall(function() return mesh.InitialSize end))
+        "#,
+    );
+    assert_eq!(
+        out,
+        [
+            "false The current thread cannot write 'MeshId' (lacking capability NotAccessible)",
+            "true rbxassetid://2",
+            "false InitialSize is not a valid member of MeshPart \"MeshPart\"",
+        ]
+    );
 }

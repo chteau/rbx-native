@@ -16,7 +16,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use rbx_dom::{Ref, Variant, WeakDom};
+use rbx_dom::{Instance, Ref, Variant, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
 mod cascade;
 mod matcher;
@@ -24,21 +25,38 @@ mod selector;
 
 const LINK_CLASS: &str = "StyleLink";
 
-/// The DOM's properties as the style sheets leave them.
-///
-/// Only instances a rule actually matched are held; everything else reads
-/// straight off the instance, so a place with no `StyleLink` in it costs one
-/// walk of the tree and nothing more.
-#[derive(Default)]
-pub(super) struct Styled(HashMap<Ref, BTreeMap<String, Variant>>);
+/// The class whose omitted properties [`Styled`] fills in: every
+/// `LayerCollector` and `GuiObject`. A `UIComponent` keeps its readers' own
+/// fallbacks, since several of them pair a property with the ones it was
+/// split into (`UICorner.CornerRadius` and its four corners), and a default
+/// for the newer half would outvote an older file's stored value.
+const GUI_ROOT: &str = "GuiBase";
 
-impl Styled {
-    pub(super) fn new(dom: &WeakDom) -> Self {
-        let mut styled = Styled::default();
+/// The DOM's properties as the style sheets leave them, with every GUI
+/// property the file left out at its class default.
+///
+/// Only instances a rule matched or a file left short are held; everything
+/// else reads straight off the instance, so a Studio-saved place with no
+/// `StyleLink` in it costs one walk of the tree and nothing more.
+pub(super) struct Styled<'db> {
+    database: &'db ReflectionDatabase,
+    styled: HashMap<Ref, BTreeMap<String, Variant>>,
+}
+
+impl<'db> Styled<'db> {
+    pub(super) fn new(dom: &WeakDom, database: &'db ReflectionDatabase) -> Self {
+        let mut styled = Styled::empty(database);
         for &root in dom.root_refs() {
             styled.gather(dom, root);
         }
         styled
+    }
+
+    fn empty(database: &'db ReflectionDatabase) -> Self {
+        Styled {
+            database,
+            styled: HashMap::new(),
+        }
     }
 
     /// [`Styled::new`] for one tree alone: the instances under `root`
@@ -47,14 +65,14 @@ impl Styled {
     /// link applies to its parent's tree, so only one on `root`'s path or
     /// inside it can reach it. The walk keeps the whole pass's order, which
     /// is what decides which of two colliding links wins.
-    pub(super) fn for_tree(dom: &WeakDom, root: Ref) -> Self {
+    pub(super) fn for_tree(dom: &WeakDom, database: &'db ReflectionDatabase, root: Ref) -> Self {
         let mut path = HashSet::new();
         let mut up = dom.parent(root);
         while let Some(ancestor) = up {
             path.insert(ancestor);
             up = dom.parent(ancestor);
         }
-        let mut styled = Styled::default();
+        let mut styled = Styled::empty(database);
         for &top in dom.root_refs() {
             styled.gather_toward(dom, top, root, &path);
         }
@@ -91,9 +109,46 @@ impl Styled {
         &'a self,
         instance: &'a rbx_dom::Instance,
     ) -> &'a BTreeMap<String, Variant> {
-        self.0
+        self.styled
             .get(&instance.referent())
             .unwrap_or_else(|| instance.properties())
+    }
+
+    /// Roblox reads a property a file leaves out as the class default, what
+    /// `Instance.new` gives (a grey `TextButton` in `Legacy`), not what
+    /// Studio's Insert sets on a new one (white, `BuilderSans`). A file that
+    /// still carries the old `Font` enum keeps it over the default
+    /// `FontFace`, which would otherwise win (see `plan::text::face`). Only
+    /// what the API dump lists is filled: a hidden property only a file holds
+    /// (`ViewportFrame.CameraCFrame`) says how the file was written, and one
+    /// left out means nothing was.
+    fn fill_defaults(&mut self, instance: &Instance) {
+        let class = instance.class();
+        if !self.database.is_subclass_of(class, GUI_ROOT) {
+            return;
+        }
+        let properties = instance.properties();
+        let mut missing = self
+            .database
+            .default_values(class)
+            .filter(|&(name, _)| {
+                !properties.contains_key(name)
+                    && !(name == "FontFace" && properties.contains_key("Font"))
+                    && self.database.resolve_property(class, name).is_some()
+            })
+            .peekable();
+        if missing.peek().is_none() {
+            return;
+        }
+        let filled = self
+            .styled
+            .entry(instance.referent())
+            .or_insert_with(|| properties.clone());
+        for (name, value) in missing {
+            filled
+                .entry(name.to_owned())
+                .or_insert_with(|| value.clone());
+        }
     }
 
     /// Finds every `StyleLink` and applies its sheet to its parent's tree.
@@ -111,6 +166,7 @@ impl Styled {
             }
             return;
         }
+        self.fill_defaults(instance);
         for &child in instance.children() {
             self.gather(dom, child);
         }
@@ -142,7 +198,7 @@ impl Styled {
                 if !matched || rule.properties.is_empty() {
                     continue;
                 }
-                self.0
+                self.styled
                     .entry(referent)
                     .or_insert_with(|| instance.properties().clone())
                     .extend(rule.properties.iter().map(|(n, v)| (n.clone(), v.clone())));

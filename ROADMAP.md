@@ -287,9 +287,15 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
     `DominantAxis`), `UISizeConstraint`, `UITextSizeConstraint`,
     `AutomaticSize` (children extent, a layout's `AbsoluteContentSize`,
     a text object's own bounds), `SizeConstraint`, `BorderMode`
-    (`Middle`/`Inset`), `ScreenGui.ScreenInsets`/`IgnoreGuiInset` (the top
-    bar reserved at 36 px, no Roblox page states the number, it is one
-    named constant) and `ZIndexBehavior.Global`.
+    (`Middle`/`Inset`), `ScreenGui.ScreenInsets`/`IgnoreGuiInset` (the
+    device's cutouts only: Studio's edit view keeps no top bar clear,
+    `GetGuiInset()` reads 0 there, so neither does ours) and
+    `ZIndexBehavior.Global`.
+  - A property a file leaves out reads as its class default, what Studio
+    loads it as (grey `BackgroundColor3`, `Legacy` font at `TextSize` 8,
+    `ZIndexBehavior.Global`, a white scroll bar, a `FixedSize` 800x600
+    `SurfaceGui`), not what Studio's Insert gives a new one. Checked by
+    saving a place of bare `GuiObject`s back out of Studio.
   - `StyleSheet`/`StyleRule`/`StyleLink`/`StyleDerive`: the selector
     engine (class, `.Tag`, `#Name`, `>` and `>>` combinators, `,` lists,
     nested rules merged into their parent's selector), `Priority` then
@@ -307,10 +313,11 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
     re-rendering on every edit; sheet tokens and `StyleQuery` are not
     editable there yet.
   - Text metrics match Studio: `TextSize` is the *line box* height (the
-    docs: "line height equal to the `TextSize`"), the glyph em a fixed
-    1/1.2 of it, measured against Studio captures of three families
-    (Source Sans Pro, Gotham SSm, Fredoka One) to the pixel, which no font
-    table combination reproduced. A family that lacks the requested
+    docs: "line height equal to the `TextSize`"), and the line box is the
+    face's own hhea ascent plus descent, measured with `GetTextSize`
+    against eight families' advances (within 1%, the rest is Roblox
+    rounding each advance to a pixel). `Legacy` draws as Arimo at 1.5
+    times its `TextSize`. A family that lacks the requested
     weight shapes in its closest face rather than falling back to a
     system font (cosmic-text only matches an exact weight). Studio's
     synthetic bold for a weight the family lacks is not reproduced.
@@ -324,7 +331,8 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
     has one and exempt from its siblings' layout.
   - `ScrollingFrame` (canvas, `CanvasPosition`, `AutomaticCanvasSize`, the
     scroll bars from their three images with every inset/position/
-    direction property), `CanvasGroup` (`GroupTransparency`/`GroupColor3`
+    direction property, and the border line Studio draws between the
+    window and the bar), `CanvasGroup` (`GroupTransparency`/`GroupColor3`
     over the subtree flattened to a texture, one blend for overlapping
     children), `ViewportFrame` (its parts under `CurrentCamera`: or the
     saved camera pose, with `Ambient`/`LightColor`/`LightDirection`, a
@@ -2610,6 +2618,16 @@ both the plain fetch failure and the silent fall back to a default
   Edits wait for Save. A refusal names the scope the key is missing
   (`universe:write`, `universe.place:write`), or reports that Team
   Create holds the place open.
+- [x] **Allow Mesh / Image APIs in Game Settings › Security.** Studio's
+  plugin keeps it as `isMeshTextureApiAccessAllowed` on
+  `develop.roblox.com/v2/universes/{id}/configuration` (seen in Studio's
+  own HTTP trace), but v2 only answers Studio, so we read and patch the
+  same field on v1 like the Creator Hub does. It runs as the Roblox
+  sign-in like Team Create, with Studio's label and text, and greys out
+  for a group game you don't own. The row sits in its own sign-in group
+  at the top of Security, not between Third Party Teleports and Third
+  Party Assets like in Studio, because the page groups rows by where
+  they're saved.
 - [x] **Hover states fade** (what the visual pass left behind): every
   `hover` and `group_hover` style eases between its resting and hovered
   colours over 120 ms (`tokens::DURATION_HOVER`) and turns back from
@@ -2794,6 +2812,98 @@ both the plain fetch failure and the silent fall back to a default
   `segment_mesh` and `generate_texture` take the selection when
   `instance_path` is left out, as Studio does. The Play capture on
   Windows and the Win32 input have not been run on a real Windows PC.
+- [x] **MCP: save, keys by place, focus and pointer.** `save_place` is our
+  own tool (Studio's MCP has no save and `game:SavePlace()` only errors on
+  a local file): Save, or Save As to a `.rbxl`/`.rbxlx` path, so a place
+  can be built start to finish over MCP. `user_keyboard_input` sends keys
+  by their US-keyboard place (evdev codes on Linux, set-1 scan codes on
+  Windows), as a `KeyCode` means, and on Linux reaches the client whatever
+  window is active or on top. Play finds a user-installed Sober with an
+  isolated `XDG_DATA_HOME`, and picks the client window by creation time
+  instead of an id list. The Windows scan codes haven't been run on a
+  real PC.
+  Checked on real Studio (2026-10-30):
+  - Pointer across calls. Studio doesn't keep it: a click with no
+    position in a new call answers `Either x and y, instance_path, or a
+    prior action that establishes mouse position is required`. I had
+    made ours keep it, so I took that back out. Ours gives the same
+    error now and only reuses a position inside one call.
+  - Console cap. Studio keeps whole lines, newest first, while they add
+    up to 20000 characters (newlines don't count), and puts
+    `[TRUNCATED DUE TO LENGTH LIMIT]` on the line above. 400 lines of 101
+    characters gave the marker and 200 lines, 600 lines of 50 gave the
+    marker and 400, one 25000 character line gave just the marker. Ours
+    kept the last 20000 characters cut mid line; it gives those three
+    answers exactly now.
+  - Mapping. Studio's `Input.Position` is always the x,y asked for:
+    (300,200), ClickMe (200,130), (600,50), right click (40,300), with
+    ClickMe's AbsolutePosition at 100,100 and a 0,58 inset. Ours gave the
+    same four, and the button printed `clicked 1`. The reported
+    (300,200) to (481,168.5) didn't come back.
+  - Still flaky: on a busy desktop some of our clicks never reach Sober
+    at all, even a raw XTest click sent by hand, while Chee was using the
+    PC. That's delivery, not mapping, and I haven't pinned it down.
+
+- [x] **Require-by-string and case-only script names over MCP.** Edit's
+  `execute_luau`, the command bar and plugins now take
+  `require("./Sibling")`, `require("../Up")`, `require("@self/Child")` and
+  `require("@game/ReplicatedStorage/Shared/X")`. The walk follows Luau's
+  own `Require` navigator, the library Studio links: exact names, `..`
+  and `.` anywhere, `@Game` in any case, and the navigator's own reasons
+  inside Roblox's `error requiring "path": reason`. A path that lands on
+  something other than a `ModuleScript` gives Roblox's usual invalid
+  argument error. `multi_edit` no longer refuses `G_main` beside `g_main`:
+  Roblox names are case-sensitive, so it's a script of its own, created
+  and edited by its own spelling. Run side by side with real Studio 0.745
+  (Vinegar, `version-7062aec9dbe74b14`), same calls on both, now matching:
+  - `multi_edit` creating `ServerScriptService.G_main` next to `g_main`:
+    Studio `Created G_main (Script) with 1 edits applied`, then
+    `Modified G_main (Script) with 1 edits applied` and `Modified g_main
+    ...` for each spelling, two scripts left. Ours says the same.
+  - `require` straight from `execute_luau`: `error requiring "./A": could
+    not reset to requiring context`, the same for `@game/...` and
+    `@self/...`. From the command bar: `could not get parent of requiring
+    context` for `./A` and `../A`, `could not resolve child component "A"`
+    for `@self/A`, and `@game/ReplicatedStorage/C` loads. Ours used to
+    give the `execute_luau` answer in the bar too.
+  - A path ending on a Script or a Folder: `Unable to require module
+    from given path './NotModule'` (ours said `Attempted to call require
+    with invalid argument(s).`).
+  - A module that errors, for example `require("./Missing")` inside it:
+    Output gets `error requiring "./Missing": could not resolve child
+    component "Missing"`, and the requirer gets `Requested module
+    experienced an error while loading`, also on every later `require`
+    of it, which doesn't run it again. Ours used to pass the module's
+    error straight through and rerun it. A cycle prints `Requested module
+    was required recursively`, then the generic error, on both.
+  - `MeshId` and `MeshContent` writes, from `execute_luau` and the
+    command bar: `The current thread cannot write 'MeshId' (lacking
+    capability NotAccessible)`, whatever the value. Ours wrote them. The
+    check is the dump's `NotAccessibleSecurity` write, so the 13 other
+    properties marked that way fail too. `TextureID` writes on both.
+    `InitialSize`: `InitialSize is not a valid member of MeshPart
+    "Workspace.Mesh"` on both now (ours had no `"Workspace.Mesh"` part,
+    for any instance).
+  - `printidentity()`: `Current identity is 10` over MCP, `Current
+    identity is 4` in the command bar, `printidentity("tag")` gives
+    `tag 10`. Ours had none.
+  - `character_navigation` with `CharacterAutoLoads` off: Studio never
+    answers, it waits for `CharacterAdded`. Given a Model with no
+    Humanoid as `Character`, it warns `Infinite yield possible on
+    'Workspace.Bot:WaitForChild("Humanoid")'` and keeps waiting; add a
+    Humanoid and it walks and answers `Success`. Ours errored `The
+    character has not spawned` at once. It waits now too, prints the same
+    infinite yield warning, and with a server script spawning the
+    character 40 s in, answered `Success` after 43.7 s. The bridge also
+    gave up on any walk after 30 s; it waits 11 minutes now, past the
+    editor's own 10. One gap left: our bridge serves one call at a time,
+    so while a walk waits nothing else gets through, where Studio's other
+    tools keep answering.
+  Still different: we have no `Content` datatype yet, so
+  `MeshPart.MeshContent` reads as a string and `Content.fromUri` is nil
+  (Studio: `Content{SourceType=None}`); a missing member of `game` says
+  `of DataModel` without Studio's `"Verify.rbxlx"`; and `require` of an
+  asset id isn't supported.
 - [x] **Pseudo-localization preview and string extraction (beta)**: View's
   Pseudo-loc tile draws every TextLabel, TextButton and TextBox about 40%
   longer, bracketed and accented (`[!! Ţĥé … !!]`), optionally right to
@@ -2854,6 +2964,9 @@ both the plain fetch failure and the silent fall back to a default
   closed after a confirmation (each client allows one instance); Invite
   copies a link to the exact test server. Research and live results:
   `docs/research/play-sandbox/`.
+- [x] Play publishes places up to 150 MiB, what Open Cloud really takes
+  (measured to the byte). It used to stop at 10 MiB because the OpenAPI
+  spec still says so.
 - [x] Server and client `print`/`warn`/`error` reach the Output dock
   during Play, tagged like Studio's context labels (Server blue, Client
   green). An error shows the Luau message itself, its `Script:line`, and
@@ -3171,6 +3284,13 @@ both the plain fetch failure and the silent fall back to a default
   not a default this project should ship opinionated about.
 
 ### Editor
+- [ ] 📋 **`EditableMesh` and `EditableImage` in the Luau runtime**: right
+  now scripts can't make them at all. Needs `AssetService:CreateEditableMesh`,
+  `CreateEditableImage` and `CreateMeshPartAsync`, the vertex/face/UV
+  methods, and the viewport drawing the result live, in Edit and in Play.
+  Found while porting OpenArena: its player and weapon models are
+  vertex-animated MD3s that get rebuilt every frame through `EditableMesh`,
+  so none of them show up in our editor yet (real Roblox runs them fine).
 - [ ] 📋 **The MCP server's AI generation tools and the package flag**:
   `generate_mesh`, `generate_material`, `generate_procedural_model`,
   `segment_mesh` and `generate_texture` are listed with Studio's schemas

@@ -383,7 +383,9 @@ impl Shell {
                         None => self.anim.fail("delete-rig: no rig"),
                     }
                 }
-                "write" => self.save_as(std::path::Path::new(arg), cx),
+                "write" => {
+                    let _ = self.save_as(std::path::Path::new(arg), cx);
+                }
                 // The top bar's Import ▾ / Export ▾ menus, opened.
                 "menu" => {
                     self.open_menu = match arg {

@@ -10,6 +10,106 @@
   Output, Invite and the live Client/Server views carry on there. A real
   leave still ends the Play. — @chteau
 
+- **GUI from a hand-written place looks like Studio now.** A `.rbxlx` that
+  leaves properties out got our own fallbacks, which were what Studio's
+  Insert gives a new object: white boxes, Source Sans, no `Legacy`. Roblox
+  loads a missing property as the class default, so I fill every
+  `GuiObject`/`LayerCollector` property a file skips from the reflection
+  defaults before the GUI is planned. That's grey (163,162,165), `Legacy`
+  at `TextSize` 8, `ZIndexBehavior.Global`, a white scroll bar and so on.
+  I saved a place of bare objects back out of Studio and every value
+  matched. (@chteau)
+- **Text is sized off each font's own metrics.** The em was a flat 1/1.2 of
+  `TextSize`. I measured `GetTextSize` in Studio for eight families and the
+  line box is the face's hhea ascent plus descent, so Arimo was drawing
+  about 9% too small. `Legacy` is Arimo at 1.5 times the `TextSize`, which
+  is why "Click me" at 24 looked so much bigger in Studio. (@chteau)
+- **No top bar inset in the edit view.** We pushed every `ScreenGui` down
+  36 px. Studio's edit view doesn't: `GetGuiInset()` reads 0 and a default
+  screen sits at (0, 0). The running game does inset it, but that's the
+  real client in Play, not us. (@chteau)
+- **ScrollingFrame draws the line between the canvas and the bar.** Studio
+  outlines the bar's strip with the frame's border, so you get a
+  `BorderColor3` line at the window's edge. We only drew the thumb.
+  Screenshots in `docs/screenshots/gui-defaults/`. (@chteau)
+
+- **MCP: build a place end to end, and play it on any keyboard.** Fixes
+  from an agent that built and played a whole game through the MCP server.
+  Studio's MCP can't save, and its `game:SavePlace()` only errors on a
+  local file, so there's a new tool of ours, `save_place`: it saves like
+  File › Save, or does a Save As when you give it a `.rbxl` or `.rbxlx`
+  path. Its description says it's ours, not Studio's.
+  `user_keyboard_input` now sends a key by where it sits on a US keyboard,
+  which is what a `KeyCode` means: `W` walks forward on AZERTY too (it
+  used to arrive as `Z`), and `Hash` is Shift+3 instead of failing. Keys
+  also land when another window is active or covers the editor. The
+  client dropped presses unless it thought the pointer was over it, so it
+  now gets a crossing event and the focus, nothing moves the pointer, and
+  the focus goes back when the call ends with no key held.
+  `user_mouse_input` forgets the pointer when a call ends, like Studio's:
+  a click with no position in a new call errors with Studio's own text.
+  `get_console_output` cuts like Studio's now: whole lines, newest kept,
+  up to 20000 characters, behind `[TRUNCATED DUE TO LENGTH LIMIT]`. Play
+  also finds Sober when `XDG_DATA_HOME` points somewhere else (an
+  isolated test home): the editor points `flatpak` at
+  `~/.local/share/flatpak`, and an empty flatpak folder left in that home
+  no longer hides it. And the client window is now picked by being
+  created after Play started, not by id: the X server gives a closed
+  client's window id to the next one, so a Sober window still around when
+  Play started could hide the new one until the 90 s wait ran out.
+  (@chteau)
+
+- **`require("./x")` works in Edit.** `execute_luau`, the command bar and
+  plugins resolve require-by-string paths the way Roblox does: `./`,
+  `../`, `@self` and `@game`, walked like Luau's own require navigator,
+  with its error reasons. Modules from Rojo-style projects can finally be
+  checked in Edit. `multi_edit` also stops refusing a script whose name
+  differs from a sibling's only in case (`G_main` next to `g_main`). It
+  creates or edits that exact name, since Roblox names are case-sensitive.
+  I ran all of it next to real Studio (0.745) and matched what it says.
+  The command bar's `require` starts from a context of its own, so
+  `require("@game/...")` works there and `require("./x")` says "could not
+  get parent of requiring context", while `execute_luau` has no context
+  at all ("could not reset to requiring context"). A path that lands on
+  something that isn't a ModuleScript says `Unable to require module from
+  given path './x'`. A module that errors prints its error once and its
+  requirer gets "Requested module experienced an error while loading",
+  then and every later time, without running it again. Writing `MeshId`
+  or `MeshContent` from a script, the command bar or MCP now fails like
+  Studio's: "The current thread cannot write 'MeshId' (lacking capability
+  NotAccessible)". `printidentity()` exists now (4 in the command bar, 10
+  over MCP), and "not a valid member" errors name the instance too, as in
+  `Nope is not a valid member of MeshPart "Workspace.Mesh"`.
+  `character_navigation` waits for a character and its Humanoid like
+  Studio's does, instead of failing at once, and a walk longer than 30 s
+  no longer times out on the way. (@chteau)
+
+- **Game Settings › Security has Allow Mesh / Image APIs.** It's the switch
+  that lets a published game create `EditableMesh` and `EditableImage`;
+  with it off the client says "EditableMesh is not accessible". I watched
+  real Studio's traffic with its HTTP trace logging on: opening Security
+  reads `develop.roblox.com/v2/universes/{id}/configuration`, and its
+  Game Settings plugin keeps the switch there as
+  `isMeshTextureApiAccessAllowed`. That v2 endpoint says 403 "Not allowed"
+  to anything that isn't Studio though, so we use the v1 `configuration`,
+  which has the same field and is what the Creator Hub patches. Open Cloud
+  has nothing for it, so like Team Create it runs as your Roblox sign-in,
+  waits for Save, and is read back after the write. Label, description and
+  Terms of Use link are Studio's own strings. A group game greys it out
+  unless you own the group, like Studio. Turned it on for the Play sandbox
+  this way: the "EditableMesh is not accessible" errors went away in Play,
+  and real Studio's Security tab shows it on. (@chteau)
+
+- **Play takes places up to 150 MB.** The cap was 10 MiB because the place
+  publishing OpenAPI spec says `x-roblox-size-limit: 10485760`. That number
+  is stale: Roblox raised the API to 100 MB back in 2021. So I measured it
+  against the Play sandbox: exactly 157,286,400 bytes (150 MiB) publishes,
+  one byte more gets cut off mid-upload, 200 MiB gets a 413. The cap is
+  that now, and the error says 150 MB. The OpenArena port's 92.9 MB place
+  got refused before this; it publishes fine. Heads up, Studio's own save
+  limit is 100 MB, so a place between the two plays here but won't save
+  from Studio. (@chteau)
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**

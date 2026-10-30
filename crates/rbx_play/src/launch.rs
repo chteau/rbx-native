@@ -62,6 +62,40 @@ pub(crate) fn command_for(program: &str) -> Command {
 }
 
 pub(crate) const SOBER_APP_ID: &str = "org.vinegarhq.Sober";
+
+/// The user's own Flatpak installation when `flatpak` would miss it: it
+/// looks under `$XDG_DATA_HOME/flatpak`, so a process given a data home of
+/// its own (an isolated test setup) finds no Sober, a user install. `Some`
+/// when `FLATPAK_USER_DIR` is unset, the data home's installation has no
+/// Sober, and `~/.local/share/flatpak` has it; the editor sets it as
+/// `FLATPAK_USER_DIR` at start, which every `flatpak` it runs inherits.
+/// Sober itself is checked for, not just the directory: any `flatpak` run
+/// with that data home leaves an empty installation behind.
+pub fn missed_user_flatpaks() -> Option<std::path::PathBuf> {
+    missed_user_installation(
+        std::env::var_os("FLATPAK_USER_DIR"),
+        std::env::var_os("XDG_DATA_HOME"),
+        std::env::var_os("HOME"),
+    )
+}
+
+fn missed_user_installation(
+    user_dir: Option<std::ffi::OsString>,
+    data_home: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+) -> Option<std::path::PathBuf> {
+    if user_dir.is_some() {
+        return None;
+    }
+    let sober =
+        |installation: &std::path::Path| installation.join("app").join(SOBER_APP_ID).is_dir();
+    let data_home = std::path::PathBuf::from(data_home?);
+    if sober(&data_home.join("flatpak")) {
+        return None;
+    }
+    let own = std::path::PathBuf::from(home?).join(".local/share/flatpak");
+    sober(&own).then_some(own)
+}
 const CLIENT_EXE: &str = "RobloxPlayerBeta.exe";
 
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -284,5 +318,41 @@ impl Drop for ClientProcess {
         if let Some(overlay) = self.overlay.take() {
             overlay.restore_after_exit();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{missed_user_installation, SOBER_APP_ID};
+
+    #[test]
+    fn an_isolated_data_home_still_finds_the_users_flatpaks() {
+        let root = std::env::temp_dir().join(format!("rbx_play_flatpak_{}", std::process::id()));
+        let home = root.join("home");
+        let isolated = root.join("isolated");
+        std::fs::create_dir_all(home.join(".local/share/flatpak/app").join(SOBER_APP_ID)).unwrap();
+        // What any `flatpak` run with this data home leaves: an empty
+        // installation, which still has no Sober.
+        std::fs::create_dir_all(isolated.join("flatpak/repo")).unwrap();
+        let find = |user_dir: Option<&str>, data_home: &std::path::Path| {
+            missed_user_installation(
+                user_dir.map(Into::into),
+                Some(data_home.into()),
+                Some(home.clone().into()),
+            )
+        };
+        assert_eq!(
+            find(None, &isolated),
+            Some(home.join(".local/share/flatpak"))
+        );
+        // Flatpak already finds it, or was told where to look.
+        assert_eq!(find(None, &home.join(".local/share")), None);
+        assert_eq!(find(Some("/elsewhere"), &isolated), None);
+        // No data home set: flatpak's own default is the home one.
+        assert_eq!(
+            missed_user_installation(None, None, Some(home.clone().into())),
+            None
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

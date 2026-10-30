@@ -285,6 +285,16 @@ fn preflight_is_empty_for_small_dom() {
 }
 
 #[test]
+fn preflight_takes_a_place_up_to_open_cloud_s_150_mib() {
+    let (mut dom, root) = data_model_dom();
+    dom.new_instance("Workspace", "Workspace", Some(root));
+    assert_eq!(MAX_PUBLISH_BYTES, 157_286_400);
+    // The OpenArena port's place, 92.9 MB, used to trip the old 10 MiB cap.
+    assert!(preflight(&dom, 92_919_904).is_empty());
+    assert!(preflight(&dom, MAX_PUBLISH_BYTES).is_empty());
+}
+
+#[test]
 fn preflight_reports_too_large_first() {
     let (mut dom, root) = data_model_dom();
     dom.new_instance("UnionOperation", "Union", Some(root));

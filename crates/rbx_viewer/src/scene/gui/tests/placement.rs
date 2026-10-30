@@ -65,16 +65,19 @@ fn border_mode_decides_how_far_inside_the_box_the_bands_start() {
 }
 
 #[test]
-fn core_ui_safe_insets_start_the_canvas_below_the_top_bar() {
+fn the_edit_view_keeps_no_top_bar_clear() {
+    // Studio's edit view puts a default `ScreenGui` (`IgnoreGuiInset` off,
+    // `CoreUISafeInsets`) at (0, 0): the top bar is the running game's.
     let (mut dom, gui) = screen_gui();
-    dom.set_property(gui, "ScreenInsets", Variant::Enum(2))
-        .unwrap();
-    frame(&mut dom, gui, udim2(0.0, 0, 0.0, 0), udim2(1.0, 0, 1.0, 0));
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 100),
+        udim2(1.0, 0, 0.0, 60),
+    );
 
     let rect = rects(&dom)[0];
-    assert_eq!(rect.y, 36.0);
-    // And the canvas is that much shorter, so the bottom edge is unmoved.
-    assert_eq!(rect.y + rect.height, VIEWPORT[1]);
+    assert_eq!((rect.y, rect.width), (100.0, VIEWPORT[0]));
 }
 
 #[test]
@@ -109,18 +112,15 @@ fn on_phone(insets_mode: u32) -> Rect {
 }
 
 #[test]
-fn a_full_size_frame_on_a_device_fills_its_safe_area_below_the_top_bar() {
-    // CoreUISafeInsets, the default: the device's cutouts, then the top bar.
+fn a_full_size_frame_on_a_device_fills_its_safe_area() {
+    // CoreUISafeInsets, the default: the device's cutouts.
     let rect = on_phone(2);
-    assert_eq!((rect.x, rect.y), (59.0, 36.0));
-    assert_eq!(
-        (rect.width, rect.height),
-        (852.0 - 118.0, 393.0 - 36.0 - 21.0)
-    );
+    assert_eq!((rect.x, rect.y), (59.0, 0.0));
+    assert_eq!((rect.width, rect.height), (852.0 - 118.0, 393.0 - 21.0));
 }
 
 #[test]
-fn device_safe_insets_keep_clear_of_the_cutouts_but_not_the_top_bar() {
+fn device_safe_insets_keep_clear_of_the_cutouts() {
     let rect = on_phone(1);
     assert_eq!(
         (rect.x, rect.y, rect.width, rect.height),
@@ -150,8 +150,8 @@ fn clip_to_device_safe_area_scissors_the_screen_to_the_inset_canvas() {
     spilling(&mut dom, gui);
 
     let clip = resolve(&screens(&dom), VIEWPORT)[0].clip.expect("clipped");
-    assert_eq!(clip.y, 36.0);
-    assert_eq!(clip.height, VIEWPORT[1] - 36.0);
+    assert_eq!(clip.y, 0.0);
+    assert_eq!(clip.height, VIEWPORT[1]);
 }
 
 #[test]
@@ -231,4 +231,13 @@ fn a_sibling_z_index_screen_still_draws_every_child_over_its_parent() {
 
     let widths: Vec<f32> = rects(&dom).iter().map(|rect| rect.width).collect();
     assert_eq!(widths, vec![10.0, 2.0]);
+}
+
+// A `ScreenGui` a file says nothing about sorts globally: Studio reads
+// `ZIndexBehavior.Global` back off one, while its Insert sets `Sibling`.
+#[test]
+fn a_screen_gui_with_nothing_set_sorts_globally() {
+    let mut dom = WeakDom::new();
+    dom.new_instance("ScreenGui", "ScreenGui", None);
+    assert!(screens(&dom)[0].global_z_index);
 }

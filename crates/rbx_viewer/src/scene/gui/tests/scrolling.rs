@@ -9,8 +9,9 @@ use crate::scene::srgb_to_linear;
 
 const THICKNESS: i32 = 12;
 
-/// A `ScrollingFrame` at `position`, `size` pixels, `ScrollBarThickness`
-/// 12 and everything else left to the defaults.
+/// A `ScrollingFrame` at `position`, `size` pixels, no border, a zero
+/// `CanvasSize`, `ScrollBarThickness` 12 and everything else left to the
+/// defaults.
 fn scrolling_frame(dom: &mut WeakDom, parent: Ref, position: Variant, size: Variant) -> Ref {
     let referent = dom.new_instance("ScrollingFrame", "Scroll", Some(parent));
     dom.set_property(referent, "Position", position).unwrap();
@@ -18,6 +19,8 @@ fn scrolling_frame(dom: &mut WeakDom, parent: Ref, position: Variant, size: Vari
     dom.set_property(referent, "BorderSizePixel", Variant::Int32(0))
         .unwrap();
     dom.set_property(referent, "ScrollBarThickness", Variant::Int32(THICKNESS))
+        .unwrap();
+    dom.set_property(referent, "CanvasSize", udim2(0.0, 0, 0.0, 0))
         .unwrap();
     referent
 }
@@ -59,7 +62,7 @@ fn bars(elements: &[Element], children: usize) -> &[Element] {
 }
 
 #[test]
-fn the_defaults_are_the_docs_defaults() {
+fn the_defaults_are_the_class_defaults() {
     let (mut dom, gui) = screen_gui();
     let frame = dom.new_instance("ScrollingFrame", "Scroll", Some(gui));
     dom.set_property(frame, "Size", udim2(0.0, 10, 0.0, 10))
@@ -67,12 +70,20 @@ fn the_defaults_are_the_docs_defaults() {
 
     let scrolling = scrolling_of(&dom);
 
-    assert_eq!(scrolling.canvas_size, Span::default());
+    // What Studio loads a `ScrollingFrame` a file says nothing else about
+    // as: twice the window tall, and a white bar.
+    assert_eq!(
+        scrolling.canvas_size,
+        Span {
+            scale: [0.0, 2.0],
+            offset: [0.0, 0.0]
+        }
+    );
     assert_eq!(scrolling.canvas_position, [0.0, 0.0]);
     assert_eq!(scrolling.automatic_canvas, [false, false]);
     assert_eq!(scrolling.direction, [true, true], "ScrollingDirection.XY");
     assert_eq!(scrolling.thickness, 12.0);
-    assert_eq!(scrolling.bar_color, [0.0; 3]);
+    assert_eq!(scrolling.bar_color, [1.0; 3]);
     assert_eq!(scrolling.bar_alpha, 1.0);
     assert_eq!(
         scrolling.images.top,
@@ -227,7 +238,7 @@ fn an_automatic_canvas_grows_to_hold_the_children() {
         assert_eq!(bar.rotation, 0.0);
         assert_eq!(bar.background_alpha, 0.0);
         let image = bar.image.as_ref().expect("a bar segment is an image");
-        assert_eq!(image.tint, [0.0; 3]);
+        assert_eq!(image.tint, [1.0; 3]);
         assert_eq!(image.alpha, 1.0);
     }
     assert_eq!(
@@ -482,4 +493,31 @@ fn a_nested_frame_carries_its_parents_window_as_its_clip() {
     assert_eq!(nested.rect, rect(0.0, 150.0, 100.0, 100.0));
     assert_eq!(nested.clip, Some(rect(0.0, 0.0, 200.0, 100.0)));
     assert_eq!(nested.range, [0.0, 400.0]);
+}
+
+// Studio outlines the bar's strip with the frame's own border, so a line in
+// `BorderColor3` parts the window from the bar; the strip's other sides fall
+// on the frame's own outline.
+#[test]
+fn a_bordered_frame_draws_a_line_between_the_window_and_the_bar() {
+    let (mut dom, gui) = screen_gui();
+    let frame = window(&mut dom, gui);
+    canvas(&mut dom, frame, 0, 200);
+    dom.set_property(frame, "BorderSizePixel", Variant::Int32(1))
+        .unwrap();
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+    let line = &bars(&elements, 0)[0];
+    assert_eq!(line.rect, rect(187.0, 0.0, 1.0, 100.0));
+    assert!(line.image.is_none() && line.background_alpha == 1.0);
+    let border = [27.0, 42.0, 53.0].map(|channel: f32| srgb_to_linear(channel / 255.0));
+    for (channel, want) in line.background.iter().zip(border) {
+        assert!((channel - want).abs() < 1e-3);
+    }
+    assert_eq!(bars(&elements, 0).len(), 4, "the line and three segments");
+
+    // No border, no line.
+    dom.set_property(frame, "BorderSizePixel", Variant::Int32(0))
+        .unwrap();
+    assert_eq!(bars(&resolve(&screens(&dom), VIEWPORT), 0).len(), 3);
 }

@@ -10,6 +10,7 @@ use mlua::{Function, IntoLua, Lua, Result, Table, Thread, Value};
 use rbx_dom::{Ref, Variant};
 
 use crate::ctx::Ctx;
+use crate::engine::require::Requirer;
 use crate::engine::{collection, engine, events, json, require, Host};
 use crate::hooks::Hooks;
 use crate::instance::tree::full_name;
@@ -137,32 +138,24 @@ fn http_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
 }
 
 /// Installs the command bar's `require` (see `engine::require`): a
-/// `ModuleScript` runs with its own `script` and `require`; a string goes
-/// to Luau's own `require` when there is one, as before modules could be
-/// required from the DOM.
+/// `ModuleScript` runs with its own `script` and `require`, and a string
+/// path resolves against the requiring module (`require::by_string`). The
+/// global one is the command bar's; code run over MCP gets its own (see
+/// `report`).
 pub(super) fn install_require(lua: &Lua) -> Result<()> {
-    let resolve = lua.create_function(|lua, (_script, target): (Value, Value)| {
-        let module = require::module_ref(lua, &target)?;
+    let resolve = lua.create_function(|lua, (script, target): (Value, Value)| {
+        let module = match &target {
+            Value::String(path) => {
+                let path = path.to_str()?.to_string();
+                require::by_string(&engine(lua).ctx.dom(), Requirer::of(&script), &path)?
+            }
+            other => require::module_ref(lua, other)?,
+        };
         LuaInstance::new(module, engine(lua).ctx.clone()).into_lua(lua)
     })?;
     let compile = lua.create_function(|lua, module: Value| compile(lua, &module))?;
     require::install(lua, resolve, compile)?;
-    let shared = require::require_for(lua, Value::Nil)?;
-    let raw: Value = lua.globals().get("require")?;
-    let global: Function = lua
-        .load(
-            r#"
-            local shared, raw = ...
-            return function(target, ...)
-                if type(target) == "string" and type(raw) == "function" then
-                    return raw(target, ...)
-                end
-                return shared(target)
-            end
-            "#,
-        )
-        .set_name("=require")
-        .call((shared, raw))?;
+    let global = require::require_for(lua, require::COMMAND_BAR)?;
     lua.globals().set("require", global)
 }
 
