@@ -204,19 +204,19 @@ impl CloudDraft {
     }
 }
 
-/// Team Create's switch, read and saved with the Roblox sign-in rather
-/// than the API key, so kept beside [`CloudDraft`] instead of in it.
+/// A switch read and saved with the Roblox sign-in rather than the API key
+/// (Team Create, Allow Mesh / Image APIs), so kept beside [`CloudDraft`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct TeamCreateDraft {
+pub(super) struct SwitchDraft {
     /// What Roblox last said; `None` before the first read.
     remote: Option<bool>,
     edit: Option<bool>,
 }
 
-impl TeamCreateDraft {
+impl SwitchDraft {
     /// Starts over from what Roblox now holds, dropping the edit.
     pub(super) fn reset(&mut self, on: bool) {
-        *self = TeamCreateDraft {
+        *self = SwitchDraft {
             remote: Some(on),
             edit: None,
         };

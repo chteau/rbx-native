@@ -113,6 +113,7 @@ fn the_list_holds_the_shell_tools_with_their_required_arguments() {
     assert_eq!(required("start_stop_play"), ["is_start", "studio_id"]);
     assert_eq!(required("get_console_output"), ["studio_id"]);
     assert_eq!(required("screen_capture"), ["capture_id", "studio_id"]);
+    assert_eq!(required("save_place"), ["studio_id"]);
 }
 
 #[test]

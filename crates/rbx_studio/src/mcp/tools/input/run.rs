@@ -18,7 +18,9 @@ const SUCCESS: &str = "Success";
 /// A probe question (where something is, typing into a box).
 const ASK_TIMEOUT: Duration = Duration::from_secs(15);
 /// A walk: the probe answers when the character arrives, and each of its
-/// waypoints gives up after 16 s, so this is only for a client gone silent.
+/// waypoints gives up after 16 s. Like Studio's, it first waits for a
+/// character with a Humanoid for as long as it takes; Studio never gives
+/// up, this stops after 10 minutes.
 const WALK_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Studio's walk speed bounds.

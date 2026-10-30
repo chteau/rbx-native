@@ -99,12 +99,17 @@ fn studio_tools() -> Vec<Value> {
 }
 
 /// Our list mirrors Studio's names and arguments; the descriptions are our
-/// own, so they are not compared.
+/// own, so they are not compared, and our extra tools are left out.
 #[test]
 fn tools_list_matches_studios_names_and_arguments() {
     let answer = reply(r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#).unwrap();
     let ours = answer["result"]["tools"].as_array().unwrap();
-    let mut listed: Vec<_> = ours.iter().map(shape).collect();
+    let extras = crate::mcp::tools::extra_names();
+    let mut listed: Vec<_> = ours
+        .iter()
+        .filter(|tool| !extras.iter().any(|name| tool["name"] == name.as_str()))
+        .map(shape)
+        .collect();
     let mut studio: Vec<_> = studio_tools().iter().map(shape).collect();
     listed.sort();
     studio.sort();

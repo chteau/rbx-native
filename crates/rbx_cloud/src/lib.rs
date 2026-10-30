@@ -31,6 +31,7 @@ mod publish;
 pub mod quick_login;
 mod retry;
 mod scopes;
+mod security;
 mod team_create;
 mod thumbnails;
 mod toolbox;
@@ -65,6 +66,7 @@ pub use scopes::{
     check as check_scopes, Grant, KeyReport, Permission, ScopeCheck, DASHBOARD_API_KEYS_URL,
     PERMISSIONS,
 };
+pub use security::{mesh_image_apis, set_mesh_image_apis_allowed, MeshImageApis};
 pub use team_create::{
     set_team_create_enabled, team_create_enabled, team_create_enabled_many, team_create_members,
     SessionMember,

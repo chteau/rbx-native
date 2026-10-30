@@ -346,7 +346,7 @@ fn every_local_field_resolves_in_the_reflection_database() {
 
 #[test]
 fn team_create_edit_waits_for_the_first_read() {
-    let mut tc = TeamCreateDraft::default();
+    let mut tc = SwitchDraft::default();
     tc.set(true);
     assert_eq!((tc.value(), tc.pending()), (None, None));
     tc.reset(false);
@@ -358,7 +358,7 @@ fn team_create_edit_waits_for_the_first_read() {
 
 #[test]
 fn team_create_rebase_keeps_only_a_differing_edit() {
-    let mut tc = TeamCreateDraft::default();
+    let mut tc = SwitchDraft::default();
     tc.reset(false);
     tc.set(true);
     tc.rebase(true);

@@ -1,7 +1,7 @@
 //! Typing into the embedded client: the Device Simulator's Android back
 //! button and its keyboard cover's keys.
 
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -11,7 +11,7 @@ use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
-use super::{x11, Embedded};
+use super::{claim_keyboard, x11, Embedded};
 use crate::embed::EmbedError;
 
 /// A key the client is sent.
@@ -29,9 +29,6 @@ const BACKSPACE_KEYSYM: u32 = 0xff08;
 const RETURN_KEYSYM: u32 = 0xff0d;
 const SHIFT_KEYSYM: u32 = 0xffe1;
 
-/// How long the pointer stays over the client after the last key: 100 ms
-/// was enough in a live test, returning it at once lost the key.
-const POINTER_RETURN: Duration = Duration::from_millis(150);
 /// How long a newly borrowed keycode is left before it is typed: Sober
 /// takes the new keymap a moment after the change (a key sent 100 ms after
 /// it typed in a live test; 0.3 s leaves room).
@@ -81,8 +78,6 @@ fn start(worker: &mut Option<Sender<Job>>, job: Job) -> Result<(), EmbedError> {
 struct Typist {
     conn: RustConnection,
     root: u32,
-    /// Where the pointer was before the current burst of keys.
-    home: Option<(i16, i16)>,
     /// Keycodes lent to characters the keymap lacks, oldest first. A lent
     /// keycode keeps its character for the rest of the Play, so only a
     /// character's first press waits for the client's keymap reload.
@@ -94,33 +89,12 @@ impl Typist {
         Typist {
             conn,
             root,
-            home: None,
             borrowed: Vec::new(),
         }
     }
 
     fn run(mut self, rx: Receiver<Job>) {
-        loop {
-            // Waiting with the pointer away from home: a short wait, after
-            // which the burst is over and it goes back.
-            let job = match self.home {
-                Some((x, y)) => match rx.recv_timeout(POINTER_RETURN) {
-                    Ok(job) => job,
-                    Err(RecvTimeoutError::Timeout) => {
-                        let _ = self
-                            .conn
-                            .warp_pointer(x11rb::NONE, self.root, 0, 0, 0, 0, x, y);
-                        let _ = self.conn.flush();
-                        self.home = None;
-                        continue;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => return,
-                },
-                None => match rx.recv() {
-                    Ok(job) => job,
-                    Err(_) => return,
-                },
-            };
+        while let Ok(job) = rx.recv() {
             let done = match job {
                 Job::Type { window, keys } => self.type_keys(window, &keys),
                 Job::Release => self.release(),
@@ -147,12 +121,11 @@ impl Typist {
         Ok(())
     }
 
-    /// XTest types into whatever has the focus, hence the focus first, and
-    /// Sober reads the keyboard only while the pointer is over it
-    /// (measured: focus alone, or moving the pointer back at once, loses the
-    /// key), so the pointer is put in the middle of the window until the
-    /// burst ends. A character the keymap has no key for is typed through a
-    /// spare keycode mapped to it.
+    /// XTest types into whatever has the focus, and Sober reads the
+    /// keyboard only while it believes the pointer is over it, so a job
+    /// claims both first ([`claim_keyboard`]), with no pointer moved. A
+    /// character the keymap has no key for is typed through a spare keycode
+    /// mapped to it.
     fn type_keys(&mut self, window: u32, keys: &[Key]) -> Result<(), EmbedError> {
         let setup = self.conn.setup();
         let (min, max) = (setup.min_keycode, setup.max_keycode);
@@ -166,24 +139,7 @@ impl Typist {
         let mut syms = map.keysyms;
         let shift = find_keysym(&syms, per, min, SHIFT_KEYSYM).map(|(code, _)| code);
 
-        if self.home.is_none() {
-            let pointer = self
-                .conn
-                .query_pointer(self.root)
-                .map_err(x11)?
-                .reply()
-                .map_err(x11)?;
-            self.home = Some((pointer.root_x, pointer.root_y));
-        }
-        let geometry = self
-            .conn
-            .get_geometry(window)
-            .map_err(x11)?
-            .reply()
-            .map_err(x11)?;
-        let middle = |extent: u16| i16::try_from(extent / 2).unwrap_or(i16::MAX);
-        let (x, y) = (middle(geometry.width), middle(geometry.height));
-
+        let mut first = true;
         for &key in keys {
             let keysym = key_keysym(key);
             let (code, shifted) = match find_keysym(&syms, per, min, keysym) {
@@ -210,15 +166,19 @@ impl Typist {
                     (code, false)
                 }
             };
-            // Taken again before every key: the press on the cover that
-            // typed it gave the editor the focus back (`FocusFollow`),
-            // and a borrowed keycode's wait gives that time to land.
-            self.conn
-                .warp_pointer(x11rb::NONE, window, 0, 0, 0, 0, x, y)
-                .map_err(x11)?;
-            self.conn
-                .set_input_focus(InputFocus::PARENT, window, x11rb::CURRENT_TIME)
-                .map_err(x11)?;
+            // The focus is taken again before every key: the press on the
+            // cover that typed it gave the editor the focus back
+            // (`FocusFollow`), and a borrowed keycode's wait gives that
+            // time to land. The crossing goes once per job: a second one
+            // while keys go by loses the press sent with it.
+            if first {
+                claim_keyboard(&self.conn, self.root, window)?;
+                first = false;
+            } else {
+                self.conn
+                    .set_input_focus(InputFocus::PARENT, window, x11rb::CURRENT_TIME)
+                    .map_err(x11)?;
+            }
             let shift = shift.filter(|_| shifted);
             if let Some(shift) = shift {
                 self.fake(KEY_PRESS_EVENT, shift)?;

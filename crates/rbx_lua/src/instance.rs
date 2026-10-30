@@ -101,7 +101,7 @@ impl LuaInstance {
         } else {
             None
         };
-        found.ok_or_else(|| not_a_member(member, &class))
+        found.ok_or_else(|| self.not_a_member(member))
     }
 
     fn require_part(&self, member: &str) -> Result<()> {
@@ -109,8 +109,23 @@ impl LuaInstance {
         if self.ctx.database().is_subclass_of(&class, "BasePart") {
             Ok(())
         } else {
-            Err(not_a_member(member, &class))
+            Err(self.not_a_member(member))
         }
+    }
+
+    /// Roblox's error for a member this instance lacks, naming it by its
+    /// full name: `Nope is not a valid member of Part "Workspace.Part"`.
+    fn not_a_member(&self, member: &str) -> mlua::Error {
+        let class = match self.class() {
+            Ok(class) => class,
+            Err(error) => return error,
+        };
+        let full = tree::full_name(&self.ctx.dom(), self.referent)
+            .or_else(|| self.ctx.tombstone(self.referent).map(|(_, name)| name))
+            .unwrap_or_default();
+        mlua::Error::runtime(format!(
+            "{member} is not a valid member of {class} \"{full}\""
+        ))
     }
 
     fn instance_name(&self) -> Result<String> {
@@ -306,7 +321,7 @@ impl UserData for LuaInstance {
             let found = crate::pivot::pivot(&this.ctx.dom(), this.ctx.database(), this.referent);
             match found {
                 Some(frame) => Ok(LuaCFrame(frame)),
-                None => Err(not_a_member("GetPivot", &this.class()?)),
+                None => Err(this.not_a_member("GetPivot")),
             }
         });
         methods.add_method("PivotTo", |_, this, target: Value| {
@@ -320,7 +335,7 @@ impl UserData for LuaInstance {
             );
             match moved {
                 Some(result) => result.map_err(mlua::Error::runtime),
-                None => Err(not_a_member("PivotTo", &this.class()?)),
+                None => Err(this.not_a_member("PivotTo")),
             }
         });
         methods.add_method("Destroy", |_, this, ()| {
@@ -425,10 +440,7 @@ impl UserData for LuaInstance {
             }
             match child {
                 Some(referent) => LuaInstance::new(referent, this.ctx.clone()).into_lua(lua),
-                None => Err(mlua::Error::runtime(format!(
-                    "{key} is not a valid member of {}",
-                    this.class()?
-                ))),
+                None => Err(this.not_a_member(&key)),
             }
         });
         methods.add_meta_method(
@@ -485,10 +497,7 @@ impl UserData for LuaInstance {
                 if property::set(&this.ctx, this.referent, &key, &value)? {
                     return Ok(());
                 }
-                Err(mlua::Error::runtime(format!(
-                    "{key} is not a valid member of {}",
-                    this.class()?
-                )))
+                Err(this.not_a_member(&key))
             },
         );
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| this.instance_name());
@@ -528,8 +537,4 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
         )?,
     )?;
     Ok(table)
-}
-
-fn not_a_member(member: &str, class: &str) -> mlua::Error {
-    mlua::Error::runtime(format!("{member} is not a valid member of {class}"))
 }
