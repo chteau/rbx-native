@@ -7,6 +7,7 @@ use std::rc::Rc;
 use mlua::{Function, MultiValue, Value};
 
 use super::Runtime;
+use crate::engine::require;
 use crate::output::LineKind;
 
 #[cfg(test)]
@@ -32,7 +33,23 @@ impl Runtime {
     /// is queued.
     pub fn start_reported(&mut self, source: &str, serializer: &str) -> Reported {
         let slot: Reported = Rc::new(RefCell::new(None));
-        let load = |text: &str| self.lua.load(text).set_name(CHUNK).into_function();
+        // Studio runs this code with no requiring context at all, unlike the
+        // command bar, and at identity 10, so it gets its own `require` and
+        // `printidentity`.
+        let scope = match self.scope() {
+            Ok(scope) => scope,
+            Err(error) => {
+                *slot.borrow_mut() = Some(Err(error.to_string()));
+                return slot;
+            }
+        };
+        let load = |text: &str| {
+            self.lua
+                .load(text)
+                .set_name(CHUNK)
+                .set_environment(scope.clone())
+                .into_function()
+        };
         let chunk = match load(&format!("return {source}")) {
             Ok(chunk) => chunk,
             Err(_) => match load(source) {
@@ -51,6 +68,22 @@ impl Runtime {
             Err(error) => *slot.borrow_mut() = Some(Err(error.to_string())),
         }
         slot
+    }
+
+    /// The chunk's environment: its own `require` and `printidentity`, the
+    /// globals behind them.
+    fn scope(&self) -> mlua::Result<mlua::Table> {
+        let scope = self.lua.create_table()?;
+        scope.set("require", require::require_for(&self.lua, Value::Nil)?)?;
+        let ctx = crate::engine::engine(&self.lua).ctx.clone();
+        scope.set(
+            "printidentity",
+            super::globals::printidentity(&self.lua, &ctx, 10)?,
+        )?;
+        let meta = self.lua.create_table()?;
+        meta.set("__index", self.lua.globals())?;
+        scope.set_metatable(Some(meta))?;
+        Ok(scope)
     }
 
     fn reporter(
