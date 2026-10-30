@@ -110,6 +110,7 @@ fn a_gui_object_is_clicked_at_its_centre_past_the_inset() {
             { "action": "wait", "wait_time_ms": 150 },
             { "action": "mouseButtonClick", "mouse_button": "left" },
         ])),
+        &mut None,
     );
     assert_eq!(answer, Ok("Success".to_owned()));
     assert_eq!(
@@ -135,6 +136,7 @@ fn coordinates_are_reused_and_asked_about_once() {
             { "action": "scrollDown" },
             { "action": "scrollUp", "x": 10, "y": 20 },
         ])),
+        &mut None,
     );
     assert_eq!(answer, Ok("Success".to_owned()));
     assert_eq!(
@@ -152,10 +154,44 @@ fn coordinates_are_reused_and_asked_about_once() {
 }
 
 #[test]
+fn the_pointer_is_kept_from_one_call_to_the_next() {
+    let mut last = None;
+    let mut first = Recorder::new(&[Ok(SCREEN)]);
+    let moved = run::mouse(
+        &mut first,
+        &steps(json!([{ "action": "moveTo", "x": 300, "y": 200 }])),
+        &mut last,
+    );
+    assert_eq!(moved, Ok("Success".to_owned()));
+    assert_eq!(last, Some((300.0, 200.0)));
+    // The next call clicks there, putting the pointer back first.
+    let mut second = Recorder::new(&[Ok(SCREEN)]);
+    let clicked = run::mouse(
+        &mut second,
+        &steps(json!([
+            { "action": "mouseButtonClick", "mouse_button": "left" },
+            { "action": "scrollUp" },
+        ])),
+        &mut last,
+    );
+    assert_eq!(clicked, Ok("Success".to_owned()));
+    assert_eq!(
+        presses(&second.events),
+        vec![
+            Event::Ask(CommandBody::Locate { path: None }),
+            Event::Move(300, 258),
+            Event::Button(Button::Left, true),
+            Event::Button(Button::Left, false),
+            Event::Scroll(true),
+        ]
+    );
+}
+
+#[test]
 fn mouse_steps_fail_in_studios_words_after_the_steps_before_them() {
     let fail = |value: Value, answers: &[Result<&str, &str>]| {
         let mut client = Recorder::new(answers);
-        let answer = run::mouse(&mut client, &steps(value));
+        let answer = run::mouse(&mut client, &steps(value), &mut None);
         (answer.unwrap_err(), presses(&client.events))
     };
     assert_eq!(
@@ -197,7 +233,7 @@ fn mouse_steps_fail_in_studios_words_after_the_steps_before_them() {
         "Instance is not a GuiObject: Part"
     );
     assert_eq!(
-        run::mouse(&mut Recorder::new(&[]), &[]),
+        run::mouse(&mut Recorder::new(&[]), &[], &mut None),
         Ok("Success".to_owned())
     );
 }

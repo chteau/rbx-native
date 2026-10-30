@@ -2794,6 +2794,18 @@ both the plain fetch failure and the silent fall back to a default
   `segment_mesh` and `generate_texture` take the selection when
   `instance_path` is left out, as Studio does. The Play capture on
   Windows and the Win32 input have not been run on a real Windows PC.
+- [x] **MCP: save, keys by place, focus and pointer.** `save_place` is our
+  own tool (Studio's MCP has no save and `game:SavePlace()` only errors on
+  a local file): Save, or Save As to a `.rbxl`/`.rbxlx` path, so a place
+  can be built start to finish over MCP. `user_keyboard_input` sends keys
+  by their US-keyboard place (evdev codes on Linux, set-1 scan codes on
+  Windows), as a `KeyCode` means, and on Linux reaches the client whatever
+  window is active or on top. `user_mouse_input` keeps the pointer between
+  calls for the playtest. Play finds a user-installed Sober with an
+  isolated `XDG_DATA_HOME`, and picks the client window by creation time
+  instead of an id list. `get_console_output` still keeps the newest
+  20000 characters: I couldn't get Studio's MCP to answer this time to
+  recheck its cap. The Windows scan codes haven't been run on a real PC.
 - [x] **Pseudo-localization preview and string extraction (beta)**: View's
   Pseudo-loc tile draws every TextLabel, TextButton and TextBox about 40%
   longer, bracketed and accented (`[!! Ţĥé … !!]`), optionally right to

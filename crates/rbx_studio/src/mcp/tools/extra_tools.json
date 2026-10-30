@@ -1,0 +1,30 @@
+[
+  {
+    "name": "save_place",
+    "title": "Save Place",
+    "description": "rbx-native's own tool, not one of Studio's (Studio's MCP has no way to save). Saves the place to its file, as File > Save does. Given a path, saves there instead and keeps working on that file from then on, as Save As does: .rbxl writes binary, .rbxlx XML, and a relative path is taken from the place's folder. Answers with the file written.",
+    "inputSchema": {
+      "properties": {
+        "path": {
+          "description": "Save As: the .rbxl or .rbxlx file to write. Leave out to save over the place's own file.",
+          "type": "string"
+        },
+        "studio_id": {
+          "description": "Which editor to act on: an id from list_roblox_studios. May be left out while only one editor is open.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "studio_id"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Save Place",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  }
+]

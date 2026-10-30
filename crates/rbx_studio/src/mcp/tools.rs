@@ -42,11 +42,29 @@ type Outcome = Result<Value, String>;
 /// editor does.
 const STUDIO_TOOLS: &str = include_str!("tools/studio_tools.json");
 
-/// `tools/list`'s answer, with the `skill` entry naming this editor's
+/// Tools of our own, for what Studio's MCP cannot do (saving the place).
+/// Each says so in its description.
+const EXTRA_TOOLS: &str = include_str!("tools/extra_tools.json");
+
+/// The names of [`EXTRA_TOOLS`].
+#[cfg(test)]
+pub(super) fn extra_names() -> Vec<String> {
+    let extras: Vec<Value> = serde_json::from_str(EXTRA_TOOLS).expect("extra_tools.json parses");
+    extras
+        .iter()
+        .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// `tools/list`'s answer, Studio's then ours, with the `skill` entry naming this editor's
 /// skills. Studio requires `studio_id` on every call and says so;
 /// here it may still be left out while only one editor is open.
 pub(super) fn list() -> Value {
     let mut tools: Value = serde_json::from_str(STUDIO_TOOLS).expect("studio_tools.json parses");
+    let extras: Vec<Value> = serde_json::from_str(EXTRA_TOOLS).expect("extra_tools.json parses");
+    if let Some(list) = tools.as_array_mut() {
+        list.extend(extras);
+    }
     for tool in tools.as_array_mut().into_iter().flatten() {
         if tool["name"] == skills::NAME {
             skills::describe(tool);
@@ -105,6 +123,7 @@ fn run(name: &str, arguments: &Value, session: &mut Session) -> Result<Outcome, 
         luau::START_STOP_PLAY => luau::start_stop(arguments, session),
         luau::CONSOLE_OUTPUT => luau::console(session),
         luau::SCREEN_CAPTURE => luau::capture(arguments, session),
+        luau::SAVE_PLACE => luau::save(arguments, session),
         _ => match assets::run(name, arguments, session) {
             Some(outcome) => outcome,
             None => return Err((INVALID_PARAMS, format!("unknown tool: {name}"))),

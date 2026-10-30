@@ -129,6 +129,8 @@ struct Session {
     /// UI Editor, Animation) took the room the 3D view had.
     #[cfg(any(target_os = "linux", windows))]
     hidden: bool,
+    /// Where `user_mouse_input` left the pointer.
+    pointer: crate::mcp::Pointer,
 }
 
 /// The latest `Uplink::Stats` of each side, shown in the Test ribbon.
@@ -570,6 +572,7 @@ impl Shell {
                     pointer_inside: None,
                     #[cfg(any(target_os = "linux", windows))]
                     hidden: false,
+                    pointer: Default::default(),
                 });
                 Ok(shell.play_embed_target(cx))
             });
@@ -829,8 +832,6 @@ impl Shell {
         if !matches!(self.play.phase, Phase::Running) {
             return None;
         }
-        // Without an embedded window (macOS) the session only gates the probe.
-        #[cfg_attr(not(any(target_os = "linux", windows)), allow(unused_variables))]
         let running = self.play.session.as_ref()?;
         Some(crate::mcp::PlayInput {
             probe: self.play.link.as_ref()?.channel.requester(),
@@ -840,6 +841,7 @@ impl Shell {
                 .as_ref()
                 .filter(|_| !running.hidden)
                 .map(|embedded| embedded.window()),
+            pointer: running.pointer.clone(),
         })
     }
 

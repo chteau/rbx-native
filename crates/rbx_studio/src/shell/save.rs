@@ -107,10 +107,45 @@ impl Shell {
     /// format it was opened in. `pub(crate)`: also `menu_bar`'s Save item's
     /// entry point, so a menu click runs the exact same path Ctrl+S does.
     pub(crate) fn save(&mut self, cx: &mut Context<Self>) {
+        let _ = self.save_in_place(cx);
+    }
+
+    fn save_in_place(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
         let path = self.path.clone();
-        if self.write_to(&path, cx) {
-            self.saved();
+        self.write_to(&path, cx)?;
+        self.saved();
+        Ok(())
+    }
+
+    /// MCP's `save_place`: Save, or Save As to `path` (relative to the
+    /// place's own folder). The file written, or why nothing was.
+    pub(super) fn save_for_mcp(
+        &mut self,
+        path: Option<&std::path::Path>,
+        cx: &mut Context<Self>,
+    ) -> Result<String, String> {
+        let Some(path) = path else {
+            self.save_in_place(cx)?;
+            return Ok(format!("Saved {}", self.path.display()));
+        };
+        let path = match self.path.parent() {
+            Some(folder) if path.is_relative() => folder.join(path),
+            _ => path.to_path_buf(),
+        };
+        let place = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("rbxl") || ext.eq_ignore_ascii_case("rbxlx")
+            });
+        if !place {
+            return Err(format!(
+                "{} is not a place file: the path must end in .rbxl or .rbxlx",
+                path.display()
+            ));
         }
+        self.save_as(&path, cx)?;
+        Ok(format!("Saved {}", path.display()))
     }
 
     /// File › Save to File As…: the place written to `path`, which then
@@ -122,11 +157,15 @@ impl Shell {
     /// The title, Ctrl+S's target and format, the Recent list and the
     /// folder tags follow; the new file is not linked to a Roblox place
     /// until it is linked itself.
-    pub(super) fn save_as(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+    pub(super) fn save_as(
+        &mut self,
+        path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
         let opened = std::mem::replace(&mut self.format, save::Format::of_path(path));
-        if !self.write_to(path, cx) {
+        if let Err(err) = self.write_to(path, cx) {
             self.format = opened;
-            return;
+            return Err(err);
         }
         let previous = std::mem::replace(&mut self.path, path.to_path_buf());
         self.folder_colors.copy_place(&previous, path);
@@ -152,6 +191,7 @@ impl Shell {
         self.saved();
         self.repoint_recovery();
         cx.notify();
+        Ok(())
     }
 
     /// `RBX_STUDIO_SAVE_AS=<path>`: documented in `save`'s module doc
@@ -161,7 +201,7 @@ impl Shell {
     /// rather than overwriting the real fixture that was opened.
     pub(super) fn apply_debug_save(&mut self, cx: &mut Context<Self>) {
         if let Ok(scratch) = std::env::var(save::SAVE_AS_VARIABLE) {
-            self.write_to(std::path::Path::new(&scratch), cx);
+            let _ = self.write_to(std::path::Path::new(&scratch), cx);
         }
     }
 
@@ -170,7 +210,7 @@ impl Shell {
     /// Command Bar's own feedback label (see [`record_outcome`]). On failure
     /// the on-disk file at `path` is left exactly as it was (see
     /// `save::save`).
-    fn write_to(&mut self, path: &std::path::Path, cx: &mut Context<Self>) -> bool {
+    fn write_to(&mut self, path: &std::path::Path, cx: &mut Context<Self>) -> Result<(), String> {
         // An open script editor's text reaches the DOM on a debounce (see
         // `shell::scripts`); saving must write what is on screen, not what
         // the DOM happened to hold when typing last paused.
@@ -191,7 +231,7 @@ impl Shell {
         }
         let result = save::save(self.edit_dom(), self.format, path);
         let saved = result.is_ok();
-        let feedback = record_outcome(&mut self.output, result, path);
+        let feedback = record_outcome(&mut self.output, result.clone(), path);
         // An auto-rigged body not published yet points at meshes only this
         // machine's cache holds; Roblox would show it without them.
         let local = self
@@ -212,7 +252,7 @@ impl Shell {
             self.rerun_tests_on_save(cx);
         }
         cx.notify();
-        saved
+        result
     }
 }
 

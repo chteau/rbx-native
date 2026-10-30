@@ -146,6 +146,10 @@ impl Shell {
                 let text = console_text(&self.output);
                 return request.answer(Some(job_reply(id, Ok(vec![text_content(&text)]))));
             }
+            Job::Save { path } => {
+                let saved = self.save_for_mcp(path.as_deref(), cx);
+                return request.answer(Some(job_reply(id, text_outcome(saved))));
+            }
             Job::Luau { code, datamodel } => {
                 let wait = match datamodel {
                     DataModel::Edit => Ok(Wait::Luau(self.run_command_reported(&code, cx))),
