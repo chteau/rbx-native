@@ -8,7 +8,7 @@
   marks a leave that `Player.OnTeleport` started, the server it left goes
   quiet, and the editor waits for the player in the next server: the link,
   Output, Invite and the live Client/Server views carry on there. A real
-  leave still ends the Play. — @chteau
+  leave still ends the Play. (@chteau)
 
 - **GUI from a hand-written place looks like Studio now.** A `.rbxlx` that
   leaves properties out got our own fallbacks, which were what Studio's
