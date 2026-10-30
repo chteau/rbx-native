@@ -80,6 +80,52 @@ fn text_size_is_the_line_box_and_the_em_a_fifth_smaller() {
     );
 }
 
+// `Legacy` draws as Arimo does at half again the size: Studio's
+// `GetTextSize` gives "Click me" 127x36 in `Legacy` at 24, as in Arimo at 36.
+#[test]
+fn a_legacy_line_is_half_again_its_text_size() {
+    let face = Face::named("LegacyArial", 400, false);
+    let mut fonts = believing(&face.family, &[(400, false)]);
+
+    let buffer = fonts.shape(&plain(face, 24.0), 24.0, None, None);
+    assert_eq!(buffer.metrics(), Metrics::new(36.0 / em::FALLBACK, 36.0));
+}
+
+// A face that lands sizes its em off its own ascent plus descent, the box
+// Roblox fits into `TextSize`: Manrope's hhea is 2132 + 600 of 2000 units.
+#[test]
+fn a_landed_face_takes_its_em_from_its_own_ascent_and_descent() {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../assets/fonts/Manrope-Regular.ttf"
+    ))
+    .unwrap();
+    assert_eq!(em::line_ems(&bytes), Some(2732.0 / 2000.0));
+    assert_eq!(em::line_ems(&[1, 2, 3]), None);
+
+    let face = Face::named("Manrope", 400, false);
+    let asset = AssetRef::Native("fonts/Manrope-Regular.ttf".to_string());
+    let mut library = Library::default();
+    library.families.insert(
+        face.family.clone(),
+        Family {
+            name: "Manrope".to_string(),
+            faces: vec![Entry {
+                weight: 400,
+                italic: false,
+                asset: asset.clone(),
+            }],
+        },
+    );
+    library.faces.insert(asset, Arc::new(bytes));
+    let mut fonts = Typesetter::new();
+    assert!(fonts.adopt(&library, std::slice::from_ref(&face)));
+
+    let buffer = fonts.shape(&plain(face, 27.32), 27.32, None, None);
+    assert!((buffer.metrics().font_size - 20.0).abs() < 1e-4);
+    assert_eq!(buffer.metrics().line_height, 27.32);
+}
+
 // A family with a single regular face serves a bold request with that
 // face, as Roblox does, rather than with some bold system font, and
 // asks for it dilated once the request reaches SemiBold.

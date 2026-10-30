@@ -180,9 +180,6 @@ pub(crate) struct Screen {
     /// See [`Node::auto_localize`].
     pub(in crate::scene::gui) auto_localize: bool,
     pub(in crate::scene::gui) display_order: i32,
-    /// `ScreenInsets`: pixels of the viewport's top edge the canvas gives up
-    /// to Roblox's top bar.
-    pub(in crate::scene::gui) top_inset: f32,
     /// Whether the device's safe-area insets (a phone's notch and home
     /// indicator) apply: every `ScreenInsets` mode but `None` adds them.
     pub(in crate::scene::gui) device_safe: bool,

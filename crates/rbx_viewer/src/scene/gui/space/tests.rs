@@ -44,10 +44,17 @@ fn placement(size: Vec3) -> Placement {
 }
 
 /// `Part -> <class>`, with the part registered as a placement of `size`.
+/// A `SurfaceGui` comes `PixelsPerStud`, as Studio's Insert makes one: its
+/// class default, what a file that leaves `SizingMode` out loads as, is
+/// `FixedSize`.
 fn fixture(class: &str, size: Vec3) -> (WeakDom, Ref, HashMap<Ref, Placement>) {
     let mut dom = WeakDom::new();
     let part = dom.new_instance("Part", "Part", None);
     let gui = dom.new_instance(class, class, Some(part));
+    if class == "SurfaceGui" {
+        dom.set_property(gui, "SizingMode", Variant::Enum(1))
+            .unwrap();
+    }
     let placements = HashMap::from([(part, placement(size))]);
     (dom, gui, placements)
 }
@@ -138,8 +145,8 @@ fn a_fixed_size_canvas_is_read_whole_and_ignores_the_face() {
     assert_eq!(surface_canvas(&properties, BOARD_FACE), [800.0, 600.0]);
 }
 
-// `PixelsPerStud` is Roblox's default `SizingMode`, and the mode the boards
-// use: their `CanvasSize` of 800 × 600 is dead data, the canvas is the face
+// `PixelsPerStud` is the `SizingMode` Studio's Insert gives, and the mode
+// the boards use: their `CanvasSize` of 800 × 600 is dead data, the canvas is the face
 // at 50 px/stud. Sizing it from `CanvasSize` instead was what shrank a
 // 355 px label to a corner of the board.
 
@@ -274,7 +281,7 @@ fn a_surface_gui_hangs_off_its_parent_part_by_default() {
 
     let planned = planned(&dom, &placements);
     assert_eq!(planned.len(), 1);
-    // `PixelsPerStud` by default: the 4 × 2 stud face at 50 px/stud.
+    // `PixelsPerStud`: the 4 × 2 stud face at 50 px/stud.
     assert_eq!(planned[0].canvas, [200.0, 100.0]);
     let Anchor::Surface { corners } = planned[0].anchor else {
         panic!("a SurfaceGui is anchored to a face");
@@ -419,6 +426,9 @@ fn a_container_holding_only_transparent_text_is_not_planned() {
     let label = dom.new_instance("TextLabel", "TextLabel", Some(gui));
     dom.set_property(label, "BackgroundTransparency", Variant::Float32(1.0))
         .unwrap();
+    // A `TextLabel` with no `Text` stored says "Label".
+    dom.set_property(label, "Text", Variant::String(String::new()))
+        .unwrap();
     assert!(planned(&dom, &placements).is_empty());
 }
 
@@ -507,8 +517,13 @@ fn brightness_scales_the_canvas_unless_light_takes_over_or_it_sits_on_top() {
 }
 
 #[test]
-fn max_distance_defaults_differ_and_zero_means_no_limit() {
-    for (class, default) in [("SurfaceGui", 1000.0), ("BillboardGui", f32::INFINITY)] {
+fn max_distance_defaults_to_no_limit_and_zero_means_none_too() {
+    // A Studio-saved place reads back 0 for a `SurfaceGui` and INF for a
+    // `BillboardGui` whose file left `MaxDistance` out: neither has a limit.
+    for (class, default) in [
+        ("SurfaceGui", f32::INFINITY),
+        ("BillboardGui", f32::INFINITY),
+    ] {
         let (mut dom, gui, placements) = fixture(class, Vec3::ONE);
         filled(&mut dom, gui);
         // A billboard with no `Size` has no canvas to place at all.
