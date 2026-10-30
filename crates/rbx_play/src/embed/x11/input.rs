@@ -16,7 +16,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::keys::{self, find_keysym, Key};
 use super::x11;
 use crate::embed::{Button, EmbedError, WindowId, CLICK_HOLD};
-use crate::keycode::KeyCode;
+use crate::keycode::{KeyCode, Physical, LEFT_SHIFT};
 
 const SHIFT_KEYSYM: u32 = 0xffe1;
 /// X11's wheel: buttons 4 (up) and 5 (down), one notch per press.
@@ -28,12 +28,23 @@ pub struct Input {
     conn: RustConnection,
     root: u32,
     window: WindowId,
+    /// Keycodes pressed and not yet released.
+    held: Vec<u8>,
+    /// Who had the keyboard before the first key, handed back when the run
+    /// ends with no key held, so the desktop's own typing goes where it did.
+    previous_focus: Option<(u32, InputFocus)>,
 }
 
 impl Input {
     pub fn open(window: WindowId) -> Result<Self, EmbedError> {
         let (conn, root) = super::connect()?;
-        Ok(Input { conn, root, window })
+        Ok(Input {
+            conn,
+            root,
+            window,
+            held: Vec::new(),
+            previous_focus: None,
+        })
     }
 
     /// The window's size in pixels.
@@ -100,9 +111,47 @@ impl Input {
         self.sync()
     }
 
-    /// Presses or releases the key that types `key` on the current layout,
-    /// with Shift around it when the keysym is on the shifted level.
+    /// Presses or releases `key` by its place on a US keyboard
+    /// ([`KeyCode::physical`]), the way the client reads it, so the layout
+    /// in use changes nothing; Shift goes around a shifted symbol. A name
+    /// with no place is the key the current layout types it with.
     pub fn key(&mut self, key: &KeyCode, down: bool) -> Result<(), EmbedError> {
+        let (code, shift) = match key.physical() {
+            Some(place) => (
+                place.x11(),
+                place.shift.then(|| {
+                    Physical {
+                        evdev: LEFT_SHIFT,
+                        shift: false,
+                    }
+                    .x11()
+                }),
+            ),
+            None => self.on_layout(key)?,
+        };
+        self.take_keyboard()?;
+        let kind = if down {
+            KEY_PRESS_EVENT
+        } else {
+            KEY_RELEASE_EVENT
+        };
+        if let (Some(shift), true) = (shift, down) {
+            self.fake(KEY_PRESS_EVENT, shift)?;
+        }
+        self.fake(kind, code)?;
+        if let (Some(shift), true) = (shift, down) {
+            self.fake(KEY_RELEASE_EVENT, shift)?;
+        }
+        self.held.retain(|&held| held != code);
+        if down {
+            self.held.push(code);
+        }
+        self.sync()
+    }
+
+    /// The keycode that types `key`'s keysym on the current layout, and
+    /// Shift's when the keysym is on the shifted level.
+    fn on_layout(&self, key: &KeyCode) -> Result<(u8, Option<u8>), EmbedError> {
         let setup = self.conn.setup();
         let (min, max) = (setup.min_keycode, setup.max_keycode);
         let map = self
@@ -118,23 +167,10 @@ impl Input {
                 key.name
             )));
         };
-        self.take_keyboard()?;
         let shift = find_keysym(&map.keysyms, per, min, SHIFT_KEYSYM)
             .map(|(code, _)| code)
             .filter(|_| shifted);
-        let kind = if down {
-            KEY_PRESS_EVENT
-        } else {
-            KEY_RELEASE_EVENT
-        };
-        if let (Some(shift), true) = (shift, down) {
-            self.fake(KEY_PRESS_EVENT, shift)?;
-        }
-        self.fake(kind, code)?;
-        if let (Some(shift), true) = (shift, down) {
-            self.fake(KEY_RELEASE_EVENT, shift)?;
-        }
-        self.sync()
+        Ok((code, shift))
     }
 
     /// Types `text` as key presses, for a text field a game script cannot
@@ -147,26 +183,22 @@ impl Input {
         keys::type_into(self.window, typed)
     }
 
-    /// The client reads the keyboard only while it has the focus and the
-    /// pointer is over it (`keys`): the pointer stays where the mouse left
-    /// it when that is over the window, and goes to its middle otherwise.
+    /// The keyboard, whatever window is active or on top
+    /// ([`super::claim_keyboard`]), once per run: a second crossing while
+    /// keys go by loses the press sent with it (measured). Who had it
+    /// before is kept to hand back.
     fn take_keyboard(&mut self) -> Result<(), EmbedError> {
-        let pointer = self
+        if self.previous_focus.is_some() {
+            return Ok(());
+        }
+        let had = self
             .conn
-            .query_pointer(self.window)
+            .get_input_focus()
             .map_err(x11)?
             .reply()
             .map_err(x11)?;
-        let (width, height) = self.size()?;
-        let inside = pointer.same_screen
-            && (0..i32::try_from(width).unwrap_or(i32::MAX)).contains(&i32::from(pointer.win_x))
-            && (0..i32::try_from(height).unwrap_or(i32::MAX)).contains(&i32::from(pointer.win_y));
-        if inside {
-            self.focus()
-        } else {
-            let half = |extent: u32| i32::try_from(extent / 2).unwrap_or(0);
-            self.move_to(half(width), half(height))
-        }
+        self.previous_focus = Some((had.focus, had.revert_to));
+        super::claim_keyboard(&self.conn, self.root, self.window)
     }
 
     fn focus(&self) -> Result<(), EmbedError> {
@@ -185,5 +217,22 @@ impl Input {
 
     fn sync(&self) -> Result<(), EmbedError> {
         self.conn.sync().map_err(x11)
+    }
+}
+
+impl Drop for Input {
+    /// Hands the keyboard back unless a key is still held down for a later
+    /// call to release (the client lets go of held keys when it loses the
+    /// focus).
+    fn drop(&mut self) {
+        let Some((focus, revert_to)) = self.previous_focus else {
+            return;
+        };
+        if self.held.is_empty() && focus != self.window {
+            let _ = self
+                .conn
+                .set_input_focus(revert_to, focus, x11rb::CURRENT_TIME);
+            let _ = self.conn.flush();
+        }
     }
 }

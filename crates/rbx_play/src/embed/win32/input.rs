@@ -8,9 +8,9 @@ use windows_sys::Win32::Foundation::{POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     MapVirtualKeyW, SendInput, VkKeyScanW, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT,
-    KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC,
+    KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC,
     MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
-    MOUSEEVENTF_WHEEL, MOUSEINPUT, VK_SHIFT,
+    MOUSEEVENTF_WHEEL, MOUSEINPUT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetClientRect, SetCursorPos, SetForegroundWindow, GA_ROOT, WHEEL_DELTA,
@@ -18,7 +18,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use super::{failed, focus_window, hwnd};
 use crate::embed::{Button, EmbedError, WindowId, CLICK_HOLD};
-use crate::keycode::KeyCode;
+use crate::keycode::{KeyCode, LEFT_SHIFT};
 
 /// One run of input into a client window.
 pub struct Input {
@@ -85,32 +85,31 @@ impl Input {
         Ok(())
     }
 
-    /// Presses or releases the key that types `key`: for a printable
-    /// character, the key the current layout puts it on (with Shift when it
-    /// is on the shifted level), else `key.vk`.
+    /// Presses or releases `key` by its place on a US keyboard
+    /// ([`KeyCode::physical`]): a scan code, which the client reads whatever
+    /// the layout, with Shift around a shifted symbol. A name with no scan
+    /// code is the key the current layout types it with (`on_layout`).
     pub fn key(&mut self, key: &KeyCode, down: bool) -> Result<(), EmbedError> {
-        let (vk, shifted) = match u16::try_from(key.keysym) {
-            Ok(c @ 0x20..=0x7e) => {
-                // SAFETY: plain call.
-                let found = unsafe { VkKeyScanW(c) };
-                match u16::try_from(found) {
-                    Ok(scan) if scan & 0xff != 0xff => (scan & 0xff, scan & 0x100 != 0),
-                    _ => (key.vk, false),
-                }
+        let place = key
+            .physical()
+            .and_then(|place| Some((place.scancode()?, place.shift)));
+        let (event, shifted) = match place {
+            Some((scan, shifted)) => (scanned(scan, !down), shifted),
+            None => {
+                let (vk, shifted) = on_layout(key)?;
+                (keyboard(vk, key.extended, !down), shifted)
             }
-            _ => (key.vk, false),
         };
-        if vk == 0 {
-            return Err(EmbedError::X11(format!("no key types {}", key.name)));
-        }
         self.take_keyboard()?;
+        // evdev numbers Left Shift by its scan code.
+        let shift = |up| scanned((LEFT_SHIFT, false), up);
         let mut events = Vec::with_capacity(3);
         if shifted && down {
-            events.push(keyboard(VK_SHIFT, false, false));
+            events.push(shift(false));
         }
-        events.push(keyboard(vk, key.extended, !down));
+        events.push(event);
         if shifted && down {
-            events.push(keyboard(VK_SHIFT, false, true));
+            events.push(shift(true));
         }
         send(&events)
     }
@@ -138,6 +137,50 @@ impl Input {
             }
         }
         focus_window(self.window)
+    }
+}
+
+/// The virtual key that types `key` on the current layout: for a printable
+/// character, the key the layout puts it on (and whether Shift is needed),
+/// else `key.vk`.
+fn on_layout(key: &KeyCode) -> Result<(u16, bool), EmbedError> {
+    let (vk, shifted) = match u16::try_from(key.keysym) {
+        Ok(c @ 0x20..=0x7e) => {
+            // SAFETY: plain call.
+            let found = unsafe { VkKeyScanW(c) };
+            match u16::try_from(found) {
+                Ok(scan) if scan & 0xff != 0xff => (scan & 0xff, scan & 0x100 != 0),
+                _ => (key.vk, false),
+            }
+        }
+        _ => (key.vk, false),
+    };
+    if vk == 0 {
+        return Err(EmbedError::X11(format!("no key types {}", key.name)));
+    }
+    Ok((vk, shifted))
+}
+
+/// A key by its set-1 scan code.
+fn scanned((scan, extended): (u16, bool), up: bool) -> INPUT {
+    let mut flags = KEYEVENTF_SCANCODE;
+    if extended {
+        flags |= KEYEVENTF_EXTENDEDKEY;
+    }
+    if up {
+        flags |= KEYEVENTF_KEYUP;
+    }
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: 0,
+                wScan: scan,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
     }
 }
 
