@@ -88,10 +88,10 @@ impl GameSettingsWindow {
         let tab = self.tab;
         let cloud_rows = self.cloud_rows(cx);
         let local_rows = self.local_rows(cx);
-        let team_create_rows = if tab == Tab::BasicInfo {
-            self.team_create_rows(cx)
-        } else {
-            Vec::new()
+        let team_create_rows = match tab {
+            Tab::BasicInfo => self.team_create_rows(cx),
+            Tab::Security => self.mesh_apis_rows(cx),
+            _ => Vec::new(),
         };
         let missed: Vec<AnyElement> = UNREACHABLE
             .iter()
@@ -142,7 +142,11 @@ impl GameSettingsWindow {
             })
             .when(!team_create_rows.is_empty(), |d| {
                 d.child(section(
-                    "Team Create",
+                    if tab == Tab::Security {
+                        "On Roblox"
+                    } else {
+                        "Team Create"
+                    },
                     Some("Roblox sign-in"),
                     "Saved to the live experience with your Roblox sign-in, not the API key.",
                     team_create_rows,
