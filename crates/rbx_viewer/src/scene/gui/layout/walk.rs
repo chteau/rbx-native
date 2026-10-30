@@ -33,7 +33,7 @@ impl Context {
 }
 
 /// One box's worth of contents to place: the elements themselves, the layout
-/// arranging them, and the scopes any plain instances among them open, see
+/// arranging them, and the scopes any `Folder`s among them open, see
 /// [`Group`].
 #[derive(Clone, Copy)]
 pub(in crate::scene::gui) struct Scope<'a> {

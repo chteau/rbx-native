@@ -60,6 +60,8 @@ const SCREEN_CLASS: &str = "ScreenGui";
 const BILLBOARD_CLASS: &str = "BillboardGui";
 const SURFACE_CLASS: &str = "SurfaceGui";
 const ELEMENT_CLASS: &str = "GuiObject";
+/// The one non-`GuiObject` class a GUI tree is walked through, see [`Group`].
+const FOLDER_CLASS: &str = "Folder";
 /// The three text classes share every text property, so one reader serves
 /// all of them, and their `UIStroke` outlines glyphs rather than the box;
 /// only the `TextBox` placeholder rule tells them apart.
@@ -196,7 +198,7 @@ fn gather(
 }
 
 /// What one container holds: its own `GuiObject` children in tree order, and
-/// a [`Group`] for every non-`GuiObject` child that holds elements of its own.
+/// a [`Group`] for every `Folder` child that holds elements of its own.
 pub(super) fn elements(
     dom: &WeakDom,
     database: &ReflectionDatabase,
@@ -217,6 +219,11 @@ pub(super) fn elements(
             if let Some(node) = element(dom, database, styles, materials, child) {
                 nodes.push(node);
             }
+            continue;
+        }
+        // A `Script`, a `Configuration`, a `Model`, anything else ends the
+        // tree: Studio draws nothing hung off one, in edit view or in Play.
+        if !database.is_subclass_of(instance.class(), FOLDER_CLASS) {
             continue;
         }
         let (children, groups_of) = elements(dom, database, styles, materials, instance.children());

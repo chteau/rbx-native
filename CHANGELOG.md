@@ -2,6 +2,13 @@
 
 ## 2026-10-30
 
+- **GUI under a script isn't drawn anymore.** A Frame hung off a Script,
+  LocalScript, Configuration, Model or anything else that isn't a GuiObject
+  or a Folder showed up in our viewport, but Studio draws nothing there, in
+  edit or in Play. Now only Folders pass a GUI tree through, same as Studio,
+  for ScreenGui, SurfaceGui and BillboardGui. Reported by @TouseefX in #294.
+  (@chteau)
+
 - **Play tells you when Roblox itself is turned down.** I couldn't hear
   anything in Play, turns out our launch was fine (Sober's stream plays,
   not muted, same as running Sober alone) but Roblox's own volume slider
