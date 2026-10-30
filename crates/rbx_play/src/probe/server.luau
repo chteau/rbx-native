@@ -28,6 +28,9 @@ local tester = nil
 -- in order once it joins (a RemoteEvent queues them until the mirror
 -- connects its handler).
 local forLater = {}
+-- Players whose client reported a teleport under way (`Player.OnTeleport`):
+-- their leaving is a move to another server, not the end of the test.
+local teleporting = {}
 
 local function post(items)
 	local ok, res = pcall(function()
@@ -135,6 +138,10 @@ remote.OnServerEvent:Connect(function(player, payload)
 		Record.fromClient(player, payload)
 		return
 	end
+	if payload.kind == "teleport" then
+		teleporting[player] = payload.started == true or nil
+		return
+	end
 	if payload.kind == "msg" then
 		if player == tester and type(payload.message) == "table" then
 			payload.message.side = "client"
@@ -174,10 +181,20 @@ local function joined(player)
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	local teleport = teleporting[player] == true
+	teleporting[player] = nil
+	queue({ type = "left", user_id = player.UserId, teleport = teleport })
 	if player == tester then
 		tester = nil
+		if teleport then
+			-- The tester's next server runs its own probe and takes over the
+			-- link: this one stops polling (it would take that server's
+			-- commands) and streaming, and sends what it has left.
+			running = false
+			live.stop()
+			flush()
+		end
 	end
-	queue({ type = "left", user_id = player.UserId })
 end)
 
 Players.PlayerAdded:Connect(joined)
@@ -188,7 +205,7 @@ end
 game:BindToClose(function()
 	running = false
 	live.stop()
-	queue({ type = "bye" })
+	queue({ type = "bye", job_id = game.JobId })
 	flush()
 end)
 

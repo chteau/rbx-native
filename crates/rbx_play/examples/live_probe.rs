@@ -128,7 +128,7 @@ fn main() {
                         });
                         say(format!("-> eval #{id}"));
                     }
-                    Uplink::Left { .. } | Uplink::Bye => {
+                    Uplink::Left { .. } | Uplink::Bye { .. } => {
                         say("session over: player left / server closing".into());
                         break;
                     }

@@ -2,6 +2,14 @@
 
 ## 2026-10-30
 
+- **Play follows a teleport instead of ending.** A game that sent the
+  player to another server (TeleportService, a reserved server included)
+  ended the Play with "you left the game" and closed Roblox. The probe now
+  marks a leave that `Player.OnTeleport` started, the server it left goes
+  quiet, and the editor waits for the player in the next server: the link,
+  Output, Invite and the live Client/Server views carry on there. A real
+  leave still ends the Play. (@chteau)
+
 - **GUI from a hand-written place looks like Studio now.** A `.rbxlx` that
   leaves properties out got our own fallbacks, which were what Studio's
   Insert gives a new object: white boxes, Source Sans, no `Legacy`. Roblox
