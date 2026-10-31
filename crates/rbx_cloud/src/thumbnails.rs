@@ -3,6 +3,7 @@
 //! (checked live, 2026-09-25), so no scope is needed. And
 //! `/v1/users/avatar-headshot`: a collaborator's round headshot, as Studio
 //! shows it beside the people in a Team Create session; anonymous too.
+//! `/v1/games/{id}/thumbnails`: Game Settings' thumbnail strip.
 
 use serde::Deserialize;
 
@@ -10,6 +11,7 @@ use crate::client::Client;
 use crate::error::{self, CloudError};
 
 const ICONS_URL: &str = "https://thumbnails.roblox.com/v1/games/icons";
+const THUMBNAILS_ROOT: &str = "https://thumbnails.roblox.com/v1/games";
 const HEADSHOTS_URL: &str = "https://thumbnails.roblox.com/v1/users/avatar-headshot";
 
 /// The endpoint's own per-request cap.
@@ -86,6 +88,34 @@ impl Client {
             headshots.extend(parse(&response.body)?);
         }
         Ok(headshots)
+    }
+
+    /// `(thumbnail id, URL)` for each of `ids` (an experience's media ids,
+    /// see `experience_thumbnails`) whose 768×432 render is ready. Anonymous,
+    /// like the icons.
+    pub fn game_thumbnail_urls(
+        &self,
+        universe_id: u64,
+        ids: &[u64],
+    ) -> Result<Vec<(u64, String)>, CloudError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let url = format!("{THUMBNAILS_ROOT}/{universe_id}/thumbnails");
+        let ids = ids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+        let response = self.get_with(&url, false, true, |req| {
+            req.query("thumbnailIds", &ids)
+                .query("size", "768x432")
+                .query("format", "Png")
+        })?;
+        if !(200..300).contains(&response.status) {
+            return Err(error::error_for_status(
+                &url,
+                response.status,
+                &response.headers,
+            ));
+        }
+        parse(&response.body)
     }
 
     /// The PNG behind one of [`game_icon_urls`](Self::game_icon_urls)' URLs.

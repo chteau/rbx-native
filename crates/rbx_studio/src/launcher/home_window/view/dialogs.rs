@@ -22,6 +22,9 @@ impl HomeWindow {
             } => self
                 .archive_dialog(place, *restore, *busy, error.as_deref(), cx)
                 .into_any_element(),
+            Dialog::NewExperience { busy, error } => self
+                .new_experience_dialog(*busy, error.as_deref(), cx)
+                .into_any_element(),
             Dialog::LocalCopy {
                 experience,
                 path,

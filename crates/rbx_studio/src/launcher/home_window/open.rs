@@ -13,27 +13,40 @@ impl HomeWindow {
     /// In the game picker, the experience is handed over and the picker
     /// closes instead; nothing is downloaded.
     pub(super) fn open_experience(&mut self, experience: Experience, cx: &mut Context<Self>) {
+        if !self.hand_over(experience.clone(), None, cx) {
+            match home::local_copy(&experience) {
+                Some(path) => {
+                    self.dialog = Some(Dialog::LocalCopy {
+                        experience,
+                        path,
+                        replace: false,
+                    })
+                }
+                None => self.download(experience, true, cx),
+            }
+            cx.notify();
+        }
+    }
+
+    /// In the game picker, hands `experience` over and closes the picker;
+    /// false when this is Home.
+    pub(super) fn hand_over(
+        &mut self,
+        experience: Experience,
+        note: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if let Some(pick) = self.pick.clone() {
             // Deferred: the window can't be removed from inside its own
             // event handler.
             let handle = self.handle;
             cx.defer(move |cx| {
-                pick(experience, cx);
+                pick(experience, note, cx);
                 let _ = handle.update(cx, |_, window, _| window.remove_window());
             });
-            return;
+            return true;
         }
-        match home::local_copy(&experience) {
-            Some(path) => {
-                self.dialog = Some(Dialog::LocalCopy {
-                    experience,
-                    path,
-                    replace: false,
-                })
-            }
-            None => self.download(experience, true, cx),
-        }
-        cx.notify();
+        false
     }
 
     pub(super) fn download(

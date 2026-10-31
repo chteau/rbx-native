@@ -3,6 +3,8 @@
 
 mod dialogs;
 mod games;
+mod head;
+mod new_experience;
 mod notes;
 mod pages;
 mod recent;
@@ -79,6 +81,7 @@ impl HomeWindow {
                 select.set_selected_index(Some(IndexPath::new(selected)), window, cx);
             });
         }
+        self.sync_creator_select(window, cx);
         let picker = self.pick.is_some();
         let grid = Grid::new(window, if picker { 0. } else { SIDEBAR });
         let crumb = match self.page {

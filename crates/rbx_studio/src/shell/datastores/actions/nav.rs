@@ -63,7 +63,7 @@ impl DataStoresWindow {
         cx.defer(move |cx| {
             let on_pick = {
                 let window = window.clone();
-                move |experience: rbx_cloud::Experience, cx: &mut App| {
+                move |experience: rbx_cloud::Experience, _: Option<String>, cx: &mut App| {
                     let _ = window.update(cx, |this, cx| {
                         let live = !this.is_sandbox(experience.universe_id, cx);
                         this.set_universe(
@@ -78,7 +78,7 @@ impl DataStoresWindow {
                     });
                 }
             };
-            let opened = crate::launcher::open_game_picker(on_pick, cx);
+            let opened = crate::launcher::open_game_picker(on_pick, false, cx);
             let _ = window.update(cx, |this, _| this.picker = opened);
         });
     }

@@ -17,6 +17,8 @@ mod create_asset;
 pub mod datastore_mock;
 mod datastores;
 mod error;
+mod experience_access;
+mod experience_media;
 mod experience_settings;
 mod experiences;
 pub mod expiry;
@@ -25,6 +27,7 @@ mod games;
 pub mod heartbeats;
 mod introspect;
 mod inventory;
+mod new_experience;
 mod parallel;
 mod places;
 mod publish;
@@ -53,12 +56,23 @@ pub use datastores::{
     MAX_MEMORY_VALUE_BYTES, MAX_NAME_CHARS, MAX_ORDERED_KEY_CHARS, MAX_VALUE_BYTES,
 };
 pub use error::{CloudError, KeyedRefusal};
+pub use experience_access::{
+    experience_genre, experience_public, set_experience_public, set_studio_api_access,
+    studio_api_access,
+};
+pub use experience_media::{
+    delete_experience_thumbnail, experience_icon, experience_thumbnails, upload_experience_icon,
+    upload_experience_thumbnail, ExperienceIcon, Thumbnail, MAX_THUMBNAILS,
+};
 pub use experience_settings::{ExperienceSettings, ExperienceUpdate, PlaceSettings, PlaceUpdate};
 pub use experiences::{Experience, Experiences, Group};
 pub use game_icon::{GameIcon, Moderation};
 pub use games::{Creator, CreatorKind, GameSummary};
 pub use introspect::{KeyInfo, Scope};
 pub use inventory::{InventoryAsset, InventoryPage};
+pub use new_experience::{
+    create_experience, creator_groups, name_experience, CreatedExperience, CreatorGroup,
+};
 pub use places::{place_id_from_link, PlaceSummary};
 pub use publish::PublishMode;
 pub use retry::rate_limit_waits;

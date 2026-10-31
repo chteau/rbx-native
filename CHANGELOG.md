@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-10-31
+
+- **Publish as a new experience.** Publishing a file that isn't linked yet
+  opens the game picker like before, but it now has a New experience
+  button. Name, description, and who owns it (you or a group you can
+  create in), same as Studio's Publish As. Roblox makes a private
+  experience from the Baseplate template with your sign-in
+  (`universes/v1/universes/create`, what Studio's own publish calls), we
+  name it, link the file and ask to publish like any picked game. If the
+  name gets refused the experience still exists, so it links anyway and
+  Output says so. (@chteau)
+
+- **Game Settings does the Creator Hub only stuff now.** Icon, thumbnails
+  (add and remove, up to 10), Playability (public or private) and Enable
+  Studio Access to API Services moved out of "Not reachable" and save with
+  the rest of the page, through your Roblox sign-in. Genre shows what the
+  experience has, but stays a Creator Hub link like in Studio, Roblox only
+  lets you change it once every three months. No reordering: Studio's old
+  order call says OK and moves nothing, so that stays on the Creator Hub.
+  Going public still gets a 403 from Roblox on our test experiences, the
+  page just shows Roblox's refusal for now. (@chteau)
+
+- **Home's page head stops overlapping.** In the game picker the search
+  slid under the owner dropdown and hid its arrow, and the dropdown's text
+  sat higher than the search's. The search now makes room and narrows when
+  the head is crowded, and dropdown text is centred like the other fields.
+  (@chteau)
+
 ## 2026-10-30
 
 - **GUI under a script isn't drawn anymore.** A Frame hung off a Script,

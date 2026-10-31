@@ -280,7 +280,7 @@ pub(crate) fn status_dot(glyph: &'static str, fg: Rgba, fill: Option<Rgba>, size
 }
 
 /// A turning `loader-circle`, still under reduced motion.
-pub(crate) fn spinner(id: &'static str, size: f32) -> AnyElement {
+pub(crate) fn spinner(id: impl Into<ElementId>, size: f32) -> AnyElement {
     let glyph = icon("loader-circle", size);
     if tokens::reduced_motion() {
         return glyph.into_any_element();
@@ -410,6 +410,14 @@ pub(crate) fn field_frame(
         .bg(fill)
         .text_color(tokens::text3())
         .child(icon(glyph, 13.).flex_none())
+}
+
+/// Where a `Select` sits in a [`field_frame`]: the select's own box is only
+/// as tall as its text and draws it at the top, so stretching it would put
+/// the text above the frame's glyph; centred in a full-height slot it lines
+/// up with it.
+pub(crate) fn select_slot() -> Div {
+    div().flex_1().min_w_0().h_full().flex().items_center()
 }
 
 #[cfg(test)]

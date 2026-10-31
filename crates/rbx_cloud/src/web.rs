@@ -11,6 +11,50 @@ pub(crate) const DEVELOP: &str = "https://develop.roblox.com";
 pub(crate) enum Method<'a> {
     Get,
     Patch(&'a serde_json::Value),
+    Post(&'a serde_json::Value),
+    /// A POST with no body.
+    Touch,
+    Delete,
+    /// A multipart POST of one image, as the website's upload forms send it.
+    Image(&'a Image<'a>),
+}
+
+/// One file part of a multipart upload.
+pub(crate) struct Image<'a> {
+    /// The form field Roblox reads the file from.
+    pub(crate) field: &'a str,
+    pub(crate) bytes: &'a [u8],
+}
+
+impl Image<'_> {
+    /// PNG or JPEG by the bytes' signature; anything else goes as PNG and
+    /// Roblox's answer says what is wrong with it.
+    fn content_type(&self) -> &'static str {
+        if self.bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+            "image/jpeg"
+        } else {
+            "image/png"
+        }
+    }
+
+    pub(crate) fn multipart(&self, boundary: &str) -> Vec<u8> {
+        let (kind, ext) = match self.content_type() {
+            "image/jpeg" => ("image/jpeg", "jpg"),
+            _ => ("image/png", "png"),
+        };
+        let mut body = Vec::with_capacity(self.bytes.len() + 256);
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{}\"; filename=\"image.{ext}\"\r\n\
+                 Content-Type: {kind}\r\n\r\n",
+                self.field
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(self.bytes);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        body
+    }
 }
 
 pub(crate) fn agent() -> ureq::Agent {
@@ -38,6 +82,18 @@ pub(crate) fn send(
         let mut response = match method {
             Method::Get => signed(agent.get(url), &cookie, &csrf, query).call(),
             Method::Patch(body) => signed(agent.patch(url), &cookie, &csrf, query).send_json(body),
+            Method::Post(body) => signed(agent.post(url), &cookie, &csrf, query).send_json(body),
+            Method::Touch => signed(agent.post(url), &cookie, &csrf, query).send_empty(),
+            Method::Delete => signed(agent.delete(url), &cookie, &csrf, query).call(),
+            Method::Image(image) => {
+                let boundary = crate::create_asset::boundary(image.bytes);
+                signed(agent.post(url), &cookie, &csrf, query)
+                    .header(
+                        "Content-Type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .send(&image.multipart(&boundary)[..])
+            }
         }
         .map_err(|err| CloudError::Transport(err.to_string()))?;
         let status = response.status().as_u16();

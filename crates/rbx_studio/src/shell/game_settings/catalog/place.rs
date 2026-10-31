@@ -176,16 +176,6 @@ const COOKIE_ONLY: &str =
 
 pub(in crate::shell::game_settings) const UNREACHABLE: &[Unreachable] = &[
     Unreachable {
-        tab: Tab::BasicInfo,
-        label: "Genre",
-        reason: COOKIE_ONLY,
-    },
-    Unreachable {
-        tab: Tab::BasicInfo,
-        label: "Icon and thumbnails",
-        reason: "Only experimental legacy endpoints upload them; set them on the Creator Hub.",
-    },
-    Unreachable {
         tab: Tab::Communication,
         label: "Enable Camera",
         reason: NO_FIELD,
@@ -234,11 +224,6 @@ pub(in crate::shell::game_settings) const UNREACHABLE: &[Unreachable] = &[
         tab: Tab::Avatar,
         label: "Live avatar settings",
         reason: "Scale, body, clothing, animation and collision live on Roblox behind a website API an API key can\u{2019}t call. The rows above are this place file\u{2019}s copies.",
-    },
-    Unreachable {
-        tab: Tab::Security,
-        label: "Enable Studio Access to API Services",
-        reason: COOKIE_ONLY,
     },
     Unreachable {
         tab: Tab::Security,

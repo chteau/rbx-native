@@ -1,7 +1,5 @@
 //! Home's page heads and its Home and Recent pages.
 
-use gpui_kit::component::input::Input;
-use gpui_kit::component::select::Select;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -14,99 +12,6 @@ use crate::launcher::ui::{self, Weight};
 use crate::tokens;
 
 impl HomeWindow {
-    pub(super) fn page_head(
-        &self,
-        title: &'static str,
-        grid: &Grid,
-        search: bool,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let add_by_link = self.page == Page::MyGames
-            && self.has_key()
-            && !self.note_visible()
-            && matches!(self.games, Games::Loaded(ref g) if !g.experiences.is_empty());
-        let search_left = (grid.content - 360.) / 2.;
-        let owners = self.page == Page::MyGames && self.has_key() && self.owner_options.len() > 1;
-        div()
-            .relative()
-            .h(px(36.))
-            .flex_none()
-            .flex()
-            .items_center()
-            .child(
-                ui::text(22., 28.)
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(tokens::text())
-                    .child(title),
-            )
-            .when(owners, |this| {
-                // Whose games: the account's own, or one group's.
-                this.child(
-                    ui::field_frame(Some(220.), ui::panel2(), tokens::border(), "users")
-                        .ml(px(16.))
-                        .child(
-                            div().flex_1().min_w_0().h_full().child(
-                                Select::new(&self.owner_select)
-                                    .appearance(false)
-                                    .text_color(tokens::text())
-                                    .h_full()
-                                    .py_0()
-                                    .px_0()
-                                    .text_size(px(12.))
-                                    .icon(ui::icon("chevron-down", 12.))
-                                    .menu_width(px(260.))
-                                    .accessibility_label("Whose games"),
-                            ),
-                        ),
-                )
-            })
-            .when(search, |this| {
-                this.child(
-                    ui::field_frame(Some(360.), ui::panel2(), tokens::border(), "search")
-                        .absolute()
-                        .left(px(search_left))
-                        .top(px(2.))
-                        .child(
-                            div().flex_1().min_w_0().h_full().child(
-                                Input::new(&self.search)
-                                    .appearance(false)
-                                    .h_full()
-                                    .px(px(0.))
-                                    .text_size(px(12.))
-                                    .text_color(tokens::text()),
-                            ),
-                        ),
-                )
-            })
-            .when(
-                self.page == Page::Recent && !self.recent.is_empty(),
-                |this| this.child(div().ml_auto().child(self.recent_view_toggle(cx))),
-            )
-            .when(add_by_link, |this| {
-                this.child(
-                    ui::icon_button(
-                        "games-add-link",
-                        "link",
-                        "Add by link",
-                        Weight::Secondary,
-                        false,
-                    )
-                    .h(px(32.))
-                    .absolute()
-                    .left(px(search_left + 368.))
-                    .top(px(2.))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.link_open = !this.link_open;
-                        let focus = this.link.read(cx).focus_handle(cx);
-                        if this.link_open {
-                            focus.focus(window, cx);
-                        }
-                        cx.notify();
-                    })),
-                )
-            })
-    }
-
     pub(super) fn section_title(title: impl Into<SharedString>) -> Div {
         ui::text(15., 20.)
             .font_weight(FontWeight::BOLD)

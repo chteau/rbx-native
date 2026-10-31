@@ -2628,6 +2628,26 @@ both the plain fetch failure and the silent fall back to a default
   at the top of Security, not between Third Party Teleports and Third
   Party Assets like in Studio, because the page groups rows by where
   they're saved.
+- [x] **Publish as a new experience.** The game picker's New experience
+  button makes a private experience the way Studio's Publish As does
+  (`universes/v1/universes/create` with the Roblox sign-in, then the name
+  and description on `develop` v2 with a v1 fallback), links the file and
+  publishes it. Live-tested: one experience made, named, published to and
+  read back in real Studio's Experience Settings.
+- [x] **Game Settings' Creator Hub rows.** Icon, thumbnails (add and
+  remove, up to 10), Playability and Enable Studio Access to API Services
+  run as the Roblox sign-in and wait for Save; genre is shown read-only
+  with a Creator Hub link. Live-tested: icon upload, two thumbnail uploads
+  and a removal (read back through the public media and thumbnail APIs),
+  and the API access switch on and off (read back, and seen on in real
+  Studio's Security tab). Thumbnails can't be reordered: Studio's old
+  `thumbnails/order` call answers 200 but moves nothing, and a removal
+  only works with the media slot's own id, not the image id.
+- [ ] 📋 **Playability from Game Settings, for real**: going public through
+  `develop` `POST /v1/universes/{id}/activate` answers 403 "You are not
+  authorized to configure this universe" on experiences the account owns
+  (tried on two). The page shows Roblox's refusal, but whether that's an
+  eligibility rule or a route the Creator Hub no longer uses is unknown.
 - [x] **Hover states fade** (what the visual pass left behind): every
   `hover` and `group_hover` style eases between its resting and hovered
   colours over 120 ms (`tokens::DURATION_HOVER`) and turns back from
