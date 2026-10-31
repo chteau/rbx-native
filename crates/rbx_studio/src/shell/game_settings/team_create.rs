@@ -144,6 +144,7 @@ impl GameSettingsWindow {
         if web.is_some() != self.team_create.web.is_some() {
             self.team_create.web = web;
             self.load_team_create(cx);
+            self.load_extras(cx);
         }
     }
 
@@ -305,7 +306,7 @@ fn members(web: &Web, place_id: u64) -> Result<Vec<SessionMember>, String> {
 /// Roblox's own message, as is. Not `fetch::describe`: its API-key wording
 /// is wrong for the sign-in. A 401 means the stored sign-in expired, which
 /// Roblox's "Authorization has been denied" doesn't say how to fix.
-fn describe(err: &CloudError) -> String {
+pub(super) fn describe(err: &CloudError) -> String {
     match err {
         CloudError::Refused { status: 401, .. } => format!(
             "{err}. Your Roblox sign-in has expired: sign in again in Settings \u{203a} Account \u{203a} Roblox sign-in."

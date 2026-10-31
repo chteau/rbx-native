@@ -47,6 +47,11 @@ impl StudioPresence {
 }
 
 impl Shell {
+    /// The editor's Roblox web sign-in, for windows that follow the shell.
+    pub(crate) fn roblox_session(&self) -> Option<SessionCookie> {
+        self.studio_presence.session.clone()
+    }
+
     /// Startup: reads the session from the keyring on a task; when one is
     /// there, stores it and, if `enabled`, starts pulsing.
     pub(super) fn restore_roblox_session(&mut self, cx: &mut Context<Self>) {
@@ -69,6 +74,8 @@ impl Shell {
                     shell.start_studio_presence(cx);
                 }
                 shell.retry_presence_after_sign_in(cx);
+                // Windows opened before the keyring answered follow the shell.
+                cx.notify();
             });
         })
         .detach();

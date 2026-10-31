@@ -2628,6 +2628,34 @@ both the plain fetch failure and the silent fall back to a default
   at the top of Security, not between Third Party Teleports and Third
   Party Assets like in Studio, because the page groups rows by where
   they're saved.
+- [x] **Publish as a new experience.** The game picker's New experience
+  button makes a private experience the way Studio's Publish As does
+  (`universes/v1/universes/create` with the Roblox sign-in, then the name
+  and description on `develop` v2 with a v1 fallback), links the file and
+  publishes it. Live-tested: one experience made, named, published to and
+  read back in real Studio's Experience Settings.
+- [x] **Game Settings' Creator Hub rows.** Icon, thumbnails (add and
+  remove, up to 10), Playability and Enable Studio Access to API Services
+  run as the Roblox sign-in and wait for Save; genre is shown read-only
+  with a Creator Hub link. Live-tested: icon upload, two thumbnail uploads
+  and a removal (read back through the public media and thumbnail APIs),
+  and the API access switch on and off (read back, and seen on in real
+  Studio's Security tab). Thumbnails can't be reordered: Studio's old
+  `thumbnails/order` call answers 200 but moves nothing, and a removal
+  only works with the media slot's own id, not the image id.
+- [x] **Playability says why it can't go public.** Roblox's 403 "You are
+  not authorized to configure this universe" on `activate` is its release
+  gate: `develop` `GET /v1/universes/{id}/activation-eligibility` (the call
+  real Studio makes too) answers not eligible, not maturity rated, until
+  the Maturity & Compliance Questionnaire is done. A private experience
+  that fails the gate shows the reason and a Creator Hub link instead of
+  the switch. Live-tested on an unarchived private test experience, and
+  real Studio's Manage Audience › Release publicly opens on that same
+  questionnaire.
+- [ ] 📋 **Going public from Game Settings once the gate passes**: the
+  switch still calls `activate`/`deactivate` for an experience that's
+  eligible or already public, but no test experience has answered the
+  questionnaire, so neither direction has been checked live.
 - [x] **Hover states fade** (what the visual pass left behind): every
   `hover` and `group_hover` style eases between its resting and hovered
   colours over 120 ms (`tokens::DURATION_HOVER`) and turns back from

@@ -170,7 +170,7 @@ impl CloudField {
             | CloudField::Vr => "Whether players on this device can join.",
             CloudField::VoiceChat => "Running servers keep their old setting until they restart.",
             CloudField::Visibility => {
-                "Open Cloud only reads this; make the experience public or private on the Creator Hub."
+                "Open Cloud only reads this. Sign in to Roblox (Settings \u{203a} Account) to change it here."
             }
             CloudField::PrivateServers => {
                 "Turning them off shuts every private server; a new price cancels their subscriptions."

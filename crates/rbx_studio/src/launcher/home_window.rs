@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
 use gpui_kit::component::IndexPath;
 use gpui_kit::*;
@@ -20,11 +20,14 @@ use super::{fixtures, Boot};
 use crate::home::{self, RecentPlace};
 
 mod archived;
+mod capture;
 mod games;
+mod new_experience;
 mod open;
 mod recent_actions;
 mod view;
 
+use capture::PAGE_VARIABLE;
 pub(super) use recent_actions::RecentMenu;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -86,6 +89,12 @@ pub(super) enum Dialog {
         busy: bool,
         error: Option<String>,
     },
+    /// The game picker's New experience form; `busy` while Roblox creates
+    /// it, `error` when it refused.
+    NewExperience {
+        busy: bool,
+        error: Option<String>,
+    },
 }
 
 pub(crate) struct HomeWindow {
@@ -135,22 +144,21 @@ pub(crate) struct HomeWindow {
     /// alone, and a card or an added link hands its experience here instead
     /// of opening it.
     pub(super) pick: Option<Pick>,
+    /// The picker offers New experience: only when it picks where to publish.
+    pub(super) offer_new: bool,
+    pub(super) new_experience: new_experience::NewExperienceForm,
     _subscriptions: Vec<Subscription>,
 }
 
 /// Where the game picker hands the picked experience. For an experience
 /// added by place ID or link, `root_place_id` is that place (see
 /// `rbx_cloud::Client::experience_of_place`).
-pub(crate) type Pick = Rc<dyn Fn(Experience, &mut App)>;
+/// The note, when there is one, is a warning to show beside the link.
+pub(crate) type Pick = Rc<dyn Fn(Experience, Option<String>, &mut App)>;
 
 /// `RBX_STUDIO_LAUNCHER_PAGE=home|recent|games` and
-/// `RBX_STUDIO_LAUNCHER_DIALOG=localcopy|downloading|error` (with
+/// `RBX_STUDIO_LAUNCHER_DIALOG=localcopy|downloading|error|newexperience` (with
 /// `RBX_STUDIO_LAUNCHER_LINK=<text>|<text>@resolving|@notlink|@noplace|@noaccess`):
-/// Home's opening state for a capture.
-const PAGE_VARIABLE: &str = "RBX_STUDIO_LAUNCHER_PAGE";
-const DIALOG_VARIABLE: &str = "RBX_STUDIO_LAUNCHER_DIALOG";
-const LINK_VARIABLE: &str = "RBX_STUDIO_LAUNCHER_LINK";
-
 impl HomeWindow {
     pub(super) fn new(boot: Boot, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -164,7 +172,9 @@ impl HomeWindow {
                 cx,
             )
         });
+        let new_experience = new_experience::NewExperienceForm::new(window, cx);
         let subscriptions = vec![
+            new_experience::follow_creator(&new_experience, cx),
             cx.subscribe(&owner_select, |this, _, event: &SelectEvent<_>, cx| {
                 let SelectEvent::Confirm(Some(label)) = event else {
                     return;
@@ -241,6 +251,8 @@ impl HomeWindow {
             owner_options: vec![(None, "You".into())],
             owner_options_dirty: true,
             pick: None,
+            offer_new: false,
+            new_experience,
             _subscriptions: subscriptions,
         };
         this.reload(cx);
@@ -252,52 +264,31 @@ impl HomeWindow {
 
     /// The editor's game picker: Home's My Games page, listing, cache and
     /// add-by-link, with no editor to boot from it.
-    pub(super) fn picker(pick: Pick, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(super) fn picker(
+        pick: Pick,
+        shell: Option<WeakEntity<crate::shell::Shell>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut this = Self::new(Rc::new(RefCell::new(None)), window, cx);
         this.page = Page::MyGames;
         this.pick = Some(pick);
-        this
-    }
-
-    fn apply_capture_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Ok(value) = std::env::var(LINK_VARIABLE) {
-            let (text, state) = value.split_once('@').unwrap_or((&value, ""));
-            let text = text.to_string();
-            self.link
-                .update(cx, |input, cx| input.set_value(text.clone(), window, cx));
-            let id = rbx_cloud::place_id_from_link(&text).unwrap_or(0);
-            self.link_state = match state {
-                "resolving" => LinkState::Resolving,
-                "notlink" => LinkState::NotALink,
-                "noplace" => LinkState::NoPlace(id),
-                "noaccess" => LinkState::NoAccess,
-                _ => LinkState::Idle,
-            };
-            self.link_open = true;
+        this.offer_new = shell.is_some();
+        if let Some(shell) = shell.and_then(|shell| shell.upgrade()) {
+            // The keyring read in `new` misses a sign-in that lands while
+            // the picker is open; follow the shell's whenever it changes.
+            let mut seen = shell.read(cx).roblox_session().is_some();
+            this._subscriptions
+                .push(cx.observe(&shell, move |this, shell, cx| {
+                    let session = shell.read(cx).roblox_session();
+                    if session.is_some() != seen {
+                        seen = session.is_some();
+                        this.session = session;
+                        cx.notify();
+                    }
+                }));
         }
-        let first = || match &self.games {
-            Games::Loaded(list) => list.experiences.first().cloned(),
-            _ => None,
-        };
-        self.dialog = match std::env::var(DIALOG_VARIABLE).as_deref() {
-            Ok("localcopy") => first().map(|experience| Dialog::LocalCopy {
-                path: self
-                    .recent
-                    .first()
-                    .map(|place| place.path.clone())
-                    .unwrap_or_default(),
-                experience,
-                replace: false,
-            }),
-            Ok("downloading") => first().map(|experience| Dialog::Downloading { experience }),
-            Ok("error") => first().map(|experience| Dialog::Error {
-                title: format!("Couldn\u{2019}t download {}", experience.name),
-                experience: Some(experience),
-                status: Some(403),
-                reason: "legacy-asset:manage is not granted for this experience".to_string(),
-            }),
-            _ => None,
-        };
+        this
     }
 
     /// The groups the owner dropdown lists after "You", by name.

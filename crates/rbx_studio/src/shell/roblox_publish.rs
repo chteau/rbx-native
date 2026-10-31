@@ -29,21 +29,24 @@
 //! File › Version History… lists the linked place's versions and restores
 //! one through this same upload; see `history`.
 
-use std::path::Path;
-
 use gpui_kit::component::Root;
 use gpui_kit::*;
 use rbx_cloud::{Experience, PublishMode};
 
 use crate::command_bar::Feedback;
-use crate::home::{self, RecentPlace};
+use crate::home;
 
 use super::Shell;
 
+mod dialog;
 mod history;
+mod place;
 mod upload;
 mod view;
 
+pub(super) use dialog::{Dialog, Failure};
+pub(super) use place::upload_file;
+use place::{after_pick, confirm, confirmed, link, pick_landed};
 use upload::{not_updated, outcome, upload, verb};
 
 const MOCK_VARIABLE: &str = "RBX_STUDIO_PUBLISH_MOCK";
@@ -65,40 +68,6 @@ impl Target {
         Target {
             universe_id: experience.universe_id,
             place_id: experience.root_place_id,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum Dialog {
-    /// Asked before every upload; `name` is the experience's, when known.
-    Confirm {
-        mode: PublishMode,
-        target: Target,
-        name: Option<String>,
-    },
-    Failed {
-        mode: PublishMode,
-        target: Target,
-        failure: Failure,
-    },
-}
-
-/// A failed upload. `unchanged` is whether the place is known to be as it
-/// was: true only when the upload never left or Roblox answered with a
-/// refusal. A dropped connection, a timeout or an unreadable answer may
-/// come after Roblox took the file, so those say so instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Failure {
-    pub(super) message: String,
-    pub(super) unchanged: bool,
-}
-
-impl Failure {
-    fn before_sending(message: String) -> Self {
-        Failure {
-            message,
-            unchanged: true,
         }
     }
 }
@@ -206,11 +175,11 @@ impl Shell {
         cx.defer(move |cx| {
             let on_pick = {
                 let shell = shell.clone();
-                move |experience: Experience, cx: &mut App| {
-                    let _ = shell.update(cx, |shell, cx| shell.picked(token, experience, cx));
+                move |experience: Experience, note: Option<String>, cx: &mut App| {
+                    let _ = shell.update(cx, |shell, cx| shell.picked(token, experience, note, cx));
                 }
             };
-            let opened = crate::launcher::open_game_picker(on_pick, cx);
+            let opened = crate::launcher::open_game_picker(on_pick, Some(shell.clone()), cx);
             let _ = shell.update(cx, |shell, _| shell.roblox.picker = opened);
         });
     }
@@ -243,7 +212,14 @@ impl Shell {
 
     /// The game picker's answer: links the file, then asks to confirm the
     /// upload the picker was opened for, a pick never uploads by itself.
-    fn picked(&mut self, token: u64, experience: Experience, cx: &mut Context<Self>) {
+    /// `note` is the picker's warning about it, shown in Output.
+    fn picked(
+        &mut self,
+        token: u64,
+        experience: Experience,
+        note: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(then) = pick_landed(&mut self.roblox.picking, token) else {
             return;
         };
@@ -268,6 +244,9 @@ impl Shell {
                 target.place_id, experience.name
             )),
         );
+        if let Some(note) = note {
+            self.output.push_warning(&note);
+        }
         if let Some(dialog) = after_pick(then, target, experience.name) {
             self.ask_to_upload(dialog, cx);
         }
@@ -379,59 +358,6 @@ impl Shell {
         }
         cx.notify();
     }
-}
-
-/// What a pick from picker `token` does to `picking`. Only the picker still
-/// open counts: it hands back the upload it was opened for and stops
-/// waiting, so a late duplicate can't run a second upload. A pick from a
-/// picker that was since replaced changes nothing.
-fn pick_landed(picking: &mut Option<Picking>, token: u64) -> Option<Option<PublishMode>> {
-    picking.take_if(|p| p.token == token).map(|p| p.then)
-}
-
-fn confirm(mode: PublishMode, target: Target, name: Option<String>) -> Dialog {
-    Dialog::Confirm { mode, target, name }
-}
-
-/// What follows a pick: the confirmation of the upload the picker was
-/// opened for, if any, never the upload itself.
-fn after_pick(then: Option<PublishMode>, target: Target, name: String) -> Option<Dialog> {
-    then.map(|mode| confirm(mode, target, Some(name)))
-}
-
-/// The upload a confirmation agrees to: closes it and hands back its place
-/// and mode. Anything else open, a failure, or nothing because Cancel or
-/// Escape closed it, is left alone and uploads nothing.
-fn confirmed(dialog: &mut Option<Dialog>) -> Option<(Target, PublishMode)> {
-    match dialog.take() {
-        Some(Dialog::Confirm { mode, target, .. }) => Some((target, mode)),
-        other => {
-            *dialog = other;
-            None
-        }
-    }
-}
-
-/// Stores the link, and moves the file to the top of Recent with it.
-/// Uploads a place file's `bytes` to `link`, for a place no editor has open;
-/// blocking. The answer is the line Output would show.
-pub(super) fn upload_file(link: &home::Link, bytes: &[u8], mode: PublishMode) -> Feedback {
-    let target = Target {
-        universe_id: link.universe_id,
-        place_id: link.place_id,
-    };
-    outcome(target, mode, &upload(target, bytes, mode))
-}
-
-fn link(path: &Path, target: Target, name: Option<String>) -> Result<(), String> {
-    home::remember(RecentPlace {
-        path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
-        universe_id: Some(target.universe_id),
-        place_id: Some(target.place_id),
-        name,
-        opened: None,
-    })
-    .map_err(|err| format!("the link couldn\u{2019}t be saved: {err}"))
 }
 
 #[cfg(test)]
