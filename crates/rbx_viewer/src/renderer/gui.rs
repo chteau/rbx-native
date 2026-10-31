@@ -43,8 +43,8 @@ use atlas::Atlas;
 use group::Baked;
 use paint::Painter;
 use space::Space;
-pub use text::GuiTextLook;
-use text::{Spot, Typesetter};
+use text::Typesetter;
+pub use text::{GuiTextEdit, GuiTextLine, GuiTextMap};
 pub(crate) use viewport::Look as FrameLook;
 use viewport::Viewports;
 
@@ -103,8 +103,6 @@ pub(super) struct Gui {
     /// Every element of the last layout, in paint order, see [`GuiBox`],
     /// after, for a canvas, the screen's own box.
     boxes: Vec<GuiBox>,
-    /// The last canvas's text objects, for [`Gui::text_look`].
-    texts: Vec<(Ref, Spot)>,
     /// The pixel size the scene gave each `BillboardGui`/`SurfaceGui` it
     /// placed in the world, which is what that tree's canvas is drawn at.
     space_canvases: Vec<(Ref, [f32; 2])>,
@@ -177,7 +175,6 @@ impl Gui {
             safe_insets: SafeInsets::default(),
             drawn: (0, 0),
             boxes: Vec::new(),
-            texts: Vec::new(),
             space_canvases: Vec::new(),
             windows: Vec::new(),
             baked: Baked::new(device),
@@ -475,11 +472,19 @@ impl Gui {
         &self.boxes
     }
 
-    /// How the last canvas set `referent`'s text, `None` for anything that
-    /// is not a text object on it.
-    pub(super) fn text_look(&self, referent: Ref) -> Option<GuiTextLook> {
-        let (_, spot) = self.texts.iter().find(|(at, _)| *at == referent)?;
-        Some(self.text.look(spot))
+    /// Draws `edit`'s `TextBox` as it is typed in from the next layout on
+    /// (see `text::edit`), or none.
+    pub(super) fn set_text_edit(&mut self, edit: Option<GuiTextEdit>) {
+        if self.text.edit != edit {
+            self.text.edit = edit;
+            self.text.edit_map = None;
+            self.built = None;
+        }
+    }
+
+    /// Where the last layout put the edited `TextBox`'s characters.
+    pub(super) fn text_map(&self) -> Option<&GuiTextMap> {
+        self.text.edit_map.as_ref()
     }
 
     /// Lays out the enabled screens, or `only` that one, enabled or not,
@@ -544,17 +549,6 @@ impl Gui {
                     aspect: element.editable.aspect,
                 }))
                 .collect();
-            if only.is_some() {
-                self.texts = elements
-                    .iter()
-                    .filter_map(|element| {
-                        Some((
-                            element.referent,
-                            Spot::of(element.text.as_ref()?, &element.rect),
-                        ))
-                    })
-                    .collect();
-            }
             // Before the flatten below, which folds a `CanvasGroup`'s subtree
             // away: a list inside a group still scrolls.
             self.windows = elements

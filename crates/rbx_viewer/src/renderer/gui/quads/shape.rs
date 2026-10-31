@@ -134,6 +134,18 @@ impl Shape {
             },
         }
     }
+
+    /// What an element's text is shaped by: nothing, `UICorner` or not.
+    /// Studio draws a rounded label's or box's text right past its corners
+    /// and its edges (checked with a TextLabel and a TextBox, 12 px
+    /// radius, text twice as wide as the box).
+    pub(super) fn text_of(element: &GuiElement) -> Self {
+        Shape {
+            half: [UNBOUNDED, UNBOUNDED],
+            radii: [0.0; 4],
+            ..Shape::of(element)
+        }
+    }
 }
 
 /// What a quad is filled with.

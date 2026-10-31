@@ -1,6 +1,7 @@
 -- A chat-style dock widget: a row of tab buttons, a scrolling message list
--- (long wrapped RichText lines, UIListLayout, AutomaticCanvasSize), an input
--- box with a Send button, and a status line that updates every second.
+-- (long wrapped RichText lines, UIListLayout, AutomaticCanvasSize), a
+-- multi-line note box, an input box with a Send button, and a status line
+-- that updates every second.
 --
 -- It exists to check two things against real Studio: that a plugin which
 -- keeps a wait loop alive costs the editor nothing while its dock sits
@@ -71,7 +72,7 @@ local function build(root)
 	local chat = Instance.new("ScrollingFrame")
 	chat.Name = "Chat"
 	chat.Position = UDim2.fromOffset(0, 32)
-	chat.Size = UDim2.new(1, 0, 1, -32 - 44 - 22)
+	chat.Size = UDim2.new(1, 0, 1, -32 - 104 - 22)
 	chat.BackgroundColor3 = palette.background
 	chat.BorderSizePixel = 0
 	chat.CanvasSize = UDim2.new()
@@ -140,13 +141,36 @@ local function build(root)
 	inputRow.Name = "InputRow"
 	inputRow.AnchorPoint = Vector2.new(0, 1)
 	inputRow.Position = UDim2.new(0, 0, 1, -22)
-	inputRow.Size = UDim2.new(1, 0, 0, 44)
+	inputRow.Size = UDim2.new(1, 0, 0, 104)
 	inputRow.BackgroundColor3 = palette.bar
 	inputRow.BorderSizePixel = 0
 	inputRow.Parent = body
+	-- A note that wraps, takes Enter as a line break and has more lines
+	-- than it shows.
+	local note = Instance.new("TextBox")
+	note.Name = "Note"
+	note.Position = UDim2.fromOffset(8, 8)
+	note.Size = UDim2.new(1, -16, 0, 52)
+	note.BackgroundColor3 = palette.bubble
+	note.TextColor3 = palette.text
+	note.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json")
+	note.TextSize = 15
+	note.MultiLine = true
+	note.TextWrapped = true
+	note.ClearTextOnFocus = false
+	note.TextXAlignment = Enum.TextXAlignment.Left
+	note.TextYAlignment = Enum.TextYAlignment.Top
+	note.Text = "Playtest notes: the shop door queue is fixed, the trail colours still look washed out on mobile.\nNext: leaderboard fix, then the four-player run."
+	note.Parent = inputRow
+	Instance.new("UICorner").Parent = note
+	local notePadding = Instance.new("UIPadding")
+	notePadding.PaddingLeft = UDim.new(0, 8)
+	notePadding.PaddingRight = UDim.new(0, 8)
+	notePadding.PaddingTop = UDim.new(0, 2)
+	notePadding.Parent = note
 	local box = Instance.new("TextBox")
 	box.Name = "Input"
-	box.Position = UDim2.fromOffset(8, 8)
+	box.Position = UDim2.fromOffset(8, 68)
 	box.Size = UDim2.new(1, -88, 0, 28)
 	box.BackgroundColor3 = palette.bubble
 	box.TextColor3 = palette.text
@@ -165,7 +189,7 @@ local function build(root)
 	local send = Instance.new("TextButton")
 	send.Name = "Send"
 	send.AnchorPoint = Vector2.new(1, 0)
-	send.Position = UDim2.new(1, -8, 0, 8)
+	send.Position = UDim2.new(1, -8, 0, 68)
 	send.Size = UDim2.fromOffset(64, 28)
 	send.BackgroundColor3 = palette.accent
 	send.TextColor3 = Color3.new(1, 1, 1)

@@ -484,9 +484,7 @@ impl<M: InputModeKind> TextElement<M> {
             line_origin
         };
 
-        // rbx-native addition: `InputBaseState::set_caret_shape`.
-        let (cursor_width, cursor_share) = state.caret_shape.unwrap_or((CURSOR_WIDTH, 0.85));
-        let cursor_height = cursor_share * line_height;
+        let cursor_height = 0.85 * line_height;
 
         for selection in state.selections.iter() {
             let is_active = selection.id == active_id;
@@ -606,7 +604,7 @@ impl<M: InputModeKind> TextElement<M> {
             // stays visible without having to shift the text via scroll_offset.
             let cursor_x = bounds.left() + cursor_pos.x + line_number_width + cursor_scroll_x;
             let cursor_x = if last_layout.text_align == TextAlign::Right {
-                cursor_x.min(bounds.right() - cursor_width)
+                cursor_x.min(bounds.right() - CURSOR_WIDTH)
             } else {
                 cursor_x
             };
@@ -616,7 +614,7 @@ impl<M: InputModeKind> TextElement<M> {
                         cursor_x,
                         bounds.top() + cursor_pos.y + ((line_height - cursor_height) / 2.),
                     ),
-                    size(cursor_width, cursor_height),
+                    size(CURSOR_WIDTH, cursor_height),
                 ),
                 is_active,
             });

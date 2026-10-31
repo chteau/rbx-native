@@ -246,10 +246,11 @@ fn build_once(
                 gradient,
             };
             text::emit(
+                element.referent,
                 &typeset.area(&element.rect),
                 typeset,
                 &strokes,
-                (&paint, &fill, &spin),
+                (&paint, &Shape::text_of(element), &spin),
                 scissor,
                 fonts,
                 &mut vertices,

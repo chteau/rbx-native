@@ -301,6 +301,7 @@ fn main() {
         theme::startup(&theme, &overrides, cx);
         scale::install(cx);
         shell::install_key_bindings(cx);
+        shell::install_text_box_keys(cx);
         workspace_view::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
         // Only a bare launch: opening a place blocks this thread, which

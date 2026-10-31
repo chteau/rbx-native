@@ -3,14 +3,22 @@
 //! say, every glyph origin snapped to a whole pixel, Roblox text is crisp,
 //! and a bitmap sampled off the pixel grid is not.
 
-use cosmic_text::{CacheKey, Color, Ellipsize, EllipsizeHeightLimit, LayoutRun, PhysicalGlyph};
+use std::ops::Range;
+
+use cosmic_text::{
+    CacheKey, Color, Ellipsize, EllipsizeHeightLimit, LayoutRun, LineIter, PhysicalGlyph,
+};
+use rbx_dom::Ref;
 
 use super::super::atlas::GLYPHS;
 use super::super::pipeline::VertexRaw;
-use super::super::text::{glyph_xs, line_width, unquantised, Typesetter};
-use super::shape::{quad, Paint, Shape, Spin, UV_WHOLE};
+use super::super::text::{
+    scroll_to, unquantised, GuiTextEdit, GuiTextLine, GuiTextMap, Typesetter, SELECTED_TEXT,
+    SELECTION,
+};
+use super::shape::{quad, Paint, Shape, Spin, FILL, UV_WHOLE};
 use super::{extend, Run, Scissor, WHITE};
-use crate::scene::{GuiAlign, GuiRect, GuiText, GuiTypeset};
+use crate::scene::{srgb_to_linear, GuiAlign, GuiRect, GuiText, GuiTypeset};
 
 /// One outline drawn under the fill: the run again in `color` at `alpha`,
 /// `thickness` pixels out in each of the eight directions.
@@ -40,11 +48,14 @@ pub(super) fn strokes(text: &GuiText) -> Vec<Stroke> {
 }
 
 /// Every quad of one element's text, strokes first, then the fill with its
-/// underlines and strikethroughs. `paint` and `shape` are the element's own
-/// fill paint and outline: a `UIGradient` tints the glyphs and a `UICorner`
-/// clips them, the same as the background under them.
+/// underlines and strikethroughs. `paint` is the element's own fill paint,
+/// so a `UIGradient` tints the glyphs like the background under them, and
+/// `shape` its text's ([`Shape::text_of`]), which no `UICorner` cuts. The
+/// `TextBox` being typed in (`Typesetter::edit`) gets its selection under
+/// all that and leaves where its characters went in `Typesetter::edit_map`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit(
+    referent: Ref,
     rect: &GuiRect,
     typeset: &GuiTypeset,
     strokes: &[Stroke],
@@ -55,7 +66,8 @@ pub(super) fn emit(
     runs: &mut Vec<Run>,
 ) {
     let text = &typeset.text;
-    if text.alpha <= 0.0 && strokes.is_empty() {
+    let edit = fonts.edit.clone().filter(|edit| edit.referent == referent);
+    if text.alpha <= 0.0 && strokes.is_empty() && edit.is_none() {
         return;
     }
     let wrapped = text.wrapped || text.scaled;
@@ -68,6 +80,11 @@ pub(super) fn emit(
     let buffer = fonts.shape_cached(text, typeset.size, width, ellipsize);
     let lines: Vec<LayoutRun> = buffer.layout_runs().collect();
     if lines.is_empty() {
+        if let Some(edit) = &edit {
+            let height = buffer.metrics().line_height;
+            let top = rect.y + offset(text.y_align, rect.height, height);
+            fonts.edit_map = Some(empty_map(edit, rect, text, top, height));
+        }
         return;
     }
 
@@ -91,6 +108,49 @@ pub(super) fn emit(
     let total: f32 = lines.iter().map(|line| line.line_height).sum();
     let top = rect.y + offset(text.y_align, rect.height, total);
     let cuts = visible_cuts(text, lines);
+    let starts = paragraph_starts(text);
+    let mut scroll = 0.0;
+    let mut selected = None;
+    if let Some(edit) = &edit {
+        let mut map = match edit.empty {
+            true => empty_map(edit, rect, text, top, lines[0].line_height),
+            false => GuiTextMap {
+                lines: lines
+                    .iter()
+                    .map(|line| map_line(fonts, rect, text, top, line, &starts))
+                    .collect(),
+                scroll: 0.0,
+            },
+        };
+        if !wrapped {
+            if let Some([x, _, _]) = map.caret(edit.caret) {
+                scroll = scroll_to(edit.scroll, x, [rect.x, rect.x + rect.width]);
+            }
+        }
+        for line in &mut map.lines {
+            for stop in &mut line.stops {
+                stop.1 -= scroll;
+            }
+        }
+        map.scroll = scroll;
+        if !edit.empty && !edit.selection.is_empty() {
+            selected = Some(edit.selection.clone());
+            let start = vertices.len();
+            for line in &map.lines {
+                if let Some(band) = band(line, &edit.selection) {
+                    let paint = Paint {
+                        color: SELECTION.map(srgb_to_linear),
+                        alpha: 1.0,
+                        band: FILL,
+                        gradient: None,
+                    };
+                    quad(&band, UV_WHOLE, &paint, shape, spin, vertices);
+                }
+            }
+            extend(runs, WHITE, scissor, start..vertices.len());
+        }
+        fonts.edit_map = Some(map);
+    }
 
     for stroke in strokes {
         for [dx, dy] in ring(stroke.thickness) {
@@ -98,7 +158,7 @@ pub(super) fn emit(
                 text,
                 rect,
                 top,
-                shift: [dx, dy],
+                shift: [dx - scroll, dy],
                 tint: Some((stroke.color, stroke.alpha)),
                 paint,
                 shape,
@@ -108,6 +168,8 @@ pub(super) fn emit(
                 vertices,
                 runs,
                 line_x: 0.0,
+                selected: None,
+                base: 0,
             };
             for (line, &cut) in lines.iter().zip(&cuts) {
                 sink.glyphs(line, cut);
@@ -118,7 +180,7 @@ pub(super) fn emit(
         text,
         rect,
         top,
-        shift: [0.0, 0.0],
+        shift: [-scroll, 0.0],
         tint: None,
         paint,
         shape,
@@ -128,11 +190,15 @@ pub(super) fn emit(
         vertices,
         runs,
         line_x: 0.0,
+        selected,
+        base: 0,
     };
     for (line, &cut) in lines.iter().zip(&cuts) {
+        sink.base = starts.get(line.line_i).copied().unwrap_or(0);
         sink.glyphs(line, cut);
         // After the glyphs, so a strikethrough lies over them.
-        sink.line_x = sink.rect.x + offset(text.x_align, rect.width, line_width(line));
+        sink.line_x =
+            sink.rect.x + offset(text.x_align, rect.width, sink.fonts.line_width(line)) - scroll;
         cosmic_text::render_decoration(&mut sink, line, Color::rgb(0, 0, 0));
     }
 }
@@ -159,12 +225,16 @@ struct Sink<'a> {
     /// The current line's left edge, for the decorations drawn through
     /// [`cosmic_text::Renderer`], which only know their offset along it.
     line_x: f32,
+    /// The edited box's selected bytes, drawn in the selection's text colour.
+    selected: Option<Range<usize>>,
+    /// The current line's paragraph's byte offset in the whole text.
+    base: usize,
 }
 
 impl Sink<'_> {
     fn glyphs(&mut self, line: &LayoutRun, cut: usize) {
         let text = self.text;
-        let (xs, width) = glyph_xs(line);
+        let (xs, width) = self.fonts.glyph_xs(line);
         // Snapped before the glyph offsets go on, so every glyph of the line
         // lands on the same whole-pixel baseline.
         let origin = (
@@ -190,6 +260,14 @@ impl Sink<'_> {
                 // Emoji keep their own colours: Roblox's docs on `Text` say
                 // `TextColor3` does not affect them.
                 (None, true) => ([1.0; 3], text.alpha),
+                (None, false)
+                    if self
+                        .selected
+                        .as_ref()
+                        .is_some_and(|range| range.contains(&(self.base + glyph.start))) =>
+                {
+                    (SELECTED_TEXT, text.alpha)
+                }
                 (None, false) => {
                     text.spans
                         .get(glyph.metadata)
@@ -318,6 +396,84 @@ fn visible_cuts(text: &GuiText, lines: &[LayoutRun]) -> Vec<usize> {
             cut
         })
         .collect()
+}
+
+/// Where each paragraph (each line the text's own line breaks start)
+/// begins in the whole text, which is what a run's byte offsets count from.
+fn paragraph_starts(text: &GuiText) -> Vec<usize> {
+    let whole: String = text.spans.iter().map(|span| span.text.as_str()).collect();
+    LineIter::new(&whole)
+        .map(|(range, _)| range.start)
+        .collect()
+}
+
+/// One drawn line's caret stops, where [`Sink::glyphs`] puts its glyphs.
+fn map_line(
+    fonts: &mut Typesetter,
+    rect: &GuiRect,
+    text: &GuiText,
+    top: f32,
+    line: &LayoutRun,
+    starts: &[usize],
+) -> GuiTextLine {
+    let base = starts.get(line.line_i).copied().unwrap_or(0);
+    let (xs, width) = fonts.glyph_xs(line);
+    let left = (rect.x + offset(text.x_align, rect.width, width)).round();
+    let mut stops: Vec<(usize, f32)> = line
+        .glyphs
+        .iter()
+        .zip(&xs)
+        .map(|(glyph, &x)| (base + glyph.start, left + x))
+        .collect();
+    let end = line.glyphs.iter().map(|glyph| glyph.end).max();
+    stops.push((base + end.unwrap_or(0), left + width));
+    stops.sort_by_key(|&(at, _)| at);
+    stops.dedup_by_key(|&mut (at, _)| at);
+    GuiTextLine {
+        top: (top + line.line_top).round(),
+        height: line.line_height,
+        stops,
+    }
+}
+
+/// The one caret stop of a box showing its placeholder: where an empty line
+/// would start.
+fn empty_map(
+    edit: &GuiTextEdit,
+    rect: &GuiRect,
+    text: &GuiText,
+    top: f32,
+    height: f32,
+) -> GuiTextMap {
+    GuiTextMap {
+        lines: vec![GuiTextLine {
+            top: top.round(),
+            height,
+            stops: vec![(0, (rect.x + offset(text.x_align, rect.width, 0.0)).round())],
+        }],
+        scroll: edit.scroll.min(0.0),
+    }
+}
+
+/// The selection behind `line`: between the stops it covers on the line,
+/// the line box tall. A line break selected adds nothing, as in Studio.
+fn band(line: &GuiTextLine, selection: &Range<usize>) -> Option<GuiRect> {
+    let (&(first, _), &(last, _)) = (line.stops.first()?, line.stops.last()?);
+    let (from, to) = (selection.start.max(first), selection.end.min(last));
+    let x_at = |offset: usize| {
+        line.stops
+            .iter()
+            .rev()
+            .find(|&&(at, _)| at <= offset)
+            .map(|&(_, x)| x)
+    };
+    let (left, right) = (x_at(from)?, x_at(to)?);
+    (from < to && right > left).then_some(GuiRect {
+        x: left,
+        y: line.top,
+        width: right - left,
+        height: line.height,
+    })
 }
 
 /// The eight offsets a stroke of `thickness` pixels is drawn at.

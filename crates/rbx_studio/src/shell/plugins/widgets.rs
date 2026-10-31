@@ -9,13 +9,14 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::component::input::InputState;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 use rbx_dom::Ref;
 use rbx_lua::plugin::{GuiEvent, GuiEventKind, Input, LayoutBox, UiId, WidgetKind};
+use rbx_viewer::GuiTextEdit;
 
 mod edit;
+pub(crate) use edit::install_keys as install_text_box_keys;
 mod pointer;
 
 use super::{float, render};
@@ -28,18 +29,6 @@ pub(super) use pointer::Pointer;
 /// Where a widget's surface was last laid out, written during prepaint so
 /// pointer positions can be made widget-local and the render sized.
 pub(super) type Area = Rc<Cell<Option<Bounds<Pixels>>>>;
-
-struct Editing {
-    widget: UiId,
-    referent: Ref,
-    field: Entity<InputState>,
-    /// The alignment last handed to the field.
-    aligned: Option<TextAlign>,
-    /// Not focused yet: a focused field missing from the frame blurs, so it
-    /// waits until a render has placed it.
-    unfocused: bool,
-    _events: Subscription,
-}
 
 #[derive(Default)]
 pub(crate) struct Widgets {
@@ -56,15 +45,12 @@ pub(crate) struct Widgets {
     requested: HashMap<UiId, Asked>,
     /// Each widget's `TextBox`es as last rendered.
     text_boxes: HashMap<UiId, HashMap<Ref, edit::TextBox>>,
-    /// Faces of edited `TextBox`es already registered with the text system,
-    /// by family, weight and slant.
-    fonts: HashSet<(String, u16, bool)>,
     /// Dock widgets enabled at the last `ui_changed`.
     enabled: HashSet<UiId>,
     hover: Option<(UiId, Ref)>,
     pressed: Option<(UiId, Ref, u8)>,
     grab: Option<Grab>,
-    editing: Option<Editing>,
+    editing: Option<edit::Editing>,
     /// Where cursor-placed floating widgets opened.
     anchors: HashMap<UiId, Point<Pixels>>,
     poll: Option<Task<()>>,
@@ -72,8 +58,8 @@ pub(crate) struct Widgets {
     landed_seen: u64,
 }
 
-/// What a render was asked for: revision, size, edited `TextBox`.
-type Asked = (u64, (u32, u32), Option<Ref>);
+/// What a render was asked for: revision, size, the `TextBox` being typed in.
+type Asked = (u64, (u32, u32), Option<GuiTextEdit>);
 
 /// How often finished renders are collected while one is owed: a frame.
 const RENDER_POLL: Duration = Duration::from_millis(16);
@@ -88,8 +74,7 @@ pub(super) fn pixel_size(bounds: Bounds<Pixels>) -> (u32, u32) {
 }
 
 impl Widgets {
-    /// The `TextBox` being typed in on widget `id`, which it is drawn
-    /// without the text of.
+    /// The `TextBox` being typed in on widget `id`.
     pub(super) fn edited_on(&self, id: UiId) -> Option<Ref> {
         self.editing
             .as_ref()
@@ -337,10 +322,6 @@ impl Shell {
         if size.0 == 0 || size.1 == 0 {
             return;
         }
-        let edited = self.plugins.widgets.edited_on(id);
-        if self.plugins.widgets.requested.get(&id) == Some(&(revision, size, edited)) {
-            return;
-        }
         let Some(mut dom) = self
             .plugins
             .host
@@ -355,16 +336,33 @@ impl Shell {
             .widgets
             .iter()
             .any(|w| w.id == id && matches!(w.kind, WidgetKind::Overlay { .. }));
+        let boxes = edit::text_boxes(&dom);
+        let edit = self
+            .plugins
+            .widgets
+            .editing
+            .as_ref()
+            .filter(|editing| editing.widget == id)
+            .map(|editing| editing.prepare(&mut dom, cx));
         let state = &mut self.plugins.widgets;
-        state.text_boxes.insert(id, edit::text_boxes(&dom));
-        if let Some(referent) = edited {
-            edit::hide_text(&mut dom, referent);
+        let asked = (revision, size, edit);
+        if state.requested.get(&id) == Some(&asked) {
+            return;
         }
+        state.text_boxes.insert(id, boxes);
         state
             .renderer
             .get_or_insert_with(render::Renderer::new)
-            .request(id, revision, dom, size, backdrop(), transparent, edited);
-        state.requested.insert(id, (revision, size, edited));
+            .request(
+                id,
+                revision,
+                dom,
+                size,
+                backdrop(),
+                transparent,
+                asked.2.clone(),
+            );
+        state.requested.insert(id, asked);
         self.arm_widget_poll(cx);
     }
 
@@ -422,22 +420,23 @@ impl Shell {
                 layouts.push(boxes);
             }
         }
+        let landed: Vec<UiId> = finished.iter().map(|(id, _)| *id).collect();
         if !finished.is_empty() {
             state.drawn.extend(finished);
             cx.notify();
+        }
+        for id in landed {
+            self.widget_edit_drawn(id, cx);
         }
         for boxes in layouts {
             self.plugin_input(Input::Layout(boxes), cx);
         }
         let state = &mut self.plugins.widgets;
-        let pending = state
-            .requested
-            .iter()
-            .any(|(id, &(revision, size, edited))| {
-                state.drawn.get(id).is_none_or(|drawn| {
-                    drawn.revision != revision || drawn.size != size || drawn.edited != edited
-                })
-            });
+        let pending = state.requested.iter().any(|(id, (revision, size, edit))| {
+            state.drawn.get(id).is_none_or(|drawn| {
+                drawn.revision != *revision || drawn.size != *size || drawn.edit != *edit
+            })
+        });
         let loading = state.renderer.as_ref().is_some_and(|r| r.loading());
         let next = if pending {
             Some(RENDER_POLL)
@@ -470,9 +469,7 @@ impl Shell {
         )
         .absolute()
         .inset_0();
-        let editor = self
-            .widget_edit_field(id, window, cx)
-            .map(|field| edit::Grayscale(field.into_any_element()));
+        let editor = self.widget_edit_overlay(id, window, cx);
         let drawn = self.plugins.widgets.drawn.get(&id);
         let image = drawn.map(|drawn| {
             img(drawn.image.clone())
@@ -497,13 +494,25 @@ impl Shell {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |shell, e: &MouseDownEvent, window, cx| {
-                    shell.widget_pointer(id, e.position, Pointer::Down(1), window, cx);
+                    shell.widget_pointer(
+                        id,
+                        e.position,
+                        Pointer::Down(1, e.click_count, e.modifiers.shift),
+                        window,
+                        cx,
+                    );
                 }),
             )
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |shell, e: &MouseDownEvent, window, cx| {
-                    shell.widget_pointer(id, e.position, Pointer::Down(2), window, cx);
+                    shell.widget_pointer(
+                        id,
+                        e.position,
+                        Pointer::Down(2, e.click_count, e.modifiers.shift),
+                        window,
+                        cx,
+                    );
                 }),
             )
             .on_mouse_up(

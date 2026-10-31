@@ -261,7 +261,7 @@ fn a_face_that_is_not_a_font_is_never_adopted() {
 
     assert!(!fonts.adopt(&library, std::slice::from_ref(&face)));
     assert!(!fonts.knows(&face));
-    assert!(fonts.bytes.contains_key(&asset), "not worth a second try");
+    assert!(fonts.loaded.contains(&asset), "not worth a second try");
     assert!(!fonts.adopt(&library, std::slice::from_ref(&face)));
 }
 
@@ -284,7 +284,7 @@ fn a_repeated_measurement_or_shape_is_served_from_the_cache() {
 
     let shaped = fonts.shape_cached(&text, 24.0, None, None);
     let again = fonts.shape_cached(&text, 24.0, None, None);
-    assert_eq!(bounds(&shaped), bounds(&again));
+    assert_eq!(fonts.bounds(&shaped), fonts.bounds(&again));
     let mut recoloured = text.clone();
     recoloured.color = [0.0; 3];
     fonts.shape_cached(&recoloured, 24.0, None, None);
@@ -292,3 +292,5 @@ fn a_repeated_measurement_or_shape_is_served_from_the_cache() {
     assert_eq!(fonts.measure(&recoloured, 24.0, Some(100.0)), first);
     assert_eq!(fonts.measured.len(), 3, "and is no part of a measurement");
 }
+
+mod studio;

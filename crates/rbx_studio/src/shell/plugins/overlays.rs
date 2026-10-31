@@ -96,7 +96,13 @@ impl Shell {
                     if shell.over_sink(id, e.position) {
                         cx.stop_propagation();
                     }
-                    shell.widget_pointer(id, e.position, Pointer::Down(1), window, cx);
+                    shell.widget_pointer(
+                        id,
+                        e.position,
+                        Pointer::Down(1, e.click_count, e.modifiers.shift),
+                        window,
+                        cx,
+                    );
                 }),
             )
             .on_mouse_down(
@@ -105,7 +111,13 @@ impl Shell {
                     if shell.over_sink(id, e.position) {
                         cx.stop_propagation();
                     }
-                    shell.widget_pointer(id, e.position, Pointer::Down(2), window, cx);
+                    shell.widget_pointer(
+                        id,
+                        e.position,
+                        Pointer::Down(2, e.click_count, e.modifiers.shift),
+                        window,
+                        cx,
+                    );
                 }),
             )
             .on_mouse_up(

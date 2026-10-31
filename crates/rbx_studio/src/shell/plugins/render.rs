@@ -9,7 +9,7 @@ use std::thread;
 
 use rbx_dom::{Ref, WeakDom};
 use rbx_lua::plugin::UiId;
-use rbx_viewer::{GuiBox, Headless};
+use rbx_viewer::{GuiBox, GuiTextEdit, GuiTextMap, Headless};
 
 /// One finished render.
 #[derive(Clone)]
@@ -24,10 +24,10 @@ pub(crate) struct Drawn {
     pub(crate) sinks: HashSet<Ref>,
     /// The scrolling frames, for the wheel and their bars.
     pub(crate) scrolls: rbx_viewer::GuiScrolls,
-    /// How the `TextBox` being typed in sets its text, for the field over it.
-    pub(crate) look: Option<(Ref, rbx_viewer::GuiTextLook)>,
-    /// The `TextBox` this was drawn with its text hidden for, if any.
-    pub(crate) edited: Option<Ref>,
+    /// The `TextBox` being typed in as this was drawn with it, and where
+    /// the draw put its characters.
+    pub(crate) edit: Option<GuiTextEdit>,
+    pub(crate) map: Option<GuiTextMap>,
 }
 
 struct Job {
@@ -38,7 +38,7 @@ struct Job {
     size: (u32, u32),
     backdrop: [f32; 3],
     transparent: bool,
-    edited: Option<Ref>,
+    edit: Option<GuiTextEdit>,
 }
 
 #[derive(Default)]
@@ -75,7 +75,7 @@ impl Renderer {
     }
 
     /// Queues a render (`backdrop` = the panel's background, encoded sRGB),
-    /// with how `edited`'s text is set if a `TextBox` is being typed in;
+    /// drawing the `TextBox` being typed in with its selection (`edit`);
     /// a newer request for the same widget replaces a queued one.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn request(
@@ -86,7 +86,7 @@ impl Renderer {
         size: (u32, u32),
         backdrop: [f32; 3],
         transparent: bool,
-        edited: Option<Ref>,
+        edit: Option<GuiTextEdit>,
     ) {
         // `PluginHost::widget_dom` roots the copy at a `ScreenGui` carrying
         // the widget's own referent.
@@ -101,7 +101,7 @@ impl Renderer {
             size,
             backdrop,
             transparent,
-            edited,
+            edit,
         };
         let (lock, wake) = &*self.queue;
         let Ok(mut queue) = lock.lock() else {
@@ -288,6 +288,7 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
         // in the wait above.
         viewer.swap_assets();
         let size = (job.size.0.max(1), job.size.1.max(1));
+        viewer.set_gui_text_edit(job.edit.clone());
         let rendered = if job.transparent {
             viewer
                 .render_gui(job.root, size, [0.0; 3])
@@ -318,10 +319,8 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
                     boxes: canvas.boxes,
                     sinks,
                     scrolls: canvas.scrolls,
-                    edited: job.edited,
-                    look: job
-                        .edited
-                        .and_then(|referent| Some((referent, viewer.gui_text_look(referent)?))),
+                    map: job.edit.as_ref().and_then(|_| viewer.gui_text_map()),
+                    edit: job.edit,
                 };
                 if done.send((job.widget, drawn)).is_err() {
                     return;

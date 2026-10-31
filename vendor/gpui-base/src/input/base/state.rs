@@ -349,8 +349,6 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(super) line_number_gutter: Option<(Pixels, Pixels)>,
     /// rbx-native addition — see [`Self::set_surface_colors`].
     surface_colors: Option<(gpui::Hsla, gpui::Hsla)>,
-    /// rbx-native addition — see [`Self::set_caret_shape`].
-    pub(super) caret_shape: Option<(Pixels, f32)>,
     /// rbx-native addition — see [`Self::reveal_range`].
     pub(super) pending_reveal: Option<usize>,
     /// Advances every time search is explicitly invoked. See
@@ -694,7 +692,6 @@ impl<M: InputModeKind> InputBaseState<M> {
             gutter: None,
             line_number_gutter: None,
             surface_colors: None,
-            caret_shape: None,
             search_activation_revision: 0,
             searchable: false,
             replaceable: true,
@@ -2197,16 +2194,6 @@ impl<M: InputModeKind> InputBaseState<M> {
     /// onto the state every frame, so there is no other way to keep these.
     pub fn set_surface_colors(&mut self, background: gpui::Hsla, active_line: gpui::Hsla, cx: &mut Context<Self>) {
         self.surface_colors = Some((background, active_line));
-        cx.notify();
-    }
-
-    /// Draws the caret `width` wide and `height` of a line tall, centred on
-    /// the line, rather than the toolkit's own 2 px (1.5 on macOS) and 85%.
-    ///
-    /// rbx-native addition: a field set over a Roblox `TextBox` draws the
-    /// box's caret, which is 1 px and the whole line.
-    pub fn set_caret_shape(&mut self, width: Pixels, height: f32, cx: &mut Context<Self>) {
-        self.caret_shape = Some((width, height));
         cx.notify();
     }
 

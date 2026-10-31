@@ -83,6 +83,7 @@ pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
 pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
+pub(crate) use plugins::install_text_box_keys;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use view_snap::PresetView;

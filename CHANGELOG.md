@@ -28,17 +28,34 @@
   I measured it in Studio (TextBounds and GetTextBoundsAsync, 7 fonts,
   sizes 8 to 100): the em is TextSize + 1 over the face's line box, not
   TextSize over it, and every glyph advances a whole pixel, rounded to a
-  64th first like FreeType does. Across 728 strings the mean miss went
-  from 10.3 px to 0.08 px, 712 within 1 px (was 128). The chat fixture now
-  wraps on the same words as Studio. (@chteau)
+  64th first like FreeType does. Kerning gets floored to a 64th before the
+  pixel rounding, punctuation or digits at the start of a line don't kern
+  into the first letter, and pairs across a space kern too (cosmic-text
+  shapes word by word and missed those, so they go through harfrust).
+  All 728 strings now land within 1 px of Studio, 727 of them exactly
+  (mean miss was 10.3 px, then 0.08). The chat fixture wraps on the same
+  words as Studio. (@chteau)
 
-- **Typing in a widget TextBox shows the text once.** The widget image
-  used to keep the box's text under the input field, so you saw it twice.
-  Now the box is drawn without its text while you type and the field over
-  it takes the box's font, weight, size, colours, alignment and padding,
-  with Studio's 1 px caret and blue selection, so focusing doesn't move
-  anything. The field also actually gets focus now (it used to blur right
-  away), and clicking elsewhere in the widget ends the edit. (@chteau)
+- **Typing in a widget TextBox works like Studio's.** The widget renderer
+  draws the box being typed in itself now, so the text sits exactly where
+  it did unfocused, and GPUI only adds the caret. Clicking puts the caret
+  where Studio does (past a glyph only once you're two thirds across it,
+  measured glyph by glyph), dragging selects, double click takes the word
+  without its space, triple click takes everything, and a press inside the
+  box you're already typing in doesn't end the edit anymore. MultiLine
+  boxes take Enter and Shift+Enter as a newline, wrapped lines past the
+  box's height aren't drawn, and Up/Down walk the wrapped lines. A single
+  line scrolls just enough to keep the caret in, parked on the box's last
+  pixel like Studio. Selected text is white on #6BA1F9 (it was coming out
+  pale before, the colour went through sRGB twice), the caret is 1 px in
+  the text colour and blinks, ClearTextOnFocus still clears first, and
+  undo, word jumps, copy/cut/paste are there. Checked side by side with
+  Studio on the chat fixture, which has a multi line note box now.
+  (@chteau)
+
+- **A UICorner doesn't cut text anymore.** Studio draws a rounded label's
+  or box's text right past its corners and edges, we were clipping it to
+  the rounded shape. (@chteau)
 
 - **Collaborators panel spacing.** One 8 px step for the edges, the gaps
   and the cards, the status sits under "Share my presence" instead of

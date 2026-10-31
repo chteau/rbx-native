@@ -82,7 +82,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::{GuiBox, GuiTextLook};
+pub use gui::{GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};
@@ -535,9 +535,14 @@ impl Renderer {
         self.gui.set_pseudo_locale(locale);
     }
 
-    /// See `Gui::text_look`.
-    pub(crate) fn gui_text_look(&self, referent: rbx_dom::Ref) -> Option<GuiTextLook> {
-        self.gui.text_look(referent)
+    /// See `Gui::set_text_edit`.
+    pub(crate) fn set_gui_text_edit(&mut self, edit: Option<GuiTextEdit>) {
+        self.gui.set_text_edit(edit);
+    }
+
+    /// See `Gui::text_map`.
+    pub(crate) fn gui_text_map(&self) -> Option<GuiTextMap> {
+        self.gui.text_map().cloned()
     }
 
     /// See `Gui::overflows`.

@@ -61,11 +61,6 @@ at least `width` wide with the numbers right-aligned `gap` before the text
 active_line)` keeps that editor's background, gutter and current-line colours
 over the theme's, which the component otherwise re-projects every frame.
 
-And `set_caret_shape(width, height)` on the same state, marked the same way
-(read in `src/input/base/element.rs`): the caret's width and its height as a
-share of the line, for the field rbx_studio sets over a plugin widget's
-`TextBox`, whose caret in Studio is 1 px and the whole line tall.
-
 The two selection methods exist because the script editor's Ctrl+D / Shift+Alt+L (add a cursor
 to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).

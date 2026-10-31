@@ -14,7 +14,8 @@ use crate::workspace_view::Scroll;
 pub(in crate::shell::plugins) enum Pointer {
     /// `true` while the left button is held.
     Move(bool),
-    Down(u8),
+    /// The button, the click count, Shift held.
+    Down(u8, usize, bool),
     Up(u8),
     Wheel(Wheel),
 }
@@ -56,13 +57,16 @@ impl Shell {
         // Pressing anywhere off the box being typed in ends it, as in Studio.
         let edited = self.plugins.widgets.edited_on(id);
         if let Some(edited) =
-            edited.filter(|edited| matches!(pointer, Pointer::Down(_)) && target != Some(*edited))
+            edited.filter(|edited| matches!(pointer, Pointer::Down(..)) && target != Some(*edited))
         {
             self.end_widget_edit(edited, false, cx);
         }
         let drawn = self.plugins.widgets.drawn.get(&id);
         match pointer {
             Pointer::Move(held) => {
+                if edited.is_some() {
+                    self.widget_edit_drag([x, y], held, cx);
+                }
                 if let Some(grab) = self.plugins.widgets.grab.filter(|g| g.widget == id) {
                     if held {
                         self.drag_thumb(grab, [x, y], cx);
@@ -84,7 +88,7 @@ impl Shell {
                     self.send_gui(r, GuiEventKind::Move { x, y }, cx);
                 }
             }
-            Pointer::Down(button) => {
+            Pointer::Down(button, clicks, shift) => {
                 let thumb = drawn.and_then(|drawn| drawn.scrolls.thumb_at([x, y]));
                 if let Some(thumb) = thumb.filter(|_| button == 1) {
                     self.plugins.widgets.grab = Some(Grab {
@@ -99,10 +103,36 @@ impl Shell {
                 if let Some(r) = target {
                     self.send_gui(r, GuiEventKind::Down { button, x, y }, cx);
                 }
+                // A text box takes focus as the button goes down, as in
+                // Studio, so a drag from there selects.
+                let text_box = target.filter(|r| {
+                    button == 1
+                        && self
+                            .plugins
+                            .widgets
+                            .text_boxes
+                            .get(&id)
+                            .is_some_and(|boxes| boxes.contains_key(r))
+                });
+                // Keeps the shell's own focus tracking, further up, from
+                // taking focus back off the box on the same press.
+                if text_box.is_some() {
+                    window.prevent_default();
+                }
+                match text_box {
+                    Some(r) if edited == Some(r) => {
+                        self.widget_edit_press([x, y], clicks, shift, cx)
+                    }
+                    Some(r) => self.begin_widget_edit(id, r, ([x, y], clicks), window, cx),
+                    None => {}
+                }
             }
             Pointer::Up(button) => {
                 if button == 1 && self.plugins.widgets.grab.take().is_some() {
                     return;
+                }
+                if button == 1 && edited.is_some() {
+                    self.widget_edit_drag([x, y], false, cx);
                 }
                 let pressed = self.plugins.widgets.pressed.take();
                 let Some(r) = target else {
@@ -111,15 +141,6 @@ impl Shell {
                 self.send_gui(r, GuiEventKind::Up { button, x, y }, cx);
                 if pressed == Some((id, r, button)) {
                     self.send_gui(r, GuiEventKind::Click { button, x, y }, cx);
-                    let is_text_box = self
-                        .plugins
-                        .widgets
-                        .text_boxes
-                        .get(&id)
-                        .is_some_and(|boxes| boxes.contains_key(&r));
-                    if button == 1 && is_text_box {
-                        self.begin_widget_edit(id, r, window, cx);
-                    }
                 }
             }
             Pointer::Wheel(wheel) => {
