@@ -153,9 +153,8 @@ const FLEX_ITEM_CLASS: &str = "UIFlexItem";
 
 /// `Enum.FillDirection.Vertical`; `Horizontal` is 0.
 const FILL_VERTICAL: u32 = 1;
-/// `Enum.SortOrder.Name`; `LayoutOrder` (the default) is 2.
+/// `Enum.SortOrder.Name`, the default; `LayoutOrder` is 2.
 const SORT_NAME: u32 = 0;
-const SORT_LAYOUT_ORDER: u32 = 2;
 
 /// The layout among `children` that arranges them, or `None`.
 ///
@@ -293,13 +292,20 @@ fn page(dom: &WeakDom, properties: &BTreeMap<String, Variant>) -> Page {
     }
 }
 
+/// `SortOrder`: a layout made in code sorts by `Name`, what Studio
+/// reports for every `UIGridStyleLayout`, not by `LayoutOrder`, which
+/// Studio's Insert sets.
 fn by_name(properties: &BTreeMap<String, Variant>) -> bool {
-    enum_of(properties, "SortOrder", SORT_LAYOUT_ORDER) == SORT_NAME
+    enum_of(properties, "SortOrder", SORT_NAME) == SORT_NAME
 }
 
-/// `HorizontalAlignment`/`VerticalAlignment`, both defaulting to Center.
+/// `HorizontalAlignment`/`VerticalAlignment`. A layout made in code starts
+/// at Left/Top (`Enum.HorizontalAlignment.Left` and `Enum.VerticalAlignment.
+/// Top` are both 1), which is what Studio reports for every
+/// `UIGridStyleLayout` and what a file that leaves them out means; Center
+/// is 0.
 fn align(properties: &BTreeMap<String, Variant>, name: &str) -> Align {
-    match enum_of(properties, name, 0) {
+    match enum_of(properties, name, 1) {
         1 => Align::Start,
         2 => Align::End,
         _ => Align::Center,

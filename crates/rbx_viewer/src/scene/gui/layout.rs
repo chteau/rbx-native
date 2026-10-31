@@ -292,10 +292,18 @@ pub(in crate::scene::gui) fn emit(
     // Settled before the children are placed: an `AutomaticSize` text box
     // grows here, and its children resolve against the grown box.
     let mut rect = rect;
-    let text = node
-        .text
-        .as_ref()
-        .map(|text| text::typeset(text, &mut rect, measure));
+    let text = node.text.as_ref().map(|text| {
+        let inset = node
+            .constraints
+            .padding
+            .as_ref()
+            .map_or([0.0; 4], |padding| padding.against(rect.size()));
+        let mut area = sizing::inset(&rect, &inset);
+        let typeset = text::typeset(text, &mut area, measure);
+        rect.width = rect.width.max(area.width + inset[0] + inset[1]);
+        rect.height = rect.height.max(area.height + inset[2] + inset[3]);
+        Typeset { inset, ..typeset }
+    });
     let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
     let start = into.len();
@@ -375,6 +383,17 @@ pub(in crate::scene::gui) fn emit(
                         false => 0.0,
                     },
                 ),
+                position: window.position,
+                thumbs: [0, 1].map(|axis| {
+                    let thumb = scrolling::thumb(axis, scrolling, &rect, &window)?;
+                    let [first, .., last] = thumb.segments;
+                    Some(Rect {
+                        x: first.x,
+                        y: first.y,
+                        width: last.x + last.width - first.x,
+                        height: last.y + last.height - first.y,
+                    })
+                }),
             });
         }
         None => children(

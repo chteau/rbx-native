@@ -151,6 +151,8 @@ fn list(dom: &mut WeakDom, parent: Ref) -> Ref {
         .unwrap();
     dom.set_property(layout, "VerticalAlignment", Variant::Enum(1))
         .unwrap();
+    dom.set_property(layout, "SortOrder", Variant::Enum(2))
+        .unwrap();
     layout
 }
 
@@ -343,4 +345,24 @@ fn a_list_does_not_change_paint_order() {
 
     // Painted last for its `ZIndex`, yet still first in the stack.
     assert_eq!(origins(&dom), [[0.0, 10.0], [0.0, 0.0]]);
+}
+
+// A list made in code with nothing but `FillDirection` set starts at the
+// top-left corner, Studio's default alignment, not centred.
+#[test]
+fn a_list_left_at_its_defaults_starts_top_left() {
+    let (mut dom, gui) = screen_gui();
+    let layout = dom.new_instance("UIListLayout", "UIListLayout", Some(gui));
+    dom.set_property(layout, "FillDirection", Variant::Enum(1))
+        .unwrap();
+    for _ in 0..2 {
+        frame(
+            &mut dom,
+            gui,
+            udim2(0.0, 0, 0.0, 0),
+            udim2(0.0, 10, 0.0, 10),
+        );
+    }
+
+    assert_eq!(origins(&dom), [[0.0, 0.0], [0.0, 10.0]]);
 }

@@ -63,7 +63,9 @@ pub(crate) use gui::{
     plan as gui_plan, resolve_with as gui_layout_with, GroupTint as GuiGroupTint,
     TextSpan as GuiTextSpan,
 };
-pub use gui::{pseudo_localize, shows_screen, PseudoLocale, SafeInsets, ScrollTarget};
+pub use gui::{
+    pseudo_localize, shows_screen, GuiScrolls, PseudoLocale, SafeInsets, ScrollTarget, ThumbGrab,
+};
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
 pub use isolation::STAGE_REACH;

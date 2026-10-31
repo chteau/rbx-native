@@ -87,7 +87,8 @@ impl Shell {
             .child(measure)
             .children(image)
             .on_mouse_move(cx.listener(move |shell, e: &MouseMoveEvent, window, cx| {
-                shell.widget_pointer(id, e.position, Pointer::Move, window, cx);
+                let held = e.pressed_button == Some(MouseButton::Left);
+                shell.widget_pointer(id, e.position, Pointer::Move(held), window, cx);
             }))
             .on_mouse_down(
                 MouseButton::Left,
@@ -129,8 +130,8 @@ impl Shell {
                 if shell.over_sink(id, e.position) {
                     cx.stop_propagation();
                 }
-                let dy = -f32::from(e.delta.pixel_delta(px(20.)).y);
-                shell.widget_pointer(id, e.position, Pointer::Scroll(dy), window, cx);
+                let wheel = crate::workspace_view::input::wheel_scroll(e.delta, e.modifiers.shift);
+                shell.widget_pointer(id, e.position, Pointer::Wheel(wheel), window, cx);
             }))
             .on_hover(cx.listener(move |shell, hovered: &bool, _, cx| {
                 if !*hovered {

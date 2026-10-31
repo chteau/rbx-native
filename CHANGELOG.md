@@ -2,6 +2,29 @@
 
 ## 2026-10-31
 
+- **Plugin docks stop eating the CPU.** A plugin with a `task.wait` loop or
+  a Heartbeat connection gets ticked ~33 times a second, and every tick
+  redrew the whole editor even when nothing came out of it. On top of that
+  the widget renderer kept redrawing every widget ~5 times a second forever,
+  bc its idle wake read camera motion that a GUI only renderer doesn't have.
+  Now only a tick that actually changes something redraws, a widget redraws
+  when its new render lands, and the renderer sleeps unless images are still
+  downloading. Same chat plugin, same place, release build on a real
+  display: idle 14% CPU and 38 editor redraws a second before, ~2% and 0
+  after; with a status line ticking once a second, ~3% and 1 redraw. (@chteau)
+
+- **Plugin widgets draw like Studio.** Checked against real Studio with a
+  chat style fixture (`examples/plugins/roblox/ChatWidget.lua`). A list
+  built in code now starts top left and sorts by Name like Studio's
+  defaults, instead of centred, which pushed a chat's first messages up
+  under the row above it. A label's UIPadding now insets its text, so
+  padded bubbles wrap and sit like Studio's. A UICorner left alone rounds
+  by 8 px. The wheel scrolls the ScrollingFrame under the cursor by 100 px
+  a notch and the bar thumb drags, both measured in Studio, and notches
+  that land before the next render add up instead of getting dropped.
+  Text still measures a couple of pixels narrower than Studio's per line,
+  that's left for the font work. (@chteau)
+
 - **Publish as a new experience.** Publishing a file that isn't linked yet
   opens the game picker like before, but it now has a New experience
   button. Name, description, and who owns it (you or a group you can

@@ -458,6 +458,8 @@ fn the_fountain_board_stacks_its_labels_under_the_image() {
     let list = dom.new_instance("UIListLayout", "UIListLayout", Some(gui));
     dom.set_property(list, "FillDirection", Variant::Enum(1))
         .unwrap();
+    dom.set_property(list, "SortOrder", Variant::Enum(2))
+        .unwrap();
     dom.set_property(list, "VerticalAlignment", Variant::Enum(1))
         .unwrap();
     for (name, height) in [("MapName", 50), ("VotesAmount", 55)] {

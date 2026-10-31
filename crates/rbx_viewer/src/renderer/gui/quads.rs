@@ -246,7 +246,7 @@ fn build_once(
                 gradient,
             };
             text::emit(
-                &element.rect,
+                &typeset.area(&element.rect),
                 typeset,
                 &strokes,
                 (&paint, &fill, &spin),

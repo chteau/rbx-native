@@ -241,6 +241,16 @@ pub enum GuiEventKind {
     Scroll {
         dy: f32,
     },
+    /// The editor scrolled a `ScrollingFrame`'s canvas, by wheel or by
+    /// dragging its bar: `CanvasPosition` moves `by` pixels along `axis` (0
+    /// across, 1 down), kept within `[0, range]`, the reach the frame was
+    /// last laid out with. Relative, so notches that arrive before the next
+    /// render add up instead of repeating the same step.
+    ScrollCanvas {
+        axis: usize,
+        by: f32,
+        range: f32,
+    },
 }
 
 /// Input on a plugin's `Handles`/`ArcHandles`/`*HandleAdornment`, picked by

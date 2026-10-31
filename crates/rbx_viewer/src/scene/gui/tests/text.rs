@@ -417,3 +417,36 @@ fn a_ui_text_size_constraint_bounds_the_text_beside_it() {
     let scaled = resolve_with(&screens(&dom), VIEWPORT, &mut Fixed);
     assert_eq!(scaled[0].text.as_ref().unwrap().size, 10.0);
 }
+
+// Studio insets a label's glyphs by its own `UIPadding`: they wrap, scale
+// and align inside the padded box, not the label's whole rect.
+#[test]
+fn a_labels_padding_insets_its_text() {
+    let (mut dom, gui) = screen_gui();
+    let referent = label(&mut dom, gui, "TextLabel", "abcd");
+    dom.set_property(referent, "TextScaled", Variant::Bool(true))
+        .unwrap();
+    let padding = dom.new_instance("UIPadding", "UIPadding", Some(referent));
+    for side in ["PaddingLeft", "PaddingRight"] {
+        dom.set_property(
+            padding,
+            side,
+            Variant::UDim(UDim {
+                scale: 0.0,
+                offset: 10,
+            }),
+        )
+        .unwrap();
+    }
+
+    // In 100 by 60, four characters 2s wide fit on one line up to s = 50;
+    // the padding leaves 80 px, so 40 (at 50 they would wrap to two lines,
+    // 100 tall).
+    dom.set_property(referent, "Size", udim2(0.0, 100, 0.0, 60))
+        .unwrap();
+    let elements = resolve_with(&screens(&dom), VIEWPORT, &mut Fixed);
+    let typeset = elements[0].text.as_ref().unwrap();
+    assert_eq!(typeset.size, 40.0, "unpadded it would be 50");
+    let area = typeset.area(&elements[0].rect);
+    assert_eq!((area.x, area.width), (10.0, 80.0));
+}

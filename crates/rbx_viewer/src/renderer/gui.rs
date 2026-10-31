@@ -461,6 +461,11 @@ impl Gui {
         Some((texture, look))
     }
 
+    /// Every `ScrollingFrame` of the last layout, in paint order.
+    pub(super) fn scrolls(&self) -> crate::GuiScrolls {
+        crate::GuiScrolls(self.windows.clone())
+    }
+
     /// Every element of the last layout, in paint order.
     pub(super) fn boxes(&self) -> &[GuiBox] {
         &self.boxes

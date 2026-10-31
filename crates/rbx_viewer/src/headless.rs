@@ -42,6 +42,9 @@ pub struct GuiCanvas {
     /// The text objects whose text overflows their box, in paint order,
     /// while a pseudo locale is set (see [`Headless::set_pseudo_locale`]).
     pub overflows: Vec<Ref>,
+    /// Every `ScrollingFrame` as laid out, for scrolling them by wheel and
+    /// by thumb.
+    pub scrolls: crate::GuiScrolls,
 }
 
 /// A loaded place that renders frames on demand, flown with the very same

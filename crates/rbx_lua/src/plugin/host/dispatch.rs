@@ -14,8 +14,8 @@ use crate::ctx::Ctx;
 use crate::engine::signal::{self, Owner, SignalKey};
 use crate::engine::{changes, scheduler};
 use crate::plugin::api::{
-    Arg, Context, DebuggerView, Input, LayoutBox, MouseInput, Origin, Outcome, OutputKind,
-    Permission, SourceBody, WidgetKind,
+    Arg, Context, DebuggerView, GuiEvent, GuiEventKind, Input, LayoutBox, MouseInput, Origin,
+    Outcome, OutputKind, Permission, SourceBody, WidgetKind,
 };
 use crate::plugin::env::{engine_for, Env};
 use crate::plugin::{debugger_api, events, loader, plugin_object, services, vm};
@@ -191,6 +191,10 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
                 }
             }
         }
+        Input::Gui(GuiEvent {
+            referent,
+            kind: GuiEventKind::ScrollCanvas { axis, by, range },
+        }) => scroll_canvas(&mut host.dom.borrow_mut(), referent, axis, by, range),
         Input::Gui(event) => {
             let targets = owner_of(host, event.referent).map_or_else(|| vms(host), |vm| vec![vm]);
             for (lua, env) in targets {
@@ -245,6 +249,24 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
             }
         }
     }
+}
+
+/// Moves a `ScrollingFrame`'s `CanvasPosition` (see
+/// `GuiEventKind::ScrollCanvas`); the change log then fires its `Changed`
+/// signals. A position past the end, `math.huge` to stick to the bottom, is
+/// read as the end, which is where the frame draws it.
+fn scroll_canvas(dom: &mut WeakDom, referent: Ref, axis: usize, by: f32, range: f32) {
+    let Some(instance) = dom.get(referent) else {
+        return;
+    };
+    let current = match instance.properties().get("CanvasPosition") {
+        Some(Variant::Vector2(v)) => [v.x, v.y],
+        _ => [0.0, 0.0],
+    };
+    let range = range.max(0.0);
+    let mut next = current;
+    next[axis.min(1)] = (current[axis.min(1)].clamp(0.0, range) + by).clamp(0.0, range);
+    set_vector2(dom, referent, "CanvasPosition", next);
 }
 
 fn set_vector2(dom: &mut WeakDom, referent: Ref, name: &str, value: [f32; 2]) {

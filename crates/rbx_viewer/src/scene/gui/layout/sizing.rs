@@ -99,7 +99,7 @@ pub(super) fn padded(node: &Node, rect: &Rect) -> Rect {
     inset(rect, &padding.against(rect.size()))
 }
 
-fn inset(rect: &Rect, sides: &[f32; 4]) -> Rect {
+pub(super) fn inset(rect: &Rect, sides: &[f32; 4]) -> Rect {
     Rect {
         x: rect.x + sides[0],
         y: rect.y + sides[2],

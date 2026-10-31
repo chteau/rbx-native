@@ -573,6 +573,8 @@ pub(crate) fn fire_gui(lua: &Lua, event: &GuiEvent) -> Result<()> {
             });
             emit(lua, r, "FocusLost", &[Arg::Bool(*enter), Arg::Nil])
         }
+        // Applied once by the host, not per VM (see `dispatch`).
+        GuiEventKind::ScrollCanvas { .. } => Ok(()),
         GuiEventKind::Scroll { dy } => {
             let event = if *dy > 0.0 {
                 "MouseWheelBackward"

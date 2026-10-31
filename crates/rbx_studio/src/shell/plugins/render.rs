@@ -22,6 +22,8 @@ pub(crate) struct Drawn {
     pub(crate) boxes: Vec<GuiBox>,
     /// Referents that take the pointer instead of letting it through.
     pub(crate) sinks: HashSet<Ref>,
+    /// The scrolling frames, for the wheel and their bars.
+    pub(crate) scrolls: rbx_viewer::GuiScrolls,
 }
 
 struct Job {
@@ -41,6 +43,8 @@ struct Queue {
     /// Bumped whenever images a render was missing have since arrived, so
     /// the widgets are drawn again with them (see `Renderer::landed`).
     landed: u64,
+    /// The viewer still waits on images, as of its last render or tick.
+    loading: bool,
 }
 
 type Shared = Arc<(Mutex<Queue>, Condvar)>;
@@ -103,6 +107,11 @@ impl Renderer {
     /// a change means every widget should be drawn again.
     pub(crate) fn landed(&self) -> u64 {
         self.queue.0.lock().map(|queue| queue.landed).unwrap_or(0)
+    }
+
+    /// Whether images a render asked for are still downloading.
+    pub(crate) fn loading(&self) -> bool {
+        self.queue.0.lock().is_ok_and(|queue| queue.loading)
     }
 
     /// Renders finished since the last call.
@@ -217,9 +226,9 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
                 if let Some(job) = guard.jobs.pop_front() {
                     break Some(job);
                 }
-                // Idle with a viewer: wake now and then to collect images
-                // that were still downloading when the last render went out.
-                if headless.is_none() {
+                // Idle while images are downloading: wake now and then to
+                // collect them; otherwise sleep until a job comes.
+                if !guard.loading {
                     guard = match wake.wait(guard) {
                         Ok(guard) => guard,
                         Err(_) => return,
@@ -238,10 +247,13 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
         };
         let Some(job) = job else {
             if let Some(viewer) = headless.as_mut() {
-                if viewer.tick(LANDING_POLL) {
-                    if let Ok(mut queue) = queue.0.lock() {
-                        queue.landed += 1;
-                    }
+                // Not `tick`: there is no camera here, and its half of
+                // `tick` reports motion that would redraw every widget.
+                let landed = viewer.swap_assets();
+                let loading = viewer.assets_in_flight() > 0;
+                if let Ok(mut queue) = queue.0.lock() {
+                    queue.landed += u64::from(landed);
+                    queue.loading = loading;
                 }
             }
             continue;
@@ -265,7 +277,7 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
         // Swap in images that landed since the last render; a widget drawn
         // every frame never leaves the renderer idle long enough to do it
         // in the wait above.
-        viewer.tick(std::time::Duration::ZERO);
+        viewer.swap_assets();
         let size = (job.size.0.max(1), job.size.1.max(1));
         let rendered = if job.transparent {
             viewer
@@ -278,6 +290,10 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
         } else {
             viewer.render_gui(job.root, size, job.backdrop)
         };
+        let loading = viewer.assets_in_flight() > 0;
+        if let Ok(mut queue) = queue.0.lock() {
+            queue.loading = loading;
+        }
         match rendered {
             Ok(canvas) => {
                 let (width, height) = canvas.size;
@@ -292,6 +308,7 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
                     image,
                     boxes: canvas.boxes,
                     sinks,
+                    scrolls: canvas.scrolls,
                 };
                 if done.send((job.widget, drawn)).is_err() {
                     return;

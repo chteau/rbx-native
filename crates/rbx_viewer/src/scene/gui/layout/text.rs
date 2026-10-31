@@ -38,6 +38,17 @@ pub(crate) struct Typeset {
     /// The pixel size of one line: `TextSize`, or what `TextScaled` settled
     /// on, either clamped by `Text::size_bounds`.
     pub(crate) size: f32,
+    /// The text object's own `UIPadding`, left, right, top, bottom: the
+    /// glyphs sit, wrap and scale inside its box less this, as Studio draws
+    /// a padded label.
+    pub(crate) inset: [f32; 4],
+}
+
+impl Typeset {
+    /// The part of the element's `rect` the glyphs are laid out in.
+    pub(crate) fn area(&self, rect: &Rect) -> Rect {
+        super::sizing::inset(rect, &self.inset)
+    }
 }
 
 /// The width the text wraps at inside `rect`, `None` where it runs free,
@@ -70,6 +81,7 @@ pub(super) fn typeset(text: &Text, rect: &mut Rect, measure: &mut dyn TextMeasur
     Typeset {
         text: text.clone(),
         size,
+        inset: [0.0; 4],
     }
 }
 
@@ -79,6 +91,7 @@ pub(super) fn typeset(text: &Text, rect: &mut Rect, measure: &mut dyn TextMeasur
 /// axis has already grown to hold it; a truncated text counts, since its
 /// ellipsis hides what does not fit.
 pub(crate) fn overflows(typeset: &Typeset, rect: &Rect, measure: &mut dyn TextMeasure) -> bool {
+    let rect = &typeset.area(rect);
     let bounds = measure.measure(&typeset.text, typeset.size, wrap_width(&typeset.text, rect));
     bounds[0] > rect.width + 0.5 || bounds[1] > rect.height + 0.5
 }

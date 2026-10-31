@@ -15,9 +15,14 @@ use gpui_kit::*;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_lua::plugin::{GuiEvent, GuiEventKind, Input, LayoutBox, UiId, WidgetKind};
 
+mod pointer;
+
 use super::{float, render};
 use crate::shell::{Panel, Shell};
 use crate::tokens;
+use crate::workspace_view::input::wheel_scroll;
+use pointer::Grab;
+pub(super) use pointer::Pointer;
 
 /// Where a widget's surface was last laid out, written during prepaint so
 /// pointer positions can be made widget-local and the render sized.
@@ -28,14 +33,6 @@ struct Editing {
     referent: Ref,
     field: Entity<InputState>,
     _events: Subscription,
-}
-
-#[derive(Clone, Copy)]
-pub(super) enum Pointer {
-    Move,
-    Down(u8),
-    Up(u8),
-    Scroll(f32),
 }
 
 #[derive(Default)]
@@ -56,14 +53,13 @@ pub(crate) struct Widgets {
     enabled: HashSet<UiId>,
     hover: Option<(UiId, Ref)>,
     pressed: Option<(UiId, Ref, u8)>,
+    grab: Option<Grab>,
     editing: Option<Editing>,
     /// Where cursor-placed floating widgets opened.
     anchors: HashMap<UiId, Point<Pixels>>,
     poll: Option<Task<()>>,
     /// `Renderer::landed` as last acted on.
     landed_seen: u64,
-    /// When the last render came back (see `collect_widget_renders`).
-    last_render: Option<std::time::Instant>,
 }
 
 fn text_boxes(dom: &WeakDom) -> HashMap<Ref, String> {
@@ -84,6 +80,11 @@ fn text_boxes(dom: &WeakDom) -> HashMap<Ref, String> {
     }
     found
 }
+
+/// How often finished renders are collected while one is owed: a frame.
+const RENDER_POLL: Duration = Duration::from_millis(16);
+/// How often the renderer is asked whether late images landed.
+const LANDING_POLL: Duration = Duration::from_millis(250);
 
 pub(super) fn pixel_size(bounds: Bounds<Pixels>) -> (u32, u32) {
     (
@@ -319,7 +320,6 @@ impl Shell {
         for (id, revision, size) in stale {
             self.request_widget_render(id, revision, size, cx);
         }
-        cx.notify();
     }
 
     pub(super) fn request_widget_render(
@@ -359,24 +359,27 @@ impl Shell {
         self.arm_widget_poll(cx);
     }
 
+    /// Polls the renderer every frame while a render is owed, and slowly
+    /// while it only waits for images to land; stops once neither holds.
     fn arm_widget_poll(&mut self, cx: &mut Context<Self>) {
         if self.plugins.widgets.poll.is_some() {
             return;
         }
-        self.plugins.widgets.poll = Some(cx.spawn(async move |shell, cx| loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(16))
-                .await;
-            match shell.update(cx, |shell, cx| shell.collect_widget_renders(cx)) {
-                Ok(true) => {}
-                _ => break,
+        self.plugins.widgets.poll = Some(cx.spawn(async move |shell, cx| {
+            let mut wait = RENDER_POLL;
+            loop {
+                cx.background_executor().timer(wait).await;
+                match shell.update(cx, |shell, cx| shell.collect_widget_renders(cx)) {
+                    Ok(Some(next)) => wait = next,
+                    _ => break,
+                }
             }
         }));
     }
 
-    /// Takes finished renders; `false` (and the poll stops) once nothing
-    /// asked for is still owed.
-    fn collect_widget_renders(&mut self, cx: &mut Context<Self>) -> bool {
+    /// Takes finished renders and says when to look again: `None` (and the
+    /// poll stops) once nothing asked for is owed and no image is loading.
+    fn collect_widget_renders(&mut self, cx: &mut Context<Self>) -> Option<Duration> {
         let state = &mut self.plugins.widgets;
         // Images that were still downloading have arrived: draw everything
         // again (forgetting what was asked makes the next frame re-ask).
@@ -411,7 +414,6 @@ impl Shell {
             }
         }
         if !finished.is_empty() {
-            state.last_render = Some(std::time::Instant::now());
             state.drawn.extend(finished);
             cx.notify();
         }
@@ -425,15 +427,18 @@ impl Shell {
                 .get(id)
                 .is_none_or(|drawn| drawn.revision != revision || drawn.size != size)
         });
-        // Keep listening for late images a little while after any render.
-        let settling = state
-            .last_render
-            .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(10));
-        let pending = pending || settling;
-        if !pending {
+        let loading = state.renderer.as_ref().is_some_and(|r| r.loading());
+        let next = if pending {
+            Some(RENDER_POLL)
+        } else if loading {
+            Some(LANDING_POLL)
+        } else {
+            None
+        };
+        if next.is_none() {
             state.poll = None;
         }
-        pending
+        next
     }
 
     pub(super) fn widget_surface(&mut self, id: UiId, cx: &mut Context<Self>) -> AnyElement {
@@ -489,7 +494,8 @@ impl Shell {
             .children(image)
             .children(editor)
             .on_mouse_move(cx.listener(move |shell, e: &MouseMoveEvent, window, cx| {
-                shell.widget_pointer(id, e.position, Pointer::Move, window, cx);
+                let held = e.pressed_button == Some(MouseButton::Left);
+                shell.widget_pointer(id, e.position, Pointer::Move(held), window, cx);
             }))
             .on_mouse_down(
                 MouseButton::Left,
@@ -516,9 +522,8 @@ impl Shell {
                 }),
             )
             .on_scroll_wheel(cx.listener(move |shell, e: &ScrollWheelEvent, window, cx| {
-                let delta = e.delta.pixel_delta(px(20.));
-                let dy = -f32::from(delta.y);
-                shell.widget_pointer(id, e.position, Pointer::Scroll(dy), window, cx);
+                let wheel = wheel_scroll(e.delta, e.modifiers.shift);
+                shell.widget_pointer(id, e.position, Pointer::Wheel(wheel), window, cx);
             }))
             .on_hover(cx.listener(move |shell, hovered: &bool, _, cx| {
                 if !*hovered {
@@ -528,83 +533,8 @@ impl Shell {
             .into_any_element()
     }
 
-    fn send_gui(&mut self, referent: Ref, kind: GuiEventKind, cx: &mut Context<Self>) {
+    pub(super) fn send_gui(&mut self, referent: Ref, kind: GuiEventKind, cx: &mut Context<Self>) {
         self.plugin_input(Input::Gui(GuiEvent { referent, kind }), cx);
-    }
-
-    pub(super) fn widget_left(&mut self, id: UiId, cx: &mut Context<Self>) {
-        if let Some((_, old)) = self.plugins.widgets.hover.filter(|(w, _)| *w == id) {
-            self.plugins.widgets.hover = None;
-            self.send_gui(old, GuiEventKind::Leave { x: -1.0, y: -1.0 }, cx);
-        }
-    }
-
-    pub(super) fn widget_pointer(
-        &mut self,
-        id: UiId,
-        position: Point<Pixels>,
-        pointer: Pointer,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(area) = self.plugins.widgets.areas.get(&id).and_then(|a| a.get()) else {
-            return;
-        };
-        let x = f32::from(position.x - area.origin.x);
-        let y = f32::from(position.y - area.origin.y);
-        let target = self
-            .plugins
-            .widgets
-            .drawn
-            .get(&id)
-            .and_then(|drawn| super::hit::hit(&drawn.boxes, &drawn.sinks, x, y));
-        match pointer {
-            Pointer::Move => {
-                let now = target.map(|r| (id, r));
-                if self.plugins.widgets.hover != now {
-                    if let Some((_, old)) = self.plugins.widgets.hover.take() {
-                        self.send_gui(old, GuiEventKind::Leave { x, y }, cx);
-                    }
-                    if let Some(r) = target {
-                        self.send_gui(r, GuiEventKind::Enter { x, y }, cx);
-                    }
-                    self.plugins.widgets.hover = now;
-                }
-                if let Some(r) = target {
-                    self.send_gui(r, GuiEventKind::Move { x, y }, cx);
-                }
-            }
-            Pointer::Down(button) => {
-                self.plugins.widgets.pressed = target.map(|r| (id, r, button));
-                if let Some(r) = target {
-                    self.send_gui(r, GuiEventKind::Down { button, x, y }, cx);
-                }
-            }
-            Pointer::Up(button) => {
-                let pressed = self.plugins.widgets.pressed.take();
-                let Some(r) = target else {
-                    return;
-                };
-                self.send_gui(r, GuiEventKind::Up { button, x, y }, cx);
-                if pressed == Some((id, r, button)) {
-                    self.send_gui(r, GuiEventKind::Click { button, x, y }, cx);
-                    let is_text_box = self
-                        .plugins
-                        .widgets
-                        .text_boxes
-                        .get(&id)
-                        .is_some_and(|boxes| boxes.contains_key(&r));
-                    if button == 1 && is_text_box {
-                        self.begin_widget_edit(id, r, window, cx);
-                    }
-                }
-            }
-            Pointer::Scroll(dy) => {
-                if let Some(r) = target {
-                    self.send_gui(r, GuiEventKind::Scroll { dy }, cx);
-                }
-            }
-        }
     }
 
     fn begin_widget_edit(

@@ -595,6 +595,11 @@ impl Renderer {
         self.gui.boxes()
     }
 
+    /// Every `ScrollingFrame` of the last layout, see `Gui::scrolls`.
+    pub(crate) fn gui_scrolls(&self) -> crate::GuiScrolls {
+        self.gui.scrolls()
+    }
+
     /// Where this frame's draggers sit, or `None` when no transform tool is
     /// active, nothing with a placement is selected, or the camera is still
     /// on its automatic orbit, which only happens in a file with no saved
