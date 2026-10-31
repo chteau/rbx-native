@@ -8,18 +8,23 @@
 
 mod atlas;
 mod em;
+mod look;
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use cosmic_text::{
-    Align, Angle, Attrs, Buffer, CacheKey, CacheKeyFlags, Color, Ellipsize, FontSystem, Metrics,
-    Shaping, Style, SwashCache, SwashImage, Transform, UnderlineStyle, Weight, Wrap,
+    Align, Angle, Attrs, Buffer, CacheKey, CacheKeyFlags, Color, Ellipsize, FontSystem, Hinting,
+    LayoutRun, Metrics, Shaping, Style, SwashCache, SwashImage, Transform, UnderlineStyle, Weight,
+    Wrap,
 };
 use rbx_assets::AssetRef;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 
 pub(super) use atlas::{Glyph, GlyphAtlas};
+pub use look::GuiTextLook;
+pub(super) use look::Spot;
 
 use crate::fonts::{Face, Family, Library};
 use crate::scene::{gui_span_face, GuiText, GuiTextMeasure};
@@ -56,8 +61,9 @@ pub(super) struct Typesetter {
     families: HashMap<AssetRef, Family>,
     /// Face file → its line box in ems (see [`em`]).
     ems: HashMap<AssetRef, f32>,
-    /// Every face file already handed to the font system.
-    loaded: HashSet<AssetRef>,
+    /// Every face file already handed to the font system, with its bytes
+    /// for a host that sets the same text itself (see [`look`]).
+    bytes: HashMap<AssetRef, Arc<Vec<u8>>>,
     /// Bounds already measured, by what decides them (see [`measure_key`]).
     /// A `TextScaled` label measures its whole string once per step of the
     /// size search on every layout, and a layout follows every edit, so a
@@ -111,7 +117,7 @@ impl Typesetter {
             atlas: GlyphAtlas::new(),
             families: HashMap::new(),
             ems: HashMap::new(),
-            loaded: HashSet::new(),
+            bytes: HashMap::new(),
             measured: HashMap::new(),
             shaped: HashMap::new(),
         }
@@ -129,7 +135,11 @@ impl Typesetter {
             let Some(bytes) = library.faces.get(&entry.asset) else {
                 continue;
             };
-            if !self.loaded.insert(entry.asset.clone()) {
+            if self
+                .bytes
+                .insert(entry.asset.clone(), bytes.clone())
+                .is_some()
+            {
                 continue;
             }
             let db = self.system.db_mut();
@@ -214,7 +224,7 @@ impl Typesetter {
         let metrics_of = |face: &Face, size: f32| {
             let line = em::line_box(face, size);
             Metrics::new(
-                line / em::line_em(families, ems, face),
+                em::em_px(line, em::line_em(families, ems, face)),
                 line * text.line_height,
             )
         };
@@ -229,6 +239,9 @@ impl Typesetter {
         let scale = size / text.size.max(1.0);
         let mut buffer = Buffer::new(system, metrics_of(&text.face, size));
         buffer.set_size(width, None);
+        // Not cosmic-text's own hinting, which rounds an advance plainly:
+        // `glyph_xs` rounds each the way Studio does (see `em`).
+        buffer.set_hinting(Hinting::Disabled);
         buffer.set_wrap(match text.wrapped || text.scaled {
             true => Wrap::WordOrGlyph,
             false => Wrap::None,
@@ -357,8 +370,35 @@ impl GuiTextMeasure for Typesetter {
 /// The widest line and the height of every line.
 pub(super) fn bounds(buffer: &Buffer) -> [f32; 2] {
     buffer.layout_runs().fold([0.0f32, 0.0], |bounds, run| {
-        [bounds[0].max(run.line_w), bounds[1] + run.line_height]
+        [bounds[0].max(line_width(&run)), bounds[1] + run.line_height]
     })
+}
+
+/// Where each of `run`'s glyphs lands, in its order, and how wide the line
+/// is. Studio advances every glyph a whole pixel, rounding the advance to a
+/// 64th first as FreeType's 26.6 fixed point does, so an advance of x.493
+/// already rounds up. The glyphs keep their visual order, right to left
+/// lines too, from the line's first whole pixel.
+pub(super) fn glyph_xs(run: &LayoutRun) -> (Vec<f32>, f32) {
+    let glyphs = run.glyphs;
+    let mut order: Vec<usize> = (0..glyphs.len()).collect();
+    order.sort_by(|&a, &b| glyphs[a].x.total_cmp(&glyphs[b].x));
+    let start = order.first().map_or(0.0, |&first| glyphs[first].x.round());
+    let mut xs = vec![0.0; glyphs.len()];
+    let mut x = start;
+    for index in order {
+        xs[index] = x;
+        x += ((glyphs[index].w * 64.0).round() / 64.0).round();
+    }
+    (xs, x - start)
+}
+
+/// How wide `run`'s glyphs lie, each advanced as `glyph_xs` does.
+pub(super) fn line_width(run: &LayoutRun) -> f32 {
+    match run.glyphs.is_empty() {
+        true => run.line_w,
+        false => glyph_xs(run).1,
+    }
 }
 
 /// The attributes one face shapes with: the family by the name fontdb knows

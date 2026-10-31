@@ -53,6 +53,14 @@ impl Shell {
         let drawn = self.plugins.widgets.drawn.get(&id);
         let target = drawn
             .and_then(|drawn| crate::shell::plugins::hit::hit(&drawn.boxes, &drawn.sinks, x, y));
+        // Pressing anywhere off the box being typed in ends it, as in Studio.
+        let edited = self.plugins.widgets.edited_on(id);
+        if let Some(edited) =
+            edited.filter(|edited| matches!(pointer, Pointer::Down(_)) && target != Some(*edited))
+        {
+            self.end_widget_edit(edited, false, cx);
+        }
+        let drawn = self.plugins.widgets.drawn.get(&id);
         match pointer {
             Pointer::Move(held) => {
                 if let Some(grab) = self.plugins.widgets.grab.filter(|g| g.widget == id) {

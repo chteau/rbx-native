@@ -2,19 +2,20 @@
 //! `DockWidgetPluginGui`) and floating widgets drawn above the editor.
 //! Each is rendered by `render` and hit-tested on its boxes: pointer and
 //! key input become `Input::Gui`, a `TextBox` is edited through an input
-//! field placed over it.
+//! field placed over it (see `edit`).
 
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::component::input::{Input as TextField, InputEvent, InputState};
+use gpui_kit::component::input::InputState;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
-use rbx_dom::{Ref, Variant, WeakDom};
+use rbx_dom::Ref;
 use rbx_lua::plugin::{GuiEvent, GuiEventKind, Input, LayoutBox, UiId, WidgetKind};
 
+mod edit;
 mod pointer;
 
 use super::{float, render};
@@ -32,6 +33,11 @@ struct Editing {
     widget: UiId,
     referent: Ref,
     field: Entity<InputState>,
+    /// The alignment last handed to the field.
+    aligned: Option<TextAlign>,
+    /// Not focused yet: a focused field missing from the frame blurs, so it
+    /// waits until a render has placed it.
+    unfocused: bool,
     _events: Subscription,
 }
 
@@ -45,10 +51,14 @@ pub(crate) struct Widgets {
     pub(crate) current: Option<UiId>,
     pub(crate) renderer: Option<render::Renderer>,
     pub(super) areas: HashMap<UiId, Area>,
-    /// The last revision and size asked of the renderer.
-    requested: HashMap<UiId, (u64, (u32, u32))>,
-    /// Each widget's `TextBox`es with their text as last rendered.
-    text_boxes: HashMap<UiId, HashMap<Ref, String>>,
+    /// The last revision and size asked of the renderer, and the `TextBox`
+    /// drawn without its text.
+    requested: HashMap<UiId, Asked>,
+    /// Each widget's `TextBox`es as last rendered.
+    text_boxes: HashMap<UiId, HashMap<Ref, edit::TextBox>>,
+    /// Faces of edited `TextBox`es already registered with the text system,
+    /// by family, weight and slant.
+    fonts: HashSet<(String, u16, bool)>,
     /// Dock widgets enabled at the last `ui_changed`.
     enabled: HashSet<UiId>,
     hover: Option<(UiId, Ref)>,
@@ -62,24 +72,8 @@ pub(crate) struct Widgets {
     landed_seen: u64,
 }
 
-fn text_boxes(dom: &WeakDom) -> HashMap<Ref, String> {
-    let mut found = HashMap::new();
-    let mut stack: Vec<Ref> = dom.root_refs().to_vec();
-    while let Some(referent) = stack.pop() {
-        let Some(instance) = dom.get(referent) else {
-            continue;
-        };
-        if instance.class() == "TextBox" {
-            let text = match instance.properties().get("Text") {
-                Some(Variant::String(text)) => text.clone(),
-                _ => String::new(),
-            };
-            found.insert(referent, text);
-        }
-        stack.extend_from_slice(instance.children());
-    }
-    found
-}
+/// What a render was asked for: revision, size, edited `TextBox`.
+type Asked = (u64, (u32, u32), Option<Ref>);
 
 /// How often finished renders are collected while one is owed: a frame.
 const RENDER_POLL: Duration = Duration::from_millis(16);
@@ -93,6 +87,17 @@ pub(super) fn pixel_size(bounds: Bounds<Pixels>) -> (u32, u32) {
     )
 }
 
+impl Widgets {
+    /// The `TextBox` being typed in on widget `id`, which it is drawn
+    /// without the text of.
+    pub(super) fn edited_on(&self, id: UiId) -> Option<Ref> {
+        self.editing
+            .as_ref()
+            .filter(|editing| editing.widget == id)
+            .map(|editing| editing.referent)
+    }
+}
+
 fn backdrop() -> [f32; 3] {
     let colour = tokens::dock();
     [colour.r, colour.g, colour.b]
@@ -102,7 +107,7 @@ impl Shell {
     /// The Plugin Widgets panel's content (for `workspace::panel_parts`).
     pub(in crate::shell) fn plugin_widgets_dock(
         &mut self,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (Option<AnyElement>, Option<AnyElement>) {
         let docked: Vec<(UiId, String, u64)> = self
@@ -182,7 +187,7 @@ impl Shell {
                     tab
                 }
             }));
-        let surface = self.widget_surface(current, cx);
+        let surface = self.widget_surface(current, window, cx);
         let content = v_flex()
             .size_full()
             .bg(tokens::dock())
@@ -233,7 +238,7 @@ impl Shell {
                 height.round().max(1.0) as u32,
             );
             self.request_widget_render(id, revision, size, cx);
-            let surface = self.widget_surface(id, cx);
+            let surface = self.widget_surface(id, window, cx);
             let mut card = div()
                 .w(px(width))
                 .h(px(height))
@@ -309,7 +314,7 @@ impl Shell {
         let stale: Vec<(UiId, u64, (u32, u32))> = widgets
             .iter()
             .filter_map(|&(id, revision, _)| {
-                let &(asked, size) = state.requested.get(&id)?;
+                let &(asked, size, _) = state.requested.get(&id)?;
                 (asked != revision).then_some((id, revision, size))
             })
             .collect();
@@ -332,10 +337,11 @@ impl Shell {
         if size.0 == 0 || size.1 == 0 {
             return;
         }
-        if self.plugins.widgets.requested.get(&id) == Some(&(revision, size)) {
+        let edited = self.plugins.widgets.edited_on(id);
+        if self.plugins.widgets.requested.get(&id) == Some(&(revision, size, edited)) {
             return;
         }
-        let Some(dom) = self
+        let Some(mut dom) = self
             .plugins
             .host
             .as_ref()
@@ -350,12 +356,15 @@ impl Shell {
             .iter()
             .any(|w| w.id == id && matches!(w.kind, WidgetKind::Overlay { .. }));
         let state = &mut self.plugins.widgets;
-        state.text_boxes.insert(id, text_boxes(&dom));
+        state.text_boxes.insert(id, edit::text_boxes(&dom));
+        if let Some(referent) = edited {
+            edit::hide_text(&mut dom, referent);
+        }
         state
             .renderer
             .get_or_insert_with(render::Renderer::new)
-            .request(id, revision, dom, size, backdrop(), transparent);
-        state.requested.insert(id, (revision, size));
+            .request(id, revision, dom, size, backdrop(), transparent, edited);
+        state.requested.insert(id, (revision, size, edited));
         self.arm_widget_poll(cx);
     }
 
@@ -421,12 +430,14 @@ impl Shell {
             self.plugin_input(Input::Layout(boxes), cx);
         }
         let state = &mut self.plugins.widgets;
-        let pending = state.requested.iter().any(|(id, &(revision, size))| {
-            state
-                .drawn
-                .get(id)
-                .is_none_or(|drawn| drawn.revision != revision || drawn.size != size)
-        });
+        let pending = state
+            .requested
+            .iter()
+            .any(|(id, &(revision, size, edited))| {
+                state.drawn.get(id).is_none_or(|drawn| {
+                    drawn.revision != revision || drawn.size != size || drawn.edited != edited
+                })
+            });
         let loading = state.renderer.as_ref().is_some_and(|r| r.loading());
         let next = if pending {
             Some(RENDER_POLL)
@@ -441,7 +452,12 @@ impl Shell {
         next
     }
 
-    pub(super) fn widget_surface(&mut self, id: UiId, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn widget_surface(
+        &mut self,
+        id: UiId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let area = self.plugins.widgets.areas.entry(id).or_default().clone();
         let measure = canvas(
             move |bounds, window, _| {
@@ -454,6 +470,9 @@ impl Shell {
         )
         .absolute()
         .inset_0();
+        let editor = self
+            .widget_edit_field(id, window, cx)
+            .map(|field| edit::Grayscale(field.into_any_element()));
         let drawn = self.plugins.widgets.drawn.get(&id);
         let image = drawn.map(|drawn| {
             img(drawn.image.clone())
@@ -463,28 +482,6 @@ impl Shell {
                 .w(px(drawn.size.0 as f32))
                 .h(px(drawn.size.1 as f32))
         });
-        let editor = self
-            .plugins
-            .widgets
-            .editing
-            .as_ref()
-            .filter(|editing| editing.widget == id)
-            .and_then(|editing| {
-                let rect = drawn?
-                    .boxes
-                    .iter()
-                    .find(|b| b.referent == editing.referent)?
-                    .rect;
-                Some(
-                    div()
-                        .absolute()
-                        .left(px(rect[0]))
-                        .top(px(rect[1]))
-                        .w(px(rect[2]))
-                        .h(px(rect[3]))
-                        .child(TextField::new(&editing.field)),
-                )
-            });
         div()
             .id(ElementId::Name(format!("plugin-widget-{id}").into()))
             .relative()
@@ -535,66 +532,5 @@ impl Shell {
 
     pub(super) fn send_gui(&mut self, referent: Ref, kind: GuiEventKind, cx: &mut Context<Self>) {
         self.plugin_input(Input::Gui(GuiEvent { referent, kind }), cx);
-    }
-
-    fn begin_widget_edit(
-        &mut self,
-        id: UiId,
-        referent: Ref,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(editing) = &self.plugins.widgets.editing {
-            if editing.referent == referent {
-                return;
-            }
-            let previous = editing.referent;
-            self.end_widget_edit(previous, false, cx);
-        }
-        let text = self
-            .plugins
-            .widgets
-            .text_boxes
-            .get(&id)
-            .and_then(|boxes| boxes.get(&referent))
-            .cloned()
-            .unwrap_or_default();
-        let field = cx.new(|cx| InputState::new(window, cx).default_value(text));
-        let events = cx.subscribe(
-            &field,
-            move |shell, field, event: &InputEvent, cx| match event {
-                InputEvent::Change => {
-                    let text = field.read(cx).value().to_string();
-                    shell.send_gui(referent, GuiEventKind::TextChanged(text), cx);
-                }
-                InputEvent::PressEnter { .. } => shell.end_widget_edit(referent, true, cx),
-                InputEvent::Blur => shell.end_widget_edit(referent, false, cx),
-                _ => {}
-            },
-        );
-        field.update(cx, |state, cx| state.focus(window, cx));
-        self.plugins.widgets.editing = Some(Editing {
-            widget: id,
-            referent,
-            field,
-            _events: events,
-        });
-        self.send_gui(referent, GuiEventKind::Focused, cx);
-        cx.notify();
-    }
-
-    fn end_widget_edit(&mut self, referent: Ref, enter: bool, cx: &mut Context<Self>) {
-        if self
-            .plugins
-            .widgets
-            .editing
-            .as_ref()
-            .is_none_or(|e| e.referent != referent)
-        {
-            return;
-        }
-        self.plugins.widgets.editing = None;
-        self.send_gui(referent, GuiEventKind::FocusLost { enter }, cx);
-        cx.notify();
     }
 }

@@ -24,6 +24,10 @@ pub(crate) struct Drawn {
     pub(crate) sinks: HashSet<Ref>,
     /// The scrolling frames, for the wheel and their bars.
     pub(crate) scrolls: rbx_viewer::GuiScrolls,
+    /// How the `TextBox` being typed in sets its text, for the field over it.
+    pub(crate) look: Option<(Ref, rbx_viewer::GuiTextLook)>,
+    /// The `TextBox` this was drawn with its text hidden for, if any.
+    pub(crate) edited: Option<Ref>,
 }
 
 struct Job {
@@ -34,6 +38,7 @@ struct Job {
     size: (u32, u32),
     backdrop: [f32; 3],
     transparent: bool,
+    edited: Option<Ref>,
 }
 
 #[derive(Default)]
@@ -69,8 +74,10 @@ impl Renderer {
         Renderer { queue, done }
     }
 
-    /// Queues a render (`backdrop` = the panel's background, encoded sRGB);
+    /// Queues a render (`backdrop` = the panel's background, encoded sRGB),
+    /// with how `edited`'s text is set if a `TextBox` is being typed in;
     /// a newer request for the same widget replaces a queued one.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn request(
         &self,
         widget: UiId,
@@ -79,6 +86,7 @@ impl Renderer {
         size: (u32, u32),
         backdrop: [f32; 3],
         transparent: bool,
+        edited: Option<Ref>,
     ) {
         // `PluginHost::widget_dom` roots the copy at a `ScreenGui` carrying
         // the widget's own referent.
@@ -93,6 +101,7 @@ impl Renderer {
             size,
             backdrop,
             transparent,
+            edited,
         };
         let (lock, wake) = &*self.queue;
         let Ok(mut queue) = lock.lock() else {
@@ -309,6 +318,10 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
                     boxes: canvas.boxes,
                     sinks,
                     scrolls: canvas.scrolls,
+                    edited: job.edited,
+                    look: job
+                        .edited
+                        .and_then(|referent| Some((referent, viewer.gui_text_look(referent)?))),
                 };
                 if done.send((job.widget, drawn)).is_err() {
                     return;

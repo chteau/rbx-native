@@ -163,7 +163,7 @@ impl Shell {
             });
             let size = (rect[2].round() as u32, rect[3].round() as u32);
             self.request_widget_render(id, revision, size, cx);
-            let surface = self.widget_surface(id, cx);
+            let surface = self.widget_surface(id, window, cx);
             let close = div()
                 .id(ElementId::Name(format!("plugin-float-close-{id}").into()))
                 .px(px(6.))

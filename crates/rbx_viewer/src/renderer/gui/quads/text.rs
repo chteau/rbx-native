@@ -7,7 +7,7 @@ use cosmic_text::{CacheKey, Color, Ellipsize, EllipsizeHeightLimit, LayoutRun, P
 
 use super::super::atlas::GLYPHS;
 use super::super::pipeline::VertexRaw;
-use super::super::text::{unquantised, Typesetter};
+use super::super::text::{glyph_xs, line_width, unquantised, Typesetter};
 use super::shape::{quad, Paint, Shape, Spin, UV_WHOLE};
 use super::{extend, Run, Scissor, WHITE};
 use crate::scene::{GuiAlign, GuiRect, GuiText, GuiTypeset};
@@ -132,7 +132,7 @@ pub(super) fn emit(
     for (line, &cut) in lines.iter().zip(&cuts) {
         sink.glyphs(line, cut);
         // After the glyphs, so a strikethrough lies over them.
-        sink.line_x = sink.rect.x + offset(text.x_align, rect.width, line.line_w);
+        sink.line_x = sink.rect.x + offset(text.x_align, rect.width, line_width(line));
         cosmic_text::render_decoration(&mut sink, line, Color::rgb(0, 0, 0));
     }
 }
@@ -164,16 +164,21 @@ struct Sink<'a> {
 impl Sink<'_> {
     fn glyphs(&mut self, line: &LayoutRun, cut: usize) {
         let text = self.text;
+        let (xs, width) = glyph_xs(line);
         // Snapped before the glyph offsets go on, so every glyph of the line
         // lands on the same whole-pixel baseline.
         let origin = (
-            (self.rect.x + offset(text.x_align, self.rect.width, line.line_w) + self.shift[0])
-                .round(),
+            (self.rect.x + offset(text.x_align, self.rect.width, width) + self.shift[0]).round(),
             (self.top + line.line_y + self.shift[1]).round(),
         );
         let start = self.vertices.len();
-        for glyph in line.glyphs.iter().filter(|glyph| glyph.start < cut) {
-            let physical = snapped(glyph, origin);
+        for (glyph, &x) in line
+            .glyphs
+            .iter()
+            .zip(&xs)
+            .filter(|(glyph, _)| glyph.start < cut)
+        {
+            let physical = snapped(glyph, x, origin);
             let Some(slot) = self.fonts.glyph(physical.cache_key) else {
                 continue;
             };
@@ -267,8 +272,8 @@ impl cosmic_text::Renderer for Sink<'_> {
 /// [`cosmic_text::LayoutGlyph::physical`] with the position rounded first:
 /// a whole-pixel position bins to no subpixel offset at all, so the same
 /// bitmap serves the glyph wherever it lands and always sits on the grid.
-fn snapped(glyph: &cosmic_text::LayoutGlyph, origin: (f32, f32)) -> PhysicalGlyph {
-    let x = origin.0 + glyph.x + glyph.font_size * glyph.x_offset;
+fn snapped(glyph: &cosmic_text::LayoutGlyph, at: f32, origin: (f32, f32)) -> PhysicalGlyph {
+    let x = origin.0 + at + glyph.font_size * glyph.x_offset;
     let y = origin.1 + glyph.y - glyph.font_size * glyph.y_offset;
     let (cache_key, x, y) = CacheKey::new(
         glyph.font_id,

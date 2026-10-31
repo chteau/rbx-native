@@ -22,8 +22,28 @@
   by 8 px. The wheel scrolls the ScrollingFrame under the cursor by 100 px
   a notch and the bar thumb drags, both measured in Studio, and notches
   that land before the next render add up instead of getting dropped.
-  Text still measures a couple of pixels narrower than Studio's per line,
-  that's left for the font work. (@chteau)
+  (@chteau)
+
+- **GUI text is as wide as Studio's.** Text was coming out ~3% narrow.
+  I measured it in Studio (TextBounds and GetTextBoundsAsync, 7 fonts,
+  sizes 8 to 100): the em is TextSize + 1 over the face's line box, not
+  TextSize over it, and every glyph advances a whole pixel, rounded to a
+  64th first like FreeType does. Across 728 strings the mean miss went
+  from 10.3 px to 0.08 px, 712 within 1 px (was 128). The chat fixture now
+  wraps on the same words as Studio. (@chteau)
+
+- **Typing in a widget TextBox shows the text once.** The widget image
+  used to keep the box's text under the input field, so you saw it twice.
+  Now the box is drawn without its text while you type and the field over
+  it takes the box's font, weight, size, colours, alignment and padding,
+  with Studio's 1 px caret and blue selection, so focusing doesn't move
+  anything. The field also actually gets focus now (it used to blur right
+  away), and clicking elsewhere in the widget ends the edit. (@chteau)
+
+- **Collaborators panel spacing.** One 8 px step for the edges, the gaps
+  and the cards, the status sits under "Share my presence" instead of
+  floating under the switch, and the scroll bar gets its own lane.
+  (@chteau)
 
 - **Publish as a new experience.** Publishing a file that isn't linked yet
   opens the game picker like before, but it now has a New experience

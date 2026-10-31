@@ -623,6 +623,14 @@ impl Headless {
             .with_renderer(|renderer, _, _| renderer.set_pseudo_locale(locale));
     }
 
+    /// How the last [`Headless::render_gui`] set `referent`'s text, for a
+    /// host drawing its own copy of it (a field over a `TextBox` being typed
+    /// in); `None` for anything that is not a text object on that canvas.
+    pub fn gui_text_look(&mut self, referent: Ref) -> Option<crate::GuiTextLook> {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.gui_text_look(referent))
+    }
+
     /// The overlay's text objects that overflow under the pseudo locale, as
     /// last drawn, in paint order.
     pub fn gui_overflows(&mut self) -> Vec<Ref> {

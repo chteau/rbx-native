@@ -82,7 +82,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::GuiBox;
+pub use gui::{GuiBox, GuiTextLook};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};
@@ -533,6 +533,11 @@ impl Renderer {
     /// See `Gui::set_pseudo_locale`.
     pub(crate) fn set_pseudo_locale(&mut self, locale: Option<crate::PseudoLocale>) {
         self.gui.set_pseudo_locale(locale);
+    }
+
+    /// See `Gui::text_look`.
+    pub(crate) fn gui_text_look(&self, referent: rbx_dom::Ref) -> Option<GuiTextLook> {
+        self.gui.text_look(referent)
     }
 
     /// See `Gui::overflows`.
