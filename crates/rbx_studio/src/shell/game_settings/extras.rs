@@ -42,6 +42,9 @@ pub(super) struct Extras {
     /// Bumped by every read and save, so a reply that lost the race is dropped.
     pub(super) generation: u64,
     pub(super) public: SwitchDraft,
+    /// Why Roblox would refuse going public; `None` until read or when the
+    /// read failed, which leaves the switch to try anyway.
+    pub(super) eligibility: Option<rbx_cloud::PublicEligibility>,
     pub(super) api_access: SwitchDraft,
     pub(super) genre: Option<Genre>,
     pub(super) media: MediaDraft,
@@ -52,6 +55,7 @@ pub(super) struct Extras {
 /// What one read brings back.
 struct Read {
     public: bool,
+    eligibility: Option<rbx_cloud::PublicEligibility>,
     api_access: bool,
     genre: Genre,
     media: Media,
@@ -83,6 +87,7 @@ impl Default for Extras {
             loading: Loading::Idle,
             generation: 0,
             public: SwitchDraft::default(),
+            eligibility: None,
             api_access: SwitchDraft::default(),
             genre: None,
             media: MediaDraft::default(),
@@ -144,6 +149,7 @@ impl GameSettingsWindow {
         ex.generation += 1;
         let generation = ex.generation;
         ex.public = SwitchDraft::default();
+        ex.eligibility = None;
         ex.api_access = SwitchDraft::default();
         ex.genre = None;
         ex.media.clear();
@@ -168,6 +174,7 @@ impl GameSettingsWindow {
                 match reply {
                     Ok(read) => {
                         ex.public.reset(read.public);
+                        ex.eligibility = read.eligibility;
                         ex.api_access.reset(read.api_access);
                         ex.genre = Some(read.genre);
                         ex.media.reset(read.media.clone());
@@ -273,6 +280,7 @@ fn read(web: &Web, universe_id: u64) -> Result<Read, String> {
         Web::Mock => {
             return Ok(Read {
                 public: false,
+                eligibility: None,
                 api_access: true,
                 genre: Genre {
                     genre: Some("obby_and_platformer".to_string()),
@@ -302,6 +310,7 @@ fn read(web: &Web, universe_id: u64) -> Result<Read, String> {
     let err = |e: rbx_cloud::CloudError| describe(&e);
     Ok(Read {
         public: rbx_cloud::experience_public(cookie, universe_id).map_err(err)?,
+        eligibility: rbx_cloud::public_eligibility(cookie, universe_id).ok(),
         api_access: rbx_cloud::studio_api_access(cookie, universe_id).map_err(err)?,
         genre: rbx_cloud::experience_genre(cookie, universe_id)
             .map(|(genre, subgenre)| Genre { genre, subgenre })

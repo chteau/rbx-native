@@ -179,7 +179,7 @@ impl Shell {
                     let _ = shell.update(cx, |shell, cx| shell.picked(token, experience, note, cx));
                 }
             };
-            let opened = crate::launcher::open_game_picker(on_pick, true, cx);
+            let opened = crate::launcher::open_game_picker(on_pick, Some(shell.clone()), cx);
             let _ = shell.update(cx, |shell, _| shell.roblox.picker = opened);
         });
     }

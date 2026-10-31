@@ -35,6 +35,43 @@ pub fn set_experience_public(
     set_public_at(DEVELOP, cookie, universe_id, public)
 }
 
+/// What Roblox checks before an experience may go public, from `develop`
+/// `GET /v1/universes/{id}/activation-eligibility` (documented in the
+/// legacy develop v1 swagger): `isEligible` "requires the user publish gate
+/// and either a maturity rating or an intact Build seal".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct PublicEligibility {
+    #[serde(rename = "isEligible")]
+    pub eligible: bool,
+    /// The Maturity & Compliance Questionnaire has been answered.
+    #[serde(rename = "maturityRated", default)]
+    pub maturity_rated: bool,
+    /// The account passes Roblox's public publishing checks.
+    #[serde(rename = "isUserEligibleForPublicPublish", default)]
+    pub user_eligible: bool,
+}
+
+pub fn public_eligibility(
+    cookie: &SessionCookie,
+    universe_id: u64,
+) -> Result<PublicEligibility, CloudError> {
+    eligibility_at(DEVELOP, cookie, universe_id)
+}
+
+fn eligibility_at(
+    root: &str,
+    cookie: &SessionCookie,
+    universe_id: u64,
+) -> Result<PublicEligibility, CloudError> {
+    let url = format!("{root}/v1/universes/{universe_id}/activation-eligibility");
+    Ok(serde_json::from_slice(&web::send(
+        cookie,
+        Method::Get,
+        &url,
+        &[],
+    )?)?)
+}
+
 /// Whether Studio's scripts may use DataStores and the other API services.
 pub fn studio_api_access(cookie: &SessionCookie, universe_id: u64) -> Result<bool, CloudError> {
     api_access_at(DEVELOP, cookie, universe_id)
@@ -153,6 +190,27 @@ mod tests {
 
     fn cookie() -> SessionCookie {
         SessionCookie::new("test-cookie")
+    }
+
+    #[test]
+    fn eligibility_reads_the_gate_and_its_two_halves() {
+        let (root, served) = serve(vec![(
+            200,
+            "",
+            r#"{"isEligible":false,"maturityRated":false,"isUserEligibleForPublicPublish":true,"creatorTier":"Trusted"}"#,
+        )]);
+        let got = eligibility_at(&root, &cookie(), 42).unwrap();
+        assert_eq!(
+            got,
+            PublicEligibility {
+                eligible: false,
+                maturity_rated: false,
+                user_eligible: true
+            }
+        );
+        assert!(
+            served.join().unwrap()[0].starts_with("GET /v1/universes/42/activation-eligibility ")
+        );
     }
 
     #[test]

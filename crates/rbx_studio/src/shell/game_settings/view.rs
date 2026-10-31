@@ -2,6 +2,7 @@
 //! where they live, and the Save/Cancel footer.
 
 mod extras;
+mod playability;
 mod rows;
 mod team_create;
 

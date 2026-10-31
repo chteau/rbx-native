@@ -19,8 +19,15 @@
   experience has, but stays a Creator Hub link like in Studio, Roblox only
   lets you change it once every three months. No reordering: Studio's old
   order call says OK and moves nothing, so that stays on the Creator Hub.
-  Going public still gets a 403 from Roblox on our test experiences, the
-  page just shows Roblox's refusal for now. (@chteau)
+  Going public needs Roblox's Maturity & Compliance Questionnaire first,
+  that's what the 403 on `activate` was. So a private experience that
+  hasn't done it shows that and a Creator Hub link instead of the switch,
+  same gate real Studio's Manage Audience runs. (@chteau)
+
+- **Game Settings catches the sign-in late.** Opened before the editor
+  had read the Roblox sign-in from the keyring, it stayed on the signed
+  out rows for good, bc nothing told it the session showed up. Now it
+  switches over once it lands. (@chteau)
 
 - **Home's page head stops overlapping.** In the game picker the search
   slid under the owner dropdown and hid its arrow, and the dropdown's text

@@ -116,11 +116,11 @@ pub(crate) fn open_home(boot: Boot, cx: &mut App) {
 
 /// The editor's game picker (1040×720, resizable down to 760×520): Home's
 /// My Games, where picking a game, or adding one by place ID or link, hands
-/// it to `on_pick` and closes the picker. `offer_new` adds New experience,
-/// for picking where to publish.
+/// it to `on_pick` and closes the picker. A `shell` adds New experience,
+/// for picking where to publish, following that editor's Roblox sign-in.
 pub(crate) fn open_game_picker(
     on_pick: impl Fn(rbx_cloud::Experience, Option<String>, &mut App) + 'static,
-    offer_new: bool,
+    shell: Option<WeakEntity<crate::shell::Shell>>,
     cx: &mut App,
 ) -> Option<WindowHandle<Root>> {
     let options = options(
@@ -130,7 +130,7 @@ pub(crate) fn open_game_picker(
         cx,
     );
     cx.open_window(options, move |window, cx| {
-        let view = cx.new(|cx| HomeWindow::picker(Rc::new(on_pick), offer_new, window, cx));
+        let view = cx.new(|cx| HomeWindow::picker(Rc::new(on_pick), shell, window, cx));
         cx.new(|cx| Root::new(view, window, cx))
     })
     .ok()

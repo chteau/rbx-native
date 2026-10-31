@@ -78,7 +78,7 @@ impl DataStoresWindow {
                     });
                 }
             };
-            let opened = crate::launcher::open_game_picker(on_pick, false, cx);
+            let opened = crate::launcher::open_game_picker(on_pick, None, cx);
             let _ = window.update(cx, |this, _| this.picker = opened);
         });
     }

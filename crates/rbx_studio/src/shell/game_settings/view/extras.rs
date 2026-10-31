@@ -1,8 +1,7 @@
 //! The sign-in rows `extras` reads: Basic Info's icon, thumbnails and
-//! genre, Permissions' Playability, and Security's Enable Studio Access to
-//! API Services.
+//! genre, and Security's Enable Studio Access to API Services. Permissions'
+//! Playability is in `playability`.
 
-use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -23,8 +22,6 @@ const SIGNED_OUT: &str =
 // Studio's own label and text (Security page).
 const API_LABEL: &str = "Enable Studio Access to API Services";
 const API_DESCRIPTION: &str = "Enables Studio access to experience services such as Data Stores";
-const PLAYABILITY: &str = "Playability";
-const PLAYABILITY_DESCRIPTION: &str = "Private experiences only let in you and people who can edit it. Going private drops everyone in its servers.";
 const ICON_DESCRIPTION: &str =
     "A square PNG or JPEG, 512\u{d7}512 works best. Roblox reviews it before anyone sees it.";
 const THUMBNAILS_DESCRIPTION: &str =
@@ -45,40 +42,6 @@ impl GameSettingsWindow {
             self.thumbnails_row(cx),
             self.genre_row(cx),
         ]
-    }
-
-    pub(super) fn permissions_extras(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        if self.link.is_none() || self.team_create.web.is_none() {
-            // Signed out, the read-only Open Cloud row stands in.
-            return Vec::new();
-        }
-        let control = self.waiting("gs-public", cx).unwrap_or_else(|| {
-            let public = self.extras.public.value().unwrap_or(false);
-            let entity = cx.entity().downgrade();
-            let pick = move |on: bool| -> kit::OnPick {
-                let entity = entity.clone();
-                Rc::new(move |_, cx: &mut App| {
-                    let _ = entity.update(cx, |this, cx| this.set_public(on, cx));
-                })
-            };
-            kit::segmented(
-                "gs-public",
-                26.,
-                vec![
-                    ("Public", public, pick(true)),
-                    ("Private", !public, pick(false)),
-                ],
-            )
-            .into_any_element()
-        });
-        vec![row(
-            PLAYABILITY,
-            PLAYABILITY_DESCRIPTION,
-            None,
-            self.extras.public.pending().is_some(),
-            control,
-            self.failure(),
-        )]
     }
 
     pub(super) fn security_extras(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
@@ -106,7 +69,11 @@ impl GameSettingsWindow {
 
     /// The control while there is no value to edit: greyed out signed out,
     /// a spinner while reading, Try again after a failed read.
-    fn waiting(&self, prefix: &'static str, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn waiting(
+        &self,
+        prefix: &'static str,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         if self.team_create.web.is_none() {
             return Some(
                 ui::disabled_button(id(prefix, "off"), "Sign in to change")
@@ -126,7 +93,7 @@ impl GameSettingsWindow {
         }
     }
 
-    fn failure(&self) -> Option<String> {
+    pub(super) fn failure(&self) -> Option<String> {
         match &self.extras.loading {
             Loading::Failed(message) => Some(message.clone()),
             _ => None,
@@ -289,20 +256,31 @@ impl GameSettingsWindow {
                 .child(text)
                 .into_any_element()
         });
-        let description = v_flex().child(GENRE_DESCRIPTION).child(
-            div()
-                .id("gs-genre-manage")
-                .text_color(tokens::accent_line())
-                .cursor_pointer()
-                .child("Manage on Creator Hub")
-                .on_click(move |_, _, cx| {
-                    cx.open_url(&format!(
-                        "https://create.roblox.com/dashboard/creations/experiences/{universe_id}/configure"
-                    ))
-                }),
-        );
+        let description = v_flex().child(GENRE_DESCRIPTION).child(creator_hub_link(
+            "gs-genre-manage",
+            "Manage on Creator Hub",
+            universe_id,
+        ));
         row("Genre", description, None, false, control, None)
     }
+}
+
+/// The experience's Creator Hub configure page, as an accent link.
+pub(super) fn creator_hub_link(
+    id: &'static str,
+    label: &'static str,
+    universe_id: u64,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .text_color(tokens::accent_line())
+        .cursor_pointer()
+        .child(label)
+        .on_click(move |_, _, cx| {
+            cx.open_url(&format!(
+                "https://create.roblox.com/dashboard/creations/experiences/{universe_id}/configure"
+            ))
+        })
 }
 
 /// A rounded image well: the render, or a placeholder glyph until it arrives.

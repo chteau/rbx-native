@@ -266,14 +266,28 @@ impl HomeWindow {
     /// add-by-link, with no editor to boot from it.
     pub(super) fn picker(
         pick: Pick,
-        offer_new: bool,
+        shell: Option<WeakEntity<crate::shell::Shell>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut this = Self::new(Rc::new(RefCell::new(None)), window, cx);
         this.page = Page::MyGames;
         this.pick = Some(pick);
-        this.offer_new = offer_new;
+        this.offer_new = shell.is_some();
+        if let Some(shell) = shell.and_then(|shell| shell.upgrade()) {
+            // The keyring read in `new` misses a sign-in that lands while
+            // the picker is open; follow the shell's whenever it changes.
+            let mut seen = shell.read(cx).roblox_session().is_some();
+            this._subscriptions
+                .push(cx.observe(&shell, move |this, shell, cx| {
+                    let session = shell.read(cx).roblox_session();
+                    if session.is_some() != seen {
+                        seen = session.is_some();
+                        this.session = session;
+                        cx.notify();
+                    }
+                }));
+        }
         this
     }
 

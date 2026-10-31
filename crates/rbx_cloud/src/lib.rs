@@ -57,8 +57,8 @@ pub use datastores::{
 };
 pub use error::{CloudError, KeyedRefusal};
 pub use experience_access::{
-    experience_genre, experience_public, set_experience_public, set_studio_api_access,
-    studio_api_access,
+    experience_genre, experience_public, public_eligibility, set_experience_public,
+    set_studio_api_access, studio_api_access, PublicEligibility,
 };
 pub use experience_media::{
     delete_experience_thumbnail, experience_icon, experience_thumbnails, upload_experience_icon,

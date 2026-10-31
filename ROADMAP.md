@@ -2643,11 +2643,19 @@ both the plain fetch failure and the silent fall back to a default
   Studio's Security tab). Thumbnails can't be reordered: Studio's old
   `thumbnails/order` call answers 200 but moves nothing, and a removal
   only works with the media slot's own id, not the image id.
-- [ ] 📋 **Playability from Game Settings, for real**: going public through
-  `develop` `POST /v1/universes/{id}/activate` answers 403 "You are not
-  authorized to configure this universe" on experiences the account owns
-  (tried on two). The page shows Roblox's refusal, but whether that's an
-  eligibility rule or a route the Creator Hub no longer uses is unknown.
+- [x] **Playability says why it can't go public.** Roblox's 403 "You are
+  not authorized to configure this universe" on `activate` is its release
+  gate: `develop` `GET /v1/universes/{id}/activation-eligibility` (the call
+  real Studio makes too) answers not eligible, not maturity rated, until
+  the Maturity & Compliance Questionnaire is done. A private experience
+  that fails the gate shows the reason and a Creator Hub link instead of
+  the switch. Live-tested on an unarchived private test experience, and
+  real Studio's Manage Audience › Release publicly opens on that same
+  questionnaire.
+- [ ] 📋 **Going public from Game Settings once the gate passes**: the
+  switch still calls `activate`/`deactivate` for an experience that's
+  eligible or already public, but no test experience has answered the
+  questionnaire, so neither direction has been checked live.
 - [x] **Hover states fade** (what the visual pass left behind): every
   `hover` and `group_hover` style eases between its resting and hovered
   colours over 120 ms (`tokens::DURATION_HOVER`) and turns back from
