@@ -75,25 +75,40 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	scroll.ScrollingDirection = Enum.ScrollingDirection.Y
 	Ui.fill(scroll, "dock")
 	scroll.Parent = gui
-	Ui.pad(scroll, 8, 10, 12, 8)
-	Ui.list(scroll, 10)
+	-- One 8 px step everywhere: the edge inset, the gap between blocks and
+	-- the cards' own padding, as the editor's docks are spaced. The bar sits
+	-- in its own lane so it never covers the content.
+	scroll.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+	Ui.pad(scroll, Ui.GAP)
+	Ui.list(scroll, Ui.GAP)
 
 	-- The note.
 	local noteCard = Ui.card(scroll, 1)
 	Ui.text(noteCard, NOTE, { size = Ui.TEXT_XS, color = "text2" })
 
-	-- "Share my presence".
-	local toggleRow = Ui.frame(scroll, 2)
-	Ui.list(toggleRow, 8, true)
+	-- "Share my presence", with the status under its label: the switch, then
+	-- a column holding the label and what the switch is doing.
+	local shareRow = Ui.frame(scroll, 2)
+	Ui.list(shareRow, Ui.GAP, true).VerticalAlignment = Enum.VerticalAlignment.Top
 	local self: Widget
-	local switch = Ui.switch(toggleRow, function()
+	-- The switch is centred on the label's 18 px line.
+	local switchLane = Instance.new("Frame")
+	switchLane.BackgroundTransparency = 1
+	switchLane.Size = UDim2.fromOffset(28, 18)
+	switchLane.LayoutOrder = 1
+	switchLane.Parent = shareRow
+	local switch = Ui.switch(switchLane, function()
 		callbacks.onToggle()
-	end, 1)
-	local toggleLabel = Ui.text(toggleRow, "Share my presence", { size = Ui.TEXT_SM, order = 2, wrap = false })
-	toggleLabel.AutomaticSize = Enum.AutomaticSize.X
-	toggleLabel.Size = UDim2.fromOffset(0, 18)
+	end)
+	switch.frame.AnchorPoint = Vector2.new(0, 0.5)
+	switch.frame.Position = UDim2.fromScale(0, 0.5)
+	local shareText = Ui.frame(shareRow, 2)
+	shareText.Size = UDim2.new(1, -(28 + Ui.GAP), 0, 0)
+	Ui.list(shareText, 2)
+	local toggleLabel = Ui.text(shareText, "Share my presence", { size = Ui.TEXT_SM, order = 1, wrap = false })
+	toggleLabel.Size = UDim2.new(1, 0, 0, 18)
+	local status = Ui.text(shareText, "Off", { size = Ui.TEXT_XS, color = "text2", order = 2 })
 
-	local status = Ui.text(scroll, "Off", { size = Ui.TEXT_XS, color = "text2", order = 3 })
 	-- Everyone in rbx-native, as faces, like Studio's own row of collaborators.
 	local faces = Ui.frame(scroll, 3)
 	faces.Visible = false
@@ -174,7 +189,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	Ui.list(catchupBody, 3)
 
 	local rows = Ui.frame(scroll, 8)
-	Ui.list(rows, 10)
+	Ui.list(rows, Ui.GAP)
 
 	self = setmetatable({
 		gui = gui,
