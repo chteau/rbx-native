@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-01
+
+- **Bytecode dock.** The Script Editor can show what Luau compiles the open
+  script into, live as you type: the bytecode listing, the compiler's
+  remarks (what got inlined, what didn't), and the native code generator's
+  IR and assembly for x64 Windows, x64 Linux/macOS, ARM64 or this machine.
+  Pick the optimization and debug level like `luau-compile`'s `-O` and `-g`.
+  Roblox mode treats `Vector3` as Luau's native vector type, so
+  `Vector3.new(1, 2, 3)` folds into a constant and typed `Vector3` params
+  show up as vectors, instead of the plain library calls the online
+  playground gives you. Click a source line in the listing to jump to it.
+  It's Luau's own compiler and dumper (`crates/rbx_bytecode`) with the same
+  dump flags `luau-compile` uses. Open it from Script › Bytecode.
+  Idea from a [DevForum feature request](https://devforum.roblox.com/t/bytecodenative-code-viewer/4964517).
+  (@chteau)
+
 ## 2026-10-31
 
 - **Plugin docks stop eating the CPU.** A plugin with a `task.wait` loop or

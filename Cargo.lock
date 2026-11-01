@@ -6515,6 +6515,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_bytecode"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "mlua-sys",
+ "serde_json",
+]
+
+[[package]]
 name = "rbx_cloud"
 version = "0.1.0"
 dependencies = [
@@ -6714,6 +6723,7 @@ dependencies = [
  "rbx_audit",
  "rbx_autorig",
  "rbx_binary",
+ "rbx_bytecode",
  "rbx_cloud",
  "rbx_dom",
  "rbx_eyedropper",

@@ -122,6 +122,7 @@ otherwise. So yes, `cargo build` still takes a while for those two crates.
 | `rbx_reflection` | The class, property and enum database, built from Roblox's API dump (CI syncs it daily). |
 | `rbx_mesh` | Parses Roblox `.mesh` files, versions `1.00` to `7.00`. |
 | `rbx_lua` | A sandboxed Luau runtime over a DOM, like Studio's command bar. No scheduler, no events, no yielding. |
+| `rbx_bytecode` | What Luau compiles a script into: the bytecode listing, the compiler's remarks, and native IR and assembly for x64 and ARM64. A small C++ shim over the Luau mlua already builds. |
 | `rbx_assets` | Resolves, caches and decodes the assets a place uses (`rbxassetid://`, `rbxasset://`, old URLs). The network side comes from `rbx_cloud`. |
 | `rbx_materials` | The texture packs (colour, normal, metalness, roughness) behind each `Enum.Material`. |
 | `rbx_import` | Reads `.fbx`/`.obj`/`.gltf`/`.glb`, checks the triangle count against Roblox's limit and gets the file ready for upload. |

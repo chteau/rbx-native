@@ -39,6 +39,8 @@ rbx_cloud = { path = "../rbx_cloud" }
 rbx_play = { path = "../rbx_play" }
 # The Security Audit dock runs the whole-place remote/script audit.
 rbx_audit = { path = "../rbx_audit" }
+# The Bytecode dock: the active script's Luau bytecode, remarks, native IR and assembly.
+rbx_bytecode = { path = "../rbx_bytecode" }
 # Loren, the optional built-in framework: `rbxstudio loren`, Home's Loren
 # project, the Loren dock.
 rbx_loren = { path = "../rbx_loren" }

@@ -1,0 +1,21 @@
+[package]
+name = "rbx_bytecode"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# What Luau turns a script into: the bytecode listing, the compiler's
+# remarks, and the native code generator's IR and assembly for any target.
+# The Script Editor's Bytecode dock reads it. It's a thin C++ shim over the
+# Luau sources mlua already builds, so the listing is the compiler's own.
+[dependencies]
+# Same Luau as `rbx_lua`'s mlua. `luau-codegen` adds the native code
+# generator's library to the link; mlua itself keeps running scripts in the
+# interpreter, since that only changes with mlua's own `luau-jit`.
+mlua-sys = { version = "0.12", features = ["luau", "luau-codegen"] }
+
+[build-dependencies]
+# Builds the shim against the very Luau headers mlua-sys compiled.
+cc = "1"
+serde_json = "1"

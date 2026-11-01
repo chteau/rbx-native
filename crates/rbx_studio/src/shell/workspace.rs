@@ -146,6 +146,7 @@ impl Shell {
             Panel::SecurityAudit => self.security_audit_dock(cx),
             Panel::Playtests => self.playtests_dock(window, cx),
             Panel::Tests => self.tests_dock(cx),
+            Panel::Bytecode => self.bytecode_dock(cx),
             Panel::Layers => self.layers_dock(window, cx),
             Panel::Loren => self.loren_dock(window, cx),
             Panel::AvatarSettings => self.avatar_dock(window, cx),
