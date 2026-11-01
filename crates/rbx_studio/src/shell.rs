@@ -10,6 +10,7 @@ mod argon_sync;
 mod attributes_panel;
 mod avatar_dock;
 mod brick_color;
+mod bytecode_dock;
 mod change_class;
 pub(crate) mod chrome;
 mod clipboard;
@@ -373,6 +374,8 @@ pub(crate) struct Shell {
     lsp: luau_lsp::Session,
     /// The Tests dock's specs and last results; see `shell::tests_dock`.
     tests: tests_dock::TestsDock,
+    /// The Bytecode dock's options and last listing; see `shell::bytecode_dock`.
+    bytecode: bytecode_dock::BytecodeDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -916,6 +919,7 @@ impl Shell {
             debug: debugging::Debugging::default(),
             lsp: luau_lsp::Session::default(),
             tests: tests_dock::TestsDock::default(),
+            bytecode: bytecode_dock::BytecodeDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
@@ -1268,6 +1272,7 @@ impl Shell {
             shell.set_panel_open(layout::Panel::Playtests, true, cx);
         }
         shell.apply_debug_tests(cx);
+        shell.apply_debug_bytecode(cx);
         shell.apply_debug_layers(cx);
         shell.apply_debug_loren(cx);
         shell.apply_debug_avatar_settings(cx);

@@ -45,6 +45,10 @@
 //! `RBX_STUDIO_TESTS=1|run` opens the Tests dock, and with `run` runs every
 //! spec at once (see `shell::tests_dock`).
 //!
+//! `RBX_STUDIO_BYTECODE=1|<view>[,<target>]` opens the Bytecode dock, on the
+//! view and native target named by their labels, `Assembly,ARM64` say (see
+//! `shell::bytecode_dock`).
+//!
 //! `RBX_STUDIO_OPEN_SCRIPT=<name>[,<name>...]` opens each named
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would, the same aid, for the script

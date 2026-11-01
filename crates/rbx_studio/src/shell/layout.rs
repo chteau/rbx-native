@@ -139,6 +139,8 @@ pub(crate) enum Panel {
     /// The place's specs and their last results (`shell::tests_dock`).
     /// Script Editor only; shut until asked for.
     Tests,
+    /// What the active script compiles to (`shell::bytecode_dock`). Script Editor only; shut until asked for.
+    Bytecode,
     /// The place's editor layers and 3D notes (`shell::layers_panel`). Shut
     /// until asked for.
     Layers,
@@ -157,7 +159,7 @@ impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 20] = [
+    pub(crate) const ALL: [Panel; 21] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -174,6 +176,7 @@ impl Panel {
         Panel::SecurityAudit,
         Panel::Playtests,
         Panel::Tests,
+        Panel::Bytecode,
         Panel::Layers,
         Panel::Loren,
         Panel::AvatarSettings,
@@ -185,9 +188,11 @@ impl Panel {
     /// closing its torn-out window puts it back.
     pub(crate) fn home(self) -> Edge {
         match self {
-            Panel::Explorer | Panel::Collaborators | Panel::PluginWidgets | Panel::Layers => {
-                Edge::Right
-            }
+            Panel::Explorer
+            | Panel::Collaborators
+            | Panel::PluginWidgets
+            | Panel::Layers
+            | Panel::Bytecode => Edge::Right,
             Panel::Properties | Panel::TerrainEditor => Edge::Left,
             Panel::Output
             | Panel::Viewport
@@ -226,6 +231,7 @@ impl Panel {
             Panel::SecurityAudit => "Security Audit",
             Panel::Playtests => "Playtests",
             Panel::Tests => "Tests",
+            Panel::Bytecode => "Bytecode",
             Panel::Layers => "Layers",
             Panel::Loren => "Loren",
             Panel::AvatarSettings => "Avatar Settings",
@@ -246,6 +252,7 @@ impl Panel {
                 | Panel::SecurityAudit
                 | Panel::Playtests
                 | Panel::Tests
+                | Panel::Bytecode
                 | Panel::Layers
                 | Panel::Loren
                 | Panel::AvatarSettings

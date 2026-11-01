@@ -252,6 +252,7 @@ fn focus_moves_into_every_dock_that_can_hold_it() {
             (Panel::SecurityAudit, None),
             (Panel::Playtests, None),
             (Panel::Tests, None),
+            (Panel::Bytecode, None),
             (Panel::Layers, None),
             (Panel::Loren, None),
             (Panel::AvatarSettings, None),

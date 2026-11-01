@@ -577,6 +577,31 @@ impl Shell {
                 shell.set_panel_open(Panel::ScriptAnalysis, !analysis, cx);
             }))
             .into_any_element(),
+            {
+                let bytecode = self.is_panel_showing(Panel::Bytecode);
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-script-bytecode",
+                    IconName::Code,
+                    "Bytecode",
+                    cx,
+                )
+                .when(bytecode, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Bytecode \u{2014} what Luau compiles this script to",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.set_panel_open(Panel::Bytecode, !bytecode, cx);
+                }))
+                .into_any_element()
+            },
         ]
     }
 
@@ -677,6 +702,7 @@ impl Shell {
             tiles.push((Panel::Watch, IconName::Eye, "Watch"));
             tiles.push((Panel::CallStack, IconName::Layers, "Call Stack"));
             tiles.push((Panel::Tests, IconName::CircleCheck, "Tests"));
+            tiles.push((Panel::Bytecode, IconName::Code, "Bytecode"));
         }
         tiles
             .into_iter()

@@ -43,6 +43,7 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::SecurityAudit
         | Panel::Playtests
         | Panel::Tests
+        | Panel::Bytecode
         | Panel::Layers
         | Panel::Loren
         | Panel::AvatarSettings
