@@ -88,9 +88,10 @@ impl Headless {
         self.resident.forget(&reference);
     }
 
-    /// How many asset fetches are still running, the harness's cue that a
-    /// streamed load has finished arriving, and nothing else's.
-    #[doc(hidden)]
+    /// How many asset fetches are still running: the harness's cue that a
+    /// streamed load has finished arriving, and an idle host's cue that
+    /// [`Headless::tick`] still has something to collect, so it can stop
+    /// ticking once this reaches zero.
     pub fn assets_in_flight(&self) -> usize {
         self.resident.in_flight()
     }
@@ -100,8 +101,9 @@ impl Headless {
     ///
     /// For the benchmark, which times how long a requested asset takes to
     /// reach a frame and cannot have the orbit camera moving underneath that
-    /// measurement. Everything else should tick.
-    #[doc(hidden)]
+    /// measurement, and for a host that only draws GUI (`render_gui`) and
+    /// has no camera whose motion would mean anything. Everything else
+    /// should tick.
     pub fn swap_assets(&mut self) -> bool {
         self.take_landed_assets()
     }

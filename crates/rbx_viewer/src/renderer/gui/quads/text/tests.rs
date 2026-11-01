@@ -53,7 +53,11 @@ fn element(text: GuiText) -> GuiElement {
         strokes: Vec::new(),
         shadows: Vec::new(),
         gradient: None,
-        text: Some(GuiTypeset { text, size: 20.0 }),
+        text: Some(GuiTypeset {
+            text,
+            size: 20.0,
+            inset: [0.0; 4],
+        }),
         viewport: None,
         group: None,
         scroll: None,

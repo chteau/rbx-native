@@ -8,6 +8,8 @@ use super::*;
 fn paged(dom: &mut WeakDom, parent: Ref) -> (Ref, [Ref; 3]) {
     let container = frame(dom, parent, udim2(0.0, 0, 0.0, 0), udim2(1.0, 0, 1.0, 0));
     let layout = dom.new_instance("UIPageLayout", "UIPageLayout", Some(container));
+    dom.set_property(layout, "SortOrder", Variant::Enum(2))
+        .unwrap();
     let pages = [0, 1, 2].map(|order| {
         // A `Position`/`Size` the layout is expected to overrule entirely.
         let page = frame(dom, container, udim2(0.3, 9, 0.3, 9), udim2(0.1, 3, 0.1, 3));

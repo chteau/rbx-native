@@ -82,7 +82,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::GuiBox;
+pub use gui::{GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};
@@ -535,6 +535,16 @@ impl Renderer {
         self.gui.set_pseudo_locale(locale);
     }
 
+    /// See `Gui::set_text_edit`.
+    pub(crate) fn set_gui_text_edit(&mut self, edit: Option<GuiTextEdit>) {
+        self.gui.set_text_edit(edit);
+    }
+
+    /// See `Gui::text_map`.
+    pub(crate) fn gui_text_map(&self) -> Option<GuiTextMap> {
+        self.gui.text_map().cloned()
+    }
+
     /// See `Gui::overflows`.
     pub(crate) fn gui_overflows(&self, canvas: bool) -> &[rbx_dom::Ref] {
         self.gui.overflows(canvas)
@@ -593,6 +603,11 @@ impl Renderer {
     /// Every element the GUI was last laid out with, in paint order.
     pub(crate) fn gui_boxes(&self) -> &[GuiBox] {
         self.gui.boxes()
+    }
+
+    /// Every `ScrollingFrame` of the last layout, see `Gui::scrolls`.
+    pub(crate) fn gui_scrolls(&self) -> crate::GuiScrolls {
+        self.gui.scrolls()
     }
 
     /// Where this frame's draggers sit, or `None` when no transform tool is

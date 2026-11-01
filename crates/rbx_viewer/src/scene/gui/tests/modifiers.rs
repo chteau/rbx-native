@@ -433,3 +433,14 @@ fn a_disabled_gradient_is_ignored() {
 
     assert_eq!(only(&dom).gradient, None);
 }
+
+// A `UICorner` made in code and left alone rounds by its class default,
+// 8 px, as Studio draws it.
+#[test]
+fn a_corner_with_no_radius_set_rounds_by_eight_pixels() {
+    let (mut dom, gui) = screen_gui();
+    let frame = boxed(&mut dom, gui);
+    dom.new_instance("UICorner", "UICorner", Some(frame));
+
+    assert_eq!(only(&dom).corner_radii, [8.0; 4]);
+}

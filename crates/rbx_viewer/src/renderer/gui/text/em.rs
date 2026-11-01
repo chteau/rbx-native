@@ -6,8 +6,16 @@
 //! descender. Measured in Studio with `TextService:GetTextSize("Click me",
 //! 100, ...)` against each face's advances, the em comes out at `100 / hhea`
 //! within 1% for Arimo (1.117), Source Sans Pro (1.257), Roboto, Montserrat,
-//! Fredoka One, Builder Sans, Nunito and Merriweather alike; the 1% left
-//! over is Roblox rounding each advance to a whole pixel.
+//! Fredoka One, Builder Sans, Nunito and Merriweather alike.
+//!
+//! Not quite `TextSize / hhea` though: the em is one pixel of `TextSize`
+//! larger. Measured per glyph with `GetTextBoundsAsync` (70 glyphs, sizes 6
+//! to 40, Builder Sans, Montserrat, Source Sans Pro, Arimo and Roboto),
+//! Studio's advances are `round(advance * (TextSize + 1) / hhea)` for 99.4%
+//! of them, against barely half for `TextSize / hhea`; its cap heights in a
+//! capture are that much taller too. At 100 the pixel is the 1% the old
+//! measurement put down to rounding, at 15 it is 7%. Each advance being a
+//! whole pixel is [`super::Typesetter::shape`]'s hinting.
 
 use std::collections::HashMap;
 
@@ -56,6 +64,12 @@ pub(super) fn line_em(
         .and_then(|entry| ems.get(&entry.asset))
         .copied()
         .unwrap_or(FALLBACK)
+}
+
+/// The em, in pixels, of a face whose line box is `line` pixels and `ems`
+/// ems tall.
+pub(super) fn em_px(line: f32, ems: f32) -> f32 {
+    (line + 1.0) / ems
 }
 
 /// The line box `face` takes at `size`, which only `Legacy` makes larger.

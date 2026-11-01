@@ -7,19 +7,23 @@
 //! so `TextScaled` settles on the size the glyphs really take.
 
 mod atlas;
+mod edit;
 mod em;
 
 use std::collections::{HashMap, HashSet};
 
 use cosmic_text::{
-    Align, Angle, Attrs, Buffer, CacheKey, CacheKeyFlags, Color, Ellipsize, FontSystem, Metrics,
-    Shaping, Style, SwashCache, SwashImage, Transform, UnderlineStyle, Weight, Wrap,
+    fontdb, Align, Angle, Attrs, Buffer, CacheKey, CacheKeyFlags, Color, Ellipsize, FontSystem,
+    Hinting, LayoutGlyph, LayoutRun, Metrics, Shaping, Style, SwashCache, SwashImage, Transform,
+    UnderlineStyle, Weight, Wrap,
 };
 use rbx_assets::AssetRef;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 
 pub(super) use atlas::{Glyph, GlyphAtlas};
+pub(super) use edit::{scroll_to, SELECTED_TEXT, SELECTION};
+pub use edit::{GuiTextEdit, GuiTextLine, GuiTextMap};
 
 use crate::fonts::{Face, Family, Library};
 use crate::scene::{gui_span_face, GuiText, GuiTextMeasure};
@@ -69,6 +73,13 @@ pub(super) struct Typesetter {
     /// included: a decoration takes its colour from the shaping) and what
     /// it was shaped to. Dropped with [`Typesetter::measured`].
     shaped: HashMap<String, Buffer>,
+    /// A face's kerning between two characters, in ems, for the pairs
+    /// cosmic-text shapes apart (see [`Typesetter::glyph_xs`]).
+    kerns: HashMap<(fontdb::ID, char, char), f32>,
+    /// The `TextBox` being typed in, drawn with its selection (see
+    /// [`edit`]), and where the last draw put its characters.
+    pub(super) edit: Option<GuiTextEdit>,
+    pub(super) edit_map: Option<GuiTextMap>,
 }
 
 /// More measurements than any one screen holds; past it the cache starts
@@ -114,6 +125,9 @@ impl Typesetter {
             loaded: HashSet::new(),
             measured: HashMap::new(),
             shaped: HashMap::new(),
+            kerns: HashMap::new(),
+            edit: None,
+            edit_map: None,
         }
     }
 
@@ -214,7 +228,7 @@ impl Typesetter {
         let metrics_of = |face: &Face, size: f32| {
             let line = em::line_box(face, size);
             Metrics::new(
-                line / em::line_em(families, ems, face),
+                em::em_px(line, em::line_em(families, ems, face)),
                 line * text.line_height,
             )
         };
@@ -229,6 +243,9 @@ impl Typesetter {
         let scale = size / text.size.max(1.0);
         let mut buffer = Buffer::new(system, metrics_of(&text.face, size));
         buffer.set_size(width, None);
+        // Not cosmic-text's own hinting, which rounds an advance plainly:
+        // `glyph_xs` rounds each the way Studio does (see `em`).
+        buffer.set_hinting(Hinting::Disabled);
         buffer.set_wrap(match text.wrapped || text.scaled {
             true => Wrap::WordOrGlyph,
             false => Wrap::None,
@@ -345,7 +362,8 @@ impl GuiTextMeasure for Typesetter {
         if let Some(&known) = self.measured.get(&key) {
             return known;
         }
-        let measured = bounds(&self.shape(text, size, max_width, None));
+        let buffer = self.shape(text, size, max_width, None);
+        let measured = self.bounds(&buffer);
         if self.measured.len() >= MEASURED_CAP {
             self.measured.clear();
         }
@@ -354,11 +372,131 @@ impl GuiTextMeasure for Typesetter {
     }
 }
 
-/// The widest line and the height of every line.
-pub(super) fn bounds(buffer: &Buffer) -> [f32; 2] {
-    buffer.layout_runs().fold([0.0f32, 0.0], |bounds, run| {
-        [bounds[0].max(run.line_w), bounds[1] + run.line_height]
-    })
+impl Typesetter {
+    /// The widest line and the height of every line.
+    pub(super) fn bounds(&mut self, buffer: &Buffer) -> [f32; 2] {
+        buffer.layout_runs().fold([0.0f32, 0.0], |bounds, run| {
+            [
+                bounds[0].max(self.line_width(&run)),
+                bounds[1] + run.line_height,
+            ]
+        })
+    }
+
+    /// Where each of `run`'s glyphs lands, in its order, and how wide the
+    /// line is, advanced the way Studio advances them (measured against
+    /// `TextService:GetTextSize` over 7 fonts, 14,700 glyph pairs and 728
+    /// strings):
+    ///
+    /// - a glyph's own advance rounds to a 64th first, as FreeType's 26.6
+    ///   fixed point does, so x.493 already rounds up;
+    /// - a pair's kerning is floored to a 64th and added before the
+    ///   advance rounds to a whole pixel, so a kern of -0.08 px can cost a
+    ///   pixel and one of +0.13 px often costs nothing;
+    /// - the punctuation or digits a line starts with are their own run and
+    ///   never kern into the first letter (`.T` is two glyph widths at the
+    ///   start of a string, `x.T` is kerned).
+    /// - a space kerns with its neighbours (Arimo's `A ` is 2 px narrower
+    ///   than `A` and ` ` at 32), which cosmic-text, shaping word by word,
+    ///   never shapes, so those pairs are shaped here.
+    ///
+    /// The glyphs keep their visual order, right to left lines too, from
+    /// the line's first whole pixel.
+    pub(super) fn glyph_xs(&mut self, run: &LayoutRun) -> (Vec<f32>, f32) {
+        let glyphs = run.glyphs;
+        let first_letter = run
+            .text
+            .char_indices()
+            .find(|(_, c)| c.is_alphabetic())
+            .map_or(usize::MAX, |(at, _)| at);
+        let mut order: Vec<usize> = (0..glyphs.len()).collect();
+        order.sort_by(|&a, &b| glyphs[a].x.total_cmp(&glyphs[b].x));
+        let start = order.first().map_or(0.0, |&first| glyphs[first].x.round());
+        let mut xs = vec![0.0; glyphs.len()];
+        let mut x = start;
+        for index in order {
+            xs[index] = x;
+            let glyph = &glyphs[index];
+            let own = self.advance(glyph).unwrap_or(glyph.w);
+            let leading = first_letter > 0
+                && glyph.start < first_letter
+                && glyphs
+                    .get(index + 1)
+                    .is_some_and(|next| next.start == first_letter);
+            let next = glyphs.get(index + 1);
+            let kern = match (
+                leading,
+                next.and_then(|next| self.spaced_kern(run, glyph, next)),
+            ) {
+                (true, _) => 0.0,
+                (false, Some(kern)) => (kern * 64.0 + 1e-3).floor(),
+                (false, None) => ((glyph.w - own) * 64.0 + 1e-3).floor(),
+            };
+            x += (((own * 64.0).round() + kern) / 64.0).round();
+        }
+        (xs, x - start)
+    }
+
+    /// How wide `run`'s glyphs lie, each advanced as `glyph_xs` does.
+    pub(super) fn line_width(&mut self, run: &LayoutRun) -> f32 {
+        match run.glyphs.is_empty() {
+            true => run.line_w,
+            false => self.glyph_xs(run).1,
+        }
+    }
+
+    /// The glyph's advance in pixels before kerning, off its face's `hmtx`.
+    fn advance(&mut self, glyph: &LayoutGlyph) -> Option<f32> {
+        let font = self.system.get_font(glyph.font_id, glyph.font_weight)?;
+        let units = f32::from(font.metrics().units_per_em);
+        let advance = font
+            .as_swash()
+            .glyph_metrics(&[])
+            .advance_width(glyph.glyph_id);
+        (units > 0.0).then(|| advance * glyph.font_size / units)
+    }
+
+    /// The kerning in pixels between `glyph` and `next` when one of them is
+    /// a space, which cosmic-text shapes as a word of its own; `None` for
+    /// any other pair, kerned already.
+    fn spaced_kern(
+        &mut self,
+        run: &LayoutRun,
+        glyph: &LayoutGlyph,
+        next: &LayoutGlyph,
+    ) -> Option<f32> {
+        let char_at = |at: usize| run.text.get(at..)?.chars().next();
+        let (left, right) = (char_at(glyph.start)?, char_at(next.start)?);
+        if !(left.is_whitespace() || right.is_whitespace())
+            || glyph.font_id != next.font_id
+            || glyph.font_size != next.font_size
+        {
+            return None;
+        }
+        let key = (glyph.font_id, left, right);
+        if let Some(&kern) = self.kerns.get(&key) {
+            return Some(kern * glyph.font_size);
+        }
+        let font = self.system.get_font(glyph.font_id, glyph.font_weight)?;
+        let units = f32::from(font.metrics().units_per_em);
+        let mut buffer = harfrust::UnicodeBuffer::new();
+        buffer.push_str(&format!("{left}{right}"));
+        buffer.guess_segment_properties();
+        let shaped = font.shaper().shape(buffer, &[]);
+        let (Some(info), Some(position)) = (
+            shaped.glyph_infos().first(),
+            shaped.glyph_positions().first(),
+        ) else {
+            return None;
+        };
+        let own = font
+            .as_swash()
+            .glyph_metrics(&[])
+            .advance_width(info.glyph_id as u16);
+        let kern = (position.x_advance as f32 - own) / units.max(1.0);
+        self.kerns.insert(key, kern);
+        Some(kern * glyph.font_size)
+    }
 }
 
 /// The attributes one face shapes with: the family by the name fontdb knows

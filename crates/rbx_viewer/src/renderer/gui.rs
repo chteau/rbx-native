@@ -44,6 +44,7 @@ use group::Baked;
 use paint::Painter;
 use space::Space;
 use text::Typesetter;
+pub use text::{GuiTextEdit, GuiTextLine, GuiTextMap};
 pub(crate) use viewport::Look as FrameLook;
 use viewport::Viewports;
 
@@ -461,9 +462,29 @@ impl Gui {
         Some((texture, look))
     }
 
+    /// Every `ScrollingFrame` of the last layout, in paint order.
+    pub(super) fn scrolls(&self) -> crate::GuiScrolls {
+        crate::GuiScrolls(self.windows.clone())
+    }
+
     /// Every element of the last layout, in paint order.
     pub(super) fn boxes(&self) -> &[GuiBox] {
         &self.boxes
+    }
+
+    /// Draws `edit`'s `TextBox` as it is typed in from the next layout on
+    /// (see `text::edit`), or none.
+    pub(super) fn set_text_edit(&mut self, edit: Option<GuiTextEdit>) {
+        if self.text.edit != edit {
+            self.text.edit = edit;
+            self.text.edit_map = None;
+            self.built = None;
+        }
+    }
+
+    /// Where the last layout put the edited `TextBox`'s characters.
+    pub(super) fn text_map(&self) -> Option<&GuiTextMap> {
+        self.text.edit_map.as_ref()
     }
 
     /// Lays out the enabled screens, or `only` that one, enabled or not,

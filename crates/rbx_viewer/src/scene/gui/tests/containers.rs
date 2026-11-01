@@ -137,12 +137,16 @@ fn an_invisible_frame_hides_a_subtree_hung_off_a_folder() {
     assert!(resolve(&screens(&dom), VIEWPORT).is_empty());
 }
 
-/// A vertical `UIListLayout` under `parent`, at Roblox's default (centred)
-/// alignment.
+/// A vertical `UIListLayout` under `parent`, centred both ways (a list
+/// made in code starts at Left/Top), so where its items land shows which
+/// box it lays out in.
 fn list_layout(dom: &mut WeakDom, parent: Ref) -> Ref {
     let list = dom.new_instance("UIListLayout", "UIListLayout", Some(parent));
     dom.set_property(list, "FillDirection", Variant::Enum(1))
         .unwrap();
+    for name in ["HorizontalAlignment", "VerticalAlignment"] {
+        dom.set_property(list, name, Variant::Enum(0)).unwrap();
+    }
     list
 }
 

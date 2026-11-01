@@ -42,6 +42,9 @@ pub struct GuiCanvas {
     /// The text objects whose text overflows their box, in paint order,
     /// while a pseudo locale is set (see [`Headless::set_pseudo_locale`]).
     pub overflows: Vec<Ref>,
+    /// Every `ScrollingFrame` as laid out, for scrolling them by wheel and
+    /// by thumb.
+    pub scrolls: crate::GuiScrolls,
 }
 
 /// A loaded place that renders frames on demand, flown with the very same
@@ -618,6 +621,20 @@ impl Headless {
     pub fn set_pseudo_locale(&mut self, locale: Option<crate::PseudoLocale>) {
         self.offscreen
             .with_renderer(|renderer, _, _| renderer.set_pseudo_locale(locale));
+    }
+
+    /// Draws a `TextBox` as it is typed in, selection, scroll and all, from
+    /// the next [`Headless::render_gui`] on; `None` draws every box plainly.
+    pub fn set_gui_text_edit(&mut self, edit: Option<crate::GuiTextEdit>) {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.set_gui_text_edit(edit));
+    }
+
+    /// Where the last [`Headless::render_gui`] put the edited `TextBox`'s
+    /// characters, for the host to place the caret and hit-test clicks.
+    pub fn gui_text_map(&mut self) -> Option<crate::GuiTextMap> {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.gui_text_map())
     }
 
     /// The overlay's text objects that overflow under the pseudo locale, as

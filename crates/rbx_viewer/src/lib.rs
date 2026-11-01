@@ -80,11 +80,13 @@ pub use lighting::sun;
 pub use lighting::Calibration;
 pub use load::{parse_place, read_place};
 pub use quality::{valid_band_ends, FrameRateManager, QualityLevel, TUNED_BAND_ENDS};
-pub use renderer::{Fill, GuiBox, OverlayColors, Segment, ISOLATION_BACKDROP};
+pub use renderer::{
+    Fill, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap, OverlayColors, Segment, ISOLATION_BACKDROP,
+};
 pub use scene::perf;
 pub use scene::{
-    pseudo_localize, resolved_shape_label, shows_screen, PseudoLocale, SafeInsets, ScrollTarget,
-    STAGE_REACH,
+    pseudo_localize, resolved_shape_label, shows_screen, GuiScrolls, PseudoLocale, SafeInsets,
+    ScrollTarget, ThumbGrab, STAGE_REACH,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};

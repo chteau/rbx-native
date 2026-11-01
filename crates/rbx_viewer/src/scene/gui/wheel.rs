@@ -28,6 +28,60 @@ pub(crate) struct ScrollWindow {
     /// where the canvas fits the window, `ScrollingDirection` excludes the
     /// axis or `ScrollingEnabled` is off.
     pub(crate) range: [f32; 2],
+    /// `CanvasPosition` as drawn, clamped to the canvas.
+    pub(crate) position: [f32; 2],
+    /// Each axis's scroll bar thumb, where one is drawn.
+    pub(crate) thumbs: [Option<Rect>; 2],
+}
+
+/// Every `ScrollingFrame` of one [`crate::Headless::render_gui`] canvas, in
+/// paint order, for a host that scrolls them itself: by wheel
+/// ([`GuiScrolls::wheel_target`]) and by dragging a bar's thumb
+/// ([`GuiScrolls::thumb_at`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GuiScrolls(pub(crate) Vec<ScrollWindow>);
+
+/// A press on a scroll bar's thumb: dragging it by one pixel along `axis`
+/// moves `CanvasPosition` by `per_pixel`, from `position`, within
+/// `[0, range]`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThumbGrab {
+    pub referent: Ref,
+    pub axis: usize,
+    pub position: [f32; 2],
+    pub range: f32,
+    pub per_pixel: f32,
+}
+
+impl GuiScrolls {
+    /// See [`scroll_target`].
+    pub fn wheel_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
+        scroll_target(&self.0, point, axis)
+    }
+
+    /// The thumb under `point`, topmost first. A thumb is the window's share
+    /// of the canvas along a track the window's length, so a pixel of thumb
+    /// travel is `slack / (track - thumb)` pixels of canvas.
+    pub fn thumb_at(&self, point: [f32; 2]) -> Option<ThumbGrab> {
+        self.0.iter().rev().find_map(|window| {
+            (0..2).find_map(|axis| {
+                let thumb = window.thumbs[axis]?;
+                let visible = window.clip.is_none_or(|clip| contains(&clip, point));
+                if !visible || !contains(&thumb, point) || window.range[axis] <= 0.0 {
+                    return None;
+                }
+                let track = window.rect.size()[axis];
+                let length = thumb.size()[axis];
+                Some(ThumbGrab {
+                    referent: window.referent,
+                    axis,
+                    position: window.position,
+                    range: window.range[axis],
+                    per_pixel: window.range[axis] / (track - length).max(1.0),
+                })
+            })
+        })
+    }
 }
 
 /// The frame the wheel over `point` scrolls, and how far it can go.
@@ -87,7 +141,24 @@ mod tests {
             rect,
             clip,
             range,
+            position: [0.0; 2],
+            thumbs: [None; 2],
         }
+    }
+
+    #[test]
+    fn a_thumb_drag_moves_the_canvas_by_its_share_of_the_track() {
+        // A 100px window over a 400px canvas: a 25px thumb on a 100px track,
+        // so 75px of travel covers the 300px of slack.
+        let mut list = window(1, rect(0.0, 0.0, 100.0, 100.0), None, [0.0, 300.0]);
+        list.position = [0.0, 30.0];
+        list.thumbs[1] = Some(rect(94.0, 7.5, 6.0, 25.0));
+        let scrolls = GuiScrolls(vec![list]);
+
+        let grab = scrolls.thumb_at([96.0, 20.0]).unwrap();
+        assert_eq!((grab.axis, grab.position[1], grab.range), (1, 30.0, 300.0));
+        assert_eq!(grab.per_pixel, 4.0);
+        assert!(scrolls.thumb_at([96.0, 50.0]).is_none());
     }
 
     #[test]

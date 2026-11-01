@@ -55,9 +55,10 @@ fn attrs_of(fonts: &mut Typesetter, face: Face) -> cosmic_text::AttrsOwned {
     cosmic_text::AttrsOwned::new(&buffer.lines[0].attrs_list().get_span(0))
 }
 
-// Roblox's docs make `TextSize` the line height; the em is a fifth
-// smaller, for a `<font size>` as much as for the base size, and
-// `LineHeight` spaces the lines without touching the em.
+// Roblox's docs make `TextSize` the line height; the em is that plus one
+// pixel over the face's line box in ems (a fifth smaller for the fallback),
+// for a `<font size>` as much as for the base size, and `LineHeight` spaces
+// the lines without touching the em.
 #[test]
 fn text_size_is_the_line_box_and_the_em_a_fifth_smaller() {
     let face = Face::named("Believed", 400, false);
@@ -70,12 +71,12 @@ fn text_size_is_the_line_box_and_the_em_a_fifth_smaller() {
     text.line_height = 1.5;
 
     let buffer = fonts.shape(&text, 24.0, None, None);
-    assert_eq!(buffer.metrics(), Metrics::new(20.0, 36.0));
+    assert_eq!(buffer.metrics(), Metrics::new(25.0 / em::FALLBACK, 36.0));
     let spans = buffer.lines[0].attrs_list();
     assert_eq!(spans.get_span(0).metrics_opt, None, "the buffer's own");
     assert_eq!(
         spans.get_span(2).metrics_opt,
-        Some(Metrics::new(10.0, 18.0).into()),
+        Some(Metrics::new(13.0 / em::FALLBACK, 18.0).into()),
         "a <font size> is a line box too"
     );
 }
@@ -88,7 +89,7 @@ fn a_legacy_line_is_half_again_its_text_size() {
     let mut fonts = believing(&face.family, &[(400, false)]);
 
     let buffer = fonts.shape(&plain(face, 24.0), 24.0, None, None);
-    assert_eq!(buffer.metrics(), Metrics::new(36.0 / em::FALLBACK, 36.0));
+    assert_eq!(buffer.metrics(), Metrics::new(37.0 / em::FALLBACK, 36.0));
 }
 
 // A face that lands sizes its em off its own ascent plus descent, the box
@@ -121,9 +122,15 @@ fn a_landed_face_takes_its_em_from_its_own_ascent_and_descent() {
     let mut fonts = Typesetter::new();
     assert!(fonts.adopt(&library, std::slice::from_ref(&face)));
 
-    let buffer = fonts.shape(&plain(face, 27.32), 27.32, None, None);
+    let buffer = fonts.shape(&plain(face.clone(), 26.32), 26.32, None, None);
     assert!((buffer.metrics().font_size - 20.0).abs() < 1e-4);
-    assert_eq!(buffer.metrics().line_height, 27.32);
+    assert_eq!(buffer.metrics().line_height, 26.32);
+
+    // Each advance is a whole pixel, as Studio's are, so a line is too.
+    let mut text = plain(face, 26.32);
+    text.spans = vec![GuiTextSpan::plain("Ag Ag")];
+    let [width, _] = fonts.measure(&text, 26.32, None);
+    assert_eq!(width, width.round());
 }
 
 // A family with a single regular face serves a bold request with that
@@ -277,7 +284,7 @@ fn a_repeated_measurement_or_shape_is_served_from_the_cache() {
 
     let shaped = fonts.shape_cached(&text, 24.0, None, None);
     let again = fonts.shape_cached(&text, 24.0, None, None);
-    assert_eq!(bounds(&shaped), bounds(&again));
+    assert_eq!(fonts.bounds(&shaped), fonts.bounds(&again));
     let mut recoloured = text.clone();
     recoloured.color = [0.0; 3];
     fonts.shape_cached(&recoloured, 24.0, None, None);
@@ -285,3 +292,5 @@ fn a_repeated_measurement_or_shape_is_served_from_the_cache() {
     assert_eq!(fonts.measure(&recoloured, 24.0, Some(100.0)), first);
     assert_eq!(fonts.measured.len(), 3, "and is no part of a measurement");
 }
+
+mod studio;

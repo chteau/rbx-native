@@ -172,6 +172,47 @@ fn layout_feeds_absolute_size() {
 }
 
 #[test]
+fn canvas_scrolls_add_up_within_the_range_and_fire_changed() {
+    let src = r#"
+        local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 200, 100, 100, 50)
+        local gui = plugin:CreateDockWidgetPluginGui("w", info)
+        local list = Instance.new("ScrollingFrame")
+        list.Name = "List"
+        list.CanvasPosition = Vector2.new(0, 1e9)
+        list.Parent = gui
+        list:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            print(string.format("%.0f", list.CanvasPosition.Y))
+        end)
+    "#;
+    let (mut f, _) = started("scroll_canvas", src);
+    let widget = f.host.ui().widgets[0].id;
+    let wdom = f.host.widget_dom(widget).unwrap();
+    let list = all_refs(&wdom)
+        .into_iter()
+        .find(|r| wdom.get(*r).is_some_and(|i| i.name() == "List"))
+        .unwrap();
+    let mut scroll = |by: f32| {
+        let kind = GuiEventKind::ScrollCanvas {
+            axis: 1,
+            by,
+            range: 250.0,
+        };
+        let out = f.send(Input::Gui(GuiEvent {
+            referent: list,
+            kind,
+        }));
+        texts(&out, OutputKind::Print)
+    };
+    // A position past the end (the "stick to the bottom" idiom) is the end:
+    // one notch up leaves the bottom, two more reach the top and stop there.
+    assert_eq!(scroll(-100.0), ["150"]);
+    assert_eq!(scroll(-100.0), ["50"]);
+    assert_eq!(scroll(-100.0), ["0"]);
+    assert!(scroll(-100.0).is_empty());
+    assert_eq!(scroll(100.0), ["100"]);
+}
+
+#[test]
 fn native_plugin_without_dom_write_cannot_edit_place() {
     let mut dom = WeakDom::new();
     let workspace = dom.new_instance("Workspace", "Workspace", None);

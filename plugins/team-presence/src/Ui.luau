@@ -22,6 +22,9 @@ Ui.TEXT_SM = 12
 Ui.TEXT_XS = 11
 Ui.TEXT_XXS = 10
 
+-- The spacing step: edge insets, gaps between blocks, card padding.
+Ui.GAP = 8
+
 Ui.RADIUS = Theme.sizes.radius or 5
 Ui.RADIUS_BADGE = Theme.sizes.radius_badge or 4
 Ui.RADIUS_TILE = Theme.sizes.radius_tile or 6
@@ -197,7 +200,7 @@ function Ui.card(parent: Instance?, order: number?, gap: number?): Frame
 	local card = Ui.frame(parent, order)
 	Ui.corner(card)
 	Ui.stroke(card, "border")
-	Ui.pad(card, 8, 10)
+	Ui.pad(card, Ui.GAP)
 	Ui.list(card, gap or 4)
 	return card
 end

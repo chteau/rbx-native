@@ -10,6 +10,9 @@ use crate::scene::gui::style::Styled;
 
 const CLASS: &str = "UICorner";
 
+/// `UICorner.CornerRadius` on a new instance, as Studio reports it.
+const DEFAULT_RADIUS: (f32, f32) = (0.0, 8.0);
+
 /// The four radii as `(scale, offset)` pairs in the order top-left,
 /// top-right, bottom-right, bottom-left. Roblox's docs make `Scale` a
 /// fraction of the parent's *shorter* side, which is what `super::layout`
@@ -29,8 +32,8 @@ pub(in crate::scene::gui) struct Corner {
 /// absent or zero, a place saved before they existed, or a tree built in
 /// code, where a serializer filling in a class default it does not know
 /// leaves the four at zero beside a real `CornerRadius`; Roblox itself never
-/// writes the two disagreeing. A `UICorner` carrying neither rounds nothing,
-/// since the docs give no default.
+/// writes the two disagreeing. A `UICorner` carrying neither is one made in
+/// code and left alone, which Studio rounds by 8 pixels, its class default.
 pub(super) fn read(
     dom: &WeakDom,
     database: &ReflectionDatabase,
@@ -48,7 +51,7 @@ pub(super) fn read(
     .map(|name| udim(properties, name).unwrap_or((0.0, 0.0)));
     let radii = match individual.iter().any(|&radius| radius != (0.0, 0.0)) {
         true => individual,
-        false => [udim(properties, "CornerRadius").unwrap_or((0.0, 0.0)); 4],
+        false => [udim(properties, "CornerRadius").unwrap_or(DEFAULT_RADIUS); 4],
     };
     Some(Corner { radii })
 }

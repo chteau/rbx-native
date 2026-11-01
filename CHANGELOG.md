@@ -2,6 +2,66 @@
 
 ## 2026-10-31
 
+- **Plugin docks stop eating the CPU.** A plugin with a `task.wait` loop or
+  a Heartbeat connection gets ticked ~33 times a second, and every tick
+  redrew the whole editor even when nothing came out of it. On top of that
+  the widget renderer kept redrawing every widget ~5 times a second forever,
+  bc its idle wake read camera motion that a GUI only renderer doesn't have.
+  Now only a tick that actually changes something redraws, a widget redraws
+  when its new render lands, and the renderer sleeps unless images are still
+  downloading. Same chat plugin, same place, release build on a real
+  display: idle 14% CPU and 38 editor redraws a second before, ~2% and 0
+  after; with a status line ticking once a second, ~3% and 1 redraw. (@chteau)
+
+- **Plugin widgets draw like Studio.** Checked against real Studio with a
+  chat style fixture (`examples/plugins/roblox/ChatWidget.lua`). A list
+  built in code now starts top left and sorts by Name like Studio's
+  defaults, instead of centred, which pushed a chat's first messages up
+  under the row above it. A label's UIPadding now insets its text, so
+  padded bubbles wrap and sit like Studio's. A UICorner left alone rounds
+  by 8 px. The wheel scrolls the ScrollingFrame under the cursor by 100 px
+  a notch and the bar thumb drags, both measured in Studio, and notches
+  that land before the next render add up instead of getting dropped.
+  (@chteau)
+
+- **GUI text is as wide as Studio's.** Text was coming out ~3% narrow.
+  I measured it in Studio (TextBounds and GetTextBoundsAsync, 7 fonts,
+  sizes 8 to 100): the em is TextSize + 1 over the face's line box, not
+  TextSize over it, and every glyph advances a whole pixel, rounded to a
+  64th first like FreeType does. Kerning gets floored to a 64th before the
+  pixel rounding, punctuation or digits at the start of a line don't kern
+  into the first letter, and pairs across a space kern too (cosmic-text
+  shapes word by word and missed those, so they go through harfrust).
+  All 728 strings now land within 1 px of Studio, 727 of them exactly
+  (mean miss was 10.3 px, then 0.08). The chat fixture wraps on the same
+  words as Studio. (@chteau)
+
+- **Typing in a widget TextBox works like Studio's.** The widget renderer
+  draws the box being typed in itself now, so the text sits exactly where
+  it did unfocused, and GPUI only adds the caret. Clicking puts the caret
+  where Studio does (past a glyph only once you're two thirds across it,
+  measured glyph by glyph), dragging selects, double click takes the word
+  without its space, triple click takes everything, and a press inside the
+  box you're already typing in doesn't end the edit anymore. MultiLine
+  boxes take Enter and Shift+Enter as a newline, wrapped lines past the
+  box's height aren't drawn, and Up/Down walk the wrapped lines. A single
+  line scrolls just enough to keep the caret in, parked on the box's last
+  pixel like Studio. Selected text is white on #6BA1F9 (it was coming out
+  pale before, the colour went through sRGB twice), the caret is 1 px in
+  the text colour and blinks, ClearTextOnFocus still clears first, and
+  undo, word jumps, copy/cut/paste are there. Checked side by side with
+  Studio on the chat fixture, which has a multi line note box now.
+  (@chteau)
+
+- **A UICorner doesn't cut text anymore.** Studio draws a rounded label's
+  or box's text right past its corners and edges, we were clipping it to
+  the rounded shape. (@chteau)
+
+- **Collaborators panel spacing.** One 8 px step for the edges, the gaps
+  and the cards, the status sits under "Share my presence" instead of
+  floating under the switch, and the scroll bar gets its own lane.
+  (@chteau)
+
 - **Publish as a new experience.** Publishing a file that isn't linked yet
   opens the game picker like before, but it now has a New experience
   button. Name, description, and who owns it (you or a group you can

@@ -50,8 +50,8 @@ pub(crate) use plan::{
 };
 pub use pseudo::{pseudo_localize, PseudoLocale};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
-pub use wheel::ScrollTarget;
 pub(crate) use wheel::{scroll_target, ScrollWindow};
+pub use wheel::{GuiScrolls, ScrollTarget, ThumbGrab};
 
 #[cfg(test)]
 mod tests;

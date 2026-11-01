@@ -23,6 +23,7 @@ mod ribbon;
 mod step;
 mod wasm;
 mod widgets;
+pub(crate) use widgets::install_text_box_keys;
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
