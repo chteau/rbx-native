@@ -5,6 +5,7 @@
 //! a `SurfaceAppearance` (rigid items only; a layered one passes without).
 
 use rbx_dom::{Content, Ref, Variant, WeakDom};
+use rbx_ugc::schema::Node;
 use rbx_ugc::{BodyScale, Category, Finding, Rule, Severity, Value};
 
 use super::super::ItemKind;
@@ -77,6 +78,44 @@ fn scale_of(dom: &WeakDom, handle: Ref) -> Option<BodyScale> {
     BodyScale::ALL
         .into_iter()
         .find(|s| s.part_scale_type() == text)
+}
+
+/// `root` and everything under it as the schema rules read it.
+pub(super) fn node(dom: &WeakDom, root: Ref) -> Node {
+    let Some(inst) = dom.get(root) else {
+        return Node::default();
+    };
+    let props = inst.properties();
+    let vector = |keys: &[&str]| {
+        keys.iter().find_map(|k| match props.get(*k) {
+            Some(Variant::Vector3(v)) => Some([v.x, v.y, v.z]),
+            _ => None,
+        })
+    };
+    let scaled = inst.class() == "MeshPart"
+        && match (
+            vector(&["size", "Size"]),
+            vector(&["InitialSize", "MeshSize"]),
+        ) {
+            (Some(size), Some(mesh)) => (0..3).any(|i| (size[i] - mesh[i]).abs() > 1e-3),
+            _ => false,
+        };
+    Node {
+        class: inst.class().to_string(),
+        name: inst.name().to_string(),
+        tagged: !inst.tags().is_empty(),
+        attributed: !inst.attributes().is_empty(),
+        value: match props.get("Value") {
+            Some(Variant::String(text)) => Some(text.clone()),
+            _ => None,
+        },
+        anchored: matches!(props.get("Anchored"), Some(Variant::Bool(true))),
+        scaled,
+        reference_mesh: super::uri(props, "ReferenceMeshId").is_some(),
+        // Enum.WrapLayerAutoSkin.EnabledOverride
+        auto_skin_override: matches!(props.get("AutoSkin"), Some(Variant::Enum(2))),
+        children: inst.children().iter().map(|&c| node(dom, c)).collect(),
+    }
 }
 
 fn textured(dom: &WeakDom, handle: Ref) -> bool {

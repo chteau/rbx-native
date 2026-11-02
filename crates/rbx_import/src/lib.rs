@@ -1,15 +1,19 @@
 //! A local `.fbx`/`.obj`/`.gltf`/`.glb` readied for Roblox's Assets API: the
-//! per-mesh triangle count (the importer refuses a mesh over
-//! [`TRIANGLE_LIMIT`], `creator-docs` `art/modeling/specifications.md`), and
-//! the one self-contained file to upload. The API takes `.fbx`, `.gltf` and
+//! per-mesh triangle count (Roblox refuses a mesh over [`TRIANGLE_LIMIT`],
+//! `creator-docs` `art/modeling/specifications.md`; Studio's importer
+//! decimates it to exactly that many instead, and so does this), and the one
+//! self-contained file to upload. The API takes `.fbx`, `.gltf` and
 //! `.glb` (`cloud/guides/usage-assets.md`); `.obj` is rewritten as glTF and a
 //! `.gltf` has its side files inlined.
 
+mod decimate;
 mod fbx;
+mod fbx_decimate;
 mod geometry;
 mod gltf_file;
 mod obj;
 
+pub use decimate::Decimated;
 pub use geometry::{read_geometry, SourceGeometry, SourceMesh, SourceTexture};
 
 use std::path::Path;
@@ -50,6 +54,9 @@ pub struct Report {
     /// Set when the triangle count could not be taken (an unreadable `.fbx`);
     /// the upload then goes ahead on Roblox's own check.
     pub unchecked: Option<String>,
+    /// Meshes brought under the limit in the upload; `meshes` has their new
+    /// counts.
+    pub decimated: Vec<Decimated>,
 }
 
 impl Report {
@@ -57,7 +64,8 @@ impl Report {
         self.meshes.iter().filter(|m| m.triangles > TRIANGLE_LIMIT)
     }
 
-    /// Why the upload should not go ahead, or `None`.
+    /// Why the upload should not go ahead, or `None`. Every other format is
+    /// decimated under the limit, so only an ASCII FBX can be refused.
     pub fn refusal(&self) -> Option<String> {
         let over: Vec<String> = self
             .over_budget()
@@ -65,8 +73,23 @@ impl Report {
             .collect();
         (!over.is_empty()).then(|| {
             format!(
-                "Roblox meshes can\u{2019}t exceed {TRIANGLE_LIMIT} triangles: {}. Reduce them (decimate, or split into several meshes) and import again.",
+                "Roblox meshes can\u{2019}t exceed {TRIANGLE_LIMIT} triangles: {}. An ASCII FBX can\u{2019}t be decimated on import: export it as binary FBX or glTF and import again.",
                 over.join(", ")
+            )
+        })
+    }
+
+    /// What decimation did, as a sentence, or `None`.
+    pub fn decimation_note(&self) -> Option<String> {
+        let done: Vec<String> = self
+            .decimated
+            .iter()
+            .map(|d| format!("{} from {} to {}", d.name, d.from, d.to))
+            .collect();
+        (!done.is_empty()).then(|| {
+            format!(
+                "Over Roblox\u{2019}s {TRIANGLE_LIMIT}-triangle limit, so decimated like Studio\u{2019}s importer does: {}.",
+                done.join(", ")
             )
         })
     }
@@ -102,7 +125,18 @@ pub fn prepare_bytes(
 ) -> Result<(Report, Upload), String> {
     match format {
         Format::Fbx => {
-            let report = fbx::report(&bytes);
+            let mut report = fbx::report(&bytes);
+            let mut bytes = bytes;
+            if report.over_budget().next().is_some() {
+                if let Some((smaller, decimated)) = fbx_decimate::decimate(&bytes, TRIANGLE_LIMIT)?
+                {
+                    bytes = smaller;
+                    report = Report {
+                        decimated,
+                        ..fbx::report(&bytes)
+                    };
+                }
+            }
             let upload = Upload {
                 file_name: format!("{stem}.fbx"),
                 content_type: "model/fbx",
@@ -111,7 +145,7 @@ pub fn prepare_bytes(
             Ok((report, upload))
         }
         Format::Glb => {
-            let meshes = gltf_file::meshes(&bytes)?;
+            let (bytes, meshes, decimated) = gltf_within_limit(bytes)?;
             let upload = Upload {
                 file_name: format!("{stem}.glb"),
                 content_type: "model/gltf-binary",
@@ -121,13 +155,14 @@ pub fn prepare_bytes(
                 Report {
                     meshes,
                     unchecked: None,
+                    decimated,
                 },
                 upload,
             ))
         }
         Format::Gltf => {
             let bytes = gltf_file::inline_side_files(&bytes, dir)?;
-            let meshes = gltf_file::meshes(&bytes)?;
+            let (bytes, meshes, decimated) = gltf_within_limit(bytes)?;
             let upload = Upload {
                 file_name: format!("{stem}.gltf"),
                 content_type: "model/gltf+json",
@@ -137,12 +172,13 @@ pub fn prepare_bytes(
                 Report {
                     meshes,
                     unchecked: None,
+                    decimated,
                 },
                 upload,
             ))
         }
         Format::Obj => {
-            let (meshes, document) = obj::convert(&bytes)?;
+            let (meshes, decimated, document) = obj::convert(&bytes)?;
             let upload = Upload {
                 file_name: format!("{stem}.gltf"),
                 content_type: "model/gltf+json",
@@ -152,11 +188,27 @@ pub fn prepare_bytes(
                 Report {
                     meshes,
                     unchecked: None,
+                    decimated,
                 },
                 upload,
             ))
         }
     }
+}
+
+/// The document, its meshes' counts after, and those decimated.
+type Limited = (Vec<u8>, Vec<MeshInfo>, Vec<Decimated>);
+
+/// A glTF document (or GLB) with every mesh over the limit decimated, and
+/// its counts after.
+fn gltf_within_limit(bytes: Vec<u8>) -> Result<Limited, String> {
+    let meshes = gltf_file::meshes(&bytes)?;
+    if meshes.iter().all(|m| m.triangles <= TRIANGLE_LIMIT) {
+        return Ok((bytes, meshes, Vec::new()));
+    }
+    let (bytes, decimated) = gltf_file::decimate(&bytes, TRIANGLE_LIMIT)?;
+    let meshes = gltf_file::meshes(&bytes)?;
+    Ok((bytes, meshes, decimated))
 }
 
 #[cfg(test)]

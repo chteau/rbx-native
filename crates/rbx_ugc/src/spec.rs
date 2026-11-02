@@ -106,10 +106,39 @@ impl AssetType {
         }
     }
 
+    /// The `Enum.AssetType` name Studio's validator messages use.
+    pub fn type_name(self) -> &'static str {
+        use AssetType::*;
+        match self {
+            Hat => "Hat",
+            Hair => "HairAccessory",
+            Face => "FaceAccessory",
+            Neck => "NeckAccessory",
+            Shoulder => "ShoulderAccessory",
+            Front => "FrontAccessory",
+            Back => "BackAccessory",
+            Waist => "WaistAccessory",
+            Eyebrow => "EyebrowAccessory",
+            Eyelash => "EyelashAccessory",
+            TShirt => "TShirtAccessory",
+            Shirt => "ShirtAccessory",
+            Sweater => "SweaterAccessory",
+            Jacket => "JacketAccessory",
+            Pants => "PantsAccessory",
+            Shorts => "ShortsAccessory",
+            DressSkirt => "DressSkirtAccessory",
+            LeftShoe => "LeftShoeAccessory",
+            RightShoe => "RightShoeAccessory",
+            Body => "Body",
+            DynamicHead => "DynamicHead",
+        }
+    }
+
     /// Attachments the item's handle may use.
     /// <https://create.roblox.com/docs/avatar/rigid-accessories/specifications>
     /// and <https://create.roblox.com/docs/avatar/layered-accessories/specifications>,
-    /// "Attachment points". Shoes, bodies and heads have no row.
+    /// "Attachment points". Shoes have no row there; Studio accepts them on
+    /// the foot attachments. Bodies and heads have none.
     pub fn attachments(self) -> &'static [&'static str] {
         use AssetType::*;
         match self {
@@ -132,7 +161,9 @@ impl AssetType {
             Neck => &["NeckAttachment"],
             Front | TShirt | Shirt | Sweater | Jacket => &["BodyFrontAttachment"],
             Pants | Shorts | DressSkirt => &["WaistCenterAttachment"],
-            LeftShoe | RightShoe | Body | DynamicHead => &[],
+            LeftShoe => &["LeftFootAttachment"],
+            RightShoe => &["RightFootAttachment"],
+            Body | DynamicHead => &[],
         }
     }
 }
@@ -207,7 +238,7 @@ const fn split(x: f32, up: f32, down: f32, front: f32, behind: f32) -> Bounds {
 }
 
 /// The box a rigid accessory or layered item must fit, or `None` when the
-/// pages give no number (shoes, bodies, heads). `attachment` picks the
+/// pages give no number (bodies, heads). `attachment` picks the
 /// Shoulder row.
 /// <https://create.roblox.com/docs/avatar/rigid-accessories/specifications>,
 /// "Body scale", the Normal, Slender and Classic tables;
@@ -220,10 +251,14 @@ pub fn item_bounds(asset: AssetType, scale: BodyScale, attachment: &str) -> Opti
     let collar = attachment.ends_with("CollarAttachment");
     Some(match (asset, scale) {
         (Eyebrow | Eyelash, _) => centred(1.5, 0.5, 0.5),
-        (TShirt | Shirt | Sweater | Jacket | Pants | Shorts | DressSkirt, _) => {
-            centred(8.0, 8.0, 8.0)
-        }
-        (LeftShoe | RightShoe | Body | DynamicHead, _) => return None,
+        // Shoes have no row on the page; Studio 0.745 measures them against
+        // the same 8 x 8 x 8 ("The max size for type LeftShoeAccessory is
+        // [8.00, 8.00, 8.00]").
+        (
+            TShirt | Shirt | Sweater | Jacket | Pants | Shorts | DressSkirt | LeftShoe | RightShoe,
+            _,
+        ) => centred(8.0, 8.0, 8.0),
+        (Body | DynamicHead, _) => return None,
 
         (Hat, Normal) => centred(1.87, 2.5, 1.87),
         (Hair, Normal) => split(1.87, 1.25, 1.875, 0.9375, 1.25),

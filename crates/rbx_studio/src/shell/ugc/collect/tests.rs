@@ -200,3 +200,33 @@ fn a_local_mesh_is_read_from_the_cache_path() {
     assert_eq!(mesh_key("rbxassetid://7"), Some(Key::Id(7)));
     assert_eq!(mesh_key("rbxasset://fonts/x.mesh"), None);
 }
+
+#[test]
+fn the_tree_gets_studios_schema_rules() {
+    let mut dom = WeakDom::new();
+    let acc = dom.new_instance("Accessory", "Cap", None);
+    let handle = mesh_part(&mut dom, "Handle", acc, 1);
+    dom.new_instance("Attachment", "HatAttachment", Some(handle));
+    dom.new_instance("Part", "Junk", Some(handle));
+    set(&mut dom, handle, "Anchored", Variant::Bool(true));
+    set(&mut dom, handle, "Tags", Variant::String("Shiny".into()));
+    let p = plan(&dom, acc, kind(AssetType::Hat)).unwrap();
+    let messages: Vec<_> = p.notes.iter().map(|f| f.message.as_str()).collect();
+    for wanted in [
+        "The following instances are not part of the approved schema and should be removed: Cap.Handle.Junk.",
+        "Property 'Anchored' on 'Cap.Handle' is invalid. Expected to be = false.",
+        "The following instances have tags but marketplace assets cannot have any tags: Cap.Handle",
+    ] {
+        assert!(messages.contains(&wanted), "{messages:?}");
+    }
+}
+
+#[test]
+fn a_renamed_handle_is_named_like_studio() {
+    let mut dom = WeakDom::new();
+    let acc = dom.new_instance("Accessory", "Cap", None);
+    mesh_part(&mut dom, "Brim", acc, 1);
+    let p = plan(&dom, acc, kind(AssetType::Hat)).unwrap();
+    assert!(p.notes.iter().any(|f| f.rule == Rule::Schema
+        && f.message == "Could not find required MeshPart called Handle inside of Cap"));
+}

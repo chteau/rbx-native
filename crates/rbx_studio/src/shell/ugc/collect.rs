@@ -242,12 +242,40 @@ pub(super) fn plan(dom: &WeakDom, root: Ref, kind: ItemKind) -> Result<Plan, Str
                 .find(|r| is_part(r) && dom.get(*r).is_some_and(|c| c.name() == "Handle"))
                 .or_else(|| kids().find(is_part))
                 .ok_or_else(|| {
-                    "The accessory has no Handle part. Add a MeshPart named Handle.".to_string()
+                    format!(
+                        "Could not find required MeshPart called Handle inside of {}",
+                        inst.name()
+                    )
                 })?;
+            let tree = studio::node(dom, root);
+            if !tree
+                .children
+                .iter()
+                .any(|c| c.name == "Handle" && matches!(c.class.as_str(), "MeshPart" | "Part"))
+            {
+                plan.notes.push(Finding {
+                    rule: Rule::Schema,
+                    severity: Severity::Error,
+                    subject: plan.name.clone(),
+                    measured: None,
+                    limit: None,
+                    message: format!(
+                        "Could not find required MeshPart called Handle inside of {}",
+                        plan.name
+                    ),
+                });
+            }
+            plan.notes.extend(rbx_ugc::schema::check(&tree, kind.asset));
             Some(handle)
         }
         "MeshPart" | "Part" => Some(root),
-        "Model" => None,
+        "Model" => {
+            if matches!(kind.asset, AssetType::LeftShoe | AssetType::RightShoe) {
+                plan.notes
+                    .extend(rbx_ugc::schema::shoe_pair(&studio::node(dom, root)));
+            }
+            None
+        }
         _ => return Err("Pick an Accessory, a MeshPart or a Model".to_string()),
     };
     if let Some(part) = single {
