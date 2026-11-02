@@ -20,6 +20,22 @@
   its launcher icon. The README there has the Flathub submission steps.
   (@chteau)
 
+- **UGC validator, the rest.** Check Item now catches what Studio's Save
+  to Roblox refuses before the spec pages do, in Studio's own words: stray
+  instances in the accessory (anything that isn't the handle, its one
+  attachment, `AvatarPartScaleType`, `OriginalSize`, a
+  `SurfaceAppearance`, a `WrapLayer` on layered items or a full
+  `ThumbnailConfiguration`), tags, attributes, an anchored handle, a
+  scaled layered handle, a missing inner cage ("Missing HSR data"),
+  eyebrows and eyelashes without `AutoSkin` EnabledOverride or the
+  `RBX_Leader`/`RBX_Follower` joints, and shoes that aren't a
+  `LeftShoeAccessory`/`RightShoeAccessory` pair. Shoes get the 8 x 8 x 8
+  box Studio uses, and an outer cage a couple of vertices off its inner
+  cage is a warning now, since Studio passes it. Import 3D decimates a mesh over 20k triangles like
+  Studio's importer instead of refusing it (OBJ, glTF, GLB, binary FBX),
+  and on the same 21k sphere both land on exactly 20,000 triangles with
+  the same bounding box. All of it checked side by side on about 50 test
+  items in real Studio, nothing published. (@chteau)
 - **Popular plugins.** Manage Plugins has a Popular plugins tab now (also
   Plugins › Popular on the ribbon). It lists 43 free Creator Store plugins
   I checked run in rbx-native, with their store icon, creator, live votes

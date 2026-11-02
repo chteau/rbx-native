@@ -75,15 +75,18 @@ fn find<'a>(
 fn compare(cage: &Cage, base: &Geometry, base_name: &str, lead: &str, out: &mut Vec<Finding>) {
     let count = cage.geometry.positions.len();
     let expected = base.positions.len();
+    // Not an error: Studio 0.745 passed a shirt whose inner and outer cages
+    // are 5410 and 5408 vertices; it checks where the cage UVs land on the
+    // body instead, which needs its own body regions.
     if count != expected {
         out.push(Finding {
             rule: Rule::CageTopology,
-            severity: Severity::Error,
+            severity: Severity::Warning,
             subject: cage.name.clone(),
             measured: Some(Value::Count(count)),
             limit: Some(Value::Count(expected)),
             message: format!(
-                "{lead}, so it must keep the vertex count of {base_name}. Move its vertices; don\u{2019}t add or delete any."
+                "{lead}, so it should keep the vertex count of {base_name}. Move its vertices; don\u{2019}t add or delete any."
             ),
         });
         return;
@@ -212,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn a_different_vertex_count_is_a_topology_error() {
+    fn a_different_vertex_count_is_a_topology_warning() {
         let i = item(
             AssetType::Jacket,
             vec![
@@ -223,6 +226,7 @@ mod tests {
         let f = run(&i);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].rule, Rule::CageTopology);
+        assert_eq!(f[0].severity, Severity::Warning);
         assert_eq!(f[0].measured, Some(Value::Count(4)));
         assert_eq!(f[0].limit, Some(Value::Count(3)));
     }

@@ -51,6 +51,9 @@ pub(in crate::shell::ugc) fn mesh_geometry(
         triangles,
         uvs: mesh.vertices.iter().map(|v| v.uv).collect(),
         influences,
+        bones: sm.skin.as_ref().map_or_else(Vec::new, |skin| {
+            skin.bones.iter().map(|b| b.name.clone()).collect()
+        }),
         in_studs: scale_to.is_some(),
     })
 }

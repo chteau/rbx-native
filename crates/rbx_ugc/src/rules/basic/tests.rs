@@ -100,3 +100,22 @@ fn a_hat_without_its_attachment_is_an_error() {
     attachment(&item(AssetType::Hat, vec![p]), &mut out);
     assert!(out.is_empty());
 }
+
+#[test]
+fn eyebrows_need_both_face_joints() {
+    let mut p = part("Handle", 1);
+    let found = |p: &Part| {
+        let mut out = Vec::new();
+        joints(&item(AssetType::Eyebrow, vec![p.clone()]), &mut out);
+        out.into_iter().map(|f| f.message).collect::<Vec<_>>()
+    };
+    assert_eq!(
+        found(&p),
+        [
+            "EyebrowAccessory must use skinning transfer, but you are missing the required joint RBX_Leader.",
+            "EyebrowAccessory must use skinning transfer, but you are missing the required joint RBX_Follower.",
+        ]
+    );
+    p.geometry.as_mut().unwrap().bones = vec!["RBX_Leader".into(), "RBX_Follower".into()];
+    assert!(found(&p).is_empty());
+}

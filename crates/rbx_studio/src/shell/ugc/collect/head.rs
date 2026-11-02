@@ -220,6 +220,7 @@ pub(in crate::shell::ugc) fn resolve_head(
         triangles: m.source.lod0().as_chunks::<3>().0.to_vec(),
         uvs: m.source.vertices.iter().map(|v| v.uv).collect(),
         influences: Vec::new(),
+        bones: Vec::new(),
         in_studs: true,
     });
     let cage = plan.cage.as_ref().and_then(|(key, origin)| {
@@ -237,6 +238,7 @@ pub(in crate::shell::ugc) fn resolve_head(
             triangles: cage.lod0().as_chunks::<3>().0.to_vec(),
             uvs: cage.vertices.iter().map(|v| v.uv).collect(),
             influences: Vec::new(),
+            bones: Vec::new(),
             in_studs: true,
         })
     });

@@ -104,6 +104,7 @@ pub(super) fn geometry(mesh: &Mesh) -> Geometry {
         triangles: mesh.triangles.clone(),
         uvs: mesh.uvs.iter().map(|v| v.to_array()).collect(),
         influences: Vec::new(),
+        bones: Vec::new(),
         in_studs: false,
     }
 }

@@ -3,7 +3,8 @@
 //! through Open Cloud (a mesh cannot be referenced in-game any other way, as
 //! in Studio's own Importer) and lands in `Workspace` as the `Model` of
 //! `MeshPart`s Roblox's importer made of it. A mesh over Roblox's triangle
-//! budget is refused before anything is uploaded (see `rbx_import`).
+//! budget is decimated to it first, as Studio's importer does (see
+//! `rbx_import`); only an ASCII FBX over it is still refused.
 //!
 //! `RBX_STUDIO_IMPORT_MOCK=<model file>` stands in for the upload with a
 //! local `.rbxm`/`.rbxmx`, for screenshots and tests without a key (an image
@@ -291,7 +292,10 @@ pub(crate) fn upload_model(
     if let Some(refusal) = report.refusal() {
         return Err(refusal);
     }
-    let mut unchecked = report.unchecked;
+    let mut unchecked = match (report.unchecked.clone(), report.decimation_note()) {
+        (Some(a), Some(b)) => Some(format!("{a} {b}")),
+        (a, b) => a.or(b),
+    };
     if let Some(kind) = avatar {
         let findings = super::ugc::check_file(path, kind)?;
         if rbx_ugc::blocks(&findings) {
