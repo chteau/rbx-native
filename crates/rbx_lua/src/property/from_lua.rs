@@ -136,7 +136,7 @@ pub(crate) fn lua_to_variant(
                 return enum_variant(ctx, name, other, value);
             }
             if ctx.database().class(other).is_some() {
-                return reference(name, other, value);
+                return reference(ctx, name, other, value);
             }
             Err(mlua::Error::runtime(format!(
                 "Unable to assign property {name}: type {other} is not supported yet"
@@ -175,10 +175,13 @@ fn enum_variant(ctx: &Ctx, name: &str, enum_name: &str, value: &Value) -> Result
     }
 }
 
-fn reference(name: &str, class: &str, value: &Value) -> Result<Variant> {
+fn reference(ctx: &Ctx, name: &str, class: &str, value: &Value) -> Result<Variant> {
     if let Value::UserData(data) = value {
         if let Ok(instance) = data.borrow::<LuaInstance>() {
             return Ok(Variant::Ref(instance.referent()));
+        }
+        if let Some(referent) = ctx.handle_referent(data) {
+            return Ok(Variant::Ref(referent));
         }
     }
     // `nil` never gets here: `property::set` clears the entry instead, since

@@ -99,7 +99,16 @@ impl Shell {
                     });
                     return;
                 }
-                self.plugins.widgets.pressed = target.map(|r| (id, r, button));
+                // Every widget layer under the pointer hears the press (a
+                // CoreGui overlay lies under a floating widget), so one that
+                // missed must not clear the press another widget took.
+                match target {
+                    Some(r) => self.plugins.widgets.pressed = Some((id, r, button)),
+                    None if self.plugins.widgets.pressed.is_some_and(|p| p.0 == id) => {
+                        self.plugins.widgets.pressed = None;
+                    }
+                    None => {}
+                }
                 if let Some(r) = target {
                     self.send_gui(r, GuiEventKind::Down { button, x, y }, cx);
                 }
@@ -134,7 +143,10 @@ impl Shell {
                 if button == 1 && edited.is_some() {
                     self.widget_edit_drag([x, y], false, cx);
                 }
-                let pressed = self.plugins.widgets.pressed.take();
+                let pressed = self.plugins.widgets.pressed.filter(|p| p.0 == id);
+                if pressed.is_some() {
+                    self.plugins.widgets.pressed = None;
+                }
                 let Some(r) = target else {
                     return;
                 };

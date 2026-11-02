@@ -9,6 +9,7 @@
 //! input), the selection, Output lines, requests (undo/redo, prompts,
 //! opening a script, debugger control) and UI changes.
 
+mod catalog;
 mod debugger_bridge;
 mod discover;
 mod float;
@@ -70,6 +71,8 @@ pub(crate) struct Plugins {
     pub(super) view_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     /// The Manage Plugins dialog is open.
     pub(super) manager_open: bool,
+    /// Its Popular tab: the verified catalog, search and installs.
+    pub(super) catalog: catalog::Catalog,
     /// Origin of `Context::now`.
     pub(super) epoch: Option<Instant>,
     /// Plugin paths the user switched off (persisted in settings).
@@ -86,15 +89,7 @@ impl Shell {
         self.plugins.epoch.get_or_insert_with(Instant::now);
         let prefs = manager::load_prefs();
         self.plugins.disabled = prefs.disabled.iter().cloned().collect();
-        let mut found = Vec::new();
-        if let Some(dir) = discover::own_dir() {
-            found.extend(discover::scan(&dir, false));
-        }
-        if prefs.load_studio {
-            if let Some(dir) = discover::studio_dir() {
-                found.extend(discover::scan(&dir, true));
-            }
-        }
+        let found = discover_all(prefs.load_studio);
         let settings_dir =
             crate::settings::default_config_dir().map(|dir| dir.join("plugin-settings"));
         let mut host = PluginHost::new(self.database.clone(), settings_dir);
@@ -130,6 +125,12 @@ impl Shell {
         self.wasm_start(cx);
         self.plugins_arm_poll(cx);
         cx.notify();
+    }
+
+    /// Refreshes the manager's list after a file came or went, without
+    /// touching what runs.
+    fn plugins_rescan(&mut self) {
+        self.plugins.found = discover_all(manager::load_prefs().load_studio);
     }
 
     /// Unloads everything (`Input::Unload` for each plugin) and starts again.
@@ -332,4 +333,18 @@ impl Shell {
             .as_ref()
             .is_some_and(|host| host.wants_tick(now))
     }
+}
+
+/// Every plugin in rbx-native's folder, then Studio's when `load_studio`.
+fn discover_all(load_studio: bool) -> Vec<discover::Found> {
+    let mut found = Vec::new();
+    if let Some(dir) = discover::own_dir() {
+        found.extend(discover::scan(&dir, false));
+    }
+    if load_studio {
+        if let Some(dir) = discover::studio_dir() {
+            found.extend(discover::scan(&dir, true));
+        }
+    }
+    found
 }

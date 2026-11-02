@@ -27,6 +27,20 @@ pub(crate) struct Ctx {
     /// destroyed instance readable (`Parent` nil), so a handler that gets
     /// one late can still ask what it was.
     tombstones: Rc<RefCell<std::collections::HashMap<Ref, (String, String)>>>,
+    /// Lets host objects that are instances in Roblox but handles here fill
+    /// an `Instance` property; see [`HandleBridge`].
+    handles: Rc<RefCell<Option<Rc<dyn HandleBridge>>>>,
+}
+
+/// Stands host handles in for instances in `Instance`-typed properties
+/// (`ObjectValue.Value = toolbar`): a handle gets a placeholder instance of
+/// its class when assigned, and reading the property gives the handle back.
+pub(crate) trait HandleBridge {
+    /// The placeholder for `data`, made on first use; `None` when `data` is
+    /// not a handle.
+    fn referent(&self, ctx: &Ctx, data: &mlua::AnyUserData) -> Option<Ref>;
+    /// The handle `referent` stands for, if it is a placeholder.
+    fn value(&self, lua: &mlua::Lua, referent: Ref) -> Option<mlua::Result<mlua::Value>>;
 }
 
 /// Decides whether a script may write to an instance; `Err` carries the reason.
@@ -37,6 +51,24 @@ pub(crate) type WriteGuard = Rc<dyn Fn(&WeakDom, Ref) -> Result<(), String>>;
 pub(crate) type WriteHook = Rc<dyn Fn(&WeakDom, Ref)>;
 
 impl Ctx {
+    pub(crate) fn set_handle_bridge(&self, bridge: Rc<dyn HandleBridge>) {
+        *self.handles.borrow_mut() = Some(bridge);
+    }
+
+    pub(crate) fn handle_referent(&self, data: &mlua::AnyUserData) -> Option<Ref> {
+        let bridge = self.handles.borrow().clone()?;
+        bridge.referent(self, data)
+    }
+
+    pub(crate) fn handle_value(
+        &self,
+        lua: &mlua::Lua,
+        referent: Ref,
+    ) -> Option<mlua::Result<mlua::Value>> {
+        let bridge = self.handles.borrow().clone()?;
+        bridge.value(lua, referent)
+    }
+
     pub(crate) fn with_guard(mut self, guard: WriteGuard) -> Self {
         self.guard = Some(guard);
         self
@@ -70,6 +102,7 @@ impl Ctx {
             guard: None,
             on_write: None,
             tombstones: Rc::default(),
+            handles: Rc::default(),
         }
     }
 

@@ -82,6 +82,42 @@ fn each_resume_gets_a_fresh_budget() {
 }
 
 #[test]
+fn reset_property_to_default_restores_the_default() {
+    let output = runtime()
+        .run(
+            "local p = Instance.new('Part') p.Transparency = 0.5
+             p:ResetPropertyToDefault('Transparency') print(p.Transparency)
+             print(pcall(p.ResetPropertyToDefault, p, 'Nope'))",
+        )
+        .expect("runs");
+    assert_eq!(output.lines()[0], "0");
+    assert!(
+        output.lines()[1].starts_with("false"),
+        "{:?}",
+        output.lines()
+    );
+}
+
+#[test]
+fn profiler_labels_and_wireframe_drawing_are_accepted() {
+    let output = runtime()
+        .run(
+            "debug.profilebegin('x') debug.profileend()
+             local w = Instance.new('WireframeHandleAdornment')
+             w:AddLine(Vector3.zero, Vector3.one) w:AddLines({}) w:AddPath({}, true)
+             w:AddText(Vector3.zero, 'hi', 1) w:Clear()
+             print(pcall(function() Instance.new('Part'):Clear() end))",
+        )
+        .expect("none of it errors");
+    assert_eq!(output.lines().len(), 1);
+    assert!(
+        output.lines()[0].starts_with("false"),
+        "{:?}",
+        output.lines()
+    );
+}
+
+#[test]
 fn output_before_an_error_survives_everywhere() {
     let error = runtime()
         .run("print('before') warn('careful') error('boom')")

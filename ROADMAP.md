@@ -136,6 +136,11 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
   and return the choice (or `nil`), from the devforum's
   [`allow-plugins-to-use-color-picker`](https://devforum.roblox.com/t/allow-plugins-to-use-color-picker/63257);
   an rbx-native addition, not Studio parity.
+- [x] **Popular plugins catalog**: a Popular plugins tab in Manage
+  Plugins listing the free Creator Store plugins verified to run in the
+  host (`shell::plugins::catalog`), with one-click Install, Update and
+  Uninstall that fetch the plugin from Roblox at install time (no plugin
+  code ships), plus live search of the store for the rest.
 - [x] **Debugger control on the plugin API**: `plugin:GetDebuggerManager()`
   (and a `DebuggerManager()` global), shaped after Roblox's
   `DebuggerManager`/`ScriptDebugger`: breakpoints with conditions,

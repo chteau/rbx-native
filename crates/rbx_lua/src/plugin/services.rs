@@ -191,7 +191,16 @@ fn user_input_service(lua: &Lua, key: &str) -> Result<Value> {
         | "WindowFocused"
         | "WindowFocusReleased"
         | "TextBoxFocused"
-        | "TextBoxFocusReleased" => signal(lua, "UserInputService", key),
+        | "TextBoxFocusReleased"
+        | "GamepadConnected"
+        | "GamepadDisconnected" => signal(lua, "UserInputService", key),
+        // No gamepad is ever attached to the editor.
+        "GetGamepadConnected" | "IsGamepadButtonDown" => {
+            func(lua, |_, _: MultiValueRest| Ok(false))
+        }
+        "GetConnectedGamepads" | "GetNavigationGamepads" | "GetGamepadState" => {
+            func(lua, |lua, _: MultiValueRest| lua.create_table())
+        }
         "GetMouseLocation" => func(lua, |lua, _: Value| {
             let ((x, y), _) = super::events::pointer_state(lua);
             lua.create_userdata(crate::datatypes::misc::LuaVector2(rbx_dom::Vector2Data {
@@ -454,6 +463,15 @@ pub(crate) fn install_settings(lua: &Lua) -> Result<()> {
     // `ThemeChanged` belongs to `Studio` (settings().Studio.ThemeChanged);
     // the theme keeps a copy for older plugins that read it there.
     studio.set("ThemeChanged", theme.get::<Value>("ThemeChanged")?)?;
+    // Only the Dark palette is known (see `palette`), so that is the one
+    // theme on offer; a fresh list per call, as in Studio.
+    let themes = theme.clone();
+    studio.set(
+        "GetAvailableThemes",
+        lua.create_function(move |lua, _: MultiValueRest| {
+            lua.create_sequence_from([themes.clone()])
+        })?,
+    )?;
     studio.set("Theme", theme)?;
     let root = lua.create_table()?;
     root.set("Studio", studio)?;
@@ -514,6 +532,21 @@ mod tests {
             MultiValue::new(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn no_gamepads_are_connected() {
+        let (lua, env) = vm(WeakDom::new());
+        run(
+            &lua,
+            "local u = UserInputService
+             connected = u:GetGamepadConnected(Enum.UserInputType.Gamepad1)
+             count = #u:GetConnectedGamepads() down = u:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonA)
+             u.GamepadConnected:Connect(function() end)",
+        );
+        no_errors(&env);
+        assert!(!lua.globals().get::<bool>("connected").unwrap());
+        assert_eq!(lua.globals().get::<i64>("count").unwrap(), 0);
     }
 
     fn no_errors(env: &crate::plugin::env::Env) {
@@ -742,10 +775,12 @@ mod tests {
         run(
             &lua,
             "name =settings().Studio.Theme.Name
-             c = settings().Studio.Theme:GetColor('MainBackground')",
+             c = settings().Studio.Theme:GetColor('MainBackground')
+             listed = settings().Studio:GetAvailableThemes()[1].Name",
         );
         no_errors(&env);
         assert_eq!(lua.globals().get::<String>("name").unwrap(), "Dark");
+        assert_eq!(lua.globals().get::<String>("listed").unwrap(), "Dark");
         let a = service(&lua, "Selection").unwrap().unwrap();
         let b = service(&lua, "Selection").unwrap().unwrap();
         assert!(a.equals(&b).unwrap());

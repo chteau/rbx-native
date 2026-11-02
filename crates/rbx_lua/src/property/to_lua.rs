@@ -64,6 +64,9 @@ pub(crate) fn variant_to_lua(
             if ctx.dom().get(*referent).is_none() {
                 return Ok(Value::Nil);
             }
+            if let Some(handle) = ctx.handle_value(lua, *referent) {
+                return handle;
+            }
             LuaInstance::new(*referent, ctx.clone()).into_lua(lua)
         }
         Variant::NumberSequence(value) => LuaNumberSequence(value.clone()).into_lua(lua),

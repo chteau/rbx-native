@@ -225,6 +225,27 @@ mod tests {
     }
 
     #[test]
+    fn failed_module_error_reaches_plugin_output() {
+        let (lua, env, main) = vm_with(|dom, ws| {
+            script(dom, "ModuleScript", "M", ws, "error('inner boom')");
+            script(
+                dom,
+                "Script",
+                "S",
+                ws,
+                "print(pcall(require, script.Parent.M))",
+            )
+        });
+        run_script(&lua, main).unwrap();
+        let out = lines(&env);
+        assert!(
+            out.iter()
+                .any(|(k, t)| *k == OutputKind::Error && t.contains("inner boom")),
+            "{out:?}"
+        );
+    }
+
+    #[test]
     fn script_parent_resolves() {
         let (lua, env, main) =
             vm_with(|dom, ws| script(dom, "Script", "S", ws, "print(script.Parent.Name)"));

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-11-02
+
+- **Popular plugins.** Manage Plugins has a Popular plugins tab now (also
+  Plugins › Popular on the ribbon). It lists 43 free Creator Store plugins
+  I checked run in rbx-native, with their store icon, creator, live votes
+  and a "Runs in rbx-native" badge. One click installs: the plugin
+  downloads from Roblox with your Open Cloud key and starts right away,
+  the others keep running. Uninstall stops it and deletes the file, and
+  Update shows up when the store copy changed. The search field finds any
+  other free plugin on the store, no badge on those since nobody tested
+  them. We ship zero plugin code, the catalog is just ids, names and our
+  own one liners. Re-ran the sweep on the top 47 free plugins for it and
+  fixed what broke: dock widget creation yields like Studio's (Lighting
+  Shading Plugin), `GetSelectedRibbonTool`, gamepad queries,
+  `PluginManager():CreatePlugin()`, `GetAvailableThemes`,
+  `ResetPropertyToDefault`, `debug.profilebegin`, plugin handles in
+  `ObjectValue.Value`, and a module's own error now shows up in Output
+  instead of just "Requested module experienced an error". Also fixed
+  floating plugin windows ignoring clicks when another plugin has a
+  CoreGui overlay up (Archimedes' Render did nothing with Resurface
+  installed). (@chteau)
+
 ## 2026-11-01
 
 - **Bytecode dock.** The Script Editor can show what Luau compiles the open

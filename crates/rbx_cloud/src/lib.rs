@@ -35,6 +35,7 @@ pub mod quick_login;
 mod retry;
 mod scopes;
 mod security;
+mod store_items;
 mod team_create;
 mod thumbnails;
 mod toolbox;
@@ -81,6 +82,7 @@ pub use scopes::{
     PERMISSIONS,
 };
 pub use security::{mesh_image_apis, set_mesh_image_apis_allowed, MeshImageApis};
+pub use store_items::StoreItem;
 pub use team_create::{
     set_team_create_enabled, team_create_enabled, team_create_enabled_many, team_create_members,
     SessionMember,

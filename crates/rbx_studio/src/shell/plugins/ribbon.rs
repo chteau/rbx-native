@@ -88,6 +88,15 @@ impl Shell {
             }
         }
 
+        let popular = self
+            .ribbon_nav
+            .claim(
+                plugin_tile("plugins-popular", "Popular".into(), None, "store", true).tooltip(
+                    |window, cx| crate::shell::tooltip::text("Popular plugins", window, cx),
+                ),
+                cx,
+            )
+            .on_click(cx.listener(|shell, _, window, cx| shell.open_plugin_catalog(window, cx)));
         let manage = self
             .ribbon_nav
             .claim(
@@ -121,6 +130,7 @@ impl Shell {
             )
             .on_click(cx.listener(|shell, _, _, cx| shell.plugins_reload(cx)));
         groups.push(vec![
+            popular.into_any_element(),
             manage.into_any_element(),
             folder.into_any_element(),
             reload.into_any_element(),

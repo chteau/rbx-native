@@ -14,7 +14,6 @@ use rbx_dom::Ref;
 use super::engine;
 use crate::instance::LuaInstance;
 use crate::output::LineKind;
-use crate::printed::PrintPart;
 
 const FACTORY: &str = "rbxn.require_factory";
 
@@ -118,9 +117,7 @@ pub(crate) fn install(lua: &Lua, resolve: Function, compile: Function) -> Result
             Value::String(text) => text.to_string_lossy().to_string(),
             other => other.to_string()?,
         };
-        engine
-            .ctx
-            .print(LineKind::Error, vec![PrintPart::Text(text)]);
+        engine.host.output(LineKind::Error, text);
         let mut modules = engine.modules.borrow_mut();
         modules.loading.remove(&module);
         modules.failed.insert(module);
