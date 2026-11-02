@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.chteau.rbx_native.Editor</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>rbx-native</name>
+  <summary>Edit Roblox places natively</summary>
+  <developer id="io.github.chteau">
+    <name>Chteau</name>
+  </developer>
+
+  <description>
+    <p>
+      rbx-native is a Roblox Studio replacement written from scratch in Rust.
+      It reads and writes place and model files (binary and XML), renders them
+      on the GPU, runs Luau, talks to Open Cloud, and tries to look and feel as
+      close to Studio as it can.
+    </p>
+    <ul>
+      <li>Explorer, Properties and a 3D viewport with move, scale and rotate tools</li>
+      <li>A Luau script editor with Script Analysis, autocomplete and a debugger</li>
+      <li>Terrain, GUI, animation and material editing</li>
+      <li>Publishing, version history, DataStores and game settings through Open Cloud</li>
+      <li>Playtesting in the Sober client, and Argon and Loren for syncing with your own tools</li>
+    </ul>
+    <p>
+      The Flatpak build can't run programs on the host, so the network
+      simulator, the controller emulator and launching Sober with a simulated
+      device aren't in it. The app says so where they would be.
+    </p>
+    <p>
+      This is an unofficial community project. It isn't affiliated with or
+      endorsed by Roblox Corporation, and "Roblox" is their trademark.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.chteau.rbx_native.Editor.desktop</launchable>
+  <provides>
+    <binary>rbxstudio</binary>
+    <mediatype>application/x-roblox-rbxl</mediatype>
+    <mediatype>application/x-roblox-rbxlx</mediatype>
+  </provides>
+
+  <url type="homepage">https://github.com/chteau/rbx-native</url>
+  <url type="bugtracker">https://github.com/chteau/rbx-native/issues</url>
+  <url type="vcs-browser">https://github.com/chteau/rbx-native</url>
+  <url type="contribute">https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#d9dce3</color>
+    <color type="primary" scheme_preference="dark">#121213</color>
+  </branding>
+
+
+  <categories>
+    <category>Development</category>
+    <category>IDE</category>
+  </categories>
+  <keywords>
+    <keyword>roblox</keyword>
+    <keyword>studio</keyword>
+    <keyword>luau</keyword>
+  </keywords>
+
+  <requires>
+    <display_length compare="ge">1024</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">mild</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.1.0" date="2026-11-02">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>
