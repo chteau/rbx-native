@@ -345,10 +345,12 @@ impl SettingsWindow {
                     .gap(px(2.))
                     .child(
                         h_flex()
+                            .flex_wrap()
                             .gap(px(8.))
                             .items_center()
                             .child(
                                 text(12.5, 17.)
+                                    .min_w_0()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child(name),
                             )
@@ -439,6 +441,8 @@ impl SettingsWindow {
                 .child(
                     div()
                         .flex_1()
+                        .min_w_0()
+                        .truncate()
                         .text_size(px(11.5))
                         .text_color(tokens::text2())
                         .child(format!("Key \u{201c}{}\u{201d}", summary.name)),
@@ -495,6 +499,8 @@ impl SettingsWindow {
                     .child(
                         div()
                             .flex_1()
+                            .min_w_0()
+                            .truncate()
                             .text_size(px(11.5))
                             .text_color(tokens::text2())
                             .child(if account.key_name.is_empty() {

@@ -41,11 +41,31 @@ impl SettingsWindow {
                 .child(
                     v_flex()
                         .flex_1()
+                        .min_w_0()
                         .gap(px(3.))
                         .child(
-                            text(13., 18.)
-                                .font_weight(FontWeight::BOLD)
-                                .child(feature.name),
+                            h_flex()
+                                .flex_wrap()
+                                .gap(px(8.))
+                                .items_center()
+                                .child(
+                                    text(13., 18.)
+                                        .font_weight(FontWeight::BOLD)
+                                        .child(feature.name),
+                                )
+                                .when(on != beta::enabled(id), |name| {
+                                    name.child(
+                                        div()
+                                            .flex_none()
+                                            .px(px(8.))
+                                            .py(px(2.))
+                                            .rounded(px(10.))
+                                            .bg(tokens::accent_soft())
+                                            .text_color(tokens::check_on())
+                                            .text_size(px(10.5))
+                                            .child("Restart to apply"),
+                                    )
+                                }),
                         )
                         .child(
                             text(12., 17.)
@@ -53,19 +73,6 @@ impl SettingsWindow {
                                 .child(feature.description),
                         ),
                 )
-                .when(on != beta::enabled(id), |row| {
-                    row.child(
-                        div()
-                            .flex_none()
-                            .px(px(8.))
-                            .py(px(2.))
-                            .rounded(px(10.))
-                            .bg(tokens::accent_soft())
-                            .text_color(tokens::check_on())
-                            .text_size(px(10.5))
-                            .child("Restart to apply"),
-                    )
-                })
                 .child(toggle(("beta-toggle", i), on, move |_, _, cx| {
                     shell.update(cx, |shell, cx| {
                         if let Err(error) = beta::choose(id, !on) {
@@ -106,6 +113,7 @@ impl SettingsWindow {
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
                     .text_size(px(12.))
                     .text_color(tokens::text())
                     .child(message),

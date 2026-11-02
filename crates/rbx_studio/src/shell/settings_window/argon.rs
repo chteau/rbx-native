@@ -135,6 +135,7 @@ impl SettingsWindow {
             .child(
                 text(11.5, 16.)
                     .flex_1()
+                    .min_w_0()
                     .text_color(tokens::text2())
                     .child(hint),
             )
