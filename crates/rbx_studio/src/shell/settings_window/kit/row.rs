@@ -247,10 +247,12 @@ fn render_row(
                         .gap(px(2.))
                         .child(
                             h_flex()
+                                .flex_wrap()
                                 .gap(px(8.))
                                 .items_center()
                                 .child(
                                     text(12.5, 17.)
+                                        .min_w_0()
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .text_color(label_color)
                                         .when(row.mono, |this| {
