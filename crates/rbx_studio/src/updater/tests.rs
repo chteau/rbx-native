@@ -297,7 +297,7 @@ fn flatpak_is_detected_by_id_or_info_file() {
     assert!(!install::in_flatpak(None, &info));
     assert!(!install::in_flatpak(Some("".into()), &info));
     assert!(install::in_flatpak(
-        Some("io.github.chteau.RbxNative".into()),
+        Some("io.github.chteau.rbx_native.Editor".into()),
         &info
     ));
     fs::write(&info, "[Application]").unwrap();
