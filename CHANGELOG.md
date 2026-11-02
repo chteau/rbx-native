@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-03
+
+- **Cut-off binary files say so.** A `.rbxl`/`.rbxm` that ends partway
+  through a chunk header used to fail with "input too short: expected at
+  least 16 bytes, got 8", sizes from inside the chunk reader that say
+  nothing about the file. Now it reads "the file is cut off: a chunk header
+  needs 16 bytes but only 8 are left in the file", like a cut-off chunk body
+  already did. (@chteau)
+
 ## 2026-11-02
 
 - **Flatpak.** `packaging/flatpak/` builds rbx-native as
