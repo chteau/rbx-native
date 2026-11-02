@@ -220,6 +220,35 @@ pub(crate) fn attachment(item: &Item, out: &mut Vec<Finding>) {
     });
 }
 
+/// Eyebrows and eyelashes follow the face through these two bones, and
+/// Studio refuses one whose mesh lacks either.
+pub(crate) fn joints(item: &Item, out: &mut Vec<Finding>) {
+    if !matches!(item.asset_type, AssetType::Eyebrow | AssetType::Eyelash) {
+        return;
+    }
+    let Some(part) = item.parts.first() else {
+        return;
+    };
+    let Some(g) = &part.geometry else {
+        return;
+    };
+    for joint in ["RBX_Leader", "RBX_Follower"] {
+        if !g.bones.iter().any(|b| b == joint) {
+            out.push(Finding {
+                rule: Rule::Skinning,
+                severity: Severity::Error,
+                subject: part.name.clone(),
+                measured: None,
+                limit: Some(Value::Text(joint.to_string())),
+                message: format!(
+                    "{} must use skinning transfer, but you are missing the required joint {joint}.",
+                    item.asset_type.type_name()
+                ),
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "basic/tests.rs"]
 mod tests;

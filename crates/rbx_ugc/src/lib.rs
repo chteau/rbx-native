@@ -8,6 +8,7 @@
 //! server-side and can refuse things the pages don't spell out.
 
 pub mod head;
+pub mod schema;
 pub mod spec;
 
 mod rules;
@@ -25,6 +26,8 @@ pub struct Geometry {
     pub uvs: Vec<[f32; 2]>,
     /// Bones each vertex follows, one per vertex; empty when unskinned.
     pub influences: Vec<u8>,
+    /// Bone names of a skinned mesh, in file order.
+    pub bones: Vec<String>,
     pub in_studs: bool,
 }
 
@@ -124,6 +127,17 @@ pub enum Rule {
     CageTopology,
     CageUvs,
     Watertight,
+    /// Instances Studio's schema doesn't allow, or required ones missing.
+    Schema,
+    Tags,
+    Attributes,
+    /// A property Studio wants a set value for (`Anchored`, an unscaled
+    /// layered handle).
+    Property,
+    /// A layered item's inner cage, which Studio makes the HSR data from.
+    Hsr,
+    /// Eyebrow and eyelash skinning transfer.
+    Skinning,
     Unreadable,
     Head(head::HeadRule),
 }
@@ -147,6 +161,12 @@ impl Rule {
             Rule::CageTopology => "Cage vertices",
             Rule::CageUvs => "Cage UVs",
             Rule::Watertight => "Watertight",
+            Rule::Schema => "Instances",
+            Rule::Tags => "Tags",
+            Rule::Attributes => "Attributes",
+            Rule::Property => "Properties",
+            Rule::Hsr => "HSR data",
+            Rule::Skinning => "Skinning",
             Rule::Unreadable => "Not checked",
             Rule::Head(rule) => rule.title(),
         }
@@ -163,10 +183,14 @@ impl Rule {
             | Rule::TextureSize
             | Rule::MissingTexture
             | Rule::Attachment
-            | Rule::ItemSize => {
+            | Rule::ItemSize
+            | Rule::Schema
+            | Rule::Tags
+            | Rule::Attributes
+            | Rule::Property => {
                 "https://create.roblox.com/docs/avatar/rigid-accessories/specifications"
             }
-            Rule::CageMissing | Rule::CageTopology | Rule::CageUvs => {
+            Rule::CageMissing | Rule::CageTopology | Rule::CageUvs | Rule::Hsr | Rule::Skinning => {
                 "https://create.roblox.com/docs/avatar/layered-accessories/specifications"
             }
             Rule::BodyTriangles | Rule::BodyPartSize | Rule::BodySize | Rule::Watertight => {
@@ -223,6 +247,7 @@ pub fn validate(item: &Item) -> Vec<Finding> {
     rules::textures(item, &mut findings);
     rules::influences(item, &mut findings);
     rules::attachment(item, &mut findings);
+    rules::joints(item, &mut findings);
     rules::size(item, &mut findings);
     rules::cages(item, &mut findings);
     rules::watertight(item, &mut findings);

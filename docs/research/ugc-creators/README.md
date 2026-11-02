@@ -146,17 +146,89 @@ loading, instance editing for all the avatar classes, skinned rendering.
      sized as Classic (so an unmarked hat gets 3 x 4 x 3, not Normal's
      1.87 x 2.5 x 1.87); a rigid handle needs a `TextureID` or a
      `SurfaceAppearance`, a layered one doesn't. Both are mirrored.
-   - Not mirrored: Studio's "Missing HSR data" error on a layered item
-     (Studio generates that data itself; ours reads it, see stage 3, but
-     can't make it) and its schema check (stray
-     instances under the handle). The Studio importer decimates a mesh over
-     20k triangles instead of refusing it; our importer still refuses.
-   - The AFT never got past its Select step on these items in our run, so
-     its own messages were not compared.
-   - No page gives a size box for shoes, a vertex/UV count for Roblox's
-     template cages, or a publishing advance for eyebrows and eyelashes;
-     those rules are skipped. The Slender hair depth row adds up wrong on
-     the page (1.892 + 1.189 for 2.08); 0.892 front is used.
+   - Second pass, Studio 0.745 on 2026-11-02, Save to Roblox run up to its
+     verdict on about 50 generated hats, shirts, eyebrows, eyelashes and
+     shoe pairs (owned meshes, nothing published). All of this is now
+     mirrored, with Studio's wording, in `rbx_ugc::schema` and the item
+     rules:
+     - Schema. An accessory may hold one `Handle` (`MeshPart`, or a `Part`
+       with a `SpecialMesh`) and a `ThumbnailConfiguration`
+       `Configuration`, which then needs an `ObjectValue`
+       `ThumbnailCameraTarget` and a `CFrameValue` `ThumbnailCameraValue`.
+       The handle may hold its one type attachment (the attachment itself
+       can't have children), an `AvatarPartScaleType` `StringValue`
+       (Classic, ProportionsSlender or ProportionsNormal), an
+       `OriginalSize` `Vector3Value`, `SurfaceAppearance`, and a
+       `WrapLayer` on layered items only. Everything else (a `Part`,
+       `Decal`, `Sound`, `Weld`, `ParticleEmitter`, a `Folder`, a second
+       attachment or handle, a value under the wrong parent) is listed with
+       every descendant in one "not part of the approved schema" error. A
+       `WrapLayer` on a rigid item adds "Asset type 'Hat' is not a layered
+       clothing category". A renamed handle gives "Could not find required
+       MeshPart called Handle". Studio stops at a schema error and hides
+       the rest; ours lists everything at once.
+     - Tags anywhere, and attributes anywhere but on the handle itself, are
+       errors; an anchored handle is too ("Expected to be = false"), rigid
+       and layered alike. A script inside gives only "Unknown error" in
+       Studio (its log says the asset quality job failed); ours lists it
+       as a stray instance.
+     - "Missing HSR data" isn't about HSR assets: Studio makes that data
+       itself, and a layered item with both cages passes without it. It
+       shows up, next to "Missing InnerCage (i.e. invalid
+       ReferenceMeshId)", only when the `WrapLayer` has no
+       `ReferenceMeshId`.
+     - Eyebrows and eyelashes need `WrapLayer.AutoSkin` EnabledOverride and
+       the mesh joints `RBX_Leader` and `RBX_Follower` ("must use skinning
+       transfer"); `FaceFrontAttachment` is accepted. A layered handle whose
+       `Size` isn't its `MeshSize` is refused ("mesh parts with wrap layers
+       do not support scaling").
+     - Shoes: the box is 8 x 8 x 8 like the rest of layered clothing ("The
+       max size for type LeftShoeAccessory is [8.00, 8.00, 8.00]"), on
+       `LeftFootAttachment` / `RightFootAttachment`. The pair must come as
+       one `Model` holding `LeftShoeAccessory` and `RightShoeAccessory`;
+       anything else is "Unknown error" in the dialog and "Expected
+       LeftShoeAccessory and RightShoeAccessory for shoe validation" in the
+       log.
+   - Import 3D now decimates a mesh over 20,000 triangles like Studio's
+     importer instead of refusing it (meshoptimizer's quadric simplifier,
+     OBJ, glTF, GLB and binary FBX; only an ASCII FBX is still refused).
+     Same 21,000-triangle sphere in both: Studio's comes out at exactly
+     20,000 faces, 1.19959 x 1.2 x 1.19972 studs, edges 0.0046 to 0.0405;
+     ours 20,000 faces, the same box to 1e-5, edges 0.0022 to 0.0405.
+   - Still not mirrored, and why: the cage numbers (outer cage inside the
+     mesh, mesh outside the outer cage, cage-to-mesh distance 0.60, "no
+     more than 14% of the modified UVs" outside the body region) and
+     eyebrows' "deforms beyond 1.95, 0.65, 0.65 when placed on an
+     avatar", because each needs Studio's own fit of the item on its body
+     and its region maps; the ownership checks ("not owned by an authorized
+     creator"), which are server side.
+   - Watertight: no Studio message about open meshes came up on any item,
+     and every mesh owned for these tests is closed, so whether Studio
+     refuses an open mesh is unknown (its validator does measure it, the
+     file list has an asset quality "watertight" measure). Ours stays a
+     warning, counted by welding positions and finding edges with one
+     face; `rbx_autorig`'s voxeliser isn't needed for that.
+   - Template cages: Studio doesn't hold cages to a vertex count. It passed
+     a shirt whose inner and outer cages are 5410 and 5408 vertices, and
+     checks where the cage UVs land on the body per type instead (above).
+     Ours used to refuse that pair; a vertex count that differs from the
+     inner cage or the template is now a warning, and UVs are still
+     compared vertex by vertex when the counts match.
+   - Side by side in ours (Check Item on the same places): the stray-part,
+     script, second-attachment, no-ReferenceMeshId shirt and eyebrow items
+     give the same messages as Studio, word for word.
+   - The AFT now gets past Select (pick the part, Clothing or Accessory,
+     the type, the body) to its fitting view, and shows no checks of its
+     own on the way: in Studio the checks live in Save to Roblox and the
+     Avatar tab's UGC Validation panel, which is what ours mirrors.
+     Generate was not pressed.
+   - No page gives a publishing advance for eyebrows and eyelashes, and
+     that row stays empty. The Slender hair depth row adds up wrong on the
+     page (1.892 + 1.189 for 2.08); 0.892 front is used.
+   - Can't be tested here, ever: whether the Creator Hub turns one of our
+     uploads into an avatar item, and whether it takes a cage made from
+     the Mannequin's. Both need an account in the UGC program, and Chee's
+     isn't in it.
 2. **Fitting tool, rigid items** (stage 2). Done: Avatar › Accessory opens
    the Accessory Fitting Tool. Pick a `MeshPart` or `Model`, Accessory or
    Clothing, the asset type (Studio's list, Shoulder with its five
@@ -306,5 +378,5 @@ before it counts as done, same as the rest of the project.
   Front, Hair, Hat, Jacket, Lip Makeup, Neck, Pants, Shirt, Shorts,
   Shoulder, Sweater, T-Shirt, Waist.
 - Whether the Open Cloud Assets API will ever take avatar item metadata.
-- Whether a validator can lean on `rbx_autorig`'s voxeliser for the
-  watertight check or needs its own.
+- Whether Studio refuses an open (non-watertight) accessory mesh. Needs an
+  owned open mesh to run through Save to Roblox.
