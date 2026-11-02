@@ -2901,6 +2901,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/float-cmp/float-cmp-0.10.0.crate",
+        "sha256": "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8",
+        "dest": "cargo/vendor/float-cmp-0.10.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8\", \"files\": {}}",
+        "dest": "cargo/vendor/float-cmp-0.10.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/float-ord/float-ord-0.3.2.crate",
         "sha256": "8ce81f49ae8a0482e4c55ea62ebbd7e5a686af544c00b9d090bba3ff9be97b3d",
         "dest": "cargo/vendor/float-ord-0.3.2"
@@ -5535,6 +5548,19 @@
         "type": "inline",
         "contents": "{\"package\": \"488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a\", \"files\": {}}",
         "dest": "cargo/vendor/memoffset-0.9.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/meshopt/meshopt-0.7.0.crate",
+        "sha256": "a403c16e3ca5752600e1d4c5ba3ba2a6496f407ded66e767f05279514363f461",
+        "dest": "cargo/vendor/meshopt-0.7.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"a403c16e3ca5752600e1d4c5ba3ba2a6496f407ded66e767f05279514363f461\", \"files\": {}}",
+        "dest": "cargo/vendor/meshopt-0.7.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
