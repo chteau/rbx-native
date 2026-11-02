@@ -3286,6 +3286,23 @@ both the plain fetch failure and the silent fall back to a default
 - [x] macOS build CI, a `macos-latest` job beside the Windows one:
   clippy, build and test. macOS is still not a supported target; the job
   only keeps the workspace from rotting there.
+- [x] A Flathub-ready Flatpak, `packaging/flatpak/`
+  (`io.github.chteau.rbx_native.Editor`, Freedesktop 26.08). Builds offline
+  from source: `cargo-sources.json` for the workspace, luau-lsp from its tag
+  with CMake, cloudflared from its tag with Go modules from
+  proxy.golang.org, and `RBX_BUNDLE_PROGRAMS=0` so `rbx_studio/build.rs`
+  embeds nothing and the editor finds those two on `PATH`. Permissions are
+  Wayland/X11, `--device=dri`, network and Discord's IPC socket; files,
+  keyring (oo7 over the Secret portal), `roblox://` and screenshots go
+  through portals. No `org.freedesktop.Flatpak` talk-name, so what needs
+  the host degrades with a message (`rbx_play::sandbox::is_flatpak`): Play
+  opens Sober through OpenURI without the device/controller options or
+  exit tracking, the Linux network simulator, the controller emulator and
+  update planning's systemd timer are off, and Vinegar/Sober installs
+  aren't read. Figma sign-in isn't in it (the secret can't be in a public
+  manifest). The `flatpak` workflow builds and lints it on PRs that touch
+  packaging. Not done yet: the Flathub submission itself, which waits for
+  a tagged release.
 
 ### Collaboration (`rbx_presence`)
 - [x] **Live co-editing between rbx-native editors, and with Studio
