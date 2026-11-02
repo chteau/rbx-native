@@ -44,12 +44,18 @@ fn luau_source_dir() -> PathBuf {
     }
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("Cargo.toml");
+    // Offline needs every package in the graph on disk, and a build only
+    // fetched the ones for its own target (CI has no accesskit_macos on
+    // Linux), so ask for just that target's graph.
+    let target = env::var("TARGET").unwrap();
     let output = Command::new(cargo)
         .args([
             "metadata",
             "--format-version",
             "1",
             "--offline",
+            "--filter-platform",
+            &target,
             "--manifest-path",
         ])
         .arg(&manifest)
