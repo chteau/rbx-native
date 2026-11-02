@@ -50,6 +50,8 @@ impl UpdatePlanningWindow {
             "Cancelled. Plan the next one whenever you like."
         } else if plan.finished() {
             "Done: the new icon is live. Plan the next one whenever you like."
+        } else if rbx_play::sandbox::is_flatpak() {
+            "Each image was uploaded at the start so Roblox reviews it early. Steps fire while the editor is open."
         } else {
             "Each image was uploaded at the start so Roblox reviews it early. Steps fire while the editor is open, and from the background helper while the PC is on."
         };
