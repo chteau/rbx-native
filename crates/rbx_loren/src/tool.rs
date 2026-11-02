@@ -136,6 +136,11 @@ pub fn resolve_tool(
     ))
 }
 
+/// Whether this process runs inside a Flatpak sandbox.
+fn in_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
 pub fn sourcemap_args() -> Vec<String> {
     ["sourcemap", PROJECT_FILE, "-o", SOURCEMAP_FILE]
         .map(String::from)
@@ -172,7 +177,12 @@ pub fn sourcemap(root: &Path, tool: Tool, run: &dyn Runner) -> Result<(), String
     match &result.error {
         Some(SpawnError::NotFound) => {
             let repo = tool_pin(tool.id()).map_or("", |p| p.repo);
-            return Err(format!("{tool} is not installed or not on PATH. Install it (rokit add {repo}) or pass --tool."));
+            let note = if in_flatpak() {
+                " The Flatpak build of rbx-native can't see programs installed on the host."
+            } else {
+                ""
+            };
+            return Err(format!("{tool} is not installed or not on PATH. Install it (rokit add {repo}) or pass --tool.{note}"));
         }
         Some(SpawnError::Other(message)) => {
             return Err(format!("{label} could not start: {message}"))

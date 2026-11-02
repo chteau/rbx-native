@@ -37,6 +37,7 @@ fn secondary_window<V: Render>(
     view: impl FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 ) -> Option<WindowHandle<Root>> {
     let options = WindowOptions {
+        app_id: Some(crate::APP_ID.to_owned()),
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
             size(

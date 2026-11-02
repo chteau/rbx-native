@@ -55,6 +55,9 @@ impl Shell {
     fn network_wrapper(&mut self) -> Result<Vec<String>, String> {
         use rbx_play::launch::Launcher;
         use rbx_play::netsim::Shaper;
+        if rbx_play::sandbox::is_flatpak() {
+            return Err("the Flatpak build can't start Sober inside a shaped network namespace (that needs the host's flatpak, unshare and slirp4netns); the GitHub build of rbx-native has it".to_owned());
+        }
         if Launcher::detect() != Launcher::Sober {
             return Err("it needs the Sober client (flatpak), which was not found".to_owned());
         }

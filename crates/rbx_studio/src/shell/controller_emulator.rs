@@ -103,6 +103,7 @@ impl Shell {
 impl ControllerEmulator {
     fn open(shell: Entity<Shell>, cx: &mut App) -> Option<WindowHandle<Root>> {
         let options = WindowOptions {
+            app_id: Some(crate::APP_ID.to_owned()),
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
                 size(tokens::scaled_width(WIDTH), tokens::scaled_width(HEIGHT)),
@@ -160,10 +161,12 @@ impl ControllerEmulator {
     }
 
     /// Connects the pad while Play runs, disconnects it otherwise, and
-    /// swaps it when the device changed.
+    /// swaps it when the device changed. The Flatpak build tries at once,
+    /// so the window says straight away why it can't.
     fn sync_connection(&mut self, cx: &mut Context<Self>) {
         let before = (self.pad.is_some(), self.problem.clone());
-        let want = self.playing(cx) && self.device().unavailable().is_none();
+        let want = (self.playing(cx) || rbx_play::sandbox::is_flatpak())
+            && self.device().unavailable().is_none();
         if self
             .pad
             .as_ref()

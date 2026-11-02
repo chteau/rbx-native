@@ -142,6 +142,7 @@ impl FigmaWindow {
             .p(px(16.));
         if self.source.is_none() {
             let text = match oauth::CLIENT_SECRET {
+                None if rbx_play::sandbox::is_flatpak() => oauth::NO_SECRET_FLATPAK,
                 None => oauth::NO_SECRET,
                 Some(_) => "Connect your Figma account to browse your files. rbx-native only asks to read file content.",
             };

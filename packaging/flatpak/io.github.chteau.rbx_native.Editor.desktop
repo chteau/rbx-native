@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=rbx-native
+GenericName=Roblox Place Editor
+Comment=Edit Roblox places and models natively
+Exec=rbxstudio %f
+Icon=io.github.chteau.rbx_native.Editor
+Terminal=false
+Categories=Development;IDE;
+Keywords=roblox;studio;luau;place;rbxl;rbxm;
+MimeType=application/x-roblox-rbxl;application/x-roblox-rbxlx;
+StartupNotify=true
+StartupWMClass=io.github.chteau.rbx_native.Editor

@@ -27,9 +27,15 @@ const REFRESH_URL: &str = "https://api.figma.com/v1/oauth/refresh";
 
 /// What a build without the secret says instead of signing in.
 pub const NO_SECRET: &str =
-    "This build has no Figma client secret, so it can\u{2019}t sign in to Figma. \
+    "Figma sign-in isn\u{2019}t available in this build: it has no Figma client secret. \
      Rebuild with RBX_FIGMA_CLIENT_SECRET set to the app\u{2019}s secret \
      (RBX_FIGMA_CLIENT_SECRET=\u{2026} cargo build -p rbx_studio).";
+
+/// What the Flatpak build says instead of signing in.
+pub const NO_SECRET_FLATPAK: &str =
+    "Figma sign-in isn\u{2019}t available in the Flatpak build: the app\u{2019}s client secret \
+     can\u{2019}t ship in a public manifest. Importing from Figma needs the GitHub build of \
+     rbx-native.";
 
 /// A signed-in session's tokens. `expires_at` is in Unix seconds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

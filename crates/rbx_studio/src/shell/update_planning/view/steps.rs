@@ -50,6 +50,8 @@ impl UpdatePlanningWindow {
             "Cancelled. Plan the next one whenever you like."
         } else if plan.finished() {
             "Done: the new icon is live. Plan the next one whenever you like."
+        } else if rbx_play::sandbox::is_flatpak() {
+            "Each image was uploaded at the start so Roblox reviews it early. Steps fire while the editor is open."
         } else {
             "Each image was uploaded at the start so Roblox reviews it early. Steps fire while the editor is open, and from the background helper while the PC is on."
         };
@@ -174,10 +176,17 @@ impl UpdatePlanningWindow {
                     ),
             )
             .when(!plan.finished(), |d| {
+                // The Flatpak build has no background helper and no
+                // notify-send, so it says what happens instead.
+                let flatpak = rbx_play::sandbox::is_flatpak();
                 d.child(
                     card(
                         "While the editor is closed",
-                        "Steps keep firing as long as the PC is on and you are logged in.",
+                        if flatpak {
+                            "Nothing fires: keep the editor open until the plan is done."
+                        } else {
+                            "Steps keep firing as long as the PC is on and you are logged in."
+                        },
                     )
                     .child(info_row("clock", crate::update_planning::helper::describe()))
                     .child(info_row(
@@ -186,7 +195,11 @@ impl UpdatePlanningWindow {
                     ))
                     .child(info_row(
                         "bell",
-                        "Each step that goes live sends a desktop notification.",
+                        if flatpak {
+                            "No desktop notifications in the Flatpak build: this list shows each step as it goes live."
+                        } else {
+                            "Each step that goes live sends a desktop notification."
+                        },
                     )),
                 )
             })

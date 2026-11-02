@@ -113,6 +113,7 @@ impl Shell {
 impl UpdatePlanningWindow {
     fn open(linked: Option<crate::home::Link>, cx: &mut App) -> Option<WindowHandle<Root>> {
         let options = WindowOptions {
+            app_id: Some(crate::APP_ID.to_owned()),
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
                 size(tokens::scaled_width(WIDTH), tokens::scaled_width(HEIGHT)),

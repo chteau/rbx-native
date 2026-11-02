@@ -2,6 +2,24 @@
 
 ## 2026-11-02
 
+- **Flatpak.** `packaging/flatpak/` builds rbx-native as
+  `io.github.chteau.rbx_native.Editor`, offline and from source like Flathub
+  wants: luau-lsp and cloudflared get built from their tags into
+  `/app/bin`, and `RBX_BUNDLE_PROGRAMS=0` tells `rbx_studio`'s `build.rs` to
+  embed none of the programs it normally downloads. AppStream metainfo,
+  desktop file, icon, `.rbxl`/`.rbxlx` file types and screenshots are in
+  there, all three Flathub linters pass, and a `flatpak` CI job builds it on
+  PRs that touch packaging, the lockfile or a `build.rs`. Permissions are
+  just the window, GPU, network and Discord's socket, the rest goes through
+  portals (files, keyring, `roblox://` links, screenshots). Stuff that
+  needs the host now says so instead of failing weirdly: Play opens Sober
+  through the portal, the network simulator, controller emulator and
+  update planning's systemd timer explain why they're off, Figma says
+  sign-in isn't in this build, and Argon/Loren mention they can't see host
+  tools. Every window carries the app id now too, so desktops match it to
+  its launcher icon. The README there has the Flathub submission steps.
+  (@chteau)
+
 - **UGC validator, the rest.** Check Item now catches what Studio's Save
   to Roblox refuses before the spec pages do, in Studio's own words: stray
   instances in the accessory (anything that isn't the handle, its one
