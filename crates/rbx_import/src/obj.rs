@@ -7,9 +7,14 @@ use std::io::Cursor;
 use base64::Engine;
 use serde_json::{json, Value};
 
-use crate::MeshInfo;
+use crate::decimate::{simplify, Decimated};
+use crate::{MeshInfo, TRIANGLE_LIMIT};
 
-pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> {
+/// The meshes found, those decimated, and the glTF written.
+type Converted = (Vec<MeshInfo>, Vec<Decimated>, Vec<u8>);
+
+/// The glTF, plus each mesh that had to be brought under the limit.
+pub(crate) fn convert(bytes: &[u8]) -> Result<Converted, String> {
     let options = tobj::LoadOptions {
         triangulate: true,
         single_index: true,
@@ -26,6 +31,7 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
     let mut buffer = Vec::new();
     let (mut views, mut accessors, mut meshes, mut nodes) = (vec![], vec![], vec![], vec![]);
     let mut infos = Vec::new();
+    let mut decimated = Vec::new();
     for model in models.iter().filter(|m| !m.mesh.indices.is_empty()) {
         let mesh = &model.mesh;
         let vertices = mesh.positions.len() / 3;
@@ -81,13 +87,28 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
                 ),
             );
         }
+        let mut corners = mesh.indices.clone();
+        if corners.len() / 3 > TRIANGLE_LIMIT {
+            let positions: Vec<[f32; 3]> = mesh
+                .positions
+                .chunks(3)
+                .map(|p| [p[0], p[1], p[2]])
+                .collect();
+            let triangles: Vec<[u32; 3]> = corners.chunks(3).map(|t| [t[0], t[1], t[2]]).collect();
+            corners = simplify(&positions, &triangles, TRIANGLE_LIMIT).concat();
+            decimated.push(Decimated {
+                name: model.name.clone(),
+                from: triangles.len(),
+                to: corners.len() / 3,
+            });
+        }
         let indices = push(
             &mut buffer,
             &mut views,
             &mut accessors,
-            mesh.indices.iter().flat_map(|i| i.to_le_bytes()).collect(),
+            corners.iter().flat_map(|i| i.to_le_bytes()).collect(),
             5125,
-            mesh.indices.len(),
+            corners.len(),
             "SCALAR",
             None,
         );
@@ -98,7 +119,7 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
         nodes.push(json!({"name": model.name, "mesh": meshes.len() - 1}));
         infos.push(MeshInfo {
             name: model.name.clone(),
-            triangles: mesh.indices.len() / 3,
+            triangles: corners.len() / 3,
         });
     }
     if infos.is_empty() {
@@ -120,6 +141,7 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
     });
     Ok((
         infos,
+        decimated,
         serde_json::to_vec(&document).map_err(|e| e.to_string())?,
     ))
 }

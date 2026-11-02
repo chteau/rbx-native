@@ -27,6 +27,7 @@ pub(crate) fn report(bytes: &[u8]) -> Report {
     Report {
         meshes,
         unchecked: None,
+        decimated: Vec::new(),
     }
 }
 
@@ -37,6 +38,7 @@ fn unchecked(what: &str) -> Report {
             "Couldn\u{2019}t count the triangles of {what}; Roblox will check the {}-triangle limit on upload",
             crate::TRIANGLE_LIMIT
         )),
+        decimated: Vec::new(),
     }
 }
 
@@ -109,6 +111,7 @@ fn ascii(bytes: &[u8]) -> Option<Report> {
     Some(Report {
         meshes,
         unchecked: None,
+        decimated: Vec::new(),
     })
 }
 
