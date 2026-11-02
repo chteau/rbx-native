@@ -192,6 +192,10 @@ use shell::Shell;
 /// The fallback for `--select`, resolved into [`Launch`] below and read
 /// nowhere else, `shell` takes the whole comma list from there rather than
 /// reaching back into the environment for it.
+/// The app id every window carries (Wayland `app_id`, X11 `WM_CLASS`), the
+/// same as the `.desktop` file's name, so the desktop matches windows to it.
+pub(crate) const APP_ID: &str = "io.github.chteau.rbx_native.Editor";
+
 const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
@@ -599,6 +603,7 @@ fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
     let bounds = Bounds::centered(None, size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
 
     WindowOptions {
+        app_id: Some(crate::APP_ID.to_owned()),
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         // The editor draws its own title bar (see `shell::chrome::topbar`),
         // so the window manager is asked not to. The title itself still

@@ -35,6 +35,7 @@ pub mod netsim;
 pub mod print;
 pub mod protocol;
 pub mod record;
+pub mod sandbox;
 pub mod service_wrap;
 pub mod sober_config;
 pub mod touch;

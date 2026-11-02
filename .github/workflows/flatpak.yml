@@ -1,0 +1,60 @@
+name: Flatpak
+
+# Builds packaging/flatpak's manifest the way Flathub does, so it doesn't rot
+# between releases. Only on changes that can break it: the packaging itself,
+# the lockfile (cargo-sources.json has to match it) and the build scripts.
+on:
+  pull_request:
+    paths:
+      - packaging/flatpak/**
+      - Cargo.lock
+      - crates/*/build.rs
+      - .github/workflows/flatpak.yml
+  workflow_dispatch:
+
+jobs:
+  sources:
+    name: cargo-sources.json matches Cargo.lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: flatpak/flatpak-builder-tools
+          path: flatpak-builder-tools
+      - name: Regenerate and compare
+        run: |
+          pip install aiohttp tomlkit
+          python3 flatpak-builder-tools/cargo/flatpak-cargo-generator.py Cargo.lock -o /tmp/cargo-sources.json
+          diff -q packaging/flatpak/cargo-sources.json /tmp/cargo-sources.json \
+            || { echo "::error::packaging/flatpak/cargo-sources.json is stale, regenerate it (see packaging/flatpak/README.md)"; exit 1; }
+
+  flatpak:
+    name: Build and lint
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('Cargo.lock', 'packaging/flatpak/**') }}
+          restore-keys: flatpak-builder-
+      # What the flatpak-builder action runs, plus --compose-url-policy=full:
+      # without it the catalogue keeps relative screenshot paths and the repo
+      # linter flags them as not mirrored.
+      - name: Build
+        run: |
+          flatpak-builder --repo=repo --disable-rofiles-fuse --install-deps-from=flathub \
+            --force-clean --ccache \
+            --mirror-screenshots-url=https://dl.flathub.org/media --compose-url-policy=full \
+            flatpak_app packaging/flatpak/io.github.chteau.rbx_native.Editor.yml
+          ostree commit --repo=repo --canonical-permissions --branch=screenshots/x86_64 \
+            flatpak_app/files/share/app-info/media
+      - name: Lint
+        run: |
+          flatpak-builder-lint manifest packaging/flatpak/io.github.chteau.rbx_native.Editor.yml
+          flatpak-builder-lint appstream packaging/flatpak/io.github.chteau.rbx_native.Editor.metainfo.xml
+          flatpak-builder-lint repo repo

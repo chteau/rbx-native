@@ -10,6 +10,7 @@ fn hat(half: f32, in_studs: bool) -> Item {
             name: "Handle".into(),
             geometry: Some(Geometry {
                 positions: vec![[half, 0.0, 0.0], [-half, 0.0, 0.0]],
+                bones: Vec::new(),
                 in_studs,
                 ..Default::default()
             }),
@@ -55,6 +56,7 @@ fn limb(name: &str, x: f32) -> Part {
         name: name.into(),
         geometry: Some(Geometry {
             positions: vec![[-0.5, -1.0, -0.5], [0.5, 1.0, 0.5]],
+            bones: Vec::new(),
             in_studs: true,
             ..Default::default()
         }),

@@ -45,6 +45,7 @@ impl Shell {
 impl RobloxLoginWindow {
     fn open(shell: Entity<Shell>, cx: &mut App) -> Option<WindowHandle<Root>> {
         let options = WindowOptions {
+            app_id: Some(crate::APP_ID.to_owned()),
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
                 size(px(WIDTH), px(HEIGHT)),

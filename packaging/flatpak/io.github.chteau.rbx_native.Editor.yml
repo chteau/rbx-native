@@ -1,0 +1,104 @@
+app-id: io.github.chteau.rbx_native.Editor
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.golang
+command: rbxstudio
+
+finish-args:
+  # GPUI draws through Wayland when the session has it and falls back to X11;
+  # ipc is X11's shared memory.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # The viewport renders with wgpu (Vulkan, or GL as a fallback).
+  - --device=dri
+  # Open Cloud, the asset CDN, Team Create's relay, Figma, Play's cloudflared
+  # tunnel, and Argon / luau-lsp talking to the editor over localhost.
+  - --share=network
+  # Discord Rich Presence: the IPC socket of a native or a Flatpak Discord.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
+  # Nothing else on purpose. Places open and save through the file chooser
+  # portal, the Open Cloud key lives in the keyring the Secret portal hands
+  # the app, links and Play's roblox:// launch go through the OpenURI portal
+  # (Sober on the host picks it up), and the eyedropper uses the Screenshot
+  # portal. No --talk-name=org.freedesktop.Flatpak: the features that would
+  # need to run host programs (Sober with extra sandbox flags, the network
+  # simulator, the controller emulator, systemd timers) say in the app that
+  # the Flatpak build can't do them.
+
+modules:
+  # The Luau language server behind Script Analysis, autocomplete and hover.
+  # The editor finds it on PATH when the binary embeds none (see
+  # RBX_BUNDLE_PROGRAMS below).
+  - name: luau-lsp
+    buildsystem: simple
+    build-commands:
+      - cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLSP_WERROR=OFF
+      - cmake --build build --target Luau.LanguageServer.CLI
+      - install -Dm755 build/luau-lsp /app/bin/luau-lsp
+    sources:
+      - type: git
+        url: https://github.com/JohnnyMorganz/luau-lsp.git
+        tag: 1.70.0
+        commit: 876d84b8caf4454c8df806ddc9eee0565228d7b6
+        x-checker-data:
+          type: git
+          tag-pattern: ^([\d.]+)$
+
+  # The tunnel Play's game server reaches the editor through.
+  - name: cloudflared
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/golang/bin
+      env:
+        GOFLAGS: -mod=vendor
+        CGO_ENABLED: '0'
+    build-commands:
+      - go build -trimpath -ldflags "-X main.Version=2026.10.0 -X github.com/cloudflare/cloudflared/cmd/cloudflared/updater.BuiltForPackageManager=flatpak"
+        -o cloudflared ./cmd/cloudflared
+      - install -Dm755 cloudflared /app/bin/cloudflared
+    sources:
+      - type: git
+        url: https://github.com/cloudflare/cloudflared.git
+        tag: 2026.10.0
+        commit: 18cdfe0a6fc7b72a0702d255a1f984e776ce0498
+      # Go modules from proxy.golang.org, generated with flatpak-go-mod
+      # (see README.md).
+      - cloudflared/go-sources.json
+
+  - name: rbxnative
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/rbxnative/cargo
+        CARGO_NET_OFFLINE: 'true'
+        # luau-lsp and cloudflared come from the modules above; the Linux
+        # network simulator's slirp4netns isn't shipped, since the sandbox
+        # can't make network namespaces anyway.
+        RBX_BUNDLE_PROGRAMS: '0'
+    build-commands:
+      - cargo --offline build --release --locked -p rbx_studio --bin rbxstudio
+      - install -Dm755 target/release/rbxstudio /app/bin/rbxstudio
+      - install -Dm644 packaging/flatpak/io.github.chteau.rbx_native.Editor.desktop -t /app/share/applications
+      - install -Dm644 packaging/flatpak/io.github.chteau.rbx_native.Editor.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 packaging/flatpak/io.github.chteau.rbx_native.Editor.svg -t /app/share/icons/hicolor/scalable/apps
+      - install -Dm644 packaging/flatpak/io.github.chteau.rbx_native.Editor.mime.xml /app/share/mime/packages/io.github.chteau.rbx_native.Editor.xml
+    sources:
+      # Flathub builds a tagged release instead: see README.md.
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - docs
+          - .forge
+          - .claude
+          - .flatpak-builder
+          # where the CI job puts its build dir and repo
+          - flatpak_app
+          - repo
+      - cargo-sources.json

@@ -302,12 +302,22 @@ fn status_line(view: &View, layout: Layout) -> Div {
     match view {
         // The one line that may wrap, in the stacked layout: a block, not a
         // row, so the text breaks at the dock's width.
-        View::Disconnected => line.when(layout.wide, |this| this.h(px(18.))).child(
-            div()
-                .w_full()
-                .when(layout.wide, |this| this.whitespace_nowrap())
-                .child("Two-way sync with an Argon project, at the address its CLI serves."),
-        ),
+        // The Flatpak build can't see the host's CLI, so it says how to
+        // connect anyway, and that line wraps in both layouts.
+        View::Disconnected => {
+            let flatpak = rbx_play::sandbox::is_flatpak();
+            let one_line = layout.wide && !flatpak;
+            line.when(one_line, |this| this.h(px(18.))).child(
+                div()
+                    .w_full()
+                    .when(one_line, |this| this.whitespace_nowrap())
+                    .child(if flatpak {
+                        "Two-way sync with an Argon project. The Flatpak build can't see the host's argon: run argon serve in a terminal, then Connect."
+                    } else {
+                        "Two-way sync with an Argon project, at the address its CLI serves."
+                    }),
+            )
+        }
         View::Connecting { address } => line
             .h(px(18.))
             .child("Reaching the Argon server at\u{a0}")

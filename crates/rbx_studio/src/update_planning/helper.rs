@@ -17,7 +17,9 @@ const SCRATCH_VARIABLE: &str = "RBX_STUDIO_UPDATE_PLAN_HELPER_DIR";
 
 /// What runs the steps while the editor is closed, for the steps view.
 pub(crate) fn describe() -> &'static str {
-    if cfg!(target_os = "linux") {
+    if rbx_play::sandbox::is_flatpak() {
+        "The Flatpak build can't install a systemd timer, so the steps run only while the editor is open."
+    } else if cfg!(target_os = "linux") {
         "A systemd user timer (rbx-native-update-planning.timer) runs them every minute."
     } else if cfg!(target_os = "macos") {
         "A launchd agent (com.rbx-native-update-planning) runs them every minute."
@@ -148,6 +150,9 @@ fn system_dir() -> Option<PathBuf> {
 pub(crate) fn register() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let scratch = scratch_dir();
+    if scratch.is_none() && rbx_play::sandbox::is_flatpak() {
+        return Ok(());
+    }
     let dir = scratch.clone().or_else(system_dir);
     if let Some(dir) = &dir {
         for (path, text) in files(&exe, dir) {
@@ -187,6 +192,9 @@ pub(crate) fn register() -> Result<(), String> {
 pub(crate) fn unregister() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let scratch = scratch_dir();
+    if scratch.is_none() && rbx_play::sandbox::is_flatpak() {
+        return Ok(());
+    }
     let dir = scratch.clone().or_else(system_dir);
     if scratch.is_none() {
         #[cfg(target_os = "linux")]

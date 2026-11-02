@@ -53,6 +53,15 @@ something's broken anyway, open an issue.
 | macOS | Not supported. CI builds it and runs the tests on `macos-latest` so it keeps compiling, but nobody actually runs the editor there. |
 | Wayland | Works, but without pointer lock (the cursor isn't captured). |
 
+## Installing
+
+There's a Flatpak, built from source the way Flathub wants it. Until it's on
+Flathub you build it yourself, see
+[packaging/flatpak/README.md](packaging/flatpak/README.md). A few things that
+need to run programs on the host (the network simulator, the controller
+emulator, device simulation in Sober) aren't in the Flatpak build, the app
+says so where they'd be. Otherwise build from source, below.
+
 ## Building
 
 You need Rust 1.96 or newer, from [rustup.rs](https://rustup.rs). If a build

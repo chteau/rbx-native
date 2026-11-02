@@ -17,12 +17,13 @@ imagesize = "0.14"
 tobj = "4"
 # Binary FBX's polygon indices give the triangle count; the file itself is
 # uploaded untouched for Roblox's importer.
-fbxcel = { version = "0.9", features = ["tree"] }
+fbxcel = { version = "0.9", features = ["tree", "writer"] }
 serde_json = "1"
 # A glTF with a separate `.bin` or texture is one upload only once those are
 # inlined as data URIs, and the converted `.obj` carries its buffer the same way.
 base64 = "0.22"
+# Studio's importer decimates a mesh over the triangle limit instead of
+# refusing it; meshoptimizer's quadric simplifier does the same here.
+meshopt = "0.7"
 
 [dev-dependencies]
-# Writes the binary FBX the polygon-count test reads.
-fbxcel = { version = "0.9", features = ["writer"] }

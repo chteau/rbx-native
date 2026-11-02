@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde_json::Value;
 
 use super::*;
@@ -56,6 +57,7 @@ fn a_mesh_over_the_limit_is_named_in_the_refusal() {
             },
         ],
         unchecked: None,
+        decimated: Vec::new(),
     };
     let refusal = report.refusal().unwrap();
     assert!(
@@ -159,6 +161,134 @@ fn a_binary_fbx_counts_polygons_as_triangles() {
             triangles: 3
         }]
     );
+}
+
+/// A UV sphere as glTF JSON plus its binary buffer: positions, TEXCOORD_0
+/// and u32 indices.
+fn sphere_gltf(segments: u32, rings: u32) -> (Value, Vec<u8>) {
+    let (mut positions, mut uvs) = (Vec::new(), Vec::new());
+    for r in 0..=rings {
+        let theta = std::f32::consts::PI * r as f32 / rings as f32;
+        for s in 0..=segments {
+            let phi = std::f32::consts::TAU * s as f32 / segments as f32;
+            for v in [
+                theta.sin() * phi.cos(),
+                theta.cos(),
+                theta.sin() * phi.sin(),
+            ] {
+                positions.extend(v.to_le_bytes());
+            }
+            for v in [s as f32 / segments as f32, r as f32 / rings as f32] {
+                uvs.extend(v.to_le_bytes());
+            }
+        }
+    }
+    let at = |r: u32, s: u32| r * (segments + 1) + s;
+    let mut indices: Vec<u8> = Vec::new();
+    for r in 0..rings {
+        for s in 0..segments {
+            let (a, b, c, d) = (at(r, s), at(r, s + 1), at(r + 1, s), at(r + 1, s + 1));
+            if r > 0 {
+                indices.extend([a, b, c].iter().flat_map(|i| i.to_le_bytes()));
+            }
+            if r + 1 < rings {
+                indices.extend([b, d, c].iter().flat_map(|i| i.to_le_bytes()));
+            }
+        }
+    }
+    let vertices = ((segments + 1) * (rings + 1)) as usize;
+    let mut bin = positions.clone();
+    bin.extend(&uvs);
+    bin.extend(&indices);
+    let doc = serde_json::json!({
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"name": "Ball", "primitives": [
+            {"attributes": {"POSITION": 0, "TEXCOORD_0": 1}, "indices": 2, "mode": 4}
+        ]}],
+        "accessors": [
+            {"bufferView": 0, "componentType": 5126, "count": vertices, "type": "VEC3",
+             "min": [-1, -1, -1], "max": [1, 1, 1]},
+            {"bufferView": 1, "componentType": 5126, "count": vertices, "type": "VEC2"},
+            {"bufferView": 2, "componentType": 5125, "count": indices.len() / 4, "type": "SCALAR"}
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": positions.len()},
+            {"buffer": 0, "byteOffset": positions.len(), "byteLength": uvs.len()},
+            {"buffer": 0, "byteOffset": positions.len() + uvs.len(), "byteLength": indices.len()}
+        ],
+        "buffers": [{"byteLength": bin.len()}]
+    });
+    (doc, bin)
+}
+
+fn glb_of(doc: &Value, bin: &[u8]) -> Vec<u8> {
+    let mut json = serde_json::to_vec(doc).unwrap();
+    while !json.len().is_multiple_of(4) {
+        json.push(b' ');
+    }
+    let mut bin = bin.to_vec();
+    while !bin.len().is_multiple_of(4) {
+        bin.push(0);
+    }
+    let mut out = b"glTF".to_vec();
+    out.extend(2u32.to_le_bytes());
+    out.extend(((12 + 8 + json.len() + 8 + bin.len()) as u32).to_le_bytes());
+    out.extend((json.len() as u32).to_le_bytes());
+    out.extend(b"JSON");
+    out.extend(&json);
+    out.extend((bin.len() as u32).to_le_bytes());
+    out.extend(b"BIN\0");
+    out.extend(&bin);
+    out
+}
+
+fn assert_decimated_sphere(report: &Report, bytes: &[u8]) {
+    assert!(
+        report.meshes[0].triangles <= 20_000 && report.meshes[0].triangles > 19_000,
+        "{}",
+        report.meshes[0].triangles
+    );
+    assert_eq!(report.decimated.len(), 1);
+    assert_eq!(report.decimated[0].from, 21_000);
+    let parsed = gltf::Gltf::from_slice(bytes).unwrap();
+    let primitive = parsed.meshes().next().unwrap().primitives().next().unwrap();
+    assert_eq!(
+        primitive
+            .get(&gltf::Semantic::TexCoords(0))
+            .unwrap()
+            .index(),
+        1
+    );
+}
+
+#[test]
+fn a_dense_glb_is_decimated_and_keeps_its_uvs() {
+    let (doc, bin) = sphere_gltf(105, 101);
+    let glb = glb_of(&doc, &bin);
+    let (report, upload) = prepare_bytes(Format::Glb, "ball", glb, None).unwrap();
+    assert_decimated_sphere(&report, &upload.bytes);
+}
+
+#[test]
+fn a_dense_gltf_is_decimated_and_keeps_its_uvs() {
+    let (mut doc, bin) = sphere_gltf(105, 101);
+    let data = base64::engine::general_purpose::STANDARD.encode(&bin);
+    doc["buffers"][0]["uri"] = format!("data:application/octet-stream;base64,{data}").into();
+    let bytes = serde_json::to_vec(&doc).unwrap();
+    let (report, upload) = prepare_bytes(Format::Gltf, "ball", bytes, None).unwrap();
+    assert_decimated_sphere(&report, &upload.bytes);
+}
+
+#[test]
+fn a_glb_under_the_limit_comes_back_unchanged() {
+    let (doc, bin) = sphere_gltf(8, 6);
+    let glb = glb_of(&doc, &bin);
+    let (report, upload) = prepare_bytes(Format::Glb, "ball", glb.clone(), None).unwrap();
+    assert!(report.decimated.is_empty());
+    assert_eq!(upload.bytes, glb);
 }
 
 #[test]

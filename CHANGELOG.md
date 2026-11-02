@@ -18,6 +18,41 @@
   releases server, a tampered package gets refused. The Windows and Mac
   swaps are only tested as file logic so far. (@chteau)
 
+- **Flatpak.** `packaging/flatpak/` builds rbx-native as
+  `io.github.chteau.rbx_native.Editor`, offline and from source like Flathub
+  wants: luau-lsp and cloudflared get built from their tags into
+  `/app/bin`, and `RBX_BUNDLE_PROGRAMS=0` tells `rbx_studio`'s `build.rs` to
+  embed none of the programs it normally downloads. AppStream metainfo,
+  desktop file, icon, `.rbxl`/`.rbxlx` file types and screenshots are in
+  there, all three Flathub linters pass, and a `flatpak` CI job builds it on
+  PRs that touch packaging, the lockfile or a `build.rs`. Permissions are
+  just the window, GPU, network and Discord's socket, the rest goes through
+  portals (files, keyring, `roblox://` links, screenshots). Stuff that
+  needs the host now says so instead of failing weirdly: Play opens Sober
+  through the portal, the network simulator, controller emulator and
+  update planning's systemd timer explain why they're off, Figma says
+  sign-in isn't in this build, and Argon/Loren mention they can't see host
+  tools. Every window carries the app id now too, so desktops match it to
+  its launcher icon. The README there has the Flathub submission steps.
+  (@chteau)
+
+- **UGC validator, the rest.** Check Item now catches what Studio's Save
+  to Roblox refuses before the spec pages do, in Studio's own words: stray
+  instances in the accessory (anything that isn't the handle, its one
+  attachment, `AvatarPartScaleType`, `OriginalSize`, a
+  `SurfaceAppearance`, a `WrapLayer` on layered items or a full
+  `ThumbnailConfiguration`), tags, attributes, an anchored handle, a
+  scaled layered handle, a missing inner cage ("Missing HSR data"),
+  eyebrows and eyelashes without `AutoSkin` EnabledOverride or the
+  `RBX_Leader`/`RBX_Follower` joints, and shoes that aren't a
+  `LeftShoeAccessory`/`RightShoeAccessory` pair. Shoes get the 8 x 8 x 8
+  box Studio uses, and an outer cage a couple of vertices off its inner
+  cage is a warning now, since Studio passes it. Import 3D decimates a mesh over 20k triangles like
+  Studio's importer instead of refusing it (OBJ, glTF, GLB, binary FBX),
+  and on the same 21k sphere both land on exactly 20,000 triangles with
+  the same bounding box. All of it checked side by side on about 50 test
+  items in real Studio, nothing published. (@chteau)
+
 - **Popular plugins.** Manage Plugins has a Popular plugins tab now (also
   Plugins › Popular on the ribbon). It lists 43 free Creator Store plugins
   I checked run in rbx-native, with their store icon, creator, live votes

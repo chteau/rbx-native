@@ -14,6 +14,7 @@ fn plane() -> Geometry {
         triangles: vec![[0, 1, 2], [0, 2, 3]],
         uvs: Vec::new(),
         influences: Vec::new(),
+        bones: Vec::new(),
         in_studs: true,
     }
 }

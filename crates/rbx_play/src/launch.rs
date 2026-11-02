@@ -103,12 +103,17 @@ const CLOSE_POLL: Duration = Duration::from_millis(200);
 
 impl Launcher {
     /// The launcher for this OS. On Linux: `Sober` when
-    /// `flatpak info org.vinegarhq.Sober` exits 0, else `XdgOpen`.
+    /// `flatpak info org.vinegarhq.Sober` exits 0, else `XdgOpen`. Inside a
+    /// Flatpak sandbox it is always `XdgOpen`: there is no `flatpak` binary
+    /// there, `xdg-open` goes through the desktop portal's OpenURI, and
+    /// Sober on the host takes the `roblox://` link.
     pub fn detect() -> Self {
         if cfg!(target_os = "windows") {
             Launcher::WindowsShell
         } else if cfg!(target_os = "macos") {
             Launcher::MacOpen
+        } else if crate::sandbox::is_flatpak() {
+            Launcher::XdgOpen
         } else {
             let sober_installed = command_for("flatpak")
                 .args(["info", SOBER_APP_ID])

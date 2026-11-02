@@ -51,6 +51,14 @@ impl VirtualPad {
     /// Plugs in a pad that looks like `device` to every reader of
     /// `/dev/input`.
     pub fn create(device: Device) -> Result<VirtualPad, PadError> {
+        if crate::sandbox::is_flatpak() {
+            return Err(PadError::Unavailable(
+                "The Flatpak build can't plug in a virtual controller: /dev/uinput isn't inside \
+                 its sandbox, and Sober would need --device=input, which only a launch from the \
+                 host can give it. The GitHub build of rbx-native has the controller emulator."
+                    .into(),
+            ));
+        }
         let layout = layout::layout(device)
             .ok_or_else(|| PadError::Unavailable(device.unavailable().unwrap_or("").into()))?;
         let file = OpenOptions::new()

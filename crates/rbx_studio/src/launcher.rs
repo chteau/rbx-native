@@ -50,6 +50,7 @@ fn options(
 ) -> WindowOptions {
     let window_size = gpui_kit::size(tokens::scaled_width(size.0), tokens::scaled_width(size.1));
     WindowOptions {
+        app_id: Some(crate::APP_ID.to_owned()),
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
             window_size,

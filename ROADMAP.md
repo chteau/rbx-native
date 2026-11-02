@@ -3307,6 +3307,23 @@ both the plain fetch failure and the silent fall back to a default
   (`RBX_UPDATE_API`), tampered package refused. The Windows rename dance
   and the macOS bundle swap are unit tested as file logic only, never run
   on a real Windows or Mac, and the workflow hasn't run on a real tag yet.
+- [x] A Flathub-ready Flatpak, `packaging/flatpak/`
+  (`io.github.chteau.rbx_native.Editor`, Freedesktop 26.08). Builds offline
+  from source: `cargo-sources.json` for the workspace, luau-lsp from its tag
+  with CMake, cloudflared from its tag with Go modules from
+  proxy.golang.org, and `RBX_BUNDLE_PROGRAMS=0` so `rbx_studio/build.rs`
+  embeds nothing and the editor finds those two on `PATH`. Permissions are
+  Wayland/X11, `--device=dri`, network and Discord's IPC socket; files,
+  keyring (oo7 over the Secret portal), `roblox://` and screenshots go
+  through portals. No `org.freedesktop.Flatpak` talk-name, so what needs
+  the host degrades with a message (`rbx_play::sandbox::is_flatpak`): Play
+  opens Sober through OpenURI without the device/controller options or
+  exit tracking, the Linux network simulator, the controller emulator and
+  update planning's systemd timer are off, and Vinegar/Sober installs
+  aren't read. Figma sign-in isn't in it (the secret can't be in a public
+  manifest). The `flatpak` workflow builds and lints it on PRs that touch
+  packaging. Not done yet: the Flathub submission itself, which waits for
+  a tagged release.
 
 ### Collaboration (`rbx_presence`)
 - [x] **Live co-editing between rbx-native editors, and with Studio
@@ -3382,19 +3399,24 @@ both the plain fetch failure and the silent fall back to a default
   The body and lower layers hide under the clothing by Roblox's own HSR
   data, like Studio: XOR 0.07 on the blocky bodies, 0.05 to 0.06 on the
   Mannequin.
-- [ ] 📋 **UGC creator workflow, the rest**: the validator, Model upload,
-  dynamic head side (FACS checks, landmarks, Avatar › Face Preview) and the
-  fitting tool above are done. Still open: a live check that the Creator
-  Hub can turn an API-uploaded Model into an avatar item, and that
-  Roblox's validator accepts cages made from the Mannequin template, and
-  that the stock bodies' HSR assets download with an API key (anonymous
-  downloads get a 401, so without a key the test body isn't hidden under
-  the clothing; Studio-saved places and packages carry the data inline and
-  work either way). The
-  upload fee, moderation and Marketplace publish have no documented Open
-  Cloud endpoint, so the last step stays a handoff to the Creator Hub. Gap
-  analysis, staged plan and what each stage was checked against in real
-  Studio: `docs/research/ugc-creators/README.md`.
+- [ ] 📋 **UGC creator workflow, the rest**: the validator (now with
+  Studio's schema, tag, attribute, Anchored, HSR, eyebrow/eyelash and shoe
+  rules, matched against Studio 0.745), Import 3D's decimation past 20k
+  triangles, Model upload, the dynamic head side (FACS checks, landmarks,
+  Avatar › Face Preview) and the fitting tool above are done. The stock
+  bodies' HSR assets did download and parse with an API key on 2026-10-28
+  (all 44). Still not mirrored: Studio's cage coverage and distance
+  numbers, the per-type cage UV regions and the eyebrow deform box (they
+  need Studio's own fit of the item on its body), the server-side
+  ownership checks, and whether Studio refuses an open mesh (no owned open
+  mesh to try it on yet). Whether the Creator Hub turns an API-uploaded
+  Model into an avatar item, and whether Roblox accepts cages made from
+  the Mannequin template, can't be tested here: both need an account in
+  the UGC program, and mine isn't in it. The upload fee, moderation and
+  Marketplace publish have no documented Open Cloud endpoint, so the last
+  step stays a handoff to the Creator Hub. Gap analysis, staged plan and
+  what each stage was checked against in real Studio:
+  `docs/research/ugc-creators/README.md`.
 
 ### Play / Test workflow
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
