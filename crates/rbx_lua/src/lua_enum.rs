@@ -168,6 +168,10 @@ impl LuaEnumItem {
         &self.enum_name
     }
 
+    pub(crate) fn item_name(&self) -> &str {
+        &self.name
+    }
+
     pub(crate) fn value(&self) -> u32 {
         self.value
     }

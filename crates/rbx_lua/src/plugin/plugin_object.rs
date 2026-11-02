@@ -7,10 +7,11 @@ mod widget;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use mlua::{
-    AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, Table, UserData, UserDataFields,
-    UserDataMethods, Value,
+    AnyUserData, Function, IntoLua, Lua, MetaMethod, MultiValue, Result, Table, UserData,
+    UserDataFields, UserDataMethods, Value,
 };
 
 use super::api::{Answer, Arg, Button, PromptKind, Request, Toolbar, UiId};
@@ -20,6 +21,7 @@ use super::env::env;
 use crate::engine::scheduler;
 use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
+use rbx_dom::Ref;
 
 /// The `plugin` object. Members:
 /// - `Name`; `CreateToolbar(name)` → toolbar (one per name per plugin);
@@ -70,6 +72,8 @@ struct State {
     prompts: HashMap<UiId, Pending>,
     menus: HashMap<UiId, menu::Menu>,
     disabled_actions: HashSet<UiId>,
+    /// The `Enum.RibbonTool` item name `SelectRibbonTool` last picked.
+    ribbon_tool: Option<String>,
 }
 
 struct StateSlot(RefCell<State>);
@@ -93,6 +97,63 @@ struct LuaToolbar(UiId);
 struct LuaButton(UiId);
 
 struct LuaPluginMouse;
+
+struct LuaPluginManager;
+
+/// What a handle is, to stand for it as an instance (`ObjectValue.Value =
+/// toolbar`): a placeholder of its Roblox class, parked with the plugin's
+/// roots, that reads back as the handle.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Handle {
+    Plugin,
+    Toolbar(UiId),
+    Button(UiId),
+}
+
+#[derive(Default)]
+struct Placeholders {
+    by_handle: RefCell<HashMap<Handle, Ref>>,
+    by_ref: RefCell<HashMap<Ref, Handle>>,
+}
+
+impl crate::ctx::HandleBridge for (Placeholders, Rc<RefCell<Vec<Ref>>>) {
+    fn referent(&self, ctx: &crate::ctx::Ctx, data: &AnyUserData) -> Option<Ref> {
+        let (class, handle) = if data.is::<LuaPlugin>() {
+            ("Plugin", Handle::Plugin)
+        } else if let Ok(t) = data.borrow::<LuaToolbar>() {
+            ("PluginToolbar", Handle::Toolbar(t.0))
+        } else if let Ok(b) = data.borrow::<LuaButton>() {
+            ("PluginToolbarButton", Handle::Button(b.0))
+        } else {
+            return None;
+        };
+        let places = &self.0;
+        if let Some(found) = places.by_handle.borrow().get(&handle) {
+            return Some(*found);
+        }
+        let referent = ctx.dom_mut().new_instance(class, class, None);
+        self.1.borrow_mut().push(referent);
+        places.by_handle.borrow_mut().insert(handle, referent);
+        places.by_ref.borrow_mut().insert(referent, handle);
+        Some(referent)
+    }
+
+    fn value(&self, lua: &Lua, referent: Ref) -> Option<Result<Value>> {
+        let handle = *self.0.by_ref.borrow().get(&referent)?;
+        Some(match handle {
+            Handle::Plugin => LuaPlugin.into_lua(lua),
+            Handle::Toolbar(id) => LuaToolbar(id).into_lua(lua),
+            Handle::Button(id) => LuaButton(id).into_lua(lua),
+        })
+    }
+}
+
+impl UserData for LuaPluginManager {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("CreatePlugin", |_, _, ()| Ok(LuaPlugin));
+        methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginManager"));
+    }
+}
 
 fn toolbar(lua: &Lua, name: &str) -> UiId {
     let env = env(lua);
@@ -534,17 +595,15 @@ impl UserData for LuaPlugin {
                 Ok(menu::create_menu(lua, title, icon))
             },
         );
-        for name in [
-            "CreateDockWidgetPluginGui",
-            "CreateDockWidgetPluginGuiAsync",
-        ] {
-            methods.add_method(
-                name,
-                |lua, _, (key, info): (String, Option<AnyUserData>)| {
-                    widget::create_dock(lua, key, info)
-                },
-            );
-        }
+        // Both spellings yield in Studio (the old one is tagged `Yields` in
+        // the docs too), so a plugin's other scripts get to run before the
+        // widget comes back; the wrapper that waits is made by `Index`.
+        methods.add_method(
+            DOCK_CREATOR,
+            |lua, _, (key, info): (String, Option<AnyUserData>)| {
+                widget::create_dock(lua, key, info)
+            },
+        );
         methods.add_method(
             "CreateFloatingWidget",
             |lua, _, (key, options): (String, Option<Table>)| {
@@ -619,7 +678,24 @@ impl UserData for LuaPlugin {
                 Ok(())
             },
         );
-        for name in ["SelectRibbonTool", "OpenWikiPage", "StartDrag"] {
+        methods.add_method(
+            "SelectRibbonTool",
+            |lua, _, (tool, _position): (mlua::AnyUserData, Option<Value>)| {
+                let name = tool
+                    .borrow::<crate::lua_enum::LuaEnumItem>()?
+                    .item_name()
+                    .to_string();
+                with_state(lua, |state| state.ribbon_tool = Some(name));
+                Ok(())
+            },
+        );
+        methods.add_method("GetSelectedRibbonTool", |lua, _, ()| {
+            let name = with_state(lua, |state| state.ribbon_tool.clone())
+                .unwrap_or_else(|| "None".to_string());
+            let ctx = env(lua).ctx.clone();
+            crate::plugin::input::enum_item(&ctx, "RibbonTool", &name)?.interned(lua)
+        });
+        for name in ["OpenWikiPage", "StartDrag"] {
             methods.add_method(name, |_, _, _: MultiValue| Ok(()));
         }
         methods.add_method("GetStudioUserId", |lua, _, ()| {
@@ -649,6 +725,9 @@ impl UserData for LuaPlugin {
                 "PromptBrickColor" => {
                     prompt_function(lua, Pending::BrickColor).map(Value::Function)
                 }
+                "CreateDockWidgetPluginGui" | "CreateDockWidgetPluginGuiAsync" => {
+                    yielding_dock_creator(lua).map(Value::Function)
+                }
                 _ => match like::index(lua, "plugin", "Plugin", &key)? {
                     Some(value) => Ok(value),
                     None => Err(mlua::Error::runtime(format!(
@@ -674,10 +753,51 @@ impl UserData for LuaPlugin {
     }
 }
 
+/// The method that makes a dock widget without yielding; the name is not one
+/// a plugin can write by accident.
+const DOCK_CREATOR: &str = "__rbxn_create_dock_widget";
+
+/// `plugin.CreateDockWidgetPluginGui[Async]`: creates the widget, then waits
+/// one step as Studio's call does. A caller that can't yield here (behind
+/// one of the host's own Rust calls, such as its `pcall`) gets the widget
+/// right away instead of an error.
+fn yielding_dock_creator(lua: &Lua) -> Result<Function> {
+    const KEY: &str = "rbxn.yielding_dock_creator";
+    if let Some(found) = lua.named_registry_value::<Option<Function>>(KEY)? {
+        return Ok(found);
+    }
+    let wait: Function = lua.globals().get::<Table>("task")?.get("wait")?;
+    let made: Function = lua
+        .load(
+            "local wait = ...
+             return function(self, ...)
+                 local widget = self.__rbxn_create_dock_widget(self, ...)
+                 if coroutine.isyieldable() then
+                     wait()
+                 end
+                 return widget
+             end",
+        )
+        .set_name("=CreateDockWidgetPluginGui")
+        .call(wait)?;
+    lua.set_named_registry_value(KEY, made.clone())?;
+    Ok(made)
+}
+
 /// Installs `plugin` and `DockWidgetPluginGuiInfo`. Call before sandboxing.
 pub(crate) fn install(lua: &Lua) -> Result<()> {
     let globals = lua.globals();
     globals.set("plugin", LuaPlugin)?;
+    let env = env(lua);
+    env.ctx
+        .set_handle_bridge(Rc::new((Placeholders::default(), env.roots.clone())));
+    // `PluginManager():CreatePlugin()`: Studio hands a script a fresh Plugin;
+    // here the running plugin's own object stands in, so toolbars, settings
+    // and widgets it makes belong to that plugin.
+    globals.set(
+        "PluginManager",
+        lua.create_function(|_, _: MultiValue| Ok(LuaPluginManager))?,
+    )?;
     globals.set("DockWidgetPluginGuiInfo", widget::info_global(lua)?)?;
     Ok(())
 }
@@ -764,6 +884,59 @@ mod tests {
     }
 
     #[test]
+    fn plugin_manager_creates_the_running_plugin() {
+        let (lua, env, _) = vm();
+        run(
+            &lua,
+            "local p = PluginManager():CreatePlugin()
+             p:CreateToolbar('T'):CreateButton('b', 'tip', '')",
+        );
+        assert!(errors(&env).is_empty(), "{:?}", errors(&env));
+        assert_eq!(env.shared.borrow().ui.toolbars.len(), 1);
+    }
+
+    #[test]
+    fn handles_fit_in_object_values() {
+        let (lua, env, _) = vm();
+        run(
+            &lua,
+            "local bar = plugin:CreateToolbar('T')
+             local button = bar:CreateButton('b', 'tip', '')
+             local holder = Instance.new('ObjectValue')
+             holder.Value = bar
+             holder.Value = button
+             back = holder.Value.ClassName == 'PluginToolbarButton'
+             holder.Value = plugin
+             isPlugin = holder.Value:GetSetting('x') == nil
+             holder.Value = nil
+             cleared = holder.Value == nil",
+        );
+        assert!(errors(&env).is_empty(), "{:?}", errors(&env));
+        let g = lua.globals();
+        assert!(g.get::<bool>("back").unwrap());
+        assert!(g.get::<bool>("isPlugin").unwrap());
+        assert!(g.get::<bool>("cleared").unwrap());
+    }
+
+    #[test]
+    fn ribbon_tool_round_trips() {
+        let (lua, env, _) = vm();
+        run(
+            &lua,
+            "before = plugin:GetSelectedRibbonTool()
+             plugin:SelectRibbonTool(Enum.RibbonTool.Rotate, UDim2.new())
+             after = plugin:GetSelectedRibbonTool()",
+        );
+        assert!(errors(&env).is_empty(), "{:?}", errors(&env));
+        let (b, a): (Value, Value) = (
+            lua.globals().get("before").unwrap(),
+            lua.globals().get("after").unwrap(),
+        );
+        assert_eq!(b.to_string().unwrap(), "Enum.RibbonTool.None");
+        assert_eq!(a.to_string().unwrap(), "Enum.RibbonTool.Rotate");
+    }
+
+    #[test]
     fn toolbar_and_button_in_ui() {
         let (lua, env, _) = vm();
         run(
@@ -789,6 +962,24 @@ mod tests {
     }
 
     #[test]
+    fn creating_a_dock_widget_yields() {
+        let (lua, env, _) = vm();
+        run(
+            &lua,
+            "local info = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 300, 200, 150, 100)
+             order = {'before'}
+             local w = plugin:CreateDockWidgetPluginGuiAsync('Panel', info)
+             table.insert(order, 'after')",
+        );
+        run(&lua, "table.insert(order, 'other script')");
+        scheduler::tick(&lua, 1.0).unwrap();
+        assert!(errors(&env).is_empty(), "{:?}", errors(&env));
+        let order: Table = lua.globals().get("order").unwrap();
+        let order: Vec<String> = order.sequence_values().map(|v| v.unwrap()).collect();
+        assert_eq!(order, ["before", "other script", "after"]);
+    }
+
+    #[test]
     fn dock_widget_created_once() {
         let (lua, env, dom) = vm();
         run(
@@ -797,7 +988,11 @@ mod tests {
              w = plugin:CreateDockWidgetPluginGui('Panel', info)
              w2 = plugin:CreateDockWidgetPluginGui('Panel', info)",
         );
+        for now in [1.0, 2.0, 3.0] {
+            scheduler::tick(&lua, now).unwrap();
+        }
         assert!(errors(&env).is_empty(), "{:?}", errors(&env));
+        assert!(lua.globals().get::<Value>("w2").unwrap().is_userdata());
         let shared = env.shared.borrow();
         assert_eq!(shared.ui.widgets.len(), 1);
         let w = &shared.ui.widgets[0];

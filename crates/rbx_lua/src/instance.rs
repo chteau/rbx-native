@@ -104,6 +104,14 @@ impl LuaInstance {
         found.ok_or_else(|| self.not_a_member(member))
     }
 
+    fn require_class(&self, class: &str, member: &str) -> Result<()> {
+        if self.ctx.database().is_subclass_of(&self.class()?, class) {
+            Ok(())
+        } else {
+            Err(self.not_a_member(member))
+        }
+    }
+
     fn require_part(&self, member: &str) -> Result<()> {
         let class = self.class()?;
         if self.ctx.database().is_subclass_of(&class, "BasePart") {
@@ -271,6 +279,13 @@ impl UserData for LuaInstance {
                 size.x, size.y, size.z,
             ))
         });
+        // A wireframe's lines are not instance data and the viewport draws no
+        // wireframe adornments, so drawing calls are accepted and dropped.
+        for name in ["AddLine", "AddLines", "AddPath", "AddText", "Clear"] {
+            methods.add_method(name, move |_, this, _: mlua::MultiValue| {
+                this.require_class("WireframeHandleAdornment", name)
+            });
+        }
         methods.add_method("GetTouchingParts", |lua, this, ()| {
             this.require_part("GetTouchingParts")?;
             lua.create_table()
@@ -282,6 +297,15 @@ impl UserData for LuaInstance {
                 lua.create_table()
             },
         );
+        methods.add_method("ResetPropertyToDefault", |_, this, name: String| {
+            if crate::property::reset(&this.ctx, this.referent, &name)? {
+                Ok(())
+            } else {
+                Err(mlua::Error::runtime(format!(
+                    "{name} is not a valid property name"
+                )))
+            }
+        });
         methods.add_method("ClearAllChildren", |_, this, ()| {
             this.ctx.check_write(this.referent)?;
             let children = this

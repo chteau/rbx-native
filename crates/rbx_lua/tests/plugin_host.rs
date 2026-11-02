@@ -118,7 +118,17 @@ fn started(tag: &str, src: &str) -> (Fixture, Outcome) {
         now: 100.0,
         _dir: dir,
     };
-    let out = f.send(Input::Start);
+    let mut out = f.send(Input::Start);
+    // Creating a dock widget yields one step (as in Studio), so what a
+    // script does after it runs on a later tick: a few, for a script
+    // that makes several.
+    for _ in 0..4 {
+        let tick = f.send(Input::Tick);
+        out.output.extend(tick.output);
+        out.requests.extend(tick.requests);
+        out.changes.extend(tick.changes);
+        out.ui_changed |= tick.ui_changed;
+    }
     (f, out)
 }
 
@@ -624,7 +634,12 @@ fn dock_widgets_restore_and_bind_to_close() {
     let mut next = PluginHost::new(ReflectionDatabase::embedded(), Some(f._dir.0.clone()));
     next.add(roblox(src));
     let ctx = f.context();
-    let out = next.dispatch(&mut f.dom, ctx, Input::Start);
+    let mut out = next.dispatch(&mut f.dom, ctx, Input::Start);
+    for _ in 0..4 {
+        let ctx = f.context();
+        out.output
+            .extend(next.dispatch(&mut f.dom, ctx, Input::Tick).output);
+    }
     assert!(texts(&out, OutputKind::Print).contains(&"start true false false".to_string()));
 }
 

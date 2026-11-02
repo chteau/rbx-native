@@ -49,7 +49,23 @@ pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
     }
 
     install_graphemes(lua)?;
+    install_profiler_labels(lua)?;
     install_error_strings(lua)
+}
+
+/// `debug.profilebegin(label)` / `debug.profileend()`: Roblox's MicroProfiler
+/// scopes, which have nothing to time here.
+fn install_profiler_labels(lua: &Lua) -> Result<(), LuaError> {
+    let debug: mlua::Table = lua.globals().get("debug")?;
+    debug.set(
+        "profilebegin",
+        lua.create_function(|_, _: Variadic<Value>| Ok(()))?,
+    )?;
+    debug.set(
+        "profileend",
+        lua.create_function(|_, _: Variadic<Value>| Ok(()))?,
+    )?;
+    Ok(())
 }
 
 /// `utf8.graphemes(s, i?, j?)`: iterates the grapheme clusters of `s`

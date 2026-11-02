@@ -75,6 +75,33 @@ fn zero_of(value_type: &str) -> Option<Variant> {
     })
 }
 
+/// `Instance:ResetPropertyToDefault`: drops what the instance stores for
+/// `name`, so it reads as the class default again. `Ok(false)` when the class
+/// has no such property.
+pub(crate) fn reset(ctx: &Ctx, referent: Ref, name: &str) -> Result<bool> {
+    ctx.check_write(referent)?;
+    let keys: Vec<String> = {
+        let dom = ctx.dom();
+        let instance = dom.get(referent).ok_or_else(missing_instance)?;
+        let database = ctx.database();
+        if database.resolve_property(instance.class(), name).is_none() {
+            return Ok(false);
+        }
+        database
+            .stored_names(instance.class(), name)
+            .into_iter()
+            .map(str::to_owned)
+            .filter(|key| instance.properties().contains_key(key))
+            .collect()
+    };
+    for key in keys {
+        ctx.dom_mut()
+            .remove_property(referent, &key)
+            .map_err(|error| mlua::Error::runtime(error.to_string()))?;
+    }
+    Ok(true)
+}
+
 /// Writes a property, returning `Ok(false)` when the class has no such member.
 pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
     ctx.check_write(referent)?;
