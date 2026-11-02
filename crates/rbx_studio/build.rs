@@ -13,7 +13,8 @@
 //! `RBX_SLIRP4NETNS_ASSET` to an
 //! already-downloaded copy of the same release asset; it is checked against
 //! the same hash. A target with no release asset embeds an empty file, and
-//! the editor falls back to the program on `PATH`.
+//! the editor falls back to the program on `PATH`. `RBX_BUNDLE_PROGRAMS=0`
+//! does the same for all three, for a packager that ships them itself.
 
 use std::env;
 use std::fs;
@@ -62,14 +63,28 @@ const ASSETS: &[(&str, &str, &str, &str)] = &[
 
 const LOCAL_VARIABLE: &str = "RBX_LUAU_LSP_ZIP";
 
+/// Set to `0` to embed none of the programs; the editor then uses the ones
+/// on `PATH`.
+const BUNDLE_VARIABLE: &str = "RBX_BUNDLE_PROGRAMS";
+
+/// Whether the programs are embedded: false only when the variable is `0`.
+fn bundling() -> bool {
+    env::var(BUNDLE_VARIABLE).map_or(true, |value| value != "0")
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed={BUNDLE_VARIABLE}");
     cloudflared();
     slirp4netns();
     println!("cargo:rerun-if-env-changed={LOCAL_VARIABLE}");
     println!("cargo:rustc-env=LUAU_LSP_VERSION={VERSION}");
 
     let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR")).join("luau-lsp.zip");
+    if !bundling() {
+        fs::write(&out, []).expect("OUT_DIR is writable");
+        return;
+    }
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let Some(&(_, _, asset, sha256)) = ASSETS.iter().find(|(o, a, ..)| *o == os && *a == arch)
@@ -182,6 +197,11 @@ fn cloudflared() {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
     let out = out_dir.join("cloudflared.zip");
+    if !bundling() {
+        fs::write(&out, []).expect("OUT_DIR is writable");
+        let _ = fs::remove_file(out_dir.join("cloudflared.sha256"));
+        return;
+    }
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let Some(&(_, _, asset, sha256)) = CLOUDFLARED_ASSETS
@@ -268,6 +288,11 @@ fn slirp4netns() {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
     let out = out_dir.join("slirp4netns.zip");
+    if !bundling() {
+        fs::write(&out, []).expect("OUT_DIR is writable");
+        let _ = fs::remove_file(out_dir.join("slirp4netns.sha256"));
+        return;
+    }
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let Some(&(_, _, asset, sha256)) = SLIRP4NETNS_ASSETS

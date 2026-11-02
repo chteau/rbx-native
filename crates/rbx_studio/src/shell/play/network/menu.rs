@@ -105,6 +105,20 @@ impl Shell {
             .border_1()
             .border_color(tokens::border())
             .bg(ui::panel())
+            .when(rbx_play::sandbox::is_flatpak(), |this| {
+                this.child(
+                    ui::text(11., 15.)
+                        .w(px(240.))
+                        .px(px(8.))
+                        .py(px(6.))
+                        .text_color(tokens::text3())
+                        .child(
+                            "Not in the Flatpak build: shaping the network needs \
+                             the host's flatpak, unshare and slirp4netns. The \
+                             GitHub build of rbx-native has it.",
+                        ),
+                )
+            })
             .children(entries.into_iter().enumerate().map(|(i, (choice, label))| {
                 let selected = choice == current;
                 h_flex()

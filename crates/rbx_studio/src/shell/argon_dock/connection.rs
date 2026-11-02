@@ -252,6 +252,11 @@ fn status(view: &View, cli: Option<std::path::PathBuf>) -> AnyElement {
                         .child("Install")
                         .child(Icon::new(IconName::ExternalLink).size(px(12.))),
                 )
+                .children(rbx_play::sandbox::is_flatpak().then(|| {
+                    div().text_color(tokens::text3()).child(
+                        "The Flatpak build can't see the host's argon. Run `argon serve` in a terminal and the dock connects over localhost.",
+                    )
+                }))
                 .into_any_element(),
         },
         View::Connecting { .. } => badge(tokens::hover(), tokens::text2())

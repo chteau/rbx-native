@@ -49,6 +49,7 @@ impl PanelWindow {
             tokens::scaled_width(WINDOW_HEIGHT),
         );
         let options = WindowOptions {
+            app_id: Some(crate::APP_ID.to_owned()),
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
                 window_size,

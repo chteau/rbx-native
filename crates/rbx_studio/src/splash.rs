@@ -183,6 +183,7 @@ pub(crate) fn open(cx: &mut App) -> Option<Splash> {
         tokens::scaled_width(WINDOW_SIZE.1),
     );
     let options = WindowOptions {
+        app_id: Some(crate::APP_ID.to_owned()),
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size, cx))),
         titlebar: None,
         is_resizable: false,

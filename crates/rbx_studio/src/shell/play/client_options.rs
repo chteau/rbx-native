@@ -22,7 +22,26 @@ impl Shell {
         self.network_client_options(&mut options);
         self.controller_client_options(&mut options, cx);
         self.quiet_client_notice();
+        self.flatpak_client_notice(&options);
         options
+    }
+
+    /// In the Flatpak build Sober is opened through the desktop portal, so
+    /// the options that shape the client can't reach it; say so.
+    fn flatpak_client_notice(&mut self, options: &ClientOptions) {
+        if rbx_play::sandbox::is_flatpak()
+            && (!options.sober_config.is_empty() || !options.flatpak_args.is_empty())
+        {
+            self.output.push(
+                PLAY_SOURCE,
+                Feedback::Warning(
+                    "The Flatpak build opens Sober through the desktop portal, so the simulated \
+                     device and the controller emulator don't reach this test. The GitHub build \
+                     of rbx-native has them."
+                        .to_owned(),
+                ),
+            );
+        }
     }
 
     /// Sober keeps Roblox's own volume slider between runs; a low one makes

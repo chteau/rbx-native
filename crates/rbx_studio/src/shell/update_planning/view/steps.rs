@@ -174,10 +174,17 @@ impl UpdatePlanningWindow {
                     ),
             )
             .when(!plan.finished(), |d| {
+                // The Flatpak build has no background helper and no
+                // notify-send, so it says what happens instead.
+                let flatpak = rbx_play::sandbox::is_flatpak();
                 d.child(
                     card(
                         "While the editor is closed",
-                        "Steps keep firing as long as the PC is on and you are logged in.",
+                        if flatpak {
+                            "Nothing fires: keep the editor open until the plan is done."
+                        } else {
+                            "Steps keep firing as long as the PC is on and you are logged in."
+                        },
                     )
                     .child(info_row("clock", crate::update_planning::helper::describe()))
                     .child(info_row(
@@ -186,7 +193,11 @@ impl UpdatePlanningWindow {
                     ))
                     .child(info_row(
                         "bell",
-                        "Each step that goes live sends a desktop notification.",
+                        if flatpak {
+                            "No desktop notifications in the Flatpak build: this list shows each step as it goes live."
+                        } else {
+                            "Each step that goes live sends a desktop notification."
+                        },
                     )),
                 )
             })

@@ -147,6 +147,7 @@ impl SequenceWindow {
         let bounds = Bounds::centered(None, window_size, cx);
 
         let options = WindowOptions {
+            app_id: Some(crate::APP_ID.to_owned()),
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             // Floats above the editor it is steering (`WM_TRANSIENT_FOR` on
             // X11): a graph the compositor can drop behind the main window
