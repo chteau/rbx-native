@@ -37,14 +37,22 @@ jobs:
       options: --privileged
     steps:
       - uses: actions/checkout@v4
-      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@master
+      - uses: actions/cache@v4
         with:
-          bundle: rbx-native.flatpak
-          manifest-path: packaging/flatpak/io.github.chteau.rbx_native.Editor.yml
-          cache-key: flatpak-builder-${{ hashFiles('Cargo.lock', 'packaging/flatpak/**') }}
-          upload-artifact: false
-          # What Flathub's own builds do; the repo linter checks for it.
-          mirror-screenshots-url: https://dl.flathub.org/media
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('Cargo.lock', 'packaging/flatpak/**') }}
+          restore-keys: flatpak-builder-
+      # What the flatpak-builder action runs, plus --compose-url-policy=full:
+      # without it the catalogue keeps relative screenshot paths and the repo
+      # linter flags them as not mirrored.
+      - name: Build
+        run: |
+          flatpak-builder --repo=repo --disable-rofiles-fuse --install-deps-from=flathub \
+            --force-clean --ccache \
+            --mirror-screenshots-url=https://dl.flathub.org/media --compose-url-policy=full \
+            flatpak_app packaging/flatpak/io.github.chteau.rbx_native.Editor.yml
+          ostree commit --repo=repo --canonical-permissions --branch=screenshots/x86_64 \
+            flatpak_app/files/share/app-info/media
       - name: Lint
         run: |
           flatpak-builder-lint manifest packaging/flatpak/io.github.chteau.rbx_native.Editor.yml

@@ -76,6 +76,21 @@
     <content_attribute id="social-info">mild</content_attribute>
   </content_rating>
 
+  <screenshots>
+    <screenshot type="default">
+      <caption>A place open in the 3D viewport with the Explorer and Properties docks</caption>
+      <image type="source" width="1598" height="900">https://raw.githubusercontent.com/chteau/rbx-native/f3cce284dc931cff8cfba5ec7682edf658465017/packaging/flatpak/screenshots/editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Editing a script with live Script Analysis from luau-lsp</caption>
+      <image type="source" width="1598" height="900">https://raw.githubusercontent.com/chteau/rbx-native/f3cce284dc931cff8cfba5ec7682edf658465017/packaging/flatpak/screenshots/scripting.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The Home screen with recent places and templates</caption>
+      <image type="source" width="1440" height="900">https://raw.githubusercontent.com/chteau/rbx-native/f3cce284dc931cff8cfba5ec7682edf658465017/packaging/flatpak/screenshots/home.png</image>
+    </screenshot>
+  </screenshots>
+
   <releases>
     <release version="0.1.0" date="2026-11-02">
       <description>

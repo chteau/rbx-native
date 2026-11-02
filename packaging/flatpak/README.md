@@ -96,8 +96,13 @@ The linters Flathub runs:
 ```sh
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest packaging/flatpak/io.github.chteau.rbx_native.Editor.yml
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder appstream packaging/flatpak/io.github.chteau.rbx_native.Editor.metainfo.xml
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo   # after a build with --repo=repo
+flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
 ```
+
+The repo one only passes on a build made like Flathub's: add `--repo=repo
+--mirror-screenshots-url=https://dl.flathub.org/media --compose-url-policy=full`
+to the build command. Without the URL policy the catalogue keeps relative
+screenshot paths and the linter says they aren't mirrored.
 
 The `flatpak` job in `.github/workflows/flatpak.yml` builds the manifest on
 every PR that touches `packaging/`, `Cargo.lock` or a `build.rs`, so it

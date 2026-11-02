@@ -98,4 +98,7 @@ modules:
           - .forge
           - .claude
           - .flatpak-builder
+          # where the CI job puts its build dir and repo
+          - flatpak_app
+          - repo
       - cargo-sources.json
