@@ -4,6 +4,7 @@
 //! `/v1/users/avatar-headshot`: a collaborator's round headshot, as Studio
 //! shows it beside the people in a Team Create session; anonymous too.
 //! `/v1/games/{id}/thumbnails`: Game Settings' thumbnail strip.
+//! `/v1/assets`: a Creator Store item's icon, for the plugin catalog.
 
 use serde::Deserialize;
 
@@ -13,6 +14,7 @@ use crate::error::{self, CloudError};
 const ICONS_URL: &str = "https://thumbnails.roblox.com/v1/games/icons";
 const THUMBNAILS_ROOT: &str = "https://thumbnails.roblox.com/v1/games";
 const HEADSHOTS_URL: &str = "https://thumbnails.roblox.com/v1/users/avatar-headshot";
+const ASSETS_URL: &str = "https://thumbnails.roblox.com/v1/assets";
 
 /// The endpoint's own per-request cap.
 const BATCH: usize = 100;
@@ -116,6 +118,34 @@ impl Client {
             ));
         }
         parse(&response.body)
+    }
+
+    /// `(asset_id, icon URL)` for each asset whose 150×150 icon is ready,
+    /// as the Creator Store shows it; anonymous like the rest.
+    pub fn asset_icon_urls(&self, asset_ids: &[u64]) -> Result<Vec<(u64, String)>, CloudError> {
+        let mut icons = Vec::new();
+        for chunk in asset_ids.chunks(BATCH) {
+            let ids = chunk
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            let response = self.get_with(ASSETS_URL, false, true, |req| {
+                req.query("assetIds", &ids)
+                    .query("size", "150x150")
+                    .query("format", "Png")
+                    .query("isCircular", "false")
+            })?;
+            if !(200..300).contains(&response.status) {
+                return Err(error::error_for_status(
+                    ASSETS_URL,
+                    response.status,
+                    &response.headers,
+                ));
+            }
+            icons.extend(parse(&response.body)?);
+        }
+        Ok(icons)
     }
 
     /// The PNG behind one of [`game_icon_urls`](Self::game_icon_urls)' URLs.

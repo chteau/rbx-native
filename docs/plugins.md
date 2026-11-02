@@ -26,6 +26,33 @@ Examples live in `examples/plugins/`:
 Each plugin gets its own Luau VM. The plugin manager lists every plugin with
 its origin and the last error that stopped one of its scripts from loading.
 
+## Popular plugins
+
+Manage Plugins has a second tab, Popular plugins (also Plugins › Popular on
+the ribbon). It lists the free Creator Store plugins verified to run here
+(the table under [Community plugins](#community-plugins)), each with its
+store icon, creator, live vote count and a "Runs in rbx-native" badge.
+Install downloads the plugin from Roblox and starts it right away, without
+restarting the others; Uninstall stops it and deletes its file; Update shows
+when the store's copy changed since you installed it. The search field
+finds any other free plugin on the store (no badge: those weren't tested).
+
+- rbx-native ships no plugin code. The catalog in
+  `shell/plugins/catalog/list.rs` is ids, names and our own one-line
+  descriptions; the plugin itself comes from Roblox at install time.
+- The store data (details, search, icons) uses Roblox's anonymous public
+  routes. The download needs your Open Cloud key (Home › Manage key), as
+  Roblox refuses anonymous plugin downloads.
+- Installed plugins land in the plugins folder as `<name>.rbxm`;
+  `<config dir>/plugin-catalog.json` remembers which file is which store id
+  and the store's update time it was downloaded at.
+- Paid plugins are never offered and are refused at install.
+
+Why a curated list plus search, not search alone: the store's own ranking
+puts plugins that have never been tried here next to ones that work, and a
+badge only means something if someone checked. The verified list comes
+from the headless sweep below; search covers the long tail.
+
 ## What works
 
 | Area | Supported |
@@ -77,46 +104,66 @@ permission; the answer is remembered in the plugin's settings.
 
 ## Community plugins
 
-The 30 most-voted free plugins on the Creator Store were run through the
-headless harness (start, every toolbar button, `RUN_PLUGIN_USER_ID=1`), and
-the big ones by hand in the editor. 28 start and answer their buttons with
-no error; the two that do not are noted. "Runs" means the plugin loads and
-its toolbar works without an error, not that every feature was exercised.
+The most-voted free plugins on the Creator Store were run through the
+headless harness (start, every toolbar button, `RUN_PLUGIN_USER_ID=1`, on a
+release build), and the big ones by hand in the editor. The list is the
+store's top plugins by up votes, paid ones left out, as of 2026-11-02:
+47 plugins, 43 start and answer their buttons with no error. "Runs"
+means the plugin loads and its toolbar works without an error, not that
+every feature was exercised. Every one that runs is in the Popular plugins
+catalog.
 
 ![F3X moving a part with its own handles](plugins/f3x-move.png)
 
-| Plugin | Votes | Headless | Notes |
+| Plugin | Up votes | Headless | Notes |
 | --- | ---: | --- | --- |
 | [Load Character Lite](https://create.roblox.com/store/asset/752585459) | 57000 | runs |  |
 | [Lemonade AI](https://create.roblox.com/store/asset/85716018250741) | 17600 | runs |  |
-| [Building Tools by F3X (Plugin)](https://create.roblox.com/store/asset/144950355) | 9600 | runs | live: select, move with handles, undo |
-| [Archimedes (v3.1.9)](https://create.roblox.com/store/asset/144938633) | 6790 | runs | live: render arcs, undo |
-| [Roblox Animation Editor](https://create.roblox.com/store/asset/144373835) | 6300 | runs | retired by Roblox; inert |
-| [Resurface - Convert surfaces to studs and more](https://create.roblox.com/store/asset/5070921519) | 5820 | runs | live: toolbar opens |
+| [Building Tools by F3X (Plugin)](https://create.roblox.com/store/asset/144950355) | 9600 | runs | live: installed from the catalog, select, move with handles |
+| [Archimedes (v3.1.9)](https://create.roblox.com/store/asset/144938633) | 6720 | runs | live: installed from the catalog, its preview piece follows the selection |
+| [Roblox Animation Editor](https://create.roblox.com/store/asset/144373835) | 6300 | no toolbar | retired by Roblox, inert; not in the catalog |
+| [Resurface - Convert surfaces to studs and more](https://create.roblox.com/store/asset/5070921519) | 5820 | runs | live: installed from the catalog, toolbar opens |
 | [ThreeDText 2](https://create.roblox.com/store/asset/2273628561) | 4800 | runs |  |
 | [Part to Terrain](https://create.roblox.com/store/asset/261634767) | 4700 | runs | live: widget title localized |
 | [Rebirth](https://create.roblox.com/store/asset/124244262358116) | 3840 | runs |  |
 | [Stravant - GapFill & Extrude](https://create.roblox.com/store/asset/165687726) | 3840 | runs | live: panel opens |
-| [AutoScale Lite](https://create.roblox.com/store/asset/1496745047) | 3720 | runs |  |
+| [AutoScale Lite](https://create.roblox.com/store/asset/1496745047) | 3680 | runs |  |
 | [RigEdit Lite](https://create.roblox.com/store/asset/1274343708) | 3600 | runs |  |
 | [Realism Mod](https://create.roblox.com/store/asset/400812710) | 3600 | runs |  |
 | [Rig Editor](https://create.roblox.com/store/asset/2908380847) | 3440 | runs |  |
 | [Asset Creator](https://create.roblox.com/store/asset/1602528167) | 2790 | runs |  |
-| [Lighting Shading Plugin (Free)](https://create.roblox.com/store/asset/13964761992) | 2760 | error | depends on script start order (unconfirmed) |
+| [Lighting Shading Plugin (Free)](https://create.roblox.com/store/asset/13964761992) | 2760 | runs | fixed: dock widget creation yields like Studio's |
 | [Rain Plugin](https://create.roblox.com/store/asset/2166774609) | 2700 | runs |  |
 | [Stravant - ResizeAlign](https://create.roblox.com/store/asset/165534573) | 1960 | runs |  |
 | [RBXMonkey - Blender Animations](https://create.roblox.com/store/asset/16708835782) | 1860 | runs |  |
-| [Avatar Importer](https://create.roblox.com/store/asset/1921957669) | 1820 | runs |  |
 | [Brushtool 2.1](https://create.roblox.com/store/asset/2268520847) | 1820 | runs |  |
+| [Avatar Importer](https://create.roblox.com/store/asset/1921957669) | 1820 | runs |  |
 | [Maor's Gui Animation Plugin](https://create.roblox.com/store/asset/14972318524) | 1680 | runs |  |
 | [Blender rig exporter/animation importer](https://create.roblox.com/store/asset/716953901) | 1660 | runs |  |
 | [Legacy Animation Editor](https://create.roblox.com/store/asset/1882309978) | 1580 | runs |  |
+| [Moon Animator Export Cutscene](https://create.roblox.com/store/asset/10546846471) | 1500 | runs |  |
 | [Selection To Camera](https://create.roblox.com/store/asset/15142310521) | 950 | runs |  |
-| [Ro-Defender™ Plugin v8.7](https://create.roblox.com/store/asset/142273772) | 940 | runs | no visible UI (minified loader) |
-| [UltraWorks Shop Creator [Pro tools]](https://create.roblox.com/store/asset/184275443) | 920 | error | needs its shop kit in StarterGui |
-| [Infinite Terrain](https://create.roblox.com/store/asset/7229545707) | 920 | runs |  |
+| [Accessory Inserter [UPDATED 2026]](https://create.roblox.com/store/asset/7055415547) | 940 | runs |  |
+| [Ro-Defender™ Plugin v8.7](https://create.roblox.com/store/asset/142273772) | 940 | no toolbar | no toolbar or UI (minified loader); not in the catalog |
 | [Load Roblox Characters 4](https://create.roblox.com/store/asset/8867876284) | 920 | runs |  |
+| [Infinite Terrain](https://create.roblox.com/store/asset/7229545707) | 920 | runs |  |
+| [Surface Converter](https://create.roblox.com/store/asset/5828862351) | 900 | runs |  |
 | [Studio Build Suite](https://create.roblox.com/store/asset/260276858) | 900 | runs |  |
+| [Light Editor](https://create.roblox.com/store/asset/1223999426) | 890 | runs |  |
+| [Smooth Cam](https://create.roblox.com/store/asset/883602387) | 890 | runs | fixed: gamepad queries on UserInputService |
+| [Paint on click](https://create.roblox.com/store/asset/3704545736) | 880 | runs |  |
+| [Brick Cutter 🔪](https://create.roblox.com/store/asset/143152131) | 880 | runs |  |
+| [[V2 Read Befor Updating] Add Easy Texture](https://create.roblox.com/store/asset/10366079803) | 860 | runs | fixed: `PluginManager():CreatePlugin()`, `GetAvailableThemes`, `ResetPropertyToDefault` |
+| [Roundify](https://create.roblox.com/store/asset/2233768483) | 860 | runs |  |
+| [Camera Light](https://create.roblox.com/store/asset/6274600541) | 846 | runs |  |
+| [Model Resize Plugin 2.1 [ DRAG TO RESIZE! ]](https://create.roblox.com/store/asset/143613186) | 830 | runs |  |
+| [UltraWorks Shop Creator [Pro tools]](https://create.roblox.com/store/asset/184275443) | 828 | runs | the 2026-10-16 failure no longer reproduces |
+| [Weather Systems - FIXED?](https://create.roblox.com/store/asset/319094400) | 810 | error | calls `LoadLibrary("RbxGui")`, which Roblox removed; fails in Studio too |
+| [Day/Night Cycle](https://create.roblox.com/store/asset/10824128781) | 790 | runs |  |
+| [VFX Studio](https://create.roblox.com/store/asset/135581141962270) | 760 | runs | fixed: `debug.profilebegin`, wireframe adornment calls (not drawn); slow to start on a debug build |
+| [Stravant - Model Reflect](https://create.roblox.com/store/asset/217792838) | 752 | runs | fixed: `GetSelectedRibbonTool` |
+| [Scene Tools](https://create.roblox.com/store/asset/16976887711) | 728 | runs | fixed: plugin handles fit in `ObjectValue.Value` |
+| [Stravant - Redupe (REpeated DUPElicate)](https://create.roblox.com/store/asset/73064993918325) | 693 | error | needs the `Content` datatype (`Content.none`), not in the host yet |
 
 What made the difference, beyond the API itself: Roblox's identity rules
 (one value per instance and per enum item), each script's own environment

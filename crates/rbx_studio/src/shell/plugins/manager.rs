@@ -1,18 +1,22 @@
 //! The Manage Plugins dialog: every plugin found, where it came from,
 //! whether it runs, its last error; a switch per plugin (persisted), the
-//! "Load Roblox Studio's plugins" switch, Open Folder and Reload.
+//! "Load Roblox Studio's plugins" switch, Open Folder and Reload. Its
+//! Popular tab is the plugin catalog (`catalog`).
 
 use std::cell::RefCell;
 use std::path::Path;
 
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::v_flex;
 use gpui_kit::*;
 use rbx_lua::plugin::Origin;
 
+use super::catalog::Tab;
 use super::discover::{self, Found, Kind};
 use crate::launcher::ui::{self, Weight};
 use crate::shell::Shell;
 use crate::tokens;
+
+mod installed;
 
 thread_local! {
     /// Held by the open dialog so Escape reaches it (the UI is single
@@ -98,7 +102,7 @@ pub(crate) fn save_prefs(prefs: &Prefs) {
     }
 }
 
-fn kind_label(kind: &Kind) -> &'static str {
+pub(super) fn kind_label(kind: &Kind) -> &'static str {
     match kind {
         Kind::Roblox => "Roblox",
         Kind::NativeLuau => "Native Luau",
@@ -106,7 +110,7 @@ fn kind_label(kind: &Kind) -> &'static str {
     }
 }
 
-fn switch(id: SharedString, on: bool) -> Stateful<Div> {
+pub(super) fn switch(id: SharedString, on: bool) -> Stateful<Div> {
     let track = div()
         .id(id)
         .w(px(34.))
@@ -154,9 +158,13 @@ impl Shell {
             };
         }
         let info = self.plugins.host.as_ref().and_then(|host| {
-            host.plugins().into_iter().find(|info| match &info.origin {
-                Origin::Roblox { path } | Origin::Native { path, .. } => *path == found.path,
-            })
+            // The newest entry: a plugin the catalog updated was added again.
+            host.plugins()
+                .into_iter()
+                .rev()
+                .find(|info| match &info.origin {
+                    Origin::Roblox { path } | Origin::Native { path, .. } => *path == found.path,
+                })
         });
         match info {
             Some(info) => match info.error {
@@ -177,101 +185,27 @@ impl Shell {
             return None;
         }
         let focus = FOCUS.with(|slot| slot.borrow().clone())?;
-        if !focus.is_focused(window) {
+        if !focus.contains_focused(window, cx) {
             focus.focus(window, cx);
         }
-        let load_studio = load_prefs().load_studio;
-
-        let mut rows = v_flex().gap(px(6.)).max_h(px(320.)).overflow_hidden();
-        if self.plugins.found.is_empty() {
-            rows = rows.child(div().text_color(tokens::text2()).child("No plugins found."));
-        }
-        for (index, found) in self.plugins.found.iter().enumerate() {
-            let key = found.path.to_string_lossy().to_string();
-            let disabled = self.plugins.disabled.contains(&key);
-            let (status, is_error) = self.plugin_status(found, disabled);
-            let tag = if found.from_studio {
-                format!("{} \u{b7} from Studio", kind_label(&found.kind))
-            } else {
-                kind_label(&found.kind).to_string()
-            };
-            let status_color = if is_error {
-                tokens::text_error()
-            } else {
-                tokens::text2()
-            };
-            rows = rows.child(
-                h_flex()
-                    .gap(px(10.))
-                    .items_center()
-                    .child(
-                        switch(format!("plugin-switch-{index}").into(), !disabled).on_click(
-                            cx.listener(move |shell, _, _, cx| {
-                                let mut prefs = load_prefs();
-                                if shell.plugins.disabled.contains(&key) {
-                                    shell.plugins.disabled.remove(&key);
-                                } else {
-                                    shell.plugins.disabled.insert(key.clone());
-                                }
-                                let mut names: Vec<String> =
-                                    shell.plugins.disabled.iter().cloned().collect();
-                                names.sort();
-                                prefs.disabled = names;
-                                save_prefs(&prefs);
-                                cx.notify();
-                            }),
-                        ),
-                    )
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .child(div().text_color(tokens::text()).child(found.name.clone()))
-                            .child(
-                                div()
-                                    .text_color(tokens::text2())
-                                    .text_size(px(11.))
-                                    .child(tag),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_color(status_color)
-                            .text_size(px(11.))
-                            .max_w(px(220.))
-                            .child(status),
-                    ),
-            );
-        }
-        let studio_row = h_flex()
-            .gap(px(10.))
-            .items_center()
-            .child(
-                switch("plugin-load-studio".into(), load_studio).on_click(cx.listener(
-                    |_, _, _, cx| {
-                        let mut prefs = load_prefs();
-                        prefs.load_studio = !prefs.load_studio;
-                        save_prefs(&prefs);
-                        cx.notify();
-                    },
-                )),
+        let tabs = self.catalog_tabs(self.plugins.found.len(), cx);
+        let (body, subtitle) = if self.plugins.catalog.tab == Tab::Popular {
+            (
+                self.catalog_body(cx),
+                "Free Creator Store plugins. Each one downloads from Roblox when you install it.",
             )
-            .child(
-                div()
-                    .text_color(tokens::text())
-                    .child("Load Roblox Studio plugins"),
+        } else {
+            (
+                self.installed_body(cx),
+                "Switches apply the next time plugins load.",
             )
-            .child(
-                div()
-                    .text_color(tokens::text2())
-                    .text_size(px(11.))
-                    .child("Changes take effect on Reload."),
-            );
+        };
         let body = v_flex()
             .px(px(20.))
             .pt(px(14.))
             .gap(px(12.))
-            .child(rows)
-            .child(studio_row)
+            .child(tabs)
+            .child(body)
             .into_any_element();
 
         Some(
@@ -286,10 +220,10 @@ impl Shell {
                     }
                 }))
                 .child(ui::dialog(
-                    560.,
+                    680.,
                     ui::dialog_glyph("plug-2", ui::accent(), ui::wash()),
                     "Manage Plugins",
-                    "Switches apply the next time plugins load.".to_string(),
+                    subtitle.to_string(),
                     Some(body),
                     vec![
                         ui::button("plugins-open-folder", "Open Folder", Weight::Ghost, false)
