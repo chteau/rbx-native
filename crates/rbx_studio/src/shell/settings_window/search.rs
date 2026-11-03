@@ -51,6 +51,7 @@ fn key(label: &str) -> Option<String> {
         "Icon pack" => "icon_pack",
         "Tool colours" => "tools",
         "Server address" => "argon_address",
+        "Automatic updates" => "updates.automatic",
         _ => {
             let (setting, _) = Setting::ALL
                 .iter()
