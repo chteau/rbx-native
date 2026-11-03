@@ -3286,6 +3286,27 @@ both the plain fetch failure and the silent fall back to a default
 - [x] macOS build CI, a `macos-latest` job beside the Windows one:
   clippy, build and test. macOS is still not a supported target; the job
   only keeps the workspace from rotting there.
+- [x] Releases and an auto-updater. A `v*` tag runs
+  `.github/workflows/release.yml`: it fails unless the tag matches
+  rbx_studio's Cargo.toml version and CHANGELOG.md has notes for it, builds
+  Windows, macOS and Linux with `RBX_NATIVE_RELEASE` set, packs
+  `rbxstudio-<version>-<target>.zip`/`.tar.gz` (an ad-hoc signed
+  `RbxNative.app` on macOS) with the README, a cargo-about
+  `THIRD-PARTY-LICENSES.html` and `THIRD-PARTY-EMBEDDED.txt` (luau-lsp,
+  cloudflared, slirp4netns and the GPL/LGPL source offer), writes
+  `SHA256SUMS`, signs it with minisign and publishes the Release.
+  `crate::updater` reads it: at launch a background check of the latest
+  non-prerelease, then download, signature and SHA-256 check, and a swap so
+  the next launch runs the new version and says "Updated to vX.Y.Z" with a
+  link to the notes. Linux and a bare macOS binary rename over the running
+  file, Windows moves the running exe to `rbxstudio.old.exe` (deleted on
+  the next launch), a macOS bundle is swapped whole. Off in a Flatpak, when
+  the install folder isn't writable, and in any build without a release
+  version; Settings › Files & recovery › Updates has the switch and Check
+  now. Tested end to end on Linux against a local mock of the releases API
+  (`RBX_UPDATE_API`), tampered package refused. The Windows rename dance
+  and the macOS bundle swap are unit tested as file logic only, never run
+  on a real Windows or Mac, and the workflow hasn't run on a real tag yet.
 - [x] A Flathub-ready Flatpak, `packaging/flatpak/`
   (`io.github.chteau.rbx_native.Editor`, Freedesktop 26.08). Builds offline
   from source: `cargo-sources.json` for the workspace, luau-lsp from its tag

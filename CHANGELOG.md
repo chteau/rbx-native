@@ -2,6 +2,22 @@
 
 ## 2026-11-02
 
+- **Auto-updates and a release workflow.** rbx-native updates itself now.
+  On launch it checks the latest GitHub release in the background, and if
+  there's a newer one it downloads it, checks the minisign signature on
+  SHA256SUMS and the package's hash, and swaps it in so the next launch
+  runs it. That launch shows a small "Updated to vX.Y.Z" toast with a link
+  to the release notes. Nothing blocks startup, and offline or rate
+  limited it just logs a line and moves on. Settings › Files & recovery ›
+  Updates has the switch and a Check now button. It stays off in a
+  Flatpak (Flathub updates it), when the install folder isn't writable
+  (distro packages), and in dev builds. Pushing a `v*` tag now builds
+  Windows, macOS (as an .app) and Linux packages with license notices
+  inside, signs the checksums and publishes the release with this
+  changelog as notes. Tested the whole loop on Linux against a fake
+  releases server, a tampered package gets refused. The Windows and Mac
+  swaps are only tested as file logic so far. (@chteau)
+
 - **Flatpak.** `packaging/flatpak/` builds rbx-native as
   `io.github.chteau.rbx_native.Editor`, offline and from source like Flathub
   wants: luau-lsp and cloudflared get built from their tags into
@@ -36,6 +52,7 @@
   and on the same 21k sphere both land on exactly 20,000 triangles with
   the same bounding box. All of it checked side by side on about 50 test
   items in real Studio, nothing published. (@chteau)
+
 - **Popular plugins.** Manage Plugins has a Popular plugins tab now (also
   Plugins › Popular on the ribbon). It lists 43 free Creator Store plugins
   I checked run in rbx-native, with their store icon, creator, live votes
