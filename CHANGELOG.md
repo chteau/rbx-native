@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-03
+
+- **Release dry run.** `gh workflow run release.yml --ref <branch> -f
+  dry_run=true` builds all three platforms, packages, writes the license
+  notices, signs and verifies `SHA256SUMS`, then keeps the packages as a
+  workflow artifact instead of publishing, so the pipeline's proven before
+  the first tag (it went green, and the signature checks out against the
+  updater's key). Fixed what it turned up: the first release's notes were
+  the whole changelog, way past GitHub's 125k limit, so they're cut to the
+  newest sections that fit with a link to the rest. The macOS `.app` has
+  an icon now (`RbxNative.icns`, made from the app SVG with resvg by
+  `.github/release/make-icns.sh`), a `-beta` version no longer becomes the
+  Latest release the updater reads, Linux builds on Ubuntu 22.04 so the
+  binary runs on glibc 2.35, the signing key file is removed even when
+  signing fails, and macOS tar stops slipping `._` files into the bundle.
+  (@chteau)
+
 ## 2026-11-02
 
 - **Auto-updates and a release workflow.** rbx-native updates itself now.
