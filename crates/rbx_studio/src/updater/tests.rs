@@ -350,7 +350,9 @@ fn a_fresh_staging_folder_survives_another_copys_launch() {
     let ours = install::Staging::new(&dir).unwrap();
     let theirs = dir.join(".rbxstudio-update-1");
     fs::create_dir_all(&theirs).unwrap();
-    assert!(ours.path().ends_with(format!(".rbxstudio-update-{}", std::process::id())));
+    assert!(ours
+        .path()
+        .ends_with(format!(".rbxstudio-update-{}", std::process::id())));
 
     Location::of(&exe).clear_leftovers();
     assert!(ours.path().exists() && theirs.exists());
