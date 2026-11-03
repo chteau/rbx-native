@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-03
+
+- **Command Bar matches Studio's on a few more things.** Checked side by
+  side with Studio's own command bar on the same place:
+  `BindableFunction`/`RemoteFunction` `OnInvoke` can yield now (it failed
+  with "attempt to yield across metamethod/C-call boundary"); setting
+  `Parent` fires `Changed("Parent")` and `GetPropertyChangedSignal("Parent")`;
+  reparenting a destroyed instance errors with Studio's "The Parent property
+  of Part is locked" line instead of doing nothing; `Players:GetPlayers()`
+  is empty and `LocalPlayer` nil, and `RunService` answers like edit mode
+  (studio, client and server, not running) in the bar and in plugins;
+  `BindableEvent:Fire` waits for the next resumption point when the place's
+  `Workspace.SignalBehavior` is Deferred; `shared` exists, and `shared`,
+  `_G` and plain globals carry over from one run to the next, with `_G` a
+  plain table like Roblox's. (@chteau)
+
 ## 2026-11-02
 
 - **Flatpak.** `packaging/flatpak/` builds rbx-native as

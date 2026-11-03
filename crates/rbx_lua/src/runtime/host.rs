@@ -11,7 +11,7 @@ use rbx_dom::{Ref, Variant};
 
 use crate::ctx::Ctx;
 use crate::engine::require::Requirer;
-use crate::engine::{collection, engine, events, json, require, Host};
+use crate::engine::{collection, edit, engine, events, json, require, Host};
 use crate::hooks::Hooks;
 use crate::instance::tree::full_name;
 use crate::instance::LuaInstance;
@@ -89,6 +89,9 @@ impl Hooks for CommandBarHooks {
         key: &str,
     ) -> Result<Option<Value>> {
         if let Some(value) = events::index(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = edit::member(lua, class, key)? {
             return Ok(Some(value));
         }
         match class {
