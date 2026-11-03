@@ -199,8 +199,18 @@ those, skip this part.
    (or `~/.config/rbx-native/api_key` if `XDG_CONFIG_HOME` isn't set), or
    `%APPDATA%\rbx-native\api_key` on Windows. Whitespace is trimmed.
 
-Set `RBX_NO_KEYRING=1` to make `rbxstudio` and `rbxcloud` skip the OS
-keyring entirely (no reads, no writes), e.g. in tests.
+`RBX_NATIVE_KEYRING` picks where `rbxstudio` and `rbxcloud` keep credentials
+instead of the OS keyring, for tests and scripted runs:
+
+- `RBX_NATIVE_KEYRING=none` skips the keyring entirely (no reads, no writes;
+  `RBX_NO_KEYRING=1` is the older spelling).
+- `RBX_NATIVE_KEYRING=file:/some/scratch/keys.json` keeps them in a plain
+  JSON file there (created `0600`), so a test can save and read a key
+  without touching the real keyring. It's plaintext, scratch use only.
+
+Anything else in that variable also means `none`, so a typo never falls
+back to the real keyring. Test builds of `rbxstudio` never use the OS
+keyring whatever it says.
 
 If there's no key, `rbx_cloud` just uses Roblox's anonymous API instead of
 failing. A lot of my own testing runs without one. If you use the file, keep

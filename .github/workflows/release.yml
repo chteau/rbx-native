@@ -5,12 +5,23 @@ name: Release
 # auto-updater reads (`crates/rbx_studio/src/updater`). The build setup is
 # test-build.yml's.
 #
+# Running it by hand (`gh workflow run release.yml --ref <branch> -f
+# dry_run=true`) does all of that except the release: the signed packages
+# come back as the `release-dry-run` workflow artifact instead, so the
+# pipeline can be proven before a real tag.
+#
 # Secret: MINISIGN_SECRET_KEY, the whole minisign secret key file (rsign2,
 # unencrypted). Its public half is compiled into the updater
 # (`updater/verify.rs`); a release signed with any other key is refused.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build, package and sign, but upload a workflow artifact instead of publishing
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -32,10 +43,21 @@ jobs:
 
       - name: Tag matches Cargo.toml
         id: version
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
           cargo_version="$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "rbx_studio") | .version')"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            # Releases only ever come from a tag.
+            if [ "$DRY_RUN" != true ]; then
+              echo "::error::a hand-started run is always a dry run; push a v<version> tag to release"
+              exit 1
+            fi
+            echo "version=$cargo_version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
           if [ "$version" != "$cargo_version" ]; then
             echo "::error::tag $GITHUB_REF_NAME does not match rbx_studio's version $cargo_version"
             exit 1
@@ -45,7 +67,10 @@ jobs:
       # Fails the release before anything builds when CHANGELOG.md has
       # nothing for it.
       - name: Release notes
-        run: .github/release/notes.sh "${{ steps.version.outputs.version }}" "$GITHUB_REF_NAME" > release-notes.md
+        run: |
+          tag="$GITHUB_REF_NAME"
+          [ "$GITHUB_REF_TYPE" = tag ] || tag=HEAD
+          .github/release/notes.sh "${{ steps.version.outputs.version }}" "$tag" > release-notes.md
 
       - uses: taiki-e/install-action@v2
         with:
@@ -76,8 +101,10 @@ jobs:
             runner: windows-latest
           - target: aarch64-apple-darwin
             runner: macos-latest
+          # The oldest runner GitHub still has, so the binary's glibc floor
+          # stays low enough for the distros people actually run.
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TARGET: ${{ matrix.target }}
@@ -148,17 +175,46 @@ jobs:
           cat SHA256SUMS
           umask 077
           key="$RUNNER_TEMP/minisign.key"
+          trap 'rm -f "$key"' EXIT
           printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
           rsign sign -W -s "$key" -t "RbxNative v$VERSION" -x SHA256SUMS.minisig SHA256SUMS
           rm -f "$key"
+          sha256sum -c SHA256SUMS
           rsign verify -P "$(sed -n 's/.*PUBLIC_KEY: &str = "\(.*\)";/\1/p' "$GITHUB_WORKSPACE/crates/rbx_studio/src/updater/verify.rs")" \
             -x SHA256SUMS.minisig SHA256SUMS
 
+      - name: What each package holds
+        working-directory: release
+        run: |
+          for package in rbxstudio-*; do
+            echo "== $package"
+            case "$package" in
+              *.zip) unzip -l "$package" ;;
+              *) tar -tzvf "$package" ;;
+            esac
+          done
+
+      - name: Keep the dry run's packages
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: |
+            release/*
+            artifacts/shared/release-notes.md
+          if-no-files-found: error
+
+      # A version with a pre-release part (`0.4.0-beta.1`) must not become
+      # "Latest": that's the release the updater reads.
       - name: Create the release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
           gh release create "$GITHUB_REF_NAME" release/* \
             --verify-tag \
+            "${prerelease[@]}" \
             --title "RbxNative v$VERSION" \
             --notes-file artifacts/shared/release-notes.md

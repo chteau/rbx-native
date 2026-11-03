@@ -21,6 +21,9 @@ impl HomeWindow {
     /// replaced or removed in Roblox publishing.
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
         self.recent = home::recent();
+        self.templates = crate::place_templates::dir()
+            .map(|d| crate::place_templates::list(&d))
+            .unwrap_or_default();
         if let Ok(which) = std::env::var(fixtures::GAMES_VARIABLE) {
             self.load_fixture(&which);
             return;

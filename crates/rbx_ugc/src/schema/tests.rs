@@ -115,6 +115,29 @@ fn layered(attachment: &str, wrap: Node) -> Node {
 }
 
 #[test]
+fn a_dotted_item_name_is_kept_whole_and_only_the_real_handle_keeps_attributes() {
+    let mut item = layered(
+        "BodyFrontAttachment",
+        node("WrapLayer", "WrapLayer", vec![]),
+    );
+    item.name = "Coat.v2".into();
+    let mut decoy = node("Folder", "Handle", vec![]);
+    decoy.attributed = true;
+    item.children.push(decoy);
+    item.children[0].attributed = true;
+    let found = check(&item, AssetType::Shirt);
+    let found = messages(&found);
+    assert!(
+        found.iter().any(|m| m.contains("accessory 'Coat.v2'")),
+        "{found:?}"
+    );
+    assert!(
+        found.contains(&"'Coat.v2' (or its descendants) contain Attributes. You need to remove Attributes from the following: Coat.v2.Handle"),
+        "{found:?}"
+    );
+}
+
+#[test]
 fn a_layered_item_without_an_inner_cage_has_no_hsr_data() {
     let item = layered(
         "BodyFrontAttachment",

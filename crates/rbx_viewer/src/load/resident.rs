@@ -424,7 +424,9 @@ impl<T: Clone> Table<T> {
                 Some(Ok(value)) => {
                     found.insert(reference, value.clone());
                 }
-                Some(Err(failure)) if reported.insert(failure.warning.as_str()) => {
+                Some(Err(failure))
+                    if !failure.warning.is_empty() && reported.insert(failure.warning.as_str()) =>
+                {
                     warnings.push(failure.warning.clone());
                 }
                 Some(Err(_)) | None => {}
@@ -495,7 +497,7 @@ impl<T: Clone> Table<T> {
         }
 
         let warning = match &result {
-            Err(failure) if !self.warned.contains(&reference) => {
+            Err(failure) if !failure.warning.is_empty() && !self.warned.contains(&reference) => {
                 self.warned.push(reference.clone());
                 Some(failure.warning.clone())
             }
