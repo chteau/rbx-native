@@ -34,14 +34,17 @@ case "$target" in
     ;;
   *apple-darwin)
     app="$stage/RbxNative.app"
-    mkdir -p "$app/Contents/MacOS"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp "$bin/rbxstudio" "$app/Contents/MacOS/rbxstudio"
+    # Made by make-icns.sh from the Flatpak's app SVG.
+    cp .github/release/RbxNative.icns "$app/Contents/Resources/RbxNative.icns"
     chmod 755 "$app/Contents/MacOS/rbxstudio"
     sed "s/@VERSION@/$version/g" .github/release/Info.plist > "$app/Contents/Info.plist"
     # No paid certificate: an ad-hoc signature seals the bundle so Apple
     # Silicon runs it; Gatekeeper still asks on first open.
     codesign --force --deep --sign - "$app"
-    tar -C "$work" -czf "$out/$name.tar.gz" "$name"
+    # Without this, macOS tar adds ._* AppleDouble files that break the seal.
+    COPYFILE_DISABLE=1 tar -C "$work" -czf "$out/$name.tar.gz" "$name"
     ;;
   *)
     cp "$bin/rbxstudio" "$stage/"

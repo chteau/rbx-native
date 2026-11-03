@@ -3303,7 +3303,7 @@ both the plain fetch failure and the silent fall back to a default
   rbx_studio's Cargo.toml version and CHANGELOG.md has notes for it, builds
   Windows, macOS and Linux with `RBX_NATIVE_RELEASE` set, packs
   `rbxstudio-<version>-<target>.zip`/`.tar.gz` (an ad-hoc signed
-  `RbxNative.app` on macOS) with the README, a cargo-about
+  `RbxNative.app` on macOS, with its icon) with the README, a cargo-about
   `THIRD-PARTY-LICENSES.html` and `THIRD-PARTY-EMBEDDED.txt` (luau-lsp,
   cloudflared, slirp4netns and the GPL/LGPL source offer), writes
   `SHA256SUMS`, signs it with minisign and publishes the Release.
@@ -3318,7 +3318,13 @@ both the plain fetch failure and the silent fall back to a default
   now. Tested end to end on Linux against a local mock of the releases API
   (`RBX_UPDATE_API`), tampered package refused. The Windows rename dance
   and the macOS bundle swap are unit tested as file logic only, never run
-  on a real Windows or Mac, and the workflow hasn't run on a real tag yet.
+  on a real Windows or Mac. The workflow hasn't run on a real tag yet, but
+  `gh workflow run release.yml -f dry_run=true` runs all of it except the
+  Release (the packages come back as a workflow artifact): it went green on
+  2026-11-03, `SHA256SUMS` verified against the updater's public key, the
+  Linux binary needs glibc 2.35, and the embedded luau-lsp 1.70.0 and
+  cloudflared 2026.10.0 match the Flatpak's. The macOS icon is in the
+  signed bundle but nobody has looked at it on a Mac yet.
 - [x] A Flathub-ready Flatpak, `packaging/flatpak/`
   (`io.github.chteau.rbx_native.Editor`, Freedesktop 26.08). Builds offline
   from source: `cargo-sources.json` for the workspace, luau-lsp from its tag
