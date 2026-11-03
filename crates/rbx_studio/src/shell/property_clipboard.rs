@@ -25,8 +25,6 @@ use crate::command_bar::Feedback;
 
 use super::Shell;
 
-const SOURCE: &str = "Copy Properties";
-
 const NEVER_COPIED: [&str; 17] = [
     "UniqueId",
     "HistoryId",
@@ -118,19 +116,23 @@ pub(super) fn applies_to_any(
         .any(|&target| !applicable(dom, db, copied, target).is_empty())
 }
 
+fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 impl Shell {
     pub(super) fn copy_properties_of(&mut self, target: Ref, cx: &mut Context<Self>) {
         let Some(copied) = copy_of(&self.dom, target) else {
             return;
         };
         let message = format!(
-            "Copied {} properties of {} \"{}\"",
-            copied.values.len(),
+            "Copied {} of {} \"{}\"",
+            count(copied.values.len(), "property", "properties"),
             copied.class,
             copied.name
         );
         cx.set_global(copied);
-        self.report_property_clipboard(Feedback::Output(message), cx);
+        self.report_property_clipboard("Copy Properties", Feedback::Output(message), cx);
     }
 
     pub(super) fn paste_properties(&mut self, cx: &mut Context<Self>) {
@@ -163,14 +165,21 @@ impl Shell {
             ))
         } else {
             Feedback::Output(format!(
-                "Pasted {written} properties onto {instances} instances"
+                "Pasted {} onto {}",
+                count(written, "property", "properties"),
+                count(instances, "instance", "instances")
             ))
         };
-        self.report_property_clipboard(feedback, cx);
+        self.report_property_clipboard("Paste Properties", feedback, cx);
     }
 
-    fn report_property_clipboard(&mut self, feedback: Feedback, cx: &mut Context<Self>) {
-        self.output.push(SOURCE, feedback.clone());
+    fn report_property_clipboard(
+        &mut self,
+        source: &'static str,
+        feedback: Feedback,
+        cx: &mut Context<Self>,
+    ) {
+        self.output.push(source, feedback.clone());
         self.command_bar.set_feedback(feedback);
         cx.notify();
     }
