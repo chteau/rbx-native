@@ -156,6 +156,7 @@ mod tests {
             triangles: vec![[0, 1, 2]; triangles],
             uvs: Vec::new(),
             influences: Vec::new(),
+            bones: Vec::new(),
         }
     }
 
