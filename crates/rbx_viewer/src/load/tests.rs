@@ -338,7 +338,8 @@ impl Source for FontShelf {
                 "name": "Shelf",
                 "faces": [
                     {"name": "Regular", "weight": 400, "style": "normal", "assetId": "rbxasset://fonts/Shelf-Regular.ttf"},
-                    {"name": "Bold", "weight": 700, "style": "normal", "assetId": "rbxasset://fonts/Shelf-Bold.ttf"}
+                    {"name": "Bold", "weight": 700, "style": "normal", "assetId": "rbxasset://fonts/Shelf-Bold.ttf"},
+                    {"name": "Extra Bold", "weight": 800, "style": "normal", "assetId": "rbxasset://fonts/Shelf-ExtraBold.ttf"}
                 ]
             }"#
             .to_vec()),
@@ -358,6 +359,10 @@ fn not_here(reference: &AssetRef) -> crate::assets::Failure {
 /// [`dom_with_unresolvable_decal`] plus a `ScreenGui` holding one bold
 /// `TextLabel` in the shelf's family.
 fn dom_with_a_text_label() -> WeakDom {
+    dom_with_a_text_label_at(700)
+}
+
+fn dom_with_a_text_label_at(weight: u16) -> WeakDom {
     let mut dom = dom_with_unresolvable_decal();
     let starter = Ref::new(9200);
     dom.insert(Instance::new(starter, "StarterGui", "StarterGui"));
@@ -373,7 +378,7 @@ fn dom_with_a_text_label() -> WeakDom {
         "FontFace".to_string(),
         Variant::Font(rbx_dom::Font {
             family: "rbxasset://fonts/families/Shelf.json".to_string(),
-            weight: 700,
+            weight,
             style: rbx_dom::FontStyle::Normal,
             cached_face_id: None,
         }),
@@ -539,4 +544,35 @@ fn rebuilt_plan(
     Loaded::from_dom(dom, database, textures_only(), resident)
         .expect("load")
         .decor_plan
+}
+
+// The shelf's family lists an 800 face it doesn't hold, the way Roblox's
+// `BuilderSans.json` names an `ExtraBold` no package ships: the request
+// moves on to the 700 face, quietly.
+#[test]
+fn a_face_the_family_names_but_nobody_has_falls_back_to_the_nearest() {
+    let database = ReflectionDatabase::embedded();
+    let dom = dom_with_a_text_label_at(800);
+    let mut resident = Resident::fed_by(std::sync::Arc::new(FontShelf));
+    let nothing = Toggles {
+        textures: false,
+        materials: false,
+        lights: false,
+        clock_time: None,
+        show_development_gui: false,
+    };
+    let extra_bold = crate::fonts::Face::named("Shelf", 800, false);
+    let patience = std::time::Duration::from_secs(5);
+
+    let mut loaded = Loaded::from_dom(&dom, &database, nothing, &mut resident).expect("load");
+    for _ in 0..4 {
+        resident.settle(patience);
+        loaded.resolve(&mut resident);
+    }
+    let (asset, _) = loaded
+        .world()
+        .fonts
+        .bytes_of(&extra_bold)
+        .expect("the nearest face stands in");
+    assert_eq!(asset, &AssetRef::Native("fonts/Shelf-Bold.ttf".to_string()));
 }
