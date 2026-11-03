@@ -16,6 +16,18 @@
   binary runs on glibc 2.35, the signing key file is removed even when
   signing fails, and macOS tar stops slipping `._` files into the bundle.
   (@chteau)
+- **Copy Properties / Paste Properties.** Right-click something in the
+  Explorer, Copy Properties, select other stuff, Paste Properties: every
+  value their class also has gets pasted in one undo step. Works across
+  places too, so you can carry a Lighting setup over. Position, scripts,
+  ids, refs, tags and attributes stay put. Real Studio never had this,
+  [the DevForum asked](https://devforum.roblox.com/t/copy-properties-from-object/224274). (@chteau)
+- **Cut-off binary files say so.** A `.rbxl`/`.rbxm` that ends partway
+  through a chunk header used to fail with "input too short: expected at
+  least 16 bytes, got 8", sizes from inside the chunk reader that say
+  nothing about the file. Now it reads "the file is cut off: a chunk header
+  needs 16 bytes but only 8 are left in the file", like a cut-off chunk body
+  already did. (@chteau)
 
 ## 2026-11-02
 
