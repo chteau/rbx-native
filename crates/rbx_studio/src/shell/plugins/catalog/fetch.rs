@@ -9,7 +9,7 @@ use rbx_cloud::{ApiKey, Client};
 /// Creator Store asset type id of a plugin.
 const PLUGIN_TYPE: u32 = 38;
 
-pub(super) fn client() -> Client {
+pub(in crate::shell) fn client() -> Client {
     Client::new(ApiKey::from_env_or_config())
 }
 
@@ -31,7 +31,7 @@ pub(super) fn download(id: u64) -> Result<Vec<u8>, String> {
 }
 
 /// Every icon URL for `ids`, then each PNG decoded; a failed one is `None`.
-pub(super) fn fetch_icons(ids: &[u64]) -> Vec<(u64, Option<Arc<RenderImage>>)> {
+pub(in crate::shell) fn fetch_icons(ids: &[u64]) -> Vec<(u64, Option<Arc<RenderImage>>)> {
     let client = client();
     let urls = client.asset_icon_urls(ids).unwrap_or_default();
     // A handful of downloads at a time: one by one, the verified list's

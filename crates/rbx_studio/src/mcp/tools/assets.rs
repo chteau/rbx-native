@@ -21,7 +21,7 @@ use serde_json::Value;
 use super::Outcome;
 use crate::mcp::Session;
 
-pub(crate) use insert::{inserted, Insertion};
+pub(crate) use insert::{inserted, toolbox_fetch, Insertion};
 
 /// `RBX_STUDIO_MCP_ASSETS_MOCK=<http root>` sends every call to a local
 /// stand-in for `apis.roblox.com`, for captures and tests without a key.

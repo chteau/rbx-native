@@ -3680,10 +3680,12 @@ and no amount of reverse engineering changes that:
   the private sandbox that stands in for it.
 - **Team Create**: proprietary real-time collaboration, no public
   equivalent API.
-- **Toolbox/marketplace parity**: public APIs (Creator Store, Open Cloud,
-  `catalog.roblox.com`) expose metadata and let you manage your *own*
-  assets; none of them let you download and insert an arbitrary third-
-  party asset the way Studio's Toolbox does.
+- **Toolbox/marketplace parity**: the Toolbox dock searches the Creator
+  Store and inserts what's free there through Open Cloud's asset
+  delivery, but no public API downloads a paid or off-sale third-party
+  asset the way Studio's Toolbox does, and Studio's Inventory and Recent
+  tabs (Inventory is being retired for the Asset Manager anyway) aren't
+  there.
 - **A pixel-faithful plugin UI**: `DockWidgetPluginGui` is rendered by
   Roblox's own UI engine (`GuiBase2d`/`LayerCollector`); reproducing it
   means reimplementing that whole subsystem, which is out of scope. A

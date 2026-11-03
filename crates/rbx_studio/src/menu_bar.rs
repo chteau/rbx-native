@@ -117,6 +117,7 @@ actions!(
         MenuToggleViewport,
         MenuToggleCollaborators,
         MenuToggleInputActions,
+        MenuToggleToolbox,
         MenuToggleSecurityAudit,
         MenuRequireGraph,
         MenuTogglePlaytests,
@@ -310,6 +311,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                     // Team presence: who else is in the place, from Studio or
                     // rbx-native. Shut by default, so it needs a way in.
                     MenuItem::action("Collaborators", MenuToggleCollaborators),
+                    MenuItem::action("Toolbox", MenuToggleToolbox),
                     MenuItem::action("Input Actions", MenuToggleInputActions),
                     MenuItem::action("Security Audit", MenuToggleSecurityAudit),
                 ]

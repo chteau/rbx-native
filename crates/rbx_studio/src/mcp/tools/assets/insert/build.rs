@@ -73,7 +73,7 @@ pub(super) fn holds_package_link(dom: &WeakDom) -> bool {
 
 /// A model file as a loaded place holds it: properties under the names
 /// Studio saves, and no part colour kept as a `BrickColor`.
-fn read_model(bytes: &[u8]) -> Result<WeakDom, String> {
+pub(super) fn read_model(bytes: &[u8]) -> Result<WeakDom, String> {
     let mut dom = rbx_viewer::parse_place(bytes, std::path::Path::new("the asset"))?;
     settle_brick_colors(&mut dom);
     Ok(dom)
