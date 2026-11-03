@@ -3460,6 +3460,51 @@ both the plain fetch failure and the silent fall back to a default
   what each stage was checked against in real Studio:
   `docs/research/ugc-creators/README.md`.
 
+Asked for on the DevForum and not built yet (the whole pass, with what was
+shipped or built and what can't be: `docs/research/devforum-requests/README.md`):
+
+- [ ] 📋 **Colour in Output, opt in**: a Studio Settings switch that renders
+  `<font color>` rich text in Output lines instead of showing the tags.
+  Off by default, since a printed string is the game's own text
+  ([Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196)).
+- [ ] 📋 **Insert parts anchored**: a Studio Settings switch that makes every
+  inserted `Part`/`MeshPart` (ribbon tiles, Insert Object) start anchored
+  ([Have parts anchored by default](https://devforum.roblox.com/t/have-parts-anchored-by-default-when-inserting-in-studio/347169)).
+- [ ] 📋 **Multi-line Command Bar**: Shift+Enter for a new line, the script
+  editor's highlighting, and Ctrl+Enter to run
+  ([Multiple Lines in the Command Bar](https://devforum.roblox.com/t/multiple-lines-in-the-command-bar/233343),
+  [too hard to edit multiline code](https://devforum.roblox.com/t/it-is-too-hard-to-edit-multiline-code-in-the-command-bar/3013101)).
+- [ ] 📋 **Replace in every script of the place**, not only the open ones
+  ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
+- [ ] 📋 **Search the installed plugins** in the Plugins window
+  ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).
+- [ ] 📋 **Select a locked part while holding a key**, without unlocking it
+  ([Allow selecting locked parts by holding a key combination](https://devforum.roblox.com/t/allow-selecting-locked-parts-by-holding-a-key-combination/977989)).
+- [ ] 📋 **Code folding in the script editor**, remembered per script between
+  sessions; folding needs block extents from a parse, not the lexer the
+  highlighter uses now
+  ([Script Editor should save which folds are collapsed](https://devforum.roblox.com/t/script-editor-should-save-which-folds-are-collapsed-and-expa/31297)).
+- [ ] 📋 **Format Document with StyLua** in the script editor
+  ([Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518)).
+- [ ] 📋 **An image's resolution** shown beside an image id in Properties and
+  the asset tooltips
+  ([Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605)).
+- [ ] 📋 **Search in Version History**, by date and by who published; a name
+  for a version can only be a local label, Roblox stores none
+  ([Version History needs naming, search, and folders](https://devforum.roblox.com/t/version-history-needs-naming-search-and-folders/4382404)).
+- [ ] 📋 **A Loren lint for scripts that index an instance by a name two
+  siblings share**
+  ([Warn when two instances share the same name](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911)).
+- [ ] 📋 **Fullbright viewport toggle**: draw Edit mode with flat ambient light
+  and no shadows, without touching `Lighting`
+  ([Fullbright Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596)).
+- [ ] 📋 **Preview button for `Sound`/`AudioPlayer`** in Properties
+  ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
+- [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
+  ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).
+- [ ] 📋 **FBX export** beside OBJ and glTF
+  ([FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566)).
+
 ### Play / Test workflow
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
