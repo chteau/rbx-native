@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use mlua::{Function, MultiValue, Value, VmState};
+use mlua::{Function, MultiValue, Table, Value, VmState};
 use rbx_dom::WeakDom;
 
 use super::{RunState, Runtime, Step};
@@ -23,13 +23,31 @@ impl Runtime {
     /// waiting keep going, as in Studio's command bar. A chunk that does not
     /// compile fails that resume. Each run starts with no module loaded.
     pub fn start(&mut self, source: &str) {
-        let chunk = self
-            .lua
-            .load(source)
-            // Studio's name for the bar's chunk: `CommandBar:2: boom`.
-            .set_name("=CommandBar")
-            .into_function();
+        let chunk = self.command_env().and_then(|env| {
+            self.lua
+                .load(source)
+                // Studio's name for the bar's chunk: `CommandBar:2: boom`.
+                .set_name("=CommandBar")
+                .set_environment(env)
+                .into_function()
+        });
         self.start_call(chunk, MultiValue::new());
+    }
+
+    /// Where the bar's chunks keep their globals: one table for every run,
+    /// over the frozen built-ins, so `x = 5` in one run is still there in
+    /// the next, as in Studio's command bar.
+    fn command_env(&self) -> mlua::Result<Table> {
+        const KEY: &str = "rbxn.command_env";
+        if let Some(env) = self.lua.named_registry_value::<Option<Table>>(KEY)? {
+            return Ok(env);
+        }
+        let env = self.lua.create_table()?;
+        let meta = self.lua.create_table()?;
+        meta.set("__index", self.lua.globals())?;
+        env.set_metatable(Some(meta))?;
+        self.lua.set_named_registry_value(KEY, env.clone())?;
+        Ok(env)
     }
 
     /// [`Runtime::start`] for a function already built in this VM, called

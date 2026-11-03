@@ -6,7 +6,7 @@ use mlua::{
     AnyUserData, Function, Lua, MetaMethod, MultiValue, Result, UserData, UserDataFields,
     UserDataMethods, Value,
 };
-use rbx_dom::Ref;
+use rbx_dom::{Ref, Variant};
 
 use super::{engine, scheduler};
 use crate::plugin::api::{Arg, UiId};
@@ -257,6 +257,40 @@ pub(crate) fn fire_values(lua: &Lua, key: &SignalKey, args: MultiValue) -> Resul
     deliver(lua, key, args, None)
 }
 
+/// A script's own `Fire`. With `Workspace.SignalBehavior` set to
+/// `Deferred` the handlers wait for the next resumption point, the way
+/// `task.defer` would, so code right after `Fire` runs first, as it does in
+/// Studio; `Default` and `Immediate` run them before `Fire` returns.
+/// Instance events need no such switch: they are fired from the change
+/// log, which is only read once the script yields or ends.
+pub(crate) fn fire_from_script(lua: &Lua, key: &SignalKey, args: MultiValue) -> Result<()> {
+    if !deferred_signals(lua) {
+        return deliver(lua, key, args, None);
+    }
+    for func in take_listeners(lua, key, None) {
+        scheduler::defer(lua, func, args.clone())?;
+    }
+    Ok(())
+}
+
+fn deferred_signals(lua: &Lua) -> bool {
+    const DEFERRED: u32 = 2;
+    let ctx = engine(lua).ctx.clone();
+    let dom = ctx.dom();
+    let workspace = dom
+        .root_refs()
+        .iter()
+        .filter_map(|r| dom.get(*r))
+        .find(|i| i.class() == "Workspace");
+    workspace.is_some_and(|w| {
+        let props = w.properties();
+        matches!(
+            props.get("SignalBehavior2").or(props.get("SignalBehavior")),
+            Some(Variant::Enum(DEFERRED))
+        )
+    })
+}
+
 /// [`fire_at`] with Luau values already in hand.
 pub(crate) fn fire_values_at(
     lua: &Lua,
@@ -268,31 +302,34 @@ pub(crate) fn fire_values_at(
 }
 
 fn deliver(lua: &Lua, key: &SignalKey, args: MultiValue, change: Option<u64>) -> Result<()> {
+    for func in take_listeners(lua, key, change) {
+        scheduler::spawn(lua, func, args.clone())?;
+    }
+    Ok(())
+}
+
+/// The handlers that hear a firing of `key` (see [`fire_at`] for
+/// `change`), with the `Once` ones among them disconnected.
+fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<Function> {
     let hears = |c: &Connection| match (change, c.since) {
         (Some(change), Some(since)) => since < change,
         _ => true,
     };
     let engine = engine(lua);
-    let funcs: Vec<Function> = {
-        let mut signals = engine.signals.borrow_mut();
-        let Some(list) = signals.connections.get_mut(key) else {
-            return Ok(());
-        };
-        let funcs = list
-            .iter()
-            .filter(|c| hears(c))
-            .map(|c| c.func.clone())
-            .collect();
-        list.retain(|c| !(c.once && hears(c)));
-        if list.is_empty() {
-            signals.connections.remove(key);
-        }
-        funcs
+    let mut signals = engine.signals.borrow_mut();
+    let Some(list) = signals.connections.get_mut(key) else {
+        return Vec::new();
     };
-    for func in funcs {
-        scheduler::spawn(lua, func, args.clone())?;
+    let funcs = list
+        .iter()
+        .filter(|c| hears(c))
+        .map(|c| c.func.clone())
+        .collect();
+    list.retain(|c| !(c.once && hears(c)));
+    if list.is_empty() {
+        signals.connections.remove(key);
     }
-    Ok(())
+    funcs
 }
 
 /// Connects `func` to `key`, stamped with the DOM's mutation count.

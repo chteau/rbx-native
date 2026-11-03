@@ -494,6 +494,17 @@ impl UserData for LuaInstance {
                     "Parent" => {
                         let target = parent_target(&value)?;
                         this.ctx.check_write(this.referent)?;
+                        if this.ctx.dom().get(this.referent).is_none() {
+                            // Roblox locks a destroyed instance's Parent.
+                            let dom = this.ctx.dom();
+                            let new = target
+                                .and_then(|p| dom.get(p))
+                                .map_or("NULL", |p| p.name());
+                            return Err(mlua::Error::runtime(format!(
+                                "The Parent property of {} is locked, current parent: NULL, new parent {new}",
+                                this.instance_name()?
+                            )));
+                        }
                         if let Some(parent) = target {
                             this.ctx.check_write(parent)?;
                             let dom = this.ctx.dom();

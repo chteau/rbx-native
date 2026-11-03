@@ -384,10 +384,9 @@ fn run_service(lua: &Lua, key: &str) -> Result<Value> {
     match key {
         "BindToRenderStep" => render_step(lua, false),
         "UnbindFromRenderStep" => render_step(lua, true),
-        "IsStudio" | "IsEdit" => func(lua, |_, _: Value| Ok(true)),
-        "IsRunning" | "IsRunMode" | "IsClient" | "IsServer" => func(lua, |_, _: Value| Ok(false)),
         "Heartbeat" | "RenderStepped" | "Stepped" => signal(lua, "RunService", key),
-        _ => Err(no_member("RunService", key)),
+        _ => crate::engine::edit::member(lua, "RunService", key)?
+            .ok_or_else(|| no_member("RunService", key)),
     }
 }
 
@@ -738,8 +737,11 @@ mod tests {
         );
         no_errors(&env);
         let g = lua.globals();
-        assert!(g.get::<bool>("studio").unwrap() && g.get::<bool>("edit").unwrap());
-        for flag in ["running", "client", "server", "mode"] {
+        // Roblox's RunService reference: edit mode is client and server both.
+        for flag in ["studio", "edit", "client", "server"] {
+            assert!(g.get::<bool>(flag).unwrap(), "{flag}");
+        }
+        for flag in ["running", "mode"] {
             assert!(!g.get::<bool>(flag).unwrap(), "{flag}");
         }
     }
