@@ -2720,8 +2720,8 @@ both the plain fetch failure and the silent fall back to a default
   asks for a name (the place's own, to start with) and writes the place as
   it is, open scripts' unsaved text included, to
   `<config>/place_templates/<name>.rbxl`, with a 256×256 shot of the
-  viewport beside it as `<name>.png` (no shot if the viewport doesn't
-  answer in 3 s). Home's New row lists them after the built-in ones;
+  viewport beside it as `<name>.png` (if the viewport doesn't answer in
+  10 s it saves without one and says so in Output). Home's New row lists them after the built-in ones;
   clicking one copies it into `places/` as a new place and opens it, and
   right-click asks before deleting it. Real Studio never got this
   ([DevForum request](https://devforum.roblox.com/t/allow-developers-to-save-places-as-studio-templates/241595)).

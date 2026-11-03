@@ -15,8 +15,9 @@ use crate::{place_templates, tokens};
 const SOURCE: &str = "Save as Template";
 
 /// How long to wait for the viewport's frame before saving without a
-/// thumbnail; a hidden or parked viewport never answers.
-const FRAME_WAIT: Duration = Duration::from_secs(3);
+/// thumbnail; a hidden or parked viewport never answers, and a busy one
+/// takes a few seconds to render the extra frame.
+const FRAME_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Default)]
 pub(super) struct SaveTemplate {
@@ -45,8 +46,11 @@ impl Shell {
             .unwrap_or_default();
         let state = cx.new(|cx| InputState::new(window, cx).default_value(stem));
         cx.subscribe_in(&state, window, |shell, _, event: &InputEvent, _, cx| {
-            if matches!(event, InputEvent::PressEnter { .. }) {
-                shell.confirm_save_template(cx);
+            match event {
+                InputEvent::PressEnter { .. } => shell.confirm_save_template(cx),
+                // A complaint about the old name is stale once it changes.
+                InputEvent::Change if shell.save_template.error.take().is_some() => cx.notify(),
+                _ => {}
             }
         })
         .detach();
@@ -97,19 +101,32 @@ impl Shell {
             let saved = cx
                 .background_spawn(async move {
                     let thumbnail = frame
-                        .and_then(|frame| frame.recv_timeout(FRAME_WAIT).ok())
-                        .and_then(|frame| frame.ok())
-                        .and_then(|(w, h, rgba)| place_templates::thumbnail_png(w, h, rgba).ok());
-                    place_templates::save(&dir, &name, &dom, thumbnail.as_deref()).map(|_| name)
+                        .ok_or_else(|| "the viewport is closed".to_owned())
+                        .and_then(|frame| {
+                            frame
+                                .recv_timeout(FRAME_WAIT)
+                                .map_err(|_| "the viewport didn't answer in time".to_owned())
+                        })
+                        .and_then(|frame| frame)
+                        .and_then(|(w, h, rgba)| place_templates::thumbnail_png(w, h, rgba));
+                    let saved = place_templates::save(&dir, &name, &dom, thumbnail.as_deref().ok());
+                    (saved.map(|_| name), thumbnail.err())
                 })
                 .await;
-            let _ = shell.update(cx, |shell, cx| shell.finish_save_template(saved, cx));
+            let _ = shell.update(cx, |shell, cx| {
+                shell.finish_save_template(saved.0, saved.1, cx)
+            });
         })
         .detach();
         cx.notify();
     }
 
-    fn finish_save_template(&mut self, saved: Result<String, String>, cx: &mut Context<Self>) {
+    fn finish_save_template(
+        &mut self,
+        saved: Result<String, String>,
+        no_thumbnail: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         self.save_template.busy = false;
         match saved {
             Ok(name) => {
@@ -118,6 +135,12 @@ impl Shell {
                     Feedback::Output(format!("Saved template {name}; it's on Home's New row"));
                 self.output.push(SOURCE, feedback.clone());
                 self.command_bar.set_feedback(feedback);
+                if let Some(why) = no_thumbnail {
+                    self.output.push(
+                        SOURCE,
+                        Feedback::Warning(format!("Saved without a thumbnail: {why}")),
+                    );
+                }
             }
             Err(message) => self.save_template.error = Some(message),
         }
