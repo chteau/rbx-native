@@ -59,10 +59,7 @@ impl<'a> ChunkReader<'a> {
             return Ok(None);
         }
         if self.remaining.len() < CHUNK_HEADER_LEN {
-            return Err(BinaryError::TooShort {
-                expected: CHUNK_HEADER_LEN,
-                actual: self.remaining.len(),
-            });
+            return Err(BinaryError::ChunkHeaderTruncated(self.remaining.len()));
         }
 
         let name: [u8; 4] = self.remaining[0..4].try_into().unwrap();
@@ -293,6 +290,16 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "the file is cut off: chunk 'INST' declares 100 bytes of data but only 30 are left in the file"
+        );
+    }
+
+    #[test]
+    fn cut_off_chunk_header_says_the_file_is_cut_off() {
+        let bytes = chunk_bytes(0, 4, &[0u8; 4]);
+        let err = first_err(&bytes[..8]);
+        assert_eq!(
+            err.to_string(),
+            "the file is cut off: a chunk header needs 16 bytes but only 8 are left in the file"
         );
     }
 }

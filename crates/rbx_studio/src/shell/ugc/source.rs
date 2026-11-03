@@ -32,7 +32,7 @@ pub(super) fn item_from_file(path: &Path, kind: ItemKind) -> Result<Collected, S
             triangles: mesh.triangles,
             uvs: mesh.uvs,
             influences: mesh.influences,
-            bones: Vec::new(),
+            bones: mesh.bones,
             in_studs: false,
         };
         match cage_kind {

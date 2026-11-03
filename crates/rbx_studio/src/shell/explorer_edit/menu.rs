@@ -13,7 +13,8 @@
 //! (`clipboard::has_copyable`, `group::has_groupable`/`has_ungroupable`), so
 //! a row can never be clickable and do nothing. Play Animation is greyed
 //! unless the row is an `Animation` with a published AnimationId and a rig
-//! to play on.
+//! to play on. Paste Properties is greyed until a copied set has something
+//! that applies to the selection (see `shell::property_clipboard`).
 //!
 //! Rows are built here rather than through [`menu::item`] because Rename,
 //! Insert and Change Class need a `Window` the controlled dropdown's action type does not
@@ -35,6 +36,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::super::export::{self, Export};
+use super::super::property_clipboard::{applies_to_any, CopiedProperties};
 use super::super::roving::Move;
 use super::super::{clipboard, freeze, group, keys, menu};
 use super::rename::renameable;
@@ -235,6 +237,9 @@ impl Shell {
             self.anim_bound_model(),
         )
         .is_some();
+        let pastable = cx.try_global::<CopiedProperties>().is_some_and(|copied| {
+            applies_to_any(&self.dom, &self.database, copied, self.selected_all())
+        });
 
         let rows = [
             row(
@@ -271,6 +276,20 @@ impl Shell {
                 "Paste into at Original Location",
                 live.paste,
                 |shell, _, cx| shell.paste_into_at_original(cx),
+            ),
+            row(
+                "copy-properties",
+                IconName::ClipboardCopy,
+                "Copy Properties",
+                true,
+                move |shell, _, cx| shell.copy_properties_of(target, cx),
+            ),
+            row(
+                "paste-properties",
+                IconName::ClipboardPaste,
+                "Paste Properties",
+                pastable,
+                |shell, _, cx| shell.paste_properties(cx),
             ),
             row(
                 "rename",

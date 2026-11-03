@@ -229,9 +229,10 @@ impl Loaded {
     /// stage on one landing and the second on the next; a blocking one runs
     /// both here.
     ///
-    /// Warnings are dropped like the effect images' are: a face that will not
-    /// download leaves its text in the typesetter's fallback face, which is
-    /// what a missing font looks like in Roblox too.
+    /// Warnings are dropped like the effect images' are. A face file that is
+    /// gone for good is struck from its family, so the request lands on the
+    /// family's next nearest face instead of the typesetter's fallback (a
+    /// Roblox family can name a face its own packages don't ship).
     pub(crate) fn resolve_fonts(&mut self, resident: &mut Resident) {
         let faces = self.scene.gui_fonts();
         let families: Vec<AssetRef> = faces
@@ -258,6 +259,15 @@ impl Loaded {
             self.fonts
                 .faces
                 .insert(reference, std::sync::Arc::new(bytes));
+        }
+
+        let gone = resident.failed_bytes(&files);
+        if !gone.is_empty() {
+            for family in self.fonts.families.values_mut() {
+                family.faces.retain(|entry| !gone.contains(&entry.asset));
+            }
+            // Each round strikes at least one face, so this ends.
+            self.resolve_fonts(resident);
         }
     }
 

@@ -100,17 +100,30 @@ pub(super) fn read(bytes: &[u8], path: &Path) -> Result<SourceGeometry, String> 
             .filter(|&&(child, parent)| parent == id && skins.contains(&child))
             .map(|&(child, _)| child)
             .collect();
-        let own_clusters: Vec<NodeHandle<'_>> = clusters
+        let own_clusters: Vec<(i64, NodeHandle<'_>)> = clusters
             .iter()
             .filter(|(cluster, _)| {
                 links
                     .iter()
                     .any(|&(child, parent)| child == *cluster && own_skins.contains(&parent))
             })
-            .map(|&(_, node)| node)
+            .copied()
             .collect();
         if !own_clusters.is_empty() {
-            mesh.influences = influences(mesh.positions.len(), &own_clusters);
+            let nodes: Vec<NodeHandle<'_>> = own_clusters.iter().map(|&(_, node)| node).collect();
+            mesh.influences = influences(mesh.positions.len(), &nodes);
+            // Each cluster is linked to the bone it binds.
+            mesh.bones = own_clusters
+                .iter()
+                .filter_map(|&(cluster, _)| {
+                    links
+                        .iter()
+                        .find_map(|&(child, parent)| {
+                            (parent == cluster).then(|| models.get(&child)).flatten()
+                        })
+                        .cloned()
+                })
+                .collect();
         }
         out.meshes.push(mesh);
     }
@@ -175,7 +188,7 @@ fn mesh_of(geometry: NodeHandle<'_>) -> Option<SourceMesh> {
         uvs: uvs(geometry, &indices, positions.len()),
         positions,
         triangles,
-        influences: Vec::new(),
+        ..Default::default()
     })
 }
 

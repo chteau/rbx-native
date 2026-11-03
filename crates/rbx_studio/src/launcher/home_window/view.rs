@@ -145,6 +145,7 @@ impl HomeWindow {
             .when(!picker, |this| this.child(disclaimer()))
             .children(menu)
             .children(dialog)
+            .children(crate::updater::toast(cx))
     }
 }
 

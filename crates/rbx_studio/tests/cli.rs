@@ -20,6 +20,7 @@ fn rbxstudio(arguments: &[&str]) -> Output {
         .env("XDG_CONFIG_HOME", &config)
         .env("APPDATA", &config)
         .env_remove("RBX_API_KEY")
+        .env("RBX_NATIVE_KEYRING", "none")
         .output()
         .expect("rbxstudio is built alongside this test")
 }

@@ -98,7 +98,7 @@ fn main() {
     }
 
     let key = rbx_cloud::ApiKey::from_env_or_config()
-        .or_else(keyring_key)
+        .or_else(rbx_cloud::keyring::stored_api_key)
         .expect("no API key: set RBX_API_KEY or run rbxstudio's key wizard");
     let client = rbx_cloud::Client::new(Some(key));
     let version = client
@@ -149,30 +149,4 @@ fn main() {
     }
     drop(game);
     drop(tunnel);
-}
-
-/// The key `rbxstudio` stored in the OS keyring (same lookup as `rbxcloud`).
-#[cfg(target_os = "linux")]
-fn keyring_key() -> Option<rbx_cloud::ApiKey> {
-    if rbx_cloud::keyring_disabled() {
-        return None;
-    }
-    futures_lite::future::block_on(async {
-        let keyring = oo7::Keyring::new().await.ok()?;
-        keyring.unlock().await.ok()?;
-        let items = keyring
-            .search_items(&[("url", "https://apis.roblox.com/rbx-native")])
-            .await
-            .ok()?;
-        let item = items.into_iter().next()?;
-        item.unlock().await.ok()?;
-        let secret = item.secret().await.ok()?;
-        let key = std::str::from_utf8(&secret).ok()?.trim();
-        (!key.is_empty()).then(|| rbx_cloud::ApiKey::new(key))
-    })
-}
-
-#[cfg(not(target_os = "linux"))]
-fn keyring_key() -> Option<rbx_cloud::ApiKey> {
-    None
 }
