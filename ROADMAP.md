@@ -2728,6 +2728,16 @@ both the plain fetch failure and the silent fall back to a default
   the editor on the same place. Live co-editing and the MCP server ship behind
   switches; `RBX_STUDIO_BETA_SAMPLE=1` also lists a sample
   feature to try the page.
+- [x] **Your own templates on Home's New row.** File › Save as Template…
+  asks for a name (the place's own, to start with) and writes the place as
+  it is, open scripts' unsaved text included, to
+  `<config>/place_templates/<name>.rbxl`, with a 256×256 shot of the
+  viewport beside it as `<name>.png` (if the viewport doesn't answer in
+  10 s it saves without one and says so in Output). Home's New row lists them after the built-in ones;
+  clicking one copies it into `places/` as a new place and opens it, and
+  right-click asks before deleting it. Real Studio never got this
+  ([DevForum request](https://devforum.roblox.com/t/allow-developers-to-save-places-as-studio-templates/241595)).
+  A `.rbxl` dropped in that folder by hand shows up too.
 - [x] **More New templates on Home.** Home's New row now offers
   Baseplate, Classic Baseplate and Flat Terrain, each with the parts,
   Lighting (Sky and effects for the modern two) and camera zoom that real
