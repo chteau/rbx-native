@@ -322,6 +322,13 @@ impl Shell {
             .input_row(format!("input-action-{key}").into(), r, cx)
             .child(name_cell)
             .child(type_cell);
+        let added_in = self.input_edits.added_in.clone();
+        let column = |binding: &Binding| -> Option<Family> {
+            match binding.families.as_slice() {
+                [] if !binding.scriptable => added_in.get(&binding.referent).copied(),
+                _ => None,
+            }
+        };
         for (index, family) in Family::ALL.into_iter().enumerate() {
             let missing = issues
                 .iter()
@@ -329,7 +336,7 @@ impl Shell {
             let chips: Vec<AnyElement> = action
                 .bindings
                 .iter()
-                .filter(|b| b.families.contains(&family))
+                .filter(|b| b.families.contains(&family) || column(b) == Some(family))
                 .map(|b| self.input_chip(b, index, issues, cx))
                 .collect();
             let add = self
@@ -359,7 +366,7 @@ impl Shell {
         let others: Vec<AnyElement> = action
             .bindings
             .iter()
-            .filter(|b| b.families.is_empty())
+            .filter(|b| b.families.is_empty() && column(b).is_none())
             .map(|b| self.input_chip(b, Family::ALL.len(), issues, cx))
             .collect();
         row.child(cell().children(others)).into_any_element()

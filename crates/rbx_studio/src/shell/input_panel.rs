@@ -63,6 +63,9 @@ pub(super) struct InputEdits {
     pub(super) collapsed: HashSet<Ref>,
     pub(super) table_scroll: ScrollHandle,
     pub(super) inspector_scroll: ScrollHandle,
+    /// The column a binding was added from with "+", so it stays there
+    /// while it has no key yet instead of dropping into Other.
+    pub(super) added_in: HashMap<Ref, Family>,
 }
 
 fn is_input_class(class: &str) -> bool {
@@ -392,13 +395,19 @@ impl Shell {
             Family::Gamepad => "GamepadBinding",
             Family::Touch => "TouchBinding",
         };
+        let mut added = None;
         self.apply_input_edit(
-            move |dom, _| {
+            |dom, _| {
                 let name = explorer::insert::incremented_name(dom, Some(action), base);
-                Ok(Some(input_actions::new_binding(dom, &name, action)))
+                let binding = input_actions::new_binding(dom, &name, action);
+                added = Some(binding);
+                Ok(Some(binding))
             },
             cx,
         );
+        if let Some(binding) = added {
+            self.input_edits.added_in.insert(binding, family);
+        }
     }
 
     /// Deletes a context, action or binding with its subtree, through the
