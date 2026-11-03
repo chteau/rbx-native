@@ -89,6 +89,7 @@ pub(crate) use plugins::install_text_box_keys;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use view_snap::PresetView;
+mod toolbox;
 mod tree_keys;
 
 mod argon_dock;
@@ -378,6 +379,8 @@ pub(crate) struct Shell {
     tests: tests_dock::TestsDock,
     /// The Bytecode dock's options and last listing; see `shell::bytecode_dock`.
     bytecode: bytecode_dock::BytecodeDock,
+    /// The Toolbox dock's search and inserts; see `shell::toolbox`.
+    toolbox: toolbox::ToolboxDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -924,6 +927,7 @@ impl Shell {
             lsp: luau_lsp::Session::default(),
             tests: tests_dock::TestsDock::default(),
             bytecode: bytecode_dock::BytecodeDock::default(),
+            toolbox: toolbox::ToolboxDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
@@ -2232,6 +2236,7 @@ impl Render for Shell {
             .children(self.roblox_dialog(cx))
             .children(self.play_dialog(cx))
             .children(self.close_place_dialog(cx))
+            .children(self.toolbox_notice_dialog(cx))
             .children(self.rig_dialog_overlay(cx))
             .children(self.animation_publish_overlay(cx))
             .children(self.animation_id_prompt_overlay(cx))

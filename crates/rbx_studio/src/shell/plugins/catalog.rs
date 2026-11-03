@@ -28,6 +28,8 @@ use super::discover;
 use crate::command_bar::Feedback;
 use crate::shell::Shell;
 use fetch::{client, download, fetch_icons};
+/// The store routes and thumbnails, shared with the Toolbox.
+pub(in crate::shell) use fetch::{client as store_client, fetch_icons as store_icons};
 use installs::{Installs, Record};
 pub(super) use rows::{Row, State};
 

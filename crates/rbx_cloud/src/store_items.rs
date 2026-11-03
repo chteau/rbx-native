@@ -119,10 +119,22 @@ impl Client {
     /// Plugin ids for `query`, in the store's own relevance order (an empty
     /// query lists the most popular), at most `limit`.
     pub fn search_plugins(&self, query: &str, limit: u32) -> Result<Vec<u64>, CloudError> {
+        self.search_store("Plugin", query, limit)
+    }
+
+    /// Ids of the store's `category` (`searchCategoryType`: `Model`,
+    /// `Decal`, `MeshPart`, `Audio`, `Video`, `Plugin`) matching `query`, in
+    /// the store's relevance order, at most `limit`.
+    pub fn search_store(
+        &self,
+        category: &str,
+        query: &str,
+        limit: u32,
+    ) -> Result<Vec<u64>, CloudError> {
         let url = self.apis_url("/toolbox-service/v2/assets:search");
         let limit = limit.to_string();
         let response = self.get_with(&url, false, true, |req| {
-            req.query("searchCategoryType", "Plugin")
+            req.query("searchCategoryType", category)
                 .query("sortCategory", "Relevance")
                 .query("query", query)
                 .query("maxPageSize", &limit)

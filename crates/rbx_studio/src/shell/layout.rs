@@ -153,13 +153,16 @@ pub(crate) enum Panel {
     /// The pseudo-localization preview and string extraction
     /// (`shell::localization`), a beta. Shut until asked for.
     Localization,
+    /// Creator Store search and insert (`shell::toolbox`), Studio's
+    /// Toolbox. Shut until asked for.
+    Toolbox,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 21] = [
+    pub(crate) const ALL: [Panel; 22] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -181,6 +184,7 @@ impl Panel {
         Panel::Loren,
         Panel::AvatarSettings,
         Panel::Localization,
+        Panel::Toolbox,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged, also
@@ -193,7 +197,7 @@ impl Panel {
             | Panel::PluginWidgets
             | Panel::Layers
             | Panel::Bytecode => Edge::Right,
-            Panel::Properties | Panel::TerrainEditor => Edge::Left,
+            Panel::Properties | Panel::TerrainEditor | Panel::Toolbox => Edge::Left,
             Panel::Output
             | Panel::Viewport
             | Panel::Argon
@@ -236,6 +240,7 @@ impl Panel {
             Panel::Loren => "Loren",
             Panel::AvatarSettings => "Avatar Settings",
             Panel::Localization => "Localization",
+            Panel::Toolbox => "Toolbox",
         }
     }
 
@@ -257,6 +262,7 @@ impl Panel {
                 | Panel::Loren
                 | Panel::AvatarSettings
                 | Panel::Localization
+                | Panel::Toolbox
         )
     }
 

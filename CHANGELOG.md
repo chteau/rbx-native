@@ -2,6 +2,17 @@
 
 ## 2026-11-03
 
+- **Toolbox.** The ribbon's Toolbox tile (and View › Toolbox) opens a
+  Creator Store dock like Studio's: search Models, Meshes, Images, Audio or
+  Videos, an empty search lists the most popular, two-column cards with
+  thumbnails. Click one and it lands where Studio puts it, checked in real
+  Studio: on whatever's under the middle of the view (bottom of the
+  bounding box on the hit point), or 64 studs out if there's nothing
+  there, a model's own roots unwrapped, an image as a Decal on the face
+  you're looking at, selected, one undo step. Assets with scripts ask you
+  to review them and Cancel takes the asset back out. Search and
+  thumbnails need no key, the download uses your Open Cloud key like the
+  MCP `insert_asset` tool. (@chteau)
 - **Command Bar matches Studio's on a few more things.** Checked side by
   side with Studio's own command bar on the same place:
   `BindableFunction`/`RemoteFunction` `OnInvoke` can yield now (it failed
