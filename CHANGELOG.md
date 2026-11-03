@@ -2,6 +2,12 @@
 
 ## 2026-11-03
 
+- **Copy Properties / Paste Properties.** Right-click something in the
+  Explorer, Copy Properties, select other stuff, Paste Properties: every
+  value their class also has gets pasted in one undo step. Works across
+  places too, so you can carry a Lighting setup over. Position, scripts,
+  ids, refs, tags and attributes stay put. Real Studio never had this,
+  [the DevForum asked](https://devforum.roblox.com/t/copy-properties-from-object/224274). (@chteau)
 - **Cut-off binary files say so.** A `.rbxl`/`.rbxm` that ends partway
   through a chunk header used to fail with "input too short: expected at
   least 16 bytes, got 8", sizes from inside the chunk reader that say

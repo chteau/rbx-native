@@ -60,6 +60,7 @@ mod play;
 mod playtests;
 mod plugins;
 pub(crate) mod project;
+mod property_clipboard;
 mod property_element;
 mod quality;
 mod query_select;

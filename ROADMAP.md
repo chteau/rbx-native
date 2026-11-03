@@ -1517,6 +1517,18 @@ both the plain fetch failure and the silent fall back to a default
   `Instance:Clone()` does (the root itself is always copied, and the copy is
   always `Archivable`). Still open: the right-click **Paste Options** ⟩
   **Paste Into At Original Location** the docs mention.
+- [x] **Copy Properties / Paste Properties** on the Explorer's right-click
+  menu (`shell::property_clipboard`), which real Studio doesn't have
+  ([DevForum request](https://devforum.roblox.com/t/copy-properties-from-object/224274)).
+  Copy takes every saved value of the row's instance; Paste writes each one
+  the target's class also has (same type, different value) onto every
+  selected instance, as one undo step, and says in Output how many it
+  wrote. The copied set is app-wide, so Lighting copied in one place pastes
+  into another. Never copied: identity (`UniqueId`, `HistoryId`,
+  `SourceAssetId`), script code, `CFrame`/`WorldPivotData` (everything
+  would stack on the source), `Ref`s, and blobs with editors of their own
+  (tags, attributes, union and terrain data). Paste is greyed until
+  something copied applies to the selection.
 - [x] **Explorer export**: Save / Export rows on the Explorer row's
   right-click menu, named as Studio's own are (`creator-docs`):
   **Save to File…** writes the selection's subtrees as a model file,
