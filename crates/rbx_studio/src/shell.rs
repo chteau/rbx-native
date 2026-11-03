@@ -2233,6 +2233,7 @@ impl Render for Shell {
             .children(self.publish_result_overlay(cx))
             .children(self.command_palette(cx))
             .children(self.plugin_overlays(window, cx))
+            .children(crate::updater::toast(cx))
             .children(self.theme_background(true))
     }
 }
