@@ -165,3 +165,10 @@ fn the_delete_row_lays_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
     });
     assert!(f32::from(cut.height) < 44.);
 }
+
+#[test]
+fn only_a_row_with_children_offers_the_hierarchy_rows() {
+    let (dom, _, model, inside, _) = place();
+    assert!(availability(&dom, &database(), &[model], true, model).children);
+    assert!(!availability(&dom, &database(), &[inside], true, inside).children);
+}

@@ -232,6 +232,17 @@ pub(crate) fn spawn(lua: &Lua, func: Function, args: MultiValue) -> Result<()> {
     start_thread(lua, Value::Function(func), args).map(|_| ())
 }
 
+/// Queues `func(args…)` for the next tick, as `task.defer` does.
+pub(crate) fn defer(lua: &Lua, func: Function, args: MultiValue) -> Result<()> {
+    let (thread, args) = prepare(lua, Value::Function(func), args)?;
+    engine(lua)
+        .scheduler
+        .borrow_mut()
+        .deferred
+        .push_back((thread, args));
+    Ok(())
+}
+
 fn report(lua: &Lua, text: String) {
     engine(lua).host.output(LineKind::Error, text);
 }
@@ -352,8 +363,15 @@ pub(crate) fn sleep(lua: &Lua, seconds: f64) -> AwaitId {
     id
 }
 
+/// How many times one [`tick`] goes back to the deferred queue for what the
+/// threads it resumed deferred in turn, Roblox's re-entrancy depth for
+/// deferred events. A thread that keeps deferring itself waits for the
+/// next tick past that.
+const DEFER_ROUNDS: usize = 10;
+
 /// Resolves due timers, runs `task.delay` functions whose time came, then
-/// the deferred queue (only what was queued before this call).
+/// the deferred queue, as Roblox ends a resumption cycle: what those
+/// threads defer runs in the same tick, before any later wait is over.
 pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
     let engine = engine(lua);
     engine.host.set_now(now);
@@ -399,8 +417,19 @@ pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
             )?,
         }
     }
-    for (thread, args) in deferred {
-        resume(lua, thread, args)?;
+    let mut deferred = deferred;
+    for _ in 0..DEFER_ROUNDS {
+        if deferred.is_empty() {
+            break;
+        }
+        for (thread, args) in deferred {
+            resume(lua, thread, args)?;
+        }
+        deferred = engine.scheduler.borrow_mut().deferred.drain(..).collect();
+    }
+    let mut scheduler = engine.scheduler.borrow_mut();
+    for call in deferred.into_iter().rev() {
+        scheduler.deferred.push_front(call);
     }
     Ok(())
 }

@@ -64,6 +64,7 @@ actions!(
         MenuExportGltf,
         MenuExportProject,
         MenuExportClean,
+        MenuSaveAsTemplate,
         MenuSaveToRoblox,
         MenuPublishToRoblox,
         MenuLinkRobloxPlace,
@@ -117,6 +118,7 @@ actions!(
         MenuToggleViewport,
         MenuToggleCollaborators,
         MenuToggleInputActions,
+        MenuToggleToolbox,
         MenuToggleSecurityAudit,
         MenuRequireGraph,
         MenuTogglePlaytests,
@@ -222,6 +224,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         // and switches to it (see `shell::save`).
         MenuItem::action("Save to File", MenuSave),
         MenuItem::action("Save to File As…", MenuSaveToFile),
+        MenuItem::action("Save as Template\u{2026}", MenuSaveAsTemplate),
         MenuItem::action("Export as glTF…", MenuExportGltf),
         // A folder Argon or Rojo syncs from; File › Open reads one
         // back (a `*.project.json`).
@@ -310,6 +313,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                     // Team presence: who else is in the place, from Studio or
                     // rbx-native. Shut by default, so it needs a way in.
                     MenuItem::action("Collaborators", MenuToggleCollaborators),
+                    MenuItem::action("Toolbox", MenuToggleToolbox),
                     MenuItem::action("Input Actions", MenuToggleInputActions),
                     MenuItem::action("Security Audit", MenuToggleSecurityAudit),
                 ]

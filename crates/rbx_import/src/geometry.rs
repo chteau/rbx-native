@@ -17,6 +17,8 @@ pub struct SourceMesh {
     pub uvs: Vec<[f32; 2]>,
     /// Bones with a non-zero weight on each vertex; empty when unskinned.
     pub influences: Vec<u8>,
+    /// Names of the bones the mesh is skinned to; empty when unskinned.
+    pub bones: Vec<String>,
 }
 
 /// A texture the file uses, embedded or beside it.
@@ -83,6 +85,7 @@ fn read_obj(path: &Path) -> Result<SourceGeometry, String> {
             positions,
             uvs,
             influences: Vec::new(),
+            bones: Vec::new(),
         });
     }
     let dir = path.parent().unwrap_or(Path::new(""));

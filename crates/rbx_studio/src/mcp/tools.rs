@@ -23,7 +23,7 @@ use super::protocol::{Failure, INVALID_PARAMS};
 use super::Session;
 use datamodel::{datamodel_dom, edit_datamodel};
 
-pub(crate) use assets::{inserted, Insertion};
+pub(crate) use assets::{inserted, toolbox_fetch, Insertion};
 pub(crate) use edit::{apply as apply_edit, ScriptEdit};
 pub(crate) use studio::{LIST_STUDIOS, STUDIOS_KEY, STUDIO_STATE};
 

@@ -17,7 +17,10 @@ pub(super) fn member(
 ) -> Result<Option<Value>> {
     let is = |base: &str| ctx.database().is_subclass_of(class, base);
     if class == "Players" {
-        return crate::plugin::services::players_member(lua, key);
+        if let Some(value) = crate::plugin::services::players_member(lua, key)? {
+            return Ok(Some(value));
+        }
+        return crate::engine::edit::member(lua, class, key);
     }
     if is("GuiObject") {
         if let Some(fields) = tween_fields(key) {

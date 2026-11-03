@@ -342,16 +342,31 @@ impl Shell {
             part.into_any_element(),
             script.into_any_element(),
             self.insert_gui(cx).into_any_element(),
-            // The Creator Store catalog: other creators' assets can't be
-            // inserted through Roblox's public APIs (see `ROADMAP.md`), and
-            // nothing here lists the user's own assets to insert instead.
-            unavailable_tile(
-                "ribbon-toolbox",
-                IconName::Package,
-                "Toolbox",
-                "inserting other creators' assets needs Roblox's Toolbox",
-            )
-            .into_any_element(),
+            {
+                let showing = self.is_panel_showing(Panel::Toolbox);
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-toolbox",
+                    IconName::Package,
+                    "Toolbox",
+                    cx,
+                )
+                .when(showing, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Toolbox \u{2014} insert items from the Creator Store",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.set_panel_open(Panel::Toolbox, !showing, cx);
+                }))
+                .into_any_element()
+            },
         ]
     }
 

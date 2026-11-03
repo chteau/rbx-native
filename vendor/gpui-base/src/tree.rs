@@ -510,6 +510,51 @@ impl TreeState {
         self.toggle_expand(ix, cx);
         cx.notify();
     }
+
+    // rbx-native addition: opens or closes the item `id` and everything
+    // under it, for the Explorer's Expand All / Collapse All. A collapsed
+    // row's descendants are not entries, so the item is looked up through
+    // every entry's `children`.
+    pub fn set_subtree_expanded(
+        &mut self,
+        id: &SharedString,
+        expanded: bool,
+        cx: &mut Context<Self>,
+    ) {
+        fn find<'a>(item: &'a TreeItem, id: &SharedString) -> Option<&'a TreeItem> {
+            if item.id == *id {
+                return Some(item);
+            }
+            item.children.iter().find_map(|child| find(child, id))
+        }
+
+        fn apply(item: &TreeItem, expanded: bool) {
+            if item.is_folder() {
+                item.state.borrow_mut().expanded = expanded;
+            }
+            for child in &item.children {
+                apply(child, expanded);
+            }
+        }
+
+        let Some(target) = self
+            .entries
+            .iter()
+            .find_map(|entry| find(&entry.item, id))
+            .cloned()
+        else {
+            return;
+        };
+        apply(&target, expanded);
+        cx.emit(if expanded {
+            TreeEvent::Expanded(id.clone())
+        } else {
+            TreeEvent::Collapsed(id.clone())
+        });
+        self.right_clicked_ix = None;
+        self.rebuild_entries();
+        cx.notify();
+    }
 }
 
 impl Render for TreeState {

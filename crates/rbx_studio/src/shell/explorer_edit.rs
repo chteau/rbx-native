@@ -4,7 +4,8 @@
 //! Split into three submodules, each well inside this file's own ~400-line
 //! budget: [`picker`] (the class list the `+` opens, and the two insertion
 //! preferences beside its search field), [`menu`] (the right-click menu) and
-//! [`rename`] (the in-place name box). What lives here is only what all
+//! [`rename`] (the in-place name box), plus [`hierarchy`] (Copy Path and
+//! Expand/Collapse All). What lives here is only what all
 //! three share, the state they keep between frames, and where the two
 //! popups anchor.
 //!
@@ -28,6 +29,7 @@ use super::Shell;
 use crate::folder_colors::Rgb;
 use crate::tokens;
 
+pub(super) mod hierarchy;
 pub(super) mod menu;
 pub(super) mod picker;
 pub(super) mod rename;

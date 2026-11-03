@@ -12,6 +12,7 @@ mod recent_grid;
 mod recent_menu;
 mod recovered;
 mod sidebar;
+mod templates;
 
 use std::sync::Arc;
 
@@ -144,6 +145,7 @@ impl HomeWindow {
             .when(!picker, |this| this.child(disclaimer()))
             .children(menu)
             .children(dialog)
+            .children(crate::updater::toast(cx))
     }
 }
 
