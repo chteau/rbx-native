@@ -18,8 +18,14 @@ use std::path::{Path, PathBuf};
 use super::release::EXE_NAME;
 
 /// Where the files are unpacked, next to the install so every rename stays
-/// on one filesystem.
+/// on one filesystem: `<STAGING>-<pid>`, one per process, so a second copy
+/// of the editor starting up can't pull an in-flight update out from under
+/// the first.
 const STAGING: &str = ".rbxstudio-update";
+
+/// A staging folder untouched this long belongs to a process that died
+/// mid-update; a live download can't stall that long (see `updater::agent`).
+const STALE_STAGING: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
 
 /// `FLATPAK_ID` is set, or the sandbox's `/.flatpak-info` exists.
 pub(super) fn in_flatpak(id: Option<OsString>, info: &Path) -> bool {
@@ -96,7 +102,8 @@ impl Location {
     }
 
     /// What an earlier swap left: Windows' `rbxstudio.old.exe`, a bundle's
-    /// `.app.old`, an interrupted download's staging folder.
+    /// `.app.old`, an interrupted download's staging folder (only a stale
+    /// one, another running copy may own a fresh one).
     pub(super) fn clear_leftovers(&self) {
         match self {
             Location::Binary(exe) => {
@@ -106,7 +113,25 @@ impl Location {
                 let _ = fs::remove_dir_all(old_bundle(bundle));
             }
         }
-        let _ = fs::remove_dir_all(self.dir().join(STAGING));
+        clear_stale_staging(self.dir(), STALE_STAGING);
+    }
+}
+
+pub(super) fn clear_stale_staging(dir: &Path, older_than: std::time::Duration) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let ours = entry.file_name().to_string_lossy().starts_with(STAGING);
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age >= older_than);
+        if ours && stale {
+            let _ = fs::remove_dir_all(entry.path());
+        }
     }
 }
 
@@ -179,7 +204,8 @@ pub(super) fn swap_aside(new: &Path, current: &Path, old: &Path) -> std::io::Res
 }
 
 /// The first path under `dir` (breadth first, a few levels) that `wanted`
-/// accepts; a bundle's insides are not searched.
+/// accepts. A bundle is just a folder here, so a bare macOS binary can be
+/// fed the one inside a package's `.app`.
 fn find(dir: &Path, wanted: &dyn Fn(&Path) -> bool) -> Option<PathBuf> {
     let mut level = vec![dir.to_owned()];
     for _ in 0..4 {
@@ -229,7 +255,7 @@ pub(super) struct Staging(PathBuf);
 
 impl Staging {
     pub(super) fn new(dir: &Path) -> Result<Staging, String> {
-        let path = dir.join(STAGING);
+        let path = dir.join(format!("{STAGING}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).map_err(|error| format!("{}: {error}", path.display()))?;
         Ok(Staging(path))

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-03
+
+- **Updater hardening.** A download that stalls halfway can't hang the
+  check forever anymore (every request ends within 20 minutes, and a
+  package over 512 MiB is refused), Check now runs on its own thread
+  instead of holding a pool worker, and each running copy stages its
+  update in its own folder, so starting a second editor mid-download
+  doesn't wipe the first one's files (only stale leftovers get cleared).
+  The Settings switch and the background check can't clobber each other's
+  `updates.json` writes, and "What's new" only opens this repo's release
+  pages, since the release JSON isn't signed. (@chteau)
+
 ## 2026-11-02
 
 - **Auto-updates and a release workflow.** rbx-native updates itself now.
