@@ -2,6 +2,10 @@
 
 ## 2026-11-03
 
+- **A Command Bar run that changes nothing is no undo step.** Running a
+  `print` used to push an empty step, so the next Ctrl+Z did nothing and
+  the redo stack got wiped. A run now opens its step on its first change,
+  and one that only reads leaves the history alone. (@chteau)
 - **Input Actions: a new binding stays in its column.** Hitting + under
   Keyboard & Mouse, Gamepad or Touch used to drop the fresh binding into
   Other as "Unbound" since it has no key yet, so it looked like the click
