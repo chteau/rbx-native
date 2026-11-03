@@ -2,6 +2,14 @@
 
 ## 2026-11-03
 
+- **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in
+  the script toolbar) runs StyLua on the open script, no install needed,
+  as one undo step. It uses StyLua's own defaults with Luau syntax, so it
+  matches what a Rojo project's StyLua gives you. Code that doesn't parse
+  is left alone and the status bar says which line is wrong. (@chteau)
+- **Command Bar: Luau highlighting and formatting.** The bar now uses the
+  script editor's highlighting, and Shift+Alt+F formats what's in it
+  too. (@chteau)
 - **A Command Bar run that changes nothing is no undo step.** Running a
   `print` used to push an empty step, so the next Ctrl+Z did nothing and
   the redo stack got wiped. A run now opens its step on its first change,

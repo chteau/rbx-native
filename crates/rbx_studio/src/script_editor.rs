@@ -10,6 +10,7 @@
 //! closing and reopening a tab show what the DOM actually has.
 
 pub(crate) mod find;
+pub(crate) mod format;
 pub(crate) mod goto;
 pub(crate) mod graph;
 pub(crate) mod highlight;
@@ -56,6 +57,9 @@ pub(crate) struct ScriptEditor {
     pub(crate) open: HashMap<Ref, OpenScript>,
     /// The Alt+F / Ctrl+Shift+F overlay, while it is up.
     pub(crate) finder: Option<Finder>,
+    /// Why the last Format Document left a script alone; the status bar
+    /// shows it until that script next changes.
+    pub(crate) format_failure: Option<(Ref, String)>,
 }
 
 /// Which list the finder overlay shows.

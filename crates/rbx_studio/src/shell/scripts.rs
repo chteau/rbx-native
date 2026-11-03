@@ -286,6 +286,9 @@ impl Shell {
         };
         open.pending = true;
         open.generation = open.generation.wrapping_add(1);
+        if matches!(self.scripts.format_failure, Some((failed, _)) if failed == reference) {
+            self.scripts.format_failure = None;
+        }
         let generation = open.generation;
         self.follow_script_edit(reference, cx);
 

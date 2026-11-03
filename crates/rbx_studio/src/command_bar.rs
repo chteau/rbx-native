@@ -4,7 +4,9 @@
 //! It takes Studio's keys: Enter starts a new line (the field grows to
 //! [`MAX_ROWS`] lines, then scrolls), Ctrl+Enter runs, and Ctrl+Up/Down walk
 //! the history while plain Up/Down move between lines. The text stays after
-//! a run, so a command can be run again or tweaked.
+//! a run, so a command can be run again or tweaked. The field is the script
+//! editor's own code editor, without its gutter: the same Luau highlighting,
+//! and Shift+Alt+F formats it with StyLua (`script_editor::format`).
 //!
 //! Running a script is [`Shell`]'s job (see `shell::command_run`), because it
 //! is the one holding the DOM, the Explorer and the viewport; this module only
@@ -23,12 +25,13 @@ mod recall;
 pub(crate) mod stream;
 mod undo;
 
-use gpui_kit::component::input::{Textarea, TextareaState};
+use gpui_kit::component::input::{Editor, EditorState};
 use gpui_kit::component::Size;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use crate::script_editor::highlight;
 use crate::tokens;
 
 use recall::Recall;
@@ -79,26 +82,50 @@ fn first_line() -> Div {
 }
 
 pub(crate) struct CommandBar {
-    input: Entity<TextareaState>,
+    input: Entity<EditorState>,
     feedback: Feedback,
     recall: Recall,
+    /// Why the last Shift+Alt+F left the field alone, with the text it was
+    /// pressed on. Shown only while the field still holds that text, so the
+    /// first edit after it clears it with no subscription to keep.
+    format_failure: Option<(String, String)>,
 }
 
 impl CommandBar {
     pub(crate) fn new(window: &mut Window, cx: &mut App) -> Self {
         CommandBar {
             input: cx.new(|cx| {
-                TextareaState::new(window, cx)
-                    .auto_grow(1, MAX_ROWS)
-                    .placeholder(PLACEHOLDER)
+                let mut state = EditorState::new(window, cx)
+                    .language(highlight::LANGUAGE)
+                    .line_number(false)
+                    .indent_guides(false)
+                    .folding(false)
+                    // Ctrl+F belongs to the script editor; a find bar inside
+                    // a one-line field would have nowhere to go.
+                    .searchable(false)
+                    .placeholder(PLACEHOLDER);
+                state.set_highlighter_factory(highlight::factory(), cx);
+                state
             }),
             feedback: Feedback::default(),
             recall: Recall::default(),
+            format_failure: None,
         }
     }
 
-    pub(crate) fn input(&self) -> &Entity<TextareaState> {
+    pub(crate) fn input(&self) -> &Entity<EditorState> {
         &self.input
+    }
+
+    /// Remembers why formatting `text` failed, until the field changes.
+    pub(crate) fn set_format_failure(&mut self, text: String, message: String) {
+        self.format_failure = Some((text, message));
+    }
+
+    fn format_failure(&self, cx: &App) -> Option<SharedString> {
+        let (text, message) = self.format_failure.as_ref()?;
+        (self.input.read(cx).value().as_ref() == text.as_str())
+            .then(|| SharedString::from(message.clone()))
     }
 
     /// Remembers a submitted command for Ctrl+Up/Down.
@@ -138,16 +165,23 @@ impl CommandBar {
         output_collapsed: bool,
         cx: &App,
     ) -> impl IntoElement {
-        let handle = self.input.read(cx).focus_handle(cx);
-        let label = if self.feedback.shown_inline(output_collapsed) {
-            self.feedback.label()
-        } else {
-            SharedString::default()
-        };
-        let color = if self.feedback.is_error() {
-            tokens::text_error()
-        } else {
-            tokens::text_placeholder()
+        let input = self.input.read(cx);
+        let handle = input.focus_handle(cx);
+        // The editor has no auto-grow of its own: one row per line, up to
+        // `MAX_ROWS`, past which it scrolls.
+        let rows = (input.value().matches('\n').count() + 1).min(MAX_ROWS);
+        let failure = self.format_failure(cx);
+        let (label, color) = match failure {
+            Some(failure) => (failure, tokens::text_error()),
+            None if self.feedback.shown_inline(output_collapsed) => (
+                self.feedback.label(),
+                if self.feedback.is_error() {
+                    tokens::text_error()
+                } else {
+                    tokens::text_placeholder()
+                },
+            ),
+            None => (SharedString::default(), tokens::text_placeholder()),
         };
 
         v_flex()
@@ -192,8 +226,12 @@ impl CommandBar {
                     // centre the first line in the field's one-line height,
                     // where the prompt and the chip sit.
                     .child(
-                        Textarea::new(&self.input)
+                        Editor::new(&self.input)
                             .appearance(false)
+                            .bordered(false)
+                            // The rows plus the kit's own padding, which
+                            // the margins below take back.
+                            .h(tokens::line_md() * rows as f32 + Size::Medium.input_py() * 2.)
                             .font_family(tokens::font_mono())
                             .text_size(tokens::text_md())
                             .line_height(tokens::line_md())

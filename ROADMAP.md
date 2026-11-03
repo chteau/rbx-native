@@ -3476,7 +3476,7 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
 - [ ] 📋 **Insert parts anchored**: a Studio Settings switch that makes every
   inserted `Part`/`MeshPart` (ribbon tiles, Insert Object) start anchored
   ([Have parts anchored by default](https://devforum.roblox.com/t/have-parts-anchored-by-default-when-inserting-in-studio/347169)).
-- [ ] 📋 **Multi-line Command Bar**: Shift+Enter for a new line, the script
+- [x] **Multi-line Command Bar**: Enter for a new line, the script
   editor's highlighting, and Ctrl+Enter to run
   ([Multiple Lines in the Command Bar](https://devforum.roblox.com/t/multiple-lines-in-the-command-bar/233343),
   [too hard to edit multiline code](https://devforum.roblox.com/t/it-is-too-hard-to-edit-multiline-code-in-the-command-bar/3013101)).
@@ -3490,7 +3490,8 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   sessions; folding needs block extents from a parse, not the lexer the
   highlighter uses now
   ([Script Editor should save which folds are collapsed](https://devforum.roblox.com/t/script-editor-should-save-which-folds-are-collapsed-and-expa/31297)).
-- [ ] 📋 **Format Document with StyLua** in the script editor
+- [x] **Format Document with StyLua** in the script editor and the Command
+  Bar, StyLua built in (Shift+Alt+F)
   ([Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518)).
 - [ ] 📋 **An image's resolution** shown beside an image id in Properties and
   the asset tooltips

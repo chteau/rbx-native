@@ -31,6 +31,7 @@ mod edit;
 mod explorer_edit;
 mod export;
 mod folder_color;
+mod format;
 mod freeze;
 pub(crate) mod game;
 mod group;
@@ -2220,6 +2221,12 @@ impl Render for Shell {
                     .capture_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                         if let Some(older) = crate::command_bar::history_key(&event.keystroke) {
                             shell.walk_command_history(older, window, cx);
+                            cx.stop_propagation();
+                        } else if crate::shortcuts::pressed(
+                            crate::shortcuts::Command::FormatDocument,
+                            &event.keystroke,
+                        ) {
+                            shell.format_command_bar(window, cx);
                             cx.stop_propagation();
                         }
                     }))

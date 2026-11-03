@@ -119,6 +119,7 @@ commands! {
     FindAll, "find_all", "Find in All Scripts", Script, ["secondary-shift-f", "secondary-shift-h"];
     SelectNextMatch, "select_next_match", "Select Next Occurrence", Script, ["secondary-d"];
     SelectAllMatches, "select_all_matches", "Select All Occurrences", Script, ["shift-alt-l"];
+    FormatDocument, "format_document", "Format Document", Script, ["shift-alt-f"];
     DebugContinue, "debug_continue", "Start / Continue Debugging", Debug, ["f5"];
     DebugStop, "debug_stop", "Stop Debugging", Debug, ["shift-f5"];
     StepOver, "step_over", "Step Over", Debug, ["f10"];
