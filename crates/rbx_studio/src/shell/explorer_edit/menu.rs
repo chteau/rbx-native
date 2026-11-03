@@ -13,7 +13,10 @@
 //! (`clipboard::has_copyable`, `group::has_groupable`/`has_ungroupable`), so
 //! a row can never be clickable and do nothing. Play Animation is greyed
 //! unless the row is an `Animation` with a published AnimationId and a rig
-//! to play on.
+//! to play on. Copy Path and the Hierarchy rows (Select Children, Expand
+//! All, Collapse All) sit flat here, as Save/Export already does, where real
+//! Studio nests them under Copy As and Hierarchy; the last three are greyed
+//! on a row with no children.
 //!
 //! Rows are built here rather than through [`menu::item`] because Rename,
 //! Insert and Change Class need a `Window` the controlled dropdown's action type does not
@@ -61,6 +64,8 @@ pub(super) struct Availability {
     pub(super) export_mesh: bool,
     /// Some turned `MeshPart` whose rotation can be baked into its mesh.
     pub(super) freeze: bool,
+    /// Select Children, Expand All and Collapse All: the row has children.
+    pub(super) children: bool,
 }
 
 pub(super) fn availability(
@@ -82,6 +87,7 @@ pub(super) fn availability(
             .any(|&referent| change_class::changeable(dom, database, referent)),
         export_mesh: export::has_geometry(dom, database, selected),
         freeze: freeze::has_freezable(dom, database, selected),
+        children: super::hierarchy::has_listed_children(dom, target),
     }
 }
 
@@ -252,6 +258,13 @@ impl Shell {
                 |shell, _, cx| shell.copy_selected(cx),
             ),
             row(
+                "copy-path",
+                IconName::Link,
+                "Copy Path",
+                true,
+                |shell, _, cx| shell.copy_selected_paths(cx),
+            ),
+            row(
                 "duplicate",
                 IconName::CopyPlus,
                 "Duplicate",
@@ -285,6 +298,27 @@ impl Shell {
                 "Insert Object…",
                 true,
                 move |shell, window, cx| shell.open_insert_picker(target, window, cx),
+            ),
+            row(
+                "select-children",
+                IconName::ListTree,
+                "Select Children",
+                live.children,
+                move |shell, _, cx| shell.select_children_of(target, cx),
+            ),
+            row(
+                "expand-all",
+                IconName::ChevronsUpDown,
+                "Expand All",
+                live.children,
+                move |shell, _, cx| shell.set_subtree_expanded(target, true, cx),
+            ),
+            row(
+                "collapse-all",
+                IconName::ChevronsDownUp,
+                "Collapse All",
+                live.children,
+                move |shell, _, cx| shell.set_subtree_expanded(target, false, cx),
             ),
             row(
                 "change-class",

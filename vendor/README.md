@@ -37,6 +37,8 @@ the selection (`focused_ix`, with `focused_index`/`set_focused_index` and
 Explorer can move focus without selecting, as a multi-selecting tree must,
 and `set_selected_ids`/`is_selected` so every row of the caller's
 multi-selection reports itself selected (`aria_selected`).
+`TreeState::set_subtree_expanded` opens or closes a row and everything under
+it for the Explorer's Expand All / Collapse All.
 Selecting a row moves the cursor to it; the toolkit's own key handlers act
 on the cursor. All are marked
 "rbx-native addition"; the last is tested from `rbx_studio`
@@ -66,7 +68,7 @@ to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).
 
 To upgrade GPUI Kit: re-copy the matching `gpui-base` from
-`~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes, the tree changes (selection by id, the focus cursor) and the gutter slot, and bump the version.
+`~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes, the tree changes (selection by id, the focus cursor, the subtree expand) and the gutter slot, and bump the version.
 Delete this directory and the patch once upstream has an equivalent.
 
 And `src/occlusion.rs` (new, marked "rbx-native addition"): a per-window

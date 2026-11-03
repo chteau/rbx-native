@@ -1517,6 +1517,20 @@ both the plain fetch failure and the silent fall back to a default
   `Instance:Clone()` does (the root itself is always copied, and the copy is
   always `Archivable`). Still open: the right-click **Paste Options** ⟩
   **Paste Into At Original Location** the docs mention.
+- [x] **Copy Path, Select Children, Expand All and Collapse All** on the
+  Explorer's right-click menu, real Studio's Copy As › Copy Path and
+  Hierarchy rows, measured in Studio (2026-11-03) and laid flat like the
+  rest of this menu. Copy Path writes each selected instance's Luau path,
+  one per line: `game.Workspace.Baseplate`, a service by its name, a name
+  that is not an identifier in brackets (`game.Workspace["my part"]`).
+  Studio writes a keyword name bare (`game.Workspace.end`), which doesn't
+  parse, so keywords get brackets here. Expand All opens the row and
+  everything under it; Collapse All closes all of it, so the children come
+  back closed next time, as in Studio. Select Children selects the row's
+  children. Two DevForum threads asked for collapse all
+  ([1](https://devforum.roblox.com/t/ability-to-collapse-all-folds-in-explorer/69318),
+  [2](https://devforum.roblox.com/t/collapseexpand-all-on-selected-explorer-objects/78905))
+  and one for [copy path](https://devforum.roblox.com/t/ability-to-right-click-copy-path-of-an-instance/2839062).
 - [x] **Explorer export**: Save / Export rows on the Explorer row's
   right-click menu, named as Studio's own are (`creator-docs`):
   **Save to File…** writes the selection's subtrees as a model file,
