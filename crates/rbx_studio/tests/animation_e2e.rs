@@ -53,6 +53,7 @@ fn session(display: &str, dir: &Path, steps: &str) -> WeakDom {
         .env("DISPLAY", display)
         .env("XDG_CONFIG_HOME", dir.join("config"))
         .env_remove("RBX_API_KEY")
+        .env("RBX_NATIVE_KEYRING", "none")
         .env(
             "RBX_STUDIO_ANIMATION",
             format!("{steps},write={},quit", written.display()),

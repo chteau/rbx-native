@@ -2,6 +2,15 @@
 
 ## 2026-11-03
 
+- **Keyring stays out of tests.** `RBX_NATIVE_KEYRING` picks where
+  rbxstudio and rbxcloud keep credentials: `none` reads and writes nothing,
+  `file:<path>` keeps them in a scratch JSON file (0600) so a test can save
+  and read a key without going near the real keyring. Anything else also
+  means `none`, so a typo never lands on the real one, and test builds of
+  rbxstudio never use the OS keyring at all. The rbxstudio integration
+  tests set it, `RBX_NO_KEYRING=1` still works as the old spelling, and
+  rbxcloud plus the live probe share one lookup now, so the file store
+  works for them on every OS. (@chteau)
 - **UGC + import fixes from a review pass.** Check Item on an eyebrow or
   eyelash FBX/glTF stopped claiming RBX_Leader and RBX_Follower were
   missing: the file reader never passed bone names along, so every file
