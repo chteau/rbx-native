@@ -72,12 +72,12 @@ pub(in crate::shell) static SCRIPT_INSERTS: [Insert; 3] = [
     insert("Module Script", IconName::Package, "ModuleScript", None),
 ];
 
-/// Home/UI › UI's live inserts. `AdGui` sits between SurfaceGui and
-/// BillboardGui in the menu, greyed: it needs a Creator-Dashboard ad unit
-/// behind it that this editor cannot provision, so it is no command.
-pub(in crate::shell) static GUI_INSERTS: [Insert; 3] = [
+/// Home/UI › UI's inserts, in Studio's order. An `AdGui` only shows ads
+/// once the experience has an ad unit, but Studio inserts it all the same.
+pub(in crate::shell) static GUI_INSERTS: [Insert; 4] = [
     insert("ScreenGui", IconName::AppWindow, "ScreenGui", None),
     insert("SurfaceGui", IconName::Frame, "SurfaceGui", None),
+    insert("AdGui", IconName::Megaphone, "AdGui", None),
     insert("BillboardGui", IconName::Presentation, "BillboardGui", None),
 ];
 
