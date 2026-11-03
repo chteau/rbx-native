@@ -1236,6 +1236,11 @@ both the plain fetch failure and the silent fall back to a default
   the literal class `"Part"` to any `BasePart` subclass. One test per
   menu item asserts both the inserted instance's class and its resolved
   `ShapeKind`.
+- [x] No dead ribbon tiles: every tile either does what Studio's does or
+  isn't drawn. Team Test (dropped from Studio's new ribbon, and native
+  Team Create is off) and the UI tab's Anchor/Align/Auto Scale (never on
+  Studio's UI tab) are gone; the UI tab has Studio's Style Editor tile and
+  the UI insert menu's AdGui inserts one.
 - [x] A scriptable command line for `rbxstudio` itself (`cli.rs`):
   `--select <target>[,<target>...]` selects instances once the place is
   open, a target being either an Explorer path anchored at a root

@@ -285,6 +285,11 @@ impl Shell {
         cx.notify();
     }
 
+    /// Whether the Style Editor is what the centre column shows.
+    pub(super) fn stylesheet_shown(&self) -> bool {
+        self.document == Document::UiEditor && self.ui.tab == Tab::Stylesheet
+    }
+
     /// Whether the canvas is what the centre column shows.
     pub(super) fn ui_canvas_active(&self) -> bool {
         self.document == Document::UiEditor && self.ui.tab == Tab::Canvas

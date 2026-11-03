@@ -2,6 +2,13 @@
 
 ## 2026-11-03
 
+- **Ribbon: no more dead tiles Studio doesn't have.** Team Test is gone
+  from the Test tab (Studio's new ribbon dropped it too, and native Team
+  Create is off the table anyway), and the UI tab's greyed Anchor, Align
+  and Auto Scale are gone since Studio's UI tab never had them. The UI tab
+  gets Studio's Style Editor tile instead, lit while the Style Editor is
+  up. AdGui in the UI insert menu works now, Studio inserts one whether or
+  not the game has an ad unit yet. (@chteau)
 - **Toolbox.** The ribbon's Toolbox tile (and View › Toolbox) opens a
   Creator Store dock like Studio's: search Models, Meshes, Images, Audio or
   Videos, an empty search lists the most popular, two-column cards with
