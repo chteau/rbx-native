@@ -86,7 +86,7 @@ impl Page {
             Page::Viewport => "Rendering, camera and what the viewport draws on top of the scene.",
             Page::Dragger => "How parts move under the mouse. The same switches sit in the Viewport dock.",
             Page::ExplorerOutput => "Defaults for the Explorer tree and the Output log.",
-            Page::Files => "Recovery copies of unsaved work, and the copies Play will make.",
+            Page::Files => "Recovery copies of unsaved work, and the copies Play will make, and updates.",
             Page::Argon => "Live sync with an Argon project. The Argon dock shows the same settings.",
             Page::Account => "Your Roblox access and what RbxNative shares about you.",
             Page::Beta => "Try features before they\u{2019}re finished. Switch one off if it misbehaves.",

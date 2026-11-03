@@ -1,0 +1,2 @@
+# Signed test fixtures: a CRLF checkout on Windows would change the bytes and break the signature.
+crates/rbx_studio/src/updater/fixtures/** -text

@@ -164,6 +164,7 @@ mod tokens;
 mod transform;
 mod ui_canvas;
 mod update_planning;
+mod updater;
 mod viewport_frame;
 mod wally_client;
 mod workspace_view;
@@ -234,6 +235,9 @@ fn main() {
     }
     // Before anything can ask whether a beta feature is on.
     beta::init();
+    // Clears the last update's leftovers and starts the launch check, on its
+    // own thread: nothing here waits for the network.
+    updater::startup();
     // The downloaded-asset cache only grows otherwise. Off the main thread:
     // walking a large cache takes a moment, and nothing waits on it.
     std::thread::spawn(|| {
