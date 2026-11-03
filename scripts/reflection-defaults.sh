@@ -51,14 +51,18 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
   # CanSave), not `EmitterSize` and `xmlRead_MaxDistance_3`. The legacy names
   # stay aliases, so a file holding them still reads.
   def saved_as_own_name: {Sound: ["RollOffMinDistance", "RollOffMaxDistance"]};
+  # Old spellings Studio still loads that rbx-dom records as properties of
+  # their own: a MeshPart saved around 2016 holds its mesh as `MeshID`
+  # (the "Tree" by SheriffTaco on the Creator Store does), and Studio shows it.
+  def legacy_aliases: {MeshPart: {MeshID: "MeshId"}};
   {
     Source: ("rojo-rbx/rbx-dom@" + $rev),
     License: "MIT, Copyright (c) 2018-2025 The Rojo Developers",
     Version,
     Classes: (.Classes | with_entries(.key as $class | .value |= ({
-      Aliases: (.Properties
+      Aliases: ((.Properties
         | with_entries(select(.value.Kind.Alias))
-        | map_values(.Kind.Alias.AliasFor)),
+        | map_values(.Kind.Alias.AliasFor)) + (legacy_aliases[$class] // {})),
       # Each property an alias names that is never saved, so never loaded
       # either: `PackageId`, which only migrates to `PackageContent`. A
       # stored `PackageIdSerialize` reads as it, but keeps its own name.

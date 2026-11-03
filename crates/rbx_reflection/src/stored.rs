@@ -319,6 +319,17 @@ mod tests {
     }
 
     #[test]
+    fn a_2016_mesh_part_mesh_id_reads_as_mesh_id() {
+        let mesh = Variant::String("rbxassetid://580199124".to_owned());
+        let mut dom = one("MeshPart", &[("MeshID", mesh.clone())]);
+
+        database().normalize_spellings(&mut dom, [("MeshPart", "MeshID")]);
+
+        assert_eq!(keys(&dom), ["MeshId"]);
+        assert_eq!(dom.get(Ref::new(1)).unwrap().properties()["MeshId"], mesh);
+    }
+
+    #[test]
     fn named_spellings_are_renamed_and_others_left_alone() {
         let mut dom = one("Part", &[("Size", size()), ("Shape", Variant::Enum(0))]);
 

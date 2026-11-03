@@ -2,6 +2,11 @@
 
 ## 2026-11-03
 
+- **Old Creator Store models get their meshes back.** A MeshPart saved
+  around 2016 keeps its mesh under the old `MeshID` spelling, which Studio
+  still reads but we dropped, so models like the Toolbox's "Tree" came in
+  as plain boxes. `MeshID` now reads as `MeshId` when a place or model
+  loads. (@chteau)
 - **Input Actions: a new binding stays in its column.** Hitting + under
   Keyboard & Mouse, Gamepad or Touch used to drop the fresh binding into
   Other as "Unbound" since it has no key yet, so it looked like the click
