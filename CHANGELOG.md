@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-03
+
+- **UGC + import fixes from a review pass.** Check Item on an eyebrow or
+  eyelash FBX/glTF stopped claiming RBX_Leader and RBX_Follower were
+  missing: the file reader never passed bone names along, so every file
+  failed that check. It reads them from FBX skin clusters and glTF skins
+  now. An accessory with a dot in its name (`Coat.v2`) is named whole in
+  the cage message, and only the real Handle gets to keep attributes, not
+  a stray folder called Handle. Import 3D decimating a .glb whose first
+  buffer is an embedded data URI (no BIN chunk) no longer writes a broken
+  file, and a mesh decimation can't get under 20k says that instead of
+  blaming an ASCII FBX. (@chteau)
+
 ## 2026-11-02
 
 - **Flatpak.** `packaging/flatpak/` builds rbx-native as
