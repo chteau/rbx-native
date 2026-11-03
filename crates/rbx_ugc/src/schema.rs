@@ -71,14 +71,14 @@ pub fn check(root: &Node, asset: AssetType) -> Vec<Finding> {
     let item = root.name.as_str();
     let layered = asset.category() == Category::Layered;
     let mut stray = Vec::new();
-    let mut handle_seen = false;
+    let mut handle_node: Option<&Node> = None;
 
     for c in &root.children {
         let path = format!("{item}.{}", c.name);
         let is_handle = c.name == "Handle" && matches!(c.class.as_str(), "MeshPart" | "Part");
-        if is_handle && !handle_seen {
-            handle_seen = true;
-            handle(c, &path, asset, layered, &mut stray, &mut out);
+        if is_handle && handle_node.is_none() {
+            handle_node = Some(c);
+            handle(c, item, &path, asset, layered, &mut stray, &mut out);
         } else if c.class == "Configuration" && c.name == "ThumbnailConfiguration" {
             for (class, name) in [
                 ("ObjectValue", "ThumbnailCameraTarget"),
@@ -132,7 +132,7 @@ pub fn check(root: &Node, asset: AssetType) -> Vec<Finding> {
             tagged.push(path.to_string());
         }
         // Studio lets the Handle itself keep attributes.
-        if n.attributed && path != format!("{item}.Handle") {
+        if n.attributed && !handle_node.is_some_and(|h| std::ptr::eq(h, n)) {
             attributed.push(path.to_string());
         }
     });
@@ -161,6 +161,7 @@ pub fn check(root: &Node, asset: AssetType) -> Vec<Finding> {
 
 fn handle(
     h: &Node,
+    item: &str,
     path: &str,
     asset: AssetType,
     layered: bool,
@@ -198,7 +199,7 @@ fn handle(
             ("SpecialMesh", _) => h.class == "Part",
             ("WrapLayer", _) if layered && !wrap_seen => {
                 wrap_seen = true;
-                wrap(c, &at, asset, out);
+                wrap(c, item, &at, asset, out);
                 true
             }
             ("WrapLayer", _) if !layered => {
@@ -238,8 +239,7 @@ fn handle(
     }
 }
 
-fn wrap(w: &Node, path: &str, asset: AssetType, out: &mut Vec<Finding>) {
-    let item = path.split('.').next().unwrap_or(path);
+fn wrap(w: &Node, item: &str, path: &str, asset: AssetType, out: &mut Vec<Finding>) {
     if !w.reference_mesh {
         out.push(finding(
             Rule::Hsr,

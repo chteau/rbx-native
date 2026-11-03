@@ -62,8 +62,3 @@ rbx_cloud = { path = "../rbx_cloud" }
 ureq = "3"
 # tests/sober_config.rs: a scratch Sober config directory; already in the lock.
 tempfile = "3"
-
-# examples/live_probe.rs falls back to the key rbxstudio stored in the keyring.
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
-futures-lite = "2"

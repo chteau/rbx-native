@@ -49,7 +49,9 @@ fn a_gltf_counts_five_influences_across_both_weight_sets() {
         ],
         "meshes": [{"name": "Tri", "primitives": [{"attributes": {
             "POSITION": 0, "JOINTS_0": 1, "WEIGHTS_0": 2, "JOINTS_1": 3, "WEIGHTS_1": 4
-        }}]}]
+        }}]}],
+        "nodes": [{"mesh": 0, "skin": 0}, {"name": "RBX_Leader"}, {"name": "RBX_Follower"}],
+        "skins": [{"joints": [1, 2]}]
     });
     let dir = temp_dir("gltf");
     let file = dir.join("tri.gltf");
@@ -63,6 +65,7 @@ fn a_gltf_counts_five_influences_across_both_weight_sets() {
     assert_eq!(mesh.positions.len(), 3);
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.influences, [5, 1, 0]);
+    assert_eq!(mesh.bones, ["RBX_Leader", "RBX_Follower"]);
     assert!(mesh.uvs.is_empty());
 }
 
@@ -141,6 +144,96 @@ fn a_binary_fbx_names_the_mesh_after_its_model_and_fans_polygons() {
     assert_eq!(mesh.positions.len(), 4);
     assert_eq!(mesh.triangles, [[0, 1, 2], [0, 2, 3]]);
     assert!(mesh.influences.is_empty() && mesh.uvs.is_empty());
+}
+
+#[test]
+fn a_skinned_fbx_names_the_bones_its_clusters_bind() {
+    use fbxcel::low::FbxVersion;
+    use fbxcel::writer::v7400::binary::{FbxFooter, Writer};
+
+    let mut out = Vec::new();
+    let mut w = Writer::new(std::io::Cursor::new(&mut out), FbxVersion::V7_4).unwrap();
+    w.new_node("Objects").unwrap();
+    {
+        let mut attrs = w.new_node("Geometry").unwrap();
+        attrs.append_i64(1).unwrap();
+        attrs.append_string_direct("Tri\0\u{1}Geometry").unwrap();
+    }
+    {
+        let mut attrs = w.new_node("Vertices").unwrap();
+        attrs
+            .append_arr_f64_from_iter(None, [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+            .unwrap();
+    }
+    w.close_node().unwrap();
+    {
+        let mut attrs = w.new_node("PolygonVertexIndex").unwrap();
+        attrs.append_arr_i32_from_iter(None, [0, 1, !2]).unwrap();
+    }
+    w.close_node().unwrap();
+    w.close_node().unwrap();
+    {
+        let mut attrs = w.new_node("Deformer").unwrap();
+        attrs.append_i64(3).unwrap();
+        attrs.append_string_direct("\0\u{1}Deformer").unwrap();
+        attrs.append_string_direct("Skin").unwrap();
+    }
+    w.close_node().unwrap();
+    for (id, bone, vertex) in [(4, 6, 0), (5, 7, 1)] {
+        {
+            let mut attrs = w.new_node("Deformer").unwrap();
+            attrs.append_i64(id).unwrap();
+            attrs.append_string_direct("\0\u{1}SubDeformer").unwrap();
+            attrs.append_string_direct("Cluster").unwrap();
+        }
+        {
+            let mut attrs = w.new_node("Indexes").unwrap();
+            attrs.append_arr_i32_from_iter(None, [vertex]).unwrap();
+        }
+        w.close_node().unwrap();
+        {
+            let mut attrs = w.new_node("Weights").unwrap();
+            attrs.append_arr_f64_from_iter(None, [1.0]).unwrap();
+        }
+        w.close_node().unwrap();
+        w.close_node().unwrap();
+        let name = if bone == 6 {
+            "RBX_Leader"
+        } else {
+            "RBX_Follower"
+        };
+        {
+            let mut attrs = w.new_node("Model").unwrap();
+            attrs.append_i64(bone).unwrap();
+            attrs
+                .append_string_direct(&format!("{name}\0\u{1}Model"))
+                .unwrap();
+        }
+        w.close_node().unwrap();
+    }
+    w.close_node().unwrap();
+    w.new_node("Connections").unwrap();
+    for (child, parent) in [(3, 1), (4, 3), (5, 3), (6, 4), (7, 5)] {
+        {
+            let mut attrs = w.new_node("C").unwrap();
+            attrs.append_string_direct("OO").unwrap();
+            attrs.append_i64(child).unwrap();
+            attrs.append_i64(parent).unwrap();
+        }
+        w.close_node().unwrap();
+    }
+    w.close_node().unwrap();
+    w.finalize_and_flush(&FbxFooter::default()).unwrap();
+
+    let dir = temp_dir("fbx_skin");
+    let file = dir.join("tri.fbx");
+    std::fs::write(&file, out).unwrap();
+    let geometry = read_geometry(&file).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+
+    let mesh = &geometry.meshes[0];
+    assert_eq!(mesh.influences, [1, 1, 0]);
+    assert_eq!(mesh.bones, ["RBX_Leader", "RBX_Follower"]);
 }
 
 #[test]

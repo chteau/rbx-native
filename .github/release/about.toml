@@ -1,0 +1,30 @@
+# cargo-about's config for THIRD-PARTY-LICENSES.html, the notices for every
+# crate compiled into rbxstudio (release.yml generates it into each package).
+# The programs build.rs embeds are in THIRD-PARTY-EMBEDDED.txt instead.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Every license in the tree (cargo metadata), most permissive first. MPL-2.0
+# is file-level copyleft: those crates ship unmodified from crates.io.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "NCSA",
+    "bzip2-1.0.6",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+]
