@@ -27,6 +27,17 @@ pub(super) const EXE_NAME: &str = if cfg!(windows) {
     "rbxstudio"
 };
 
+/// The release's page, for the toast's "What's new" link. The release JSON
+/// isn't signed, so anything off this repo's GitHub pages is replaced by
+/// the releases list rather than opened.
+pub(super) fn notes_page(html_url: &str) -> String {
+    let releases = format!("https://github.com/{REPO}/releases");
+    match html_url.strip_prefix(&releases) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => html_url.to_owned(),
+        _ => releases,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct Release {
     pub(super) tag_name: String,

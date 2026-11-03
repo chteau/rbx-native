@@ -137,6 +137,10 @@ impl Prefs {
     }
 
     fn update(change: impl FnOnce(&mut Prefs)) -> Result<(), String> {
+        // The Settings switch and the background check both write here, so
+        // the read-change-write must not interleave.
+        static WRITING: Mutex<()> = Mutex::new(());
+        let _writing = WRITING.lock().unwrap_or_else(|e| e.into_inner());
         let mut prefs = Self::load();
         change(&mut prefs);
         let path = Self::path().ok_or("no config folder")?;
@@ -228,6 +232,11 @@ pub(crate) fn startup() {
 
 /// Starts a check unless one is already running (`false` then). The check
 /// itself is [`finish`], on a background thread.
+/// Whether a check started by [`begin`] hasn't finished yet.
+pub(crate) fn running() -> bool {
+    RUNNING.load(Ordering::SeqCst)
+}
+
 pub(crate) fn begin() -> bool {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return false;
@@ -293,18 +302,25 @@ fn run() -> Result<Status, String> {
     Prefs::update(|prefs| {
         prefs.installed = Some(Installed {
             version: version.to_string(),
-            notes: latest.html_url.clone(),
+            notes: release::notes_page(&latest.html_url),
         })
     })?;
     eprintln!("rbxstudio: v{version} is installed and runs from the next launch");
     Ok(Status::Installed(version))
 }
 
+/// A package bigger than this is not ours, whatever the server says.
+const MAX_PACKAGE: u64 = 512 << 20;
+
+/// Every request, the package download included, ends within
+/// `timeout_global`: a connection that stalls mid-body would otherwise hold
+/// the check (and its "Checking…" row) for the rest of the session.
 fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .user_agent(concat!("rbxstudio/", env!("CARGO_PKG_VERSION")))
         .timeout_connect(Some(Duration::from_secs(10)))
         .timeout_recv_response(Some(Duration::from_secs(30)))
+        .timeout_global(Some(Duration::from_secs(20 * 60)))
         .build()
         .into()
 }
@@ -331,10 +347,15 @@ fn download(agent: &ureq::Agent, url: &str, path: &Path) -> Result<String, Strin
     let mut file = std::fs::File::create(path).map_err(|e| failed(&e))?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0; 64 * 1024];
+    let mut total = 0u64;
     loop {
         let read = reader.read(&mut buffer).map_err(|e| failed(&e))?;
         if read == 0 {
             break;
+        }
+        total += read as u64;
+        if total > MAX_PACKAGE {
+            return Err(failed(&format!("bigger than {} MiB", MAX_PACKAGE >> 20)));
         }
         hasher.update(&buffer[..read]);
         file.write_all(&buffer[..read]).map_err(|e| failed(&e))?;
