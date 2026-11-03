@@ -38,7 +38,9 @@ use rbx_dom::WeakDom;
 
 use crate::properties::Properties;
 
-pub(crate) use tools::{apply_edit, image_content, inserted, text_content, Insertion, ScriptEdit};
+pub(crate) use tools::{
+    apply_edit, image_content, inserted, text_content, toolbox_fetch, Insertion, ScriptEdit,
+};
 
 /// The command-line flag that turns `rbxstudio` into the [`bridge`].
 pub(crate) const BRIDGE_FLAG: &str = "--mcp";

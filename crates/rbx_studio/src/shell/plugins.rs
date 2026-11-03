@@ -10,6 +10,7 @@
 //! opening a script, debugger control) and UI changes.
 
 mod catalog;
+pub(super) use catalog::{store_client, store_icons};
 mod debugger_bridge;
 mod discover;
 mod float;

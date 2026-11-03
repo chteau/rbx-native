@@ -18,7 +18,7 @@
 mod build;
 
 pub(super) use build::build;
-use build::{holds_package_link, missing};
+use build::{holds_package_link, missing, read_model};
 
 use rbx_cloud::{AssetContent, Client, CloudError, KeyedRefusal};
 use rbx_dom::attributes::encode_tags;
@@ -190,6 +190,31 @@ fn fetch(
         parent_warning: None,
         guid,
     })
+}
+
+/// What the Toolbox inserts for `asset_id`, with the asset's name. A model
+/// asset's own roots, unwrapped: Studio's Toolbox drops them in as they are
+/// (a MeshPart asset lands as the MeshPart, a model keeps its own name),
+/// unlike `insert_asset`, which wraps them in a `Model` named after the
+/// asset the way `InsertService:LoadAsset` does. Any other kind becomes the
+/// instance `insert_asset` makes for it.
+pub(crate) fn toolbox_fetch(asset_id: u64) -> Result<(WeakDom, String), String> {
+    // Search works keyless, but the download route answers 401 without a key.
+    let client = client().map_err(|_| {
+        "Inserting needs an Open Cloud API key: add one from Home \u{203a} Manage key.".to_owned()
+    })?;
+    let content = client
+        .asset(asset_id)
+        .map_err(|err| refused(asset_id, &err))?;
+    let (_, kind) = Kind::of(&content, None).ok_or_else(|| unsupported(asset_id, &content))?;
+    let name = display_name(&client, asset_id, kind);
+    let dom = match kind {
+        Kind::Model => {
+            read_model(&content.bytes).map_err(|err| format!("asset {asset_id}: {err}"))?
+        }
+        _ => build(asset_id, kind, &content.bytes, &name)?,
+    };
+    Ok((dom, name))
 }
 
 fn tag(guid: &str) -> String {

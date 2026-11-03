@@ -27,6 +27,7 @@ mod games;
 pub mod heartbeats;
 mod introspect;
 mod inventory;
+pub mod keyring;
 mod new_experience;
 mod parallel;
 mod places;
@@ -43,7 +44,7 @@ mod universes;
 mod version_history;
 mod web;
 
-pub use api_key::{keyring_disabled, ApiKey};
+pub use api_key::ApiKey;
 pub use archive::{archived_experiences, set_experience_archived};
 pub use asset_metadata::AssetMetadata;
 pub use assets::AssetContent;

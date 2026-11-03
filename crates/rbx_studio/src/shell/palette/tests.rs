@@ -193,8 +193,7 @@ fn every_live_ribbon_command_is_a_row() {
         sphere.run,
         Run::Ribbon(RibbonCommand::Insert(item)) if item.class == "Part" && item.shape.is_some()
     ));
-    // AdGui is greyed in the ribbon, so it is no command.
-    assert!(commands.iter().all(|command| command.label != "UI: AdGui"));
+    assert!(commands.iter().any(|command| command.label == "UI: AdGui"));
 }
 
 #[test]
@@ -257,6 +256,7 @@ fn focus_moves_into_every_dock_that_can_hold_it() {
             (Panel::Loren, None),
             (Panel::AvatarSettings, None),
             (Panel::Localization, None),
+            (Panel::Toolbox, Some(Entry::ToolboxSearch)),
         ]
     );
 }

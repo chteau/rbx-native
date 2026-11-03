@@ -79,6 +79,17 @@ impl Firing<'_> {
                 &[Arg::Instance(referent), parent.clone()],
             )?;
         }
+        // A value object's `Changed` fires for its `Value` only.
+        let value_object = {
+            let ctx = engine(self.lua).ctx.clone();
+            let dom = ctx.dom();
+            dom.get(referent)
+                .is_some_and(|i| ctx.database().is_subclass_of(i.class(), "ValueBase"))
+        };
+        if !value_object {
+            self.emit(referent, "Changed", &[Arg::String("Parent".into())])?;
+        }
+        self.emit(referent, "Changed:Parent", &[])?;
         let child = [Arg::Instance(referent)];
         if let Some(old) = old {
             self.emit(old, "ChildRemoved", &child)?;
@@ -175,7 +186,8 @@ impl Firing<'_> {
 /// nothing, every attribute name present fires); `Parent` → the child's
 /// `AncestryChanged(child, parent)` (and its descendants'), the old
 /// parent's `ChildRemoved`, the new one's `ChildAdded`, and
-/// `DescendantRemoving`/`DescendantAdded` up both ancestor chains;
+/// `DescendantRemoving`/`DescendantAdded` up both ancestor chains, and
+/// `Changed("Parent")`/`Changed:Parent` on the child;
 /// `Added` with a parent and no later `Parent` change → as a `Parent`
 /// change from nil; `Removed` →
 /// `Destroying` on the instance. Only connected signals cost anything.

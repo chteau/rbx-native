@@ -64,19 +64,30 @@ impl Report {
         self.meshes.iter().filter(|m| m.triangles > TRIANGLE_LIMIT)
     }
 
-    /// Why the upload should not go ahead, or `None`. Every other format is
-    /// decimated under the limit, so only an ASCII FBX can be refused.
+    /// Why the upload should not go ahead, or `None`: an ASCII FBX, which
+    /// is never decimated, or a mesh decimation could not bring under the
+    /// limit (thousands of tiny pieces each kept at one triangle or more).
     pub fn refusal(&self) -> Option<String> {
-        let over: Vec<String> = self
-            .over_budget()
+        let over: Vec<&MeshInfo> = self.over_budget().collect();
+        if over.is_empty() {
+            return None;
+        }
+        let names: Vec<String> = over
+            .iter()
             .map(|m| format!("{} ({} triangles)", m.name, m.triangles))
             .collect();
-        (!over.is_empty()).then(|| {
-            format!(
-                "Roblox meshes can\u{2019}t exceed {TRIANGLE_LIMIT} triangles: {}. An ASCII FBX can\u{2019}t be decimated on import: export it as binary FBX or glTF and import again.",
-                over.join(", ")
-            )
-        })
+        let tried = over
+            .iter()
+            .any(|m| self.decimated.iter().any(|d| d.name == m.name));
+        let why = if tried {
+            "Decimating on import still left it over: split it into fewer, bigger pieces or reduce it before exporting, and import again."
+        } else {
+            "An ASCII FBX can\u{2019}t be decimated on import: export it as binary FBX or glTF and import again."
+        };
+        Some(format!(
+            "Roblox meshes can\u{2019}t exceed {TRIANGLE_LIMIT} triangles: {}. {why}",
+            names.join(", ")
+        ))
     }
 
     /// What decimation did, as a sentence, or `None`.

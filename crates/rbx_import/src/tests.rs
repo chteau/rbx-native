@@ -235,13 +235,16 @@ fn glb_of(doc: &Value, bin: &[u8]) -> Vec<u8> {
     }
     let mut out = b"glTF".to_vec();
     out.extend(2u32.to_le_bytes());
-    out.extend(((12 + 8 + json.len() + 8 + bin.len()) as u32).to_le_bytes());
+    let bin_chunk = if bin.is_empty() { 0 } else { 8 + bin.len() };
+    out.extend(((12 + 8 + json.len() + bin_chunk) as u32).to_le_bytes());
     out.extend((json.len() as u32).to_le_bytes());
     out.extend(b"JSON");
     out.extend(&json);
-    out.extend((bin.len() as u32).to_le_bytes());
-    out.extend(b"BIN\0");
-    out.extend(&bin);
+    if !bin.is_empty() {
+        out.extend((bin.len() as u32).to_le_bytes());
+        out.extend(b"BIN\0");
+        out.extend(&bin);
+    }
     out
 }
 
@@ -270,6 +273,37 @@ fn a_dense_glb_is_decimated_and_keeps_its_uvs() {
     let glb = glb_of(&doc, &bin);
     let (report, upload) = prepare_bytes(Format::Glb, "ball", glb, None).unwrap();
     assert_decimated_sphere(&report, &upload.bytes);
+}
+
+#[test]
+fn a_glb_with_an_embedded_uri_buffer_and_no_binary_chunk_is_decimated() {
+    let (mut doc, bin) = sphere_gltf(105, 101);
+    let data = base64::engine::general_purpose::STANDARD.encode(&bin);
+    doc["buffers"][0]["uri"] = format!("data:application/octet-stream;base64,{data}").into();
+    let glb = glb_of(&doc, &[]);
+    let (report, upload) = prepare_bytes(Format::Glb, "ball", glb, None).unwrap();
+    assert_decimated_sphere(&report, &upload.bytes);
+}
+
+#[test]
+fn a_mesh_decimation_could_not_shrink_is_not_blamed_on_ascii_fbx() {
+    let report = Report {
+        meshes: vec![MeshInfo {
+            name: "dust".into(),
+            triangles: 30_000,
+        }],
+        decimated: vec![Decimated {
+            name: "dust".into(),
+            from: 30_000,
+            to: 30_000,
+        }],
+        ..Report::default()
+    };
+    let refusal = report.refusal().unwrap();
+    assert!(
+        refusal.contains("still left it over") && !refusal.contains("ASCII"),
+        "{refusal}"
+    );
 }
 
 #[test]

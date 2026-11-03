@@ -341,3 +341,39 @@ fn prefs_default_to_automatic() {
     let off: Prefs = serde_json::from_str(r#"{"automatic":false}"#).unwrap();
     assert!(!off.automatic);
 }
+
+#[test]
+fn a_fresh_staging_folder_survives_another_copys_launch() {
+    let dir = scratch("staging");
+    let exe = dir.join("rbxstudio");
+    fs::write(&exe, "old").unwrap();
+    let ours = install::Staging::new(&dir).unwrap();
+    let theirs = dir.join(".rbxstudio-update-1");
+    fs::create_dir_all(&theirs).unwrap();
+    assert!(ours
+        .path()
+        .ends_with(format!(".rbxstudio-update-{}", std::process::id())));
+
+    Location::of(&exe).clear_leftovers();
+    assert!(ours.path().exists() && theirs.exists());
+
+    install::clear_stale_staging(&dir, std::time::Duration::ZERO);
+    assert!(!ours.path().exists() && !theirs.exists());
+    assert!(exe.exists());
+    drop(ours);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn only_this_repos_release_pages_are_opened() {
+    let page = "https://github.com/chteau/rbx-native/releases/tag/v0.3.0";
+    assert_eq!(release::notes_page(page), page);
+    let list = "https://github.com/chteau/rbx-native/releases";
+    for bad in [
+        "https://evil.example/",
+        "https://github.com/chteau/rbx-native/releases.evil.example/x",
+        "file:///etc/passwd",
+    ] {
+        assert_eq!(release::notes_page(bad), list);
+    }
+}

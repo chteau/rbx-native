@@ -15,6 +15,9 @@
 //! visibly disabled with a tooltip saying so, rather than vanishing,
 //! seeing the shape of what belongs here is worth more than a shorter
 //! ribbon, and it's the same rule `menu_bar`'s greyed items already follow.
+//! What Studio's own ribbon doesn't show (Team Test, the UI tab's Anchor,
+//! Align and Auto Scale) isn't drawn at all: a greyed tile there would only
+//! promise something that isn't coming.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{h_flex, v_flex, Icon};
@@ -176,31 +179,7 @@ impl Shell {
             }
             Tab::Ui => vec![
                 vec![self.insert_gui(cx).into_any_element()],
-                vec![
-                    unavailable_tile(
-                        "ribbon-ui-anchor",
-                        IconName::Anchor,
-                        "Anchor",
-                        "setting AnchorPoint from the ribbon isn't built; edit it in Properties",
-                    )
-                    .into_any_element(),
-                    // The Align tool moves parts by `CFrame`; a GuiObject has
-                    // `Position` and `Size` instead, which it doesn't write.
-                    unavailable_tile(
-                        "ribbon-ui-align",
-                        IconName::AlignHorizontalJustifyCenter,
-                        "Align",
-                        "the Align tool moves parts, not GUI objects",
-                    )
-                    .into_any_element(),
-                    unavailable_tile(
-                        "ribbon-ui-auto-scale",
-                        IconName::Scaling,
-                        "Auto Scale",
-                        "converting Offset sizes to Scale isn't built",
-                    )
-                    .into_any_element(),
-                ],
+                vec![self.style_editor_tile(cx)],
             ],
             Tab::Script => vec![self.script_tiles(cx)],
             Tab::Model => vec![
@@ -363,16 +342,31 @@ impl Shell {
             part.into_any_element(),
             script.into_any_element(),
             self.insert_gui(cx).into_any_element(),
-            // The Creator Store catalog: other creators' assets can't be
-            // inserted through Roblox's public APIs (see `ROADMAP.md`), and
-            // nothing here lists the user's own assets to insert instead.
-            unavailable_tile(
-                "ribbon-toolbox",
-                IconName::Package,
-                "Toolbox",
-                "inserting other creators' assets needs Roblox's Toolbox",
-            )
-            .into_any_element(),
+            {
+                let showing = self.is_panel_showing(Panel::Toolbox);
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-toolbox",
+                    IconName::Package,
+                    "Toolbox",
+                    cx,
+                )
+                .when(showing, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Toolbox \u{2014} insert items from the Creator Store",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.set_panel_open(Panel::Toolbox, !showing, cx);
+                }))
+                .into_any_element()
+            },
         ]
     }
 
@@ -721,6 +715,32 @@ impl Shell {
             .collect()
     }
 
+    /// The UI tab's Style Editor, as in Studio: the UI Editor on its
+    /// Stylesheet sub-tab, lit while that is up.
+    fn style_editor_tile(&self, cx: &mut Context<Self>) -> AnyElement {
+        let shown = self.stylesheet_shown();
+        tile(
+            &self.ribbon_nav,
+            "ribbon-style-editor",
+            IconName::Palette,
+            "Style Editor",
+            cx,
+        )
+        .when(shown, |this| {
+            this.bg(tokens::accent_soft())
+                .text_color(tokens::check_on())
+        })
+        .tooltip(|window, cx| {
+            super::tooltip::text(
+                "Style Editor \u{2014} the place's style sheets and rules",
+                window,
+                cx,
+            )
+        })
+        .on_click(cx.listener(|shell, _, _, cx| shell.reveal_style_editor(cx)))
+        .into_any_element()
+    }
+
     fn insert_gui(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
         menu::dropdown_in_group(
             self,
@@ -735,11 +755,8 @@ impl Shell {
             vec![
                 insert_item(&GUI_INSERTS[0]),
                 insert_item(&GUI_INSERTS[1]),
-                // Roblox's own ad surface: it needs a Creator-Dashboard ad
-                // unit behind it to mean anything, which this editor has no
-                // way to provision.
-                menu::item("AdGui").icon(IconName::Megaphone).disabled(),
                 insert_item(&GUI_INSERTS[2]),
+                insert_item(&GUI_INSERTS[3]),
             ],
             cx,
         )
@@ -998,13 +1015,6 @@ impl Shell {
             self.view_tile(cx).into_any_element(),
             self.network_tile(cx),
             self.device_tile(cx),
-            unavailable_tile(
-                "ribbon-team",
-                IconName::Users,
-                "Team Test",
-                "it needs Roblox's Team Create servers",
-            )
-            .into_any_element(),
             self.controller_tile(cx).into_any_element(),
         ];
         tiles.extend(self.stats_readout().map(IntoElement::into_any_element));

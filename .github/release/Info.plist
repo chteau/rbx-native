@@ -8,6 +8,8 @@
 	<string>RbxNative</string>
 	<key>CFBundleExecutable</key>
 	<string>rbxstudio</string>
+	<key>CFBundleIconFile</key>
+	<string>RbxNative</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.chteau.rbx-native.Editor</string>
 	<key>CFBundleInfoDictionaryVersion</key>

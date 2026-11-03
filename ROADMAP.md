@@ -1236,6 +1236,11 @@ both the plain fetch failure and the silent fall back to a default
   the literal class `"Part"` to any `BasePart` subclass. One test per
   menu item asserts both the inserted instance's class and its resolved
   `ShapeKind`.
+- [x] No dead ribbon tiles: every tile either does what Studio's does or
+  isn't drawn. Team Test (dropped from Studio's new ribbon, and native
+  Team Create is off) and the UI tab's Anchor/Align/Auto Scale (never on
+  Studio's UI tab) are gone; the UI tab has Studio's Style Editor tile and
+  the UI insert menu's AdGui inserts one.
 - [x] A scriptable command line for `rbxstudio` itself (`cli.rs`):
   `--select <target>[,<target>...]` selects instances once the place is
   open, a target being either an Explorer path anchored at a root
@@ -1517,6 +1522,32 @@ both the plain fetch failure and the silent fall back to a default
   `Instance:Clone()` does (the root itself is always copied, and the copy is
   always `Archivable`). Still open: the right-click **Paste Options** ⟩
   **Paste Into At Original Location** the docs mention.
+- [x] **Copy Path, Select Children, Expand All and Collapse All** on the
+  Explorer's right-click menu, real Studio's Copy As › Copy Path and
+  Hierarchy rows, measured in Studio (2026-11-03) and laid flat like the
+  rest of this menu. Copy Path writes each selected instance's Luau path,
+  one per line: `game.Workspace.Baseplate`, a service by its name, a name
+  that is not an identifier in brackets (`game.Workspace["my part"]`).
+  Studio writes a keyword name bare (`game.Workspace.end`), which doesn't
+  parse, so keywords get brackets here. Expand All opens the row and
+  everything under it; Collapse All closes all of it, so the children come
+  back closed next time, as in Studio. Select Children selects the row's
+  children. Two DevForum threads asked for collapse all
+  ([1](https://devforum.roblox.com/t/ability-to-collapse-all-folds-in-explorer/69318),
+  [2](https://devforum.roblox.com/t/collapseexpand-all-on-selected-explorer-objects/78905))
+  and one for [copy path](https://devforum.roblox.com/t/ability-to-right-click-copy-path-of-an-instance/2839062).
+- [x] **Copy Properties / Paste Properties** on the Explorer's right-click
+  menu (`shell::property_clipboard`), which real Studio doesn't have
+  ([DevForum request](https://devforum.roblox.com/t/copy-properties-from-object/224274)).
+  Copy takes every saved value of the row's instance; Paste writes each one
+  the target's class also has (same type, different value) onto every
+  selected instance, as one undo step, and says in Output how many it
+  wrote. The copied set is app-wide, so Lighting copied in one place pastes
+  into another. Never copied: identity (`UniqueId`, `HistoryId`,
+  `SourceAssetId`), script code, `CFrame`/`WorldPivotData` (everything
+  would stack on the source), `Ref`s, and blobs with editors of their own
+  (tags, attributes, union and terrain data). Paste is greyed until
+  something copied applies to the selection.
 - [x] **Explorer export**: Save / Export rows on the Explorer row's
   right-click menu, named as Studio's own are (`creator-docs`):
   **Save to File…** writes the selection's subtrees as a model file,
@@ -2716,6 +2747,16 @@ both the plain fetch failure and the silent fall back to a default
   the editor on the same place. Live co-editing and the MCP server ship behind
   switches; `RBX_STUDIO_BETA_SAMPLE=1` also lists a sample
   feature to try the page.
+- [x] **Your own templates on Home's New row.** File › Save as Template…
+  asks for a name (the place's own, to start with) and writes the place as
+  it is, open scripts' unsaved text included, to
+  `<config>/place_templates/<name>.rbxl`, with a 256×256 shot of the
+  viewport beside it as `<name>.png` (if the viewport doesn't answer in
+  10 s it saves without one and says so in Output). Home's New row lists them after the built-in ones;
+  clicking one copies it into `places/` as a new place and opens it, and
+  right-click asks before deleting it. Real Studio never got this
+  ([DevForum request](https://devforum.roblox.com/t/allow-developers-to-save-places-as-studio-templates/241595)).
+  A `.rbxl` dropped in that folder by hand shows up too.
 - [x] **More New templates on Home.** Home's New row now offers
   Baseplate, Classic Baseplate and Flat Terrain, each with the parts,
   Lighting (Sky and effects for the modern two) and camera zoom that real
@@ -3292,7 +3333,7 @@ both the plain fetch failure and the silent fall back to a default
   rbx_studio's Cargo.toml version and CHANGELOG.md has notes for it, builds
   Windows, macOS and Linux with `RBX_NATIVE_RELEASE` set, packs
   `rbxstudio-<version>-<target>.zip`/`.tar.gz` (an ad-hoc signed
-  `RbxNative.app` on macOS) with the README, a cargo-about
+  `RbxNative.app` on macOS, with its icon) with the README, a cargo-about
   `THIRD-PARTY-LICENSES.html` and `THIRD-PARTY-EMBEDDED.txt` (luau-lsp,
   cloudflared, slirp4netns and the GPL/LGPL source offer), writes
   `SHA256SUMS`, signs it with minisign and publishes the Release.
@@ -3307,7 +3348,13 @@ both the plain fetch failure and the silent fall back to a default
   now. Tested end to end on Linux against a local mock of the releases API
   (`RBX_UPDATE_API`), tampered package refused. The Windows rename dance
   and the macOS bundle swap are unit tested as file logic only, never run
-  on a real Windows or Mac, and the workflow hasn't run on a real tag yet.
+  on a real Windows or Mac. The workflow hasn't run on a real tag yet, but
+  `gh workflow run release.yml -f dry_run=true` runs all of it except the
+  Release (the packages come back as a workflow artifact): it went green on
+  2026-11-03, `SHA256SUMS` verified against the updater's public key, the
+  Linux binary needs glibc 2.35, and the embedded luau-lsp 1.70.0 and
+  cloudflared 2026.10.0 match the Flatpak's. The macOS icon is in the
+  signed bundle but nobody has looked at it on a Mac yet.
 - [x] A Flathub-ready Flatpak, `packaging/flatpak/`
   (`io.github.chteau.rbx_native.Editor`, Freedesktop 26.08). Builds offline
   from source: `cargo-sources.json` for the workspace, luau-lsp from its tag
@@ -3418,6 +3465,51 @@ both the plain fetch failure and the silent fall back to a default
   step stays a handoff to the Creator Hub. Gap analysis, staged plan and
   what each stage was checked against in real Studio:
   `docs/research/ugc-creators/README.md`.
+
+Asked for on the DevForum and not built yet (the whole pass, with what was
+shipped or built and what can't be: `docs/research/devforum-requests/README.md`):
+
+- [ ] 📋 **Colour in Output, opt in**: a Studio Settings switch that renders
+  `<font color>` rich text in Output lines instead of showing the tags.
+  Off by default, since a printed string is the game's own text
+  ([Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196)).
+- [ ] 📋 **Insert parts anchored**: a Studio Settings switch that makes every
+  inserted `Part`/`MeshPart` (ribbon tiles, Insert Object) start anchored
+  ([Have parts anchored by default](https://devforum.roblox.com/t/have-parts-anchored-by-default-when-inserting-in-studio/347169)).
+- [ ] 📋 **Multi-line Command Bar**: Shift+Enter for a new line, the script
+  editor's highlighting, and Ctrl+Enter to run
+  ([Multiple Lines in the Command Bar](https://devforum.roblox.com/t/multiple-lines-in-the-command-bar/233343),
+  [too hard to edit multiline code](https://devforum.roblox.com/t/it-is-too-hard-to-edit-multiline-code-in-the-command-bar/3013101)).
+- [ ] 📋 **Replace in every script of the place**, not only the open ones
+  ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
+- [ ] 📋 **Search the installed plugins** in the Plugins window
+  ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).
+- [ ] 📋 **Select a locked part while holding a key**, without unlocking it
+  ([Allow selecting locked parts by holding a key combination](https://devforum.roblox.com/t/allow-selecting-locked-parts-by-holding-a-key-combination/977989)).
+- [ ] 📋 **Code folding in the script editor**, remembered per script between
+  sessions; folding needs block extents from a parse, not the lexer the
+  highlighter uses now
+  ([Script Editor should save which folds are collapsed](https://devforum.roblox.com/t/script-editor-should-save-which-folds-are-collapsed-and-expa/31297)).
+- [ ] 📋 **Format Document with StyLua** in the script editor
+  ([Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518)).
+- [ ] 📋 **An image's resolution** shown beside an image id in Properties and
+  the asset tooltips
+  ([Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605)).
+- [ ] 📋 **Search in Version History**, by date and by who published; a name
+  for a version can only be a local label, Roblox stores none
+  ([Version History needs naming, search, and folders](https://devforum.roblox.com/t/version-history-needs-naming-search-and-folders/4382404)).
+- [ ] 📋 **A Loren lint for scripts that index an instance by a name two
+  siblings share**
+  ([Warn when two instances share the same name](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911)).
+- [ ] 📋 **Fullbright viewport toggle**: draw Edit mode with flat ambient light
+  and no shadows, without touching `Lighting`
+  ([Fullbright Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596)).
+- [ ] 📋 **Preview button for `Sound`/`AudioPlayer`** in Properties
+  ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
+- [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
+  ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).
+- [ ] 📋 **FBX export** beside OBJ and glTF
+  ([FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566)).
 
 ### Play / Test workflow
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
@@ -3702,10 +3794,12 @@ and no amount of reverse engineering changes that:
   the private sandbox that stands in for it.
 - **Team Create**: proprietary real-time collaboration, no public
   equivalent API.
-- **Toolbox/marketplace parity**: public APIs (Creator Store, Open Cloud,
-  `catalog.roblox.com`) expose metadata and let you manage your *own*
-  assets; none of them let you download and insert an arbitrary third-
-  party asset the way Studio's Toolbox does.
+- **Toolbox/marketplace parity**: the Toolbox dock searches the Creator
+  Store and inserts what's free there through Open Cloud's asset
+  delivery, but no public API downloads a paid or off-sale third-party
+  asset the way Studio's Toolbox does, and Studio's Inventory and Recent
+  tabs (Inventory is being retired for the Asset Manager anyway) aren't
+  there.
 - **A pixel-faithful plugin UI**: `DockWidgetPluginGui` is rendered by
   Roblox's own UI engine (`GuiBase2d`/`LayerCollector`); reproducing it
   means reimplementing that whole subsystem, which is out of scope. A

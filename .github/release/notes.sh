@@ -43,4 +43,19 @@ if empty "$notes"; then
   echo "notes.sh: CHANGELOG.md has nothing for $tag" >&2
   exit 1
 fi
+
+# GitHub refuses a release body over 125000 characters, and the first
+# release's notes are the whole changelog. Keep the newest dated sections
+# that fit and point at the file for the rest.
+limit=120000
+if [ "${#notes}" -gt "$limit" ]; then
+  link="https://github.com/chteau/rbx-native/blob/$tag/CHANGELOG.md"
+  notes="$(awk -v limit="$limit" '
+    /^### / && kept + length(section) > limit { exit }
+    /^### / { printf "%s", section; kept += length(section); section = "" }
+    { section = section $0 "\n" }
+    END { if (kept + length(section) <= limit) printf "%s", section }
+  ' <<<"$notes")"
+  notes="$notes"$'\n\n'"Older changes are in [CHANGELOG.md]($link)."
+fi
 printf '%s\n' "$notes"

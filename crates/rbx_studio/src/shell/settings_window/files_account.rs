@@ -242,8 +242,15 @@ impl SettingsWindow {
             secondary_button("update-check", "refresh-cw", label)
                 .on_click(cx.listener(|_, _, _, cx| {
                     if updater::begin() {
+                        // Its own thread, like the launch check: a download
+                        // can take minutes, too long to hold a pool worker.
+                        std::thread::spawn(updater::finish);
                         cx.spawn(async move |this, cx| {
-                            cx.background_spawn(async { updater::finish() }).await;
+                            while updater::running() {
+                                cx.background_executor()
+                                    .timer(std::time::Duration::from_millis(250))
+                                    .await;
+                            }
                             let _ = this.update(cx, |_, cx| cx.notify());
                         })
                         .detach();

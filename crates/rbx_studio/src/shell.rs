@@ -60,6 +60,7 @@ mod play;
 mod playtests;
 mod plugins;
 pub(crate) mod project;
+mod property_clipboard;
 mod property_element;
 mod quality;
 mod query_select;
@@ -88,6 +89,7 @@ pub(crate) use plugins::install_text_box_keys;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use view_snap::PresetView;
+mod toolbox;
 mod tree_keys;
 
 mod argon_dock;
@@ -96,6 +98,7 @@ mod game_settings;
 mod require_graph;
 mod rows;
 mod save;
+mod save_template;
 mod script_analysis;
 mod script_finder;
 mod script_graph;
@@ -376,6 +379,8 @@ pub(crate) struct Shell {
     tests: tests_dock::TestsDock,
     /// The Bytecode dock's options and last listing; see `shell::bytecode_dock`.
     bytecode: bytecode_dock::BytecodeDock,
+    /// The Toolbox dock's search and inserts; see `shell::toolbox`.
+    toolbox: toolbox::ToolboxDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -464,6 +469,8 @@ pub(crate) struct Shell {
     /// The Wally dock's search results and install state, see
     /// `shell::wally_sync`.
     wally: wally_sync::Search,
+    /// File › Save as Template…'s prompt (see `shell::save_template`).
+    save_template: save_template::SaveTemplate,
     /// The file `self.dom` was opened from and its on-disk format; see
     /// `shell::save`. Ctrl+S always writes back here, in this format,
     /// regardless of what the tree currently looks like.
@@ -920,6 +927,7 @@ impl Shell {
             lsp: luau_lsp::Session::default(),
             tests: tests_dock::TestsDock::default(),
             bytecode: bytecode_dock::BytecodeDock::default(),
+            toolbox: toolbox::ToolboxDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
@@ -967,6 +975,7 @@ impl Shell {
             argon_settings,
             wally_query,
             wally: wally_sync::Search::default(),
+            save_template: save_template::SaveTemplate::default(),
             path,
             format,
             folder_colors,
@@ -2075,6 +2084,7 @@ impl Render for Shell {
             });
         }
         self.realize_animation_dialogs(window, cx);
+        self.realize_save_template(window, cx);
         // Deliberately no seeded focus. Seeding it *programmatically* is
         // what left a cold start with focus somewhere and no ring anywhere:
         // `focus_visible` only paints for keyboard-driven focus, so a
@@ -2226,9 +2236,11 @@ impl Render for Shell {
             .children(self.roblox_dialog(cx))
             .children(self.play_dialog(cx))
             .children(self.close_place_dialog(cx))
+            .children(self.toolbox_notice_dialog(cx))
             .children(self.rig_dialog_overlay(cx))
             .children(self.animation_publish_overlay(cx))
             .children(self.animation_id_prompt_overlay(cx))
+            .children(self.save_template_overlay(cx))
             .children(self.publish_result_overlay(cx))
             .children(self.command_palette(cx))
             .children(self.plugin_overlays(window, cx))

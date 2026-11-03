@@ -20,6 +20,11 @@ pub enum BinaryError {
     ChunkTooLarge,
 
     #[error(
+        "the file is cut off: a chunk header needs 16 bytes but only {0} are left in the file"
+    )]
+    ChunkHeaderTruncated(usize),
+
+    #[error(
         "the file is cut off: chunk '{name}' declares {declared} bytes of data but only {available} are left in the file"
     )]
     ChunkTruncated {

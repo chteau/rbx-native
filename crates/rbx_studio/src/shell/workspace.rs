@@ -151,6 +151,7 @@ impl Shell {
             Panel::Loren => self.loren_dock(window, cx),
             Panel::AvatarSettings => self.avatar_dock(window, cx),
             Panel::Localization => self.localization_dock(cx),
+            Panel::Toolbox => self.toolbox_dock(window, cx),
         }
     }
 

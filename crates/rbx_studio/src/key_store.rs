@@ -21,20 +21,29 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use gpui_kit::{AsyncApp, BackgroundExecutor, FutureExt as _};
+use rbx_cloud::keyring::{self, Backend};
 use rbx_cloud::ApiKey;
 
 // Every credential-store access in the editor goes through these three, so
-// `RBX_NO_KEYRING` (see `rbx_cloud::keyring_disabled`) makes the store look
-// empty and writes vanish, with nothing reaching the real keyring.
+// `RBX_NATIVE_KEYRING` (see `rbx_cloud::keyring`) can swap the OS store for
+// nothing or a scratch file. Test builds never reach the OS store at all.
+
+fn backend() -> Backend {
+    match rbx_cloud::keyring::backend() {
+        Backend::System if cfg!(test) => Backend::Disabled,
+        backend => backend,
+    }
+}
 
 pub(crate) async fn read_credentials(
     url: &str,
     cx: &mut AsyncApp,
 ) -> anyhow::Result<Option<(String, Vec<u8>)>> {
-    if rbx_cloud::keyring_disabled() {
-        return Ok(None);
+    match backend() {
+        Backend::Disabled => Ok(None),
+        Backend::File(path) => Ok(keyring::file_read(&path, url)?),
+        Backend::System => cx.update(|cx| cx.read_credentials(url)).await,
     }
-    cx.update(|cx| cx.read_credentials(url)).await
 }
 
 pub(crate) async fn write_credentials(
@@ -43,22 +52,26 @@ pub(crate) async fn write_credentials(
     secret: Vec<u8>,
     cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
-    if rbx_cloud::keyring_disabled() {
-        return Ok(());
+    match backend() {
+        Backend::Disabled => Ok(()),
+        Backend::File(path) => Ok(keyring::file_write(&path, url, account, &secret)?),
+        Backend::System => {
+            cx.update(|cx| cx.write_credentials(url, account, &secret))
+                .await
+        }
     }
-    cx.update(|cx| cx.write_credentials(url, account, &secret))
-        .await
 }
 
 pub(crate) async fn delete_credentials(url: &str, cx: &mut AsyncApp) -> anyhow::Result<()> {
-    if rbx_cloud::keyring_disabled() {
-        return Ok(());
+    match backend() {
+        Backend::Disabled => Ok(()),
+        Backend::File(path) => Ok(keyring::file_delete(&path, url)?),
+        Backend::System => cx.update(|cx| cx.delete_credentials(url)).await,
     }
-    cx.update(|cx| cx.delete_credentials(url)).await
 }
 
 /// The store's lookup key: one entry for this editor.
-const URL: &str = "https://apis.roblox.com/rbx-native";
+const URL: &str = keyring::API_KEY_URL;
 const ACCOUNT: &str = "open-cloud-api-key";
 
 /// How long startup waits on the credential store. A Secret Service that
@@ -315,5 +328,30 @@ mod tests {
             within(async { true }, RESTORE_TIMEOUT, &executor).await,
             Some(true)
         );
+    }
+
+    // The env lock has to span the awaits: the variable is process-wide.
+    // Nothing else runs on this test's executor, so holding it can't stall.
+    #[allow(clippy::await_holding_lock)]
+    #[gpui_kit::test]
+    async fn the_file_backend_keeps_credentials_in_its_own_file(cx: &mut gpui_kit::TestAppContext) {
+        let _guard = crate::settings::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let path =
+            std::env::temp_dir().join(format!("rbx_studio_keys_{}.json", std::process::id()));
+        // SAFETY: serialized by ENV_LOCK with every other env-mutating test.
+        unsafe { std::env::set_var("RBX_NATIVE_KEYRING", format!("file:{}", path.display())) };
+        let mut async_cx = cx.to_async();
+        write_credentials(URL, ACCOUNT, b"key".to_vec(), &mut async_cx)
+            .await
+            .unwrap();
+        let stored = read_credentials(URL, &mut async_cx).await.unwrap();
+        assert_eq!(stored, Some((ACCOUNT.to_string(), b"key".to_vec())));
+        delete_credentials(URL, &mut async_cx).await.unwrap();
+        assert_eq!(read_credentials(URL, &mut async_cx).await.unwrap(), None);
+        unsafe { std::env::remove_var("RBX_NATIVE_KEYRING") };
+        assert_eq!(backend(), Backend::Disabled);
+        std::fs::remove_file(path).unwrap();
     }
 }

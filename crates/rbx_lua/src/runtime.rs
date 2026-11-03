@@ -1,5 +1,7 @@
 //! The scripting entry point.
 
+#[cfg(test)]
+mod edit_tests;
 mod globals;
 mod host;
 mod report;
@@ -26,7 +28,7 @@ use crate::hooks::HookSlot;
 use crate::output::{LineKind, Output};
 use crate::LuaError;
 
-pub(crate) use globals::install_globals;
+pub(crate) use globals::{install_globals, install_shared};
 pub(crate) use host::compile_in;
 use host::{CommandBar, CommandBarHooks};
 pub use report::Reported;
@@ -125,9 +127,11 @@ impl Runtime {
             .set("printidentity", globals::printidentity(&lua, &ctx, 4)?)?;
         engine::install(&lua, Engine::new(ctx, host.clone()))?;
         host::install_require(&lua)?;
-        // Globals must be installed first: sandboxing freezes them, which is the
-        // point, one command-bar script cannot reshape the next one's environment.
+        // Globals must be installed first: sandboxing freezes them, so no script
+        // can change a built-in under another; what a command-bar run assigns
+        // lands in the bar's own environment (`Runtime::command_env`).
         lua.sandbox(true)?;
+        globals::install_shared(&lua)?;
 
         Ok(Runtime {
             lua,
