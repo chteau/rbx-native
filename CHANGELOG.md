@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-03
+
+- **Save as Template.** File › Save as Template… saves the open place as
+  your own template, with a viewport shot, and Home's New row shows it
+  next to Baseplate. Click it to start a new place from a copy,
+  right-click to delete it. Asked for on the DevForum since 2019
+  ([thread](https://devforum.roblox.com/t/allow-developers-to-save-places-as-studio-templates/241595)),
+  real Studio still doesn't have it. (@chteau)
+
 ## 2026-11-02
 
 - **Flatpak.** `packaging/flatpak/` builds rbx-native as

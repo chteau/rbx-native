@@ -134,6 +134,7 @@ mod menu_bar;
 mod notes;
 mod pacing;
 mod packs;
+mod place_templates;
 mod playtests;
 mod pointer_lock;
 #[cfg(test)]

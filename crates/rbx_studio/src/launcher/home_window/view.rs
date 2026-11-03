@@ -12,6 +12,7 @@ mod recent_grid;
 mod recent_menu;
 mod recovered;
 mod sidebar;
+mod templates;
 
 use std::sync::Arc;
 

@@ -89,6 +89,11 @@ pub(super) enum Dialog {
         busy: bool,
         error: Option<String>,
     },
+    /// Right-click on a user template in New, asking before it is deleted.
+    DeleteTemplate {
+        template: crate::place_templates::PlaceTemplate,
+        error: Option<String>,
+    },
     /// The game picker's New experience form; `busy` while Roblox creates
     /// it, `error` when it refused.
     NewExperience {
@@ -107,6 +112,8 @@ pub(crate) struct HomeWindow {
     /// Recent as icons rather than the list; saved in settings.
     pub(super) recent_icons: bool,
     pub(super) recent_menu: Option<RecentMenu>,
+    /// The user's saved place templates, listed after the built-in ones.
+    pub(super) templates: Vec<crate::place_templates::PlaceTemplate>,
     /// The editor's Roblox web sign-in, which Archive needs.
     pub(super) session: Option<rbx_cloud::heartbeats::SessionCookie>,
     /// Auto-Recovery copies no editor owns, read as Home opens.
@@ -230,6 +237,7 @@ impl HomeWindow {
             recent: home::recent(),
             recent_icons,
             recent_menu: None,
+            templates: Vec::new(),
             session: None,
             recovered: crate::recovery::folder()
                 .map(|folder| crate::recovery::leftovers(&folder))
