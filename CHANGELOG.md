@@ -2,6 +2,10 @@
 
 ## 2026-11-03
 
+- **A Command Bar run that changes nothing is no undo step.** Running a
+  `print` used to push an empty step, so the next Ctrl+Z did nothing and
+  the redo stack got wiped. A run now opens its step on its first change,
+  and one that only reads leaves the history alone. (@chteau)
 - **Old Creator Store models get their meshes back.** A MeshPart saved
   around 2016 keeps its mesh under the old `MeshID` spelling, which Studio
   still reads but we dropped, so models like the Toolbox's "Tree" came in

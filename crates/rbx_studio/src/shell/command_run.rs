@@ -109,11 +109,13 @@ impl Shell {
         cx: &mut Context<Self>,
         start: impl FnOnce(&mut Runtime, &str),
     ) -> Result<(), String> {
-        // Snapshotted before the run touches anything, whether or not it ends
-        // up mutating, see `shell::history`. The run's changes all join this
-        // one entry (see `command_bar::undo`).
-        self.push_history();
-        self.command_run.undo = Some(RunUndo::new(self.history.revision()));
+        // Snapshotted before the run touches anything, and pushed only once
+        // it changes something (see `command_bar::undo`). The run's changes
+        // all join that one entry.
+        self.command_run.undo = Some(RunUndo::pending(
+            self.history_snapshot(),
+            self.history.revision(),
+        ));
         self.command_run.source = source.to_owned();
         self.command_run.emitted = false;
 
@@ -177,8 +179,7 @@ impl Shell {
             .as_ref()
             .is_some_and(|undo| undo.interrupted(revision))
         {
-            self.push_history();
-            self.command_run.undo = Some(RunUndo::new(self.history.revision()));
+            self.command_run.undo = Some(RunUndo::pending(self.history_snapshot(), revision));
         }
 
         let runtime = self.command_run.runtime.as_mut()?;
@@ -244,11 +245,25 @@ impl Shell {
 
     /// Shows this step's DOM changes in the Explorer and the viewport, also
     /// after an error, since what the script did before it failed is kept,
-    /// and files them under the run's undo step.
+    /// and files them under the run's undo step, pushing it on the first.
     fn reflect_command_changes(&mut self, cx: &mut Context<Self>) {
         let changes = self.dom.take_changes();
         if changes.is_empty() {
             return;
+        }
+        // The run's first change opens its entry, before anything reacting
+        // to the change (a plugin) can push one of its own under it.
+        if let Some(before) = self
+            .command_run
+            .undo
+            .as_mut()
+            .and_then(RunUndo::take_before)
+        {
+            self.push_history_snapshot(before);
+            let revision = self.history.revision();
+            if let Some(undo) = self.command_run.undo.as_mut() {
+                undo.opened(revision);
+            }
         }
         self.rebuild_explorer(cx);
         self.reflect_changes(&changes, cx);
