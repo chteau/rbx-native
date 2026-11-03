@@ -296,6 +296,9 @@ fn load_with<T: Send>(
     // After the progress line is finished, so a warning never lands in the
     // middle of it.
     for failure in results.values().filter_map(|result| result.as_ref().err()) {
+        if failure.warning.is_empty() {
+            continue;
+        }
         eprintln!("warning: {}", failure.warning);
     }
     results
@@ -399,9 +402,22 @@ fn fetch_bytes(resolver: &AssetResolver, reference: &AssetRef) -> Result<Vec<u8>
         .resolve(reference)
         .map(|asset| asset.bytes)
         .map_err(|err| Failure {
-            warning: err.to_string(),
+            warning: match quiet_miss(reference, &err) {
+                true => String::new(),
+                false => err.to_string(),
+            },
             transient: transient(&err),
         })
+}
+
+/// A face file one of Roblox's own family JSONs names but no content
+/// package ships (`BuilderSans.json` lists an `ExtraBold` the Studio
+/// packages leave out). The text falls back to the family's nearest face
+/// that does exist (see `load::resolve_fonts`), so the miss is nobody's to
+/// fix and is not reported. Its `Failure` carries an empty warning.
+fn quiet_miss(reference: &AssetRef, err: &AssetError) -> bool {
+    matches!(err, AssetError::NativeFileNotFound(_))
+        && matches!(reference, AssetRef::Native(path) if path.starts_with("fonts/"))
 }
 
 fn progress(label: &str, done: usize, total: usize) {
@@ -493,6 +509,18 @@ pub(crate) mod tests {
     #[test]
     fn an_empty_reference_list_needs_no_cache_and_no_network() {
         assert!(load_images(&[]).is_empty());
+    }
+
+    #[test]
+    fn only_a_native_font_file_missing_from_its_package_is_quiet() {
+        let missing = AssetError::NativeFileNotFound("x".into());
+        let face = AssetRef::Native("fonts/BuilderSans-ExtraBold.otf".into());
+        assert!(quiet_miss(&face, &missing));
+        assert!(!quiet_miss(
+            &AssetRef::Native("textures/a.png".into()),
+            &missing
+        ));
+        assert!(!quiet_miss(&face, &AssetError::Empty));
     }
 
     fn permanent(warning: &str) -> Failure {

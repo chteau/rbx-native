@@ -1,6 +1,100 @@
 # Changelog
 
+## 2026-11-03
+
+- **Copy Path, Expand All, Collapse All in the Explorer.** Right-click a
+  row for Copy Path (its Luau path, like `game.Workspace["my part"]`, one
+  line per selected instance), Select Children, Expand All and Collapse
+  All, same as real Studio's Copy As and Hierarchy menus. Long asked for on
+  the DevForum ([collapse all](https://devforum.roblox.com/t/ability-to-collapse-all-folds-in-explorer/69318),
+  [copy path](https://devforum.roblox.com/t/ability-to-right-click-copy-path-of-an-instance/2839062)).
+  One difference: Studio copies a keyword name as `.end`, which doesn't
+  parse, we bracket it. (@chteau)
+- **Updater hardening.** A download that stalls halfway can't hang the
+  check forever anymore (every request ends within 20 minutes, and a
+  package over 512 MiB is refused), Check now runs on its own thread
+  instead of holding a pool worker, and each running copy stages its
+  update in its own folder, so starting a second editor mid-download
+  doesn't wipe the first one's files (only stale leftovers get cleared).
+  The Settings switch and the background check can't clobber each other's
+  `updates.json` writes, and "What's new" only opens this repo's release
+  pages, since the release JSON isn't signed. (@chteau)
+- **Save as Template.** File › Save as Template… saves the open place as
+  your own template, with a viewport shot, and Home's New row shows it
+  next to Baseplate. Click it to start a new place from a copy,
+  right-click to delete it. Asked for on the DevForum since 2019
+  ([thread](https://devforum.roblox.com/t/allow-developers-to-save-places-as-studio-templates/241595)),
+  real Studio still doesn't have it. (@chteau)
+- **No more BuilderSans-ExtraBold warning.** Roblox's own `BuilderSans.json`
+  names faces (ExtraBold, and Regular/Bold too without a Studio install
+  around) that no content package ships, so every launch logged a "does
+  not contain the requested file" warning and put a row in Output. A
+  native font file missing from its package is quiet now, and a face
+  that's gone for good gets struck from its family so the text moves on to
+  the nearest face that does exist instead of the plain fallback. (@chteau)
+- **Keyring stays out of tests.** `RBX_NATIVE_KEYRING` picks where
+  rbxstudio and rbxcloud keep credentials: `none` reads and writes nothing,
+  `file:<path>` keeps them in a scratch JSON file (0600) so a test can save
+  and read a key without going near the real keyring. Anything else also
+  means `none`, so a typo never lands on the real one, and test builds of
+  rbxstudio never use the OS keyring at all. The rbxstudio integration
+  tests set it, `RBX_NO_KEYRING=1` still works as the old spelling, and
+  rbxcloud plus the live probe share one lookup now, so the file store
+  works for them on every OS. (@chteau)
+- **UGC + import fixes from a review pass.** Check Item on an eyebrow or
+  eyelash FBX/glTF stopped claiming RBX_Leader and RBX_Follower were
+  missing: the file reader never passed bone names along, so every file
+  failed that check. It reads them from FBX skin clusters and glTF skins
+  now. An accessory with a dot in its name (`Coat.v2`) is named whole in
+  the cage message, and only the real Handle gets to keep attributes, not
+  a stray folder called Handle. Import 3D decimating a .glb whose first
+  buffer is an embedded data URI (no BIN chunk) no longer writes a broken
+  file, and a mesh decimation can't get under 20k says that instead of
+  blaming an ASCII FBX. (@chteau)
+- **Release dry run.** `gh workflow run release.yml --ref <branch> -f
+  dry_run=true` builds all three platforms, packages, writes the license
+  notices, signs and verifies `SHA256SUMS`, then keeps the packages as a
+  workflow artifact instead of publishing, so the pipeline's proven before
+  the first tag (it went green, and the signature checks out against the
+  updater's key). Fixed what it turned up: the first release's notes were
+  the whole changelog, way past GitHub's 125k limit, so they're cut to the
+  newest sections that fit with a link to the rest. The macOS `.app` has
+  an icon now (`RbxNative.icns`, made from the app SVG with resvg by
+  `.github/release/make-icns.sh`), a `-beta` version no longer becomes the
+  Latest release the updater reads, Linux builds on Ubuntu 22.04 so the
+  binary runs on glibc 2.35, the signing key file is removed even when
+  signing fails, and macOS tar stops slipping `._` files into the bundle.
+  (@chteau)
+- **Copy Properties / Paste Properties.** Right-click something in the
+  Explorer, Copy Properties, select other stuff, Paste Properties: every
+  value their class also has gets pasted in one undo step. Works across
+  places too, so you can carry a Lighting setup over. Position, scripts,
+  ids, refs, tags and attributes stay put. Real Studio never had this,
+  [the DevForum asked](https://devforum.roblox.com/t/copy-properties-from-object/224274). (@chteau)
+- **Cut-off binary files say so.** A `.rbxl`/`.rbxm` that ends partway
+  through a chunk header used to fail with "input too short: expected at
+  least 16 bytes, got 8", sizes from inside the chunk reader that say
+  nothing about the file. Now it reads "the file is cut off: a chunk header
+  needs 16 bytes but only 8 are left in the file", like a cut-off chunk body
+  already did. (@chteau)
+
 ## 2026-11-02
+
+- **Auto-updates and a release workflow.** rbx-native updates itself now.
+  On launch it checks the latest GitHub release in the background, and if
+  there's a newer one it downloads it, checks the minisign signature on
+  SHA256SUMS and the package's hash, and swaps it in so the next launch
+  runs it. That launch shows a small "Updated to vX.Y.Z" toast with a link
+  to the release notes. Nothing blocks startup, and offline or rate
+  limited it just logs a line and moves on. Settings › Files & recovery ›
+  Updates has the switch and a Check now button. It stays off in a
+  Flatpak (Flathub updates it), when the install folder isn't writable
+  (distro packages), and in dev builds. Pushing a `v*` tag now builds
+  Windows, macOS (as an .app) and Linux packages with license notices
+  inside, signs the checksums and publishes the release with this
+  changelog as notes. Tested the whole loop on Linux against a fake
+  releases server, a tampered package gets refused. The Windows and Mac
+  swaps are only tested as file logic so far. (@chteau)
 
 - **Flatpak.** `packaging/flatpak/` builds rbx-native as
   `io.github.chteau.rbx_native.Editor`, offline and from source like Flathub
@@ -36,6 +130,7 @@
   and on the same 21k sphere both land on exactly 20,000 triangles with
   the same bounding box. All of it checked side by side on about 50 test
   items in real Studio, nothing published. (@chteau)
+
 - **Popular plugins.** Manage Plugins has a Popular plugins tab now (also
   Plugins › Popular on the ribbon). It lists 43 free Creator Store plugins
   I checked run in rbx-native, with their store icon, creator, live votes

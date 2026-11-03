@@ -1517,6 +1517,32 @@ both the plain fetch failure and the silent fall back to a default
   `Instance:Clone()` does (the root itself is always copied, and the copy is
   always `Archivable`). Still open: the right-click **Paste Options** ⟩
   **Paste Into At Original Location** the docs mention.
+- [x] **Copy Path, Select Children, Expand All and Collapse All** on the
+  Explorer's right-click menu, real Studio's Copy As › Copy Path and
+  Hierarchy rows, measured in Studio (2026-11-03) and laid flat like the
+  rest of this menu. Copy Path writes each selected instance's Luau path,
+  one per line: `game.Workspace.Baseplate`, a service by its name, a name
+  that is not an identifier in brackets (`game.Workspace["my part"]`).
+  Studio writes a keyword name bare (`game.Workspace.end`), which doesn't
+  parse, so keywords get brackets here. Expand All opens the row and
+  everything under it; Collapse All closes all of it, so the children come
+  back closed next time, as in Studio. Select Children selects the row's
+  children. Two DevForum threads asked for collapse all
+  ([1](https://devforum.roblox.com/t/ability-to-collapse-all-folds-in-explorer/69318),
+  [2](https://devforum.roblox.com/t/collapseexpand-all-on-selected-explorer-objects/78905))
+  and one for [copy path](https://devforum.roblox.com/t/ability-to-right-click-copy-path-of-an-instance/2839062).
+- [x] **Copy Properties / Paste Properties** on the Explorer's right-click
+  menu (`shell::property_clipboard`), which real Studio doesn't have
+  ([DevForum request](https://devforum.roblox.com/t/copy-properties-from-object/224274)).
+  Copy takes every saved value of the row's instance; Paste writes each one
+  the target's class also has (same type, different value) onto every
+  selected instance, as one undo step, and says in Output how many it
+  wrote. The copied set is app-wide, so Lighting copied in one place pastes
+  into another. Never copied: identity (`UniqueId`, `HistoryId`,
+  `SourceAssetId`), script code, `CFrame`/`WorldPivotData` (everything
+  would stack on the source), `Ref`s, and blobs with editors of their own
+  (tags, attributes, union and terrain data). Paste is greyed until
+  something copied applies to the selection.
 - [x] **Explorer export**: Save / Export rows on the Explorer row's
   right-click menu, named as Studio's own are (`creator-docs`):
   **Save to File…** writes the selection's subtrees as a model file,
@@ -2716,6 +2742,16 @@ both the plain fetch failure and the silent fall back to a default
   the editor on the same place. Live co-editing and the MCP server ship behind
   switches; `RBX_STUDIO_BETA_SAMPLE=1` also lists a sample
   feature to try the page.
+- [x] **Your own templates on Home's New row.** File › Save as Template…
+  asks for a name (the place's own, to start with) and writes the place as
+  it is, open scripts' unsaved text included, to
+  `<config>/place_templates/<name>.rbxl`, with a 256×256 shot of the
+  viewport beside it as `<name>.png` (if the viewport doesn't answer in
+  10 s it saves without one and says so in Output). Home's New row lists them after the built-in ones;
+  clicking one copies it into `places/` as a new place and opens it, and
+  right-click asks before deleting it. Real Studio never got this
+  ([DevForum request](https://devforum.roblox.com/t/allow-developers-to-save-places-as-studio-templates/241595)).
+  A `.rbxl` dropped in that folder by hand shows up too.
 - [x] **More New templates on Home.** Home's New row now offers
   Baseplate, Classic Baseplate and Flat Terrain, each with the parts,
   Lighting (Sky and effects for the modern two) and camera zoom that real
@@ -3286,6 +3322,33 @@ both the plain fetch failure and the silent fall back to a default
 - [x] macOS build CI, a `macos-latest` job beside the Windows one:
   clippy, build and test. macOS is still not a supported target; the job
   only keeps the workspace from rotting there.
+- [x] Releases and an auto-updater. A `v*` tag runs
+  `.github/workflows/release.yml`: it fails unless the tag matches
+  rbx_studio's Cargo.toml version and CHANGELOG.md has notes for it, builds
+  Windows, macOS and Linux with `RBX_NATIVE_RELEASE` set, packs
+  `rbxstudio-<version>-<target>.zip`/`.tar.gz` (an ad-hoc signed
+  `RbxNative.app` on macOS, with its icon) with the README, a cargo-about
+  `THIRD-PARTY-LICENSES.html` and `THIRD-PARTY-EMBEDDED.txt` (luau-lsp,
+  cloudflared, slirp4netns and the GPL/LGPL source offer), writes
+  `SHA256SUMS`, signs it with minisign and publishes the Release.
+  `crate::updater` reads it: at launch a background check of the latest
+  non-prerelease, then download, signature and SHA-256 check, and a swap so
+  the next launch runs the new version and says "Updated to vX.Y.Z" with a
+  link to the notes. Linux and a bare macOS binary rename over the running
+  file, Windows moves the running exe to `rbxstudio.old.exe` (deleted on
+  the next launch), a macOS bundle is swapped whole. Off in a Flatpak, when
+  the install folder isn't writable, and in any build without a release
+  version; Settings › Files & recovery › Updates has the switch and Check
+  now. Tested end to end on Linux against a local mock of the releases API
+  (`RBX_UPDATE_API`), tampered package refused. The Windows rename dance
+  and the macOS bundle swap are unit tested as file logic only, never run
+  on a real Windows or Mac. The workflow hasn't run on a real tag yet, but
+  `gh workflow run release.yml -f dry_run=true` runs all of it except the
+  Release (the packages come back as a workflow artifact): it went green on
+  2026-11-03, `SHA256SUMS` verified against the updater's public key, the
+  Linux binary needs glibc 2.35, and the embedded luau-lsp 1.70.0 and
+  cloudflared 2026.10.0 match the Flatpak's. The macOS icon is in the
+  signed bundle but nobody has looked at it on a Mac yet.
 - [x] A Flathub-ready Flatpak, `packaging/flatpak/`
   (`io.github.chteau.rbx_native.Editor`, Freedesktop 26.08). Builds offline
   from source: `cargo-sources.json` for the workspace, luau-lsp from its tag

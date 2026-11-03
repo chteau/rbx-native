@@ -151,6 +151,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuSaveAsTemplate, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.request_save_template(cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuSaveToRoblox, cx| {
             let _ = shell.update(cx, |shell, cx| {
                 shell.upload_to_roblox(PublishMode::Saved, cx)

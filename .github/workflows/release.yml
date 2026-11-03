@@ -1,0 +1,220 @@
+name: Release
+
+# Pushing a `v<version>` tag builds Windows, macOS and Linux packages, signs
+# their checksums and publishes a GitHub Release, which is what the editor's
+# auto-updater reads (`crates/rbx_studio/src/updater`). The build setup is
+# test-build.yml's.
+#
+# Running it by hand (`gh workflow run release.yml --ref <branch> -f
+# dry_run=true`) does all of that except the release: the signed packages
+# come back as the `release-dry-run` workflow artifact instead, so the
+# pipeline can be proven before a real tag.
+#
+# Secret: MINISIGN_SECRET_KEY, the whole minisign secret key file (rsign2,
+# unencrypted). Its public half is compiled into the updater
+# (`updater/verify.rs`); a release signed with any other key is refused.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build, package and sign, but upload a workflow artifact instead of publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Check version, notes and licenses
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # notes.sh looks for the previous release tag.
+          fetch-depth: 0
+
+      - name: Tag matches Cargo.toml
+        id: version
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          cargo_version="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "rbx_studio") | .version')"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            # Releases only ever come from a tag.
+            if [ "$DRY_RUN" != true ]; then
+              echo "::error::a hand-started run is always a dry run; push a v<version> tag to release"
+              exit 1
+            fi
+            echo "version=$cargo_version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$cargo_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match rbx_studio's version $cargo_version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Fails the release before anything builds when CHANGELOG.md has
+      # nothing for it.
+      - name: Release notes
+        run: |
+          tag="$GITHUB_REF_NAME"
+          [ "$GITHUB_REF_TYPE" = tag ] || tag=HEAD
+          .github/release/notes.sh "${{ steps.version.outputs.version }}" "$tag" > release-notes.md
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Third-party licenses
+        run: |
+          cargo about generate --config .github/release/about.toml \
+            --manifest-path crates/rbx_studio/Cargo.toml \
+            -o THIRD-PARTY-LICENSES.html .github/release/about.hbs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shared
+          path: |
+            release-notes.md
+            THIRD-PARTY-LICENSES.html
+          if-no-files-found: error
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          # The oldest runner GitHub still has, so the binary's glibc floor
+          # stays low enough for the distros people actually run.
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libfontconfig1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      # RBX_NATIVE_RELEASE is what makes this a build that updates itself.
+      - name: cargo build --release
+        shell: bash
+        env:
+          RBX_NATIVE_RELEASE: ${{ needs.prepare.outputs.version }}
+        run: cargo build --release --locked -p rbx_studio --bin rbxstudio --target "$TARGET"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: shared
+
+      - name: Package
+        shell: bash
+        run: .github/release/package.sh "$VERSION" "$TARGET" "target/$TARGET/release" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Sign and publish
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # The tool the key was made with, so the two formats always agree.
+      - name: Install rsign2
+        run: cargo install rsign2 --locked --version 0.6.7
+
+      - name: SHA256SUMS and its signature
+        working-directory: artifacts
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          mkdir ../release
+          mv package-*/* ../release/
+          cd ../release
+          sha256sum rbxstudio-* > SHA256SUMS
+          cat SHA256SUMS
+          umask 077
+          key="$RUNNER_TEMP/minisign.key"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          rsign sign -W -s "$key" -t "RbxNative v$VERSION" -x SHA256SUMS.minisig SHA256SUMS
+          rm -f "$key"
+          sha256sum -c SHA256SUMS
+          rsign verify -P "$(sed -n 's/.*PUBLIC_KEY: &str = "\(.*\)";/\1/p' "$GITHUB_WORKSPACE/crates/rbx_studio/src/updater/verify.rs")" \
+            -x SHA256SUMS.minisig SHA256SUMS
+
+      - name: What each package holds
+        working-directory: release
+        run: |
+          for package in rbxstudio-*; do
+            echo "== $package"
+            case "$package" in
+              *.zip) unzip -l "$package" ;;
+              *) tar -tzvf "$package" ;;
+            esac
+          done
+
+      - name: Keep the dry run's packages
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: |
+            release/*
+            artifacts/shared/release-notes.md
+          if-no-files-found: error
+
+      # A version with a pre-release part (`0.4.0-beta.1`) must not become
+      # "Latest": that's the release the updater reads.
+      - name: Create the release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --verify-tag \
+            "${prerelease[@]}" \
+            --title "RbxNative v$VERSION" \
+            --notes-file artifacts/shared/release-notes.md

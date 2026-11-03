@@ -71,7 +71,7 @@ fn main() -> ExitCode {
     };
 
     if std::env::var_os("RBX_API_KEY").is_none() {
-        ApiKey::install(keyring_key());
+        ApiKey::install(rbx_cloud::keyring::stored_api_key());
     }
     let client = Client::new(ApiKey::from_env_or_config());
 
@@ -96,34 +96,6 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-/// The key `rbxstudio` stored in the OS keyring (see `rbx_studio::key_store`),
-/// so the CLI works without `RBX_API_KEY` once the editor's wizard has run.
-#[cfg(target_os = "linux")]
-fn keyring_key() -> Option<ApiKey> {
-    if rbx_cloud::keyring_disabled() {
-        return None;
-    }
-    futures_lite::future::block_on(async {
-        let keyring = oo7::Keyring::new().await.ok()?;
-        keyring.unlock().await.ok()?;
-        let items = keyring
-            .search_items(&[("url", "https://apis.roblox.com/rbx-native")])
-            .await
-            .ok()?;
-        let item = items.into_iter().next()?;
-        item.unlock().await.ok()?;
-        let secret = item.secret().await.ok()?;
-        let key = std::str::from_utf8(&secret).ok()?.trim();
-        (!key.is_empty()).then(|| ApiKey::new(key))
-    })
-}
-
-// ponytail: Linux only; macOS Keychain / Windows Credential Manager when the CLI is used there.
-#[cfg(not(target_os = "linux"))]
-fn keyring_key() -> Option<ApiKey> {
-    None
 }
 
 fn run_whoami(client: &Client) -> Result<(), String> {
