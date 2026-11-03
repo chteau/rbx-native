@@ -7,7 +7,7 @@ use rbx_cloud::Experience;
 
 use super::*;
 use crate::home::RecentPlace;
-use crate::launcher::home_window::{Games, HomeWindow, Page};
+use crate::launcher::home_window::{Dialog, Games, HomeWindow, Page};
 use crate::launcher::ui::{self, Weight};
 use crate::tokens;
 
@@ -226,7 +226,7 @@ impl HomeWindow {
                         .bg(tokens::secondary_hover())
                 })
         };
-        let label = |title: &'static str, sub: &'static str| {
+        let label = |title: SharedString, sub: SharedString| {
             v_flex()
                 .flex_1()
                 .min_w_0()
@@ -256,8 +256,38 @@ impl HomeWindow {
                     .map(|(index, t)| {
                         tile(("new-template", index).into(), false)
                             .child(template_thumb(t, 52.))
-                            .child(label(t.name(), t.blurb()))
+                            .child(label(
+                                t.name().to_string().into(),
+                                t.blurb().to_string().into(),
+                            ))
                             .on_click(cx.listener(move |this, _, _, cx| this.new_place(t, cx)))
+                    }),
+            )
+            .children(
+                self.templates
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(index, template)| {
+                        let thumb = super::templates::user_template_thumb(&template);
+                        let open = template.clone();
+                        let delete = template.clone();
+                        tile(("new-user-template", index).into(), false)
+                            .child(thumb)
+                            .child(label(template.name.clone().into(), "Your template".into()))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.new_from_template(open.clone(), cx)
+                            }))
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.dialog = Some(Dialog::DeleteTemplate {
+                                        template: delete.clone(),
+                                        error: None,
+                                    });
+                                    cx.notify();
+                                }),
+                            )
                     }),
             )
             .child(
@@ -273,7 +303,10 @@ impl HomeWindow {
                             .text_color(ui::accent())
                             .child(ui::icon("flame", 20.)),
                     )
-                    .child(label("Loren project", "Services & Controllers, by fabi"))
+                    .child(label(
+                        "Loren project".into(),
+                        "Services & Controllers, by fabi".into(),
+                    ))
                     .on_click(cx.listener(|this, _, _, cx| this.new_loren_project(cx))),
             )
             .child(
@@ -290,8 +323,8 @@ impl HomeWindow {
                             .child(ui::icon("folder-open", 20.)),
                     )
                     .child(label(
-                        "Open a file\u{2026}",
-                        ".rbxl or .rbxlx from your computer",
+                        "Open a file\u{2026}".into(),
+                        ".rbxl or .rbxlx from your computer".into(),
                     ))
                     .on_click(cx.listener(|this, _, _, cx| this.open_file(cx))),
             )

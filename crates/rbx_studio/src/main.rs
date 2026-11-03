@@ -8,9 +8,10 @@
 //! are given. The rest stay variables: they are aids for scripted
 //! screenshots, not a surface worth committing to.
 //!
-//! `RBX_NO_KEYRING=1` (any non-empty value) stops every OS keyring read and
-//! write, here and in `rbxcloud`, so a test run with scratch XDG dirs cannot
-//! reach the user's real Open Cloud key.
+//! `RBX_NATIVE_KEYRING=none` stops every OS keyring read and write, here and
+//! in `rbxcloud`, and `RBX_NATIVE_KEYRING=file:<path>` keeps credentials in a
+//! scratch JSON file instead, so a test run cannot reach the user's real
+//! keyring (`RBX_NO_KEYRING=1` still means `none`).
 //!
 //! `RBX_STUDIO_SELECT=<target>[,<target>...]` pre-selects the first instance
 //! that target names, an Explorer path (`Workspace.Model.Part`) or a bare
@@ -134,6 +135,7 @@ mod menu_bar;
 mod notes;
 mod pacing;
 mod packs;
+mod place_templates;
 mod playtests;
 mod pointer_lock;
 #[cfg(test)]

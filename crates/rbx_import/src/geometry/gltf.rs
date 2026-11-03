@@ -38,7 +38,10 @@ pub(super) fn read(bytes: &[u8], path: &Path) -> Result<SourceGeometry, String> 
     for mesh in document.meshes() {
         let name = mesh_name(&document, &mesh);
         match read_mesh(&mesh, &buffers, name.clone()) {
-            Some(m) => out.meshes.push(m),
+            Some(mut m) => {
+                m.bones = skin_joints(&document, &mesh);
+                out.meshes.push(m);
+            }
             None => out.notes.push(format!(
                 "The mesh {name} has data that could not be read, so it was not checked."
             )),
@@ -83,6 +86,23 @@ fn mesh_name(document: &::gltf::Document, mesh: &Mesh<'_>) -> String {
                 .and_then(|n| n.name())
         })
         .map_or_else(|| format!("mesh {}", mesh.index()), str::to_owned)
+}
+
+/// Joint names of the skin on the node that uses `mesh`, if any.
+fn skin_joints(document: &::gltf::Document, mesh: &Mesh<'_>) -> Vec<String> {
+    document
+        .nodes()
+        .filter(|n| n.mesh().is_some_and(|m| m.index() == mesh.index()))
+        .find_map(|n| n.skin())
+        .map(|skin| {
+            skin.joints()
+                .map(|j| {
+                    j.name()
+                        .map_or_else(|| format!("node {}", j.index()), str::to_owned)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn read_mesh(mesh: &Mesh<'_>, buffers: &Buffers, name: String) -> Option<SourceMesh> {

@@ -196,6 +196,28 @@ impl HomeWindow {
         self.open_path_later(place.path.clone(), cx);
     }
 
+    pub(super) fn new_from_template(
+        &mut self,
+        template: crate::place_templates::PlaceTemplate,
+        cx: &mut Context<Self>,
+    ) {
+        let created = home::places_dir()
+            .ok_or_else(|| "no config directory to create the place in".to_string())
+            .and_then(|places| crate::place_templates::instantiate(&template, &places));
+        match created {
+            Ok(path) => self.open_path_later(path, cx),
+            Err(reason) => {
+                self.dialog = Some(Dialog::Error {
+                    experience: None,
+                    title: "Couldn\u{2019}t create the place".to_string(),
+                    status: None,
+                    reason,
+                });
+                cx.notify();
+            }
+        }
+    }
+
     pub(super) fn new_place(&mut self, template: Template, cx: &mut Context<Self>) {
         let created = home::new_place_path(template)
             .ok_or_else(|| "no config directory to create the place in".to_string())
