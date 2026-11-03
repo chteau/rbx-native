@@ -118,7 +118,15 @@ pub(crate) fn decimate(
     } else {
         serde_json::from_slice(bytes).map_err(|err| format!("not a valid glTF: {err}"))?
     };
-    let mut extra = if glb {
+    // Only `buffers[0]` without a `uri` can be a GLB's binary chunk; a GLB
+    // whose first buffer is a data: URI gets the new indices as one more
+    // embedded buffer, like a .gltf.
+    let in_bin = glb
+        && root
+            .get("buffers")
+            .and_then(|b| b.get(0))
+            .is_none_or(|b| b.get("uri").is_none());
+    let mut extra = if in_bin {
         parsed.blob.clone().unwrap_or_default()
     } else {
         Vec::new()
@@ -126,7 +134,7 @@ pub(crate) fn decimate(
     while extra.len() % 4 != 0 {
         extra.push(0);
     }
-    let buffer_index = if glb {
+    let buffer_index = if in_bin {
         0
     } else {
         root.get("buffers")
@@ -221,7 +229,7 @@ pub(crate) fn decimate(
         return Ok((bytes.to_vec(), decimated));
     }
 
-    if glb {
+    if in_bin {
         if root
             .get("buffers")
             .and_then(Value::as_array)
@@ -241,7 +249,11 @@ pub(crate) fn decimate(
                 "uri": format!("data:application/octet-stream;base64,{data}"),
             }),
         );
-        let out = serde_json::to_vec(&root).map_err(|err| err.to_string())?;
+        let out = if glb {
+            glb_container(&root, &[])?
+        } else {
+            serde_json::to_vec(&root).map_err(|err| err.to_string())?
+        };
         Ok((out, decimated))
     }
 }
@@ -321,7 +333,8 @@ fn glb_container(root: &Value, bin: &[u8]) -> Result<Vec<u8>, String> {
     while !bin.len().is_multiple_of(4) {
         bin.push(0);
     }
-    let total = u32::try_from(12 + 8 + json.len() + 8 + bin.len())
+    let bin_chunk = if bin.is_empty() { 0 } else { 8 + bin.len() };
+    let total = u32::try_from(12 + 8 + json.len() + bin_chunk)
         .map_err(|_| "the decimated .glb is over 4 GB".to_owned())?;
     let mut out = Vec::with_capacity(total as usize);
     out.extend_from_slice(b"glTF");
@@ -330,8 +343,11 @@ fn glb_container(root: &Value, bin: &[u8]) -> Result<Vec<u8>, String> {
     out.extend_from_slice(&(json.len() as u32).to_le_bytes());
     out.extend_from_slice(b"JSON");
     out.extend_from_slice(&json);
-    out.extend_from_slice(&(bin.len() as u32).to_le_bytes());
-    out.extend_from_slice(b"BIN\0");
-    out.extend_from_slice(&bin);
+    // An empty binary chunk is not allowed; a GLB without one just ends here.
+    if !bin.is_empty() {
+        out.extend_from_slice(&(bin.len() as u32).to_le_bytes());
+        out.extend_from_slice(b"BIN\0");
+        out.extend_from_slice(&bin);
+    }
     Ok(out)
 }

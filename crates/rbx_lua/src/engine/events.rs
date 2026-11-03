@@ -50,7 +50,7 @@ pub(crate) fn is_signal(db: &ReflectionDatabase, class: &str, key: &str) -> bool
 ///   `SetAttribute`, `GetAttributes` (over the attribute blob, via
 ///   `rbx_dom::attributes`);
 /// - `BindableEvent`: `Event`, `Fire(...)`; `BindableFunction`:
-///   `Invoke(...)` (calls `OnInvoke` synchronously);
+///   `Invoke(...)` (calls `OnInvoke`, which may yield);
 /// - `RemoteEvent` / `RemoteFunction`: with no network to cross, a remote
 ///   is a bindable with a player argument (`nil` for the server's view).
 pub(crate) fn index(
@@ -316,56 +316,75 @@ fn bindable_function(
     let f = match key {
         "Fire" if is("BindableEvent") => {
             lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-                signal::fire_values(lua, &instance_key(referent, "Event"), args)
+                signal::fire_from_script(lua, &instance_key(referent, "Event"), args)
             })?
         }
-        "Invoke" if is("BindableFunction") => {
-            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
+        "Invoke" if is("BindableFunction") => call_through(
+            lua,
+            lua.create_function(move |lua, mut args: MultiValue| {
                 let callback: Option<Function> =
                     registry_table(lua, ON_INVOKE_KEY)?.get(ref_key(referent))?;
-                match callback {
-                    Some(callback) => callback.call::<MultiValue>(args),
-                    None => Err(mlua::Error::runtime(
-                        "OnInvoke is not set on this BindableFunction",
-                    )),
-                }
-            })?
-        }
+                let callback = callback.ok_or_else(|| {
+                    mlua::Error::runtime("OnInvoke is not set on this BindableFunction")
+                })?;
+                args.push_front(Value::Function(callback));
+                Ok(args)
+            })?,
+        )?,
         // `…Server` calls pass `nil` for the player the server would see;
         // `…Client` calls drop the player they name.
         "FireServer" if is("RemoteEvent") => {
             lua.create_function(move |lua, (_this, mut args): (Value, MultiValue)| {
                 args.push_front(Value::Nil);
-                signal::fire_values(lua, &instance_key(referent, "OnServerEvent"), args)
+                signal::fire_from_script(lua, &instance_key(referent, "OnServerEvent"), args)
             })?
         }
         "FireClient" | "FireAllClients" if is("RemoteEvent") => {
             let skip = usize::from(key == "FireClient");
             lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
                 let args: MultiValue = args.into_iter().skip(skip).collect();
-                signal::fire_values(lua, &instance_key(referent, "OnClientEvent"), args)
+                signal::fire_from_script(lua, &instance_key(referent, "OnClientEvent"), args)
             })?
         }
         "InvokeServer" | "InvokeClient" if is("RemoteFunction") => {
             let server = key == "InvokeServer";
-            lua.create_function(move |lua, (_this, args): (Value, MultiValue)| {
-                let side = if server { "server" } else { "client" };
-                let callback: Option<Function> = registry_table(lua, ON_INVOKE_KEY)?
-                    .get(format!("{side}:{}", ref_key(referent)))?;
-                let mut args: MultiValue = args.into_iter().skip(usize::from(!server)).collect();
-                if server {
-                    args.push_front(Value::Nil);
-                }
-                match callback {
-                    Some(callback) => callback.call::<MultiValue>(args),
-                    None => Err(mlua::Error::runtime(format!(
-                        "On{}Invoke is not set on this RemoteFunction",
-                        if server { "Server" } else { "Client" }
-                    ))),
-                }
-            })?
+            call_through(
+                lua,
+                lua.create_function(move |lua, args: MultiValue| {
+                    let side = if server { "server" } else { "client" };
+                    let callback: Option<Function> = registry_table(lua, ON_INVOKE_KEY)?
+                        .get(format!("{side}:{}", ref_key(referent)))?;
+                    let callback = callback.ok_or_else(|| {
+                        mlua::Error::runtime(format!(
+                            "On{}Invoke is not set on this RemoteFunction",
+                            if server { "Server" } else { "Client" }
+                        ))
+                    })?;
+                    let mut args: MultiValue =
+                        args.into_iter().skip(usize::from(!server)).collect();
+                    if server {
+                        args.push_front(Value::Nil);
+                    }
+                    args.push_front(Value::Function(callback));
+                    Ok(args)
+                })?,
+            )?
         }
         _ => return Ok(None),
     };
     Ok(Some(Value::Function(f)))
+}
+
+/// A method that calls the function `get(args…)` returns with the rest of
+/// its results. The call happens in Luau, so an `OnInvoke` that yields
+/// suspends the invoking thread, as in Roblox, instead of failing at a
+/// Rust call boundary.
+fn call_through(lua: &Lua, get: Function) -> Result<Function> {
+    lua.load(
+        "local get = ... \
+         local function call(f, ...) return f(...) end \
+         return function(_, ...) return call(get(...)) end",
+    )
+    .set_name("=Invoke")
+    .call(get)
 }

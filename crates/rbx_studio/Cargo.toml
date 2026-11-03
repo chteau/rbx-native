@@ -138,6 +138,14 @@ sha2 = "0.10"
 getrandom = "0.3"
 # The colour popover's eyedropper.
 rbx_eyedropper = { path = "../rbx_eyedropper" }
+# The auto-updater (`crate::updater`): a release's SHA256SUMS is signed with
+# minisign and checked against the public key compiled in. Small, pure Rust.
+minisign-verify = "0.3"
+# Unpacking a release's .tar.gz (Linux, and macOS's .app bundle, a whole
+# directory tree). `flate2` is already in Cargo.lock at this version under
+# the build script; `tar` is the one new archive dependency.
+flate2 = "1"
+tar = "0.4"
 
 # The pointer lock's Win32 backend (`pointer_lock::server`): cursor warp and
 # hide. Already in the tree (under `mio`, `rustix`, …) at this version.

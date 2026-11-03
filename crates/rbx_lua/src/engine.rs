@@ -8,6 +8,7 @@
 
 pub(crate) mod changes;
 pub(crate) mod collection;
+pub(crate) mod edit;
 pub(crate) mod events;
 pub(crate) mod json;
 pub(crate) mod require;

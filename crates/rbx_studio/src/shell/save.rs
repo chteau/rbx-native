@@ -61,7 +61,8 @@ impl Shell {
                 | self.cancel_rig_dialog()
                 | self.close_publish_result()
                 | self.close_animation_publish()
-                | self.close_animation_id_prompt())
+                | self.close_animation_id_prompt()
+                | self.close_save_template())
         {
             cx.notify();
         }

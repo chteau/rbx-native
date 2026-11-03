@@ -189,6 +189,87 @@ impl SettingsWindow {
         Section::new("Play", vec![row])
     }
 
+    fn updates_section(&mut self, cx: &mut Context<Self>) -> Section {
+        use crate::updater::{self, Status};
+
+        let blocked = updater::blocked();
+        let automatic = match &blocked {
+            None => {
+                let on = updater::automatic();
+                let shell = self.shell.clone();
+                let weak = cx.entity().downgrade();
+                Row::new(
+                    "Automatic updates",
+                    toggle("auto-update", on, move |_, _, cx| {
+                        if let Err(error) = updater::set_automatic(!on) {
+                            shell.update(cx, |shell, _| {
+                                shell
+                                    .output
+                                    .push_warning(&format!("could not save updates.json: {error}"));
+                            });
+                        }
+                        let _ = weak.update(cx, |_, cx| cx.notify());
+                    }),
+                )
+                .describe("Checks GitHub for a new release when RbxNative starts, and installs it for the next launch. Never interrupts what you\u{2019}re doing.")
+                .changed(!on, |_, _| {
+                    let _ = updater::set_automatic(true);
+                })
+            }
+            Some(blocked) => {
+                Row::new("Automatic updates", readout("Off")).describe(blocked.reason())
+            }
+        };
+        let version = updater::current()
+            .map(|v| format!("v{v}"))
+            .unwrap_or_else(|| format!("v{} (development build)", env!("CARGO_PKG_VERSION")));
+        let status = updater::status();
+        let description: SharedString = match &status {
+            Status::Idle => format!("You have {version}.").into(),
+            Status::Checking => "Checking GitHub for a newer release\u{2026}".into(),
+            Status::UpToDate(v) => format!("v{v} is the latest release.").into(),
+            Status::Installed(v) => {
+                format!("v{v} is installed and runs from the next launch.").into()
+            }
+            Status::Failed(e) => format!("Couldn\u{2019}t check: {e}").into(),
+        };
+        let control = if blocked.is_none() {
+            let label = if status == Status::Checking {
+                "Checking\u{2026}"
+            } else {
+                "Check now"
+            };
+            secondary_button("update-check", "refresh-cw", label)
+                .on_click(cx.listener(|_, _, _, cx| {
+                    if updater::begin() {
+                        // Its own thread, like the launch check: a download
+                        // can take minutes, too long to hold a pool worker.
+                        std::thread::spawn(updater::finish);
+                        cx.spawn(async move |this, cx| {
+                            while updater::running() {
+                                cx.background_executor()
+                                    .timer(std::time::Duration::from_millis(250))
+                                    .await;
+                            }
+                            let _ = this.update(cx, |_, cx| cx.notify());
+                        })
+                        .detach();
+                    }
+                    cx.notify();
+                }))
+                .into_any_element()
+        } else {
+            div().into_any_element()
+        };
+        Section::new(
+            "Updates",
+            vec![
+                automatic,
+                Row::new("Check for updates", control).describe(description),
+            ],
+        )
+    }
+
     pub(super) fn files_page(
         &mut self,
         window: &mut Window,
@@ -218,6 +299,7 @@ impl SettingsWindow {
         }
         let copy_input = self.recovery.copy_name.clone();
         let strip = self.shell.read(cx).strip_on_publish();
+        let updates = self.updates_section(cx);
         vec![
             Section::new(
                 "Publishing",
@@ -277,6 +359,7 @@ impl SettingsWindow {
                     shell.set_play_copy_name(copy_name::DEFAULT.to_owned(), cx)
                 })],
             ),
+            updates,
         ]
     }
 

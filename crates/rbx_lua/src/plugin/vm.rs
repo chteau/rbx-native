@@ -72,6 +72,7 @@ pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
     });
 
     lua.sandbox(true)?;
+    crate::runtime::install_shared(&lua)?;
     Ok(lua)
 }
 

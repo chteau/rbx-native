@@ -53,6 +53,19 @@ pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
     install_error_strings(lua)
 }
 
+/// Roblox's `shared` and `_G`: plain tables every run in the VM reads and
+/// writes (Roblox's `_G` is not the global environment, `_G.print` is nil
+/// in Studio). Called after sandboxing, which would otherwise freeze them
+/// with the rest of the globals.
+pub(crate) fn install_shared(lua: &Lua) -> Result<(), LuaError> {
+    let globals = lua.globals();
+    globals.set_readonly(false);
+    globals.raw_set("shared", lua.create_table()?)?;
+    globals.raw_set("_G", lua.create_table()?)?;
+    globals.set_readonly(true);
+    Ok(())
+}
+
 /// `debug.profilebegin(label)` / `debug.profileend()`: Roblox's MicroProfiler
 /// scopes, which have nothing to time here.
 fn install_profiler_labels(lua: &Lua) -> Result<(), LuaError> {

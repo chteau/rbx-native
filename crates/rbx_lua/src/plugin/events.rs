@@ -774,14 +774,15 @@ mod tests {
              ws.DescendantAdded:Connect(function() added += 1 end)",
         );
         vm.flush();
-        // Of the part's own changes, only the rename came after the
-        // connection; the parenting came before `DescendantAdded`'s.
-        assert_eq!(vm.get::<f64>("n"), 1.0);
+        // Of the part's own changes, only the rename and the parenting
+        // came after the connection; the parenting came before
+        // `DescendantAdded`'s.
+        assert_eq!(vm.get::<f64>("n"), 2.0);
         assert_eq!(vm.get::<f64>("added"), 0.0);
 
         vm.run("p.Name = 'Later' Instance.new('Folder', ws)");
         vm.flush();
-        assert_eq!(vm.get::<f64>("n"), 2.0);
+        assert_eq!(vm.get::<f64>("n"), 3.0);
         assert_eq!(vm.get::<f64>("added"), 1.0);
     }
 

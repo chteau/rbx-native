@@ -64,6 +64,7 @@ actions!(
         MenuExportGltf,
         MenuExportProject,
         MenuExportClean,
+        MenuSaveAsTemplate,
         MenuSaveToRoblox,
         MenuPublishToRoblox,
         MenuLinkRobloxPlace,
@@ -223,6 +224,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         // and switches to it (see `shell::save`).
         MenuItem::action("Save to File", MenuSave),
         MenuItem::action("Save to File As…", MenuSaveToFile),
+        MenuItem::action("Save as Template\u{2026}", MenuSaveAsTemplate),
         MenuItem::action("Export as glTF…", MenuExportGltf),
         // A folder Argon or Rojo syncs from; File › Open reads one
         // back (a `*.project.json`).

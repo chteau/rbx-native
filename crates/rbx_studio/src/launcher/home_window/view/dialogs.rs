@@ -11,6 +11,67 @@ use crate::launcher::ui::{self, Weight};
 use crate::tokens;
 
 impl HomeWindow {
+    fn delete_template_dialog(
+        &self,
+        template: &crate::place_templates::PlaceTemplate,
+        error: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let body = error.map(|error| {
+            div()
+                .mt(px(14.))
+                .mx(px(20.))
+                .py(px(10.))
+                .px(px(12.))
+                .rounded(px(6.))
+                .border_1()
+                .border_color(ui::red_line())
+                .bg(ui::red_soft())
+                .text_size(px(11.5))
+                .line_height(px(17.))
+                .text_color(tokens::text())
+                .child(error.to_string())
+                .into_any_element()
+        });
+        ui::dialog(
+            480.,
+            ui::dialog_glyph("trash", ui::red(), ui::red_soft()),
+            "Delete template?",
+            format!(
+                "{} is removed from New. Places already made from it are not touched.",
+                template.name
+            ),
+            body,
+            vec![
+                ui::button("template-delete-cancel", "Cancel", Weight::Secondary, false)
+                    .on_click(cx.listener(|this, _, _, cx| this.cancel_dialog(cx)))
+                    .into_any_element(),
+                ui::button("template-delete-confirm", "Delete", Weight::Danger, false)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let Some(Dialog::DeleteTemplate { template, .. }) = &this.dialog else {
+                            return;
+                        };
+                        match crate::place_templates::remove(template) {
+                            Ok(()) => {
+                                this.dialog = None;
+                                this.templates = crate::place_templates::dir()
+                                    .map(|d| crate::place_templates::list(&d))
+                                    .unwrap_or_default();
+                            }
+                            Err(reason) => {
+                                if let Some(Dialog::DeleteTemplate { error, .. }) = &mut this.dialog
+                                {
+                                    *error = Some(reason);
+                                }
+                            }
+                        }
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+            ],
+        )
+    }
+
     pub(super) fn dialog_view(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let dialog = self.dialog.as_ref()?;
         Some(match dialog {
@@ -21,6 +82,9 @@ impl HomeWindow {
                 error,
             } => self
                 .archive_dialog(place, *restore, *busy, error.as_deref(), cx)
+                .into_any_element(),
+            Dialog::DeleteTemplate { template, error } => self
+                .delete_template_dialog(template, error.as_deref(), cx)
                 .into_any_element(),
             Dialog::NewExperience { busy, error } => self
                 .new_experience_dialog(*busy, error.as_deref(), cx)

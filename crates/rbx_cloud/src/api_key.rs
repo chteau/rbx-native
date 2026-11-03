@@ -12,17 +12,6 @@ use std::sync::RwLock;
 /// built afterwards (the viewer's asset fetches included) sees it.
 static INSTALLED: RwLock<Option<ApiKey>> = RwLock::new(None);
 
-/// Whether `RBX_NO_KEYRING` asks every keyring read and write to be skipped,
-/// so a test run with scratch XDG dirs cannot reach the user's real key.
-/// Any non-empty value turns it on.
-pub fn keyring_disabled() -> bool {
-    opts_out_of_keyring(non_empty_env("RBX_NO_KEYRING"))
-}
-
-fn opts_out_of_keyring(value: Option<String>) -> bool {
-    value.is_some()
-}
-
 /// A Roblox Open Cloud API key.
 ///
 /// `Debug` never prints the value: this type ends up in `Client` fields and
@@ -195,23 +184,6 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    #[test]
-    fn keyring_opt_out_needs_a_non_empty_value() {
-        assert!(!opts_out_of_keyring(None));
-        assert!(opts_out_of_keyring(Some("1".into())));
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        // SAFETY: serialized by ENV_LOCK; no other test touches this variable.
-        unsafe {
-            std::env::set_var("RBX_NO_KEYRING", "");
-            assert!(!keyring_disabled());
-            std::env::set_var("RBX_NO_KEYRING", "1");
-            assert!(keyring_disabled());
-            std::env::remove_var("RBX_NO_KEYRING");
-        }
-        assert!(!keyring_disabled());
-    }
 
     fn temp_dir() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
