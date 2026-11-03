@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-03
+
+- **Input Actions: a new binding stays in its column.** Hitting + under
+  Keyboard & Mouse, Gamepad or Touch used to drop the fresh binding into
+  Other as "Unbound" since it has no key yet, so it looked like the click
+  went somewhere else. It now sits in the column you added it from until
+  you give it a key (or reopen the place, where an unbound one shows under
+  Other). (@chteau)
+
 ## 2026-11-02
 
 - **Auto-updates and a release workflow.** rbx-native updates itself now.

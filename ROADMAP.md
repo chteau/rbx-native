@@ -2751,7 +2751,8 @@ both the plain fetch failure and the silent fall back to a default
   Input Actions (also a Home ribbon tile) opens a dock with every
   `InputContext` as a section, its `InputAction`s as rows and their
   `InputBinding`s sorted into Keyboard & Mouse, Gamepad and Touch columns
-  (plus Other for scriptable or unbound ones), by the `KeyCode` items and
+  (plus Other for scriptable or unbound ones; one added with a column's
+  "+" stays in that column until it gets a key), by the `KeyCode` items and
   `UIButton` the dump defines. Contexts, actions and bindings are created,
   renamed and deleted in place; an inspector beside the table edits every
   property the dump saves for the class (enum dropdowns, searchable for
