@@ -132,7 +132,7 @@ mod tests {
         let mut last = None;
         for (i, name) in names.iter().enumerate() {
             let class = if i == 0 { "Workspace" } else { "Folder" };
-            let made = dom.new_instance(class, *name, parent);
+            let made = dom.new_instance(class, name, parent);
             parent = Some(made);
             last = Some(made);
         }
