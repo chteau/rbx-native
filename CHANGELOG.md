@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-03
+
+- **No more BuilderSans-ExtraBold warning.** Roblox's own `BuilderSans.json`
+  names faces (ExtraBold, and Regular/Bold too without a Studio install
+  around) that no content package ships, so every launch logged a "does
+  not contain the requested file" warning and put a row in Output. A
+  native font file missing from its package is quiet now, and a face
+  that's gone for good gets struck from its family so the text moves on to
+  the nearest face that does exist instead of the plain fallback. (@chteau)
+
 ## 2026-11-02
 
 - **Flatpak.** `packaging/flatpak/` builds rbx-native as
