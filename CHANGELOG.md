@@ -2,6 +2,14 @@
 
 ## 2026-11-03
 
+- **Copy Path, Expand All, Collapse All in the Explorer.** Right-click a
+  row for Copy Path (its Luau path, like `game.Workspace["my part"]`, one
+  line per selected instance), Select Children, Expand All and Collapse
+  All, same as real Studio's Copy As and Hierarchy menus. Long asked for on
+  the DevForum ([collapse all](https://devforum.roblox.com/t/ability-to-collapse-all-folds-in-explorer/69318),
+  [copy path](https://devforum.roblox.com/t/ability-to-right-click-copy-path-of-an-instance/2839062)).
+  One difference: Studio copies a keyword name as `.end`, which doesn't
+  parse, we bracket it. (@chteau)
 - **Updater hardening.** A download that stalls halfway can't hang the
   check forever anymore (every request ends within 20 minutes, and a
   package over 512 MiB is refused), Check now runs on its own thread
