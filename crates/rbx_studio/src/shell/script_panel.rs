@@ -47,6 +47,7 @@ impl Shell {
                 // own handler, where it is the Explorer's Duplicate.
                 if shell.handle_finder_key(&event.keystroke, window, cx)
                     || shell.handle_match_cursor_key(active, &event.keystroke, window, cx)
+                    || shell.handle_format_key(active, &event.keystroke, window, cx)
                     || shell.handle_debug_key(&event.keystroke, cx)
                 {
                     cx.stop_propagation();

@@ -145,6 +145,17 @@ impl Shell {
                     window.dispatch_action(Box::new(Redo), cx);
                 },
             ))
+            .child(tool(
+                "code-format",
+                IconName::WandSparkles,
+                "Format Document with StyLua",
+                false,
+                cx,
+                move |shell, window, cx| {
+                    shell.focus_script(active, window, cx);
+                    shell.format_script(active, window, cx);
+                },
+            ))
             .child(divider())
             .child(
                 div()
@@ -290,6 +301,10 @@ impl Shell {
         window: &Window,
         cx: &App,
     ) -> AnyElement {
+        let failure = match (&self.scripts.format_failure, view) {
+            (Some((failed, message)), View::Code) if *failed == active => Some(message.clone()),
+            _ => None,
+        };
         let (left, right) = match view {
             View::Code => (self.code_status(active, window, cx), "Luau".to_owned()),
             View::Graph => (
@@ -312,6 +327,14 @@ impl Shell {
             .text_size(tokens::text_xs())
             .text_color(tokens::text_muted())
             .child(left)
+            .children(failure.map(|message| {
+                div()
+                    .flex_1()
+                    .px(px(12.0))
+                    .truncate()
+                    .text_color(tokens::text_error())
+                    .child(message)
+            }))
             .child(right)
             .into_any_element()
     }
