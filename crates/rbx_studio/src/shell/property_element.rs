@@ -207,7 +207,7 @@ impl Shell {
                 // Beside the field: an image's resolution, and a Content
                 // row's way into Object mode.
                 let size = self.image_size_label(row, cx);
-                if object_pick || size.is_some() {
+                let (control, composite, error) = if object_pick || size.is_some() {
                     // A refused pick has no field of its own to hold it.
                     let picked = self.edits.ref_pick.error_for(&row.name).map(str::to_owned);
                     let pick = object_pick.then(|| self.object_pick_button(&row.name, cx));
@@ -217,12 +217,18 @@ impl Shell {
                         .gap(tokens::label_gap())
                         .child(div().flex_1().min_w_0().child(control))
                         .children(size)
-                        .children(pick);
-                    let error = error.or(picked);
-                    return property_row_control(row, control, false, error.as_deref())
+                        .children(pick)
                         .into_any_element();
+                    (control, false, error.or(picked))
+                } else {
+                    (control.into_any_element(), composite, error)
+                };
+                // A sound's asset opens onto Studio's Preview row.
+                match self.sound_row(row, control, error.as_deref(), window, cx) {
+                    Ok(element) => element,
+                    Err(control) => property_row_control(row, control, composite, error.as_deref())
+                        .into_any_element(),
                 }
-                property_row_control(row, control, composite, error.as_deref()).into_any_element()
             }
         }
     }

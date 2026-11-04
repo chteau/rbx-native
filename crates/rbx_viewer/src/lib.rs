@@ -77,6 +77,7 @@ pub use joints::JointSolver;
 pub use lighting::light_guides;
 // An editor placing the sun by pointing at the scene needs the inverse of the
 // sun model the renderer lights with.
+pub use assets::asset_bytes;
 pub use lighting::sun;
 pub use lighting::Calibration;
 pub use load::{parse_place, read_place};
