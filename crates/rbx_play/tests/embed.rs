@@ -1,6 +1,8 @@
 #![cfg(target_os = "linux")]
 
-use rbx_play::embed::{is_client_class, motif_no_decorations, visible_parts, Embedded, Rect};
+use rbx_play::embed::{
+    is_client_class, is_unavailable_dialog, motif_no_decorations, visible_parts, Embedded, Rect,
+};
 
 fn r(x: i32, y: i32, width: u32, height: u32) -> Rect {
     Rect {
@@ -71,6 +73,24 @@ fn wine_player_class_matches() {
     assert!(is_client_class(b"Wine\0RobloxPlayerBeta.exe\0"));
 }
 
+/// Sober's own dialogs share its name but are never the game: embedding
+/// its "Gameplay Unavailable" box made Play look like it was running.
+#[test]
+fn sober_services_dialog_is_not_a_client() {
+    assert!(!is_client_class(b"sober_services\0sober_services\0"));
+}
+
+#[test]
+fn unavailable_dialog_matches_by_class_and_title() {
+    let class = b"sober_services\0sober_services\0";
+    assert!(is_unavailable_dialog(class, "Gameplay Unavailable"));
+    assert!(!is_unavailable_dialog(class, "sober_services"));
+    assert!(!is_unavailable_dialog(
+        b"sober\0Sober\0",
+        "Gameplay Unavailable"
+    ));
+}
+
 #[test]
 fn other_class_does_not_match() {
     assert!(!is_client_class(b"firefox\0Firefox\0"));
@@ -138,6 +158,7 @@ fn only_a_window_created_after_the_watch_is_attached() {
         r(0, 0, 32, 24),
         &before,
         std::time::Duration::from_millis(300),
+        &|| None,
     );
     assert!(missed.is_err(), "a window from before Play was taken");
     let (_new_conn, new) = sober_window();
@@ -146,6 +167,7 @@ fn only_a_window_created_after_the_watch_is_attached() {
         r(0, 0, 32, 24),
         &before,
         std::time::Duration::from_secs(5),
+        &|| None,
     )
     .unwrap();
     assert_eq!(embedded.window(), new);

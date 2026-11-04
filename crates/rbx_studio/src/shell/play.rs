@@ -27,12 +27,15 @@
 //!    &play_client_options())`,
 //!    after reading `Embedded::existing_clients()` (Linux) to ignore.
 //! 7. Linux with an `embed_target`: `Embedded::attach(target.window,
-//!    target.rect, &ignore, 90 s)` on a background task; on `NotFound` the
-//!    client simply stays in its own window (Output warning).
+//!    target.rect, &ignore, 90 s, give_up)` on a background task; on
+//!    `NotFound` the client simply stays in its own window (Output warning).
+//!    The client saying it can't join games (`StopReason::Unavailable`) or
+//!    exiting first (`StopReason::ClosedEarly`) stops the Play there.
 //! 8. `Phase::Running`; a poll task every `POLL` drains `channel.events()`
 //!    into Output via `session::feedback_for`, records `job_id` from
 //!    `Hello`, applies `session::follow` (a teleport keeps the Play and
-//!    resyncs the views in the next server), checks `client.exited()` and
+//!    resyncs the views in the next server), checks `client.unavailable()`,
+//!    `client.exited()` and
 //!    `embedded.alive()`, and moves the embedded window when the
 //!    `embed_target` rect changed.
 //!
@@ -58,7 +61,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use gpui_kit::*;
 use rbx_cloud::{ApiKey, Client, PlaceUpdate, PublishMode};
 use rbx_play::channel::{ChannelServer, DEFAULT_HOLD};
+#[cfg(any(target_os = "linux", windows))]
+use rbx_play::embed::EmbedError;
 use rbx_play::inject::ProbeConfig;
+#[cfg(any(target_os = "linux", windows))]
+use rbx_play::launch::ClientWatch;
 use rbx_play::launch::{join_server_uri, join_uri, ClientProcess, Launcher};
 use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
 use rbx_play::tunnel::{Tunnel, TunnelProvider};
@@ -230,11 +237,25 @@ fn step(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, step: &'stati
 }
 
 fn fail(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, text: String) {
+    stop_starting(this, cx, attempt, StopReason::Failed(text));
+}
+
+fn stop_starting(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, reason: StopReason) {
     let _ = this.update(cx, |shell, cx| {
         if shell.play.attempt == attempt {
-            shell.play_stop(StopReason::Failed(text), cx);
+            shell.play_stop(reason, cx);
         }
     });
+}
+
+/// Why waiting for the client's window is pointless: it said it can't join
+/// games, or it is already gone.
+#[cfg(any(target_os = "linux", windows))]
+fn embed_give_up(watch: &ClientWatch) -> Option<EmbedError> {
+    if let Some(why) = watch.unavailable() {
+        return Some(EmbedError::Unavailable(why));
+    }
+    watch.exited().then_some(EmbedError::ClientExited)
 }
 
 /// Blocking: GETs `/healthz` until it answers 200 or the budget runs out.
@@ -553,6 +574,8 @@ impl Shell {
                     );
                 }
             };
+            #[cfg(any(target_os = "linux", windows))]
+            let watch = client.watch();
             let target = this.update(cx, |shell, cx| {
                 if shell.play.attempt != attempt {
                     return Err(());
@@ -590,9 +613,18 @@ impl Shell {
                             target.rect,
                             &ignore,
                             EMBED_TIMEOUT,
+                            &|| embed_give_up(&watch),
                         )
                     })
                     .await;
+                let reason = match &attached {
+                    Err(EmbedError::Unavailable(why)) => Some(StopReason::Unavailable(why.clone())),
+                    Err(EmbedError::ClientExited) => Some(StopReason::ClosedEarly),
+                    _ => None,
+                };
+                if let Some(reason) = reason {
+                    return stop_starting(&this, cx, attempt, reason);
+                }
                 let _ = this.update(cx, |shell, cx| {
                     if shell.play.attempt != attempt {
                         return;
@@ -772,8 +804,12 @@ impl Shell {
         let Some(running) = self.play.session.as_mut() else {
             return false;
         };
-        if stop.is_none() && running.client.exited() {
-            stop = Some(StopReason::ClientExited);
+        if stop.is_none() {
+            if let Some(why) = running.client.unavailable() {
+                stop = Some(StopReason::Unavailable(why));
+            } else if running.client.exited() {
+                stop = Some(StopReason::ClientExited);
+            }
         }
         #[cfg(any(target_os = "linux", windows))]
         if stop.is_none() {

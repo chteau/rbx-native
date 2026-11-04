@@ -31,20 +31,39 @@ use x11rb::wrapper::ConnectionExt as _;
 /// Roblox client window: Sober and the official player under Wine.
 pub const CLIENT_CLASSES: &[&str] = &["sober", "robloxplayerbeta"];
 
+/// Sober's own dialogs ("Gameplay Unavailable", …): never the game.
+const SOBER_SERVICES: &str = "sober_services";
+
+/// The title of the dialog Sober shows instead of the game when it cannot
+/// join any (seen with a Roblox build it does not support yet).
+const UNAVAILABLE_TITLE: &str = "Gameplay Unavailable";
+
 fn x11<E: ToString>(e: E) -> EmbedError {
     EmbedError::X11(e.to_string())
 }
 
-/// True when a window's `WM_CLASS` (the two NUL-separated strings, as raw
-/// bytes) contains one of `CLIENT_CLASSES`, case-insensitively.
-pub fn is_client_class(wm_class: &[u8]) -> bool {
+fn class_parts(wm_class: &[u8]) -> Vec<String> {
     wm_class
         .to_ascii_lowercase()
         .split(|&b| b == 0)
-        .any(|part| {
-            let part = String::from_utf8_lossy(part);
-            CLIENT_CLASSES.iter().any(|c| part.contains(c))
-        })
+        .map(|part| String::from_utf8_lossy(part).into_owned())
+        .collect()
+}
+
+/// True when a window's `WM_CLASS` (the two NUL-separated strings, as raw
+/// bytes) contains one of `CLIENT_CLASSES`, case-insensitively, and is not
+/// one of Sober's dialogs.
+pub fn is_client_class(wm_class: &[u8]) -> bool {
+    let parts = class_parts(wm_class);
+    !parts.iter().any(|p| p.contains(SOBER_SERVICES))
+        && parts
+            .iter()
+            .any(|p| CLIENT_CLASSES.iter().any(|c| p.contains(c)))
+}
+
+/// True for Sober's "Gameplay Unavailable" dialog, by `WM_CLASS` and title.
+pub fn is_unavailable_dialog(wm_class: &[u8], title: &str) -> bool {
+    title == UNAVAILABLE_TITLE && class_parts(wm_class).iter().any(|p| p == SOBER_SERVICES)
 }
 
 /// `_MOTIF_WM_HINTS` value that removes all decorations:
@@ -59,19 +78,37 @@ fn connect() -> Result<(RustConnection, u32), EmbedError> {
     Ok((conn, root))
 }
 
-fn is_viewable_client(conn: &RustConnection, window: u32) -> bool {
-    let viewable = conn
-        .get_window_attributes(window)
+fn is_viewable(conn: &RustConnection, window: u32) -> bool {
+    conn.get_window_attributes(window)
         .ok()
         .and_then(|c| c.reply().ok())
-        .is_some_and(|a| a.map_state == MapState::VIEWABLE);
-    if !viewable {
+        .is_some_and(|a| a.map_state == MapState::VIEWABLE)
+}
+
+fn property(conn: &RustConnection, window: u32, name: impl Into<u32>) -> Vec<u8> {
+    conn.get_property(false, window, name, AtomEnum::ANY, 0, 256)
+        .ok()
+        .and_then(|c| c.reply().ok())
+        .map(|p| p.value)
+        .unwrap_or_default()
+}
+
+fn is_viewable_client(conn: &RustConnection, window: u32) -> bool {
+    is_viewable(conn, window) && is_client_class(&property(conn, window, AtomEnum::WM_CLASS))
+}
+
+/// `net_wm_name` is the interned `_NET_WM_NAME`; `WM_NAME` stands in when
+/// it is unset.
+fn is_viewable_unavailable_dialog(conn: &RustConnection, window: u32, net_wm_name: u32) -> bool {
+    if !is_viewable(conn, window) {
         return false;
     }
-    conn.get_property(false, window, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 256)
-        .ok()
-        .and_then(|c| c.reply().ok())
-        .is_some_and(|p| is_client_class(&p.value))
+    let class = property(conn, window, AtomEnum::WM_CLASS);
+    let mut title = property(conn, window, net_wm_name);
+    if title.is_empty() {
+        title = property(conn, window, AtomEnum::WM_NAME);
+    }
+    is_unavailable_dialog(&class, &String::from_utf8_lossy(&title))
 }
 
 fn children(conn: &RustConnection, window: u32) -> Vec<u32> {
@@ -82,16 +119,16 @@ fn children(conn: &RustConnection, window: u32) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// Matching windows among the root's children and their children, since
-/// reparenting WMs wrap each client in a frame.
-fn scan(conn: &RustConnection, root: u32) -> Vec<u32> {
+/// Windows `matches` accepts among the root's children and their children,
+/// since reparenting WMs wrap each client in a frame.
+fn scan(conn: &RustConnection, root: u32, matches: impl Fn(u32) -> bool) -> Vec<u32> {
     let mut found = Vec::new();
     for top in children(conn, root) {
-        if is_viewable_client(conn, top) {
+        if matches(top) {
             found.push(top);
         }
         for child in children(conn, top) {
-            if is_viewable_client(conn, child) {
+            if matches(child) {
                 found.push(child);
             }
         }
@@ -255,7 +292,10 @@ impl Embedded {
     /// Opens its own X connection, polls the root window's children (and
     /// one level below, for reparenting WMs) every 100 ms until a viewable
     /// window with a client `WM_CLASS` created after `before` exists, or
-    /// `timeout` passes. Then: sets `_MOTIF_WM_HINTS` to
+    /// `timeout` passes, or `give_up` returns an error (checked every poll,
+    /// e.g. for the client having exited). Sober's "Gameplay Unavailable"
+    /// dialog showing up instead ends it with [`EmbedError::Unavailable`].
+    /// Then: sets `_MOTIF_WM_HINTS` to
     /// `motif_no_decorations()`, withdraws it from the window manager
     /// (`withdraw`), reparents it under `parent`
     /// at `rect`, maps it, and flushes.
@@ -264,17 +304,35 @@ impl Embedded {
         rect: Rect,
         before: &Before,
         timeout: Duration,
+        give_up: &dyn Fn() -> Option<EmbedError>,
     ) -> Result<Self, EmbedError> {
         let (conn, root) = connect()?;
+        let net_wm_name = conn
+            .intern_atom(false, b"_NET_WM_NAME")
+            .map_err(x11)?
+            .reply()
+            .map_err(x11)?
+            .atom;
         let deadline = Instant::now() + timeout;
         let mut fresh = std::collections::HashSet::new();
         let window = loop {
             before.note_created(&mut fresh);
-            if let Some(w) = scan(&conn, root)
+            let new = |w: u32| before.is_new(w, &fresh);
+            if let Some(w) = scan(&conn, root, |w| is_viewable_client(&conn, w))
                 .into_iter()
-                .find(|&w| before.is_new(w, &fresh))
+                .find(|&w| new(w))
             {
                 break w;
+            }
+            if let Some(err) = give_up() {
+                return Err(err);
+            }
+            if !scan(&conn, root, |w| {
+                new(w) && is_viewable_unavailable_dialog(&conn, w, net_wm_name)
+            })
+            .is_empty()
+            {
+                return Err(EmbedError::Unavailable(UNAVAILABLE_TITLE.to_owned()));
             }
             if Instant::now() >= deadline {
                 return Err(EmbedError::NotFound);

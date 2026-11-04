@@ -117,18 +117,23 @@ pub struct Embedded {
 
 impl Embedded {
     /// Polls every 100 ms until a visible client top-level window not in
-    /// `ignore` exists, or `timeout` passes; then strips its frame, makes it
+    /// `ignore` exists, or `timeout` passes, or `give_up` returns an error
+    /// (checked every poll); then strips its frame, makes it
     /// a child of `parent` and places it at `rect`.
     pub fn attach(
         parent: WindowId,
         rect: Rect,
         ignore: &[WindowId],
         timeout: Duration,
+        give_up: &dyn Fn() -> Option<EmbedError>,
     ) -> Result<Self, EmbedError> {
         let deadline = Instant::now() + timeout;
         let window = loop {
             if let Some(w) = scan()?.into_iter().find(|w| !ignore.contains(w)) {
                 break w;
+            }
+            if let Some(err) = give_up() {
+                return Err(err);
             }
             if Instant::now() >= deadline {
                 return Err(EmbedError::NotFound);

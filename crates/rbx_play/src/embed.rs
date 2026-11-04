@@ -59,6 +59,11 @@ pub enum EmbedError {
     /// A windowing-system request failed (X11 or Win32); carries its
     /// description.
     X11(String),
+    /// The client cannot join games: carries its startup treatment (or the
+    /// title of the dialog it showed instead).
+    Unavailable(String),
+    /// The client exited before its window appeared.
+    ClientExited,
 }
 
 impl std::fmt::Display for EmbedError {
@@ -67,6 +72,10 @@ impl std::fmt::Display for EmbedError {
             EmbedError::NoDisplay(e) => write!(f, "Could not open the X display: {e}."),
             EmbedError::NotFound => f.write_str("No Roblox client window appeared in time."),
             EmbedError::X11(e) => write!(f, "A window request failed: {e}."),
+            EmbedError::Unavailable(why) => {
+                write!(f, "The Roblox client cannot join games ({why}).")
+            }
+            EmbedError::ClientExited => f.write_str("Roblox closed before its window appeared."),
         }
     }
 }

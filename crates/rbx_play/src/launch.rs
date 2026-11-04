@@ -9,6 +9,9 @@ use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 use crate::sober_config::SoberConfigOverlay;
 
+mod client_log;
+pub use client_log::{fatal_treatment, ClientWatch};
+
 /// Everything outside `A-Z a-z 0-9 - _ . ~` is escaped.
 const LAUNCH_DATA_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -255,12 +258,13 @@ pub struct ClientOptions {
 /// process when the launcher tracks the client.
 pub struct ClientProcess {
     pub launcher: Launcher,
-    pub child: std::process::Child,
+    watch: ClientWatch,
     overlay: Option<SoberConfigOverlay>,
 }
 
 impl ClientProcess {
-    /// Spawns `launcher.command(uri)` with stdin null and stdout/stderr null.
+    /// Spawns `launcher.command(uri)` with stdin and stdout null, and stderr
+    /// read on a thread of its own ([`ClientWatch::unavailable`]).
     pub fn spawn(launcher: Launcher, uri: &str) -> std::io::Result<Self> {
         Self::spawn_with(launcher, uri, &ClientOptions::default())
     }
@@ -282,18 +286,28 @@ impl ClientProcess {
         let mut cmd = launcher.command_with(uri, options);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         let child = cmd.spawn()?;
         Ok(ClientProcess {
             launcher,
-            child,
+            watch: ClientWatch::new(launcher, child),
             overlay,
         })
     }
 
     /// `try_wait` reports an exit and the launcher tracks the client.
-    pub fn exited(&mut self) -> bool {
-        self.launcher.tracks_client() && matches!(self.child.try_wait(), Ok(Some(_)))
+    pub fn exited(&self) -> bool {
+        self.watch.exited()
+    }
+
+    /// The client logged that it cannot join games ([`fatal_treatment`]).
+    pub fn unavailable(&self) -> Option<String> {
+        self.watch.unavailable()
+    }
+
+    /// A handle another thread can check the client through.
+    pub fn watch(&self) -> ClientWatch {
+        self.watch.clone()
     }
 }
 
@@ -304,8 +318,9 @@ impl Drop for ClientProcess {
     /// this runs on the editor's UI thread.
     fn drop(&mut self) {
         if self.launcher.tracks_client() {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
+            let mut child = self.watch.child();
+            let _ = child.kill();
+            let _ = child.wait();
         }
         let kill = match self.launcher {
             Launcher::Sober => Some(("flatpak", vec!["kill", SOBER_APP_ID])),

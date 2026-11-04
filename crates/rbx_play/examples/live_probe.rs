@@ -112,7 +112,7 @@ fn main() {
     let launcher = Launcher::detect();
     let uri = join_uri(place, &session);
     say(format!("launching {launcher:?}: {uri}"));
-    let mut game = ClientProcess::spawn(launcher, &uri).expect("launch");
+    let game = ClientProcess::spawn(launcher, &uri).expect("launch");
 
     let mut evaluated = false;
     let deadline = Instant::now() + Duration::from_secs(600);
