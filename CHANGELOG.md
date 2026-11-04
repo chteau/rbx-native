@@ -36,6 +36,11 @@
   `+` and a lone part or mesh from the Toolbox. A Toolbox model's parts
   keep what its author set. Off by default, so inserts still fall like in
   Studio. (@chteau)
+- **Fullbright.** The Test tab's Fullbright tile (also in the Viewport
+  panel's Camera section, and Alt+L, rebindable) lights the 3D view with
+  flat light and no shadows, so you can actually see what you're building in a night place
+  or a dark interior. It only changes how we draw, `Lighting` isn't
+  touched and nothing gets saved. (@chteau)
 
 ## 2026-11-03
 

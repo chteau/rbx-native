@@ -46,6 +46,9 @@ impl Shell {
             self.filter
                 .update(cx, |filter, cx| filter.focus(window, cx));
         }
+        if crate::shortcuts::pressed(crate::shortcuts::Command::Fullbright, keystroke) {
+            self.set_fullbright(!self.fullbright, cx);
+        }
         if let Some(Action::Save) = save::action_for(&keystroke.key, keystroke.modifiers) {
             self.save(cx);
         }

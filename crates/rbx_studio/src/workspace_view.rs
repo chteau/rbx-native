@@ -983,6 +983,13 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// Draws Edit mode with flat, shadowless light (the Fullbright view), or
+    /// with the place's own `Lighting` again; renderer-only, never saved.
+    pub(crate) fn set_fullbright(&mut self, fullbright: bool, cx: &mut Context<Self>) {
+        self.pump.fullbright(fullbright);
+        cx.notify();
+    }
+
     /// Switches the selection outline between drawing through everything and
     /// being depth-tested against the scene, the same way `set_orthographic`
     /// above switches projection: the render thread owns the viewer, so the
