@@ -363,6 +363,10 @@ impl HistoryWindow {
                     .min_w_0()
                     .child(
                         h_flex()
+                            // Pinned to the title's line height so the label
+                            // field, taller than the text, doesn't grow the row
+                            // while it's being typed into.
+                            .h(px(19.))
                             .gap(px(6.))
                             .when(editing, |this| {
                                 this.child(
@@ -372,16 +376,16 @@ impl HistoryWindow {
                                         tokens::accent_line(),
                                         "tag",
                                     )
-                                    .h(px(26.))
+                                    .h(px(21.))
                                     .flex_1()
                                     .min_w_0()
                                     .child(
-                                        div().flex_1().min_w_0().h_full().child(
+                                        div().flex_1().min_w_0().child(
                                             Input::new(&self.label_input)
                                                 .appearance(false)
-                                                .h_full()
-                                                .px(px(0.))
+                                                .px_0()
                                                 .text_size(px(12.5))
+                                                .line_height(px(17.))
                                                 .text_color(tokens::text()),
                                         ),
                                     ),
