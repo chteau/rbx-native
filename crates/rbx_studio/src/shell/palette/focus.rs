@@ -19,6 +19,7 @@ pub(super) enum Entry {
     WallySearch,
     WatchExpression,
     ToolboxSearch,
+    FindQuery,
 }
 
 /// The one control in `panel` that every state of it shows, or `None`
@@ -36,6 +37,7 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         Panel::Wally => Some(Entry::WallySearch),
         Panel::Watch => Some(Entry::WatchExpression),
         Panel::Toolbox => Some(Entry::ToolboxSearch),
+        Panel::FindInPlace => Some(Entry::FindQuery),
         Panel::ScriptAnalysis
         | Panel::CallStack
         | Panel::TerrainEditor
@@ -81,6 +83,7 @@ impl Shell {
             Some(Entry::WallySearch) => focus_input(&self.wally_query, window, cx),
             Some(Entry::WatchExpression) => self.focus_watch_input(window, cx),
             Some(Entry::ToolboxSearch) => self.focus_toolbox_search(window, cx),
+            Some(Entry::FindQuery) => self.focus_find_query(window, cx),
             None => {}
         }
     }

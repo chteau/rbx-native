@@ -29,7 +29,7 @@ pub struct Edit {
 pub struct Issue {
     pub file: String,
     pub line: usize,
-    /// `colon-middleware`, `reserved-name`, `orphan-middleware`, `orphan-spec` or `reserved-key`.
+    /// `colon-middleware`, `reserved-name`, `orphan-middleware`, `orphan-spec`, `reserved-key` or `duplicate-name`.
     pub kind: &'static str,
     pub message: String,
     pub severity: Severity,

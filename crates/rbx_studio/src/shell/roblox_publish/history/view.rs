@@ -2,6 +2,7 @@
 //! version rows and the empty/loading/failed states, in the launcher's own
 //! kit so it reads like the publish confirmation (see `dialogs`).
 
+use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -10,7 +11,7 @@ use rbx_cloud::PlaceVersion;
 use crate::launcher::ui::{self, Weight};
 
 use super::super::super::chrome;
-use super::model::date_label;
+use super::model::{date_label, Since};
 use super::{tokens, HistoryWindow, Listing};
 
 impl Render for HistoryWindow {
@@ -129,18 +130,58 @@ impl HistoryWindow {
                             ),
                         ),
                 )
-                // One saver is no filter worth offering.
-                .when(pills.len() > 2, |this| {
-                    this.child(h_flex().flex_wrap().gap(px(6.)).children(
-                        pills.into_iter().enumerate().map(|(i, (user, label))| {
-                            div()
-                                .id(("history-contributor", i))
-                                .cursor_pointer()
-                                .on_click(cx.listener(move |this, _, _, cx| this.reload(user, cx)))
-                                .child(ui::pill(label, None, user == filter))
-                        }),
-                    ))
-                })
+                .child(
+                    ui::field_frame(None, ui::panel2(), tokens::border(), "search").child(
+                        div().flex_1().min_w_0().h_full().child(
+                            Input::new(&self.search)
+                                .appearance(false)
+                                .h_full()
+                                .px(px(0.))
+                                .text_size(px(12.))
+                                .text_color(tokens::text()),
+                        ),
+                    ),
+                )
+                .child(
+                    h_flex()
+                        .gap(px(12.))
+                        .items_start()
+                        .child(
+                            // One saver is no filter worth offering.
+                            h_flex().flex_1().min_w_0().flex_wrap().gap(px(6.)).when(
+                                pills.len() > 2,
+                                |this| {
+                                    this.children(pills.into_iter().enumerate().map(
+                                        |(i, (user, label))| {
+                                            div()
+                                                .id(("history-contributor", i))
+                                                .cursor_pointer()
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.reload(user, cx)
+                                                }))
+                                                .child(ui::pill(label, None, user == filter))
+                                        },
+                                    ))
+                                },
+                            ),
+                        )
+                        .child(h_flex().flex_none().gap(px(6.)).children(
+                            Since::ALL.into_iter().enumerate().map(|(i, since)| {
+                                div()
+                                    .id(("history-since", i))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.since = since;
+                                        cx.notify();
+                                    }))
+                                    .child(ui::pill(
+                                        since.label(),
+                                        (i == 0).then_some("calendar"),
+                                        since == self.since,
+                                    ))
+                            }),
+                        )),
+                )
                 .into_any_element(),
         )
     }
@@ -214,8 +255,39 @@ impl HistoryWindow {
                 None,
             );
         }
-        let latest = self.history.latest();
-        let more = self.history.next_cursor.is_some().then(|| {
+        let query = self.search.read(cx).value();
+        let query = query.trim();
+        let now = chrono::Utc::now();
+        let shown: Vec<&PlaceVersion> = self
+            .history
+            .versions
+            .iter()
+            .filter(|v| {
+                let label = self.labels.get(&v.version).map(String::as_str);
+                self.since.holds(v, now) && self.history.matches(v, label, query)
+            })
+            .collect();
+        let more_pages = self.history.next_cursor.is_some();
+        // A search only sees the pages already loaded: say how many, and
+        // keep Load more under it to reach further back.
+        let narrowed = !query.is_empty() || self.since != Since::AllTime;
+        let searched = narrowed.then(|| {
+            let loaded = self.history.versions.len();
+            let older = if more_pages {
+                ", older ones aren\u{2019}t loaded yet"
+            } else {
+                ""
+            };
+            ui::text(12., 18.)
+                .px(px(16.))
+                .py(px(10.))
+                .text_color(tokens::text2())
+                .child(format!(
+                    "{} of {loaded} loaded versions match{older}",
+                    shown.len()
+                ))
+        });
+        let more = more_pages.then(|| {
             h_flex()
                 .justify_center()
                 .py(px(14.))
@@ -227,23 +299,38 @@ impl HistoryWindow {
                         .into_any_element()
                 })
         });
+        if shown.is_empty() && !more_pages {
+            return state(
+                ui::dialog_glyph("search", tokens::text2(), ui::wash()),
+                "Nothing matches your filters",
+                Some("Try adjusting or clearing your filters.".into()),
+                Some(
+                    ui::button("history-clear", "Clear filters", Weight::Secondary, false)
+                        .on_click(cx.listener(|this, _, window, cx| this.clear_filters(window, cx)))
+                        .into_any_element(),
+                ),
+            );
+        }
+        let latest = self.history.latest();
         v_flex()
             .id("history-list")
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
             .children(
-                self.history
-                    .versions
-                    .iter()
+                shown
+                    .into_iter()
                     .map(|version| self.row(version, Some(version.version) == latest, cx)),
             )
+            .children(searched)
             .children(more)
             .into_any_element()
     }
 
     fn row(&self, version: &PlaceVersion, latest: bool, cx: &mut Context<Self>) -> AnyElement {
         let n = version.version;
+        let label = self.labels.get(&n).cloned();
+        let editing = self.editing == Some(n);
         let title = version.title.clone().unwrap_or_else(|| {
             if version.is_published {
                 "Published".into()
@@ -276,13 +363,58 @@ impl HistoryWindow {
                     .min_w_0()
                     .child(
                         h_flex()
+                            // Pinned to the title's line height so the label
+                            // field, taller than the text, doesn't grow the row
+                            // while it's being typed into.
+                            .h(px(19.))
                             .gap(px(6.))
-                            .child(
-                                ui::text(13., 19.)
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .truncate()
-                                    .child(title),
-                            )
+                            .when(editing, |this| {
+                                this.child(
+                                    ui::field_frame(
+                                        None,
+                                        ui::panel2(),
+                                        tokens::accent_line(),
+                                        "tag",
+                                    )
+                                    .h(px(21.))
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        div().flex_1().min_w_0().child(
+                                            Input::new(&self.label_input)
+                                                .appearance(false)
+                                                .px_0()
+                                                .text_size(px(12.5))
+                                                .line_height(px(17.))
+                                                .text_color(tokens::text()),
+                                        ),
+                                    ),
+                                )
+                            })
+                            .when(!editing, |this| {
+                                this.when_some(label.clone(), |this, label| {
+                                    this.child(
+                                        ui::icon("tag", 12.).flex_none().text_color(ui::accent()),
+                                    )
+                                    .child(
+                                        ui::text(13., 19.)
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .truncate()
+                                            .child(label),
+                                    )
+                                })
+                                .child(
+                                    ui::text(13., 19.)
+                                        .when(label.is_none(), |this| {
+                                            this.font_weight(FontWeight::SEMIBOLD)
+                                        })
+                                        .when(label.is_some(), |this| {
+                                            this.text_color(tokens::text2())
+                                        })
+                                        .flex_none()
+                                        .child(title),
+                                )
+                            })
                             .when(version.is_published, |this| {
                                 this.child(ui::tag(
                                     "PUBLISHED",
@@ -306,6 +438,20 @@ impl HistoryWindow {
                             .truncate()
                             .child(notes)
                     })),
+            )
+            .child(
+                ui::icon_button(
+                    ("history-label", n as usize),
+                    "tag",
+                    if label.is_some() {
+                        "Rename label"
+                    } else {
+                        "Label this version"
+                    },
+                    Weight::Ghost,
+                    true,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| this.edit_label(n, window, cx))),
             )
             .child(
                 ui::icon_button(

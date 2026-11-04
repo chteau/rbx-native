@@ -84,7 +84,7 @@ pub(crate) struct Layout {
 
 /// FNV-1a over `place NUL script`: stable across runs and builds, unlike
 /// `DefaultHasher`.
-fn file_name(key: &LayoutKey) -> String {
+pub(crate) fn file_name(key: &LayoutKey) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in key
         .place

@@ -1078,11 +1078,15 @@ both the plain fetch failure and the silent fall back to a default
   - **Find/Replace** in the current script: Ctrl+F, and Ctrl+H for
     replace, is the editor's own search bar with a match count, case
     toggle and next/previous.
-  - **Find All / Replace All** over every open script (Ctrl+Shift+F):
-    an overlay listing each match as its line and `Script:line`, jumping
-    to one on click or Enter. Replace All goes through each tab's
-    editor, so it lands on that tab's own undo stack and reaches
-    `Source` through the usual debounced write.
+  - **Find in Place** (Ctrl+Shift+F, Ctrl+Shift+H to replace): a dock
+    that searches the `Source` of every script in the place, open or
+    not (an open tab's unsaved typing counts). Match case, whole word
+    and regex toggles, a Where field to filter by the script's full
+    name, one collapsible group per script with a row per match, and
+    previous/next. A click or Enter opens the script on the match.
+    Replace and Replace All write straight to the place as one undo
+    step, so Ctrl+Z puts every script back, closed ones too, which
+    Studio's own can't. Regex replacements take `$1` groups.
   - **Go to Declaration**: Ctrl-hover underlines a name that resolves,
     and Ctrl-click or the right-click menu's Go to Definition jumps to
     where it was declared. It resolves locals, parameters and loop
@@ -3469,18 +3473,23 @@ both the plain fetch failure and the silent fall back to a default
 Asked for on the DevForum and not built yet (the whole pass, with what was
 shipped or built and what can't be: `docs/research/devforum-requests/README.md`):
 
-- [ ] 📋 **Colour in Output, opt in**: a Studio Settings switch that renders
-  `<font color>` rich text in Output lines instead of showing the tags.
-  Off by default, since a printed string is the game's own text
+- [x] **Colour in Output, opt in**: Studio Settings › Explorer & Output ›
+  Rich text colours draws a printed line's `<font color>`, `<b>`, `<u>`
+  and `<s>` tags (the `RichText` label parser) instead of showing them;
+  `<i>` is stripped but draws upright, the UI font has no italic face. Off by default, since a printed string is the game's own text
   ([Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196)).
-- [ ] 📋 **Insert parts anchored**: a Studio Settings switch that makes every
-  inserted `Part`/`MeshPart` (ribbon tiles, Insert Object) start anchored
+- [x] **Insert parts anchored**: a Studio Settings › Explorer switch (also
+  in the insert picker's `⋯`) that makes every inserted `Part`/`MeshPart`
+  (ribbon tiles, Insert Object, the Explorer's `+`, a lone part or mesh
+  from the Toolbox) start anchored
   ([Have parts anchored by default](https://devforum.roblox.com/t/have-parts-anchored-by-default-when-inserting-in-studio/347169)).
 - [x] **Multi-line Command Bar**: Enter for a new line, the script
   editor's highlighting, and Ctrl+Enter to run
   ([Multiple Lines in the Command Bar](https://devforum.roblox.com/t/multiple-lines-in-the-command-bar/233343),
   [too hard to edit multiline code](https://devforum.roblox.com/t/it-is-too-hard-to-edit-multiline-code-in-the-command-bar/3013101)).
-- [ ] 📋 **Replace in every script of the place**, not only the open ones
+- [x] **Replace in every script of the place**, not only the open ones:
+  the Find in Place dock (Ctrl+Shift+F, Ctrl+Shift+H), one undo step for
+  the whole Replace All
   ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
 - [x] **Search the installed plugins** in the Plugins window: Manage
   Plugins opens with the cursor in a search field over the Installed tab,
@@ -3488,28 +3497,68 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   shows how many match, and says so when nothing does. Studio's Plugin
   Management window has no search at all
   ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).
-- [ ] 📋 **Select a locked part while holding a key**, without unlocking it
+- [x] **Select a locked part while holding a key**: Ctrl+Alt+click
+  (Cmd+Option on macOS) selects a `Locked` part without unlocking it,
+  Shift on top adds it to the selection; a plain click still passes
+  through, as in Studio
   ([Allow selecting locked parts by holding a key combination](https://devforum.roblox.com/t/allow-selecting-locked-parts-by-holding-a-key-combination/977989)).
-- [ ] 📋 **Code folding in the script editor**, remembered per script between
-  sessions; folding needs block extents from a parse, not the lexer the
-  highlighter uses now
+- [x] **Code folding in the script editor**, remembered per script between
+  sessions. Block extents come from a `full_moon` parse (functions, each
+  `if`/`elseif`/`else` branch, `for`, `while`, `repeat`, `do`, multi-line
+  tables, comments and long strings), so a half-typed script still folds
+  what parsed. Markers are Studio's filled triangles in the gutter, always
+  shown, and a fold keeps its opener and closer line visible. Collapsed
+  folds are saved per script on this machine (`script-folds` in the config
+  dir, keyed like the graph layout) and only come back on a line that still
+  opens a block with the same text. Find, Go to Definition and the debugger
+  open a fold that hides their target
   ([Script Editor should save which folds are collapsed](https://devforum.roblox.com/t/script-editor-should-save-which-folds-are-collapsed-and-expa/31297)).
 - [x] **Format Document with StyLua** in the script editor and the Command
   Bar, StyLua built in (Shift+Alt+F)
   ([Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518)).
-- [ ] 📋 **An image's resolution** shown beside an image id in Properties and
-  the asset tooltips
+- [x] **An image's resolution** shown beside an image id in Properties
+  (`512×512`), and the image itself with its size in that label's tooltip.
+  Studio's Properties show the bare id with no preview or size. Every image
+  property counts, by name (`Texture`, `Image`, the `SurfaceAppearance`
+  maps, the skybox faces, ... and their `…Content` twins); the image comes
+  the way the viewport gets it, the shared asset cache first, so one the
+  place already shows costs no download, and a decal id is followed to its
+  image the way Roblox does for `Image`/`Texture`
   ([Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605)).
-- [ ] 📋 **Search in Version History**, by date and by who published; a name
-  for a version can only be a local label, Roblox stores none
+- [x] **Search in Version History**, by date and by who saved it: a search
+  box that matches every word against the version number, the date as
+  listed (or its month's name), who saved it, its notes and its local
+  label, beside Studio's All time / Today / This week / This month presets.
+  Studio's own box only searches notes. A name for a version can only be a
+  local label, Roblox stores none: the tag button on a row gives it one,
+  kept per place in `version-labels.json` in the config folder. The search
+  covers the pages loaded so far and says so, Load more reaches further back
   ([Version History needs naming, search, and folders](https://devforum.roblox.com/t/version-history-needs-naming-search-and-folders/4382404)).
-- [ ] 📋 **A Loren lint for scripts that index an instance by a name two
-  siblings share**
+- [x] **A Loren lint for scripts that index an instance by a name two
+  siblings share**: `workspace.Part`, `["Part"]`, `:FindFirstChild("Part")`
+  and `:WaitForChild("Part")` all hand back the first of the two in child
+  order (checked in Studio), so which one you get changes when one is
+  re-parented. Chains starting at `game`, `workspace`, `script`,
+  `GetService` or a `local` alias are followed through the place; a
+  property or method of the class wins over a child, like in Roblox, and a
+  recursive `FindFirstChild` is skipped. Shows in Script Analysis and as
+  squiggles (source "Loren", works without luau-lsp) and in `loren doctor`
+  as a warning with file and line
   ([Warn when two instances share the same name](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911)).
-- [ ] 📋 **Fullbright viewport toggle**: draw Edit mode with flat ambient light
-  and no shadows, without touching `Lighting`
+- [x] **Fullbright viewport toggle**: the Test tab's Fullbright tile, the
+  Viewport panel's Camera section or Alt+L (Customize Shortcuts) draws
+  Edit mode with flat ambient light and no shadows, renderer only,
+  `Lighting` untouched and nothing saved
   ([Fullbright Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596)).
-- [ ] 📋 **Preview button for `Sound`/`AudioPlayer`** in Properties
+- [x] **Preview button for `Sound`/`AudioPlayer`** in Properties, as Studio
+  draws it: `SoundId` (an `AudioPlayer`'s `Asset`, or its older `AssetId`)
+  opens onto a Preview row with play/pause and a rail that follows the sound
+  and seeks it; a pause keeps its place. The asset comes through the shared
+  cache like a texture, is decoded in pure Rust (`symphonia`: OGG Vorbis,
+  MP3, WAV, FLAC) and plays at the instance's `Volume` (`crate::audio`):
+  through the PulseAudio protocol on Linux (PipeWire speaks it, nothing to
+  link), `cpal` on Windows and macOS. The Windows and macOS output has only
+  been type-checked, never heard
   ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
 - [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
   ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).

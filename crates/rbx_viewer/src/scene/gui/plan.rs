@@ -49,6 +49,7 @@ pub use starter::shows_screen;
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
 pub(crate) use text::Span as TextSpan;
+pub use text::{rich_runs, RichRun};
 pub(crate) use text::{span_face, Text};
 pub(super) use viewport::each_part as each_viewport_part;
 pub(crate) use viewport::{ViewCamera, Viewport};

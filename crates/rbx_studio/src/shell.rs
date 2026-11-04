@@ -37,6 +37,7 @@ pub(crate) mod game;
 mod group;
 mod guides;
 mod history;
+mod image_size;
 pub(crate) mod import3d;
 mod input_panel;
 mod keys;
@@ -45,6 +46,7 @@ mod layers_panel;
 mod layout;
 mod light_guides;
 mod localization;
+mod loren_dupes;
 mod loren_panel;
 mod luau_lsp;
 mod mcp;
@@ -89,12 +91,14 @@ pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
 pub(crate) use plugins::install_text_box_keys;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
+pub(crate) use script_folds::FoldMemory;
 pub(crate) use view_snap::PresetView;
 mod toolbox;
 mod tree_keys;
 
 mod argon_dock;
 mod datastores;
+mod find_in_place;
 mod game_settings;
 mod require_graph;
 mod rows;
@@ -102,6 +106,7 @@ mod save;
 mod save_template;
 mod script_analysis;
 mod script_finder;
+mod script_folds;
 mod script_graph;
 mod script_panel;
 mod script_toolbar;
@@ -112,6 +117,7 @@ mod security_audit;
 mod selection;
 mod settings_window;
 mod shortcuts_window;
+mod sound_preview;
 mod style_panel;
 mod sun;
 mod templates_live;
@@ -199,6 +205,9 @@ pub(crate) struct Shell {
     /// perspective. Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     orthographic: bool,
+    /// The viewport's Fullbright view (see `WorkspaceView::set_fullbright`):
+    /// flat light for working in a dark place. A view aid, so not persisted.
+    fullbright: bool,
     /// Whether the viewport's top-right orientation indicator draws at all.
     /// Persisted the same way `orthographic` is, for the same reason: it's
     /// meant to be a durable preference, not a per-session debug switch.
@@ -320,6 +329,8 @@ pub(crate) struct Shell {
     /// persisted, see `shell::explorer_edit::picker`.
     increment_names: bool,
     expand_on_select: bool,
+    /// See `Settings::insert_anchored`; read by every insert path.
+    insert_anchored: bool,
     /// See `Settings::strip_on_publish`.
     strip_on_publish: bool,
     /// Editor layers and 3D notes; see `shell::layers`.
@@ -336,6 +347,8 @@ pub(crate) struct Shell {
     /// One open `Input` per Properties row currently being edited, keyed by
     /// property name; see `shell::edit`.
     edits: edit::Edits,
+    image_sizes: image_size::ImageSizes,
+    sound_preview: sound_preview::SoundPreview,
     /// The Attributes/Tags section's own rename box and add-attribute/add-tag
     /// fields; see `shell::attributes_panel`.
     attribute_edits: attributes_panel::AttributeEdits,
@@ -382,6 +395,8 @@ pub(crate) struct Shell {
     bytecode: bytecode_dock::BytecodeDock,
     /// The Toolbox dock's search and inserts; see `shell::toolbox`.
     toolbox: toolbox::ToolboxDock,
+    /// The Find in Place dock's fields and results; see `shell::find_in_place`.
+    find_place: find_in_place::FindInPlace,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -420,6 +435,9 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// Whether Output rows draw their rich text tags (Settings › Explorer &
+    /// Output › Rich text colours). Persisted.
+    output_rich_text: bool,
     /// The Output panel's other display toggles (context, source, tables);
     /// persisted beside `output_show_timestamps`.
     output_display: crate::settings::OutputDisplay,
@@ -637,10 +655,12 @@ impl Shell {
             named_layouts,
             output_collapsed,
             output_timestamps,
+            output_rich_text,
             output_display,
             optimize_graph_on_open,
             increment_names,
             expand_on_select,
+            insert_anchored,
             strip_on_publish,
             dragger,
             controls,
@@ -859,6 +879,7 @@ impl Shell {
             service_overrides,
             quality_choice: quality,
             orthographic,
+            fullbright: false,
             axis_indicator,
             selection_occluded,
             perf: None,
@@ -906,6 +927,7 @@ impl Shell {
             explorer_edit: explorer_edit::ExplorerEdit::default(),
             increment_names,
             expand_on_select,
+            insert_anchored,
             strip_on_publish,
             search,
             explorer_query: String::new(),
@@ -913,6 +935,8 @@ impl Shell {
             filter,
             properties,
             edits: edit::Edits::default(),
+            image_sizes: image_size::ImageSizes::default(),
+            sound_preview: sound_preview::SoundPreview::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
             range_anchor: None,
@@ -929,6 +953,7 @@ impl Shell {
             tests: tests_dock::TestsDock::default(),
             bytecode: bytecode_dock::BytecodeDock::default(),
             toolbox: toolbox::ToolboxDock::default(),
+            find_place: find_in_place::FindInPlace::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
@@ -949,6 +974,7 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            output_rich_text,
             output_display,
             output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
@@ -1849,6 +1875,18 @@ impl Shell {
         cx.notify();
     }
 
+    /// Turns the viewport's Fullbright view on or off, see
+    /// `WorkspaceView::set_fullbright`.
+    fn set_fullbright(&mut self, fullbright: bool, cx: &mut Context<Self>) {
+        if fullbright == self.fullbright {
+            return;
+        }
+        self.fullbright = fullbright;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_fullbright(fullbright, cx));
+        cx.notify();
+    }
+
     /// Shows or hides the top-right orientation indicator, see
     /// `WorkspaceView::set_axis_indicator`.
     fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
@@ -1998,11 +2036,13 @@ impl Shell {
             named_layouts: self.named_layouts.clone(),
             output_collapsed: self.output_collapsed,
             output_timestamps: self.output_show_timestamps,
+            output_rich_text: self.output_rich_text,
             output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
             expand_on_select: self.expand_on_select,
+            insert_anchored: self.insert_anchored,
             dragger: self.dragger,
             controls: crate::settings::Controls {
                 camera: self.camera_feel,

@@ -33,6 +33,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         self.resync_scripts(window, cx);
+        self.sync_folds(cx);
         let script_font = self.script_font_size();
 
         let Some(active) = self.scripts.tabs.active() else {
