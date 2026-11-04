@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use chrono::{DateTime, Datelike, Duration, NaiveTime, Utc};
 use rbx_cloud::{PlaceVersion, VersionPage};
 
 #[derive(Debug, Default)]
@@ -116,5 +117,114 @@ pub(super) fn date_label(rfc3339: &str) -> String {
         format!("{} {} UTC", &rfc3339[..10], &rfc3339[11..16])
     } else {
         rfc3339.to_string()
+    }
+}
+
+const MONTHS: [&str; 12] = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+];
+
+impl History {
+    /// Whether `version` answers every word of `query`, each one somewhere
+    /// in its number (`v12`), its date as listed or its month's name, who
+    /// saved it, its local `label`, its Roblox title and notes, or whether it
+    /// was published or saved. Case doesn't matter; a blank query keeps all.
+    pub(super) fn matches(&self, version: &PlaceVersion, label: Option<&str>, query: &str) -> bool {
+        let month = version
+            .created_time
+            .get(5..7)
+            .and_then(|m| m.parse::<usize>().ok())
+            .and_then(|m| MONTHS.get(m.wrapping_sub(1)));
+        let fields = [
+            Some(format!("v{}", version.version)),
+            Some(date_label(&version.created_time)),
+            month.map(|m| m.to_string()),
+            self.author(version),
+            label.map(str::to_string),
+            version.title.clone(),
+            version.description.clone(),
+            Some(
+                if version.is_published {
+                    "published"
+                } else {
+                    "saved"
+                }
+                .to_string(),
+            ),
+        ];
+        let haystack = fields
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_lowercase();
+        query
+            .to_lowercase()
+            .split_whitespace()
+            .all(|word| haystack.contains(word))
+    }
+}
+
+/// Studio's date filter presets, counted in UTC like the dates listed.
+/// A week starts on Sunday, as Studio's calendar does.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum Since {
+    #[default]
+    AllTime,
+    Today,
+    ThisWeek,
+    ThisMonth,
+}
+
+impl Since {
+    pub(super) const ALL: [Since; 4] = [
+        Since::AllTime,
+        Since::Today,
+        Since::ThisWeek,
+        Since::ThisMonth,
+    ];
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Since::AllTime => "All time",
+            Since::Today => "Today",
+            Since::ThisWeek => "This week",
+            Since::ThisMonth => "This month",
+        }
+    }
+
+    fn start(self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        let today = now.date_naive();
+        let day = match self {
+            Since::AllTime => return None,
+            Since::Today => today,
+            Since::ThisWeek => {
+                today - Duration::days(today.weekday().num_days_from_sunday().into())
+            }
+            Since::ThisMonth => today.with_day(1)?,
+        };
+        Some(day.and_time(NaiveTime::MIN).and_utc())
+    }
+
+    /// Whether `version` was saved within this range of `now`. A date that
+    /// doesn't parse is kept: hiding it would lose a version silently.
+    pub(super) fn holds(self, version: &PlaceVersion, now: DateTime<Utc>) -> bool {
+        let Some(start) = self.start(now) else {
+            return true;
+        };
+        DateTime::parse_from_rfc3339(&version.created_time)
+            .map(|saved| saved >= start)
+            .unwrap_or(true)
     }
 }

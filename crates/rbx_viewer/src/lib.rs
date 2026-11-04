@@ -59,6 +59,7 @@ mod view;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
+pub use assets::{decode_image_uri, DecodedImage};
 pub use camera::Pose;
 #[cfg(not(target_arch = "wasm32"))]
 pub use capture::Rendered;
@@ -76,6 +77,7 @@ pub use joints::JointSolver;
 pub use lighting::light_guides;
 // An editor placing the sun by pointing at the scene needs the inverse of the
 // sun model the renderer lights with.
+pub use assets::asset_bytes;
 pub use lighting::sun;
 pub use lighting::Calibration;
 pub use load::{parse_place, read_place};
@@ -85,8 +87,8 @@ pub use renderer::{
 };
 pub use scene::perf;
 pub use scene::{
-    pseudo_localize, resolved_shape_label, shows_screen, GuiScrolls, PseudoLocale, SafeInsets,
-    ScrollTarget, ThumbGrab, STAGE_REACH,
+    pseudo_localize, resolved_shape_label, rich_runs, shows_screen, GuiScrolls, PseudoLocale,
+    RichRun, SafeInsets, ScrollTarget, ThumbGrab, STAGE_REACH,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};

@@ -236,6 +236,8 @@ pub(crate) struct Renderer {
     /// [`Renderer::set_isolated`]): no environment, neutral light, a flat
     /// backdrop. Which *parts* are drawn is the scene's to say, not this.
     isolated: bool,
+    /// See [`Renderer::set_fullbright`].
+    fullbright: bool,
     /// What the sun's shadow map is fitted to instead of `bounds` while
     /// isolated: the drawn rig and the stage floor around it, see
     /// `Scene::stage_bounds`.
@@ -452,6 +454,7 @@ impl Renderer {
             target,
             refracting: scene.has_glass(),
             isolated: false,
+            fullbright: false,
             stage: None,
         }
     }
@@ -474,6 +477,14 @@ impl Renderer {
     /// job (see `scene::isolation`), which a rebuild then reads.
     pub(crate) fn set_isolated(&mut self, isolated: bool) {
         self.isolated = isolated;
+    }
+
+    /// Lights every following frame with [`Lighting::fullbright`] instead of
+    /// the place's own lighting, and none of its local lights: the editor's
+    /// Fullbright view. A switch on the draw alone, like
+    /// [`Renderer::set_isolated`], which wins while both are on.
+    pub(crate) fn set_fullbright(&mut self, fullbright: bool) {
+        self.fullbright = fullbright;
     }
 
     /// The box an isolated frame fits its sun shadow to, see
@@ -803,11 +814,20 @@ impl Renderer {
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let drawn = self.surroundings();
-        let (lighting, probe, lit_quality) =
+        let (mut lighting, probe, lit_quality) =
             isolation::lit(self.isolated, &self.lighting, self.env.probe, self.quality);
-        // An isolated view is lit by its key alone: none of the place's
-        // lights is counted, selected for a map or looped over.
-        let lights = if drawn.local_lights { self.lights } else { 0 };
+        let fullbright = self.fullbright && !self.isolated;
+        if fullbright {
+            lighting = lighting.fullbright();
+        }
+        // An isolated view is lit by its key alone, and a fullbright one by
+        // its flat light: none of the place's lights is counted, selected for
+        // a map or looped over.
+        let lights = if drawn.local_lights && !fullbright {
+            self.lights
+        } else {
+            0
+        };
         let (lamp, fit) = self.sun_shadow(&lighting, from, aspect);
         // Specular, reflections and fog all need the eye, so the lighting
         // uniform changes every frame even though the place's `Lighting` does not.

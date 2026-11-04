@@ -108,6 +108,12 @@ const TWILIGHT_BAND: f32 = 0.1;
 const NEUTRAL_KEY: Vec3 = Vec3::new(0.35, 0.8, -0.5);
 /// Far enough that no fog an isolated view uses ever reaches anything in it.
 const NO_FOG: f32 = 1.0e9;
+/// The Fullbright view's flat light (see [`Lighting::fullbright`]): what every
+/// surface gets from everywhere, and what a face turned straight at the sun
+/// or the moon gets on top, so the two add up to the surface's own colour and
+/// a side still reads apart from a top.
+const FULLBRIGHT_AMBIENT: f32 = 0.7;
+const FULLBRIGHT_KEY: f32 = 0.3;
 
 /// How the distance is faded out.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -302,6 +308,30 @@ impl Lighting {
         lighting.sky_tint = Vec3::ONE;
         lighting.star_fade = 0.0;
         lighting
+    }
+
+    /// The editor's Fullbright view of a place lit as `self`: flat ambient
+    /// light with a soft, shadowless key along the sun's line from both
+    /// ends, no fog, no environment light or highlights, so a night place or
+    /// a pitch-black interior shows every part in its own colour. The sky,
+    /// stars, clouds and post effects stay the place's, so the backdrop
+    /// still says what time it is. Nothing here touches `Lighting` itself.
+    pub(crate) fn fullbright(&self) -> Self {
+        Lighting {
+            sun_color: Vec3::splat(FULLBRIGHT_KEY),
+            fill_color: Vec3::splat(FULLBRIGHT_KEY),
+            ambient: Vec3::splat(FULLBRIGHT_AMBIENT),
+            exposure: 1.0,
+            environment_diffuse: 0.0,
+            environment_specular: 0.0,
+            global_shadows: false,
+            fog: Fog::Linear {
+                color: Vec3::ZERO,
+                start: NO_FOG,
+                end: 2.0 * NO_FOG,
+            },
+            ..*self
+        }
     }
 
     fn from_clock(clock_override: Option<f32>, clouds: Option<Clouds>) -> Self {

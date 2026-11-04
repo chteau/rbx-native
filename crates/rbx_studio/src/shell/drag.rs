@@ -50,7 +50,8 @@ impl Shell {
                 cycling,
                 extend,
                 held,
-            } => self.pick_in_viewport(*ray, *cycling, *extend, *held, cx),
+                locked,
+            } => self.pick_in_viewport(*ray, *cycling, *extend, *held, *locked, cx),
             ViewportAction::Hover { ray, alt } => self.hover_in_viewport(*ray, *alt, cx),
             ViewportAction::Scrolled(scroll) => self.scroll_canvas(scroll, cx),
             ViewportAction::Moved {
@@ -195,12 +196,16 @@ impl Shell {
     /// selected, itself, or through a selected `Model`, the way Studio
     /// drags a selected object from any point on it. Anything nearer takes
     /// the click as an ordinary pick instead.
+    ///
+    /// With `locked` (`Ctrl`+`Alt` held), a `Locked` part counts as a hit
+    /// like any other, so it can be selected without unlocking it.
     fn pick_in_viewport(
         &mut self,
         ray: Ray,
         cycling: bool,
         extend: bool,
         held: bool,
+        locked: bool,
         cx: &mut Context<Self>,
     ) {
         // The viewport holds a handle onto the render thread's own mesh data
@@ -221,10 +226,13 @@ impl Shell {
             return;
         }
         // Studio: a locked part can't be clicked or dragged in the viewport,
-        // only selected from the Explorer.
+        // only selected from the Explorer; holding the locked-pick chord is
+        // the one way past that here.
         let hits: Vec<Ref> = hits
             .into_iter()
-            .filter(|&hit| !ribbon::is_locked(&self.dom, hit) && !self.layer_locked(hit))
+            .filter(|&hit| {
+                (locked || !ribbon::is_locked(&self.dom, hit)) && !self.layer_locked(hit)
+            })
             .collect();
         if held {
             let posed = self.pose_in();

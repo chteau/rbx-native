@@ -53,6 +53,15 @@ fn extends_selection(modifiers: Modifiers) -> bool {
     modifiers.shift || modifiers.control || modifiers.platform
 }
 
+/// `Ctrl`+`Alt` (`Cmd`+`⌥` on macOS) held: a click that may land on a
+/// `Locked` part, which Studio never lets a viewport click select, without
+/// unlocking it. Studio reads `Ctrl`+`Alt`-click as a plain `Alt`-click
+/// (checked side by side), so the chord still cycles to the part rather
+/// than its `Model`; `Ctrl` here does not extend, `Shift` on top does.
+fn picks_locked(modifiers: Modifiers) -> bool {
+    modifiers.alt && modifiers.secondary()
+}
+
 /// A left-button drag in progress.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Drag {
@@ -359,6 +368,7 @@ impl WorkspaceView {
                 cycling: modifiers.alt,
                 extend: false,
                 held: false,
+                locked: false,
             });
             return;
         }
@@ -392,8 +402,12 @@ impl WorkspaceView {
             return;
         }
 
+        let locked = picks_locked(modifiers);
         let cycling = modifiers.alt;
-        let extend = extends_selection(modifiers);
+        let extend = match locked {
+            true => modifiers.shift,
+            false => extends_selection(modifiers),
+        };
         self.measure_from_part();
         if self.transform.tool == Tool::Pivot {
             if let Some(drag) = self.grab_pivot(ray) {
@@ -450,6 +464,7 @@ impl WorkspaceView {
             cycling,
             extend,
             held: self.pending_grab.is_some(),
+            locked,
         });
     }
 
