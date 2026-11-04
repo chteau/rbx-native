@@ -106,6 +106,7 @@ impl Offscreen {
         }
         offscreen.set_gizmo(view.gizmo);
         offscreen.set_isolated(view.isolated());
+        offscreen.set_fullbright(view.fullbright);
         offscreen.set_stage(world.scene.stage_bounds());
         offscreen
     }
@@ -132,12 +133,18 @@ impl Offscreen {
         }
         self.set_gizmo(view.gizmo);
         self.set_isolated(view.isolated());
+        self.set_fullbright(view.fullbright);
         self.set_stage(world.scene.stage_bounds());
     }
 
     /// See [`Renderer::set_stage`].
     pub(crate) fn set_stage(&mut self, stage: Option<Bounds>) {
         self.renderer.set_stage(stage);
+    }
+
+    /// See [`Renderer::set_fullbright`].
+    pub(crate) fn set_fullbright(&mut self, fullbright: bool) {
+        self.renderer.set_fullbright(fullbright);
     }
 
     /// Draws an isolated view or the whole place, see

@@ -87,6 +87,7 @@ commands! {
     QuickOpen, "quick_open", "Quick Open", View, ["secondary-p"];
     MenuBar, "menu_bar", "Focus the Menu Bar", View, ["f10"];
     FocusPropertiesFilter, "focus_properties_filter", "Filter Properties", View, ["secondary-shift-p"];
+    Fullbright, "fullbright", "Fullbright", View, ["alt-l"];
     Delete, "delete", "Delete", Explorer, ["delete", "backspace"];
     Rename, "rename", "Rename", Explorer, ["f2"];
     // Unbound by default: Studio gives Ctrl+Shift+P to the Properties filter

@@ -3473,12 +3473,15 @@ both the plain fetch failure and the silent fall back to a default
 Asked for on the DevForum and not built yet (the whole pass, with what was
 shipped or built and what can't be: `docs/research/devforum-requests/README.md`):
 
-- [ ] 📋 **Colour in Output, opt in**: a Studio Settings switch that renders
-  `<font color>` rich text in Output lines instead of showing the tags.
-  Off by default, since a printed string is the game's own text
+- [x] **Colour in Output, opt in**: Studio Settings › Explorer & Output ›
+  Rich text colours draws a printed line's `<font color>`, `<b>`, `<u>`
+  and `<s>` tags (the `RichText` label parser) instead of showing them;
+  `<i>` is stripped but draws upright, the UI font has no italic face. Off by default, since a printed string is the game's own text
   ([Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196)).
-- [ ] 📋 **Insert parts anchored**: a Studio Settings switch that makes every
-  inserted `Part`/`MeshPart` (ribbon tiles, Insert Object) start anchored
+- [x] **Insert parts anchored**: a Studio Settings › Explorer switch (also
+  in the insert picker's `⋯`) that makes every inserted `Part`/`MeshPart`
+  (ribbon tiles, Insert Object, the Explorer's `+`, a lone part or mesh
+  from the Toolbox) start anchored
   ([Have parts anchored by default](https://devforum.roblox.com/t/have-parts-anchored-by-default-when-inserting-in-studio/347169)).
 - [x] **Multi-line Command Bar**: Enter for a new line, the script
   editor's highlighting, and Ctrl+Enter to run
@@ -3490,7 +3493,10 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
 - [ ] 📋 **Search the installed plugins** in the Plugins window
   ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).
-- [ ] 📋 **Select a locked part while holding a key**, without unlocking it
+- [x] **Select a locked part while holding a key**: Ctrl+Alt+click
+  (Cmd+Option on macOS) selects a `Locked` part without unlocking it,
+  Shift on top adds it to the selection; a plain click still passes
+  through, as in Studio
   ([Allow selecting locked parts by holding a key combination](https://devforum.roblox.com/t/allow-selecting-locked-parts-by-holding-a-key-combination/977989)).
 - [ ] 📋 **Code folding in the script editor**, remembered per script between
   sessions; folding needs block extents from a parse, not the lexer the
@@ -3499,19 +3505,41 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
 - [x] **Format Document with StyLua** in the script editor and the Command
   Bar, StyLua built in (Shift+Alt+F)
   ([Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518)).
-- [ ] 📋 **An image's resolution** shown beside an image id in Properties and
-  the asset tooltips
+- [x] **An image's resolution** shown beside an image id in Properties
+  (`512×512`), and the image itself with its size in that label's tooltip.
+  Studio's Properties show the bare id with no preview or size. Every image
+  property counts, by name (`Texture`, `Image`, the `SurfaceAppearance`
+  maps, the skybox faces, ... and their `…Content` twins); the image comes
+  the way the viewport gets it, the shared asset cache first, so one the
+  place already shows costs no download, and a decal id is followed to its
+  image the way Roblox does for `Image`/`Texture`
   ([Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605)).
-- [ ] 📋 **Search in Version History**, by date and by who published; a name
-  for a version can only be a local label, Roblox stores none
+- [x] **Search in Version History**, by date and by who saved it: a search
+  box that matches every word against the version number, the date as
+  listed (or its month's name), who saved it, its notes and its local
+  label, beside Studio's All time / Today / This week / This month presets.
+  Studio's own box only searches notes. A name for a version can only be a
+  local label, Roblox stores none: the tag button on a row gives it one,
+  kept per place in `version-labels.json` in the config folder. The search
+  covers the pages loaded so far and says so, Load more reaches further back
   ([Version History needs naming, search, and folders](https://devforum.roblox.com/t/version-history-needs-naming-search-and-folders/4382404)).
 - [ ] 📋 **A Loren lint for scripts that index an instance by a name two
   siblings share**
   ([Warn when two instances share the same name](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911)).
-- [ ] 📋 **Fullbright viewport toggle**: draw Edit mode with flat ambient light
-  and no shadows, without touching `Lighting`
+- [x] **Fullbright viewport toggle**: the Test tab's Fullbright tile, the
+  Viewport panel's Camera section or Alt+L (Customize Shortcuts) draws
+  Edit mode with flat ambient light and no shadows, renderer only,
+  `Lighting` untouched and nothing saved
   ([Fullbright Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596)).
-- [ ] 📋 **Preview button for `Sound`/`AudioPlayer`** in Properties
+- [x] **Preview button for `Sound`/`AudioPlayer`** in Properties, as Studio
+  draws it: `SoundId` (an `AudioPlayer`'s `Asset`, or its older `AssetId`)
+  opens onto a Preview row with play/pause and a rail that follows the sound
+  and seeks it; a pause keeps its place. The asset comes through the shared
+  cache like a texture, is decoded in pure Rust (`symphonia`: OGG Vorbis,
+  MP3, WAV, FLAC) and plays at the instance's `Volume` (`crate::audio`):
+  through the PulseAudio protocol on Linux (PipeWire speaks it, nothing to
+  link), `cpal` on Windows and macOS. The Windows and macOS output has only
+  been type-checked, never heard
   ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
 - [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
   ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).

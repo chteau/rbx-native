@@ -64,7 +64,8 @@ pub(crate) use gui::{
     TextSpan as GuiTextSpan,
 };
 pub use gui::{
-    pseudo_localize, shows_screen, GuiScrolls, PseudoLocale, SafeInsets, ScrollTarget, ThumbGrab,
+    pseudo_localize, rich_runs, shows_screen, GuiScrolls, PseudoLocale, RichRun, SafeInsets,
+    ScrollTarget, ThumbGrab,
 };
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;

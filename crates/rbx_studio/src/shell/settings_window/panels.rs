@@ -34,13 +34,15 @@ const SERVICES: [&str; 12] = [
 
 impl SettingsWindow {
     pub(super) fn explorer_output_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {
-        let (all, increment, expand, timestamps, overrides) = {
+        let (all, increment, expand, anchored, timestamps, rich, overrides) = {
             let shell = self.shell.read(cx);
             (
                 shell.show_all_services(),
                 shell.increment_names(),
                 shell.expand_on_select,
+                shell.insert_anchored,
                 shell.output_show_timestamps,
+                shell.output_rich_text,
                 shell.service_overrides().clone(),
             )
         };
@@ -109,6 +111,16 @@ impl SettingsWindow {
                 )
                 .describe("Open the tree down to whatever you select in the viewport.")
                 .changed(!expand, |shell, cx| shell.set_expand_on_select(true, cx)),
+                Row::new(
+                    "Insert parts anchored",
+                    toggle(
+                        "insert-anchored",
+                        anchored,
+                        self.set(move |shell, cx| shell.set_insert_anchored(!anchored, cx)),
+                    ),
+                )
+                .describe("A Part or MeshPart from the ribbon, Insert Object or the Toolbox starts Anchored.")
+                .changed(anchored, |shell, cx| shell.set_insert_anchored(false, cx)),
                 Row::new("Default services", div())
                     .describe("Click a service to list or hide it while Show all services is off.")
                     .changed(!overrides.is_empty(), |shell, cx| {
@@ -135,7 +147,17 @@ impl SettingsWindow {
             .describe("Show the time before every line. Remembered between launches.")
             .changed(timestamps, |shell, cx| {
                 shell.set_output_timestamps(false, cx)
-            })],
+            }),
+            Row::new(
+                "Rich text colours",
+                toggle(
+                    "output-rich-text",
+                    rich,
+                    self.set(move |shell, cx| shell.set_output_rich_text(!rich, cx)),
+                ),
+            )
+            .describe("Draw a printed line\u{2019}s rich text tags, <font color>, <b>, <u> and <s>, instead of showing them.")
+            .changed(rich, |shell, cx| shell.set_output_rich_text(false, cx))],
         );
         vec![explorer, output]
     }

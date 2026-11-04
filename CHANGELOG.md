@@ -2,6 +2,51 @@
 
 ## 2026-11-04
 
+- **Image sizes in Properties.** An image id in Properties now has its
+  resolution beside it, like `512×512`, and hovering that shows the image
+  with its size and id. Works for every image property (Decal and Texture
+  textures, ImageLabel images, SurfaceAppearance maps, skyboxes and the
+  rest). It reads the image from the asset cache when the place already
+  loaded it, so no extra download. A decal id shows the size of the image
+  it points at. (@chteau)
+- **Sound preview in Properties.** Like Studio, a Sound's `SoundId` opens
+  onto a Preview row with a play/pause button and a bar that follows the
+  sound. Drag the bar to jump around, pause keeps your spot. AudioPlayer
+  gets the same on its `Asset`. It plays at the instance's Volume and
+  changes nothing in the place. If the sound can't be fetched or decoded,
+  Output says why. (@chteau)
+- **Version History: search, date filter and local labels.** There's a
+  search box now. It matches every word you type against the version
+  number, the date (`2026-10`, `oct`), who saved it, its notes and its
+  label, so `chee oct` finds Chee's October saves. Beside it are Studio's
+  date presets: All time, Today, This week, This month. Roblox keeps no name
+  for a version, so the tag button on a row gives it a local label instead.
+  Labels stay on this machine, per place, and the search finds them too.
+  The search only sees the pages already loaded and says how many matched,
+  Load more goes further back. (@chteau)
+- **Colour in Output, if you want it.** Studio Settings › Explorer &
+  Output › Rich text colours makes Output draw a printed line's
+  `<font color>`, `<b>`, `<u>` and `<s>` tags instead of showing them,
+  same parser a `RichText` label uses. `<i>` gets stripped too, but our UI
+  font has no italic face so it reads upright. Off by default since real
+  Studio prints the tags as typed (checked side by side). (@chteau)
+- **Insert parts anchored.** A new switch in Studio Settings › Explorer
+  (and the `⋯` next to the insert search) makes every Part or MeshPart you
+  insert start Anchored: ribbon Part tiles, Insert Object, the Explorer's
+  `+` and a lone part or mesh from the Toolbox. A Toolbox model's parts
+  keep what its author set. Off by default, so inserts still fall like in
+  Studio. (@chteau)
+- **Fullbright.** The Test tab's Fullbright tile (also in the Viewport
+  panel's Camera section, and Alt+L, rebindable) lights the 3D view with
+  flat light and no shadows, so you can actually see what you're building in a night place
+  or a dark interior. It only changes how we draw, `Lighting` isn't
+  touched and nothing gets saved. (@chteau)
+- **Ctrl+Alt+click selects a locked part.** Locked parts still ignore a
+  normal click like in Studio, but holding Ctrl+Alt (Cmd+Option on Mac)
+  lets the click land on one without unlocking it. Studio treats
+  Ctrl+Alt+click like Alt+click (it picks the part, not its model), and so
+  does this, it just reaches locked parts too. Add Shift to add it to the
+  selection. (@chteau)
 - **Find in Place: search and replace in every script of the place.**
   Ctrl+Shift+F (Ctrl+Shift+H to replace) opens a dock that looks through
   every script, open or not, with match case, whole word and regex
