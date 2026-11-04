@@ -78,6 +78,7 @@ impl Shell {
                 let name = self.plugin_name(plugin);
                 self.output.push_plugin(&name, Feedback::Info(text));
             }
+            Request::SetClipboard(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
         }
     }
 

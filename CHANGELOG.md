@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-04
+
+- **Plugins can copy to the clipboard.** `plugin:SetClipboard(text)` is a
+  new rbx-native addition, like `PromptColor3`. It takes its argument the
+  way Roblox's own string parameters do, so nil errors and a table warns
+  then goes in through `tostring`. Studio doesn't have it, so a plugin made
+  for both should check for it first (see `docs/plugins.md`). (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

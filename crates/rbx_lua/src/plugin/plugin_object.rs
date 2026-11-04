@@ -14,7 +14,7 @@ use mlua::{
     UserDataFields, UserDataMethods, Value,
 };
 
-use super::api::{Answer, Arg, Button, PromptKind, Request, Toolbar, UiId};
+use super::api::{Answer, Arg, Button, OutputKind, PromptKind, Request, Toolbar, UiId};
 use super::arg;
 use super::debugger_api;
 use super::env::env;
@@ -55,7 +55,8 @@ use rbx_dom::Ref;
 ///   nil, yielding `PromptBrickColor(initial?)` → BrickColor or nil,
 ///   `CreateFloatingWidget(id, {Size: Vector2, Position: Vector2?,
 ///   LightDismiss: bool?})` → a widget instance of kind `Floating`,
-///   `GetDebuggerManager()` → `debugger_api::manager`.
+///   `GetDebuggerManager()` → `debugger_api::manager`,
+///   `SetClipboard(text)` → `Request::SetClipboard`.
 pub(crate) struct LuaPlugin;
 
 /// What a prompt this VM is waiting on resolves to.
@@ -717,6 +718,15 @@ impl UserData for LuaPlugin {
         methods.add_method("GetDebuggerManager", |lua, _, ()| {
             debugger_api::manager(lua)
         });
+        methods.add_method("SetClipboard", |lua, _, text: Value| {
+            let text = clipboard_text(lua, text)?;
+            env(lua)
+                .shared
+                .borrow_mut()
+                .requests
+                .push(Request::SetClipboard(text));
+            Ok(())
+        });
         methods.add_meta_method(MetaMethod::Index, |lua, _, key: String| {
             match key.as_str() {
                 "Name" => Ok(Value::String(lua.create_string(&env(lua).name)?)),
@@ -751,6 +761,28 @@ impl UserData for LuaPlugin {
         );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("Plugin"));
     }
+}
+
+/// `SetClipboard`'s argument, taken the way Roblox takes a `string`
+/// parameter (checked in Studio against `Plugin:GetSetting` and
+/// `FindFirstChild`): nil or nothing errors, a number is its text, and
+/// anything else warns, then goes in as `tostring` gives it.
+fn clipboard_text(lua: &Lua, value: Value) -> Result<String> {
+    let globals = lua.globals();
+    match value {
+        Value::Nil => return Err(mlua::Error::runtime("Argument 1 missing or nil")),
+        Value::String(_) | Value::Integer(_) | Value::Number(_) => {}
+        _ => {
+            let kind: String = globals.get::<Function>("typeof")?.call(&value)?;
+            let env = env(lua);
+            env.shared.borrow_mut().push_output(
+                &env.name,
+                OutputKind::Warn,
+                format!("argument #1 expects a string, but {kind} was passed"),
+            );
+        }
+    }
+    globals.get::<Function>("tostring")?.call(value)
 }
 
 /// The method that makes a dock widget without yielding; the name is not one
@@ -1069,5 +1101,34 @@ mod tests {
         assert!(errors(&env).is_empty(), "{:?}", errors(&env));
         assert!(lua.globals().get::<bool>("picked").unwrap());
         assert_eq!(lua.globals().get::<String>("name").unwrap(), "a");
+    }
+
+    #[test]
+    fn set_clipboard_checks_its_argument_like_roblox() {
+        let (lua, env, _) = vm();
+        run(
+            &lua,
+            "plugin:SetClipboard('hello')
+             plugin:SetClipboard(12.5)
+             plugin:SetClipboard(true)
+             missing = select(2, pcall(plugin.SetClipboard, plugin))",
+        );
+        assert_eq!(
+            errors(&env),
+            ["argument #1 expects a string, but boolean was passed"]
+        );
+        let copied: Vec<String> = env
+            .shared
+            .borrow()
+            .requests
+            .iter()
+            .filter_map(|request| match request {
+                Request::SetClipboard(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(copied, ["hello", "12.5", "true"]);
+        let missing = lua.globals().get::<String>("missing").unwrap();
+        assert!(missing.ends_with("Argument 1 missing or nil"), "{missing}");
     }
 }
