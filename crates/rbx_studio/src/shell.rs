@@ -199,6 +199,9 @@ pub(crate) struct Shell {
     /// perspective. Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     orthographic: bool,
+    /// The viewport's Fullbright view (see `WorkspaceView::set_fullbright`):
+    /// flat light for working in a dark place. A view aid, so not persisted.
+    fullbright: bool,
     /// Whether the viewport's top-right orientation indicator draws at all.
     /// Persisted the same way `orthographic` is, for the same reason: it's
     /// meant to be a durable preference, not a per-session debug switch.
@@ -859,6 +862,7 @@ impl Shell {
             service_overrides,
             quality_choice: quality,
             orthographic,
+            fullbright: false,
             axis_indicator,
             selection_occluded,
             perf: None,
@@ -1846,6 +1850,18 @@ impl Shell {
             viewport.set_orthographic(orthographic, cx)
         });
         self.save_settings();
+        cx.notify();
+    }
+
+    /// Turns the viewport's Fullbright view on or off, see
+    /// `WorkspaceView::set_fullbright`.
+    fn set_fullbright(&mut self, fullbright: bool, cx: &mut Context<Self>) {
+        if fullbright == self.fullbright {
+            return;
+        }
+        self.fullbright = fullbright;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_fullbright(fullbright, cx));
         cx.notify();
     }
 

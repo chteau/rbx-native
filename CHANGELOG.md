@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-04
+
+- **Fullbright.** The Test tab's Fullbright tile (also in the viewport's
+  `⋯` menu, Alt+L, rebindable) lights the 3D view with flat light and no
+  shadows, so you can actually see what you're building in a night place
+  or a dark interior. It only changes how we draw, `Lighting` isn't
+  touched and nothing gets saved. (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

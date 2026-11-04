@@ -378,6 +378,7 @@ impl Shell {
     /// Studio keeps on its ribbon.
     fn viewport_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let shown = self.show_screen_gui;
+        let fullbright = self.fullbright;
         let mut tiles =
             vec![
                 tile(
@@ -407,6 +408,22 @@ impl Shell {
                 .on_click(cx.listener(|shell, _, _, cx| {
                     shell.set_screen_gui_shown(!shell.show_screen_gui, cx)
                 }))
+                .into_any_element(),
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-fullbright",
+                    IconName::Sun,
+                    "Fullbright",
+                    cx,
+                )
+                .when(fullbright, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .tooltip(move |window, cx| {
+                    super::tooltip::text(fullbright_tooltip(fullbright), window, cx)
+                })
+                .on_click(cx.listener(move |shell, _, _, cx| shell.set_fullbright(!fullbright, cx)))
                 .into_any_element(),
             ];
         if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
@@ -1059,6 +1076,19 @@ fn show_ui_tooltip(shown: bool) -> &'static str {
         "Show UI \u{2014} hide the ScreenGuis drawn over the 3D view"
     } else {
         "Show UI \u{2014} draw the ScreenGuis over the 3D view again"
+    }
+}
+
+/// The Fullbright tile's tooltip, with its key when it has one.
+fn fullbright_tooltip(on: bool) -> String {
+    let what = if on {
+        "Fullbright \u{2014} light the 3D view with the place\u{2019}s own Lighting again"
+    } else {
+        "Fullbright \u{2014} flat light and no shadows, to see in a dark place. Lighting is not changed"
+    };
+    match crate::shortcuts::hint(crate::shortcuts::Command::Fullbright) {
+        Some(key) => format!("{what} ({key})"),
+        None => what.to_owned(),
     }
 }
 

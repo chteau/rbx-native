@@ -77,6 +77,8 @@ enum Command {
     Interval(Duration),
     Quality(QualityLevel),
     Orthographic(bool),
+    /// The Fullbright view, see `Headless::set_fullbright`.
+    Fullbright(bool),
     /// How the free camera responds, see `Headless::set_camera_feel`.
     CameraFeel(CameraFeel),
     /// Puts the camera at `eye` looking at `target`: see `Headless::open_at`.
@@ -295,6 +297,11 @@ impl Pump {
     /// Swaps the main camera between perspective and orthographic projection.
     pub(super) fn orthographic(&self, orthographic: bool) {
         let _ = self.commands.send(Command::Orthographic(orthographic));
+    }
+
+    /// Draws with flat, shadowless light, or with the place's own again.
+    pub(super) fn fullbright(&self, fullbright: bool) {
+        let _ = self.commands.send(Command::Fullbright(fullbright));
     }
 
     /// Switches whether the selection outline is depth-tested against the
@@ -927,6 +934,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Interval(new) => *rendering.interval = new,
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
+        Command::Fullbright(fullbright) => rendering.viewer.set_fullbright(fullbright),
         Command::CameraFeel(feel) => rendering.viewer.set_camera_feel(feel),
         // Studio's own default field of view.
         Command::LookAt { eye, target, fov } => rendering.viewer.open_at(eye, target, fov),
