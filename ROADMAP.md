@@ -3560,7 +3560,11 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   link), `cpal` on Windows and macOS. The Windows and macOS output has only
   been type-checked, never heard
   ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
-- [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
+- [x] **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition:
+  puts text on the system clipboard, and takes its argument like Roblox's
+  own string parameters (nil errors, a number is its text, anything else
+  warns and goes in through `tostring`). Studio doesn't have it, so a plugin
+  for both checks for it first (`docs/plugins.md`)
   ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).
 - [ ] 📋 **FBX export** beside OBJ and glTF
   ([FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566)).

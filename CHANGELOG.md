@@ -72,6 +72,11 @@
   shows how many match, and tells you when nothing does. Plugins you got
   from Popular plugins also show who made them now. Studio's own Plugin
   Management window still has no search. (@chteau)
+- **Plugins can copy to the clipboard.** `plugin:SetClipboard(text)` is a
+  new rbx-native addition, like `PromptColor3`. It takes its argument the
+  way Roblox's own string parameters do, so nil errors and a table warns
+  then goes in through `tostring`. Studio doesn't have it, so a plugin made
+  for both should check for it first (see `docs/plugins.md`). (@chteau)
 
 ## 2026-11-03
 

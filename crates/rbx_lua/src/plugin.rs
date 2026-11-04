@@ -8,7 +8,7 @@
 //! (`Plugin`/`PluginToolbar`, `Selection`, `ChangeHistoryService`,
 //! `HttpService`, `RunService`, signals, `task`), plus the extensions this
 //! project adds on `plugin` (`PromptColor3`, `PromptBrickColor`,
-//! `CreateFloatingWidget`, `GetDebuggerManager`).
+//! `CreateFloatingWidget`, `GetDebuggerManager`, `SetClipboard`).
 //!
 //! The place's DOM is owned by the editor. [`PluginHost::dispatch`] borrows
 //! it for the length of one input: the host's own instances (each plugin's
