@@ -37,6 +37,7 @@ pub(crate) mod game;
 mod group;
 mod guides;
 mod history;
+mod image_size;
 pub(crate) mod import3d;
 mod input_panel;
 mod keys;
@@ -112,6 +113,7 @@ mod security_audit;
 mod selection;
 mod settings_window;
 mod shortcuts_window;
+mod sound_preview;
 mod style_panel;
 mod sun;
 mod templates_live;
@@ -336,6 +338,8 @@ pub(crate) struct Shell {
     /// One open `Input` per Properties row currently being edited, keyed by
     /// property name; see `shell::edit`.
     edits: edit::Edits,
+    image_sizes: image_size::ImageSizes,
+    sound_preview: sound_preview::SoundPreview,
     /// The Attributes/Tags section's own rename box and add-attribute/add-tag
     /// fields; see `shell::attributes_panel`.
     attribute_edits: attributes_panel::AttributeEdits,
@@ -917,6 +921,8 @@ impl Shell {
             filter,
             properties,
             edits: edit::Edits::default(),
+            image_sizes: image_size::ImageSizes::default(),
+            sound_preview: sound_preview::SoundPreview::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
             range_anchor: None,
