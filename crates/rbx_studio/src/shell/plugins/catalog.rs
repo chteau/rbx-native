@@ -87,7 +87,7 @@ fn records_path() -> Option<PathBuf> {
 impl Shell {
     /// Opens Manage Plugins on the Popular tab.
     pub(super) fn open_plugin_catalog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_plugin_manager(cx);
+        self.open_plugin_manager(window, cx);
         self.catalog_show(Tab::Popular, window, cx);
     }
 
@@ -114,8 +114,57 @@ impl Shell {
             if matches!(self.plugins.catalog.listing, Load::Idle | Load::Failed(_)) {
                 self.catalog_refresh(cx);
             }
+        } else if let Some(query) = &self.plugins.filter.query {
+            query.update(cx, |state, cx| state.focus(window, cx));
         }
         cx.notify();
+    }
+
+    /// Loads the install records and the store listing of the installed
+    /// plugins not listed yet, so the Installed tab can name and search by
+    /// their creators.
+    pub(super) fn catalog_load_installed(&mut self, cx: &mut Context<Self>) {
+        let catalog = &mut self.plugins.catalog;
+        if let Some(path) = records_path() {
+            catalog.installs = Installs::load_from(&path);
+        }
+        let ids: Vec<u64> = catalog
+            .installs
+            .installed
+            .keys()
+            .filter(|id| !catalog.items.contains_key(id))
+            .copied()
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let reply = cx
+                .background_spawn(async move { client().store_items(&ids) })
+                .await;
+            if let Ok(items) = reply {
+                let _ = this.update(cx, |shell, cx| {
+                    let items = items.into_iter().map(|item| (item.id, item));
+                    shell.plugins.catalog.items.extend(items);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// The store creator of each plugin the catalog installed, by file name.
+    pub(super) fn catalog_creators(&self) -> HashMap<&str, &str> {
+        let catalog = &self.plugins.catalog;
+        catalog
+            .installs
+            .installed
+            .iter()
+            .filter_map(|(id, record)| {
+                let item = catalog.items.get(id)?;
+                Some((record.file.as_str(), item.creator_name.as_str()))
+            })
+            .collect()
     }
 
     fn catalog_refresh(&mut self, cx: &mut Context<Self>) {

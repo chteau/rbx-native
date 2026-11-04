@@ -1,8 +1,7 @@
-//! The script editor's finder overlay: Studio's Script Function Filter
-//! (Alt+F, the active script's functions) and Find All / Replace All
-//! (Ctrl+Shift+F, every open tab). One overlay for both, each is a query
-//! field over a list of places to jump to, and they differ only in where the
-//! list comes from.
+//! The script editor's function filter overlay: Studio's Script Function
+//! Filter (Alt+F), a query field over the active script's functions. (Find
+//! and Replace over the whole place is the Find in Place dock,
+//! `shell::find_in_place`.)
 //!
 //! The overlay's keys are taken as the query field's own actions in the
 //! capture phase: GPUI runs a focused input's key bindings before any
@@ -11,40 +10,23 @@
 
 use std::ops::Range;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Enter, Escape, Input, InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
-use crate::script_editor::{find, outline, source, Finder, FinderMode};
+use crate::script_editor::{find, outline, Finder};
 
 use super::Shell;
 use crate::shortcuts::Command;
 
-/// Past this many hits the list stops growing: a one-letter Find All over a
-/// few large scripts is thousands of rows nobody scrolls through, and each is
-/// a laid-out element.
-const MAX_HITS: usize = 500;
-
-/// One place the overlay can jump to.
+/// One function the overlay can jump to.
 pub(super) struct Hit {
     reference: Ref,
     range: Range<usize>,
     label: SharedString,
     detail: SharedString,
-}
-
-/// The shortcut that opens the overlay in `mode`, if `keystroke` is one.
-pub(super) fn mode_for(keystroke: &Keystroke) -> Option<FinderMode> {
-    if crate::shortcuts::pressed(Command::FindFunction, keystroke) {
-        Some(FinderMode::Functions)
-    } else if crate::shortcuts::pressed(Command::FindAll, keystroke) {
-        Some(FinderMode::FindAll)
-    } else {
-        None
-    }
 }
 
 impl Shell {
@@ -56,43 +38,18 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(mode) = mode_for(keystroke) else {
+        if !crate::shortcuts::pressed(Command::FindFunction, keystroke) {
             return false;
-        };
-        self.open_finder(mode, window, cx);
+        }
+        self.open_finder(window, cx);
         true
     }
 
-    pub(super) fn open_finder(
-        &mut self,
-        mode: FinderMode,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(active) = self.scripts.tabs.active() else {
+    fn open_finder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.scripts.tabs.active().is_none() {
             return;
-        };
-        // Find All starts from what's selected, as Studio's does.
-        let seed = match mode {
-            FinderMode::FindAll => self
-                .scripts
-                .open
-                .get(&active)
-                .map(|open| open.state.read(cx).selected_value().to_string())
-                .filter(|text| !text.contains('\n'))
-                .unwrap_or_default(),
-            FinderMode::Functions => String::new(),
-        };
-        let placeholder = match mode {
-            FinderMode::Functions => "Filter functions",
-            FinderMode::FindAll => "Find in open scripts",
-        };
-        let query = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(placeholder)
-                .default_value(seed)
-        });
-        let replacement = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
+        }
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Filter functions"));
         let subscription = cx.subscribe(&query, |shell, _, event: &InputEvent, cx| {
             if let (InputEvent::Change, Some(finder)) = (event, shell.scripts.finder.as_mut()) {
                 finder.selected = 0;
@@ -104,9 +61,7 @@ impl Shell {
             state.focus(window, cx);
         });
         self.scripts.finder = Some(Finder {
-            mode,
             query,
-            replacement,
             selected: 0,
             _subscription: subscription,
         });
@@ -124,59 +79,27 @@ impl Shell {
     }
 
     fn finder_hits(&self, cx: &App) -> Vec<Hit> {
-        let Some(finder) = &self.scripts.finder else {
+        let (Some(finder), Some(active)) = (&self.scripts.finder, self.scripts.tabs.active())
+        else {
             return Vec::new();
         };
-        let query = finder.query.read(cx).value().to_string();
-        let text_of = |reference: Ref| {
-            self.scripts
-                .open
-                .get(&reference)
-                .map(|open| open.state.read(cx).value().to_string())
-        };
-        match finder.mode {
-            FinderMode::Functions => {
-                let Some(active) = self.scripts.tabs.active() else {
-                    return Vec::new();
-                };
-                let text = text_of(active).unwrap_or_default();
-                let needle = query.to_lowercase();
-                outline::functions(&text)
-                    .into_iter()
-                    .filter(|function| function.name.to_lowercase().contains(&needle))
-                    .map(|function| Hit {
-                        reference: active,
-                        detail: format!("line {}", find::line_at(&text, function.range.start).0)
-                            .into(),
-                        range: function.range,
-                        label: function.name.into(),
-                    })
-                    .collect()
-            }
-            FinderMode::FindAll => self
-                .scripts
-                .tabs
-                .all()
-                .iter()
-                .flat_map(|&reference| {
-                    let text = text_of(reference).unwrap_or_default();
-                    let name = source::label(self.edit_dom(), reference).unwrap_or_default();
-                    find::matches(&text, &query)
-                        .into_iter()
-                        .map(|range| {
-                            let (line, content) = find::line_at(&text, range.start);
-                            Hit {
-                                reference,
-                                label: content.to_string().into(),
-                                detail: format!("{name}:{line}").into(),
-                                range,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .take(MAX_HITS)
-                .collect(),
-        }
+        let needle = finder.query.read(cx).value().to_lowercase();
+        let text = self
+            .scripts
+            .open
+            .get(&active)
+            .map(|open| open.state.read(cx).value().to_string())
+            .unwrap_or_default();
+        outline::functions(&text)
+            .into_iter()
+            .filter(|function| function.name.to_lowercase().contains(&needle))
+            .map(|function| Hit {
+                reference: active,
+                detail: format!("line {}", find::line_at(&text, function.range.start).0).into(),
+                range: function.range,
+                label: function.name.into(),
+            })
+            .collect()
     }
 
     /// Brings `hit`'s tab to the front with the hit selected, and hands focus
@@ -216,34 +139,6 @@ impl Shell {
         }
     }
 
-    /// Replace All across every open tab. Goes through the editor rather than
-    /// the DOM, so each tab keeps the change on its own undo stack and
-    /// reaches `Source` through the same debounced write typing does.
-    fn replace_everywhere(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(finder) = &self.scripts.finder else {
-            return;
-        };
-        let query = finder.query.read(cx).value().to_string();
-        let replacement = finder.replacement.read(cx).value().to_string();
-        for reference in self.scripts.tabs.all().to_vec() {
-            let Some(state) = self
-                .scripts
-                .open
-                .get(&reference)
-                .map(|open| open.state.clone())
-            else {
-                continue;
-            };
-            let text = state.read(cx).value().to_string();
-            let Some(replaced) = find::replace_all(&text, &query, &replacement) else {
-                continue;
-            };
-            state.update(cx, |state, cx| state.replace_all(replaced, window, cx));
-            self.script_changed(reference, cx);
-        }
-        cx.notify();
-    }
-
     /// The overlay, if it is up; drawn over the top of the editor.
     pub(super) fn script_finder(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let finder = self.scripts.finder.as_ref()?;
@@ -256,7 +151,6 @@ impl Shell {
             theme.list_active,
             theme.muted_foreground,
         );
-        let find_all = finder.mode == FinderMode::FindAll;
         let empty = hits.is_empty() && !finder.query.read(cx).value().is_empty();
 
         let rows = hits.into_iter().enumerate().map(|(index, hit)| {
@@ -311,26 +205,6 @@ impl Shell {
                 cx.stop_propagation();
             }))
             .child(Input::new(&finder.query).xsmall())
-            .when(find_all, |overlay| {
-                overlay.child(
-                    h_flex()
-                        .gap_1()
-                        .child(
-                            div()
-                                .flex_1()
-                                .child(Input::new(&finder.replacement).xsmall()),
-                        )
-                        .child(
-                            Button::new("script-finder-replace-all")
-                                .label("Replace All")
-                                .xsmall()
-                                .ghost()
-                                .on_click(cx.listener(|shell, _, window, cx| {
-                                    shell.replace_everywhere(window, cx);
-                                })),
-                        ),
-                )
-            })
             .child(
                 v_flex()
                     .id("script-finder-hits")
@@ -342,34 +216,5 @@ impl Shell {
                     }),
             );
         Some(overlay.into_any_element())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    // Not `super::*`: that brings in `gpui_kit::*`, whose own `test` macro
-    // would shadow the standard one.
-    use super::mode_for;
-    use crate::script_editor::FinderMode;
-    use gpui_kit::Keystroke;
-
-    fn key(text: &str) -> Keystroke {
-        Keystroke::parse(text).unwrap()
-    }
-
-    #[test]
-    fn shortcuts_open_the_matching_mode() {
-        assert_eq!(mode_for(&key("alt-f")), Some(FinderMode::Functions));
-        assert_eq!(
-            mode_for(&key("secondary-shift-f")),
-            Some(FinderMode::FindAll)
-        );
-        assert_eq!(
-            mode_for(&key("secondary-shift-h")),
-            Some(FinderMode::FindAll)
-        );
-        // Plain Ctrl+F is the editor's own in-script Find.
-        assert_eq!(mode_for(&key("secondary-f")), None);
-        assert_eq!(mode_for(&key("f")), None);
     }
 }

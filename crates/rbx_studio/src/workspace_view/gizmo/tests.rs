@@ -1080,3 +1080,21 @@ fn a_locked_corner_wedge_scales_every_axis_by_the_same_factor() {
     };
     assert_eq!((size.x, size.y, size.z), (5.0, 2.5, 10.0));
 }
+
+#[test]
+fn only_ctrl_alt_picks_a_locked_part() {
+    let held = |control, alt, shift| Modifiers {
+        control,
+        alt,
+        shift,
+        ..Modifiers::default()
+    };
+    #[cfg(not(target_os = "macos"))]
+    assert!(picks_locked(held(true, true, false)));
+    #[cfg(not(target_os = "macos"))]
+    assert!(picks_locked(held(true, true, true)));
+    assert!(!picks_locked(held(false, true, false)));
+    assert!(!picks_locked(held(true, false, false)));
+    assert!(!picks_locked(held(false, true, true)));
+    assert!(!picks_locked(Modifiers::default()));
+}

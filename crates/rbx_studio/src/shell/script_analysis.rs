@@ -166,7 +166,9 @@ fn problem_row(
 fn summary(status: &Status, counts: Counts) -> String {
     match status {
         Status::Off | Status::Starting => "Starting luau-lsp…".into(),
-        Status::Failed(reason) => reason.clone(),
+        // Loren's warnings still show without the server.
+        Status::Failed(reason) if counts == Counts::default() => reason.clone(),
+        Status::Failed(reason) => format!("{reason} · {}", count_summary(counts)),
         Status::Ready(_) => count_summary(counts),
     }
 }
@@ -189,7 +191,7 @@ fn count_summary(counts: Counts) -> String {
 
 /// `Instance:GetFullName()`: the dotted path from the service down, which is
 /// how Studio's own Script Analysis names a script.
-fn full_name(dom: &WeakDom, script: Ref) -> String {
+pub(super) fn full_name(dom: &WeakDom, script: Ref) -> String {
     let mut names = Vec::new();
     let mut at = Some(script);
     while let Some(reference) = at {

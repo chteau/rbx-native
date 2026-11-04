@@ -373,6 +373,15 @@ impl Headless {
         self.offscreen.set_orthographic(orthographic);
     }
 
+    /// Draws the place with flat, shadowless light and none of its local
+    /// lights, or with its own `Lighting` again: the editor's Fullbright
+    /// view. The place is not touched, and an isolated view keeps its own
+    /// neutral light. Read on the next frame.
+    pub fn set_fullbright(&mut self, fullbright: bool) {
+        self.view.fullbright = fullbright;
+        self.offscreen.set_fullbright(fullbright);
+    }
+
     /// The projection mode [`Headless::set_orthographic`] last set.
     pub fn orthographic(&self) -> bool {
         self.view.orthographic

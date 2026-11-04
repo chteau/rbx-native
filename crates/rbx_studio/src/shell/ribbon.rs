@@ -28,7 +28,6 @@ use super::chrome::Document;
 use super::layout::Panel;
 use super::roving::Roving;
 
-use crate::script_editor::FinderMode;
 use crate::script_templates::ScriptTemplates;
 use crate::tokens;
 use crate::transform::Tool;
@@ -378,6 +377,7 @@ impl Shell {
     /// Studio keeps on its ribbon.
     fn viewport_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let shown = self.show_screen_gui;
+        let fullbright = self.fullbright;
         let mut tiles =
             vec![
                 tile(
@@ -407,6 +407,22 @@ impl Shell {
                 .on_click(cx.listener(|shell, _, _, cx| {
                     shell.set_screen_gui_shown(!shell.show_screen_gui, cx)
                 }))
+                .into_any_element(),
+                tile(
+                    &self.ribbon_nav,
+                    "ribbon-fullbright",
+                    IconName::Sun,
+                    "Fullbright",
+                    cx,
+                )
+                .when(fullbright, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .tooltip(move |window, cx| {
+                    super::tooltip::text(fullbright_tooltip(fullbright), window, cx)
+                })
+                .on_click(cx.listener(move |shell, _, _, cx| shell.set_fullbright(!fullbright, cx)))
                 .into_any_element(),
             ];
         if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
@@ -507,28 +523,24 @@ impl Shell {
         .into_any_element()
     }
 
-    /// The Script tab: Find and Replace open the script editor's finder
-    /// overlay (its Find All / Replace All), Analysis toggles the Script
-    /// Analysis panel. Format has nothing behind it.
+    /// The Script tab: Find and Replace open the Find in Place panel, from
+    /// any document, Analysis toggles the Script Analysis panel. Format has
+    /// nothing behind it.
     fn script_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let can_find = self.document == Document::Scripts && self.scripts.tabs.active().is_some();
         let finder = |id: &'static str,
                       icon,
                       label: &'static str,
                       tip: &'static str,
+                      replace: bool,
                       cx: &mut Context<Self>| {
-            if can_find {
-                tile(&self.ribbon_nav, id, icon, label, cx)
-                    .tooltip(move |window, cx| {
-                        super::tooltip::text(format!("{label} \u{2014} {tip}"), window, cx)
-                    })
-                    .on_click(cx.listener(|shell, _, window, cx| {
-                        shell.open_finder(FinderMode::FindAll, window, cx)
-                    }))
-                    .into_any_element()
-            } else {
-                unavailable_tile(id, icon, label, "open a script first").into_any_element()
-            }
+            tile(&self.ribbon_nav, id, icon, label, cx)
+                .tooltip(move |window, cx| {
+                    super::tooltip::text(format!("{label} \u{2014} {tip}"), window, cx)
+                })
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.open_find_in_place(replace, window, cx)
+                }))
+                .into_any_element()
         };
         let analysis = self.is_panel_showing(Panel::ScriptAnalysis);
         vec![
@@ -536,14 +548,16 @@ impl Shell {
                 "ribbon-script-find",
                 IconName::Search,
                 "Find",
-                "search every open script",
+                "search every script in the place",
+                false,
                 cx,
             ),
             finder(
                 "ribbon-script-replace",
                 IconName::Type,
                 "Replace",
-                "replace across every open script",
+                "replace across every script in the place",
+                true,
                 cx,
             ),
             unavailable_tile(
@@ -678,6 +692,7 @@ impl Shell {
             (Panel::Playtests, IconName::Film, "Playtests"),
             (Panel::Layers, IconName::Layers, "Layers"),
             (Panel::Loren, IconName::Layers, "Loren"),
+            (Panel::FindInPlace, IconName::Search, "Find in Place"),
         ];
         if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
             tiles.push((Panel::Localization, IconName::Globe, "Localization"));
@@ -1059,6 +1074,19 @@ fn show_ui_tooltip(shown: bool) -> &'static str {
         "Show UI \u{2014} hide the ScreenGuis drawn over the 3D view"
     } else {
         "Show UI \u{2014} draw the ScreenGuis over the 3D view again"
+    }
+}
+
+/// The Fullbright tile's tooltip, with its key when it has one.
+fn fullbright_tooltip(on: bool) -> String {
+    let what = if on {
+        "Fullbright \u{2014} light the 3D view with the place\u{2019}s own Lighting again"
+    } else {
+        "Fullbright \u{2014} flat light and no shadows, to see in a dark place. Lighting is not changed"
+    };
+    match crate::shortcuts::hint(crate::shortcuts::Command::Fullbright) {
+        Some(key) => format!("{what} ({key})"),
+        None => what.to_owned(),
     }
 }
 

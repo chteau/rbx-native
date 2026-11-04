@@ -373,6 +373,8 @@ pub enum Request {
         plugin: PluginId,
         text: String,
     },
+    /// `plugin:SetClipboard(text)`: put `text` on the system clipboard.
+    SetClipboard(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]

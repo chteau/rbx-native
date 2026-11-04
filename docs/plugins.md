@@ -25,6 +25,9 @@ Examples live in `examples/plugins/`:
 
 Each plugin gets its own Luau VM. The plugin manager lists every plugin with
 its origin and the last error that stopped one of its scripts from loading.
+It opens with the cursor in its search field, which filters the list as you
+type by name, creator (known for plugins installed from Popular plugins) or
+kind; every word typed has to match.
 
 ## Popular plugins
 
@@ -186,6 +189,13 @@ Available to every plugin, Roblox or native:
   a click outside closes it.
 - `plugin:GetDebuggerManager()`: breakpoints, watches and stepping through
   the editor's debugger.
+- `plugin:SetClipboard(text)`: puts `text` on the system clipboard. It takes
+  its argument the way Roblox's own string parameters do: nil errors
+  (`Argument 1 missing or nil`), a number is its text, and anything else
+  warns (`argument #1 expects a string, but table was passed`) and goes in
+  as `tostring` gives it. Roblox Studio has no such method (`SetClipboard is
+  not a valid member of Plugin`), so a plugin meant for both should check
+  first: `pcall(function() return plugin.SetClipboard end)`.
 
 Native plugins also get `rbxnative.command(id, text, fn)`, which adds a
 button to the Plugins tab, and `rbxnative.notify(text)`, which shows a toast.

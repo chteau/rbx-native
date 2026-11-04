@@ -867,3 +867,67 @@ fn run_doctor_follows_default_project_json_when_the_code_is_not_under_src() {
         "src/ first, then the mapped folders; Service checks only under the server folder"
     );
 }
+
+#[test]
+fn run_doctor_warns_about_a_name_two_siblings_share_with_file_and_line() {
+    let dir = project(None);
+    let root = dir.path();
+    let tree = |world: &str| {
+        format!(
+            r#"{{"name":"t","tree":{{"$className":"DataModel","Workspace":{{"$className":"Workspace",{world}}},"ServerScriptService":{{"Server":{{"$path":"src/server"}}}}}}}}"#
+        )
+    };
+    write(
+        root,
+        "src/server/Main.server.luau",
+        "local ok = 1\nlocal a = workspace.Part\n",
+    );
+    let dupes = |res: &rbx_loren::ctx::DoctorResult| {
+        res.issues
+            .iter()
+            .filter(|i| i.kind == "duplicate-name")
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+
+    write(
+        root,
+        "default.project.json",
+        &tree(r#""Part":{"$className":"Part"}"#),
+    );
+    assert!(dupes(&run_doctor(root, &opts(&Log::memory()))).is_empty());
+
+    write(
+        root,
+        "default.project.json",
+        &tree(
+            r#""Part":{"$className":"Part"},"Other":{"$className":"Folder","Part":{"$className":"Part"}}"#,
+        ),
+    );
+    assert!(dupes(&run_doctor(root, &opts(&Log::memory()))).is_empty());
+
+    write(
+        root,
+        "default.project.json",
+        &tree(r#""World":{"$path":"src/world"}"#),
+    );
+    write(
+        root,
+        "src/server/Main.server.luau",
+        "local ok = 1\nlocal a = workspace.World.Part\n",
+    );
+    write(root, "src/world/Part.server.luau", "");
+    write(root, "src/world/Part.client.luau", "");
+    let log = Log::memory();
+    let res = run_doctor(root, &opts(&log));
+    let found = dupes(&res);
+    assert_eq!(found.len(), 1, "{:?}", res.issues);
+    assert_eq!(found[0].file, "src/server/Main.server.luau");
+    assert_eq!(found[0].line, 2);
+    assert_eq!(found[0].severity, Severity::Warn);
+    assert_eq!(res.exit_code, 0);
+    assert_match(
+        &log.output(),
+        r"src/server/Main\.server\.luau:2 .*World has 2 children named",
+    );
+}
