@@ -3530,8 +3530,16 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   kept per place in `version-labels.json` in the config folder. The search
   covers the pages loaded so far and says so, Load more reaches further back
   ([Version History needs naming, search, and folders](https://devforum.roblox.com/t/version-history-needs-naming-search-and-folders/4382404)).
-- [ ] 📋 **A Loren lint for scripts that index an instance by a name two
-  siblings share**
+- [x] **A Loren lint for scripts that index an instance by a name two
+  siblings share**: `workspace.Part`, `["Part"]`, `:FindFirstChild("Part")`
+  and `:WaitForChild("Part")` all hand back the first of the two in child
+  order (checked in Studio), so which one you get changes when one is
+  re-parented. Chains starting at `game`, `workspace`, `script`,
+  `GetService` or a `local` alias are followed through the place; a
+  property or method of the class wins over a child, like in Roblox, and a
+  recursive `FindFirstChild` is skipped. Shows in Script Analysis and as
+  squiggles (source "Loren", works without luau-lsp) and in `loren doctor`
+  as a warning with file and line
   ([Warn when two instances share the same name](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911)).
 - [x] **Fullbright viewport toggle**: the Test tab's Fullbright tile, the
   Viewport panel's Camera section or Alt+L (Customize Shortcuts) draws

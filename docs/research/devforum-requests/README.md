@@ -54,7 +54,7 @@ Status, as of `dev` on 2026-11-03:
 | [Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605) | 48 | **planned** |
 | [Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518) | 44 | **planned** |
 | [Version History needs naming, search, and folders](https://devforum.roblox.com/t/version-history-needs-naming-search-and-folders/4382404) | 41 | **planned**: browse and restore are shipped; search is not. Naming a version needs Roblox's servers to store the name, so only a local label is possible |
-| [Warn when two instances share the same name and are accessed by scripts](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911) | 36 | **planned** |
+| [Warn when two instances share the same name and are accessed by scripts](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911) | 36 | **shipped** |
 | ["Fullbright" Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596) | 35 | **shipped**: Test tab › Fullbright, the Viewport panel's Camera section or Alt+L; renderer only, `Lighting` untouched (Viewport) |
 | [AudioPlayer should have Play button in Properties Pane](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735) | 32 | **planned** |
 | [Add server/client context option for ModuleScripts](https://devforum.roblox.com/t/add-server-client-context-option-for-modulescripts/4192753) | 65 | **impossible**: where a module runs is the engine's call |

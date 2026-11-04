@@ -42,7 +42,15 @@ pub(super) struct Session {
     mirror: Mirror,
     /// The history revision the mirror last matched.
     synced: Option<u64>,
-    /// Every script with a problem, as of the last pull.
+    /// What the server reported at the last pull.
+    pulled: Vec<(Ref, Vec<Diagnostic>)>,
+    /// Loren's own warnings for the place as of `loren_revision`; they need
+    /// no server.
+    pub(super) loren: Vec<(Ref, Vec<Diagnostic>)>,
+    pub(super) loren_revision: Option<u64>,
+    pub(super) loren_scheduled: bool,
+    /// Every script with a problem, the two lists above together; the one
+    /// thing the dock, the status bar and the squiggles read.
     pub(super) problems: Vec<(Ref, Vec<Diagnostic>)>,
     /// Bumped per scheduled refresh; only the latest one runs.
     generation: u64,
@@ -56,6 +64,10 @@ impl Default for Session {
             status: Status::Off,
             mirror: Mirror::new(luau_lsp::workspace_root()),
             synced: None,
+            pulled: Vec::new(),
+            loren: Vec::new(),
+            loren_revision: None,
+            loren_scheduled: false,
             problems: Vec::new(),
             generation: 0,
             scheduled: false,
@@ -178,6 +190,7 @@ impl Shell {
     /// mirror last matched it, an undo, a Command Bar script, an Argon
     /// sync, and one is not already waiting.
     pub(super) fn notice_luau_lsp_dom_change(&mut self, cx: &mut Context<Self>) {
+        self.notice_loren_dom_change(cx);
         if self.live_shown() {
             return;
         }
@@ -234,7 +247,14 @@ impl Shell {
         let Ok(reply) = reply else {
             return;
         };
-        self.lsp.problems = diagnostics::parse(&reply, &self.lsp.mirror);
+        self.lsp.pulled = diagnostics::parse(&reply, &self.lsp.mirror);
+        self.show_problems(cx);
+    }
+
+    /// Merges the server's problems with Loren's and hands them to the dock
+    /// and every open tab.
+    pub(super) fn show_problems(&mut self, cx: &mut Context<Self>) {
+        self.lsp.problems = diagnostics::merge(&self.lsp.pulled, &self.lsp.loren);
         for (reference, open) in &self.scripts.open {
             let problems = self
                 .lsp
