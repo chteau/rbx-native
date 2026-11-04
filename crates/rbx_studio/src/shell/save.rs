@@ -46,6 +46,9 @@ impl Shell {
             self.filter
                 .update(cx, |filter, cx| filter.focus(window, cx));
         }
+        if crate::shortcuts::pressed(crate::shortcuts::Command::FindAll, keystroke) {
+            self.open_find_in_place(keystroke.key == "h", window, cx);
+        }
         if let Some(Action::Save) = save::action_for(&keystroke.key, keystroke.modifiers) {
             self.save(cx);
         }

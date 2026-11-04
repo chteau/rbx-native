@@ -156,13 +156,16 @@ pub(crate) enum Panel {
     /// Creator Store search and insert (`shell::toolbox`), Studio's
     /// Toolbox. Shut until asked for.
     Toolbox,
+    /// Find and replace over every script in the place
+    /// (`shell::find_in_place`). Shut until asked for.
+    FindInPlace,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 22] = [
+    pub(crate) const ALL: [Panel; 23] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -185,6 +188,7 @@ impl Panel {
         Panel::AvatarSettings,
         Panel::Localization,
         Panel::Toolbox,
+        Panel::FindInPlace,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged, also
@@ -211,7 +215,8 @@ impl Panel {
             | Panel::Tests
             | Panel::Loren
             | Panel::AvatarSettings
-            | Panel::Localization => Edge::Bottom,
+            | Panel::Localization
+            | Panel::FindInPlace => Edge::Bottom,
         }
     }
 
@@ -241,6 +246,7 @@ impl Panel {
             Panel::AvatarSettings => "Avatar Settings",
             Panel::Localization => "Localization",
             Panel::Toolbox => "Toolbox",
+            Panel::FindInPlace => "Find in Place",
         }
     }
 
@@ -263,6 +269,7 @@ impl Panel {
                 | Panel::AvatarSettings
                 | Panel::Localization
                 | Panel::Toolbox
+                | Panel::FindInPlace
         )
     }
 

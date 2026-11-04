@@ -95,6 +95,7 @@ mod tree_keys;
 
 mod argon_dock;
 mod datastores;
+mod find_in_place;
 mod game_settings;
 mod require_graph;
 mod rows;
@@ -382,6 +383,8 @@ pub(crate) struct Shell {
     bytecode: bytecode_dock::BytecodeDock,
     /// The Toolbox dock's search and inserts; see `shell::toolbox`.
     toolbox: toolbox::ToolboxDock,
+    /// The Find in Place dock's fields and results; see `shell::find_in_place`.
+    find_place: find_in_place::FindInPlace,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -929,6 +932,7 @@ impl Shell {
             tests: tests_dock::TestsDock::default(),
             bytecode: bytecode_dock::BytecodeDock::default(),
             toolbox: toolbox::ToolboxDock::default(),
+            find_place: find_in_place::FindInPlace::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),

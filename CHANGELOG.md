@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-04
+
+- **Find in Place: search and replace in every script of the place.**
+  Ctrl+Shift+F (Ctrl+Shift+H to replace) opens a dock that looks through
+  every script, open or not, with match case, whole word and regex
+  toggles, a Where filter on the script's name, and results grouped per
+  script with a row per match. Replace All writes to the whole place as
+  one step, so Ctrl+Z puts every script back, which Studio's own can't do
+  for closed ones. Works from any window, no open script needed. (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

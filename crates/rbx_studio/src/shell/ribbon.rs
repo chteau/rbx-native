@@ -28,7 +28,6 @@ use super::chrome::Document;
 use super::layout::Panel;
 use super::roving::Roving;
 
-use crate::script_editor::FinderMode;
 use crate::script_templates::ScriptTemplates;
 use crate::tokens;
 use crate::transform::Tool;
@@ -507,28 +506,24 @@ impl Shell {
         .into_any_element()
     }
 
-    /// The Script tab: Find and Replace open the script editor's finder
-    /// overlay (its Find All / Replace All), Analysis toggles the Script
-    /// Analysis panel. Format has nothing behind it.
+    /// The Script tab: Find and Replace open the Find in Place panel, from
+    /// any document, Analysis toggles the Script Analysis panel. Format has
+    /// nothing behind it.
     fn script_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let can_find = self.document == Document::Scripts && self.scripts.tabs.active().is_some();
         let finder = |id: &'static str,
                       icon,
                       label: &'static str,
                       tip: &'static str,
+                      replace: bool,
                       cx: &mut Context<Self>| {
-            if can_find {
-                tile(&self.ribbon_nav, id, icon, label, cx)
-                    .tooltip(move |window, cx| {
-                        super::tooltip::text(format!("{label} \u{2014} {tip}"), window, cx)
-                    })
-                    .on_click(cx.listener(|shell, _, window, cx| {
-                        shell.open_finder(FinderMode::FindAll, window, cx)
-                    }))
-                    .into_any_element()
-            } else {
-                unavailable_tile(id, icon, label, "open a script first").into_any_element()
-            }
+            tile(&self.ribbon_nav, id, icon, label, cx)
+                .tooltip(move |window, cx| {
+                    super::tooltip::text(format!("{label} \u{2014} {tip}"), window, cx)
+                })
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.open_find_in_place(replace, window, cx)
+                }))
+                .into_any_element()
         };
         let analysis = self.is_panel_showing(Panel::ScriptAnalysis);
         vec![
@@ -536,14 +531,16 @@ impl Shell {
                 "ribbon-script-find",
                 IconName::Search,
                 "Find",
-                "search every open script",
+                "search every script in the place",
+                false,
                 cx,
             ),
             finder(
                 "ribbon-script-replace",
                 IconName::Type,
                 "Replace",
-                "replace across every open script",
+                "replace across every script in the place",
+                true,
                 cx,
             ),
             unavailable_tile(
@@ -678,6 +675,7 @@ impl Shell {
             (Panel::Playtests, IconName::Film, "Playtests"),
             (Panel::Layers, IconName::Layers, "Layers"),
             (Panel::Loren, IconName::Layers, "Loren"),
+            (Panel::FindInPlace, IconName::Search, "Find in Place"),
         ];
         if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
             tiles.push((Panel::Localization, IconName::Globe, "Localization"));
