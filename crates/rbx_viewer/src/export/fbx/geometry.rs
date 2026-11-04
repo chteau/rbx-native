@@ -18,7 +18,6 @@ pub(super) fn geometry(id: i64, name: &str, meshes: &[&ExportMesh], to_local: Ma
     let mut materials = Vec::new();
     let mut tangents = Vec::new();
     let mut binormals = Vec::new();
-    let with_uvs = meshes.iter().any(|mesh| !mesh.uvs.is_empty());
     // Only a baked normal map comes with its own frame; written where every
     // surface has one, or a reader would mix it with frames it derives.
     let with_tangents = meshes.iter().all(|mesh| !mesh.tangents.is_empty());
@@ -33,13 +32,13 @@ pub(super) fn geometry(id: i64, name: &str, meshes: &[&ExportMesh], to_local: Ma
             let local = to_local.transform_point3(Vec3::from(p));
             vertices.extend(local.to_array().map(f64::from));
         }
-        if with_uvs {
-            // FBX puts V's origin at the bottom, where Roblox has it on top.
-            let flip = |uv: &[f32; 2]| [f64::from(uv[0]), 1.0 - f64::from(uv[1])];
-            match mesh.uvs.is_empty() {
-                true => uvs.extend(std::iter::repeat_n(0.0, mesh.positions.len() * 2)),
-                false => uvs.extend(mesh.uvs.iter().flat_map(flip)),
-            }
+        // Always written, as every surface has a colour map to sample, if
+        // only a one-texel swatch. FBX puts V's origin at the bottom, where
+        // Roblox has it on top.
+        let flip = |uv: &[f32; 2]| [f64::from(uv[0]), 1.0 - f64::from(uv[1])];
+        match mesh.uvs.is_empty() {
+            true => uvs.extend(std::iter::repeat_n(0.0, mesh.positions.len() * 2)),
+            false => uvs.extend(mesh.uvs.iter().flat_map(flip)),
         }
         for triangle in mesh.indices.as_chunks::<3>().0 {
             for (corner, &index) in triangle.iter().enumerate() {
@@ -124,18 +123,16 @@ pub(super) fn geometry(id: i64, name: &str, meshes: &[&ExportMesh], to_local: Ma
             vec![Node::new("Tangents", vec![Prop::F64s(tangents)])],
         );
     }
-    if with_uvs {
-        add(
-            "LayerElementUV",
-            101,
-            "ByPolygonVertex",
-            "IndexToDirect",
-            vec![
-                Node::new("UV", vec![Prop::F64s(uvs)]),
-                Node::new("UVIndex", vec![Prop::I32s(uv_index)]),
-            ],
-        );
-    }
+    add(
+        "LayerElementUV",
+        101,
+        "ByPolygonVertex",
+        "IndexToDirect",
+        vec![
+            Node::new("UV", vec![Prop::F64s(uvs)]),
+            Node::new("UVIndex", vec![Prop::I32s(uv_index)]),
+        ],
+    );
     add(
         "LayerElementMaterial",
         101,

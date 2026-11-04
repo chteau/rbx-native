@@ -74,6 +74,17 @@ fn tinted(rgba: &[u8], tint: [f32; 3], alpha: bool) -> Vec<u8> {
     out
 }
 
+/// A linear `color` as the sRGB texel of its swatch.
+pub(super) fn swatch_texel(color: [f32; 4]) -> [u8; 3] {
+    [color[0], color[1], color[2]]
+        .map(|c| (linear_to_srgb(c.clamp(0.0, 1.0)) * 255.0).round() as u8)
+}
+
+/// A 1x1 PNG of `texel`, the whole colour map of a plain surface.
+pub(super) fn swatch(texel: [u8; 3]) -> Vec<u8> {
+    encode(1, 1, &texel, false).unwrap_or_default()
+}
+
 fn decode(png: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     let mut decoder = png::Decoder::new(Cursor::new(png));
     decoder.set_transformations(png::Transformations::normalize_to_color8());

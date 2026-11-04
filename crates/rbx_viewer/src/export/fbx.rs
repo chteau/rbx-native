@@ -2,7 +2,7 @@
 //! placed relative to their parents, each part's surfaces as one geometry
 //! (see [`geometry`]), a Phong material per surface, and the PNGs those
 //! materials use embedded in the file, colour maps with the part's colour
-//! baked in (see [`diffuse`]).
+//! baked in and a one-texel swatch on plain surfaces (see [`diffuse`]).
 //!
 //! Units are studs at one stud to the metre (`UnitScaleFactor` 100, FBX
 //! counting in centimetres), in Roblox's own right-handed Y-up frame, so a
@@ -54,15 +54,17 @@ pub fn fbx(export: &Export) -> Result<Vec<u8>, String> {
         .collect();
     // Each image once, as a texture over an embedded clip: a normal map by
     // its index in `Export::textures`, a colour map by that and the tint
-    // baked into it (see [`diffuse`]).
+    // baked into it (see [`diffuse`]), and a surface with no colour map by
+    // its colour, as a one-texel swatch.
     let mut textures = BTreeMap::new();
     for (mesh, &id) in export.meshes.iter().zip(&materials) {
         objects.push(material(id, mesh));
         let maps = [
             (
-                mesh.maps
-                    .color
-                    .map(|i| Map::Color(diffuse::Key::of(mesh, i))),
+                Some(mesh.maps.color.map_or_else(
+                    || Map::Swatch(diffuse::swatch_texel(mesh.color)),
+                    |i| Map::Color(diffuse::Key::of(mesh, i)),
+                )),
                 "DiffuseColor",
             ),
             (mesh.maps.normal.map(Map::Normal), "NormalMap"),
@@ -78,6 +80,7 @@ pub fn fbx(export: &Export) -> Result<Vec<u8>, String> {
                 let png = match map {
                     Map::Color(key) => diffuse::bake(&export.textures[key.index()], key),
                     Map::Normal(index) => export.textures[index].clone(),
+                    Map::Swatch(texel) => diffuse::swatch(texel),
                 };
                 objects.push(texture_node(texture, count));
                 objects.push(video_node(video, count, png));
@@ -167,6 +170,10 @@ const CREATOR: &str = "rbx-native";
 enum Map {
     Color(diffuse::Key),
     Normal(usize),
+    /// Studio's 3D Importer leaves a material with no colour map grey,
+    /// whatever its `DiffuseColor`, so plain surfaces get their colour as
+    /// an image too.
+    Swatch([u8; 3]),
 }
 
 fn header() -> Node {

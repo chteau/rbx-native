@@ -203,7 +203,8 @@ fn materials_carry_colour_neon_and_the_embedded_image() {
     assert_eq!(property(materials[0], "EmissiveFactor"), [0.0]);
     assert_eq!(property(materials[2], "EmissiveColor"), [1.0, 0.5, 0.25]);
     let videos = objects(&tree, "Video");
-    assert_eq!(videos.len(), 1);
+    // The image and one swatch the two plain surfaces share.
+    assert_eq!(videos.len(), 2);
     let content = child(videos[0], "Content");
     assert_eq!(
         content.attributes()[0].get_binary(),
@@ -267,8 +268,8 @@ fn colour_maps_carry_the_tint_and_only_an_images_own_alpha() {
     export.meshes[1].blend = true;
     export.meshes[1].uvs = export.meshes[0].uvs.clone();
     let tree = parse(&fbx(&export).unwrap());
-    // Two files: the tinted one and the untouched one.
-    assert_eq!(objects(&tree, "Video").len(), 2);
+    // Three files: the tinted one, the untouched one and the lamp's swatch.
+    assert_eq!(objects(&tree, "Video").len(), 3);
 
     let (kind, texels) = image_on(&tree, 0);
     assert_eq!(kind, png::ColorType::Rgb);
@@ -278,4 +279,21 @@ fn colour_maps_carry_the_tint_and_only_an_images_own_alpha() {
     let (kind, texels) = image_on(&tree, 1);
     assert_eq!(kind, png::ColorType::Rgba);
     assert_eq!(texels, [188, 188, 188, 40]);
+}
+
+#[test]
+fn plain_surfaces_get_one_swatch_per_colour() {
+    let mut export = sample();
+    export.meshes.push(surface("Other", [0.0; 3], false));
+    export.meshes[3].color = [0.0, 0.0, 1.0, 0.5];
+    let tree = parse(&fbx(&export).unwrap());
+    // (1, 0.5, 0.25) linear in sRGB, shared by the plain Block and the lamp.
+    assert_eq!(
+        image_on(&tree, 1),
+        (png::ColorType::Rgb, vec![255, 188, 137])
+    );
+    assert_eq!(image_on(&tree, 2), image_on(&tree, 1));
+    // Transparency stays on the material, not in the swatch.
+    assert_eq!(image_on(&tree, 3), (png::ColorType::Rgb, vec![0, 0, 255]));
+    assert_eq!(objects(&tree, "Video").len(), 3);
 }

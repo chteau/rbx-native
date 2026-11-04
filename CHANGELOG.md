@@ -7,7 +7,9 @@
   it opens straight in Blender, Maya or Studio's 3D Importer. You get the
   same hierarchy, meshes, UVs and textures as the glTF export, with each
   part's colour baked into its texture since FBX tools don't tint it
-  themselves. Neon comes out emissive and Transparency carries over.
+  themselves. Plain parts get a one-pixel texture of their colour, since
+  Studio's importer shows a colour with no texture as grey. Neon comes out
+  emissive and Transparency carries over.
   (@chteau)
 
 ## 2026-11-03
