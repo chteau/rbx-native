@@ -15,6 +15,12 @@ impl Shell {
         cx.notify();
     }
 
+    pub(in crate::shell) fn set_output_rich_text(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.output_rich_text = on;
+        self.save_settings();
+        cx.notify();
+    }
+
     pub(in crate::shell) fn set_output_display(
         &mut self,
         display: crate::settings::OutputDisplay,

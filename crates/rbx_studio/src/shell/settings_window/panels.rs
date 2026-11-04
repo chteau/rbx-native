@@ -34,7 +34,7 @@ const SERVICES: [&str; 12] = [
 
 impl SettingsWindow {
     pub(super) fn explorer_output_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {
-        let (all, increment, expand, anchored, timestamps, overrides) = {
+        let (all, increment, expand, anchored, timestamps, rich, overrides) = {
             let shell = self.shell.read(cx);
             (
                 shell.show_all_services(),
@@ -42,6 +42,7 @@ impl SettingsWindow {
                 shell.expand_on_select,
                 shell.insert_anchored,
                 shell.output_show_timestamps,
+                shell.output_rich_text,
                 shell.service_overrides().clone(),
             )
         };
@@ -146,7 +147,17 @@ impl SettingsWindow {
             .describe("Show the time before every line. Remembered between launches.")
             .changed(timestamps, |shell, cx| {
                 shell.set_output_timestamps(false, cx)
-            })],
+            }),
+            Row::new(
+                "Rich text colours",
+                toggle(
+                    "output-rich-text",
+                    rich,
+                    self.set(move |shell, cx| shell.set_output_rich_text(!rich, cx)),
+                ),
+            )
+            .describe("Draw a printed line\u{2019}s rich text tags, <font color>, <b>, <u> and <s>, instead of showing them.")
+            .changed(rich, |shell, cx| shell.set_output_rich_text(false, cx))],
         );
         vec![explorer, output]
     }

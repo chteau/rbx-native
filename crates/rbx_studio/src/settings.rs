@@ -103,6 +103,10 @@ pub(crate) struct Settings {
     pub(crate) output_collapsed: bool,
     /// Whether Output rows print their time.
     pub(crate) output_timestamps: bool,
+    /// Whether Output draws a printed string's `<font color>`, `<b>`, `<i>`
+    /// and the rest of its rich text tags instead of showing them. Off by
+    /// default, since Studio prints the game's text as typed.
+    pub(crate) output_rich_text: bool,
     /// The rest of the Output panel's "level of detail" toggles.
     pub(crate) output_display: OutputDisplay,
     /// Whether opening a script's Graph side tidies it, rather than
@@ -248,6 +252,7 @@ impl Default for Settings {
             named_layouts: Vec::new(),
             output_collapsed: false,
             output_timestamps: false,
+            output_rich_text: false,
             output_display: OutputDisplay::default(),
             optimize_graph_on_open: false,
             increment_names: true,
@@ -450,6 +455,10 @@ fn load_from(path: &Path) -> Settings {
             .unwrap_or(false),
         output_timestamps: value
             .get("output_timestamps")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        output_rich_text: value
+            .get("output_rich_text")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         output_display: OutputDisplay::read(&value),
@@ -792,6 +801,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     // Outside the literal: `json!` hits the macro recursion limit at this size.
     value["play_copy_name"] = settings.play_copy_name.clone().into();
     value["insert_anchored"] = settings.insert_anchored.into();
+    value["output_rich_text"] = settings.output_rich_text.into();
     value["playtest_rate_hz"] = settings.playtest_rate_hz.into();
     value["network_presets"] = network_presets::json(&settings.network_presets);
     value["device_custom"] = settings.device_custom.json();
