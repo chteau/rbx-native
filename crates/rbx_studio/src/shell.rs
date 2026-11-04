@@ -322,6 +322,8 @@ pub(crate) struct Shell {
     /// persisted, see `shell::explorer_edit::picker`.
     increment_names: bool,
     expand_on_select: bool,
+    /// See `Settings::insert_anchored`; read by every insert path.
+    insert_anchored: bool,
     /// See `Settings::strip_on_publish`.
     strip_on_publish: bool,
     /// Editor layers and 3D notes; see `shell::layers`.
@@ -649,6 +651,7 @@ impl Shell {
             optimize_graph_on_open,
             increment_names,
             expand_on_select,
+            insert_anchored,
             strip_on_publish,
             dragger,
             controls,
@@ -914,6 +917,7 @@ impl Shell {
             explorer_edit: explorer_edit::ExplorerEdit::default(),
             increment_names,
             expand_on_select,
+            insert_anchored,
             strip_on_publish,
             search,
             explorer_query: String::new(),
@@ -2015,6 +2019,7 @@ impl Shell {
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
             expand_on_select: self.expand_on_select,
+            insert_anchored: self.insert_anchored,
             dragger: self.dragger,
             controls: crate::settings::Controls {
                 camera: self.camera_feel,

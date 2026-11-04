@@ -39,6 +39,7 @@ fn key(label: &str) -> Option<String> {
         "Increment names" => "increment_names",
         "Strip editor-only data on publish" => "strip_on_publish",
         "Expand to selection" => "expand_on_select",
+        "Insert parts anchored" => "insert_anchored",
         "Default services" => "service_overrides",
         "Timestamps" => "output_timestamps",
         "Rich text colours" => "output_rich_text",

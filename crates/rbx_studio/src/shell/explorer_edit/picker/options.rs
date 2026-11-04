@@ -1,5 +1,5 @@
-//! The `⋯` beside the insert picker's search field, and the two insertion
-//! preferences behind it.
+//! The `⋯` beside the insert picker's search field, and the insertion
+//! preferences behind it: real Studio's two, and inserting parts anchored.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::*;
@@ -14,6 +14,7 @@ impl Shell {
     pub(super) fn insertion_options(&self, cx: &mut Context<Self>) -> AnyElement {
         let increment = self.increment_names();
         let expand = self.expand_on_select();
+        let anchored = self.insert_anchored;
         menu::dropdown(
             self,
             MenuId::InsertOptions,
@@ -25,6 +26,9 @@ impl Shell {
                 menu::item("Expand hierarchy when selecting")
                     .checked(expand)
                     .on_click(move |shell, cx| shell.set_expand_on_select(!expand, cx)),
+                menu::item("Insert parts anchored")
+                    .checked(anchored)
+                    .on_click(move |shell, cx| shell.set_insert_anchored(!anchored, cx)),
             ],
             cx,
         )
@@ -55,6 +59,14 @@ impl Shell {
 
     pub(in crate::shell) fn set_expand_on_select(&mut self, expand: bool, cx: &mut Context<Self>) {
         self.expand_on_select = expand;
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Whether a part the editor inserts starts `Anchored`, see
+    /// `Settings::insert_anchored`.
+    pub(in crate::shell) fn set_insert_anchored(&mut self, anchored: bool, cx: &mut Context<Self>) {
+        self.insert_anchored = anchored;
         self.save_settings();
         cx.notify();
     }
