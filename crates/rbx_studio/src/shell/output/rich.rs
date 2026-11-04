@@ -28,9 +28,7 @@ fn styled(markup: &str) -> (String, Vec<(Range<usize>, HighlightStyle)>) {
         let start = plain.len();
         plain.push_str(&run.text);
         let style = HighlightStyle {
-            color: run
-                .color
-                .map(|[r, g, b]| Rgba { r, g, b, a: 1.0 }.into()),
+            color: run.color.map(|[r, g, b]| Rgba { r, g, b, a: 1.0 }.into()),
             font_weight: run.bold.then_some(FontWeight::BOLD),
             font_style: run.italic.then_some(FontStyle::Italic),
             underline: run.underline.then_some(UnderlineStyle {

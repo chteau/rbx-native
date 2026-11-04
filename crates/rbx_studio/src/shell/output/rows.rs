@@ -187,7 +187,10 @@ fn game_row(
 
     let mut text = div().min_w_0().text_xs();
     text = if entry.printed.is_empty() || show.display.log_mode {
-        text.child(rich::text(truncate(&message.text, LABEL_MAX_LEN), show.rich))
+        text.child(rich::text(
+            truncate(&message.text, LABEL_MAX_LEN),
+            show.rich,
+        ))
     } else {
         text.child(tables::printed(entry, show, log, cx))
     };
