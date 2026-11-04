@@ -135,6 +135,39 @@ impl Text {
     }
 }
 
+/// One run of `RichText` markup as plain styles, sRGB colour and all: what
+/// a host drawing the markup with its own text stack needs (the editor's
+/// Output, when its colour switch is on).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RichRun {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+    /// `<font color>`, sRGB channels from 0 to 1.
+    pub color: Option<[f32; 3]>,
+}
+
+/// Parses `markup` the way a `RichText` label does (see [`rich`]): tags
+/// gone, escapes resolved, each run with its style. A `<font weight>` of
+/// semibold or heavier reads as bold.
+pub fn rich_runs(markup: &str) -> Vec<RichRun> {
+    rich::parse(markup)
+        .into_iter()
+        .map(|span| RichRun {
+            bold: span.bold || span.weight.is_some_and(|weight| weight >= 600),
+            italic: span.italic,
+            underline: span.underline,
+            strike: span.strike,
+            color: span
+                .color
+                .map(|linear| linear.map(crate::scene::linear_to_srgb)),
+            text: span.text,
+        })
+        .collect()
+}
+
 /// The face one span shapes in: its own overrides over the text's face, a
 /// `<b>` asking for bold weight and an `<i>` for italic.
 pub(crate) fn span_face(base: &Face, span: &Span) -> Face {

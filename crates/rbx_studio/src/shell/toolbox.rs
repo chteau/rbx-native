@@ -296,6 +296,18 @@ impl Shell {
         if roots.is_empty() {
             return Err(format!("{name} holds nothing to insert."));
         }
+        // A lone part or mesh starts anchored like any other insert; a
+        // model's parts keep what its author gave them.
+        if self.insert_anchored {
+            for &root in &roots {
+                let part = self.dom.get(root).is_some_and(|instance| {
+                    self.database.is_subclass_of(instance.class(), "BasePart")
+                });
+                if part {
+                    let _ = self.dom.set_property(root, "Anchored", Variant::Bool(true));
+                }
+            }
+        }
         if decal {
             // On the face the view looks at, as Studio does.
             if let Some(face) = aim

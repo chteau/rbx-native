@@ -8,13 +8,15 @@ use crate::settings::OutputDisplay;
 use crate::tokens;
 
 use super::row_kind::RowColor;
-use super::{game, tables, truncate, OutputEntry, OutputLog, Shell, LABEL_MAX_LEN};
+use super::{game, rich, tables, truncate, OutputEntry, OutputLog, Shell, LABEL_MAX_LEN};
 
 /// What the panel's display toggles say every row shows.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Show {
     pub(super) timestamp: bool,
     pub(super) display: OutputDisplay,
+    /// Rich text tags drawn rather than shown (see `rich`).
+    pub(super) rich: bool,
 }
 
 /// The colour a row's level paints with, `None` for the default text.
@@ -80,12 +82,15 @@ pub(super) fn output_row(
     // panel edge: gpui measures text's min-content width unwrapped, so
     // without it the label refuses to shrink and runs out of the row.
     let mut result_label = if entry.printed.is_empty() || show.display.log_mode {
-        div().min_w_0().text_xs().child(entry.label())
+        div()
+            .min_w_0()
+            .text_xs()
+            .child(rich::text(entry.label(), show.rich))
     } else {
         div()
             .min_w_0()
             .text_xs()
-            .child(tables::printed(entry, show.display, log, cx))
+            .child(tables::printed(entry, show, log, cx))
     };
     if let Some(color) = color {
         result_label = result_label.text_color(color);
@@ -182,9 +187,12 @@ fn game_row(
 
     let mut text = div().min_w_0().text_xs();
     text = if entry.printed.is_empty() || show.display.log_mode {
-        text.child(truncate(&message.text, LABEL_MAX_LEN))
+        text.child(rich::text(
+            truncate(&message.text, LABEL_MAX_LEN),
+            show.rich,
+        ))
     } else {
-        text.child(tables::printed(entry, show.display, log, cx))
+        text.child(tables::printed(entry, show, log, cx))
     };
     if let Some(color) = color {
         text = text.text_color(color);

@@ -343,3 +343,18 @@ fn an_out_of_range_softness_is_clamped_rather_than_trusted() {
         0.0
     );
 }
+
+#[test]
+fn fullbright_is_flat_and_shadowless_but_keeps_the_sky() {
+    let night = Lighting::from_clock(Some(0.0), None);
+    let lit = night.fullbright();
+    assert!(!lit.global_shadows);
+    assert_eq!(lit.environment_diffuse, 0.0);
+    assert_eq!(lit.environment_specular, 0.0);
+    assert_eq!(lit.ambient + lit.sun_color, Vec3::ONE);
+    assert_eq!(lit.sun_color, lit.fill_color);
+    assert!(matches!(lit.fog, Fog::Linear { start, .. } if start >= NO_FOG));
+    assert_eq!(lit.sun_direction, night.sun_direction);
+    assert_eq!(lit.sky_tint, night.sky_tint);
+    assert_eq!(lit.star_fade, night.star_fade);
+}

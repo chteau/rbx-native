@@ -20,6 +20,7 @@
 //!
 //! [`RobloxPublish::changes`]: super::RobloxPublish::changes
 
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::Root;
 use gpui_kit::*;
 use rbx_cloud::PublishMode;
@@ -32,6 +33,7 @@ use super::{Failure, Shell, Target, SOURCE};
 
 mod dialogs;
 mod fetch;
+mod labels;
 mod model;
 mod view;
 
@@ -78,6 +80,15 @@ pub(crate) struct HistoryWindow {
     notice: Option<Notice>,
     /// The shell's `roblox.changes` this window last caught up with.
     seen: u64,
+    /// Narrows the listed versions, see [`model::History::matches`].
+    search: Entity<InputState>,
+    /// The date filter beside it.
+    since: model::Since,
+    /// The linked place's local labels, see `labels`.
+    labels: labels::Labels,
+    /// The version whose label is being typed into `label_input`.
+    editing: Option<u64>,
+    label_input: Entity<InputState>,
     focus: FocusHandle,
     scroll: ScrollHandle,
     _subscriptions: Vec<Subscription>,
@@ -133,18 +144,44 @@ impl HistoryWindow {
     }
 
     fn new(shell: Entity<Shell>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let subscriptions = vec![cx.observe(&shell, |this, shell, cx| {
-            let changes = shell.read(cx).roblox.changes;
-            if changes != this.seen {
-                this.seen = changes;
-                this.relink(cx);
-            }
-        })];
+        let search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Search by date, who saved it, or label")
+                .clean_on_escape()
+        });
+        let label_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Label this version"));
+        let subscriptions = vec![
+            cx.observe(&shell, |this, shell, cx| {
+                let changes = shell.read(cx).roblox.changes;
+                if changes != this.seen {
+                    this.seen = changes;
+                    this.relink(cx);
+                }
+            }),
+            cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+            cx.subscribe(
+                &label_input,
+                |this, _, event: &InputEvent, cx| match event {
+                    InputEvent::PressEnter { .. } | InputEvent::Blur => this.commit_label(cx),
+                    _ => {}
+                },
+            ),
+        ];
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let seen = shell.read(cx).roblox.changes;
+        let link = home::link_of(&shell.read(cx).path);
         let mut this = HistoryWindow {
-            link: home::link_of(&shell.read(cx).path),
+            labels: link
+                .as_ref()
+                .map(|link| labels::load(link.place_id))
+                .unwrap_or_default(),
+            link,
             shell,
             history: model::History::default(),
             listing: Listing::Loading,
@@ -153,6 +190,10 @@ impl HistoryWindow {
             busy: None,
             notice: None,
             seen,
+            search,
+            since: model::Since::default(),
+            editing: None,
+            label_input,
             focus,
             scroll: ScrollHandle::new(),
             _subscriptions: subscriptions,
@@ -171,6 +212,12 @@ impl HistoryWindow {
     /// Re-reads the file's link and starts over from the first page.
     fn relink(&mut self, cx: &mut Context<Self>) {
         self.link = home::link_of(&self.shell.read(cx).path);
+        self.labels = self
+            .link
+            .as_ref()
+            .map(|link| labels::load(link.place_id))
+            .unwrap_or_default();
+        self.editing = None;
         self.reload(None, cx);
     }
 
@@ -236,6 +283,49 @@ impl HistoryWindow {
             });
         })
         .detach();
+    }
+
+    /// Studio's Clear filters: the search, the date range and the person.
+    fn clear_filters(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        self.since = model::Since::AllTime;
+        if self.history.filter.is_some() {
+            self.reload(None, cx);
+        }
+        cx.notify();
+    }
+
+    /// Opens `version`'s label for typing, holding the label it has.
+    fn edit_label(&mut self, version: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self.labels.get(&version).cloned().unwrap_or_default();
+        self.editing = Some(version);
+        self.label_input.update(cx, |input, cx| {
+            input.set_value(current, window, cx);
+            input.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    /// Saves the label being typed (Enter, or clicking away); a blank one
+    /// takes the label off.
+    fn commit_label(&mut self, cx: &mut Context<Self>) {
+        let (Some(version), Some(link)) = (self.editing.take(), self.link.as_ref()) else {
+            return;
+        };
+        let text = self.label_input.read(cx).value().to_string();
+        if self.labels.get(&version).map(String::as_str).unwrap_or("") != text.trim() {
+            match labels::save(link.place_id, version, &text) {
+                Ok(labels) => self.labels = labels,
+                Err(message) => {
+                    self.notice = Some(Notice {
+                        ok: false,
+                        text: format!("The label couldn\u{2019}t be saved: {message}"),
+                    })
+                }
+            }
+        }
+        cx.notify();
     }
 
     fn link_place(&mut self, cx: &mut Context<Self>) {
@@ -350,6 +440,7 @@ impl HistoryWindow {
     fn handle_key(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) -> bool {
         match (keystroke.key.as_str(), &self.dialog) {
             ("escape", Some(_)) => self.dialog = None,
+            ("escape", None) if self.editing.is_some() => self.editing = None,
             ("enter", Some(Dialog::Restore { version })) if !keystroke.modifiers.modified() => {
                 let version = *version;
                 self.restore(version, PublishMode::Saved, cx);

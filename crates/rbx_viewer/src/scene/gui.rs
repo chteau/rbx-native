@@ -40,7 +40,6 @@ pub(crate) use layout::{
 #[cfg(test)]
 pub(crate) use layout::{resolve, resolve_canvas, resolve_on_device, resolve_with};
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
-pub use plan::shows_screen;
 #[cfg(test)]
 pub(crate) use plan::GroupTint;
 #[cfg(test)]
@@ -48,6 +47,7 @@ pub(crate) use plan::TextSpan;
 pub(crate) use plan::{
     plan, plan_root, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
 };
+pub use plan::{rich_runs, shows_screen, RichRun};
 pub use pseudo::{pseudo_localize, PseudoLocale};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 pub(crate) use wheel::{scroll_target, ScrollWindow};
