@@ -344,6 +344,35 @@ fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, 
     image(reference, &asset)
 }
 
+/// An image asset decoded for the editor (Properties' size and preview):
+/// tightly packed RGBA8, top row first.
+pub struct DecodedImage {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
+/// Resolves and decodes `uri` the way the viewport does: the shared disk
+/// cache first, so an image a load already fetched costs no download, then
+/// the network, a decal id followed to the image it wraps.
+pub fn decode_image_uri(uri: &str) -> Result<DecodedImage, String> {
+    let reference = AssetRef::parse(uri).map_err(|err| err.to_string())?;
+    // The caller already names the asset; the warning's own lead-in
+    // (`asset 1: asset 1 was not found`) would say it twice.
+    let lead_in = format!("{}: ", describe(&reference));
+    let image = fetch_image(&resolver()?, &reference).map_err(|failure| {
+        match failure.warning.strip_prefix(&lead_in) {
+            Some(rest) => rest.to_owned(),
+            None => failure.warning,
+        }
+    })?;
+    Ok(DecodedImage {
+        width: image.width,
+        height: image.height,
+        pixels: image.pixels,
+    })
+}
+
 /// Decodes what `reference` resolved to, after [`wrapped_image`]'s hop,
 /// which is the caller's, since only it knows how to fetch the inner one.
 pub(crate) fn image(reference: &AssetRef, asset: &rbx_assets::Asset) -> Result<Image, Failure> {
