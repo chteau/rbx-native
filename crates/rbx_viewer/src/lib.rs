@@ -59,6 +59,7 @@ mod view;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
+pub use assets::{decode_image_uri, DecodedImage};
 pub use camera::Pose;
 #[cfg(not(target_arch = "wasm32"))]
 pub use capture::Rendered;

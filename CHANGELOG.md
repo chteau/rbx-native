@@ -2,6 +2,13 @@
 
 ## 2026-11-04
 
+- **Image sizes in Properties.** An image id in Properties now has its
+  resolution beside it, like `512×512`, and hovering that shows the image
+  with its size and id. Works for every image property (Decal and Texture
+  textures, ImageLabel images, SurfaceAppearance maps, skyboxes and the
+  rest). It reads the image from the asset cache when the place already
+  loaded it, so no extra download. A decal id shows the size of the image
+  it points at. (@chteau)
 - **Sound preview in Properties.** Like Studio, a Sound's `SoundId` opens
   onto a Preview row with a play/pause button and a bar that follows the
   sound. Drag the bar to jump around, pause keeps your spot. AudioPlayer

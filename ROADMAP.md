@@ -3493,8 +3493,14 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
 - [x] **Format Document with StyLua** in the script editor and the Command
   Bar, StyLua built in (Shift+Alt+F)
   ([Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518)).
-- [ ] 📋 **An image's resolution** shown beside an image id in Properties and
-  the asset tooltips
+- [x] **An image's resolution** shown beside an image id in Properties
+  (`512×512`), and the image itself with its size in that label's tooltip.
+  Studio's Properties show the bare id with no preview or size. Every image
+  property counts, by name (`Texture`, `Image`, the `SurfaceAppearance`
+  maps, the skybox faces, ... and their `…Content` twins); the image comes
+  the way the viewport gets it, the shared asset cache first, so one the
+  place already shows costs no download, and a decal id is followed to its
+  image the way Roblox does for `Image`/`Texture`
   ([Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605)).
 - [ ] 📋 **Search in Version History**, by date and by who published; a name
   for a version can only be a local label, Roblox stores none
