@@ -41,6 +41,7 @@ fn key(label: &str) -> Option<String> {
         "Expand to selection" => "expand_on_select",
         "Default services" => "service_overrides",
         "Timestamps" => "output_timestamps",
+        "Rich text colours" => "output_rich_text",
         "Dock layout" => "docks",
         "Output panel" => "output_collapsed",
         "Reduce motion" => "reduce_motion",

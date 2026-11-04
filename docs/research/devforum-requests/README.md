@@ -25,7 +25,7 @@ Status, as of `dev` on 2026-11-03:
 | [It should be possible to use Roblox Studio offline](https://devforum.roblox.com/t/it-should-be-possible-to-use-roblox-studio-offline/153244) | 1964 | **shipped**: local files open, edit and save with no sign-in; the `rbxasset://` fallback keeps a place readable offline (Platform) |
 | [Colored folders!](https://devforum.roblox.com/t/colored-folders/20739) | 933 | **shipped**: colour-coded Explorer folders |
 | [Add a dark theme for studio](https://devforum.roblox.com/t/add-a-dark-theme-for-studio/25932) | 725 | **shipped**: whole-editor themes, Dark, Light and High Contrast built in |
-| [Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196) | 633 | **planned**: opt-in rich-text colour for Output lines (a printed string is the game's, so it stays off by default) |
+| [Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196) | 633 | **shipped**: Studio Settings › Explorer & Output › Rich text colours, off by default since a printed string is the game's (Output) |
 | [Expanded UI Elements for Roblox (Dropdowns, Sliders, etc)](https://devforum.roblox.com/t/expanded-ui-elements-for-roblox-dropdowns-sliders-etc/2538016) | 618 | **impossible**: new runtime `GuiObject` classes only exist if the engine has them |
 | [FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566) | 483 | **planned**: OBJ and glTF export are shipped; FBX would be a third writer |
 | [Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682) | 400 | **planned**: an rbx-native `plugin:SetClipboard` addition, like `PromptColor3` |

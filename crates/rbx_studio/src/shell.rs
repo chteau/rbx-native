@@ -420,6 +420,9 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// Whether Output rows draw their rich text tags (Settings › Explorer &
+    /// Output › Rich text colours). Persisted.
+    output_rich_text: bool,
     /// The Output panel's other display toggles (context, source, tables);
     /// persisted beside `output_show_timestamps`.
     output_display: crate::settings::OutputDisplay,
@@ -637,6 +640,7 @@ impl Shell {
             named_layouts,
             output_collapsed,
             output_timestamps,
+            output_rich_text,
             output_display,
             optimize_graph_on_open,
             increment_names,
@@ -949,6 +953,7 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            output_rich_text,
             output_display,
             output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
@@ -1998,6 +2003,7 @@ impl Shell {
             named_layouts: self.named_layouts.clone(),
             output_collapsed: self.output_collapsed,
             output_timestamps: self.output_show_timestamps,
+            output_rich_text: self.output_rich_text,
             output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
             increment_names: self.increment_names,

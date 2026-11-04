@@ -40,7 +40,7 @@ pub(crate) use layout::{
 #[cfg(test)]
 pub(crate) use layout::{resolve, resolve_canvas, resolve_on_device, resolve_with};
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
-pub use plan::shows_screen;
+pub use plan::{rich_runs, shows_screen, RichRun};
 #[cfg(test)]
 pub(crate) use plan::GroupTint;
 #[cfg(test)]

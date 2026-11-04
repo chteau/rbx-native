@@ -3469,9 +3469,10 @@ both the plain fetch failure and the silent fall back to a default
 Asked for on the DevForum and not built yet (the whole pass, with what was
 shipped or built and what can't be: `docs/research/devforum-requests/README.md`):
 
-- [ ] 📋 **Colour in Output, opt in**: a Studio Settings switch that renders
-  `<font color>` rich text in Output lines instead of showing the tags.
-  Off by default, since a printed string is the game's own text
+- [x] **Colour in Output, opt in**: Studio Settings › Explorer & Output ›
+  Rich text colours draws a printed line's `<font color>`, `<b>`, `<u>`
+  and `<s>` tags (the `RichText` label parser) instead of showing them;
+  `<i>` is stripped but draws upright, the UI font has no italic face. Off by default, since a printed string is the game's own text
   ([Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196)).
 - [ ] 📋 **Insert parts anchored**: a Studio Settings switch that makes every
   inserted `Part`/`MeshPart` (ribbon tiles, Insert Object) start anchored
