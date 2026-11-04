@@ -397,6 +397,17 @@ pub(crate) fn mesh(reference: &AssetRef, bytes: &[u8]) -> Result<rbx_mesh::Skinn
     })
 }
 
+/// The bytes `uri` names, the way a load gets them: the shared disk cache
+/// first, then the network (the Open Cloud key when anonymous delivery
+/// refuses). For the editor's sound preview.
+pub fn asset_bytes(uri: &str) -> Result<Vec<u8>, String> {
+    let reference = AssetRef::parse(uri).map_err(|err| err.to_string())?;
+    resolver()?
+        .resolve(&reference)
+        .map(|asset| asset.bytes)
+        .map_err(|err| format!("{}: {err}", describe(&reference)))
+}
+
 fn fetch_bytes(resolver: &AssetResolver, reference: &AssetRef) -> Result<Vec<u8>, Failure> {
     resolver
         .resolve(reference)

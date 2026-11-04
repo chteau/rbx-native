@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-04
+
+- **Sound preview in Properties.** Like Studio, a Sound's `SoundId` opens
+  onto a Preview row with a play/pause button and a bar that follows the
+  sound. Drag the bar to jump around, pause keeps your spot. AudioPlayer
+  gets the same on its `Asset`. It plays at the instance's Volume and
+  changes nothing in the place. If the sound can't be fetched or decoded,
+  Output says why. (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

@@ -3505,7 +3505,15 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
 - [ ] 📋 **Fullbright viewport toggle**: draw Edit mode with flat ambient light
   and no shadows, without touching `Lighting`
   ([Fullbright Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596)).
-- [ ] 📋 **Preview button for `Sound`/`AudioPlayer`** in Properties
+- [x] **Preview button for `Sound`/`AudioPlayer`** in Properties, as Studio
+  draws it: `SoundId` (an `AudioPlayer`'s `Asset`, or its older `AssetId`)
+  opens onto a Preview row with play/pause and a rail that follows the sound
+  and seeks it; a pause keeps its place. The asset comes through the shared
+  cache like a texture, is decoded in pure Rust (`symphonia`: OGG Vorbis,
+  MP3, WAV, FLAC) and plays at the instance's `Volume` (`crate::audio`):
+  through the PulseAudio protocol on Linux (PipeWire speaks it, nothing to
+  link), `cpal` on Windows and macOS. The Windows and macOS output has only
+  been type-checked, never heard
   ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
 - [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
   ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).
