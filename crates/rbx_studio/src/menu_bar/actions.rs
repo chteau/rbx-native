@@ -141,6 +141,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuExportFbx, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.export_place(Export::Fbx, cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuExportProject, cx| {
             let _ = shell.update(cx, |shell, cx| shell.export_place(Export::Project, cx));
         }

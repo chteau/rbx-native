@@ -1,15 +1,17 @@
 //! The Explorer row menu's Save / Export rows, named as Studio's own row menu
 //! names them (`creator-docs`): **Save to File…** writes the selection as a
 //! model file (`.rbxm`, or `.rbxmx` when that is the name picked), **Export
-//! Selection…** as a Wavefront `.obj`, and **Export as glTF…** as `.gltf`
-//! with its `.bin` and `.png`s beside it (see `rbx_viewer::export::gltf`).
+//! Selection…** as a Wavefront `.obj`, **Export as glTF…** as `.gltf`
+//! with its `.bin` and `.png`s beside it (see `rbx_viewer::export::gltf`),
+//! and **Export as FBX…** as one binary `.fbx` with its images inside,
+//! which Studio itself has no export for.
 //! The meshes are what the viewport draws (see `rbx_viewer::export`).
 //!
 //! The File menu's own two do the same for the whole place: **Save to File
 //! As…** writes all of it (`.rbxl`, or `.rbxlx` when that is the name
 //! picked) under a name of the user's choosing and makes that the file
 //! being edited, as Studio does (see `Shell::save_as`), and **Export as
-//! glTF…** writes
+//! glTF…** (and **Export as FBX…**) writes
 //! `Workspace`, the part of a place that is drawn, as Studio's own File ›
 //! Export as glTF does (its export of a place has `Workspace` as its root).
 //!
@@ -42,6 +44,7 @@ pub(crate) enum Export {
     CleanPlace,
     Obj,
     Gltf,
+    Fbx,
     /// The whole place as an Argon/Rojo project folder (see
     /// `shell::project`), from the File menu.
     Project,
@@ -54,6 +57,7 @@ impl Export {
             Export::Place | Export::CleanPlace => "rbxl",
             Export::Obj => "obj",
             Export::Gltf => "gltf",
+            Export::Fbx => "fbx",
             Export::Project => "",
         }
     }
@@ -121,6 +125,7 @@ fn encode(
                 .map(|(name, bytes)| (path.with_file_name(name), bytes))
                 .collect())
         }
+        Export::Fbx => Ok(vec![(path.to_path_buf(), export::fbx(&solids()?)?)]),
         // Written by `export_to` itself: a folder of files, not bytes.
         Export::Project => Ok(Vec::new()),
     }
@@ -141,11 +146,11 @@ impl Shell {
     }
 
     /// File › Save to File As… (`Export::Place`) and File › Export as glTF…
-    /// (`Export::Gltf`): the whole place, suggested under the opened file's
+    /// or FBX… (`Export::Gltf`, `Export::Fbx`): the whole place, suggested under the opened file's
     /// own name. `pub(crate)`: `menu_bar`'s entry point.
     pub(crate) fn export_place(&mut self, kind: Export, cx: &mut Context<Self>) {
         let roots = match kind {
-            Export::Gltf => match workspace(&self.dom) {
+            Export::Gltf | Export::Fbx => match workspace(&self.dom) {
                 Some(workspace) => vec![workspace],
                 None => {
                     self.report_export(

@@ -27,7 +27,7 @@ Status, as of `dev` on 2026-11-03:
 | [Add a dark theme for studio](https://devforum.roblox.com/t/add-a-dark-theme-for-studio/25932) | 725 | **shipped**: whole-editor themes, Dark, Light and High Contrast built in |
 | [Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196) | 633 | **planned**: opt-in rich-text colour for Output lines (a printed string is the game's, so it stays off by default) |
 | [Expanded UI Elements for Roblox (Dropdowns, Sliders, etc)](https://devforum.roblox.com/t/expanded-ui-elements-for-roblox-dropdowns-sliders-etc/2538016) | 618 | **impossible**: new runtime `GuiObject` classes only exist if the engine has them |
-| [FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566) | 483 | **planned**: OBJ and glTF export are shipped; FBX would be a third writer |
+| [FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566) | 483 | **shipped**: File > Export as FBX… beside OBJ and glTF, one binary file with the textures packed in |
 | [Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682) | 400 | **planned**: an rbx-native `plugin:SetClipboard` addition, like `PromptColor3` |
 | [Allow plugins to use color picker](https://devforum.roblox.com/t/allow-plugins-to-use-color-picker/63257) | 334 | **shipped**: `plugin:PromptColor3` / `PromptBrickColor` (Plugins) |
 | [Custom Intellisense Documentation Comments](https://devforum.roblox.com/t/custom-intellisense-documentation-comments/110378) | 288 | **shipped**: luau-lsp hover reads `---` doc comments (Script Analysis) |

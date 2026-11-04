@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-04
+
+- **Export as FBX.** File > Export as FBX… (or right-click in the
+  Explorer) saves the selection or the place as one binary FBX file, so
+  it opens straight in Blender, Maya or Studio's 3D Importer. You get the
+  same hierarchy, meshes, UVs and textures as the glTF export, with each
+  part's colour baked into its texture since FBX tools don't tint it
+  themselves. Neon comes out emissive and Transparency carries over.
+  (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

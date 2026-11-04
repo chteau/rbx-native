@@ -36,6 +36,8 @@ glam = "0.33"
 bytemuck = { version = "1.25", features = ["derive"] }
 pollster = "1.0"
 png = "0.18"
+# FBX export's binary writer; already in the tree for the importer.
+fbxcel = { version = "0.9", features = ["tree", "writer"] }
 # Text shaping and glyph rasterisation for `TextLabel`/`TextButton`/`TextBox`
 # (see `renderer::gui::text`). Already in `Cargo.lock` through the editor's
 # GPUI, so this pins the same version rather than adding one.

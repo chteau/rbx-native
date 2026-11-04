@@ -3509,7 +3509,11 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
 - [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
   ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).
-- [ ] 📋 **FBX export** beside OBJ and glTF
+- [x] **FBX export** beside OBJ and glTF: File > Export as FBX… and the
+  Explorer's right-click write one binary FBX 7.4 file with the instance
+  tree, each part's mesh, UVs and normals, a material per surface with
+  the textures packed inside and the part's colour baked in, at one stud
+  to the metre. No skinned rigs, since the glTF export has none either
   ([FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566)).
 
 ### Play / Test workflow

@@ -63,7 +63,7 @@ pub(super) struct Availability {
     /// Live while any of the selection can change class; the command
     /// converts those and names the rest (see `shell::change_class`).
     pub(super) change_class: bool,
-    /// Export Selection and Export as glTF: some part to write.
+    /// Export Selection, Export as glTF and Export as FBX: some part to write.
     pub(super) export_mesh: bool,
     /// Some turned `MeshPart` whose rotation can be baked into its mesh.
     pub(super) freeze: bool,
@@ -430,6 +430,13 @@ impl Shell {
                 "Export as glTF…",
                 live.export_mesh,
                 |shell, _, cx| shell.export_selected(Export::Gltf, cx),
+            ),
+            row(
+                "export-fbx",
+                IconName::FileBox,
+                "Export as FBX…",
+                live.export_mesh,
+                |shell, _, cx| shell.export_selected(Export::Fbx, cx),
             ),
         ];
         let actions: Vec<Option<RowAction>> = rows

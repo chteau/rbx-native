@@ -6931,6 +6931,7 @@ dependencies = [
  "bytemuck",
  "console_error_panic_hook",
  "cosmic-text",
+ "fbxcel",
  "glam",
  "harfrust",
  "js-sys",

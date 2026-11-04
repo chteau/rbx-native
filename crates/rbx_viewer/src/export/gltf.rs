@@ -302,7 +302,7 @@ impl Buffers {
 
 /// Each node's world placement: a part's own, a container's its parent's
 /// (it places nothing itself). Nodes come parent first.
-fn node_worlds(export: &Export) -> Vec<Mat4> {
+pub(super) fn node_worlds(export: &Export) -> Vec<Mat4> {
     let mut worlds: Vec<Mat4> = Vec::with_capacity(export.nodes.len());
     for node in &export.nodes {
         let world = match node.placement {
