@@ -41,6 +41,12 @@
   flat light and no shadows, so you can actually see what you're building in a night place
   or a dark interior. It only changes how we draw, `Lighting` isn't
   touched and nothing gets saved. (@chteau)
+- **Ctrl+Alt+click selects a locked part.** Locked parts still ignore a
+  normal click like in Studio, but holding Ctrl+Alt (Cmd+Option on Mac)
+  lets the click land on one without unlocking it. Studio treats
+  Ctrl+Alt+click like Alt+click (it picks the part, not its model), and so
+  does this, it just reaches locked parts too. Add Shift to add it to the
+  selection. (@chteau)
 
 ## 2026-11-03
 

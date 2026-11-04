@@ -3487,7 +3487,10 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
 - [ ] 📋 **Search the installed plugins** in the Plugins window
   ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).
-- [ ] 📋 **Select a locked part while holding a key**, without unlocking it
+- [x] **Select a locked part while holding a key**: Ctrl+Alt+click
+  (Cmd+Option on macOS) selects a `Locked` part without unlocking it,
+  Shift on top adds it to the selection; a plain click still passes
+  through, as in Studio
   ([Allow selecting locked parts by holding a key combination](https://devforum.roblox.com/t/allow-selecting-locked-parts-by-holding-a-key-combination/977989)).
 - [ ] 📋 **Code folding in the script editor**, remembered per script between
   sessions; folding needs block extents from a parse, not the lexer the

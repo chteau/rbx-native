@@ -110,11 +110,15 @@ pub(crate) enum ViewportAction {
     /// (see [`WorkspaceView::confirm_grab`]), the view sees the selection's
     /// boxes, not whatever unselected part may stand in front of them, and a
     /// click on that part must select it, not drag the selection behind it.
+    ///
+    /// `locked`: the click may select a `Locked` part (see
+    /// `gizmo::picks_locked`), which a plain one passes through.
     Pick {
         ray: Ray,
         cycling: bool,
         extend: bool,
         held: bool,
+        locked: bool,
     },
     /// A drag moved every part it carries to a new position, more than one
     /// when the gesture grabbed a multi-part selection's gizmo, each keeping
