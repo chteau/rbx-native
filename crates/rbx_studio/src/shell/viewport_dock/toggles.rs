@@ -14,6 +14,7 @@ impl Shell {
     pub(super) fn viewport_toggles(&self) -> [Vec<Toggle>; 3] {
         let camera: Vec<Toggle> = vec![
             ("Orthographic", self.orthographic, Shell::set_orthographic),
+            ("Fullbright", self.fullbright, Shell::set_fullbright),
             (
                 "Orientation Indicator",
                 self.axis_indicator,

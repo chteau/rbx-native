@@ -15,6 +15,9 @@ addition":
   `set_selected_range` only scrolls one line toward it, and not at all in a
   tab that hasn't been laid out yet. Script Analysis, the Security Audit and
   the debugger open scripts at a line with it.
+- `undo`/`redo` propagate when the input has nothing to undo or redo, so
+  Ctrl+Z in a search field with no typing to take back still reaches the
+  place's own Undo instead of doing nothing.
 
 And one fix in `src/input/editor/highlighting.rs`, marked the same way:
 `InputEditorStyle::resolved` fills unset (transparent) diagnostic colours
@@ -62,6 +65,19 @@ at least `width` wide with the numbers right-aligned `gap` before the text
 `LastLayout::line_number_offset`; and `set_surface_colors(background,
 active_line)` keeps that editor's background, gutter and current-line colours
 over the theme's, which the component otherwise re-projects every frame.
+
+And code folding for the script editor, marked the same way:
+`set_fold_markers` draws every fold candidate as a small filled triangle
+(Studio's), always visible and dimmed until the pointer is over the gutter,
+in place of the component's hover-only chevron (`element.rs`);
+`folded_lines`, `foldable_lines` and `set_folded` on the editor state expose
+the otherwise private fold set so the Shell can save and restore it;
+`set_selected_range` (so `reveal_range`) and the search's next/previous match
+open a fold hiding their target (`unfold_offset`); fold candidates are
+replaced rather than merged after an edit, and a collapsed fold follows its
+candidate's new extent (`fold_map.rs`), because a parse-based highlighter
+answers with the whole file and an edit can change a block whose opener is
+outside the edited lines.
 
 The two selection methods exist because the script editor's Ctrl+D / Shift+Alt+L (add a cursor
 to the next / every match of the selection) has to add selections, and

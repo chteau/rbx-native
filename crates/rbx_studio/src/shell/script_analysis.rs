@@ -191,7 +191,7 @@ fn count_summary(counts: Counts) -> String {
 
 /// `Instance:GetFullName()`: the dotted path from the service down, which is
 /// how Studio's own Script Analysis names a script.
-fn full_name(dom: &WeakDom, script: Ref) -> String {
+pub(super) fn full_name(dom: &WeakDom, script: Ref) -> String {
     let mut names = Vec::new();
     let mut at = Some(script);
     while let Some(reference) = at {

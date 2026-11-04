@@ -10,6 +10,7 @@
 //! closing and reopening a tab show what the DOM actually has.
 
 pub(crate) mod find;
+pub(crate) mod folds;
 pub(crate) mod format;
 pub(crate) mod goto;
 pub(crate) mod graph;
@@ -46,8 +47,12 @@ pub(crate) struct OpenScript {
     pub(crate) generation: u64,
     /// This tab as `luau-lsp` knows it, once the server is up.
     pub(crate) lsp: Option<std::rc::Rc<lsp::Document>>,
+    /// Which of its folds are collapsed, and what was last written to disk.
+    pub(crate) folds: crate::shell::FoldMemory,
     /// Kept only to stay subscribed to the editor's own change events.
     pub(crate) _subscription: Subscription,
+    /// Kept only to save the folds when the gutter toggles one.
+    pub(crate) _fold_observer: Subscription,
 }
 
 /// Every open tab and the editor behind it. One field on `Shell`.
@@ -55,28 +60,17 @@ pub(crate) struct OpenScript {
 pub(crate) struct ScriptEditor {
     pub(crate) tabs: Tabs,
     pub(crate) open: HashMap<Ref, OpenScript>,
-    /// The Alt+F / Ctrl+Shift+F overlay, while it is up.
+    /// The Alt+F function filter overlay, while it is up.
     pub(crate) finder: Option<Finder>,
     /// Why the last Format Document left a script alone; the status bar
     /// shows it until that script next changes.
     pub(crate) format_failure: Option<(Ref, String)>,
 }
 
-/// Which list the finder overlay shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinderMode {
-    /// Studio's Script Function Filter: the active script's functions.
-    Functions,
-    /// Find All / Replace All, over every open tab.
-    FindAll,
-}
-
 /// The finder overlay's own state; its hits are recomputed from the query on
 /// every render rather than cached, so they can never go stale under typing.
 pub(crate) struct Finder {
-    pub(crate) mode: FinderMode,
     pub(crate) query: Entity<InputState>,
-    pub(crate) replacement: Entity<InputState>,
     /// Index into the current hits; clamped on read, since the list shrinks
     /// under it as the query is typed.
     pub(crate) selected: usize,

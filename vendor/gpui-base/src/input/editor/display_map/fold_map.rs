@@ -112,12 +112,19 @@ impl FoldMap {
         candidates.dedup_by_key(|r| r.start_line);
         self.candidates = candidates;
 
-        // Remove any folded ranges that are no longer in candidates
-        self.folded.retain(|fold| {
-            self.candidates
-                .iter()
-                .any(|c| c.start_line == fold.start_line)
+        // Remove any folded ranges that are no longer in candidates, and
+        // rbx-native addition: follow the ones that remain to their new extent.
+        let candidates = &self.candidates;
+        self.folded.retain_mut(|fold| {
+            match candidates.iter().find(|c| c.start_line == fold.start_line) {
+                Some(c) => {
+                    *fold = *c;
+                    true
+                }
+                None => false,
+            }
         });
+        self.needs_rebuild = true;
     }
 
     /// Merge new candidates extracted from an edited region into existing candidates.

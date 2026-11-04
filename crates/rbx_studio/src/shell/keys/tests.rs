@@ -75,10 +75,22 @@ fn no_selection_stays_none() {
 }
 
 #[test]
+fn an_insert_is_anchored_only_when_settings_asks() {
+    let mut dom = WeakDom::new();
+    let loose = dom.new_instance("Part", "Part", None);
+    let anchored = dom.new_instance("MeshPart", "MeshPart", None);
+    apply_part_defaults(&mut dom, loose, Some(PART_TYPE_BLOCK), false);
+    apply_part_defaults(&mut dom, anchored, None, true);
+    let read = |part| dom.get(part).unwrap().properties().get("Anchored").cloned();
+    assert_eq!(read(loose), Some(Variant::Bool(false)));
+    assert_eq!(read(anchored), Some(Variant::Bool(true)));
+}
+
+#[test]
 fn inserted_part_gets_studio_s_visible_defaults() {
     let mut dom = WeakDom::new();
     let part = dom.new_instance("Part", "Part", None);
-    apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK));
+    apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK), false);
 
     let instance = dom.get(part).expect("just inserted");
     assert_eq!(
@@ -108,7 +120,7 @@ fn insert_menu_item(class: &str, shape: Option<u32>) -> (WeakDom, Ref) {
     let mut dom = WeakDom::new();
     let reference = dom.new_instance(class, class, None);
     if let Some(part_shape) = part_defaults_shape(&database(), class, shape) {
-        apply_part_defaults(&mut dom, reference, part_shape);
+        apply_part_defaults(&mut dom, reference, part_shape, false);
     }
     (dom, reference)
 }
@@ -235,7 +247,7 @@ fn inserting_each_script_class_seeds_a_non_empty_starter_source() {
 fn inserting_a_part_gets_no_source_property() {
     let mut dom = WeakDom::new();
     let part = dom.new_instance("Part", "Part", None);
-    apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK));
+    apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK), false);
 
     assert_eq!(default_template(&database(), "Part"), None);
     assert_eq!(

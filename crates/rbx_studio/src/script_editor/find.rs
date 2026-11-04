@@ -1,9 +1,11 @@
-//! Plain-text search over a script's source, for Find All / Replace All
-//! across every open tab. Case-insensitive, as Studio's own Find All is by
-//! default; ASCII case only, so a match's byte length always equals the
-//! query's and a replacement lands exactly where the match was.
+//! Search over a script's source. [`matches`] and [`replace_all`] are the
+//! plain-text pair (ASCII case-insensitive, so a match's byte length always
+//! equals the query's); [`Pattern`] is Find in Place's, with Studio's match
+//! case, whole word and regex options.
 
 use std::ops::Range;
+
+use regex::{Captures, Regex, RegexBuilder};
 
 #[cfg(test)]
 mod tests;
@@ -49,6 +51,117 @@ pub(crate) fn replace_all(text: &str, query: &str, replacement: &str) -> Option<
     }
     out.push_str(&text[last..]);
     Some(out)
+}
+
+/// Find in Place's three toggles. All off is Studio's default: plain text,
+/// any case, anywhere in a word.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Options {
+    pub(crate) match_case: bool,
+    pub(crate) whole_word: bool,
+    pub(crate) regex: bool,
+}
+
+/// A query compiled under [`Options`].
+pub(crate) struct Pattern {
+    regex: Regex,
+    whole_word: bool,
+    /// `$1`-style groups in a replacement, only meaningful for a regex query.
+    groups: bool,
+}
+
+impl Pattern {
+    /// The reason a regex query does not compile, in one line, for the status row.
+    pub(crate) fn compile(query: &str, options: Options) -> Result<Pattern, String> {
+        let source = match options.regex {
+            true => query.to_owned(),
+            false => regex::escape(query),
+        };
+        let regex = RegexBuilder::new(&source)
+            .case_insensitive(!options.match_case)
+            .multi_line(true)
+            .build()
+            .map_err(|error| {
+                let text = error.to_string();
+                let last = text.lines().last().unwrap_or_default();
+                last.strip_prefix("error: ").unwrap_or(last).to_owned()
+            })?;
+        Ok(Pattern {
+            regex,
+            whole_word: options.whole_word,
+            groups: options.regex,
+        })
+    }
+
+    /// Non-empty matches only, and with whole word on only those with no
+    /// identifier character on either side, as Studio's whole word is.
+    fn captures<'a>(&'a self, text: &'a str) -> impl Iterator<Item = Captures<'a>> {
+        let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+        self.regex.captures_iter(text).filter(move |caps| {
+            let found = caps.get(0).map(|m| m.range()).unwrap_or_default();
+            !found.is_empty()
+                && (!self.whole_word
+                    || (!word(text[..found.start].chars().next_back())
+                        && !word(text[found.end..].chars().next())))
+        })
+    }
+
+    /// Every match in `text`, in order.
+    pub(crate) fn matches(&self, text: &str) -> Vec<Range<usize>> {
+        self.captures(text)
+            .filter_map(|caps| caps.get(0).map(|m| m.range()))
+            .collect()
+    }
+
+    /// What `replacement` becomes for the match at `range` (which must be
+    /// one of [`Pattern::matches`]): itself, or with `$1` groups filled in.
+    pub(crate) fn expansion(&self, text: &str, range: &Range<usize>, replacement: &str) -> String {
+        let mut out = String::new();
+        let caps = self
+            .groups
+            .then(|| self.regex.captures_at(text, range.start))
+            .flatten()
+            .filter(|caps| caps.get(0).is_some_and(|m| m.range() == *range));
+        match caps {
+            Some(caps) => caps.expand(replacement, &mut out),
+            None => out.push_str(replacement),
+        }
+        out
+    }
+
+    /// `text` with every match replaced, or `None` if nothing matched.
+    pub(crate) fn replace_all(&self, text: &str, replacement: &str) -> Option<String> {
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        for caps in self.captures(text) {
+            let Some(found) = caps.get(0) else { continue };
+            out.push_str(&text[last..found.start()]);
+            match self.groups {
+                true => caps.expand(replacement, &mut out),
+                false => out.push_str(replacement),
+            }
+            last = found.end();
+        }
+        if last == 0 && out.is_empty() {
+            return None;
+        }
+        out.push_str(&text[last..]);
+        Some(out)
+    }
+
+    /// `text` with only the match at `range` replaced.
+    pub(crate) fn replace_one(
+        &self,
+        text: &str,
+        range: &Range<usize>,
+        replacement: &str,
+    ) -> String {
+        let mut out = String::with_capacity(text.len());
+        out.push_str(&text[..range.start]);
+        out.push_str(&self.expansion(text, range, replacement));
+        out.push_str(&text[range.end..]);
+        out
+    }
 }
 
 /// The 1-based line number `offset` sits on, and that line's text with its
