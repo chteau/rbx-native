@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-04
+
+- **Warning when a script indexes a name two siblings share.** If two
+  children of Workspace are both called "Part", `workspace.Part` (and
+  `["Part"]`, `:FindFirstChild("Part")`, `:WaitForChild("Part")`) gives
+  you whichever comes first, and that changes when one is re-parented.
+  Script Analysis and the editor now flag these as Loren warnings, even
+  without luau-lsp, and `loren doctor` lists them with file and line. (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

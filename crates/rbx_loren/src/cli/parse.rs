@@ -221,7 +221,7 @@ pub(super) static COMMANDS: [Cmd; 10] = [
     Cmd {
         name: "doctor",
         alias: None,
-        desc: "check the toolchain and the project (including colon-style middleware)",
+        desc: "check the toolchain and the project (including colon-style middleware and names two siblings share)",
         args: &[],
         opts: &[
             Opt {

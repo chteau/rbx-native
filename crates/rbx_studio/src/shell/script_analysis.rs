@@ -166,7 +166,9 @@ fn problem_row(
 fn summary(status: &Status, counts: Counts) -> String {
     match status {
         Status::Off | Status::Starting => "Starting luau-lsp…".into(),
-        Status::Failed(reason) => reason.clone(),
+        // Loren's warnings still show without the server.
+        Status::Failed(reason) if counts == Counts::default() => reason.clone(),
+        Status::Failed(reason) => format!("{reason} · {}", count_summary(counts)),
         Status::Ready(_) => count_summary(counts),
     }
 }

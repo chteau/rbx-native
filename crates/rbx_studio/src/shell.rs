@@ -45,6 +45,7 @@ mod layers_panel;
 mod layout;
 mod light_guides;
 mod localization;
+mod loren_dupes;
 mod loren_panel;
 mod luau_lsp;
 mod mcp;
