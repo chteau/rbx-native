@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
 use rbx_lua::plugin::Origin;
@@ -22,6 +23,13 @@ thread_local! {
     /// Held by the open dialog so Escape reaches it (the UI is single
     /// threaded).
     static FOCUS: RefCell<Option<FocusHandle>> = const { RefCell::new(None) };
+}
+
+/// The Installed tab's search field, cleared each time the dialog opens.
+#[derive(Default)]
+pub(crate) struct Filter {
+    pub(super) query: Option<Entity<InputState>>,
+    _changed: Option<Subscription>,
 }
 
 /// What the user chose in the dialog, kept in `<config dir>/plugins.json`.
@@ -130,11 +138,26 @@ pub(super) fn switch(id: SharedString, on: bool) -> Stateful<Div> {
 }
 
 impl Shell {
-    pub(super) fn open_plugin_manager(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn open_plugin_manager(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         FOCUS.with(|slot| {
             slot.borrow_mut().get_or_insert_with(|| cx.focus_handle());
         });
         self.plugins.manager_open = true;
+        let filter = &mut self.plugins.filter;
+        match &filter.query {
+            Some(query) => query.update(cx, |state, cx| state.set_value("", window, cx)),
+            None => {
+                let query = cx
+                    .new(|cx| InputState::new(window, cx).placeholder("Search installed plugins"));
+                filter._changed = Some(cx.subscribe(&query, |_, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        cx.notify();
+                    }
+                }));
+                filter.query = Some(query);
+            }
+        }
+        self.catalog_load_installed(cx);
         cx.notify();
     }
 
@@ -186,7 +209,13 @@ impl Shell {
         }
         let focus = FOCUS.with(|slot| slot.borrow().clone())?;
         if !focus.contains_focused(window, cx) {
-            focus.focus(window, cx);
+            // Typing goes straight to the Installed tab's search field.
+            match &self.plugins.filter.query {
+                Some(query) if self.plugins.catalog.tab == Tab::Installed => {
+                    query.update(cx, |state, cx| state.focus(window, cx));
+                }
+                _ => focus.focus(window, cx),
+            }
         }
         let tabs = self.catalog_tabs(self.plugins.found.len(), cx);
         let (body, subtitle) = if self.plugins.catalog.tab == Tab::Popular {

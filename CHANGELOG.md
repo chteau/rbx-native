@@ -66,6 +66,12 @@
   you whichever comes first, and that changes when one is re-parented.
   Script Analysis and the editor now flag these as Loren warnings, even
   without luau-lsp, and `loren doctor` lists them with file and line. (@chteau)
+- **Search your installed plugins.** Manage Plugins now opens with the
+  cursor in a search box on the Installed tab, so you can just start
+  typing. It filters as you type by name, creator or kind (try "native"),
+  shows how many match, and tells you when nothing does. Plugins you got
+  from Popular plugins also show who made them now. Studio's own Plugin
+  Management window still has no search. (@chteau)
 
 ## 2026-11-03
 

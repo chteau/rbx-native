@@ -72,6 +72,8 @@ pub(crate) struct Plugins {
     pub(super) view_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     /// The Manage Plugins dialog is open.
     pub(super) manager_open: bool,
+    /// Its Installed tab's search field.
+    pub(super) filter: manager::Filter,
     /// Its Popular tab: the verified catalog, search and installs.
     pub(super) catalog: catalog::Catalog,
     /// Origin of `Context::now`.

@@ -3491,7 +3491,11 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   the Find in Place dock (Ctrl+Shift+F, Ctrl+Shift+H), one undo step for
   the whole Replace All
   ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
-- [ ] 📋 **Search the installed plugins** in the Plugins window
+- [x] **Search the installed plugins** in the Plugins window: Manage
+  Plugins opens with the cursor in a search field over the Installed tab,
+  which filters as you type by name, creator (for store plugins) or kind,
+  shows how many match, and says so when nothing does. Studio's Plugin
+  Management window has no search at all
   ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).
 - [x] **Select a locked part while holding a key**: Ctrl+Alt+click
   (Cmd+Option on macOS) selects a `Locked` part without unlocking it,
