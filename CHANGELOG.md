@@ -24,6 +24,12 @@
   Labels stay on this machine, per place, and the search finds them too.
   The search only sees the pages already loaded and says how many matched,
   Load more goes further back. (@chteau)
+- **Colour in Output, if you want it.** Studio Settings › Explorer &
+  Output › Rich text colours makes Output draw a printed line's
+  `<font color>`, `<b>`, `<u>` and `<s>` tags instead of showing them,
+  same parser a `RichText` label uses. `<i>` gets stripped too, but our UI
+  font has no italic face so it reads upright. Off by default since real
+  Studio prints the tags as typed (checked side by side). (@chteau)
 
 ## 2026-11-03
 
