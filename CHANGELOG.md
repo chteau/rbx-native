@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-04
+
+- **Insert parts anchored.** A new switch in Studio Settings › Explorer
+  (and the `⋯` next to the insert search) makes every Part or MeshPart you
+  insert start Anchored: ribbon Part tiles, Insert Object, the Explorer's
+  `+` and a lone part or mesh from the Toolbox. A Toolbox model's parts
+  keep what its author set. Off by default, so inserts still fall like in
+  Studio. (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

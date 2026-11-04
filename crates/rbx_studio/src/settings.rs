@@ -115,6 +115,9 @@ pub(crate) struct Settings {
     /// reveal reads as an insert that did nothing.
     pub(crate) increment_names: bool,
     pub(crate) expand_on_select: bool,
+    /// Whether a `Part`/`MeshPart` (any `BasePart`) the editor inserts starts
+    /// `Anchored`, rather than falling as Studio's inserts do. Off by default.
+    pub(crate) insert_anchored: bool,
     /// Whether Save/Publish to Roblox uploads a copy without the editor's
     /// own layers and notes (see `crate::strip`). Defaults on: they mean
     /// nothing to the engine, and a note is not meant for players.
@@ -249,6 +252,7 @@ impl Default for Settings {
             optimize_graph_on_open: false,
             increment_names: true,
             expand_on_select: true,
+            insert_anchored: false,
             strip_on_publish: true,
             dragger: DraggerSettings::default(),
             controls: Controls::default(),
@@ -465,6 +469,10 @@ fn load_from(path: &Path) -> Settings {
             .get("expand_on_select")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        insert_anchored: value
+            .get("insert_anchored")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         dragger: DraggerSettings::read(&value),
         controls: Controls::read(&value),
         argon_address: value
@@ -783,6 +791,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     });
     // Outside the literal: `json!` hits the macro recursion limit at this size.
     value["play_copy_name"] = settings.play_copy_name.clone().into();
+    value["insert_anchored"] = settings.insert_anchored.into();
     value["playtest_rate_hz"] = settings.playtest_rate_hz.into();
     value["network_presets"] = network_presets::json(&settings.network_presets);
     value["device_custom"] = settings.device_custom.json();

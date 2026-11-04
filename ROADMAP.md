@@ -3473,8 +3473,10 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   `<font color>` rich text in Output lines instead of showing the tags.
   Off by default, since a printed string is the game's own text
   ([Colors in the output window](https://devforum.roblox.com/t/colors-in-the-output-window/51196)).
-- [ ] 📋 **Insert parts anchored**: a Studio Settings switch that makes every
-  inserted `Part`/`MeshPart` (ribbon tiles, Insert Object) start anchored
+- [x] **Insert parts anchored**: a Studio Settings › Explorer switch (also
+  in the insert picker's `⋯`) that makes every inserted `Part`/`MeshPart`
+  (ribbon tiles, Insert Object, the Explorer's `+`, a lone part or mesh
+  from the Toolbox) start anchored
   ([Have parts anchored by default](https://devforum.roblox.com/t/have-parts-anchored-by-default-when-inserting-in-studio/347169)).
 - [x] **Multi-line Command Bar**: Enter for a new line, the script
   editor's highlighting, and Ctrl+Enter to run
