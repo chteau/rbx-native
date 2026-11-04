@@ -237,3 +237,44 @@ fn export_as_gltf_of_the_place_is_rooted_at_workspace() {
         .collect();
     assert!(names.contains(&"Car") && names.contains(&"Wheel") && names.contains(&"Outside"));
 }
+
+/// Export as FBX… writes one binary file with nothing beside it.
+#[test]
+fn export_as_fbx_is_one_binary_file() {
+    let (mut dom, _, wheel) = place();
+    dom.set_property(
+        wheel,
+        "CFrame",
+        Variant::CFrame(rbx_dom::CFrameData {
+            position: rbx_dom::Vector3Data {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }),
+    )
+    .unwrap();
+    dom.set_property(
+        wheel,
+        "size",
+        Variant::Vector3(rbx_dom::Vector3Data {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        }),
+    )
+    .unwrap();
+    let files = encode(
+        Export::Fbx,
+        &dom,
+        &database(),
+        &pick::Meshes::default(),
+        &[wheel],
+        Path::new("Wheel.fbx"),
+    )
+    .unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].0, Path::new("Wheel.fbx"));
+    assert!(files[0].1.starts_with(b"Kaydara FBX Binary  \0"));
+}

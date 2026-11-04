@@ -1,9 +1,9 @@
 use gpui_kit::{Action, OwnedMenuItem};
 
 use super::{
-    menus, MenuClosePlace, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace, MenuMergePlace,
-    MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox, MenuSave, MenuSaveToFile,
-    MenuSaveToRoblox, MenuVersionHistory,
+    menus, MenuClosePlace, MenuExportFbx, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace,
+    MenuMergePlace, MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox, MenuSave,
+    MenuSaveToFile, MenuSaveToRoblox, MenuVersionHistory,
 };
 use crate::script_templates::Template;
 
@@ -138,6 +138,7 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
     assert!(live("Save to File", &MenuSave));
     assert!(live("Save to File As\u{2026}", &MenuSaveToFile));
     assert!(live("Export as glTF\u{2026}", &MenuExportGltf));
+    assert!(live("Export as FBX\u{2026}", &MenuExportFbx));
 }
 
 /// The settings windows and the templates window open from File's tail,

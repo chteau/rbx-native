@@ -1,5 +1,5 @@
-//! Instances as plain triangle meshes, written out as Wavefront `.obj` or
-//! glTF 2.0 for another 3D tool to open.
+//! Instances as plain triangle meshes, written out as Wavefront `.obj`,
+//! glTF 2.0 or binary FBX for another 3D tool to open.
 //!
 //! Every part is exported as the geometry the viewport draws it with, the
 //! same `scene::shape::resolve` precedence and unit meshes for the procedural
@@ -26,6 +26,7 @@
 //! exporter writes.
 
 mod bake;
+mod fbx;
 mod gltf;
 mod obj;
 mod packed;
@@ -43,6 +44,7 @@ use crate::assets::Image;
 use crate::pick::Meshes;
 use crate::scene::{descendants_of, is_drawable};
 
+pub use fbx::fbx;
 pub use gltf::{gltf, gltf_files};
 pub use obj::{mtl, obj, obj_files};
 

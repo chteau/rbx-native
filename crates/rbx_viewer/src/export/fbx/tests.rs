@@ -1,0 +1,325 @@
+use std::io::Cursor;
+
+use fbxcel::low::v7400::AttributeValue;
+use fbxcel::tree::any::AnyTree;
+use fbxcel::tree::v7400::{NodeHandle, Tree};
+use glam::{Quat, Vec3};
+
+use super::fbx;
+use crate::export::{Export, ExportMesh, ExportNode, Finish, Maps};
+
+/// A one-triangle surface at `at`, world space.
+fn surface(name: &str, at: [f32; 3], uvs: bool) -> ExportMesh {
+    let [x, y, z] = at;
+    ExportMesh {
+        name: name.into(),
+        positions: vec![[x, y, z], [x + 1.0, y, z], [x, y + 1.0, z]],
+        normals: vec![[0.0, 0.0, 1.0]; 3],
+        tangents: Vec::new(),
+        indices: vec![0, 1, 2],
+        color: [1.0, 0.5, 0.25, 1.0],
+        uvs: if uvs {
+            vec![[0.0, 0.0], [1.0, 0.0], [0.0, 0.25]]
+        } else {
+            Vec::new()
+        },
+        maps: Maps::default(),
+        blend: false,
+        finish: Finish::Plain,
+    }
+}
+
+/// A `Model` holding `Block` (turned a quarter about Y, at 10,2,0, drawn
+/// as a textured surface and a plain one) and a Neon `Lamp`.
+fn sample() -> Export {
+    let mut textured = surface("Block", [10.0, 2.0, 0.0], true);
+    textured.maps.color = Some(0);
+    let mut lamp = surface("Lamp", [0.0, 5.0, 0.0], false);
+    lamp.finish = Finish::Neon;
+    let quarter = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2).to_array();
+    Export {
+        meshes: vec![textured, surface("Block", [10.0, 2.0, 0.0], false), lamp],
+        textures: vec![b"\x89PNG not really".to_vec()],
+        nodes: vec![
+            ExportNode {
+                name: "Model".into(),
+                class: "Model".into(),
+                parent: None,
+                placement: None,
+                meshes: Vec::new(),
+                material: None,
+            },
+            ExportNode {
+                name: "Block".into(),
+                class: "Part".into(),
+                parent: Some(0),
+                placement: Some((quarter, [10.0, 2.0, 0.0])),
+                meshes: vec![0, 1],
+                material: Some("Plastic".into()),
+            },
+            ExportNode {
+                name: "Lamp".into(),
+                class: "Part".into(),
+                parent: Some(0),
+                placement: Some((Quat::IDENTITY.to_array(), [0.0, 5.0, 0.0])),
+                meshes: vec![2],
+                material: Some("Neon".into()),
+            },
+        ],
+    }
+}
+
+fn parse(bytes: &[u8]) -> Tree {
+    match AnyTree::from_seekable_reader(Cursor::new(bytes)).expect("parses") {
+        AnyTree::V7400(version, tree, _) => {
+            assert_eq!(version, fbxcel::low::FbxVersion::V7_4);
+            tree
+        }
+        _ => panic!("not FBX 7.4"),
+    }
+}
+
+fn objects<'a>(tree: &'a Tree, kind: &str) -> Vec<NodeHandle<'a>> {
+    let root = tree.root();
+    let objects = root.first_child_by_name("Objects").expect("Objects");
+    objects.children_by_name(kind).collect()
+}
+
+fn child<'a>(node: NodeHandle<'a>, name: &str) -> NodeHandle<'a> {
+    node.first_child_by_name(name)
+        .unwrap_or_else(|| panic!("no {name}"))
+}
+
+fn f64s(node: NodeHandle<'_>) -> Vec<f64> {
+    match &node.attributes()[0] {
+        AttributeValue::ArrF64(values) => values.clone(),
+        other => panic!("not doubles: {other:?}"),
+    }
+}
+
+fn i32s(node: NodeHandle<'_>) -> Vec<i32> {
+    match &node.attributes()[0] {
+        AttributeValue::ArrI32(values) => values.clone(),
+        other => panic!("not ints: {other:?}"),
+    }
+}
+
+/// The values of the `P` entry `name` in `node`'s `Properties70`.
+fn property(node: NodeHandle<'_>, name: &str) -> Vec<f64> {
+    child(node, "Properties70")
+        .children_by_name("P")
+        .find(|p| p.attributes()[0].get_string() == Some(name))
+        .unwrap_or_else(|| panic!("no {name}"))
+        .attributes()[4..]
+        .iter()
+        .filter_map(AttributeValue::get_f64)
+        .collect()
+}
+
+fn connections(tree: &Tree) -> Vec<(i64, i64)> {
+    let root = tree.root();
+    let connections = root
+        .first_child_by_name("Connections")
+        .expect("Connections");
+    connections
+        .children_by_name("C")
+        .map(|c| {
+            (
+                c.attributes()[1].get_i64().unwrap(),
+                c.attributes()[2].get_i64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn id(node: NodeHandle<'_>) -> i64 {
+    node.attributes()[0].get_i64().unwrap()
+}
+
+fn name(node: NodeHandle<'_>) -> &str {
+    node.attributes()[1]
+        .get_string()
+        .unwrap()
+        .split('\0')
+        .next()
+        .unwrap()
+}
+
+#[test]
+fn the_tree_comes_along_placed_relative_to_parents() {
+    let tree = parse(&fbx(&sample()).unwrap());
+    let models = objects(&tree, "Model");
+    let names: Vec<&str> = models.iter().map(|&m| name(m)).collect();
+    assert_eq!(names, ["Model", "Block", "Block_1", "Block_2", "Lamp"]);
+    let kinds: Vec<&str> = models
+        .iter()
+        .map(|m| m.attributes()[2].get_string().unwrap())
+        .collect();
+    assert_eq!(kinds, ["Null", "Null", "Mesh", "Mesh", "Mesh"]);
+    let links = connections(&tree);
+    assert!(links.contains(&(id(models[0]), 0)));
+    assert!(links.contains(&(id(models[1]), id(models[0]))));
+    assert!(links.contains(&(id(models[4]), id(models[0]))));
+    let rotation = property(models[1], "Lcl Rotation");
+    assert!(
+        (rotation[1] - 90.0).abs() < 1e-3 && rotation[0].abs() < 1e-3,
+        "{rotation:?}"
+    );
+    assert_eq!(property(models[1], "Lcl Translation"), [10.0, 2.0, 0.0]);
+}
+
+/// The ids of what `links` hangs off `parent`, among `among`.
+fn attached(links: &[(i64, i64)], parent: NodeHandle<'_>, among: &[NodeHandle<'_>]) -> Vec<i64> {
+    links
+        .iter()
+        .filter(|(child, to)| *to == id(parent) && among.iter().any(|m| id(*m) == *child))
+        .map(|(child, _)| *child)
+        .collect()
+}
+
+#[test]
+fn each_surface_is_its_own_mesh_and_a_part_with_several_holds_them() {
+    let tree = parse(&fbx(&sample()).unwrap());
+    let models = objects(&tree, "Model");
+    let geometries = objects(&tree, "Geometry");
+    let mats = objects(&tree, "Material");
+    let links = connections(&tree);
+    assert_eq!(geometries.len(), 3);
+
+    // Block's two surfaces sit right on it, in its own frame.
+    let (block, first, second) = (models[1], models[2], models[3]);
+    assert_eq!(attached(&links, block, &models), [id(first), id(second)]);
+    assert!(attached(&links, block, &geometries).is_empty());
+    assert!(attached(&links, block, &mats).is_empty());
+    for surface in [first, second] {
+        assert_eq!(property(surface, "Lcl Translation"), [0.0; 3]);
+        assert_eq!(property(surface, "Lcl Rotation"), [0.0; 3]);
+    }
+    assert_eq!(attached(&links, first, &mats), [id(mats[0])]);
+    assert_eq!(attached(&links, second, &mats), [id(mats[1])]);
+    assert_eq!(attached(&links, first, &geometries), [id(geometries[0])]);
+    assert_eq!(attached(&links, second, &geometries), [id(geometries[1])]);
+
+    let textured = geometries[0];
+    assert_eq!(i32s(child(textured, "PolygonVertexIndex")), [0, 1, !2]);
+    // The second corner sits one stud along world X, which the quarter
+    // turn about Y makes local +Z.
+    let vertices = f64s(child(textured, "Vertices"));
+    let corner = Vec3::new(vertices[3] as f32, vertices[4] as f32, vertices[5] as f32);
+    assert!(corner.abs_diff_eq(Vec3::Z, 1e-5), "{corner}");
+    let materials = i32s(child(child(textured, "LayerElementMaterial"), "Materials"));
+    assert_eq!(materials, [0]);
+    // V flipped, the plain surface's corners at the origin.
+    let uvs = f64s(child(child(textured, "LayerElementUV"), "UV"));
+    assert_eq!(uvs, [0.0, 1.0, 1.0, 1.0, 0.0, 0.75]);
+    let plain = f64s(child(child(geometries[1], "LayerElementUV"), "UV"));
+    assert_eq!(plain, [0.0; 6]);
+
+    // A one-surface part keeps its mesh and material itself.
+    let lamp = models[4];
+    assert_eq!(attached(&links, lamp, &mats), [id(mats[2])]);
+    assert_eq!(attached(&links, lamp, &geometries), [id(geometries[2])]);
+}
+
+#[test]
+fn materials_carry_colour_neon_and_the_embedded_image() {
+    let tree = parse(&fbx(&sample()).unwrap());
+    let materials = objects(&tree, "Material");
+    assert_eq!(property(materials[0], "DiffuseColor"), [1.0, 0.5, 0.25]);
+    assert_eq!(property(materials[0], "EmissiveFactor"), [0.0]);
+    assert_eq!(property(materials[2], "EmissiveColor"), [1.0, 0.5, 0.25]);
+    let videos = objects(&tree, "Video");
+    // The image and one swatch the two plain surfaces share.
+    assert_eq!(videos.len(), 2);
+    let content = child(videos[0], "Content");
+    assert_eq!(
+        content.attributes()[0].get_binary(),
+        Some(&b"\x89PNG not really"[..])
+    );
+    let texture = objects(&tree, "Texture")[0];
+    let links = connections(&tree);
+    assert!(links.contains(&(id(videos[0]), id(texture))));
+    assert!(links.contains(&(id(texture), id(materials[0]))));
+}
+
+#[test]
+fn the_same_export_writes_the_same_bytes() {
+    assert_eq!(fbx(&sample()).unwrap(), fbx(&sample()).unwrap());
+}
+
+/// A 1x1 RGBA PNG of `texel`.
+fn png_of(texel: [u8; 4]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&texel).unwrap();
+    writer.finish().unwrap();
+    bytes
+}
+
+/// The embedded image of the texture on material `material`, decoded.
+fn image_on(tree: &Tree, material: usize) -> (png::ColorType, Vec<u8>) {
+    let links = connections(tree);
+    let target = id(objects(tree, "Material")[material]);
+    let texture = objects(tree, "Texture")
+        .into_iter()
+        .find(|t| links.contains(&(id(*t), target)))
+        .expect("a texture on the material");
+    let video = objects(tree, "Video")
+        .into_iter()
+        .find(|v| links.contains(&(id(*v), id(texture))))
+        .expect("a clip under the texture");
+    let bytes = child(video, "Content").attributes()[0]
+        .get_binary()
+        .unwrap()
+        .to_vec();
+    let mut reader = png::Decoder::new(Cursor::new(bytes)).read_info().unwrap();
+    let mut buffer = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buffer).unwrap();
+    buffer.truncate(info.buffer_size());
+    (info.color_type, buffer)
+}
+
+#[test]
+fn colour_maps_carry_the_tint_and_only_an_images_own_alpha() {
+    let mut export = sample();
+    // A grey pack texel with a stray mask in its alpha.
+    export.textures = vec![png_of([188, 188, 188, 40])];
+    // Surface 1: the same texture on an opaque decal-like surface that
+    // blends because of its image, untinted.
+    export.meshes[1].maps.color = Some(0);
+    export.meshes[1].color = [1.0; 4];
+    export.meshes[1].blend = true;
+    export.meshes[1].uvs = export.meshes[0].uvs.clone();
+    let tree = parse(&fbx(&export).unwrap());
+    // Three files: the tinted one, the untouched one and the lamp's swatch.
+    assert_eq!(objects(&tree, "Video").len(), 3);
+
+    let (kind, texels) = image_on(&tree, 0);
+    assert_eq!(kind, png::ColorType::Rgb);
+    // 188 is 0.5 linear: times (1, 0.5, 0.25) and back to sRGB.
+    assert_eq!(texels, [188, 137, 99]);
+
+    let (kind, texels) = image_on(&tree, 1);
+    assert_eq!(kind, png::ColorType::Rgba);
+    assert_eq!(texels, [188, 188, 188, 40]);
+}
+
+#[test]
+fn plain_surfaces_get_one_swatch_per_colour() {
+    let mut export = sample();
+    export.meshes.push(surface("Other", [0.0; 3], false));
+    export.meshes[3].color = [0.0, 0.0, 1.0, 0.5];
+    let tree = parse(&fbx(&export).unwrap());
+    // (1, 0.5, 0.25) linear in sRGB, shared by the plain Block and the lamp.
+    assert_eq!(
+        image_on(&tree, 1),
+        (png::ColorType::Rgb, vec![255, 188, 137])
+    );
+    assert_eq!(image_on(&tree, 2), image_on(&tree, 1));
+    // Transparency stays on the material, not in the swatch.
+    assert_eq!(image_on(&tree, 3), (png::ColorType::Rgb, vec![0, 0, 255]));
+    assert_eq!(objects(&tree, "Video").len(), 3);
+}

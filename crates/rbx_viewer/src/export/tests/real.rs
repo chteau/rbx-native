@@ -5,8 +5,8 @@ use super::*;
 /// A real place through the same streamed meshes and images the editor
 /// exports from: every textured mesh comes out with its PNG, and every union
 /// whose boolean carved with its own triangles rather than a box. Set
-/// `RBX_EXPORT_OUT=<dir>` to keep the `.obj`/`.mtl`/`.png`s and `.gltf` it
-/// wrote, to open in another tool.
+/// `RBX_EXPORT_OUT=<dir>` to keep the `.obj`/`.mtl`/`.png`s, `.gltf` and
+/// `.fbx` it wrote, to open in another tool.
 #[test]
 #[ignore = "needs RBX_EXPORT_FIXTURE=<place> and the network or an asset cache"]
 fn a_real_place_exports_its_textures_and_unions() {
@@ -67,6 +67,7 @@ fn a_real_place_exports_its_textures_and_unions() {
         for (name, bytes) in gltf_files(&exported, "export") {
             std::fs::write(out.join(name), bytes).unwrap();
         }
+        std::fs::write(out.join("export.fbx"), fbx(&exported).unwrap()).unwrap();
     }
 
     assert!(textured > 0);

@@ -62,6 +62,7 @@ actions!(
         MenuSaveToFile,
         MenuClosePlace,
         MenuExportGltf,
+        MenuExportFbx,
         MenuExportProject,
         MenuExportClean,
         MenuSaveAsTemplate,
@@ -226,6 +227,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::action("Save to File As…", MenuSaveToFile),
         MenuItem::action("Save as Template\u{2026}", MenuSaveAsTemplate),
         MenuItem::action("Export as glTF…", MenuExportGltf),
+        MenuItem::action("Export as FBX…", MenuExportFbx),
         // A folder Argon or Rojo syncs from; File › Open reads one
         // back (a `*.project.json`).
         MenuItem::action("Export as Project…", MenuExportProject),

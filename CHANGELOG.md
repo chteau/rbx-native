@@ -77,6 +77,18 @@
   way Roblox's own string parameters do, so nil errors and a table warns
   then goes in through `tostring`. Studio doesn't have it, so a plugin made
   for both should check for it first (see `docs/plugins.md`). (@chteau)
+- **Export as FBX.** File > Export as FBX… (or right-click in the
+  Explorer) saves the selection or the place as one binary FBX file, so
+  it opens straight in Blender, Maya or Studio's 3D Importer. You get the
+  same hierarchy, meshes, UVs and textures as the glTF export, with each
+  part's colour baked into its texture since FBX tools don't tint it
+  themselves. Plain parts get a one-pixel texture of their colour, since
+  Studio's importer shows a colour with no texture as grey. A part drawn
+  with more than one material, like a cylinder's side and caps, becomes a
+  group with one mesh per surface, since the importer greys out a mesh
+  with several materials too. Neon comes out emissive and Transparency
+  carries over.
+  (@chteau)
 
 ## 2026-11-03
 
