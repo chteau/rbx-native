@@ -15,6 +15,15 @@
   gets the same on its `Asset`. It plays at the instance's Volume and
   changes nothing in the place. If the sound can't be fetched or decoded,
   Output says why. (@chteau)
+- **Version History: search, date filter and local labels.** There's a
+  search box now. It matches every word you type against the version
+  number, the date (`2026-10`, `oct`), who saved it, its notes and its
+  label, so `chee oct` finds Chee's October saves. Beside it are Studio's
+  date presets: All time, Today, This week, This month. Roblox keeps no name
+  for a version, so the tag button on a row gives it a local label instead.
+  Labels stay on this machine, per place, and the search finds them too.
+  The search only sees the pages already loaded and says how many matched,
+  Load more goes further back. (@chteau)
 
 ## 2026-11-03
 

@@ -3502,8 +3502,14 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   place already shows costs no download, and a decal id is followed to its
   image the way Roblox does for `Image`/`Texture`
   ([Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605)).
-- [ ] 📋 **Search in Version History**, by date and by who published; a name
-  for a version can only be a local label, Roblox stores none
+- [x] **Search in Version History**, by date and by who saved it: a search
+  box that matches every word against the version number, the date as
+  listed (or its month's name), who saved it, its notes and its local
+  label, beside Studio's All time / Today / This week / This month presets.
+  Studio's own box only searches notes. A name for a version can only be a
+  local label, Roblox stores none: the tag button on a row gives it one,
+  kept per place in `version-labels.json` in the config folder. The search
+  covers the pages loaded so far and says so, Load more reaches further back
   ([Version History needs naming, search, and folders](https://devforum.roblox.com/t/version-history-needs-naming-search-and-folders/4382404)).
 - [ ] 📋 **A Loren lint for scripts that index an instance by a name two
   siblings share**
