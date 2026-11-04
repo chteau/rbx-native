@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use rbx_dom::{Ref, Variant, WeakDom};
+use rbx_dom::{Change, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::*;
@@ -185,10 +185,7 @@ fn replace_all_over_open_and_closed_scripts_is_one_undo_step() {
 
     // What `Shell::write_script_edits` does around the writes.
     let mut history = History::new(DEFAULT_CAP);
-    dom.take_changes();
-    let before = dom.clone();
-    assert!(write_all(&mut dom, &edits));
-    history.push(before);
+    history.push(write_step(&mut dom, &edits).expect("the scripts changed"));
 
     assert_eq!(
         source::read(&dom, main).unwrap(),
@@ -216,5 +213,29 @@ fn replace_all_over_open_and_closed_scripts_is_one_undo_step() {
 fn writing_nothing_new_reports_no_change() {
     let (mut dom, [main, ..]) = place();
     let same = source::read(&dom, main).unwrap();
-    assert!(!write_all(&mut dom, &[(main, same)]));
+    assert!(!write_all(&mut dom, &[(main, same.clone())]));
+    assert!(write_step(&mut dom, &[(main, same)]).is_none());
+}
+
+#[test]
+fn a_write_step_logs_only_its_own_writes() {
+    let (mut dom, [main, _, client]) = place();
+    // An earlier, unrelated edit still sitting in the log.
+    source::write(&mut dom, client, "print('earlier')\n");
+    let before = write_step(&mut dom, &[(main, "-- new\n".into())]).unwrap();
+    assert_eq!(source::read(&before, client).unwrap(), "print('earlier')\n");
+    assert_eq!(
+        source::read(&before, main).unwrap(),
+        "local foo = 1\nprint(foo, Foo)\n"
+    );
+    let touched: Vec<Ref> = dom
+        .take_changes()
+        .iter()
+        .filter_map(|change| match change {
+            Change::Property { referent, .. } => Some(*referent),
+            _ => None,
+        })
+        .collect();
+    assert!(!touched.is_empty());
+    assert!(touched.iter().all(|&referent| referent == main));
 }

@@ -185,6 +185,16 @@ pub(super) fn replacements(
 
 /// Writes `edits` as the scripts' `Source`, reporting whether any changed.
 /// The caller wraps this in one history step.
+/// The DOM half of `Shell::write_script_edits`: writes `edits` and hands
+/// back the tree as it stood before them, the undo snapshot, or `None` if
+/// nothing changed. The change log is drained first so the step's log holds
+/// only these writes.
+pub(super) fn write_step(dom: &mut WeakDom, edits: &[(Ref, String)]) -> Option<WeakDom> {
+    dom.take_changes();
+    let before = dom.clone();
+    write_all(dom, edits).then_some(before)
+}
+
 pub(super) fn write_all(dom: &mut WeakDom, edits: &[(Ref, String)]) -> bool {
     edits.iter().fold(false, |any, (script, text)| {
         source::write(dom, *script, text) | any

@@ -299,11 +299,9 @@ impl Shell {
     fn write_script_edits(&mut self, edits: &[(Ref, String)], cx: &mut Context<Self>) -> bool {
         // See `commit_script`: the snapshot is the tree as it stood before
         // the writes, pushed only once they have landed.
-        self.dom.take_changes();
-        let before = self.dom.clone();
-        if !scan::write_all(&mut self.dom, edits) {
+        let Some(before) = scan::write_step(&mut self.dom, edits) else {
             return false;
-        }
+        };
         self.push_history_snapshot(before);
         self.properties.dom_changed(&[]);
         let changes = self.dom.take_changes();
@@ -370,3 +368,6 @@ impl Shell {
         cx.notify();
     }
 }
+
+#[cfg(test)]
+mod tests;
