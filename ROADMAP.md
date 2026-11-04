@@ -3503,9 +3503,9 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   siblings share**
   ([Warn when two instances share the same name](https://devforum.roblox.com/t/warn-when-two-instances-share-the-same-name-and-are-accessed-by-scripts/2698911)).
 - [x] **Fullbright viewport toggle**: the Test tab's Fullbright tile, the
-  viewport `⋯` menu or Alt+L (Customize Shortcuts) draws Edit mode with
-  flat ambient light and no shadows, renderer only, `Lighting` untouched
-  and nothing saved
+  Viewport panel's Camera section or Alt+L (Customize Shortcuts) draws
+  Edit mode with flat ambient light and no shadows, renderer only,
+  `Lighting` untouched and nothing saved
   ([Fullbright Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596)).
 - [ ] 📋 **Preview button for `Sound`/`AudioPlayer`** in Properties
   ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
