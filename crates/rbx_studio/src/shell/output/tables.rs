@@ -12,7 +12,8 @@ use rbx_lua::{PrintPart, PrintValue, TableDump};
 use crate::settings::OutputDisplay;
 use crate::tokens;
 
-use super::{truncate, OutputEntry, OutputLog, Shell, LABEL_MAX_LEN};
+use super::rows::Show;
+use super::{rich, truncate, OutputEntry, OutputLog, Shell, LABEL_MAX_LEN};
 
 /// How far each level of a table's entries sits in from its brace.
 const INDENT: f32 = 14.0;
@@ -20,7 +21,7 @@ const INDENT: f32 = 14.0;
 /// One row per `print` call, its arguments side by side.
 pub(super) fn printed(
     entry: &OutputEntry,
-    display: OutputDisplay,
+    show: Show,
     log: &OutputLog,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
@@ -31,11 +32,11 @@ pub(super) fn printed(
             line = line.child(match part {
                 PrintPart::Text(text) => div()
                     .min_w_0()
-                    .child(truncate(text, LABEL_MAX_LEN))
+                    .child(rich::text(truncate(text, LABEL_MAX_LEN), show.rich))
                     .into_any_element(),
                 PrintPart::Table(table) => {
                     let path = vec![line_index as u32, part_index as u32];
-                    node(entry.id, path, table, display, log, cx)
+                    node(entry.id, path, table, show.display, log, cx)
                 }
             });
         }
