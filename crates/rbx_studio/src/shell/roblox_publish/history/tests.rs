@@ -3,7 +3,8 @@ use std::cell::RefCell;
 use rbx_cloud::{CloudError, PlaceVersion, PublishMode, VersionPage};
 
 use super::fetch::{copy_path, describe_read, restore_with};
-use super::model::{date_label, unnamed, History};
+use super::labels;
+use super::model::{date_label, unnamed, History, Since};
 use super::{restored_line, Target};
 
 const TARGET: Target = Target {
@@ -237,4 +238,57 @@ fn a_restore_line_says_whether_players_get_it() {
         "Restored version 409 of place 1 as version 411 (saved, not published)"
     );
     assert!(restored_line(1, 409, 411, PublishMode::Published).ends_with("(published)"));
+}
+
+#[test]
+fn search_matches_every_word_across_date_author_and_label() {
+    let mut history = History::default();
+    history.learn_names([(7, "Chee".to_string())]);
+    let mut v = version(12, Some(7), &[]);
+    v.created_time = "2026-10-04T18:02:11.000Z".into();
+    assert!(history.matches(&v, None, ""));
+    assert!(history.matches(&v, None, "2026-10-04"));
+    assert!(history.matches(&v, None, "oct chee"));
+    assert!(history.matches(&v, None, "V12 saved"));
+    assert!(!history.matches(&v, None, "published"));
+    assert!(!history.matches(&v, None, "chee 2026-11"));
+    assert!(history.matches(&v, Some("Before the lighting pass"), "lighting"));
+    assert!(!history.matches(&v, None, "lighting"));
+}
+
+#[test]
+fn labels_are_kept_per_place_and_a_blank_one_is_dropped() {
+    let dir = std::env::temp_dir().join(format!("rbx-version-labels-{}", std::process::id()));
+    let path = dir.join("version-labels.json");
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(
+        labels::save_to(&path, 1, 5, "  Before lights ").unwrap()[&5],
+        "Before lights"
+    );
+    labels::save_to(&path, 2, 5, "Other place").unwrap();
+    assert_eq!(labels::load_from(&path, 1)[&5], "Before lights");
+    assert!(labels::save_to(&path, 1, 5, " ").unwrap().is_empty());
+    assert!(labels::load_from(&path, 1).is_empty());
+    assert_eq!(labels::load_from(&path, 2)[&5], "Other place");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn date_presets_count_from_midnight_sunday_and_the_first() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-11-04T15:00:00Z")
+        .unwrap()
+        .to_utc();
+    let at = |time: &str| PlaceVersion {
+        created_time: time.into(),
+        ..version(1, None, &[])
+    };
+    assert!(Since::Today.holds(&at("2026-11-04T00:00:00.000Z"), now));
+    assert!(!Since::Today.holds(&at("2026-11-03T23:59:59.000Z"), now));
+    // 2026-11-04 is a Wednesday: the week began on Sunday the 1st.
+    assert!(Since::ThisWeek.holds(&at("2026-11-01T00:00:00.000Z"), now));
+    assert!(!Since::ThisWeek.holds(&at("2026-10-31T23:00:00.000Z"), now));
+    assert!(Since::ThisMonth.holds(&at("2026-11-01T00:00:00.000Z"), now));
+    assert!(!Since::ThisMonth.holds(&at("2026-10-31T23:00:00.000Z"), now));
+    assert!(Since::AllTime.holds(&at("2016-01-01T00:00:00.000Z"), now));
+    assert!(Since::ThisMonth.holds(&at("not a date"), now));
 }
