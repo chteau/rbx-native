@@ -150,12 +150,16 @@ fn the_tree_comes_along_placed_relative_to_parents() {
     let tree = parse(&fbx(&sample()).unwrap());
     let models = objects(&tree, "Model");
     let names: Vec<&str> = models.iter().map(|&m| name(m)).collect();
-    assert_eq!(names, ["Model", "Block", "Lamp"]);
-    assert_eq!(models[0].attributes()[2].get_string(), Some("Null"));
-    assert_eq!(models[1].attributes()[2].get_string(), Some("Mesh"));
+    assert_eq!(names, ["Model", "Block", "Block_1", "Block_2", "Lamp"]);
+    let kinds: Vec<&str> = models
+        .iter()
+        .map(|m| m.attributes()[2].get_string().unwrap())
+        .collect();
+    assert_eq!(kinds, ["Null", "Null", "Mesh", "Mesh", "Mesh"]);
     let links = connections(&tree);
     assert!(links.contains(&(id(models[0]), 0)));
     assert!(links.contains(&(id(models[1]), id(models[0]))));
+    assert!(links.contains(&(id(models[4]), id(models[0]))));
     let rotation = property(models[1], "Lcl Rotation");
     assert!(
         (rotation[1] - 90.0).abs() < 1e-3 && rotation[0].abs() < 1e-3,
@@ -164,35 +168,57 @@ fn the_tree_comes_along_placed_relative_to_parents() {
     assert_eq!(property(models[1], "Lcl Translation"), [10.0, 2.0, 0.0]);
 }
 
+/// The ids of what `links` hangs off `parent`, among `among`.
+fn attached(links: &[(i64, i64)], parent: NodeHandle<'_>, among: &[NodeHandle<'_>]) -> Vec<i64> {
+    links
+        .iter()
+        .filter(|(child, to)| *to == id(parent) && among.iter().any(|m| id(*m) == *child))
+        .map(|(child, _)| *child)
+        .collect()
+}
+
 #[test]
-fn a_part_is_one_geometry_in_its_own_frame_with_a_material_per_surface() {
+fn each_surface_is_its_own_mesh_and_a_part_with_several_holds_them() {
     let tree = parse(&fbx(&sample()).unwrap());
+    let models = objects(&tree, "Model");
     let geometries = objects(&tree, "Geometry");
-    assert_eq!(geometries.len(), 2);
-    let block = geometries[0];
-    let corners = i32s(child(block, "PolygonVertexIndex"));
-    assert_eq!(corners, [0, 1, !2, 3, 4, !5]);
-    // The second corner sits one stud along world X, which the quarter
-    // turn about Y makes local +Z.
-    let vertices = f64s(child(block, "Vertices"));
-    let second = Vec3::new(vertices[3] as f32, vertices[4] as f32, vertices[5] as f32);
-    assert!(second.abs_diff_eq(Vec3::Z, 1e-5), "{second}");
-    let materials = i32s(child(child(block, "LayerElementMaterial"), "Materials"));
-    assert_eq!(materials, [0, 1]);
-    // V flipped, the plain surface's corners at the origin.
-    let uvs = f64s(child(child(block, "LayerElementUV"), "UV"));
-    assert_eq!(uvs[..6], [0.0, 1.0, 1.0, 1.0, 0.0, 0.75]);
-    assert_eq!(uvs[6..], [0.0; 6]);
-    let model = objects(&tree, "Model")[1];
     let mats = objects(&tree, "Material");
     let links = connections(&tree);
-    let attached: Vec<i64> = links
-        .iter()
-        .filter(|(child, parent)| *parent == id(model) && mats.iter().any(|m| id(*m) == *child))
-        .map(|(child, _)| *child)
-        .collect();
-    assert_eq!(attached, [id(mats[0]), id(mats[1])]);
-    assert!(links.contains(&(id(block), id(model))));
+    assert_eq!(geometries.len(), 3);
+
+    // Block's two surfaces sit right on it, in its own frame.
+    let (block, first, second) = (models[1], models[2], models[3]);
+    assert_eq!(attached(&links, block, &models), [id(first), id(second)]);
+    assert!(attached(&links, block, &geometries).is_empty());
+    assert!(attached(&links, block, &mats).is_empty());
+    for surface in [first, second] {
+        assert_eq!(property(surface, "Lcl Translation"), [0.0; 3]);
+        assert_eq!(property(surface, "Lcl Rotation"), [0.0; 3]);
+    }
+    assert_eq!(attached(&links, first, &mats), [id(mats[0])]);
+    assert_eq!(attached(&links, second, &mats), [id(mats[1])]);
+    assert_eq!(attached(&links, first, &geometries), [id(geometries[0])]);
+    assert_eq!(attached(&links, second, &geometries), [id(geometries[1])]);
+
+    let textured = geometries[0];
+    assert_eq!(i32s(child(textured, "PolygonVertexIndex")), [0, 1, !2]);
+    // The second corner sits one stud along world X, which the quarter
+    // turn about Y makes local +Z.
+    let vertices = f64s(child(textured, "Vertices"));
+    let corner = Vec3::new(vertices[3] as f32, vertices[4] as f32, vertices[5] as f32);
+    assert!(corner.abs_diff_eq(Vec3::Z, 1e-5), "{corner}");
+    let materials = i32s(child(child(textured, "LayerElementMaterial"), "Materials"));
+    assert_eq!(materials, [0]);
+    // V flipped, the plain surface's corners at the origin.
+    let uvs = f64s(child(child(textured, "LayerElementUV"), "UV"));
+    assert_eq!(uvs, [0.0, 1.0, 1.0, 1.0, 0.0, 0.75]);
+    let plain = f64s(child(child(geometries[1], "LayerElementUV"), "UV"));
+    assert_eq!(plain, [0.0; 6]);
+
+    // A one-surface part keeps its mesh and material itself.
+    let lamp = models[4];
+    assert_eq!(attached(&links, lamp, &mats), [id(mats[2])]);
+    assert_eq!(attached(&links, lamp, &geometries), [id(geometries[2])]);
 }
 
 #[test]

@@ -8,8 +8,11 @@
   same hierarchy, meshes, UVs and textures as the glTF export, with each
   part's colour baked into its texture since FBX tools don't tint it
   themselves. Plain parts get a one-pixel texture of their colour, since
-  Studio's importer shows a colour with no texture as grey. Neon comes out
-  emissive and Transparency carries over.
+  Studio's importer shows a colour with no texture as grey. A part drawn
+  with more than one material, like a cylinder's side and caps, becomes a
+  group with one mesh per surface, since the importer greys out a mesh
+  with several materials too. Neon comes out emissive and Transparency
+  carries over.
   (@chteau)
 
 ## 2026-11-03

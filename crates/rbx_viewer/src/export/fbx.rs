@@ -1,6 +1,7 @@
 //! Binary FBX 7.4, one self-contained file: the instance tree as models
-//! placed relative to their parents, each part's surfaces as one geometry
-//! (see [`geometry`]), a Phong material per surface, and the PNGs those
+//! placed relative to their parents, each surface as its own geometry
+//! (see [`geometry`]) with one Phong material (a part drawn with several
+//! becomes a container of one mesh per surface), and the PNGs those
 //! materials use embedded in the file, colour maps with the part's colour
 //! baked in and a one-texel swatch on plain surfaces (see [`diffuse`]).
 //!
@@ -97,7 +98,7 @@ pub fn fbx(export: &Export) -> Result<Vec<u8>, String> {
         .iter()
         .map(|_| ids.next().unwrap_or_default())
         .collect();
-    let mut geometries = 0;
+    let mut extra_models = 0;
     for (index, node) in export.nodes.iter().enumerate() {
         let id = models[index];
         let parent = node.parent.map_or(Mat4::IDENTITY, |p| worlds[p]);
@@ -108,30 +109,42 @@ pub fn fbx(export: &Export) -> Result<Vec<u8>, String> {
                 .as_deref()
                 .map(|material| p_user("Material", material)),
         );
-        objects.push(model(id, &node.name, !node.meshes.is_empty(), local, user));
+        let single = node.meshes.len() == 1;
+        objects.push(model(id, &node.name, single, local, user));
         connect(id, node.parent.map_or(0, |p| models[p]), None);
-        if node.meshes.is_empty() {
-            continue;
-        }
-        let surfaces: Vec<&ExportMesh> = node.meshes.iter().map(|&m| &export.meshes[m]).collect();
-        let geometry_id = ids.next().unwrap_or_default();
-        objects.push(geometry::geometry(
-            geometry_id,
-            &node.name,
-            &surfaces,
-            worlds[index].inverse(),
-        ));
-        geometries += 1;
-        connect(geometry_id, id, None);
-        for &mesh in &node.meshes {
-            connect(materials[mesh], id, None);
+        // Studio's 3D Importer shows a mesh with several materials grey, so
+        // a part drawn with several is a container holding one mesh per
+        // surface, each sitting right on the part.
+        for (n, &mesh) in node.meshes.iter().enumerate() {
+            let (owner, name) = if single {
+                (id, node.name.clone())
+            } else {
+                let owner = ids.next().unwrap_or_default();
+                let name = format!("{}_{}", node.name, n + 1);
+                objects.push(model(owner, &name, true, Mat4::IDENTITY, Vec::new()));
+                connect(owner, id, None);
+                extra_models += 1;
+                (owner, name)
+            };
+            let geometry_id = ids.next().unwrap_or_default();
+            objects.push(geometry::geometry(
+                geometry_id,
+                &name,
+                &export.meshes[mesh],
+                worlds[index].inverse(),
+            ));
+            connect(geometry_id, owner, None);
+            connect(materials[mesh], owner, None);
         }
     }
 
     let counts = [
         ("GlobalSettings", 1),
-        ("Model", export.nodes.len()),
-        ("Geometry", geometries),
+        ("Model", export.nodes.len() + extra_models),
+        (
+            "Geometry",
+            export.nodes.iter().map(|n| n.meshes.len()).sum(),
+        ),
         ("Material", materials.len()),
         ("Texture", textures.len()),
         ("Video", textures.len()),
