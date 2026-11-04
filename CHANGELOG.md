@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-04
+
+- **Ctrl+Alt+click selects a locked part.** Locked parts still ignore a
+  normal click like in Studio, but holding Ctrl+Alt (Cmd+Option on Mac)
+  lets the click land on one without unlocking it. Studio treats
+  Ctrl+Alt+click like Alt+click (it picks the part, not its model), and so
+  does this, it just reaches locked parts too. Add Shift to add it to the
+  selection. (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in
