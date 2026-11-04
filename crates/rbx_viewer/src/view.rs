@@ -30,6 +30,8 @@ use crate::renderer::{Fill, OverlayColors, Segment};
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct View {
     pub(crate) orthographic: bool,
+    /// The editor's Fullbright view, see `Renderer::set_fullbright`.
+    pub(crate) fullbright: bool,
     /// Outlined in the viewport, every instance in the selection, not just
     /// one: `rbxstudio`'s `Shift`/`Ctrl`/`Cmd`-click adds another top-level
     /// object rather than replacing it. Each entry already carries the parts

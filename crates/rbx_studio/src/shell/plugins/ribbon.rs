@@ -105,7 +105,7 @@ impl Shell {
                 ),
                 cx,
             )
-            .on_click(cx.listener(|shell, _, _, cx| shell.open_plugin_manager(cx)));
+            .on_click(cx.listener(|shell, _, window, cx| shell.open_plugin_manager(window, cx)));
         let folder = self
             .ribbon_nav
             .claim(

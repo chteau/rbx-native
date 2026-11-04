@@ -152,6 +152,7 @@ impl Shell {
             Panel::AvatarSettings => self.avatar_dock(window, cx),
             Panel::Localization => self.localization_dock(cx),
             Panel::Toolbox => self.toolbox_dock(window, cx),
+            Panel::FindInPlace => self.find_in_place_dock(window, cx),
         }
     }
 

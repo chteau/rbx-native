@@ -25,6 +25,9 @@ Examples live in `examples/plugins/`:
 
 Each plugin gets its own Luau VM. The plugin manager lists every plugin with
 its origin and the last error that stopped one of its scripts from loading.
+It opens with the cursor in its search field, which filters the list as you
+type by name, creator (known for plugins installed from Popular plugins) or
+kind; every word typed has to match.
 
 ## Popular plugins
 

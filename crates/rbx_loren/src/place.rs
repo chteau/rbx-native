@@ -3,7 +3,7 @@
 //! project files. The editor's Home uses it so a new Loren project opens
 //! ready to play; the spec runner builds its test place with it.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rbx_dom::{Ref, Variant, WeakDom};
 
@@ -42,11 +42,20 @@ fn entry_names(dir: &Path) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-fn set_source(dom: &mut WeakDom, instance: Ref, path: &Path) -> Result<(), String> {
+/// Which file each script's `Source` was read from.
+pub type SourceFiles = Vec<(Ref, PathBuf)>;
+
+fn set_source(
+    dom: &mut WeakDom,
+    files: &mut SourceFiles,
+    instance: Ref,
+    path: &Path,
+) -> Result<(), String> {
     let text = fsutil::read_text(path)
         .map_err(|err| format!("Could not read {}: {err}", path.display()))?;
     dom.set_property(instance, "Source", Variant::String(text))
         .map_err(|err| format!("{err}"))?;
+    files.push((instance, path.to_path_buf()));
     Ok(())
 }
 
@@ -55,6 +64,16 @@ fn set_source(dom: &mut WeakDom, instance: Ref, path: &Path) -> Result<(), Strin
 /// LocalScript, a folder with `init*.luau` becomes that script, a folder
 /// holding `default.project.json` follows that project's tree).
 pub fn insert_path(dom: &mut WeakDom, parent: Ref, name: &str, path: &Path) -> Result<Ref, String> {
+    insert_path_into(dom, &mut Vec::new(), parent, name, path)
+}
+
+fn insert_path_into(
+    dom: &mut WeakDom,
+    files: &mut SourceFiles,
+    parent: Ref,
+    name: &str,
+    path: &Path,
+) -> Result<Ref, String> {
     if fsutil::is_file(path) {
         let file = path
             .file_name()
@@ -63,7 +82,7 @@ pub fn insert_path(dom: &mut WeakDom, parent: Ref, name: &str, path: &Path) -> R
         let (class, _) =
             script_kind(&file).ok_or_else(|| format!("Unsupported file {}", path.display()))?;
         let made = dom.new_instance(class, name, Some(parent));
-        set_source(dom, made, path)?;
+        set_source(dom, files, made, path)?;
         return Ok(made);
     }
     if !fsutil::is_dir(path) {
@@ -79,7 +98,7 @@ pub fn insert_path(dom: &mut WeakDom, parent: Ref, name: &str, path: &Path) -> R
         let tree = data
             .get("tree")
             .ok_or_else(|| format!("{} has no tree", project.display()))?;
-        return build_node(dom, parent, name, tree, path)?
+        return build_node(dom, files, parent, name, tree, path)?
             .ok_or_else(|| format!("{} points at nothing", project.display()));
     }
 
@@ -94,14 +113,15 @@ pub fn insert_path(dom: &mut WeakDom, parent: Ref, name: &str, path: &Path) -> R
     };
     let made = dom.new_instance(class, name, Some(parent));
     if let Some(file) = &init_file {
-        set_source(dom, made, &path.join(file))?;
+        set_source(dom, files, made, &path.join(file))?;
     }
-    insert_children(dom, made, path, &names, init_file.as_deref())?;
+    insert_children(dom, files, made, path, &names, init_file.as_deref())?;
     Ok(made)
 }
 
 fn insert_children(
     dom: &mut WeakDom,
+    files: &mut SourceFiles,
     parent: Ref,
     dir: &Path,
     names: &[String],
@@ -113,9 +133,9 @@ fn insert_children(
         }
         let full = dir.join(file);
         if fsutil::is_dir(&full) {
-            insert_path(dom, parent, file, &full)?;
+            insert_path_into(dom, files, parent, file, &full)?;
         } else if let Some((_, stem)) = script_kind(file) {
-            insert_path(dom, parent, stem, &full)?;
+            insert_path_into(dom, files, parent, stem, &full)?;
         }
     }
     Ok(())
@@ -124,6 +144,7 @@ fn insert_children(
 /// Builds one project-tree node; `None` when it is an optional path that is absent.
 fn build_node(
     dom: &mut WeakDom,
+    files: &mut SourceFiles,
     parent: Ref,
     name: &str,
     node: &Json,
@@ -135,7 +156,7 @@ fn build_node(
         if optional && !fsutil::exists(&target) {
             return Ok(None);
         }
-        insert_path(dom, parent, name, &target)?
+        insert_path_into(dom, files, parent, name, &target)?
     } else if let Some(class) = node.get("$className").and_then(Json::as_str) {
         dom.new_instance(class, name, Some(parent))
     } else {
@@ -152,11 +173,17 @@ fn build_node(
             _ => dom.new_instance("Folder", name, Some(parent)),
         }
     };
-    build_children(dom, made, node, base)?;
+    build_children(dom, files, made, node, base)?;
     Ok(Some(made))
 }
 
-fn build_children(dom: &mut WeakDom, parent: Ref, node: &Json, base: &Path) -> Result<(), String> {
+fn build_children(
+    dom: &mut WeakDom,
+    files: &mut SourceFiles,
+    parent: Ref,
+    node: &Json,
+    base: &Path,
+) -> Result<(), String> {
     let Some(entries) = node.as_object() else {
         return Ok(());
     };
@@ -164,7 +191,7 @@ fn build_children(dom: &mut WeakDom, parent: Ref, node: &Json, base: &Path) -> R
         if key.starts_with('$') || !child.is_object() {
             continue;
         }
-        build_node(dom, parent, key, child, base)?;
+        build_node(dom, files, parent, key, child, base)?;
     }
     Ok(())
 }
@@ -186,7 +213,11 @@ fn find_child(dom: &WeakDom, parent: Ref, name: &str) -> Option<Ref> {
         .find(|c| dom.get(*c).is_some_and(|i| i.name() == name))
 }
 
-fn apply_script_sync(dom: &mut WeakDom, root: &Path) -> Result<(), String> {
+fn apply_script_sync(
+    dom: &mut WeakDom,
+    files: &mut SourceFiles,
+    root: &Path,
+) -> Result<(), String> {
     let layout: [(Key, &[&str]); 4] = [
         (Key::Shared, &["ReplicatedStorage", "Shared"]),
         (Key::Packages, &["ReplicatedStorage", "LorenPackages"]),
@@ -211,7 +242,7 @@ fn apply_script_sync(dom: &mut WeakDom, root: &Path) -> Result<(), String> {
                 None => dom.new_instance("Folder", part, Some(at)),
             };
         }
-        insert_path(dom, at, last, &dir)?;
+        insert_path_into(dom, files, at, last, &dir)?;
     }
     Ok(())
 }
@@ -219,28 +250,33 @@ fn apply_script_sync(dom: &mut WeakDom, root: &Path) -> Result<(), String> {
 /// Applies the project's `default.project.json` tree (or a Script Sync
 /// project's four folders) onto `dom`, reusing services already there.
 pub fn apply_project(dom: &mut WeakDom, root: &Path) -> Result<(), String> {
+    apply_project_files(dom, root).map(drop)
+}
+
+/// `apply_project`, also returning the file behind each script, for lints
+/// that report a place's scripts by file.
+pub fn apply_project_files(dom: &mut WeakDom, root: &Path) -> Result<SourceFiles, String> {
+    let mut files = SourceFiles::new();
     if is_script_sync(root) {
-        return apply_script_sync(dom, root);
+        apply_script_sync(dom, &mut files, root)?;
+        return Ok(files);
     }
     let file = root.join(PROJECT_FILE);
     let text =
         fsutil::read_text(&file).map_err(|err| format!("Could not read {PROJECT_FILE}: {err}"))?;
     let data = Json::parse(fsutil::strip_bom(&text))
         .map_err(|err| format!("{PROJECT_FILE} is not valid JSON: {err}"))?;
-    let Some(tree) = data.get("tree") else {
-        return Ok(());
-    };
-    let Some(entries) = tree.as_object() else {
-        return Ok(());
+    let Some(entries) = data.get("tree").and_then(Json::as_object) else {
+        return Ok(files);
     };
     for (name, node) in entries.iter() {
         if name.starts_with('$') || !node.is_object() {
             continue;
         }
         let service = find_service(dom, name);
-        build_children(dom, service, node, root)?;
+        build_children(dom, &mut files, service, node, root)?;
     }
-    Ok(())
+    Ok(files)
 }
 
 #[cfg(test)]

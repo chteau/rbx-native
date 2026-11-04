@@ -87,6 +87,7 @@ commands! {
     QuickOpen, "quick_open", "Quick Open", View, ["secondary-p"];
     MenuBar, "menu_bar", "Focus the Menu Bar", View, ["f10"];
     FocusPropertiesFilter, "focus_properties_filter", "Filter Properties", View, ["secondary-shift-p"];
+    Fullbright, "fullbright", "Fullbright", View, ["alt-l"];
     Delete, "delete", "Delete", Explorer, ["delete", "backspace"];
     Rename, "rename", "Rename", Explorer, ["f2"];
     // Unbound by default: Studio gives Ctrl+Shift+P to the Properties filter
@@ -116,7 +117,7 @@ commands! {
     TerrainBrush, "terrain_brush", "Hold for Brush", Terrain, ["b"];
     TerrainDelete, "terrain_delete", "Delete Region", Terrain, ["delete", "backspace"];
     FindFunction, "find_function", "Go to Function", Script, ["alt-f"];
-    FindAll, "find_all", "Find in All Scripts", Script, ["secondary-shift-f", "secondary-shift-h"];
+    FindAll, "find_all", "Find in Place", Script, ["secondary-shift-f", "secondary-shift-h"];
     SelectNextMatch, "select_next_match", "Select Next Occurrence", Script, ["secondary-d"];
     SelectAllMatches, "select_all_matches", "Select All Occurrences", Script, ["shift-alt-l"];
     FormatDocument, "format_document", "Format Document", Script, ["shift-alt-f"];

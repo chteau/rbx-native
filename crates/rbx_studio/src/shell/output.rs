@@ -36,6 +36,7 @@ mod controls;
 mod entry;
 mod filter;
 pub(crate) mod game;
+mod rich;
 mod row_kind;
 mod rows;
 mod tables;
@@ -245,6 +246,7 @@ impl Shell {
         let show = rows::Show {
             timestamp: self.output_show_timestamps,
             display: self.output_display,
+            rich: self.output_rich_text,
         };
         let query = self.output_search.read(cx).value().trim().to_lowercase();
         let entries: Vec<&OutputEntry> = self

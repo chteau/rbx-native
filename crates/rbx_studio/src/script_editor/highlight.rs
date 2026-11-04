@@ -5,6 +5,7 @@
 //! crate: an [`InputHighlighter`] hands back styled byte ranges and the editor
 //! paints them. Colours come from the active theme's own `syntax` palette, so
 //! the editor follows a light/dark switch with nothing further to do here.
+//! Fold ranges come from a parse instead (see [`super::folds`]).
 
 #[cfg(test)]
 mod tests;
@@ -18,6 +19,7 @@ use gpui_kit::base::input::{
 };
 use gpui_kit::{Context, HighlightStyle, SharedString, Window};
 
+use super::folds;
 use super::luau::{self, Token};
 
 /// The language name the editor is built with, and the key the factory below
@@ -30,7 +32,7 @@ pub(crate) const LANGUAGE: &str = "luau";
 /// linear pass, but it runs on the UI thread for every keystroke, and a
 /// multi-megabyte `Source` is far likelier to be generated data pasted into a
 /// script than something anyone is reading colour in.
-const MAX_HIGHLIGHTED_BYTES: usize = 512 * 1024;
+pub(super) const MAX_HIGHLIGHTED_BYTES: usize = 512 * 1024;
 
 pub(crate) fn factory() -> InputHighlighterFactory {
     Rc::new(|language| {
@@ -42,6 +44,9 @@ pub(crate) fn factory() -> InputHighlighterFactory {
 #[derive(Default)]
 struct LuauHighlighter {
     tokens: Vec<Token>,
+    /// Block extents from the last parse that found any, computed once per
+    /// edit here rather than per paint.
+    folds: Vec<FoldRange>,
 }
 
 impl InputHighlighter for LuauHighlighter {
@@ -57,15 +62,23 @@ impl InputHighlighter for LuauHighlighter {
         &mut self,
         _edit: Option<InputEdit>,
         text: &Rope,
-        _folding: bool,
+        folding: bool,
         _window: &mut Window,
         _cx: &mut Context<EditorState>,
     ) {
-        self.tokens = if text.len() > MAX_HIGHLIGHTED_BYTES {
-            Vec::new()
-        } else {
-            luau::tokenize(&text.to_string())
-        };
+        if text.len() > MAX_HIGHLIGHTED_BYTES {
+            self.tokens = Vec::new();
+            self.folds = Vec::new();
+            return;
+        }
+        let text = text.to_string();
+        self.tokens = luau::tokenize(&text);
+        // A script that stops parsing mid-edit keeps the folds it had.
+        if !folding {
+            self.folds = Vec::new();
+        } else if let Some(folds) = folds::try_fold_ranges(&text) {
+            self.folds = folds;
+        }
     }
 
     fn styles(
@@ -84,10 +97,9 @@ impl InputHighlighter for LuauHighlighter {
             .collect()
     }
 
-    /// No code folding: it needs a parse tree's block extents, which a lexer
-    /// does not have. The editor is built with folding off to match.
+    /// Block extents need a parse, not the lexer above: see [`folds`].
     fn fold_ranges(&self, _: &Rope) -> Vec<FoldRange> {
-        Vec::new()
+        self.folds.clone()
     }
 }
 

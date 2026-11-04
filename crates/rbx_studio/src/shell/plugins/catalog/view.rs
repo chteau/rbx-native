@@ -2,7 +2,7 @@
 //! field over a scrolling list of 60px rows (icon, name with the "Runs in
 //! rbx-native" badge, creator and votes, our blurb, the action).
 
-use gpui_kit::component::input::Input;
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -35,6 +35,42 @@ pub(in crate::shell::plugins) fn row_frame(id: impl Into<ElementId>) -> Stateful
         .border_color(tokens::border())
 }
 const ICON: f32 = 40.;
+
+/// The search box both tabs put over their list, `hint` at its right.
+pub(in crate::shell::plugins) fn search_field(
+    query: &Entity<InputState>,
+    hint: SharedString,
+) -> Div {
+    h_flex()
+        .h(px(32.))
+        .flex_none()
+        .px(px(10.))
+        .gap(px(8.))
+        .items_center()
+        .rounded(tokens::radius())
+        .bg(tokens::field_select())
+        .border_1()
+        .border_color(tokens::border())
+        .text_color(tokens::text3())
+        .child(ui::icon("search", 13.).flex_none())
+        .child(
+            div().flex_1().min_w_0().h_full().child(
+                Input::new(query)
+                    .appearance(false)
+                    .h_full()
+                    .px(px(0.))
+                    .text_size(tokens::text_md())
+                    .text_color(tokens::text()),
+            ),
+        )
+        .child(
+            div()
+                .flex_none()
+                .text_size(tokens::text_xs())
+                .line_height(tokens::line_xs())
+                .child(hint),
+        )
+}
 
 /// `1.2k` past a thousand, as the store prints votes.
 fn votes_label(votes: u64) -> String {
@@ -151,36 +187,10 @@ impl Shell {
 
     pub(in crate::shell::plugins) fn catalog_body(&mut self, cx: &mut Context<Self>) -> Div {
         let catalog = &self.plugins.catalog;
-        let field = catalog.query.clone().map(|query| {
-            h_flex()
-                .h(px(32.))
-                .px(px(10.))
-                .gap(px(8.))
-                .items_center()
-                .rounded(tokens::radius())
-                .bg(tokens::field_select())
-                .border_1()
-                .border_color(tokens::border())
-                .text_color(tokens::text3())
-                .child(ui::icon("search", 13.).flex_none())
-                .child(
-                    div().flex_1().min_w_0().h_full().child(
-                        Input::new(&query)
-                            .appearance(false)
-                            .h_full()
-                            .px(px(0.))
-                            .text_size(tokens::text_md())
-                            .text_color(tokens::text()),
-                    ),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(tokens::text_xs())
-                        .line_height(tokens::line_xs())
-                        .child("Enter to search"),
-                )
-        });
+        let field = catalog
+            .query
+            .as_ref()
+            .map(|query| search_field(query, "Enter to search".into()));
         let search = &catalog.search;
         // Always one line, so the list doesn't jump when a search starts.
         let (caption, warn) = match (&search.load, &catalog.listing) {

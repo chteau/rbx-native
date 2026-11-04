@@ -4,11 +4,15 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use rbx_dom::WeakDom;
+
+use super::dupes::{duplicate_names, is_class_member};
 use super::scan::{apply_edits, is_script_file, scan_text, Edit, Issue, Severity};
 use crate::constants::{Key, BACKUP_DIR, PREFIX, PROJECT_FILE};
 use crate::ctx::{DoctorOptions, DoctorResult};
 use crate::fsutil;
 use crate::json::Json;
+use crate::place;
 use crate::project::node_path;
 use crate::scriptsync::is_script_sync;
 
@@ -132,6 +136,37 @@ fn plural(n: usize) -> &'static str {
     }
 }
 
+/// The place the project builds, linted for scripts that index a name two
+/// siblings share. Nothing when the project has no tree to build.
+fn duplicate_name_issues(root: &Path, skip_dirs: &[String]) -> Vec<Issue> {
+    if !fsutil::is_file(&root.join(PROJECT_FILE)) && !is_script_sync(root) {
+        return Vec::new();
+    }
+    let mut dom = WeakDom::new();
+    let Ok(files) = place::apply_project_files(&mut dom, root) else {
+        return Vec::new();
+    };
+    let skipped: Vec<PathBuf> = skip_dirs.iter().map(|d| root.join(d)).collect();
+    duplicate_names(&dom, &is_class_member)
+        .into_iter()
+        .filter_map(|d| {
+            let (_, path) = files.iter().find(|(script, _)| *script == d.script)?;
+            if skipped.iter().any(|s| fsutil::is_inside(s, path)) {
+                return None;
+            }
+            Some(Issue {
+                file: fsutil::rel(root, path),
+                line: d.line,
+                kind: d.kind,
+                message: d.message,
+                severity: Severity::Warn,
+                manual: false,
+                edit: None,
+            })
+        })
+        .collect()
+}
+
 pub fn run_doctor(root: &Path, opts: &DoctorOptions) -> DoctorResult {
     let log = opts.log;
     let layout = if opts.src_dir.is_some() && opts.server_dir.is_some() {
@@ -183,6 +218,8 @@ pub fn run_doctor(root: &Path, opts: &DoctorOptions) -> DoctorResult {
         }
         issues.extend(found);
     }
+
+    issues.extend(duplicate_name_issues(root, &skip_dirs));
 
     if issues.is_empty() {
         log.ok("Middleware lint: no issues.");

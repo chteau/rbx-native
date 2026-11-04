@@ -4,8 +4,8 @@
 //! Pulled rather than pushed: the server only pushes for documents a tab has
 //! open, and Script Analysis is the whole place.
 
-use lsp_types::{Diagnostic, DiagnosticSeverity};
-use rbx_dom::Ref;
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use rbx_dom::{Ref, Variant, WeakDom};
 use serde_json::Value;
 
 use super::Mirror;
@@ -28,6 +28,63 @@ pub(crate) fn parse(reply: &Value, mirror: &Mirror) -> Vec<(Ref, Vec<Diagnostic>
             (!problems.is_empty()).then_some((script, problems))
         })
         .collect();
+    scripts.sort_by_key(|(script, _)| *script);
+    scripts
+}
+
+/// Loren's duplicate-name warnings for every script of `dom`, in the same
+/// shape as the server's problems (columns are bytes into the line, like the
+/// editor's own conversion expects).
+pub(crate) fn loren_problems(dom: &WeakDom) -> Vec<(Ref, Vec<Diagnostic>)> {
+    let mut scripts: Vec<(Ref, Vec<Diagnostic>)> = Vec::new();
+    for issue in rbx_loren::lint::duplicate_names(dom, &rbx_loren::lint::is_class_member) {
+        let Some(Variant::String(source)) = dom
+            .get(issue.script)
+            .and_then(|script| script.properties().get("Source"))
+        else {
+            continue;
+        };
+        let position = |offset: usize| {
+            let before = &source[..offset];
+            let line_start = before.rfind('\n').map_or(0, |n| n + 1);
+            Position::new(
+                before.matches('\n').count() as u32,
+                (offset - line_start) as u32,
+            )
+        };
+        let problem = Diagnostic {
+            range: Range::new(position(issue.range.start), position(issue.range.end)),
+            severity: Some(DiagnosticSeverity::WARNING),
+            code: Some(NumberOrString::String(issue.kind.into())),
+            source: Some("Loren".into()),
+            message: issue.message,
+            ..Diagnostic::default()
+        };
+        match scripts.last_mut() {
+            Some((script, problems)) if *script == issue.script => problems.push(problem),
+            _ => scripts.push((issue.script, vec![problem])),
+        }
+    }
+    scripts
+}
+
+/// What the dock and the squiggles show: the server's problems and Loren's,
+/// together, so their counts cannot disagree. Scripts in referent order, each
+/// script's problems in line order.
+pub(crate) fn merge(
+    server: &[(Ref, Vec<Diagnostic>)],
+    loren: &[(Ref, Vec<Diagnostic>)],
+) -> Vec<(Ref, Vec<Diagnostic>)> {
+    let mut scripts: Vec<(Ref, Vec<Diagnostic>)> = Vec::new();
+    for (script, problems) in server.iter().chain(loren) {
+        match scripts.iter_mut().find(|(s, _)| s == script) {
+            Some((_, merged)) => merged.extend(problems.iter().cloned()),
+            None => scripts.push((*script, problems.clone())),
+        }
+    }
+    for (_, problems) in &mut scripts {
+        problems.sort_by_key(|p| (p.range.start.line, p.range.start.character));
+    }
     scripts.sort_by_key(|(script, _)| *script);
     scripts
 }
@@ -105,5 +162,51 @@ mod tests {
     fn a_reply_without_items_is_no_problems() {
         let mirror = Mirror::new(std::env::temp_dir().join("rbx-luau-diag-none"));
         assert!(parse(&Value::Null, &mirror).is_empty());
+    }
+
+    #[test]
+    fn loren_warnings_carry_their_line_and_column_and_merge_in_line_order() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        dom.new_instance("Part", "Part", Some(workspace));
+        dom.new_instance("Part", "Part", Some(workspace));
+        let script = dom.new_instance("Script", "Main", Some(workspace));
+        let source = "print(1)\n  local a = workspace.Part\n";
+        let _ = dom.set_property(script, "Source", Variant::String(source.into()));
+
+        let loren = loren_problems(&dom);
+        assert_eq!(loren.len(), 1);
+        let warning = &loren[0].1[0];
+        assert_eq!(warning.range.start, Position::new(1, 22));
+        assert_eq!(warning.range.end, Position::new(1, 26));
+        assert_eq!(warning.severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(warning.source.as_deref(), Some("Loren"));
+        assert_eq!(
+            warning.code,
+            Some(NumberOrString::String("duplicate-name".into()))
+        );
+
+        let server = vec![(
+            script,
+            vec![Diagnostic {
+                range: Range::new(Position::new(3, 0), Position::new(3, 1)),
+                severity: Some(DiagnosticSeverity::ERROR),
+                message: "late".into(),
+                ..Diagnostic::default()
+            }],
+        )];
+        let merged = merge(&server, &loren);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].1.len(), 2);
+        assert_eq!(merged[0].1[0].source.as_deref(), Some("Loren"));
+        assert_eq!(
+            counts(&merged),
+            Counts {
+                errors: 1,
+                warnings: 1,
+                notes: 0
+            }
+        );
+        assert_eq!(merge(&[], &loren), loren);
     }
 }

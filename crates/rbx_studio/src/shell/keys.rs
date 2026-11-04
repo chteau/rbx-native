@@ -314,7 +314,7 @@ impl Shell {
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let reference = dom.new_instance(class, &name, parent);
         if let Some(part_shape) = part_defaults_shape(&self.database, class, shape) {
-            apply_part_defaults(&mut dom, reference, part_shape);
+            apply_part_defaults(&mut dom, reference, part_shape, self.insert_anchored);
         }
         // A seed that were refused would only leave `Instance.new`'s own
         // value behind, which is still a whole instance.
@@ -412,10 +412,14 @@ pub(super) fn class_defaults(
         .collect()
 }
 
-/// Applies [`part_defaults`] to a freshly inserted instance.
-fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
+/// Applies [`part_defaults`] to a freshly inserted instance, `Anchored` when
+/// Settings asks for anchored inserts (see `Settings::insert_anchored`).
+fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>, anchored: bool) {
     for (key, value) in part_defaults(shape) {
         let _ = dom.set_property(referent, key, value);
+    }
+    if anchored {
+        let _ = dom.set_property(referent, "Anchored", Variant::Bool(true));
     }
 }
 

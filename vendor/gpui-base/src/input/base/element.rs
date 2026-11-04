@@ -379,12 +379,47 @@ fn empty_bottom_height(
     }
 }
 
+/// rbx-native addition: a filled triangle, pointing down when expanded and
+/// right when folded, in `color`, dimmed until the pointer is over the
+/// gutter (`hitbox`).
+fn fold_marker(is_folded: bool, color: Hsla, hitbox: Hitbox) -> gpui::AnyElement {
+    gpui::canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let c = bounds.center();
+            let pts = if is_folded {
+                [(-2.5, -4.), (3.5, 0.), (-2.5, 4.)]
+            } else {
+                [(-4., -2.5), (4., -2.5), (0., 3.5)]
+            };
+            let mut builder = gpui::PathBuilder::fill();
+            for (i, (x, y)) in pts.into_iter().enumerate() {
+                let p = c + point(px(x), px(y));
+                if i == 0 {
+                    builder.move_to(p);
+                } else {
+                    builder.line_to(p);
+                }
+            }
+            builder.close();
+            if let Ok(path) = builder.build() {
+                let alpha = if hitbox.is_hovered(window) { 1. } else { 0.6 };
+                window.paint_path(path, color.opacity(alpha));
+            }
+        },
+    )
+    .size(FOLD_ICON_WIDTH)
+    .into_any_element()
+}
+
 /// Layout information for fold icons.
 struct FoldIconLayout {
     /// Hitbox for the line number area (used for hover detection)
     line_number_hitbox: Hitbox,
     /// List of (display_row, is_folded, icon_element) pairs for each fold candidate
     icons: Vec<(usize, bool, gpui::AnyElement)>,
+    /// rbx-native addition: see `InputBaseState::set_fold_markers`.
+    always_visible: bool,
 }
 
 pub(super) struct TextElement<M: InputModeKind> {
@@ -1201,6 +1236,7 @@ impl<M: InputModeKind> TextElement<M> {
         let mut icon_layout = FoldIconLayout {
             line_number_hitbox,
             icons: vec![],
+            always_visible: self.state.read(cx).fold_markers,
         };
 
         let fold_infos: Vec<FoldInfo> = {
@@ -1254,14 +1290,21 @@ impl<M: InputModeKind> TextElement<M> {
             );
 
             // Create and prepaint icon
-            let child = self
-                .state
-                .read(cx)
-                .editor_style
-                .fold_icon_renderer
-                .as_ref()
-                .map(|render| render(ix, info.is_folded))
-                .unwrap_or_else(|| {
+            let child = if icon_layout.always_visible {
+                Some(fold_marker(
+                    info.is_folded,
+                    self.state.read(cx).editor_style.muted_foreground,
+                    icon_layout.line_number_hitbox.clone(),
+                ))
+            } else {
+                self.state
+                    .read(cx)
+                    .editor_style
+                    .fold_icon_renderer
+                    .as_ref()
+                    .map(|render| render(ix, info.is_folded))
+            }
+            .unwrap_or_else(|| {
                     let (path, svg) = if info.is_folded {
                         ("input-fold-chevron-right", FOLD_CHEVRON_RIGHT_SVG)
                     } else {
@@ -1332,10 +1375,11 @@ impl<M: InputModeKind> TextElement<M> {
         cx: &mut App,
     ) {
         let is_hovered = fold_icon_layout.line_number_hitbox.is_hovered(window);
+        let always_visible = fold_icon_layout.always_visible;
         for (display_row, is_folded, icon) in fold_icon_layout.icons.iter_mut() {
             let is_current_line = current_row == Some(*display_row);
 
-            if !is_hovered && !is_current_line && !*is_folded {
+            if !always_visible && !is_hovered && !is_current_line && !*is_folded {
                 continue;
             }
 
