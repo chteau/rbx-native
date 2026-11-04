@@ -3493,8 +3493,14 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
 - [x] **Format Document with StyLua** in the script editor and the Command
   Bar, StyLua built in (Shift+Alt+F)
   ([Build stylua into Roblox Studio](https://devforum.roblox.com/t/build-stylua-into-roblox-studio/3645518)).
-- [ ] 📋 **An image's resolution** shown beside an image id in Properties and
-  the asset tooltips
+- [x] **An image's resolution** shown beside an image id in Properties
+  (`512×512`), and the image itself with its size in that label's tooltip.
+  Studio's Properties show the bare id with no preview or size. Every image
+  property counts, by name (`Texture`, `Image`, the `SurfaceAppearance`
+  maps, the skybox faces, ... and their `…Content` twins); the image comes
+  the way the viewport gets it, the shared asset cache first, so one the
+  place already shows costs no download, and a decal id is followed to its
+  image the way Roblox does for `Image`/`Texture`
   ([Easier way of getting an image's resolution](https://devforum.roblox.com/t/easier-way-of-getting-an-images-resolution/4225605)).
 - [x] **Search in Version History**, by date and by who saved it: a search
   box that matches every word against the version number, the date as
@@ -3511,7 +3517,15 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
 - [ ] 📋 **Fullbright viewport toggle**: draw Edit mode with flat ambient light
   and no shadows, without touching `Lighting`
   ([Fullbright Option in Studio](https://devforum.roblox.com/t/fullbright-option-in-studio/4622596)).
-- [ ] 📋 **Preview button for `Sound`/`AudioPlayer`** in Properties
+- [x] **Preview button for `Sound`/`AudioPlayer`** in Properties, as Studio
+  draws it: `SoundId` (an `AudioPlayer`'s `Asset`, or its older `AssetId`)
+  opens onto a Preview row with play/pause and a rail that follows the sound
+  and seeks it; a pause keeps its place. The asset comes through the shared
+  cache like a texture, is decoded in pure Rust (`symphonia`: OGG Vorbis,
+  MP3, WAV, FLAC) and plays at the instance's `Volume` (`crate::audio`):
+  through the PulseAudio protocol on Linux (PipeWire speaks it, nothing to
+  link), `cpal` on Windows and macOS. The Windows and macOS output has only
+  been type-checked, never heard
   ([AudioPlayer should have Play button](https://devforum.roblox.com/t/audioplayer-should-have-play-button-in-properties-pane/3790735)).
 - [ ] 📋 **`plugin:SetClipboard(text)`** as an rbx-native plugin API addition
   ([Allow Studio plugins to copy things to clipboard](https://devforum.roblox.com/t/allow-studio-plugins-to-copy-things-to-clipboard/638682)).
