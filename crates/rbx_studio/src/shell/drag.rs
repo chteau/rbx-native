@@ -230,7 +230,9 @@ impl Shell {
         // the one way past that here.
         let hits: Vec<Ref> = hits
             .into_iter()
-            .filter(|&hit| (locked || !ribbon::is_locked(&self.dom, hit)) && !self.layer_locked(hit))
+            .filter(|&hit| {
+                (locked || !ribbon::is_locked(&self.dom, hit)) && !self.layer_locked(hit)
+            })
             .collect();
         if held {
             let posed = self.pose_in();
