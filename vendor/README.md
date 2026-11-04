@@ -15,6 +15,9 @@ addition":
   `set_selected_range` only scrolls one line toward it, and not at all in a
   tab that hasn't been laid out yet. Script Analysis, the Security Audit and
   the debugger open scripts at a line with it.
+- `undo`/`redo` propagate when the input has nothing to undo or redo, so
+  Ctrl+Z in a search field with no typing to take back still reaches the
+  place's own Undo instead of doing nothing.
 
 And one fix in `src/input/editor/highlighting.rs`, marked the same way:
 `InputEditorStyle::resolved` fills unset (transparent) diagnostic colours

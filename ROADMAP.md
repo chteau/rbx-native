@@ -1078,11 +1078,15 @@ both the plain fetch failure and the silent fall back to a default
   - **Find/Replace** in the current script: Ctrl+F, and Ctrl+H for
     replace, is the editor's own search bar with a match count, case
     toggle and next/previous.
-  - **Find All / Replace All** over every open script (Ctrl+Shift+F):
-    an overlay listing each match as its line and `Script:line`, jumping
-    to one on click or Enter. Replace All goes through each tab's
-    editor, so it lands on that tab's own undo stack and reaches
-    `Source` through the usual debounced write.
+  - **Find in Place** (Ctrl+Shift+F, Ctrl+Shift+H to replace): a dock
+    that searches the `Source` of every script in the place, open or
+    not (an open tab's unsaved typing counts). Match case, whole word
+    and regex toggles, a Where field to filter by the script's full
+    name, one collapsible group per script with a row per match, and
+    previous/next. A click or Enter opens the script on the match.
+    Replace and Replace All write straight to the place as one undo
+    step, so Ctrl+Z puts every script back, closed ones too, which
+    Studio's own can't. Regex replacements take `$1` groups.
   - **Go to Declaration**: Ctrl-hover underlines a name that resolves,
     and Ctrl-click or the right-click menu's Go to Definition jumps to
     where it was declared. It resolves locals, parameters and loop
@@ -3483,7 +3487,9 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   editor's highlighting, and Ctrl+Enter to run
   ([Multiple Lines in the Command Bar](https://devforum.roblox.com/t/multiple-lines-in-the-command-bar/233343),
   [too hard to edit multiline code](https://devforum.roblox.com/t/it-is-too-hard-to-edit-multiline-code-in-the-command-bar/3013101)).
-- [ ] 📋 **Replace in every script of the place**, not only the open ones
+- [x] **Replace in every script of the place**, not only the open ones:
+  the Find in Place dock (Ctrl+Shift+F, Ctrl+Shift+H), one undo step for
+  the whole Replace All
   ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
 - [ ] 📋 **Search the installed plugins** in the Plugins window
   ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).

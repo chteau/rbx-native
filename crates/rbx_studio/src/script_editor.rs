@@ -55,28 +55,17 @@ pub(crate) struct OpenScript {
 pub(crate) struct ScriptEditor {
     pub(crate) tabs: Tabs,
     pub(crate) open: HashMap<Ref, OpenScript>,
-    /// The Alt+F / Ctrl+Shift+F overlay, while it is up.
+    /// The Alt+F function filter overlay, while it is up.
     pub(crate) finder: Option<Finder>,
     /// Why the last Format Document left a script alone; the status bar
     /// shows it until that script next changes.
     pub(crate) format_failure: Option<(Ref, String)>,
 }
 
-/// Which list the finder overlay shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FinderMode {
-    /// Studio's Script Function Filter: the active script's functions.
-    Functions,
-    /// Find All / Replace All, over every open tab.
-    FindAll,
-}
-
 /// The finder overlay's own state; its hits are recomputed from the query on
 /// every render rather than cached, so they can never go stale under typing.
 pub(crate) struct Finder {
-    pub(crate) mode: FinderMode,
     pub(crate) query: Entity<InputState>,
-    pub(crate) replacement: Entity<InputState>,
     /// Index into the current hits; clamped on read, since the list shrinks
     /// under it as the query is typed.
     pub(crate) selected: usize,

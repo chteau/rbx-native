@@ -7077,6 +7077,7 @@ dependencies = [
  "rbx_viewer",
  "rbx_wasm",
  "rbx_xml",
+ "regex",
  "resvg 0.46.0",
  "rmpv",
  "rust-embed",

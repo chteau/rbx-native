@@ -2772,6 +2772,11 @@ impl<M: InputModeKind> InputBaseState<M> {
             self.restore_selections(replay.selections);
             self.mode
                 .restore_auto_closed_pairs(replay.auto_closed_pairs.unwrap_or_default());
+        } else {
+            // rbx-native addition: with nothing of its own to step through,
+            // the keystroke goes on to the next binding and the window, so
+            // the app's own Undo/Redo still answers it.
+            cx.propagate();
         }
         self.undo_manager.set_ignoring(false);
     }
@@ -2787,6 +2792,11 @@ impl<M: InputModeKind> InputBaseState<M> {
             self.restore_selections(replay.selections);
             self.mode
                 .restore_auto_closed_pairs(replay.auto_closed_pairs.unwrap_or_default());
+        } else {
+            // rbx-native addition: with nothing of its own to step through,
+            // the keystroke goes on to the next binding and the window, so
+            // the app's own Undo/Redo still answers it.
+            cx.propagate();
         }
         self.undo_manager.set_ignoring(false);
     }

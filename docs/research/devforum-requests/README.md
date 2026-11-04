@@ -35,7 +35,7 @@ Status, as of `dev` on 2026-11-03:
 | [Custom Studio Interface (Themes and Icons)](https://devforum.roblox.com/t/custom-studio-interface-themes-and-icons/1535715) | 256 | **shipped**: installable themes and icon packs |
 | [Add ability to browse / view instances that are parented to `nil`](https://devforum.roblox.com/t/add-ability-to-browse-view-instances-that-are-parented-to-nil/1664441) | 237 | **impossible**: nil-parented instances only exist in a running game's memory, and Play runs in Roblox's own client |
 | [Create an orthographic view](https://devforum.roblox.com/t/create-an-orthographic-view/1300021) | 191 | **shipped**: orthographic camera toggle |
-| [Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255) | 178 | **shipped** for open scripts (Find All / Replace All); **planned** for every script in the place |
+| [Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255) | 178 | **shipped**: the Find in Place dock searches and replaces in every script of the place, one undo step |
 | [Provide an exploit investigation environment](https://devforum.roblox.com/t/provide-an-exploit-investigation-environment/3083740) | 163 | **impossible**: needs Roblox's client and server |
 | [Customizable folder icons for studio explorer](https://devforum.roblox.com/t/customizable-folder-icons-for-studio-explorer/256538) | 157 | **shipped** as colour tags; per-folder icon art is not planned |
 | [Allow developers to save places as studio templates](https://devforum.roblox.com/t/allow-developers-to-save-places-as-studio-templates/241595) | 156 | **tonight**: `feat/place-templates` |
