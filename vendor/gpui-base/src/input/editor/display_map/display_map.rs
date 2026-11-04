@@ -153,6 +153,12 @@ impl DisplayMap {
     }
 
     /// Check if a line is a fold candidate
+    /// Get all fold candidates (rbx-native addition)
+    #[inline]
+    pub fn fold_candidates(&self) -> &[FoldRange] {
+        self.fold_map.fold_candidates()
+    }
+
     #[inline]
     pub fn is_fold_candidate(&self, start_line: usize) -> bool {
         self.fold_map.is_fold_candidate(start_line)

@@ -43,7 +43,7 @@ Status, as of `dev` on 2026-11-03:
 | ["Magic Wand" Selection Tool for Studio](https://devforum.roblox.com/t/magic-wand-selection-tool-for-studio/1489595) | 147 | **shipped** as query selection (`Part where Color == ...`) |
 | [Copy Properties From Object](https://devforum.roblox.com/t/copy-properties-from-object/224274) | 119 | **tonight**: `feat/copy-paste-properties` |
 | [Studio layout saving](https://devforum.roblox.com/t/studio-layout-saving/10639) | 113 | **shipped**: dock layout persists, with a reset |
-| [Script Editor should save which folds are collapsed](https://devforum.roblox.com/t/script-editor-should-save-which-folds-are-collapsed-and-expa/31297) | 110 | **planned**: the script editor has no folding yet, which comes first |
+| [Script Editor should save which folds are collapsed](https://devforum.roblox.com/t/script-editor-should-save-which-folds-are-collapsed-and-expa/31297) | 110 | **shipped**: the script editor folds blocks, and which folds are collapsed is saved per script |
 | [Automatically make a history waypoint after the command bar is ran](https://devforum.roblox.com/t/automatically-make-a-history-waypoint-after-the-command-bar-is-ran/56619) | 108 | **shipped**: a Command Bar run is one undo step |
 | [Please add a search bar for the plugin management window](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337) (and [2025's](https://devforum.roblox.com/t/add-a-search-bar-to-plugin-management-and-overwrite-an-existing-asset/4137618), 65) | 103 | **planned**: the Plugins window searches the store, not the installed list |
 | [Collapse/Expand All on Selected Explorer Objects](https://devforum.roblox.com/t/collapseexpand-all-on-selected-explorer-objects/78905) | 102 | **tonight**: `feat/explorer-hierarchy` |
@@ -102,5 +102,4 @@ checked on a real build in one night.
   a real multi-line editor there means reusing the script editor kit
   inside the Output dock, a bigger UI change than one night.
 - The rest of the planned rows are smaller-voted or need work first
-  (folding before saved folds, an installed-plugins list before its
-  search).
+  (an installed-plugins list before its search).

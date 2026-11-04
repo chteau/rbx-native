@@ -3498,9 +3498,16 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   Shift on top adds it to the selection; a plain click still passes
   through, as in Studio
   ([Allow selecting locked parts by holding a key combination](https://devforum.roblox.com/t/allow-selecting-locked-parts-by-holding-a-key-combination/977989)).
-- [ ] 📋 **Code folding in the script editor**, remembered per script between
-  sessions; folding needs block extents from a parse, not the lexer the
-  highlighter uses now
+- [x] **Code folding in the script editor**, remembered per script between
+  sessions. Block extents come from a `full_moon` parse (functions, each
+  `if`/`elseif`/`else` branch, `for`, `while`, `repeat`, `do`, multi-line
+  tables, comments and long strings), so a half-typed script still folds
+  what parsed. Markers are Studio's filled triangles in the gutter, always
+  shown, and a fold keeps its opener and closer line visible. Collapsed
+  folds are saved per script on this machine (`script-folds` in the config
+  dir, keyed like the graph layout) and only come back on a line that still
+  opens a block with the same text. Find, Go to Definition and the debugger
+  open a fold that hides their target
   ([Script Editor should save which folds are collapsed](https://devforum.roblox.com/t/script-editor-should-save-which-folds-are-collapsed-and-expa/31297)).
 - [x] **Format Document with StyLua** in the script editor and the Command
   Bar, StyLua built in (Shift+Alt+F)

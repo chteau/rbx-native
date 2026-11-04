@@ -54,6 +54,12 @@
   script with a row per match. Replace All writes to the whole place as
   one step, so Ctrl+Z puts every script back, which Studio's own can't do
   for closed ones. Works from any window, no open script needed. (@chteau)
+- **Code folding in the script editor, remembered.** Functions, each
+  if/elseif/else branch, loops, tables, multi-line comments and long strings
+  get Studio's little triangle in the gutter, and collapsing one keeps its
+  first and last line showing. Unlike Studio, the folds you collapsed come
+  back when you reopen the script, per script on this machine. Find and Go
+  to Definition open a fold that hides what they jump to. (@chteau)
 
 ## 2026-11-03
 
