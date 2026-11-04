@@ -3482,7 +3482,11 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   [too hard to edit multiline code](https://devforum.roblox.com/t/it-is-too-hard-to-edit-multiline-code-in-the-command-bar/3013101)).
 - [ ] 📋 **Replace in every script of the place**, not only the open ones
   ([Ctrl+Shift+H to find and replace in all scripts](https://devforum.roblox.com/t/ctrlshifth-to-find-and-replace-in-all-scripts/35255)).
-- [ ] 📋 **Search the installed plugins** in the Plugins window
+- [x] **Search the installed plugins** in the Plugins window: Manage
+  Plugins opens with the cursor in a search field over the Installed tab,
+  which filters as you type by name, creator (for store plugins) or kind,
+  shows how many match, and says so when nothing does. Studio's Plugin
+  Management window has no search at all
   ([search bar for plugin management](https://devforum.roblox.com/t/please-add-a-search-bar-for-the-plugin-management-window/2016337)).
 - [ ] 📋 **Select a locked part while holding a key**, without unlocking it
   ([Allow selecting locked parts by holding a key combination](https://devforum.roblox.com/t/allow-selecting-locked-parts-by-holding-a-key-combination/977989)).
