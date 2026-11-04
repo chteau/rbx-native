@@ -122,13 +122,13 @@ impl Shell {
         let state = cx.new(|cx| {
             let mut state = EditorState::new(window, cx)
                 .language(highlight::LANGUAGE)
-                // Folding needs a parse tree's block extents, which the lexer
-                // this editor highlights with does not produce.
-                .folding(false)
+                // Block extents come from a parse (`script_editor::folds`).
+                .folding(true)
                 // Ctrl+F / Ctrl+H: the editor's own in-script Find/Replace bar.
                 .searchable(true)
                 .default_value(seed);
             state.set_highlighter_factory(highlight::factory(), cx);
+            state.set_fold_markers(true, cx);
             state.lsp_mut().definition_provider = Some(Rc::new(goto::Declarations));
             state
         });
@@ -138,10 +138,18 @@ impl Shell {
             }
         });
 
+        let folds = self.fold_memory(reference);
+        // The gutter toggles folds without telling the Shell; this is how a
+        // click reaches the file.
+        let fold_observer = cx.observe(&state, move |shell, _, cx| {
+            shell.sync_script_folds(reference, cx);
+        });
         self.scripts.open.insert(
             reference,
             OpenScript {
                 state,
+                folds,
+                _fold_observer: fold_observer,
                 synced: text,
                 pending: false,
                 generation: 0,
@@ -198,6 +206,7 @@ impl Shell {
     /// closing a tab can never be a way to lose an edit.
     pub(crate) fn close_script(&mut self, reference: Ref, cx: &mut Context<Self>) {
         self.commit_script(reference, None, cx);
+        self.sync_script_folds(reference, cx);
         self.scripts.tabs.close(reference);
         self.scripts.open.remove(&reference);
         self.update_discord();

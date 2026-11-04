@@ -63,6 +63,19 @@ at least `width` wide with the numbers right-aligned `gap` before the text
 active_line)` keeps that editor's background, gutter and current-line colours
 over the theme's, which the component otherwise re-projects every frame.
 
+And code folding for the script editor, marked the same way:
+`set_fold_markers` draws every fold candidate as a small filled triangle
+(Studio's), always visible and dimmed until the pointer is over the gutter,
+in place of the component's hover-only chevron (`element.rs`);
+`folded_lines`, `foldable_lines` and `set_folded` on the editor state expose
+the otherwise private fold set so the Shell can save and restore it;
+`set_selected_range` (so `reveal_range`) and the search's next/previous match
+open a fold hiding their target (`unfold_offset`); fold candidates are
+replaced rather than merged after an edit, and a collapsed fold follows its
+candidate's new extent (`fold_map.rs`), because a parse-based highlighter
+answers with the whole file and an edit can change a block whose opener is
+outside the edited lines.
+
 The two selection methods exist because the script editor's Ctrl+D / Shift+Alt+L (add a cursor
 to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).

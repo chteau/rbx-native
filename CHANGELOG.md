@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-04
+
+- **Code folding in the script editor, remembered.** Functions, each
+  if/elseif/else branch, loops, tables, multi-line comments and long strings
+  get Studio's little triangle in the gutter, and collapsing one keeps its
+  first and last line showing. Unlike Studio, the folds you collapsed come
+  back when you reopen the script, per script on this machine. Find and Go
+  to Definition open a fold that hides what they jump to. (@chteau)
+
 ## 2026-11-03
 
 - **Format Document with StyLua, built in.** Shift+Alt+F (or the wand in

@@ -10,6 +10,7 @@
 //! closing and reopening a tab show what the DOM actually has.
 
 pub(crate) mod find;
+pub(crate) mod folds;
 pub(crate) mod format;
 pub(crate) mod goto;
 pub(crate) mod graph;
@@ -46,8 +47,12 @@ pub(crate) struct OpenScript {
     pub(crate) generation: u64,
     /// This tab as `luau-lsp` knows it, once the server is up.
     pub(crate) lsp: Option<std::rc::Rc<lsp::Document>>,
+    /// Which of its folds are collapsed, and what was last written to disk.
+    pub(crate) folds: crate::shell::FoldMemory,
     /// Kept only to stay subscribed to the editor's own change events.
     pub(crate) _subscription: Subscription,
+    /// Kept only to save the folds when the gutter toggles one.
+    pub(crate) _fold_observer: Subscription,
 }
 
 /// Every open tab and the editor behind it. One field on `Shell`.

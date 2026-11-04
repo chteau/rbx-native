@@ -347,6 +347,8 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(super) gutter: Option<super::Gutter>,
     /// rbx-native addition — see [`Self::set_line_number_gutter`].
     pub(super) line_number_gutter: Option<(Pixels, Pixels)>,
+    /// rbx-native addition — see [`Self::set_fold_markers`].
+    pub(super) fold_markers: bool,
     /// rbx-native addition — see [`Self::set_surface_colors`].
     surface_colors: Option<(gpui::Hsla, gpui::Hsla)>,
     /// rbx-native addition — see [`Self::reveal_range`].
@@ -691,6 +693,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             search_session: super::SearchSession::default(),
             gutter: None,
             line_number_gutter: None,
+            fold_markers: false,
             surface_colors: None,
             search_activation_revision: 0,
             searchable: false,
@@ -2176,6 +2179,77 @@ impl<M: InputModeKind> InputBaseState<M> {
         cx.notify();
     }
 
+    /// Draws every fold candidate's marker as a small filled triangle, all
+    /// the time, instead of the component's hover-only chevron.
+    ///
+    /// rbx-native addition: upstream shows chevrons on hover only.
+    pub fn set_fold_markers(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.fold_markers = on;
+        cx.notify();
+    }
+
+    /// Opens the folds hiding the line holding byte `offset`, like
+    /// `EditorState::unfold_at`.
+    ///
+    /// rbx-native addition: shared with `set_selected_range` and search.
+    pub(crate) fn unfold_offset(&mut self, offset: usize, cx: &mut Context<Self>) -> bool {
+        let offset = offset.min(self.text.len());
+        let line = self.text.offset_to_point(offset).row;
+        // A fold hides start_line + 1 ..= end_line - 1, so a line is hidden
+        // exactly when some folded range strictly contains it.
+        let covering: Vec<usize> = self
+            .display_map
+            .folded_ranges()
+            .iter()
+            .filter(|fold| line > fold.start_line && line < fold.end_line)
+            .map(|fold| fold.start_line)
+            .collect();
+        if covering.is_empty() {
+            return false;
+        }
+
+        for start_line in covering {
+            self.display_map.set_folded(start_line, false);
+        }
+        cx.notify();
+        true
+    }
+
+    /// Start lines of the folds currently collapsed, ascending.
+    ///
+    /// rbx-native addition: `display_map` is private.
+    pub fn folded_lines(&self) -> Vec<usize> {
+        self.display_map
+            .folded_ranges()
+            .iter()
+            .map(|fold| fold.start_line)
+            .collect()
+    }
+
+    /// Start lines of every line the highlighter offers a fold on, ascending.
+    ///
+    /// rbx-native addition, alongside [`Self::folded_lines`].
+    pub fn foldable_lines(&self) -> Vec<usize> {
+        self.display_map
+            .fold_candidates()
+            .iter()
+            .map(|fold| fold.start_line)
+            .collect()
+    }
+
+    /// Collapses or expands the fold starting on `line`. Returns whether
+    /// `line` is a fold candidate (nothing happens otherwise).
+    ///
+    /// rbx-native addition, alongside [`Self::folded_lines`].
+    pub fn set_folded(&mut self, line: usize, folded: bool, cx: &mut Context<Self>) -> bool {
+        let candidate = self.display_map.is_fold_candidate(line);
+        if candidate {
+            self.display_map.set_folded(line, folded);
+            cx.notify();
+        }
+        candidate
+    }
+
     /// Lays the line-number column out at least `width` wide, with the
     /// numbers right-aligned `gap` before the text, instead of sizing it to
     /// the digits plus a fixed margin.
@@ -2896,6 +2970,8 @@ impl<M: InputModeKind> InputBaseState<M> {
     /// Non-empty ranges expand to character boundaries. Empty ranges remain empty and are
     /// clipped to the preceding character boundary.
     pub fn set_selected_range(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        // rbx-native addition: a range inside a collapsed fold opens it.
+        self.unfold_offset(range.start, cx);
         let end_bias = if range.start == range.end {
             Bias::Left
         } else {
@@ -3704,13 +3780,12 @@ impl<M: InputModeKind> InputBaseState<M> {
             return;
         };
 
-        // The new byte range in the updated text after the edit
-        let new_end = edit_range.start + new_text.len();
-        self.display_map.update_fold_candidates_for_edit(
-            |range, text| highlighter.fold_ranges_for_edit(range, text),
-            edit_range.start..new_end,
-            &self.text,
-        );
+        // rbx-native addition: replace rather than merge. A parse-based
+        // highlighter answers with the whole file, and an edit can change the
+        // extent of a block whose opener sits outside the edited lines.
+        let _ = (edit_range, new_text);
+        self.display_map
+            .set_fold_candidates(highlighter.fold_ranges(&self.text));
     }
 }
 
@@ -9206,25 +9281,7 @@ impl InputBaseState<crate::input::EditorMode> {
     /// Returns whether any fold was opened.
     pub fn unfold_at(&mut self, position: impl Into<Position>, cx: &mut Context<Self>) -> bool {
         let offset = self.text.position_to_offset(&position.into());
-        let line = self.text.offset_to_point(offset).row;
-        // A fold hides start_line + 1 ..= end_line - 1, so a line is hidden
-        // exactly when some folded range strictly contains it.
-        let covering: Vec<usize> = self
-            .display_map
-            .folded_ranges()
-            .iter()
-            .filter(|fold| line > fold.start_line && line < fold.end_line)
-            .map(|fold| fold.start_line)
-            .collect();
-        if covering.is_empty() {
-            return false;
-        }
-
-        for start_line in covering {
-            self.display_map.set_folded(start_line, false);
-        }
-        cx.notify();
-        true
+        self.unfold_offset(offset, cx)
     }
 
     /// Set enable/disable line number.
