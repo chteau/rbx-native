@@ -195,9 +195,21 @@ fn every_stop_reason_has_a_message() {
         StopReason::PlayerLeft,
         StopReason::ServerClosed,
         StopReason::Failed("x".to_owned()),
+        StopReason::Unavailable("fatal_v1__update_pending".to_owned()),
+        StopReason::ClosedEarly,
     ] {
         assert!(!reason.message().is_empty());
     }
+}
+
+#[test]
+fn only_a_start_that_never_got_going_is_a_failure() {
+    assert!(StopReason::Failed("x".to_owned()).is_failure());
+    assert!(StopReason::Unavailable("fatal_v1__update_pending".to_owned()).is_failure());
+    assert!(StopReason::ClosedEarly.is_failure());
+    assert!(!StopReason::Stopped.is_failure());
+    assert!(!StopReason::ClientExited.is_failure());
+    assert!(!StopReason::ServerClosed.is_failure());
 }
 
 #[test]

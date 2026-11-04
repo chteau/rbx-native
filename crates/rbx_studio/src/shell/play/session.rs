@@ -364,7 +364,8 @@ pub(crate) fn feedback_for(event: &Uplink) -> Option<(&'static str, Feedback)> {
     }
 }
 
-/// Why a session ended; shown in Output as `PLAY_SOURCE` Output.
+/// Why a session ended; shown in Output as `PLAY_SOURCE` Output, or as an
+/// Error when [`StopReason::is_failure`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StopReason {
     /// Stop pressed.
@@ -375,7 +376,7 @@ pub(crate) enum StopReason {
     /// Sober's `fatal_v1__update_pending`, or the dialog it showed.
     Unavailable(String),
     /// The client exited before its window appeared.
-    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     ClosedEarly,
     /// The embedded window disappeared.
     #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
@@ -408,6 +409,14 @@ impl StopReason {
             StopReason::ClosedEarly => "Play failed: Roblox closed before the game opened.".to_owned(),
             StopReason::Failed(text) => format!("Play failed: {text}"),
         }
+    }
+
+    /// The Play never got going, as opposed to ending.
+    pub(crate) fn is_failure(&self) -> bool {
+        matches!(
+            self,
+            StopReason::Unavailable(_) | StopReason::ClosedEarly | StopReason::Failed(_)
+        )
     }
 }
 

@@ -61,10 +61,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use gpui_kit::*;
 use rbx_cloud::{ApiKey, Client, PlaceUpdate, PublishMode};
 use rbx_play::channel::{ChannelServer, DEFAULT_HOLD};
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(target_os = "linux")]
 use rbx_play::embed::EmbedError;
 use rbx_play::inject::ProbeConfig;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(target_os = "linux")]
 use rbx_play::launch::ClientWatch;
 use rbx_play::launch::{join_server_uri, join_uri, ClientProcess, Launcher};
 use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
@@ -249,8 +249,8 @@ fn stop_starting(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, reas
 }
 
 /// Why waiting for the client's window is pointless: it said it can't join
-/// games, or it is already gone.
-#[cfg(any(target_os = "linux", windows))]
+/// games, or it is already gone. Linux only: Sober is the client that says so.
+#[cfg(target_os = "linux")]
 fn embed_give_up(watch: &ClientWatch) -> Option<EmbedError> {
     if let Some(why) = watch.unavailable() {
         return Some(EmbedError::Unavailable(why));
@@ -574,7 +574,7 @@ impl Shell {
                     );
                 }
             };
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(target_os = "linux")]
             let watch = client.watch();
             let target = this.update(cx, |shell, cx| {
                 if shell.play.attempt != attempt {
@@ -606,6 +606,7 @@ impl Shell {
                 if !step(&this, cx, attempt, "Embedding the Roblox window\u{2026}") {
                     return;
                 }
+                #[cfg(target_os = "linux")]
                 let attached = cx
                     .background_spawn(async move {
                         rbx_play::embed::Embedded::attach(
@@ -617,11 +618,24 @@ impl Shell {
                         )
                     })
                     .await;
+                #[cfg(windows)]
+                let attached = cx
+                    .background_spawn(async move {
+                        rbx_play::embed::Embedded::attach(
+                            target.window,
+                            target.rect,
+                            &ignore,
+                            EMBED_TIMEOUT,
+                        )
+                    })
+                    .await;
+                #[cfg(target_os = "linux")]
                 let reason = match &attached {
                     Err(EmbedError::Unavailable(why)) => Some(StopReason::Unavailable(why.clone())),
                     Err(EmbedError::ClientExited) => Some(StopReason::ClosedEarly),
                     _ => None,
                 };
+                #[cfg(target_os = "linux")]
                 if let Some(reason) = reason {
                     return stop_starting(&this, cx, attempt, reason);
                 }
@@ -986,8 +1000,13 @@ impl Shell {
         self.play.stats = PlayStats::default();
         self.play.confirm_close = false;
         self.play.pending_launcher = None;
-        self.output
-            .push(PLAY_SOURCE, Feedback::Output(reason.message()));
+        let message = reason.message();
+        let feedback = if reason.is_failure() {
+            Feedback::Error(message)
+        } else {
+            Feedback::Output(message)
+        };
+        self.output.push(PLAY_SOURCE, feedback);
         self.play.phase = Phase::Idle;
         self.device_play_changed(cx);
         cx.notify();

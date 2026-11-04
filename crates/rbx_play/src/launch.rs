@@ -263,8 +263,9 @@ pub struct ClientProcess {
 }
 
 impl ClientProcess {
-    /// Spawns `launcher.command(uri)` with stdin and stdout null, and stderr
-    /// read on a thread of its own ([`ClientWatch::unavailable`]).
+    /// Spawns `launcher.command(uri)` with stdin and stdout null; Sober's
+    /// stderr is read on a thread of its own ([`ClientWatch::unavailable`]),
+    /// anything else's is null.
     pub fn spawn(launcher: Launcher, uri: &str) -> std::io::Result<Self> {
         Self::spawn_with(launcher, uri, &ClientOptions::default())
     }
@@ -284,9 +285,15 @@ impl ClientProcess {
             _ => None,
         };
         let mut cmd = launcher.command_with(uri, options);
+        // Only Sober says on stderr why it can't join; other clients keep
+        // the old null.
+        let stderr = match launcher {
+            Launcher::Sober => Stdio::piped(),
+            _ => Stdio::null(),
+        };
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::piped());
+            .stderr(stderr);
         let child = cmd.spawn()?;
         Ok(ClientProcess {
             launcher,
