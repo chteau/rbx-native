@@ -968,8 +968,6 @@ impl Shell {
         self.play.link.as_ref().map(|link| link.channel.send(body))
     }
 
-    /// The embedded client while it is shown over the 3D view.
-    #[cfg(any(target_os = "linux", windows))]
     /// Presses on the keyboard cover (`cover`, client pixels: x, y, width,
     /// height; zero height while it is down) leave the keyboard with the
     /// client, see `FocusFollow::keep_client_focus_in`.
@@ -991,6 +989,8 @@ impl Shell {
         let _ = cover;
     }
 
+    /// The embedded client while it is shown over the 3D view.
+    #[cfg(any(target_os = "linux", windows))]
     pub(in crate::shell) fn play_embedded(&self) -> Option<&rbx_play::embed::Embedded> {
         let running = self.play.session.as_ref()?;
         running.embedded.as_ref().filter(|_| !running.hidden)
