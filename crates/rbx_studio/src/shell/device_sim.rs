@@ -267,6 +267,14 @@ impl Shell {
         }
     }
 
+    /// The probe's `DEVICE` for the next Play (`device_sim::probe_device`),
+    /// empty when no device is simulated.
+    pub(super) fn device_probe(&self, cx: &App) -> String {
+        self.simulated_device(cx)
+            .map(|device| device_sim::probe_device(device.platform).to_owned())
+            .unwrap_or_default()
+    }
+
     /// The Sober config keys for the next Play's client: the simulated
     /// device's input mode, or none (the user's own config) without one.
     pub(super) fn device_sober_config(&mut self, cx: &App) -> Vec<(String, serde_json::Value)> {

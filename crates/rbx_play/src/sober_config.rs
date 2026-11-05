@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value};
 
-use crate::launch::SOBER_APP_ID;
+use crate::launch::{Launcher, ROSELINE_APP_ID, SOBER_APP_ID};
 
 /// How long a restore waits for Sober to exit, so the client's own write of
 /// its settings on the way out cannot land after the restore.
@@ -168,16 +168,33 @@ pub fn recover(path: &Path) -> io::Result<()> {
 pub const QUIET_MASTER_VOLUME: f32 = 0.3;
 
 /// The Roblox client's own volume (the in-game Settings › Volume slider,
-/// 0 to 1), from the newest `GlobalBasicSettings_<n>.xml` in Sober's data.
-/// It is kept across runs and applies on top of the system mixer, so a low
-/// one makes Play quiet whatever launched the client.
-pub fn master_volume() -> Option<f32> {
+/// 0 to 1), from the newest `GlobalBasicSettings_<n>.xml` the client keeps:
+/// Sober's `appData`, or the `Library/Roblox` of the macOS user in
+/// Roséline's bottle. It is kept across runs and applies on top of the
+/// system mixer, so a low one makes Play quiet whatever launched the
+/// client. `None` for a client whose settings aren't on this machine.
+pub fn master_volume(launcher: Launcher) -> Option<f32> {
     let home = std::env::var_os("HOME")?;
-    let dir = Path::new(&home)
-        .join(".var/app")
-        .join(SOBER_APP_ID)
-        .join("data/sober/appData");
-    let newest = fs::read_dir(&dir)
+    let app = Path::new(&home).join(".var/app");
+    let dir = match launcher {
+        Launcher::Sober => app.join(SOBER_APP_ID).join("data/sober/appData"),
+        Launcher::Roseline => {
+            let users = app
+                .join(ROSELINE_APP_ID)
+                .join("data/roseline/bottle/prefix/root/Users");
+            fs::read_dir(users)
+                .ok()?
+                .flatten()
+                .map(|user| user.path().join("Library/Roblox"))
+                .find(|dir| dir.is_dir())?
+        }
+        _ => return None,
+    };
+    master_volume_in_dir(&dir)
+}
+
+fn master_volume_in_dir(dir: &Path) -> Option<f32> {
+    let newest = fs::read_dir(dir)
         .ok()?
         .filter_map(|entry| {
             let name = entry.ok()?.file_name().into_string().ok()?;

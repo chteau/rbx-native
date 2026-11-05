@@ -1,7 +1,8 @@
 #![cfg(target_os = "linux")]
 
 use rbx_play::embed::{
-    is_client_class, is_unavailable_dialog, motif_no_decorations, visible_parts, Embedded, Rect,
+    is_client_class, is_launcher_window, is_unavailable_dialog, motif_no_decorations,
+    visible_parts, Embedded, Rect,
 };
 
 fn r(x: i32, y: i32, width: u32, height: u32) -> Rect {
@@ -180,4 +181,13 @@ fn only_a_window_created_after_the_watch_is_attached() {
     .unwrap();
     assert_eq!(embedded.window(), new);
     assert_ne!(embedded.window(), old);
+}
+
+/// Roséline's splash is hidden while Play waits; the game is never.
+#[test]
+fn only_roselines_own_window_is_its_launcher() {
+    assert!(is_launcher_window(b"roseline\0roseline\0"));
+    assert!(!is_launcher_window(b"rosemary\0net.buwryy.Roseline\0"));
+    assert!(!is_launcher_window(b"sober\0Sober\0"));
+    assert!(!is_launcher_window(b""));
 }

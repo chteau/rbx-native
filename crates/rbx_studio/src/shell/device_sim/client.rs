@@ -39,6 +39,7 @@ impl Shell {
             return;
         }
         let rect = device_sim::report::keyboard_rect(screen, height);
+        self.play_keep_focus_for_cover(rect);
         if self.device_sim.keyboard_sent == Some(rect) {
             return;
         }

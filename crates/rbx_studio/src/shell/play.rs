@@ -394,6 +394,7 @@ impl Shell {
         let dom = self.dom.clone();
         let debug_requests = self.play_debug_requests();
         let record_hz = self.playtests.rate_hz;
+        let device = self.device_probe(cx);
         self.playtests_session_start();
         cx.spawn(async move |this, cx| {
             if close_first {
@@ -477,6 +478,7 @@ impl Shell {
                 base_url,
                 token: token.as_str().to_owned(),
                 session: session.clone(),
+                device,
             };
             let prepared = match cx
                 .background_spawn(async move { session::prepare(&dom, &probe, &debug_requests, record_hz) })
@@ -759,6 +761,7 @@ impl Shell {
                 next.name()
             )),
         );
+        self.quiet_client_notice(next);
         self.sober_only_notice(next, options);
         cx.notify();
         true
@@ -967,6 +970,27 @@ impl Shell {
 
     /// The embedded client while it is shown over the 3D view.
     #[cfg(any(target_os = "linux", windows))]
+    /// Presses on the keyboard cover (`cover`, client pixels: x, y, width,
+    /// height; zero height while it is down) leave the keyboard with the
+    /// client, see `FocusFollow::keep_client_focus_in`.
+    pub(in crate::shell) fn play_keep_focus_for_cover(&self, cover: [u32; 4]) {
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(running) = &self.play.session {
+            if let (Some(focus), Some(client)) = (&running.focus, running.last_rect) {
+                let [x, y, width, height] = cover;
+                let keep = (height > 0).then(|| rbx_play::embed::Rect {
+                    x: client.x + x as i32,
+                    y: client.y + y as i32,
+                    width,
+                    height,
+                });
+                focus.keep_client_focus_in(keep);
+            }
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
+        let _ = cover;
+    }
+
     pub(in crate::shell) fn play_embedded(&self) -> Option<&rbx_play::embed::Embedded> {
         let running = self.play.session.as_ref()?;
         running.embedded.as_ref().filter(|_| !running.hidden)

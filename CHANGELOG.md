@@ -8,9 +8,20 @@
   can't join games (like the update outage right now), Play drops it and
   opens the test in Roséline instead, and the next Plays go straight there
   until you restart the editor. The game embeds in the 3D view, takes the
-  keyboard and works with the network simulator like before. Device
-  simulation and the controller emulator still need Sober, Output says so.
-  (@chteau)
+  keyboard and works with the network simulator like before.
+
+  Everything Sober did works there too. Device simulation: on a phone or
+  tablet your scripts see touch (thumbstick, jump button, touch events),
+  on a console they see a gamepad and `IsTenFootInterface()` reads true.
+  The editor now tells the probe which device it simulates instead of
+  relying on Sober's touch/console mode, so this works with any client.
+  Only Roblox's own menus stay desktop ones in Roséline, Output says so.
+  The controller emulator's pad reaches the game (better than Sober,
+  where presses never got through). The keyboard cover types and sends,
+  the Android back button opens the menu, the volume warning reads
+  Roséline's own setting, and textures the CDN can't serve come from
+  Roséline's copy of the client. Roséline's "Launching Roblox..." window
+  stays hidden while Play waits for the game. (@chteau)
 - **Play when Sober can't join.** When Sober is waiting on an update for a
   new Roblox build, Play used to embed its "Gameplay Unavailable" box as if
   it were the game and sit there. Now Play stops within a few seconds and

@@ -141,6 +141,7 @@ fn probe(dom: &mut WeakDom) {
             base_url: "http://127.0.0.1:9".to_owned(),
             token: "market-place".to_owned(),
             session: "market-place".to_owned(),
+            ..Default::default()
         },
     )
     .expect("inject");

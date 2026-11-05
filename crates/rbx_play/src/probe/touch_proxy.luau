@@ -90,11 +90,33 @@ function P.console()
 	return { real = real, signals = {}, proxy = P.makeProxy(real, overrides) }
 end
 
-function P.tenFoot()
+-- The device the editor simulates, "touch" or "console" (the DEVICE
+-- attribute), nil for none. Sober is also started in that mode; another
+-- client, such as Roseline, only gets it from here.
+function P.simulated()
+	local device = script:GetAttribute("DEVICE")
+	return if device == "touch" or device == "console" then device else nil
+end
+
+function P.realTenFoot()
 	local ok, yes = pcall(function()
 		return game:GetService("GuiService"):IsTenFootInterface()
 	end)
 	return ok and yes == true
+end
+
+function P.tenFoot()
+	return P.simulated() == "console" or P.realTenFoot()
+end
+
+-- A GuiService whose IsTenFootInterface reads true, for a simulated
+-- console on a client that was not started as one.
+function P.tenFootGui(real)
+	return P.makeProxy(real, {
+		IsTenFootInterface = function()
+			return true
+		end,
+	})
 end
 
 

@@ -31,8 +31,10 @@
 --   and Changed and GetPropertyChangedSignal fire for them.
 --
 -- On a simulated console's client (IsTenFootInterface) only PreferredInput
--- changes: Gamepad, as on a console with its pad. Roblox's own CoreGui
--- reads the real service, so it still picks its UI by the real values.
+-- changes: Gamepad, as on a console with its pad, and a GuiService
+-- rewritten through `gui` reads IsTenFootInterface true even when the
+-- Roblox client wasn't started as a console. Roblox's own CoreGui reads
+-- the real services, so it still picks its UI by the real values.
 --
 -- A touch is a stand-in InputObject (a table): its properties, Changed,
 -- GetPropertyChangedSignal and IsA work, and `typeof` reads "Instance".
@@ -275,7 +277,8 @@ local function current()
 	if engine == nil then
 		local real = game:GetService("UserInputService")
 		local client = game:GetService("RunService"):IsClient()
-		if client and real.TouchEnabled and not Proxy.preferredTouch(real) then
+		local touch = real.TouchEnabled or Proxy.simulated() == "touch"
+		if client and touch and not Proxy.preferredTouch(real) then
 			engine = build()
 		elseif client and Proxy.tenFoot() then
 			engine = Proxy.console()
@@ -313,6 +316,19 @@ function M.wrap(value)
 	end
 	local e = current()
 	return if e then e.proxy else value
+end
+
+-- `<expr>:GetService("GuiService")`: on a simulated console's client that
+-- the Roblox client itself doesn't run as one, a GuiService whose
+-- IsTenFootInterface reads true; else what it was given.
+function M.gui(value)
+	if typeof(value) ~= "Instance" or value.ClassName ~= "GuiService" then
+		return value
+	end
+	if game:GetService("RunService"):IsClient() and Proxy.simulated() == "console" and not Proxy.realTenFoot() then
+		return Proxy.tenFootGui(value)
+	end
+	return value
 end
 
 -- `<object>.<name>` for an input event: a GuiObject's stand-in on a

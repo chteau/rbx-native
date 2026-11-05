@@ -87,6 +87,17 @@ const LOOKUPS: &[&str] = &[
     "WaitForChild",
 ];
 
+/// Inserted before a `GuiService` lookup on a simulated console.
+pub const GUI_OPEN: &str =
+    "require(game:GetService(\"ReplicatedStorage\"):WaitForChild(\"__rbxnative_touch_input\")).gui(";
+
+/// Wraps every `GuiService` lookup in `source` for a simulated console, so
+/// `IsTenFootInterface` reads true on a client that wasn't started as one.
+/// `Ok(None)` when there is nothing to rewrite.
+pub fn rewrite_gui(source: &str) -> Result<Option<String>, String> {
+    crate::service_wrap::wrap_lookups(source, "GuiService", GUI_OPEN)
+}
+
 /// Rewrites `source` as the module docs describe. `Ok(None)` when there is
 /// nothing to rewrite, `Err` with the parser's message when `source` does
 /// not parse (the caller publishes it as is).

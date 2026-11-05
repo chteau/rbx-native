@@ -15,6 +15,7 @@ fn config() -> ProbeConfig {
         base_url: "https://probe.example".to_owned(),
         token: "a".repeat(64),
         session: "session-1".to_owned(),
+        ..Default::default()
     }
 }
 
@@ -327,4 +328,27 @@ fn preflight_counts_incomplete_classes_sorted() {
             },
         ]
     );
+}
+
+#[test]
+fn the_simulated_device_rides_on_the_touch_proxy() {
+    let (mut dom, root) = data_model_dom();
+    let touch = ProbeConfig {
+        device: "touch".to_owned(),
+        ..config()
+    };
+    inject(&mut dom, &touch).expect("inject");
+    let rs = single_child_of_class(&dom, root, "ReplicatedStorage");
+    let proxy = children_matching(&dom, rs, |i| i.name() == rbx_play::inject::TOUCH_PROXY_NAME);
+    assert_eq!(proxy.len(), 1);
+    assert_eq!(
+        string_attr(&dom, proxy[0], "DEVICE").as_deref(),
+        Some("touch")
+    );
+
+    let (mut dom, root) = data_model_dom();
+    inject(&mut dom, &config()).expect("inject");
+    let rs = single_child_of_class(&dom, root, "ReplicatedStorage");
+    let proxy = children_matching(&dom, rs, |i| i.name() == rbx_play::inject::TOUCH_PROXY_NAME);
+    assert_eq!(string_attr(&dom, proxy[0], "DEVICE"), None);
 }

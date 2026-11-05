@@ -1,7 +1,9 @@
 -- Stand-in touch controls for a simulated touch device.
 --
--- Sober runs touch devices with `touch_mode` on, so `TouchEnabled` is true,
--- but every input reaches the game as a mouse: `PreferredInput` stays
+-- Sober runs touch devices with `touch_mode` on, so `TouchEnabled` is true;
+-- another client (Roseline) stays a desktop and only the DEVICE attribute
+-- (touch_proxy) says touch. Either way every input reaches the game as a
+-- mouse: `PreferredInput` stays
 -- KeyboardAndMouse and the PlayerModule never shows its TouchGui (it keys
 -- on `PreferredInput == Touch`). This module draws the same controls and
 -- drives them with the mouse: Roblox's dynamic thumbstick (press in its
@@ -83,7 +85,9 @@ function M.start()
 		return ok and pref
 	end
 	-- Only on a simulated touch device; a real touch screen gets Roblox's own.
-	if not UserInputService.TouchEnabled or preferredTouch() then
+	local Proxy = require(script.Parent:WaitForChild("__rbxnative_touch_proxy"))
+	local touch = UserInputService.TouchEnabled or Proxy.simulated() == "touch"
+	if not touch or preferredTouch() then
 		return
 	end
 

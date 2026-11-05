@@ -85,6 +85,7 @@ fn main() {
             base_url: tunnel.public_url.clone(),
             token: token.as_str().to_owned(),
             session: session.clone(),
+            ..Default::default()
         },
     )
     .expect("inject");

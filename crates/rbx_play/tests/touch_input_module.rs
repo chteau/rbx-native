@@ -290,3 +290,43 @@ fn keyboard_changes_name_only_what_moved() {
     );
     assert!(keyboard_changes(&m, &up, &keyboard(&m, (0, 552, 393, 300))).is_empty());
 }
+
+/// The editor says which device it simulates through the DEVICE attribute,
+/// so a client that wasn't started as one (Roseline) still gets it.
+#[test]
+fn the_simulated_device_comes_from_the_device_attribute() {
+    let (lua, Value::Table(proxy)) = load_wired("__rbxnative_touch_proxy") else {
+        panic!("touch_proxy returns its table");
+    };
+    let simulated: Function = proxy.get("simulated").unwrap();
+    for (attr, expect) in [
+        ("touch", Some("touch")),
+        ("console", Some("console")),
+        ("phone", None),
+    ] {
+        lua.load(format!(
+            "script.GetAttribute = function(_, k) return if k == 'DEVICE' then '{attr}' else nil end"
+        ))
+        .exec()
+        .unwrap();
+        let got: Option<String> = simulated.call(()).unwrap();
+        assert_eq!(got.as_deref(), expect, "DEVICE = {attr}");
+    }
+
+    let real: Table = lua
+        .load("return { Name = 'GuiService', IsTenFootInterface = function() return false end }")
+        .eval()
+        .unwrap();
+    let gui: Table = proxy
+        .get::<Function>("tenFootGui")
+        .unwrap()
+        .call(real)
+        .unwrap();
+    lua.globals().set("gui", gui).unwrap();
+    let (ten, name): (bool, String) = lua
+        .load("return gui:IsTenFootInterface(), gui.Name")
+        .eval()
+        .unwrap();
+    assert!(ten);
+    assert_eq!(name, "GuiService");
+}

@@ -34,7 +34,11 @@ Roséline (Linux, the fallback)
 - [Verified, local 2026-11-05] `net.buwryy.Roseline` 0.1.3 runs Roblox's macOS client under Rosemary. Same sandbox shape as Sober (`shared=ipc;network;`, `sockets=fallback-x11;pulseaudio;wayland;`, `devices=dri;`), and it's the `roblox:`/`roblox-player:` handler too.
 - [Verified, local] `flatpak run net.buwryy.Roseline "roblox://placeId=<id>"` joins with Roséline's own login. `flatpak run` stays up while the game runs and returns when its window closes; `flatpak kill net.buwryy.Roseline` ends it.
 - [Verified, local] The game window is `WM_CLASS` `rosemary` / `net.buwryy.Roseline`, title `Roblox`. Roséline's own launcher window is `roseline` / `roseline` and is never the game. Reparenting, keyboard focus and the shaped network namespace all work like with Sober.
-- [Verified, local] Sober's config keys (device simulation, gamepad switch, volume) don't exist there.
+- [Verified, local] Sober's config keys (touch/console mode, gamepad switch) don't exist there, and the macOS client has no touch or console mode. Device simulation goes through the probe instead (`DEVICE` attribute on `__rbxnative_touch_proxy`); Roblox's own CoreGui stays desktop.
+- [Verified, local] Gamepads work: `--device=input` plus Rosemary's bundled SDL3 sees the uinput pad, and presses arrive with the focus elsewhere.
+- [Verified, local] The client drops a TextBox's focus about a second after its X window loses the keyboard, so presses on the keyboard cover must leave the focus with the client.
+- [Verified, local] Its settings live in `data/roseline/bottle/prefix/root/Users/<user>/Library/Roblox/GlobalBasicSettings_13.xml`; its client copy's `RobloxPlayer.app/Contents/Resources` is laid out like a Windows version folder (`content`, `PlatformContent/pc`).
+- [Verified, local] Roséline has no switch for its "Launching Roblox..." splash (GTK, `WM_CLASS roseline`); Play withdraws it while it waits for the game.
 
 Auth
 - [Inferred] The sandbox flow needs only the client's existing login. Roblox clients log in once and persist the session. Our app never sees credentials, which satisfies the "no cookies" rule.

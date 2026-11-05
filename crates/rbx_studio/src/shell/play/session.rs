@@ -200,7 +200,7 @@ pub(crate) fn playtest_marks(copy: &mut WeakDom) -> Vec<String> {
 /// `rbx_play::touch`). Scripts inside a forked PlayerModule are left alone.
 /// A script that cannot be rewritten keeps its source and is reported in
 /// the returned warnings.
-pub(crate) fn simulated_touches(copy: &mut WeakDom) -> Vec<String> {
+pub(crate) fn simulated_touches(copy: &mut WeakDom, console: bool) -> Vec<String> {
     let mut warnings = Vec::new();
     for (script, name) in game_scripts(copy) {
         if in_skipped_subtree(copy, script) {
@@ -209,12 +209,18 @@ pub(crate) fn simulated_touches(copy: &mut WeakDom) -> Vec<String> {
         let Some(source) = crate::script_editor::source::read(copy, script) else {
             continue;
         };
-        let result = rbx_play::touch::rewrite(&source).and_then(|rewritten| match rewritten {
-            Some(new) => {
-                rbx_lua::compile_check(&new, &name).map_err(|err| err.to_string())?;
-                Ok(Some(new))
+        let result = rbx_play::touch::rewrite(&source).and_then(|rewritten| {
+            let gui = match console {
+                true => rbx_play::touch::rewrite_gui(rewritten.as_deref().unwrap_or(&source))?,
+                false => None,
+            };
+            match gui.or(rewritten) {
+                Some(new) => {
+                    rbx_lua::compile_check(&new, &name).map_err(|err| err.to_string())?;
+                    Ok(Some(new))
+                }
+                None => Ok(None),
             }
-            None => Ok(None),
         });
         match result {
             Ok(Some(new)) => {
@@ -259,7 +265,7 @@ pub(crate) fn prepare(
     let mut warnings = mock_purchases(&mut copy);
     warnings.extend(structured_prints(&mut copy));
     warnings.extend(playtest_marks(&mut copy));
-    warnings.extend(simulated_touches(&mut copy));
+    warnings.extend(simulated_touches(&mut copy, probe.device == "console"));
     let (debug, instrument_warnings) = instrument_scripts(&mut copy, debug);
     warnings.extend(instrument_warnings);
     rbx_play::inject::inject(&mut copy, probe).map_err(|err| match err {

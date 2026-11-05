@@ -38,9 +38,12 @@ const CONTENT_ROOTS: [&[&str]; 3] = [
     &["PlatformContent", "pc", "textures"],
 ];
 
-/// The `Versions` directory of a local Roblox install.
+/// The `Versions` directory of a local Roblox install, and any client copy
+/// laid out like one of its version folders (Roséline's macOS bundle).
 pub(crate) struct LocalInstall {
-    versions_dir: PathBuf,
+    versions_dir: Option<PathBuf>,
+    /// Searched after every `version-*` folder, see [`roseline_resources`].
+    bundles: Vec<PathBuf>,
     /// Every `version-*` directory, newest first, listed on the first read and
     /// kept: offline, each asset in a place misses the CDN and lands here, and
     /// the set of installed versions does not change while one is loading.
@@ -50,22 +53,33 @@ pub(crate) struct LocalInstall {
 impl LocalInstall {
     /// Builds a [`LocalInstall`] against `%LOCALAPPDATA%\Roblox\Versions`,
     /// or, where that variable is unset, against a Vinegar install of Studio
-    /// (see [`vinegar_versions_dir`]). `None` when neither is there. The
+    /// (see [`vinegar_versions_dir`]), plus Roséline's copy of the client
+    /// ([`roseline_resources`]). `None` when none of them is there. The
     /// variable gates the first, not the platform: it is unset everywhere
     /// but Windows, but a shell that exports it (Wine, say) turns it on.
     pub(crate) fn new() -> Option<Self> {
         let versions_dir = match std::env::var_os("LOCALAPPDATA") {
-            Some(local_app_data) => versions_dir_under(Path::new(&local_app_data)),
-            None => vinegar_versions_dir()?,
+            Some(local_app_data) => Some(versions_dir_under(Path::new(&local_app_data))),
+            None => vinegar_versions_dir(),
         };
-        Some(Self::with_versions_dir(versions_dir))
+        let bundles: Vec<PathBuf> = roseline_resources().into_iter().collect();
+        if versions_dir.is_none() && bundles.is_empty() {
+            return None;
+        }
+        Some(Self::with_dirs(versions_dir, bundles))
     }
 
     /// Builds a [`LocalInstall`] against an arbitrary directory; tests use
     /// this to stand a temp dir in for the real install.
+    #[cfg(test)]
     pub(crate) fn with_versions_dir(versions_dir: PathBuf) -> Self {
+        Self::with_dirs(Some(versions_dir), Vec::new())
+    }
+
+    fn with_dirs(versions_dir: Option<PathBuf>, bundles: Vec<PathBuf>) -> Self {
         Self {
             versions_dir,
+            bundles,
             versions: OnceLock::new(),
         }
     }
@@ -89,11 +103,18 @@ impl LocalInstall {
         })
     }
 
-    /// Every `version-*` directory, newest first. Listed once, see
-    /// [`LocalInstall::versions`].
+    /// Every `version-*` directory, newest first, then the bundles. Listed
+    /// once, see [`LocalInstall::versions`].
     fn version_dirs(&self) -> &[PathBuf] {
-        self.versions
-            .get_or_init(|| list_versions(&self.versions_dir))
+        self.versions.get_or_init(|| {
+            let mut dirs = self
+                .versions_dir
+                .as_deref()
+                .map(list_versions)
+                .unwrap_or_default();
+            dirs.extend(self.bundles.iter().cloned());
+            dirs
+        })
     }
 }
 
@@ -141,6 +162,16 @@ fn vinegar_versions_dir() -> Option<PathBuf> {
         .flatten()
         .map(|data| data.join("vinegar").join("versions"))
         .find(|dir| dir.is_dir())
+}
+
+/// The `Resources` of the macOS client Roséline (`net.buwryy.Roseline`)
+/// keeps a copy of: `content` and `PlatformContent/pc` sit there exactly as
+/// in a Windows version folder. `None` when Roséline never installed it.
+fn roseline_resources() -> Option<PathBuf> {
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let dir = home
+        .join(".var/app/net.buwryy.Roseline/data/roseline/app/RobloxPlayer.app/Contents/Resources");
+    dir.join("content").is_dir().then_some(dir)
 }
 
 /// The directory names carry a random hash, not an ordering, so the
@@ -243,6 +274,40 @@ mod tests {
         let file = versions.join(version).join("content").join(relative);
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(file, bytes).unwrap();
+    }
+
+    /// Roséline's bundle is one more version folder, read after the real
+    /// ones, and with no `Versions` dir at all.
+    #[test]
+    fn a_bundle_is_read_after_the_versions_and_on_its_own() {
+        let root = temp_dir();
+        let versions = root.join("Versions");
+        let bundle = root.join("RobloxPlayer.app/Contents/Resources");
+        install_file(&versions, "version-aaaa", "textures/face.png", b"windows");
+        for (relative, bytes) in [
+            ("content/textures/face.png", "mac"),
+            ("PlatformContent/pc/textures/sky/sky512_bk.tex", "sky"),
+        ] {
+            let file = bundle.join(relative);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, bytes).unwrap();
+        }
+
+        let both = LocalInstall::with_dirs(Some(versions), vec![bundle.clone()]);
+        assert_eq!(
+            both.read("textures/face.png").as_deref(),
+            Some(&b"windows"[..])
+        );
+        let alone = LocalInstall::with_dirs(None, vec![bundle]);
+        assert_eq!(
+            alone.read("textures/face.png").as_deref(),
+            Some(&b"mac"[..])
+        );
+        assert_eq!(
+            alone.read("sky/sky512_bk.tex").as_deref(),
+            Some(&b"sky"[..])
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
