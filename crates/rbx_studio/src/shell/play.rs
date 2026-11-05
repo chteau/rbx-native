@@ -563,7 +563,11 @@ impl Shell {
             else {
                 return;
             };
+            // Only Linux has a client to fall back on, so only there does
+            // this go round more than once.
+            #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
             let mut launcher = launcher;
+            #[cfg_attr(not(target_os = "linux"), allow(clippy::never_loop))]
             loop {
                 if !step(&this, cx, attempt, "Starting Roblox\u{2026}") {
                     return;
