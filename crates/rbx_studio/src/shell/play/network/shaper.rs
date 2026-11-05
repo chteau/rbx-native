@@ -58,8 +58,10 @@ impl Shell {
         if rbx_play::sandbox::is_flatpak() {
             return Err("the Flatpak build can't start Sober inside a shaped network namespace (that needs the host's flatpak, unshare and slirp4netns); the GitHub build of rbx-native has it".to_owned());
         }
-        if Launcher::detect() != Launcher::Sober {
-            return Err("it needs the Sober client (flatpak), which was not found".to_owned());
+        if !matches!(Launcher::detect(), Launcher::Sober | Launcher::Roseline) {
+            return Err(
+                "it needs the Sober or Roséline client (flatpak), and neither was found".to_owned(),
+            );
         }
         let network = &mut self.play.network;
         if !network.shaper.as_mut().is_some_and(Shaper::alive) {

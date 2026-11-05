@@ -29,16 +29,15 @@ pub const TOUCH_NAME: &str = "__rbxnative_touch";
 /// `__rbxnative_touch_input`: game scripts' UserInputService on a simulated
 /// touch device (see `crate::touch`).
 pub const PROBE_TOUCH_INPUT: &str = include_str!("probe/touch_input.luau");
+/// The touch part that carries the simulated device (`ProbeConfig::device`).
+pub const TOUCH_PROXY_NAME: &str = "__rbxnative_touch_proxy";
 /// The modules `touch_input` requires, by name (ModuleScripts in ReplicatedStorage).
 pub const TOUCH_PARTS: [(&str, &str); 3] = [
     (
         "__rbxnative_touch_gesture",
         include_str!("probe/touch_gesture.luau"),
     ),
-    (
-        "__rbxnative_touch_proxy",
-        include_str!("probe/touch_proxy.luau"),
-    ),
+    (TOUCH_PROXY_NAME, include_str!("probe/touch_proxy.luau")),
     (
         "__rbxnative_touch_fingers",
         include_str!("probe/touch_fingers.luau"),
@@ -69,7 +68,7 @@ pub const REMOTE_NAME: &str = "__rbxnative_remote";
 pub const MAX_PUBLISH_BYTES: usize = 150 * 1024 * 1024;
 
 /// What the probe needs to call home; stored as attributes on the probe Script.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProbeConfig {
     /// Public tunnel URL, no trailing slash. Attribute `BASE`.
     pub base_url: String,
@@ -77,6 +76,10 @@ pub struct ProbeConfig {
     pub token: String,
     /// Attribute `SESSION`; also sent as `launchData`.
     pub session: String,
+    /// The simulated device's input, `"touch"` or `"console"`, empty for
+    /// none. Attribute `DEVICE` on `__rbxnative_touch_proxy`, so the client
+    /// simulates it whatever the Roblox client itself was started as.
+    pub device: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -221,6 +224,11 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         .map(|(name, source)| {
             let part = dom.new_instance("ModuleScript", name, Some(rs));
             set_prop(dom, part, "Source", Variant::String((*source).to_owned()));
+            if *name == TOUCH_PROXY_NAME && !config.device.is_empty() {
+                let attrs =
+                    BTreeMap::from([("DEVICE".to_owned(), Variant::String(config.device.clone()))]);
+                set_attributes(dom, part, &attrs);
+            }
             part
         })
         .collect();
@@ -264,14 +272,7 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         "SESSION".to_owned(),
         Variant::String(config.session.clone()),
     );
-    if let Some(raw) = rbx_dom::attributes::encode(&attrs, |_| None) {
-        set_prop(
-            dom,
-            probe,
-            "AttributesSerialize",
-            Variant::Unknown { type_id: 0x01, raw },
-        );
-    }
+    set_attributes(dom, probe, &attrs);
 
     let remote = dom.new_instance("RemoteEvent", REMOTE_NAME, Some(rs));
     let mirror = dom.new_instance("LocalScript", MIRROR_NAME, Some(scripts));
@@ -378,6 +379,17 @@ const INCOMPLETE_CLASSES: [&str; 4] = [
     "SurfaceAppearance",
 ];
 
+fn set_attributes(dom: &mut WeakDom, instance: Ref, attrs: &BTreeMap<String, Variant>) {
+    if let Some(raw) = rbx_dom::attributes::encode(attrs, |_| None) {
+        set_prop(
+            dom,
+            instance,
+            "AttributesSerialize",
+            Variant::Unknown { type_id: 0x01, raw },
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,6 +402,7 @@ mod tests {
             base_url: "https://example.test".to_owned(),
             token: "t".to_owned(),
             session: "s".to_owned(),
+            ..Default::default()
         };
         inject(&mut dom, &config).unwrap();
         let mut stack: Vec<Ref> = dom.root_refs().to_vec();

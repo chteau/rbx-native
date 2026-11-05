@@ -196,6 +196,16 @@ pub(crate) fn sober_keys(platform: Platform) -> Vec<(String, Value)> {
     ]
 }
 
+/// The probe's `DEVICE` for a simulated platform (`ProbeConfig::device`):
+/// the input the game scripts see, whichever client runs the test.
+pub(crate) fn probe_device(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Phone | Platform::Tablet => "touch",
+        Platform::Console => "console",
+        Platform::Desktop | Platform::Headset => "",
+    }
+}
+
 /// `None` is no simulation, i.e. the user's own Sober config.
 pub(crate) fn needs_restart(launched: Option<Platform>, now: Option<Platform>) -> bool {
     match (launched, now) {

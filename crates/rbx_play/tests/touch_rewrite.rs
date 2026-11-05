@@ -113,3 +113,19 @@ fn unrelated_sources_are_untouched() {
     assert_eq!(rewrite("-- UserInputService\nprint(1)").unwrap(), None);
     assert!(rewrite("game.UserInputService(").is_err());
 }
+
+#[test]
+fn gui_service_lookups_go_through_gui_on_their_line() {
+    let source = "local GS = game:GetService(\"GuiService\")\nprint(GS:IsTenFootInterface())\n";
+    let out = rbx_play::touch::rewrite_gui(source)
+        .expect("source parses")
+        .expect("something to rewrite");
+    assert_eq!(
+        out,
+        format!(
+            "local GS = {}game:GetService(\"GuiService\"))\nprint(GS:IsTenFootInterface())\n",
+            rbx_play::touch::GUI_OPEN
+        )
+    );
+    assert_eq!(rbx_play::touch::rewrite_gui("print(1)").unwrap(), None);
+}

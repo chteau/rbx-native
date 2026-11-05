@@ -169,6 +169,7 @@ mod tests {
             base_url: String::new(),
             token: String::new(),
             session: String::new(),
+            ..Default::default()
         };
         let injected = inject(&mut dom, &config).unwrap();
         assert!(dom.get(root).is_some());

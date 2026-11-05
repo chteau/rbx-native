@@ -177,7 +177,12 @@ local function chatFocused()
 	return okRead and focused == true
 end
 
+-- What the game's own scripts see: the simulated device's services when
+-- one is simulated (see touch_input), whatever the client was started as.
 local function readDevice()
+	local TouchInput = require(ReplicatedStorage:WaitForChild("__rbxnative_touch_input"))
+	local seenInput = TouchInput.wrap(UserInputService)
+	local seenGui = TouchInput.gui(GuiService)
 	local width, height = 0, 0
 	pcall(function()
 		local camera = workspace.CurrentCamera
@@ -195,30 +200,30 @@ local function readDevice()
 		viewport_width = width,
 		viewport_height = height,
 		touch_enabled = flag(function()
-			return UserInputService.TouchEnabled
+			return seenInput.TouchEnabled
 		end),
 		keyboard_enabled = flag(function()
-			return UserInputService.KeyboardEnabled
+			return seenInput.KeyboardEnabled
 		end),
 		gamepad_enabled = flag(function()
-			return UserInputService.GamepadEnabled
+			return seenInput.GamepadEnabled
 		end),
 		ten_foot = flag(function()
-			return GuiService:IsTenFootInterface()
+			return seenGui:IsTenFootInterface()
 		end),
 		on_screen_keyboard_visible = flag(function()
-			return UserInputService.OnScreenKeyboardVisible
+			return seenInput.OnScreenKeyboardVisible
 		end),
 		text_focus = textFocus or chatFocused(),
 	}
 	local okPref, pref = pcall(function()
-		return UserInputService.PreferredInput.Name
+		return seenInput.PreferredInput.Name
 	end)
 	if okPref and type(pref) == "string" then
 		m.preferred_input = pref
 	end
 	local okLast, last = pcall(function()
-		return UserInputService:GetLastInputType().Name
+		return seenInput:GetLastInputType().Name
 	end)
 	if okLast and type(last) == "string" then
 		m.last_input = last

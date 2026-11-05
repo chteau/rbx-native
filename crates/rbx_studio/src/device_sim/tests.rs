@@ -258,3 +258,12 @@ fn keyboard_layouts_round_trip_and_cycle() {
     }
     assert_eq!(KeyboardLayout::from_key("dvorak"), None);
 }
+
+#[test]
+fn probe_device_per_platform() {
+    assert_eq!(probe_device(Platform::Phone), "touch");
+    assert_eq!(probe_device(Platform::Tablet), "touch");
+    assert_eq!(probe_device(Platform::Console), "console");
+    assert_eq!(probe_device(Platform::Desktop), "");
+    assert_eq!(probe_device(Platform::Headset), "");
+}

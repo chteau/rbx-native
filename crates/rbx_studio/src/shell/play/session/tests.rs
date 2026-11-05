@@ -5,6 +5,7 @@ fn config() -> ProbeConfig {
         base_url: "https://example.test".to_owned(),
         token: "t".to_owned(),
         session: "s".to_owned(),
+        ..Default::default()
     }
 }
 

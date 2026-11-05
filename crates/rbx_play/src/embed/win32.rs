@@ -353,6 +353,11 @@ impl FocusFollow {
         Ok(FocusFollow)
     }
 
+    /// Windows moves focus natively; nothing to keep.
+    pub fn keep_client_focus_in(&self, rect: Option<Rect>) {
+        let _ = rect;
+    }
+
     /// Not followed on Windows, where it is untested whether the client
     /// reads the wheel while the pointer is elsewhere.
     pub fn pointer_inside(&self) -> Option<bool> {

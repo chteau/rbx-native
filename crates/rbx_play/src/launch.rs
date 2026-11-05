@@ -41,6 +41,10 @@ pub fn join_server_uri(place_id: u64, job_id: &str) -> String {
 pub enum Launcher {
     /// Linux: `flatpak run org.vinegarhq.Sober <uri>`.
     Sober,
+    /// Linux: `flatpak run net.buwryy.Roseline <uri>`, Roblox's macOS
+    /// client under Rosemary. Used when Sober isn't installed, or can't
+    /// join games right now ([`Launcher::fallback`]).
+    Roseline,
     /// Linux fallback: `xdg-open <uri>`.
     XdgOpen,
     /// Windows: `cmd /C start "" <uri>`.
@@ -65,14 +69,26 @@ pub(crate) fn command_for(program: &str) -> Command {
 }
 
 pub(crate) const SOBER_APP_ID: &str = "org.vinegarhq.Sober";
+pub(crate) const ROSELINE_APP_ID: &str = "net.buwryy.Roseline";
+
+/// `flatpak info <app_id>` exits 0.
+fn flatpak_installed(app_id: &str) -> bool {
+    command_for("flatpak")
+        .args(["info", app_id])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
 
 /// The user's own Flatpak installation when `flatpak` would miss it: it
 /// looks under `$XDG_DATA_HOME/flatpak`, so a process given a data home of
-/// its own (an isolated test setup) finds no Sober, a user install. `Some`
-/// when `FLATPAK_USER_DIR` is unset, the data home's installation has no
-/// Sober, and `~/.local/share/flatpak` has it; the editor sets it as
-/// `FLATPAK_USER_DIR` at start, which every `flatpak` it runs inherits.
-/// Sober itself is checked for, not just the directory: any `flatpak` run
+/// its own (an isolated test setup) finds no Sober or Roséline, user
+/// installs. `Some` when `FLATPAK_USER_DIR` is unset, the data home's
+/// installation has neither, and `~/.local/share/flatpak` has one; the
+/// editor sets it as `FLATPAK_USER_DIR` at start, which every `flatpak` it
+/// runs inherits. The clients are checked for, not just the directory: any `flatpak` run
 /// with that data home leaves an empty installation behind.
 pub fn missed_user_flatpaks() -> Option<std::path::PathBuf> {
     missed_user_installation(
@@ -90,8 +106,11 @@ fn missed_user_installation(
     if user_dir.is_some() {
         return None;
     }
-    let sober =
-        |installation: &std::path::Path| installation.join("app").join(SOBER_APP_ID).is_dir();
+    let sober = |installation: &std::path::Path| {
+        [SOBER_APP_ID, ROSELINE_APP_ID]
+            .iter()
+            .any(|app| installation.join("app").join(app).is_dir())
+    };
     let data_home = std::path::PathBuf::from(data_home?);
     if sober(&data_home.join("flatpak")) {
         return None;
@@ -106,7 +125,8 @@ const CLOSE_POLL: Duration = Duration::from_millis(200);
 
 impl Launcher {
     /// The launcher for this OS. On Linux: `Sober` when
-    /// `flatpak info org.vinegarhq.Sober` exits 0, else `XdgOpen`. Inside a
+    /// `flatpak info org.vinegarhq.Sober` exits 0, else `Roseline` when
+    /// `flatpak info net.buwryy.Roseline` does, else `XdgOpen`. Inside a
     /// Flatpak sandbox it is always `XdgOpen`: there is no `flatpak` binary
     /// there, `xdg-open` goes through the desktop portal's OpenURI, and
     /// Sober on the host takes the `roblox://` link.
@@ -118,18 +138,40 @@ impl Launcher {
         } else if crate::sandbox::is_flatpak() {
             Launcher::XdgOpen
         } else {
-            let sober_installed = command_for("flatpak")
-                .args(["info", SOBER_APP_ID])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .is_ok_and(|status| status.success());
-            if sober_installed {
+            if flatpak_installed(SOBER_APP_ID) {
                 Launcher::Sober
+            } else if flatpak_installed(ROSELINE_APP_ID) {
+                Launcher::Roseline
             } else {
                 Launcher::XdgOpen
             }
+        }
+    }
+
+    /// The client to try when this one can't join games: Roséline for
+    /// Sober, when it is installed. Blocking (runs `flatpak info`).
+    pub fn fallback(self) -> Option<Self> {
+        (self == Launcher::Sober
+            && !crate::sandbox::is_flatpak()
+            && flatpak_installed(ROSELINE_APP_ID))
+        .then_some(Launcher::Roseline)
+    }
+
+    /// The Flatpak app id of a client run through `flatpak run`.
+    fn app_id(self) -> Option<&'static str> {
+        match self {
+            Launcher::Sober => Some(SOBER_APP_ID),
+            Launcher::Roseline => Some(ROSELINE_APP_ID),
+            Launcher::XdgOpen | Launcher::WindowsShell | Launcher::MacOpen => None,
+        }
+    }
+
+    /// The client's name, as Output shows it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Launcher::Sober => "Sober",
+            Launcher::Roseline => "Roséline",
+            Launcher::XdgOpen | Launcher::WindowsShell | Launcher::MacOpen => "Roblox",
         }
     }
 
@@ -138,12 +180,12 @@ impl Launcher {
         self.command_with(uri, &ClientOptions::default())
     }
 
-    /// [`Launcher::command`] with `options` applied: Sober runs under
-    /// `options.wrapper` with `options.flatpak_args` before its app id. The
-    /// other launchers hand the URI to the OS and take no options.
+    /// [`Launcher::command`] with `options` applied: Sober and Roséline run
+    /// under `options.wrapper` with `options.flatpak_args` before their app
+    /// id. The other launchers hand the URI to the OS and take no options.
     pub fn command_with(self, uri: &str, options: &ClientOptions) -> Command {
         match self {
-            Launcher::Sober => {
+            Launcher::Sober | Launcher::Roseline => {
                 let mut cmd = match options.wrapper.split_first() {
                     Some((program, args)) => {
                         let mut cmd = command_for(program);
@@ -154,7 +196,7 @@ impl Launcher {
                 };
                 cmd.arg("run")
                     .args(&options.flatpak_args)
-                    .args([SOBER_APP_ID, uri]);
+                    .args([self.app_id().expect("a flatpak client"), uri]);
                 cmd
             }
             Launcher::XdgOpen => {
@@ -176,12 +218,16 @@ impl Launcher {
     }
 
     /// Whether a Roblox client this launcher would start is already running.
-    /// Sober: `flatpak ps --columns=application` lists `org.vinegarhq.Sober`.
+    /// Sober and Roséline: `flatpak ps --columns=application` lists its app id.
     /// Windows: `tasklist /FI "IMAGENAME eq RobloxPlayerBeta.exe" /NH` lists it.
     /// Others: false. Errors running the probe count as not running.
     pub fn client_running(self) -> bool {
         let (program, args, needle): (&str, &[&str], &str) = match self {
-            Launcher::Sober => ("flatpak", &["ps", "--columns=application"], SOBER_APP_ID),
+            Launcher::Sober | Launcher::Roseline => (
+                "flatpak",
+                &["ps", "--columns=application"],
+                self.app_id().expect("a flatpak client"),
+            ),
             Launcher::WindowsShell => (
                 "tasklist",
                 &["/FI", "IMAGENAME eq RobloxPlayerBeta.exe", "/NH"],
@@ -198,14 +244,14 @@ impl Launcher {
     }
 
     /// Closes that running client so a new one can start (each allows one
-    /// instance). Sober: `flatpak kill org.vinegarhq.Sober`. Windows:
+    /// instance). Sober and Roséline: `flatpak kill <app id>`. Windows:
     /// `taskkill /IM RobloxPlayerBeta.exe /F`. Then waits up to 5 s for
     /// `client_running` to turn false. Others: Ok without doing anything.
     pub fn close_running_client(self) -> io::Result<()> {
         let mut cmd = match self {
-            Launcher::Sober => {
+            Launcher::Sober | Launcher::Roseline => {
                 let mut cmd = command_for("flatpak");
-                cmd.args(["kill", SOBER_APP_ID]);
+                cmd.args(["kill", self.app_id().expect("a flatpak client")]);
                 cmd
             }
             Launcher::WindowsShell => {
@@ -233,10 +279,11 @@ impl Launcher {
     }
 
     /// Whether this launcher's process lives as long as the game client, so
-    /// its exit means the client closed. True for `Sober` (`flatpak run`
-    /// waits for the app); false for the others, which hand off and return.
+    /// its exit means the client closed. True for `Sober` and `Roseline`
+    /// (`flatpak run` waits for the app); false for the others, which hand
+    /// off and return.
     pub fn tracks_client(self) -> bool {
-        matches!(self, Launcher::Sober)
+        self.app_id().is_some()
     }
 }
 
@@ -320,7 +367,7 @@ impl ClientProcess {
 
 impl Drop for ClientProcess {
     /// Ends the game client, not only the launcher: `flatpak run` going away
-    /// leaves the sandboxed Sober running, and the Windows shell hand-off
+    /// leaves the sandboxed client running, and the Windows shell hand-off
     /// returns at once. The kill is fired without waiting for it, since
     /// this runs on the editor's UI thread.
     fn drop(&mut self) {
@@ -330,7 +377,10 @@ impl Drop for ClientProcess {
             let _ = child.wait();
         }
         let kill = match self.launcher {
-            Launcher::Sober => Some(("flatpak", vec!["kill", SOBER_APP_ID])),
+            Launcher::Sober | Launcher::Roseline => Some((
+                "flatpak",
+                vec!["kill", self.launcher.app_id().expect("a flatpak client")],
+            )),
             Launcher::WindowsShell => Some(("taskkill", vec!["/IM", "RobloxPlayerBeta.exe", "/F"])),
             Launcher::XdgOpen | Launcher::MacOpen => None,
         };

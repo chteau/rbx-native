@@ -56,6 +56,20 @@ fn sober_command_runs_flatpak() {
 }
 
 #[test]
+fn roseline_command_runs_flatpak() {
+    let uri = "roblox://placeId=1";
+    let cmd = Launcher::Roseline.command(uri);
+    assert_eq!(cmd.get_program().to_string_lossy(), "flatpak");
+    assert_eq!(args_of(&cmd), ["run", "net.buwryy.Roseline", uri]);
+}
+
+#[test]
+fn only_sober_falls_back() {
+    assert_eq!(Launcher::Roseline.fallback(), None);
+    assert_eq!(Launcher::XdgOpen.fallback(), None);
+}
+
+#[test]
 fn xdg_open_command_passes_uri() {
     let uri = "roblox://placeId=1";
     let cmd = Launcher::XdgOpen.command(uri);
@@ -64,8 +78,9 @@ fn xdg_open_command_passes_uri() {
 }
 
 #[test]
-fn only_sober_tracks_client() {
+fn only_flatpak_clients_track_the_client() {
     assert!(Launcher::Sober.tracks_client());
+    assert!(Launcher::Roseline.tracks_client());
     assert!(!Launcher::XdgOpen.tracks_client());
     assert!(!Launcher::WindowsShell.tracks_client());
     assert!(!Launcher::MacOpen.tracks_client());

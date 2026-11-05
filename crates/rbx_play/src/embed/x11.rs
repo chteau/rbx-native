@@ -28,8 +28,10 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 /// Lowercased `WM_CLASS` (instance or class) substrings that identify a
-/// Roblox client window: Sober and the official player under Wine.
-pub const CLIENT_CLASSES: &[&str] = &["sober", "robloxplayerbeta"];
+/// Roblox client window: Sober, Roséline's game window (`rosemary`; its own
+/// launcher windows are `roseline`, never the game) and the official player
+/// under Wine.
+pub const CLIENT_CLASSES: &[&str] = &["sober", "rosemary", "robloxplayerbeta"];
 
 /// Sober's own dialogs ("Gameplay Unavailable", …): never the game.
 const SOBER_SERVICES: &str = "sober_services";
@@ -59,6 +61,17 @@ pub fn is_client_class(wm_class: &[u8]) -> bool {
         && parts
             .iter()
             .any(|p| CLIENT_CLASSES.iter().any(|c| p.contains(c)))
+}
+
+/// Roséline's own window (its "Launching Roblox…" splash, and the dialogs
+/// it shows inside it): `WM_CLASS` `roseline` / `roseline`. The game itself
+/// is `rosemary`.
+pub fn is_launcher_window(wm_class: &[u8]) -> bool {
+    class_parts(wm_class)
+        .iter()
+        .filter(|part| !part.is_empty())
+        .all(|part| part == "roseline")
+        && !wm_class.is_empty()
 }
 
 /// True for Sober's "Gameplay Unavailable" dialog, by `WM_CLASS` and title.
@@ -295,6 +308,9 @@ impl Embedded {
     /// `timeout` passes, or `give_up` returns an error (checked every poll,
     /// e.g. for the client having exited). Sober's "Gameplay Unavailable"
     /// dialog showing up instead ends it with [`EmbedError::Unavailable`].
+    /// Roséline's splash ([`is_launcher_window`]) is withdrawn as it shows,
+    /// since the game takes its place in the editor, and mapped again if
+    /// no game window comes, so a dialog Roséline put in it is still seen.
     /// Then: sets `_MOTIF_WM_HINTS` to
     /// `motif_no_decorations()`, withdraws it from the window manager
     /// (`withdraw`), reparents it under `parent`
@@ -315,6 +331,14 @@ impl Embedded {
             .atom;
         let deadline = Instant::now() + timeout;
         let mut fresh = std::collections::HashSet::new();
+        let mut hidden: Vec<u32> = Vec::new();
+        let give_back = |hidden: &[u32], err: EmbedError| {
+            for &w in hidden {
+                let _ = conn.map_window(w);
+            }
+            let _ = conn.flush();
+            Err(err)
+        };
         let window = loop {
             before.note_created(&mut fresh);
             let new = |w: u32| before.is_new(w, &fresh);
@@ -324,18 +348,30 @@ impl Embedded {
             {
                 break w;
             }
+            for w in scan(&conn, root, |w| {
+                new(w)
+                    && is_viewable(&conn, w)
+                    && is_launcher_window(&property(&conn, w, AtomEnum::WM_CLASS))
+            }) {
+                if withdraw(&conn, root, w).is_ok() {
+                    hidden.push(w);
+                }
+            }
             if let Some(err) = give_up() {
-                return Err(err);
+                return give_back(&hidden, err);
             }
             if !scan(&conn, root, |w| {
                 new(w) && is_viewable_unavailable_dialog(&conn, w, net_wm_name)
             })
             .is_empty()
             {
-                return Err(EmbedError::Unavailable(UNAVAILABLE_TITLE.to_owned()));
+                return give_back(
+                    &hidden,
+                    EmbedError::Unavailable(UNAVAILABLE_TITLE.to_owned()),
+                );
             }
             if Instant::now() >= deadline {
-                return Err(EmbedError::NotFound);
+                return give_back(&hidden, EmbedError::NotFound);
             }
             std::thread::sleep(Duration::from_millis(100));
         };
@@ -558,6 +594,8 @@ pub struct FocusFollow {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// `POINTER_*`.
     pointer: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    /// See [`FocusFollow::keep_client_focus_in`].
+    keep: std::sync::Arc<std::sync::Mutex<Option<Rect>>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -595,6 +633,8 @@ impl FocusFollow {
         let stopping = stop.clone();
         let pointer = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(POINTER_UNKNOWN));
         let pointing = pointer.clone();
+        let keep = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let keeping = keep.clone();
         let thread = std::thread::Builder::new()
             .name("embed-focus".into())
             .spawn(move || {
@@ -627,7 +667,8 @@ impl FocusFollow {
                         // After the window manager's own click-to-focus, so
                         // ours is the focus change that sticks.
                         std::thread::sleep(Duration::from_millis(30));
-                        let _ = route_focus(&conn, root, editor, client);
+                        let kept = *keeping.lock().unwrap_or_else(|e| e.into_inner());
+                        let _ = route_focus(&conn, root, editor, client, kept);
                     }
                     std::thread::sleep(Duration::from_millis(20));
                 }
@@ -636,8 +677,18 @@ impl FocusFollow {
         Ok(FocusFollow {
             stop,
             pointer,
+            keep,
             thread: Some(thread),
         })
+    }
+
+    /// A press inside `rect` (editor-window pixels) leaves the keyboard with
+    /// the client, `None` for nowhere. For the keyboard cover drawn over
+    /// the client: the macOS client under Roséline drops a TextBox's focus
+    /// when its window loses the keyboard, so typing on the cover must not
+    /// hand it to the editor.
+    pub fn keep_client_focus_in(&self, rect: Option<Rect>) {
+        *self.keep.lock().unwrap_or_else(|e| e.into_inner()) = rect;
     }
 
     /// Whether the pointer was over the client at its last move; `None`
@@ -670,17 +721,32 @@ fn pointer_path(conn: &RustConnection, root: u32) -> Result<Vec<u32>, EmbedError
 }
 
 /// Which window is under the pointer decides: the client (or anything
-/// inside it) takes focus; elsewhere in the editor's top-level, the editor.
+/// inside it) takes focus; elsewhere in the editor's top-level, the editor,
+/// unless the press is inside `keep` (editor-window pixels).
 fn route_focus(
     conn: &RustConnection,
     root: u32,
     editor: u32,
     client: u32,
+    keep: Option<Rect>,
 ) -> Result<(), EmbedError> {
     let path = pointer_path(conn, root)?;
     let target = if path.contains(&client) {
         client
     } else if path.contains(&editor) || path.iter().any(|&w| is_ancestor(conn, w, editor)) {
+        if let Some(keep) = keep {
+            let at = conn
+                .query_pointer(editor)
+                .map_err(x11)?
+                .reply()
+                .map_err(x11)?;
+            let (x, y) = (i32::from(at.win_x), i32::from(at.win_y));
+            let inside = (keep.x..keep.x + keep.width as i32).contains(&x)
+                && (keep.y..keep.y + keep.height as i32).contains(&y);
+            if inside {
+                return Ok(());
+            }
+        }
         editor
     } else {
         return Ok(());
