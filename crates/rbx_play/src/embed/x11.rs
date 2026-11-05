@@ -28,8 +28,10 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 /// Lowercased `WM_CLASS` (instance or class) substrings that identify a
-/// Roblox client window: Sober and the official player under Wine.
-pub const CLIENT_CLASSES: &[&str] = &["sober", "robloxplayerbeta"];
+/// Roblox client window: Sober, Roséline's game window (`rosemary`; its own
+/// launcher windows are `roseline`, never the game) and the official player
+/// under Wine.
+pub const CLIENT_CLASSES: &[&str] = &["sober", "rosemary", "robloxplayerbeta"];
 
 /// Sober's own dialogs ("Gameplay Unavailable", …): never the game.
 const SOBER_SERVICES: &str = "sober_services";

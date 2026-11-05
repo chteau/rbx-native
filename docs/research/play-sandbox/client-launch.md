@@ -30,6 +30,12 @@ Sober (Linux)
 - [Reported] Sober's site says "Open your favorite Roblox experience / Sober will prompt you for installation". This implies it registers as the `roblox:` and `roblox-player:` handler via its exported `.desktop` file, so a browser click launches it. https://sober.vinegarhq.org/
 - [Inferred] Launch from `rbxstudio` with `flatpak run org.vinegarhq.Sober "roblox://placeId=<id>"` (the URI as argv[1]). The alternative is `xdg-open roblox://…` if the handler is registered. I could not read the `.desktop` file (outside the allowed dirs), so I could not confirm its `Exec=`/`MimeType=` lines. Check `Exec=… @@u %u @@` and `MimeType=x-scheme-handler/roblox;x-scheme-handler/roblox-player;`.
 
+Roséline (Linux, the fallback)
+- [Verified, local 2026-11-05] `net.buwryy.Roseline` 0.1.3 runs Roblox's macOS client under Rosemary. Same sandbox shape as Sober (`shared=ipc;network;`, `sockets=fallback-x11;pulseaudio;wayland;`, `devices=dri;`), and it's the `roblox:`/`roblox-player:` handler too.
+- [Verified, local] `flatpak run net.buwryy.Roseline "roblox://placeId=<id>"` joins with Roséline's own login. `flatpak run` stays up while the game runs and returns when its window closes; `flatpak kill net.buwryy.Roseline` ends it.
+- [Verified, local] The game window is `WM_CLASS` `rosemary` / `net.buwryy.Roseline`, title `Roblox`. Roséline's own launcher window is `roseline` / `roseline` and is never the game. Reparenting, keyboard focus and the shaped network namespace all work like with Sober.
+- [Verified, local] Sober's config keys (device simulation, gamepad switch, volume) don't exist there.
+
 Auth
 - [Inferred] The sandbox flow needs only the client's existing login. Roblox clients log in once and persist the session. Our app never sees credentials, which satisfies the "no cookies" rule.
 - [Inferred] The sandbox place being private means the user's account must be the owner, or a collaborator in the test universe. Otherwise the client shows a "not authorized" error. This is also true of an unpublished or private place.

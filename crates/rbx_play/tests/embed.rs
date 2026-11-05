@@ -68,6 +68,14 @@ fn sober_class_matches() {
     assert!(is_client_class(b"sober\0Sober\0"));
 }
 
+/// Roséline's game window (seen live, 2026-11-05); its own launcher and
+/// settings windows are `roseline` and never the game.
+#[test]
+fn roseline_game_class_matches() {
+    assert!(is_client_class(b"rosemary\0net.buwryy.Roseline\0"));
+    assert!(!is_client_class(b"roseline\0roseline\0"));
+}
+
 #[test]
 fn wine_player_class_matches() {
     assert!(is_client_class(b"Wine\0RobloxPlayerBeta.exe\0"));

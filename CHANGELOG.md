@@ -2,6 +2,15 @@
 
 ## 2026-11-05
 
+- **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox
+  client on Linux, `net.buwryy.Roseline`) if you have it. Sober still goes
+  first. If Sober isn't installed, Play uses Roséline. If Sober says it
+  can't join games (like the update outage right now), Play drops it and
+  opens the test in Roséline instead, and the next Plays go straight there
+  until you restart the editor. The game embeds in the 3D view, takes the
+  keyboard and works with the network simulator like before. Device
+  simulation and the controller emulator still need Sober, Output says so.
+  (@chteau)
 - **Play when Sober can't join.** When Sober is waiting on an update for a
   new Roblox build, Play used to embed its "Gameplay Unavailable" box as if
   it were the game and sit there. Now Play stops within a few seconds and

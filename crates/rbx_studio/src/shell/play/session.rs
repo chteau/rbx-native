@@ -364,6 +364,10 @@ pub(crate) fn feedback_for(event: &Uplink) -> Option<(&'static str, Feedback)> {
     }
 }
 
+/// Play falls back on Roséline when Sober can't join games.
+const ROSELINE_HINT: &str =
+    "Install Roséline (net.buwryy.Roseline) and Play uses it while Sober is down.";
+
 /// Why a session ended; shown in Output as `PLAY_SOURCE` Output, or as an
 /// Error when [`StopReason::is_failure`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -401,12 +405,14 @@ impl StopReason {
             StopReason::PlayerLeft => "Play ended: you left the game.".to_owned(),
             StopReason::ServerClosed => "Play ended: the server shut down.".to_owned(),
             StopReason::Unavailable(why) if why.contains("update_pending") => {
-                "Play failed: Sober can't join games right now. It's waiting on an update for the latest Roblox build.".to_owned()
+                format!("Play failed: Sober can't join games right now. It's waiting on an update for the latest Roblox build. {ROSELINE_HINT}")
             }
             StopReason::Unavailable(why) => {
-                format!("Play failed: Sober can't join games right now ({why}).")
+                format!("Play failed: Sober can't join games right now ({why}). {ROSELINE_HINT}")
             }
-            StopReason::ClosedEarly => "Play failed: Roblox closed before the game opened.".to_owned(),
+            StopReason::ClosedEarly => {
+                "Play failed: Roblox closed before the game opened.".to_owned()
+            }
             StopReason::Failed(text) => format!("Play failed: {text}"),
         }
     }

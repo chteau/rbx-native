@@ -1,6 +1,7 @@
 //! Play/Test without Roblox Studio (`docs/research/play-sandbox/README.md`,
 //! live-tested 2026-10-14): publish a probed copy of the place over the
-//! user's private sandbox, open it in the Roblox client (Sober on Linux),
+//! user's private sandbox, open it in the Roblox client (Sober on Linux, or
+//! Roséline when Sober is missing or can't join games),
 //! embed that window frameless in the viewport, and stream the game's
 //! output back through a tunnel.
 //!
@@ -30,7 +31,9 @@
 //!    target.rect, &ignore, 90 s, give_up)` on a background task; on
 //!    `NotFound` the client simply stays in its own window (Output warning).
 //!    The client saying it can't join games (`StopReason::Unavailable`) or
-//!    exiting first (`StopReason::ClosedEarly`) stops the Play there.
+//!    exiting first (`StopReason::ClosedEarly`) stops the Play there, except
+//!    that Sober saying so hands the test to `Launcher::fallback` (Roséline)
+//!    when it is installed, back at step 6, and later Plays start there.
 //! 8. `Phase::Running`; a poll task every `POLL` drains `channel.events()`
 //!    into Output via `session::feedback_for`, records `job_id` from
 //!    `Hello`, applies `session::follow` (a teleport keeps the Play and
@@ -189,6 +192,9 @@ pub(super) struct Play {
     attempt: u64,
     /// The launcher detected for the start waiting on `confirm_close`.
     pending_launcher: Option<Launcher>,
+    /// Sober said it can't join games during this run of the editor and
+    /// Roséline took over; later Plays go straight to Roséline.
+    sober_down: bool,
 }
 
 impl Play {
@@ -219,6 +225,7 @@ impl Play {
             poll: None,
             attempt: 0,
             pending_launcher: None,
+            sober_down: false,
         }
     }
 }
@@ -305,10 +312,14 @@ impl Shell {
         let attempt = self.play.attempt;
         self.play.phase = Phase::Starting("Checking for Roblox\u{2026}");
         cx.notify();
+        let sober_down = self.play.sober_down;
         cx.spawn(async move |this, cx| {
             let (launcher, running) = cx
                 .background_spawn(async move {
-                    let launcher = Launcher::detect();
+                    let mut launcher = Launcher::detect();
+                    if sober_down {
+                        launcher = launcher.fallback().unwrap_or(launcher);
+                    }
                     (launcher, launcher.client_running())
                 })
                 .await;
@@ -547,133 +558,158 @@ impl Shell {
                 cx.notify();
             });
 
-            if !step(&this, cx, attempt, "Starting Roblox\u{2026}") {
-                return;
-            }
-            let uri = join_uri(place_id, &session);
-            let Ok(options) = this.update(cx, |shell, cx| shell.play_client_options(cx)) else {
+            let Ok(options) =
+                this.update(cx, |shell, cx| shell.play_client_options(launcher, cx))
+            else {
                 return;
             };
-            let launched = cx
-                .background_spawn(async move {
-                    #[cfg(any(target_os = "linux", windows))]
-                    let ignore = rbx_play::embed::Embedded::existing_clients().unwrap_or_default();
-                    #[cfg(not(any(target_os = "linux", windows)))]
-                    let ignore: Vec<crate::pointer_lock::WindowId> = Vec::new();
-                    ClientProcess::spawn_with(launcher, &uri, &options).map(|client| (client, ignore))
-                })
-                .await;
-            let (client, ignore) = match launched {
-                Ok(launched) => launched,
-                Err(err) => {
-                    return fail(
-                        &this,
-                        cx,
-                        attempt,
-                        format!("Roblox could not be started: {err}."),
-                    );
-                }
-            };
-            #[cfg(target_os = "linux")]
-            let watch = client.watch();
-            let target = this.update(cx, |shell, cx| {
-                if shell.play.attempt != attempt {
-                    return Err(());
-                }
-                shell.play.session = Some(Session {
-                    _token: token,
-                    #[cfg(any(target_os = "linux", windows))]
-                    embedded: None,
-                    #[cfg(any(target_os = "linux", windows))]
-                    focus: None,
-                    client,
-                    presence: session::Presence::default(),
-                    last_rect: None,
-                    corner: 0,
-                    #[cfg(any(target_os = "linux", windows))]
-                    pointer_inside: None,
-                    #[cfg(any(target_os = "linux", windows))]
-                    hidden: false,
-                });
-                Ok(shell.play_embed_target(cx))
-            });
-            let Ok(Ok(target)) = target else {
-                return;
-            };
-
-            #[cfg(any(target_os = "linux", windows))]
-            if let Some(target) = target {
-                if !step(&this, cx, attempt, "Embedding the Roblox window\u{2026}") {
+            let mut launcher = launcher;
+            loop {
+                if !step(&this, cx, attempt, "Starting Roblox\u{2026}") {
                     return;
                 }
-                #[cfg(target_os = "linux")]
-                let attached = cx
+                let uri = join_uri(place_id, &session);
+                let client_options = options.clone();
+                let launched = cx
                     .background_spawn(async move {
-                        rbx_play::embed::Embedded::attach(
-                            target.window,
-                            target.rect,
-                            &ignore,
-                            EMBED_TIMEOUT,
-                            &|| embed_give_up(&watch),
-                        )
+                        #[cfg(any(target_os = "linux", windows))]
+                        let ignore = rbx_play::embed::Embedded::existing_clients().unwrap_or_default();
+                        #[cfg(not(any(target_os = "linux", windows)))]
+                        let ignore: Vec<crate::pointer_lock::WindowId> = Vec::new();
+                        ClientProcess::spawn_with(launcher, &uri, &client_options).map(|client| (client, ignore))
                     })
                     .await;
-                #[cfg(windows)]
-                let attached = cx
-                    .background_spawn(async move {
-                        rbx_play::embed::Embedded::attach(
-                            target.window,
-                            target.rect,
-                            &ignore,
-                            EMBED_TIMEOUT,
-                        )
-                    })
-                    .await;
-                #[cfg(target_os = "linux")]
-                let reason = match &attached {
-                    Err(EmbedError::Unavailable(why)) => Some(StopReason::Unavailable(why.clone())),
-                    Err(EmbedError::ClientExited) => Some(StopReason::ClosedEarly),
-                    _ => None,
+                let (client, ignore) = match launched {
+                    Ok(launched) => launched,
+                    Err(err) => {
+                        return fail(
+                            &this,
+                            cx,
+                            attempt,
+                            format!("Roblox could not be started: {err}."),
+                        );
+                    }
                 };
                 #[cfg(target_os = "linux")]
-                if let Some(reason) = reason {
-                    return stop_starting(&this, cx, attempt, reason);
-                }
-                let _ = this.update(cx, |shell, cx| {
+                let watch = client.watch();
+                let target = this.update(cx, |shell, cx| {
                     if shell.play.attempt != attempt {
+                        return Err(());
+                    }
+                    shell.play.session = Some(Session {
+                        _token: token.clone(),
+                        #[cfg(any(target_os = "linux", windows))]
+                        embedded: None,
+                        #[cfg(any(target_os = "linux", windows))]
+                        focus: None,
+                        client,
+                        presence: session::Presence::default(),
+                        last_rect: None,
+                        corner: 0,
+                        #[cfg(any(target_os = "linux", windows))]
+                        pointer_inside: None,
+                        #[cfg(any(target_os = "linux", windows))]
+                        hidden: false,
+                    });
+                    Ok(shell.play_embed_target(cx))
+                });
+                let Ok(Ok(target)) = target else {
+                    return;
+                };
+
+                #[cfg(any(target_os = "linux", windows))]
+                if let Some(target) = target {
+                    if !step(&this, cx, attempt, "Embedding the Roblox window\u{2026}") {
                         return;
                     }
-                    match attached {
-                        Ok(embedded) => {
-                            let focus = rbx_play::embed::FocusFollow::start(
+                    #[cfg(target_os = "linux")]
+                    let attached = cx
+                        .background_spawn(async move {
+                            rbx_play::embed::Embedded::attach(
                                 target.window,
-                                embedded.window(),
-                            );
-                            if let Err(err) = &focus {
-                                shell.output.push(
-                                    PLAY_SOURCE,
-                                    Feedback::Warning(format!(
-                                        "{err} Click the game and it may not get the keyboard."
-                                    )),
-                                );
-                            }
-                            if let Some(running) = shell.play.session.as_mut() {
-                                running.embedded = Some(embedded);
-                                running.focus = focus.ok();
-                                running.last_rect = Some(target.rect);
-                                running.corner = target.corner;
+                                target.rect,
+                                &ignore,
+                                EMBED_TIMEOUT,
+                                &|| embed_give_up(&watch),
+                            )
+                        })
+                        .await;
+                    #[cfg(windows)]
+                    let attached = cx
+                        .background_spawn(async move {
+                            rbx_play::embed::Embedded::attach(
+                                target.window,
+                                target.rect,
+                                &ignore,
+                                EMBED_TIMEOUT,
+                            )
+                        })
+                        .await;
+                    #[cfg(target_os = "linux")]
+                    let reason = match &attached {
+                        Err(EmbedError::Unavailable(why)) => Some(StopReason::Unavailable(why.clone())),
+                        Err(EmbedError::ClientExited) => Some(StopReason::ClosedEarly),
+                        _ => None,
+                    };
+                    #[cfg(target_os = "linux")]
+                    if let Some(reason) = reason {
+                        if let StopReason::Unavailable(why) = &reason {
+                            let why = why.clone();
+                            let next = cx
+                                .background_spawn(async move { launcher.fallback() })
+                                .await;
+                            if let Some(next) = next {
+                                let switched = this
+                                    .update(cx, |shell, cx| {
+                                        shell.play_switch_client(attempt, launcher, next, &why, &options, cx)
+                                    })
+                                    .unwrap_or(false);
+                                if !switched {
+                                    return;
+                                }
+                                launcher = next;
+                                continue;
                             }
                         }
-                        Err(err) => shell.output.push(
-                            PLAY_SOURCE,
-                            Feedback::Warning(format!("{err} Roblox stays in its own window.")),
-                        ),
+                        return stop_starting(&this, cx, attempt, reason);
                     }
-                    cx.notify();
-                });
+                    let _ = this.update(cx, |shell, cx| {
+                        if shell.play.attempt != attempt {
+                            return;
+                        }
+                        match attached {
+                            Ok(embedded) => {
+                                let focus = rbx_play::embed::FocusFollow::start(
+                                    target.window,
+                                    embedded.window(),
+                                );
+                                if let Err(err) = &focus {
+                                    shell.output.push(
+                                        PLAY_SOURCE,
+                                        Feedback::Warning(format!(
+                                            "{err} Click the game and it may not get the keyboard."
+                                        )),
+                                    );
+                                }
+                                if let Some(running) = shell.play.session.as_mut() {
+                                    running.embedded = Some(embedded);
+                                    running.focus = focus.ok();
+                                    running.last_rect = Some(target.rect);
+                                    running.corner = target.corner;
+                                }
+                            }
+                            Err(err) => shell.output.push(
+                                PLAY_SOURCE,
+                                Feedback::Warning(format!("{err} Roblox stays in its own window.")),
+                            ),
+                        }
+                        cx.notify();
+                    });
+                }
+                #[cfg(not(any(target_os = "linux", windows)))]
+                let _ = (target, ignore);
+                break;
             }
-            #[cfg(not(any(target_os = "linux", windows)))]
-            let _ = (target, ignore);
 
             let _ = this.update(cx, |shell, cx| {
                 if shell.play.attempt != attempt {
@@ -688,6 +724,40 @@ impl Shell {
             });
         })
         .detach();
+    }
+
+    /// Sober said it can't join games while starting: drop it and say the
+    /// test moves to `next` (Roséline). False when this start was cancelled.
+    #[cfg(target_os = "linux")]
+    fn play_switch_client(
+        &mut self,
+        attempt: u64,
+        from: Launcher,
+        next: Launcher,
+        why: &str,
+        options: &rbx_play::launch::ClientOptions,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.play.attempt != attempt {
+            return false;
+        }
+        self.play.session = None;
+        self.play.sober_down = true;
+        let why = match why.contains("update_pending") {
+            true => "it's waiting on an update for the latest Roblox build".to_owned(),
+            false => why.to_owned(),
+        };
+        self.output.push(
+            PLAY_SOURCE,
+            Feedback::Warning(format!(
+                "{} can't join games right now ({why}). This test opens in {} instead.",
+                from.name(),
+                next.name()
+            )),
+        );
+        self.sober_only_notice(next, options);
+        cx.notify();
+        true
     }
 
     fn play_poll(&mut self, cx: &mut Context<Self>) -> Task<()> {

@@ -1,7 +1,7 @@
 //! What the playtest tools ask of the client a Play session launches.
 
 use gpui_kit::Context;
-use rbx_play::launch::ClientOptions;
+use rbx_play::launch::{ClientOptions, Launcher};
 
 use crate::command_bar::Feedback;
 use crate::shell::play::session::PLAY_SOURCE;
@@ -13,6 +13,7 @@ impl Shell {
     /// that shape the client (device, network, controller).
     pub(in crate::shell) fn play_client_options(
         &mut self,
+        launcher: Launcher,
         cx: &mut Context<Self>,
     ) -> ClientOptions {
         let mut options = ClientOptions {
@@ -21,9 +22,31 @@ impl Shell {
         };
         self.network_client_options(&mut options);
         self.controller_client_options(&mut options, cx);
-        self.quiet_client_notice();
+        if launcher == Launcher::Sober {
+            self.quiet_client_notice();
+        }
         self.flatpak_client_notice(&options);
+        self.sober_only_notice(launcher, &options);
         options
+    }
+
+    /// The simulated device and the controller emulator work through
+    /// Sober's config, which another client never reads; say so.
+    pub(in crate::shell) fn sober_only_notice(
+        &mut self,
+        launcher: Launcher,
+        options: &ClientOptions,
+    ) {
+        if launcher != Launcher::Sober && !options.sober_config.is_empty() {
+            self.output.push(
+                PLAY_SOURCE,
+                Feedback::Warning(format!(
+                    "The simulated device and the controller emulator need Sober, so they don't \
+                     reach this test in {}.",
+                    launcher.name()
+                )),
+            );
+        }
     }
 
     /// In the Flatpak build Sober is opened through the desktop portal, so

@@ -370,7 +370,7 @@ impl Shell {
             .child(
                 ui::text(10.5, 14.).text_color(tokens::text3()).child(
                     "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself lags. \
-                     Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs Sober.",
+                     Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs Sober or Ros\u{e9}line.",
                 ),
             )
             .when_some(popover.status.clone(), |this, status| {
