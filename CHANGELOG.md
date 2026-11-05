@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-05
+
+- **Play when Sober can't join.** When Sober is waiting on an update for a
+  new Roblox build, Play used to embed its "Gameplay Unavailable" box as if
+  it were the game and sit there. Now Play stops within a few seconds and
+  Output says Sober can't join games right now. Roblox closing before the
+  game opens also stops Play straight away instead of waiting 90 seconds
+  for a window. (@chteau)
+
 ## 2026-11-04
 
 - **Image sizes in Properties.** An image id in Properties now has its

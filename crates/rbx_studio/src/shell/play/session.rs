@@ -364,13 +364,20 @@ pub(crate) fn feedback_for(event: &Uplink) -> Option<(&'static str, Feedback)> {
     }
 }
 
-/// Why a session ended; shown in Output as `PLAY_SOURCE` Output.
+/// Why a session ended; shown in Output as `PLAY_SOURCE` Output, or as an
+/// Error when [`StopReason::is_failure`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StopReason {
     /// Stop pressed.
     Stopped,
     /// The client process exited (Sober closed).
     ClientExited,
+    /// The client can't join games: its startup treatment, such as
+    /// Sober's `fatal_v1__update_pending`, or the dialog it showed.
+    Unavailable(String),
+    /// The client exited before its window appeared.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    ClosedEarly,
     /// The embedded window disappeared.
     #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     WindowClosed,
@@ -393,8 +400,23 @@ impl StopReason {
             StopReason::WindowClosed => "Play ended: the Roblox window was closed.".to_owned(),
             StopReason::PlayerLeft => "Play ended: you left the game.".to_owned(),
             StopReason::ServerClosed => "Play ended: the server shut down.".to_owned(),
+            StopReason::Unavailable(why) if why.contains("update_pending") => {
+                "Play failed: Sober can't join games right now. It's waiting on an update for the latest Roblox build.".to_owned()
+            }
+            StopReason::Unavailable(why) => {
+                format!("Play failed: Sober can't join games right now ({why}).")
+            }
+            StopReason::ClosedEarly => "Play failed: Roblox closed before the game opened.".to_owned(),
             StopReason::Failed(text) => format!("Play failed: {text}"),
         }
+    }
+
+    /// The Play never got going, as opposed to ending.
+    pub(crate) fn is_failure(&self) -> bool {
+        matches!(
+            self,
+            StopReason::Unavailable(_) | StopReason::ClosedEarly | StopReason::Failed(_)
+        )
     }
 }
 
