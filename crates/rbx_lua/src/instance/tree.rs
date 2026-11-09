@@ -2,24 +2,11 @@
 
 use rbx_dom::{Ref, WeakDom};
 
-/// Finds an instance's parent by walking down from the roots.
-///
-/// `WeakDom` keeps a reverse edge map but does not expose it, and it has no way to
-/// iterate instances either, so the only public route is a walk. Scripts touch
-/// `Parent` often but on trees of a few thousand nodes, which stays cheap enough
-/// to not justify a second parent index that would have to be kept in sync.
+/// An instance's parent, from the DOM's own reverse edges: an instance with no
+/// parent can still have children, and those are out of reach of a walk from
+/// the roots.
 pub(crate) fn parent_of(dom: &WeakDom, target: Ref) -> Option<Ref> {
-    let mut stack: Vec<Ref> = dom.root_refs().to_vec();
-    while let Some(current) = stack.pop() {
-        let Some(instance) = dom.get(current) else {
-            continue;
-        };
-        if instance.children().contains(&target) {
-            return Some(current);
-        }
-        stack.extend_from_slice(instance.children());
-    }
-    None
+    dom.parent(target)
 }
 
 /// `Instance:GetFullName`: names from the topmost ancestor down, joined by
