@@ -3,158 +3,92 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RbxNative: Roblox development, native on Linux</title>
-<meta name="description" content="A Roblox editor written from scratch in Rust. Open your places, build, script, animate and playtest on Linux. No Wine, no VM.">
-<meta property="og:title" content="RbxNative: Roblox development, native on Linux">
-<meta property="og:description" content="A Roblox editor written from scratch in Rust. No Wine, no VM. Pre-alpha, open source, MIT.">
+<title>RbxNative, a Roblox editor for Linux</title>
+<meta name="description" content="A Roblox editor that runs natively on Linux, written from scratch in Rust. Pre-alpha, open source, MIT.">
+<meta property="og:title" content="RbxNative, a Roblox editor for Linux">
+<meta property="og:description" content="Written from scratch in Rust. No Wine, no VM. Pre-alpha, open source, MIT.">
 <meta property="og:image" content="https://rbxnative.chteau.bzh/assets/og.jpg">
 <meta property="og:url" content="https://rbxnative.chteau.bzh/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#0b0b10">
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css">
-<script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
 
-<header class="bar">
-  <div class="wrap bar-in">
-    <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="24" height="17"><span>RbxNative</span></a>
-    <nav>
-      <a href="#features">Features</a>
-      <a href="#install">Install</a>
-      <a href="#status">Status</a>
-      <a href="https://github.com/chteau/rbx-native">GitHub</a>
-    </nav>
-  </div>
+<header>
+  <img class="logo" src="assets/logo.svg" alt="" width="34" height="24">
+  <h1>RbxNative</h1>
 </header>
 
-<main id="top">
+<p class="lead">A Roblox editor that runs on Linux. No Wine, no VM, it's a real native app written from scratch in Rust.</p>
 
-<section class="hero">
-  <div class="wrap">
-    <p class="eyebrow rise" style="--d:0"><span class="dot"></span>Linux · Pre-alpha · Open source</p>
-    <h1 class="rise" style="--d:1">Make Roblox games on&nbsp;Linux. <em>Natively.</em></h1>
-    <p class="lede rise" style="--d:2">RbxNative is a Roblox editor written from scratch in Rust. Open your places, build, script, animate and hit Play. No Wine, no VM.</p>
-    <div class="cta rise" style="--d:3">
-      <a class="btn primary" id="download" href="#install">Get it for Linux</a>
-      <a class="btn" href="https://github.com/chteau/rbx-native">View the source</a>
-    </div>
-    <p class="note rise" style="--d:4" id="download-note">No binary release yet tho, so for now you build it from source.</p>
-    <p class="soon rise" style="--d:5"><span>Upcoming</span> macOS and Windows releases</p>
-  </div>
-  <div class="wrap">
-    <figure class="window hero-shot" id="hero-shot">
-      <img src="assets/editor.webp" width="1600" height="897" alt="The RbxNative editor with a small village open: Properties on the left, the 3D viewport in the middle, Explorer on the right." fetchpriority="high">
-    </figure>
-  </div>
-</section>
+<p>It's pre-alpha. It opens real places and you can build, script, animate and playtest in it, but plenty is still missing or approximated, so expect bugs.</p>
 
-<section class="facts">
-  <div class="wrap facts-in">
-    <div><b>Rust</b><span>Written from scratch</span></div>
-    <div><b>.rbxl .rbxlx</b><span>Reads and writes both</span></div>
-    <div><b>X11 + Wayland</b><span>Used on Linux every day</span></div>
-    <div><b>MIT</b><span>Open source, credit required</span></div>
-  </div>
-</section>
+<p class="links">
+  <a class="get" id="download" href="#install">Build it for Linux</a>
+  <a href="https://github.com/chteau/rbx-native">Source</a>
+  <a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a>
+  <a href="https://github.com/chteau/rbx-native/issues">Report a bug</a>
+</p>
 
-<section id="features" class="wrap">
-  <article class="row reveal">
-    <div class="copy">
-      <p class="kicker">The editor</p>
-      <h2>Feels like Studio. That's the whole point.</h2>
-      <p>Explorer, Properties, the ribbon, gizmos, docks you can move around. Real places open and save back in the real formats, binary and XML.</p>
-      <p>Every PR gets checked against real Studio before it lands. If something behaves differently, that's a bug.</p>
-    </div>
-    <figure class="window"><img src="assets/detail.webp" loading="lazy" width="1120" height="640" alt="A house selected in the viewport, its properties in the panel on the left."></figure>
-  </article>
+<p id="download-note">No binary release yet tho. macOS and Windows releases are upcoming, Linux goes first.</p>
 
-  <article class="row flip reveal">
-    <div class="copy">
-      <p class="kicker">Scripting</p>
-      <h2>Luau with actual tooling.</h2>
-      <ul class="ticks">
-        <li>Autocomplete, hover, go to definition and diagnostics through <code>luau-lsp</code></li>
-        <li>A debugger with breakpoints and single step</li>
-        <li>Command Bar, Output and Script Analysis</li>
-        <li>StyLua formatting and a graph view of your code</li>
-      </ul>
-    </div>
-    <figure class="window"><img src="assets/script.webp" loading="lazy" width="1600" height="897" alt="A Luau script open in the script editor, with diagnostics in the status line."></figure>
-  </article>
+<figure>
+  <img src="assets/editor.webp" width="1600" height="897" alt="The RbxNative editor with a small village open: Properties on the left, the 3D viewport in the middle, Explorer on the right.">
+  <figcaption>A test village. The whole thing came from one script pasted in the Command Bar.</figcaption>
+</figure>
 
-  <div class="cards">
-    <article class="card reveal"><img src="assets/icons/animation.svg" alt="" width="22" height="22"><h3>Animation Editor</h3><p>Pose rigs with joint gizmos, build real animations and save them.</p></article>
-    <article class="card reveal"><img src="assets/icons/screen-gui.svg" alt="" width="22" height="22"><h3>UI Editor</h3><p>A real canvas with draw tools. You can even bring designs in from Figma.</p></article>
-    <article class="card reveal"><img src="assets/icons/terrain.svg" alt="" width="22" height="22"><h3>Smooth terrain</h3><p>Rendered and editable, read straight from your place file.</p></article>
-    <article class="card reveal"><img src="assets/icons/local-script.svg" alt="" width="22" height="22"><h3>Studio plugins</h3><p>Most community plugins run in here. F3X and Archimedes both work.</p></article>
-    <article class="card reveal"><img src="assets/icons/players.svg" alt="" width="22" height="22"><h3>Play</h3><p>Playtest with Sober or Roséline, embedded right in the editor.</p></article>
-    <article class="card reveal"><img src="assets/icons/sky.svg" alt="" width="22" height="22"><h3>Open Cloud</h3><p>Publish, version history, DataStore browser and game settings.</p></article>
-  </div>
-</section>
+<h2>What's in it</h2>
+<ul>
+  <li>Opens and saves real places and models, binary and XML</li>
+  <li>Explorer, Properties, the ribbon, gizmos, docks you can drag around</li>
+  <li>Script editor with <code>luau-lsp</code> (autocomplete, hover, go to definition, diagnostics), StyLua formatting and a debugger with breakpoints</li>
+  <li>Command Bar, Output, Script Analysis</li>
+  <li>Animation Editor with joint gizmos</li>
+  <li>UI Editor, and it can import from Figma</li>
+  <li>Smooth terrain</li>
+  <li>Most community plugins run. F3X and Archimedes both work</li>
+  <li>Play through <a href="https://sober.vinegarhq.org">Sober</a> or Roséline, embedded in the editor</li>
+  <li>Publish, version history, DataStores and game settings through Open Cloud</li>
+</ul>
 
-<section id="install" class="band">
-  <div class="wrap install reveal">
-    <div class="copy">
-      <p class="kicker">Install</p>
-      <h2>Get it running on Linux.</h2>
-      <p>You need Rust 1.96 or newer from <a href="https://rustup.rs">rustup.rs</a>. The first build takes a while, it's a big project.</p>
-      <ul class="ticks">
-        <li>X11 is the main target</li>
-        <li>Wayland works, just without pointer lock</li>
-        <li>Play needs <a href="https://sober.vinegarhq.org">Sober</a> or Roséline installed</li>
-        <li>Most of it works without a Roblox account</li>
-      </ul>
-    </div>
-    <div class="code" role="group" aria-label="Build commands">
-      <button class="copy-btn" type="button" data-copy="code-build">Copy</button>
-<pre id="code-build"><span class="c"># Debian/Ubuntu, other distros have the same libs</span>
-sudo apt install libxkbcommon-x11-dev libx11-xcb-dev \
-  libssl-dev libfontconfig1-dev
+<figure>
+  <img src="assets/script.webp" loading="lazy" width="1600" height="897" alt="A Luau script open in the script editor.">
+  <figcaption>Script editor, same place. Every PR gets checked against real Studio before it lands.</figcaption>
+</figure>
+
+<h2 id="team-create">Team Create</h2>
+<p>Real Team Create isn't happening, that part belongs to Roblox. What exists instead is a Studio plugin that talks to RbxNative through a relay. Each side sees the other's camera, selection and open script, end-to-end encrypted. Live co-editing is a beta toggle in the plugin, off by default.</p>
+<p>RbxNative has its side built in, only people in Studio need the plugin. <a href="assets/TeamPresence.rbxmx" download>Download TeamPresence.rbxmx</a>, drop it in Studio's plugins folder (Plugins tab, Plugins Folder), restart Studio and allow the HTTP requests when it asks.</p>
+
+<h2 id="install">Install</h2>
+<p>You need Rust 1.96 or newer from <a href="https://rustup.rs">rustup.rs</a>. First build takes a while, it's a big project.</p>
+<pre><code># Debian/Ubuntu
+sudo apt install libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libfontconfig1-dev
 
 git clone https://github.com/chteau/rbx-native
 cd rbx-native
 cargo build --release -p rbx_studio --bin rbxstudio
+./target/release/rbxstudio</code></pre>
+<p>X11 is the main target. Wayland works but without pointer lock. Play needs Sober or Roséline installed. Most things work without a Roblox account.</p>
 
-./target/release/rbxstudio</pre>
-    </div>
-  </div>
-</section>
+<h2>Latest changes</h2>
+<p class="date">2026-11-09</p>
+<ul>
+  <li>Middle mouse pans the viewport now</li>
+  <li><code>Lighting.ClockTime</code> reads the right value instead of 0</li>
+  <li>Parts with no parent stay out of the Explorer and the saved file</li>
+  <li><code>Selection</code> works from the Command Bar</li>
+  <li>Select tool can drag parts</li>
+  <li>Play updates Sober first when it's out of date</li>
+</ul>
+<p><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Full changelog</a></p>
 
-<section id="status" class="wrap status reveal">
-  <div>
-    <p class="kicker">Status</p>
-    <h2>Pre-alpha, and moving fast.</h2>
-    <p>It works on real places, but a lot is still approximated or missing. Expect bugs and <a href="https://github.com/chteau/rbx-native/issues">open an issue</a> when you hit one. The <a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">roadmap</a> has the full list of what's done, what's faked and what's out of scope on purpose.</p>
-    <p>AI coding tools get used a lot on this project, no point hiding it. Nothing lands without a human going through the code and testing it against real Studio.</p>
-  </div>
-  <aside class="next">
-    <p class="kicker">Upcoming</p>
-    <h3>macOS and Windows releases</h3>
-    <p>Linux comes first. Those two are next, once they've been properly tested on real machines.</p>
-    <a href="https://github.com/chteau/rbx-native/releases">Watch the releases</a>
-  </aside>
-</section>
+<h2>License</h2>
+<p>MIT. Fork it, ship it, sell it, do what you want. But MIT <strong>means</strong> credit: keep the copyright and license notice in anything that uses this code. <a href="https://github.com/chteau/rbx-native/blob/dev/LICENSE">Read it here</a>, it's short.</p>
+<p>AI coding tools get used a lot on this project, no point hiding it. Nothing lands without a human going through the code and testing it against real Studio.</p>
 
-</main>
-
-<footer>
-  <div class="wrap foot">
-    <div>
-      <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="24" height="17"><span>RbxNative</span></a>
-      <p>An unofficial community project. Not affiliated with or endorsed by Roblox Corporation. "Roblox" is their trademark.</p>
-    </div>
-    <div class="mit">
-      <h4>MIT means credit.</h4>
-      <p>Fork it, ship it, sell it, build your own thing on top. But the license has one rule: keep the copyright and license notice in anything that uses this code. Open source doesn't mean free to take without saying where it came from.</p>
-      <a href="https://github.com/chteau/rbx-native/blob/dev/LICENSE">Read the license</a>
-    </div>
-  </div>
-</footer>
+<footer>Unofficial community project. Not affiliated with or endorsed by Roblox Corporation, "Roblox" is their trademark.</footer>
 
 <script src="main.js"></script>
 </body>
