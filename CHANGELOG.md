@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **Pan the view.** Hold the middle mouse button and drag in the 3D view to slide the camera, like Studio. What you grabbed stays under the cursor.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox

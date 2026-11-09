@@ -53,6 +53,7 @@ impl Shell {
                 locked,
             } => self.pick_in_viewport(*ray, *cycling, *extend, *held, *locked, cx),
             ViewportAction::Hover { ray, alt } => self.hover_in_viewport(*ray, *alt, cx),
+            ViewportAction::PanStart(ray) => self.pan_from(*ray, cx),
             ViewportAction::Scrolled(scroll) => self.scroll_canvas(scroll, cx),
             ViewportAction::Moved {
                 moves,
@@ -82,6 +83,19 @@ impl Shell {
                 self.snap_fields.focus(*kind, window, cx);
             }
             ViewportAction::Tool(action) => self.transform_action(*action, cx),
+        }
+    }
+
+    /// Tells the view how far away the point a pan just grabbed is.
+    fn pan_from(&mut self, ray: Ray, cx: &mut Context<Self>) {
+        let meshes = self.viewport.read(cx).meshes().clone();
+        let distance = pick::parts_along(&self.dom, &self.database, &meshes, ray)
+            .first()
+            .and_then(|&part| pick::model_of(&self.dom, part))
+            .and_then(|model| pick::ray_hits_box(ray, model));
+        if let Some(distance) = distance {
+            self.viewport
+                .update(cx, |view, _| view.set_pan_distance(distance));
         }
     }
 
