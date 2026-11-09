@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **Save as Template name.** The suggested name is selected, so typing replaces it.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox
