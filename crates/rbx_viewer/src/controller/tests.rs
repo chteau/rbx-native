@@ -733,3 +733,21 @@ fn a_flight_moves_a_pose_it_does_not_own_and_settles_after_release() {
     }
     assert!(!flight.busy(), "a second later the move has settled");
 }
+
+#[test]
+fn a_pan_slides_the_camera_against_the_drag_without_turning_it() {
+    let dt = Duration::from_millis(33);
+    let mut controller = spawned();
+    let before = pose(step(&mut controller, &mut Input::default(), dt));
+
+    let mut input = Input::default();
+    input.apply(CameraInput::PanButton(Some(0.5)));
+    input.apply(CameraInput::MouseLook { dx: 10.0, dy: 4.0 });
+    let after = pose(step(&mut controller, &mut input, dt));
+
+    let (_, right, up) = before.basis();
+    let moved = after.position - before.position;
+    assert!((moved.dot(right) + 5.0).abs() < 1e-3, "{moved}");
+    assert!((moved.dot(up) - 2.0).abs() < 1e-3, "{moved}");
+    assert_eq!((after.yaw, after.pitch), (before.yaw, before.pitch));
+}

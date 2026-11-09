@@ -2,6 +2,7 @@
 
 ## 2026-11-09
 
+- **Pan the view.** Hold the middle mouse button and drag in the 3D view to slide the camera, like Studio. What you grabbed stays under the cursor.
 - **Typed API keys.** The key check now tells you to press Enter after typing a key.
 - **Save as Template name.** The suggested name is selected, so typing replaces it.
 - **Home template clicks.** Clicking a template a few times fast makes one place instead of one per click.
