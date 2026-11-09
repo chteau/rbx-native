@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **Typed API keys.** The key check now tells you to press Enter after typing a key.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox

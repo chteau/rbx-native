@@ -158,6 +158,12 @@ pub(in crate::launcher) fn result(
             .on_click(|_, _, cx| cx.open_url(rbx_cloud::DASHBOARD_API_KEYS_URL))
     };
     Some(match &state.status {
+        // Pasting checks straight away; typing waits to be told it's done.
+        Status::Idle if state.has_secret() => div()
+            .text_size(px(12.))
+            .text_color(tokens::text2())
+            .child("Press Enter to check this key.")
+            .into_any_element(),
         Status::Idle => return None,
         Status::Running => v_flex()
             .gap(px(12.))
