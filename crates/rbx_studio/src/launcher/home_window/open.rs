@@ -177,6 +177,7 @@ impl HomeWindow {
                     .update(cx, |_, window, _| window.remove_window());
             }
             Err(failed) => {
+                self.opening = false;
                 let (message, mut boot) = *failed;
                 // Game Settings was for this open only.
                 boot.launch.configure = None;
@@ -201,12 +202,16 @@ impl HomeWindow {
         template: crate::place_templates::PlaceTemplate,
         cx: &mut Context<Self>,
     ) {
+        if std::mem::replace(&mut self.opening, true) {
+            return;
+        }
         let created = home::places_dir()
             .ok_or_else(|| "no config directory to create the place in".to_string())
             .and_then(|places| crate::place_templates::instantiate(&template, &places));
         match created {
             Ok(path) => self.open_path_later(path, cx),
             Err(reason) => {
+                self.opening = false;
                 self.dialog = Some(Dialog::Error {
                     experience: None,
                     title: "Couldn\u{2019}t create the place".to_string(),
@@ -219,12 +224,16 @@ impl HomeWindow {
     }
 
     pub(super) fn new_place(&mut self, template: Template, cx: &mut Context<Self>) {
+        if std::mem::replace(&mut self.opening, true) {
+            return;
+        }
         let created = home::new_place_path(template)
             .ok_or_else(|| "no config directory to create the place in".to_string())
             .and_then(|path| template.create(&path).map(|()| path));
         match created {
             Ok(path) => self.open_path_later(path, cx),
             Err(reason) => {
+                self.opening = false;
                 self.dialog = Some(Dialog::Error {
                     experience: None,
                     title: "Couldn\u{2019}t create the place".to_string(),
