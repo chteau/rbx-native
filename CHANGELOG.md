@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-09
+
+- **Play keeps Sober up to date.** Before each Play the editor checks
+  whether Sober (or Roséline) has a newer build and installs it, with
+  "Updating Sober…" on the Play button and a line in Output. Sober stops
+  running once it falls behind Roblox, and its refreshes keep the same
+  version number, so going by the installed commit is what catches them.
+  If the update can't happen, the test goes ahead on the installed build.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox
