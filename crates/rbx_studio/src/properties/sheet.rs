@@ -336,6 +336,13 @@ impl Properties {
             // A service has no parent in the DOM; `nil` would be wrong, since
             // Studio's is the place itself.
             PARENT => Cow::Owned(Variant::Ref(dom.parent(reference)?)),
+            // A place file carries only `TimeOfDay`.
+            "ClockTime" if instance.class() == "Lighting" => {
+                let Variant::String(text) = self.read(instance, "TimeOfDay")? else {
+                    return None;
+                };
+                Cow::Owned(Variant::Float32(rbx_lua::clock::hours_of(&text)?))
+            }
             _ => match entry.source {
                 Source::Stored => Cow::Borrowed(stored(entry, instance)?),
                 Source::BrickColor => Cow::Owned(brick_color(stored(entry, instance)?)?),

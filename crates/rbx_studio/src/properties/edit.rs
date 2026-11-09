@@ -10,6 +10,7 @@ use rbx_dom::{
 use rbx_reflection::ReflectionDatabase;
 
 mod authority;
+mod clock;
 mod content;
 mod font;
 mod many;
@@ -258,8 +259,9 @@ pub(crate) fn commit(
     }
     // A saved place carries both `Font` and `FontFace`, and the viewer draws
     // the face; the enum edit would otherwise change nothing on screen.
-    let partner =
-        synced(canonical, &value).filter(|(name, _)| instance.properties().contains_key(*name));
+    let partner = synced(canonical, &value)
+        .filter(|(name, _)| instance.properties().contains_key(*name))
+        .or_else(|| clock::synced(&class, canonical, &value, instance.properties()));
     let previous = dom
         .set_property(reference, &key, value)
         .map_err(|err| err.to_string())?;

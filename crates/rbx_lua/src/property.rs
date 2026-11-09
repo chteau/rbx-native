@@ -1,6 +1,7 @@
 //! Generic property bridge: one `__index`/`__newindex` pair for all 2459
 //! reflected properties, validated against the reflection database.
 
+pub mod clock;
 mod from_lua;
 mod pseudo;
 mod to_lua;

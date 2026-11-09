@@ -2,6 +2,7 @@
 
 ## 2026-11-09
 
+- **`Lighting.ClockTime` works.** It reads from `TimeOfDay` like it does in Studio instead of printing 0, and setting either one updates both. The Properties panel row follows it too.
 - **Parts with no parent stay out of the place.** A part removed with `:Remove()`, set to `Parent = nil`, or made by `Instance.new` without a parent no longer shows up in the Explorer or gets saved.
 - **Pan the view.** Hold the middle mouse button and drag in the 3D view to slide the camera, like Studio. What you grabbed stays under the cursor.
 - **Typed API keys.** The key check now tells you to press Enter after typing a key.
