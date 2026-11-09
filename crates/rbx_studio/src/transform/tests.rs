@@ -174,6 +174,17 @@ fn anything_else_is_left_alone() {
 }
 
 #[test]
+fn only_select_picks_up_what_it_presses() {
+    for tool in Tool::TRANSFORM {
+        let transform = Transform {
+            tool,
+            ..Transform::default()
+        };
+        assert_eq!(transform.picks_up(), tool == Tool::Select, "{tool:?}");
+    }
+}
+
+#[test]
 fn every_tool_but_select_shows_handles_and_drags() {
     let select = Transform::default();
     assert_eq!(select.tool, Tool::Select);
