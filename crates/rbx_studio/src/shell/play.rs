@@ -243,6 +243,45 @@ fn step(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, step: &'stati
     .unwrap_or(false)
 }
 
+/// Installs a newer build of the client if there is one. A failed update
+/// doesn't stop Play: the installed build may run fine. False when this
+/// attempt was cancelled.
+async fn keep_client_current(
+    this: &WeakEntity<Shell>,
+    cx: &mut AsyncApp,
+    attempt: u64,
+    launcher: Launcher,
+) -> bool {
+    if !cx
+        .background_spawn(async move { launcher.update_available() })
+        .await
+    {
+        return true;
+    }
+    if !step(this, cx, attempt, launcher.updating_step()) {
+        return false;
+    }
+    let updated = cx.background_spawn(async move { launcher.update() }).await;
+    let name = launcher.name();
+    this.update(cx, |shell, cx| {
+        if shell.play.attempt != attempt {
+            return false;
+        }
+        shell.output.push(
+            PLAY_SOURCE,
+            match updated {
+                Ok(()) => Feedback::Output(format!("{name} was updated to its latest build.")),
+                Err(why) => Feedback::Warning(format!(
+                    "{name} couldn't be updated ({why}), so this test uses the installed build."
+                )),
+            },
+        );
+        cx.notify();
+        true
+    })
+    .unwrap_or(false)
+}
+
 fn fail(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, text: String) {
     stop_starting(this, cx, attempt, StopReason::Failed(text));
 }
@@ -314,14 +353,20 @@ impl Shell {
         cx.notify();
         let sober_down = self.play.sober_down;
         cx.spawn(async move |this, cx| {
-            let (launcher, running) = cx
+            let launcher = cx
                 .background_spawn(async move {
-                    let mut launcher = Launcher::detect();
-                    if sober_down {
-                        launcher = launcher.fallback().unwrap_or(launcher);
+                    let launcher = Launcher::detect();
+                    match sober_down {
+                        true => launcher.fallback().unwrap_or(launcher),
+                        false => launcher,
                     }
-                    (launcher, launcher.client_running())
                 })
+                .await;
+            if !keep_client_current(&this, cx, attempt, launcher).await {
+                return;
+            }
+            let running = cx
+                .background_spawn(async move { launcher.client_running() })
                 .await;
             let _ = this.update(cx, |shell, cx| {
                 if shell.play.attempt != attempt {

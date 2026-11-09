@@ -3,6 +3,17 @@
 ## 2026-11-09
 
 - **Pan the view.** Hold the middle mouse button and drag in the 3D view to slide the camera, like Studio. What you grabbed stays under the cursor.
+- **Typed API keys.** The key check now tells you to press Enter after typing a key.
+- **Save as Template name.** The suggested name is selected, so typing replaces it.
+- **Home template clicks.** Clicking a template a few times fast makes one place instead of one per click.
+- **Selection in the Command Bar.** `Get`, `Set`, `Add`, `Remove` and `SelectionChanged` work there now and the Explorer follows.
+- **Select drags.** Pressing a part with the Select tool picks it up and moves it, even if it wasn't selected. Letting go without moving is still a click.
+- **Play keeps Sober up to date.** Before each Play the editor checks
+  whether Sober (or Roséline) has a newer build and installs it, with
+  "Updating Sober…" on the Play button and a line in Output. Sober stops
+  running once it falls behind Roblox, and its refreshes keep the same
+  version number, so going by the installed commit is what catches them.
+  If the update can't happen, the test goes ahead on the installed build.
 
 ## 2026-11-05
 

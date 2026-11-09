@@ -273,6 +273,12 @@ impl Transform {
         })
     }
 
+    /// Whether a press picks up the part it lands on: Studio's Select tool
+    /// has no handles but moves what you drag, selected or not.
+    pub(crate) fn picks_up(self) -> bool {
+        self.effective() == Tool::Select
+    }
+
     /// Whether dragging in the viewport transforms the selected part at all.
     pub(crate) fn drags(self) -> bool {
         self.effective().kind().is_some()
