@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **Selection in the Command Bar.** `Get`, `Set`, `Add`, `Remove` and `SelectionChanged` work there now and the Explorer follows.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox

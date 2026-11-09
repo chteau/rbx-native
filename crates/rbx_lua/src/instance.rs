@@ -410,10 +410,21 @@ impl UserData for LuaInstance {
             tags::get(&this.ctx, this.referent).into_lua_multi(lua)
         });
         // Deprecated: parents the instance to nil, children and all.
-        methods.add_method("Remove", |_, this, ()| {
+        methods.add_method("Remove", |lua, this, mut args: MultiValue| {
+            // Methods answer before `__index`, so `Selection:Remove`, an
+            // unrelated method with the same name, has to be sent on from here.
+            if matches!(this.class().as_deref(), Ok("Selection")) {
+                if let Some(hooks) = crate::hooks::hooks(lua) {
+                    let member = hooks.index(lua, &this.ctx, this.referent, "Selection", "Remove")?;
+                    if let Some(Value::Function(remove)) = member {
+                        args.push_front(Value::Nil);
+                        return remove.call::<MultiValue>(args);
+                    }
+                }
+            }
             this.ctx.check_write(this.referent)?;
             this.ctx.dom_mut().set_parent(this.referent, None);
-            Ok(())
+            Ok(MultiValue::new())
         });
         methods.add_method("Clone", |_, this, ()| {
             let copy = tree::deep_clone(&mut this.ctx.dom_mut(), this.referent, None)
