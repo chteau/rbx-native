@@ -2,6 +2,7 @@
 
 ## 2026-11-09
 
+- **Selection in the Command Bar.** `Get`, `Set`, `Add`, `Remove` and `SelectionChanged` work there now and the Explorer follows.
 - **Select drags.** Pressing a part with the Select tool picks it up and moves it, even if it wasn't selected. Letting go without moving is still a click.
 - **Play keeps Sober up to date.** Before each Play the editor checks
   whether Sober (or Roséline) has a newer build and installs it, with

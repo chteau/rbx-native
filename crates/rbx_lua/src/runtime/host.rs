@@ -97,6 +97,7 @@ impl Hooks for CommandBarHooks {
         match class {
             "HttpService" => http_member(lua, key),
             "CollectionService" => collection::member(lua, key),
+            "Selection" => super::selection::member(lua, ctx, key),
             _ => Ok(None),
         }
     }
