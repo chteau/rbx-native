@@ -139,6 +139,20 @@ mod tests {
     }
 
     #[test]
+    fn an_instance_with_no_parent_is_not_saved() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let gone = dom.new_instance("Part", "Gone", Some(workspace));
+        dom.unparent(gone);
+
+        let binary = Format::Binary.encode(&dom).unwrap();
+        let read = rbx_binary::deserialize(&binary).unwrap();
+        assert!(crate::explorer::find_by_name(&read, "Gone").is_none());
+        let xml = Format::Xml.encode(&dom).unwrap();
+        assert!(!String::from_utf8_lossy(&xml).contains("Gone"));
+    }
+
+    #[test]
     fn a_binary_save_round_trips_through_rbx_binary() {
         let mut dom = WeakDom::new();
         dom.new_instance("Part", "Saved", None);

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **Parts with no parent stay out of the place.** A part removed with `:Remove()`, set to `Parent = nil`, or made by `Instance.new` without a parent no longer shows up in the Explorer or gets saved.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox

@@ -412,12 +412,13 @@ impl UserData for LuaInstance {
         // Deprecated: parents the instance to nil, children and all.
         methods.add_method("Remove", |_, this, ()| {
             this.ctx.check_write(this.referent)?;
-            this.ctx.dom_mut().set_parent(this.referent, None);
+            this.ctx.dom_mut().unparent(this.referent);
             Ok(())
         });
         methods.add_method("Clone", |_, this, ()| {
             let copy = tree::deep_clone(&mut this.ctx.dom_mut(), this.referent, None)
                 .ok_or_else(property::missing_instance)?;
+            this.ctx.dom_mut().unparent(copy);
             Ok(LuaInstance::new(copy, this.ctx.clone()))
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
@@ -517,7 +518,11 @@ impl UserData for LuaInstance {
                                 ));
                             }
                         }
-                        this.ctx.dom_mut().set_parent(this.referent, target);
+                        let mut dom = this.ctx.dom_mut();
+                        match target {
+                            Some(_) => dom.set_parent(this.referent, target),
+                            None => dom.unparent(this.referent),
+                        }
                         return Ok(());
                     }
                     _ => {}
@@ -566,6 +571,9 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
                     ctx.check_write(parent)?;
                 }
                 let referent = ctx.dom_mut().new_instance(&class, &class, target);
+                if target.is_none() {
+                    ctx.dom_mut().unparent(referent);
+                }
                 defaults::apply(&ctx, &class, referent);
                 Ok(LuaInstance::new(referent, ctx.clone()))
             },
