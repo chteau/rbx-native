@@ -415,7 +415,8 @@ impl UserData for LuaInstance {
             // unrelated method with the same name, has to be sent on from here.
             if matches!(this.class().as_deref(), Ok("Selection")) {
                 if let Some(hooks) = crate::hooks::hooks(lua) {
-                    let member = hooks.index(lua, &this.ctx, this.referent, "Selection", "Remove")?;
+                    let member =
+                        hooks.index(lua, &this.ctx, this.referent, "Selection", "Remove")?;
                     if let Some(Value::Function(remove)) = member {
                         args.push_front(Value::Nil);
                         return remove.call::<MultiValue>(args);

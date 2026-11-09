@@ -153,7 +153,10 @@ mod tests {
         let (mut runtime, workspace) = with_workspace();
         runtime.set_selection(vec![workspace]);
         let source = format!("{S}print(#s:Get(), s:Get()[1], s.ClassName, typeof(s))");
-        assert_eq!(lines(&mut runtime, &source), ["1 Workspace Selection Instance"]);
+        assert_eq!(
+            lines(&mut runtime, &source),
+            ["1 Workspace Selection Instance"]
+        );
         assert_eq!(runtime.take_selection(), None);
     }
 
@@ -184,8 +187,14 @@ mod tests {
             "{S}print(pcall(function() s:Set(5) end)) print(pcall(function() s:Set({{5}}) end))"
         );
         let printed = lines(&mut runtime, &source);
-        assert!(printed[0].ends_with("Expected table argument, got number"), "{printed:?}");
-        assert!(printed[1].ends_with("Unable to cast value to Object"), "{printed:?}");
+        assert!(
+            printed[0].ends_with("Expected table argument, got number"),
+            "{printed:?}"
+        );
+        assert!(
+            printed[1].ends_with("Unable to cast value to Object"),
+            "{printed:?}"
+        );
         assert_eq!(runtime.take_selection(), None);
     }
 
