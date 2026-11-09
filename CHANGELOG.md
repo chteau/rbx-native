@@ -2,6 +2,7 @@
 
 ## 2026-11-09
 
+- **Save as Template name.** The suggested name is selected, so typing replaces it.
 - **Home template clicks.** Clicking a template a few times fast makes one place instead of one per click.
 - **Selection in the Command Bar.** `Get`, `Set`, `Add`, `Remove` and `SelectionChanged` work there now and the Explorer follows.
 - **Select drags.** Pressing a part with the Select tool picks it up and moves it, even if it wasn't selected. Letting go without moving is still a click.
