@@ -3,6 +3,13 @@
 ## 2026-11-09
 
 - **Selection in the Command Bar.** `Get`, `Set`, `Add`, `Remove` and `SelectionChanged` work there now and the Explorer follows.
+- **Select drags.** Pressing a part with the Select tool picks it up and moves it, even if it wasn't selected. Letting go without moving is still a click.
+- **Play keeps Sober up to date.** Before each Play the editor checks
+  whether Sober (or Roséline) has a newer build and installs it, with
+  "Updating Sober…" on the Play button and a line in Output. Sober stops
+  running once it falls behind Roblox, and its refreshes keep the same
+  version number, so going by the installed commit is what catches them.
+  If the update can't happen, the test goes ahead on the installed build.
 
 ## 2026-11-05
 

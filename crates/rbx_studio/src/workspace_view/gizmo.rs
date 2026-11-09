@@ -354,6 +354,7 @@ impl WorkspaceView {
             self.show_gizmo(self.transform.gizmo());
         }
         self.pending_grab = None;
+        self.click_on_release = None;
         // Any press in the view takes Studio's measurement box down.
         self.close_measure();
         let Some(ray) = self.cursor_ray(position, scale) else {
@@ -414,7 +415,7 @@ impl WorkspaceView {
                 self.begin(drag, cx);
                 return;
             }
-        } else if self.transform.drags() {
+        } else if self.transform.drags() || self.transform.picks_up() {
             // A handle is the gizmo's own, drawn over everything: grabbing
             // one needs no second opinion.
             let centred = scale::from_pivot(modifiers);
@@ -454,6 +455,12 @@ impl WorkspaceView {
                     return;
                 }
                 self.pending_grab = self.grab_body(ray, None).map(|_| ray);
+                if self.transform.picks_up() {
+                    // Held whatever it landed on: `Shell` selects first and
+                    // the grab follows the new selection.
+                    self.pending_grab = Some(ray);
+                    self.click_on_release = Some(ray);
+                }
             }
         }
 
@@ -513,10 +520,29 @@ impl WorkspaceView {
         }
     }
 
+    /// The Select tool's press landed on something not selected yet. `Shell`
+    /// has selected it, so the same press now carries it. The click is
+    /// spent: letting go without moving must not pick a second time.
+    pub(crate) fn carry_pick(
+        &mut self,
+        surface: Option<(SurfaceFrame, Vec3)>,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
+        self.click_on_release = None;
+        self.confirm_grab(surface, cx);
+    }
+
+    /// Whether a press `Shell` could not match to the selection still picks
+    /// up what it selects instead.
+    pub(crate) fn picks_up(&self) -> bool {
+        self.transform.picks_up()
+    }
+
     /// `Shell`'s other answer: something nearer than the selection was under
     /// the cursor and took the click as a pick instead, so nothing is held.
     pub(crate) fn refuse_grab(&mut self) {
         self.pending_grab = None;
+        self.click_on_release = None;
     }
 
     /// Draws only the Move arrow or Scale ball `ray` grabbed, for as long as
@@ -608,7 +634,9 @@ impl WorkspaceView {
         // Transform includes Move's own handles, so its cursor dragging
         // comes along too, `creator-docs` only documents the gesture under
         // Move, but Transform draws Move's very arrows over the same part.
-        if !matches!(self.transform.tool, Tool::Move | Tool::Transform) {
+        if !matches!(self.transform.tool, Tool::Move | Tool::Transform)
+            && !self.transform.picks_up()
+        {
             return None;
         }
         let anchor = self.targets.anchor()?;
@@ -920,6 +948,9 @@ impl WorkspaceView {
             self.drag_pending = self.drag_pending.or(self.guides.dragged_at);
         }
         self.step_drag(window, cx);
+        // A Select press on the selection that never moved was a click after
+        // all: it still narrows a group or steps into a model.
+        let click = self.click_on_release.take().filter(|_| !self.dragged);
         if self.drag == Some(Drag::Terrain) {
             self.terrain_release(cx);
         }
@@ -943,6 +974,15 @@ impl WorkspaceView {
             }
         }
         self.drag_stepped_at = None;
+        if let Some(ray) = click {
+            cx.emit(ViewportAction::Pick {
+                ray,
+                cycling: false,
+                extend: false,
+                held: false,
+                locked: false,
+            });
+        }
         // A grab `Shell` has not answered yet is answered by the release:
         // nothing is held any more.
         self.pending_grab = None;
