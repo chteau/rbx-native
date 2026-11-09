@@ -315,6 +315,13 @@ fn free_update(
         );
     }
 
+    if let Some(studs_per_pixel) = input.pan_studs_per_pixel() {
+        // The view follows the cursor, so the camera goes the other way:
+        // dragging right moves it left, dragging down (dy > 0) moves it up.
+        let (_, right, up) = pose.basis();
+        pose.position += (up * dy - right * dx) * studs_per_pixel;
+    }
+
     let forward = look_direction(pose.yaw, pose.pitch);
     let mut speed = speed;
     let notches = input.take_wheel_notches();

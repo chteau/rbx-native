@@ -2,7 +2,7 @@
 
 mod mirror;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::change::Change;
 use crate::error::DomError;
@@ -20,6 +20,10 @@ pub use mirror::Snapshot;
 pub struct WeakDom {
     instances: HashMap<Ref, Instance>,
     root_refs: Vec<Ref>,
+    // Instances a script parented to nil. Alive and reachable by `Ref`, but in
+    // no tree: a root would be written to the place file and listed in the
+    // Explorer, and Roblox does neither with these.
+    unparented: HashSet<Ref>,
     // Reverse lookup of the tree edges: Instance itself only stores children,
     // so this is what lets set_parent detach a child from its current parent
     // (or from root_refs) before reattaching it.
@@ -293,6 +297,22 @@ impl WeakDom {
         });
     }
 
+    /// Parents `child` to nil, as a script does. It stays alive, but it is no
+    /// root: [`WeakDom::root_refs`] leaves it out until it gets a parent again.
+    pub fn unparent(&mut self, child: Ref) {
+        if !self.instances.contains_key(&child) {
+            return;
+        }
+        let old = self.parents.get(&child).copied();
+        self.detach(child);
+        self.unparented.insert(child);
+        self.log(Change::Parent {
+            referent: child,
+            old,
+            new: None,
+        });
+    }
+
     /// Moves `child` to sit right after `anchor` among their shared parent's
     /// children (or among the roots). A no-op unless the two are distinct
     /// siblings. Logs nothing of its own: it is meant for a child whose
@@ -329,6 +349,7 @@ impl WeakDom {
                     parent_instance.children_mut().retain(|&r| r != child);
                 }
             }
+            None if self.unparented.remove(&child) => {}
             None => self.root_refs.retain(|&r| r != child),
         }
     }
@@ -360,6 +381,27 @@ mod tests {
 
         assert_eq!(dom.root_refs(), &[parent]);
         assert_eq!(dom.get(parent).unwrap().children(), &[child]);
+    }
+
+    #[test]
+    fn an_unparented_instance_is_alive_but_no_root() {
+        let mut dom = WeakDom::new();
+        let parent = dom.new_instance("Folder", "Parent", None);
+        let child = dom.new_instance("Part", "Child", Some(parent));
+
+        dom.unparent(child);
+        assert!(dom.get(child).is_some());
+        assert_eq!(dom.parent(child), None);
+        assert_eq!(dom.root_refs(), [parent]);
+
+        dom.set_parent(child, Some(parent));
+        assert_eq!(dom.get(parent).unwrap().children(), [child]);
+        assert_eq!(dom.root_refs(), [parent]);
+
+        dom.unparent(child);
+        dom.remove(child);
+        assert!(dom.get(child).is_none());
+        assert_eq!(dom.root_refs(), [parent]);
     }
 
     #[test]

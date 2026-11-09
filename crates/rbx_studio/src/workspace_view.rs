@@ -69,6 +69,9 @@ pub(crate) use terrain::{Dial, TerrainInput, TerrainPhase};
 
 // How long a speed change stays on screen, matching the standalone viewer's
 // title bar.
+/// How far away a pan grabs when there is nothing under the cursor.
+const PAN_DISTANCE_OVER_NOTHING: f32 = 100.0;
+
 const SPEED_LABEL: Duration = Duration::from_millis(1500);
 // How many times per frame budget the UI thread looks for a finished frame. Two
 // loops running at the same rate beat against each other, and every beat is a
@@ -191,6 +194,9 @@ pub(crate) enum ViewportAction {
     /// just began and a hover box hanging over the gesture would look
     /// broken.
     Hover { ray: Option<Ray>, alt: bool },
+    /// The middle button went down over the view. `Shell` answers with
+    /// [`WorkspaceView::set_pan_distance`], the distance to what's under it.
+    PanStart(Ray),
     /// The wheel rolled over a `ScrollingFrame` of a `ScreenGui`: `Shell`
     /// moves its `CanvasPosition` (see `shell::scroll`). Not an edit,
     /// Studio's own scroll is not undoable either, so it never goes near
@@ -257,6 +263,8 @@ pub(crate) struct WorkspaceView {
     /// doc). What hover resolution gates on instead of `PointerLock::holds`
     /// (see `hover::suppressed`).
     looking: bool,
+    /// Where a pan started and the window scale then, while one is going.
+    pan_start: Option<(Point<Pixels>, f32)>,
     /// The latest un-resolved cursor position from an ordinary move,
     /// waiting for `advance` to decide it's due (see `hover::due`) and cast
     /// a ray against the DOM. Cleared, not just left to resolve stale, at
@@ -386,6 +394,9 @@ pub(crate) struct WorkspaceView {
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
     pending_grab: Option<Ray>,
+    /// The Select tool's press on the selection: if the button comes up
+    /// without the part having moved, it was a click and is resolved as one.
+    click_on_release: Option<Ray>,
     /// A Properties `Ref` row is waiting for its target (see
     /// `shell::ref_pick`): a press only picks, and the cursor says so.
     ref_picking: bool,
@@ -513,6 +524,7 @@ impl WorkspaceView {
             cursor: None,
             lock: PointerLock::new(),
             looking: false,
+            pan_start: None,
             hover_pending: None,
             hover_part: None,
             drag_pending: None,
@@ -557,6 +569,7 @@ impl WorkspaceView {
             terrain_dial_x: None,
             terrain_modifiers: Modifiers::default(),
             pending_grab: None,
+            click_on_release: None,
             ref_picking: false,
             joint_markers: (Vec::new(), None),
             measure: None,
@@ -817,6 +830,49 @@ impl WorkspaceView {
         }
     }
 
+    /// Starts a middle-button pan. The point under the cursor stays under it,
+    /// so the rate depends on how far away that point is: a guess until
+    /// `Shell` has looked (see `ViewportAction::PanStart`).
+    fn begin_pan(
+        &mut self,
+        position: Point<Pixels>,
+        scale: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        self.cursor = None;
+        self.looking = true;
+        self.pan_start = Some((position, scale));
+        self.set_pan_distance(PAN_DISTANCE_OVER_NOTHING);
+        self.hover_pending = None;
+        cx.emit(ViewportAction::Hover {
+            ray: None,
+            alt: false,
+        });
+        if let Some(ray) = self.cursor_ray(position, scale) {
+            cx.emit(ViewportAction::PanStart(ray));
+        }
+    }
+
+    /// Sets the pan rate from the distance to the grabbed point: what one
+    /// pixel of cursor motion spans out there, which also holds for an
+    /// orthographic view, where the two rays run parallel.
+    pub(crate) fn set_pan_distance(&mut self, distance: f32) {
+        let Some((position, scale)) = self.pan_start else {
+            return;
+        };
+        let next = point(position.x + px(1.0), position.y);
+        if let (Some(a), Some(b)) = (
+            self.cursor_ray(position, scale),
+            self.cursor_ray(next, scale),
+        ) {
+            let studs_per_pixel = a.at(distance).distance(b.at(distance));
+            self.pump
+                .input(CameraInput::PanButton(Some(studs_per_pixel)));
+        }
+    }
+
     /// Ends the look however it ended, button up inside or outside the panel,
     /// lost focus, window deactivated, because each of those otherwise leaves
     /// the cursor hidden with the camera still turning.
@@ -824,7 +880,9 @@ impl WorkspaceView {
         self.lock.release();
         self.cursor = None;
         self.looking = false;
+        self.pan_start = None;
         self.pump.input(CameraInput::LookButton(false));
+        self.pump.input(CameraInput::PanButton(None));
     }
 
     /// Reports the motion since the last move. Whether it turns the view is the
@@ -1209,6 +1267,21 @@ impl Render for WorkspaceView {
                         view.end_drag(window, cx);
                     }
                 }),
+            )
+            .on_mouse_down(
+                MouseButton::Middle,
+                cx.listener(|view, event: &MouseDownEvent, window, cx| {
+                    view.note_input();
+                    view.begin_pan(event.position, window.scale_factor(), window, cx);
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Middle,
+                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_look()),
+            )
+            .on_mouse_up_out(
+                MouseButton::Middle,
+                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_look()),
             )
             .on_mouse_down(
                 MouseButton::Right,

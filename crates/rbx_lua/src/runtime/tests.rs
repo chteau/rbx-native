@@ -657,3 +657,22 @@ fn loadstring_and_function_environments_work() {
     );
     assert_eq!(printed, ["2", "Workspace", "function function true"]);
 }
+
+#[test]
+fn an_instance_with_no_parent_is_alive_but_not_under_game() {
+    let mut dom = WeakDom::new();
+    dom.new_instance("Workspace", "Workspace", None);
+    let mut runtime = Runtime::new(dom, ReflectionDatabase::embedded()).unwrap();
+    let output = runtime
+        .run(
+            "local before = #game:GetChildren() \
+             local removed = Instance.new('Part', workspace) removed.Name = 'Removed' removed:Remove() \
+             local nilled = Instance.new('Part', workspace) nilled.Name = 'Nilled' nilled.Parent = nil \
+             local fresh = Instance.new('Part') fresh.Name = 'Fresh' \
+             local copy = removed:Clone() copy.Name = 'Copy' \
+             print(#game:GetChildren() == before, game:FindFirstChild('Removed'), removed.Name, removed.Parent) \
+             fresh.Parent = workspace print(workspace:FindFirstChild('Fresh'))",
+        )
+        .unwrap();
+    assert_eq!(output.lines(), ["true nil Removed nil", "Fresh"]);
+}

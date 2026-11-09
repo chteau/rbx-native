@@ -82,6 +82,10 @@ impl KeyCheck {
     }
 
     /// A stand-in secret for a capture, so the field shows its dots.
+    pub(super) fn has_secret(&self) -> bool {
+        !self.secret.is_empty()
+    }
+
     pub(super) fn set_fixture_secret(&mut self) {
         self.secret = "x".repeat(964);
     }
