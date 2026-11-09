@@ -23,6 +23,7 @@ pub mod pivot;
 pub mod plugin;
 mod printed;
 mod property;
+pub use property::clock;
 mod runtime;
 pub mod test_runner;
 

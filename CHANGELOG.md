@@ -2,7 +2,7 @@
 
 ## 2026-11-09
 
-- **`Lighting.ClockTime` works.** It reads from `TimeOfDay` like it does in Studio instead of printing 0, and setting either one updates both.
+- **`Lighting.ClockTime` works.** It reads from `TimeOfDay` like it does in Studio instead of printing 0, and setting either one updates both. The Properties panel row follows it too.
 
 ## 2026-11-05
 

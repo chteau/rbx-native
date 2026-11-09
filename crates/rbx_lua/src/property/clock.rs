@@ -46,8 +46,7 @@ pub(super) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
     let mut dom = ctx.dom_mut();
     let writes = [
         ("TimeOfDay", Variant::String(spelled(seconds))),
-        // Stored too: the renderer reads it first, and `Changed` fires per
-        // property written.
+        // Stored too: the renderer reads it first.
         ("ClockTime", Variant::Float32(hours(seconds))),
     ];
     for (key, variant) in writes {
@@ -55,6 +54,17 @@ pub(super) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
             .map_err(|error| mlua::Error::runtime(error.to_string()))?;
     }
     Ok(true)
+}
+
+/// What a `TimeOfDay` string reads as in hours, or `None` where Studio
+/// refuses the string.
+pub fn hours_of(text: &str) -> Option<f32> {
+    seconds_of(text).ok().map(hours)
+}
+
+/// The `TimeOfDay` string a `ClockTime` of `hours` comes out as.
+pub fn time_of_day(hours: f64) -> String {
+    spelled(seconds_from_hours(hours))
 }
 
 fn hours(seconds: i64) -> f32 {
