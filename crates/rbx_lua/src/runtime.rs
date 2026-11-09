@@ -6,6 +6,7 @@ mod globals;
 mod host;
 mod report;
 mod resume;
+mod selection;
 #[cfg(test)]
 mod tests;
 
@@ -126,6 +127,7 @@ impl Runtime {
         lua.globals()
             .set("printidentity", globals::printidentity(&lua, &ctx, 4)?)?;
         engine::install(&lua, Engine::new(ctx, host.clone()))?;
+        lua.set_app_data(selection::Selection::default());
         host::install_require(&lua)?;
         // Globals must be installed first: sandboxing freezes them, so no script
         // can change a built-in under another; what a command-bar run assigns
@@ -140,6 +142,16 @@ impl Runtime {
             host,
             budget: Duration::from_secs(10),
         })
+    }
+
+    /// What `Selection:Get` answers until a run sets its own.
+    pub fn set_selection(&mut self, refs: Vec<rbx_dom::Ref>) {
+        selection::load(&self.lua, refs);
+    }
+
+    /// The selection a run set since the last call, if it set one.
+    pub fn take_selection(&mut self) -> Option<Vec<rbx_dom::Ref>> {
+        selection::take(&self.lua)
     }
 
     /// Replaces the clock timers and `time()` read: the time since the
