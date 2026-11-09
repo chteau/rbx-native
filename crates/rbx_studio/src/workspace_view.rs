@@ -386,6 +386,9 @@ pub(crate) struct WorkspaceView {
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
     pending_grab: Option<Ray>,
+    /// The Select tool's press on the selection: if the button comes up
+    /// without the part having moved, it was a click and is resolved as one.
+    click_on_release: Option<Ray>,
     /// A Properties `Ref` row is waiting for its target (see
     /// `shell::ref_pick`): a press only picks, and the cursor says so.
     ref_picking: bool,
@@ -557,6 +560,7 @@ impl WorkspaceView {
             terrain_dial_x: None,
             terrain_modifiers: Modifiers::default(),
             pending_grab: None,
+            click_on_release: None,
             ref_picking: false,
             joint_markers: (Vec::new(), None),
             measure: None,

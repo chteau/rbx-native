@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **Select drags.** Pressing a part with the Select tool picks it up and moves it, even if it wasn't selected. Letting go without moving is still a click.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox
