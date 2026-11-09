@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **Home template clicks.** Clicking a template a few times fast makes one place instead of one per click.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox
