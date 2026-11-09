@@ -37,6 +37,10 @@ pub enum CameraInput {
     /// The look button (the right mouse button) going down or up. Mouse motion
     /// only turns the view while it is held, as in Studio.
     LookButton(bool),
+    /// The pan button (the middle mouse button): while it is `Some`, mouse
+    /// motion slides the camera by that many studs per pixel of motion, the
+    /// way the point grabbed under the cursor would follow it.
+    PanButton(Option<f32>),
     /// Relative mouse motion in pixels, `dy` growing downward like every
     /// windowing system reports it.
     MouseLook {
@@ -68,6 +72,7 @@ const MOVEMENT_KEYS: [CameraKey; 6] = [
 pub(crate) struct Input {
     keys: Vec<CameraKey>,
     look_button: bool,
+    pan: Option<f32>,
     mouse_delta: (f32, f32),
     wheel_notches: f32,
 }
@@ -77,6 +82,7 @@ impl Input {
         match event {
             CameraInput::Key { key, pressed } => self.set_key(key, pressed),
             CameraInput::LookButton(down) => self.look_button = down,
+            CameraInput::PanButton(studs_per_pixel) => self.pan = studs_per_pixel,
             CameraInput::MouseLook { dx, dy } => {
                 self.mouse_delta.0 += dx;
                 self.mouse_delta.1 += dy;
@@ -97,6 +103,10 @@ impl Input {
         std::mem::take(&mut self.mouse_delta)
     }
 
+    pub(crate) fn pan_studs_per_pixel(&self) -> Option<f32> {
+        self.pan
+    }
+
     pub(crate) fn take_wheel_notches(&mut self) -> f32 {
         std::mem::take(&mut self.wheel_notches)
     }
@@ -104,7 +114,9 @@ impl Input {
     /// The trigger that ends the automatic orbit for good: the look button or
     /// any movement key, the instant either first appears.
     pub(crate) fn requests_free_flight(&self) -> bool {
-        self.look_button || MOVEMENT_KEYS.iter().any(|key| self.key_held(*key))
+        self.look_button
+            || self.pan.is_some()
+            || MOVEMENT_KEYS.iter().any(|key| self.key_held(*key))
     }
 
     pub(crate) fn slow_down(&self) -> bool {

@@ -10,6 +10,7 @@ use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use crate::sober_config::SoberConfigOverlay;
 
 mod client_log;
+mod update;
 pub use client_log::{fatal_treatment, ClientWatch};
 
 /// Everything outside `A-Z a-z 0-9 - _ . ~` is escaped.

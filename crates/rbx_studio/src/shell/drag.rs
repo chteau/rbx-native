@@ -53,6 +53,7 @@ impl Shell {
                 locked,
             } => self.pick_in_viewport(*ray, *cycling, *extend, *held, *locked, cx),
             ViewportAction::Hover { ray, alt } => self.hover_in_viewport(*ray, *alt, cx),
+            ViewportAction::PanStart(ray) => self.pan_from(*ray, cx),
             ViewportAction::Scrolled(scroll) => self.scroll_canvas(scroll, cx),
             ViewportAction::Moved {
                 moves,
@@ -82,6 +83,19 @@ impl Shell {
                 self.snap_fields.focus(*kind, window, cx);
             }
             ViewportAction::Tool(action) => self.transform_action(*action, cx),
+        }
+    }
+
+    /// Tells the view how far away the point a pan just grabbed is.
+    fn pan_from(&mut self, ray: Ray, cx: &mut Context<Self>) {
+        let meshes = self.viewport.read(cx).meshes().clone();
+        let distance = pick::parts_along(&self.dom, &self.database, &meshes, ray)
+            .first()
+            .and_then(|&part| pick::model_of(&self.dom, part))
+            .and_then(|model| pick::ray_hits_box(ray, model));
+        if let Some(distance) = distance {
+            self.viewport
+                .update(cx, |view, _| view.set_pan_distance(distance));
         }
     }
 
@@ -234,21 +248,23 @@ impl Shell {
                 (locked || !ribbon::is_locked(&self.dom, hit)) && !self.layer_locked(hit)
             })
             .collect();
+        let carries = held && self.viewport.read(cx).picks_up();
         if held {
             let posed = self.pose_in();
             let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());
             let covered = selection::covers(&outlined, hits.first().copied());
             // The grab holds the part by the surface under this press, found
             // here and now against the real geometry.
-            let grid = self.viewport.read(cx).hover_grid();
-            let surface = covered
-                .then(|| hits.first())
-                .flatten()
-                .and_then(|&part| PartSurface::read(&self.dom, &self.database, &meshes, part))
-                .and_then(|part| target::under(&part, ray, grid));
+            let surface = if covered {
+                self.surface_under(hits.first().copied(), ray, &meshes, cx)
+            } else {
+                None
+            };
             self.pose_out(posed);
             self.viewport.update(cx, |viewport, cx| match covered {
                 true => viewport.confirm_grab(surface, cx),
+                // Answered below, once the pick has landed.
+                false if carries => {}
                 false => viewport.refuse_grab(),
             });
             if covered {
@@ -265,6 +281,29 @@ impl Shell {
             (None, true) => {}
             (None, false) => self.deselect(cx),
         }
+        if carries {
+            let posed = self.pose_in();
+            let surface = self.surface_under(hits.first().copied(), ray, &meshes, cx);
+            self.pose_out(posed);
+            self.viewport.update(cx, |viewport, cx| match picked {
+                Some(_) => viewport.carry_pick(surface, cx),
+                None => viewport.refuse_grab(),
+            });
+        }
+    }
+
+    /// The frame under a press and where the press met it, against the real
+    /// geometry. The caller poses the rig first.
+    fn surface_under(
+        &self,
+        hit: Option<Ref>,
+        ray: Ray,
+        meshes: &pick::Meshes,
+        cx: &mut Context<Self>,
+    ) -> Option<(crate::dragger::surface::SurfaceFrame, Vec3)> {
+        let grid = self.viewport.read(cx).hover_grid();
+        let part = PartSurface::read(&self.dom, &self.database, meshes, hit?)?;
+        target::under(&part, ray, grid)
     }
 
     /// One step of a drag, whether it carries one selected part or a whole
