@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sky.svg - tile 28 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>sky</title>
+  <rect x="0" y="0" width="16" height="16" fill="#63AEF5"/>
+  <g fill="#A6B2C0">
+    <ellipse cx="5.5" cy="11" rx="4" ry="2.2"/>
+    <ellipse cx="9" cy="9.5" rx="3.4" ry="2"/>
+  </g>
+</svg>

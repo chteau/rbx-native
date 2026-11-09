@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- local-script.svg - tile 18 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>local-script</title>
+  <path d="M4,2 L10.5,2 L13,4.5 L13,14 L4,14 Z" fill="#4ACE6B"/>
+  <path d="M10.5,2 L10.5,4.5 L13,4.5 Z" fill="#2C9A4B"/>
+  <g fill="none" stroke="#2C9A4B" stroke-width="1" stroke-linecap="round">
+    <line x1="5.5" y1="8" x2="11" y2="8"/>
+    <line x1="5.5" y1="10.5" x2="9.5" y2="10.5"/>
+  </g>
+  <g transform="translate(8.5,6.5) scale(0.34)">
+    <circle cx="8" cy="4.2" r="2.4" fill="#1E242B"/>
+    <path d="M4.5,14 C4.5,9.5 11.5,9.5 11.5,14 Z" fill="#1E242B"/>
+  </g>
+</svg>
