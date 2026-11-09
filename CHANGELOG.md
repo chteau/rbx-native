@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-09
+
+- **`Lighting.ClockTime` works.** It reads from `TimeOfDay` like it does in Studio instead of printing 0, and setting either one updates both.
+
 ## 2026-11-05
 
 - **Roséline for Play.** Play now also runs in Roséline (the macOS Roblox

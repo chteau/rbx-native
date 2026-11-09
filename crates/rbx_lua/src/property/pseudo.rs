@@ -76,6 +76,7 @@ fn write_cframe(ctx: &Ctx, referent: Ref, frame: CFrameData) -> Result<()> {
 /// the caller falls back to the generic reflected-property path.
 pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Option<Value>> {
     match name {
+        "ClockTime" => super::clock::get(ctx, referent),
         "Position" => {
             let Some(frame) = cframe(ctx, referent)? else {
                 return Ok(None);
@@ -162,6 +163,7 @@ fn brick_color_expected(value: &Value) -> mlua::Error {
 /// so the caller falls back to the generic reflected-property path.
 pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
     match name {
+        "ClockTime" | "TimeOfDay" => super::clock::set(ctx, referent, name, value),
         // Unassigning a model's `PrimaryPart` resets its pivot.
         "PrimaryPart" if value.is_nil() => {
             let mut dom = ctx.dom_mut();
