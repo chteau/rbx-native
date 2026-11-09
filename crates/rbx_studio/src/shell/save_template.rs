@@ -54,7 +54,11 @@ impl Shell {
             }
         })
         .detach();
-        state.update(cx, |state, cx| state.focus(window, cx));
+        state.update(cx, |state, cx| {
+            state.focus(window, cx);
+            // The place's name is only a suggestion: typing replaces it.
+            state.select_all(window, cx);
+        });
         self.save_template.field = Some(state);
         self.save_template.error = None;
         self.save_template.busy = false;

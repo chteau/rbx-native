@@ -104,6 +104,9 @@ pub(super) enum Dialog {
 
 pub(crate) struct HomeWindow {
     pub(super) boot: Boot,
+    /// A place is on its way into the editor: more clicks must not make
+    /// more copies of it.
+    pub(super) opening: bool,
     pub(super) page: Page,
     pub(super) key: KeyState,
     pub(super) games: Games,
@@ -226,6 +229,7 @@ impl HomeWindow {
             .is_some_and(|boot| boot.settings.recent_icons);
         let mut this = HomeWindow {
             boot,
+            opening: false,
             page: match std::env::var(PAGE_VARIABLE).as_deref() {
                 Ok("recent") => Page::Recent,
                 Ok("games") => Page::MyGames,

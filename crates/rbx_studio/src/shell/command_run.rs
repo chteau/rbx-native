@@ -131,6 +131,7 @@ impl Shell {
             }
         }
         if let Some(runtime) = self.command_run.runtime.as_mut() {
+            runtime.set_selection(self.selection.all().to_vec());
             start(runtime, source);
         }
         if let Some(wait) = self.command_step(cx) {
@@ -182,8 +183,13 @@ impl Shell {
             self.command_run.undo = Some(RunUndo::pending(self.history_snapshot(), revision));
         }
 
+        let selected = self.selection.all().to_vec();
         let runtime = self.command_run.runtime.as_mut()?;
+        runtime.set_selection(selected);
         let step = runtime.resume_in(&mut self.dom);
+        if let Some(selection) = runtime.take_selection() {
+            self.reselect(selection, cx);
+        }
 
         let source = self.command_run.source.clone();
         for (kind, range) in stream::segments(step.output.kinds()) {
