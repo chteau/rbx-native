@@ -85,6 +85,11 @@ fn spawn(command: &mut Command, opts: &RunOpts) -> RunResult {
                 .stdin(ProcessStdio::null())
                 .stdout(ProcessStdio::piped())
                 .stderr(ProcessStdio::piped());
+            // Captured output: no console window of its own when the editor
+            // (a GUI program on Windows) runs it. The inherited modes below
+            // share the terminal `rbxstudio loren` was started from.
+            #[cfg(windows)]
+            std::os::windows::process::CommandExt::creation_flags(command, 0x0800_0000);
         }
         // `output()` pipes whatever is not set explicitly; a shared terminal has to be asked for.
         Stdio::Inherit => {

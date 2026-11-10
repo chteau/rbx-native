@@ -17,6 +17,10 @@ mod wire;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// `CREATE_NO_WINDOW` from `winbase.h`.
+#[cfg(windows)]
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread;
@@ -82,6 +86,10 @@ pub(crate) fn start(root: &Path) -> Result<Client, String> {
     if let Some(documentation) = api.documentation {
         command.arg(format!("--docs={}", documentation.display()));
     }
+    // The editor is a GUI program on Windows: without this the console
+    // program would open a console window of its own.
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
     let client = Client::spawn(command).map_err(|error| match error.kind() {
         std::io::ErrorKind::NotFound => {
             format!("luau-lsp was not found on PATH (set {BINARY_VARIABLE} to its path)")

@@ -106,6 +106,9 @@ impl TunnelProvider {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         end_with_parent(&mut command);
+        // No console window of its own next to the (GUI) editor.
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
         let mut child = command.spawn().map_err(TunnelError::Spawn)?;
 
         let (tx, rx) = mpsc::channel::<String>();

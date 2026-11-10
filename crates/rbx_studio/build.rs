@@ -72,9 +72,82 @@ fn bundling() -> bool {
     env::var(BUNDLE_VARIABLE).map_or(true, |value| value != "0")
 }
 
+/// Gives `rbxstudio.exe` its icon (Explorer, taskbar, Alt+Tab) on MSVC
+/// targets: `windows/rbxstudio.ico` turned into a compiled resource file,
+/// which `link.exe` takes as an input like an object file. Written by hand
+/// so the build needs neither `rc.exe` nor another crate.
+fn windows_icon() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows")
+        || env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc")
+    {
+        return;
+    }
+    let source = "windows/rbxstudio.ico";
+    println!("cargo:rerun-if-changed={source}");
+    let ico = fs::read(source).expect("windows/rbxstudio.ico is in the tree");
+    let res = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR")).join("rbxstudio.res");
+    fs::write(&res, icon_res(&ico)).expect("OUT_DIR is writable");
+    println!("cargo:rustc-link-arg-bin=rbxstudio={}", res.display());
+}
+
+/// The `.res` for one icon group (`ICON 1`) holding every image of `ico`.
+fn icon_res(ico: &[u8]) -> Vec<u8> {
+    const RT_ICON: u16 = 3;
+    const RT_GROUP_ICON: u16 = 14;
+    let u16_at = |at: usize| u16::from_le_bytes([ico[at], ico[at + 1]]);
+    let u32_at = |at: usize| u32::from_le_bytes(ico[at..at + 4].try_into().unwrap());
+    assert_eq!(
+        (u16_at(0), u16_at(2)),
+        (0, 1),
+        "rbxstudio.ico is not an .ico"
+    );
+    let count = u16_at(4);
+
+    let mut out = Vec::new();
+    // A `.res` file starts with an empty entry.
+    entry(&mut out, 0, 0, 0, &[]);
+    let mut group = Vec::new();
+    group.extend_from_slice(&[0, 0, 1, 0]);
+    group.extend_from_slice(&count.to_le_bytes());
+    for index in 0..count {
+        let at = 6 + 16 * usize::from(index);
+        let size = u32_at(at + 8) as usize;
+        let offset = u32_at(at + 12) as usize;
+        let id = index + 1;
+        entry(&mut out, RT_ICON, id, 0x1010, &ico[offset..offset + size]);
+        // GRPICONDIRENTRY: the ICONDIRENTRY's first 12 bytes, then the id.
+        group.extend_from_slice(&ico[at..at + 12]);
+        group.extend_from_slice(&id.to_le_bytes());
+    }
+    entry(&mut out, RT_GROUP_ICON, 1, 0x1030, &group);
+    out
+}
+
+/// One `RESOURCEHEADER` with a numeric type and name, then `data`, padded
+/// to 4 bytes.
+fn entry(out: &mut Vec<u8>, kind: u16, name: u16, flags: u16, data: &[u8]) {
+    let language: u16 = if kind == 0 { 0 } else { 0x0409 };
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(&32u32.to_le_bytes());
+    out.extend_from_slice(&[0xFF, 0xFF]);
+    out.extend_from_slice(&kind.to_le_bytes());
+    out.extend_from_slice(&[0xFF, 0xFF]);
+    out.extend_from_slice(&name.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&flags.to_le_bytes());
+    out.extend_from_slice(&language.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(data);
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed={BUNDLE_VARIABLE}");
+    windows_icon();
     cloudflared();
     slirp4netns();
     println!("cargo:rerun-if-env-changed={LOCAL_VARIABLE}");
