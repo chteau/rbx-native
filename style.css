@@ -59,6 +59,8 @@ code { font-size: .87em; }
 .nav-links { display: flex; gap: clamp(14px, 2.4vw, 32px); font-size: 14px; }
 .nav-links a { text-decoration: none; color: var(--body); transition: color .15s; }
 .nav-links a:hover { color: var(--white); }
+.nav-dc { display: inline-flex; align-items: center; gap: 7px; }
+.dc { fill: currentColor; flex: none; }
 
 /* Hero. The mark is the picture. */
 .hero { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); align-items: center; gap: clamp(24px, 4vw, 64px); max-width: 1240px; margin: 0 auto; padding: 112px var(--gutter) 72px; }
@@ -170,7 +172,9 @@ footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gutter) 36px; }
 }
 
 @media (max-width: 520px) {
-  .nav-links a:nth-child(3) { display: none; }
+  .home .nav-links a:nth-child(1), .home .nav-links a:nth-child(3) { display: none; }
+  .nav-links a { white-space: nowrap; }
+  .nav-dc span { display: none; }
   .foot-links span { margin-left: 0; }
 }
 
