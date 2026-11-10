@@ -1,0 +1,9 @@
+# Link the MSVC C runtime statically on Windows. Without this, rbxstudio.exe
+# imports VCRUNTIME140.dll, VCRUNTIME140_1.dll and MSVCP140.dll, which a clean
+# Windows install doesn't have: the exe exits with STATUS_DLL_NOT_FOUND
+# (0xC0000135) unless the user installs the Visual C++ Redistributable first.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
