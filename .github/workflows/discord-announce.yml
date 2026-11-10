@@ -1,0 +1,47 @@
+# Posts an announcement to the Discord #announcements channel. Run it from the
+# Actions tab (works from the GitHub mobile app too).
+# Needs the DISCORD_ANNOUNCE_WEBHOOK repo secret.
+name: Discord announcement
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: Title
+        required: true
+      message:
+        description: Text (Discord markdown, use \n for new lines)
+        required: true
+      link:
+        description: Optional link for a button
+        required: false
+      ping:
+        description: Ping
+        type: choice
+        options: [nobody, Release ping, everyone]
+        default: nobody
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK }}
+          TITLE: ${{ inputs.title }}
+          MESSAGE: ${{ inputs.message }}
+          LINK: ${{ inputs.link }}
+          PING: ${{ inputs.ping }}
+          ROLE: "1569674071556366366" # Release ping
+        run: |
+          jq -n --arg title "$TITLE" --arg msg "$MESSAGE" --arg link "$LINK" --arg ping "$PING" --arg role "$ROLE" '{
+            username: "RbxNative",
+            content: (if $ping == "everyone" then "@everyone" elif $ping == "Release ping" then "<@&\($role)>" else null end),
+            allowed_mentions: (if $ping == "everyone" then { parse: ["everyone"] } else { roles: (if $ping == "Release ping" then [$role] else [] end) } end),
+            embeds: [{ color: 7110619, title: $title, description: ($msg | gsub("\\\\n"; "\n")), timestamp: (now | todate) }],
+            components: (if $link == "" then [] else [{ type: 1, components: [{ type: 2, style: 5, label: "Open", url: $link }] }] end)
+          }' > payload.json
+          curl -fsS -H "Content-Type: application/json" -d @payload.json "$WEBHOOK?wait=true&with_components=true" -o /dev/null
