@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playtesting - RbxNative docs</title>
+<meta name="description" content="Hit Play and the game runs embedded in the editor.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html" class="on" aria-current="page">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Playtesting</h1>
+<p class="sub">Hit Play and the game runs embedded in the editor.</p>
+<p class="lead">Roblox's client doesn't run natively on Linux, so Play goes through <a href="https://sober.vinegarhq.org">Sober</a> or Roséline. Install one of them separately.</p>
+<h2>Setup</h2>
+<pre><code>flatpak install flathub org.vinegarhq.Sober</code></pre>
+<p>Roséline works too, its app id is <code>net.buwryy.Roseline</code>. You also need to be signed in to Roblox, from the first-run setup or Settings, Account.</p>
+<h2>Which client runs</h2>
+<ul>
+<li>Sober goes first when it's installed.</li>
+<li>No Sober, Play uses Roséline.</li>
+<li>If Sober says it can't join, for example while it's waiting on an update for a new Roblox version, the test opens in Roséline instead when you have it.</li>
+</ul>
+<p>Before each Play the editor checks whether your client has a newer build and installs it. You'll see "Updating Sober…" on the button and a line in Output.</p>
+<h2>Good to know</h2>
+<ul>
+<li>In Roséline, Roblox's own menus stay the desktop ones. Output says so.</li>
+<li>The Flatpak build of RbxNative leaves out the network simulator, controller emulator and Sober device simulation.</li>
+</ul>
+<div class="pager"><a href="open-cloud.html"><small>Previous</small>Roblox key</a><a class="r" href="team-create.html"><small>Next</small>Team Create</a></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

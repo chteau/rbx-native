@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- module-script.svg - tile 76 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>module-script</title>
+  <g transform="translate(0,0) scale(0.7)">
+    <path d="M4,2 L10.5,2 L13,4.5 L13,14 L4,14 Z" fill="#4ACE6B"/>
+    <path d="M10.5,2 L10.5,4.5 L13,4.5 Z" fill="#2C9A4B"/>
+    <g fill="none" stroke="#2C9A4B" stroke-width="1" stroke-linecap="round">
+      <line x1="5.5" y1="8" x2="11" y2="8"/>
+      <line x1="5.5" y1="10.5" x2="9.5" y2="10.5"/>
+    </g>
+  </g>
+  <g transform="translate(7,7) scale(0.55)">
+    <path d="M8,1.5 L14,5 L14,11.5 L8,15 L2,11.5 L2,5 Z" fill="#A6B2C0"/>
+    <path d="M8,1.5 L14,5 L8,8.5 L2,5 Z" fill="#7A8794"/>
+  </g>
+</svg>

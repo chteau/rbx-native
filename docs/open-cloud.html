@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roblox key - RbxNative docs</title>
+<meta name="description" content="Optional. Only for the stuff Roblox requires auth for.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html" class="on" aria-current="page">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Roblox key</h1>
+<p class="sub">Optional. Only for the stuff Roblox requires auth for.</p>
+<p class="lead">Most of RbxNative works without a Roblox account. A key is for publishing, My Games, version history, DataStores, and downloading plugins from the store.</p>
+<h2>Making a key</h2>
+<ol>
+<li>Sign in to the <a href="https://create.roblox.com/dashboard">Creator Dashboard</a> and open API Keys, under Open Cloud.</li>
+<li>Create a key and give it only the scopes you need. The setup wizard tells you which ones it wants, and a feature missing one names it in its error.</li>
+<li>If the dashboard lets you lock it to specific experiences or IPs, do it. Less damage if it ever leaks.</li>
+<li>Copy it, Roblox only shows it once.</li>
+</ol>
+<h2>Adding it</h2>
+<p>Paste it in the first-run setup or later under Home, Manage key. It goes in your OS keyring.</p>
+<p>For scripts and CI, <code>rbxcloud</code> and the editor also read these, in this order:</p>
+<ol>
+<li>The <code>RBX_API_KEY</code> environment variable.</li>
+<li>A plain text file at <code>~/.config/rbx-native/api_key</code>. Run <code>chmod 600</code> on it, the loader warns you if other users can read it.</li>
+</ol>
+<p>Never commit a key, in this repo or any other.</p>
+<h2>Signing in</h2>
+<p>Separate from the key. Play, Team Create and presence use a Roblox sign-in, done by code from the first-run setup or Settings, Account.</p>
+<div class="pager"><a href="install.html"><small>Previous</small>Install</a><a class="r" href="playtesting.html"><small>Next</small>Playtesting</a></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

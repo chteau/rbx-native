@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command line - RbxNative docs</title>
+<meta name="description" content="The tools that come with a source build.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html" class="on" aria-current="page">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Command line</h1>
+<p class="sub">The tools that come with a source build.</p>
+<p class="lead">The release tarball ships <code>rbxstudio</code>. <code>cargo build --release</code> from a <a href="install.html#source">source checkout</a> builds the rest.</p>
+<table>
+<tr><th>Binary</th><th>What it does</th></tr>
+<tr><td><code>rbxstudio</code></td><td>The editor. <code>rbxstudio [--select &lt;name-or-path&gt;] [--run &lt;script.luau&gt;] [--verbose] &lt;place&gt;</code>, <code>--help</code> for the rest</td></tr>
+<tr><td><code>rbxview</code></td><td>Standalone 3D viewer, <code>rbxview place.rbxl [--screenshot out.png]</code></td></tr>
+<tr><td><code>rbxdump</code></td><td>Prints a file's instance tree. <code>--roundtrip &lt;file&gt;</code> writes it back and diffs it</td></tr>
+<tr><td><code>rbxlua</code></td><td>Runs Luau against a place, or its TestEZ specs with <code>rbxlua test place.rbxl</code></td></tr>
+<tr><td><code>rbxaudit</code></td><td>Checks scripts for remote security problems, exits 1 on any High so it fits in CI</td></tr>
+<tr><td><code>rbxcloud</code></td><td>Small Open Cloud CLI: <code>whoami</code>, <code>list</code>, <code>download</code>, <code>asset</code></td></tr>
+</table>
+<h2 id="mcp">MCP server (beta)</h2>
+<p>Turn on Settings, Beta features, MCP server, then point your AI client at <code>rbxstudio --mcp</code>. It can read and edit the place the editor has open, through the same tools Roblox's Studio MCP server names.</p>
+<div class="pager"><a href="themes.html"><small>Previous</small>Themes</a><span></span></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

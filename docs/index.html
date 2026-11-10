@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started - RbxNative docs</title>
+<meta name="description" content="From nothing to a place open in the editor.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html" class="on" aria-current="page">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Getting started</h1>
+<p class="sub">From nothing to a place open in the editor.</p>
+<p class="lead">RbxNative is a Roblox editor that runs natively on Linux. It's pre-alpha, so here's the short way in and where to look when something breaks.</p>
+<h2>The quick version</h2>
+<ol>
+<li><a href="install.html">Install it</a>. Grab the tarball, unpack it, run <code>rbxstudio</code>.</li>
+<li>Go through the first-run setup. Signing in to Roblox and adding a key are both skippable.</li>
+<li>Pick a template on Home (Baseplate, Classic Baseplate, Flat Terrain) or open your own <code>.rbxl</code> or <code>.rbxlx</code>.</li>
+</ol>
+<p>You can also go straight to a file:</p>
+<pre><code>./rbxstudio path/to/place.rbxl</code></pre>
+<h2>What needs what</h2>
+<table>
+<tr><th>Feature</th><th>You need</th></tr>
+<tr><td>Open, edit, script, animate, save files</td><td>Nothing, no account</td></tr>
+<tr><td>Public meshes, textures and materials</td><td>Nothing, they download anonymously</td></tr>
+<tr><td>Publish, My Games, version history, DataStores</td><td><a href="open-cloud.html">An Open Cloud key</a></td></tr>
+<tr><td>Installing plugins from the store</td><td><a href="open-cloud.html">An Open Cloud key</a></td></tr>
+<tr><td>Playtesting</td><td><a href="playtesting.html">Sober or Roséline</a>, and a Roblox sign-in</td></tr>
+<tr><td>Team Create with people in Studio</td><td><a href="team-create.html">The Studio plugin</a> on their side, and a Roblox sign-in</td></tr>
+</table>
+<h2>When something breaks</h2>
+<p>It will. Run <code>rbxstudio --verbose</code> from a terminal, then <a href="https://github.com/chteau/rbx-native/issues">open an issue</a> with the output and what you were doing. The <a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">roadmap</a> lists what's done, what's faked and what's out of scope on purpose, worth a look before reporting something missing.</p>
+<div class="pager"><span></span><a class="r" href="install.html"><small>Next</small>Install</a></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

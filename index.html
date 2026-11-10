@@ -13,116 +13,155 @@
 <meta name="theme-color" content="#0a0a0b">
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<script>if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("motion");</script>
 </head>
 <body>
-<div class="window">
 
-<header class="topbar">
-  <a class="mark" href="#overview" aria-label="RbxNative"><img src="assets/logo.svg" alt="" width="24" height="17"></a>
-  <div class="title"><strong>RbxNative</strong><i></i><span>a Roblox editor for Linux</span></div>
-  <span class="stage">Pre-alpha</span>
-</header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <path id="half-a" d="M15.3 5.196L9.623 1.508L5.389 1.443Q4.405 1.428 4.138 2.374L0 17L5.453 17Q6.059 17 6.223 16.551L7.249 13.728L5.998 13.728Q5.91 13.728 5.966 13.536L8.34 5.357L14.177 9.174L15.3 5.196Z"/>
+  <path id="half-b" d="M23.8 0L18.989 0Q18.203 0 17.962 0.674L16.84 3.817L18.026 3.817Q18.147 3.817 18.091 4.009L15.589 12.606L9.526 8.596L8.404 12.574L13.504 16.006Q13.837 16.23 14.017 16.23L18.54 16.23Q19.25 16.23 19.502 15.332L23.8 0Z"/>
+  <symbol id="mark" viewBox="0 0 23.8 17"><use href="#half-a"/><use href="#half-b"/></symbol>
+</defs></svg>
 
-<nav class="menu">
-  <a id="menu-download" href="https://github.com/chteau/rbx-native/releases/latest">Download</a>
-  <a href="https://github.com/chteau/rbx-native">Source</a>
-  <a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a>
-  <a href="https://github.com/chteau/rbx-native/issues">Report a bug</a>
+<nav class="nav" id="nav">
+  <a class="brand" href="#top"><svg width="24" height="17" aria-hidden="true"><use href="#mark"/></svg>RbxNative</a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="docs/index.html">Docs</a>
+    <a href="docs/install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub<span id="stars"></span></a>
+  </div>
 </nav>
 
-<div class="panes">
-<main>
+<header class="hero" id="top">
+  <div class="toy"><canvas id="logo3d" aria-hidden="true"></canvas><span class="hint">go on, click it</span></div>
+  <div class="hero-text">
+    <h1>
+      <span class="line"><span>A Roblox</span></span>
+      <span class="line"><span>editor that</span></span>
+      <span class="line"><span>runs on Linux.</span></span>
+    </h1>
+    <div class="pitch">
+      <div>
+        <p class="lead">No Wine, no VM, it's a real native app written from scratch in Rust.</p>
+        <p>It's pre-alpha. It opens real places and you can build, script, animate and playtest in it, but plenty is still missing or approximated, so expect bugs.</p>
+      </div>
+      <div>
+        <p class="get"><a class="primary" id="download" href="https://github.com/chteau/rbx-native/releases/latest">Download for Linux</a> <a class="secondary" href="docs/index.html">Read the docs</a></p>
+        <p class="note" id="download-note">v0.1.0, unpack it and run rbxstudio. macOS and Windows releases are upcoming, Linux goes first.</p>
+      </div>
+    </div>
+  </div>
+</header>
 
-<section id="overview" class="intro">
-  <h1>A Roblox editor that runs on Linux.</h1>
-  <p class="lead">No Wine, no VM, it's a real native app written from scratch in Rust.</p>
-  <p>It's pre-alpha. It opens real places and you can build, script, animate and playtest in it, but plenty is still missing or approximated, so expect bugs.</p>
-  <p class="get"><a class="primary" id="download" href="https://github.com/chteau/rbx-native/releases/latest">Download for Linux</a> <a class="secondary" href="#install">Build it yourself</a></p>
-  <p class="note" id="download-note">v0.1.0, unpack it and run rbxstudio. macOS and Windows releases are upcoming, Linux goes first.</p>
-</section>
+<div class="band" aria-hidden="true"><div class="band-track">
+  <span>No Wine</span><svg><use href="#mark"/></svg><span>No VM</span><svg><use href="#mark"/></svg><span>From scratch in Rust</span><svg><use href="#mark"/></svg><span>Open source</span><svg><use href="#mark"/></svg><span>Linux first</span><svg><use href="#mark"/></svg>
+  <span>No Wine</span><svg><use href="#mark"/></svg><span>No VM</span><svg><use href="#mark"/></svg><span>From scratch in Rust</span><svg><use href="#mark"/></svg><span>Open source</span><svg><use href="#mark"/></svg><span>Linux first</span><svg><use href="#mark"/></svg>
+  <span>No Wine</span><svg><use href="#mark"/></svg><span>No VM</span><svg><use href="#mark"/></svg><span>From scratch in Rust</span><svg><use href="#mark"/></svg><span>Open source</span><svg><use href="#mark"/></svg><span>Linux first</span><svg><use href="#mark"/></svg>
+  <span>No Wine</span><svg><use href="#mark"/></svg><span>No VM</span><svg><use href="#mark"/></svg><span>From scratch in Rust</span><svg><use href="#mark"/></svg><span>Open source</span><svg><use href="#mark"/></svg><span>Linux first</span><svg><use href="#mark"/></svg>
+</div></div>
 
-<figure>
-  <img src="assets/editor.webp" width="1600" height="897" alt="The RbxNative editor with a small village open: Properties on the left, the 3D viewport in the middle, Explorer on the right.">
+<figure class="showcase" id="showcase">
+  <img src="assets/shot-viewport.webp" width="1600" height="566" alt="The RbxNative editor with a small village open: Properties on the left, the 3D viewport in the middle, Explorer on the right.">
   <figcaption>A test village. The whole thing came from one script pasted in the Command Bar.</figcaption>
 </figure>
 
-<details id="features" open>
-<summary><h2>What's in it</h2></summary>
-<dl>
-  <dt>Files</dt><dd>Opens and saves real places and models, binary and XML</dd>
-  <dt>Editor</dt><dd>Explorer, Properties, the ribbon, gizmos, docks you can drag around</dd>
-  <dt>Scripting</dt><dd>Script editor with <code>luau-lsp</code> (autocomplete, hover, go to definition, diagnostics), StyLua formatting and a debugger with breakpoints</dd>
-  <dt>Console</dt><dd>Command Bar, Output, Script Analysis</dd>
-  <dt>Animation</dt><dd>Animation Editor with joint gizmos</dd>
-  <dt>UI</dt><dd>UI Editor, and it can import from Figma</dd>
-  <dt>Terrain</dt><dd>Smooth terrain</dd>
-  <dt>Plugins</dt><dd>Most community plugins run. F3X and Archimedes both work</dd>
-  <dt>Play</dt><dd>Through <a href="https://sober.vinegarhq.org">Sober</a> or Roséline, embedded in the editor</dd>
-  <dt>Cloud</dt><dd>Publish, version history, DataStores and game settings through Open Cloud</dd>
-</dl>
-<figure>
-  <img src="assets/script.webp" loading="lazy" width="1600" height="897" alt="A Luau script open in the script editor.">
-  <figcaption>Script editor, same place. Every PR gets checked against real Studio before it lands.</figcaption>
-</figure>
-</details>
+<section class="block" id="features">
+  <h2 class="reveal"><span class="line"><span>What's in it</span></span></h2>
+  <dl class="rows">
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/folder.svg" alt="" width="20" height="20">Files</span></span></dt><dd>Opens and saves real places and models, binary and XML</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/model.svg" alt="" width="20" height="20">Editor</span></span></dt><dd>Explorer, Properties, the ribbon, gizmos, docks you can drag around</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/script.svg" alt="" width="20" height="20">Scripting</span></span></dt><dd>Script editor with <code>luau-lsp</code> (autocomplete, hover, go to definition, diagnostics), StyLua formatting and a debugger with breakpoints</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/module-script.svg" alt="" width="20" height="20">Console</span></span></dt><dd>Command Bar, Output, Script Analysis</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/animation.svg" alt="" width="20" height="20">Animation</span></span></dt><dd>Animation Editor with joint gizmos</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/screen-gui.svg" alt="" width="20" height="20">UI</span></span></dt><dd>UI Editor, and it can import from Figma</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/terrain.svg" alt="" width="20" height="20">Terrain</span></span></dt><dd>Smooth terrain</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/tool.svg" alt="" width="20" height="20">Plugins</span></span></dt><dd>Most community plugins run. F3X and Archimedes both work</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/spawn-location.svg" alt="" width="20" height="20">Play</span></span></dt><dd>Through <a href="https://sober.vinegarhq.org">Sober</a> or Roséline, embedded in the editor</dd></div>
+    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/replicated-storage.svg" alt="" width="20" height="20">Cloud</span></span></dt><dd>Publish, version history, DataStores and game settings through Open Cloud</dd></div>
+  </dl>
+</section>
 
-<details id="team-create" open>
-<summary><h2>Team Create</h2></summary>
-<p>Real Team Create isn't happening, that part belongs to Roblox. What exists instead is a Studio plugin that talks to RbxNative through a relay. Each side sees the other's camera, selection and open script, end-to-end encrypted. Live co-editing is a beta toggle in the plugin, off by default.</p>
-<p>RbxNative has its side built in, only people in Studio need the plugin. Get it on the <a href="https://create.roblox.com/store/asset/96675894010955">Creator Store</a>, or <a href="assets/TeamPresence.rbxmx" download>download TeamPresence.rbxmx</a>, drop it in Studio's plugins folder (Plugins tab, Plugins Folder) and restart Studio. Either way, allow the HTTP requests when it asks.</p>
-</details>
+<section class="pair">
+  <figure class="wipe reveal" data-drift="-40">
+    <img src="assets/shot-script.webp" loading="lazy" width="1600" height="566" alt="A Luau script open in the script editor.">
+    <figcaption>Script editor, same place. Every PR gets checked against real Studio before it lands.</figcaption>
+  </figure>
+  <figure class="wipe reveal" data-drift="40">
+    <img src="assets/shot-graph.webp" loading="lazy" width="1030" height="420" alt="A script shown as connected nodes in graph mode.">
+    <figcaption>Graph mode. Same script as nodes, the Luau source stays the real thing.</figcaption>
+  </figure>
+</section>
 
-<details id="install" open>
-<summary><h2>Install</h2></summary>
-<p>To build it yourself you need Rust 1.96 or newer from <a href="https://rustup.rs">rustup.rs</a>. First build takes a while, it's a big project.</p>
-<div class="bar"><span class="tag">bash</span><pre><code><span class="c"># Debian/Ubuntu</span>
+<section class="block split" id="team-create">
+  <div>
+    <h2 class="reveal"><span class="line"><span>Team Create</span></span></h2>
+    <div class="relay reveal" aria-hidden="true">
+      <span>Studio</span>
+      <i class="wire"><b></b><b></b><b></b><em>relay</em></i>
+      <span class="ours"><svg width="24" height="17"><use href="#mark"/></svg>RbxNative</span>
+    </div>
+  </div>
+  <div>
+    <p class="lead">Real Team Create isn't happening, that part belongs to Roblox. What exists instead is a Studio plugin that talks to RbxNative through a relay.</p>
+    <p>Each side sees the other's camera, selection and open script, end-to-end encrypted. Live co-editing is a beta toggle in the plugin, off by default.</p>
+    <p>RbxNative has its side built in, only people in Studio need the plugin. Get it on the <a href="https://create.roblox.com/store/asset/96675894010955">Creator Store</a>, or <a href="assets/TeamPresence.rbxmx" download>download TeamPresence.rbxmx</a>, drop it in Studio's plugins folder (Plugins tab, Plugins Folder) and restart Studio. Either way, allow the HTTP requests when it asks.</p>
+  </div>
+</section>
+
+<section class="block split" id="install">
+  <div>
+    <h2 class="reveal"><span class="line"><span>Install</span></span></h2>
+    <p>To build it yourself you need Rust 1.96 or newer from <a href="https://rustup.rs">rustup.rs</a>. First build takes a while, it's a big project.</p>
+    <p>X11 is the main target. Wayland works but without pointer lock. Play needs Sober or Roséline installed. Most things work without a Roblox account.</p>
+    <p><a href="docs/install.html">Full install guide</a>, <a href="docs/index.html">all the docs</a></p>
+  </div>
+  <pre class="wipe reveal"><code><span class="c"># Debian/Ubuntu</span>
 sudo apt install libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libfontconfig1-dev
 
 git clone https://github.com/chteau/rbx-native
 cd rbx-native
 cargo build --release -p rbx_studio --bin rbxstudio
-./target/release/rbxstudio</code></pre></div>
-<p>X11 is the main target. Wayland works but without pointer lock. Play needs Sober or Roséline installed. Most things work without a Roblox account.</p>
-</details>
+./target/release/rbxstudio</code></pre>
+</section>
 
-<details id="changes" open>
-<summary><h2>Latest changes</h2></summary>
-<ol class="output">
-  <li class="info">2026-11-09</li>
-  <li>Middle mouse pans the viewport now</li>
-  <li><code>Lighting.ClockTime</code> reads the right value instead of 0</li>
-  <li>Parts with no parent stay out of the Explorer and the saved file</li>
-  <li><code>Selection</code> works from the Command Bar</li>
-  <li>Select tool can drag parts</li>
-  <li>Play updates Sober first when it's out of date</li>
-</ol>
-<p><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Full changelog</a></p>
-</details>
-
-<details id="license" open>
-<summary><h2>License</h2></summary>
-<p>MIT. Fork it, ship it, sell it, do what you want. But MIT <strong>means</strong> credit: keep the copyright and license notice in anything that uses this code. <a href="https://github.com/chteau/rbx-native/blob/dev/LICENSE">Read it here</a>, it's short.</p>
-<p>AI coding tools get used a lot on this project, no point hiding it. Nothing lands without a human going through the code and testing it against real Studio.</p>
-</details>
-
-</main>
-
-<aside class="explorer" aria-label="On this page">
-  <div class="dock-tab">Explorer</div>
-  <ul class="tree">
-    <li><a href="#overview" class="selected"><img src="assets/icons/workspace.svg" alt="" width="16" height="16">Overview</a></li>
-    <li class="child"><a href="#features"><img src="assets/icons/folder.svg" alt="" width="16" height="16">What's in it</a></li>
-    <li class="child"><a href="#team-create"><img src="assets/icons/players.svg" alt="" width="16" height="16">Team Create</a></li>
-    <li class="child"><a href="#install"><img src="assets/icons/tool.svg" alt="" width="16" height="16">Install</a></li>
-    <li class="child"><a href="#changes"><img src="assets/icons/script.svg" alt="" width="16" height="16">Latest changes</a></li>
-    <li class="child"><a href="#license"><img src="assets/icons/configuration.svg" alt="" width="16" height="16">License</a></li>
+<section class="block split" id="changes">
+  <div>
+    <h2 class="reveal"><span class="line"><span>Latest changes</span></span></h2>
+    <p class="note">2026-11-09</p>
+    <p><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Full changelog</a></p>
+  </div>
+  <ul class="changes">
+    <li class="reveal">Middle mouse pans the viewport now</li>
+    <li class="reveal"><code>Lighting.ClockTime</code> reads the right value instead of 0</li>
+    <li class="reveal">Parts with no parent stay out of the Explorer and the saved file</li>
+    <li class="reveal"><code>Selection</code> works from the Command Bar</li>
+    <li class="reveal">Select tool can drag parts</li>
+    <li class="reveal">Play updates Sober first when it's out of date</li>
   </ul>
-</aside>
-</div>
+</section>
 
-<footer>Unofficial community project. Not affiliated with or endorsed by Roblox Corporation, "Roblox" is their trademark.</footer>
+<section class="credit" id="license">
+  <h2 class="reveal">
+    <span class="line"><span>MIT means</span></span>
+    <span class="line"><span>credit.</span></span>
+  </h2>
+  <div class="credit-text">
+    <p class="lead">Fork it, ship it, sell it, do what you want. But keep the copyright and license notice in anything that uses this code. <a href="https://github.com/chteau/rbx-native/blob/dev/LICENSE">Read it here</a>, it's short.</p>
+    <p>AI coding tools get used a lot on this project, no point hiding it. Nothing lands without a human going through the code and testing it against real Studio.</p>
+  </div>
+</section>
 
-</div>
+<footer>
+  <div class="foot-links">
+    <a href="https://github.com/chteau/rbx-native">Source</a>
+    <a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a>
+    <a href="https://github.com/chteau/rbx-native/issues">Report a bug</a>
+    <span>Unofficial community project. Not affiliated with or endorsed by Roblox Corporation, "Roblox" is their trademark.</span>
+  </div>
+</footer>
+
 <script src="main.js"></script>
+<script src="logo3d.js"></script>
 </body>
 </html>

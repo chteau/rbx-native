@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install - RbxNative docs</title>
+<meta name="description" content="Linux x86_64 for now. macOS and Windows releases are upcoming.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html" class="on" aria-current="page">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Install</h1>
+<p class="sub">Linux x86_64 for now. macOS and Windows releases are upcoming.</p>
+<h2 id="download">Download</h2>
+<p>The <a href="https://github.com/chteau/rbx-native/releases/latest">latest release</a> has a tarball, nothing to install system-wide.</p>
+<pre><code>curl -LO https://github.com/chteau/rbx-native/releases/download/v0.1.0/rbxstudio-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/chteau/rbx-native/releases/download/v0.1.0/SHA256SUMS
+sha256sum -c SHA256SUMS
+
+tar xzf rbxstudio-0.1.0-x86_64-unknown-linux-gnu.tar.gz
+cd rbxstudio-0.1.0-x86_64-unknown-linux-gnu
+./rbxstudio</code></pre>
+<p>X11 is the main target. Wayland works but the cursor doesn't get captured, so anything that needs pointer lock won't feel right.</p>
+<h2 id="updates">Updates</h2>
+<p>RbxNative updates itself. On launch it checks the latest GitHub release in the background, downloads a newer one, checks the minisign signature and the hash, and swaps it in for the next launch. Nothing blocks startup, and offline it just moves on.</p>
+<p>The switch and a Check now button are in Settings, Files &amp; recovery, Updates. It stays off when the install folder isn't writable, in a Flatpak, and in dev builds.</p>
+<h2 id="source">Build from source</h2>
+<p>You need Rust 1.96 or newer from <a href="https://rustup.rs">rustup.rs</a>. First build takes a while, it's a big project.</p>
+<pre><code># Debian/Ubuntu
+sudo apt install libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libfontconfig1-dev
+
+git clone https://github.com/chteau/rbx-native
+cd rbx-native
+cargo build --release -p rbx_studio --bin rbxstudio
+./target/release/rbxstudio</code></pre>
+<p>That package list comes from real setups, not a full audit. If your distro needs something else, open an issue or a PR. If a build fails deep in a dependency, check that <code>rustc -V</code> is the toolchain rustup installed and not an older one earlier in <code>PATH</code>.</p>
+<h2 id="flatpak">Flatpak</h2>
+<p>The Flatpak builds from source the way Flathub wants it. It isn't on Flathub yet, so for now you build it yourself, <a href="https://github.com/chteau/rbx-native/blob/dev/packaging/flatpak/README.md">the packaging readme</a> has the steps.</p>
+<p>Things that have to run programs on the host aren't in that build: the network simulator, the controller emulator and device simulation in Sober. The app says so where they'd be.</p>
+<div class="pager"><a href="index.html"><small>Previous</small>Getting started</a><a class="r" href="open-cloud.html"><small>Next</small>Roblox key</a></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

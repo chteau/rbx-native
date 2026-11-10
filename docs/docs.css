@@ -1,0 +1,42 @@
+/* Docs pages sit on top of ../style.css. */
+.docs { font-size: 15.5px; line-height: 26px; }
+.doc-wrap { display: grid; grid-template-columns: 200px minmax(0, 46rem); gap: clamp(32px, 6vw, 88px); justify-content: center; padding: 104px var(--gutter) 88px; }
+.doc-side { position: sticky; top: 92px; align-self: start; display: flex; flex-direction: column; font-size: 14px; line-height: 20px; }
+.doc-side span { margin: 18px 0 8px 10px; font-size: 12px; font-weight: 700; color: var(--dim); }
+.doc-side span:first-child { margin-top: 0; }
+.doc-side a { padding: 5px 10px; border-radius: 5px; color: var(--body); text-decoration: none; transition: background .15s, color .15s, transform .3s var(--out); }
+.doc-side a:hover { color: var(--white); transform: translateX(3px); }
+.doc-side a.on { background: #6c7fdb26; color: var(--white); font-weight: 600; box-shadow: inset 2px 0 0 var(--indigo); }
+article { min-width: 0; }
+.motion article { animation: page-in .55s var(--out) both; }
+@keyframes page-in { from { opacity: 0; transform: translateY(8px); } }
+article h1 { font-size: 36px; line-height: 1.12; letter-spacing: -.03em; margin: 0 0 8px; }
+.sub { color: var(--dim); margin-bottom: 28px; }
+article .lead { font-size: 17px; line-height: 27px; }
+article h2 { font-size: 21px; line-height: 28px; letter-spacing: -.015em; margin: 36px 0 10px; scroll-margin-top: 84px; }
+article p { max-width: none; }
+article ol, article ul { margin: 0 0 16px; padding-left: 22px; }
+article li { margin: 5px 0; }
+article li::marker { color: var(--dim); }
+article pre { position: relative; margin: 14px 0 18px; }
+article code { background: #ffffff12; padding: 1px 5px; border-radius: 4px; }
+article pre code { background: none; padding: 0; font-size: inherit; }
+.copy { position: absolute; top: 8px; right: 8px; font: 600 12px/16px Manrope, system-ui, sans-serif; color: var(--dim); background: var(--black); border: 1px solid var(--line); border-radius: 5px; padding: 3px 9px; cursor: pointer; transition: color .15s; }
+.copy:hover { color: var(--white); }
+.tbl { overflow-x: auto; margin: 12px 0 20px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 22px; }
+th, td { text-align: left; padding: 9px 14px 9px 0; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--dim); font-size: 12.5px; font-weight: 700; border-top: 0; }
+td { color: var(--white); }
+.pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-weight: 600; }
+.pager a { text-decoration: none; }
+.pager a.r { text-align: right; }
+.pager small { display: block; font-size: 12px; line-height: 18px; color: var(--dim); font-weight: 500; }
+@media (max-width: 860px) {
+  .doc-wrap { grid-template-columns: minmax(0, 1fr); padding-top: 84px; gap: 20px; }
+  .doc-side { position: static; flex-direction: row; flex-wrap: wrap; gap: 2px; }
+  .doc-side span { display: none; }
+  .doc-side a { padding: 4px 8px; font-size: 13px; }
+  .doc-side a[href^="http"] { display: none; }
+  .copy { display: none; }
+}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Themes - RbxNative docs</title>
+<meta name="description" content="Restyle the whole editor.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html" class="on" aria-current="page">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Themes</h1>
+<p class="sub">Restyle the whole editor.</p>
+<p class="lead">A theme can change the palette, sizes, the toolkit's widgets, the class icons and a few effects. Default, Light and High contrast are built in.</p>
+<h2>Installing one</h2>
+<p>Themes live in the config folder, one folder each:</p>
+<pre><code>~/.config/rbx-native/themes/&lt;id&gt;/
+~/.config/rbx-native/appearance.json    {"theme": "&lt;id&gt;"}</code></pre>
+<p>Put the folder in <code>themes/</code> and name it in <code>appearance.json</code>, <code>"default"</code> goes back to Default. The editor picks it up within a second, no restart.</p>
+<h2>Writing one</h2>
+<p>A theme only has to name what it changes, everything else comes from Default. The editor re-applies the active theme whenever one of its files is saved, so you can write it with the editor open. <a href="https://github.com/chteau/rbx-native/blob/dev/THEMES.md"><code>THEMES.md</code></a> has the folder layout, the manifest and every token.</p>
+<div class="pager"><a href="plugins.html"><small>Previous</small>Plugins</a><a class="r" href="command-line.html"><small>Next</small>Command line</a></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

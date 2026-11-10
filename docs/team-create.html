@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team Create - RbxNative docs</title>
+<meta name="description" content="Work next to people in Studio, through a plugin.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html" class="on" aria-current="page">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Team Create</h1>
+<p class="sub">Work next to people in Studio, through a plugin.</p>
+<p class="lead">Real Team Create isn't happening, that part belongs to Roblox. What exists is a Studio plugin that talks to RbxNative through a relay.</p>
+<h2>Setting it up</h2>
+<p>RbxNative has its side built in, only people in Studio need the plugin.</p>
+<ol>
+<li>Get it on the <a href="https://create.roblox.com/store/asset/96675894010955">Creator Store</a>, or <a href="../assets/TeamPresence.rbxmx" download>download TeamPresence.rbxmx</a>, drop it in Studio's plugins folder (Plugins tab, Plugins Folder) and restart Studio.</li>
+<li>Allow the HTTP requests when it asks.</li>
+<li>Everyone opens the same place. Each side needs to be signed in to Roblox.</li>
+</ol>
+<h2>What you get</h2>
+<p>Each side sees the other's camera, selection and open script. Presence is end-to-end encrypted with a key derived from the place, so the relay only ever sees ciphertext.</p>
+<h2>Live co-editing (beta)</h2>
+<p>Off by default. Turn on Beta Features, Live co-editing in RbxNative, and the Co-edit toggle in the plugin for people in Studio.</p>
+<p>It shares property changes, inserts, deletes, reparenting, renames and script text. Remote edits are their own undo steps, concurrent script edits merge with conflicts kept side by side, and someone joining late catches up from the relay's log.</p>
+<p>It's beta. Save your work somewhere that isn't only the live session.</p>
+<div class="pager"><a href="playtesting.html"><small>Previous</small>Playtesting</a><a class="r" href="plugins.html"><small>Next</small>Plugins</a></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

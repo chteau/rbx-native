@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugins - RbxNative docs</title>
+<meta name="description" content="Real Studio plugins, plus native ones.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="index.html">Docs</a>
+    <a href="install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html" class="on" aria-current="page">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a></aside>
+<article>
+<h1>Plugins</h1>
+<p class="sub">Real Studio plugins, plus native ones.</p>
+<p class="lead">RbxNative runs real Roblox Studio plugins, and its own native ones in Luau or WebAssembly. Most community plugins run, F3X and Archimedes both work.</p>
+<h2>Installing from the store</h2>
+<p>Open Manage Plugins, Popular plugins (also Plugins, Popular on the ribbon). It lists free Creator Store plugins verified to run here. Install downloads it and starts it right away, Uninstall stops it and deletes the file.</p>
+<p>The search finds any other free plugin, those just weren't tested. Downloads need your <a href="open-cloud.html">Open Cloud key</a>, Roblox refuses anonymous plugin downloads. Paid plugins are never offered.</p>
+<h2>Where they load from</h2>
+<ul>
+<li>RbxNative's own folder, <code>~/.config/rbx-native/plugins</code> (or <code>RBX_STUDIO_PLUGINS_DIR</code>).</li>
+<li>Studio's <code>Plugins</code> folder, including the one in a Vinegar prefix, unless you switch that off in Manage Plugins.</li>
+</ul>
+<p>A <code>.lua</code> or <code>.luau</code> file runs as one Script. A <code>.rbxm</code> or <code>.rbxmx</code> runs every enabled Script in it. Each plugin gets its own Luau VM, and the manager shows the last error that stopped one from loading.</p>
+<h2>Writing a native plugin</h2>
+<p>One folder per plugin in the plugins folder, with a <code>plugin.toml</code>. There are examples in <a href="https://github.com/chteau/rbx-native/tree/dev/examples/plugins"><code>examples/plugins</code></a>, and the full reference is in <a href="https://github.com/chteau/rbx-native/blob/dev/docs/plugins.md"><code>docs/plugins.md</code></a>.</p>
+<div class="pager"><a href="team-create.html"><small>Previous</small>Team Create</a><a class="r" href="themes.html"><small>Next</small>Themes</a></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>

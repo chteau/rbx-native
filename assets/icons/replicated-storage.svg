@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- replicated-storage.svg - tile 70 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>replicated-storage</title>
+  <ellipse cx="8" cy="4.5" rx="5" ry="2" fill="#3C7FC4"/>
+  <rect x="3" y="4.5" width="10" height="6.5" fill="#63AEF5"/>
+  <ellipse cx="8" cy="11" rx="5" ry="2" fill="#3C7FC4"/>
+  <path d="M8,0.5 L8,4 M6.2,2.4 L8,4.2 L9.8,2.4" fill="none" stroke="#1E242B" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
