@@ -167,6 +167,10 @@ footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gutter) 36px; }
   h1 { font-size: 38px; }
   .split > div:first-child { margin-bottom: 8px; }
   .nav-links a:nth-child(2) { display: none; }
+}
+
+@media (max-width: 520px) {
+  .nav-links a:nth-child(3) { display: none; }
   .foot-links span { margin-left: 0; }
 }
 
