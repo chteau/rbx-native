@@ -186,7 +186,7 @@ impl Shell {
             .into();
         self.retitle = true;
         if let Err(err) = crate::home::remember(crate::home::RecentPlace {
-            path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
+            path: dunce::canonicalize(path).unwrap_or(path.to_path_buf()),
             universe_id: None,
             place_id: None,
             name: None,

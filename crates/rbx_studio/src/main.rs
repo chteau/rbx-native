@@ -501,7 +501,7 @@ pub(crate) fn open_editor(
         }
     };
     if let Err(err) = home::remember(home::RecentPlace {
-        path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
+        path: dunce::canonicalize(path).unwrap_or(path.to_path_buf()),
         universe_id: None,
         place_id: None,
         name: None,

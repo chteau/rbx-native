@@ -159,7 +159,7 @@ fn read_links(path: &Path) -> Links {
 /// Paths are compared canonicalized: the editor records its file that way,
 /// Home records the download path as it built it.
 fn link_key(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or(path.to_path_buf())
+    dunce::canonicalize(path).unwrap_or(path.to_path_buf())
 }
 
 /// The Roblox place `path` is linked to, if any.

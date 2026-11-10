@@ -57,7 +57,7 @@ impl Recovery {
         Recovery {
             enabled,
             minutes: recovery::clamp_minutes(u64::from(minutes)),
-            place: std::fs::canonicalize(place).unwrap_or_else(|_| place.to_path_buf()),
+            place: dunce::canonicalize(place).unwrap_or_else(|_| place.to_path_buf()),
             copy: None,
             _lock: None,
             changed: false,
@@ -141,7 +141,7 @@ impl Shell {
         }
 
         let state = &mut self.recovery;
-        if std::fs::canonicalize(&folder).is_ok_and(|folder| state.place.starts_with(folder)) {
+        if dunce::canonicalize(&folder).is_ok_and(|folder| state.place.starts_with(folder)) {
             self.output.push_warning(
                 "This place is in the Auto-Recovery folder, so no recovery copies are written \
                  of it, and Ctrl+S saves it there. To keep working on it, use File › Save to File As… \

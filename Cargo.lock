@@ -7042,6 +7042,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "cpal",
+ "dunce",
  "flate2",
  "full_moon",
  "futures",

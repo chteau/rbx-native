@@ -67,7 +67,7 @@ pub(in crate::shell) fn upload_file(
 /// Stores the link, and moves the file to the top of Recent with it.
 pub(super) fn link(path: &Path, target: Target, name: Option<String>) -> Result<(), String> {
     home::remember(RecentPlace {
-        path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
+        path: dunce::canonicalize(path).unwrap_or(path.to_path_buf()),
         universe_id: Some(target.universe_id),
         place_id: Some(target.place_id),
         name,

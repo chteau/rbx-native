@@ -46,6 +46,9 @@ rbx_bytecode = { path = "../rbx_bytecode" }
 rbx_loren = { path = "../rbx_loren" }
 # Find in Place's regex option; already in the tree through rbx_loren and rbx_play.
 regex = "1"
+# Canonical place paths without Windows' `\\?\` prefix, which Home's Recent
+# list used to show; already in the tree.
+dunce = "1"
 rbx_animation = { path = "../rbx_animation" }
 rbx_autorig = { path = "../rbx_autorig" }
 rbx_dom = { path = "../rbx_dom" }

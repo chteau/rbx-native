@@ -353,7 +353,7 @@ pub(crate) fn open_game(
 ) -> Result<(), Box<(String, EditorBoot)>> {
     // Absolute, so the places resolve the same whatever the working
     // directory, and Recent lists the game once.
-    let path = &std::fs::canonicalize(path).unwrap_or(path.to_path_buf());
+    let path = &dunce::canonicalize(path).unwrap_or(path.to_path_buf());
     let manifest = match super::manifest::read(path) {
         Ok(manifest) => manifest,
         Err(message) => return Err(Box::new((message, boot))),
