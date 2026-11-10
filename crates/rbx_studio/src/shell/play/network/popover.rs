@@ -15,6 +15,21 @@ use crate::shell::Shell;
 use crate::tokens;
 
 const WIDTH: f32 = 340.;
+
+/// What shaping touches, and what this OS needs for it (Windows used to be
+/// told it needed Sober or Roséline, the Linux clients).
+#[cfg(windows)]
+const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
+     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs WinDivert \
+     next to rbxstudio.exe, and asks for administrator approval the first time.";
+#[cfg(target_os = "macos")]
+const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
+     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Asks for your \
+     password the first time.";
+#[cfg(not(any(windows, target_os = "macos")))]
+const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
+     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs Sober or \
+     Ros\u{e9}line.";
 const ROWS: [(Field, &str, &str); 3] = [
     (Field::Latency, "Latency", "ms"),
     (Field::Jitter, "Jitter", "ms"),
@@ -357,7 +372,12 @@ impl Shell {
             .child(
                 h_flex()
                     .gap(px(8.))
-                    .child(ui::text(13., 18.).flex_1().font_weight(FontWeight::SEMIBOLD).child("Network simulation"))
+                    .child(
+                        ui::text(13., 18.)
+                            .flex_1()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Network simulation"),
+                    )
                     .child(ui::pill(shown.pill(), None, shown.choice != Choice::Off)),
             )
             .child(section("Preset", ""))
@@ -368,10 +388,9 @@ impl Shell {
             .child(section("Outbound", "client \u{2192} server"))
             .child(group(Way::Outbound))
             .child(
-                ui::text(10.5, 14.).text_color(tokens::text3()).child(
-                    "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself lags. \
-                     Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs Sober or Ros\u{e9}line.",
-                ),
+                ui::text(10.5, 14.)
+                    .text_color(tokens::text3())
+                    .child(FOOTNOTE),
             )
             .when_some(popover.status.clone(), |this, status| {
                 this.child(ui::text(11., 14.).text_color(tokens::text2()).child(status))
