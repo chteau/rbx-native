@@ -20,8 +20,8 @@ const WIDTH: f32 = 340.;
 /// told it needed Sober or Roséline, the Linux clients).
 #[cfg(windows)]
 const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
-     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs WinDivert \
-     next to rbxstudio.exe, and asks for administrator approval the first time.";
+     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Uses the bundled \
+     WinDivert, and asks for administrator approval the first time.";
 #[cfg(target_os = "macos")]
 const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
      lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Asks for your \

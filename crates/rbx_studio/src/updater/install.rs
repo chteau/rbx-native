@@ -92,7 +92,9 @@ impl Location {
                 })
                 .ok_or_else(|| format!("the package has no {EXE_NAME}"))?;
                 if cfg!(windows) {
-                    swap_aside(&new, exe, &old_exe(exe))
+                    swap_aside(&new, exe, &old_exe(exe)).map(|()| {
+                        add_missing_sidecars(new.parent().unwrap_or(unpacked), self.dir())
+                    })
                 } else {
                     swap_over(&new, exe)
                 }
@@ -114,6 +116,20 @@ impl Location {
             }
         }
         clear_stale_staging(self.dir(), STALE_STAGING);
+    }
+}
+
+/// Files the Windows package ships beside the editor (Play's network
+/// simulator). Only missing ones are copied: a loaded driver's `.sys` can't
+/// be overwritten, and these never change between our releases.
+const SIDECARS: [&str; 3] = ["WinDivert.dll", "WinDivert64.sys", "WinDivert-LICENSE.txt"];
+
+fn add_missing_sidecars(from: &Path, to: &Path) {
+    for name in SIDECARS {
+        let (source, target) = (from.join(name), to.join(name));
+        if source.is_file() && !target.exists() {
+            let _ = fs::copy(source, target);
+        }
     }
 }
 

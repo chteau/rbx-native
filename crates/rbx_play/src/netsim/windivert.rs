@@ -7,8 +7,8 @@
 //! filtered on the Roblox client's local UDP ports, holds each packet in a
 //! delay line, then reinjects it.
 //!
-//! WinDivert is LGPLv3, so it is not shipped: `WinDivert.dll` and
-//! `WinDivert64.sys` are loaded at runtime from beside the executable.
+//! `WinDivert.dll` and `WinDivert64.sys` (LGPLv3, shipped unmodified in the
+//! Windows package) are loaded at runtime from beside the executable.
 //!
 //! This file holds the pure parts (filter text, error wording, parsing); the
 //! Windows-only modules below do the system calls.
@@ -50,7 +50,7 @@ pub(crate) fn ports_filter(ports: &[u16]) -> String {
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn error_text(code: u32) -> String {
     match code {
-        2 => "WinDivert.dll or WinDivert64.sys is missing: download WinDivert 2.2 from https://github.com/basil00/WinDivert/releases (LGPLv3) and put both files from its x64 folder next to rbxstudio.exe".to_string(),
+        2 => "WinDivert.dll or WinDivert64.sys is missing from the editor's folder: unpack the whole Windows download again, or get both files from the x64 folder of WinDivert 2.2 (https://github.com/basil00/WinDivert/releases)".to_string(),
         5 => "WinDivert needs administrator rights".to_string(),
         87 => "WinDivert rejected the packet filter (bad filter)".to_string(),
         577 => "Windows rejected the WinDivert driver signature (Secure Boot)".to_string(),

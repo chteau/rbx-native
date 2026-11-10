@@ -30,6 +30,8 @@ cp THIRD-PARTY-LICENSES.html .github/release/THIRD-PARTY-EMBEDDED.txt "$stage/"
 case "$target" in
   *windows*)
     cp "$bin/rbxstudio.exe" "$stage/"
+    # Play's network simulator loads these from beside the editor.
+    .github/release/windivert.sh "$stage"
     (cd "$work" && 7z a -tzip -bso0 "$out/$name.zip" "$name")
     ;;
   *apple-darwin)

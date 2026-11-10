@@ -10,7 +10,8 @@ the next launch.
 Windows
   Double-click rbxstudio.exe. The build isn't signed with a paid
   certificate, so SmartScreen may say "Windows protected your PC": click
-  "More info", then "Run anyway".
+  "More info", then "Run anyway". Keep WinDivert.dll and WinDivert64.sys
+  next to it: Play's network simulator needs them.
 
 macOS (Apple Silicon)
   Move RbxNative.app to Applications. It is only ad-hoc signed, so the
@@ -32,6 +33,8 @@ lists the options.
 
 LICENSE.txt is RbxNative's license, THIRD-PARTY-LICENSES.html covers the
 Rust crates built into it, and THIRD-PARTY-EMBEDDED.txt the programs it
-carries inside (luau-lsp, cloudflared, slirp4netns).
+carries inside (luau-lsp, cloudflared, slirp4netns). On Windows,
+WinDivert-LICENSE.txt covers WinDivert (LGPLv3), shipped unmodified from
+https://github.com/basil00/WinDivert.
 
 Bugs and ideas: https://github.com/chteau/rbx-native/issues
