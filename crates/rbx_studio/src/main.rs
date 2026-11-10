@@ -631,7 +631,25 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
 }
 
 fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
-    let bounds = Bounds::centered(None, size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
+    let wanted = size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1));
+    // No bigger than the screen minus the taskbar or dock: at 1600x900 or
+    // on a 1366x768 laptop the bottom rows (the Command Bar) used to sit
+    // under the Windows taskbar.
+    let bounds = match cx.primary_display() {
+        Some(display) => {
+            let area = display.visible_bounds();
+            let fitted = wanted.min(&area.size);
+            let center = area.center();
+            Bounds::new(
+                point(
+                    center.x - fitted.width / 2.0,
+                    center.y - fitted.height / 2.0,
+                ),
+                fitted,
+            )
+        }
+        None => Bounds::centered(None, wanted, cx),
+    };
 
     WindowOptions {
         app_id: Some(crate::APP_ID.to_owned()),
