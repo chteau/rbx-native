@@ -101,31 +101,25 @@ figcaption { font-size: 14px; line-height: 20px; color: var(--dim); margin-top: 
 
 .toy { position: relative; order: 2; justify-self: end; width: 100%; max-width: 480px; }
 #logo3d { display: block; width: 140%; max-width: none; margin: -20%; aspect-ratio: 1; cursor: pointer; touch-action: pan-y; }
-.hint { position: absolute; right: 4px; bottom: 4px; font: 12px/16px var(--mono); color: var(--dim); }
 
 .block { max-width: 1240px; margin: 0 auto; padding: clamp(56px, 7vw, 96px) var(--gutter) 0; }
 h2 { margin: 0 0 18px; color: var(--white); font-size: clamp(26px, 2.6vw, 34px); line-height: 1.15; font-weight: 600; letter-spacing: -.025em; }
 .motion .reveal .line > span { transform: translateY(112%); transition: transform 1.05s var(--out); }
 .motion .reveal.in .line > span { transform: none; }
 
-.rows { margin: 0; }
-.row { position: relative; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 4px 24px; align-items: baseline; padding: 11px 0; }
-.row::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: var(--line); transform-origin: 0 50%; }
-.motion .row.reveal::before { transform: scaleX(0); transition: transform 1.2s var(--out); }
-.motion .row.reveal.in::before { transform: none; }
-dt { color: var(--white); font-size: 16px; line-height: 26px; font-weight: 600; }
-dt .line > span { display: flex; align-items: center; gap: 10px; }
-dt img { width: 20px; height: 20px; flex: none; transition: transform .5s var(--out); }
-dd { margin: 0; color: var(--white); }
-@media (hover: hover) {
-  .row:hover dt img { transform: translateX(8px) rotate(-6deg) scale(1.18); }
-}
 
-.pair { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(16px, 3vw, 40px); align-items: start; padding: clamp(48px, 6vw, 80px) var(--gutter) 0; }
-.pair figure:last-child { margin-top: clamp(16px, 4vw, 56px); }
-.pair img { width: 100%; height: auto; border-radius: 5px; box-shadow: 0 0 0 1px var(--line); }
 .motion .wipe.reveal { clip-path: inset(0 0 100% 0); transition: clip-path 1.3s var(--out); }
 .motion .wipe.reveal.in { clip-path: inset(-2px -2px -40px -2px); }
+
+/* One section per feature, sides swapping. */
+.feature { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 8fr); gap: clamp(20px, 5vw, 72px); align-items: center; padding: clamp(22px, 3vw, 40px) 0; }
+.feature:nth-of-type(even) { grid-template-columns: minmax(0, 8fr) minmax(0, 3fr); }
+.feature:nth-of-type(even) .feature-text { order: 2; }
+.feature p { margin: 0; color: var(--body); }
+h3 { margin: 0 0 8px; color: var(--white); font-size: 23px; line-height: 30px; font-weight: 600; letter-spacing: -.02em; }
+h3 .line > span { display: flex; align-items: center; gap: 11px; }
+.frame { aspect-ratio: 16 / 10; border-radius: 5px; overflow: hidden; background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
+.frame img, .frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 .split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(20px, 5vw, 72px); align-items: start; }
 
@@ -167,9 +161,7 @@ footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gutter) 36px; }
 .foot-links span { color: var(--dim); margin-left: auto; max-width: 36rem; }
 
 @media (max-width: 860px) {
-  .pitch, .split, .pair, .credit { grid-template-columns: minmax(0, 1fr); }
-  .pair figure:last-child { margin-top: 0; }
-  .row { grid-template-columns: minmax(0, 1fr); }
+  .pitch, .split, .feature, .feature:nth-of-type(even), .credit { grid-template-columns: minmax(0, 1fr); }
   .hero { grid-template-columns: minmax(0, 1fr); gap: 8px; padding-top: 76px; padding-bottom: 44px; }
   .toy { order: 0; justify-self: center; max-width: 300px; }
   h1 { font-size: 38px; }
@@ -180,4 +172,7 @@ footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gutter) 36px; }
 
 @media (max-width: 860px) {
   .hero { overflow-x: clip; }
+  .feature:nth-of-type(even) .feature-text { order: 0; }
 }
+
+.frame img[src$="graph.webp"] { object-fit: contain; }

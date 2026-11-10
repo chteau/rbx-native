@@ -39,8 +39,22 @@ if (moving) {
   document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
 }
 
+// Clips only run while they're on screen. With reduced motion they stay on the
+// poster and get normal controls.
+const clips = [...document.querySelectorAll("video[data-clip]")];
+if (moving) {
+  const watcher = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) e.target.play().catch(() => {});
+      else e.target.pause();
+    }
+  }, { threshold: 0.35 });
+  clips.forEach((clip) => watcher.observe(clip));
+} else {
+  clips.forEach((clip) => { clip.controls = true; });
+}
+
 const showcase = document.querySelector("#showcase img");
-const drifters = [...document.querySelectorAll("[data-drift]")];
 
 let last = scrollY;
 let queued = false;
@@ -60,14 +74,6 @@ function frame() {
   const grown = clamp(1 - top / (vh * 0.85), 0, 1);
   showcase.style.setProperty("--grow", (0.84 + grown * 0.16).toFixed(4));
 
-  if (innerWidth > 860) {
-    for (const el of drifters) {
-      const box = el.getBoundingClientRect();
-      if (box.bottom < -200 || box.top > vh + 200) continue;
-      const off = (box.top + box.height / 2 - vh / 2) / vh;
-      el.style.translate = `0 ${(off * Number(el.dataset.drift)).toFixed(1)}px`;
-    }
-  }
 }
 
 addEventListener("scroll", () => {

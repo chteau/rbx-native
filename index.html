@@ -34,7 +34,7 @@
 </nav>
 
 <header class="hero" id="top">
-  <div class="toy"><canvas id="logo3d" aria-hidden="true"></canvas><span class="hint">go on, click it</span></div>
+  <div class="toy"><canvas id="logo3d" aria-hidden="true"></canvas></div>
   <div class="hero-text">
     <h1>
       <span class="line"><span>A Roblox</span></span>
@@ -68,29 +68,83 @@
 
 <section class="block" id="features">
   <h2 class="reveal"><span class="line"><span>What's in it</span></span></h2>
-  <dl class="rows">
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/folder.svg" alt="" width="20" height="20">Files</span></span></dt><dd>Opens and saves real places and models, binary and XML</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/model.svg" alt="" width="20" height="20">Editor</span></span></dt><dd>Explorer, Properties, the ribbon, gizmos, docks you can drag around</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/script.svg" alt="" width="20" height="20">Scripting</span></span></dt><dd>Script editor with <code>luau-lsp</code> (autocomplete, hover, go to definition, diagnostics), StyLua formatting and a debugger with breakpoints</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/module-script.svg" alt="" width="20" height="20">Console</span></span></dt><dd>Command Bar, Output, Script Analysis</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/animation.svg" alt="" width="20" height="20">Animation</span></span></dt><dd>Animation Editor with joint gizmos</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/screen-gui.svg" alt="" width="20" height="20">UI</span></span></dt><dd>UI Editor, and it can import from Figma</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/terrain.svg" alt="" width="20" height="20">Terrain</span></span></dt><dd>Smooth terrain</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/tool.svg" alt="" width="20" height="20">Plugins</span></span></dt><dd>Most community plugins run. F3X and Archimedes both work</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/spawn-location.svg" alt="" width="20" height="20">Play</span></span></dt><dd>Through <a href="https://sober.vinegarhq.org">Sober</a> or Roséline, embedded in the editor</dd></div>
-    <div class="row reveal"><dt><span class="line"><span><img src="assets/icons/replicated-storage.svg" alt="" width="20" height="20">Cloud</span></span></dt><dd>Publish, version history, DataStores and game settings through Open Cloud</dd></div>
-  </dl>
-</section>
-
-<section class="pair">
-  <figure class="wipe reveal" data-drift="-40">
-    <img src="assets/shot-script.webp" loading="lazy" width="1600" height="566" alt="A Luau script open in the script editor.">
-    <figcaption>Script editor, same place. Every PR gets checked against real Studio before it lands.</figcaption>
-  </figure>
-  <figure class="wipe reveal" data-drift="40">
-    <img src="assets/shot-graph.webp" loading="lazy" width="1030" height="420" alt="A script shown as connected nodes in graph mode.">
-    <figcaption>Graph mode. Same script as nodes, the Luau source stays the real thing.</figcaption>
-  </figure>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/folder.svg" alt="" width="22" height="22">Files</span></span></h3>
+      <p>Opens and saves real places and models, binary and XML.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/files.mp4" poster="assets/clips/files.webp" muted loop playsinline preload="none" aria-label="Opening a place from Home"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/model.svg" alt="" width="22" height="22">Editor</span></span></h3>
+      <p>Explorer, Properties, the ribbon, gizmos, docks you can drag around.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/editor.mp4" poster="assets/clips/editor.webp" muted loop playsinline preload="none" aria-label="Selecting and moving parts in the editor"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/script.svg" alt="" width="22" height="22">Scripting</span></span></h3>
+      <p>Script editor with <code>luau-lsp</code> (autocomplete, hover, go to definition, diagnostics), StyLua formatting and a debugger with breakpoints.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/scripting.mp4" poster="assets/clips/scripting.webp" muted loop playsinline preload="none" aria-label="Typing Luau with autocomplete"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/module-script.svg" alt="" width="22" height="22">Graph mode</span></span></h3>
+      <p>The same script as nodes. The Luau source stays the real thing.</p>
+    </div>
+    <div class="frame wipe reveal"><img src="assets/clips/graph.webp" loading="lazy" alt="A script shown as connected nodes in graph mode"></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/module-script.svg" alt="" width="22" height="22">Console</span></span></h3>
+      <p>Command Bar, Output, Script Analysis.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/console.mp4" poster="assets/clips/console.webp" muted loop playsinline preload="none" aria-label="Running Luau in the Command Bar"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/animation.svg" alt="" width="22" height="22">Animation</span></span></h3>
+      <p>Animation Editor with joint gizmos.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/animation.mp4" poster="assets/clips/animation.webp" muted loop playsinline preload="none" aria-label="Posing a rig in the Animation Editor"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/screen-gui.svg" alt="" width="22" height="22">UI</span></span></h3>
+      <p>UI Editor, and it can import from Figma.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/ui.mp4" poster="assets/clips/ui.webp" muted loop playsinline preload="none" aria-label="Editing a frame on the UI Editor canvas"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/terrain.svg" alt="" width="22" height="22">Terrain</span></span></h3>
+      <p>Smooth terrain.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/terrain.mp4" poster="assets/clips/terrain.webp" muted loop playsinline preload="none" aria-label="Painting smooth terrain with a brush"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/tool.svg" alt="" width="22" height="22">Plugins</span></span></h3>
+      <p>Most community plugins run. F3X and Archimedes both work.</p>
+    </div>
+    <div class="frame wipe reveal"><video data-clip src="assets/clips/plugins.mp4" poster="assets/clips/plugins.webp" muted loop playsinline preload="none" aria-label="Browsing Popular plugins"></video></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/spawn-location.svg" alt="" width="22" height="22">Play</span></span></h3>
+      <p>Through <a href="https://sober.vinegarhq.org">Sober</a> or Roséline, embedded in the editor.</p>
+    </div>
+    <div class="frame wipe reveal"><img src="assets/clips/play.webp" loading="lazy" alt="The Roblox client running inside the editor during a playtest"></div>
+  </article>
+  <article class="feature">
+    <div class="feature-text reveal">
+      <h3><span class="line"><span><img src="assets/icons/replicated-storage.svg" alt="" width="22" height="22">Cloud</span></span></h3>
+      <p>Publish, version history, DataStores and game settings through Open Cloud.</p>
+    </div>
+    <div class="frame wipe reveal"><img src="assets/clips/cloud.webp" loading="lazy" alt="The version history window"></div>
+  </article>
 </section>
 
 <section class="block split" id="team-create">
