@@ -101,6 +101,11 @@
 //! `RBX_STUDIO_PERF=<word of a measure's name>` turns the Performance view
 //! on with that measure (see `shell::perf_view`).
 
+// A GUI program on Windows: double-clicking it opens no console window next
+// to the editor (closing that window used to kill the editor). The command
+// line uses still print: `attach_parent_console` below.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod accent;
 mod align;
 mod anim_editor;
@@ -203,7 +208,30 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
+/// Run from a terminal, a GUI-subsystem program gets no stdout or stderr, so
+/// `--help`, `loren` and errors would print nowhere. Attach to the parent's
+/// console in that case. Handles a parent already gave us (an MCP client's
+/// pipes, a redirect to a file) are kept as they are.
+#[cfg(windows)]
+fn attach_parent_console() {
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, GetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    // SAFETY: plain Win32 calls with no pointers.
+    unsafe {
+        let has = |which| {
+            let handle = GetStdHandle(which);
+            !handle.is_null() && handle != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE
+        };
+        if !has(STD_OUTPUT_HANDLE) && !has(STD_ERROR_HANDLE) {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+}
+
 fn main() {
+    #[cfg(windows)]
+    attach_parent_console();
     // Before any thread starts: Play runs Sober, a user Flatpak, and an
     // isolated `XDG_DATA_HOME` would hide it from `flatpak`.
     #[cfg(target_os = "linux")]
@@ -473,7 +501,7 @@ pub(crate) fn open_editor(
         }
     };
     if let Err(err) = home::remember(home::RecentPlace {
-        path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
+        path: dunce::canonicalize(path).unwrap_or(path.to_path_buf()),
         universe_id: None,
         place_id: None,
         name: None,
@@ -603,7 +631,25 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
 }
 
 fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
-    let bounds = Bounds::centered(None, size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
+    let wanted = size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1));
+    // No bigger than the screen minus the taskbar or dock: at 1600x900 or
+    // on a 1366x768 laptop the bottom rows (the Command Bar) used to sit
+    // under the Windows taskbar.
+    let bounds = match cx.primary_display() {
+        Some(display) => {
+            let area = display.visible_bounds();
+            let fitted = wanted.min(&area.size);
+            let center = area.center();
+            Bounds::new(
+                point(
+                    center.x - fitted.width / 2.0,
+                    center.y - fitted.height / 2.0,
+                ),
+                fitted,
+            )
+        }
+        None => Bounds::centered(None, wanted, cx),
+    };
 
     WindowOptions {
         app_id: Some(crate::APP_ID.to_owned()),

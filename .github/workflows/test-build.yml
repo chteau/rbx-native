@@ -46,9 +46,9 @@ jobs:
       # rbxstudio is the only program a tester needs: luau-lsp, cloudflared
       # and slirp4netns are fetched by rbx_studio's build.rs and embedded,
       # Loren's runner and template are embedded by rbx_loren's, and the
-      # icons, themes, fonts and API dump are compiled in. WinDivert (Play's
-      # network simulator on Windows) is LGPLv3 and deliberately not shipped;
-      # the editor says where to get it when it is missing.
+      # icons, themes, fonts and API dump are compiled in. On Windows,
+      # WinDivert (Play's network simulator, LGPLv3) ships unmodified next to
+      # the editor with its license, as in the release zip.
       - name: cargo build --release
         run: cargo build --release -p rbx_studio --bin rbxstudio
 
@@ -59,6 +59,9 @@ jobs:
           echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
           mkdir dist
           cp "target/release/${{ matrix.exe }}" dist/
+          if [ "${{ matrix.os }}" = windows ]; then
+            .github/release/windivert.sh dist
+          fi
           {
             cat .github/test-build/README-ALPHA.txt
             echo

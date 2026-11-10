@@ -152,14 +152,17 @@ fn links_path() -> Option<PathBuf> {
 fn read_links(path: &Path) -> Links {
     std::fs::read(path)
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .and_then(|bytes| serde_json::from_slice::<Links>(&bytes).ok())
         .unwrap_or_default()
+        .into_iter()
+        .map(|(key, link)| (dunce::simplified(&key).to_path_buf(), link))
+        .collect()
 }
 
 /// Paths are compared canonicalized: the editor records its file that way,
 /// Home records the download path as it built it.
 fn link_key(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or(path.to_path_buf())
+    dunce::canonicalize(path).unwrap_or(path.to_path_buf())
 }
 
 /// The Roblox place `path` is linked to, if any.
@@ -191,14 +194,21 @@ fn with_link(links: &mut Links, mut place: RecentPlace) -> RecentPlace {
     place
 }
 
+/// Older Windows builds recorded paths with the `\\?\` prefix; read them
+/// back without it so the same file isn't listed twice.
 fn read_recent(path: &Path) -> Vec<RecentPlace> {
-    std::fs::read(path)
+    let mut list: Vec<RecentPlace> = Vec::new();
+    let read = std::fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Vec<RecentPlace>>(&bytes).ok())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|place| place.path.exists())
-        .collect()
+        .unwrap_or_default();
+    for mut place in read {
+        place.path = dunce::simplified(&place.path).to_path_buf();
+        if place.path.exists() && !list.iter().any(|p| p.path == place.path) {
+            list.push(place);
+        }
+    }
+    list
 }
 
 fn with_remembered(mut list: Vec<RecentPlace>, mut place: RecentPlace) -> Vec<RecentPlace> {

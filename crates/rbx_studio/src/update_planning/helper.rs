@@ -124,10 +124,14 @@ fn scratch_dir() -> Option<PathBuf> {
 }
 
 fn run(program: &str, args: &[&str]) -> Result<(), String> {
-    let status = std::process::Command::new(program)
-        .args(args)
-        .status()
-        .map_err(|e| format!("{program}: {e}"))?;
+    let mut command = std::process::Command::new(program);
+    command.args(args);
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(
+        &mut command,
+        crate::luau_lsp::CREATE_NO_WINDOW,
+    );
+    let status = command.status().map_err(|e| format!("{program}: {e}"))?;
     status
         .success()
         .then_some(())

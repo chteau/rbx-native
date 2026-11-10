@@ -52,10 +52,14 @@ fn format_elapsed(at: Instant) -> String {
 /// the only thing that needs it.
 pub(crate) fn detect_argon_version() -> Option<(std::path::PathBuf, SharedString)> {
     let binary = super::super::argon_sync::argon_cli_path()?;
-    let output = std::process::Command::new(&binary)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let mut command = std::process::Command::new(&binary);
+    command.arg("--version");
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(
+        &mut command,
+        crate::luau_lsp::CREATE_NO_WINDOW,
+    );
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }

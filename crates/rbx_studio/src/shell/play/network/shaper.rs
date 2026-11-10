@@ -127,8 +127,8 @@ pub(in crate::shell) fn unsupported() -> Option<&'static str> {
 pub(in crate::shell) fn prerequisite() -> Option<&'static str> {
     if cfg!(windows) {
         Some(
-            "needs WinDivert.dll and WinDivert64.sys (WinDivert 2.2, x64) next to \
-             rbxstudio.exe; the first shaped Play asks for administrator approval",
+            "uses the WinDivert.dll and WinDivert64.sys shipped next to the editor; \
+             the first shaped Play asks for administrator approval",
         )
     } else if cfg!(target_os = "macos") {
         Some("the first shaped Play asks for an administrator password (pf and dummynet need root)")

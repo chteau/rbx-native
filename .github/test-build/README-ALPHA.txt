@@ -10,7 +10,9 @@ Opening it
 
 Windows
   Double-click rbxstudio.exe. If SmartScreen says "Windows protected your
-  PC", click "More info", then "Run anyway".
+  PC", click "More info", then "Run anyway". Keep WinDivert.dll and
+  WinDivert64.sys next to it: Play's network simulator needs them
+  (WinDivert is LGPLv3, see WinDivert-LICENSE.txt).
 
 macOS (Apple Silicon)
   The zip drops the executable bit and macOS quarantines downloads, so in a
