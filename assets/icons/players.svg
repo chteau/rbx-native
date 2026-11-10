@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- players.svg - tile 21 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>players</title>
+  <g transform="translate(0,0.4) scale(0.62)">
+    <rect x="4.6" y="1.8" width="6.8" height="5.8" rx="1" fill="#FBD34B"/>
+    <rect x="2.6" y="8.8" width="10.8" height="5.4" rx="1.2" fill="#3C7FC4"/>
+  </g>
+  <g transform="translate(5,2.6) scale(0.72)">
+    <rect x="4.6" y="1.8" width="6.8" height="5.8" rx="1" fill="#FBD34B"/>
+    <rect x="2.6" y="8.8" width="10.8" height="5.4" rx="1.2" fill="#63AEF5"/>
+  </g>
+</svg>

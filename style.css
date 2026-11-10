@@ -1,61 +1,174 @@
+/* Colours, fonts, radii and bar heights come from the editor's default theme
+   (assets/themes/default/theme.json on dev). Type is a notch bigger than the
+   app's because this gets read, not clicked. */
+
+@font-face { font-family: Manrope; font-weight: 400; font-display: swap; src: url(assets/fonts/Manrope-Regular.ttf); }
+@font-face { font-family: Manrope; font-weight: 500; font-display: swap; src: url(assets/fonts/Manrope-Medium.ttf); }
+@font-face { font-family: Manrope; font-weight: 600; font-display: swap; src: url(assets/fonts/Manrope-SemiBold.ttf); }
+@font-face { font-family: Manrope; font-weight: 700; font-display: swap; src: url(assets/fonts/Manrope-Bold.ttf); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url(assets/fonts/JetBrainsMono-Regular.ttf); }
+
 :root {
-  color-scheme: light dark;
-  --bg: #fbfaf7;
-  --fg: #1d1c1a;
-  --dim: #66635c;
-  --line: #d9d6cd;
-  --link: #1746b0;
-  --code: #efece4;
-  --logo: invert(1);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17171a;
-    --fg: #e4e2dd;
-    --dim: #9b9890;
-    --line: #36363b;
-    --link: #8fb0ff;
-    --code: #232327;
-    --logo: none;
-  }
+  color-scheme: dark;
+  --black: #0a0a0b;
+  --dock: #121213;
+  --field: #191a1c;
+  --hover: #ffffff0d;
+  --border: #ffffff0f;
+  --border2: #ffffff1c;
+  --text: #e2e2e6;
+  --text2: #8f8f97;
+  --text3: #5c5c63;
+  --accent: #6c7fdb;
+  --accent-hover: #7385dd;
+  --accent-soft: #6c7fdb1f;
+  --info: #6fb1fc;
+  --radius: 5px;
+  --bars: 64px; /* topbar 34 + menu 30 */
+  --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
+* { box-sizing: border-box; }
+html { scroll-padding-top: calc(var(--bars) + 12px); }
 body {
-  background: var(--bg);
-  color: var(--fg);
-  font: 17px/1.55 Ubuntu, Cantarell, "Noto Sans", "Segoe UI", system-ui, sans-serif;
-  max-width: 44rem;
-  margin: 0 auto;
-  padding: 2.5rem 1.1rem 3rem;
+  margin: 0;
+  background: var(--black);
+  color: var(--text);
+  font: 500 15px/24px Manrope, Ubuntu, "Noto Sans", system-ui, sans-serif;
 }
 
-a { color: var(--link); }
+a { color: var(--text); text-decoration-color: var(--text3); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-header { display: flex; align-items: center; gap: .6rem; }
-.logo { filter: var(--logo); }
-h1 { font-size: 1.9rem; margin: 0; }
-h2 { font-size: 1.2rem; margin: 2.2rem 0 .5rem; }
-p { margin: .7rem 0; }
-.lead { font-size: 1.2rem; line-height: 1.4; margin-top: 1rem; }
+.window {
+  max-width: 1280px;
+  margin: 0 auto;
+  border-inline: 1px solid var(--border);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
-.links { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.1rem; margin-top: 1.2rem; }
-.get { background: var(--fg); color: var(--bg); padding: .35rem .8rem; text-decoration: none; font-weight: 600; }
+/* Same as shell::chrome::topbar_frame. */
+.topbar {
+  position: sticky; top: 0; z-index: 2;
+  height: 34px; flex: none;
+  display: flex; align-items: center;
+  background: var(--black);
+  padding: 0 12px;
+}
+.mark { display: flex; }
+.title {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-size: 12px; line-height: 16px; color: var(--text2); min-width: 0; white-space: nowrap;
+}
+.title strong { font-weight: 600; }
+.title i { width: 1px; height: 12px; background: var(--border2); }
+.stage { font-size: 11.5px; color: var(--text3); }
 
-ul { margin: .5rem 0; padding-left: 1.2rem; }
-li { margin: .2rem 0; }
+.menu {
+  position: sticky; top: 34px; z-index: 2;
+  height: 30px; flex: none;
+  display: flex; align-items: center; gap: 2px;
+  background: var(--black);
+  border-block: 1px solid var(--border);
+  padding: 0 6px;
+  font-size: 13px;
+}
+.menu a { padding: 2px 8px; border-radius: var(--radius); text-decoration: none; white-space: nowrap; }
+.menu a:hover { background: var(--hover); }
 
-figure { margin: 1.6rem 0; }
-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); }
-figcaption { color: var(--dim); font-size: .9rem; margin-top: .35rem; }
+.panes { flex: 1; display: flex; align-items: stretch; background: var(--dock); }
+main { flex: 1; min-width: 0; padding: 36px 40px 56px; }
 
-code, pre { font-family: "Ubuntu Mono", "DejaVu Sans Mono", ui-monospace, monospace; }
-code { font-size: .95em; }
-pre { background: var(--code); padding: .8rem 1rem; overflow-x: auto; font-size: .88rem; line-height: 1.5; }
+h1 { font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 12px; }
+p { margin: 0 0 12px; max-width: 42rem; color: #c4c4ca; }
+.lead { font-size: 18px; line-height: 27px; color: var(--text); }
+strong { color: var(--text); font-weight: 700; }
 
-.date { color: var(--dim); margin-bottom: 0; }
+.get { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; margin-bottom: 10px; }
+.primary, .secondary {
+  height: 32px; padding: 0 14px; display: inline-flex; align-items: center;
+  border-radius: var(--radius); font-size: 13px; font-weight: 600; text-decoration: none;
+}
+.primary { background: var(--accent); color: #fff; }
+.primary:hover { background: var(--accent-hover); }
+.secondary { background: var(--field); box-shadow: inset 0 0 0 1px var(--border2); }
+.secondary:hover { background: #202123; }
+.note { font-size: 13px; line-height: 20px; color: var(--text2); }
 
-footer { color: var(--dim); font-size: .88rem; border-top: 1px solid var(--line); margin-top: 2.5rem; padding-top: .8rem; }
+figure { margin: 28px 0; }
+figure img { display: block; width: 100%; height: auto; border-radius: var(--radius); box-shadow: 0 0 0 1px var(--border2); }
+figcaption { font-size: 12.5px; line-height: 18px; color: var(--text2); margin-top: 8px; }
 
-@media (min-width: 62rem) {
-  figure { margin-left: -6rem; margin-right: -6rem; }
+/* Sections fold like property categories. */
+details { border-top: 1px solid var(--border); padding: 10px 0 18px; }
+summary {
+  display: flex; align-items: center; gap: 9px;
+  height: 28px; margin-bottom: 8px; cursor: default; list-style: none; user-select: none;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before {
+  content: ""; width: 5px; height: 5px; flex: none; margin: -3px 1px 0 2px;
+  border-right: 1.3px solid var(--text2); border-bottom: 1.3px solid var(--text2);
+  transform: rotate(45deg);
+}
+details:not([open]) summary::before { transform: rotate(-45deg); margin-top: 0; }
+summary:hover h2 { color: var(--text); }
+h2 { margin: 0; font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text2); }
+
+/* Properties rows. */
+dl { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 7px 12px; margin: 0; max-width: 44rem; }
+dt { color: var(--text2); padding-left: 16px; }
+dd { margin: 0; }
+
+code, pre { font-family: var(--mono); font-weight: 400; }
+code { font-size: 13.5px; }
+
+/* Command Bar, with its language badge. */
+.bar { position: relative; background: var(--field); box-shadow: inset 0 0 0 1px var(--border2); border-radius: var(--radius); margin: 14px 0; max-width: 44rem; }
+.tag { position: absolute; top: 8px; right: 8px; font-size: 11px; line-height: 16px; padding: 1px 7px; color: var(--text2); background: var(--dock); border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border2); }
+pre { margin: 0; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 21px; }
+.c { color: var(--text3); }
+
+/* Output panel. */
+.output { list-style: none; margin: 0 0 12px; padding: 12px 14px; background: var(--black); border-radius: var(--radius); box-shadow: 0 0 0 1px var(--border); font: 13px/22px var(--mono); max-width: 44rem; }
+.output code { font-size: inherit; color: var(--text); }
+.output li { color: #c4c4ca; }
+.output .info { color: var(--info); }
+
+/* Explorer dock, doubles as the page's table of contents. */
+.explorer { width: 280px; flex: none; border-left: 1px solid var(--border); }
+.dock-tab {
+  position: sticky; top: var(--bars);
+  height: 38px; display: flex; align-items: center; padding: 0 16px;
+  font-size: 12px; font-weight: 600; background: var(--dock);
+}
+.tree { position: sticky; top: calc(var(--bars) + 38px); list-style: none; margin: 0; padding: 4px 8px; font-size: 13px; }
+.tree a {
+  display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 8px;
+  border-radius: 4px; text-decoration: none; color: var(--text2);
+}
+.tree img { flex: none; }
+.tree .child { position: relative; padding-left: 18px; }
+.tree .child::before { content: ""; position: absolute; left: 15px; top: 0; bottom: 0; width: 1px; background: var(--border2); }
+.tree a:hover { background: var(--hover); color: var(--text); }
+.tree a.selected { background: var(--accent-soft); color: var(--text); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+
+footer {
+  flex: none; background: var(--black); border-top: 1px solid var(--border);
+  padding: 8px 12px; font-size: 11.5px; line-height: 16px; color: var(--text3);
+}
+
+@media (max-width: 900px) {
+  .explorer { display: none; }
+  main { padding: 24px 16px 40px; }
+  h1 { font-size: 28px; line-height: 34px; }
+  .stage { display: none; }
+  .menu { overflow-x: auto; }
+}
+@media (max-width: 480px) {
+  dl { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  dt { padding-left: 0; font-size: 13px; margin-top: 8px; }
 }
