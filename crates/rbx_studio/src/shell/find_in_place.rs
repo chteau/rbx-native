@@ -25,6 +25,16 @@ use scan::{Place, Results};
 mod scan;
 mod view;
 
+/// Find in Place's keys (Ctrl+Shift+F / Ctrl+Shift+H), as a keymap action
+/// rather than a key handler: a binding with no context outranks the script
+/// editor's own on the same key (its Replace is Cmd+Shift+F on macOS), so
+/// the place-wide find wins there too, as in Studio.
+#[derive(Clone, PartialEq, serde::Deserialize, Action)]
+#[action(namespace = shell, no_json)]
+pub(crate) struct OpenFindInPlace {
+    pub(crate) replace: bool,
+}
+
 /// The three text fields, made the first time the panel is asked for since
 /// an `InputState` needs a window.
 struct Inputs {

@@ -11,10 +11,11 @@ fn delete_and_backspace_both_delete_with_no_modifiers_required() {
 }
 
 #[test]
-fn ctrl_shift_f_inserts_a_folder_and_ctrl_shift_p_inserts_nothing() {
-    // Ctrl+Shift+P is the Properties filter's, as in Studio.
+fn ctrl_shift_f_and_ctrl_shift_p_insert_nothing() {
+    // Ctrl+Shift+P is the Properties filter's and Ctrl+Shift+F Find in
+    // Place's, as in Studio.
     assert_eq!(action("secondary-shift-p"), None);
-    assert_eq!(action("secondary-shift-f"), Some(Action::InsertFolder));
+    assert_eq!(action("secondary-shift-f"), None);
 }
 
 #[test]

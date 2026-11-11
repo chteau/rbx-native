@@ -823,7 +823,7 @@ impl WorkspaceView {
         });
 
         if let (Some(id), Some(centre)) = (
-            pointer_lock::window_id(window),
+            pointer_lock::look_window(window),
             self.viewport.get().centre(),
         ) {
             self.lock.hold(id, centre);

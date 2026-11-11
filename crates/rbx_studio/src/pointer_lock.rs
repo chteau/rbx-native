@@ -2,7 +2,8 @@
 //!
 //! GPUI exposes no pointer-lock API at all, so the lock is spoken straight to
 //! the windowing system, the X server, or Win32: hide the cursor, then warp it
-//! back to the viewport centre after every reported move. That is what keeps a
+//! back to the viewport centre after every reported move. macOS freezes the
+//! cursor itself and reports the travel (see [`server`]). That is what keeps a
 //! long look drag from wandering onto the Explorer and losing the rest of the
 //! turn. Wayland's equivalent lives in a protocol GPUI does not forward, so
 //! there the look keeps working exactly as it did, with a visible cursor and no
@@ -148,6 +149,15 @@ pub(crate) fn window_id(window: &Window) -> Option<WindowId> {
         RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
         _ => None,
     }
+}
+
+/// The window a look pins the pointer in. macOS freezes the cursor for the
+/// whole display, so there any id does.
+pub(crate) fn look_window(window: &Window) -> Option<WindowId> {
+    if cfg!(target_os = "macos") {
+        return Some(0);
+    }
+    window_id(window)
 }
 
 /// Narrows a C `unsigned long` X id to the 32 bits the protocol gives one.

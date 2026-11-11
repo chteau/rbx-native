@@ -117,6 +117,32 @@ fn the_keymap_binds_settings_and_the_palette(cx: &mut gpui_kit::TestAppContext) 
     });
 }
 
+// The script editor binds its own Replace to Cmd+Shift+F on macOS, in its
+// "Input" context; Find in Place has to win there, as in Studio.
+#[gpui_kit::test]
+fn find_in_place_outranks_a_text_fields_own_key(cx: &mut gpui_kit::TestAppContext) {
+    cx.update(|cx| {
+        cx.bind_keys([gpui_kit::KeyBinding::new(
+            "secondary-shift-f",
+            MenuPlaceholder,
+            Some("Input"),
+        )]);
+        crate::menu_bar::install_key_bindings(cx);
+        let keymap = cx.key_bindings();
+        let keymap = keymap.borrow();
+        let first = |typed: &str| {
+            let typed = [Keystroke::parse(typed).unwrap()];
+            let context = [gpui_kit::KeyContext::parse("Input").unwrap()];
+            let (bindings, _) = keymap.bindings_for_input(&typed, &context);
+            bindings.first().map(|binding| binding.action().boxed_clone())
+        };
+        let find = first("secondary-shift-f").expect("bound");
+        assert!(find.partial_eq(&crate::shell::OpenFindInPlace { replace: false }));
+        let replace = first("secondary-shift-h").expect("bound");
+        assert!(replace.partial_eq(&crate::shell::OpenFindInPlace { replace: true }));
+    });
+}
+
 #[test]
 fn an_empty_query_lists_everything_recent_first() {
     let commands = all();

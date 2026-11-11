@@ -20,6 +20,8 @@ pub(super) enum AfterClose {
     Restart,
     /// The titlebar's Close button or the window manager's close.
     Quit,
+    /// Cmd+Q: the whole app, not just this window.
+    Exit,
     /// File › New: a fresh Baseplate, created once the prompt is answered
     /// so Cancel leaves no stray file.
     New,
@@ -90,13 +92,23 @@ impl Shell {
     /// changes; answers whether it may close right now (the window manager's
     /// close asks through `on_window_should_close`).
     pub(crate) fn request_quit(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.leave_game(AfterClose::Quit, cx) {
+        self.ask_before_leaving(AfterClose::Quit, cx)
+    }
+
+    /// [`Shell::request_quit`] for the whole app (Cmd+Q): the same question,
+    /// then everything quits rather than this window closing.
+    pub(crate) fn request_exit(&mut self, cx: &mut Context<Self>) -> bool {
+        self.ask_before_leaving(AfterClose::Exit, cx)
+    }
+
+    fn ask_before_leaving(&mut self, after: AfterClose, cx: &mut Context<Self>) -> bool {
+        if self.leave_game(after.clone(), cx) {
             return false;
         }
         if !self.has_unsaved_changes() {
             return true;
         }
-        self.after_close = AfterClose::Quit;
+        self.after_close = after;
         self.close_prompt = true;
         cx.notify();
         false
@@ -133,6 +145,10 @@ impl Shell {
         match std::mem::take(&mut self.after_close) {
             AfterClose::Restart => {
                 crate::relaunch(&self.path);
+                cx.quit();
+                return;
+            }
+            AfterClose::Exit => {
                 cx.quit();
                 return;
             }

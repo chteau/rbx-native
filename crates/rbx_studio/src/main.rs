@@ -347,6 +347,7 @@ fn main() {
         shell::install_text_box_keys(cx);
         workspace_view::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
+        menu_bar::install_app(cx);
         // Only a bare launch: opening a place blocks this thread, which
         // would freeze the logo mid-spin.
         let splash = path.is_none().then(|| splash::open(cx)).flatten();

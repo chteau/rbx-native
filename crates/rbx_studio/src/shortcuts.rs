@@ -45,8 +45,22 @@ pub(crate) enum Scope {
     Animation,
 }
 
+/// A row's defaults: one list, or one for every OS then macOS's own.
+macro_rules! defaults {
+    ([$($key:literal),*]) => {
+        &[$($key),*]
+    };
+    ([$($key:literal),*], [$($mac:literal),*]) => {
+        if cfg!(target_os = "macos") {
+            &[$($mac),*]
+        } else {
+            &[$($key),*]
+        }
+    };
+}
+
 macro_rules! commands {
-    ($($variant:ident, $id:literal, $name:literal, $category:ident, [$($key:literal),*];)*) => {
+    ($($variant:ident, $id:literal, $name:literal, $category:ident, [$($key:literal),*] $(mac [$($mac:literal),*])?;)*) => {
         /// One rebindable command.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         #[allow(clippy::enum_variant_names)]
@@ -59,7 +73,7 @@ macro_rules! commands {
                 id: $id,
                 name: $name,
                 category: Category::$category,
-                defaults: &[$($key),*],
+                defaults: defaults!([$($key),*] $(, [$($mac),*])?),
             },)*
         ];
     };
@@ -69,7 +83,10 @@ commands! {
     NewPlace, "new_place", "New", File, ["secondary-n"];
     OpenPlace, "open_place", "Open…", File, ["secondary-o"];
     Save, "save", "Save to File", File, ["secondary-s"];
-    StudioSettings, "studio_settings", "Studio Settings", File, ["alt-s"];
+    // macOS's own Settings key first, so its menus show it.
+    StudioSettings, "studio_settings", "Studio Settings", File, ["alt-s"] mac ["secondary-,", "alt-s"];
+    // The window manager closes the window elsewhere; Cmd+Q is macOS's.
+    Quit, "quit", "Quit", File, [] mac ["secondary-q"];
     Undo, "undo", "Undo", Edit, ["secondary-z"];
     Redo, "redo", "Redo", Edit, ["secondary-shift-z", "secondary-y"];
     Cut, "cut", "Cut", Edit, ["secondary-x"];
@@ -91,9 +108,10 @@ commands! {
     Delete, "delete", "Delete", Explorer, ["delete", "backspace"];
     Rename, "rename", "Rename", Explorer, ["f2"];
     // Unbound by default: Studio gives Ctrl+Shift+P to the Properties filter
-    // (`studio/properties.md`) and has no key for inserting a part.
+    // (`studio/properties.md`) and Ctrl+Shift+F to Find in Place, and has no
+    // key for inserting either.
     InsertPart, "insert_part", "Insert Part", Explorer, [];
-    InsertFolder, "insert_folder", "Insert Folder", Explorer, ["secondary-shift-f"];
+    InsertFolder, "insert_folder", "Insert Folder", Explorer, [];
     InsertObject, "insert_object", "Insert Object…", Explorer, ["secondary-i"];
     RowMenu, "row_menu", "Row Menu", Explorer, ["shift-f10", "menu"];
     ToolSelect, "tool_select", "Select Tool", Tools, ["1"];
@@ -215,6 +233,15 @@ impl Command {
         ALL.iter()
             .find(|spec| spec.command == self)
             .expect("every command is listed in ALL")
+    }
+
+    /// Where its key is listened for: its category's scope, but for Find in
+    /// Place, listed with the script editor and run from anywhere.
+    pub(crate) fn scope(self) -> Scope {
+        match self {
+            Command::FindAll => Scope::Global,
+            _ => self.spec().category.scope(),
+        }
     }
 
     pub(crate) fn from_id(id: &str) -> Option<Command> {
@@ -339,11 +366,11 @@ impl Store {
     /// Other commands `keystroke` already runs in a scope that clashes with
     /// `command`'s (see [`Scope`]).
     pub(crate) fn conflicts(&self, command: Command, keystroke: &Keystroke) -> Vec<Command> {
-        let scope = command.spec().category.scope();
+        let scope = command.scope();
         ALL.iter()
             .filter(|spec| spec.command != command)
             .filter(|spec| {
-                let other = spec.category.scope();
+                let other = spec.command.scope();
                 other == scope || other == Scope::Global || scope == Scope::Global
             })
             .filter(|spec| self.pressed(spec.command, keystroke))
@@ -622,15 +649,26 @@ pub(crate) fn register_keymap_action<A: Action + Clone>(
 }
 
 /// Puts the keymap-backed commands (Studio Settings, Command Palette, Quick
-/// Open, Summon Handles) in GPUI's keymap with their current keys,
+/// Open, Quit, Find in Place, Summon Handles) in GPUI's keymap with their current keys,
 /// replacing whatever bindings those actions had. Called once at startup
 /// and after every change.
 pub(crate) fn apply_bindings(cx: &mut App) {
-    use crate::menu_bar::{MenuCommandPalette, MenuQuickOpen, MenuStudioSettings};
+    use crate::menu_bar::{MenuCommandPalette, MenuQuickOpen, MenuQuit, MenuStudioSettings};
+    use crate::shell::OpenFindInPlace;
     let builtin = [
         entry(Command::StudioSettings, MenuStudioSettings, None),
         entry(Command::CommandPalette, MenuCommandPalette, None),
         entry(Command::QuickOpen, MenuQuickOpen, None),
+        entry(Command::Quit, MenuQuit, None),
+        // One action, two meanings: the H key opens it on Replace.
+        KeymapEntry {
+            command: Command::FindAll,
+            action: TypeId::of::<OpenFindInPlace>(),
+            bind: Box::new(|spelling| {
+                let replace = parse(spelling).is_some_and(|key| key.key == "h");
+                KeyBinding::new(spelling, OpenFindInPlace { replace }, None)
+            }),
+        },
     ];
     REGISTERED.with(|list| {
         let list = list.borrow();
