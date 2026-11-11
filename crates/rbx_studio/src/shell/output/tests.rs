@@ -7,7 +7,8 @@ use std::time::UNIX_EPOCH;
 use gpui_kit::px;
 
 use super::{
-    follows_tail, game, ContextFilter, OutputEntry, OutputFilter, OutputLog, RowKind, CAP, SOURCE_MAX_LEN,
+    follows_tail, game, ContextFilter, OutputEntry, OutputFilter, OutputLog, RowKind, CAP,
+    SOURCE_MAX_LEN,
 };
 use crate::command_bar::Feedback;
 
