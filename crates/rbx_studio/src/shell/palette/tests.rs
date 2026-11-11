@@ -134,7 +134,9 @@ fn find_in_place_outranks_a_text_fields_own_key(cx: &mut gpui_kit::TestAppContex
             let typed = [Keystroke::parse(typed).unwrap()];
             let context = [gpui_kit::KeyContext::parse("Input").unwrap()];
             let (bindings, _) = keymap.bindings_for_input(&typed, &context);
-            bindings.first().map(|binding| binding.action().boxed_clone())
+            bindings
+                .first()
+                .map(|binding| binding.action().boxed_clone())
         };
         let find = first("secondary-shift-f").expect("bound");
         assert!(find.partial_eq(&crate::shell::OpenFindInPlace { replace: false }));

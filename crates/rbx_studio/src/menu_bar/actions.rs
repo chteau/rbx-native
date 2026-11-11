@@ -68,7 +68,10 @@ pub(crate) fn retarget(shell: &Entity<Shell>, cx: &mut App) {
 pub(super) fn install_app(cx: &mut App) {
     cx.on_action(|_: &MenuQuit, cx| {
         // No editor open (Home, the wizard) has nothing to ask.
-        if Target.update(cx, |shell, cx| shell.request_exit(cx)).unwrap_or(true) {
+        if Target
+            .update(cx, |shell, cx| shell.request_exit(cx))
+            .unwrap_or(true)
+        {
             cx.quit();
         }
     });
