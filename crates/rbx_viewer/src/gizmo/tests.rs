@@ -592,3 +592,11 @@ fn a_press_just_off_a_ring_is_near_it_but_grabs_nothing() {
     let away = Ray::new(Vec3::new(3.0, 3.0, 10.0), Vec3::NEG_Z);
     assert!(!handles.near(away, 2.0));
 }
+
+// A NaN pivot gives a NaN arm, which `f32::clamp` would panic on.
+#[test]
+fn a_nan_gizmo_grabs_nothing_rather_than_panicking() {
+    let handles = Handles::new(Vec3::splat(f32::NAN), basis(None), f32::NAN);
+    let ray = Ray::new(Vec3::new(0.5, 0.0, 5.0), Vec3::NEG_Z);
+    assert_eq!(handles.grab_arm(ray), None);
+}

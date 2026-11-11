@@ -218,12 +218,17 @@ struct Extent {
 }
 
 /// Keeps a half-width `half` window inside `[min, max]`, or centres it there
-/// when the window is wider than the span itself.
+/// when the window is wider than the span itself. A NaN bound leaves `value`
+/// alone: `f32::clamp` panics on one, and that panic was the render thread's.
 fn clamp_span(value: f32, min: f32, max: f32, half: f32) -> f32 {
-    if max - min <= 2.0 * half {
+    let (low, high) = (min + half, max - half);
+    if low.is_nan() || high.is_nan() {
+        return value;
+    }
+    if low >= high {
         return 0.5 * (min + max);
     }
-    value.clamp(min + half, max - half)
+    value.clamp(low, high)
 }
 
 fn snap(value: f32, texel: f32) -> f32 {

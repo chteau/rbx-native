@@ -6,7 +6,7 @@
 //! camera flies, so this module owns both the read Studio opens with and the
 //! write Ctrl+S later picks back up.
 
-use rbx_dom::{CFrameData, Instance, Ref, Variant, Vector3Data, WeakDom};
+use rbx_dom::{CFrameData, Change, Instance, Ref, Variant, Vector3Data, WeakDom};
 use rbx_viewer::Pose;
 
 /// Roblox's own default when a `Camera` names no `FieldOfView` at all, in degrees.
@@ -38,6 +38,9 @@ impl PlaceCamera {
             return None;
         };
         let eye = [cframe.position.x, cframe.position.y, cframe.position.z];
+        if !eye.iter().all(|axis| axis.is_finite()) {
+            return None;
+        }
         let look = look_vector(&cframe.rotation)?;
 
         Some(PlaceCamera {
@@ -61,6 +64,22 @@ fn field_of_view(camera: &Instance) -> f32 {
     } else {
         DEFAULT_FOV_DEGREES
     }
+}
+
+/// Where `changes` moved the view to, when one of them wrote the current
+/// camera's `CFrame` or `FieldOfView`: Studio's edit camera follows
+/// `workspace.CurrentCamera.CFrame = ...` from the Command Bar, a plugin or
+/// the Properties panel.
+pub(crate) fn moved_by(dom: &WeakDom, changes: &[Change]) -> Option<PlaceCamera> {
+    let camera = current_camera(dom)?;
+    changes
+        .iter()
+        .any(|change| {
+            matches!(change, Change::Property { referent, name }
+                if *referent == camera && (name == "CFrame" || name == "FieldOfView"))
+        })
+        .then(|| PlaceCamera::from_dom(dom))
+        .flatten()
 }
 
 fn current_camera(dom: &WeakDom) -> Option<Ref> {
@@ -116,8 +135,13 @@ pub(crate) fn write_pose(dom: &mut WeakDom, pose: Pose) {
         camera
     });
 
-    let _ = dom.set_property(camera, "CFrame", Variant::CFrame(cframe_from_pose(pose)));
-    let _ = dom.set_property(camera, "FieldOfView", Variant::Float32(pose.fov_degrees));
+    // Past the change log: the editor mirroring its own camera is not a
+    // write for [`moved_by`] to turn back into a camera move.
+    if let Some(instance) = dom.get_mut(camera) {
+        let properties = instance.properties_mut();
+        properties.insert("CFrame".into(), Variant::CFrame(cframe_from_pose(pose)));
+        properties.insert("FieldOfView".into(), Variant::Float32(pose.fov_degrees));
+    }
 }
 
 /// Builds the `CFrameData` a place would need to reopen at exactly this

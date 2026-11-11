@@ -111,6 +111,19 @@ pub struct Context {
     pub user_id: Option<u64>,
 }
 
+impl Context {
+    /// The 3D view's size in pixels, never zero: before the view is first
+    /// laid out a plugin still reads a Studio-sized one, as Roblox's
+    /// `Camera.ViewportSize` is never `(0, 0)`. A zero one turned F3X's
+    /// studs-per-pixel infinite and its handle drags NaN.
+    pub fn view_size(&self) -> [f32; 2] {
+        match self.viewport_size {
+            Some([width, height]) if width >= 1.0 && height >= 1.0 => [width, height],
+            _ => [1280.0, 720.0],
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DebuggerView {
     /// Every breakpoint: script, 1-based line, condition.

@@ -107,6 +107,10 @@ impl Input {
         self.pan
     }
 
+    pub(crate) fn wheel_notches(&self) -> f32 {
+        self.wheel_notches
+    }
+
     pub(crate) fn take_wheel_notches(&mut self) -> f32 {
         std::mem::take(&mut self.wheel_notches)
     }
