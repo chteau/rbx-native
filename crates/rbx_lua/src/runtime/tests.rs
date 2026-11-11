@@ -676,3 +676,23 @@ fn an_instance_with_no_parent_is_alive_but_not_under_game() {
         .unwrap();
     assert_eq!(output.lines(), ["true nil Removed nil", "Fresh"]);
 }
+
+#[test]
+fn writing_back_what_is_there_logs_no_change() {
+    let mut dom = place();
+    let mut runtime = Runtime::lent(&mut dom, ReflectionDatabase::embedded()).unwrap();
+    runtime.start("local p = Instance.new('Part', workspace) p.Name = 'P' p:SetAttribute('Kept', 1)");
+    runtime.resume_in(&mut dom);
+    dom.take_changes();
+    runtime.start(
+        "local p = workspace.P \
+         p.Anchored = p.Anchored p.Name = p.Name \
+         p:SetAttribute('Missing', nil) p:SetAttribute('Kept', 1) \
+         workspace:SetAttribute('Never', nil)",
+    );
+    assert!(matches!(
+        runtime.resume_in(&mut dom).state,
+        RunState::Finished
+    ));
+    assert!(dom.changes().is_empty(), "no-op writes logged {:?}", dom.changes());
+}

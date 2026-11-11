@@ -249,6 +249,12 @@ impl Shell {
             rich: self.output_rich_text,
         };
         let query = self.output_search.read(cx).value().trim().to_lowercase();
+        // Like Studio, the log follows new lines while it sits at its
+        // bottom, and stays put once scrolled up to read.
+        let scroll = &self.output_scroll;
+        if follows_tail(scroll.offset().y, scroll.max_offset().y) {
+            scroll.scroll_to_bottom();
+        }
         let entries: Vec<&OutputEntry> = self
             .output
             .filtered(filter, self.output_context, &query)
@@ -285,6 +291,13 @@ impl Shell {
                 .scrollbar_y(&self.output_scroll),
         )
     }
+}
+
+/// Whether the log sat at its bottom when it was last laid out (`offset`
+/// runs from 0 down to `-max`). One that fits has no room to scroll and
+/// counts as at its bottom, so it follows from the first line that spills.
+fn follows_tail(offset: Pixels, max: Pixels) -> bool {
+    -offset >= max - px(1.)
 }
 
 #[cfg(test)]

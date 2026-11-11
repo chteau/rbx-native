@@ -4,8 +4,10 @@
 // see `shell::dock`'s own test module for the same guard.
 use std::time::UNIX_EPOCH;
 
+use gpui_kit::px;
+
 use super::{
-    game, ContextFilter, OutputEntry, OutputFilter, OutputLog, RowKind, CAP, SOURCE_MAX_LEN,
+    follows_tail, game, ContextFilter, OutputEntry, OutputFilter, OutputLog, RowKind, CAP, SOURCE_MAX_LEN,
 };
 use crate::command_bar::Feedback;
 
@@ -519,4 +521,16 @@ fn plugin_lines_show_under_user_plugin_only() {
     assert_eq!(sources(ContextFilter::UserPlugin), vec!["Inspector"]);
     assert_eq!(sources(ContextFilter::Edit), vec!["print(1)"]);
     assert_eq!(sources(ContextFilter::All).len(), 2);
+}
+
+#[test]
+fn the_log_follows_new_lines_only_from_its_bottom() {
+    // Fits: nothing to scroll, so it follows once it spills.
+    assert!(follows_tail(px(0.), px(0.)));
+    // At the bottom, give or take a rounding.
+    assert!(follows_tail(px(-300.), px(300.)));
+    assert!(follows_tail(px(-299.5), px(300.)));
+    // Scrolled up to read: left where it is.
+    assert!(!follows_tail(px(-120.), px(300.)));
+    assert!(!follows_tail(px(0.), px(300.)));
 }
