@@ -234,6 +234,11 @@ fn a_window_wider_than_its_span_is_centred_on_it() {
 fn a_nan_scene_fits_without_panicking() {
     let nan = Vec3::splat(f32::NAN);
     let bounds = bounds_from(nan, nan);
-    let fit = fit(afternoon_sun(), &frustum(Vec3::ZERO, 50.0), &bounds, RESOLUTION);
+    let fit = fit(
+        afternoon_sun(),
+        &frustum(Vec3::ZERO, 50.0),
+        &bounds,
+        RESOLUTION,
+    );
     assert!(fit.half.is_finite());
 }

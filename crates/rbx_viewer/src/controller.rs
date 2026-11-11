@@ -382,7 +382,8 @@ fn free_update(
                 .clamp(MIN_ORTHO_SCALE, MAX_ORTHO_SCALE);
         } else {
             let step = speed * feel.speed_scale * ZOOM_SECONDS_PER_NOTCH * notches;
-            motion.dolly_remaining += forward * dolly_step(step, pose.position, forward, motion, room);
+            motion.dolly_remaining +=
+                forward * dolly_step(step, pose.position, forward, motion, room);
         }
     }
     // Ease the dolly hop in over a few frames instead of teleporting the full

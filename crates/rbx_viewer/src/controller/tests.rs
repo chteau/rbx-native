@@ -786,7 +786,11 @@ fn a_long_zoom_out_stops_at_the_scenes_reach() {
     let mut controller = spawned();
     let mut from = step(&mut controller, &mut Input::default(), Duration::ZERO);
     for _ in 0..2_000 {
-        from = step(&mut controller, &mut wheeled(-5.0, false), Duration::from_millis(16));
+        from = step(
+            &mut controller,
+            &mut wheeled(-5.0, false),
+            Duration::from_millis(16),
+        );
     }
     let reach = bounds().radius() * ZOOM_OUT_RADII + ZOOM_OUT_SLACK;
     let distance = pose(from).position.distance(bounds().center());
@@ -800,7 +804,11 @@ fn a_nan_pose_is_replaced_rather_than_flown_from() {
         ..Camera::spawn_pose(&bounds())
     };
     let mut controller = Controller::new(Start::Pose(broken), &bounds(), Some(30.0), 0.2);
-    let from = pose(step(&mut controller, &mut wheeled(1.0, false), Duration::from_millis(16)));
+    let from = pose(step(
+        &mut controller,
+        &mut wheeled(1.0, false),
+        Duration::from_millis(16),
+    ));
     assert!(finite(&from), "{from:?}");
 }
 
@@ -812,6 +820,10 @@ fn no_smoothing_over_a_zero_step_stays_finite() {
         smoothing: 0.0,
         ..CameraFeel::default()
     });
-    let from = pose(step(&mut controller, &mut wheeled(3.0, false), Duration::ZERO));
+    let from = pose(step(
+        &mut controller,
+        &mut wheeled(3.0, false),
+        Duration::ZERO,
+    ));
     assert!(finite(&from), "{from:?}");
 }
