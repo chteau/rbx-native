@@ -32,7 +32,7 @@ impl Shell {
 
     /// Replaces the script's text with StyLua's as one undo step, the cursor
     /// kept on its line. Text that doesn't parse is left alone, and why is
-    /// shown in the status bar until the script next changes.
+    /// shown in the status bar until the script next changes, and in Output.
     pub(super) fn format_script(
         &mut self,
         reference: Ref,
@@ -55,7 +55,11 @@ impl Shell {
                     });
                 }
             }
-            Err(message) => self.scripts.format_failure = Some((reference, message)),
+            Err(message) => {
+                // Output too: the status bar's red line is easy to miss.
+                self.output.push_warning(&message);
+                self.scripts.format_failure = Some((reference, message));
+            }
         }
         cx.notify();
     }

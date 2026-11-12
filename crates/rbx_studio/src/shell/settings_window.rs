@@ -209,6 +209,10 @@ impl SettingsWindow {
         let (calibration, calibrated) = viewport::CalibrationFields::new(&shell, window, cx);
         subscriptions.extend(calibrated);
         let (argon, picked) = argon::ArgonControls::new(window, cx);
+        // However it closes (title bar, Escape, the OS), Home's hidden
+        // host goes with it.
+        let host = shell.clone();
+        subscriptions.push(cx.on_release(move |_, cx| crate::close_settings_host(&host, cx)));
         subscriptions.extend(picked);
         let (appearance, chosen) = appearance::AppearanceControls::new(&shell, window, cx);
         subscriptions.extend(chosen);

@@ -655,7 +655,8 @@ pub(crate) fn register_keymap_action<A: Action + Clone>(
 pub(crate) fn apply_bindings(cx: &mut App) {
     use crate::menu_bar::{MenuCommandPalette, MenuQuickOpen, MenuQuit, MenuStudioSettings};
     use crate::shell::OpenFindInPlace;
-    let builtin = [
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut, clippy::useless_vec))]
+    let mut builtin = vec![
         entry(Command::StudioSettings, MenuStudioSettings, None),
         entry(Command::CommandPalette, MenuCommandPalette, None),
         entry(Command::QuickOpen, MenuQuickOpen, None),
@@ -670,6 +671,27 @@ pub(crate) fn apply_bindings(cx: &mut App) {
             }),
         },
     ];
+    // macOS's menu bar shows an item's key from the keymap. The Edit keys
+    // are handled by the editor's own key handlers, so these bindings sit
+    // under a context no element has: labels only, never a second dispatch.
+    #[cfg(target_os = "macos")]
+    {
+        use crate::menu_bar::{
+            MenuCopyInstance, MenuCutInstance, MenuDeleteInstance, MenuDuplicateInstance,
+            MenuPasteInstance, MenuPasteIntoInstance, MenuRedo, MenuUndo,
+        };
+        const LABEL_ONLY: Option<&str> = Some("RbxNativeMenuLabel");
+        builtin.extend([
+            entry(Command::Undo, MenuUndo, LABEL_ONLY),
+            entry(Command::Redo, MenuRedo, LABEL_ONLY),
+            entry(Command::Cut, MenuCutInstance, LABEL_ONLY),
+            entry(Command::Copy, MenuCopyInstance, LABEL_ONLY),
+            entry(Command::Paste, MenuPasteInstance, LABEL_ONLY),
+            entry(Command::PasteInto, MenuPasteIntoInstance, LABEL_ONLY),
+            entry(Command::Duplicate, MenuDuplicateInstance, LABEL_ONLY),
+            entry(Command::Delete, MenuDeleteInstance, LABEL_ONLY),
+        ]);
+    }
     REGISTERED.with(|list| {
         let list = list.borrow();
         let entries: Vec<&KeymapEntry> = builtin.iter().chain(list.iter()).collect();
