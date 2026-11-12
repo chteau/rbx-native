@@ -30,6 +30,15 @@ x11rb = { version = "0.13", features = ["xinput", "shape", "xtest"] }
 # `PR_SET_PDEATHSIG` for the tunnel child (`tunnel`); already in the tree.
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Hiding and showing the player app and asking whether the editor is the
+# active app (`embed::mac`); same versions rbx_studio uses.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "libc",
+    "NSRunningApplication",
+] }
+
 [target.'cfg(windows)'.dependencies]
 # Embedding RobloxPlayerBeta's window; same version rbx_studio uses. The
 # network simulator adds: WinDivert.dll loaded at runtime (LibraryLoader),

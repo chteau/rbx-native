@@ -75,12 +75,18 @@ pub(crate) fn is_client(owner: &str, layer: i64, frame: Frame) -> bool {
         && frame.height >= MIN_CLIENT_SIDE
 }
 
-/// Whether the client must be raised: the editor's window is the front one
-/// (it was just clicked) and the client is on screen behind it. A window
-/// of another app in front means the user is elsewhere, and the client
-/// stays where it is.
-pub(crate) fn needs_raise(front_to_back: &[u32], editor: u32, client: u32) -> bool {
-    front_to_back.first() == Some(&editor) && front_to_back.contains(&client)
+/// Whether the client must be raised: the editor's app is the active one
+/// (its windows are in front, not necessarily the editor's own: Home or
+/// Settings may be) and the client sits behind the editor. `front_to_back`
+/// is the normal-layer windows as `(window, pid)`. Another app's window in
+/// front means the user is elsewhere, and the client stays where it is.
+pub(crate) fn needs_raise(front_to_back: &[(u32, i32)], me: i32, editor: u32, client: u32) -> bool {
+    let at = |id: u32| front_to_back.iter().position(|&(w, _)| w == id);
+    let front_is_mine = front_to_back.first().is_some_and(|&(_, pid)| pid == me);
+    match (at(editor), at(client)) {
+        (Some(editor), Some(client)) => front_is_mine && client > editor,
+        _ => false,
+    }
 }
 
 /// The game's area in pixels: the window below its title bar.
@@ -265,12 +271,22 @@ mod tests {
     }
 
     #[test]
-    fn raises_only_when_the_editor_is_in_front_of_a_shown_client() {
-        assert!(needs_raise(&[1, 2, 9], 1, 2));
-        assert!(!needs_raise(&[2, 1], 1, 2));
-        assert!(!needs_raise(&[7, 1, 2], 1, 2));
-        assert!(!needs_raise(&[1, 9], 1, 2));
-        assert!(!needs_raise(&[], 1, 2));
+    fn raises_only_when_the_editor_app_is_in_front_of_a_shown_client() {
+        const ME: i32 = 10;
+        const ROBLOX: i32 = 20;
+        const SAFARI: i32 = 30;
+        // Editor (1) in front, client (2) behind it.
+        assert!(needs_raise(&[(1, ME), (2, ROBLOX), (9, SAFARI)], ME, 1, 2));
+        // Another of the editor's windows (Settings) in front of both.
+        assert!(needs_raise(&[(5, ME), (1, ME), (2, ROBLOX)], ME, 1, 2));
+        // Already over the editor.
+        assert!(!needs_raise(&[(2, ROBLOX), (1, ME)], ME, 1, 2));
+        assert!(!needs_raise(&[(5, ME), (2, ROBLOX), (1, ME)], ME, 1, 2));
+        // Safari in front: the user is elsewhere.
+        assert!(!needs_raise(&[(7, SAFARI), (1, ME), (2, ROBLOX)], ME, 1, 2));
+        // The client isn't on screen, or nothing is.
+        assert!(!needs_raise(&[(1, ME), (9, SAFARI)], ME, 1, 2));
+        assert!(!needs_raise(&[], ME, 1, 2));
     }
 
     #[test]

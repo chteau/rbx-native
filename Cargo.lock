@@ -6988,6 +6988,7 @@ dependencies = [
  "getrandom 0.3.4",
  "libc",
  "mlua",
+ "objc2-app-kit 0.3.2",
  "percent-encoding",
  "rbx_binary",
  "rbx_cloud",

@@ -13,6 +13,9 @@
 //!
 //! All of it needs the Accessibility permission; without it `attach`
 //! fails with `EmbedError::NoAccess` and the player stays where it is.
+//!
+//! What it sees and does goes to stderr as `mac embed:` lines, once per
+//! change, since nobody can watch the window server from a bug report.
 
 mod capture;
 mod events;
@@ -22,6 +25,8 @@ mod input;
 pub use input::Input;
 
 use std::cell::{Cell, RefCell};
+
+use objc2_app_kit::NSRunningApplication;
 use std::time::{Duration, Instant};
 
 use super::pin::{self, Frame};
@@ -36,6 +41,23 @@ fn failed(call: &str) -> EmbedError {
     EmbedError::X11(format!("{call} failed"))
 }
 
+/// This process's id, as the window server lists owners.
+fn own_pid() -> i32 {
+    i32::try_from(std::process::id()).unwrap_or(-1)
+}
+
+/// Hides or shows the app `pid` the way Cmd+H does, through AppKit, which
+/// needs no permission; the Accessibility attribute is the fallback.
+fn set_app_hidden(pid: i32, app: &Ax, hidden: bool) -> bool {
+    let done = NSRunningApplication::runningApplicationWithProcessIdentifier(pid).is_some_and(
+        |running| match hidden {
+            true => running.hide() || running.isHidden(),
+            false => running.unhide() || !running.isHidden(),
+        },
+    );
+    done || app.set_bool("AXHidden", hidden)
+}
+
 /// The player's game windows on screen, front first.
 fn scan() -> Vec<WindowInfo> {
     ffi::windows(ffi::ON_SCREEN, 0)
@@ -47,6 +69,7 @@ fn scan() -> Vec<WindowInfo> {
 /// The player window being pinned, and its Accessibility handles.
 struct Client {
     id: WindowId,
+    pid: i32,
     app: Ax,
     window: Option<Ax>,
 }
@@ -57,6 +80,7 @@ impl Client {
         let window = app.window(info.id);
         Ok(Client {
             id: info.id,
+            pid: info.pid,
             app,
             window,
         })
@@ -76,6 +100,8 @@ pub struct Embedded {
     /// Whether the player app is shown, as last set.
     shown: Cell<bool>,
     missing_since: Cell<Option<Instant>>,
+    /// The last `mac embed:` line written, so each is written once.
+    said: RefCell<String>,
 }
 
 impl Embedded {
@@ -110,7 +136,9 @@ impl Embedded {
             offscreen: Cell::new(false),
             shown: Cell::new(true),
             missing_since: Cell::new(None),
+            said: RefCell::new(String::new()),
         };
+        this.say(format!("pinning {} ({}) of pid {}", info.id, info.owner, info.pid));
         this.set_rect(rect)?;
         Ok(this)
     }
@@ -131,7 +159,10 @@ impl Embedded {
     /// called on every poll; it only moves or raises what is out of place.
     pub fn set_rect(&self, rect: Rect) -> Result<(), EmbedError> {
         let editor = ffi::window(self.parent).ok_or_else(|| failed("finding the editor window"))?;
-        self.offscreen.set(!editor.onscreen);
+        // Minimised, on another Space, or the app hidden with Cmd+H: the
+        // window server lists the editor's window as off screen.
+        let hidden_app = NSRunningApplication::currentApplication().isHidden();
+        self.offscreen.set(!editor.onscreen || hidden_app);
         self.sync_shown();
         if !self.shown.get() {
             return Ok(());
@@ -142,21 +173,55 @@ impl Embedded {
             client.window = client.app.window(client.id);
         }
         let window = client.window.as_ref().ok_or_else(|| failed("AXWindows"))?;
-        let placed = ffi::window(client.id).is_some_and(|w| w.frame.near(target));
+        let now = ffi::window(client.id).map(|w| w.frame);
+        let placed = now.is_some_and(|frame| frame.near(target));
         if !placed && !window.set_frame(target) {
             // The element may be stale (the player rebuilt its window).
             client.window = None;
+            drop(client);
+            self.say("moving the player failed (AXPosition/AXSize)".to_owned());
             return Err(failed("AXPosition/AXSize"));
         }
-        let order: Vec<u32> = ffi::windows(ffi::ON_SCREEN, 0)
+        if let Some(frame) = ffi::window(client.id).map(|w| w.frame) {
+            if frame.height > target.height + 1.0 || frame.width > target.width + 1.0 {
+                // The player has a minimum size; it overflows the view.
+                let (w, h) = (frame.width, frame.height);
+                let (tw, th) = (target.width, target.height);
+                let id = client.id;
+                drop(client);
+                self.say(format!("player {id} kept {w}x{h} for a {tw}x{th} view"));
+                client = self.client.borrow_mut();
+            }
+        }
+        let order: Vec<(u32, i32)> = ffi::windows(ffi::ON_SCREEN, 0)
             .into_iter()
             .filter(|w| w.layer == 0)
-            .map(|w| w.id)
+            .map(|w| (w.id, w.pid))
             .collect();
-        if pin::needs_raise(&order, self.parent, client.id) {
-            window.raise();
+        if pin::needs_raise(&order, own_pid(), self.parent, client.id) {
+            let raised = client.window.as_ref().is_some_and(Ax::raise);
+            let id = client.id;
+            drop(client);
+            let front: Vec<u32> = order.iter().take(4).map(|&(w, _)| w).collect();
+            self.say(format!(
+                "raising player {id} over editor {} (front {front:?}): {}",
+                self.parent,
+                match raised {
+                    true => "ok",
+                    false => "AXRaise refused",
+                }
+            ));
         }
         Ok(())
+    }
+
+    /// Writes `line` to stderr unless it was the last one written.
+    fn say(&self, line: String) {
+        let mut said = self.said.borrow_mut();
+        if *said != line {
+            eprintln!("mac embed: {line}");
+            *said = line;
+        }
     }
 
     /// A separate window cannot be clipped around the editor's popups:
@@ -181,9 +246,33 @@ impl Embedded {
 
     fn sync_shown(&self) {
         let want = !(self.hidden.get() || self.holed.get() || self.offscreen.get());
-        if want != self.shown.get() && self.client.borrow().app.set_bool("AXHidden", !want) {
+        if want == self.shown.get() {
+            return;
+        }
+        let done = {
+            let client = self.client.borrow();
+            set_app_hidden(client.pid, &client.app, !want)
+        };
+        if done {
             self.shown.set(want);
         }
+        let why = match (self.hidden.get(), self.holed.get(), self.offscreen.get()) {
+            (true, ..) => "another document is in front",
+            (_, true, _) => "a popup overlaps the view",
+            (.., true) => "the editor is minimised, hidden or on another Space",
+            _ => "the 3D view is back",
+        };
+        self.say(format!(
+            "{} the player ({why}){}",
+            match want {
+                true => "showing",
+                false => "hiding",
+            },
+            match done {
+                true => "",
+                false => ": refused",
+            }
+        ));
     }
 
     /// Activates the player app, which gives it the keyboard.
@@ -217,7 +306,8 @@ impl Drop for Embedded {
     /// after Play stops, in its own window as before.
     fn drop(&mut self) {
         if !self.shown.get() {
-            self.client.borrow().app.set_bool("AXHidden", false);
+            let client = self.client.borrow();
+            set_app_hidden(client.pid, &client.app, false);
         }
     }
 }
