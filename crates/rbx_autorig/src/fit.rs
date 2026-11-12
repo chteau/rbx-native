@@ -455,8 +455,8 @@ impl Limb {
     /// bigger: the limb entering the torso.
     fn merge(&self, from: usize) -> usize {
         let mut seen: Vec<f32> = Vec::new();
-        for i in from..self.points.len() {
-            let s = &self.sections[i];
+        let samples = self.sections.iter().enumerate().take(self.points.len());
+        for (i, s) in samples.skip(from) {
             if seen.len() >= 3 {
                 let mut sorted = seen.clone();
                 sorted.sort_by(f32::total_cmp);
