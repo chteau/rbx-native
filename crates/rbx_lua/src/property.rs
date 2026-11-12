@@ -149,6 +149,12 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
     }
     let variant = from_lua::lua_to_variant(ctx, name, &value_type, value)?;
     let variant = keep_representation(existing.as_ref(), variant);
+    // Writing the default an instance doesn't store (`part.Anchored =
+    // part.Anchored` on a fresh part) changes nothing either, but storing it
+    // would log a change and mark the place unsaved.
+    if existing.as_ref() == Some(&variant) {
+        return Ok(true);
+    }
     ctx.dom_mut()
         .set_property(referent, &key, variant)
         .map_err(|error| mlua::Error::runtime(error.to_string()))?;

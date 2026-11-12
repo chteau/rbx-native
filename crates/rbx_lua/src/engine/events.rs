@@ -238,11 +238,11 @@ fn set_attribute(
     ctx.check_write(referent)?;
     // Only this entry is re-encoded: the others keep their bytes, enum
     // names included.
-    let blob = ctx
+    let old = ctx
         .dom()
         .get(referent)
         .and_then(|i| i.properties().get(ATTRIBUTES).cloned());
-    let blob = match blob {
+    let blob = match old.clone() {
         Some(Variant::String(text)) => Variant::Unknown {
             type_id: STRING_TYPE_ID,
             raw: text.into_bytes(),
@@ -260,6 +260,17 @@ fn set_attribute(
         enum_type.flatten().as_deref(),
     )
     .ok_or_else(|| mlua::Error::runtime("these attributes cannot be written back"))?;
+    // Clearing one that isn't there, or setting one to what it holds, is
+    // no edit, though the re-encoded blob can differ byte for byte.
+    let same = |blob: Option<&Variant>| {
+        (
+            rbx_dom::attributes::decode(blob),
+            rbx_dom::attributes::enum_types(blob),
+        )
+    };
+    if same(old.as_ref()) == same(Some(&blob)) {
+        return Ok(());
+    }
     ctx.dom_mut()
         .set_property(referent, ATTRIBUTES, blob)
         .map_err(|e| mlua::Error::runtime(e.to_string()))?;

@@ -139,6 +139,12 @@ impl Shell {
         let ours = self.sound_preview.is_for(target, &uri);
         let state = &self.sound_preview;
         let at = if ours { state.fraction() } else { 0. };
+        // Every frame while it plays, not just each poll: a sound shorter
+        // than a few polls (a click, a pickup) otherwise ends before the
+        // rail visibly moves.
+        if ours && state.playing() {
+            window.request_animation_frame();
+        }
         let (icon, label, color) = match () {
             _ if ours && state.loading => (IconName::LoaderCircle, "Loading", tokens::text_muted()),
             _ if ours && state.playing() => (IconName::Pause, "Pause", tokens::warning()),
