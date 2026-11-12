@@ -304,6 +304,7 @@ impl GameWorkspace {
             };
             match after {
                 AfterClose::Quit => remove(cx),
+                AfterClose::Exit => cx.quit(),
                 AfterClose::Home => {
                     crate::open_home_again(cx);
                     remove(cx);

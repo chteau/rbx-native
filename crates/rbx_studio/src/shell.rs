@@ -82,6 +82,7 @@ mod team_presence;
 pub(crate) use chrome::panel_topbar;
 pub(crate) use coedit::BETA_ID as COEDIT_BETA_ID;
 pub(crate) use export::Export;
+pub(crate) use find_in_place::OpenFindInPlace;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use localization::BETA_ID as PSEUDO_LOC_BETA_ID;
 pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
@@ -2191,6 +2192,9 @@ impl Render for Shell {
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);
+            }))
+            .on_action(cx.listener(|shell, find: &OpenFindInPlace, window, cx| {
+                shell.open_find_in_place(find.replace, window, cx);
             }))
             // A bare Alt tap is one of the two ways into the menu bar, so
             // the window has to see Alt going down and coming back up. Both

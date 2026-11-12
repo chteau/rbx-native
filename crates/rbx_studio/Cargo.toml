@@ -176,9 +176,13 @@ pulseaudio = "0.3"
 cpal = "0.15"
 
 # Hiding AppKit's own window buttons under the editor's title bar
-# (`shell::chrome`). Already in Cargo.lock through GPUI's macOS back end.
+# (`shell::chrome`) and macOS's About panel (`menu_bar::native`). Both
+# already in Cargo.lock through GPUI's macOS back end.
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "NSApplication",
     "NSButton",
     "NSControl",
     "NSResponder",

@@ -1,5 +1,5 @@
-//! The X11 requests and Win32 calls the pointer lock is made of, and the
-//! nothing it becomes everywhere else.
+//! The X11 requests, Win32 calls and CoreGraphics calls the pointer lock is
+//! made of, and the nothing it becomes everywhere else.
 //!
 //! On X11 the connection is the lock's own, never GPUI's: warping and hiding are
 //! not part of what GPUI's event loop does, and a second client connection costs
@@ -147,12 +147,95 @@ fn hwnd(window: WindowId) -> windows_sys::Win32::Foundation::HWND {
     window as windows_sys::Win32::Foundation::HWND
 }
 
+/// macOS hides the cursor and freezes it in place itself
+/// (`CGAssociateMouseAndMouseCursorPosition`), and reports the travel the
+/// frozen cursor would have made. So there is no real warp: `pointer` is a
+/// virtual position, moved by that travel, and `warp` just sets it, which is
+/// all the tracker needs to see the same deltas it sees elsewhere.
+#[cfg(target_os = "macos")]
+pub(super) struct Server {
+    at: std::cell::Cell<super::At>,
+    /// Mouse events seen so far: GPUI repeats the last drag every 16 ms
+    /// while a button is held, and only a new event carries new travel.
+    seen: std::cell::Cell<u32>,
+}
+
+#[cfg(target_os = "macos")]
+mod cg {
+    /// `kCGEventSourceStateCombinedSessionState`.
+    pub(super) const SESSION: i32 = 0;
+    /// Mouse moved, left/right dragged, other dragged.
+    pub(super) const MOTION: [u32; 4] = [5, 6, 7, 27];
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        pub(super) fn CGMainDisplayID() -> u32;
+        pub(super) fn CGDisplayHideCursor(display: u32) -> i32;
+        pub(super) fn CGDisplayShowCursor(display: u32) -> i32;
+        pub(super) fn CGAssociateMouseAndMouseCursorPosition(connected: i32) -> i32;
+        pub(super) fn CGGetLastMouseDelta(dx: *mut i32, dy: *mut i32);
+        pub(super) fn CGEventSourceCounterForEventType(state: i32, kind: u32) -> u32;
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Server {
+    pub(super) fn open() -> Option<Self> {
+        Some(Server {
+            at: std::cell::Cell::new((0, 0)),
+            seen: std::cell::Cell::new(0),
+        })
+    }
+
+    fn motion_events() -> u32 {
+        cg::MOTION
+            .iter()
+            // SAFETY: a plain query with no pointers.
+            .map(|&kind| unsafe { cg::CGEventSourceCounterForEventType(cg::SESSION, kind) })
+            .fold(0, u32::wrapping_add)
+    }
+
+    pub(super) fn pointer(&self, _window: super::WindowId) -> Option<super::At> {
+        let (x, y) = self.at.get();
+        let events = Self::motion_events();
+        if self.seen.replace(events) == events {
+            return Some((x, y));
+        }
+        let (mut dx, mut dy) = (0, 0);
+        // SAFETY: both pointers are to live locals.
+        unsafe { cg::CGGetLastMouseDelta(&mut dx, &mut dy) };
+        let step = |at: i16, by: i32| at.saturating_add(by.clamp(-1000, 1000) as i16);
+        Some((step(x, dx), step(y, dy)))
+    }
+
+    pub(super) fn warp(&self, _window: super::WindowId, to: super::At) {
+        self.at.set(to);
+    }
+
+    pub(super) fn hide(&self, _window: super::WindowId) {
+        self.seen.set(Self::motion_events());
+        // SAFETY: plain calls on the main display, no pointers.
+        unsafe {
+            cg::CGDisplayHideCursor(cg::CGMainDisplayID());
+            cg::CGAssociateMouseAndMouseCursorPosition(0);
+        }
+    }
+
+    pub(super) fn show(&self, _window: super::WindowId) {
+        // SAFETY: as in `hide`.
+        unsafe {
+            cg::CGAssociateMouseAndMouseCursorPosition(1);
+            cg::CGDisplayShowCursor(cg::CGMainDisplayID());
+        }
+    }
+}
+
 /// Never constructed: no other backend gets a lock, so every call below is
 /// unreachable by construction rather than by convention.
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
 pub(super) enum Server {}
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
 impl Server {
     pub(super) fn open() -> Option<Self> {
         None

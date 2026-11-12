@@ -295,3 +295,28 @@ fn tab_is_recordable_only_for_a_command_that_defaults_to_it() {
     assert!(!bindable(Command::GraphPan, &parsed("tab")));
     assert!(!bindable(Command::SummonHandles, &parsed("enter")));
 }
+
+// Find in Place runs from anywhere, so no Explorer, viewport or global key
+// may share its defaults: Ctrl+Shift+F used to insert a Folder as well.
+#[test]
+fn find_in_place_shares_no_default_key() {
+    let store = Store::default();
+    for key in store.bindings(Command::FindAll) {
+        assert_eq!(store.conflicts(Command::FindAll, &key), vec![], "{key:?}");
+    }
+    assert_eq!(Command::FindAll.scope(), Scope::Global);
+}
+
+#[test]
+fn quit_and_settings_defaults_follow_the_os() {
+    let store = Store::default();
+    let quit = store.bindings(Command::Quit);
+    let settings = store.bindings(Command::StudioSettings);
+    if cfg!(target_os = "macos") {
+        assert_eq!(quit, vec![parsed("cmd-q")]);
+        assert_eq!(settings, vec![parsed("cmd-,"), parsed("alt-s")]);
+    } else {
+        assert!(quit.is_empty());
+        assert_eq!(settings, vec![parsed("alt-s")]);
+    }
+}

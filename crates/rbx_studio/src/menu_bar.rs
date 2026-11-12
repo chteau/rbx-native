@@ -40,6 +40,8 @@ use crate::tokens;
 mod actions;
 mod alt_tap;
 mod bar;
+#[cfg(target_os = "macos")]
+mod native;
 mod popup;
 
 pub(crate) use bar::{install_key_bindings, MenuBar};
@@ -76,6 +78,8 @@ actions!(
         MenuUpdatePlanning,
         MenuOpenAutoSaves,
         MenuStudioSettings,
+        /// Cmd+Q on macOS: the close button's question, then the whole app.
+        MenuQuit,
         MenuCustomizeShortcuts,
         MenuBetaFeatures,
         MenuScriptTemplates,
@@ -149,7 +153,17 @@ pub(crate) struct MenuInsertTemplate {
 /// render tree (see [`MenuBar::bar`]).
 pub(crate) fn build(shell: Entity<Shell>, templates: &[Template], cx: &mut App) -> Entity<MenuBar> {
     actions::install(&shell, cx);
+    #[cfg(target_os = "macos")]
+    native::set(templates, cx);
     MenuBar::new(menus(templates), cx)
+}
+
+/// The commands that work before any editor exists: Quit, and on macOS the
+/// system menu bar. Once, at launch.
+pub(crate) fn install_app(cx: &mut App) {
+    actions::install_app(cx);
+    #[cfg(target_os = "macos")]
+    native::install(cx);
 }
 
 pub(crate) use actions::retarget;
@@ -159,11 +173,13 @@ pub(crate) use actions::retarget;
 /// point at the wrong template.
 pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut App) {
     bar.update(cx, |bar, cx| bar.set_menus(menus(templates), cx));
+    #[cfg(target_os = "macos")]
+    native::set(templates, cx);
 }
 
 /// The menu structure itself. File and Edit hold this editor's real
 /// commands (see this module's doc comment); Model holds the two quick
-/// inserts `shell::keys` handles (Insert Folder on Ctrl+Shift+F), plus the three
+/// inserts `shell::keys` handles (unbound by default, rebindable), plus the three
 /// script classes and the OOP `ModuleScript` variant, Roblox itself offers
 /// `Script`/`LocalScript`/`ModuleScript` as distinct inserts, so this matches
 /// that rather than collapsing them into one generic "Insert Script", and
