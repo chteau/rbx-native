@@ -44,3 +44,23 @@ fn multibyte_characters_are_never_split() {
     assert_eq!(out.chars().count(), MAX_CHARS);
     assert!(out.chars().all(|c| c == 'é' || c == '😀'));
 }
+
+#[test]
+fn a_name_that_already_has_the_mark_keeps_one() {
+    assert_eq!(
+        render(DEFAULT, "Obby (Play)").as_deref(),
+        Some("Obby (Play)")
+    );
+    assert_eq!(
+        render(DEFAULT, "Obby (Play) (Play)").as_deref(),
+        Some("Obby (Play)")
+    );
+    assert_eq!(
+        render("Test: {place}", "Test: Obby").as_deref(),
+        Some("Test: Obby")
+    );
+    assert_eq!(
+        render(DEFAULT, "Obby (Playground)").as_deref(),
+        Some("Obby (Playground) (Play)")
+    );
+}

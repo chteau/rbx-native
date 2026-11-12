@@ -11,6 +11,8 @@
 //! how many changes each tick made. `RUN_PLUGIN_VIEW_CLICK=<name>` clicks
 //! the 3D view over a place instance (for a plugin that activated itself),
 //! and `RUN_PLUGIN_DUMP_UI=1` prints each widget's instance tree.
+//! `RUN_PLUGIN_CHANGES=1` prints every place change a dispatch reports,
+//! with the instance's path, and whether it armed an undo step.
 
 use std::path::Path;
 
@@ -53,6 +55,31 @@ impl Run {
         for request in &outcome.requests {
             println!("request: {request:?}");
         }
+        if std::env::var_os("RUN_PLUGIN_CHANGES").is_some() {
+            let describe = |r: Ref| {
+                let mut path = Vec::new();
+                let mut at = Some(r);
+                while let Some(i) = at.and_then(|r| self.dom.get(r)) {
+                    path.push(format!("{}<{}>", i.name(), i.class()));
+                    at = self.dom.parent(i.referent());
+                }
+                path.reverse();
+                path.join(".")
+            };
+            if outcome.before.is_some() {
+                println!("undo point armed ({} changes)", outcome.changes.len());
+            }
+            for change in &outcome.changes {
+                let r = match change {
+                    rbx_dom::Change::Property { referent, .. }
+                    | rbx_dom::Change::Parent { referent, .. }
+                    | rbx_dom::Change::Added(referent)
+                    | rbx_dom::Change::Removed(referent)
+                    | rbx_dom::Change::Class(referent) => *referent,
+                };
+                println!("change: {change:?} {}", describe(r));
+            }
+        }
         outcome
     }
 
@@ -83,7 +110,9 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let place = args.next().expect("usage: run_plugin place.rbxl plugin…");
     let bytes = std::fs::read(&place).expect("place must be readable");
-    let dom = rbx_binary::deserialize(&bytes).expect("place must parse");
+    let mut dom = rbx_binary::deserialize(&bytes).expect("place must parse");
+    // Loading logs every instance as added; the editor drops that too.
+    dom.take_changes();
     let mut host = PluginHost::new(ReflectionDatabase::embedded(), None);
     for path in args {
         match rbx_lua::plugin::read_source(Path::new(&path)) {

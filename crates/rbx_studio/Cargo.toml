@@ -189,6 +189,12 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSView",
     "NSWindow",
 ] }
+# The app menu's title is the process name: "RbxNative", not the binary's.
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "NSProcessInfo",
+    "NSString",
+] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

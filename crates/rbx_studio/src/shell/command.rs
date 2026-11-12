@@ -263,7 +263,9 @@ impl Shell {
             return;
         }
         self.plugins_dom_changed(changes, cx);
-        self.recovery.changed();
+        if touches_place(&self.dom, changes) {
+            self.recovery.changed();
+        }
         self.presence_changes(changes, cx);
         self.properties.dom_changed(changes);
         let mut refresh = refresh_for(changes, &self.covered);
@@ -429,11 +431,84 @@ pub(super) fn refresh_for(changes: &[Change], covered: &HashSet<Ref>) -> Refresh
     refresh
 }
 
+/// Whether `changes` reach what gets saved. A plugin building its UI or a
+/// scratch part out of instances parented to nil (F3X does both as it
+/// loads) edits nothing the place file holds, so it must not ask to save.
+/// A removal can't be traced back once the instance is gone and counts.
+pub(super) fn touches_place(dom: &rbx_dom::WeakDom, changes: &[Change]) -> bool {
+    changes.iter().any(|change| match change {
+        Change::Property { referent, .. } | Change::Class(referent) | Change::Added(referent) => {
+            dom.in_tree(*referent)
+        }
+        Change::Parent { referent, old, new } => {
+            dom.in_tree(*referent)
+                || old.is_some_and(|old| dom.in_tree(old))
+                || new.is_some_and(|new| dom.in_tree(new))
+        }
+        Change::Removed(_) => true,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use rbx_dom::{Change, Ref};
 
-    use super::{refresh_for, HashSet, Refresh};
+    use super::{refresh_for, touches_place, HashSet, Refresh};
+
+    #[test]
+    fn edits_to_instances_parented_to_nil_leave_the_place_saved() {
+        let mut dom = rbx_dom::WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let part = dom.new_instance("Part", "Part", Some(workspace));
+        let gui = dom.new_instance("ScreenGui", "F3X", None);
+        dom.unparent(gui);
+        let frame = dom.new_instance("Frame", "Dock", Some(gui));
+        dom.take_changes();
+
+        let detached = [
+            Change::Added(frame),
+            Change::Property {
+                referent: frame,
+                name: "Size".into(),
+            },
+            Change::Parent {
+                referent: frame,
+                old: None,
+                new: Some(gui),
+            },
+            Change::Parent {
+                referent: gui,
+                old: None,
+                new: None,
+            },
+        ];
+        assert!(!touches_place(&dom, &detached));
+        assert!(touches_place(
+            &dom,
+            &[Change::Property {
+                referent: part,
+                name: "Size".into()
+            }]
+        ));
+        // Taking a part out of Workspace, or putting the GUI into it, counts.
+        assert!(touches_place(
+            &dom,
+            &[Change::Parent {
+                referent: frame,
+                old: Some(workspace),
+                new: None
+            }]
+        ));
+        assert!(touches_place(
+            &dom,
+            &[Change::Parent {
+                referent: gui,
+                old: None,
+                new: Some(workspace)
+            }]
+        ));
+        assert!(touches_place(&dom, &[Change::Removed(Ref::new(999))]));
+    }
 
     fn write(id: u32, name: &str) -> Change {
         Change::Property {

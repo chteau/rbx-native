@@ -18,7 +18,15 @@ pub(super) fn install(cx: &mut App) {
         KeyBinding::new("cmd-h", MenuHide, None),
         KeyBinding::new("alt-cmd-h", MenuHideOthers, None),
     ]);
+    name_process();
     set(&[], cx);
+}
+
+/// AppKit titles the app menu (and Force Quit, the Dock's tooltip for an
+/// unbundled binary) after the process, which is the binary's file name.
+fn name_process() {
+    let name = objc2_foundation::NSString::from_str("RbxNative");
+    objc2_foundation::NSProcessInfo::processInfo().setProcessName(&name);
 }
 
 /// Rebuilt with the in-window bar, whose Model menu lists the user's

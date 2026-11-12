@@ -360,7 +360,7 @@ impl Render for SettingsWindow {
                     }
                     cx.stop_propagation();
                     cx.notify();
-                } else if keystroke.key == "f" && keystroke.modifiers.control {
+                } else if keystroke.key == "f" && keystroke.modifiers.secondary() {
                     this.search.update(cx, |state, cx| state.focus(window, cx));
                     cx.stop_propagation();
                 }
