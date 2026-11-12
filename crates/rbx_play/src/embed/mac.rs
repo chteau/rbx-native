@@ -15,6 +15,7 @@
 //! fails with `EmbedError::NoAccess` and the player stays where it is.
 
 mod capture;
+mod events;
 mod ffi;
 mod input;
 

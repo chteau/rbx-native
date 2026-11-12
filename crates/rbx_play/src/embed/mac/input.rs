@@ -6,7 +6,7 @@
 use std::thread;
 
 use super::super::pin;
-use super::{failed, ffi, focus_window, frame_and_scale};
+use super::{events, failed, focus_window, frame_and_scale};
 use crate::embed::{Button, EmbedError, WindowId, CLICK_HOLD};
 use crate::keycode::KeyCode;
 
@@ -45,7 +45,7 @@ impl Input {
         let (frame, scale) = frame_and_scale(self.window)?;
         let (x, y) = pin::client_point(frame, scale, (x, y));
         sent(
-            ffi::post_mouse(MOVED, ffi::CGPoint { x, y }, 0),
+            events::post_mouse(MOVED, events::CGPoint { x, y }, 0),
             "CGEventPost",
         )
     }
@@ -57,12 +57,15 @@ impl Input {
             (Button::Right, true) => (RIGHT_DOWN, 1),
             (Button::Right, false) => (RIGHT_UP, 1),
         };
-        sent(ffi::post_mouse(kind, ffi::cursor(), number), "CGEventPost")
+        sent(
+            events::post_mouse(kind, events::cursor(), number),
+            "CGEventPost",
+        )
     }
 
     /// One wheel notch where the cursor is.
     pub fn scroll(&mut self, up: bool) -> Result<(), EmbedError> {
-        sent(ffi::post_scroll(if up { 1 } else { -1 }), "CGEventPost")?;
+        sent(events::post_scroll(if up { 1 } else { -1 }), "CGEventPost")?;
         thread::sleep(CLICK_HOLD);
         Ok(())
     }
@@ -86,11 +89,14 @@ impl Input {
         focus_window(self.window)?;
         let shifted = place.shift && down;
         if shifted {
-            sent(ffi::post_key(pin::MAC_SHIFT, true, true), "CGEventPost")?;
+            sent(events::post_key(pin::MAC_SHIFT, true, true), "CGEventPost")?;
         }
-        sent(ffi::post_key(code, down, shifted), "CGEventPost")?;
+        sent(events::post_key(code, down, shifted), "CGEventPost")?;
         if shifted {
-            sent(ffi::post_key(pin::MAC_SHIFT, false, false), "CGEventPost")?;
+            sent(
+                events::post_key(pin::MAC_SHIFT, false, false),
+                "CGEventPost",
+            )?;
         }
         Ok(())
     }
@@ -101,7 +107,7 @@ impl Input {
         focus_window(self.window)?;
         let mut units = [0u16; 2];
         for c in text.chars() {
-            sent(ffi::post_text(c.encode_utf16(&mut units)), "CGEventPost")?;
+            sent(events::post_text(c.encode_utf16(&mut units)), "CGEventPost")?;
         }
         Ok(())
     }

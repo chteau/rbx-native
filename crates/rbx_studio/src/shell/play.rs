@@ -1089,6 +1089,7 @@ impl Shell {
             return;
         }
         let scale = self.play.scale;
+        #[cfg_attr(target_os = "macos", allow(unused_mut))]
         let mut holes: Vec<rbx_play::embed::Rect> = gpui_base::occlusion::rects(window)
             .into_iter()
             .filter_map(|bounds| {
