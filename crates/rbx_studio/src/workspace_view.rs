@@ -1025,6 +1025,12 @@ impl WorkspaceView {
         self.pump.look_at(eye, target, fov);
     }
 
+    /// [`Self::look_at`] at `fov` degrees: a script setting
+    /// `workspace.CurrentCamera`'s `CFrame` or `FieldOfView`.
+    pub(crate) fn look_at_with(&self, eye: [f32; 3], target: [f32; 3], fov: f32) {
+        self.pump.look_at(eye, target, fov);
+    }
+
     /// The renderer's tuned constants, taken between two frames like the
     /// camera feel.
     pub(crate) fn set_calibration(&self, calibration: rbx_viewer::Calibration) {

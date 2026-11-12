@@ -343,6 +343,7 @@ impl Viewer {
             self.start.elapsed(),
             self.loaded.scene().bounds(),
             false,
+            None,
         );
         self.from = from;
         if self

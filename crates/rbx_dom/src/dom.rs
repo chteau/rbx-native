@@ -126,11 +126,14 @@ impl WeakDom {
             .get_mut(&referent)
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.name().to_string();
-        instance.set_name(name);
-        self.log(Change::Property {
-            referent,
-            name: "Name".to_string(),
-        });
+        // Like `set_property`: the same name again is no edit.
+        if old != name {
+            instance.set_name(name);
+            self.log(Change::Property {
+                referent,
+                name: "Name".to_string(),
+            });
+        }
         Ok(old)
     }
 

@@ -397,12 +397,10 @@ impl Hooks for PluginHooks {
             return plugin_member(lua, key).map(Some);
         }
         if key == "ViewportSize" && class == "Camera" {
-            let size = env(lua).shared.borrow().context.viewport_size;
-            if let Some([x, y]) = size {
-                return lua
-                    .create_userdata(LuaVector2(Vector2Data { x, y }))
-                    .map(|u| Some(Value::UserData(u)));
-            }
+            let [x, y] = env(lua).shared.borrow().context.view_size();
+            return lua
+                .create_userdata(LuaVector2(Vector2Data { x, y }))
+                .map(|u| Some(Value::UserData(u)));
         }
         if let Some(value) = events::index(lua, ctx, referent, class, key)? {
             return Ok(Some(value));

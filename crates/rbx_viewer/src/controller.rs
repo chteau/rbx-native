@@ -27,6 +27,17 @@ const MAX_PITCH_DEGREES: f32 = 89.0;
 const ZOOM_SECONDS_PER_NOTCH: f32 = 0.5;
 // The view `--orbit` starts from, and what F/Home returns to once triggered from it.
 const INITIAL_ORBIT_YAW: f32 = 0.0;
+// A notch dollying in covers at most this share of what is left between the
+// eye and the surface straight ahead, less `ZOOM_STANDOFF`: the surface is
+// approached, never crossed. Unchecked, a long scroll used to fly the eye
+// through the baseplate into the empty sky under the world.
+const ZOOM_IN_SHARE: f32 = 0.5;
+const ZOOM_STANDOFF: f32 = 0.5;
+// How far from the scene's centre dollying out may take the eye: this many
+// scene radii plus `ZOOM_OUT_SLACK` studs. Past it the place is a speck and
+// every view reads as empty sky.
+const ZOOM_OUT_RADII: f32 = 4.0;
+const ZOOM_OUT_SLACK: f32 = 2_000.0;
 // `--speed`'s own default, cruising speed for an ordinary baseplate-sized scene.
 pub(crate) const DEFAULT_SPEED: f32 = 30.0;
 // Past this radius a 30 studs/s cruise would take forever to cross the scene, so the
@@ -115,6 +126,17 @@ struct Motion {
     dolly_remaining: Vec3,
 }
 
+/// What the wheel's dolly may not cross: the nearest surface straight ahead,
+/// and the sphere around the scene it may not leave. `None`s for a view with
+/// no scene of its own to stop at.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Room {
+    /// Studs from the eye to the first surface along its look direction.
+    pub(crate) ahead: Option<f32>,
+    /// The scene's centre and how far from it the eye may dolly out.
+    pub(crate) home: Option<(Vec3, f32)>,
+}
+
 /// Owns which of the two controllers is live and the free camera's current speed.
 pub(crate) struct Controller {
     mode: Mode,
@@ -197,11 +219,25 @@ impl Controller {
         elapsed: Duration,
         bounds: &Bounds,
         orthographic: bool,
+        ahead: Option<f32>,
     ) -> Viewpoint {
         if matches!(self.mode, Mode::Orbit) && input.requests_free_flight() {
             let yaw = Camera::orbit_yaw(elapsed);
             self.mode = Mode::Free(Camera::orbit_pose(bounds, yaw));
         }
+        // A pose that arrived broken (a NaN look-at) is not flown from: the
+        // view would stay stuck on it with nothing able to move it.
+        if matches!(&self.mode, Mode::Free(pose) if !finite(pose)) {
+            self.mode = Mode::Free(Camera::spawn_pose(bounds));
+            self.motion = Motion::default();
+        }
+        let room = Room {
+            ahead,
+            home: Some((
+                bounds.center(),
+                bounds.radius() * ZOOM_OUT_RADII + ZOOM_OUT_SLACK,
+            )),
+        };
 
         match &mut self.mode {
             Mode::Orbit => Viewpoint::Orbit(Camera::orbit_yaw(elapsed)),
@@ -214,6 +250,7 @@ impl Controller {
                     self.feel,
                     &mut self.motion,
                     orthographic,
+                    room,
                 );
                 Viewpoint::Free(*pose)
             }
@@ -258,6 +295,7 @@ impl Flight {
             self.feel,
             &mut self.motion,
             false,
+            Room::default(),
         );
     }
 
@@ -290,6 +328,7 @@ fn default_speed(bounds: &Bounds) -> f32 {
 /// perspective, or the orthographic view volume's own zoom without it in
 /// orthographic, see the wheel-handling block below). Kept free of `self`
 /// so it's trivially callable from a pure unit test.
+#[allow(clippy::too_many_arguments)]
 fn free_update(
     pose: &mut Pose,
     input: &mut Input,
@@ -298,7 +337,9 @@ fn free_update(
     feel: Feel,
     motion: &mut Motion,
     orthographic: bool,
+    room: Room,
 ) -> f32 {
+    let before = *pose;
     let (dx, dy) = input.take_mouse_delta();
     if input.look_button_down() {
         // `look_direction`'s yaw runs the opposite way from screen-right: with yaw=0
@@ -340,8 +381,9 @@ fn free_update(
             pose.ortho_scale = (pose.ortho_scale / SPEED_STEP.powf(notches))
                 .clamp(MIN_ORTHO_SCALE, MAX_ORTHO_SCALE);
         } else {
+            let step = speed * feel.speed_scale * ZOOM_SECONDS_PER_NOTCH * notches;
             motion.dolly_remaining +=
-                forward * speed * feel.speed_scale * ZOOM_SECONDS_PER_NOTCH * notches;
+                forward * dolly_step(step, pose.position, forward, motion, room);
         }
     }
     // Ease the dolly hop in over a few frames instead of teleporting the full
@@ -377,7 +419,43 @@ fn free_update(
     motion.velocity = velocity;
     pose.position += displacement;
 
+    // Whatever went wrong this frame, the view keeps the last pose it could
+    // draw rather than going NaN for good.
+    if !finite(pose) {
+        *pose = before;
+        *motion = Motion::default();
+    }
     speed
+}
+
+/// How far a wheel dolly of `step` studs along `forward` may really go: in,
+/// no further than `ZOOM_IN_SHARE` of the gap left before the surface ahead;
+/// out, not past `room.home`'s reach once already beyond it.
+fn dolly_step(step: f32, position: Vec3, forward: Vec3, motion: &Motion, room: Room) -> f32 {
+    let owed = motion.dolly_remaining.dot(forward);
+    if step > 0.0 {
+        return match room.ahead {
+            Some(ahead) => step.min((ahead - owed - ZOOM_STANDOFF).max(0.0) * ZOOM_IN_SHARE),
+            None => step,
+        };
+    }
+    match room.home {
+        Some((centre, reach)) => {
+            let from = position + motion.dolly_remaining;
+            let to = from + forward * step;
+            let leaving = to.distance(centre) > from.distance(centre);
+            if leaving && to.distance(centre) > reach {
+                0.0
+            } else {
+                step
+            }
+        }
+        None => step,
+    }
+}
+
+fn finite(pose: &Pose) -> bool {
+    pose.position.is_finite() && pose.yaw.is_finite() && pose.pitch.is_finite()
 }
 
 /// Exponential ease of `current` towards `target`, closing ~63% of the
@@ -386,8 +464,17 @@ fn free_update(
 /// tick rate), many small `dt` steps converge to the same result as one big
 /// step, since `exp(-a) * exp(-b) == exp(-(a + b))`.
 fn ease_towards(current: Vec3, target: Vec3, dt: Duration, tau: f32) -> Vec3 {
-    let t = 1.0 - (-dt.as_secs_f32() / tau).exp();
-    current + (target - current) * t
+    current + (target - current) * eased(dt, tau)
+}
+
+/// The share of the gap an ease closes over `dt`. A zero `tau` (Smoothing
+/// at 0) snaps, even over a zero `dt`, where `0 / 0` would be NaN.
+fn eased(dt: Duration, tau: f32) -> f32 {
+    if tau > 0.0 {
+        1.0 - (-dt.as_secs_f32() / tau).exp()
+    } else {
+        1.0
+    }
 }
 
 /// `ease_towards`, plus the exact distance covered while `current` curves
@@ -399,7 +486,7 @@ fn ease_towards(current: Vec3, target: Vec3, dt: Duration, tau: f32) -> Vec3 {
 /// still sums to this exact displacement, for the same reason `ease_towards`
 /// itself is split-independent.
 fn ease_and_advance(current: Vec3, target: Vec3, dt: Duration, tau: f32) -> (Vec3, Vec3) {
-    let t = 1.0 - (-dt.as_secs_f32() / tau).exp();
+    let t = eased(dt, tau);
     let new_value = current + (target - current) * t;
     let displacement = target * dt.as_secs_f32() - (target - current) * tau * t;
     (new_value, displacement)

@@ -191,7 +191,7 @@ impl Viewer<'_> {
         // see `capture::write_png`), so the wheel always dollies here.
         let from = self
             .controller
-            .update(&mut self.input, motion_dt, elapsed, bounds, false);
+            .update(&mut self.input, motion_dt, elapsed, bounds, false, None);
         let title_update = self.next_title(now, fps_updated);
         // The whole frame, presentation included: what the window actually
         // delivered, which is the only thing the manager can measure here.

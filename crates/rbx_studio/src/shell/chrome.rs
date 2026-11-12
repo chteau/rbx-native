@@ -140,6 +140,55 @@ pub(super) const HANDLE_HIT: Pixels = px(4.);
 /// on whatever is left over.
 const WINDOW_ACTIONS_WIDTH: Pixels = px(136.);
 
+/// Hides macOS's own close/minimise/zoom buttons, which AppKit keeps
+/// drawing in the top-left corner of a transparent title bar, right over
+/// the logo. Our bar's buttons are the ones wired to what closing a window
+/// means (asking to save, re-docking a panel, finishing the wizard), so
+/// AppKit's are hidden rather than ours. A zero-size child of every title
+/// bar, so it runs for each window this app opens, and again after AppKit
+/// rebuilds the title bar (leaving full screen).
+fn native_buttons_hider() -> impl IntoElement {
+    canvas(
+        |_, window, _| hide_native_window_buttons(window),
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .size_0()
+}
+
+#[cfg(target_os = "macos")]
+fn hide_native_window_buttons(window: &Window) {
+    use objc2_app_kit::{NSView, NSWindowButton};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return;
+    };
+    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return;
+    };
+    // SAFETY: GPUI hands out the content view of a window it keeps open for
+    // as long as `window` is borrowed, and this runs on the main thread.
+    let view: &NSView = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+    let Some(ns_window) = view.window() else {
+        return;
+    };
+    for kind in [
+        NSWindowButton::CloseButton,
+        NSWindowButton::MiniaturizeButton,
+        NSWindowButton::ZoomButton,
+    ] {
+        if let Some(button) = ns_window.standardWindowButton(kind) {
+            if !button.isHidden() {
+                button.setHidden(true);
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hide_native_window_buttons(_window: &Window) {}
+
 impl Shell {
     /// The title bar. This editor asks for client-side decorations (see
     /// `main::window_options`), so this row *is* the window's title bar:
@@ -445,6 +494,7 @@ pub(crate) fn topbar_frame(title: SharedString) -> Div {
         .bg(tokens::black())
         .border_b(px(1.))
         .border_color(tokens::border())
+        .child(native_buttons_hider())
         .child(super::tooltip::rehover_on_scroll())
         .child(
             h_flex()
@@ -628,6 +678,7 @@ pub(crate) fn panel_topbar(
         .flex_none()
         .items_center()
         .bg(tokens::black())
+        .child(native_buttons_hider())
         .child(super::tooltip::rehover_on_scroll())
         .child(
             h_flex()
