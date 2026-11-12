@@ -82,7 +82,7 @@ pub(crate) struct PlayInput {
     pub(crate) probe: rbx_play::channel::Requester,
     /// The embedded client's window, for real mouse and key events; `None`
     /// while it is not embedded or another document hides the 3D view.
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pub(crate) window: Option<rbx_play::embed::WindowId>,
 }
 

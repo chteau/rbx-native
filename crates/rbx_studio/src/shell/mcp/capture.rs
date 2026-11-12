@@ -23,7 +23,10 @@ pub(super) enum Step {
     /// The viewport's render thread is drawing the frame.
     Frame(Receiver<Pixels>),
     /// The game's camera is being posed by the exec with this id.
-    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+    #[cfg_attr(
+        not(any(target_os = "linux", windows, target_os = "macos")),
+        allow(dead_code)
+    )]
     Posed(u64),
 }
 
@@ -72,7 +75,7 @@ fn outcome(pixels: Pixels) -> JobOutcome {
     Ok(vec![image_content(&jpeg(width, height, rgba)?)])
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 fn lua_vector(v: [f32; 3]) -> String {
     format!("Vector3.new({}, {}, {})", v[0], v[1], v[2])
 }
@@ -91,7 +94,7 @@ impl Shell {
                 .map(Step::Frame)
                 .ok_or_else(|| "the viewport is closed".to_owned());
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         {
             if self.play_embedded().is_none() {
                 return Err("the running game is not shown in the viewport".to_owned());
@@ -115,14 +118,14 @@ impl Shell {
                 _ => Err("the camera could not be posed".to_owned()),
             }
         }
-        #[cfg(not(any(target_os = "linux", windows)))]
+        #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
         {
             let _ = camera;
             Err("capturing the running game is not supported on this system".to_owned())
         }
     }
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     fn embedded_pixels(&self) -> Pixels {
         let embedded = self
             .play_embedded()
@@ -150,7 +153,7 @@ impl Shell {
         }
     }
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     fn capture_posed(&mut self, posed: Result<String, String>) -> JobOutcome {
         posed?;
         let pixels = self.embedded_pixels();
@@ -167,7 +170,7 @@ impl Shell {
         outcome(pixels)
     }
 
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     fn capture_posed(&mut self, posed: Result<String, String>) -> JobOutcome {
         posed?;
         Err("capturing the running game is not supported on this system".to_owned())

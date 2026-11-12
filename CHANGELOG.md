@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-12
+
+- **Play shows the game in the viewport on macOS.** The Roblox window gets pinned over the 3D view and follows it when you move or resize the editor, like Linux and Windows. It needs Accessibility access (System Settings › Privacy & Security › Accessibility); without it Roblox keeps its own window and Output says what to tick. Popups over the view hide the game for a moment since a separate window can't be cut around them.
+
 ## 2026-11-09
 
 - **`Lighting.ClockTime` works.** It reads from `TimeOfDay` like it does in Studio instead of printing 0, and setting either one updates both. The Properties panel row follows it too.

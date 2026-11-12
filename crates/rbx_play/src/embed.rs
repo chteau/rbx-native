@@ -6,13 +6,14 @@
 //!   official player under Wine) under the editor's window.
 //! - Windows (`win32`): makes `RobloxPlayerBeta.exe`'s top-level window a
 //!   `WS_CHILD` of the editor's `HWND`.
-//! - macOS has no cross-process window parenting: the client keeps its own
-//!   window there, and this module does not exist.
+//! - macOS (`mac`): has no cross-process window parenting, so the player's
+//!   own window is pinned over the viewport with the Accessibility API.
 //!
-//! Both back ends expose the same `Embedded` / `FocusFollow` API over
+//! The back ends expose the same `Embedded` / `FocusFollow` API over
 //! `WindowId`, the platform's native window handle, and the same `Input`:
 //! real mouse and keyboard events into the client's window, the way a
-//! person's reach it (XTest on Linux, `SendInput` on Windows).
+//! person's reach it (XTest on Linux, `SendInput` on Windows, Quartz events
+//! on macOS).
 
 #[cfg(target_os = "linux")]
 mod x11;
@@ -24,7 +25,15 @@ mod win32;
 #[cfg(windows)]
 pub use win32::*;
 
-/// A native window: an X11 window id, or a Win32 `HWND` as an integer.
+#[cfg(target_os = "macos")]
+mod mac;
+#[cfg(target_os = "macos")]
+pub use mac::*;
+#[cfg(any(target_os = "macos", test))]
+mod pin;
+
+/// A native window: an X11 window id, a Win32 `HWND` as an integer, or a
+/// macOS window server number.
 #[cfg(not(windows))]
 pub type WindowId = u32;
 #[cfg(windows)]
@@ -64,6 +73,10 @@ pub enum EmbedError {
     Unavailable(String),
     /// The client exited before its window appeared.
     ClientExited,
+    /// macOS has not given the editor the Accessibility permission, which
+    /// moving another app's window needs.
+    #[cfg(target_os = "macos")]
+    NoAccess,
 }
 
 impl std::fmt::Display for EmbedError {
@@ -76,6 +89,12 @@ impl std::fmt::Display for EmbedError {
                 write!(f, "The Roblox client cannot join games ({why}).")
             }
             EmbedError::ClientExited => f.write_str("Roblox closed before its window appeared."),
+            #[cfg(target_os = "macos")]
+            EmbedError::NoAccess => f.write_str(
+                "Putting Roblox over the viewport needs Accessibility access: tick RbxNative \
+                 (or the terminal you started it from) under System Settings \u{203a} Privacy \
+                 & Security \u{203a} Accessibility, then press Play again.",
+            ),
         }
     }
 }
@@ -84,26 +103,12 @@ impl std::error::Error for EmbedError {}
 
 /// Converts 4-byte BGRX/BGRA pixels to RGBA with alpha 255 (a trailing
 /// partial pixel is dropped).
-#[cfg(any(target_os = "linux", windows))]
 pub(crate) fn bgrx_to_rgba(bgrx: &[u8]) -> Vec<u8> {
     bgrx.as_chunks::<4>()
         .0
         .iter()
         .flat_map(|p| [p[2], p[1], p[0], 255])
         .collect()
-}
-
-#[cfg(all(test, any(target_os = "linux", windows)))]
-mod tests {
-    use super::bgrx_to_rgba;
-
-    #[test]
-    fn swaps_channels_and_opaques_alpha() {
-        assert_eq!(
-            bgrx_to_rgba(&[1, 2, 3, 0, 10, 20, 30, 7]),
-            vec![3, 2, 1, 255, 30, 20, 10, 255]
-        );
-    }
 }
 
 /// `full` minus every hole, as non-overlapping rects (each hole splits the
@@ -143,4 +148,17 @@ pub fn visible_parts(full: Rect, holes: &[Rect]) -> Vec<Rect> {
         pieces = next;
     }
     pieces
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bgrx_to_rgba;
+
+    #[test]
+    fn swaps_channels_and_opaques_alpha() {
+        assert_eq!(
+            bgrx_to_rgba(&[1, 2, 3, 0, 10, 20, 30, 7]),
+            vec![3, 2, 1, 255, 30, 20, 10, 255]
+        );
+    }
 }

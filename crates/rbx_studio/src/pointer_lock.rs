@@ -19,7 +19,8 @@ use server::Server;
 /// A pointer position inside the window GPUI drew, in physical pixels.
 type At = (i16, i16);
 
-/// The native window GPUI drew: an X11 window id, or a Win32 `HWND`.
+/// The native window GPUI drew: an X11 window id, a Win32 `HWND`, or a
+/// macOS window server number.
 #[cfg(not(windows))]
 pub(crate) type WindowId = u32;
 #[cfg(windows)]
@@ -135,7 +136,8 @@ impl PointerLock {
     }
 }
 
-/// The X11 id or `HWND` of the window GPUI drew, `None` on every other backend.
+/// The X11 id, `HWND` or macOS window number of the window GPUI drew, `None`
+/// on every other backend.
 pub(crate) fn window_id(window: &Window) -> Option<WindowId> {
     // GPUI's inherent `window_handle` is its own handle type, so the raw one has
     // to be asked for through the trait by name.
@@ -147,6 +149,13 @@ pub(crate) fn window_id(window: &Window) -> Option<WindowId> {
         RawWindowHandle::Xlib(handle) => narrow_x11_id(handle.window),
         #[cfg(windows)]
         RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
+        #[cfg(target_os = "macos")]
+        RawWindowHandle::AppKit(handle) => {
+            // SAFETY: GPUI hands out the content view of a window it keeps
+            // open for as long as `window` is borrowed, on the main thread.
+            let view: &objc2_app_kit::NSView = unsafe { handle.ns_view.cast().as_ref() };
+            u32::try_from(view.window()?.windowNumber()).ok()
+        }
         _ => None,
     }
 }

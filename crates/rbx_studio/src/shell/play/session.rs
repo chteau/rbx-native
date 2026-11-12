@@ -389,7 +389,10 @@ pub(crate) enum StopReason {
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     ClosedEarly,
     /// The embedded window disappeared.
-    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+    #[cfg_attr(
+        not(any(target_os = "linux", windows, target_os = "macos")),
+        allow(dead_code)
+    )]
     WindowClosed,
     /// The developer's own player left the game.
     PlayerLeft,
@@ -498,13 +501,13 @@ pub(crate) fn follow(event: &Uplink, presence: &mut Presence) -> Option<Follow> 
     }
 }
 
-/// `rbx_play::embed::Rect` exists on Linux and Windows only; elsewhere an identical
+/// `rbx_play::embed::Rect` exists on Linux, Windows and macOS only; elsewhere an identical
 /// local struct stands in so this module builds everywhere.
 pub(crate) mod rbx_play_rect {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pub(crate) use rbx_play::embed::Rect;
 
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct Rect {
         pub x: i32,

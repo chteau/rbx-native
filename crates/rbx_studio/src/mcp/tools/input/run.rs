@@ -205,9 +205,9 @@ fn click(client: &mut dyn Client, button: Button) -> Result<(), String> {
 /// How long a click holds its button: the embed back end's, where there is
 /// one.
 fn rbx_play_click_hold() -> Duration {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     return rbx_play::embed::CLICK_HOLD;
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     Duration::from_millis(30)
 }
 
@@ -270,7 +270,7 @@ pub(super) fn window_point(
 /// embedded window, opened at the first step that needs it.
 pub(super) struct Live {
     play: PlayInput,
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     input: Option<rbx_play::embed::Input>,
 }
 
@@ -278,12 +278,12 @@ impl Live {
     pub(super) fn new(play: PlayInput) -> Self {
         Live {
             play,
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
             input: None,
         }
     }
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     fn input(&mut self) -> Result<&mut rbx_play::embed::Input, String> {
         let input = match self.input.take() {
             Some(input) => input,
@@ -298,7 +298,7 @@ impl Live {
         Ok(self.input.insert(input))
     }
 
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     fn input(&mut self) -> Result<&mut Unreachable, String> {
         Err(
             "the Roblox client keeps its own window on this platform, so mouse and key events \
@@ -309,10 +309,10 @@ impl Live {
 }
 
 /// No input back end on this platform: [`Live::input`] always fails first.
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
 enum Unreachable {}
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
 impl Unreachable {
     fn size(&self) -> Result<(u32, u32), String> {
         match *self {}
@@ -334,7 +334,7 @@ impl Unreachable {
     }
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 fn embed_button(button: Button) -> rbx_play::embed::Button {
     match button {
         Button::Left => rbx_play::embed::Button::Left,
@@ -342,7 +342,7 @@ fn embed_button(button: Button) -> rbx_play::embed::Button {
     }
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
 fn embed_button(button: Button) -> Button {
     button
 }

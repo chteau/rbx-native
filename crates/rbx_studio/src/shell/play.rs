@@ -2,7 +2,8 @@
 //! live-tested 2026-10-14): publish a probed copy of the place over the
 //! user's private sandbox, open it in the Roblox client (Sober on Linux, or
 //! Roséline when Sober is missing or can't join games),
-//! embed that window frameless in the viewport, and stream the game's
+//! embed that window frameless in the viewport (on macOS: pin it over the
+//! viewport), and stream the game's
 //! output back through a tunnel.
 //!
 //! Start (`play_start`), each step shown as `Phase::Starting(step)`:
@@ -27,7 +28,7 @@
 //! 6. Launch `ClientProcess::spawn_with(launcher, &join_uri(place, session),
 //!    &play_client_options())`,
 //!    after reading `Embedded::existing_clients()` (Linux) to ignore.
-//! 7. Linux with an `embed_target`: `Embedded::attach(target.window,
+//! 7. With an `embed_target`: `Embedded::attach(target.window,
 //!    target.rect, &ignore, 90 s, give_up)` on a background task; on
 //!    `NotFound` the client simply stays in its own window (Output warning).
 //!    The client saying it can't join games (`StopReason::Unavailable`) or
@@ -40,7 +41,8 @@
 //!    resyncs the views in the next server), checks `client.unavailable()`,
 //!    `client.exited()` and
 //!    `embedded.alive()`, and moves the embedded window when the
-//!    `embed_target` rect changed.
+//!    `embed_target` rect changed (on macOS every poll, as the editor's
+//!    window moving or coming to the front moves the pinned one astray).
 //!
 //! Stop (`play_stop`): drops the session (kills the client when the
 //! launcher tracks it, releases the embedded window), keeps the link,
@@ -88,11 +90,12 @@ pub(super) const DNS_SETTLE: Duration = Duration::from_secs(10);
 const TUNNEL_TIMEOUT: Duration = Duration::from_secs(60);
 const HEALTH_BUDGET: Duration = Duration::from_secs(60);
 const HEALTH_RETRY: Duration = Duration::from_secs(1);
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 const EMBED_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Where the viewport is, for embedding: the native window it is drawn in
-/// (X11 id or `HWND`) and its rect there in physical pixels.
+/// (X11 id, `HWND` or macOS window number) and its rect there in physical
+/// pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EmbedTarget {
     pub(crate) window: crate::pointer_lock::WindowId,
@@ -121,24 +124,24 @@ struct Link {
 /// One running Play.
 struct Session {
     _token: Token,
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     embedded: Option<rbx_play::embed::Embedded>,
     /// Gives the embedded client the keyboard when it is clicked.
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     focus: Option<rbx_play::embed::FocusFollow>,
     client: ClientProcess,
     presence: session::Presence,
     last_rect: Option<session::rbx_play_rect::Rect>,
     /// The last `CommandBody::Pointer` sent.
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pointer_inside: Option<bool>,
-    /// `EmbedTarget::corner` of `last_rect`. Only an embedded client has
-    /// corners to cut.
+    /// `EmbedTarget::corner` of `last_rect`. Only a client embedded on Linux
+    /// or Windows has corners to cut.
     #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     corner: u32,
     /// The embedded window is hidden because another document (Scripts,
     /// UI Editor, Animation) took the room the 3D view had.
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     hidden: bool,
 }
 
@@ -160,8 +163,8 @@ pub(super) struct Play {
     pub(super) phase: Phase,
     /// The "Roblox is already running" question is showing.
     pub(super) confirm_close: bool,
-    /// The editor window Play was pressed in (X11 id or `HWND`); the client
-    /// is embedded there, over the 3D view.
+    /// The editor window Play was pressed in (X11 id, `HWND` or macOS window
+    /// number); the client is embedded there, over the 3D view.
     main_window: Option<crate::pointer_lock::WindowId>,
     /// The same window as GPUI knows it, for `gpui_base::occlusion`.
     gpui_window: Option<gpui_kit::WindowId>,
@@ -182,7 +185,7 @@ pub(super) struct Play {
     /// logical bounds into the embedded window's device pixels.
     scale: f32,
     /// The holes last cut out of the embedded window (`play_update_holes`).
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     holes: Vec<rbx_play::embed::Rect>,
     link: Option<Link>,
     session: Option<Session>,
@@ -217,7 +220,7 @@ impl Play {
             window_handle: None,
             stats: PlayStats::default(),
             scale: 1.0,
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
             holes: Vec::new(),
             job_id: None,
             link: None,
@@ -623,9 +626,9 @@ impl Shell {
                 let client_options = options.clone();
                 let launched = cx
                     .background_spawn(async move {
-                        #[cfg(any(target_os = "linux", windows))]
+                        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
                         let ignore = rbx_play::embed::Embedded::existing_clients().unwrap_or_default();
-                        #[cfg(not(any(target_os = "linux", windows)))]
+                        #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
                         let ignore: Vec<crate::pointer_lock::WindowId> = Vec::new();
                         ClientProcess::spawn_with(launcher, &uri, &client_options).map(|client| (client, ignore))
                     })
@@ -649,17 +652,17 @@ impl Shell {
                     }
                     shell.play.session = Some(Session {
                         _token: token.clone(),
-                        #[cfg(any(target_os = "linux", windows))]
+                        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
                         embedded: None,
-                        #[cfg(any(target_os = "linux", windows))]
+                        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
                         focus: None,
                         client,
                         presence: session::Presence::default(),
                         last_rect: None,
                         corner: 0,
-                        #[cfg(any(target_os = "linux", windows))]
+                        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
                         pointer_inside: None,
-                        #[cfg(any(target_os = "linux", windows))]
+                        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
                         hidden: false,
                     });
                     Ok(shell.play_embed_target(cx))
@@ -668,7 +671,7 @@ impl Shell {
                     return;
                 };
 
-                #[cfg(any(target_os = "linux", windows))]
+                #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
                 if let Some(target) = target {
                     if !step(&this, cx, attempt, "Embedding the Roblox window\u{2026}") {
                         return;
@@ -685,7 +688,7 @@ impl Shell {
                             )
                         })
                         .await;
-                    #[cfg(windows)]
+                    #[cfg(any(windows, target_os = "macos"))]
                     let attached = cx
                         .background_spawn(async move {
                             rbx_play::embed::Embedded::attach(
@@ -757,7 +760,7 @@ impl Shell {
                         cx.notify();
                     });
                 }
-                #[cfg(not(any(target_os = "linux", windows)))]
+                #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
                 let _ = (target, ignore);
                 break;
             }
@@ -859,7 +862,7 @@ impl Shell {
     }
 
     fn play_tick(&mut self, cx: &mut Context<Self>) -> bool {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         let target = self.play_embed_target(cx);
         let Some(channel) = self.play.link.as_ref().map(|link| Rc::clone(&link.channel)) else {
             return false;
@@ -935,7 +938,7 @@ impl Shell {
             }
         }
         // The game replaces the 3D view only: another document hides it.
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         let on_viewport = self.document == super::chrome::Document::Viewport;
         let Some(running) = self.play.session.as_mut() else {
             return false;
@@ -947,7 +950,7 @@ impl Shell {
                 stop = Some(StopReason::ClientExited);
             }
         }
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         if stop.is_none() {
             if let Some(embedded) = &running.embedded {
                 if !embedded.alive() {
@@ -958,7 +961,13 @@ impl Shell {
                         running.hidden = true;
                     }
                 } else if let Some(target) = target {
-                    if running.last_rect != Some(target.rect) || running.hidden {
+                    // macOS pins a window of its own, which goes astray when
+                    // the editor moves or comes to the front: every poll
+                    // checks it.
+                    if running.last_rect != Some(target.rect)
+                        || running.hidden
+                        || cfg!(target_os = "macos")
+                    {
                         let _ = embedded.set_rect(target.rect);
                         running.last_rect = Some(target.rect);
                     }
@@ -972,21 +981,21 @@ impl Shell {
         }
         // Sober reads the wheel wherever the pointer is; the client ignores
         // it while the pointer is elsewhere in the editor.
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         if let Some(inside) = running.focus.as_ref().and_then(|f| f.pointer_inside()) {
             if running.pointer_inside != Some(inside) {
                 running.pointer_inside = Some(inside);
                 channel.send(rbx_play::protocol::CommandBody::Pointer { inside });
             }
         }
-        #[cfg(not(any(target_os = "linux", windows)))]
+        #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
         let _ = &running.last_rect;
         if let Some(reason) = stop {
             self.play_stop(reason, cx);
             return false;
         }
         self.live_tick(cx);
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         self.play_update_holes();
         if changed {
             cx.notify();
@@ -1017,7 +1026,7 @@ impl Shell {
     /// height; zero height while it is down) leave the keyboard with the
     /// client, see `FocusFollow::keep_client_focus_in`.
     pub(in crate::shell) fn play_keep_focus_for_cover(&self, cover: [u32; 4]) {
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         if let Some(running) = &self.play.session {
             if let (Some(focus), Some(client)) = (&running.focus, running.last_rect) {
                 let [x, y, width, height] = cover;
@@ -1030,12 +1039,12 @@ impl Shell {
                 focus.keep_client_focus_in(keep);
             }
         }
-        #[cfg(not(any(target_os = "linux", windows)))]
+        #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
         let _ = cover;
     }
 
     /// The embedded client while it is shown over the 3D view.
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pub(in crate::shell) fn play_embedded(&self) -> Option<&rbx_play::embed::Embedded> {
         let running = self.play.session.as_ref()?;
         running.embedded.as_ref().filter(|_| !running.hidden)
@@ -1047,12 +1056,15 @@ impl Shell {
         if !matches!(self.play.phase, Phase::Running) {
             return None;
         }
-        // Without an embedded window (macOS) the session only gates the probe.
-        #[cfg_attr(not(any(target_os = "linux", windows)), allow(unused_variables))]
+        // Without an embedded window the session only gates the probe.
+        #[cfg_attr(
+            not(any(target_os = "linux", windows, target_os = "macos")),
+            allow(unused_variables)
+        )]
         let running = self.play.session.as_ref()?;
         Some(crate::mcp::PlayInput {
             probe: self.play.link.as_ref()?.channel.requester(),
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
             window: running
                 .embedded
                 .as_ref()
@@ -1064,7 +1076,7 @@ impl Shell {
     /// Cuts the editor's popups out of the embedded game window, so they
     /// show above it (`gpui_base::occlusion` records where they were
     /// painted). Called after every frame while embedded and on each poll.
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pub(in crate::shell) fn play_update_holes(&mut self) {
         let (Some(window), Some(running)) = (self.play.gpui_window, self.play.session.as_ref())
         else {
@@ -1095,6 +1107,9 @@ impl Shell {
                 })
             })
             .collect();
+        // macOS hides the client for any hole, so a simulated device's
+        // corners, always there, would hide it for good: they stay square.
+        #[cfg(not(target_os = "macos"))]
         holes.extend(
             crate::device_sim::corner_holes(rect.width, rect.height, running.corner)
                 .into_iter()
@@ -1117,7 +1132,7 @@ impl Shell {
         self.live_end(cx);
         self.play_debug_end(cx);
         self.playtests_session_end(cx);
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         self.play.holes.clear();
         if let Some(running) = self.play.session.take() {
             // Tell that session's server to close, so the next Play can't be
@@ -1128,15 +1143,15 @@ impl Shell {
             }
             // Hidden before the client is killed and the window handed back
             // to the root, so nothing flashes on the desktop.
-            #[cfg(any(target_os = "linux", windows))]
-            #[cfg_attr(windows, allow(clippy::drop_non_drop))]
+            #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
+            #[cfg_attr(any(windows, target_os = "macos"), allow(clippy::drop_non_drop))]
             drop(running.focus);
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
             if let Some(embedded) = &running.embedded {
                 embedded.hide();
             }
             drop(running.client);
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
             drop(running.embedded);
         }
         self.play.job_id = None;

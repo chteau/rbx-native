@@ -18,10 +18,10 @@
 //! - `value`: Roblox values ↔ JSON, both ways, for live properties.
 //! - `live`: a side's live instance tree as a `WeakDom`, from `Tree`/`Diff`/`Props`.
 //! - `embed`: puts the client's window, frameless, into the viewport (Linux
-//!   X11 and Windows).
+//!   X11 and Windows), or pins it over the viewport (macOS).
 
 pub mod channel;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 pub mod embed;
 pub mod exec;
 pub mod gamepad;

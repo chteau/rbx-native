@@ -2118,7 +2118,7 @@ impl Render for Shell {
         // Popups record where they paint during this frame; Play cuts those
         // areas out of the embedded game window once the frame is drawn.
         gpui_base::occlusion::begin_frame(window.window_handle().window_id());
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
         if self.play.phase == play::Phase::Running {
             let shell = cx.entity().downgrade();
             window.on_next_frame(move |_, cx| {
