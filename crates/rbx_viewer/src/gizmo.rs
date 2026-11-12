@@ -237,7 +237,8 @@ impl Handles {
                 // point on the *dragger* is its endpoint, not the nearest point
                 // on the infinite axis line.
                 let sign = if along < 0.0 { -1.0 } else { 1.0 };
-                let clamped = along.abs().clamp(SHAFT_START * self.arm, self.arm) * sign;
+                // `max`/`min`, not `clamp`: a NaN arm (a NaN pivot) must not panic.
+                let clamped = along.abs().max(SHAFT_START * self.arm).min(self.arm) * sign;
                 let (distance, offset) = ray.nearest(self.origin + direction * clamped);
                 (offset <= reach && distance > 0.0).then_some((axis, sign, distance))
             })

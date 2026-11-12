@@ -379,3 +379,36 @@ fn a_place_knows_whether_anything_in_it_is_glass() {
 
     assert!(Scene::from_dom(&dom, &database).unwrap().has_glass());
 }
+
+// A plugin's 0/0 once put a whole model at NaN, and the scene's bounds, the
+// shadow fit and the render thread with them. Such a part is not drawn.
+#[test]
+fn a_part_at_nan_is_left_out_and_the_bounds_stay_finite() {
+    let mut dom = test_place();
+    let mut pending = dom.root_refs().to_vec();
+    let mut spawn = None;
+    while let Some(referent) = pending.pop() {
+        let instance = dom.get(referent).unwrap();
+        if instance.name() == "SpawnLocation" {
+            spawn = Some(referent);
+        }
+        pending.extend_from_slice(instance.children());
+    }
+    let spawn = spawn.unwrap();
+    let nan = CFrameData {
+        position: Vector3Data {
+            x: f32::NAN,
+            y: f32::NAN,
+            z: f32::NAN,
+        },
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    };
+    dom.set_property(spawn, "CFrame", Variant::CFrame(nan))
+        .unwrap();
+
+    let scene = Scene::from_dom(&dom, &ReflectionDatabase::embedded()).unwrap();
+
+    assert_eq!(scene.parts().len(), 1);
+    assert!(scene.bounds().center().is_finite());
+    assert!(scene.bounds().radius().is_finite());
+}

@@ -87,12 +87,7 @@ fn world_to_view(lua: &Lua, ctx: &Ctx, camera: Ref, point: &Value) -> Result<(Va
         crate::datatypes::from_userdata::<crate::datatypes::vector3::LuaVector3>(point, "Vector3")?
             .0;
     let (frame, fov) = camera_pose(ctx, camera)?;
-    let [width, height] = env(lua)
-        .shared
-        .borrow()
-        .context
-        .viewport_size
-        .unwrap_or([1280.0, 720.0]);
+    let [width, height] = env(lua).shared.borrow().context.view_size();
     let d = [
         p.x - frame.position.x,
         p.y - frame.position.y,
@@ -155,12 +150,7 @@ fn screen_ray(lua: &Lua, ctx: &Ctx, camera: Ref, point: [f32; 2], depth: f32) ->
         };
         (frame, fov)
     };
-    let [width, height] = env(lua)
-        .shared
-        .borrow()
-        .context
-        .viewport_size
-        .unwrap_or([1280.0, 720.0]);
+    let [width, height] = env(lua).shared.borrow().context.view_size();
     let tan = (fov.to_radians() / 2.0).tan();
     let local = [
         (2.0 * point[0] / width.max(1.0) - 1.0) * tan * width / height.max(1.0),

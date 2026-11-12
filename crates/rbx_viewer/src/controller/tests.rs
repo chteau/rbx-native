@@ -44,14 +44,14 @@ fn pose(from: Viewpoint) -> Pose {
 }
 
 fn step(controller: &mut Controller, input: &mut Input, dt: Duration) -> Viewpoint {
-    controller.update(input, dt, Duration::ZERO, &bounds(), false)
+    controller.update(input, dt, Duration::ZERO, &bounds(), false, None)
 }
 
 /// Like [`step`], but with orthographic mode on, for the wheel's other role
 /// (zooming `Pose::ortho_scale` instead of dollying), see
 /// `orthographic_wheel_zooms_ortho_scale_instead_of_translating` and friends.
 fn step_orthographic(controller: &mut Controller, input: &mut Input, dt: Duration) -> Viewpoint {
-    controller.update(input, dt, Duration::ZERO, &bounds(), true)
+    controller.update(input, dt, Duration::ZERO, &bounds(), true, None)
 }
 
 #[test]
@@ -64,6 +64,7 @@ fn orbit_mode_ignores_input_until_the_first_trigger() {
         Duration::from_secs(2),
         &bounds(),
         false,
+        None,
     );
     assert_eq!(
         from,
@@ -79,7 +80,7 @@ fn a_movement_key_switches_to_free_mode_without_a_jump() {
 
     let elapsed = Duration::from_millis(2500);
     let before = Camera::orbit_pose(&bounds, Camera::orbit_yaw(elapsed));
-    let after = pose(controller.update(&mut input, Duration::ZERO, elapsed, &bounds, false));
+    let after = pose(controller.update(&mut input, Duration::ZERO, elapsed, &bounds, false, None));
 
     assert_eq!(after, before);
 }
@@ -92,6 +93,7 @@ fn the_default_mode_starts_free_at_the_spawn_pose() {
         Duration::ZERO,
         &bounds(),
         false,
+        None,
     );
 
     assert_eq!(from, Viewpoint::Free(Camera::spawn_pose(&bounds())));
@@ -461,6 +463,7 @@ fn sync_ortho_scale_does_nothing_while_still_orbiting() {
         Duration::ZERO,
         &bounds,
         true,
+        None,
     );
     assert!(matches!(from, Viewpoint::Orbit(_)));
 }
@@ -490,6 +493,7 @@ fn recentre_restores_the_initial_orbit_view_for_the_legacy_orbit_flag() {
         Duration::ZERO,
         &bounds,
         false,
+        None,
     );
 
     controller.recentre(&bounds);
@@ -750,4 +754,76 @@ fn a_pan_slides_the_camera_against_the_drag_without_turning_it() {
     assert!((moved.dot(right) + 5.0).abs() < 1e-3, "{moved}");
     assert!((moved.dot(up) - 2.0).abs() < 1e-3, "{moved}");
     assert_eq!((after.yaw, after.pitch), (before.yaw, before.pitch));
+}
+
+// A long scroll used to fly the eye through the baseplate into the sky under
+// the world, where nothing on screen moved any more.
+#[test]
+fn a_long_zoom_in_slows_down_and_never_crosses_the_surface_ahead() {
+    let mut controller = spawned();
+    let start = pose(step(&mut controller, &mut Input::default(), Duration::ZERO));
+    let forward = start.basis().0;
+    let surface = 40.0;
+    let mut travelled = 0.0;
+    for _ in 0..500 {
+        let ahead = Some(surface - travelled);
+        let from = controller.update(
+            &mut wheeled(5.0, false),
+            Duration::from_millis(16),
+            Duration::ZERO,
+            &bounds(),
+            false,
+            ahead,
+        );
+        travelled = (pose(from).position - start.position).dot(forward);
+    }
+    assert!(travelled < surface, "{travelled}");
+    assert!(travelled > surface - 2.0 * ZOOM_STANDOFF, "{travelled}");
+}
+
+#[test]
+fn a_long_zoom_out_stops_at_the_scenes_reach() {
+    let mut controller = spawned();
+    let mut from = step(&mut controller, &mut Input::default(), Duration::ZERO);
+    for _ in 0..2_000 {
+        from = step(
+            &mut controller,
+            &mut wheeled(-5.0, false),
+            Duration::from_millis(16),
+        );
+    }
+    let reach = bounds().radius() * ZOOM_OUT_RADII + ZOOM_OUT_SLACK;
+    let distance = pose(from).position.distance(bounds().center());
+    assert!(distance < reach + 100.0, "{distance} vs {reach}");
+}
+
+#[test]
+fn a_nan_pose_is_replaced_rather_than_flown_from() {
+    let broken = Pose {
+        position: Vec3::splat(f32::NAN),
+        ..Camera::spawn_pose(&bounds())
+    };
+    let mut controller = Controller::new(Start::Pose(broken), &bounds(), Some(30.0), 0.2);
+    let from = pose(step(
+        &mut controller,
+        &mut wheeled(1.0, false),
+        Duration::from_millis(16),
+    ));
+    assert!(finite(&from), "{from:?}");
+}
+
+// Smoothing at 0 over a zero-length step was 0 / 0.
+#[test]
+fn no_smoothing_over_a_zero_step_stays_finite() {
+    let mut controller = spawned();
+    controller.set_feel(CameraFeel {
+        smoothing: 0.0,
+        ..CameraFeel::default()
+    });
+    let from = pose(step(
+        &mut controller,
+        &mut wheeled(3.0, false),
+        Duration::ZERO,
+    ));
+    assert!(finite(&from), "{from:?}");
 }

@@ -102,7 +102,8 @@ impl Faces {
             let offset = point - self.centre;
             self.lateral = Vec3::from(Axis::ALL.map(|axis| {
                 let half = self.half[axis as usize];
-                offset.dot(self.direction(axis)).clamp(-half, half)
+                // Not `clamp`, which panics on a NaN size.
+                offset.dot(self.direction(axis)).max(-half).min(half)
             }));
         }
         self

@@ -291,3 +291,36 @@ fn a_degenerate_field_of_view_never_reaches_the_renderer() {
         assert_eq!(camera.fov_degrees, DEFAULT_FOV_DEGREES, "for {degenerate}");
     }
 }
+
+#[test]
+fn a_nan_camera_cframe_has_no_viewpoint() {
+    let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    let dom = place("Camera", Some(cframe([f32::NAN, 5.0, 0.0], identity)));
+
+    assert_eq!(PlaceCamera::from_dom(&dom), None);
+}
+
+// Studio's edit camera follows `workspace.CurrentCamera.CFrame = ...` from
+// the Command Bar; the editor's own mirroring of its pose must not.
+#[test]
+fn a_script_moving_the_current_camera_moves_the_view_but_the_mirror_does_not() {
+    let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    let mut dom = place("Camera", Some(cframe([0.0, 5.0, 0.0], identity)));
+    let camera = Ref::new(2);
+
+    dom.set_property(camera, "CFrame", cframe([60.0, 8.0, 0.0], identity))
+        .unwrap();
+    let changes = dom.take_changes();
+    let view = moved_by(&dom, &changes).expect("the script moved the camera");
+    assert_eq!(view.eye, [60.0, 8.0, 0.0]);
+    assert_eq!(view.look_at, [60.0, 8.0, -1.0]);
+
+    write_pose(&mut dom, pose([1.0, 2.0, 3.0], 0.0, 0.0, 70.0));
+    assert!(dom.take_changes().is_empty());
+
+    let other = insert(&mut dom, 3, "Part");
+    dom.set_property(other, "CFrame", cframe([1.0, 1.0, 1.0], identity))
+        .unwrap();
+    let changes = dom.take_changes();
+    assert_eq!(moved_by(&dom, &changes), None);
+}

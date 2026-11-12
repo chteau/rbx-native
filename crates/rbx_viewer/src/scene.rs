@@ -362,6 +362,19 @@ impl Scene {
         &self.parts
     }
 
+    /// Studs along `ray` to the first drawn part's box it meets, for the
+    /// wheel's dolly to stop short of (see `controller::Room`). A box the
+    /// eye already stands in does not count: zooming has to work inside a
+    /// big zone part.
+    pub(crate) fn distance_ahead(&self, ray: crate::pick::Ray) -> Option<f32> {
+        self.parts
+            .iter()
+            .filter(|part| !part.is_suppressed())
+            .filter_map(|part| crate::pick::ray_hits_box(ray, part.transform))
+            .filter(|&distance| distance > 0.0)
+            .min_by(f32::total_cmp)
+    }
+
     pub(crate) fn bounds(&self) -> &Bounds {
         &self.bounds
     }
@@ -870,6 +883,13 @@ fn build_part(
         return None;
     };
     let size = Vec3::new(size.x, size.y, size.z);
+    let transform = cframe_matrix(cframe);
+    // A NaN or infinite placement (a script's 0/0) is not drawn: Roblox
+    // shows nothing there either, and every bound and fit downstream would
+    // inherit the NaN.
+    if !transform.is_finite() || !size.is_finite() {
+        return None;
+    }
     let geometry = shape::resolve(dom, database, instance, size);
 
     let mut part = assemble_part(
@@ -877,7 +897,7 @@ fn build_part(
         database,
         materials,
         geometry,
-        cframe_matrix(cframe),
+        transform,
         PartId::whole(referent),
     );
     // A union with no geometry anywhere, or a part wearing a deprecated

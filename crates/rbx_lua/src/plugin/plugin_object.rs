@@ -362,7 +362,7 @@ impl UserData for LuaPluginMouse {
             };
             let env = env(lua);
             let context = env.shared.borrow().context.clone();
-            let size = context.viewport_size.unwrap_or([0.0, 0.0]);
+            let size = context.view_size();
             let cframe = |p: [f32; 3]| -> Result<Value> {
                 let new: Function = lua.globals().get::<Table>("CFrame")?.get("new")?;
                 new.call((p[0], p[1], p[2]))

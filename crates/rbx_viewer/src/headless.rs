@@ -726,12 +726,14 @@ impl Headless {
     /// streaming, which is the right way round: a viewport nobody is looking
     /// at has nothing to swap anything into.
     pub fn tick(&mut self, dt: Duration) -> bool {
+        let ahead = self.wheel_ahead();
         let from = self.controller.update(
             &mut self.input,
             dt,
             self.start.elapsed(),
             &self.bounds,
             self.view.orthographic,
+            ahead,
         );
         let moved = from != self.from;
         self.from = from;
@@ -739,6 +741,17 @@ impl Headless {
         // or not, and short-circuiting would leave them waiting for a tick
         // that happens to be still.
         moved | self.take_landed_assets()
+    }
+
+    /// The surface straight ahead of the eye while a wheel notch waits to
+    /// dolly in: only then, it costs a ray against every part.
+    fn wheel_ahead(&self) -> Option<f32> {
+        if self.input.wheel_notches() <= 0.0 {
+            return None;
+        }
+        let pose = self.pose()?;
+        let ray = crate::pick::Ray::new(pose.position, pose.basis().0);
+        self.loaded.scene().distance_ahead(ray)
     }
 
     /// Whether the picture moves on its own, with no input and no edit: a

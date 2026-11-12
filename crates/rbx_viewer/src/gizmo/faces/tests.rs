@@ -252,3 +252,10 @@ fn no_summon_leaves_every_ball_on_the_middle_of_its_face() {
     assert_eq!(faces.summoned(None), faces);
     assert_eq!(faces.handle(Axis::X, -1.0), Vec3::new(-2.0, 0.0, 0.0));
 }
+
+// A NaN size gives NaN half extents, which `f32::clamp` would panic on.
+#[test]
+fn summoning_onto_a_nan_part_does_not_panic() {
+    let nan = part(Vec3::ZERO, Vec3::splat(f32::NAN));
+    let _ = faces(nan).summoned(Some(Vec3::ONE));
+}

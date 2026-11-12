@@ -320,6 +320,11 @@ impl Shell {
         if class_changed {
             self.selection_changed(cx);
         }
+        if let Some(view) = crate::camera::moved_by(&self.dom, changes) {
+            self.viewport
+                .read(cx)
+                .look_at_with(view.eye, view.look_at, view.fov_degrees);
+        }
         self.forward_to_argon(changes, cx);
     }
 

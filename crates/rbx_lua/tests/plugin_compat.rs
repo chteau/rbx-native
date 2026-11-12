@@ -326,3 +326,24 @@ fn stand_in_services_and_web_free_members() {
         "rbxthumb://type=AvatarHeadShot&id=1&w=150&h=150 true"
     );
 }
+
+// Before the 3D view is first laid out the host has no size for it. Studio's
+// `Camera.ViewportSize` is never `(0, 0)`; ours was, and F3X's handles divide
+// by it, which turned a Move drag into a NaN pivot.
+#[test]
+fn a_view_not_laid_out_yet_still_has_a_size() {
+    let (mut h, _) = run(
+        "noview",
+        r#"
+        game:GetService("Selection").SelectionChanged:Connect(function()
+            local camera = workspace.CurrentCamera
+            local size = camera.ViewportSize
+            local studsPerPixel = 2 * math.tan(math.rad(camera.FieldOfView) / 2) * 10 / size.X
+            print(size.X > 0 and size.Y > 0, studsPerPixel < math.huge)
+        end)
+        "#,
+    );
+    h.viewport = None;
+    let out = h.send(Input::SelectionChanged);
+    assert_eq!(prints(&out), ["true true"]);
+}
