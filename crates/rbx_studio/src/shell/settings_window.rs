@@ -219,7 +219,10 @@ impl SettingsWindow {
         let (recovery, moved) = files_account::RecoveryControls::new(&shell, window, cx);
         subscriptions.push(moved);
         let search = cx.new(|cx| {
-            let mut state = InputState::new(window, cx).placeholder("Search settings");
+            // The box clears itself: it eats Esc before the window's handler.
+            let mut state = InputState::new(window, cx)
+                .placeholder("Search settings")
+                .clean_on_escape();
             if let Ok(query) = std::env::var(SEARCH_VARIABLE) {
                 state = state.default_value(query);
             }

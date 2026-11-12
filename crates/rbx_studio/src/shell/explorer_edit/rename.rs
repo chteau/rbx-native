@@ -63,6 +63,13 @@ pub(super) fn name_box(input: &Entity<InputState>) -> AnyElement {
         .flex_1()
         .min_w(px(40.))
         .h(tokens::tree_row_height())
+        // Framed like a focused field: bare, the box looked exactly like
+        // the label it replaced, and a rename seemed not to open at all.
+        .px(px(4.))
+        .border_1()
+        .border_color(tokens::accent_line())
+        .rounded(px(4.))
+        .bg(tokens::field_select())
         // The tree's own row press selects, and the Explorer's wrapper hands
         // focus back to the tree on any click inside it, which would blur
         // this box and commit the half-typed name. A click aimed at the
