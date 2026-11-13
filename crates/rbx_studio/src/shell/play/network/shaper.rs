@@ -131,7 +131,7 @@ pub(in crate::shell) fn prerequisite() -> Option<&'static str> {
              the first shaped Play asks for administrator approval",
         )
     } else if cfg!(target_os = "macos") {
-        Some("the first shaped Play asks for an administrator password (pf and dummynet need root)")
+        Some("the first shaped Play installs a small root helper (pf and dummynet need root) and asks for your password once")
     } else {
         None
     }

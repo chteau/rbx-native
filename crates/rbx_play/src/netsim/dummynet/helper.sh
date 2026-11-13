@@ -1,8 +1,12 @@
 #!/bin/sh
-# Root helper for the macOS network shaper. Started once through osascript as
-#   sh helper.sh DIR PARENT_PID
-# and driven over two FIFOs in DIR: `cmd` (parent -> helper) and `status`
-# (helper -> parent). Lines accepted on `cmd`:
+# Root helper for the macOS network shaper. Installed once (one
+# administrator prompt) as a launchd daemon listening on a Unix socket only
+# the installing user can open; launchd runs one copy per connection, with
+# the connection as stdin/stdout. A connection is one Play session: the rules
+# go away when it closes, so a crashed editor can't leave shaping behind.
+#
+# Says `hello VERSION`, then `ready PID` (after `nojitter` if this pf takes
+# no `probability`). Lines accepted after that:
 #   out L J P | in L J P   latency us, jitter us, loss ppm
 #   ports p1 ... pn        UDP ports to shape (0..64)
 #   stop
@@ -10,22 +14,19 @@
 set -f
 # System tools first; the rest of PATH only matters to the tests' stubs.
 PATH="/sbin:/usr/sbin:/bin:/usr/bin:$PATH"
-
-DIR=$1
-PARENT=$2
-case "$DIR" in ""|*[!A-Za-z0-9/._-]*) exit 2 ;; esac
-case "$PARENT" in ""|*[!0-9]*) exit 2 ;; esac
+# Bump with any change here: an older installed copy is then replaced.
+VERSION=1
 
 ANCHOR=com.apple/rbxnative
 IN_PIPES="4201 4202 4203 4204"
 OUT_PIPES="4211 4212 4213 4214"
 K=4
 TOKEN=""
-WATCH=""
 PORTS=""
 
-exec 3<"$DIR/cmd"
-exec 4>"$DIR/status"
+# Commands on 3, answers on 4; nothing else may reach the connection.
+exec 3<&0 4>&1 1>/dev/null 2>/dev/null
+echo "hello $VERSION" >&4
 
 cleanup_rules() {
     pfctl -a "$ANCHOR" -F all >/dev/null 2>&1
@@ -36,12 +37,11 @@ cleanup_rules() {
 
 finish() {
     trap - EXIT
-    [ -n "$WATCH" ] && kill "$WATCH" >/dev/null 2>&1
     cleanup_rules
     [ -n "$TOKEN" ] && pfctl -X "$TOKEN" >/dev/null 2>&1
 }
 trap finish EXIT
-trap 'exit 0' INT TERM HUP
+trap 'exit 0' INT TERM HUP PIPE
 
 num() {
     case "$1" in
@@ -122,8 +122,6 @@ for n in $IN_PIPES $OUT_PIPES; do
     fi
 done
 
-( while kill -0 "$PARENT" 2>/dev/null; do sleep 1; done; kill -TERM $$ ) >/dev/null 2>&1 &
-WATCH=$!
 echo "ready $$" >&4
 
 while read -r verb rest <&3; do
