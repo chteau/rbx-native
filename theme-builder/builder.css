@@ -97,9 +97,10 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 .tb-more > :not(summary) { margin: 0 12px 12px; }
 .filter { width: calc(100% - 24px); box-sizing: border-box; }
 .group-title { font-size: 12px; font-weight: 700; color: var(--dim); margin: 14px 0 4px; }
-.sizes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
-.size { display: grid !important; grid-template-columns: 1fr 64px; align-items: center; gap: 8px !important; font: 400 12px var(--mono) !important; }
-.size input { padding: 3px 6px !important; font: 400 12.5px var(--mono) !important; }
+.sizes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 14px; }
+.size { display: grid !important; grid-template-columns: minmax(0, 1fr) 58px; min-width: 0; align-items: center; gap: 8px !important; font: 400 12px var(--mono) !important; }
+.size > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.size input { width: 100%; min-width: 0; box-sizing: border-box; padding: 3px 4px !important; font: 400 12.5px var(--mono) !important; }
 .size.changed { color: #9aa7ea !important; }
 
 .files { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -125,7 +126,7 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 
 /* The desktop behind a see-through window. */
 .desk { width: 1600px; height: 900px; border-radius: 10px; overflow: hidden; position: relative;
-  background: radial-gradient(120% 90% at 15% 10%, #f28b55 0%, #c0447a 38%, #4a2c8f 70%, #1b1d4a 100%); }
+  background: var(--wall, radial-gradient(120% 90% at 15% 10%, #f28b55 0%, #c0447a 38%, #4a2c8f 70%, #1b1d4a 100%)); }
 .desk.solid { background: #000; }
 .desk.solid .ed { backdrop-filter: none; }
 
@@ -142,6 +143,7 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 .ed * { box-sizing: border-box; }
 .ed svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .ed .bg { position: absolute; inset: 0; z-index: -1; background-repeat: no-repeat; pointer-events: none; }
+.pv-tools { display: flex; align-items: center; gap: 10px; }
 .ed .bg.over { z-index: 20; }
 .ed .hov { transition: background .12s, box-shadow .12s; }
 .ed .hov:hover { background: var(--c-hover); box-shadow: var(--glow); }

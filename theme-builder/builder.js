@@ -22,7 +22,7 @@ function fresh(base = "default") {
     mode: null,
     window: "opaque",
     hover: { on: false, glow: "@check_on/0.6", radius: 10 },
-    background: null, // { name, type, data (data URL), opacity, fit, layer }
+    background: null, // { name, type, data (data URL), opacity, fit, layer, blur }
     fonts: { ui: [], mono: [] }, // [{ name, family, data (base64) }]
     view: "place",
   };
@@ -590,6 +590,8 @@ function applyPreview() {
   bg.style.opacity = b ? b.opacity : 0;
   bg.style.backgroundSize = b ? { cover: "cover", contain: "contain", fill: "100% 100%" }[b.fit] : "";
   bg.style.backgroundPosition = "center";
+  bg.style.filter = b && b.blur ? `blur(${b.blur}px)` : "";
+  bg.style.inset = b && b.blur ? `-${b.blur * 2}px` : "";
   $("pop").hidden = state.view !== "place";
 }
 
@@ -600,6 +602,47 @@ function fit() {
   const k = Math.min(w / W, Math.max(h, 320) / H, 1);
   scale.style.transform = `scale(${k})`;
   stage.style.height = H * k + "px";
+}
+
+// ---------- See-through panels ----------
+
+// Panel opacity is how much of what's behind the window a panel hides. A panel
+// (`dock`) paints over the ground (`black`), so their alphas stack; both get
+// 1 - sqrt(1 - a), which stacks back to a. The chrome, tiles and menu bar
+// point at those two, so they follow.
+const PANEL_KEYS = ["black", "dock"];
+const panelAlpha = () => { const g = resolved("black")[3], d = resolved("dock")[3]; return +(1 - (1 - g) * (1 - d)).toFixed(2); };
+function setPanelAlpha(a) {
+  const each = a >= 1 ? 1 : 1 - Math.sqrt(1 - a);
+  for (const k of PANEL_KEYS) {
+    const c = resolve(rawColor(k));
+    const hex = hex6(c).toUpperCase() + (each >= 1 ? "" : Math.round(each * 255).toString(16).padStart(2, "0").toUpperCase());
+    setColor(k, hex);
+  }
+}
+// Something should show through but the panels are solid: make them see-through
+// once, and say so, rather than leave a preview that looks unchanged.
+function seeThrough(what) {
+  if (panelAlpha() < 1) return;
+  setPanelAlpha(0.72);
+  msg(`Panels set to 72% opacity so ${what} shows through. Change it with Panel opacity under Look.`);
+}
+
+// A made-up desktop behind see-through windows, preview only.
+function newWallpaper() {
+  const r = (a, b) => a + Math.random() * (b - a);
+  const h = r(0, 360);
+  const spot = (dh, x, y, l) => `radial-gradient(${r(40, 70)}% ${r(45, 80)}% at ${x}% ${y}%, hsl(${(h + dh) % 360} ${r(55, 85)}% ${l}%) 0%, transparent 70%)`;
+  // Hard-edged discs and stripes, so Blurred visibly differs from See-through.
+  const disc = (dh, l) => { const x = r(5, 95), y = r(5, 95), d = r(6, 16); return `radial-gradient(circle at ${x}% ${y}%, hsl(${(h + dh) % 360} 80% ${l}%) ${d}%, transparent ${d + 0.3}%)`; };
+  $("desk").style.setProperty("--wall", [
+    disc(r(0, 60), r(60, 75)), disc(r(120, 200), r(55, 70)), disc(r(220, 300), r(50, 65)),
+    `repeating-linear-gradient(${r(20, 70)}deg, hsl(${h} 70% 70% / .14) 0 14px, transparent 14px 46px)`,
+    spot(0, r(5, 35), r(5, 35), r(55, 68)),
+    spot(r(40, 90), r(60, 95), r(10, 45), r(45, 60)),
+    spot(r(150, 220), r(20, 70), r(60, 100), r(35, 55)),
+    `linear-gradient(${r(0, 360)}deg, hsl(${(h + 200) % 360} 45% 18%), hsl(${(h + 260) % 360} 50% 10%))`,
+  ].join(", "));
 }
 
 // ---------- Sync the form with the state ----------
@@ -638,7 +681,10 @@ function refreshForm() {
   if (b) {
     $("bg-name").textContent = b.name;
     setRange("bg-opacity", b.opacity, v => Math.round(v * 100) + "%");
+    setRange("bg-blur", b.blur || 0, v => v + "px");
   }
+  setRange("panel-alpha", panelAlpha(), v => Math.round(v * 100) + "%");
+  $("wallpaper").hidden = state.window === "opaque";
   $("window-hint").hidden = state.window === "opaque";
   segs.forEach(f => f());
   renderFontList("ui");
@@ -673,7 +719,10 @@ function themeJson() {
   if (mode() !== "dark") out.mode = mode();
   if (state.window !== "opaque") out.window = state.window;
   const b = state.background;
-  if (b) out.background = { image: bgFile(b), opacity: b.opacity, fit: b.fit, layer: b.layer };
+  if (b) {
+    out.background = { image: bgFile(b), opacity: b.opacity, fit: b.fit, layer: b.layer };
+    if (b.blur) out.background.blur = b.blur;
+  }
   if (state.hover.on) out.hover = { glow: state.hover.glow, glow_radius: state.hover.radius };
   const files = [...state.fonts.ui, ...state.fonts.mono].map(f => "fonts/" + f.name);
   if (files.length) {
@@ -769,7 +818,7 @@ async function openZip(file) {
       const ext = bgName.split(".").pop().toLowerCase();
       const type = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" }[ext] || "image/png";
       const data = await zip.file(root + bgName).async("base64");
-      next.background = { name: bgName.split("/").pop(), type, data: `data:${type};base64,${data}`, opacity: theme.background.opacity ?? 1, fit: theme.background.fit || "cover", layer: theme.background.layer || "behind" };
+      next.background = { name: bgName.split("/").pop(), type, data: `data:${type};base64,${data}`, opacity: theme.background.opacity ?? 1, fit: theme.background.fit || "cover", layer: theme.background.layer || "behind", blur: Math.min(64, Math.max(0, Number(theme.background.blur) || 0)) };
     }
     const fonts = theme.fonts || {};
     for (const path of fonts.files || []) {
@@ -810,9 +859,12 @@ function init() {
     for (const k of Object.keys(state.colors)) if (state.colors[k] === baseColor(k)) delete state.colors[k];
   }));
   segs.push(seg("mode", mode, v => (state.mode = v === (baseTheme().mode || "dark") ? null : v)));
-  segs.push(seg("window", () => state.window, v => (state.window = v)));
+  segs.push(seg("window", () => state.window, v => { state.window = v; if (v !== "opaque") seeThrough("your desktop"); }));
   segs.push(seg("bg-fit", () => state.background && state.background.fit, v => state.background && (state.background.fit = v)));
-  segs.push(seg("bg-layer", () => state.background && state.background.layer, v => state.background && (state.background.layer = v)));
+  segs.push(seg("bg-layer", () => state.background && state.background.layer, v => { if (state.background) { state.background.layer = v; if (v === "behind") seeThrough("the image"); } }));
+  $("panel-alpha").addEventListener("input", e => { setPanelAlpha(Number(e.target.value)); changed(); });
+  $("bg-blur").addEventListener("input", e => { if (state.background) { state.background.blur = Number(e.target.value); changed(); } });
+  $("wallpaper").addEventListener("click", newWallpaper);
   segs.push(seg("pv-view", () => state.view, v => (state.view = v)));
 
   $("glow-on").addEventListener("change", e => { state.hover.on = e.target.checked; changed(); });
@@ -825,7 +877,8 @@ function init() {
     if (f.size > 16 * 1024 * 1024) { msg("Background images have to be under 16 MiB.", true); return; }
     const r = new FileReader();
     r.onload = () => {
-      state.background = Object.assign({ opacity: 0.8, fit: "cover", layer: "behind" }, state.background || {}, { name: f.name, type: f.type, data: r.result });
+      state.background = Object.assign({ opacity: 0.8, fit: "cover", layer: "behind", blur: 0 }, state.background || {}, { name: f.name, type: f.type, data: r.result });
+      if (state.background.layer === "behind") seeThrough("the image");
       changed();
     };
     r.readAsDataURL(f);
@@ -842,6 +895,7 @@ function init() {
   });
   $("download").addEventListener("click", download);
 
+  newWallpaper();
   window.addEventListener("resize", fit);
   new ResizeObserver(fit).observe($("stage"));
   registerFonts();

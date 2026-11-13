@@ -106,7 +106,13 @@
           <button type="button" data-v="blurred">Blurred</button>
         </div>
       </div>
-      <p class="hint" id="window-hint">See-through only shows where Background and Panels have some transparency.</p>
+      <p class="hint" id="window-hint">See-through lets your desktop show through the panels, Blurred frosts it (needs a compositor that can blur, otherwise it stays see-through).</p>
+      <div class="slider-row">
+        <label for="panel-alpha" title="The opacity of Background and Panels">Panel opacity</label>
+        <input type="range" id="panel-alpha" min="0.2" max="1" step="0.01">
+        <output id="panel-alpha-out"></output>
+      </div>
+      <p class="hint">Below 100%, whatever is behind the panels (your desktop, a background image) shows through.</p>
       <div class="tb-row">
         <label class="check"><input type="checkbox" id="glow-on"> Glow on hover</label>
       </div>
@@ -141,6 +147,11 @@
             <button type="button" data-v="fill">Stretch</button>
           </div>
         </div>
+        <div class="slider-row">
+          <label for="bg-blur">Blur</label>
+          <input type="range" id="bg-blur" min="0" max="64" step="1">
+          <output id="bg-blur-out"></output>
+        </div>
         <div class="tb-row">
           <span class="tb-label" id="layer-label">Layer</span>
           <div class="seg" role="group" aria-labelledby="layer-label" id="bg-layer">
@@ -148,7 +159,7 @@
             <button type="button" data-v="over">Over everything</button>
           </div>
         </div>
-        <p class="hint">Behind only shows through panels you made see-through.</p>
+        <p class="hint">Behind sits under the panels and shows through as much as Panel opacity lets it. Blur frosts the image so text on the panels stays readable.</p>
       </div>
     </section>
 
@@ -190,10 +201,11 @@
   <main class="tb-main" aria-label="Live preview">
     <div class="pv-bar">
       <span class="pv-title">Live preview</span>
+      <span class="pv-tools"><button type="button" class="btn ghost small" id="wallpaper" hidden title="Pick another made-up desktop">New wallpaper</button>
       <div class="seg small" role="group" aria-label="Preview view" id="pv-view">
         <button type="button" data-v="place">Place</button>
         <button type="button" data-v="script">Script</button>
-      </div>
+      </div></span>
     </div>
     <div class="pv-stage" id="stage">
       <div class="pv-scale" id="scale">
