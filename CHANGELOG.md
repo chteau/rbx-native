@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-13
+
+- **Fewer Mac password prompts.** The Mac build is now signed with RbxNative's own certificate, the same one every build, so "Always Allow" on the Keychain prompt and the Accessibility permission stay after an update instead of asking again. macOS still asks the first time you open it (we're not an Apple-paid developer).
+- **Network simulator asks once on Mac.** The first shaped Play installs a small helper and asks for your password, then never again. Settings › Files › Play › Network helper removes it.
+
 ## 2026-11-09
 
 - **`Lighting.ClockTime` works.** It reads from `TimeOfDay` like it does in Studio instead of printing 0, and setting either one updates both. The Properties panel row follows it too.

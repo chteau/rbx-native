@@ -25,7 +25,7 @@ const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so t
 #[cfg(target_os = "macos")]
 const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
      lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Asks for your \
-     password the first time.";
+     password once, to install its helper.";
 #[cfg(not(any(windows, target_os = "macos")))]
 const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
      lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs Sober or \

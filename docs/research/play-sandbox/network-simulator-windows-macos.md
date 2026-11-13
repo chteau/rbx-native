@@ -96,12 +96,13 @@ DOC and HDR are the `master` copies, not a 2.2.2 tag. [Unknown whether master di
 
 ### macOS
 
-- **Elevation.** A root helper shell script is started once per editor session through `osascript` with `do shell script ... with administrator privileges`.
-  - The command first copies the helper to a root-owned temp file with `mktemp` and `cat`, then runs that copy, so the user cannot swap the script after the prompt. The tail is backgrounded, so `osascript` returns at once.
-  - The prompt text is "rbx-native wants to simulate network conditions for Play."
+- **Elevation.** The root helper shell script is installed once, through `osascript` with `do shell script ... with administrator privileges`, as the launchd daemon `io.github.chteau.rbx-native.netsim` (`/Library/PrivilegedHelperTools` + `/Library/LaunchDaemons`). Later Plays never prompt. Settings › Files › Play › Network helper removes it (one more prompt).
+  - The install command copies the helper and the plist into their root-owned places, then checks both against SHA-256 hashes the editor took before the prompt, so swapping the user-writable originals in between gains nothing. A helper whose `hello VERSION` differs from the bundled one is reinstalled.
+  - The daemon is `inetdCompatibility` on a Unix socket at `/var/run/io.github.chteau.rbx-native.netsim.sock`, `SockPathOwner` = the installing user and mode 0600, so no other account can drive it. launchd runs one helper per connection with the socket as stdin/stdout.
+  - Each prompt was a tester complaint (2026-11-13): the first build asked on every Play.
   - `AuthorizationExecuteWithPrivileges` is deprecated and `SMJobBless` needs Developer ID signing; both were rejected. [Reported/known; unverified here]
   - Behaviour of the backgrounded helper on Sequoia is [Unknown].
-- **IPC.** Two FIFOs, `cmd` (parent to helper) and `status` (helper to parent), live in a 0700 directory created by the app. The helper validates each line as digits only and never executes anything it reads.
+- **IPC.** The socket connection: commands in, answers out. The helper validates each line as digits only and never executes anything it reads. The connection closing (Stop, quit, crash) ends the session and clears the rules, so no parent-PID watcher is needed.
   - EOF on `cmd` ends the helper. A watcher also polls the parent PID once a second.
   - A trap on EXIT removes our rules and pipes.
 - **pf.** Rules are loaded into the anchor `com.apple/rbxnative` without touching `/etc/pf.conf`.
@@ -187,8 +188,8 @@ Replies from the helper:
 
 1. Run `echo 'dummynet out quick proto udp from any to any probability 50% pipe 4211' | pfctl -n -a com.apple/rbxnative -f -`. Confirm it is accepted, and note `port {...}` and `from any port` on `in` rules too. If it is rejected, confirm the single-pipe fallback and the `nojitter` reply.
 2. Check that the rules shape traffic with only the stock `pf.conf`: `pfctl -a com.apple/rbxnative -sr`, and `dnctl pipe show` counters.
-3. Run the password prompt flow. Accept it and cancel it. Check the dialog text, and check that the helper survives `osascript` returning.
-4. Quit the editor normally and by SIGKILL. The helper should see EOF or the parent-PID watcher and clean up. Check with `pfctl -a com.apple/rbxnative -sr`, `dnctl list` and `pfctl -s References`.
+3. Run the install prompt flow. Accept it and cancel it. Check the dialog text, that `launchctl print system/io.github.chteau.rbx-native.netsim` shows the daemon, that the socket is owned by the user with mode `srw-------`, and that a second Play doesn't prompt.
+4. Quit the editor normally and by SIGKILL. The helper should see EOF and clean up. Check with `pfctl -a com.apple/rbxnative -sr`, `dnctl list` and `pfctl -s References`.
 5. Start the helper twice, with a leftover from a killed run. Check that startup cleanup is idempotent.
 6. Confirm `pgrep -x RobloxPlayer` finds the client, and read the real `lsof -nP -a -p PID -iUDP -F n` output against `parse_lsof_udp`.
 7. Check whether an already-open flow picks up a pipe when rules are loaded late.
