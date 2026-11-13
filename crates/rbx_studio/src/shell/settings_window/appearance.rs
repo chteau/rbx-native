@@ -6,7 +6,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
-use gpui_kit::component::{h_flex, Icon, IndexPath, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, Icon, IndexPath, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -473,7 +473,23 @@ impl SettingsWindow {
                 install_row,
             ],
         );
-        theme_section.head = Some(self.theme_cards(cx));
+        theme_section.head = Some(match crate::window_blur::blur_missing() {
+            true => v_flex()
+                .child(self.theme_cards(cx))
+                .child(
+                    kit::text(11.5, 16.)
+                        .px(px(16.))
+                        .pb(px(12.))
+                        .text_color(tokens::text3())
+                        .child(
+                            "Your desktop can\u{2019}t blur behind windows, so this theme \
+                             shows see-through. On GNOME, the Blur my Shell extension can \
+                             blur it.",
+                        ),
+                )
+                .into_any_element(),
+            false => self.theme_cards(cx),
+        });
 
         let config = crate::settings::default_config_dir();
         let interface = Section::new(

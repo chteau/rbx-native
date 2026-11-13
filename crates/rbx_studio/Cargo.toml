@@ -102,9 +102,10 @@ resvg = "0.46"
 # GPUI's own handle type: the X11 window id the pointer lock warps in comes out
 # of it, so a second copy of the crate would not typecheck.
 raw-window-handle = "0.6"
-# Already in the tree under GPUI's X11 backend; `xfixes` hides the cursor and
-# `randr` is where the display's refresh rate comes from.
-x11rb = { version = "0.13", features = ["randr", "xfixes"] }
+# Already in the tree under GPUI's X11 backend; `xfixes` hides the cursor,
+# `randr` is where the display's refresh rate comes from, and `render` plus
+# `damage` draw a blurred theme's backdrop on GNOME (`window_blur`).
+x11rb = { version = "0.13", features = ["damage", "randr", "render", "xfixes"] }
 
 # Dock layout state serialization, uses same version serde_json brings in.
 serde = { version = "1", features = ["derive"] }

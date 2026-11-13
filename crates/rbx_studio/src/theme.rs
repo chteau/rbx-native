@@ -67,8 +67,8 @@ pub(crate) struct Palette {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Effects {
     /// Transparent and blurred windows only show the desktop through
-    /// surfaces the theme also gave some transparency; blur needs a
-    /// compositor that offers it and falls back to plain transparency.
+    /// surfaces the theme also gave some transparency; who blurs, and where
+    /// nobody can, is `window_blur`'s business.
     pub(crate) window: WindowBackgroundAppearance,
     pub(crate) background: Option<Background>,
     /// Added to every hover state the chrome draws, on top of its fill.

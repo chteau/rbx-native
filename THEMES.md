@@ -98,8 +98,9 @@ then delete what you don't change.
   switches the Explorer to the class icons' light variant.
 - **`window`**: `opaque` (default), `transparent` or `blurred`. The desktop
   only shows through surfaces you also gave some transparency (`black` is
-  the ground behind everything, `dock` the panels). Blur needs a compositor
-  that offers it and falls back to plain transparency.
+  the ground behind everything, `dock` the panels). Blur is native on
+  Windows, macOS, KDE (X11 and Wayland) and picom; on GNOME with X11
+  RbxNative draws it itself. Anywhere else it shows see-through.
 - **`background`**: an image (PNG, JPEG, WebP or GIF, under 16 MiB) inside
   the theme. `opacity` 0–1, `fit` is `cover`, `contain` or `fill`, and
   `layer` is `behind` (shows through translucent surfaces) or `over` (on top

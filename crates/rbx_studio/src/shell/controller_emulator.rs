@@ -122,7 +122,7 @@ impl ControllerEmulator {
         };
         cx.open_window(options, move |window, cx| {
             let view = cx.new(|cx| ControllerEmulator::new(shell, window, cx));
-            cx.new(|cx| Root::new(view, window, cx))
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
         .ok()
     }

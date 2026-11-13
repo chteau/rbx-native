@@ -37,7 +37,10 @@ impl Shell {
         if let Some(existing) = self.ugc_validator {
             let raised = existing.update(cx, |root, window, cx| {
                 window.activate_window();
-                let Some(view) = root.view().clone().downcast::<ValidatorWindow>().ok() else {
+                let Some(view) = crate::window_blur::content(root.view(), cx)
+                    .downcast::<ValidatorWindow>()
+                    .ok()
+                else {
                     return;
                 };
                 if let Some(source) = source.clone() {
@@ -92,7 +95,7 @@ impl ValidatorWindow {
         };
         cx.open_window(options, move |window, cx| {
             let view = cx.new(|cx| ValidatorWindow::new(shell, source, kind, cx));
-            cx.new(|cx| Root::new(view, window, cx))
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
         .ok()
     }
