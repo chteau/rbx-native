@@ -725,13 +725,31 @@ mod tests {
             vec![("ws", ws), ("f", f)]
         });
         vm.run(
-            "ws.ChildAdded:Connect(function(c) added = c.Name end) \
+            "ws.ChildAdded:Connect(function(c) fired = true; added = c.Name end) \
              f.AncestryChanged:Connect(function(c, p) anc = p.Name end) \
              f.Parent = ws",
         );
         vm.flush();
         assert_eq!(vm.get::<String>("added"), "F");
         assert_eq!(vm.get::<String>("anc"), "Workspace");
+    }
+
+    #[test]
+    fn a_child_removed_before_its_signals_fire_is_skipped() {
+        let vm = setup(|dom| vec![("ws", dom.new_instance("Workspace", "Workspace", None))]);
+        vm.run(
+            "ws.ChildAdded:Connect(function(c) fired = true; added = c.Name end) \
+             ws.ChildRemoved:Connect(function(c) fired = true; removed = c.Name end)",
+        );
+        vm.flush();
+        {
+            let mut dom = vm.slot.borrow_mut();
+            let ws = dom.root_refs()[0];
+            let part = dom.new_instance("Part", "P", Some(ws));
+            dom.remove(part);
+        }
+        vm.flush();
+        assert!(vm.get::<Option<bool>>("fired").is_none());
     }
 
     #[test]

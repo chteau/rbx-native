@@ -33,6 +33,8 @@ pub(super) struct Renaming {
     /// What had focus before the box took it, the tree, from `F2` or the
     /// row menu, given back however the box closes.
     previous: Option<FocusHandle>,
+    /// When the box opened: see `STRAY_BLUR`.
+    opened: std::time::Instant,
     /// Kept alive only to stay subscribed, see `shell::edit::RowEdit`'s
     /// identical convention.
     _subscription: Subscription,
@@ -55,6 +57,12 @@ impl Renaming {
     }
 }
 
+/// How long after opening a blur is taken back instead of committing. On
+/// macOS the menu click that opened the box arrives again after the box has
+/// focus, the Explorer hands focus to the tree, and the box closed before it
+/// was ever seen (F2, with no click, was fine).
+const STRAY_BLUR: std::time::Duration = std::time::Duration::from_millis(300);
+
 /// The box a row being renamed draws in place of its label. Free-standing
 /// for the reason `picker::insert_button` is (see `ExplorerEdit::row_slots`).
 pub(super) fn name_box(input: &Entity<InputState>) -> AnyElement {
@@ -63,6 +71,13 @@ pub(super) fn name_box(input: &Entity<InputState>) -> AnyElement {
         .flex_1()
         .min_w(px(40.))
         .h(tokens::tree_row_height())
+        // Framed like a focused field: bare, the box looked exactly like
+        // the label it replaced, and a rename seemed not to open at all.
+        .px(px(4.))
+        .border_1()
+        .border_color(tokens::accent_line())
+        .rounded(px(4.))
+        .bg(tokens::field_select())
         // The tree's own row press selects, and the Explorer's wrapper hands
         // focus back to the tree on any click inside it, which would blur
         // this box and commit the half-typed name. A click aimed at the
@@ -103,8 +118,16 @@ impl Shell {
         let subscription = cx.subscribe_in(
             &input,
             window,
-            |shell, _, event: &InputEvent, window, cx| {
-                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+            |shell, input, event: &InputEvent, window, cx| {
+                let stray = matches!(event, InputEvent::Blur)
+                    && shell
+                        .explorer_edit
+                        .renaming
+                        .as_ref()
+                        .is_some_and(|renaming| renaming.opened.elapsed() < STRAY_BLUR);
+                if stray {
+                    input.update(cx, |state, cx| state.focus(window, cx));
+                } else if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
                     shell.commit_rename(window, cx);
                 }
             },
@@ -117,6 +140,7 @@ impl Shell {
             target: reference,
             input,
             previous: window.focused(cx),
+            opened: std::time::Instant::now(),
             _subscription: subscription,
         });
         cx.notify();

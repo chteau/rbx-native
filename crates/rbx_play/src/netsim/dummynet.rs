@@ -34,7 +34,10 @@ pub(crate) fn parse_lsof_udp(output: &str) -> Vec<u16> {
 
 /// Arguments for `osascript` that run the helper as root. The helper is
 /// copied to a root-owned temp file first so a user-writable original can't
-/// be swapped after the prompt.
+/// be swapped after the prompt. Only the helper's own subshell goes to the
+/// background, with every stream on /dev/null: `do shell script` returns once
+/// nothing holds its output pipe, and backgrounding the whole `&&` list kept
+/// that pipe open for as long as the helper ran.
 pub(crate) fn osascript_args(dir: &str, parent_pid: u32) -> Option<[String; 2]> {
     let ok = !dir.is_empty()
         && dir
@@ -44,7 +47,7 @@ pub(crate) fn osascript_args(dir: &str, parent_pid: u32) -> Option<[String; 2]> 
         return None;
     }
     let cmd = format!(
-        "f=$(/usr/bin/mktemp /tmp/rbxnative-netsim.XXXXXX) && /bin/cat {dir}/helper.sh > $f && (/bin/sh $f {dir} {parent_pid}; /bin/rm -f $f) >/dev/null 2>&1 &"
+        "f=$(/usr/bin/mktemp /tmp/rbxnative-netsim.XXXXXX) && /bin/cat {dir}/helper.sh > $f || exit 1; (/bin/sh $f {dir} {parent_pid}; /bin/rm -f $f) </dev/null >/dev/null 2>&1 &"
     );
     let script = format!(
         "do shell script \"{cmd}\" with administrator privileges with prompt \"rbx-native wants to simulate network conditions for Play.\""
@@ -70,6 +73,9 @@ mod tests {
         assert_eq!(a[0], "-e");
         assert!(a[1].contains("/bin/sh $f /var/folders/ab/c_d-1/T/.tmpXyZ 77;"));
         assert!(a[1].contains("with administrator privileges"));
+        // Only the redirected subshell may be backgrounded, or osascript hangs.
+        assert!(a[1].contains("|| exit 1; (/bin/sh $f"));
+        assert!(a[1].contains(") </dev/null >/dev/null 2>&1 &\" with"));
         assert!(osascript_args("/tmp/a b", 1).is_none());
         assert!(osascript_args("/tmp/a\"b", 1).is_none());
         assert!(osascript_args("/tmp/a'b", 1).is_none());

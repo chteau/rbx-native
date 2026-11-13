@@ -90,6 +90,42 @@ fn windows_icon() {
     println!("cargo:rustc-link-arg-bin=rbxstudio={}", res.display());
 }
 
+/// Names the app "RbxNative" on macOS: AppKit titles the app menu after
+/// the bundle's `CFBundleName`, and an unbundled binary has none, so the
+/// menu read "rbxstudio" (setting the process name at run time doesn't
+/// reach it). An `Info.plist` linked into `__TEXT,__info_plist` is read as
+/// the main bundle's, which also gives Accessibility and Keychain prompts a
+/// stable identity.
+fn mac_info_plist() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return;
+    }
+    let version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
+    let plist = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>io.github.chteau.rbx-native.Editor</string>
+  <key>CFBundleName</key><string>RbxNative</string>
+  <key>CFBundleDisplayName</key><string>RbxNative</string>
+  <key>CFBundleExecutable</key><string>rbxstudio</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>{version}</string>
+  <key>CFBundleVersion</key><string>{version}</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+"#
+    );
+    let path = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR")).join("Info.plist");
+    fs::write(&path, plist).expect("OUT_DIR is writable");
+    println!(
+        "cargo:rustc-link-arg-bin=rbxstudio=-Wl,-sectcreate,__TEXT,__info_plist,{}",
+        path.display()
+    );
+}
+
 /// The `.res` for one icon group (`ICON 1`) holding every image of `ico`.
 fn icon_res(ico: &[u8]) -> Vec<u8> {
     const RT_ICON: u16 = 3;
@@ -148,6 +184,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed={BUNDLE_VARIABLE}");
     windows_icon();
+    mac_info_plist();
     cloudflared();
     slirp4netns();
     println!("cargo:rerun-if-env-changed={LOCAL_VARIABLE}");
