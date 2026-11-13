@@ -232,8 +232,8 @@ fn cubic_and_constant_round_trips_play_the_same() {
 #[test]
 fn multi_axis_euler_segments_are_baked_on_the_way_back() {
     let mut joint = JointCurves::default();
-    for axis in 0..2 {
-        joint.rotation[axis] = FloatCurve::new(vec![
+    for rotation in &mut joint.rotation[..2] {
+        *rotation = FloatCurve::new(vec![
             FloatKey::new(0., 0., Interpolation::Linear),
             FloatKey::new(1., 1.5, Interpolation::Linear),
         ]);
