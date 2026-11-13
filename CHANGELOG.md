@@ -2,6 +2,8 @@
 
 ## 2026-11-13
 
+- **See-through themes are see-through.** A theme that gives Background or Panels some transparency used to come out solid anyway, because a layer of Default's colour sat under everything. Now the whole window follows the theme's own colours, and the top bars and panels show through the way the website's theme builder shows them.
+- **Blur for theme backgrounds.** A theme's background image can be blurred with `"blur"` (0 to 64) so text on see-through panels stays readable. The editor blurs it once when the theme loads and keeps the result, so it costs nothing after that.
 - **Blurred themes blur on Linux.** On GNOME with X11 RbxNative now draws the frosted blur behind the window itself, from the windows under it and your wallpaper. KDE and picom are asked to blur it for us. Where the desktop can't blur at all (like GNOME on Wayland), Settings › Appearance says so and the theme shows see-through.
 - **Play on macOS runs the game in the Roblox app.** macOS can't put another app's window inside the editor, so instead of a half-working overlay, Play opens Roblox full screen and blurs the 3D view with a note and a Show Roblox button. Stop quits the player too. Full screen needs Accessibility access; without it Roblox stays windowed and Output says what to allow.
 - **RbxNative panel in the game (macOS).** Press F8 or click the RbxNative chip in the corner: Output from the client and the server with the same filters as the editor's, client and server stats, and Continue / Step buttons when the debugger pauses, so you don't have to leave full screen. It uses your editor theme's colours.
