@@ -23,9 +23,7 @@ impl Shell {
         let attempt = self.play.attempt;
         cx.spawn(async move |this, cx| {
             let outcome = cx
-                .background_spawn(async {
-                    mac_client::full_screen(FULL_SCREEN_WAIT, &|| false)
-                })
+                .background_spawn(async { mac_client::full_screen(FULL_SCREEN_WAIT, &|| false) })
                 .await;
             let _ = this.update(cx, |shell, cx| {
                 if shell.play.attempt != attempt {

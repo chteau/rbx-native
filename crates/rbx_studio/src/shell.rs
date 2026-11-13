@@ -2095,7 +2095,11 @@ impl Shell {
     /// The 3D view itself. No border: Row D's panels are told apart from it
     /// by their own elevation and surface, not by a line (see
     /// `UX_GUIDELINES.md` §3).
-    pub(super) fn viewport(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn viewport(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let bounds = self.plugins.view_bounds.clone();
         let measure = canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
             .absolute()

@@ -73,11 +73,28 @@ mod tests {
         let theme: serde_json::Value = serde_json::from_str(&theme()).unwrap();
         let source = rbx_play::inject::PROBE_PANEL;
         for name in [
-            "dock", "chrome", "field", "border", "border2", "hover", "text", "text2", "text3",
-            "accent", "accent_soft", "warning", "error", "info", "client", "server",
+            "dock",
+            "chrome",
+            "field",
+            "border",
+            "border2",
+            "hover",
+            "text",
+            "text2",
+            "text3",
+            "accent",
+            "accent_soft",
+            "warning",
+            "error",
+            "info",
+            "client",
+            "server",
         ] {
             assert!(theme.get(name).is_some(), "{name} missing from the theme");
-            assert!(source.contains(&format!("\"{name}\"")), "panel never reads {name}");
+            assert!(
+                source.contains(&format!("\"{name}\"")),
+                "panel never reads {name}"
+            );
         }
     }
 }

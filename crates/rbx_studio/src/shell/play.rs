@@ -54,13 +54,13 @@ pub(crate) mod debug;
 pub(crate) mod live;
 #[cfg(target_os = "macos")]
 mod mac;
-mod panel;
-mod veil;
 pub(in crate::shell) mod network;
+mod panel;
 mod server_authority;
 pub(crate) mod session;
 #[cfg(target_os = "linux")]
 mod slirp4netns;
+mod veil;
 
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};

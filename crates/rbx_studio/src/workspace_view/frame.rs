@@ -135,7 +135,12 @@ fn blur_pixels(bytes: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
         small = box_pass(&small, w, h, true);
         small = box_pass(&small, w, h, false);
     }
-    Some(small.into_iter().map(|v| v.round().clamp(0.0, 255.0) as u8).collect())
+    Some(
+        small
+            .into_iter()
+            .map(|v| v.round().clamp(0.0, 255.0) as u8)
+            .collect(),
+    )
 }
 
 /// One box-blur pass of radius 2 along rows (`horizontal`) or columns,
