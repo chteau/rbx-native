@@ -563,6 +563,22 @@ const CODE = {
   hc: { fg: "#FFFFFF", kw: "#B8C6FF", str: "#A8F0B0", num: "#FFD58F", fn: "#A6E2FF", com: "#D6CBA4", var: "#FFBCD8", line: "#FFFFFF1A", warn: "#FFD58F" },
 };
 
+const imageSizes = new Map();
+function imageScale(b) {
+  const size = imageSizes.get(b.data);
+  if (!size) {
+    if (!imageSizes.has(b.data)) {
+      imageSizes.set(b.data, null);
+      const im = new Image();
+      im.onload = () => { imageSizes.set(b.data, [im.naturalWidth, im.naturalHeight]); applyPreview(); };
+      im.src = b.data;
+    }
+    return W / 1600;
+  }
+  const [w, h] = size, sx = W / w, sy = H / h;
+  return b.fit === "contain" ? Math.min(sx, sy) : b.fit === "fill" ? Math.sqrt(sx * sy) : Math.max(sx, sy);
+}
+
 function applyPreview() {
   const ed = $("ed");
   const s = ed.style;
@@ -590,8 +606,11 @@ function applyPreview() {
   bg.style.opacity = b ? b.opacity : 0;
   bg.style.backgroundSize = b ? { cover: "cover", contain: "contain", fill: "100% 100%" }[b.fit] : "";
   bg.style.backgroundPosition = "center";
-  bg.style.filter = b && b.blur ? `blur(${b.blur}px)` : "";
-  bg.style.inset = b && b.blur ? `-${b.blur * 2}px` : "";
+  // The editor blurs in the image's own pixels (sigma, like CSS), so on
+  // screen the blur grows or shrinks with how far the image is scaled.
+  const px = b && b.blur ? b.blur * imageScale(b) : 0;
+  bg.style.filter = px ? `blur(${px.toFixed(1)}px)` : "";
+  bg.style.inset = px ? `-${Math.ceil(px * 2)}px` : "";
   $("pop").hidden = state.view !== "place";
 }
 
