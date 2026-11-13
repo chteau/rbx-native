@@ -186,6 +186,7 @@ impl SettingsWindow {
         if any {
             row = row.below(below);
         }
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
         let mut rows = vec![row];
         #[cfg(target_os = "macos")]
         rows.extend(self.network_helper_row(cx));
