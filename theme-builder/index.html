@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theme builder - RbxNative</title>
+<meta name="description" content="Make an RbxNative theme with a live preview of the editor, and download it as a .zip ready to install.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="builder.css">
+</head>
+<body class="tb-page">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a href="../docs/index.html">Docs</a>
+    <a href="../docs/themes.html">Themes</a>
+    <a href="../docs/install.html">Install</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+  </div>
+</nav>
+
+<div class="tb">
+  <aside class="tb-side" aria-label="Theme settings">
+    <header class="tb-head">
+      <h1>Theme builder</h1>
+      <p>Pick colours, sizes and effects, watch the editor change on the right, then download the theme as a .zip.</p>
+      <div class="tb-row">
+        <span class="tb-label" id="base-label" title="Your own changes stay on top when you switch">Start from</span>
+        <div class="seg" role="group" aria-labelledby="base-label" id="base">
+          <button type="button" data-base="default">Default</button>
+          <button type="button" data-base="light">Light</button>
+          <button type="button" data-base="high-contrast">High contrast</button>
+        </div>
+      </div>
+      <div class="tb-actions">
+        <label class="btn ghost" for="open-zip">Open a theme .zip</label>
+        <input type="file" id="open-zip" accept=".zip,application/zip" hidden>
+        <button type="button" class="btn ghost" id="reset">Start over</button>
+      </div>
+      <p class="tb-msg" id="msg" role="status" aria-live="polite"></p>
+    </header>
+
+    <section class="tb-sec">
+      <h2>Details</h2>
+      <div class="tb-grid">
+        <label>Name<input id="m-name" maxlength="60" autocomplete="off"></label>
+        <label>Author<input id="m-author" maxlength="60" placeholder="@you" autocomplete="off"></label>
+      </div>
+      <label>Description<textarea id="m-description" rows="2" maxlength="300"></textarea></label>
+      <div class="tb-grid">
+        <label>Version<input id="m-version" maxlength="20" autocomplete="off"></label>
+        <label>Folder name<input id="m-id" maxlength="60" autocomplete="off" spellcheck="false"></label>
+      </div>
+    </section>
+
+    <section class="tb-sec">
+      <h2>Colours</h2>
+      <div id="essentials" class="tokens"></div>
+      <details class="tb-more" id="all-colours">
+        <summary>Every colour <span class="count" id="colour-count"></span></summary>
+        <input type="search" id="colour-filter" class="filter" placeholder="Filter tokens" aria-label="Filter colour tokens">
+        <div id="colour-groups"></div>
+      </details>
+    </section>
+
+    <section class="tb-sec">
+      <h2>Sizes</h2>
+      <div class="slider-row">
+        <label for="corners">Corners</label>
+        <input type="range" id="corners" min="0" max="14" step="0.5">
+        <output id="corners-out"></output>
+      </div>
+      <div class="slider-row">
+        <label for="textsize">Text size</label>
+        <input type="range" id="textsize" min="10" max="15" step="0.5">
+        <output id="textsize-out"></output>
+      </div>
+      <div class="slider-row">
+        <label for="density">Row height</label>
+        <input type="range" id="density" min="20" max="36" step="1">
+        <output id="density-out"></output>
+      </div>
+      <details class="tb-more">
+        <summary>Every size <span class="count" id="size-count"></span></summary>
+        <div id="size-list" class="sizes"></div>
+      </details>
+    </section>
+
+    <section class="tb-sec">
+      <h2>Look</h2>
+      <div class="tb-row">
+        <span class="tb-label" id="mode-label">Mode</span>
+        <div class="seg" role="group" aria-labelledby="mode-label" id="mode">
+          <button type="button" data-v="dark">Dark</button>
+          <button type="button" data-v="light">Light</button>
+        </div>
+      </div>
+      <p class="hint">Picks the text boxes, menus and code colours that match your background.</p>
+      <div class="tb-row">
+        <span class="tb-label" id="window-label">Window</span>
+        <div class="seg" role="group" aria-labelledby="window-label" id="window">
+          <button type="button" data-v="opaque">Solid</button>
+          <button type="button" data-v="transparent">See-through</button>
+          <button type="button" data-v="blurred">Blurred</button>
+        </div>
+      </div>
+      <p class="hint" id="window-hint">See-through lets your desktop show through the panels, Blurred frosts it: on Windows, macOS, KDE and GNOME on X11. Other Linux desktops show it see-through.</p>
+      <div class="slider-row">
+        <label for="panel-alpha" title="The opacity of Background and Panels">Panel opacity</label>
+        <input type="range" id="panel-alpha" min="0.2" max="1" step="0.01">
+        <output id="panel-alpha-out"></output>
+      </div>
+      <p class="hint">Below 100%, whatever is behind the panels (your desktop, a background image) shows through.</p>
+      <div class="tb-row">
+        <label class="check"><input type="checkbox" id="glow-on"> Glow on hover</label>
+      </div>
+      <div id="glow-box" class="sub-box" hidden>
+        <div id="glow-colour" class="tokens"></div>
+        <div class="slider-row">
+          <label for="glow-radius">Glow size</label>
+          <input type="range" id="glow-radius" min="0" max="64" step="1">
+          <output id="glow-radius-out"></output>
+        </div>
+      </div>
+      <div class="tb-row">
+        <span class="tb-label">Background image</span>
+        <div class="tb-actions tight">
+          <label class="btn ghost small" for="bg-file">Choose</label>
+          <input type="file" id="bg-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+          <button type="button" class="btn ghost small" id="bg-clear" hidden>Remove</button>
+        </div>
+      </div>
+      <div id="bg-box" class="sub-box" hidden>
+        <p class="hint" id="bg-name"></p>
+        <div class="slider-row">
+          <label for="bg-opacity">Opacity</label>
+          <input type="range" id="bg-opacity" min="0" max="1" step="0.05">
+          <output id="bg-opacity-out"></output>
+        </div>
+        <div class="tb-row">
+          <span class="tb-label" id="fit-label">Fit</span>
+          <div class="seg" role="group" aria-labelledby="fit-label" id="bg-fit">
+            <button type="button" data-v="cover">Cover</button>
+            <button type="button" data-v="contain">Contain</button>
+            <button type="button" data-v="fill">Stretch</button>
+          </div>
+        </div>
+        <div class="slider-row">
+          <label for="bg-blur">Blur</label>
+          <input type="range" id="bg-blur" min="0" max="64" step="1">
+          <output id="bg-blur-out"></output>
+        </div>
+        <div class="tb-row">
+          <span class="tb-label" id="layer-label">Layer</span>
+          <div class="seg" role="group" aria-labelledby="layer-label" id="bg-layer">
+            <button type="button" data-v="behind">Behind panels</button>
+            <button type="button" data-v="over">Over everything</button>
+          </div>
+        </div>
+        <p class="hint">Behind sits under the panels and shows through as much as Panel opacity lets it. Blur frosts the image so text on the panels stays readable.</p>
+      </div>
+    </section>
+
+    <section class="tb-sec">
+      <h2>Fonts</h2>
+      <p class="hint">Optional. Upload each weight you want (regular, medium, semibold, bold) as .ttf or .otf. Without files the editor keeps Manrope and JetBrains Mono.</p>
+      <div class="font-slot" data-slot="ui">
+        <div class="tb-row"><span class="tb-label">Interface</span><label class="btn ghost small" for="font-ui">Add files</label><input type="file" id="font-ui" accept=".ttf,.otf,.ttc,font/ttf,font/otf" multiple hidden></div>
+        <ul class="files" id="font-ui-list"></ul>
+      </div>
+      <div class="font-slot" data-slot="mono">
+        <div class="tb-row"><span class="tb-label">Code</span><label class="btn ghost small" for="font-mono">Add files</label><input type="file" id="font-mono" accept=".ttf,.otf,.ttc,font/ttf,font/otf" multiple hidden></div>
+        <ul class="files" id="font-mono-list"></ul>
+      </div>
+    </section>
+
+    <section class="tb-sec">
+      <h2>Installing it</h2>
+      <details class="tb-more" open>
+        <summary>After you download</summary>
+        <ol class="steps">
+          <li>Unzip it into the themes folder, so you get <code>themes/<span class="theme-id"></span>/manifest.json</code>:
+            <ul>
+              <li>Linux and macOS: <code>~/.config/rbx-native/themes/</code></li>
+              <li>Windows: <code>%APPDATA%\rbx-native\themes\</code></li>
+            </ul>
+          </li>
+          <li>In RbxNative, open Settings › Appearance › Theme and click its card. No restart needed.</li>
+          <li>To share it, put the folder's files in a GitHub repository. Anyone can then use <strong>Install from GitHub</strong> with the repository link.</li>
+        </ol>
+      </details>
+    </section>
+    <div class="tb-export">
+      <p class="tb-msg" id="export-msg" role="status" aria-live="polite"></p>
+      <button type="button" class="btn primary" id="download">Download theme .zip</button>
+    </div>
+  </aside>
+
+  <main class="tb-main" aria-label="Live preview">
+    <div class="pv-bar">
+      <span class="pv-title">Live preview</span>
+      <span class="pv-tools"><button type="button" class="btn ghost small" id="wallpaper" hidden title="Pick another made-up desktop">New wallpaper</button>
+      <div class="seg small" role="group" aria-label="Preview view" id="pv-view">
+        <button type="button" data-v="place">Place</button>
+        <button type="button" data-v="script">Script</button>
+      </div></span>
+    </div>
+    <div class="pv-stage" id="stage">
+      <div class="pv-scale" id="scale">
+        <div class="desk" id="desk">
+          <div class="ed" id="ed"></div>
+        </div>
+      </div>
+    </div>
+    <p class="pv-note">A close copy of the editor drawn in the browser. Text boxes, menus and code colours follow the mode you pick, as in the editor.</p>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
+<script type="module" src="builder.js"></script>
+</body>
+</html>

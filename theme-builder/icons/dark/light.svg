@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- light.svg - tile 13 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>light</title>
+  <circle cx="8" cy="6.5" r="4.5" fill="#F6CE4B"/>
+  <rect x="6.3" y="10.5" width="3.4" height="2.2" rx="0.4" fill="#CBA32C"/>
+  <path d="M6.5,6 L7.5,7.5 M9.5,6 L8.5,7.5" fill="none" stroke="#CBA32C" stroke-width="1.1" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- spawn-location.svg - tile 25 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>spawn-location</title>
+  <g fill="#A6B2C0">
+    <circle cx="8" cy="8" r="3.6"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6" transform="rotate(45 8 8)"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6" transform="rotate(90 8 8)"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6" transform="rotate(135 8 8)"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6" transform="rotate(180 8 8)"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6" transform="rotate(225 8 8)"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6" transform="rotate(270 8 8)"/>
+    <rect x="7.3" y="0.8" width="1.4" height="2.6" transform="rotate(315 8 8)"/>
+  </g>
+  <circle cx="8" cy="8" r="1.8" fill="#31373E"/>
+</svg>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- script.svg - tile 6 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>script</title>
+  <path d="M4,2 L10.5,2 L13,4.5 L13,14 L4,14 Z" fill="#1C8D3E"/>
+  <path d="M10.5,2 L10.5,4.5 L13,4.5 Z" fill="#14682D"/>
+  <g fill="none" stroke="#14682D" stroke-width="1" stroke-linecap="round">
+    <line x1="5.5" y1="8" x2="11" y2="8"/>
+    <line x1="5.5" y1="10.5" x2="9.5" y2="10.5"/>
+  </g>
+</svg>

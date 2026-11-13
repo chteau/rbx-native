@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- text-chat-service.svg - tile 143 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>text-chat-service</title>
+  <g transform="translate(-1.5,4) scale(0.72)">
+    <rect x="4.6" y="1.8" width="6.8" height="5.8" rx="1" fill="#FBD34B"/>
+    <rect x="2.6" y="8.8" width="10.8" height="5.4" rx="1.2" fill="#7A8794"/>
+  </g>
+  <g transform="translate(4,-1.4) scale(0.68)">
+    <rect x="1.5" y="2.5" width="13" height="8.5" rx="3" fill="#3FCBDB"/>
+    <path d="M4,11 L4,14 L7.2,11 Z" fill="#3FCBDB"/>
+  </g>
+</svg>

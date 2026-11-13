@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- camera.svg - tile 5 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>camera</title>
+  <rect x="1.5" y="5" width="13" height="8" rx="1.5" fill="#5C6773"/>
+  <rect x="10.5" y="3.5" width="3" height="2" rx="0.5" fill="#3E4752"/>
+  <circle cx="7" cy="9" r="3.4" fill="#3E4752"/>
+  <circle cx="7" cy="9" r="2.2" fill="#5C6773"/>
+</svg>

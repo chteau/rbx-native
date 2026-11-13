@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- part.svg - tile 1 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>part</title>
+  <path d="M2,10 L8,7 L14,10 L14,13 L8,16 L2,13 Z" fill="#A6B2C0"/>
+  <path d="M2,10 L8,7 L14,10 L8,13 Z" fill="#7A8794"/>
+  <circle cx="6" cy="9.4" r="0.9" fill="#7A8794"/>
+  <circle cx="10" cy="9.4" r="0.9" fill="#7A8794"/>
+</svg>
