@@ -244,6 +244,14 @@ impl AppearanceControls {
                     this.refresh_themes(window, cx);
                 }
             }),
+            // A theme copied into the folder by hand (Finder, a file
+            // manager) shows up when Settings comes back to the front,
+            // without closing and reopening it.
+            cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() && this.themes_changed_on_disk() {
+                    this.refresh_themes(window, cx);
+                }
+            }),
         ];
         (
             AppearanceControls {
@@ -332,6 +340,15 @@ impl SettingsWindow {
             state.set_items(SearchableVec::new(labels), window, cx);
             state.set_selected_index(row, window, cx);
         });
+    }
+
+    /// Whether the themes folder lists other themes, or other manifests,
+    /// than the dropdown shows.
+    fn themes_changed_on_disk(&self) -> bool {
+        let on_disk = theme::themes_dir()
+            .map(|dir| theme::installed(&dir))
+            .unwrap_or_default();
+        on_disk != self.appearance.listed
     }
 
     /// Hands the link to the shell's Install from GitHub.
@@ -521,7 +538,11 @@ impl SettingsWindow {
                         .child(readout(format!("{scale:.2}\u{d7}"))),
                 )
                 .describe("Everything in the window, text included.")
-                .keys(&["Ctrl =", "Ctrl \u{2212}", "Ctrl 0"])
+                .keys(if cfg!(target_os = "macos") {
+                    &["\u{2318}=", "\u{2318}\u{2212}", "\u{2318}0"]
+                } else {
+                    &["Ctrl =", "Ctrl \u{2212}", "Ctrl 0"]
+                })
                 .changed((scale - 1.).abs() > 1e-3, |shell, cx| {
                     shell.set_font_scale(1., cx)
                 }),

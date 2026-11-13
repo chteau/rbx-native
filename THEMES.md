@@ -14,7 +14,7 @@ way too.
 Themes live in the config directory, one folder each:
 
 ```text
-<config>/themes/<id>/            ~/.config/rbx-native on Linux, %APPDATA%\rbx-native on Windows
+<config>/themes/<id>/            ~/.config/rbx-native on Linux and macOS, %APPDATA%\rbx-native on Windows
 <config>/appearance.json         {"theme": "<id>"}
 ```
 
@@ -106,7 +106,11 @@ then delete what you don't change.
   `layer` is `behind` (shows through translucent surfaces) or `over` (on top
   of everything, never taking a click). `blur` (0–64, default 0) blurs the
   image by that radius in its own pixels, for a frosted look behind
-  translucent panels; a blurred GIF keeps only its first frame.
+  translucent panels; a blurred GIF keeps only its first frame. The
+  blurred copy is made once and kept in `<cache>/theme-backgrounds/`
+  (`~/.cache/rbx-native` on Linux and macOS, `%LOCALAPPDATA%\rbx-native` on
+  Windows), which is safe to delete. A file that isn't a readable image
+  is refused like a missing one: the theme isn't applied and Output says why.
 - **`hover`**: a `glow` colour and `glow_radius` (0–64) added to every hover
   state the editor draws.
 - **`fonts`**: `{"ui": "Inter", "mono": "Fira Code", "files":

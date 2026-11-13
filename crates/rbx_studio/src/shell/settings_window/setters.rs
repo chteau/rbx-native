@@ -159,10 +159,11 @@ impl Shell {
 
     /// Switches to the installed theme `id` (`theme::DEFAULT_ID` for the
     /// built-in one). An installed theme that brings an accent of its own
-    /// seeds the user's accent with it; after that the user's wins, as
-    /// always. A built-in one doesn't: Light's darker accent would stay
-    /// behind, unreadable, after switching back to a dark theme. A preset
-    /// the user picked follows the switch as the new theme's variant of it.
+    /// shows it: picking it clears the user's accent rather than copying the
+    /// theme's into it, which used to leave that accent behind on every
+    /// theme picked after (an accent equal to the theme being left is that
+    /// leftover, and is dropped too). A preset the user picked follows the
+    /// switch as the new theme's variant of it.
     pub(in crate::shell) fn pick_theme(&mut self, id: &str, cx: &mut Context<Self>) {
         let pack = match crate::theme::ThemePack::load(id) {
             Ok(pack) => pack,
@@ -175,9 +176,20 @@ impl Shell {
         };
         let builtin = crate::theme::ThemePack::builtin();
         let own = pack.palette.color("check_on");
-        if own != builtin.palette.color("check_on") && !crate::theme::is_reserved(id) {
-            self.appearance.accent = Some(crate::accent::hex(own));
-            self.warn_colors_unsaved();
+        let leaving = crate::accent::hex(self.theme.palette.color("check_on"));
+        let current = self
+            .appearance
+            .accent
+            .as_deref()
+            .and_then(crate::accent::parse_hex)
+            .map(crate::accent::hex);
+        let brings_own = own != builtin.palette.color("check_on") && !crate::theme::is_reserved(id);
+        let leftover = current.as_deref() == Some(leaving.as_str())
+            && leaving != crate::accent::hex(builtin.palette.color("check_on"));
+        if brings_own || leftover {
+            if self.appearance.accent.take().is_some() {
+                self.warn_colors_unsaved();
+            }
         } else if let Some(i) = self.appearance.accent.as_deref().and_then(|text| {
             let current = crate::accent::hex(crate::accent::parse_hex(text)?);
             let from = crate::accent::presets(&self.theme.palette);
