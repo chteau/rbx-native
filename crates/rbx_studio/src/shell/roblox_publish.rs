@@ -227,7 +227,11 @@ impl Shell {
         // Linking to the Play sandbox reads back the name Play gave it while
         // testing; the place keeps its own name, not "x (Play)".
         let mut experience = experience;
-        if self.play.sandbox.is_some_and(|sandbox| sandbox.place_id == target.place_id) {
+        if self
+            .play
+            .sandbox
+            .is_some_and(|sandbox| sandbox.place_id == target.place_id)
+        {
             experience.name =
                 super::play::copy_name::unmark(&self.play.copy_name, &experience.name).to_owned();
         }
