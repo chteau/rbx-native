@@ -12,6 +12,7 @@ use rbx_cloud::PublishMode;
 
 use crate::shell::import3d::ImportKind;
 use crate::shell::{Export, Panel, PresetView, Shell};
+use crate::shortcuts::Command;
 
 use super::*;
 
@@ -60,12 +61,38 @@ impl Target {
     }
 }
 
+/// A macOS Edit item fired by its key equivalent: the editor's key
+/// handler already ran (see `native::picked_by_key`). Never elsewhere.
+fn by_key(command: Command) -> bool {
+    #[cfg(target_os = "macos")]
+    return super::native::picked_by_key(command);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = command;
+        false
+    }
+}
+
 /// Points the menu commands at `shell`.
 pub(crate) fn retarget(shell: &Entity<Shell>, cx: &mut App) {
     cx.set_global(MenuTarget(shell.downgrade()));
 }
 
+/// Points them at no editor (Home's hidden Settings host).
+pub(crate) fn untarget(cx: &mut App) {
+    cx.set_global(MenuTarget(gpui_kit::WeakEntity::new_invalid()));
+}
+
 pub(super) fn install_app(cx: &mut App) {
+    // From an editor, its Settings; from Home, a hidden one's.
+    cx.on_action(|_: &MenuStudioSettings, cx| {
+        if Target
+            .update(cx, |shell, cx| shell.open_settings(cx))
+            .is_err()
+        {
+            crate::open_settings_from_home(cx);
+        }
+    });
     cx.on_action(|_: &MenuQuit, cx| {
         // No editor open (Home, the wizard) has nothing to ask.
         if Target
@@ -217,11 +244,6 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
-        move |_: &MenuStudioSettings, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.open_settings(cx));
-        }
-    });
-    cx.on_action({
         move |_: &MenuCustomizeShortcuts, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_shortcuts(cx));
         }
@@ -292,12 +314,16 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     }
     cx.on_action({
         move |_: &MenuUndo, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.undo(cx));
+            if !by_key(Command::Undo) {
+                let _ = shell.update(cx, |shell, cx| shell.undo(cx));
+            }
         }
     });
     cx.on_action({
         move |_: &MenuRedo, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.redo(cx));
+            if !by_key(Command::Redo) {
+                let _ = shell.update(cx, |shell, cx| shell.redo(cx));
+            }
         }
     });
     cx.on_action({
@@ -352,7 +378,9 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         move |_: &MenuDeleteInstance, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.delete_selected(cx));
+            if !by_key(Command::Delete) {
+                let _ = shell.update(cx, |shell, cx| shell.delete_selected(cx));
+            }
         }
     });
     cx.on_action({
@@ -367,27 +395,37 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         move |_: &MenuCutInstance, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.cut_selected(cx));
+            if !by_key(Command::Cut) {
+                let _ = shell.update(cx, |shell, cx| shell.cut_selected(cx));
+            }
         }
     });
     cx.on_action({
         move |_: &MenuCopyInstance, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.copy_selected(cx));
+            if !by_key(Command::Copy) {
+                let _ = shell.update(cx, |shell, cx| shell.copy_selected(cx));
+            }
         }
     });
     cx.on_action({
         move |_: &MenuPasteInstance, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.paste_clipboard(cx));
+            if !by_key(Command::Paste) {
+                let _ = shell.update(cx, |shell, cx| shell.paste_clipboard(cx));
+            }
         }
     });
     cx.on_action({
         move |_: &MenuPasteIntoInstance, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.paste_into_selected(cx));
+            if !by_key(Command::PasteInto) {
+                let _ = shell.update(cx, |shell, cx| shell.paste_into_selected(cx));
+            }
         }
     });
     cx.on_action({
         move |_: &MenuDuplicateInstance, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.duplicate_selected(cx));
+            if !by_key(Command::Duplicate) {
+                let _ = shell.update(cx, |shell, cx| shell.duplicate_selected(cx));
+            }
         }
     });
     cx.on_action({

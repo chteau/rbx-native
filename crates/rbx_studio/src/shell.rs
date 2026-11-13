@@ -848,6 +848,10 @@ impl Shell {
         // over `cx.entity()`, so `Shell` must already be constructible,
         // valid as soon as `cx.new` starts building it.
         let menu_bar = crate::menu_bar::build(cx.entity(), user.script_templates.extras(), cx);
+        if launch.settings_only {
+            // Home has no editor for File or Edit to act on.
+            crate::menu_bar::untarget(cx);
+        }
 
         let (snap_fields, [translate_typed, rotate_typed, translate_stepped, rotate_stepped]) =
             SnapFields::new(transform, window, cx);
@@ -1092,17 +1096,22 @@ impl Shell {
         // And the screen it sits in, for the UI editor's canvas.
         shell.ui_follow_selection();
 
-        if discord_presence_enabled {
+        // Settings opened from Home: Account still reads the sign-in, but
+        // nothing that acts on a place, or announces one, starts.
+        let live = !launch.settings_only;
+        if discord_presence_enabled && live {
             shell.start_discord();
         }
         // Reads the stored Roblox sign-in, then starts the pulse if enabled.
         shell.restore_roblox_session(cx);
-        // Team presence: the mock feed, or the relay when turned on.
-        shell.init_team_presence(cx);
-        // Loads and starts the installed plugins (see `shell::plugins`).
-        shell.plugins_start(cx);
-        // Beta Features › MCP server (see `shell::mcp`).
-        shell.mcp_start(cx);
+        if live {
+            // Team presence: the mock feed, or the relay when turned on.
+            shell.init_team_presence(cx);
+            // Loads and starts the installed plugins (see `shell::plugins`).
+            shell.plugins_start(cx);
+            // Beta Features › MCP server (see `shell::mcp`).
+            shell.mcp_start(cx);
+        }
         shell.start_credential_watch(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
@@ -1360,9 +1369,14 @@ impl Shell {
             shell.configure_game(page, cx);
         }
 
-        shell.offer_merge_sidecar(cx);
+        // Home's Settings host has no place worth recovering or merging.
+        if !launch.settings_only {
+            shell.offer_merge_sidecar(cx);
+        }
         shell.watch_theme(cx);
-        shell.watch_recovery(cx);
+        if !launch.settings_only {
+            shell.watch_recovery(cx);
+        }
         shell.watch_script_templates(cx);
 
         shell

@@ -138,6 +138,10 @@ pub(crate) struct Launch {
     /// Home's Configure Experience / Configure Place: Game Settings opens
     /// on that page once the editor is up.
     pub(crate) configure: Option<Configure>,
+    /// A hidden editor over an empty place that only hosts Studio Settings,
+    /// opened from Home (see `main::open_settings_from_home`): it starts no
+    /// plugins, presence, Discord or MCP and never takes the menus.
+    pub(crate) settings_only: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

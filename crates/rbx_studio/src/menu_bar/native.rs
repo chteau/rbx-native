@@ -18,7 +18,15 @@ pub(super) fn install(cx: &mut App) {
         KeyBinding::new("cmd-h", MenuHide, None),
         KeyBinding::new("alt-cmd-h", MenuHideOthers, None),
     ]);
+    name_process();
     set(&[], cx);
+}
+
+/// AppKit titles the app menu (and Force Quit, the Dock's tooltip for an
+/// unbundled binary) after the process, which is the binary's file name.
+fn name_process() {
+    let name = objc2_foundation::NSString::from_str("RbxNative");
+    objc2_foundation::NSProcessInfo::processInfo().setProcessName(&name);
 }
 
 /// Rebuilt with the in-window bar, whose Model menu lists the user's
@@ -69,6 +77,46 @@ fn item(owned: OwnedMenuItem) -> MenuItem {
             disabled,
         },
     }
+}
+
+/// Whether the menu item running now was chosen by its key equivalent
+/// rather than clicked. The Edit items show their keys (see
+/// `shortcuts::apply_bindings`), but the editor's own key handlers already
+/// ran for that key press without telling AppKit, which then fires the menu
+/// item too: acting again would undo twice.
+pub(super) fn picked_by_key(command: crate::shortcuts::Command) -> bool {
+    use objc2_app_kit::{NSApplication, NSEventModifierFlags, NSEventType};
+    let Some(main) = objc2::MainThreadMarker::new() else {
+        return false;
+    };
+    let Some(event) = NSApplication::sharedApplication(main).currentEvent() else {
+        return false;
+    };
+    if event.r#type() != NSEventType::KeyDown {
+        return false;
+    }
+    let flags = event.modifierFlags();
+    let chars = event
+        .charactersIgnoringModifiers()
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    let key = match chars.as_str() {
+        "\u{7f}" => "backspace".to_owned(),
+        "\u{f728}" => "delete".to_owned(),
+        other => other.to_lowercase(),
+    };
+    let keystroke = Keystroke {
+        key,
+        modifiers: Modifiers {
+            control: flags.contains(NSEventModifierFlags::Control),
+            alt: flags.contains(NSEventModifierFlags::Option),
+            shift: flags.contains(NSEventModifierFlags::Shift),
+            platform: flags.contains(NSEventModifierFlags::Command),
+            function: flags.contains(NSEventModifierFlags::Function),
+        },
+        key_char: None,
+    };
+    crate::shortcuts::pressed(command, &keystroke)
 }
 
 /// AppKit's standard About panel: the bundle's name, icon and version.

@@ -319,6 +319,7 @@ fn main() {
         },
         verbose,
         configure: None,
+        settings_only: false,
     };
 
     // Everything read from the config directory beyond `settings.json`, in one
@@ -530,6 +531,116 @@ pub(crate) fn open_editor(
     })
     .expect("failed to open the main window");
     Ok(())
+}
+
+/// Home's Settings host: a hidden editor over an empty place (see
+/// [`open_settings_from_home`]), alive while its Settings window is.
+struct SettingsHost {
+    window: AnyWindowHandle,
+    shell: WeakEntity<Shell>,
+}
+
+impl Global for SettingsHost {}
+
+/// Studio Settings with no place open. The Settings window is built around
+/// an editor (it applies every change to one live), so Home gets a hidden
+/// one over an empty place that starts no plugins, presence or MCP, never
+/// takes the menus, and goes when Settings closes.
+pub(crate) fn open_settings_from_home(cx: &mut App) {
+    if let Some(host) = cx.try_global::<SettingsHost>() {
+        if let Some(shell) = host.shell.upgrade() {
+            shell.update(cx, |shell, cx| shell.open_settings(cx));
+            return;
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
+    let path = dir.join("Settings.rbxlx");
+    let written = std::fs::create_dir_all(&dir).and_then(|()| {
+        std::fs::write(
+            &path,
+            "<roblox version=\"4\"><Item class=\"Workspace\" referent=\"RBX0\">\
+             <Properties><string name=\"Name\">Workspace</string></Properties></Item></roblox>",
+        )
+    });
+    if let Err(err) = written {
+        eprintln!("rbxstudio: could not open Settings from Home: {err}");
+        return;
+    }
+    let EditorBoot { settings, user, .. } = fresh_boot();
+    let launch = Launch {
+        settings_only: true,
+        ..Launch::default()
+    };
+    let place = match load(&path, &launch, settings.icon_pack) {
+        Ok(place) => place,
+        Err(err) => {
+            eprintln!("rbxstudio: could not open Settings from Home: {err}");
+            return;
+        }
+    };
+    let mut options = window_options(&SharedString::from("Settings"), cx);
+    options.show = false;
+    options.focus = false;
+    let mut host = None;
+    let opened = cx.open_window(options, |window, cx| {
+        let shell = cx.new(|cx| Shell::new("Settings", place, settings, launch, user, window, cx));
+        host = Some(shell.downgrade());
+        cx.new(|cx| Root::new(shell, window, cx))
+    });
+    let (Ok(window), Some(shell)) = (opened, host) else {
+        return;
+    };
+    // GPUI's Linux back end maps every window whatever `show` says, some
+    // time after it opens: take it off again once that has happened.
+    #[cfg(target_os = "linux")]
+    cx.spawn(async move |cx| {
+        for wait in [100, 400, 1500] {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(wait))
+                .await;
+            let _ = window.update(cx, |_, window, _| unmap_x11(window));
+        }
+    })
+    .detach();
+    cx.set_global(SettingsHost {
+        window: window.into(),
+        shell: shell.clone(),
+    });
+    if let Some(shell) = shell.upgrade() {
+        shell.update(cx, |shell, cx| shell.open_settings(cx));
+    }
+}
+
+/// Takes `window` off the X11 screen; nothing on Wayland.
+#[cfg(target_os = "linux")]
+fn unmap_x11(window: &Window) {
+    use x11rb::protocol::xproto::ConnectionExt as _;
+    let Some(id) = pointer_lock::window_id(window) else {
+        return;
+    };
+    if let Ok((connection, _)) = x11rb::connect(None) {
+        // Waited on: a request left in the buffer as the connection drops
+        // never reached the server.
+        let _ = connection.unmap_window(id).map(|cookie| cookie.check());
+    }
+}
+
+/// Called as a Settings window closes: when `shell` is Home's hidden host,
+/// it goes too, with its temporary place.
+pub(crate) fn close_settings_host(shell: &Entity<Shell>, cx: &mut App) {
+    let Some(host) = cx.try_global::<SettingsHost>() else {
+        return;
+    };
+    if host.shell.entity_id() != shell.entity_id() {
+        return;
+    }
+    let window = host.window;
+    cx.remove_global::<SettingsHost>();
+    cx.defer(move |cx| {
+        let _ = window.update(cx, |_, window, _| window.remove_window());
+        let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(dir);
+    });
 }
 
 /// A place file, read before the window exists: the tree the Explorer lists,

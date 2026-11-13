@@ -166,7 +166,7 @@ pub(crate) fn install_app(cx: &mut App) {
     native::install(cx);
 }
 
-pub(crate) use actions::retarget;
+pub(crate) use actions::{retarget, untarget};
 
 /// Rebuilds the menus after the user's templates changed on disk: Model's
 /// template items carry an index into the list, so the old ones would now
