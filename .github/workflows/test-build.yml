@@ -1,8 +1,9 @@
 name: Test build
 
 # Hand-dispatched alpha builds for testers on Windows, macOS and Linux. Not
-# the release pipeline: nothing is signed, packaged as an installer, or
-# published as a GitHub Release; each OS gets one workflow artifact zip that
+# the release pipeline: nothing is packaged as an installer or
+# published as a GitHub Release (macOS is signed with our own cert, see
+# release/macos-sign.sh); each OS gets one workflow artifact zip that
 # expires with the run.
 on:
   workflow_dispatch:
@@ -51,6 +52,15 @@ jobs:
       # the editor with its license, as in the release zip.
       - name: cargo build --release
         run: cargo build --release -p rbx_studio --bin rbxstudio
+
+      # Same identity every build, so Keychain and Accessibility grants
+      # survive an update (see the script).
+      - name: Sign (macOS)
+        if: matrix.os == 'macos'
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+        run: .github/release/macos-sign.sh target/release/rbxstudio
 
       - name: Stage the artifact
         shell: bash

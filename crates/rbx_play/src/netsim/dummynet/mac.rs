@@ -1,11 +1,12 @@
-//! macOS shaper: a root helper (`helper.sh`, started through one
-//! administrator prompt) drives pf/dummynet; this side talks to it over two
-//! FIFOs in a private temp directory and tells it which UDP ports the Roblox
-//! player uses.
-use std::fs::{self, File, OpenOptions};
+//! macOS shaper: a root helper (`helper.sh`, installed once as a launchd
+//! daemon) drives pf/dummynet; this side connects to its socket for the
+//! length of a Play session and tells it which UDP ports the Roblox player
+//! uses. The connection closing is what ends the shaping.
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::fs::DirBuilderExt;
-use std::path::PathBuf;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -13,22 +14,145 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use super::{osascript_args, parse_lsof_udp, HELPER};
+use sha2::{Digest, Sha256};
+
+use super::{
+    helper_version, install_command, osascript_args, parse_lsof_udp, plist, uninstall_command,
+    HELPER, PLIST_PATH, SOCKET,
+};
 use crate::netsim::lines;
 use crate::netsim::{NetConditions, ShaperError};
 
-/// osascript only returns once the password is in, so the helper is already
-/// starting; it needs a handful of `pfctl`/`dnctl` calls.
+/// A handful of `pfctl`/`dnctl` calls between connecting and `ready`.
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
+const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+/// launchd opens the socket a moment after `bootstrap` returns.
+const SOCKET_WAIT: Duration = Duration::from_secs(5);
 const ACK_TIMEOUT: Duration = Duration::from_secs(5);
 const PORT_POLL: Duration = Duration::from_millis(500);
 
+/// Whether the network helper daemon is installed (Settings offers removal).
+pub fn helper_installed() -> bool {
+    Path::new(PLIST_PATH).exists()
+}
+
+/// Stops and deletes the helper daemon, behind one administrator prompt.
+pub fn remove_helper() -> Result<(), ShaperError> {
+    admin(
+        &uninstall_command(),
+        "RbxNative wants to remove its network helper.",
+    )
+}
+
+/// Runs `command` as root through osascript's administrator prompt.
+fn admin(command: &str, prompt: &str) -> Result<(), ShaperError> {
+    let out = Command::new("osascript")
+        .args(osascript_args(command, prompt))
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| ShaperError(format!("could not ask for administrator rights ({e})")))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    if err.contains("-128") {
+        Err(ShaperError(
+            "the administrator password prompt was cancelled".into(),
+        ))
+    } else {
+        Err(ShaperError(format!(
+            "could not get administrator rights ({})",
+            err.trim()
+        )))
+    }
+}
+
+fn sha256(text: &str) -> String {
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Installs (or replaces) the helper daemon: the one administrator prompt.
+fn install() -> Result<(), ShaperError> {
+    let fail = |what: &str, e: &dyn std::fmt::Display| {
+        ShaperError(format!("could not set up the network helper: {what} ({e})"))
+    };
+    let mut raw = [0u8; 8];
+    getrandom::fill(&mut raw).map_err(|e| fail("random name", &e))?;
+    let hex: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+    let dir = std::env::temp_dir().join(format!("rbxnative-netsim-{hex}"));
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .map_err(|e| fail("temp directory", &e))?;
+    let result = (|| {
+        fs::write(dir.join("helper.sh"), HELPER).map_err(|e| fail("helper script", &e))?;
+        // The folder was just made by this process, so it carries our uid.
+        let uid = fs::metadata(&dir)
+            .map_err(|e| fail("temp directory", &e))?
+            .uid();
+        let daemon = plist(uid);
+        fs::write(dir.join("daemon.plist"), &daemon).map_err(|e| fail("daemon file", &e))?;
+        let command = install_command(&dir.to_string_lossy(), &sha256(HELPER), &sha256(&daemon))
+            .ok_or_else(|| {
+                ShaperError("the temporary folder path has characters the helper cannot use".into())
+            })?;
+        admin(
+            &command,
+            "RbxNative wants to install a small helper so Play can simulate network conditions. You will only be asked once.",
+        )
+    })();
+    let _ = fs::remove_dir_all(&dir);
+    result
+}
+
+/// A connection to the daemon and the version its `hello` named.
+fn connect() -> Option<(UnixStream, BufReader<UnixStream>, u32)> {
+    let stream = UnixStream::connect(SOCKET).ok()?;
+    stream.set_read_timeout(Some(HELLO_TIMEOUT)).ok()?;
+    let mut reader = BufReader::new(stream.try_clone().ok()?);
+    let mut hello = String::new();
+    reader.read_line(&mut hello).ok()?;
+    let version = hello.trim().strip_prefix("hello ")?.parse().ok()?;
+    stream.set_read_timeout(None).ok()?;
+    Some((stream, reader, version))
+}
+
+/// A connection to an up-to-date daemon, installing or replacing it first if
+/// needed.
+fn connect_current() -> Result<(UnixStream, BufReader<UnixStream>), ShaperError> {
+    let want = helper_version();
+    if let Some((stream, reader, version)) = connect() {
+        if version == want {
+            return Ok((stream, reader));
+        }
+    }
+    install()?;
+    let deadline = Instant::now() + SOCKET_WAIT;
+    loop {
+        match connect() {
+            Some((stream, reader, version)) if version == want => return Ok((stream, reader)),
+            Some((_, _, version)) => {
+                return Err(ShaperError(format!(
+                    "the network helper still runs version {version} after the update"
+                )));
+            }
+            None if Instant::now() < deadline => thread::sleep(Duration::from_millis(200)),
+            None => {
+                return Err(ShaperError(
+                    "the network helper was installed but doesn't answer".into(),
+                ));
+            }
+        }
+    }
+}
+
 /// Shapes the Roblox player's UDP traffic through pf dummynet.
 pub struct Shaper {
-    dir: PathBuf,
-    cmd: Arc<Mutex<File>>,
+    cmd: Arc<Mutex<UnixStream>>,
     status: Receiver<String>,
-    _status_file: File,
     pid: u32,
     jitter: bool,
     stop: Arc<AtomicBool>,
@@ -36,107 +160,29 @@ pub struct Shaper {
 }
 
 impl Shaper {
-    /// Asks for administrator rights once and waits for the helper to be ready.
+    /// Connects to the helper (installing it the first time, the only
+    /// password prompt) and waits for it to be ready.
     pub fn start() -> Result<Shaper, ShaperError> {
-        let fail = |what: &str, e: &dyn std::fmt::Display| {
-            ShaperError(format!("could not set up the network helper: {what} ({e})"))
-        };
-        let mut raw = [0u8; 8];
-        getrandom::fill(&mut raw).map_err(|e| fail("random name", &e))?;
-        let hex: String = raw.iter().map(|b| format!("{b:02x}")).collect();
-        let dir = std::env::temp_dir().join(format!("rbxnative-netsim-{hex}"));
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(&dir)
-            .map_err(|e| fail("temp directory", &e))?;
-
-        let setup = (|| -> Result<(File, File), ShaperError> {
-            fs::write(dir.join("helper.sh"), HELPER).map_err(|e| fail("helper script", &e))?;
-            let made = Command::new("mkfifo")
-                .args(["-m", "600"])
-                .arg(dir.join("cmd"))
-                .arg(dir.join("status"))
-                .output()
-                .map_err(|e| fail("mkfifo", &e))?;
-            if !made.status.success() {
-                return Err(fail(
-                    "mkfifo",
-                    &String::from_utf8_lossy(&made.stderr).trim(),
-                ));
-            }
-            let open = |name: &str| {
-                OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(dir.join(name))
-                    .map_err(|e| fail("pipe", &e))
-            };
-            Ok((open("cmd")?, open("status")?))
-        })();
-        let (cmd_file, status_file) = match setup {
-            Ok(files) => files,
-            Err(e) => {
-                let _ = fs::remove_dir_all(&dir);
-                return Err(e);
-            }
-        };
-
+        let (stream, reader) = connect_current()?;
         let (tx, rx) = mpsc::channel();
-        let reader = match status_file.try_clone() {
-            Ok(f) => f,
-            Err(e) => {
-                let _ = fs::remove_dir_all(&dir);
-                return Err(fail("pipe", &e));
-            }
-        };
         thread::spawn(move || {
-            for line in BufReader::new(reader).lines().map_while(Result::ok) {
+            for line in reader.lines().map_while(Result::ok) {
                 if tx.send(line).is_err() {
                     break;
                 }
             }
         });
-
         let mut shaper = Shaper {
-            dir,
-            cmd: Arc::new(Mutex::new(cmd_file)),
+            cmd: Arc::new(Mutex::new(stream)),
             status: rx,
-            _status_file: status_file,
             pid: 0,
             jitter: true,
             stop: Arc::new(AtomicBool::new(false)),
             watch: None,
         };
-        shaper.launch()?;
         shaper.await_ready()?;
         shaper.spawn_watch();
         Ok(shaper)
-    }
-
-    fn launch(&self) -> Result<(), ShaperError> {
-        let dir = self.dir.to_string_lossy();
-        let args = osascript_args(&dir, std::process::id()).ok_or_else(|| {
-            ShaperError("the temporary folder path has characters the helper cannot use".into())
-        })?;
-        let out = Command::new("osascript")
-            .args(&args)
-            .stdin(Stdio::null())
-            .output()
-            .map_err(|e| ShaperError(format!("could not ask for administrator rights ({e})")))?;
-        if out.status.success() {
-            return Ok(());
-        }
-        let err = String::from_utf8_lossy(&out.stderr);
-        if err.contains("-128") {
-            Err(ShaperError(
-                "the administrator password prompt was cancelled".into(),
-            ))
-        } else {
-            Err(ShaperError(format!(
-                "could not get administrator rights ({})",
-                err.trim()
-            )))
-        }
     }
 
     fn await_ready(&mut self) -> Result<(), ShaperError> {
@@ -252,8 +298,8 @@ impl Drop for Shaper {
         }
         if let Ok(mut f) = self.cmd.lock() {
             let _ = f.write_all(b"stop\n");
+            let _ = f.shutdown(std::net::Shutdown::Both);
         }
-        let _ = fs::remove_dir_all(&self.dir);
     }
 }
 

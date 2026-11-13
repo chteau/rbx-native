@@ -40,6 +40,8 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "libc",
     "NSRunningApplication",
 ] }
+# Hashes of the network helper's files, checked after the root install.
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 # Embedding RobloxPlayerBeta's window; same version rbx_studio uses. The

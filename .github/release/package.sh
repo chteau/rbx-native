@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Packs one release build: rbxstudio-<version>-<target>.zip on Windows,
-# .tar.gz elsewhere, one top folder holding the program (an ad-hoc signed
-# RbxNative.app on macOS), the README and the license notices. The updater
+# .tar.gz elsewhere, one top folder holding the program (a signed
+# RbxNative.app on macOS, see macos-sign.sh), the README and the license notices. The updater
 # looks for exactly these names (`updater/release.rs`).
 #
 # Usage: package.sh <version> <target> <dir with the built binary> <out dir>
@@ -42,9 +42,9 @@ case "$target" in
     cp .github/release/RbxNative.icns "$app/Contents/Resources/RbxNative.icns"
     chmod 755 "$app/Contents/MacOS/rbxstudio"
     sed "s/@VERSION@/$version/g" .github/release/Info.plist > "$app/Contents/Info.plist"
-    # No paid certificate: an ad-hoc signature seals the bundle so Apple
-    # Silicon runs it; Gatekeeper still asks on first open.
-    codesign --force --deep --sign - "$app"
+    # RbxNative's own certificate (ad-hoc without the secrets): the same
+    # identity every release keeps Keychain and Accessibility grants.
+    .github/release/macos-sign.sh "$app"
     # Without this, macOS tar adds ._* AppleDouble files that break the seal.
     COPYFILE_DISABLE=1 tar -C "$work" -czf "$out/$name.tar.gz" "$name"
     ;;

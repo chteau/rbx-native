@@ -186,7 +186,45 @@ impl SettingsWindow {
         if any {
             row = row.below(below);
         }
-        Section::new("Play", vec![row])
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+        let mut rows = vec![row];
+        #[cfg(target_os = "macos")]
+        rows.extend(self.network_helper_row(cx));
+        Section::new("Play", rows)
+    }
+
+    /// macOS: the root helper the network simulator installs once, with a
+    /// way to take it off again.
+    #[cfg(target_os = "macos")]
+    fn network_helper_row(&mut self, cx: &mut Context<Self>) -> Option<Row> {
+        use rbx_play::netsim::dummynet;
+
+        if !dummynet::helper_installed() {
+            return None;
+        }
+        let button = secondary_button("netsim-helper-remove", "trash", "Remove").on_click(
+            cx.listener(|_, _, _, cx| {
+                cx.spawn(async move |this, cx| {
+                    let removed = cx
+                        .background_spawn(async { dummynet::remove_helper() })
+                        .await;
+                    let _ = this.update(cx, |this, cx| {
+                        if let Err(error) = removed {
+                            this.shell.update(cx, |shell, _| {
+                                shell.output.push_warning(&format!(
+                                    "could not remove the network helper: {error}"
+                                ));
+                            });
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }),
+        );
+        Some(Row::new("Network helper", button).describe(
+            "Installed the first time Play simulated network conditions, so you\u{2019}re not asked for your password every Play. Remove it and Play asks again next time.",
+        ))
     }
 
     fn updates_section(&mut self, cx: &mut Context<Self>) -> Section {
