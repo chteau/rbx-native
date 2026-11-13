@@ -471,6 +471,7 @@ function buildPreview() {
       <span class="e-sep"></span>
       ${tile("explorer", "Explorer", " on")}${tile("props", "Properties", " on")}${tile("output", "Output", " on")}${tile("viewport", "Viewport")}${tile("pad", "Input Acti…")}${tile("shield", "Security…")}${tile("film", "Playtests")}${tile("layers", "Lay")}
     </div>
+    <div class="e-work">
     <div class="e-body">
       <section class="e-dock">
         ${dockHead('SpawnLocation "SpawnLocation"')}
@@ -551,6 +552,7 @@ function buildPreview() {
         <div class="row err"><span class="kind">error</span><span>Workspace.Village.Lights:12: attempt to index nil with 'Position'</span></div>
       </div>
     </section>
+    </div>
     <div class="e-cmd"><span class="e-cmdbox">${icon("right", "i xs")}<span>Execute a command with Ctrl+Enter or use Ctrl+Up/Down for history</span><b>Luau</b></span></div>
 `;
 }
@@ -583,6 +585,12 @@ function applyPreview() {
   const ed = $("ed");
   const s = ed.style;
   for (const k of COLOR_KEYS) s.setProperty("--c-" + k, css(resolved(k)));
+  // The editor paints its ground (`black`) once, under everything; a strip
+  // whose colour is that same translucent ground skips its own fill, so the
+  // coats don't stack.
+  const ground = resolved("black");
+  const same = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+  if (ground[3] < 1) if (same(resolved("menu_bar"), ground)) s.setProperty("--c-menu_bar", "transparent");
   for (const k of SIZE_KEYS) s.setProperty("--s-" + k, size(k));
   const code = state.base === "high-contrast" && mode() === "dark" ? CODE.hc : CODE[mode()];
   for (const [k, v] of Object.entries(code)) s.setProperty("--code-" + k, css(resolve(v)));

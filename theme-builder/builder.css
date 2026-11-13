@@ -201,8 +201,10 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 .e-pop i { display: block; height: 1px; background: var(--c-border); margin: 4px 2px; }
 
 /* Body: Properties | view | Explorer, with hairline seams of black. */
-.e-body { flex: 1; display: grid; grid-template-columns: 316px 1fr 311px; column-gap: 4px; padding-top: 2px; min-height: 0; }
-.e-dock { background: var(--c-dock); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+/* One panel coat over the whole workspace, gaps included, as the editor paints it. */
+.e-work { flex: 1; display: flex; flex-direction: column; min-height: 0; padding-top: 2px; background: var(--c-dock); }
+.e-body { flex: 1; display: grid; grid-template-columns: 316px 1fr 311px; column-gap: 4px; min-height: 0; }
+.e-dock { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .e-dockhead { height: 38px; display: flex; align-items: center; gap: 14px; padding: 0 0 0 20px; flex: none; }
 .e-dtab { display: flex; align-items: center; gap: 12px; }
 .e-dtab b { color: var(--c-text_strong); font-weight: 700; font-size: calc(var(--s-text_sm) * 1px); }
@@ -246,7 +248,7 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 .e-slider i::after { content: ""; position: absolute; left: 0; top: 50%; width: calc(var(--s-slider_thumb) * 1px); height: calc(var(--s-slider_thumb) * 1px); border-radius: 50%; background: var(--c-text_full); transform: translate(-50%, -50%); }
 
 /* The 3D view is a capture of the real one: the theme does not paint it. */
-.e-center { display: flex; flex-direction: column; min-height: 0; background: var(--c-dock); }
+.e-center { display: flex; flex-direction: column; min-height: 0; }
 .e-view { flex: 1; background: var(--c-viewport_background) url(viewport.webp) center / cover no-repeat; }
 
 /* Explorer */
@@ -261,7 +263,7 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 .e-node.sel:hover { background: var(--c-accent_soft); }
 
 /* Output, full width under the docks */
-.e-out { height: 178px; flex: none; margin-top: 6px; background: var(--c-dock); display: flex; flex-direction: column; min-height: 0; }
+.e-out { height: 178px; flex: none; margin-top: 6px; display: flex; flex-direction: column; min-height: 0; }
 .e-outhead { height: 38px; display: flex; align-items: center; gap: 4px; padding: 0 12px 0 6px; flex: none; white-space: nowrap; }
 .e-otab { height: 28px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-radius: calc(var(--s-radius) * 1px); color: var(--c-text2); font-size: calc(var(--s-text_sm) * 1px); }
 .e-otab b { font-weight: 600; color: var(--c-text_strong); }
@@ -292,7 +294,7 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 .e-log .err .kind { color: var(--c-text_error); padding-left: 23px; }
 
 /* Command Bar */
-.e-cmd { height: 48px; flex: none; display: flex; align-items: center; padding: 0 8px; background: var(--c-dock); }
+.e-cmd { height: 48px; flex: none; display: flex; align-items: center; padding: 0 8px; background: var(--c-menu_bar); }
 .e-cmdbox { flex: 1; height: 30px; display: flex; align-items: center; gap: 14px; padding: 0 6px 0 10px; border: 1px solid var(--c-border2); border-radius: calc(var(--s-radius) * 1px); background: var(--c-field_select); font: 400 calc(var(--s-text_sm) * 1px) var(--mono-font), "JetBrains Mono", monospace; color: var(--c-text3); }
 .e-cmdbox svg.xs { width: 11px; height: 11px; color: var(--c-check_on); }
 .e-cmdbox b { margin-left: auto; font: 500 calc(var(--s-text_xxs) * 1px) var(--ui), Manrope, sans-serif; color: var(--c-text); padding: 3px 7px; border: 1px solid var(--c-border2); border-radius: calc(var(--s-radius) * 1px); }
