@@ -306,6 +306,40 @@ fn a_theme_without_icons_or_widgets_falls_back_to_defaults() {
     assert_eq!(pack.palette, builtin.palette);
 }
 
+/// The toolkit's Root paints `background` under the whole window, so a
+/// translucent ground that stopped at the palette stayed opaque.
+#[test]
+fn a_theme_s_widget_colours_follow_its_palette_alpha_included() {
+    let themes = scratch();
+    theme(
+        &themes,
+        "glass",
+        Some(r##"{"colors":{"black":"#0A0A0BAA","dock":"#121213AA"},"window":"transparent"}"##),
+    );
+    let pack = ThemePack::load_from(&themes, "glass").unwrap();
+    let widgets = serde_json::to_value(&pack.widgets).unwrap();
+    assert_eq!(widgets["colors"]["background"], "#0A0A0BAA");
+    assert_eq!(widgets["colors"]["sidebar.background"], "#121213AA");
+
+    let own = theme(
+        &themes,
+        "own",
+        Some(r##"{"colors":{"black":"#0A0A0BAA"}}"##),
+    );
+    write(
+        &own,
+        "widgets.json",
+        br##"{"name":"o","author":"a","themes":[{"name":"Own","mode":"dark","colors":{"border":"#FF0000"}}]}"##,
+    );
+    let pack = ThemePack::load_from(&themes, "own").unwrap();
+    let widgets = serde_json::to_value(&pack.widgets).unwrap();
+    assert_eq!(
+        widgets["colors"]["border"], "#FF0000",
+        "its own colour stays"
+    );
+    assert_eq!(widgets["colors"]["background"], "#0A0A0BAA");
+}
+
 #[test]
 fn a_theme_without_a_manifest_does_not_load() {
     let themes = scratch();
@@ -576,46 +610,16 @@ fn the_built_in_themes_cannot_be_shadowed_or_uninstalled() {
 /// the toolkit's widgets never drift from the chrome around them.
 #[test]
 fn the_built_in_widgets_paint_their_theme_s_palette() {
-    let hex = |color: Rgba| {
-        let byte = |c: f32| (c * 255.).round() as u8;
-        let rgb = format!(
-            "#{:02X}{:02X}{:02X}",
-            byte(color.r),
-            byte(color.g),
-            byte(color.b)
-        );
-        if color.a >= 1. {
-            rgb
-        } else {
-            format!("{rgb}{:02X}", byte(color.a))
-        }
-    };
     for id in [LIGHT_ID, HIGH_CONTRAST_ID] {
         let pack = ThemePack::embedded(id).unwrap();
         let widgets = serde_json::to_value(&pack.widgets).unwrap();
-        for (key, token) in [
-            ("background", "black"),
-            ("foreground", "text"),
-            ("popover.background", "field_select"),
-            ("border", "border"),
-            ("muted.background", "field_select"),
-            ("muted.foreground", "text3"),
-            ("sidebar.background", "dock"),
-            ("secondary.foreground", "text2"),
-            ("primary.background", "check_on"),
-            ("ring", "check_on"),
-            ("selection.background", "selection"),
-            ("accent.background", "hover"),
-            ("tab_bar.background", "black"),
-            ("title_bar.background", "black"),
-            ("danger.background", "text_error"),
-        ] {
+        for (key, token) in pack::PALETTE_WIDGETS {
             let listed = widgets["colors"][key]
                 .as_str()
                 .unwrap_or_else(|| panic!("{id}: widgets.json has no {key}"));
             assert_eq!(
                 listed.to_ascii_uppercase(),
-                hex(pack.palette.color(token)),
+                pack::hex_rgba(pack.palette.color(token)),
                 "{id}: widgets.json's {key} has drifted from {token}"
             );
         }
