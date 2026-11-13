@@ -23,6 +23,16 @@ task.spawn(function()
 	end
 end)
 
+-- The in-game dev panel, on when the editor asked for it (macOS Play).
+task.spawn(function()
+	local ok, err = pcall(function()
+		require(ReplicatedStorage:WaitForChild("__rbxnative_panel")).client(remote, Debug)
+	end)
+	if not ok then
+		warn("[rbx-native] dev panel: " .. tostring(err))
+	end
+end)
+
 local t0 = os.clock()
 local buffer = {}
 local outgoing = {}

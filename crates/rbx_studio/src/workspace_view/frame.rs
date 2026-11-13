@@ -80,8 +80,106 @@ pub(super) fn render_image(pixels: Vec<u8>, width: u32, height: u32) -> Option<A
     to_render_image(pixels, width, height)
 }
 
+/// How much `blurred` shrinks a frame before blurring it: GPUI's sampler
+/// scales it back up, which is most of the softening for free.
+const BLUR_STEP: usize = 8;
+
+/// A soft, small copy of `image` (the last frame) to sit behind a veil:
+/// shrunk by [`BLUR_STEP`], then three box-blur passes. Drawn stretched to
+/// the panel it looks like a frosted copy of the scene.
+pub(super) fn blurred(image: &RenderImage) -> Option<Arc<RenderImage>> {
+    let bytes = image.as_bytes(0)?;
+    let size = image.size(0);
+    let (width, height) = (
+        usize::try_from(size.width.0).ok()?,
+        usize::try_from(size.height.0).ok()?,
+    );
+    let pixels = blur_pixels(bytes, width, height)?;
+    let (small_w, small_h) = shrunk(width, height);
+    // Already in GPUI's channel order: the bytes came from a RenderImage.
+    let buffer = image::RgbaImage::from_raw(small_w as u32, small_h as u32, pixels)?;
+    Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+}
+
+fn shrunk(width: usize, height: usize) -> (usize, usize) {
+    ((width / BLUR_STEP).max(1), (height / BLUR_STEP).max(1))
+}
+
+/// `bytes` (4 per pixel, row-major) shrunk and blurred, as 4-byte pixels.
+fn blur_pixels(bytes: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
+    if width == 0 || height == 0 || bytes.len() < width * height * 4 {
+        return None;
+    }
+    let (w, h) = shrunk(width, height);
+    let mut small = vec![0f32; w * h * 4];
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = [0f32; 4];
+            let mut count = 0f32;
+            for sy in y * BLUR_STEP..((y + 1) * BLUR_STEP).min(height) {
+                for sx in x * BLUR_STEP..((x + 1) * BLUR_STEP).min(width) {
+                    let at = (sy * width + sx) * 4;
+                    for (channel, total) in sum.iter_mut().enumerate() {
+                        *total += f32::from(bytes[at + channel]);
+                    }
+                    count += 1.0;
+                }
+            }
+            let at = (y * w + x) * 4;
+            for (channel, total) in sum.into_iter().enumerate() {
+                small[at + channel] = total / count.max(1.0);
+            }
+        }
+    }
+    for _ in 0..3 {
+        small = box_pass(&small, w, h, true);
+        small = box_pass(&small, w, h, false);
+    }
+    Some(small.into_iter().map(|v| v.round().clamp(0.0, 255.0) as u8).collect())
+}
+
+/// One box-blur pass of radius 2 along rows (`horizontal`) or columns,
+/// clamping at the edges.
+fn box_pass(pixels: &[f32], w: usize, h: usize, horizontal: bool) -> Vec<f32> {
+    const RADIUS: isize = 2;
+    let mut out = vec![0f32; pixels.len()];
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = [0f32; 4];
+            for d in -RADIUS..=RADIUS {
+                let (sx, sy) = match horizontal {
+                    true => ((x as isize + d).clamp(0, w as isize - 1) as usize, y),
+                    false => (x, (y as isize + d).clamp(0, h as isize - 1) as usize),
+                };
+                let at = (sy * w + sx) * 4;
+                for (channel, total) in sum.iter_mut().enumerate() {
+                    *total += pixels[at + channel];
+                }
+            }
+            let at = (y * w + x) * 4;
+            for (channel, total) in sum.into_iter().enumerate() {
+                out[at + channel] = total / (2 * RADIUS + 1) as f32;
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_flat_frame_stays_flat_and_shrinks_by_the_step() {
+        let bytes = [10u8, 20, 30, 255].repeat(64 * 32);
+        let out = super::blur_pixels(&bytes, 64, 32).unwrap();
+        assert_eq!(out.len(), 8 * 4 * 4);
+        assert!(out.chunks(4).all(|p| p == [10, 20, 30, 255]));
+    }
+
+    #[test]
+    fn a_short_buffer_is_refused() {
+        assert!(super::blur_pixels(&[0; 8], 4, 4).is_none());
+    }
+
     use gpui_kit::px;
 
     use super::{device_pixels, Viewport};

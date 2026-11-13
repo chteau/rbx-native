@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-13
+
+- **Play on macOS runs the game in the Roblox app.** macOS can't put another app's window inside the editor, so instead of a half-working overlay, Play opens Roblox full screen and blurs the 3D view with a note and a Show Roblox button. Stop quits the player too. Full screen needs Accessibility access; without it Roblox stays windowed and Output says what to allow.
+- **RbxNative panel in the game (macOS).** Press F8 or click the RbxNative chip in the corner: Output from the client and the server with the same filters as the editor's, client and server stats, and Continue / Step buttons when the debugger pauses, so you don't have to leave full screen. It uses your editor theme's colours.
+
 ## 2026-11-09
 
 - **`Lighting.ClockTime` works.** It reads from `TimeOfDay` like it does in Studio instead of printing 0, and setting either one updates both. The Properties panel row follows it too.
