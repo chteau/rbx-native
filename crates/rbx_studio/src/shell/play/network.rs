@@ -131,10 +131,11 @@ pub(in crate::shell) struct NetworkSim {
     /// The running client was launched inside the shaper, so Apply reaches
     /// it; otherwise an applied preset waits for the next Play.
     shaped_client: bool,
-    /// Started by the first shaped Play and kept for later ones, like the
-    /// tunnel; ended when the editor quits.
+    /// Started by the first shaped Play. Linux and Windows keep it for later
+    /// ones, like the tunnel, until the editor quits; macOS drops it at Stop
+    /// (`play_stop`), its helper being installed for good.
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
-    shaper: Option<rbx_play::netsim::Shaper>,
+    pub(in crate::shell::play) shaper: Option<rbx_play::netsim::Shaper>,
     pub(in crate::shell) popover: Option<Popover>,
     /// When the popover last closed, so the tile click that closed it from
     /// outside does not reopen it.
