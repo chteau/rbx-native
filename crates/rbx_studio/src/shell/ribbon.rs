@@ -940,7 +940,10 @@ impl Shell {
                 .gap(px(6.))
                 .px(px(7.))
                 .rounded(tokens::radius())
-                .bg(tokens::tile())
+                .when_some(
+                    tokens::on_surface(tokens::tile(), tokens::chrome()),
+                    |this, bg| this.bg(bg),
+                )
                 .text_size(tokens::text_xs())
                 .line_height(tokens::line_xs())
                 .text_color(tokens::text_label())
@@ -1324,7 +1327,10 @@ fn tile_frame(
         .items_center()
         .justify_center()
         .rounded(tokens::radius())
-        .bg(tokens::tile())
+        .when_some(
+            tokens::on_surface(tokens::tile(), tokens::chrome()),
+            |this, bg| this.bg(bg),
+        )
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())
         .map(|this| {
@@ -1432,7 +1438,10 @@ fn base_row(id: &'static str, icon: IconName, label: &'static str) -> Stateful<D
         .gap(px(6.))
         .px(px(7.))
         .rounded(tokens::radius())
-        .bg(tokens::tile())
+        .when_some(
+            tokens::on_surface(tokens::tile(), tokens::chrome()),
+            |this, bg| this.bg(bg),
+        )
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())
         .child(Icon::new(icon).size(tokens::text_xs()))

@@ -31,6 +31,7 @@
 //! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
 //! so it goes under View.
 
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::script_templates::Template;
@@ -378,7 +379,9 @@ pub(crate) fn bar(menu_bar: &Entity<MenuBar>) -> impl IntoElement {
         .w_full()
         .h(tokens::menu_bar_height())
         .flex_none()
-        .bg(tokens::menu_bar())
+        .when_some(tokens::on_ground(tokens::menu_bar()), |this, bg| {
+            this.bg(bg)
+        })
         .border_b(px(1.))
         .border_color(tokens::border())
         .text_size(tokens::text_md())

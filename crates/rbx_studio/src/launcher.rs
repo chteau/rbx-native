@@ -101,7 +101,7 @@ pub(crate) fn open_wizard(
     let options = options(title, (1040., 720.), None, cx);
     cx.open_window(options, move |window, cx| {
         let view = cx.new(|cx| wizard::Wizard::new(boot, plan, on_finish, window, cx));
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     })
     .ok()
 }
@@ -111,7 +111,7 @@ pub(crate) fn open_home(boot: Boot, cx: &mut App) {
     let options = options("RbxNative", (1440., 900.), Some((1100., 700.)), cx);
     let _ = cx.open_window(options, move |window, cx| {
         let view = cx.new(|cx| HomeWindow::new(boot, window, cx));
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     });
 }
 
@@ -132,7 +132,7 @@ pub(crate) fn open_game_picker(
     );
     cx.open_window(options, move |window, cx| {
         let view = cx.new(|cx| HomeWindow::picker(Rc::new(on_pick), shell, window, cx));
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     })
     .ok()
 }
@@ -144,6 +144,6 @@ pub(crate) fn open_publishing(on_change: impl Fn(&mut App) + 'static, cx: &mut A
     let on_change = Rc::new(on_change);
     let _ = cx.open_window(options, move |window, cx| {
         let view = cx.new(|cx| publishing::Publishing::new(on_change, window, cx));
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     });
 }

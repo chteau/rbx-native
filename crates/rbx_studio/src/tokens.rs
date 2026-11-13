@@ -41,6 +41,22 @@ pub(crate) fn black() -> Rgba {
     theme::color("black")
 }
 
+/// `color` as the fill of a strip laid straight on the window's ground, or
+/// `None` when it is that ground and the ground is translucent: the
+/// toolkit's `Root` already paints [`black`] under the whole window (its
+/// widget `background` follows the palette), and every further coat of a
+/// translucent colour thickens it, so the title bar would come out more
+/// opaque than the gaps between the docks.
+pub(crate) fn on_ground(color: Rgba) -> Option<Rgba> {
+    on_surface(color, black())
+}
+
+/// [`on_ground`] for a fill laid on `under` rather than on the ground: a
+/// ribbon button's [`tile`] on the ribbon's [`chrome`].
+pub(crate) fn on_surface(color: Rgba, under: Rgba) -> Option<Rgba> {
+    (color != under || under.a >= 1.).then_some(color)
+}
+
 /// A dock's body, the ribbon's own body, and a ribbon button, every
 /// structural surface in the shell, measured off the reference at a flat
 /// `#121213` with no separate "raised" step for a tile or an active dock

@@ -394,7 +394,7 @@ pub(crate) fn open_game(
                 .update(cx, |game, cx| game.request_quit(cx))
                 .unwrap_or(true)
         });
-        cx.new(|cx| Root::new(game, window, cx))
+        cx.new(|cx| Root::new(crate::window_blur::wrap(game, cx), window, cx))
     })
     .expect("failed to open the main window");
     Ok(())

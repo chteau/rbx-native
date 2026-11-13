@@ -153,7 +153,7 @@ impl SettingsWindow {
                 closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
                 true
             });
-            cx.new(|cx| Root::new(view, window, cx))
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
         .ok()
     }

@@ -81,7 +81,7 @@ then delete what you don't change.
   "sizes": { "radius": 8, "text_md": 13 },
   "mode": "dark",
   "window": "transparent",
-  "background": { "image": "bg.png", "opacity": 0.8, "fit": "cover", "layer": "behind" },
+  "background": { "image": "bg.png", "opacity": 0.8, "fit": "cover", "layer": "behind", "blur": 0 },
   "hover": { "glow": "@check_on/0.7", "glow_radius": 10 }
 }
 ```
@@ -98,12 +98,15 @@ then delete what you don't change.
   switches the Explorer to the class icons' light variant.
 - **`window`**: `opaque` (default), `transparent` or `blurred`. The desktop
   only shows through surfaces you also gave some transparency (`black` is
-  the ground behind everything, `dock` the panels). Blur needs a compositor
-  that offers it and falls back to plain transparency.
+  the ground behind everything, `dock` the panels). Blur is native on
+  Windows, macOS, KDE (X11 and Wayland) and picom; on GNOME with X11
+  RbxNative draws it itself. Anywhere else it shows see-through.
 - **`background`**: an image (PNG, JPEG, WebP or GIF, under 16 MiB) inside
   the theme. `opacity` 0–1, `fit` is `cover`, `contain` or `fill`, and
   `layer` is `behind` (shows through translucent surfaces) or `over` (on top
-  of everything, never taking a click).
+  of everything, never taking a click). `blur` (0–64, default 0) blurs the
+  image by that radius in its own pixels, for a frosted look behind
+  translucent panels; a blurred GIF keeps only its first frame.
 - **`hover`**: a `glow` colour and `glow_radius` (0–64) added to every hover
   state the editor draws.
 - **`fonts`**: `{"ui": "Inter", "mono": "Fira Code", "files":

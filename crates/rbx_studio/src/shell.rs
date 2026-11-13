@@ -145,6 +145,7 @@ use gpui_kit::component::input::{Enter, InputEvent, InputState};
 use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
 use gpui_kit::component::{v_flex, IndexPath};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -2178,7 +2179,7 @@ impl Render for Shell {
         self.sync_argon_fields(window, cx);
         v_flex()
             .size_full()
-            .bg(tokens::black())
+            .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
             .font_family(tokens::font_ui())
             .text_color(tokens::text_strong())
             .track_focus(&self.root_focus)
