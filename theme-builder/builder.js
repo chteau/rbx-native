@@ -377,29 +377,61 @@ function renderFontList(slot) {
 const family = slot => (state.fonts[slot][0] || {}).family || null;
 
 // ---------- Preview ----------
+// A copy of the real editor window at its own 1600×900, laid out from
+// screenshots of the Linux build: titlebar, menu bar, document tabs, ribbon,
+// Properties | 3D view | Explorer, then Output and the Command Bar.
+
+const W = 1600, H = 900;
 
 const ICON = {
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   paste: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
   cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
-  dup: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/>',
+  dup: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11M14.5 11.5v6M11.5 14.5h6"/>',
   select: '<path d="M4.04 4.69a.5.5 0 0 1 .65-.65l16 6.5a.5.5 0 0 1-.06.95l-6.13 1.58a2 2 0 0 0-1.43 1.43l-1.58 6.13a.5.5 0 0 1-.95.06z"/>',
-  move: '<path d="M12 2v20M2 12h20M9 5l3-3 3 3M9 19l3 3 3-3M5 9l-3 3 3 3M19 9l3 3-3 3"/>',
-  scale: '<path d="M21 3 14 10M21 3h-6M21 3v6M3 21l7-7M3 21h6M3 21v-6"/>',
-  rotate: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  move: '<path d="M5 3v15h15M5 18l7-7M17 15l3 3-3 3M2 6l3-3 3 3"/>',
+  scale: '<path d="M5 3v15h15"/><circle cx="12" cy="11" r="2"/><circle cx="20" cy="18" r="2"/>',
+  rotate: '<ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M12 3a4 9 0 0 1 0 18M9 21l3 0-1-3"/>',
   transform: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 3"/>',
-  align: '<path d="M4 4v16M8 8h10M8 16h6"/>',
-  grid: '<path d="M4 9h16M4 15h16M9 4v16M15 4v16"/>',
-  angle: '<path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v6h6"/>',
+  pivot: '<path d="M5 3v15h15M9 14l4-4M15 14h0"/>',
+  align: '<path d="M4 4v16M8 6h10a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H8zM8 14h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H8z"/>',
+  stud: '<path d="m4 14 8-8 8 8-8 4z"/><path d="M12 6v12"/>',
+  angle: '<path d="M20 12a8 8 0 1 1-2.3-5.7L20 9"/><path d="M20 4v5h-5"/>',
   part: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/>',
-  script: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M10 13l-2 2 2 2M14 17l2-2-2-2"/>',
-  ui: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',
-  box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>',
-  terrain: '<path d="m3 20 6-12 4 7 3-4 5 9z"/>',
-  explorer: '<path d="M3 5h6M7 5v14h4M7 12h4M14 12h7M14 19h7M14 5h7"/>',
-  props: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
-  output: '<path d="m5 8 4 4-4 4M12 17h7"/>',
-  play: '<path d="M7 4v16l13-8z"/>',
+  script: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M10 12l-2 2 2 2M14 16l2-2-2-2"/>',
+  ui: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h0"/>',
+  box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12M7.5 4.3l9 5.1"/>',
+  terrain: '<path d="M3 20 10 4l4 8 2-3 5 11z"/><path d="m8 9 2 2 2-2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  db: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  explorer: '<path d="M4 4h16M4 4v14h4M4 11h4M11 11h9M11 18h9M11 4"/>',
+  props: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/><path d="M4 12h16"/><circle cx="12" cy="12" r="2"/>',
+  output: '<path d="m4 7 5 5-5 5M12 18h8"/>',
+  viewport: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="17" cy="9" r="2"/>',
+  pad: '<rect x="2" y="7" width="20" height="11" rx="5"/><path d="M7 11v3M5.5 12.5h3"/><circle cx="16" cy="11.5" r=".6"/><circle cx="18" cy="13.5" r=".6"/>',
+  shield: '<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4M12 16h0"/>',
+  film: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4M3 12h18"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 12 10 5 10-5M2 17l10 5 10-5"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/>',
+  code: '<path d="m8 7-5 5 5 5M16 7l5 5-5 5"/>',
+  grid4: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+  anim: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M3 8h4M3 12h4M3 16h4"/>',
+  min: '<path d="M6 12h12"/>',
+  max: '<rect x="6" y="6" width="12" height="12" rx="1"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  x: '<path d="M8 8l8 8M16 8l-8 8"/>',
+  plus: '<path d="M12 6v12M6 12h12"/>',
+  more: '<circle cx="6" cy="12" r=".8"/><circle cx="12" cy="12" r=".8"/><circle cx="18" cy="12" r=".8"/>',
+  chev: '<path d="m7 10 5 5 5-5"/>',
+  right: '<path d="m10 7 5 5-5 5"/>',
+  warn: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h0"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>',
+  wand: '<path d="M15 4V2M15 10V8M11 6h2M17 6h2M18 3l-1 1M3 21l11-11"/>',
+  bug: '<rect x="8" y="6" width="8" height="14" rx="4"/><path d="M12 10v10M4 13h4M16 13h4M5 7l3 2M19 7l-3 2M5 19l3-2M19 19l-3-2"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  cube: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
 };
 const icon = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
 const LOGO = '<svg class="e-logo" viewBox="0 0 23.8 17" fill="currentColor" aria-hidden="true"><path d="M15.3 5.196L9.623 1.508L5.389 1.443Q4.405 1.428 4.138 2.374L0 17L5.453 17Q6.059 17 6.223 16.551L7.249 13.728L5.998 13.728Q5.91 13.728 5.966 13.536L8.34 5.357L14.177 9.174L15.3 5.196Z"/><path d="M23.8 0L18.989 0Q18.203 0 17.962 0.674L16.84 3.817L18.026 3.817Q18.147 3.817 18.091 4.009L15.589 12.606L9.526 8.596L8.404 12.574L13.504 16.006Q13.837 16.23 14.017 16.23L18.54 16.23Q19.25 16.23 19.502 15.332L23.8 0Z"/></svg>';
@@ -407,117 +439,128 @@ const LOGO = '<svg class="e-logo" viewBox="0 0 23.8 17" fill="currentColor" aria
 function cls(name) { return `icons/${mode() === "light" ? "light" : "dark"}/${name}.svg`; }
 
 function buildPreview() {
-  const tile = (i, label, on) => `<div class="e-tile hov${on ? " on" : ""}">${icon(i)}<span>${label}</span></div>`;
-  const node = (depth, icn, name, tw, sel) =>
-    `<div class="e-node hov${sel ? " sel" : ""}" style="padding-left:${4 + depth * 16}px"><span class="tw ${tw}"></span><img data-icon="${icn}" alt="">${name}</div>`;
-  const prop = (label, val) => `<div class="e-prop hov"><span>${label}</span>${val}</div>`;
+  const tile = (i, label, extra = "") => `<div class="e-tile hov${extra}">${icon(i)}<span>${label}</span></div>`;
+  const node = (depth, icn, name, tw, extra = "") =>
+    `<div class="e-node hov${extra}" style="padding-left:${6 + depth * 20}px">${depth ? `<i class="guide" style="left:${depth * 20 - 3}px"></i>` : ""}<span class="tw ${tw}">${tw && tw !== "none" ? icon(tw === "open" ? "chev" : "right") : ""}</span><img data-icon="${icn}" alt=""><span>${name}</span></div>`;
+  const prop = (label, val, ro = false) => `<div class="e-prop hov${ro ? " ro" : ""}"><span>${label}</span><div>${val}</div></div>`;
+  const sec = name => `<div class="e-sec">${icon("chev")}${name}</div>`;
+  const dockHead = title => `<div class="e-dockhead"><span class="e-dtab"><b>${title}</b>${icon("x", "i xs")}</span><span class="e-vsep"></span><span class="more">${icon("more")}</span></div>`;
+  const docTab = (i, label, on, closable) => `<span class="e-doc hov${on ? " on" : ""}" data-doc="${on}">${icon(i)}${label}${closable ? icon("x", "i xs") : ""}</span>`;
   $("ed").innerHTML = `
     <div class="bg" id="bg"></div>
-    <div class="e-top">${LOGO}
-      ${["Home", "Avatar", "UI", "Script", "Model", "Test", "Plugins"].map((t, i) => `<span class="e-tab hov${i === 0 ? " on" : ""}">${t}</span>`).join("")}
-      <span class="sp"></span><span class="e-place">Village.rbxl</span><span class="e-avatar">C</span>
+    <div class="e-title">${LOGO}<span class="e-name"><b>RbxNative</b><i></i><span>Village.rbxl</span></span><span class="e-wc">${icon("min")}${icon("max")}${icon("close")}</span></div>
+    <div class="e-menu"><span>File</span><span>Edit</span><span>Model</span><span>View</span></div>
+    <div class="e-docs" id="docs">
+      ${docTab("globe", "Village.rbxl", true, false)}${docTab("code", "Script Editor", false, true)}${docTab("grid4", "UI Editor", false, true)}${docTab("anim", "Animation Editor", false, true)}<span class="e-docplus">${icon("plus")}</span>
     </div>
+    <div class="e-rtabs">${["Home", "Avatar", "UI", "Script", "Model", "Test", "Plugins"].map((t, i) => `<span class="${i === 0 ? "on" : ""}">${t}</span>`).join("")}</div>
     <div class="e-ribbon">
-      <div class="e-group">${tile("copy", "Copy")}<div class="e-stack"><div class="hov">${icon("paste")}Paste</div><div class="hov">${icon("cut")}Cut</div><div class="hov">${icon("dup")}Duplicate</div></div></div>
+      ${tile("copy", "Copy")}
+      <div class="e-stack"><div class="hov off">${icon("paste")}Paste</div><div class="hov">${icon("cut")}Cut</div><div class="hov">${icon("dup")}Duplicate</div></div>
       <span class="e-sep"></span>
-      <div class="e-group"><div class="e-tools">${["select", "move", "scale", "rotate", "transform", "align"].map((t, i) => `<span class="e-tool hov${i === 0 ? " on" : ""}">${icon(t)}</span>`).join("")}</div>
-        <div class="e-fields"><span class="e-field">${icon("grid")}1 stud</span><span class="e-field">${icon("angle")}45°</span></div></div>
+      <div class="e-tools">${["select", "move", "scale", "rotate", "transform", "pivot", "align"].map((t, i) => `<span class="e-tool hov${i === 0 ? " on" : ""}">${icon(t)}</span>`).join("")}</div>
+      <div class="e-fields"><span class="e-field">${icon("stud")}1 stud</span><span class="e-field">${icon("angle")}45°</span></div>
       <span class="e-sep"></span>
-      <div class="e-group">${tile("part", "Part")}${tile("script", "Script")}${tile("ui", "UI")}${tile("box", "Toolbox")}${tile("terrain", "Terrain")}</div>
+      ${tile("part", "Part")}<div class="e-popwrap">${tile("script", "Script", " open")}
+        <div class="e-pop" id="pop"><span class="hov">${icon("file")}Script</span><span class="hov">${icon("file")}Local Script</span><span class="hov">${icon("cube")}Module Script</span><i></i><span class="hov">${icon("pencil")}Manage templates…</span></div></div>
+      ${tile("ui", "UI")}${tile("box", "Toolbox")}
       <span class="e-sep"></span>
-      <div class="e-group">${tile("explorer", "Explorer", true)}${tile("props", "Properties", true)}${tile("output", "Output", true)}</div>
+      ${tile("terrain", "Terrain E…")}
       <span class="e-sep"></span>
-      <div class="e-group">${tile("play", "Play")}</div>
+      ${tile("gear", "Game Set…")}${tile("db", "Data Stor…")}
+      <span class="e-sep"></span>
+      ${tile("explorer", "Explorer", " on")}${tile("props", "Properties", " on")}${tile("output", "Output", " on")}${tile("viewport", "Viewport")}${tile("pad", "Input Acti…")}${tile("shield", "Security…")}${tile("film", "Playtests")}${tile("layers", "Lay")}
     </div>
     <div class="e-body">
       <section class="e-dock">
-        <div class="e-dockhead"><b>Model "House"</b><span class="x">✕</span><span class="more">···</span></div>
+        ${dockHead('SpawnLocation "SpawnLocation"')}
         <div class="e-search">Filter Properties (Ctrl+Shift+P)</div>
         <div class="e-props">
-          <div class="e-sel"><img data-icon="model" alt="">House <small>– Village</small></div>
-          <div class="e-sec">APPEARANCE</div>
-          ${prop("LevelOfDetail", '<span class="e-popwrap"><span class="e-val sel focus">Automatic</span><span class="e-pop" id="pop"><span>Automatic</span><span class="on">StreamingMesh</span><span>Disabled</span></span></span>')}
-          ${prop("Transparency", '<span class="e-slider"><i></i><b>0.6</b></span>')}
-          <div class="e-sec">DATA</div>
-          ${prop("ClassName", '<span class="e-val ro">"Model"</span>')}
-          ${prop("Name", '<span class="e-val">House</span>')}
-          ${prop("Parent", '<span class="e-val ro">Village</span>')}
-          <div class="e-sec">BEHAVIOR</div>
-          ${prop("Anchored", '<span class="e-tog on"></span>')}
-          ${prop("CanCollide", '<span class="e-tog"></span>')}
-          ${prop("Archivable", '<span class="e-chk on"></span>')}
-          ${prop("Locked", '<span class="e-chk"></span>')}
+          <div class="e-sel"><span class="e-selicon"><img data-icon="spawn-location" alt=""></span><b>SpawnLocation</b><small>— Workspace</small></div>
+          ${sec("APPEARANCE")}
+          ${prop("BrickColor", '<span class="e-val"><i class="sw" style="background:#A3A2A5"></i>Medium stone…</span>')}
+          ${prop("CastShadow", '<span class="e-tog on"></span>')}
+          ${prop("Color", '<i class="sw big" style="background:#A3A2A5"></i>')}
+          ${prop("Material", '<span class="e-val sel">Plastic' + icon("chev", "i xs") + '</span>')}
+          ${prop("MaterialVariant", '<span class="e-val"></span>')}
+          ${prop("Reflectance", '<span class="e-slider"><i></i><span class="e-val num">0</span></span>')}
+          ${prop("Transparency", '<span class="e-slider"><i></i><span class="e-val num">0</span></span>')}
+          ${sec("DATA")}
+          ${prop("ClassName", '<span class="e-ro">"SpawnLocation"</span>', true)}
+          ${prop("Name", '<span class="e-val">SpawnLocation</span>')}
         </div>
       </section>
-      <div class="e-center">
-        <div class="e-view">
-          <span class="e-badge">${icon("grid", "i")}Camera speed 1.0</span>
-          <span class="e-readout">12.40 studs</span>
-          <svg class="e-gizmo" viewBox="0 0 58 58" aria-hidden="true"><circle cx="29" cy="29" r="20" fill="var(--c-viewport_orient_body)" stroke="var(--c-viewport_orient_rim)" stroke-width="1.5"/><path d="M29 29 46 35" stroke="var(--c-viewport_axis_x)" stroke-width="2.5" stroke-linecap="round"/><path d="M29 29 29 9" stroke="var(--c-viewport_axis_y)" stroke-width="2.5" stroke-linecap="round"/><path d="M29 29 14 38" stroke="var(--c-viewport_axis_z)" stroke-width="2.5" stroke-linecap="round"/></svg>
-        </div>
-        <section class="e-out">
-          <div class="e-dockhead"><b>Output</b><span class="x">✕</span><span class="e-chips"><span class="e-chip on">All</span><span class="e-chip">Warnings</span><span class="e-chip">Errors</span></span><span class="more">···</span></div>
-          <div class="e-log">
-            <div><time>14:02:11</time><span class="server">Server  Village loaded: 42 houses</span></div>
-            <div><time>14:02:11</time><span class="client">Client  Hello from Cheeteau</span></div>
-            <div><time>14:02:12</time><span class="info">Info    Autosaved to Village.rbxl</span></div>
-            <div><time>14:02:14</time><span class="warn">Warning Infinite yield possible on 'Lamp'</span></div>
-            <div class="err"><time>14:02:15</time><span>Error   attempt to index nil with 'Position'</span></div>
-            <div><time>14:02:16</time><span class="server">Server  tick 3</span></div>
-          </div>
-        </section>
-        <section class="e-script">
-          <div class="e-stabs"><span class="e-stab">${icon("ui")}Place</span><span class="e-stab on"><img data-icon="script" alt="">Lights</span><span class="e-stab"><img data-icon="script" alt="">Doors</span></div>
+      <section class="e-center">
+        <div class="e-view"></div>
+        <div class="e-script">
+          <div class="e-stabs"><span class="e-stab on">${icon("file")}Lights${icon("x", "i xs")}</span><span class="sp"></span>${icon("bug")}</div>
+          <div class="e-stool"><span class="e-seg"><span class="on">Code</span><span>Graph</span></span><span class="e-vsep"></span><span class="e-crumb">${icon("cube")}Script <code>ServerScriptService.Lights</code></span><span class="sp"></span>${icon("undo")}${icon("redo")}${icon("wand")}<span class="e-vsep"></span><span class="px">13 px</span></div>
           <div class="e-code">
-            <div class="e-gutter">${Array.from({ length: 14 }, (_, i) => `<div>${i + 1}</div>`).join("")}</div>
+            <div class="e-gutter">${Array.from({ length: 12 }, (_, i) => `<div${i === 5 ? ' class="cur"' : ""}>${i + 1}</div>`).join("")}</div>
             <div class="e-lines">
               <div><span class="c">-- Turns the street lamps on at dusk</span></div>
-              <div><span class="k">local</span> Lighting = game:<span class="f">GetService</span>(<span class="s">"Lighting"</span>)</div>
-              <div><span class="k">local</span> lamps = workspace.Village:<span class="f">GetDescendants</span>()</div>
+              <div><span class="k">local</span> Lighting <span class="o">=</span> <span class="v">game</span>:<span class="f">GetService</span>(<span class="s">"Lighting"</span>)</div>
+              <div><span class="k">local</span> lamps <span class="o">=</span> <span class="v">workspace</span>.Village:<span class="f">GetDescendants</span>()</div>
               <div></div>
               <div><span class="k">local function</span> <span class="f">update</span>()</div>
-              <div class="cur">    <span class="k">local</span> night = Lighting.ClockTime &gt; <span class="n">18</span> <span class="k">or</span> Lighting.ClockTime &lt; <span class="n">6</span></div>
+              <div class="cur">    <span class="k">local</span> night <span class="o">=</span> Lighting.ClockTime <span class="o">&gt;</span> <span class="n">18</span> <span class="k">or</span> Lighting.ClockTime <span class="o">&lt;</span> <span class="n">6</span></div>
               <div>    <span class="k">for</span> _, lamp <span class="k">in</span> <span class="hl">lamps</span> <span class="k">do</span></div>
-              <div>        <span class="k">if</span> lamp:<span class="f">IsA</span>(<span class="s">"PointLight"</span>) <span class="k">then</span></div>
-              <div>            lamp.Enabled = night</div>
-              <div>        <span class="k">end</span></div>
+              <div>        <span class="k">if</span> lamp:<span class="f">IsA</span>(<span class="s">"PointLight"</span>) <span class="k">then</span> lamp.Enabled <span class="o">=</span> night <span class="k">end</span></div>
               <div>    <span class="k">end</span></div>
               <div><span class="k">end</span></div>
               <div></div>
               <div>Lighting:<span class="f">GetPropertyChangedSignal</span>(<span class="s">"ClockTime"</span>):<span class="f">Connect</span>(<span class="sq">updat</span>)</div>
             </div>
           </div>
-          <div class="e-status"><span>Ln 6, Col 18</span><span>Luau</span><span class="bad">1 error</span></div>
-        </section>
-      </div>
+          <div class="e-status"><span>Ln 6, Col 18 · Luau · <b class="bad">1 error</b></span><span>Luau</span></div>
+        </div>
+      </section>
       <section class="e-dock right">
-        <div class="e-dockhead"><b>Explorer</b><span class="x">✕</span><span class="more">···</span></div>
-        <div class="e-search">Search</div>
+        ${dockHead("Explorer")}
+        <div class="e-searchrow"><div class="e-search">Search</div>${icon("code")}</div>
         <div class="e-tree">
           ${node(0, "workspace", "Workspace", "open")}
           ${node(1, "camera", "Camera", "none")}
           ${node(1, "terrain", "Terrain", "none")}
-          ${node(1, "folder", "Village", "open")}
-          ${node(2, "model", "House", "")}
-          ${node(2, "model", "House", "")}
-          ${node(2, "model", "House", "", true)}
-          ${node(2, "model", "Tree", "")}
-          ${node(2, "part", "Baseplate", "none")}
-          ${node(2, "script", "Lights", "none")}
-          ${node(0, "players", "Players", "")}
-          ${node(0, "replicated-storage", "ReplicatedStorage", "")}
-          ${node(0, "server-script-service", "ServerScriptService", "")}
+          ${node(1, "spawn-location", "SpawnLocation", "closed", " sel")}
+          ${node(1, "part", "Baseplate", "closed")}
+          ${node(0, "players", "Players", "none")}
+          ${node(0, "light", "Lighting", "closed")}
+          ${node(0, "material-service", "MaterialService", "none")}
+          ${node(0, "replicated-storage", "ReplicatedFirst", "none")}
+          ${node(0, "replicated-storage", "ReplicatedStorage", "none")}
+          ${node(0, "server-script-service", "ServerScriptService", "closed")}
+          ${node(0, "server-storage", "ServerStorage", "none")}
+          ${node(0, "screen-gui", "StarterGui", "none")}
+          ${node(0, "backpack", "StarterPack", "none")}
+          ${node(0, "starter-player", "StarterPlayer", "closed")}
         </div>
       </section>
     </div>
+    <section class="e-out">
+      <div class="e-outhead">
+        <span class="e-otab on"><b>Output</b>${icon("x", "i xs")}</span><span class="e-otab">Viewport</span><span class="e-otab sc">Argon</span><span class="e-otab sc">Wally</span><span class="e-otab sc">Script Analysis</span><span class="e-otab sc">Watch</span><span class="e-otab sc">Call Stack</span>
+        <span class="e-vsep"></span><span class="runs">1 runs</span><span class="e-search grow">Search</span>
+        <span class="e-chips"><span class="on">All</span><span>Output</span><span>Info</span><span>Warnings</span><span>Errors</span></span>
+        <span class="e-ctx">All Contexts${icon("chev", "i xs")}</span><span class="clear">Clear</span>${icon("more")}${icon("chev")}
+      </div>
+      <div class="e-log">
+        <div class="row"><span class="kind">${icon("warn")}warning</span><span class="warn">Infinite yield possible on 'Workspace.Village:WaitForChild("Lamp")'</span></div>
+        <div class="row"><span class="kind srv">Server</span><span class="server">Village loaded: 42 houses</span></div>
+        <div class="row"><span class="kind cli">Client</span><span class="client">Hello from Cheeteau</span></div>
+        <div class="row err"><span class="kind">error</span><span>Workspace.Village.Lights:12: attempt to index nil with 'Position'</span></div>
+      </div>
+    </section>
+    <div class="e-cmd"><span class="e-cmdbox">${icon("right", "i xs")}<span>Execute a command with Ctrl+Enter or use Ctrl+Up/Down for history</span><b>Luau</b></span></div>
 `;
 }
 
-// Code colours: the toolkit's own palette for the mode (High contrast ships its own).
+// Code colours: GPUI Kit's own palette for the mode (High contrast ships its
+// own in widgets.json), which is what the editor paints with.
 const CODE = {
-  dark: { bg: "#1A1B1E", fg: "#D7D7DC", gutter: "#5C5C63", line: "#FFFFFF0A", kw: "#C792EA", str: "#C3E88D", num: "#F78C6C", fn: "#82AAFF", com: "#6B7080" },
-  light: { bg: "#FFFFFF", fg: "#1B1B1F", gutter: "#8C8C94", line: "#0000000A", kw: "#7B30D0", str: "#1C7A33", num: "#B4501E", fn: "#1F5FC4", com: "#7A7F8C" },
-  hc: { bg: "#000000", fg: "#FFFFFF", gutter: "#C8C8D0", line: "#FFFFFF1A", kw: "#B8C6FF", str: "#A8F0B0", num: "#FFD58F", fn: "#A6E2FF", com: "#D6CBA4" },
+  dark: { fg: "@text", kw: "#87B1F6", str: "#A3E09F", num: "#CC9E00", fn: "#B3C5F3", com: "#9D9D9D", var: "#87B1F6", line: "#FFFFFF08", warn: "#FACC15" },
+  light: { fg: "@text", kw: "#0433FF", str: "#036A07", num: "#0433FF", fn: "#0000A2", com: "#007FFF", var: "#0433FF", line: "#00000008", warn: "#B88400" },
+  hc: { fg: "#FFFFFF", kw: "#B8C6FF", str: "#A8F0B0", num: "#FFD58F", fn: "#A6E2FF", com: "#D6CBA4", var: "#FFBCD8", line: "#FFFFFF1A", warn: "#FFD58F" },
 };
 
 function applyPreview() {
@@ -533,6 +576,9 @@ function applyPreview() {
   ed.classList.toggle("blurred", state.window === "blurred");
   ed.classList.toggle("script", state.view === "script");
   $("desk").classList.toggle("solid", state.window === "opaque");
+  const docs = $("docs").children;
+  docs[0].classList.toggle("on", state.view !== "script");
+  docs[1].classList.toggle("on", state.view === "script");
   for (const img of ed.querySelectorAll("img[data-icon]")) {
     const src = cls(img.dataset.icon);
     if (img.getAttribute("src") !== src) img.src = src;
@@ -551,9 +597,9 @@ function fit() {
   const stage = $("stage"), scale = $("scale");
   const w = stage.clientWidth;
   const h = window.innerHeight - 190;
-  const k = Math.min(w / 1280, Math.max(h, 320) / 800, 1.25);
+  const k = Math.min(w / W, Math.max(h, 320) / H, 1);
   scale.style.transform = `scale(${k})`;
-  stage.style.height = 800 * k + "px";
+  stage.style.height = H * k + "px";
 }
 
 // ---------- Sync the form with the state ----------
@@ -649,12 +695,12 @@ function problems() {
 }
 
 async function preview() {
-  // Rendered from the live copy at its full 1280×800, as the card image.
+  // Rendered from the live copy, 1600×900 scaled to 1280×720, as the card image.
   const prev = state.view;
   if (prev !== "place") { state.view = "place"; applyPreview(); }
   $("pop").hidden = true;
   try {
-    return await window.htmlToImage.toBlob($("desk"), { width: 1280, height: 800, pixelRatio: 1, style: { transform: "none" }, cacheBust: true });
+    return await window.htmlToImage.toBlob($("desk"), { width: W, height: H, canvasWidth: 1280, canvasHeight: 720, pixelRatio: 1, style: { transform: "none" }, cacheBust: true });
   } finally {
     state.view = prev; applyPreview();
   }

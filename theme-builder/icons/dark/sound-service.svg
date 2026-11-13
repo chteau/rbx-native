@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sound-service.svg - tile 31 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>sound-service</title>
+  <path d="M2,6 L5.5,6 L9,3 L9,13 L5.5,10 L2,10 Z" fill="#A6B2C0"/>
+  <path d="M11,6 A3,3 0 0 1 11,10" fill="none" stroke="#A6B2C0" stroke-width="1"/>
+</svg>

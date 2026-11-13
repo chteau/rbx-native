@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- server-storage.svg - tile 69 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>server-storage</title>
+  <rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="#F3B44A"/>
+  <rect x="5" y="2.5" width="5" height="4" fill="#C88A28"/>
+  <rect x="4" y="9" width="8" height="3.5" rx="0.4" fill="#31373E"/>
+</svg>
