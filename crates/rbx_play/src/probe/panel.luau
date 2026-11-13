@@ -36,27 +36,68 @@ end
 
 -- Server: forwards the probe's own messages to the tester, batched once a
 -- frame so a print loop is one remote call per frame, not one per line.
-function M.server(remote, getTester)
+-- Nothing goes out until the tester's panel says it is listening
+-- (`panel_ready`); it then gets what it missed first: the last MAX_ROWS
+-- lines, the latest stats of each side and a pause still waiting, so the
+-- first prints of a game and a breakpoint hit at startup show up too.
+-- Returns `forward(message)` and `ready(player)`.
+function M.server(remote, getTester, Debug)
 	if not M.enabled() then
-		return nil
+		return nil, nil
 	end
+	local history = {}
+	local stats = {}
+	local pauses = {}
 	local pending = {}
+	local listening = nil
 	RunService.Heartbeat:Connect(function()
 		if #pending == 0 then
 			return
 		end
 		local tester = getTester()
-		if tester then
+		if tester and tester == listening then
 			remote:FireClient(tester, { kind = "panel", items = pending })
 		end
 		pending = {}
 	end)
-	return function(message)
+	local function forward(message)
 		local kind = message.type
-		if kind == "log" or kind == "stats" or kind == "paused" then
-			table.insert(pending, message)
+		if kind == "log" then
+			table.insert(history, message)
+			if #history > MAX_ROWS then
+				table.remove(history, 1)
+			end
+		elseif kind == "stats" then
+			stats[message.side or "server"] = message
+		elseif kind == "paused" then
+			pauses[message.side == "client" and "client" or "server"] = message
+		else
+			return
 		end
+		table.insert(pending, message)
 	end
+	local function ready(player)
+		if player ~= getTester() then
+			return
+		end
+		listening = player
+		local items = table.clone(history)
+		for _, message in stats do
+			table.insert(items, message)
+		end
+		local server = pauses.server
+		if server and Debug.isPaused(server.pause) then
+			table.insert(items, server)
+		end
+		-- The client checks its own side's pause is still live.
+		if pauses.client then
+			table.insert(items, pauses.client)
+		end
+		-- Anything queued this frame is in `history` already.
+		pending = {}
+		remote:FireClient(player, { kind = "panel", items = items })
+	end
+	return forward, ready
 end
 
 -- "#rrggbb" or "#rrggbbaa" -> Color3, transparency.
@@ -709,7 +750,9 @@ function M.client(remote, Debug)
 		refilter()
 	end)
 	UserInputService.InputBegan:Connect(function(input, processed)
-		if not processed and input.KeyCode == TOGGLE_KEY then
+		-- `processed` is also true when Roblox's own UI has the keyboard
+		-- (a menu, a toast), which ate F8 once; only typing should.
+		if input.KeyCode == TOGGLE_KEY and not UserInputService:GetFocusedTextBox() then
 			setOpen(not panel.Visible)
 		end
 	end)
@@ -773,13 +816,18 @@ function M.client(remote, Debug)
 				elseif item.type == "stats" then
 					setStats(item.side, item.metrics)
 				elseif item.type == "paused" then
-					paused(item)
+					-- A replayed client pause may have been resumed meanwhile.
+					if item.side ~= "client" or Debug.isPaused(item.pause) then
+						paused(item)
+					end
 				end
 			end
 		end
 	end)
 
 	gui.Parent = player:WaitForChild("PlayerGui")
+	-- Listening now: the server sends what this panel missed, then live.
+	remote:FireServer({ kind = "panel_ready" })
 end
 
 return M

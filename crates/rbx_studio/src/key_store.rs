@@ -84,10 +84,28 @@ const RESTORE_TIMEOUT: Duration = Duration::from_secs(5);
 static STALLED: AtomicBool = AtomicBool::new(false);
 
 /// [`restore`] with [`RESTORE_TIMEOUT`]: `None` when the store did not
-/// answer in time, and the launch goes on without a key.
+/// answer in time, and the launch goes on without a key. The read itself
+/// keeps going: a macOS Keychain prompt the user answers later (every new
+/// build of an app without an Apple team asks once) still loads the key,
+/// and Home picks it up then, no restart needed.
 pub(crate) async fn restore_at_startup(cx: &mut AsyncApp) -> Option<bool> {
     let executor = cx.background_executor().clone();
-    let restored = within(restore(cx), RESTORE_TIMEOUT, &executor).await;
+    let (tx, rx) = futures::channel::oneshot::channel();
+    cx.spawn(async move |cx| {
+        let has_key = restore(cx).await;
+        if let Err(has_key) = tx.send(has_key) {
+            // Startup stopped waiting: this is the late answer.
+            STALLED.store(false, Ordering::Relaxed);
+            eprintln!(
+                "rbxstudio: the OS credential store answered after all; key loaded: {has_key}"
+            );
+            cx.update(crate::launcher::reload_home);
+        }
+    })
+    .detach();
+    let restored = within(rx, RESTORE_TIMEOUT, &executor)
+        .await
+        .and_then(Result::ok);
     if restored.is_none() {
         eprintln!(
             "rbxstudio: the OS credential store did not answer within {}s; starting without the saved key",

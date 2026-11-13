@@ -96,7 +96,7 @@ DOC and HDR are the `master` copies, not a 2.2.2 tag. [Unknown whether master di
 
 ### macOS
 
-- **Elevation.** The root helper shell script is installed once, through `osascript` with `do shell script ... with administrator privileges`, as the launchd daemon `io.github.chteau.rbx-native.netsim` (`/Library/PrivilegedHelperTools` + `/Library/LaunchDaemons`). Later Plays never prompt. Settings › Files › Play › Network helper removes it (one more prompt).
+- **Elevation.** The root helper shell script is installed once, through `osascript` with `do shell script ... with administrator privileges`, as the launchd daemon `io.github.chteau.rbx-native.netsim` (`/Library/PrivilegedHelperTools` + `/Library/LaunchDaemons`). Later Plays never prompt. Settings › Account › Play › Network helper removes it (one more prompt).
   - The install command copies the helper and the plist into their root-owned places, then checks both against SHA-256 hashes the editor took before the prompt, so swapping the user-writable originals in between gains nothing. A helper whose `hello VERSION` differs from the bundled one is reinstalled.
   - The daemon is `inetdCompatibility` on a Unix socket at `/var/run/io.github.chteau.rbx-native.netsim.sock`, `SockPathOwner` = the installing user and mode 0600, so no other account can drive it. launchd runs one helper per connection with the socket as stdin/stdout.
   - Each prompt was a tester complaint (2026-11-13): the first build asked on every Play.

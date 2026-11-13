@@ -1156,6 +1156,13 @@ impl Shell {
             #[cfg(target_os = "macos")]
             rbx_play::mac_client::quit();
         }
+        // macOS: one helper connection per Play, closed here so its rules go
+        // with the test. The installed helper means reconnecting costs no
+        // prompt (Linux keeps its namespace, Windows its elevated helper).
+        #[cfg(target_os = "macos")]
+        {
+            self.play.network.shaper = None;
+        }
         self.play.job_id = None;
         self.play.stats = PlayStats::default();
         self.play.confirm_close = false;

@@ -47,13 +47,21 @@ local function post(items)
 	return ok and res.Success
 end
 
--- The in-game dev panel's relay (macOS Play), set once the remote exists.
+-- The in-game dev panel's relay (macOS Play), set once the remote exists;
+-- what comes before that waits in `early` (a game's first prints).
 local panelForward = nil
+local panelReady = nil
+local early = {}
 
 local function queue(message)
 	table.insert(buffer, message)
 	if panelForward then
 		panelForward(message)
+	elseif early then
+		table.insert(early, message)
+		if #early > 1000 then
+			table.remove(early, 1)
+		end
 	end
 end
 
@@ -131,9 +139,15 @@ end)
 Debug.attach("server", queue)
 
 local remote = ReplicatedStorage:WaitForChild("__rbxnative_remote")
-panelForward = require(ReplicatedStorage:WaitForChild("__rbxnative_panel")).server(remote, function()
+panelForward, panelReady = require(ReplicatedStorage:WaitForChild("__rbxnative_panel")).server(remote, function()
 	return tester
-end)
+end, Debug)
+if panelForward then
+	for _, message in early do
+		panelForward(message)
+	end
+end
+early = nil
 local Record = require(ReplicatedStorage:WaitForChild("__rbxnative_record"))
 Record.startServer(queue, t0, remote)
 
@@ -149,6 +163,12 @@ remote.OnServerEvent:Connect(function(player, payload)
 	end
 	if payload.kind == "teleport" then
 		teleporting[player] = payload.started == true or nil
+		return
+	end
+	if payload.kind == "panel_ready" then
+		if panelReady then
+			panelReady(player)
+		end
 		return
 	end
 	if payload.kind == "panel_resume" then

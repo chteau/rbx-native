@@ -185,6 +185,12 @@ function D.hit(id, line, names, values, cond, log, cont)
 	stop(thread, id, line, names, values, depth)
 end
 
+-- Whether pause `pause` is still waiting (the dev panel replays only live
+-- pauses to a panel that connects late).
+function D.isPaused(pause)
+	return pauses[pause] ~= nil
+end
+
 function D.attach(newSide, fn)
 	side = newSide
 	isServer = side == "server"
