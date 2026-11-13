@@ -44,4 +44,4 @@ if [ -z "$hash" ]; then
   exit 1
 fi
 codesign --force --deep --sign "$hash" --keychain "$keychain" --identifier "$identifier" --timestamp=none "$target"
-codesign -dv "$target" 2>&1 | grep -E "Identifier|Authority|Signature"
+codesign -dvv "$target" 2>&1 | grep -E "Identifier|Authority|Signature"
