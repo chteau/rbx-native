@@ -52,7 +52,7 @@ something's broken anyway, open an issue.
 |---|---|
 | Linux (X11) | Main target. I use it on this every day. |
 | Windows | **Supported, the editor runs.** CI runs clippy, the build and the tests on `windows-latest` for every change. Known gaps are listed under [Platform](ROADMAP.md#platform) in the roadmap. If something breaks on your machine, please open an issue. |
-| macOS | Not supported. CI builds it and runs the tests on `macos-latest` so it keeps compiling, but nobody actually runs the editor there. |
+| macOS | **Alpha, tested on Apple Silicon.** The editor runs, but Play works differently than on Linux and Windows: macOS has no way to put another app's window inside ours, so the game can't show up in the 3D view. Play opens Roblox full screen instead (it needs Accessibility access for that, otherwise it stays windowed), the 3D view gets blurred with a note and a Show Roblox button, and the game gets an RbxNative panel (F8) with Output, stats and the debugger's step buttons. |
 | Wayland | Works, but without pointer lock (the cursor isn't captured). |
 
 ## Installing
