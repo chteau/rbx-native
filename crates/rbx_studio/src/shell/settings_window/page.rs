@@ -161,7 +161,11 @@ impl SettingsWindow {
                             })),
                     )
                 } else {
-                    this.child(kit::key_hint("Ctrl F"))
+                    this.child(kit::key_hint(if cfg!(target_os = "macos") {
+                        "⌘F"
+                    } else {
+                        "Ctrl F"
+                    }))
                 }
             })
             .into_any_element()

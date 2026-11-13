@@ -300,6 +300,17 @@ impl WeakDom {
         });
     }
 
+    /// Whether `referent` sits in the place's tree: alive, and its topmost
+    /// ancestor is a root rather than an instance parented to nil. Only
+    /// these are saved and listed, so only edits to them change the place.
+    pub fn in_tree(&self, referent: Ref) -> bool {
+        let mut top = referent;
+        while let Some(parent) = self.parents.get(&top) {
+            top = *parent;
+        }
+        self.instances.contains_key(&top) && !self.unparented.contains(&top)
+    }
+
     /// Parents `child` to nil, as a script does. It stays alive, but it is no
     /// root: [`WeakDom::root_refs`] leaves it out until it gets a parent again.
     pub fn unparent(&mut self, child: Ref) {
@@ -405,6 +416,23 @@ mod tests {
         dom.remove(child);
         assert!(dom.get(child).is_none());
         assert_eq!(dom.root_refs(), [parent]);
+    }
+
+    #[test]
+    fn in_tree_follows_the_topmost_ancestor() {
+        let mut dom = WeakDom::new();
+        let root = dom.new_instance("Folder", "Root", None);
+        let part = dom.new_instance("Part", "Part", Some(root));
+        let gui = dom.new_instance("ScreenGui", "Gui", None);
+        let label = dom.new_instance("TextLabel", "Label", Some(gui));
+        dom.unparent(gui);
+
+        assert!(dom.in_tree(root) && dom.in_tree(part));
+        assert!(!dom.in_tree(gui) && !dom.in_tree(label));
+        dom.set_parent(gui, Some(root));
+        assert!(dom.in_tree(label));
+        dom.remove(gui);
+        assert!(!dom.in_tree(label));
     }
 
     #[test]
