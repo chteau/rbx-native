@@ -806,8 +806,8 @@ impl B<'_> {
         }
         self.colls.push(Coll::default());
         let mut declares = Vec::new();
-        for k in i..j {
-            if let Some(d) = self.fold_local(&b.items[k]) {
+        for item in &b.items[i..j] {
+            if let Some(d) = self.fold_local(item) {
                 declares.push(d);
             }
         }

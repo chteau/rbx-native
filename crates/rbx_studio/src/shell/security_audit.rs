@@ -126,8 +126,9 @@ impl Shell {
                 .take_while(|finding| &finding.path == path)
                 .count();
             list = list.child(path_row(path, run));
-            for offset in index..index + run {
-                list = list.child(finding_row(offset, &self.audit.findings[offset], cx));
+            let findings = self.audit.findings.iter().enumerate();
+            for (offset, finding) in findings.skip(index).take(run) {
+                list = list.child(finding_row(offset, finding, cx));
             }
             index += run;
         }
