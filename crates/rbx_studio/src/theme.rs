@@ -25,6 +25,7 @@ use gpui_kit::component::ThemeMode;
 use gpui_kit::{BoxShadow, ObjectFit, Rgba, WindowBackgroundAppearance};
 
 mod apply;
+mod blur;
 mod github;
 mod overrides;
 mod pack;

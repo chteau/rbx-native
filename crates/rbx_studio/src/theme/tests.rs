@@ -252,9 +252,63 @@ fn a_background_image_must_be_an_image_inside_the_theme() {
         r#"{"background":{"image":"art/bg.png","opacity":2}}"#,
         r#"{"background":{"image":"art/bg.png","fit":"tile"}}"#,
         r#"{"background":{"image":"art/bg.png","layer":"sideways"}}"#,
+        r#"{"background":{"image":"art/bg.png","blur":65}}"#,
+        r#"{"background":{"image":"art/bg.png","blur":-1}}"#,
     ] {
         assert!(palette_of(bad, Some(&dir)).is_err(), "{bad}");
     }
+
+    // An image that cannot be decoded keeps painting sharp.
+    let (palette, _) = palette_of(
+        r#"{"background":{"image":"art/bg.png","blur":64}}"#,
+        Some(&dir),
+    )
+    .unwrap();
+    assert_eq!(
+        palette.effects.background.unwrap().path,
+        dir.join("art/bg.png")
+    );
+}
+
+#[test]
+fn a_blurred_background_paints_a_cached_softened_copy() {
+    let dir = scratch();
+    let sharp = image::RgbaImage::from_fn(2000, 1000, |x, y| {
+        let on = (x / 2 + y / 2) % 2 == 0;
+        image::Rgba(if on {
+            [255, 255, 255, 255]
+        } else {
+            [0, 0, 0, 255]
+        })
+    });
+    sharp.save(dir.join("bg.png")).unwrap();
+    let json = r#"{"background":{"image":"bg.png","blur":24}}"#;
+
+    let path = palette_of(json, Some(&dir))
+        .unwrap()
+        .0
+        .effects
+        .background
+        .unwrap()
+        .path;
+    assert!(
+        path.starts_with(super::blur::cache_dir().unwrap()),
+        "{path:?}"
+    );
+    let blurred = image::open(&path).unwrap().to_rgba8();
+    assert_eq!(blurred.dimensions(), (super::blur::MAX_SIDE, 640));
+    // A fine checkerboard blurred that hard is flat grey.
+    let [r, ..] = blurred.get_pixel(640, 320).0;
+    assert!((100..=155).contains(&r), "{r}");
+
+    let again = palette_of(json, Some(&dir))
+        .unwrap()
+        .0
+        .effects
+        .background
+        .unwrap()
+        .path;
+    assert_eq!(again, path);
 }
 
 // ---------------------------------------------------------------- packs
