@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
-use gpui_kit::component::IndexPath;
+use gpui_kit::component::{IndexPath, Root};
 use gpui_kit::*;
 use rbx_cloud::{Experience, Experiences, Grant, KeyReport};
 
@@ -360,6 +360,21 @@ impl HomeWindow {
 
     pub(super) fn has_key(&self) -> bool {
         !matches!(self.key, KeyState::Missing)
+    }
+}
+
+/// Re-reads the key and My Games in every open Home window: the Keychain
+/// answered after startup stopped waiting on it.
+pub(crate) fn reload_all(cx: &mut App) {
+    for window in cx.windows() {
+        let Some(root) = window.downcast::<Root>() else {
+            continue;
+        };
+        let _ = root.update(cx, |root, _, cx| {
+            if let Ok(home) = root.view().clone().downcast::<HomeWindow>() {
+                home.update(cx, |home, cx| home.reload(cx));
+            }
+        });
     }
 }
 

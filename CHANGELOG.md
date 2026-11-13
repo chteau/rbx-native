@@ -2,10 +2,15 @@
 
 ## 2026-11-13
 
+- **Late Keychain answers count.** If macOS asks for your Keychain password at launch and you answer after a few seconds, the saved key now loads right then and Home refreshes. Before, you had to restart.
+- **The in-game panel misses nothing.** The RbxNative panel now gets everything printed before it opened (a game's very first prints too), the latest stats and a breakpoint already paused, so the first pause shows its Continue / Step bar.
+- **F8 always opens the panel**, unless you're typing in a text box. Roblox's own menus used to swallow it.
+- **Network helper connection ends with the test** on Mac, so nothing stays connected between Plays.
+
 - **Play on macOS runs the game in the Roblox app.** macOS can't put another app's window inside the editor, so instead of a half-working overlay, Play opens Roblox full screen and blurs the 3D view with a note and a Show Roblox button. Stop quits the player too. Full screen needs Accessibility access; without it Roblox stays windowed and Output says what to allow.
 - **RbxNative panel in the game (macOS).** Press F8 or click the RbxNative chip in the corner: Output from the client and the server with the same filters as the editor's, client and server stats, and Continue / Step buttons when the debugger pauses, so you don't have to leave full screen. It uses your editor theme's colours.
 - **Fewer Mac password prompts.** The Mac build is now signed with RbxNative's own certificate, the same one every build, so "Always Allow" on the Keychain prompt and the Accessibility permission stay after an update instead of asking again. macOS still asks the first time you open it (we're not an Apple-paid developer).
-- **Network simulator asks once on Mac.** The first shaped Play installs a small helper and asks for your password, then never again. Settings › Files › Play › Network helper removes it.
+- **Network simulator asks once on Mac.** The first shaped Play installs a small helper and asks for your password, then never again. Settings › Account › Play › Network helper removes it.
 
 ## 2026-11-09
 
