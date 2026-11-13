@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- terrain.svg - tile 65 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>terrain</title>
+  <path d="M0,10 Q4,5 8,9 T16,8 L16,16 L0,16 Z" fill="#14682D"/>
+  <path d="M0,13 Q5,9 9,12 T16,11 L16,16 L0,16 Z" fill="#1C8D3E"/>
+</svg>
