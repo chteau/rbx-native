@@ -125,21 +125,28 @@ input[type="range"] { accent-color: var(--indigo); width: 100%; margin: 0; }
 .pv-note { font-size: 13px; color: var(--dim); margin: 0; }
 
 /* The desktop behind a see-through window. */
-.desk { width: 1600px; height: 900px; border-radius: 10px; overflow: hidden; position: relative;
+.desk { width: 1600px; height: 900px; border-radius: 0; overflow: hidden; position: relative;
   background: var(--wall, radial-gradient(120% 90% at 15% 10%, #f28b55 0%, #c0447a 38%, #4a2c8f 70%, #1b1d4a 100%)); }
 .desk.solid { background: #000; }
-.desk.solid .ed { backdrop-filter: none; }
+.desk.solid .ed .wallblur { display: none; }
 
 /* ---------- The editor copy ---------- */
 .ed {
   --ui: Manrope; --mono-font: "JetBrains Mono";
   position: absolute; inset: 0; display: flex; flex-direction: column;
-  background: var(--c-black); color: var(--c-text);
+  color: var(--c-text);
   font-family: var(--ui), Manrope, system-ui, sans-serif; font-weight: 500;
   font-size: calc(var(--s-text_md) * 1px); line-height: calc(var(--s-line_md) * 1px);
   -webkit-font-smoothing: antialiased; overflow: hidden; isolation: isolate;
 }
-.ed.blurred { backdrop-filter: blur(28px) saturate(1.2); }
+/* Layers from the bottom, as the editor paints them: the desktop behind
+   (blurred when the window is Blurred, sigma 24 like the editor's own), the
+   ground (`black`), the background image, then the UI. */
+.ed .wallblur { position: absolute; inset: -72px; z-index: -3; background: var(--wall); filter: blur(24px); display: none; pointer-events: none; }
+.ed.blurred .wallblur { display: block; }
+.ed .ground { position: absolute; inset: 0; z-index: -2; background: var(--c-black); pointer-events: none; }
+/* The window's own 1px frame (square corners), drawn over everything like the toolkit's. */
+.ed::after { content: ""; position: absolute; inset: 0; border: 1px solid #333333; pointer-events: none; z-index: 30; }
 .ed * { box-sizing: border-box; }
 .ed svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .ed .bg { position: absolute; inset: 0; z-index: -1; background-repeat: no-repeat; pointer-events: none; }

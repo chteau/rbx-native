@@ -447,6 +447,7 @@ function buildPreview() {
   const dockHead = title => `<div class="e-dockhead"><span class="e-dtab"><b>${title}</b>${icon("x", "i xs")}</span><span class="e-vsep"></span><span class="more">${icon("more")}</span></div>`;
   const docTab = (i, label, on, closable) => `<span class="e-doc hov${on ? " on" : ""}" data-doc="${on}">${icon(i)}${label}${closable ? icon("x", "i xs") : ""}</span>`;
   $("ed").innerHTML = `
+    <div class="wallblur"></div><div class="ground"></div>
     <div class="bg" id="bg"></div>
     <div class="e-title">${LOGO}<span class="e-name"><b>RbxNative</b><i></i><span>Village.rbxl</span></span><span class="e-wc">${icon("min")}${icon("max")}${icon("close")}</span></div>
     <div class="e-menu"><span>File</span><span>Edit</span><span>Model</span><span>View</span></div>
