@@ -126,3 +126,16 @@ this crate's own tests need fonts from outside it and do not build here.
 To upgrade GPUI: re-copy the matching `gpui-pre` from
 `~/.cargo/registry/src/*/`, drop the example and test targets from its
 `Cargo.toml`, re-apply the three marked pieces, and bump the version.
+
+## `gpui-pre-apple` (0.3.4, Apache-2.0, `zed-industries/zed`'s `gpui_apple` as published)
+
+Unmodified crates.io 0.3.4 source (its `Cargo.lock` and `.cargo-ok` dropped)
+but for one fix in `src/metal_renderer.rs`, marked "rbx-native fix": the
+sprite and path pipelines blend the destination alpha with
+`OneMinusSourceAlpha` instead of `One`. Upstream adds the alphas of
+stacked shapes, so on macOS a 67% dock over a 67% background came out fully
+opaque (Linux and Windows composite them as 89%), and see-through themes
+showed nothing behind the docks, ribbon or text boxes. Colour blending is
+unchanged; only the window's coverage, which the macOS compositor reads,
+is. Re-apply it (two lines) when upgrading with `gpui-pre`.
+

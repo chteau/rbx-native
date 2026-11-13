@@ -61,3 +61,6 @@ gpui-base = { path = "vendor/gpui-base" }
 # gpui-pre 0.3.4 unchanged but for the marked hover-transition addition (see
 # `vendor/README.md`).
 gpui-pre = { path = "vendor/gpui-pre" }
+# macOS alpha blending: `vendor/gpui-pre-apple` is gpui-pre-apple 0.3.4
+# unchanged but for the marked Metal blend fix (see `vendor/README.md`).
+gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
