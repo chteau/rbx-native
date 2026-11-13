@@ -29,7 +29,11 @@ impl Shell {
 
     /// The veil over the 3D view, when it is up; also blurs or un-blurs the
     /// view's picture to match.
-    pub(in crate::shell) fn play_veil(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(in crate::shell) fn play_veil(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let veiled = self.play_veiled();
         self.viewport
             .update(cx, |view, cx| view.set_veiled(veiled, window, cx));
@@ -102,7 +106,9 @@ impl Shell {
         if !rbx_play::mac_client::bring_to_front() {
             self.output.push(
                 super::session::PLAY_SOURCE,
-                crate::command_bar::Feedback::Warning("Roblox isn\u{2019}t running anymore.".to_owned()),
+                crate::command_bar::Feedback::Warning(
+                    "Roblox isn\u{2019}t running anymore.".to_owned(),
+                ),
             );
         }
         cx.notify();

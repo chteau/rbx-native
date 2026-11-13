@@ -183,7 +183,12 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, rs, INPUT_NAME);
 
     let panel = dom.new_instance("ModuleScript", PANEL_NAME, Some(rs));
-    set_prop(dom, panel, "Source", Variant::String(PROBE_PANEL.to_owned()));
+    set_prop(
+        dom,
+        panel,
+        "Source",
+        Variant::String(PROBE_PANEL.to_owned()),
+    );
     if let Some(theme) = &config.panel_theme {
         let attrs = BTreeMap::from([("THEME".to_owned(), Variant::String(theme.clone()))]);
         set_attributes(dom, panel, &attrs);
