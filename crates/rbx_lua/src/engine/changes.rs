@@ -200,6 +200,10 @@ pub(crate) fn fire_changes(lua: &Lua, changes: &[Change], first: Option<u64>) ->
         };
         match change {
             Change::Property { referent, name } => firing.property(&ctx, *referent, name)?,
+            // Gone by now (an undo took back an insert): its `Destroying`
+            // comes from `Removed`, and a `ChildAdded` handler reading the
+            // child's `Name` would only hit a destroyed instance.
+            Change::Parent { referent, .. } if ctx.dom().get(*referent).is_none() => {}
             Change::Parent { referent, old, new } => firing.parent(*referent, *old, *new)?,
             Change::Added(referent) => {
                 // `new_instance` with a parent logs the parenting too; that

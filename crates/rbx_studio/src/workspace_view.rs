@@ -54,7 +54,7 @@ use crate::settle::Settle;
 use crate::transform::{self, Targets, Transform};
 use crate::{display, pacing, tokens};
 pub(crate) use canvas::{Canvas, CanvasUpdated};
-use frame::{device_pixels, render_image, Viewport};
+use frame::{blurred, device_pixels, render_image, Viewport};
 use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
 pub(crate) use joints::JointPhase;
@@ -326,6 +326,10 @@ pub(crate) struct WorkspaceView {
     /// `Pump::resting`.
     resting: bool,
     frame: Option<Arc<RenderImage>>,
+    /// While a test runs where the game can't be shown here (macOS), the
+    /// view is veiled: a blurred copy of the last frame stands in for the
+    /// live one. `Some(None)`: veiled with no frame to blur.
+    veil: Option<Option<Arc<RenderImage>>>,
     /// One display refresh: the budget a frame is given while the window is
     /// focused. Fixed for the life of the view, see `pacing` for the
     /// unfocused cap this and the window's focus state combine into.
@@ -548,6 +552,7 @@ impl WorkspaceView {
             missed_paints: 0,
             resting: false,
             frame: None,
+            veil: None,
             full_interval,
             interval,
             pacing,
@@ -787,6 +792,10 @@ impl WorkspaceView {
         }
 
         self.frame = render_image(pixels, size.0, size.1);
+        if matches!(self.veil, Some(None)) {
+            // Veiled before any frame was drawn: the first one is the still.
+            self.veil = Some(self.frame.as_deref().and_then(blurred));
+        }
         cx.notify();
         self.pump.stats().uploaded(started.elapsed());
     }
@@ -1000,6 +1009,28 @@ impl WorkspaceView {
     /// the viewer, so it takes the change between two frames.
     pub(crate) fn set_camera_feel(&self, feel: rbx_viewer::CameraFeel) {
         self.pump.camera_feel(feel);
+    }
+
+    /// Veils the view (a blurred still of the last frame) or lifts the veil.
+    pub(crate) fn set_veiled(&mut self, veiled: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if veiled == self.veil.is_some() {
+            return;
+        }
+        if let Some(Some(old)) = self.veil.take() {
+            cx.drop_image(old, Some(window));
+        }
+        if veiled {
+            self.veil = Some(self.frame.as_deref().and_then(blurred));
+        }
+        cx.notify();
+    }
+
+    /// The live frame, or the veil's still while veiled.
+    fn shown_frame(&self) -> Option<Arc<RenderImage>> {
+        match &self.veil {
+            Some(still) => still.clone(),
+            None => self.frame.clone(),
+        }
     }
 
     /// Drops the viewer while the place is off screen, or brings it back;
@@ -1413,7 +1444,7 @@ impl Render for WorkspaceView {
                     }
                 }
             }))
-            .when_some(self.frame.clone(), |this, frame| {
+            .when_some(self.shown_frame(), |this, frame| {
                 // Letterboxed, the frame goes exactly where the pointer
                 // mapping has it (`Viewport::letterboxed`, from the last
                 // layout), not wherever the image's own sizing would put it.

@@ -19,6 +19,8 @@
 //! - `live`: a side's live instance tree as a `WeakDom`, from `Tree`/`Diff`/`Props`.
 //! - `embed`: puts the client's window, frameless, into the viewport (Linux
 //!   X11 and Windows).
+//! - `mac_client`: the player on macOS, which can't be embedded: full screen
+//!   and bring-to-front.
 
 pub mod channel;
 #[cfg(any(target_os = "linux", windows))]
@@ -30,6 +32,8 @@ pub mod instrument;
 pub mod keycode;
 pub mod launch;
 pub mod live;
+#[cfg(target_os = "macos")]
+pub mod mac_client;
 pub mod market;
 pub mod netsim;
 pub mod print;

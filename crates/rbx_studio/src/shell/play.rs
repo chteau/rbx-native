@@ -52,11 +52,15 @@ pub(in crate::shell) mod cloudflared;
 pub(crate) mod copy_name;
 pub(crate) mod debug;
 pub(crate) mod live;
+#[cfg(target_os = "macos")]
+mod mac;
 pub(in crate::shell) mod network;
+mod panel;
 mod server_authority;
 pub(crate) mod session;
 #[cfg(target_os = "linux")]
 mod slirp4netns;
+mod veil;
 
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -524,6 +528,7 @@ impl Shell {
                 token: token.as_str().to_owned(),
                 session: session.clone(),
                 device,
+                panel_theme: panel::ENABLED.then(panel::theme),
             };
             let prepared = match cx
                 .background_spawn(async move { session::prepare(&dom, &probe, &debug_requests, record_hz) })
@@ -667,6 +672,13 @@ impl Shell {
                 let Ok(Ok(target)) = target else {
                     return;
                 };
+
+                // macOS can't embed the game: it goes full screen instead.
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = target;
+                    let _ = this.update(cx, |shell, cx| shell.play_mac_full_screen(cx));
+                }
 
                 #[cfg(any(target_os = "linux", windows))]
                 if let Some(target) = target {
@@ -1138,6 +1150,11 @@ impl Shell {
             drop(running.client);
             #[cfg(any(target_os = "linux", windows))]
             drop(running.embedded);
+            // The player on macOS is often Roblox's own tray process rather
+            // than one Play started, and left alone it sits on a "kicked"
+            // dialog once the server shuts down.
+            #[cfg(target_os = "macos")]
+            rbx_play::mac_client::quit();
         }
         self.play.job_id = None;
         self.play.stats = PlayStats::default();

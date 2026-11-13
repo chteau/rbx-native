@@ -47,8 +47,14 @@ local function post(items)
 	return ok and res.Success
 end
 
+-- The in-game dev panel's relay (macOS Play), set once the remote exists.
+local panelForward = nil
+
 local function queue(message)
 	table.insert(buffer, message)
+	if panelForward then
+		panelForward(message)
+	end
 end
 
 local function flush()
@@ -125,6 +131,9 @@ end)
 Debug.attach("server", queue)
 
 local remote = ReplicatedStorage:WaitForChild("__rbxnative_remote")
+panelForward = require(ReplicatedStorage:WaitForChild("__rbxnative_panel")).server(remote, function()
+	return tester
+end)
 local Record = require(ReplicatedStorage:WaitForChild("__rbxnative_record"))
 Record.startServer(queue, t0, remote)
 
@@ -140,6 +149,14 @@ remote.OnServerEvent:Connect(function(player, payload)
 	end
 	if payload.kind == "teleport" then
 		teleporting[player] = payload.started == true or nil
+		return
+	end
+	if payload.kind == "panel_resume" then
+		-- The dev panel's stepping buttons, for a pause on the server.
+		local cmd = payload.command
+		if player == tester and type(cmd) == "table" and cmd.type == "debug_resume" then
+			Debug.command(cmd)
+		end
 		return
 	end
 	if payload.kind == "msg" then

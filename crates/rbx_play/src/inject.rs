@@ -51,6 +51,9 @@ pub const INPUT_NAME: &str = "__rbxnative_input";
 /// `__rbxnative_stats`: the server probe's once-a-second playtest stats.
 pub const PROBE_STATS: &str = include_str!("probe/stats.luau");
 pub const STATS_NAME: &str = "__rbxnative_stats";
+/// `__rbxnative_panel`: the in-game dev panel (macOS Play, see the module).
+pub const PROBE_PANEL: &str = include_str!("probe/panel.luau");
+pub const PANEL_NAME: &str = "__rbxnative_panel";
 pub const DEBUG_NAME: &str = "__rbxnative_debug";
 pub const CODEC_NAME: &str = "__rbxnative_codec";
 pub const LIVE_NAME: &str = "__rbxnative_live";
@@ -80,6 +83,9 @@ pub struct ProbeConfig {
     /// none. Attribute `DEVICE` on `__rbxnative_touch_proxy`, so the client
     /// simulates it whatever the Roblox client itself was started as.
     pub device: String,
+    /// The editor's theme colours as JSON for the in-game dev panel, which
+    /// is off when `None`. Attribute `THEME` on `PANEL_NAME`.
+    pub panel_theme: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +166,7 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
     remove_named(dom, rs, crate::exec::FIU_NAME);
     remove_named(dom, rs, crate::exec::EXEC_NAME);
     remove_named(dom, rs, STATS_NAME);
+    remove_named(dom, rs, PANEL_NAME);
 
     for (name, source) in [
         (
@@ -174,6 +181,18 @@ pub fn inject(dom: &mut WeakDom, config: &ProbeConfig) -> Result<Injected, Injec
         set_prop(dom, module, "Source", Variant::String(source));
     }
     remove_named(dom, rs, INPUT_NAME);
+
+    let panel = dom.new_instance("ModuleScript", PANEL_NAME, Some(rs));
+    set_prop(
+        dom,
+        panel,
+        "Source",
+        Variant::String(PROBE_PANEL.to_owned()),
+    );
+    if let Some(theme) = &config.panel_theme {
+        let attrs = BTreeMap::from([("THEME".to_owned(), Variant::String(theme.clone()))]);
+        set_attributes(dom, panel, &attrs);
+    }
 
     let record = dom.new_instance("ModuleScript", crate::record::RECORD_NAME, Some(rs));
     set_prop(

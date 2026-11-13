@@ -2,6 +2,7 @@ use mlua::Lua;
 
 const SERVER: &str = include_str!("../src/probe/server.luau");
 const CLIENT: &str = include_str!("../src/probe/client.luau");
+const PANEL: &str = include_str!("../src/probe/panel.luau");
 
 fn compiles(name: &str, src: &str) {
     Lua::new()
@@ -19,6 +20,11 @@ fn server_probe_compiles() {
 #[test]
 fn client_probe_compiles() {
     compiles("client.luau", CLIENT);
+}
+
+#[test]
+fn dev_panel_compiles() {
+    compiles("panel.luau", PANEL);
 }
 
 #[test]

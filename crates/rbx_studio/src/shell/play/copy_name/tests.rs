@@ -1,4 +1,4 @@
-use super::{render, DEFAULT, MAX_CHARS};
+use super::{render, unmark, DEFAULT, MAX_CHARS};
 
 #[test]
 fn default_template_marks_the_place_as_a_test() {
@@ -43,4 +43,32 @@ fn multibyte_characters_are_never_split() {
     let out = render("{place}", &place).unwrap();
     assert_eq!(out.chars().count(), MAX_CHARS);
     assert!(out.chars().all(|c| c == 'é' || c == '😀'));
+}
+
+#[test]
+fn a_name_that_already_has_the_mark_keeps_one() {
+    assert_eq!(
+        render(DEFAULT, "Obby (Play)").as_deref(),
+        Some("Obby (Play)")
+    );
+    assert_eq!(
+        render(DEFAULT, "Obby (Play) (Play)").as_deref(),
+        Some("Obby (Play)")
+    );
+    assert_eq!(
+        render("Test: {place}", "Test: Obby").as_deref(),
+        Some("Test: Obby")
+    );
+    assert_eq!(
+        render(DEFAULT, "Obby (Playground)").as_deref(),
+        Some("Obby (Playground) (Play)")
+    );
+}
+
+#[test]
+fn unmark_takes_off_every_layer_of_the_mark() {
+    assert_eq!(unmark(DEFAULT, "wintest (Play) (Play) (Play)"), "wintest");
+    assert_eq!(unmark(DEFAULT, "Obby"), "Obby");
+    assert_eq!(unmark("{place}", "Obby (Play)"), "Obby (Play)");
+    assert_eq!(unmark("Test run", "Obby (Play)"), "Obby (Play)");
 }

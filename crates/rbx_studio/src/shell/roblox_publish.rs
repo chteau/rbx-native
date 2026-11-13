@@ -224,6 +224,17 @@ impl Shell {
             return;
         };
         let target = Target::of(&experience);
+        // Linking to the Play sandbox reads back the name Play gave it while
+        // testing; the place keeps its own name, not "x (Play)".
+        let mut experience = experience;
+        if self
+            .play
+            .sandbox
+            .is_some_and(|sandbox| sandbox.place_id == target.place_id)
+        {
+            experience.name =
+                super::play::copy_name::unmark(&self.play.copy_name, &experience.name).to_owned();
+        }
         if let Err(message) = link(&self.path, target, Some(experience.name.clone())) {
             let feedback = Feedback::Error(format!(
                 "Linking to place {} failed: {message}",
