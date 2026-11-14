@@ -2,10 +2,13 @@
 #
 #   irm https://rbxnative.chteau.bzh/install.ps1 | iex
 #
-# A version, or uninstalling (keeps settings, places and saved keys):
-#   & ([scriptblock]::Create((irm https://rbxnative.chteau.bzh/install.ps1))) -Version 0.2.0
-#   & ([scriptblock]::Create((irm https://rbxnative.chteau.bzh/install.ps1))) -Uninstall
-# ($env:RBXNATIVE_VERSION works too.)
+# A version:
+#   $env:RBXNATIVE_VERSION = '0.2.0'
+#   irm https://rbxnative.chteau.bzh/install.ps1 | iex
+# Uninstalling (keeps settings, places and saved keys):
+#   $s = irm https://rbxnative.chteau.bzh/install.ps1
+#   & ([scriptblock]::Create($s)) -Uninstall
+# (-Version 0.2.0 works the same way.)
 #
 # Installs for the current user only, no admin, to the same folder as the
 # setup (%LOCALAPPDATA%\Programs\RbxNative) with a Start menu shortcut. The
