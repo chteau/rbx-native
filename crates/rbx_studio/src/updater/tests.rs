@@ -31,9 +31,10 @@ fn release(tag: &str, prerelease: bool) -> Release {
     Release::parse(&format!(
         r#"{{"tag_name":"{tag}","html_url":"https://github.com/chteau/rbx-native/releases/tag/{tag}",
             "prerelease":{prerelease},"draft":false,"assets":[
-            {{"name":"rbxstudio-0.2.0-x86_64-unknown-linux-gnu.tar.gz","browser_download_url":"https://x/linux"}},
-            {{"name":"rbxstudio-0.2.0-aarch64-apple-darwin.tar.gz","browser_download_url":"https://x/mac"}},
-            {{"name":"rbxstudio-0.2.0-x86_64-pc-windows-msvc.zip","browser_download_url":"https://x/win"}},
+            {{"name":"RbxNative-0.2.0-x86_64-unknown-linux-gnu.tar.gz","browser_download_url":"https://x/linux"}},
+            {{"name":"RbxNative-0.2.0-aarch64-apple-darwin.tar.gz","browser_download_url":"https://x/mac"}},
+            {{"name":"RbxNative-0.2.0-x86_64-pc-windows-msvc.zip","browser_download_url":"https://x/win"}},
+            {{"name":"RbxNative-0.2.0-x86_64.AppImage","browser_download_url":"https://x/appimage"}},
             {{"name":"SHA256SUMS","browser_download_url":"https://x/sums"}},
             {{"name":"SHA256SUMS.minisig","browser_download_url":"https://x/sig"}}]}}"#
     ))
@@ -61,25 +62,39 @@ fn versions_compare_as_semver() {
 fn the_package_for_each_target_is_picked_by_name() {
     let release = release("v0.2.0", false);
     let version = v("0.2.0");
-    let pick = |target| {
+    let binary = Location::Binary(PathBuf::from("/opt/rbxnative/rbxnative"));
+    let pick = |location: &Location, target| {
         release
-            .package(&version, target)
-            .unwrap()
-            .browser_download_url
-            .clone()
+            .asset(&location.package_name(&version, target))
+            .map(|asset| asset.browser_download_url.clone())
     };
-    assert_eq!(pick("x86_64-unknown-linux-gnu"), "https://x/linux");
-    assert_eq!(pick("aarch64-apple-darwin"), "https://x/mac");
-    assert_eq!(pick("x86_64-pc-windows-msvc"), "https://x/win");
+    assert_eq!(
+        pick(&binary, "x86_64-unknown-linux-gnu").unwrap(),
+        "https://x/linux"
+    );
+    assert_eq!(
+        pick(&binary, "aarch64-apple-darwin").unwrap(),
+        "https://x/mac"
+    );
+    assert_eq!(
+        pick(&binary, "x86_64-pc-windows-msvc").unwrap(),
+        "https://x/win"
+    );
+    let image = Location::AppImage(PathBuf::from("/home/x/Apps/RbxNative.AppImage"));
+    assert_eq!(
+        pick(&image, "x86_64-unknown-linux-gnu").unwrap(),
+        "https://x/appimage"
+    );
+    assert!(pick(&binary, "riscv64gc-unknown-linux-gnu").is_err());
     assert!(release
-        .package(&version, "riscv64gc-unknown-linux-gnu")
-        .is_err());
-    assert!(release
-        .package(&v("0.3.0"), "x86_64-unknown-linux-gnu")
+        .asset(&release::package_name(
+            &v("0.3.0"),
+            "x86_64-unknown-linux-gnu"
+        ))
         .is_err());
     assert_eq!(
         release::package_name(&version, "x86_64-pc-windows-msvc"),
-        "rbxstudio-0.2.0-x86_64-pc-windows-msvc.zip"
+        "RbxNative-0.2.0-x86_64-pc-windows-msvc.zip"
     );
 }
 

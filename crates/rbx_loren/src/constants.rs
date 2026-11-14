@@ -4,7 +4,7 @@
 pub const CLI_VERSION: &str = "2.0.0-beta.2";
 /// How to update the CLI. Upstream says `npm i -g loren-framework@next`; here
 /// the CLI is part of the editor, so updating the editor is the answer.
-pub const CLI_INSTALL: &str = "update rbx-native (rbxstudio loren is built in)";
+pub const CLI_INSTALL: &str = "update RbxNative (rbxnative loren is built in)";
 pub const PREFIX: &str = "(LORENঌ)";
 pub const PROJECT_FILE: &str = "default.project.json";
 pub const DOCS_URL: &str = "https://fabideveloper.github.io/Loren-Framework/";

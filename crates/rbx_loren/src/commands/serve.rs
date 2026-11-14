@@ -31,7 +31,7 @@ pub fn serve_command(ctx: &Ctx, tool: Option<&str>) -> CmdResult {
             "This project uses Rojo; rbx-native syncs through Argon, which reads the same default.project.json.",
         );
     }
-    ctx.log.info("In rbxstudio, open your place and press Connect in the Argon dock (or turn on Auto Connect).");
+    ctx.log.info("In RbxNative, open your place and press Connect in the Argon dock (or turn on Auto Connect).");
     let result = ctx.run.run(
         cmd,
         &args,

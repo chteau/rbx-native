@@ -291,7 +291,7 @@ fn v151_to_2_0_runtime_shim_project_promise_types_sourcemap_lint() {
         &out,
         r"Loren 1\.5\.1 project \(src/shared/Loren\.luau is the whole 1\.x runtime\)",
     );
-    assert_match(&out, "To update the Loren CLI itself: update rbx-native");
+    assert_match(&out, "To update the Loren CLI itself: update RbxNative");
 }
 
 #[test]
@@ -740,7 +740,7 @@ fn a_project_runtime_newer_than_the_cli_is_refused() {
     assert_eq!(res.exit_code, 1);
     assert_match(
         &log.stderr(),
-        r"newer than this CLI's \(2\.0\.0\)\. Update the CLI first: update rbx-native",
+        r"newer than this CLI's \(2\.0\.0\)\. Update the CLI first: update RbxNative",
     );
     assert_eq!(snapshot(d), before);
     assert_eq!(

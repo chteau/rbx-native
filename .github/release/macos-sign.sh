@@ -8,15 +8,18 @@
 #
 # Without the secrets (a fork's CI) it falls back to an ad-hoc signature.
 #
-# Usage: macos-sign.sh <binary or .app>
+# Usage: macos-sign.sh <binary, .app or .dmg>
 set -euo pipefail
 
 target="$1"
 identifier="io.github.chteau.rbx-native.Editor"
+# --deep is for what a bundle holds; a disk image is signed as one file.
+deep=(--deep)
+case "$target" in *.dmg) deep=() ;; esac
 
 if [ -z "${MACOS_SIGN_P12:-}" ] || [ -z "${MACOS_SIGN_PASSWORD:-}" ]; then
   echo "::warning::No MACOS_SIGN_P12 secret: ad-hoc signature, Keychain will ask again after every build."
-  codesign --force --deep --sign - --identifier "$identifier" "$target"
+  codesign --force ${deep[@]+"${deep[@]}"} --sign - --identifier "$identifier" "$target"
   codesign -dv "$target" 2>&1 | grep -E "Identifier|Signature"
   exit 0
 fi
@@ -43,5 +46,5 @@ if [ -z "$hash" ]; then
   security find-identity "$keychain"
   exit 1
 fi
-codesign --force --deep --sign "$hash" --keychain "$keychain" --identifier "$identifier" --timestamp=none "$target"
+codesign --force ${deep[@]+"${deep[@]}"} --sign "$hash" --keychain "$keychain" --identifier "$identifier" --timestamp=none "$target"
 codesign -dvv "$target" 2>&1 | grep -E "Identifier|Authority|Signature"

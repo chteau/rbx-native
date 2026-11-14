@@ -173,8 +173,11 @@ jobs:
         run: |
           mkdir ../release
           mv package-*/* ../release/
+          # The one-line installers the website serves, kept with the
+          # release they were tested against.
+          cp "$GITHUB_WORKSPACE"/packaging/install/install.{sh,ps1} ../release/
           cd ../release
-          sha256sum rbxstudio-* > SHA256SUMS
+          sha256sum RbxNative-* rbxstudio-* install.sh install.ps1 > SHA256SUMS
           cat SHA256SUMS
           umask 077
           key="$RUNNER_TEMP/minisign.key"
@@ -189,11 +192,13 @@ jobs:
       - name: What each package holds
         working-directory: release
         run: |
-          for package in rbxstudio-*; do
+          ls -l
+          for package in RbxNative-* rbxstudio-*; do
             echo "== $package"
             case "$package" in
               *.zip) unzip -l "$package" ;;
-              *) tar -tzvf "$package" ;;
+              *.tar.gz) tar -tzvf "$package" ;;
+              *.AppImage) chmod +x "$package" && "./$package" --appimage-extract >/dev/null && find squashfs-root | sort && rm -rf squashfs-root ;;
             esac
           done
 

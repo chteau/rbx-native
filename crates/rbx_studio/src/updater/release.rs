@@ -20,12 +20,20 @@ pub(super) const TARGET: Option<&str> = if cfg!(all(target_os = "linux", target_
     None
 };
 
-/// The executable's name inside a package.
+/// The executable's name inside a package. Lowercase on Linux, where
+/// commands are; Windows and macOS file systems ignore case, so
+/// `rbxnative` names it everywhere.
 pub(super) const EXE_NAME: &str = if cfg!(windows) {
-    "rbxstudio.exe"
+    "RbxNative.exe"
+} else if cfg!(target_os = "macos") {
+    "RbxNative"
 } else {
-    "rbxstudio"
+    "rbxnative"
 };
+
+/// What the Linux 0.1.0 package called the executable (see
+/// `compat::migrate_legacy_name`).
+pub(super) const LEGACY_EXE_NAME: &str = "rbxstudio";
 
 /// The release's page, for the toast's "What's new" link. The release JSON
 /// isn't signed, so anything off this repo's GitHub pages is replaced by
@@ -77,11 +85,6 @@ impl Release {
             .find(|asset| asset.name == name)
             .ok_or_else(|| format!("release {} has no {name}", self.tag_name))
     }
-
-    /// The package for `target`.
-    pub(super) fn package(&self, version: &Version, target: &str) -> Result<&Asset, String> {
-        self.asset(&package_name(version, target))
-    }
 }
 
 pub(super) fn package_name(version: &Version, target: &str) -> String {
@@ -90,7 +93,12 @@ pub(super) fn package_name(version: &Version, target: &str) -> String {
     } else {
         "tar.gz"
     };
-    format!("rbxstudio-{version}-{target}.{extension}")
+    format!("RbxNative-{version}-{target}.{extension}")
+}
+
+/// The Linux AppImage, which replaces itself whole rather than unpacking.
+pub(super) fn appimage_name(version: &Version) -> String {
+    format!("RbxNative-{version}-x86_64.AppImage")
 }
 
 /// `v0.2.0` or `0.2.0`.
