@@ -4110,19 +4110,6 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/gpui-pre-windows/gpui-pre-windows-0.3.4.crate",
-        "sha256": "45918b16e62e89ef4952a6e140297f716934bf6f9b21206ad6ce54faa7316005",
-        "dest": "cargo/vendor/gpui-pre-windows-0.3.4"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"45918b16e62e89ef4952a6e140297f716934bf6f9b21206ad6ce54faa7316005\", \"files\": {}}",
-        "dest": "cargo/vendor/gpui-pre-windows-0.3.4",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/gpui-pre-zlog/gpui-pre-zlog-0.3.4.crate",
         "sha256": "24609786bd3dd9291b440a97ad700003827bbf55b69223038253ea0b401b3c36",
         "dest": "cargo/vendor/gpui-pre-zlog-0.3.4"

@@ -87,17 +87,29 @@ fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<Index
         .unwrap_or_default();
     let labels = installed
         .iter()
-        .map(|(id, manifest)| {
-            if theme::is_reserved(id) {
-                format!("{} (built-in)", manifest.name).into()
-            } else {
-                manifest.name.clone().into()
-            }
+        .map(|(id, manifest)| match theme_cards::builtin_name(id) {
+            Some(name) => name.into(),
+            None => manifest.name.clone().into(),
         })
         .collect();
     let ids: Vec<String> = installed.iter().map(|(id, _)| id.clone()).collect();
     let row = ids.iter().position(|id| id == current).map(IndexPath::new);
     (ids, labels, row, installed)
+}
+
+/// The icon pack dropdown's row for the shell's pack: an installed one by
+/// name, else the kit's dark or light variant.
+fn icon_pack_row(
+    icon_packs: &[(Option<String>, IconPack)],
+    pack: &(Option<String>, IconPack),
+) -> Option<usize> {
+    icon_packs
+        .iter()
+        .position(|(name, kind)| match (&pack.0, name) {
+            (Some(chosen), Some(name)) => chosen == name,
+            (None, None) => *kind == pack.1,
+            _ => false,
+        })
 }
 
 impl AppearanceControls {
@@ -128,13 +140,7 @@ impl AppearanceControls {
                 (None, IconPack::Light) => "Default light".into(),
             })
             .collect();
-        let pack_row = icon_packs
-            .iter()
-            .position(|(name, kind)| match (&pack.0, name) {
-                (Some(chosen), Some(name)) => chosen == name,
-                (None, None) => *kind == pack.1,
-                _ => false,
-            });
+        let pack_row = icon_pack_row(&icon_packs, &pack);
         let icon_pack = cx.new(|cx| {
             SelectState::new(
                 SearchableVec::new(pack_labels),
@@ -230,6 +236,26 @@ impl AppearanceControls {
                 }
             }),
             cx.observe_in(shell, window, |this, shell, window, cx| {
+                // A theme switch between dark and light swaps the kit's icon
+                // variant under the dropdown; keep the dropdown on it.
+                let pack = {
+                    let shell = shell.read(cx);
+                    let (_, chosen) = shell.installed_icon_packs();
+                    (chosen.map(str::to_owned), shell.icon_pack())
+                };
+                let row = icon_pack_row(&this.appearance.icon_packs, &pack);
+                if this
+                    .appearance
+                    .icon_pack
+                    .read(cx)
+                    .selected_index(cx)
+                    .map(|ix| ix.row)
+                    != row
+                {
+                    this.appearance.icon_pack.update(cx, |state, cx| {
+                        state.set_selected_index(row.map(IndexPath::new), window, cx);
+                    });
+                }
                 let install = &shell.read(cx).theme_install;
                 let running = matches!(install, Install::Running(_));
                 let done = this.appearance.installing && !running;
