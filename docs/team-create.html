@@ -31,9 +31,13 @@
 <p class="get"><a class="primary" href="https://create.roblox.com/store/asset/96675894010955">Get the Studio plugin</a> <a class="secondary" href="../assets/TeamPresence.rbxmx" download>Download .rbxmx</a></p>
 <ol>
 <li>Install it from the <a href="https://create.roblox.com/store/asset/96675894010955">Creator Store</a> (it shows up in Studio's Toolbox, Plugins), or drop TeamPresence.rbxmx in Studio's plugins folder (Plugins tab, Plugins Folder) and restart Studio.</li>
+<li>Switch on Share my presence in the plugin's Collaborators panel. It opens by itself the first time, after that it's Plugins tab, Presence. In RbxNative it's View, Collaborators.</li>
 <li>Allow the HTTP requests when it asks.</li>
 <li>Everyone opens the same place. Each side needs to be signed in to Roblox.</li>
 </ol>
+<h2>Someone has to be in RbxNative</h2>
+<p>The session runs on the computer of whoever has the place open in RbxNative. Studio can't host it on its own, so with only Studio users the plugin just says it's waiting for someone in RbxNative to open the place.</p>
+<p>The first editor that turns presence on gives the place a key. If the plugin says it made one, save the place from Studio (File, Save to Roblox) before opening it in RbxNative, or each side ends up with its own key and they can't see each other. If that happens, both sides tell you: save from Studio, then reopen the place in RbxNative from My Games and pick Download the published version.</p>
 <h2>What you get</h2>
 <p>Each side sees the other's camera, selection and open script. Presence is end-to-end encrypted with a key derived from the place, so the relay only ever sees ciphertext.</p>
 <h2>Live co-editing (beta)</h2>

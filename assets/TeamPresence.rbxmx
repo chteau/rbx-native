@@ -19,6 +19,7 @@ local Schema = require(script.Schema)
 local Secret = require(script.Secret)
 local Widget = require(script.Widget)
 
+local HttpService = game:GetService(&quot;HttpService&quot;)
 local Players = game:GetService(&quot;Players&quot;)
 
 local HEARTBEAT = 5
@@ -28,6 +29,10 @@ local LAST_SEEN_EVERY = 30
 local TICK = 0.2
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
+
+local NEW_KEY = Relay.WAITING
+	.. &quot; This place had no presence key yet, so I made one: save the place (File &gt; Save to Roblox)&quot;
+	.. &quot; before opening it in RbxNative.&quot;
 
 local toolbar = plugin:CreateToolbar(&quot;rbx-native&quot;)
 local button = toolbar:CreateButton(&quot;Presence&quot;, &quot;Show rbx-native team presence&quot;, &quot;&quot;)
@@ -95,6 +100,42 @@ local function stop()
 	end
 end
 
+-- The status line for a failed publish or poll. Never silent: waiting is
+-- said in plain words, with what to do when the two sides can't meet.
+-- This install's beacon sender id, kept so reopening the place replaces our
+-- own earlier beacon instead of reading as a second Studio on another key.
+local function beaconId(): string
+	local id = plugin:GetSetting(&quot;BeaconFrom&quot;)
+	if type(id) == &quot;string&quot; and #id == 16 then
+		return id
+	end
+	local fresh = string.sub(string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;), 1, 16)
+	plugin:SetSetting(&quot;BeaconFrom&quot;, fresh)
+	return fresh
+end
+
+local function showProblem(myRelay: any, err: string?, minted: boolean)
+	local text = err or &quot;Can't reach the relay&quot;
+	if myRelay:waiting() then
+		local other = myRelay:keyConflict()
+		if other then
+			local who = if other == &quot;studio&quot; then &quot;Another Studio&quot; else &quot;RbxNative&quot;
+			widget:setStatus(
+				`{who} has this place open with a different presence key, so you can't see each other.`
+					.. &quot; Save the place from Studio (File &gt; Save to Roblox), then reopen it in RbxNative&quot;
+					.. &quot; from My Games and pick Download the published version.&quot;,
+				true
+			)
+			return
+		end
+		if text == Relay.WAITING then
+			widget:setStatus(if minted then NEW_KEY else text)
+			return
+		end
+	end
+	widget:setStatus(text, string.find(text, &quot;yet (&quot;, 1, true) == nil)
+end
+
 local function nextBackoff(current: number): number
 	if current == 0 then
 		return BACKOFF_MIN
@@ -112,9 +153,9 @@ local function start()
 	-- Zero-config: the first connector mints the place's secret, everyone
 	-- else reads it. Writing it needs a Save/Publish to reach collaborators.
 	local secret = Secret.read()
+	local minted = secret == nil
 	if not secret then
 		secret = Secret.create()
-		widget:setStatus(&quot;Shared a key — Save or Publish once to share it&quot;)
 	end
 
 	-- The place names the relay; collaborators read it. A place that names
@@ -134,6 +175,8 @@ local function start()
 		encKey = encKey,
 		room = Auth.roomId(key),
 		userId = ownId,
+		placeId = game.PlaceId,
+		beaconFrom = beaconId(),
 	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
@@ -194,7 +237,7 @@ local function start()
 					lastPublish = os.clock()
 					backoff = 0
 				else
-					widget:setStatus(err or &quot;Publish failed&quot;, not myRelay:waiting())
+					showProblem(myRelay, err, minted)
 					backoff = nextBackoff(backoff)
 					lastPublish = os.clock()
 					task.wait(backoff)
@@ -238,7 +281,7 @@ local function start()
 				-- ntfy polls return at once; pace them so we don't spin.
 				task.wait(myRelay:pollDelay())
 			else
-				widget:setStatus(err or &quot;Poll failed&quot;, not myRelay:waiting())
+				showProblem(myRelay, err, minted)
 				backoff = nextBackoff(backoff)
 				task.wait(backoff)
 			end
@@ -262,7 +305,7 @@ local function apply(on: boolean)
 		start()
 	else
 		stop()
-		widget:setStatus(&quot;Off&quot;)
+		widget:setStatus(&quot;Off. Switch on Share my presence to see RbxNative users.&quot;)
 	end
 end
 
@@ -317,6 +360,11 @@ if savedRelay then
 	widget:setRelay(savedRelay.kind, savedRelay.url, false)
 else
 	widget:setRelay(Defaults.communityKind, Defaults.communityUrl, true)
+end
+-- First run: show the widget, so the switch that turns presence on is in
+-- front of the user instead of behind a toolbar button.
+if plugin:GetSetting(&quot;Enabled&quot;) == nil then
+	widget.gui.Enabled = true
 end
 apply(plugin:GetSetting(&quot;Enabled&quot;) == true)
 </ProtectedString>
@@ -452,6 +500,81 @@ return Auth
       </Properties>
     </Item>
     <Item class="ModuleScript" referent="RBX3">
+      <Properties>
+        <string name="Name">Beacon</string>
+        <ProtectedString name="Source">--!strict
+--! Which presence key each editor with this place open uses, mirrored from
+--! crates/rbx_presence/src/beacon.rs. The key lives in the place, so two
+--! editors can end up with different ones (each made its own because the
+--! place had none saved yet, or one opened an older copy) and would wait for
+--! each other forever. Each editor posts a short fingerprint of its room to
+--! a topic named after the place; seeing another fingerprint there is how
+--! that gets said out loud. Pure (no HttpService): the Luau tests check it
+--! against the Rust encoder.
+
+local Json = require(script.Parent.Json)
+local Sha256 = require(script.Parent.Sha256)
+
+local Beacon = {}
+
+-- How long a beacon counts; each editor posts again well within it.
+Beacon.FRESH_MS = 25 * 60 * 1000
+Beacon.CLOCK_SKEW_MS = 60000
+-- Seconds between this editor's own beacons.
+Beacon.EVERY = 10 * 60
+
+function Beacon.topic(placeId: number): string
+	return &quot;rbxnp-place-&quot; .. string.sub(Sha256.hex(string.format(&quot;rbx-presence/place/v1/%.0f&quot;, placeId)), 1, 32)
+end
+
+-- Says which key without saying which room, so the place's topic does not
+-- point at the room's.
+function Beacon.fingerprint(room: string): string
+	return string.sub(Sha256.hex(&quot;rbx-presence/fingerprint/v1/&quot; .. room), 1, 16)
+end
+
+-- `fp` empty says the sender left.
+function Beacon.encode(fp: string, from: string, client: string, at: number): string
+	return Json.encode({ v = 1, fp = fp, from = from, client = client, at = at })
+end
+
+-- The client (&quot;studio&quot; or &quot;rbx-native&quot;) of the newest current beacon from
+-- another sender whose key differs from `fp`, or nil.
+function Beacon.conflict(fp: string, from: string, now: number, texts: { string }): string?
+	local newest: { [string]: any } = {}
+	for _, text in texts do
+		local ok, m = pcall(Json.decode, text)
+		if
+			ok
+			and type(m) == &quot;table&quot;
+			and m.v == 1
+			and type(m.fp) == &quot;string&quot;
+			and type(m.from) == &quot;string&quot;
+			and type(m.client) == &quot;string&quot;
+			and type(m.at) == &quot;number&quot;
+			and m.from ~= from
+		then
+			local best = newest[m.from]
+			if best == nil or m.at &gt; best.at then
+				newest[m.from] = m
+			end
+		end
+	end
+	local found: any = nil
+	for _, m in newest do
+		local current = now - m.at &lt;= Beacon.FRESH_MS and m.at &lt;= now + Beacon.CLOCK_SKEW_MS
+		if current and m.fp ~= &quot;&quot; and m.fp ~= fp and (found == nil or m.at &gt; found.at) then
+			found = m
+		end
+	end
+	return if found then found.client else nil
+end
+
+return Beacon
+</ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="ModuleScript" referent="RBX4">
       <Properties>
         <string name="Name">Capture</string>
         <ProtectedString name="Source">--!strict
@@ -663,7 +786,7 @@ return Capture
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX4">
+    <Item class="ModuleScript" referent="RBX5">
       <Properties>
         <string name="Name">Catchup</string>
         <ProtectedString name="Source">--!strict
@@ -836,7 +959,7 @@ return Catchup
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX5">
+    <Item class="ModuleScript" referent="RBX6">
       <Properties>
         <string name="Name">Changes</string>
         <ProtectedString name="Source">--!strict
@@ -961,7 +1084,7 @@ return Changes
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX6">
+    <Item class="ModuleScript" referent="RBX7">
       <Properties>
         <string name="Name">Coedit</string>
         <ProtectedString name="Source">-- Live co-editing in Studio: captures local edits under the tracked roots
@@ -1317,7 +1440,7 @@ return Coedit
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX7">
+    <Item class="ModuleScript" referent="RBX8">
       <Properties>
         <string name="Name">CoeditApply</string>
         <ProtectedString name="Source">-- Applies co-edit batches from the relay log to the place, in log order,
@@ -1640,7 +1763,7 @@ return Apply
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX8">
+    <Item class="ModuleScript" referent="RBX9">
       <Properties>
         <string name="Name">CoeditClasses</string>
         <ProtectedString name="Source">--!strict
@@ -6078,7 +6201,7 @@ return {
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX9">
+    <Item class="ModuleScript" referent="RBX10">
       <Properties>
         <string name="Name">CoeditCollect</string>
         <ProtectedString name="Source">-- Turns what changed in Studio since the last flush into ops: deletes,
@@ -6278,7 +6401,7 @@ return Collect
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX10">
+    <Item class="ModuleScript" referent="RBX11">
       <Properties>
         <string name="Name">CoeditCore</string>
         <ProtectedString name="Source">--!strict
@@ -6629,7 +6752,7 @@ return CoeditCore
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX11">
+    <Item class="ModuleScript" referent="RBX12">
       <Properties>
         <string name="Name">CoeditKept</string>
         <ProtectedString name="Source">--!strict
@@ -6741,7 +6864,7 @@ return Kept
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX12">
+    <Item class="ModuleScript" referent="RBX13">
       <Properties>
         <string name="Name">CoeditSync</string>
         <ProtectedString name="Source">-- Co-editing's traffic with the relay: sends batches to the op log (sealed
@@ -6927,7 +7050,7 @@ return Sync
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX13">
+    <Item class="ModuleScript" referent="RBX14">
       <Properties>
         <string name="Name">CoeditValue</string>
         <ProtectedString name="Source">--!strict
@@ -7177,7 +7300,7 @@ return CoeditValue
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX14">
+    <Item class="ModuleScript" referent="RBX15">
       <Properties>
         <string name="Name">Crypto</string>
         <ProtectedString name="Source">--!strict
@@ -7572,7 +7695,7 @@ return Crypto
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX15">
+    <Item class="ModuleScript" referent="RBX16">
       <Properties>
         <string name="Name">Defaults</string>
         <ProtectedString name="Source">--!strict
@@ -7585,7 +7708,7 @@ return {
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX16">
+    <Item class="ModuleScript" referent="RBX17">
       <Properties>
         <string name="Name">DiffWindow</string>
         <ProtectedString name="Source">--!strict
@@ -8205,7 +8328,7 @@ return DiffWindow
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX17">
+    <Item class="ModuleScript" referent="RBX18">
       <Properties>
         <string name="Name">Edits</string>
         <ProtectedString name="Source">--!strict
@@ -8341,7 +8464,7 @@ return Edits
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX18">
+    <Item class="ModuleScript" referent="RBX19">
       <Properties>
         <string name="Name">Hmac</string>
         <ProtectedString name="Source">--!strict
@@ -8373,7 +8496,7 @@ return Hmac
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX19">
+    <Item class="ModuleScript" referent="RBX20">
       <Properties>
         <string name="Name">Json</string>
         <ProtectedString name="Source">--!strict
@@ -8658,7 +8781,7 @@ return Json
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX20">
+    <Item class="ModuleScript" referent="RBX21">
       <Properties>
         <string name="Name">Markers</string>
         <ProtectedString name="Source">--!strict
@@ -8824,7 +8947,7 @@ return Markers
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX21">
+    <Item class="ModuleScript" referent="RBX22">
       <Properties>
         <string name="Name">Ntfy</string>
         <ProtectedString name="Source">--!strict
@@ -8943,7 +9066,7 @@ return Ntfy
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX22">
+    <Item class="ModuleScript" referent="RBX23">
       <Properties>
         <string name="Name">Paths</string>
         <ProtectedString name="Source">--!strict
@@ -9040,7 +9163,7 @@ return Paths
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX23">
+    <Item class="ModuleScript" referent="RBX24">
       <Properties>
         <string name="Name">Relay</string>
         <ProtectedString name="Source">--!strict
@@ -9059,11 +9182,22 @@ return Paths
 local HttpService = game:GetService(&quot;HttpService&quot;)
 
 local Announce = require(script.Parent.Announce)
+local Beacon = require(script.Parent.Beacon)
 local Auth = require(script.Parent.Auth)
 local Ntfy = require(script.Parent.Ntfy)
 local Schema = require(script.Parent.Schema)
 
-export type Config = { kind: string, url: string, key: string, encKey: string, room: string, userId: number }
+export type Config = {
+	kind: string,
+	url: string,
+	key: string,
+	encKey: string,
+	room: string,
+	userId: number,
+	placeId: number,
+	-- Kept by the caller across sessions; a fresh one when absent.
+	beaconFrom: string?,
+}
 
 local VERSION_MISMATCH =
 	&quot;The relay runs a different Team Presence version; update the plugin, rbx-native and the relay together.&quot;
@@ -9085,11 +9219,14 @@ end
 local EXPIRY_MS = 15000
 -- How often a hosted room looks for its host while it has none.
 local RESOLVE_EVERY = 15
-local WAITING = &quot;Waiting for an rbx-native collaborator to open the place&quot;
-
+-- How often a hosted room reads the place's beacons while it waits.
+local BEACON_READ_EVERY = 60
 
 local Relay = {}
 Relay.__index = Relay
+
+Relay.WAITING = &quot;Waiting for someone in RbxNative to open this place. Studio can't host the session on its own.&quot;
+local WAITING = Relay.WAITING
 
 function Relay.new(config: Config)
 	local url = string.gsub(config.url, &quot;/+$&quot;, &quot;&quot;)
@@ -9110,6 +9247,13 @@ function Relay.new(config: Config)
 		peers = {} :: { [number]: { state: any, seen: number } },
 		cursor = 0,
 		lastId = nil :: string?,
+		-- hosted only: this editor's beacon (see Beacon) and what it last read.
+		beaconTopic = Beacon.topic(config.placeId),
+		beaconFp = Beacon.fingerprint(config.room),
+		beaconFrom = config.beaconFrom or string.sub(string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;), 1, 16),
+		lastBeaconPost = -math.huge,
+		lastBeaconRead = -math.huge,
+		conflict = nil :: string?,
 	}
 	return setmetatable(self, Relay)
 end
@@ -9178,6 +9322,48 @@ function Relay:_lost()
 		self.base = nil
 		self.lastResolve = -math.huge
 	end
+end
+
+-- hosted: posts this editor's beacon when due (`leaving` posts the goodbye)
+-- and reads the others' at most every BEACON_READ_EVERY seconds. Returns the
+-- client (&quot;studio&quot; or &quot;rbx-native&quot;) of an editor on this place using a
+-- different key, if any. Failures are ignored: the beacon only explains.
+function Relay:keyConflict(leaving: boolean?): string?
+	if self.kind ~= &quot;hosted&quot; then
+		return nil
+	end
+	local base = self.announceBase .. &quot;/&quot; .. self.beaconTopic
+	if leaving or os.clock() - self.lastBeaconPost &gt;= Beacon.EVERY then
+		self.lastBeaconPost = os.clock()
+		pcall(function()
+			HttpService:RequestAsync({
+				Url = base,
+				Method = &quot;POST&quot;,
+				Headers = { [&quot;Content-Type&quot;] = &quot;text/plain&quot; },
+				Body = Beacon.encode(if leaving then &quot;&quot; else self.beaconFp, self.beaconFrom, &quot;studio&quot;, nowMs()),
+			})
+		end)
+	end
+	if leaving or os.clock() - self.lastBeaconRead &lt; BEACON_READ_EVERY then
+		return self.conflict
+	end
+	self.lastBeaconRead = os.clock()
+	local ok, res = pcall(function()
+		return HttpService:RequestAsync({ Url = base .. &quot;/json?poll=1&amp;since=15m&quot;, Method = &quot;GET&quot; })
+	end)
+	if ok and res.Success then
+		local texts = {}
+		for line in string.gmatch(res.Body or &quot;&quot;, &quot;[^\n]+&quot;) do
+			local decoded, parsed = pcall(function()
+				return HttpService:JSONDecode(line)
+			end)
+			if decoded and type(parsed) == &quot;table&quot; and parsed.event == &quot;message&quot; and type(parsed.message) == &quot;string&quot; then
+				table.insert(texts, parsed.message)
+			end
+		end
+		self.conflict = Beacon.conflict(self.beaconFp, self.beaconFrom, nowMs(), texts)
+	end
+	return self.conflict
 end
 
 -- ===== Worker (signed HTTP) =====
@@ -9457,6 +9643,7 @@ function Relay:pollOps(since: number): (any?, string?)
 end
 
 function Relay:leave()
+	self:keyConflict(true)
 	if self.kind == &quot;ntfy&quot; or self:waiting() then
 		-- Nothing to delete on a dumb pub/sub (peers expire us), or no host.
 		return
@@ -9468,7 +9655,7 @@ return Relay
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX24">
+    <Item class="ModuleScript" referent="RBX25">
       <Properties>
         <string name="Name">Schema</string>
         <ProtectedString name="Source">--!strict
@@ -9748,7 +9935,7 @@ return Schema
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX25">
+    <Item class="ModuleScript" referent="RBX26">
       <Properties>
         <string name="Name">Secret</string>
         <ProtectedString name="Source">--!strict
@@ -9842,7 +10029,7 @@ return Secret
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX26">
+    <Item class="ModuleScript" referent="RBX27">
       <Properties>
         <string name="Name">Sha256</string>
         <ProtectedString name="Source">--!strict
@@ -9947,7 +10134,7 @@ return Sha256
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX27">
+    <Item class="ModuleScript" referent="RBX28">
       <Properties>
         <string name="Name">Theme</string>
         <ProtectedString name="Source">--!strict
@@ -10114,7 +10301,7 @@ return {
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX28">
+    <Item class="ModuleScript" referent="RBX29">
       <Properties>
         <string name="Name">Ui</string>
         <ProtectedString name="Source">--!strict
@@ -10457,7 +10644,7 @@ return Ui
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX29">
+    <Item class="ModuleScript" referent="RBX30">
       <Properties>
         <string name="Name">Widget</string>
         <ProtectedString name="Source">--!strict
