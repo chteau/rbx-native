@@ -813,7 +813,10 @@ fn coedit_notes_print_once_and_never_for_waiting() {
     let state: Table = notes
         .get::<Function>("new")
         .unwrap()
-        .call("Waiting for someone in RbxNative")
+        .call(
+            lua.create_sequence_from(["Waiting for someone", "host yet"])
+                .unwrap(),
+        )
         .unwrap();
     let say = |text: &str, now: f64| -> bool {
         notes
@@ -832,6 +835,10 @@ fn coedit_notes_print_once_and_never_for_waiting() {
     let waiting =
         "Co-edit: could not read edits (Waiting for someone in RbxNative to open this place.)";
     assert!(!say(waiting, 0.0));
+    assert!(!say(
+        "Co-edit: could not send edits (Can't reach the rbx-native host yet (HTTP 530))",
+        0.0
+    ));
     assert!(say("Co-edit: could not read edits (HTTP 500)", 0.0));
     assert!(!say("Co-edit: could not read edits (HTTP 500)", 1.0));
     assert!(say("Co-edit: could not send edits (HTTP 500)", 1.0));

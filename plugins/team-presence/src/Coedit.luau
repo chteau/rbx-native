@@ -40,8 +40,8 @@ export type Options = {
 	encKey: string,
 	name: string,
 	onNote: (string) -> (),
-	-- A note containing this is a state the panel shows, never printed.
-	quiet: string?,
+	-- A note containing any of these is a state the panel shows, never printed.
+	quiet: { string }?,
 }
 
 local Coedit = {}

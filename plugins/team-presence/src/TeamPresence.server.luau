@@ -201,7 +201,7 @@ local function start()
 			room = Auth.roomId(key),
 			encKey = encKey,
 			name = if Players.LocalPlayer then Players.LocalPlayer.Name else tostring(ownId),
-			quiet = Relay.WAITING,
+			quiet = { Relay.WAITING, Relay.HOST_GONE },
 			onNote = function(note: string)
 				warn("[Co-edit] " .. note)
 				if generation == myGen then
