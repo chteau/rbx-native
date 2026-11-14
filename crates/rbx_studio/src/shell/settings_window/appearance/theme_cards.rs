@@ -70,12 +70,11 @@ impl SettingsWindow {
             .py(px(14.))
             .px(px(16.))
             .children(self.appearance.listed.iter().map(|(id, manifest)| {
-                let builtin = match id.as_str() {
-                    theme::DEFAULT_ID => Some(("Default", "Built-in", &CARDS[0])),
-                    theme::HIGH_CONTRAST_ID => Some(("High contrast", "7:1 text, AAA", &CARDS[1])),
-                    theme::LIGHT_ID => Some(("Light", "Built-in", &CARDS[2])),
-                    _ => None,
-                };
+                let builtin = builtin_name(id).map(|name| match id.as_str() {
+                    theme::HIGH_CONTRAST_ID => (name, "7:1 text, AAA", &CARDS[1]),
+                    theme::LIGHT_ID => (name, "Built-in", &CARDS[2]),
+                    _ => (name, "Built-in", &CARDS[0]),
+                });
                 let (name, sub, face) = match builtin {
                     Some((name, sub, mini)) => (
                         SharedString::from(name),
@@ -263,5 +262,16 @@ mod tests {
             assert_eq!(CARDS[index].title, palette.color("text"), "{id} title");
         }
         assert_ne!(CARDS[2].body, CARDS[0].body);
+    }
+}
+
+/// What a built-in theme is called on its card and in the dropdown, so the
+/// two never disagree; `None` for an installed theme (its manifest names it).
+pub(in crate::shell::settings_window) fn builtin_name(id: &str) -> Option<&'static str> {
+    match id {
+        theme::DEFAULT_ID => Some("Default"),
+        theme::HIGH_CONTRAST_ID => Some("High contrast"),
+        theme::LIGHT_ID => Some("Light"),
+        _ => None,
     }
 }
