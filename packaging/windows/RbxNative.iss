@@ -61,9 +61,9 @@ Root: HKA; Subkey: "Software\Classes\RbxNative.Place"; ValueType: string; ValueN
 Root: HKA; Subkey: "Software\Classes\RbxNative.Place\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\RbxNative.exe"",0"; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\RbxNative.Place\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\RbxNative.exe"" ""%1"""; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.rbxl"; ValueType: string; ValueName: ""; ValueData: "RbxNative.Place"; Flags: uninsdeletevalue; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\.rbxl\OpenWithProgids"; ValueType: string; ValueName: "RbxNative.Place"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.rbxl\OpenWithProgids"; ValueType: string; ValueName: "RbxNative.Place"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\.rbxlx"; ValueType: string; ValueName: ""; ValueData: "RbxNative.Place"; Flags: uninsdeletevalue; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\.rbxlx\OpenWithProgids"; ValueType: string; ValueName: "RbxNative.Place"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.rbxlx\OpenWithProgids"; ValueType: string; ValueName: "RbxNative.Place"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associate
 
 [Run]
 Filename: "{app}\RbxNative.exe"; Description: "{cm:LaunchProgram,RbxNative}"; Flags: nowait postinstall skipifsilent
@@ -72,3 +72,41 @@ Filename: "{app}\RbxNative.exe"; Description: "{cm:LaunchProgram,RbxNative}"; Fl
 [UninstallDelete]
 Type: files; Name: "{app}\RbxNative.old.exe"
 Type: filesandordirs; Name: "{app}\.rbxstudio-update-*"
+
+[Code]
+// Roblox Studio may already own .rbxl and .rbxlx. Taking them over is what
+// the "associate" task asks for, but uninstalling hands them back.
+const
+  PreviousKey = 'Software\RbxNative\PreviousAssociation';
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Ext, Old: String;
+  I: Integer;
+begin
+  if (CurStep <> ssInstall) or not WizardIsTaskSelected('associate') then
+    Exit;
+  for I := 0 to 1 do
+  begin
+    if I = 0 then Ext := '.rbxl' else Ext := '.rbxlx';
+    if RegQueryStringValue(HKCU, 'Software\Classes\' + Ext, '', Old)
+      and (Old <> '') and (Old <> 'RbxNative.Place') then
+      RegWriteStringValue(HKCU, PreviousKey, Ext, Old);
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Ext, Old: String;
+  I: Integer;
+begin
+  if CurUninstallStep <> usPostUninstall then
+    Exit;
+  for I := 0 to 1 do
+  begin
+    if I = 0 then Ext := '.rbxl' else Ext := '.rbxlx';
+    if RegQueryStringValue(HKCU, PreviousKey, Ext, Old) then
+      RegWriteStringValue(HKCU, 'Software\Classes\' + Ext, '', Old);
+  end;
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\RbxNative');
+end;
