@@ -1,8 +1,9 @@
-//! Plugin dock widgets whose `InitialDockState` is `Float`: a panel over the
-//! editor with a title bar, as Studio opens them in a floating window.
-//! Dragging the bar moves it, the corner grip resizes it (never below the
-//! widget's minimum), × closes it, and where it was left comes back next
-//! session (the host keeps it in the plugin's settings).
+//! Plugin dock widgets the layout has floating (`InitialDockState.Float`,
+//! or torn out or floated from their dock): a panel over the editor with a
+//! title bar, as Studio opens them in a floating window. Dragging the bar
+//! moves it, the corner grip resizes it (never below the widget's
+//! minimum), its menu docks it, × closes it, and where it was left comes
+//! back next session (the host keeps it in the plugin's settings).
 
 use std::collections::HashMap;
 
@@ -14,7 +15,7 @@ use crate::shell::Shell;
 use crate::tokens;
 
 /// `Enum.InitialDockState.Float`.
-const FLOAT: u8 = 4;
+pub(super) const FLOAT: u8 = 4;
 /// The title bar's height.
 const BAR: f32 = 22.0;
 /// What the 1 px frame and the title bar take off the window: Studio 0.743
@@ -59,10 +60,6 @@ fn stack(order: &mut Vec<UiId>, open: &mut [Open]) {
         }
     }
     open.sort_by_key(|w| order.iter().position(|id| *id == w.0));
-}
-
-pub(super) fn is_float(kind: &WidgetKind) -> bool {
-    matches!(kind, WidgetKind::Dock { initial: FLOAT, .. })
 }
 
 /// The content size a floating widget opens at: a `FloatingXSize` x
@@ -141,12 +138,12 @@ impl Shell {
             .ui
             .widgets
             .iter()
-            .filter(|w| w.enabled)
+            .filter(|w| w.enabled && self.plugin_dock_floats(w.id))
             .filter_map(|w| match w.kind {
                 WidgetKind::Dock {
-                    initial: FLOAT,
                     float_size,
                     min_size,
+                    ..
                 } => Some((w.id, w.revision, w.title.clone(), float_size, min_size)),
                 _ => None,
             })
@@ -164,6 +161,13 @@ impl Shell {
             let size = (rect[2].round() as u32, rect[3].round() as u32);
             self.request_widget_render(id, revision, size, cx);
             let surface = self.widget_surface(id, window, cx);
+            let menu = self.plugin_dock_menu(id, cx).map(|menu| {
+                div()
+                    .absolute()
+                    .left(px(2.))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(menu)
+            });
             let close = div()
                 .id(ElementId::Name(format!("plugin-float-close-{id}").into()))
                 .px(px(6.))
@@ -190,6 +194,7 @@ impl Shell {
                 .text_color(tokens::text())
                 .text_size(px(12.))
                 .cursor_move()
+                .children(menu)
                 .child(title)
                 .child(close)
                 .on_mouse_down(

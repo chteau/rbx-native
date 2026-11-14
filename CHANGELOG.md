@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-14
+
+- **Every plugin widget is its own dock.** The "Plugin Widgets" dock with its sub-tabs is gone. Each plugin's dock widget now gets its own tab, titled after the widget, that you can drag to any edge, tab with Explorer or Output, stack above or below another dock, or float. It opens where its `InitialDockState` says the first time, then remembers where you put it (per plugin and widget) across restarts. Closing it with its × just turns the widget off, so the plugin's toolbar button (or the command palette) brings it back in the same spot. Old saved layouts with the Plugin Widgets dock open fine, that dock is simply dropped.
+
 ## 2026-11-13
 
 - **See-through themes are see-through.** A theme that gives Background or Panels some transparency used to come out solid anyway, because a layer of Default's colour sat under everything. Now the whole window follows the theme's own colours, and the top bars and panels show through the way the website's theme builder shows them.

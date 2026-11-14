@@ -1725,6 +1725,7 @@ impl Shell {
         };
         self.layout = layout::Layout::restore(&named.layout);
         self.last_named_layout = Some(named.name.clone());
+        self.seat_plugin_docks();
         self.save_settings();
         cx.notify();
     }
@@ -1745,6 +1746,7 @@ impl Shell {
     /// to find and delete the settings file.
     pub(crate) fn reset_layout(&mut self, cx: &mut Context<Self>) {
         self.layout = layout::Layout::default();
+        self.seat_plugin_docks();
         self.output_collapsed = false;
         self.save_settings();
         cx.notify();
@@ -1780,6 +1782,9 @@ impl Shell {
 
     /// Shuts one panel, from its tab's own cross or its dock menu.
     pub(super) fn close_panel(&mut self, panel: layout::Panel, cx: &mut Context<Self>) {
+        if let layout::Panel::Plugin(dock) = panel {
+            return self.close_plugin_dock(dock, cx);
+        }
         self.layout.close(panel);
         self.save_settings();
         cx.notify();
@@ -1793,6 +1798,12 @@ impl Shell {
         open: bool,
         cx: &mut Context<Self>,
     ) {
+        if let layout::Panel::Plugin(dock) = panel {
+            return match open {
+                true => self.open_plugin_dock(dock, cx),
+                false => self.close_plugin_dock(dock, cx),
+            };
+        }
         // Asked for by name, so the canvas stops setting it aside.
         if open {
             self.ui_unhide(panel);

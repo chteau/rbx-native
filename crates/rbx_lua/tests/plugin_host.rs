@@ -630,6 +630,17 @@ fn dock_widgets_restore_and_bind_to_close() {
             .unwrap()
             .enabled
     );
+    f.send(Input::WidgetOpened(c));
+    assert!(
+        f.host
+            .ui()
+            .widgets
+            .iter()
+            .find(|w| w.key == "c")
+            .unwrap()
+            .enabled
+    );
+    f.send(Input::WidgetClosed(c));
 
     let mut next = PluginHost::new(ReflectionDatabase::embedded(), Some(f._dir.0.clone()));
     next.add(roblox(src));
