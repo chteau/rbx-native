@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-14
+
+- **Installers.** Every release now has a Windows setup (per user, no
+  admin, Start menu, optional desktop shortcut, opens .rbxl and .rbxlx
+  files, uninstalls from Settings > Apps), a macOS .dmg and a Linux
+  AppImage, next to the zip and tarballs. Or one line in a terminal:
+  `curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh` on macOS and
+  Linux, `irm https://rbxnative.chteau.bzh/install.ps1 | iex` on Windows.
+  Both check the signed checksums and can `--uninstall`. Every kind of
+  install keeps updating itself, the AppImage included. (@chteau)
+- **The program is called RbxNative.** `RbxNative.exe` on Windows,
+  `RbxNative` in the Mac app, `rbxnative` on Linux (`rbxnative --mcp`
+  works everywhere). A Linux 0.1.0 install that updates renames itself
+  and leaves `rbxstudio` as a link, so old shortcuts keep working. (@chteau)
+- **Release posts on Discord** carry the changelog, download links for
+  each OS and the install commands. (@chteau)
+
 ## 2026-11-13
 
 - **See-through themes are see-through.** A theme that gives Background or Panels some transparency used to come out solid anyway, because a layer of Default's colour sat under everything. Now the whole window follows the theme's own colours, and the top bars and panels show through the way the website's theme builder shows them.

@@ -5,17 +5,21 @@
 //!   running one. Same folder, so the rename is atomic; the running process
 //!   keeps the old file's inode until it exits.
 //! - Windows can't replace a running .exe, but can rename it: the running one
-//!   becomes `rbxstudio.old.exe`, the new one takes its name, and the next
+//!   becomes `RbxNative.old.exe`, the new one takes its name, and the next
 //!   launch deletes the old one ([`Location::clear_leftovers`]).
 //! - A macOS `.app`: the whole bundle is swapped the same way (`X.app` →
 //!   `X.app.old`, new bundle → `X.app`), so its signature seal and
 //!   Info.plist always match the binary inside.
+//! - A Linux AppImage: the downloaded AppImage is renamed over the file the
+//!   running one was mounted from, like a bare binary.
 
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::release::EXE_NAME;
+use semver::Version;
+
+use super::release::{self, EXE_NAME};
 
 /// Where the files are unpacked, next to the install so every rename stays
 /// on one filesystem: `<STAGING>-<pid>`, one per process, so a second copy
@@ -51,12 +55,19 @@ pub(super) enum Location {
     Binary(PathBuf),
     /// A macOS `.app` the executable runs from.
     Bundle(PathBuf),
+    /// The AppImage file this runs from.
+    AppImage(PathBuf),
 }
 
 impl Location {
     pub(super) fn current() -> Result<Location, String> {
         let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-        Ok(Location::of(&running_path(exe)))
+        let image = appimage_of(
+            &exe,
+            std::env::var_os("APPIMAGE"),
+            std::env::var_os("APPDIR"),
+        );
+        Ok(image.map_or_else(|| Location::of(&running_path(exe)), Location::AppImage))
     }
 
     pub(super) fn of(exe: &Path) -> Location {
@@ -68,8 +79,28 @@ impl Location {
 
     /// The folder whose entries change.
     pub(super) fn dir(&self) -> &Path {
-        let (Location::Binary(path) | Location::Bundle(path)) = self;
+        let (Location::Binary(path) | Location::Bundle(path) | Location::AppImage(path)) = self;
         path.parent().unwrap_or(Path::new("."))
+    }
+
+    /// The release asset this kind of install updates from.
+    pub(super) fn package_name(&self, version: &Version, target: &str) -> String {
+        match self {
+            Location::AppImage(_) => release::appimage_name(version),
+            Location::Binary(_) | Location::Bundle(_) => release::package_name(version, target),
+        }
+    }
+
+    /// Puts the verified download `package` in place of this install,
+    /// unpacking it under `staging` first unless it's an AppImage.
+    pub(super) fn install(&self, package: &Path, staging: &Path) -> Result<(), String> {
+        if let Location::AppImage(image) = self {
+            return swap_over(package, image)
+                .map_err(|error| format!("could not replace the install: {error}"));
+        }
+        let unpacked = staging.join("unpacked");
+        unpack(package, &unpacked)?;
+        self.replace_from(&unpacked)
     }
 
     /// Replaces this install with the package unpacked at `unpacked`.
@@ -99,11 +130,14 @@ impl Location {
                     swap_over(&new, exe)
                 }
             }
+            Location::AppImage(_) => Err(std::io::Error::other(
+                "an AppImage is replaced whole, not unpacked",
+            )),
         };
         result.map_err(|error| format!("could not replace the install: {error}"))
     }
 
-    /// What an earlier swap left: Windows' `rbxstudio.old.exe`, a bundle's
+    /// What an earlier swap left: Windows' `RbxNative.old.exe`, a bundle's
     /// `.app.old`, an interrupted download's staging folder (only a stale
     /// one, another running copy may own a fresh one).
     pub(super) fn clear_leftovers(&self) {
@@ -114,6 +148,7 @@ impl Location {
             Location::Bundle(bundle) => {
                 let _ = fs::remove_dir_all(old_bundle(bundle));
             }
+            Location::AppImage(_) => {}
         }
         clear_stale_staging(self.dir(), STALE_STAGING);
     }
@@ -151,9 +186,21 @@ pub(super) fn clear_stale_staging(dir: &Path, older_than: std::time::Duration) {
     }
 }
 
+/// The AppImage `exe` runs from. Its runtime sets `APPIMAGE` (the file) and
+/// `APPDIR` (where it's mounted); a program an AppImage starts inherits
+/// both, so `exe` must be under `APPDIR` for them to be about this process.
+pub(super) fn appimage_of(
+    exe: &Path,
+    image: Option<OsString>,
+    appdir: Option<OsString>,
+) -> Option<PathBuf> {
+    let (image, appdir) = (PathBuf::from(image?), PathBuf::from(appdir?));
+    (!appdir.as_os_str().is_empty() && exe.starts_with(&appdir) && image.is_file()).then_some(image)
+}
+
 /// Where the install is, once this process's own file has been swapped out:
-/// Linux names it `/path/rbxstudio (deleted)`, Windows follows the rename to
-/// `rbxstudio.old.exe`.
+/// Linux names it `/path/rbxnative (deleted)`, Windows follows the rename to
+/// `RbxNative.old.exe`.
 pub(super) fn running_path(exe: PathBuf) -> PathBuf {
     let Some(path) = exe.to_str() else {
         return exe;
@@ -178,12 +225,12 @@ fn bundle_of(exe: &Path) -> Option<PathBuf> {
         .then(|| bundle.to_owned())
 }
 
-/// `rbxstudio.old.exe` beside `rbxstudio.exe`.
+/// `RbxNative.old.exe` beside `RbxNative.exe`.
 pub(super) fn old_exe(exe: &Path) -> PathBuf {
     let stem = exe.file_stem().map(|s| s.to_string_lossy().into_owned());
     exe.with_file_name(format!(
         "{}.old.exe",
-        stem.as_deref().unwrap_or("rbxstudio")
+        stem.as_deref().unwrap_or("RbxNative")
     ))
 }
 

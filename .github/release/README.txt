@@ -1,20 +1,26 @@
 RbxNative
 =========
 
-A native Roblox Studio replacement. Nothing to install: unpack this folder
-anywhere you can write to and run the program from there. It keeps itself
-up to date (Settings > Files & recovery > Updates): a new release downloads
-in the background, is checked against its signed checksums and runs from
-the next launch.
+A native Roblox Studio replacement. This folder is the portable copy:
+unpack it anywhere you can write to and run the program from there. It
+keeps itself up to date (Settings > Files & recovery > Updates): a new
+release downloads in the background, is checked against its signed
+checksums and runs from the next launch.
+
+Rather install it? Each release also has a Windows setup, a macOS .dmg
+and a Linux AppImage, and one-line installers:
+  macOS, Linux:          curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh
+  Windows (PowerShell):  irm https://rbxnative.chteau.bzh/install.ps1 | iex
+See https://rbxnative.chteau.bzh/docs/install.html
 
 Windows
-  Double-click rbxstudio.exe. The build isn't signed with a paid
+  Double-click RbxNative.exe. The build isn't signed with a paid
   certificate, so SmartScreen may say "Windows protected your PC": click
   "More info", then "Run anyway". Keep WinDivert.dll and WinDivert64.sys
   next to it: Play's network simulator needs them.
 
 macOS (Apple Silicon)
-  Move RbxNative.app to Applications. It is only ad-hoc signed, so the
+  Move RbxNative.app to Applications. It isn't notarized by Apple, so the
   first time right-click it, choose Open, then Open again (or run
   `xattr -dr com.apple.quarantine /Applications/RbxNative.app`). Run it
   from Applications rather than straight from the download, or macOS keeps
@@ -24,11 +30,11 @@ Linux (x86_64, X11)
   It needs the X11/xkbcommon/fontconfig libraries and a Vulkan driver.
   On Debian/Ubuntu:
     sudo apt install libxkbcommon-x11-0 libx11-xcb1 libfontconfig1 libvulkan1 mesa-vulkan-drivers
-  Then run ./rbxstudio. Open/Save As go through xdg-desktop-portal and the
+  Then run ./rbxnative. Open/Save As go through xdg-desktop-portal and the
   API key is kept in the Secret Service (GNOME Keyring, KWallet).
 
 The first launch asks for a Roblox Open Cloud API key (kept in your OS
-keyring). You can skip it and still edit local places. `rbxstudio --help`
+keyring). You can skip it and still edit local places. `rbxnative --help`
 lists the options.
 
 LICENSE.txt is RbxNative's license, THIRD-PARTY-LICENSES.html covers the
