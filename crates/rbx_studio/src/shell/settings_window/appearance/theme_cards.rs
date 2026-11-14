@@ -243,6 +243,17 @@ fn drawn_window(mini: &Mini) -> Div {
         )
 }
 
+/// What a built-in theme is called on its card and in the dropdown, so the
+/// two never disagree; `None` for an installed theme (its manifest names it).
+pub(in crate::shell::settings_window) fn builtin_name(id: &str) -> Option<&'static str> {
+    match id {
+        theme::DEFAULT_ID => Some("Default"),
+        theme::HIGH_CONTRAST_ID => Some("High contrast"),
+        theme::LIGHT_ID => Some("Light"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::CARDS;
@@ -262,16 +273,5 @@ mod tests {
             assert_eq!(CARDS[index].title, palette.color("text"), "{id} title");
         }
         assert_ne!(CARDS[2].body, CARDS[0].body);
-    }
-}
-
-/// What a built-in theme is called on its card and in the dropdown, so the
-/// two never disagree; `None` for an installed theme (its manifest names it).
-pub(in crate::shell::settings_window) fn builtin_name(id: &str) -> Option<&'static str> {
-    match id {
-        theme::DEFAULT_ID => Some("Default"),
-        theme::HIGH_CONTRAST_ID => Some("High contrast"),
-        theme::LIGHT_ID => Some("Light"),
-        _ => None,
     }
 }
