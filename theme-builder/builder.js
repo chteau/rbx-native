@@ -97,7 +97,7 @@ const LABELS = {
   dock: ["Panels", "Explorer, Properties, Output"],
   field_select: ["Fields", "Text boxes and dropdowns"],
   text: ["Text", ""],
-  text2: ["Secondary text", "Labels, inactive tabs"],
+  text2: ["Secondary text", "Labels, inactive tabs, title and menu bar"],
   text3: ["Faint text", "Hints, placeholders"],
   border: ["Lines", "Between panels"],
   border2: ["Strong lines", "Around popovers and chips"],
