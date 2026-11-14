@@ -139,3 +139,14 @@ showed nothing behind the docks, ribbon or text boxes. Colour blending is
 unchanged; only the window's coverage, which the macOS compositor reads,
 is. Re-apply it (two lines) when upgrading with `gpui-pre`.
 
+
+## `gpui-pre-windows` (0.3.4, Apache-2.0, `zed-industries/zed`'s `gpui_windows` as published)
+
+Unmodified crates.io 0.3.4 source (its `Cargo.lock` and `.cargo-ok` dropped)
+but for the same fix as `gpui-pre-apple`, in `src/directx_renderer.rs` and
+marked "rbx-native fix": the main and path-sprite blend states use
+`D3D11_BLEND_INV_SRC_ALPHA` for the destination alpha instead of
+`D3D11_BLEND_ONE`. Upstream adds the alphas of stacked shapes, so on
+Windows the DirectComposition swap chain came out opaque under every
+see-through theme. Re-apply it (two lines) when upgrading with `gpui-pre`.
+

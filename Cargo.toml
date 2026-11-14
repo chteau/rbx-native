@@ -64,3 +64,5 @@ gpui-pre = { path = "vendor/gpui-pre" }
 # macOS alpha blending: `vendor/gpui-pre-apple` is gpui-pre-apple 0.3.4
 # unchanged but for the marked Metal blend fix (see `vendor/README.md`).
 gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
+# Same alpha blending fix for Windows (DirectX): `vendor/gpui-pre-windows`.
+gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
