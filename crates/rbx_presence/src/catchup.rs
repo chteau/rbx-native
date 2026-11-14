@@ -336,6 +336,8 @@ mod tests {
             key: "k".repeat(64),
             enc_key: crate::crypt::enc_key("s", 1),
             user_id: 42,
+            place_id: 4567,
+            beacon_from: "test".into(),
             hosting: None,
         }
     }

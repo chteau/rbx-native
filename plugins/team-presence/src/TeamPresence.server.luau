@@ -14,6 +14,7 @@ local Schema = require(script.Schema)
 local Secret = require(script.Secret)
 local Widget = require(script.Widget)
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
 local HEARTBEAT = 5
@@ -23,6 +24,10 @@ local LAST_SEEN_EVERY = 30
 local TICK = 0.2
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
+
+local NEW_KEY = Relay.WAITING
+	.. " This place had no presence key yet, so I made one: save the place (File > Save to Roblox)"
+	.. " before opening it in RbxNative."
 
 local toolbar = plugin:CreateToolbar("rbx-native")
 local button = toolbar:CreateButton("Presence", "Show rbx-native team presence", "")
@@ -90,6 +95,42 @@ local function stop()
 	end
 end
 
+-- The status line for a failed publish or poll. Never silent: waiting is
+-- said in plain words, with what to do when the two sides can't meet.
+-- This install's beacon sender id, kept so reopening the place replaces our
+-- own earlier beacon instead of reading as a second Studio on another key.
+local function beaconId(): string
+	local id = plugin:GetSetting("BeaconFrom")
+	if type(id) == "string" and #id == 16 then
+		return id
+	end
+	local fresh = string.sub(string.gsub(HttpService:GenerateGUID(false), "-", ""), 1, 16)
+	plugin:SetSetting("BeaconFrom", fresh)
+	return fresh
+end
+
+local function showProblem(myRelay: any, err: string?, minted: boolean)
+	local text = err or "Can't reach the relay"
+	if myRelay:waiting() then
+		local other = myRelay:keyConflict()
+		if other then
+			local who = if other == "studio" then "Another Studio" else "RbxNative"
+			widget:setStatus(
+				`{who} has this place open with a different presence key, so you can't see each other.`
+					.. " Save the place from Studio (File > Save to Roblox), then reopen it in RbxNative"
+					.. " from My Games and pick Download the published version.",
+				true
+			)
+			return
+		end
+		if text == Relay.WAITING then
+			widget:setStatus(if minted then NEW_KEY else text)
+			return
+		end
+	end
+	widget:setStatus(text, string.find(text, "yet (", 1, true) == nil)
+end
+
 local function nextBackoff(current: number): number
 	if current == 0 then
 		return BACKOFF_MIN
@@ -107,9 +148,9 @@ local function start()
 	-- Zero-config: the first connector mints the place's secret, everyone
 	-- else reads it. Writing it needs a Save/Publish to reach collaborators.
 	local secret = Secret.read()
+	local minted = secret == nil
 	if not secret then
 		secret = Secret.create()
-		widget:setStatus("Shared a key — Save or Publish once to share it")
 	end
 
 	-- The place names the relay; collaborators read it. A place that names
@@ -129,6 +170,8 @@ local function start()
 		encKey = encKey,
 		room = Auth.roomId(key),
 		userId = ownId,
+		placeId = game.PlaceId,
+		beaconFrom = beaconId(),
 	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
@@ -189,7 +232,7 @@ local function start()
 					lastPublish = os.clock()
 					backoff = 0
 				else
-					widget:setStatus(err or "Publish failed", not myRelay:waiting())
+					showProblem(myRelay, err, minted)
 					backoff = nextBackoff(backoff)
 					lastPublish = os.clock()
 					task.wait(backoff)
@@ -233,7 +276,7 @@ local function start()
 				-- ntfy polls return at once; pace them so we don't spin.
 				task.wait(myRelay:pollDelay())
 			else
-				widget:setStatus(err or "Poll failed", not myRelay:waiting())
+				showProblem(myRelay, err, minted)
 				backoff = nextBackoff(backoff)
 				task.wait(backoff)
 			end
@@ -257,7 +300,7 @@ local function apply(on: boolean)
 		start()
 	else
 		stop()
-		widget:setStatus("Off")
+		widget:setStatus("Off. Switch on Share my presence to see RbxNative users.")
 	end
 end
 
@@ -312,5 +355,10 @@ if savedRelay then
 	widget:setRelay(savedRelay.kind, savedRelay.url, false)
 else
 	widget:setRelay(Defaults.communityKind, Defaults.communityUrl, true)
+end
+-- First run: show the widget, so the switch that turns presence on is in
+-- front of the user instead of behind a toolbar button.
+if plugin:GetSetting("Enabled") == nil then
+	widget.gui.Enabled = true
 end
 apply(plugin:GetSetting("Enabled") == true)
