@@ -38,11 +38,14 @@
 <li>Windows: <code>%LOCALAPPDATA%\Programs\RbxNative</code> with a Start menu shortcut, the same folder the setup uses.</li>
 </ul>
 <p>If <a href="https://jedisct1.github.io/minisign/">minisign</a> is installed, the script also checks the checksums' signature, with the same key the updater uses. Without it, it still checks the hash.</p>
-<p>A specific version, or removing it again. Uninstalling only takes what the script added, your settings, places and saved keys stay.</p>
-<pre><code>curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh -s -- --version 0.2.0
-curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh -s -- --uninstall</code></pre>
-<pre><code>&amp; ([scriptblock]::Create((irm https://rbxnative.chteau.bzh/install.ps1))) -Version 0.2.0
-&amp; ([scriptblock]::Create((irm https://rbxnative.chteau.bzh/install.ps1))) -Uninstall</code></pre>
+<p>A specific version:</p>
+<pre><code>curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh -s -- --version 0.2.0</code></pre>
+<pre><code>$env:RBXNATIVE_VERSION = '0.2.0'
+irm https://rbxnative.chteau.bzh/install.ps1 | iex</code></pre>
+<p>Removing it again. That only takes what the script added, your settings, places and saved keys stay.</p>
+<pre><code>curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh -s -- --uninstall</code></pre>
+<pre><code>$s = irm https://rbxnative.chteau.bzh/install.ps1
+&amp; ([scriptblock]::Create($s)) -Uninstall</code></pre>
 <p>Want to read it first? <a href="../install.sh">install.sh</a> and <a href="../install.ps1">install.ps1</a>. They're also attached to every release.</p>
 <h2 id="installers">Installers</h2>
 <p>Rather click through something? The <a href="https://github.com/chteau/rbx-native/releases/latest">latest release</a> has these:</p>
