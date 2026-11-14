@@ -339,6 +339,11 @@ fn background(file: &BackgroundFile, dir: Option<&Path>) -> Result<Background, S
             MAX_IMAGE_BYTES / (1024 * 1024)
         ));
     }
+    // Only the header is read: enough to turn a file that isn't an image
+    // into the same clear refusal as a missing one, instead of a theme that
+    // applies with nothing painted where its image should be.
+    image::image_dimensions(&path)
+        .map_err(|err| format!("background image {:?} can't be read: {err}", file.image))?;
     if !(0.0..=1.0).contains(&file.opacity) {
         return Err(format!(
             "background opacity {} is outside 0–1",

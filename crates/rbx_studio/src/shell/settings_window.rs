@@ -370,6 +370,14 @@ impl Render for SettingsWindow {
                 } else if keystroke.key == "f" && keystroke.modifiers.secondary() {
                     this.search.update(cx, |state, cx| state.focus(window, cx));
                     cx.stop_propagation();
+                } else if keystroke.key == "w"
+                    && keystroke.modifiers.secondary()
+                    && !keystroke.modifiers.shift
+                {
+                    // Cmd+W (Ctrl+W) closes Settings like its close button.
+                    this.commit_typed(cx);
+                    window.defer(cx, |window, _| window.remove_window());
+                    cx.stop_propagation();
                 }
             }))
             .font_family(tokens::font_ui())

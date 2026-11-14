@@ -231,8 +231,12 @@ fn window_modes_and_the_hover_glow_parse() {
 #[test]
 fn a_background_image_must_be_an_image_inside_the_theme() {
     let dir = scratch();
-    write(&dir, "art/bg.png", b"png");
+    std::fs::create_dir_all(dir.join("art")).unwrap();
+    image::RgbaImage::new(4, 2)
+        .save(dir.join("art/bg.png"))
+        .unwrap();
     write(&dir, "notes.txt", b"x");
+    write(&dir, "broken.png", b"not a png");
     let (palette, _) = palette_of(
         r#"{"background":{"image":"art/bg.png","opacity":0.3,"fit":"contain","layer":"over"}}"#,
         Some(&dir),
@@ -254,20 +258,12 @@ fn a_background_image_must_be_an_image_inside_the_theme() {
         r#"{"background":{"image":"art/bg.png","layer":"sideways"}}"#,
         r#"{"background":{"image":"art/bg.png","blur":65}}"#,
         r#"{"background":{"image":"art/bg.png","blur":-1}}"#,
+        // Not an image: refused like a missing one, not applied blank.
+        r#"{"background":{"image":"broken.png"}}"#,
+        r#"{"background":{"image":"broken.png","blur":24}}"#,
     ] {
         assert!(palette_of(bad, Some(&dir)).is_err(), "{bad}");
     }
-
-    // An image that cannot be decoded keeps painting sharp.
-    let (palette, _) = palette_of(
-        r#"{"background":{"image":"art/bg.png","blur":64}}"#,
-        Some(&dir),
-    )
-    .unwrap();
-    assert_eq!(
-        palette.effects.background.unwrap().path,
-        dir.join("art/bg.png")
-    );
 }
 
 #[test]

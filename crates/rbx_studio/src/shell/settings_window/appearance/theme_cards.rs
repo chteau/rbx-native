@@ -1,5 +1,5 @@
 //! Appearance › Theme's cards, one per listed theme. The built-in themes,
-//! Dark soft (Default), High contrast and Light, are small windows drawn in
+//! Default, High contrast and Light, are small windows drawn in
 //! their own palette; an installed theme shows its preview image.
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -38,7 +38,7 @@ fn mini(id: &str) -> Mini {
     }
 }
 
-/// Dark soft, High contrast, Light; parsed once rather than every frame.
+/// Default, High contrast, Light; parsed once rather than every frame.
 static CARDS: std::sync::LazyLock<[Mini; 3]> = std::sync::LazyLock::new(|| {
     [
         mini(theme::DEFAULT_ID),
@@ -71,7 +71,7 @@ impl SettingsWindow {
             .px(px(16.))
             .children(self.appearance.listed.iter().map(|(id, manifest)| {
                 let builtin = match id.as_str() {
-                    theme::DEFAULT_ID => Some(("Dark soft", "Built-in", &CARDS[0])),
+                    theme::DEFAULT_ID => Some(("Default", "Built-in", &CARDS[0])),
                     theme::HIGH_CONTRAST_ID => Some(("High contrast", "7:1 text, AAA", &CARDS[1])),
                     theme::LIGHT_ID => Some(("Light", "Built-in", &CARDS[2])),
                     _ => None,
