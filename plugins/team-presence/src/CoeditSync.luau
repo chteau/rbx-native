@@ -110,14 +110,15 @@ function Sync.authorOf(_self: any, actor: any): string
 	return "user " .. userId .. " (" .. client .. ")"
 end
 
-function Sync.poll(self: any)
+-- True when the relay answered.
+function Sync.poll(self: any): boolean
 	local options = self.options
 	local okPoll, result, err = pcall(options.relay.pollOps, options.relay, self.since)
 	if not okPoll or result == nil then
 		if not okPoll or err ~= nil then
 			self:note("Co-edit: could not read edits (" .. tostring(if okPoll then err else result) .. ")")
 		end
-		return
+		return false
 	end
 	-- A relay may carry on the log we read, lack some or all of it (a new
 	-- host: hand it over), or run another (read that from its start; what
@@ -125,13 +126,13 @@ function Sync.poll(self: any)
 	local step, missing = self.kept:step(result)
 	if step == "fill" then
 		handOver(self, missing :: { any })
-		return
+		return true
 	elseif step == "restart" then
 		self.kept:restart(result.log)
 		self.since = 0
 		self.reassembler = CoeditCore.Reassembler.new()
 		self.state.registers = CoeditCore.Registers.new()
-		return
+		return true
 	end
 	local log = if type(result.log) == "string" then result.log else ""
 	local entries = type(result.entries) == "table" and result.entries or {}
@@ -175,6 +176,7 @@ function Sync.poll(self: any)
 			end
 		end
 	end
+	return true
 end
 
 return Sync

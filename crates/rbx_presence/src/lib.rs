@@ -35,6 +35,7 @@ pub mod beacon;
 pub mod catchup;
 pub mod client;
 pub mod coedit;
+pub mod converge;
 pub mod crypt;
 pub mod host;
 pub mod lastseen;

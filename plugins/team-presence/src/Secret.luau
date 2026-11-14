@@ -35,16 +35,34 @@ function Secret.read(): string?
 	return nil
 end
 
-function Secret.create(): string
-	local secret = string.lower(
-		string.gsub(HttpService:GenerateGUID(false), "-", "") .. string.gsub(HttpService:GenerateGUID(false), "-", "")
-	)
-	local id = ChangeHistoryService:TryBeginRecording("Create presence key")
-	ensureFolder():SetAttribute(ATTRIBUTE, secret)
+-- Turning presence on puts everything collaborators need into the place,
+-- in one undo step: the key (made here when the place has none) and the
+-- relay (`kind`, `url`, when the place names none). Returns the key and
+-- whether it was just made. Both reach collaborators with the next save.
+function Secret.ensure(kind: string, url: string): (string, boolean)
+	local secret = Secret.read()
+	local relay = Secret.readRelay()
+	if secret ~= nil and relay ~= nil then
+		return secret, false
+	end
+	local id = ChangeHistoryService:TryBeginRecording("Set up presence")
+	local folder = ensureFolder()
+	local minted = secret == nil
+	if secret == nil then
+		secret = string.lower(
+			string.gsub(HttpService:GenerateGUID(false), "-", "")
+				.. string.gsub(HttpService:GenerateGUID(false), "-", "")
+		)
+		folder:SetAttribute(ATTRIBUTE, secret)
+	end
+	if relay == nil then
+		folder:SetAttribute(RELAY_KIND, kind)
+		folder:SetAttribute(RELAY_URL, url)
+	end
 	if id then
 		ChangeHistoryService:FinishRecording(id, Enum.FinishRecordingOperation.Commit)
 	end
-	return secret
+	return secret :: string, minted
 end
 
 -- The relay the place names, if any: a known kind and a non-empty URL.
@@ -61,25 +79,12 @@ function Secret.readRelay(): { kind: string, url: string }?
 	return nil
 end
 
--- Owner setup: writes the relay into the place for every collaborator.
+-- Writes the relay into the place for every collaborator.
 function Secret.writeRelay(kind: string, url: string)
 	local id = ChangeHistoryService:TryBeginRecording("Set presence relay")
 	local folder = ensureFolder()
 	folder:SetAttribute(RELAY_KIND, kind)
 	folder:SetAttribute(RELAY_URL, url)
-	if id then
-		ChangeHistoryService:FinishRecording(id, Enum.FinishRecordingOperation.Commit)
-	end
-end
-
-function Secret.clearRelay()
-	local folder = ServerStorage:FindFirstChild(FOLDER)
-	if folder == nil then
-		return
-	end
-	local id = ChangeHistoryService:TryBeginRecording("Clear presence relay")
-	folder:SetAttribute(RELAY_KIND, nil)
-	folder:SetAttribute(RELAY_URL, nil)
 	if id then
 		ChangeHistoryService:FinishRecording(id, Enum.FinishRecordingOperation.Commit)
 	end

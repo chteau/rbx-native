@@ -56,16 +56,11 @@ fn status_line(presence: &super::TeamPresence) -> (String, bool) {
         .key_conflict
         .as_deref()
         .filter(|_| presence.collaborators.is_empty());
-    match conflict {
-        Some("studio") => return (
-            "Studio has this place open with a different presence key, so you can't see each other. Save the place from Studio (File > Save to Roblox), then reopen it here from My Games and pick Download the published version.".into(),
+    if let Some(client) = conflict {
+        return (
+            conflict_text(client, presence.key_check.next.as_ref()),
             true,
-        ),
-        Some(_) => return (
-            "Another RbxNative has this place open with a different presence key, so you can't see each other. Save it to Roblox from one side (File > Save to Roblox), then reopen it on the other from My Games and pick Download the published version.".into(),
-            true,
-        ),
-        None => {}
+        );
     }
     let text = status_text(&presence.connection, presence.route.as_ref());
     if presence.minted
@@ -73,11 +68,39 @@ fn status_line(presence: &super::TeamPresence) -> (String, bool) {
         && presence.connection != Connection::Off
     {
         return (
-            format!("{text}. This place had no presence key, so I made one: save it to Roblox (File > Save to Roblox) before opening it in Studio. If Studio already has it open, save from Studio instead and reopen it here from My Games."),
+            format!("{text}. This place had no presence key, so I made one. Save it to Roblox (File > Save to Roblox) so Studio gets it. If Studio already has the place open with its own key, save it from Studio instead and this switches over by itself."),
             false,
         );
     }
     (text, matches!(presence.connection, Connection::Rejected(_)))
+}
+
+/// What to do about `client` ("studio" or "rbx-native") having the place
+/// open with another key, from what reading the saved place said (`next`;
+/// `None` while it is read, an error when it can't be).
+fn conflict_text(
+    client: &str,
+    next: Option<&Result<rbx_presence::converge::Next, String>>,
+) -> String {
+    use rbx_presence::converge::Next;
+    let studio = client == "studio";
+    let who = if studio {
+        "Studio"
+    } else {
+        "Another RbxNative"
+    };
+    let head = format!(
+        "{who} has this place open with a different presence key, so you can't see each other."
+    );
+    let todo = match (next, studio) {
+        (Some(Ok(Next::PeerReopens)), true) => "Studio has an older copy: close the place in Studio and open it again from Roblox.".to_owned(),
+        (Some(Ok(Next::PeerReopens)), false) => "It switches to the key saved on Roblox by itself.".to_owned(),
+        (Some(Err(why)), true) => format!("Couldn't read the place saved on Roblox ({why}). Save the place from Studio (File > Save to Roblox), then reopen it here from My Games and pick Download the published version."),
+        (Some(Err(why)), false) => format!("Couldn't read the place saved on Roblox ({why}). Publish it from one side, then reopen it on the other from My Games and pick Download the published version."),
+        (_, true) => "Save the place in Studio (File > Save to Roblox) and this switches to Studio's key by itself.".to_owned(),
+        (_, false) => "Publish the place from either one and the other switches over by itself.".to_owned(),
+    };
+    format!("{head} {todo}")
 }
 
 fn plural(n: usize, one: &'static str, many: &'static str) -> &'static str {
@@ -264,8 +287,8 @@ impl Shell {
                     .child("Share my presence"),
             );
 
-        // Owner setup: pick a transport, type its URL, and write both into
-        // the place so collaborators read them. Non-owners can ignore it.
+        // Owner setup: pick a transport, type its URL; each change goes into
+        // the place so collaborators read it. Non-owners can ignore it.
         let owner_setup = v_flex()
             .w_full()
             .gap_1()
@@ -274,7 +297,7 @@ impl Shell {
                 div()
                     .text_size(tokens::text_xs())
                     .text_color(tokens::text3())
-                    .child("Owner setup — saved into the place for everyone"),
+                    .child("Owner setup, saved into the place as you change it"),
             )
             .child(
                 h_flex()
@@ -294,16 +317,7 @@ impl Shell {
                         )
                         .on_click(cx.listener(|shell, _, _, cx| shell.toggle_owner_kind(cx))),
                     )
-                    .child(div().flex_1().child(Input::new(&relay_input)))
-                    .child(
-                        ui::button(
-                            "collaborators-relay-save",
-                            "Save to place",
-                            ui::Weight::Secondary,
-                            true,
-                        )
-                        .on_click(cx.listener(|shell, _, _, cx| shell.save_presence_relay(cx))),
-                    ),
+                    .child(div().flex_1().child(Input::new(&relay_input))),
             )
             .child(
                 div()
@@ -518,5 +532,29 @@ impl Shell {
             );
         }
         Some(strip.into_any_element())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::conflict_text;
+    use rbx_presence::converge::Next;
+
+    #[test]
+    fn a_conflict_asks_for_one_step_on_the_other_side() {
+        let saves = conflict_text("studio", Some(&Ok(Next::PeerSaves)));
+        assert!(saves.contains("Save the place in Studio"));
+        assert!(saves.contains("by itself"));
+        assert!(!saves.contains("Download the published version"));
+        assert_eq!(conflict_text("studio", None), saves);
+        assert!(conflict_text("studio", Some(&Ok(Next::PeerReopens))).contains("open it again"));
+        assert!(conflict_text("rbx-native", Some(&Ok(Next::PeerReopens))).contains("by itself"));
+    }
+
+    #[test]
+    fn an_unreadable_saved_place_falls_back_to_the_manual_steps() {
+        let text = conflict_text("studio", Some(&Err("HTTP 403".into())));
+        assert!(text.contains("HTTP 403"));
+        assert!(text.contains("Download the published version"));
     }
 }
