@@ -97,7 +97,7 @@ const LABELS = {
   dock: ["Panels", "Explorer, Properties, Output"],
   field_select: ["Fields", "Text boxes and dropdowns"],
   text: ["Text", ""],
-  text2: ["Secondary text", "Labels, inactive tabs"],
+  text2: ["Secondary text", "Labels, inactive tabs, title and menu bar"],
   text3: ["Faint text", "Hints, placeholders"],
   border: ["Lines", "Between panels"],
   border2: ["Strong lines", "Around popovers and chips"],
@@ -443,8 +443,9 @@ function buildPreview() {
   const node = (depth, icn, name, tw, extra = "") =>
     `<div class="e-node hov${extra}" style="padding-left:${6 + depth * 20}px">${depth ? `<i class="guide" style="left:${depth * 20 - 3}px"></i>` : ""}<span class="tw ${tw}">${tw && tw !== "none" ? icon(tw === "open" ? "chev" : "right") : ""}</span><img data-icon="${icn}" alt=""><span>${name}</span></div>`;
   const prop = (label, val, ro = false) => `<div class="e-prop hov${ro ? " ro" : ""}"><span>${label}</span><div>${val}</div></div>`;
+  const otab = (label, cls) => `<span class="e-otab${cls}">${label}${icon("x", "i xs")}</span>`;
   const sec = name => `<div class="e-sec">${icon("chev")}${name}</div>`;
-  const dockHead = title => `<div class="e-dockhead"><span class="e-dtab"><b>${title}</b>${icon("x", "i xs")}</span><span class="e-vsep"></span><span class="more">${icon("more")}</span></div>`;
+  const dockHead = title => `<div class="e-dockhead"><span class="e-dtab"><b>${title}</b>${icon("x", "i xs")}</span><span class="e-dtrail"><span class="e-ib">${icon("more")}</span></span></div>`;
   const docTab = (i, label, on, closable) => `<span class="e-doc hov${on ? " on" : ""}" data-doc="${on}">${icon(i)}${label}${closable ? icon("x", "i xs") : ""}</span>`;
   $("ed").innerHTML = `
     <div class="wallblur"></div><div class="ground"></div>
@@ -456,21 +457,21 @@ function buildPreview() {
     </div>
     <div class="e-rtabs">${["Home", "Avatar", "UI", "Script", "Model", "Test", "Plugins"].map((t, i) => `<span class="${i === 0 ? "on" : ""}">${t}</span>`).join("")}</div>
     <div class="e-ribbon">
-      ${tile("copy", "Copy")}
-      <div class="e-stack"><div class="hov off">${icon("paste")}Paste</div><div class="hov">${icon("cut")}Cut</div><div class="hov">${icon("dup")}Duplicate</div></div>
+      <div class="e-grp">${tile("copy", "Copy")}
+      <div class="e-stack"><div class="hov off">${icon("paste")}Paste</div><div class="hov">${icon("cut")}Cut</div><div class="hov">${icon("dup")}Duplicate</div></div></div>
       <span class="e-sep"></span>
-      <div class="e-tools">${["select", "move", "scale", "rotate", "transform", "pivot", "align"].map((t, i) => `<span class="e-tool hov${i === 0 ? " on" : ""}">${icon(t)}</span>`).join("")}</div>
-      <div class="e-fields"><span class="e-field">${icon("stud")}1 stud</span><span class="e-field">${icon("angle")}45°</span></div>
+      <div class="e-grp"><div class="e-toolwrap"><div class="e-tools">${["select", "move", "scale", "rotate", "transform", "pivot", "align"].map((t, i) => `<span class="e-tool hov${i === 0 ? " on" : ""}">${icon(t)}</span>`).join("")}</div></div>
+      <div class="e-fields"><span class="e-field">${icon("stud")}1 stud</span><span class="e-field">${icon("angle")}45°</span></div></div>
       <span class="e-sep"></span>
-      ${tile("part", "Part")}<div class="e-popwrap">${tile("script", "Script", " open")}
+      <div class="e-grp">${tile("part", "Part")}<div class="e-popwrap">${tile("script", "Script", " open")}
         <div class="e-pop" id="pop"><span class="hov">${icon("file")}Script</span><span class="hov">${icon("file")}Local Script</span><span class="hov">${icon("cube")}Module Script</span><i></i><span class="hov">${icon("pencil")}Manage templates…</span></div></div>
-      ${tile("ui", "UI")}${tile("box", "Toolbox")}
+      ${tile("ui", "UI")}${tile("box", "Toolbox")}</div>
       <span class="e-sep"></span>
-      ${tile("terrain", "Terrain E…")}
+      <div class="e-grp">${tile("terrain", "Terrain E…")}</div>
       <span class="e-sep"></span>
-      ${tile("gear", "Game Set…")}${tile("db", "Data Stor…")}
+      <div class="e-grp">${tile("gear", "Game Set…")}${tile("db", "Data Stor…")}</div>
       <span class="e-sep"></span>
-      ${tile("explorer", "Explorer", " on")}${tile("props", "Properties", " on")}${tile("output", "Output", " on")}${tile("viewport", "Viewport")}${tile("pad", "Input Acti…")}${tile("shield", "Security…")}${tile("film", "Playtests")}${tile("layers", "Lay")}
+      <div class="e-grp">${tile("explorer", "Explorer", " on")}${tile("props", "Properties", " on")}${tile("output", "Output", " on")}${tile("viewport", "Viewport")}${tile("pad", "Input Acti…")}${tile("shield", "Security…")}${tile("film", "Playtests")}${tile("layers", "Lay")}</div>
     </div>
     <div class="e-work">
     <div class="e-body">
@@ -519,7 +520,7 @@ function buildPreview() {
       </section>
       <section class="e-dock right">
         ${dockHead("Explorer")}
-        <div class="e-searchrow"><div class="e-search">Search</div>${icon("code")}</div>
+        <div class="e-searchrow"><div class="e-search">Search</div><span class="e-ib">${icon("code")}</span></div>
         <div class="e-tree">
           ${node(0, "workspace", "Workspace", "open")}
           ${node(1, "camera", "Camera", "none")}
@@ -541,10 +542,10 @@ function buildPreview() {
     </div>
     <section class="e-out">
       <div class="e-outhead">
-        <span class="e-otab on"><b>Output</b>${icon("x", "i xs")}</span><span class="e-otab">Viewport</span><span class="e-otab sc">Argon</span><span class="e-otab sc">Wally</span><span class="e-otab sc">Script Analysis</span><span class="e-otab sc">Watch</span><span class="e-otab sc">Call Stack</span>
-        <span class="e-vsep"></span><span class="runs">1 runs</span><span class="e-search grow">Search</span>
+        <span class="e-otab on"><b>Output</b>${icon("x", "i xs")}</span>${otab("Viewport", "")}${["Argon", "Wally", "Script Analysis", "Watch", "Call Stack"].map(t => otab(t, " sc")).join("")}
+        <span class="e-trail"><span class="e-octl"><span class="runs">1 runs</span><span class="e-search grow">Search</span>
         <span class="e-chips"><span class="on">All</span><span>Output</span><span>Info</span><span>Warnings</span><span>Errors</span></span>
-        <span class="e-ctx">All Contexts${icon("chev", "i xs")}</span><span class="clear">Clear</span>${icon("more")}${icon("chev")}
+        <span class="e-ctx">All Contexts${icon("chev", "i xs")}</span><span class="clear">Clear</span></span><span class="e-ib">${icon("more")}</span><span class="e-ib">${icon("chev")}</span></span>
       </div>
       <div class="e-log">
         <div class="row"><span class="kind">${icon("warn")}warning</span><span class="warn">Infinite yield possible on 'Workspace.Village:WaitForChild("Lamp")'</span></div>
@@ -554,7 +555,7 @@ function buildPreview() {
       </div>
     </section>
     </div>
-    <div class="e-cmd"><span class="e-cmdbox">${icon("right", "i xs")}<span>Execute a command with Ctrl+Enter or use Ctrl+Up/Down for history</span><b>Luau</b></span></div>
+    <div class="e-cmd"><span class="e-cmdbox"><i>&gt;</i><span>Execute a command with Ctrl+Enter or use Ctrl+Up/Down for history</span><b>Luau</b></span></div>
 `;
 }
 
