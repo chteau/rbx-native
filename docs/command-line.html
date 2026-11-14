@@ -25,10 +25,10 @@
 <article>
 <h1>Command line</h1>
 <p class="sub">The tools that come with a source build.</p>
-<p class="lead">The release tarball ships <code>rbxstudio</code>. <code>cargo build --release</code> from a <a href="install.html#source">source checkout</a> builds the rest.</p>
+<p class="lead">Releases ship the editor as <code>rbxnative</code> (<code>RbxNative.exe</code> on Windows, inside <code>RbxNative.app</code> on macOS). <code>cargo build --release</code> from a <a href="install.html#source">source checkout</a> builds the rest, and names the editor <code>rbxstudio</code>.</p>
 <table>
 <tr><th>Binary</th><th>What it does</th></tr>
-<tr><td><code>rbxstudio</code></td><td>The editor. <code>rbxstudio [--select &lt;name-or-path&gt;] [--run &lt;script.luau&gt;] [--verbose] &lt;place&gt;</code>, <code>--help</code> for the rest</td></tr>
+<tr><td><code>rbxnative</code></td><td>The editor. <code>rbxnative [--select &lt;name-or-path&gt;] [--run &lt;script.luau&gt;] [--verbose] &lt;place&gt;</code>, <code>--help</code> for the rest</td></tr>
 <tr><td><code>rbxview</code></td><td>Standalone 3D viewer, <code>rbxview place.rbxl [--screenshot out.png]</code></td></tr>
 <tr><td><code>rbxdump</code></td><td>Prints a file's instance tree. <code>--roundtrip &lt;file&gt;</code> writes it back and diffs it</td></tr>
 <tr><td><code>rbxlua</code></td><td>Runs Luau against a place, or its TestEZ specs with <code>rbxlua test place.rbxl</code></td></tr>
@@ -36,7 +36,7 @@
 <tr><td><code>rbxcloud</code></td><td>Small Open Cloud CLI: <code>whoami</code>, <code>list</code>, <code>download</code>, <code>asset</code></td></tr>
 </table>
 <h2 id="mcp">MCP server (beta)</h2>
-<p>Turn on Settings, Beta features, MCP server, then point your AI client at <code>rbxstudio --mcp</code>. It can read and edit the place the editor has open, through the same tools Roblox's Studio MCP server names.</p>
+<p>Turn on Settings, Beta features, MCP server, then point your AI client at <code>rbxnative --mcp</code>. It can read and edit the place the editor has open, through the same tools Roblox's Studio MCP server names.</p>
 <div class="pager"><a href="themes.html"><small>Previous</small>Themes</a><span></span></div>
 </article>
 </div>
