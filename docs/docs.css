@@ -40,3 +40,6 @@ td { color: var(--white); }
   .doc-side a[href^="http"] { display: none; }
   .copy { display: none; }
 }
+.shot { margin: 14px 0 18px; }
+.shot img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+article table { display: block; overflow-x: auto; }

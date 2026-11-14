@@ -28,11 +28,38 @@
 <p class="lead">Most of RbxNative works without a Roblox account. A key is for publishing, My Games, version history, DataStores, and downloading plugins from the store.</p>
 <h2>Making a key</h2>
 <ol>
-<li>Sign in to the <a href="https://create.roblox.com/dashboard">Creator Dashboard</a> and open API Keys, under Open Cloud.</li>
-<li>Create a key and give it only the scopes you need. The setup wizard tells you which ones it wants, and a feature missing one names it in its error.</li>
-<li>If the dashboard lets you lock it to specific experiences or IPs, do it. Less damage if it ever leaks.</li>
-<li>Copy it, Roblox only shows it once.</li>
+<li>Sign in to the <a href="https://create.roblox.com/dashboard/credentials">Creator Dashboard</a> and open <strong>API Keys</strong>, under Open Cloud. Click <strong>Create API Key</strong> and name it RbxNative.</li>
+<li>Under <strong>Access Permissions</strong>, pick an API from the dropdown, click <strong>Add API System</strong>, then pick its operations in the box on the right. Do that for each API below.</li>
+<li>Under <strong>Security</strong> you can type your IP address and pick an expiration date. Both are optional. With an IP set, the key only works from that internet connection, so a stolen key is useless. But if your IP changes (new Wi-Fi, VPN, a router reboot on some providers), RbxNative gets refused until you add the new one.</li>
+<li>Click <strong>Save &amp; Generate Key</strong>, then <strong>Copy Key To Clipboard</strong>. Roblox only shows it once.</li>
 </ol>
+
+<h2>Which scopes</h2>
+<p>Three are needed for the basics. Everything else switches one feature on, and the editor tells you which scope is missing when a feature needs it.</p>
+<table>
+<thead><tr><th>API on the dashboard</th><th>Operations</th><th>What it's for</th></tr></thead>
+<tbody>
+<tr><td>universe-places</td><td><code>universe-places:write</code></td><td>Save and publish places. <strong>Required</strong></td></tr>
+<tr><td>legacy-assets</td><td><code>legacy-asset:manage</code></td><td>Open private places, download avatar clothing and heads. <strong>Required</strong></td></tr>
+<tr><td>inventory</td><td><code>user.inventory-item:read</code></td><td>List your private experiences on Home. <strong>Required</strong></td></tr>
+<tr><td>universe</td><td><code>universe.place:read</code>, <code>universe.place:write</code>, <code>universe:write</code></td><td>Version history, place settings, game settings</td></tr>
+<tr><td>legacy-groups</td><td><code>legacy-group:manage</code></td><td>Group experiences on Home</td></tr>
+<tr><td>legacy-universes</td><td><code>legacy-universe:manage</code></td><td>Swapping the game icon in update planning</td></tr>
+<tr><td>game-passes</td><td><code>game-pass:read</code>, <code>game-pass:write</code></td><td>View and edit game passes</td></tr>
+<tr><td>developer-products</td><td><code>developer-product:read</code>, <code>developer-product:write</code></td><td>View and edit developer products</td></tr>
+<tr><td>universe-datastores</td><td>the <code>control</code>, <code>objects</code> and <code>versions</code> operations</td><td>The DataStore browser</td></tr>
+<tr><td>ordered-data-stores</td><td><code>universe.ordered-data-store.scope.entry:read</code>, <code>:write</code></td><td>Ordered data stores</td></tr>
+<tr><td>memory-stores</td><td>all five</td><td>The MemoryStore browser</td></tr>
+<tr><td>luau-execution-sessions</td><td><code>universe.place.luau-execution-session:read</code>, <code>:write</code></td><td>Running Luau in the cloud</td></tr>
+<tr><td>assets</td><td><code>asset:read</code>, <code>asset:write</code></td><td>Uploading meshes and images</td></tr>
+<tr><td>messaging-service</td><td><code>universe-messaging-service:publish</code></td><td>Publishing to MessagingService</td></tr>
+</tbody>
+</table>
+<p>Want everything to just work? Add every API like this. You can leave the Restrict toggles off, or turn them on and pick your games so the key can't touch anything else.</p>
+<figure class="shot"><img src="../assets/docs/key-scopes-1.webp" width="1291" height="799" loading="lazy" alt="Creator Dashboard key permissions: assets, developer-products, game-passes, groups, legacy-assets and legacy-groups with their operations added"></figure>
+<figure class="shot"><img src="../assets/docs/key-scopes-2.webp" width="1295" height="879" loading="lazy" alt="Key permissions continued: legacy-universes, memory-stores, universe-datastores and messaging-service with their operations added"></figure>
+<figure class="shot"><img src="../assets/docs/key-scopes-3.webp" width="1295" height="904" loading="lazy" alt="Key permissions continued: universe-places, ordered-data-stores, universe-place-instances, luau-execution-sessions, universe and inventory with their operations added"></figure>
+
 <h2>Adding it</h2>
 <p>Paste it in the first-run setup or later under Home, Manage key. It goes in your OS keyring.</p>
 <p>For scripts and CI, <code>rbxcloud</code> and the editor also read these, in this order:</p>
