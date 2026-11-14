@@ -61,24 +61,30 @@ function Install-RbxNative {
     }
 
     $Version = "$Version".TrimStart('v')
-    $api = if ($Version) { "https://api.github.com/repos/$repo/releases/tags/v$Version" } else { "https://api.github.com/repos/$repo/releases/latest" }
+    # RBX_UPDATE_API points at a local mock, as it does for the updater.
+    $root = if ($env:RBX_UPDATE_API) { $env:RBX_UPDATE_API } else { 'https://api.github.com' }
+    $api = if ($Version) { "$root/repos/$repo/releases/tags/v$Version" } else { "$root/repos/$repo/releases/latest" }
     try { $release = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'rbxnative-install' } }
     catch { throw "Couldn't read the release from GitHub ($api): $($_.Exception.Message)" }
     $tag = $release.tag_name
     $Version = $tag.TrimStart('v')
     $asset = "RbxNative-$Version-$target.zip"
-    if (-not ($release.assets | Where-Object { $_.name -eq $asset })) { throw "Release $tag has no Windows package." }
+    function Get-AssetUrl([string]$name) {
+        $found = $release.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+        if (-not $found) { throw "Release $tag has no $name" }
+        $found.browser_download_url
+    }
+    $null = Get-AssetUrl $asset
 
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ("rbxnative-install-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
-        $base = "https://github.com/$repo/releases/download/$tag"
         Write-Host "Downloading RbxNative $Version ($asset)"
-        Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile (Join-Path $tmp $asset)
-        Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS" -OutFile (Join-Path $tmp 'SHA256SUMS')
+        Invoke-WebRequest -UseBasicParsing -Uri (Get-AssetUrl $asset) -OutFile (Join-Path $tmp $asset)
+        Invoke-WebRequest -UseBasicParsing -Uri (Get-AssetUrl 'SHA256SUMS') -OutFile (Join-Path $tmp 'SHA256SUMS')
 
         if (Get-Command minisign -ErrorAction SilentlyContinue) {
-            Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS.minisig" -OutFile (Join-Path $tmp 'SHA256SUMS.minisig')
+            Invoke-WebRequest -UseBasicParsing -Uri (Get-AssetUrl 'SHA256SUMS.minisig') -OutFile (Join-Path $tmp 'SHA256SUMS.minisig')
             & minisign -Vq -P $publicKey -m (Join-Path $tmp 'SHA256SUMS') -x (Join-Path $tmp 'SHA256SUMS.minisig')
             if ($LASTEXITCODE -ne 0) { throw 'SHA256SUMS is not signed by the RbxNative release key. Nothing was installed.' }
             Write-Host 'Signature OK (minisign)'

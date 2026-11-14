@@ -113,17 +113,19 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/rbxnative-install.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 trap 'exit 130' INT TERM
 
-if [ -n "$version" ]; then
-  api="https://api.github.com/repos/$REPO/releases/tags/v$version"
-else
-  api="https://api.github.com/repos/$REPO/releases/latest"
-fi
+# RBX_UPDATE_API points at a local mock, as it does for the updater.
+api="${RBX_UPDATE_API:-https://api.github.com}/repos/$REPO/releases"
+if [ -n "$version" ]; then api="$api/tags/v$version"; else api="$api/latest"; fi
 fetch "$api" "$tmp/release.json" || fail "couldn't read the release from GitHub ($api)"
 tag="$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$tmp/release.json" | head -n 1)"
 [ -n "$tag" ] || fail "GitHub answered without a release tag"
 version="${tag#v}"
 
-has_asset() { grep -q "\"name\": *\"$1\"" "$tmp/release.json"; }
+# The download URL GitHub lists for asset $1, empty when there's none.
+asset_url() {
+  tr ',' '\n' < "$tmp/release.json" | sed -n "s|.*\"browser_download_url\": *\"\([^\"]*/$1\)\".*|\1|p" | head -n 1
+}
+has_asset() { [ -n "$(asset_url "$1")" ]; }
 asset="RbxNative-$version-$target.tar.gz"
 exe=rbxnative
 [ "$os" = macos ] && exe=RbxNative
@@ -134,13 +136,17 @@ if ! has_asset "$asset"; then
   has_asset "$asset" || fail "release $tag has nothing for $target"
 fi
 
-base="https://github.com/$REPO/releases/download/$tag"
+download() {
+  url="$(asset_url "$1")"
+  [ -n "$url" ] || fail "release $tag has no $1"
+  fetch "$url" "$tmp/$1" || fail "download failed: $url"
+}
 say "Downloading RbxNative $version ($asset)"
-fetch "$base/$asset" "$tmp/$asset" || fail "download failed: $base/$asset"
-fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
+download "$asset"
+download SHA256SUMS
 
 if command -v minisign >/dev/null 2>&1; then
-  fetch "$base/SHA256SUMS.minisig" "$tmp/SHA256SUMS.minisig" || fail "download failed: SHA256SUMS.minisig"
+  download SHA256SUMS.minisig
   minisign -Vq -P "$PUBLIC_KEY" -m "$tmp/SHA256SUMS" -x "$tmp/SHA256SUMS.minisig" \
     || fail "SHA256SUMS is not signed by the RbxNative release key. Nothing was installed."
   say "Signature OK (minisign)"
@@ -194,7 +200,11 @@ if [ -d "$linux_dir/share" ]; then
 fi
 
 say ""
-say "RbxNative $version is installed. It's in your app menu, or run: rbxnative"
+if [ -d "$linux_dir/share" ]; then
+  say "RbxNative $version is installed. It's in your app menu, or run: rbxnative"
+else
+  say "RbxNative $version is installed. Run: rbxnative"
+fi
 case ":${PATH:-}:" in
   *":$linux_bin:"*) ;;
   *) say "$linux_bin isn't in your PATH. Add it, or run $linux_bin/rbxnative" ;;
