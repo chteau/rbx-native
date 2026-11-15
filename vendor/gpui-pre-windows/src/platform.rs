@@ -22,7 +22,7 @@ use windows::{
         Foundation::*,
         Graphics::{Direct3D11::ID3D11Device, Gdi::*},
         Security::Credentials::*,
-        System::{Com::*, LibraryLoader::*, Ole::*, Power::*, SystemInformation::*},
+        System::{Com::*, LibraryLoader::*, Ole::*, Power::*, SystemInformation::*, Threading::GetCurrentThreadId},
         UI::{Input::KeyboardAndMouse::*, Shell::*, WindowsAndMessaging::*},
     },
     core::*,
@@ -1426,78 +1426,44 @@ fn file_save_dialog(
 
 /// rbx-native addition: shows a file dialog centred over `owner`. The shell
 /// puts it at the owner's top-left corner, which for an editor filling the
-/// screen is the screen's corner, far from where the click was.
+/// screen is the screen's corner, far from where the click was. A CBT hook
+/// on this thread moves the dialog as it first activates: it is placed by
+/// then, and the move happens before it is drawn, however slow it is to load.
 fn show_centered(dialog: &IFileDialog, owner: Option<HWND>) -> Result<()> {
-    let events: IFileDialogEvents = DialogCenter {
-        owner,
-        done: Cell::new(false),
-    }
-    .into();
-    let cookie = unsafe { dialog.Advise(&events) }.log_err();
+    let hook = owner.and_then(|owner| {
+        DIALOG_OWNER.set(Some(owner.0 as isize));
+        unsafe { SetWindowsHookExW(WH_CBT, Some(center_on_activate), None, GetCurrentThreadId()) }
+            .context("failed to hook the file dialog")
+            .log_err()
+    });
     let shown = unsafe { dialog.Show(owner) };
-    if let Some(cookie) = cookie {
-        unsafe { dialog.Unadvise(cookie) }.log_err();
+    if let Some(hook) = hook {
+        unsafe { UnhookWindowsHookEx(hook) }.log_err();
     }
+    DIALOG_OWNER.set(None);
     Ok(shown?)
 }
 
-/// rbx-native addition, see [`show_centered`]. The type change fires once
-/// as the dialog opens, its window already made but not yet shown.
-#[implement(IFileDialogEvents)]
-struct DialogCenter {
-    owner: Option<HWND>,
-    done: Cell<bool>,
+thread_local! {
+    /// The window [`show_centered`] is waiting to centre a dialog over,
+    /// cleared once it has.
+    static DIALOG_OWNER: Cell<Option<isize>> = const { Cell::new(None) };
 }
 
-#[allow(non_snake_case)]
-impl IFileDialogEvents_Impl for DialogCenter_Impl {
-    fn OnFileOk(&self, _: Ref<IFileDialog>) -> windows::core::Result<()> {
-        Ok(())
+/// rbx-native addition, see [`show_centered`]. The first top-level window
+/// other than the owner to activate on this thread is the dialog.
+unsafe extern "system" fn center_on_activate(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code == HCBT_ACTIVATE as i32 {
+        let window = HWND(wparam.0 as _);
+        if let Some(owner) = DIALOG_OWNER.get().map(|owner| HWND(owner as _))
+            && window != owner
+            && unsafe { GetAncestor(window, GA_ROOT) } == window
+        {
+            DIALOG_OWNER.set(None);
+            center_over(window, owner).log_err();
+        }
     }
-    fn OnFolderChanging(&self, _: Ref<IFileDialog>, _: Ref<IShellItem>) -> windows::core::Result<()> {
-        Ok(())
-    }
-    fn OnFolderChange(&self, _: Ref<IFileDialog>) -> windows::core::Result<()> {
-        Ok(())
-    }
-    fn OnSelectionChange(&self, _: Ref<IFileDialog>) -> windows::core::Result<()> {
-        Ok(())
-    }
-    fn OnShareViolation(
-        &self,
-        _: Ref<IFileDialog>,
-        _: Ref<IShellItem>,
-    ) -> windows::core::Result<FDE_SHAREVIOLATION_RESPONSE> {
-        Err(E_NOTIMPL.into())
-    }
-    fn OnTypeChange(&self, dialog: Ref<IFileDialog>) -> windows::core::Result<()> {
-        let Some(owner) = self.owner.filter(|_| !self.done.replace(true)) else {
-            return Ok(());
-        };
-        let window = unsafe { dialog.ok()?.cast::<IOleWindow>()?.GetWindow()? };
-        let window = unsafe { GetAncestor(window, GA_ROOT) };
-        // The dialog places itself as it shows, after this; the move waits
-        // for that on a thread of its own (raw handles: `HWND` isn't Send).
-        let (window, owner) = (window.0 as isize, owner.0 as isize);
-        std::thread::spawn(move || {
-            let (window, owner) = (HWND(window as _), HWND(owner as _));
-            for _ in 0..200 {
-                if unsafe { IsWindowVisible(window) }.as_bool() {
-                    center_over(window, owner).log_err();
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-        });
-        Ok(())
-    }
-    fn OnOverwrite(
-        &self,
-        _: Ref<IFileDialog>,
-        _: Ref<IShellItem>,
-    ) -> windows::core::Result<FDE_OVERWRITE_RESPONSE> {
-        Err(E_NOTIMPL.into())
-    }
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
 /// rbx-native addition, see [`show_centered`]: moves `window` to the middle
