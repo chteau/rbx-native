@@ -1328,7 +1328,7 @@ fn file_open_dialog(
             folder_dialog.SetOkButtonLabel(&HSTRING::from(prompt))?;
         }
 
-        if folder_dialog.Show(window).is_err() {
+        if show_centered(&folder_dialog, window).is_err() {
             // User cancelled
             return Ok(None);
         }
@@ -1409,7 +1409,7 @@ fn file_save_dialog(
                 .context("failed to set the default extension")
                 .log_err();
         }
-        if dialog.Show(window).is_err() {
+        if show_centered(&dialog, window).is_err() {
             // User cancelled
             return Ok(None);
         }
@@ -1422,6 +1422,86 @@ fn file_save_dialog(
         string
     };
     Ok(Some(PathBuf::from(file_path_string)))
+}
+
+/// rbx-native addition: shows a file dialog centred over `owner`. The shell
+/// puts it at the owner's top-left corner, which for an editor filling the
+/// screen is the screen's corner, far from where the click was.
+fn show_centered(dialog: &IFileDialog, owner: Option<HWND>) -> Result<()> {
+    let events: IFileDialogEvents = DialogCenter {
+        owner,
+        done: Cell::new(false),
+    }
+    .into();
+    let cookie = unsafe { dialog.Advise(&events) }.log_err();
+    let shown = unsafe { dialog.Show(owner) };
+    if let Some(cookie) = cookie {
+        unsafe { dialog.Unadvise(cookie) }.log_err();
+    }
+    Ok(shown?)
+}
+
+/// rbx-native addition, see [`show_centered`]. The type change fires once
+/// as the dialog opens, its window already made but not yet shown.
+#[implement(IFileDialogEvents)]
+struct DialogCenter {
+    owner: Option<HWND>,
+    done: Cell<bool>,
+}
+
+#[allow(non_snake_case)]
+impl IFileDialogEvents_Impl for DialogCenter_Impl {
+    fn OnFileOk(&self, _: Ref<IFileDialog>) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnFolderChanging(&self, _: Ref<IFileDialog>, _: Ref<IShellItem>) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnFolderChange(&self, _: Ref<IFileDialog>) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnSelectionChange(&self, _: Ref<IFileDialog>) -> windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnShareViolation(
+        &self,
+        _: Ref<IFileDialog>,
+        _: Ref<IShellItem>,
+    ) -> windows::core::Result<FDE_SHAREVIOLATION_RESPONSE> {
+        Err(E_NOTIMPL.into())
+    }
+    fn OnTypeChange(&self, dialog: Ref<IFileDialog>) -> windows::core::Result<()> {
+        let Some(owner) = self.owner.filter(|_| !self.done.replace(true)) else {
+            return Ok(());
+        };
+        let window = unsafe { dialog.ok()?.cast::<IOleWindow>()?.GetWindow()? };
+        let mut outer = RECT::default();
+        let mut inner = RECT::default();
+        let mut monitor = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        unsafe {
+            GetWindowRect(owner, &mut outer)?;
+            GetWindowRect(window, &mut inner)?;
+            let _ = GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut monitor);
+        }
+        let (width, height) = (inner.right - inner.left, inner.bottom - inner.top);
+        let work = monitor.rcWork;
+        let x = ((outer.left + outer.right - width) / 2).clamp(work.left, (work.right - width).max(work.left));
+        let y = ((outer.top + outer.bottom - height) / 2).clamp(work.top, (work.bottom - height).max(work.top));
+        unsafe {
+            SetWindowPos(window, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)?;
+        }
+        Ok(())
+    }
+    fn OnOverwrite(
+        &self,
+        _: Ref<IFileDialog>,
+        _: Ref<IShellItem>,
+    ) -> windows::core::Result<FDE_OVERWRITE_RESPONSE> {
+        Err(E_NOTIMPL.into())
+    }
 }
 
 /// rbx-native addition: the save dialog's (name, pattern) rows for a file

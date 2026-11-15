@@ -34,6 +34,10 @@ pub(super) const PRIMARY_ROWS: [&str; 4] = [
     "Delete",
 ];
 
+/// How far down the window a dropdown starts (the title bar, the menu row
+/// and the popup's own offset), plus the anchor's 8px margin below it.
+const BAR_BOTTOM: Pixels = px(80.);
+
 /// `action_context` is where an item's action dispatches from, the handle
 /// focus was on before the bar took it, so a command reads the same world it
 /// would have if its shortcut had been typed instead.
@@ -44,6 +48,10 @@ pub(super) fn dropdown(
     cx: &mut App,
 ) -> Entity<PopupMenu> {
     let items = items.to_vec();
+    // Room under the bar. The File menu is taller than a 1080p window at
+    // 125 %, and the anchor's snap then pushed it up over the bar itself;
+    // capped here it stays under its title and scrolls instead.
+    let room = window.viewport_size().height - BAR_BOTTOM;
     PopupMenu::build(window, cx, move |menu, _, _| {
         let menu = items.iter().fold(menu, |menu, item| match item {
             OwnedMenuItem::Action {
@@ -114,6 +122,8 @@ pub(super) fn dropdown(
             // for an OS-managed menu on this platform.
             OwnedMenuItem::Submenu(_) | OwnedMenuItem::SystemMenu(_) => menu,
         });
-        menu.when_some(action_context, |menu, context| menu.action_context(context))
+        menu.scrollable(true)
+            .max_h(room)
+            .when_some(action_context, |menu, context| menu.action_context(context))
     })
 }
