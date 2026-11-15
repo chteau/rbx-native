@@ -23,6 +23,7 @@
 //!   and bring-to-front.
 
 pub mod channel;
+pub mod child_job;
 #[cfg(any(target_os = "linux", windows))]
 pub mod embed;
 pub mod exec;

@@ -521,6 +521,7 @@ pub(crate) fn open_editor(
     );
     let options = window_options(&title, cx);
     cx.open_window(options, |window, cx| {
+        mark_primary(window, cx);
         let shell = cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));
         let closing = shell.downgrade();
         window.on_window_should_close(cx, move |_, cx| {
@@ -532,6 +533,34 @@ pub(crate) fn open_editor(
     })
     .expect("failed to open the main window");
     Ok(())
+}
+
+/// The windows the app lives for: editors and Home. Settings and the other
+/// secondary windows don't keep it running on their own; GPUI only quits
+/// once every window is gone, so closing the editor with Settings open used
+/// to leave a process holding nothing but Settings.
+#[derive(Default)]
+struct PrimaryWindows(std::collections::HashSet<WindowId>);
+
+impl Global for PrimaryWindows {}
+
+/// Counts `window` as primary: when the last primary window closes the app
+/// quits, whatever else is open. Not on macOS, where an app outlives its
+/// windows.
+pub(crate) fn mark_primary(window: &Window, cx: &mut App) {
+    if !cx.has_global::<PrimaryWindows>() {
+        cx.set_global(PrimaryWindows::default());
+        cx.on_window_closed(|cx, id| {
+            let primary = cx.global_mut::<PrimaryWindows>();
+            if primary.0.remove(&id) && primary.0.is_empty() && cfg!(not(target_os = "macos")) {
+                cx.quit();
+            }
+        })
+        .detach();
+    }
+    cx.global_mut::<PrimaryWindows>()
+        .0
+        .insert(window.window_handle().window_id());
 }
 
 /// Home's Settings host: a hidden editor over an empty place (see
@@ -743,26 +772,29 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
     })
 }
 
-fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
-    let wanted = size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1));
-    // No bigger than the screen minus the taskbar or dock: at 1600x900 or
-    // on a 1366x768 laptop the bottom rows (the Command Bar) used to sit
-    // under the Windows taskbar.
-    let bounds = match cx.primary_display() {
-        Some(display) => {
-            let area = display.visible_bounds();
-            let fitted = wanted.min(&area.size);
-            let center = area.center();
-            Bounds::new(
-                point(
-                    center.x - fitted.width / 2.0,
-                    center.y - fitted.height / 2.0,
-                ),
-                fitted,
-            )
-        }
-        None => Bounds::centered(None, wanted, cx),
+/// `wanted` centred on the primary screen's work area and no bigger than
+/// it: at 1600x900, on a 1366x768 laptop or at 1080p with 125 % scaling the
+/// title bar used to land off the top and the bottom rows (the Command Bar)
+/// under the Windows taskbar. The area is in logical pixels, so the display
+/// scale is already in it.
+pub(crate) fn fit_to_screen(wanted: Size<Pixels>, cx: &App) -> Bounds<Pixels> {
+    let Some(display) = cx.primary_display() else {
+        return Bounds::centered(None, wanted, cx);
     };
+    let area = display.visible_bounds();
+    let fitted = wanted.min(&area.size);
+    let center = area.center();
+    Bounds::new(
+        point(
+            center.x - fitted.width / 2.0,
+            center.y - fitted.height / 2.0,
+        ),
+        fitted,
+    )
+}
+
+fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
+    let bounds = fit_to_screen(size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
 
     WindowOptions {
         app_id: Some(crate::APP_ID.to_owned()),

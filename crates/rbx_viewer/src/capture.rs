@@ -12,7 +12,7 @@ use crate::camera::{self, Camera, Viewpoint};
 use crate::gizmo::Gizmo;
 use crate::gpu;
 use crate::pick::Selected;
-use crate::quality::QualityProfile;
+use crate::quality::{QualityLevel, QualityProfile};
 use crate::renderer::{Fill, Renderer, Segment, World};
 use crate::scene::{Bounds, Scene};
 use crate::view::View;
@@ -56,15 +56,41 @@ impl Offscreen {
     /// the place has to be said out loud wherever a renderer is built or
     /// rebuilt (see [`Offscreen::reload`]), which is what stops one from
     /// silently starting blank, see [`View`].
+    ///
+    /// Running out of GPU memory building it is not the end: it is built
+    /// again leaner (smaller material textures at the lowest quality level),
+    /// then on the next backend (see [`gpu::backend_order`]). The level it
+    /// ended up at comes back with it.
     pub(crate) fn new(
         world: World<'_>,
-        quality: &QualityProfile,
+        quality: QualityLevel,
         view: &View,
-    ) -> Result<Self, String> {
-        let instance = gpu::instance();
-        let adapter = gpu::adapter(&instance, None)?;
-        let (device, queue) = gpu::device(&adapter)?;
-        Ok(Self::on_device(device, queue, world, quality, view))
+    ) -> Result<(Self, QualityLevel), String> {
+        let mut failure = String::from("no GPU backend to try");
+        for backends in gpu::backend_order() {
+            let instance = gpu::instance_for(backends);
+            let opened = gpu::adapter(&instance, None).and_then(|adapter| gpu::device(&adapter));
+            let (device, queue) = match opened {
+                Ok(opened) => opened,
+                Err(err) => {
+                    eprintln!("rbxview: {backends:?}: {err}");
+                    failure = err;
+                    continue;
+                }
+            };
+            for level in [quality, QualityLevel::Level(QualityLevel::MIN)] {
+                let scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+                let offscreen =
+                    Self::on_device(device.clone(), queue.clone(), world, &level.profile(), view);
+                let Some(err) = pollster::block_on(scope.pop()) else {
+                    return Ok((offscreen, level));
+                };
+                eprintln!("rbxview: building the scene at {level:?} ran out of GPU memory: {err}");
+                failure = format!("the GPU ran out of memory: {err}");
+                gpu::lean_after_oom();
+            }
+        }
+        Err(failure)
     }
 
     /// Same as [`Offscreen::new`], but on a device/queue the caller already

@@ -1283,6 +1283,11 @@ impl Shell {
         // a screenshot aid proving a just-applied mutation was reverted.
         shell.apply_debug_undo(cx);
 
+        // `RBX_PLAY_EMBED_TEST` (see `shell::play`): embeds another program
+        // over the 3D view, to check embedding without Roblox.
+        #[cfg(windows)]
+        shell.play_embed_test(window, cx);
+
         // `RBX_STUDIO_SETTINGS` (see `shell::settings_window`): opens Studio
         // Settings with the editor, for a capture.
         if std::env::var_os(settings_window::OPEN_VARIABLE).is_some() {

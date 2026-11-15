@@ -45,6 +45,16 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 /// Lowercased executable file names of Roblox client processes.
 pub const CLIENT_EXES: &[&str] = &["robloxplayerbeta.exe"];
 
+/// `RBX_PLAY_EMBED_TEST=notepad.exe`: that program's window counts as a
+/// client too, so embedding (z-order, holes, resizing) can be checked on a
+/// machine Roblox can't run on, such as a VM. See `Shell::play_embed_test`.
+pub const EMBED_TEST_VARIABLE: &str = "RBX_PLAY_EMBED_TEST";
+
+fn is_client_exe(exe: &str) -> bool {
+    CLIENT_EXES.contains(&exe)
+        || std::env::var(EMBED_TEST_VARIABLE).is_ok_and(|test| test.eq_ignore_ascii_case(exe))
+}
+
 fn failed(call: &str) -> EmbedError {
     EmbedError::X11(format!("{call} failed"))
 }
@@ -88,10 +98,7 @@ unsafe extern "system" fn collect(window: HWND, lparam: LPARAM) -> i32 {
         GetWindowThreadProcessId(window, &mut pid);
         (visible, pid)
     };
-    if visible
-        && pid != 0
-        && process_exe(pid).is_some_and(|exe| CLIENT_EXES.contains(&exe.as_str()))
-    {
+    if visible && pid != 0 && process_exe(pid).is_some_and(|exe| is_client_exe(&exe)) {
         found.push(window as WindowId);
     }
     TRUE
@@ -117,18 +124,23 @@ pub struct Embedded {
 
 impl Embedded {
     /// Polls every 100 ms until a visible client top-level window not in
-    /// `ignore` exists, or `timeout` passes; then strips its frame, makes it
-    /// a child of `parent` and places it at `rect`.
+    /// `ignore` exists, `timeout` passes or `give_up` names a reason (the
+    /// client exited); then strips its frame, makes it a child of `parent`
+    /// and places it at `rect`.
     pub fn attach(
         parent: WindowId,
         rect: Rect,
         ignore: &[WindowId],
         timeout: Duration,
+        give_up: &dyn Fn() -> Option<EmbedError>,
     ) -> Result<Self, EmbedError> {
         let deadline = Instant::now() + timeout;
         let window = loop {
             if let Some(w) = scan()?.into_iter().find(|w| !ignore.contains(w)) {
                 break w;
+            }
+            if let Some(why) = give_up() {
+                return Err(why);
             }
             if Instant::now() >= deadline {
                 return Err(EmbedError::NotFound);

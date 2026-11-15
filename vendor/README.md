@@ -150,3 +150,14 @@ marked "rbx-native fix": the main and path-sprite blend states use
 Windows the DirectComposition swap chain came out opaque under every
 see-through theme. Re-apply it (two lines) when upgrading with `gpui-pre`.
 
+Also marked "rbx-native fix", in `src/directx_renderer.rs`:
+`CreateTargetForHwnd` gets `topmost: false`, so the editor's composition
+tree sits behind child windows. Upstream draws it on top, which hid the
+embedded Roblox client (a child `HWND` over the 3D view) under the editor.
+
+And in `src/platform.rs`, the save dialog's file types come from the
+suggested name's extension (`place.rbxl` offers Roblox place, Roblox XML
+place, then All files) instead of only "All files", and a dialog with no
+active window of ours to hang off uses our first window, so it opens over
+the editor rather than in the screen's corner.
+

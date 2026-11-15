@@ -386,7 +386,7 @@ pub(crate) enum StopReason {
     /// Sober's `fatal_v1__update_pending`, or the dialog it showed.
     Unavailable(String),
     /// The client exited before its window appeared.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     ClosedEarly,
     /// The embedded window disappeared.
     #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]

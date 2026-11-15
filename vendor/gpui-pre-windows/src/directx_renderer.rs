@@ -1008,7 +1008,11 @@ impl DirectXRenderPipelines {
 impl DirectComposition {
     pub fn new(dxgi_device: &IDXGIDevice, hwnd: HWND) -> Result<Self> {
         let comp_device = get_comp_device(dxgi_device)?;
-        let comp_target = unsafe { comp_device.CreateTargetForHwnd(hwnd, true) }?;
+        // rbx-native fix: the visual tree goes *behind* child windows
+        // (`topmost` false). With `true` the window's own frame covered a
+        // child HWND from another process, so the Roblox client embedded
+        // over the 3D view stayed invisible under the editor.
+        let comp_target = unsafe { comp_device.CreateTargetForHwnd(hwnd, false) }?;
         let comp_visual = unsafe { comp_device.CreateVisual() }?;
 
         Ok(Self {

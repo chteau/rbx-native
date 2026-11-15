@@ -110,6 +110,7 @@ impl TunnelProvider {
         #[cfg(windows)]
         std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
         let mut child = command.spawn().map_err(TunnelError::Spawn)?;
+        crate::child_job::kill_with_editor(&child);
 
         let (tx, rx) = mpsc::channel::<String>();
         if let Some(out) = child.stdout.take() {

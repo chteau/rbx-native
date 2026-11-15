@@ -68,10 +68,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use gpui_kit::*;
 use rbx_cloud::{ApiKey, Client, PlaceUpdate, PublishMode};
 use rbx_play::channel::{ChannelServer, DEFAULT_HOLD};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use rbx_play::embed::EmbedError;
 use rbx_play::inject::ProbeConfig;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use rbx_play::launch::ClientWatch;
 use rbx_play::launch::{join_server_uri, join_uri, ClientProcess, Launcher};
 use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
@@ -302,8 +302,9 @@ fn stop_starting(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, reas
 }
 
 /// Why waiting for the client's window is pointless: it said it can't join
-/// games, or it is already gone. Linux only: Sober is the client that says so.
-#[cfg(target_os = "linux")]
+/// games (Sober), or it is already gone (on Windows: no Roblox process left,
+/// e.g. its launcher failed with its own error dialog).
+#[cfg(any(target_os = "linux", windows))]
 fn embed_give_up(watch: &ClientWatch) -> Option<EmbedError> {
     if let Some(why) = watch.unavailable() {
         return Some(EmbedError::Unavailable(why));
@@ -683,7 +684,7 @@ impl Shell {
                         );
                     }
                 };
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", windows))]
                 let watch = client.watch();
                 let target = this.update(cx, |shell, cx| {
                     if shell.play.attempt != attempt {
@@ -722,7 +723,6 @@ impl Shell {
                     if !step(&this, cx, attempt, "Embedding the Roblox window\u{2026}") {
                         return;
                     }
-                    #[cfg(target_os = "linux")]
                     let attached = cx
                         .background_spawn(async move {
                             rbx_play::embed::Embedded::attach(
@@ -734,18 +734,6 @@ impl Shell {
                             )
                         })
                         .await;
-                    #[cfg(windows)]
-                    let attached = cx
-                        .background_spawn(async move {
-                            rbx_play::embed::Embedded::attach(
-                                target.window,
-                                target.rect,
-                                &ignore,
-                                EMBED_TIMEOUT,
-                            )
-                        })
-                        .await;
-                    #[cfg(target_os = "linux")]
                     let reason = match &attached {
                         Err(EmbedError::Unavailable(why)) => Some(StopReason::Unavailable(why.clone())),
                         Err(EmbedError::ClientExited) => Some(StopReason::ClosedEarly),
@@ -771,6 +759,10 @@ impl Shell {
                                 continue;
                             }
                         }
+                        return stop_starting(&this, cx, attempt, reason);
+                    }
+                    #[cfg(windows)]
+                    if let Some(reason) = reason {
                         return stop_starting(&this, cx, attempt, reason);
                     }
                     let _ = this.update(cx, |shell, cx| {
@@ -822,6 +814,57 @@ impl Shell {
                 shell.play.poll = Some(shell.play_poll(cx));
                 cx.notify();
             });
+        })
+        .detach();
+    }
+
+    /// `RBX_PLAY_EMBED_TEST=<exe>` (see `rbx_play::embed::win32`): embeds
+    /// that program's window over the 3D view the way Play embeds Roblox,
+    /// and keeps it on the view as it moves, so the z-order against the
+    /// editor's own swap chain can be checked where Roblox can't run.
+    #[cfg(windows)]
+    pub(in crate::shell) fn play_embed_test(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if std::env::var_os(rbx_play::embed::EMBED_TEST_VARIABLE).is_none() {
+            return;
+        }
+        self.play.main_window = crate::pointer_lock::window_id(window);
+        cx.spawn(async move |this, cx| {
+            let target = loop {
+                cx.background_executor().timer(POLL).await;
+                match this.update(cx, |shell, cx| shell.play_embed_target(cx)) {
+                    Ok(Some(target)) => break target,
+                    Ok(None) => continue,
+                    Err(_) => return,
+                }
+            };
+            let attached = cx
+                .background_spawn(async move {
+                    rbx_play::embed::Embedded::attach(
+                        target.window,
+                        target.rect,
+                        &[],
+                        EMBED_TIMEOUT,
+                        &|| None,
+                    )
+                })
+                .await;
+            let embedded = match attached {
+                Ok(embedded) => embedded,
+                Err(err) => return eprintln!("rbxstudio: embed test: {err}"),
+            };
+            eprintln!("rbxstudio: embed test: attached at {:?}", target.rect);
+            let mut last = target.rect;
+            while embedded.alive() {
+                cx.background_executor().timer(POLL).await;
+                let Ok(Some(target)) = this.update(cx, |shell, cx| shell.play_embed_target(cx))
+                else {
+                    break;
+                };
+                if target.rect != last {
+                    let _ = embedded.set_rect(target.rect);
+                    last = target.rect;
+                }
+            }
         })
         .detach();
     }
@@ -993,7 +1036,15 @@ impl Shell {
             if let Some(why) = running.client.unavailable() {
                 stop = Some(StopReason::Unavailable(why));
             } else if running.client.exited() {
-                stop = Some(StopReason::ClientExited);
+                // Gone without ever showing the game: it never started.
+                #[cfg(any(target_os = "linux", windows))]
+                let never_started = running.embedded.is_none() && self.play.job_id.is_none();
+                #[cfg(not(any(target_os = "linux", windows)))]
+                let never_started = false;
+                stop = Some(match never_started {
+                    true => StopReason::ClosedEarly,
+                    false => StopReason::ClientExited,
+                });
             }
         }
         #[cfg(any(target_os = "linux", windows))]

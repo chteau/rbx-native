@@ -152,12 +152,17 @@ impl Headless {
             clock_time: None,
             show_development_gui: false,
         };
-        Headless::build(
-            dom,
-            toggles,
-            ReflectionDatabase::embedded(),
-            View::default(),
-        )
+        // An embedder builds this from a UI callback, where a panic aborts
+        // the whole process instead of unwinding (any Win32 window message).
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Headless::build(
+                dom,
+                toggles,
+                ReflectionDatabase::embedded(),
+                View::default(),
+            )
+        }))
+        .unwrap_or_else(|_| Err("the 3D renderer crashed building this place".to_owned()))
     }
 
     /// [`Headless::from_dom`] with the toggles, database and view given,
@@ -185,9 +190,9 @@ impl Headless {
 
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();
-        let quality = QualityLevel::default();
+        let (offscreen, quality) = Offscreen::new(loaded.world(), QualityLevel::default(), &view)?;
         let mut headless = Headless {
-            offscreen: Offscreen::new(loaded.world(), &quality.profile(), &view)?,
+            offscreen,
             quality,
             calibration: crate::lighting::Calibration::default(),
             view,

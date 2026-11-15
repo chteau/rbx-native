@@ -33,7 +33,9 @@ const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so t
 const ROWS: [(Field, &str, &str); 3] = [
     (Field::Latency, "Latency", "ms"),
     (Field::Jitter, "Jitter", "ms"),
-    (Field::Loss, "Packet loss", "%"),
+    // Studio's own cap (`netsim::MAX_LOSS_PERCENT`): typing 2 silently
+    // came back as 0.50, so the label says where it stops.
+    (Field::Loss, "Packet loss (max 0.5)", "%"),
 ];
 
 /// The open popover's widgets; the values themselves live in `staged`.

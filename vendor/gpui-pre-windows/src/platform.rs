@@ -298,14 +298,15 @@ impl WindowsPlatform {
     }
 
     fn find_current_active_window(&self) -> Option<HWND> {
-        let active_window_hwnd = unsafe { GetActiveWindow() };
-        if active_window_hwnd.is_invalid() {
-            return None;
-        }
-        self.raw_window_handles
-            .read()
-            .iter()
-            .find(|hwnd| hwnd.as_raw() == active_window_hwnd)
+        let handles = self.raw_window_handles.read();
+        // rbx-native fix: a dialog with no owner opens in the screen's
+        // corner. When the active window isn't one of ours (a menu click
+        // can leave none active), the foreground one or our first will do.
+        [unsafe { GetActiveWindow() }, unsafe { GetForegroundWindow() }]
+            .into_iter()
+            .filter(|hwnd| !hwnd.is_invalid())
+            .find_map(|wanted| handles.iter().find(|hwnd| hwnd.as_raw() == wanted))
+            .or_else(|| handles.first())
             .map(|hwnd| hwnd.as_raw())
     }
 
@@ -1373,6 +1374,10 @@ fn file_save_dialog(
         };
     }
 
+    let suggested_extension = suggested_name.as_deref().and_then(|name| {
+        let (stem, extension) = name.rsplit_once('.')?;
+        (!stem.is_empty() && !extension.is_empty()).then(|| extension.to_ascii_lowercase())
+    });
     if let Some(suggested_name) = suggested_name {
         unsafe {
             dialog
@@ -1382,11 +1387,28 @@ fn file_save_dialog(
         };
     }
 
+    // rbx-native fix: offer the suggested name's own type (and its sibling
+    // format) before "All files", which used to be the only choice.
+    let extension = suggested_extension.as_deref();
+    let types: Vec<(HSTRING, HSTRING)> = save_file_types(extension)
+        .into_iter()
+        .map(|(name, spec)| (HSTRING::from(name), HSTRING::from(spec)))
+        .collect();
+    let specs: Vec<Common::COMDLG_FILTERSPEC> = types
+        .iter()
+        .map(|(name, spec)| Common::COMDLG_FILTERSPEC {
+            pszName: PCWSTR(name.as_ptr()),
+            pszSpec: PCWSTR(spec.as_ptr()),
+        })
+        .collect();
     unsafe {
-        dialog.SetFileTypes(&[Common::COMDLG_FILTERSPEC {
-            pszName: windows::core::w!("All files"),
-            pszSpec: windows::core::w!("*.*"),
-        }])?;
+        dialog.SetFileTypes(&specs)?;
+        if let Some(extension) = extension {
+            dialog
+                .SetDefaultExtension(&HSTRING::from(extension))
+                .context("failed to set the default extension")
+                .log_err();
+        }
         if dialog.Show(window).is_err() {
             // User cancelled
             return Ok(None);
@@ -1400,6 +1422,36 @@ fn file_save_dialog(
         string
     };
     Ok(Some(PathBuf::from(file_path_string)))
+}
+
+/// rbx-native addition: the save dialog's (name, pattern) rows for a file
+/// named `*.extension`, its own type first, "All files" last.
+fn save_file_types(extension: Option<&str>) -> Vec<(String, String)> {
+    let family: &[(&str, &str)] = match extension {
+        Some("rbxl" | "rbxlx") => &[("rbxl", "Roblox place"), ("rbxlx", "Roblox XML place")],
+        Some("rbxm" | "rbxmx") => &[("rbxm", "Roblox model"), ("rbxmx", "Roblox XML model")],
+        Some("fbx") => &[("fbx", "FBX model")],
+        Some("obj") => &[("obj", "OBJ model")],
+        Some("gltf" | "glb") => &[("glb", "glTF binary"), ("gltf", "glTF")],
+        Some("lua" | "luau") => &[("luau", "Luau script"), ("lua", "Lua script")],
+        _ => &[],
+    };
+    let mut rows: Vec<(String, String)> = family
+        .iter()
+        .map(|(ext, name)| (format!("{name} (*.{ext})"), format!("*.{ext}")))
+        .collect();
+    if let Some(at) = rows.iter().position(|(_, spec)| Some(&spec[2..]) == extension) {
+        let own = rows.remove(at);
+        rows.insert(0, own);
+    }
+    if let Some(extension) = extension.filter(|_| rows.is_empty()) {
+        rows.push((
+            format!("{} file (*.{extension})", extension.to_ascii_uppercase()),
+            format!("*.{extension}"),
+        ));
+    }
+    rows.push(("All files (*.*)".to_owned(), "*.*".to_owned()));
+    rows
 }
 
 fn load_icon() -> Result<HICON> {

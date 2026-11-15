@@ -42,6 +42,12 @@ struct Shared {
 }
 
 pub fn run_helper(args: &[String]) -> i32 {
+    let code = serve(args);
+    driver::release();
+    code
+}
+
+fn serve(args: &[String]) -> i32 {
     let [pipe, pid] = args else { return 2 };
     if !pipe.starts_with(super::PIPE_PREFIX)
         || pid.is_empty()
@@ -68,6 +74,7 @@ pub fn run_helper(args: &[String]) -> i32 {
         Ok(api) => Arc::new(api),
         Err(code) => return report_error(&mut writer, code),
     };
+    driver::note_state();
     // A filter that matches nothing still loads the driver, so admin and
     // driver problems surface now rather than on the first port change.
     match Handle::open(&api, "false", 0) {
@@ -154,6 +161,7 @@ fn watch_parent(pid: u32) {
     std::thread::spawn(move || {
         // SAFETY: `raw` is a live process handle owned by this thread.
         unsafe { WaitForSingleObject(raw as _, INFINITE) };
+        driver::release();
         std::process::exit(0);
     });
 }
@@ -257,5 +265,74 @@ fn sender(shared: &Shared) {
         for (packet, addr, handle) in due.drain(..) {
             handle.send(&packet, &addr);
         }
+    }
+}
+
+/// WinDivert loads its driver on the first open and leaves the service
+/// running until reboot or `sc stop WinDivert`, so quitting the editor used
+/// to leave it RUNNING. The helper stops it on the way out, unless it was
+/// already running before (another program of the user's may be using it).
+/// The stop is asked while this process still holds handles; Windows
+/// finishes it once they close, a moment later when the process exits.
+mod driver {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use windows_sys::Win32::System::Services::{
+        CloseServiceHandle, ControlService, OpenSCManagerW, OpenServiceW, QueryServiceStatus,
+        SC_HANDLE, SC_MANAGER_CONNECT, SERVICE_CONTROL_STOP, SERVICE_QUERY_STATUS, SERVICE_RUNNING,
+        SERVICE_STATUS, SERVICE_STOP, SERVICE_STOPPED,
+    };
+
+    /// Set when the service was not running before this helper loaded it.
+    static OURS: AtomicBool = AtomicBool::new(false);
+
+    /// Runs `body` on the WinDivert service, if it exists and opens.
+    fn with_service<T>(body: impl FnOnce(SC_HANDLE) -> T) -> Option<T> {
+        let name: Vec<u16> = "WinDivert\0".encode_utf16().collect();
+        // SAFETY: handles are checked for null and closed once; `name` is a
+        // NUL-terminated UTF-16 string alive for the call.
+        unsafe {
+            let manager = OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT);
+            if manager.is_null() {
+                return None;
+            }
+            let service = OpenServiceW(manager, name.as_ptr(), SERVICE_QUERY_STATUS | SERVICE_STOP);
+            let result = (!service.is_null()).then(|| body(service));
+            if !service.is_null() {
+                CloseServiceHandle(service);
+            }
+            CloseServiceHandle(manager);
+            result
+        }
+    }
+
+    fn state(service: SC_HANDLE) -> Option<u32> {
+        // SAFETY: `status` is a valid out pointer for a live handle.
+        unsafe {
+            let mut status: SERVICE_STATUS = std::mem::zeroed();
+            (QueryServiceStatus(service, &mut status) != 0).then_some(status.dwCurrentState)
+        }
+    }
+
+    /// Remembers whether the driver is this helper's to stop. Called before
+    /// the first open; a service that doesn't exist yet is ours too.
+    pub(super) fn note_state() {
+        let running = with_service(state).flatten() == Some(SERVICE_RUNNING);
+        OURS.store(!running, Ordering::Relaxed);
+    }
+
+    /// Stops the driver if this helper started it.
+    pub(super) fn release() {
+        if !OURS.swap(false, Ordering::Relaxed) {
+            return;
+        }
+        with_service(|service| {
+            if state(service) == Some(SERVICE_STOPPED) {
+                return;
+            }
+            // SAFETY: `status` is a valid out pointer for a live handle.
+            let mut status: SERVICE_STATUS = unsafe { std::mem::zeroed() };
+            unsafe { ControlService(service, SERVICE_CONTROL_STOP, &mut status) };
+        });
     }
 }

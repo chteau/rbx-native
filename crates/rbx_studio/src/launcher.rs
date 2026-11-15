@@ -52,8 +52,7 @@ fn options(
     let window_size = gpui_kit::size(tokens::scaled_width(size.0), tokens::scaled_width(size.1));
     WindowOptions {
         app_id: Some(crate::APP_ID.to_owned()),
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-            None,
+        window_bounds: Some(WindowBounds::Windowed(crate::fit_to_screen(
             window_size,
             cx,
         ))),
@@ -111,6 +110,7 @@ pub(crate) fn open_wizard(
 pub(crate) fn open_home(boot: Boot, cx: &mut App) {
     let options = options("RbxNative", (1440., 900.), Some((1100., 700.)), cx);
     let _ = cx.open_window(options, move |window, cx| {
+        crate::mark_primary(window, cx);
         let view = cx.new(|cx| HomeWindow::new(boot, window, cx));
         cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     });
