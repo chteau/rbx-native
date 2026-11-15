@@ -28,11 +28,10 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClientRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible,
-    SetLayeredWindowAttributes, SetParent, SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE,
-    LWA_ALPHA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNA, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
-    WS_DLGFRAME, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_LAYERED,
+    EnumWindows, GetClientRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetParent,
+    SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNA, WS_BORDER, WS_CAPTION, WS_CHILD,
+    WS_CLIPSIBLINGS, WS_DLGFRAME, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
     WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
@@ -46,17 +45,15 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 /// Lowercased executable file names of Roblox client processes.
 pub const CLIENT_EXES: &[&str] = &["robloxplayerbeta.exe"];
 
-/// `RBX_PLAY_EMBED_TEST=notepad.exe`: that program's window counts as a
-/// client too, so embedding (z-order, holes, resizing) can be checked on a
-/// machine Roblox can't run on, such as a VM. See `Shell::play_embed_test`.
+/// `RBX_PLAY_EMBED_TEST=<exe>`: that program's window counts as a client
+/// too, so embedding (z-order, holes, resizing) can be checked on a machine
+/// Roblox can't run on, such as a VM. See `Shell::play_embed_test`. It has
+/// to present like a game, with a flip-model swap chain: the editor's
+/// window has no redirection surface (it draws through DirectComposition),
+/// so a child painting with GDI, like Character Map, shows nothing. A copy
+/// of this editor renamed and started with
+/// `GPUI_DISABLE_DIRECT_COMPOSITION=1` presents the right way.
 pub const EMBED_TEST_VARIABLE: &str = "RBX_PLAY_EMBED_TEST";
-
-/// `RBX_PLAY_EMBED_LAYERED=1`: the embedded window is made layered, which
-/// gives it a surface of its own. The editor's window has no redirection
-/// surface (it draws through DirectComposition), so a child that paints
-/// with GDI or a blt-model swap chain draws nowhere and stays invisible;
-/// a flip-model swap chain (what a D3D game uses) shows without it.
-pub const EMBED_LAYERED_VARIABLE: &str = "RBX_PLAY_EMBED_LAYERED";
 
 fn is_client_exe(exe: &str) -> bool {
     CLIENT_EXES.contains(&exe)
@@ -175,20 +172,13 @@ impl Embedded {
         let new_style = (style & !removed) | (WS_CHILD | WS_CLIPSIBLINGS) as isize;
         let ex_removed =
             (WS_EX_APPWINDOW | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_DLGMODALFRAME) as isize;
-        let mut new_ex = ex_style & !ex_removed;
-        let layered = std::env::var_os(EMBED_LAYERED_VARIABLE).is_some();
-        if layered {
-            new_ex |= WS_EX_LAYERED as isize;
-        }
+        let new_ex = ex_style & !ex_removed;
         // SAFETY: as above; SetParent's null result is checked.
         unsafe {
             SetWindowLongPtrW(h, GWL_STYLE, new_style as _);
             SetWindowLongPtrW(h, GWL_EXSTYLE, new_ex as _);
             if SetParent(h, hwnd(parent)).is_null() {
                 return Err(failed("SetParent"));
-            }
-            if layered {
-                SetLayeredWindowAttributes(h, 0, 255, LWA_ALPHA);
             }
         }
         let this = Embedded {

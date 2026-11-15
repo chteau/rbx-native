@@ -1475,24 +1475,20 @@ impl IFileDialogEvents_Impl for DialogCenter_Impl {
             return Ok(());
         };
         let window = unsafe { dialog.ok()?.cast::<IOleWindow>()?.GetWindow()? };
-        let mut outer = RECT::default();
-        let mut inner = RECT::default();
-        let mut monitor = MONITORINFO {
-            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-            ..Default::default()
-        };
-        unsafe {
-            GetWindowRect(owner, &mut outer)?;
-            GetWindowRect(window, &mut inner)?;
-            let _ = GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut monitor);
-        }
-        let (width, height) = (inner.right - inner.left, inner.bottom - inner.top);
-        let work = monitor.rcWork;
-        let x = ((outer.left + outer.right - width) / 2).clamp(work.left, (work.right - width).max(work.left));
-        let y = ((outer.top + outer.bottom - height) / 2).clamp(work.top, (work.bottom - height).max(work.top));
-        unsafe {
-            SetWindowPos(window, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)?;
-        }
+        let window = unsafe { GetAncestor(window, GA_ROOT) };
+        // The dialog places itself as it shows, after this; the move waits
+        // for that on a thread of its own (raw handles: `HWND` isn't Send).
+        let (window, owner) = (window.0 as isize, owner.0 as isize);
+        std::thread::spawn(move || {
+            let (window, owner) = (HWND(window as _), HWND(owner as _));
+            for _ in 0..200 {
+                if unsafe { IsWindowVisible(window) }.as_bool() {
+                    center_over(window, owner).log_err();
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        });
         Ok(())
     }
     fn OnOverwrite(
@@ -1502,6 +1498,29 @@ impl IFileDialogEvents_Impl for DialogCenter_Impl {
     ) -> windows::core::Result<FDE_OVERWRITE_RESPONSE> {
         Err(E_NOTIMPL.into())
     }
+}
+
+/// rbx-native addition, see [`show_centered`]: moves `window` to the middle
+/// of `owner`, kept inside the owner's monitor work area.
+fn center_over(window: HWND, owner: HWND) -> windows::core::Result<()> {
+    let mut outer = RECT::default();
+    let mut inner = RECT::default();
+    let mut monitor = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    unsafe {
+        GetWindowRect(owner, &mut outer)?;
+        GetWindowRect(window, &mut inner)?;
+        let _ = GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut monitor);
+    }
+    let (width, height) = (inner.right - inner.left, inner.bottom - inner.top);
+    let work = monitor.rcWork;
+    let x = ((outer.left + outer.right - width) / 2)
+        .clamp(work.left, (work.right - width).max(work.left));
+    let y = ((outer.top + outer.bottom - height) / 2)
+        .clamp(work.top, (work.bottom - height).max(work.top));
+    unsafe { SetWindowPos(window, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) }
 }
 
 /// rbx-native addition: the save dialog's (name, pattern) rows for a file
