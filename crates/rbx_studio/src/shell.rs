@@ -60,6 +60,7 @@ mod perf_view;
 mod pivot;
 mod place_merge;
 mod play;
+mod play_sandbox;
 mod playtests;
 mod plugins;
 pub(crate) mod project;

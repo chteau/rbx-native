@@ -7,6 +7,7 @@
 
 ## 2026-11-13
 
+- **Play makes its own sandbox.** With no sandbox set, Play now finds or creates a private experience called "RbxNative Sandbox" on your account and carries on, with a one-time note. Settings › Account › Play has a "Create one for me" button, shows the sandbox's name, and links to it on the Creator Dashboard. It needs your Roblox sign-in; if you already have one, it's reused, never doubled.
 - **See-through themes are see-through.** A theme that gives Background or Panels some transparency used to come out solid anyway, because a layer of Default's colour sat under everything. Now the whole window follows the theme's own colours, and the top bars and panels show through the way the website's theme builder shows them.
 - **Blur for theme backgrounds.** A theme's background image can be blurred with `"blur"` (0 to 64) so text on see-through panels stays readable. The editor blurs it once when the theme loads and keeps the result, so it costs nothing after that.
 - **Blurred themes blur on Linux.** On GNOME with X11 RbxNative now draws the frosted blur behind the window itself, from the windows under it and your wallpaper. KDE and picom are asked to blur it for us. Where the desktop can't blur at all (like GNOME on Wayland), Settings › Appearance says so and the theme shows see-through.

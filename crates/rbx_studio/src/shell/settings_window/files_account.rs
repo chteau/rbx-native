@@ -11,6 +11,7 @@ use crate::key_store;
 use crate::launcher::{self, ui, KeyTag};
 use crate::recovery::{self, INTERVAL_DEFAULT, INTERVAL_MINUTES};
 use crate::shell::play::copy_name;
+use crate::shell::play_sandbox;
 use crate::tokens;
 
 use super::kit::{
@@ -24,6 +25,11 @@ pub(super) struct RecoveryControls {
     interval: Entity<SliderState>,
     sandbox: Entity<InputState>,
     sandbox_error: Option<SharedString>,
+    /// "Create one for me" is running.
+    sandbox_busy: bool,
+    /// The sandbox's name, read once per universe.
+    sandbox_name: Option<(u64, SharedString)>,
+    sandbox_name_asked: Option<u64>,
     copy_name: Entity<InputState>,
     /// The setting as the field last showed it, to notice a reset elsewhere.
     copy_name_seen: String,
@@ -74,6 +80,9 @@ impl RecoveryControls {
                 interval,
                 sandbox,
                 sandbox_error: None,
+                sandbox_busy: false,
+                sandbox_name: None,
+                sandbox_name_asked: None,
                 copy_name,
                 copy_name_seen,
                 accounts_error: None,
@@ -98,6 +107,62 @@ fn open_publishing(window: WeakEntity<SettingsWindow>, cx: &mut App) {
 }
 
 impl SettingsWindow {
+    /// "Create one for me": finds or makes "RbxNative Sandbox".
+    fn create_sandbox(&mut self, cx: &mut Context<Self>) {
+        if self.recovery.sandbox_busy {
+            return;
+        }
+        self.recovery.sandbox_busy = true;
+        self.recovery.sandbox_error = None;
+        let session = self.shell.read(cx).roblox_session();
+        cx.spawn(async move |this, cx| {
+            let made = cx
+                .background_spawn(async move {
+                    play_sandbox::provision(rbx_cloud::ApiKey::from_env_or_config(), session)
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.recovery.sandbox_busy = false;
+                match made {
+                    Ok(made) => {
+                        this.recovery.sandbox_error = made.warning.map(Into::into);
+                        this.shell.update(cx, |shell, cx| {
+                            shell.set_play_sandbox(Some(made.sandbox), cx)
+                        });
+                    }
+                    Err(error) => this.recovery.sandbox_error = Some(error.into()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Reads the current sandbox's name when the universe changed.
+    fn load_sandbox_name(&mut self, universe_id: u64, cx: &mut Context<Self>) {
+        if self.recovery.sandbox_name_asked == Some(universe_id) {
+            return;
+        }
+        self.recovery.sandbox_name_asked = Some(universe_id);
+        cx.spawn(async move |this, cx| {
+            let name = cx
+                .background_spawn(async move {
+                    rbx_cloud::Client::new(rbx_cloud::ApiKey::from_env_or_config())
+                        .universe(universe_id)
+                        .map(|universe| universe.display_name)
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Ok(name) = name {
+                    this.recovery.sandbox_name = Some((universe_id, name.into()));
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
     fn use_sandbox(&mut self, cx: &mut Context<Self>) {
         let text = self.recovery.sandbox.read(cx).value().trim().to_string();
         let place_id = rbx_cloud::place_id_from_link(&text).or_else(|| text.parse::<u64>().ok());
@@ -145,6 +210,10 @@ impl SettingsWindow {
 impl SettingsWindow {
     fn play_sandbox_section(&mut self, cx: &mut Context<Self>) -> Section {
         let current = self.shell.read(cx).play.sandbox;
+        if let Some(sandbox) = &current {
+            self.load_sandbox_name(sandbox.universe_id, cx);
+        }
+        let busy = self.recovery.sandbox_busy;
         let input = self.recovery.sandbox.clone();
         let mut row = Row::new(
             "Sandbox place",
@@ -156,6 +225,15 @@ impl SettingsWindow {
                     ui::button("sandbox-use", "Use", ui::Weight::Secondary, true)
                         .on_click(cx.listener(|this, _, _, cx| this.use_sandbox(cx))),
                 )
+                .children(current.is_none().then(|| {
+                    ui::button(
+                        "sandbox-create",
+                        if busy { "Creating\u{2026}" } else { "Create one for me" },
+                        ui::Weight::Primary,
+                        !busy,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.create_sandbox(cx)))
+                }))
                 .children(current.as_ref().map(|_| {
                     ui::button("sandbox-clear", "Clear", ui::Weight::Secondary, true).on_click(
                         cx.listener(|this, _, _, cx| {
@@ -170,10 +248,29 @@ impl SettingsWindow {
         let mut any = false;
         if let Some(sandbox) = &current {
             any = true;
-            below = below.child(mono(11.5, 16.).child(format!(
-                "Place {} \u{b7} Universe {}",
-                sandbox.place_id, sandbox.universe_id
-            )));
+            let name = match &self.recovery.sandbox_name {
+                Some((id, name)) if *id == sandbox.universe_id => format!("{name} \u{b7} "),
+                _ => String::new(),
+            };
+            let universe_id = sandbox.universe_id;
+            below = below
+                .child(mono(11.5, 16.).child(format!(
+                    "{name}Place {} \u{b7} Universe {}",
+                    sandbox.place_id, sandbox.universe_id
+                )))
+                .child(
+                    h_flex().child(
+                        ui::button(
+                            "sandbox-dashboard",
+                            "Open on Creator Dashboard",
+                            ui::Weight::Secondary,
+                            true,
+                        )
+                        .on_click(move |_, _, cx| {
+                            cx.open_url(&play_sandbox::dashboard_url(universe_id))
+                        }),
+                    ),
+                );
         }
         if let Some(error) = &self.recovery.sandbox_error {
             any = true;
