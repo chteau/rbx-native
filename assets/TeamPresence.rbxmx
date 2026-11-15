@@ -31,8 +31,8 @@ local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
 
 local NEW_KEY = Relay.WAITING
-	.. &quot; This place had no presence key yet, so I made one: save the place (File &gt; Save to Roblox)&quot;
-	.. &quot; before opening it in RbxNative.&quot;
+	.. &quot; This place had no presence key yet, so I made one. Save the place (File &gt; Save to Roblox)&quot;
+	.. &quot; and RbxNative picks it up by itself.&quot;
 
 local toolbar = plugin:CreateToolbar(&quot;rbx-native&quot;)
 local button = toolbar:CreateButton(&quot;Presence&quot;, &quot;Show rbx-native team presence&quot;, &quot;&quot;)
@@ -119,11 +119,14 @@ local function showProblem(myRelay: any, err: string?, minted: boolean)
 	if myRelay:waiting() then
 		local other = myRelay:keyConflict()
 		if other then
-			local who = if other == &quot;studio&quot; then &quot;Another Studio&quot; else &quot;RbxNative&quot;
+			-- RbxNative reads the key saved on Roblox and switches to it by
+			-- itself; another Studio can't, so it has to reopen the place.
 			widget:setStatus(
-				`{who} has this place open with a different presence key, so you can't see each other.`
-					.. &quot; Save the place from Studio (File &gt; Save to Roblox), then reopen it in RbxNative&quot;
-					.. &quot; from My Games and pick Download the published version.&quot;,
+				if other == &quot;studio&quot;
+					then &quot;Another Studio has this place open with a different presence key, so you can't see each other.&quot;
+						.. &quot; Save the place from one of them (File &gt; Save to Roblox), then close it and open it again in the other.&quot;
+					else &quot;RbxNative has this place open with a different presence key.&quot;
+						.. &quot; Save the place (File &gt; Save to Roblox) and RbxNative switches to this one by itself.&quot;,
 				true
 			)
 			return
@@ -134,6 +137,20 @@ local function showProblem(myRelay: any, err: string?, minted: boolean)
 		end
 	end
 	widget:setStatus(text, string.find(text, &quot;yet (&quot;, 1, true) == nil)
+end
+
+-- The relay the owner setup names: the kind picked and the URL typed, a
+-- blank URL being Auto. A kind that needs a URL but has none is Auto too.
+local function ownerChoice(): (string, string)
+	local url = string.gsub(widget.urlBox.Text, &quot;^%s*(.-)%s*$&quot;, &quot;%1&quot;)
+	if url == &quot;&quot; then
+		return Defaults.communityKind, Defaults.communityUrl
+	end
+	return widget.relayKind, url
+end
+
+local function showRelay(kind: string, url: string)
+	widget:setRelay(kind, url, kind == Defaults.communityKind and url == Defaults.communityUrl)
 end
 
 local function nextBackoff(current: number): number
@@ -150,20 +167,17 @@ local function start()
 		return
 	end
 
-	-- Zero-config: the first connector mints the place's secret, everyone
-	-- else reads it. Writing it needs a Save/Publish to reach collaborators.
-	local secret = Secret.read()
-	local minted = secret == nil
-	if not secret then
-		secret = Secret.create()
-	end
+	-- Zero-config: the first editor to turn presence on puts the key and the
+	-- relay into the place, everyone else reads them. They reach
+	-- collaborators with the next save.
+	local secret, minted = Secret.ensure(ownerChoice())
 
 	-- The place names the relay; collaborators read it. A place that names
 	-- none falls back to the best-effort community instance.
 	local placeRelay = Secret.readRelay()
 	local kind = if placeRelay then placeRelay.kind else Defaults.communityKind
 	local url = if placeRelay then placeRelay.url else Defaults.communityUrl
-	widget:setRelay(kind, url, placeRelay == nil)
+	showRelay(kind, url)
 
 	local key = Auth.deriveKey(secret :: string, game.PlaceId)
 	local encKey = Crypto.encKey(secret :: string, game.PlaceId)
@@ -192,6 +206,7 @@ local function start()
 			room = Auth.roomId(key),
 			encKey = encKey,
 			name = if Players.LocalPlayer then Players.LocalPlayer.Name else tostring(ownId),
+			quiet = { Relay.WAITING, Relay.HOST_GONE },
 			onNote = function(note: string)
 				warn(&quot;[Co-edit] &quot; .. note)
 				if generation == myGen then
@@ -320,12 +335,19 @@ widget = Widget.new(plugin, {
 		diffWindow:show(lastEntries)
 	end,
 	onSaveRelay = function(kind: string, url: string)
-		-- Owner setup: write the relay into the place (empty URL clears it).
-		if url == &quot;&quot; then
-			Secret.clearRelay()
-		else
-			Secret.writeRelay(kind, url)
+		-- Owner setup saves as soon as it changes. Worker and ntfy wait for
+		-- their URL; a blank one is Auto.
+		if url == &quot;&quot; and kind ~= Defaults.communityKind then
+			widget:setStatus(`Type the {kind} URL. It saves into the place when you press Enter or click away.`)
+			return
 		end
+		local wantKind, wantUrl = ownerChoice()
+		local current = Secret.readRelay()
+		if current and current.kind == wantKind and current.url == wantUrl then
+			return
+		end
+		Secret.writeRelay(wantKind, wantUrl)
+		showRelay(wantKind, wantUrl)
 		if enabled then
 			start()
 		end
@@ -357,9 +379,9 @@ plugin.Unloading:Connect(stop)
 
 local savedRelay = Secret.readRelay()
 if savedRelay then
-	widget:setRelay(savedRelay.kind, savedRelay.url, false)
+	showRelay(savedRelay.kind, savedRelay.url)
 else
-	widget:setRelay(Defaults.communityKind, Defaults.communityUrl, true)
+	showRelay(Defaults.communityKind, Defaults.communityUrl)
 end
 -- First run: show the widget, so the switch that turns presence on is in
 -- front of the user instead of behind a toolbar button.
@@ -1096,11 +1118,14 @@ local Apply = require(script.Parent.CoeditApply)
 local Collect = require(script.Parent.CoeditCollect)
 local CoeditCore = require(script.Parent.CoeditCore)
 local Kept = require(script.Parent.CoeditKept)
+local Notes = require(script.Parent.Notes)
 local Paths = require(script.Parent.Paths)
 local Sync = require(script.Parent.CoeditSync)
 
 local FLUSH_EVERY = 0.3
 local POLL_EVERY = 0.5
+-- The longest wait between polls while the relay can't be read.
+local POLL_BACKOFF_MAX = 10
 
 local ROOTS = {
 	&quot;Workspace&quot;,
@@ -1126,6 +1151,8 @@ export type Options = {
 	encKey: string,
 	name: string,
 	onNote: (string) -&gt; (),
+	-- A note containing any of these is a state the panel shows, never printed.
+	quiet: { string }?,
 }
 
 local Coedit = {}
@@ -1168,11 +1195,14 @@ function Coedit.new(options: Options)
 		since = 0,
 		kept = Kept.new(),
 		batchCount = 0,
+		notes = Notes.new(options.quiet),
 	}, Coedit)
 end
 
 function Coedit.note(self: any, text: string)
-	pcall(self.options.onNote, text)
+	if Notes.say(self.notes, text, os.clock()) then
+		pcall(self.options.onNote, text)
+	end
 end
 
 function Coedit.isTracked(self: any, inst: Instance): boolean
@@ -1406,12 +1436,19 @@ function Coedit.start(self: any)
 		end
 	end)
 	task.spawn(function()
+		local wait = POLL_EVERY
 		while self.running do
-			local okPoll, pollErr = pcall(self.poll, self)
+			local okPoll, result = pcall(self.poll, self)
 			if not okPoll then
-				self:note(&quot;Co-edit: &quot; .. tostring(pollErr))
+				self:note(&quot;Co-edit: &quot; .. tostring(result))
 			end
-			task.wait(POLL_EVERY)
+			if okPoll and result then
+				wait = POLL_EVERY
+				Notes.worked(self.notes, os.clock())
+			else
+				wait = math.min(wait * 2, POLL_BACKOFF_MAX)
+			end
+			task.wait(wait)
 		end
 	end)
 end
@@ -6979,14 +7016,15 @@ function Sync.authorOf(_self: any, actor: any): string
 	return &quot;user &quot; .. userId .. &quot; (&quot; .. client .. &quot;)&quot;
 end
 
-function Sync.poll(self: any)
+-- True when the relay answered.
+function Sync.poll(self: any): boolean
 	local options = self.options
 	local okPoll, result, err = pcall(options.relay.pollOps, options.relay, self.since)
 	if not okPoll or result == nil then
 		if not okPoll or err ~= nil then
 			self:note(&quot;Co-edit: could not read edits (&quot; .. tostring(if okPoll then err else result) .. &quot;)&quot;)
 		end
-		return
+		return false
 	end
 	-- A relay may carry on the log we read, lack some or all of it (a new
 	-- host: hand it over), or run another (read that from its start; what
@@ -6994,13 +7032,13 @@ function Sync.poll(self: any)
 	local step, missing = self.kept:step(result)
 	if step == &quot;fill&quot; then
 		handOver(self, missing :: { any })
-		return
+		return true
 	elseif step == &quot;restart&quot; then
 		self.kept:restart(result.log)
 		self.since = 0
 		self.reassembler = CoeditCore.Reassembler.new()
 		self.state.registers = CoeditCore.Registers.new()
-		return
+		return true
 	end
 	local log = if type(result.log) == &quot;string&quot; then result.log else &quot;&quot;
 	local entries = type(result.entries) == &quot;table&quot; and result.entries or {}
@@ -7044,6 +7082,7 @@ function Sync.poll(self: any)
 			end
 		end
 	end
+	return true
 end
 
 return Sync
@@ -8949,6 +8988,57 @@ return Markers
     </Item>
     <Item class="ModuleScript" referent="RBX22">
       <Properties>
+        <string name="Name">Notes</string>
+        <ProtectedString name="Source">--!strict
+--! Which co-edit problems reach Studio's Output. Co-editing polls twice a
+--! second, so a problem that lasts would print the same line over and over:
+--! each distinct one prints once, and again only after co-editing worked
+--! for a while. Waiting for someone in RbxNative to host (or for a host
+--! that left to be replaced) is a state the panel's status line already
+--! shows, not a problem. Pure, so the Luau
+--! tests drive it with their own clock.
+
+local Notes = {}
+
+-- Seconds before a problem that went away may be printed again.
+Notes.AGAIN = 60
+
+export type State = { quiet: { string }, said: { [string]: number } }
+
+function Notes.new(quiet: { string }?): State
+	return { quiet = quiet or {}, said = {} }
+end
+
+-- Whether `text` should be printed now.
+function Notes.say(state: State, text: string, now: number): boolean
+	for _, quiet in state.quiet do
+		if string.find(text, quiet, 1, true) ~= nil then
+			return false
+		end
+	end
+	if state.said[text] ~= nil then
+		return false
+	end
+	state.said[text] = now
+	return true
+end
+
+-- Co-editing reached the relay: problems printed long enough ago may be
+-- printed again if they come back.
+function Notes.worked(state: State, now: number)
+	for text, at in state.said do
+		if now - at &gt;= Notes.AGAIN then
+			state.said[text] = nil
+		end
+	end
+end
+
+return Notes
+</ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="ModuleScript" referent="RBX23">
+      <Properties>
         <string name="Name">Ntfy</string>
         <ProtectedString name="Source">--!strict
 --! The ntfy wire format, mirrored from crates/rbx_presence/src/ntfy.rs: one
@@ -9066,7 +9156,7 @@ return Ntfy
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX23">
+    <Item class="ModuleScript" referent="RBX24">
       <Properties>
         <string name="Name">Paths</string>
         <ProtectedString name="Source">--!strict
@@ -9163,7 +9253,7 @@ return Paths
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX24">
+    <Item class="ModuleScript" referent="RBX25">
       <Properties>
         <string name="Name">Relay</string>
         <ProtectedString name="Source">--!strict
@@ -9227,6 +9317,8 @@ Relay.__index = Relay
 
 Relay.WAITING = &quot;Waiting for someone in RbxNative to open this place. Studio can't host the session on its own.&quot;
 local WAITING = Relay.WAITING
+-- The host this room had stopped answering: also waiting, not an error.
+Relay.HOST_GONE = &quot;Can't reach the rbx-native host yet&quot;
 
 function Relay.new(config: Config)
 	local url = string.gsub(config.url, &quot;/+$&quot;, &quot;&quot;)
@@ -9416,12 +9508,12 @@ function Relay:_send(method: string, suffix: string, body: string): (any?, strin
 		-- No HTTP answer at all: the host may be gone, or its address not
 		-- reachable yet; look again shortly.
 		self:_lost()
-		err = `Can't reach the rbx-native host yet ({err})`
+		err = `{Relay.HOST_GONE} ({err})`
 	elseif res == nil and raw and self.kind == &quot;hosted&quot; and (raw.StatusCode == 404 or raw.StatusCode &gt;= 500) then
 		-- A closed tunnel answers 404/502/530 from Cloudflare's edge (an
 		-- HTML page: keep it out of the status line).
 		self:_lost()
-		err = `Can't reach the rbx-native host yet (HTTP {raw.StatusCode})`
+		err = `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
 	end
 	if res == nil and needsKey(raw) and not self.sendKey then
 		self.sendKey = true
@@ -9655,7 +9747,7 @@ return Relay
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX25">
+    <Item class="ModuleScript" referent="RBX26">
       <Properties>
         <string name="Name">Schema</string>
         <ProtectedString name="Source">--!strict
@@ -9935,7 +10027,7 @@ return Schema
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX26">
+    <Item class="ModuleScript" referent="RBX27">
       <Properties>
         <string name="Name">Secret</string>
         <ProtectedString name="Source">--!strict
@@ -9975,16 +10067,34 @@ function Secret.read(): string?
 	return nil
 end
 
-function Secret.create(): string
-	local secret = string.lower(
-		string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;) .. string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;)
-	)
-	local id = ChangeHistoryService:TryBeginRecording(&quot;Create presence key&quot;)
-	ensureFolder():SetAttribute(ATTRIBUTE, secret)
+-- Turning presence on puts everything collaborators need into the place,
+-- in one undo step: the key (made here when the place has none) and the
+-- relay (`kind`, `url`, when the place names none). Returns the key and
+-- whether it was just made. Both reach collaborators with the next save.
+function Secret.ensure(kind: string, url: string): (string, boolean)
+	local secret = Secret.read()
+	local relay = Secret.readRelay()
+	if secret ~= nil and relay ~= nil then
+		return secret, false
+	end
+	local id = ChangeHistoryService:TryBeginRecording(&quot;Set up presence&quot;)
+	local folder = ensureFolder()
+	local minted = secret == nil
+	if secret == nil then
+		secret = string.lower(
+			string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;)
+				.. string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;)
+		)
+		folder:SetAttribute(ATTRIBUTE, secret)
+	end
+	if relay == nil then
+		folder:SetAttribute(RELAY_KIND, kind)
+		folder:SetAttribute(RELAY_URL, url)
+	end
 	if id then
 		ChangeHistoryService:FinishRecording(id, Enum.FinishRecordingOperation.Commit)
 	end
-	return secret
+	return secret :: string, minted
 end
 
 -- The relay the place names, if any: a known kind and a non-empty URL.
@@ -10001,7 +10111,7 @@ function Secret.readRelay(): { kind: string, url: string }?
 	return nil
 end
 
--- Owner setup: writes the relay into the place for every collaborator.
+-- Writes the relay into the place for every collaborator.
 function Secret.writeRelay(kind: string, url: string)
 	local id = ChangeHistoryService:TryBeginRecording(&quot;Set presence relay&quot;)
 	local folder = ensureFolder()
@@ -10012,24 +10122,11 @@ function Secret.writeRelay(kind: string, url: string)
 	end
 end
 
-function Secret.clearRelay()
-	local folder = ServerStorage:FindFirstChild(FOLDER)
-	if folder == nil then
-		return
-	end
-	local id = ChangeHistoryService:TryBeginRecording(&quot;Clear presence relay&quot;)
-	folder:SetAttribute(RELAY_KIND, nil)
-	folder:SetAttribute(RELAY_URL, nil)
-	if id then
-		ChangeHistoryService:FinishRecording(id, Enum.FinishRecordingOperation.Commit)
-	end
-end
-
 return Secret
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX27">
+    <Item class="ModuleScript" referent="RBX28">
       <Properties>
         <string name="Name">Sha256</string>
         <ProtectedString name="Source">--!strict
@@ -10134,7 +10231,7 @@ return Sha256
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX28">
+    <Item class="ModuleScript" referent="RBX29">
       <Properties>
         <string name="Name">Theme</string>
         <ProtectedString name="Source">--!strict
@@ -10301,7 +10398,7 @@ return {
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX29">
+    <Item class="ModuleScript" referent="RBX30">
       <Properties>
         <string name="Name">Ui</string>
         <ProtectedString name="Source">--!strict
@@ -10644,7 +10741,7 @@ return Ui
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX30">
+    <Item class="ModuleScript" referent="RBX31">
       <Properties>
         <string name="Name">Widget</string>
         <ProtectedString name="Source">--!strict
@@ -10773,7 +10870,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	local owner = Ui.frame(scroll, 5)
 	owner.Visible = false
 	Ui.list(owner, 6)
-	Ui.text(owner, &quot;Owner setup — saved into the place for everyone&quot;, { size = Ui.TEXT_XS, color = &quot;text3&quot;, order = 1 })
+	Ui.text(owner, &quot;Owner setup, saved into the place as you change it&quot;, { size = Ui.TEXT_XS, color = &quot;text3&quot;, order = 1 })
 
 	local kinds = Instance.new(&quot;Frame&quot;)
 	kinds.LayoutOrder = 2
@@ -10814,8 +10911,6 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		urlStroke.Transparency = Ui.alpha(&quot;border&quot;)
 	end)
 
-	local saveButton = Ui.button(owner, &quot;Save to place&quot;, false, 4)
-	saveButton.Size = UDim2.fromOffset(110, 28)
 	local resolved = Ui.text(owner, &quot;&quot;, { size = Ui.TEXT_XS, color = &quot;text3&quot;, order = 5 })
 
 	local httpNote = Ui.card(scroll, 6)
@@ -10863,6 +10958,11 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	}, Widget)
 	self:showKind()
 
+	-- Owner setup has no save button: each change goes into the place.
+	local function save()
+		callbacks.onSaveRelay(self.relayKind, (string.gsub(urlBox.Text, &quot;^%s*(.-)%s*$&quot;, &quot;%1&quot;)))
+	end
+
 	table.insert(
 		self.connections,
 		advanced.Activated:Connect(function()
@@ -10875,6 +10975,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindHosted.Activated:Connect(function()
 			self.relayKind = &quot;hosted&quot;
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
@@ -10882,6 +10983,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindWorker.Activated:Connect(function()
 			self.relayKind = &quot;worker&quot;
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
@@ -10889,13 +10991,12 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindNtfy.Activated:Connect(function()
 			self.relayKind = &quot;ntfy&quot;
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
 		self.connections,
-		saveButton.Activated:Connect(function()
-			callbacks.onSaveRelay(self.relayKind, (string.gsub(urlBox.Text, &quot;^%s*(.-)%s*$&quot;, &quot;%1&quot;)))
-		end)
+		urlBox.FocusLost:Connect(save)
 	)
 	table.insert(
 		self.connections,
@@ -10935,7 +11036,7 @@ function Widget.setRelay(self: Widget, kind: string, url: string, isCommunity: b
 		self.urlBox.Text = url
 		self.resolved.Text = `Relay: {url} ({kind})`
 	else
-		self.resolved.Text = &quot;Relay: Auto — hosted by whoever opens the place in rbx-native, no account needed&quot;
+		self.resolved.Text = &quot;Relay: Auto, hosted by whoever opens the place in RbxNative, no account needed&quot;
 	end
 end
 

@@ -37,9 +37,9 @@
 </ol>
 <h2>Someone has to be in RbxNative</h2>
 <p>The session runs on the computer of whoever has the place open in RbxNative. Studio can't host it on its own, so with only Studio users the plugin just says it's waiting for someone in RbxNative to open the place.</p>
-<p>The first editor that turns presence on gives the place a key. If the plugin says it made one, save the place from Studio (File, Save to Roblox) before opening it in RbxNative, or each side ends up with its own key and they can't see each other. If that happens, both sides tell you: save from Studio, then reopen the place in RbxNative from My Games and pick Download the published version.</p>
+<p>Turning on Share my presence saves the place's key and relay by itself, there's no button to press. If Studio and RbxNative each made a key, RbxNative picks up the one saved on Roblox within a minute and you're in the same room. On a place without Team Create, that just means saving once from Studio (File, Save to Roblox).</p>
 <h2>What you get</h2>
-<p>Each side sees the other's camera, selection and open script. Presence is end-to-end encrypted with a key derived from the place, so the relay only ever sees ciphertext.</p>
+<p>Each side sees the other's camera, selection and open script. Presence is end-to-end encrypted with the place's key, so the relay only ever sees ciphertext.</p>
 <h2>Live co-editing (beta)</h2>
 <p>Off by default. Turn on Beta Features, Live co-editing in RbxNative, and the Co-edit toggle in the plugin for people in Studio.</p>
 <p>It shares property changes, inserts, deletes, reparenting, renames and script text. Remote edits are their own undo steps, concurrent script edits merge with conflicts kept side by side, and someone joining late catches up from the relay's log.</p>
