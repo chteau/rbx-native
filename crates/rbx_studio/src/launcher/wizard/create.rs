@@ -235,11 +235,16 @@ impl Wizard {
                             ))
                             .child(row(
                                 "Security",
-                                h_flex()
-                                    .gap(px(6.))
-                                    .child(ui::tag("RECOMMENDED", ui::accent(), tokens::accent_soft()))
+                                v_flex()
+                                    .gap(px(2.))
+                                    .child(
+                                        h_flex()
+                                            .gap(px(6.))
+                                            .child(ui::tag("RECOMMENDED", ui::accent(), tokens::accent_soft()))
+                                            .child("Add your IP address and an expiration date."),
+                                    )
                                     .child(div().text_color(tokens::text2()).child(
-                                        "Allow only your IP and set an expiration, so a copied key is useless elsewhere.",
+                                        "A leaked key then can\u{2019}t be used. If your IP changes, add the new one.",
                                     ))
                                     .into_any_element(),
                                 true,
