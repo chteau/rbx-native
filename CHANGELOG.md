@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-15
+
+- **Plugin widgets tear out into their own windows.** Drag a plugin's tab
+  out of the editor, or pick Float in its menu, and it gets a real window
+  with our own title bar, same as Explorer or Output. Drag the window's top
+  to an edge to dock it again. A widget that asks to float
+  (`InitialDockState.Float`) opens in its own window too. The window
+  remembers where you left it per widget, across restarts, and closing it
+  closes the widget (`BindToClose` fires) until its toolbar button opens
+  it again right where it was. (@chteau)
+
 ## 2026-11-14
 
 - **Installers.** Every release now has a Windows setup (per user, no

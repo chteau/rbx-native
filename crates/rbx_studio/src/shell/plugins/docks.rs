@@ -17,7 +17,7 @@ use rbx_lua::plugin::{Input, UiId, WidgetKind};
 use super::float::FLOAT;
 use super::widgets::pixel_size;
 use crate::shell::chrome;
-use crate::shell::layout::{initial_edge, Edge, Home, Landing, PluginDock};
+use crate::shell::layout::{initial_edge, Edge, Landing, PluginDock};
 use crate::shell::menu::{self, MenuId};
 use crate::shell::{Panel, Shell};
 use crate::tokens;
@@ -34,7 +34,7 @@ impl Shell {
             .collect()
     }
 
-    fn dock_widget(&self, dock: PluginDock) -> Option<UiId> {
+    pub(super) fn dock_widget(&self, dock: PluginDock) -> Option<UiId> {
         let docks = &self.plugins.widgets.docks;
         docks.iter().find(|(_, d)| **d == dock).map(|(id, _)| *id)
     }
@@ -158,15 +158,6 @@ impl Shell {
         } else {
             self.plugin_input(Input::WidgetOpened(id), cx);
         }
-    }
-
-    /// Whether a plugin dock is floating over the editor.
-    pub(super) fn plugin_dock_floats(&self, id: UiId) -> bool {
-        self.plugins
-            .widgets
-            .docks
-            .get(&id)
-            .is_some_and(|dock| self.layout.home_of(Panel::Plugin(*dock)) == Home::Floating)
     }
 
     /// The overflow menu a plugin dock wears, docked or floating: the same
