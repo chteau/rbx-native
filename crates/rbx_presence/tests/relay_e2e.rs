@@ -52,6 +52,8 @@ fn join(
         key: key.to_owned(),
         enc_key,
         user_id,
+        place_id: 4567,
+        beacon_from: "test".into(),
         hosting: None,
     })
 }
@@ -102,6 +104,8 @@ fn two_editors_see_each_other_and_a_stranger_is_refused() {
         key: auth::derive_key(&eve_secret, 4567),
         enc_key: crypt::enc_key(&eve_secret, 4567),
         user_id: 3,
+        place_id: 4567,
+        beacon_from: "test".into(),
         hosting: None,
     });
     let refused = loop {
@@ -211,7 +215,7 @@ fn the_plugin_and_the_editor_see_each_other() {
         local Crypto = script.Parent.Crypto
         local Relay = script.Parent.Relay
         local key = Auth.deriveKey("{secret}", 4567)
-        local relay = Relay.new({{ url = "{relay}", key = key, encKey = Crypto.encKey("{secret}", 4567), room = Auth.roomId(key), userId = 7 }})
+        local relay = Relay.new({{ url = "{relay}", key = key, encKey = Crypto.encKey("{secret}", 4567), room = Auth.roomId(key), userId = 7, placeId = 4567 }})
         local ok, err = relay:publish({{
             v = 2, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
             selection = {{ "Workspace.Baseplate" }}, edits = {{}}, seen = 0,

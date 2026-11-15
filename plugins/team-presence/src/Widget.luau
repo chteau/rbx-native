@@ -124,7 +124,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	local owner = Ui.frame(scroll, 5)
 	owner.Visible = false
 	Ui.list(owner, 6)
-	Ui.text(owner, "Owner setup — saved into the place for everyone", { size = Ui.TEXT_XS, color = "text3", order = 1 })
+	Ui.text(owner, "Owner setup, saved into the place as you change it", { size = Ui.TEXT_XS, color = "text3", order = 1 })
 
 	local kinds = Instance.new("Frame")
 	kinds.LayoutOrder = 2
@@ -165,8 +165,6 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		urlStroke.Transparency = Ui.alpha("border")
 	end)
 
-	local saveButton = Ui.button(owner, "Save to place", false, 4)
-	saveButton.Size = UDim2.fromOffset(110, 28)
 	local resolved = Ui.text(owner, "", { size = Ui.TEXT_XS, color = "text3", order = 5 })
 
 	local httpNote = Ui.card(scroll, 6)
@@ -214,6 +212,11 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	}, Widget)
 	self:showKind()
 
+	-- Owner setup has no save button: each change goes into the place.
+	local function save()
+		callbacks.onSaveRelay(self.relayKind, (string.gsub(urlBox.Text, "^%s*(.-)%s*$", "%1")))
+	end
+
 	table.insert(
 		self.connections,
 		advanced.Activated:Connect(function()
@@ -226,6 +229,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindHosted.Activated:Connect(function()
 			self.relayKind = "hosted"
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
@@ -233,6 +237,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindWorker.Activated:Connect(function()
 			self.relayKind = "worker"
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
@@ -240,13 +245,12 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindNtfy.Activated:Connect(function()
 			self.relayKind = "ntfy"
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
 		self.connections,
-		saveButton.Activated:Connect(function()
-			callbacks.onSaveRelay(self.relayKind, (string.gsub(urlBox.Text, "^%s*(.-)%s*$", "%1")))
-		end)
+		urlBox.FocusLost:Connect(save)
 	)
 	table.insert(
 		self.connections,
@@ -286,7 +290,7 @@ function Widget.setRelay(self: Widget, kind: string, url: string, isCommunity: b
 		self.urlBox.Text = url
 		self.resolved.Text = `Relay: {url} ({kind})`
 	else
-		self.resolved.Text = "Relay: Auto — hosted by whoever opens the place in rbx-native, no account needed"
+		self.resolved.Text = "Relay: Auto, hosted by whoever opens the place in RbxNative, no account needed"
 	end
 end
 

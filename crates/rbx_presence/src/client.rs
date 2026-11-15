@@ -101,6 +101,10 @@ pub struct Config {
     /// [`crate::crypt::enc_key`] for the place; never sent anywhere.
     pub enc_key: [u8; 32],
     pub user_id: u64,
+    /// The place, for [`crate::beacon`] (hosted rooms only).
+    pub place_id: u64,
+    /// This editor's [`crate::beacon`] sender id, the same every session.
+    pub beacon_from: String,
     /// [`RelayKind::Hosted`] only: lets this client host the room.
     pub hosting: Option<Hosting>,
 }
@@ -128,6 +132,10 @@ pub enum Event {
     Rejected(String),
     /// [`RelayKind::Hosted`]: how this client reaches the room now.
     Route(Route),
+    /// [`RelayKind::Hosted`]: the client ("studio" or "rbx-native") of an
+    /// editor that has the place open with a different presence key, or
+    /// `None` once there is none (see [`crate::beacon`]).
+    KeyConflict(Option<String>),
 }
 
 /// The handle; dropping it stops the worker.
@@ -189,6 +197,11 @@ struct Worker {
     hosted: Option<Hosted>,
     /// Hosted only: the announced relay this client joined.
     joined: Option<String>,
+    /// Hosted only: when this client's [`crate::beacon`] was last posted
+    /// and read, and what the last read found.
+    beacon_posted: Option<Instant>,
+    beacon_read: Option<Instant>,
+    key_conflict: Option<String>,
 }
 
 /// The relay this client runs for the room, and its public tunnel.
@@ -216,12 +229,15 @@ fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
         ntfy_last_id: None,
         hosted: None,
         joined: None,
+        beacon_posted: None,
+        beacon_read: None,
+        key_conflict: None,
     };
     let mut delay = BACKOFF_START;
     loop {
         let (event, wait) = match worker.session(&mut delay) {
             Outcome::Stopped => {
-                worker.stop_hosting();
+                worker.leave();
                 return;
             }
             Outcome::Failed(why) => (Event::Disconnected(why), delay),
@@ -231,7 +247,7 @@ fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
             }
         };
         if worker.events.send(event).is_err() || !worker.wait(wait) {
-            worker.stop_hosting();
+            worker.leave();
             return;
         }
         delay = (delay * 2).min(BACKOFF_MAX);
@@ -286,6 +302,9 @@ impl Worker {
     /// A hosted room: join the announced host if it answers, else host it
     /// ourselves (when we can), then talk to that relay like a Worker.
     fn hosted_session(&mut self, delay: &mut Duration) -> Outcome {
+        if !self.check_beacon() {
+            return Outcome::Stopped;
+        }
         if self.hosted.is_none() {
             let ntfy = self.config.relay_url.clone();
             match announce::find(&ntfy, &self.config.key, &self.config.room) {
@@ -349,6 +368,45 @@ impl Worker {
         Ok(())
     }
 
+    /// Posts this client's beacon when due and reads the others' at most once
+    /// a [`ROUTE_CHECK`], reporting a change in what it finds. Failures are
+    /// ignored: the beacon only explains. False when the client is gone.
+    fn check_beacon(&mut self) -> bool {
+        let due = |at: Option<Instant>, every: Duration| at.is_none_or(|t| t.elapsed() >= every);
+        let ntfy = self.config.relay_url.clone();
+        let fp = crate::beacon::fingerprint(&self.config.room);
+        let (place, from) = (self.config.place_id, self.config.beacon_from.clone());
+        if due(
+            self.beacon_posted,
+            Duration::from_millis(crate::beacon::EVERY_MS),
+        ) {
+            self.beacon_posted = Some(Instant::now());
+            let _ = crate::beacon::publish(&ntfy, place, &fp, &from);
+        }
+        if !due(self.beacon_read, ROUTE_CHECK) {
+            return true;
+        }
+        self.beacon_read = Some(Instant::now());
+        let Ok(found) = crate::beacon::read(&ntfy, place, &fp, &from) else {
+            return true;
+        };
+        if found == self.key_conflict {
+            return true;
+        }
+        self.key_conflict = found.clone();
+        self.events.send(Event::KeyConflict(found)).is_ok()
+    }
+
+    /// The client is gone: stops hosting and takes this client's beacon down.
+    fn leave(&mut self) {
+        self.stop_hosting();
+        if self.config.kind == RelayKind::Hosted && self.beacon_posted.is_some() {
+            let config = &self.config;
+            let _ =
+                crate::beacon::publish(&config.relay_url, config.place_id, "", &config.beacon_from);
+        }
+    }
+
     /// Leaves the room's hosting: says goodbye so guests look again at once,
     /// then closes the tunnel and the relay.
     fn stop_hosting(&mut self) {
@@ -367,6 +425,9 @@ impl Worker {
     /// re-host): a host whose tunnel died or that a newer host replaced, or a
     /// guest whose host moved or left.
     fn check_route(&mut self) -> Option<Outcome> {
+        if !self.check_beacon() {
+            return Some(Outcome::Stopped);
+        }
         let found = announce::find(&self.config.relay_url, &self.config.key, &self.config.room);
         if let Some(hosted) = &mut self.hosted {
             if !hosted.tunnel.alive() {
@@ -841,6 +902,8 @@ mod tests {
             key: key.clone(),
             enc_key: crate::crypt::enc_key("s", 1),
             user_id: 42,
+            place_id: 4567,
+            beacon_from: "test".into(),
             hosting: None,
         });
         client.publish(state(1));
