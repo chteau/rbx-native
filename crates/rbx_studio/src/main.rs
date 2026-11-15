@@ -209,6 +209,10 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
+/// How long quitting waits for team presence to leave its room: a couple of
+/// small ntfy posts and the tunnel closing.
+const PRESENCE_LEAVE_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Run from a terminal, a GUI-subsystem program gets no stdout or stderr, so
 /// `--help`, `loren` and errors would print nowhere. Attach to the parent's
 /// console in that case. Handles a parent already gave us (an MCP client's
@@ -350,6 +354,14 @@ fn main() {
         workspace_view::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
         menu_bar::install_app(cx);
+        // Quitting ends every thread with the process: give team presence a
+        // moment to leave its room first, so a host's goodbye reaches the
+        // others instead of leaving them on a dead address.
+        cx.on_app_quit(|_| {
+            rbx_presence::client::leave_all(PRESENCE_LEAVE_LIMIT);
+            async {}
+        })
+        .detach();
         // Only a bare launch: opening a place blocks this thread, which
         // would freeze the logo mid-spin.
         let splash = path.is_none().then(|| splash::open(cx)).flatten();

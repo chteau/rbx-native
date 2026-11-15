@@ -11,7 +11,9 @@
 
 use std::collections::HashMap;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -143,6 +145,32 @@ pub struct Client {
     states: Sender<UserState>,
 }
 
+/// How many workers are still running, so quitting can wait for them.
+static RUNNING: Mutex<usize> = Mutex::new(0);
+static STOPPED: Condvar = Condvar::new();
+/// Set once the app quits: every worker leaves its room.
+static QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// For quitting the app: makes every worker leave its room (a host says
+/// goodbye on the announce topic and closes its tunnel) and waits up to
+/// `limit` for them. The process ending would otherwise cut them off first
+/// and leave guests on a dead address.
+pub fn leave_all(limit: Duration) {
+    QUITTING.store(true, Ordering::Relaxed);
+    let end = Instant::now() + limit;
+    let mut running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
+    while *running > 0 {
+        let left = end.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return;
+        }
+        running = STOPPED
+            .wait_timeout(running, left)
+            .unwrap_or_else(PoisonError::into_inner)
+            .0;
+    }
+}
+
 /// `relay_url` with `https` → `wss`, `http` → `ws`, plus
 /// `/v1/rooms/<room>/ws`. `None` for any other scheme.
 pub fn ws_url(relay_url: &str, room: &str) -> Option<String> {
@@ -160,7 +188,12 @@ impl Client {
     pub fn start(config: Config) -> (Client, Receiver<Event>) {
         let (states, state_rx) = mpsc::channel();
         let (event_tx, events) = mpsc::channel();
-        thread::spawn(move || run(config, state_rx, event_tx));
+        *RUNNING.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        thread::spawn(move || {
+            run(config, state_rx, event_tx);
+            *RUNNING.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+            STOPPED.notify_all();
+        });
         (Client { states }, events)
     }
 
@@ -256,15 +289,18 @@ fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
 
 impl Worker {
     /// Sleeps for `total` while still collecting published states; false when
-    /// the client is gone.
+    /// the client is gone or the app quits.
     fn wait(&mut self, total: Duration) -> bool {
         let end = Instant::now() + total;
         loop {
+            if QUITTING.load(Ordering::Relaxed) {
+                return false;
+            }
             let left = end.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 return true;
             }
-            match self.states.recv_timeout(left) {
+            match self.states.recv_timeout(left.min(READ_TIMEOUT)) {
                 Ok(state) => self.take(state),
                 Err(RecvTimeoutError::Timeout) => return true,
                 Err(RecvTimeoutError::Disconnected) => return false,
@@ -277,8 +313,12 @@ impl Worker {
         self.dirty = true;
     }
 
-    /// Pulls every pending state; false when the client is gone.
+    /// Pulls every pending state; false when the client is gone or the app
+    /// quits.
     fn drain(&mut self) -> bool {
+        if QUITTING.load(Ordering::Relaxed) {
+            return false;
+        }
         loop {
             match self.states.try_recv() {
                 Ok(state) => self.take(state),
