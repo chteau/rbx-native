@@ -33,6 +33,7 @@ pub(super) const EXE_NAME: &str = if cfg!(windows) {
 
 /// What the Linux 0.1.0 package called the executable (see
 /// `compat::migrate_legacy_name`).
+#[cfg(unix)]
 pub(super) const LEGACY_EXE_NAME: &str = "rbxstudio";
 
 /// The release's page, for the toast's "What's new" link. The release JSON
