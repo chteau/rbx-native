@@ -232,14 +232,14 @@ function Ui.switch(parent: Instance?, onClick: () -> (), order: number?): Switch
 	Ui.corner(track, 999)
 	local knob = Instance.new("Frame")
 	knob.Size = UDim2.fromOffset(12, 12)
-	knob.AnchorPoint = Vector2.new(0, 0.5)
+	knob.AnchorPoint = Vector2.new(0, 1 / 2)
 	knob.BorderSizePixel = 0
 	knob.BackgroundColor3 = Ui.color("knob")
 	Ui.corner(knob, 999)
 	knob.Parent = track
 	local function set(on: boolean)
 		Ui.fill(track, if on then "check_on" else "track")
-		knob.Position = if on then UDim2.new(1, -14, 0.5, 0) else UDim2.new(0, 2, 0.5, 0)
+		knob.Position = if on then UDim2.new(1, -14, 1 / 2, 0) else UDim2.new(0, 2, 1 / 2, 0)
 	end
 	set(false)
 	track.Activated:Connect(onClick)

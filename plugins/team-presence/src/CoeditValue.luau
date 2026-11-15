@@ -52,9 +52,9 @@ local function encodeInner(value: any, valueType: string?, targetOf: (Instance) 
 	elseif kind == "Color3" then
 		if valueType == "Color3uint8" then
 			return wrap("Color3uint8", {
-				math.clamp(math.floor(value.R * 255 + 0.5), 0, 255),
-				math.clamp(math.floor(value.G * 255 + 0.5), 0, 255),
-				math.clamp(math.floor(value.B * 255 + 0.5), 0, 255),
+				math.clamp(math.floor(value.R * 255 + 1 / 2), 0, 255),
+				math.clamp(math.floor(value.G * 255 + 1 / 2), 0, 255),
+				math.clamp(math.floor(value.B * 255 + 1 / 2), 0, 255),
 			})
 		end
 		return wrap("Color3", { value.R, value.G, value.B })

@@ -21,7 +21,7 @@ local HEARTBEAT = 5
 -- How often the last-seen time is saved while connected: what arrives while
 -- connected is seen live, so the next catch-up starts after it.
 local LAST_SEEN_EVERY = 30
-local TICK = 0.2
+local TICK = 1 / 5
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
 
@@ -234,7 +234,7 @@ local function start()
 	end)
 
 	task.spawn(function()
-		local lastPublish = 0.0
+		local lastPublish = 0
 		local backoff = 0
 		while generation == myGen do
 			if myCapture:isDirty() or os.clock() - lastPublish >= HEARTBEAT then

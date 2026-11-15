@@ -12,9 +12,9 @@ local Edits = require(script.Parent.Edits)
 local Paths = require(script.Parent.Paths)
 local Schema = require(script.Parent.Schema)
 
-local SAMPLE_INTERVAL = 0.2
-local MOVE_STUDS = 0.05
-local TURN_RADIANS = math.rad(0.5)
+local SAMPLE_INTERVAL = 1 / 5
+local MOVE_STUDS = 1 / 20
+local TURN_RADIANS = math.rad(1 / 2)
 local MAX_WATCHED = 50
 local VALUE_CUT = 80
 

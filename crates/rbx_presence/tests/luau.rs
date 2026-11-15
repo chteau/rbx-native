@@ -110,6 +110,46 @@ fn data_json_round_trip() {
     }
 }
 
+/// Studio on a French Mac formats and parses numbers with a decimal comma;
+/// JSON on the wire must still use a point both ways.
+#[test]
+fn data_json_with_a_decimal_comma_locale() {
+    let lua = new_lua();
+    lua.load(
+        r#"
+        local format, parse = string.format, tonumber
+        string.format = function(pattern, ...)
+            local text = format(pattern, ...)
+            if string.find(pattern, "%%[%d.]*[fgeE]") then
+                text = string.gsub(text, "%.", ",")
+            end
+            return text
+        end
+        tonumber = function(text, base)
+            if base == nil and type(text) == "string" then
+                if string.find(text, ".", 1, true) then
+                    return nil
+                end
+                text = string.gsub(text, ",", ".")
+            end
+            return parse(text, base)
+        end
+        "#,
+    )
+    .exec()
+    .unwrap();
+    assert!(fixture_text("state_studio.json").contains("0.25"));
+    let decode = func(&lua, "Json", "decode");
+    let encode = func(&lua, "Json", "encode");
+    for name in ["state_studio.json", "state_native.json", "snapshot.json"] {
+        let text = fixture_text(name);
+        let text = text.trim();
+        let value: Value = decode.call(text).unwrap();
+        let again: String = encode.call(value).unwrap();
+        assert_eq!(again, text, "{name}");
+    }
+}
+
 #[test]
 fn data_schema() {
     let lua = new_lua();

@@ -100,8 +100,8 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	local switch = Ui.switch(switchLane, function()
 		callbacks.onToggle()
 	end)
-	switch.frame.AnchorPoint = Vector2.new(0, 0.5)
-	switch.frame.Position = UDim2.fromScale(0, 0.5)
+	switch.frame.AnchorPoint = Vector2.new(0, 1 / 2)
+	switch.frame.Position = UDim2.fromScale(0, 1 / 2)
 	local shareText = Ui.frame(shareRow, 2)
 	shareText.Size = UDim2.new(1, -(28 + Ui.GAP), 0, 0)
 	Ui.list(shareText, 2)
@@ -158,7 +158,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	urlBox.Parent = owner
 	urlBox.Focused:Connect(function()
 		urlStroke.Color = Ui.color("check_on")
-		urlStroke.Transparency = 0.45
+		urlStroke.Transparency = 9 / 20
 	end)
 	urlBox.FocusLost:Connect(function()
 		urlStroke.Color = Ui.color("border")
