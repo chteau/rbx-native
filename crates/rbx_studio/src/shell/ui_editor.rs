@@ -342,6 +342,7 @@ impl Shell {
         hidden
             .into_iter()
             .filter(|panel| !self.ui.unhidden.contains(panel))
+            .chain(self.shut_plugin_docks())
             .collect()
     }
 

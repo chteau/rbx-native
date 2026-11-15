@@ -150,7 +150,7 @@ impl GameSettingsWindow {
         };
         cx.open_window(options, move |window, cx| {
             let view = cx.new(|cx| GameSettingsWindow::new(shell, tab, window, cx));
-            cx.new(|cx| Root::new(view, window, cx))
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
         .ok()
     }

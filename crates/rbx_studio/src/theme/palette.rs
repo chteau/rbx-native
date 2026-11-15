@@ -15,6 +15,7 @@ use gpui_kit::component::ThemeMode;
 use gpui_kit::{point, px, rgb, rgba, BoxShadow, Rgba, WindowBackgroundAppearance};
 use serde::Deserialize;
 
+use super::blur;
 use super::pack::{inside, MAX_IMAGE_BYTES};
 use super::{Background, Effects, Fit, Fonts, Palette};
 
@@ -66,6 +67,8 @@ struct BackgroundFile {
     fit: Option<String>,
     #[serde(default)]
     layer: Option<String>,
+    #[serde(default)]
+    blur: f32,
 }
 
 fn opaque() -> f32 {
@@ -336,6 +339,11 @@ fn background(file: &BackgroundFile, dir: Option<&Path>) -> Result<Background, S
             MAX_IMAGE_BYTES / (1024 * 1024)
         ));
     }
+    // Only the header is read: enough to turn a file that isn't an image
+    // into the same clear refusal as a missing one, instead of a theme that
+    // applies with nothing painted where its image should be.
+    image::image_dimensions(&path)
+        .map_err(|err| format!("background image {:?} can't be read: {err}", file.image))?;
     if !(0.0..=1.0).contains(&file.opacity) {
         return Err(format!(
             "background opacity {} is outside 0–1",
@@ -360,6 +368,15 @@ fn background(file: &BackgroundFile, dir: Option<&Path>) -> Result<Background, S
                 "background layer {other:?} is not \"behind\" or \"over\""
             ))
         }
+    };
+    if !(0.0..=64.0).contains(&file.blur) {
+        return Err(format!("background blur {} is outside 0–64", file.blur));
+    }
+    // A blur that cannot be made (undecodable image, unwritable cache)
+    // costs only the frosting: the sharp image still paints.
+    let path = match blur::cache_dir() {
+        Some(cache) if file.blur > 0. => blur::blurred(&path, file.blur, &cache).unwrap_or(path),
+        _ => path,
     };
     Ok(Background {
         path,

@@ -116,6 +116,7 @@ impl Shell {
             super::Panel::ALL
                 .into_iter()
                 .filter(move |p| !hidden.contains(p))
+                .chain(self.plugin_dock_panels())
         };
         let menus = crate::menu_bar::menus(self.script_templates.extras());
         let query = cx.new(|cx| {

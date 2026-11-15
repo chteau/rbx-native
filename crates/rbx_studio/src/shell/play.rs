@@ -77,7 +77,7 @@ use rbx_play::launch::{join_server_uri, join_uri, ClientProcess, Launcher};
 use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
 use rbx_play::tunnel::{Tunnel, TunnelProvider};
 
-use super::Shell;
+use super::{play_sandbox, Shell};
 use crate::command_bar::Feedback;
 use crate::launcher::ui::{self, Weight};
 use crate::settings::PlaySandbox;
@@ -164,6 +164,8 @@ pub(super) struct Play {
     pub(super) phase: Phase,
     /// The "Roblox is already running" question is showing.
     pub(super) confirm_close: bool,
+    /// Play just made the sandbox experience and says so once.
+    sandbox_notice: bool,
     /// The editor window Play was pressed in (X11 id or `HWND`); the client
     /// is embedded there, over the 3D view.
     main_window: Option<crate::pointer_lock::WindowId>,
@@ -214,6 +216,7 @@ impl Play {
             named: None,
             phase: Phase::Idle,
             confirm_close: false,
+            sandbox_notice: false,
             main_window: None,
             gpui_window: None,
             live: live::Live::new(),
@@ -341,16 +344,50 @@ impl Shell {
         self.play.gpui_window = Some(window.window_handle().window_id());
         self.play.scale = window.scale_factor();
         if self.play.sandbox.is_none() {
-            self.output.push(
-                PLAY_SOURCE,
-                Feedback::Error(
-                    "Choose a sandbox place in Settings \u{203a} Account first.".to_owned(),
-                ),
-            );
-            self.open_settings_on("account", cx);
-            cx.notify();
+            self.play_make_sandbox(cx);
             return;
         }
+        self.play_begin(cx);
+    }
+
+    /// No sandbox chosen: finds or makes "RbxNative Sandbox", then carries on.
+    fn play_make_sandbox(&mut self, cx: &mut Context<Self>) {
+        self.play.attempt += 1;
+        let attempt = self.play.attempt;
+        self.play.phase = Phase::Starting("Setting up the sandbox\u{2026}");
+        cx.notify();
+        let session = self.roblox_session();
+        cx.spawn(async move |this, cx| {
+            let made = cx
+                .background_spawn(async move {
+                    play_sandbox::provision(ApiKey::from_env_or_config(), session)
+                })
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                if shell.play.attempt != attempt {
+                    return;
+                }
+                match made {
+                    Ok(made) => {
+                        shell.set_play_sandbox(Some(made.sandbox), cx);
+                        if let Some(warning) = made.warning {
+                            shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
+                        }
+                        shell.play.sandbox_notice = made.created;
+                        shell.play.phase = Phase::Idle;
+                        shell.play_begin(cx);
+                    }
+                    Err(text) => {
+                        shell.play_stop(StopReason::Failed(text), cx);
+                        shell.open_settings_on("account", cx);
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn play_begin(&mut self, cx: &mut Context<Self>) {
         self.play.attempt += 1;
         let attempt = self.play.attempt;
         self.play.phase = Phase::Starting("Checking for Roblox\u{2026}");
@@ -1223,6 +1260,36 @@ impl Shell {
 
     /// The "Roblox is already running" dialog, while `confirm_close`.
     pub(in crate::shell) fn play_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if self.play.sandbox_notice && !self.play.confirm_close {
+            return Some(
+                ui::dialog(
+                    440.,
+                    ui::dialog_glyph("info", ui::accent(), ui::wash()),
+                    "Made a private sandbox for Play",
+                    format!(
+                        "It is an experience called \u{201c}{}\u{201d} on your account. You can change it in Settings.",
+                        play_sandbox::NAME
+                    ),
+                    None,
+                    vec![
+                        ui::button("sandbox-settings", "Open the setting", Weight::Secondary, false)
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.play.sandbox_notice = false;
+                                shell.open_settings_on("account", cx);
+                                cx.notify();
+                            }))
+                            .into_any_element(),
+                        ui::button("sandbox-ok", "OK", Weight::Primary, false)
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.play.sandbox_notice = false;
+                                cx.notify();
+                            }))
+                            .into_any_element(),
+                    ],
+                )
+                .into_any_element(),
+            );
+        }
         if !self.play.confirm_close {
             return None;
         }

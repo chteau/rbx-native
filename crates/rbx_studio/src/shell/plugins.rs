@@ -9,7 +9,9 @@
 //! input), the selection, Output lines, requests (undo/redo, prompts,
 //! opening a script, debugger control) and UI changes.
 
+mod built_in;
 mod catalog;
+mod docks;
 pub(super) use catalog::{store_client, store_icons};
 mod debugger_bridge;
 mod discover;
@@ -80,6 +82,9 @@ pub(crate) struct Plugins {
     pub(super) epoch: Option<Instant>,
     /// Plugin paths the user switched off (persisted in settings).
     pub(super) disabled: HashSet<String>,
+    /// Plugins found but not run because RbxNative does their job itself
+    /// (see `built_in`).
+    pub(super) built_in: HashSet<std::path::PathBuf>,
 }
 
 impl Shell {
@@ -97,6 +102,7 @@ impl Shell {
             crate::settings::default_config_dir().map(|dir| dir.join("plugin-settings"));
         let mut host = PluginHost::new(self.database.clone(), settings_dir);
         let mut wasm = Vec::new();
+        self.plugins.built_in.clear();
         for plugin in &found {
             if self
                 .plugins
@@ -108,7 +114,11 @@ impl Shell {
             let loaded = match plugin.kind {
                 discover::Kind::Roblox | discover::Kind::NativeLuau => {
                     rbx_lua::plugin::read_source(&plugin.path).map(|source| {
-                        host.add(source);
+                        if self.plugin_built_in(&plugin.path, &source) {
+                            self.plugins.built_in.insert(plugin.path.clone());
+                        } else {
+                            host.add(source);
+                        }
                     })
                 }
                 discover::Kind::NativeWasm => {
@@ -182,7 +192,8 @@ impl Shell {
             | Input::ActionTriggered(_)
             | Input::PromptAnswered(..)
             | Input::Handle(_)
-            | Input::WidgetClosed(_) => (true, true),
+            | Input::WidgetClosed(_)
+            | Input::WidgetOpened(_) => (true, true),
             Input::Mouse(MouseInput::Down(1)) => (true, false),
             Input::Mouse(MouseInput::Up(1)) => (false, true),
             _ => (false, false),

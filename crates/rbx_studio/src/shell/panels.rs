@@ -31,8 +31,11 @@ impl Shell {
         let explorer = self.explorer.clone();
         // Every row's drop handler mutates the DOM, and its `can_drop` has to
         // ask the DOM what it would do, neither runs while this render holds
-        // `self`, so both reach the shell back through its own handle.
-        let shell = cx.entity();
+        // `self`, so both reach the shell back through its own handle. A weak
+        // one: `Tree` keeps this closure in the `TreeState` the shell owns,
+        // and a strong handle there kept every closed place's editor (and its
+        // renderer and GPU device) alive for good.
+        let shell = cx.weak_entity();
         let scroll_handle = self.tree.read(cx).scroll_handle().clone();
         // Highlighting reads `self.selection`'s own full set rather than the
         // `TreeState`'s `state.is_selected()`: the tree can track only one
@@ -119,7 +122,9 @@ impl Shell {
                             let tint = tints.get(&item.id).copied();
                             // A row whose id does not read back as a referent has
                             // nothing to drag or drop onto; it still has to draw.
-                            let Some(reference) = explorer::item_ref(&item.id) else {
+                            let (Some(reference), Some(shell)) =
+                                (explorer::item_ref(&item.id), shell.upgrade())
+                            else {
                                 return row(
                                     &tree,
                                     index,

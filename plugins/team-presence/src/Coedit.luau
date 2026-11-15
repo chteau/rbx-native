@@ -7,11 +7,14 @@ local Apply = require(script.Parent.CoeditApply)
 local Collect = require(script.Parent.CoeditCollect)
 local CoeditCore = require(script.Parent.CoeditCore)
 local Kept = require(script.Parent.CoeditKept)
+local Notes = require(script.Parent.Notes)
 local Paths = require(script.Parent.Paths)
 local Sync = require(script.Parent.CoeditSync)
 
 local FLUSH_EVERY = 0.3
 local POLL_EVERY = 0.5
+-- The longest wait between polls while the relay can't be read.
+local POLL_BACKOFF_MAX = 10
 
 local ROOTS = {
 	"Workspace",
@@ -37,6 +40,8 @@ export type Options = {
 	encKey: string,
 	name: string,
 	onNote: (string) -> (),
+	-- A note containing any of these is a state the panel shows, never printed.
+	quiet: { string }?,
 }
 
 local Coedit = {}
@@ -79,11 +84,14 @@ function Coedit.new(options: Options)
 		since = 0,
 		kept = Kept.new(),
 		batchCount = 0,
+		notes = Notes.new(options.quiet),
 	}, Coedit)
 end
 
 function Coedit.note(self: any, text: string)
-	pcall(self.options.onNote, text)
+	if Notes.say(self.notes, text, os.clock()) then
+		pcall(self.options.onNote, text)
+	end
 end
 
 function Coedit.isTracked(self: any, inst: Instance): boolean
@@ -317,12 +325,19 @@ function Coedit.start(self: any)
 		end
 	end)
 	task.spawn(function()
+		local wait = POLL_EVERY
 		while self.running do
-			local okPoll, pollErr = pcall(self.poll, self)
+			local okPoll, result = pcall(self.poll, self)
 			if not okPoll then
-				self:note("Co-edit: " .. tostring(pollErr))
+				self:note("Co-edit: " .. tostring(result))
 			end
-			task.wait(POLL_EVERY)
+			if okPoll and result then
+				wait = POLL_EVERY
+				Notes.worked(self.notes, os.clock())
+			else
+				wait = math.min(wait * 2, POLL_BACKOFF_MAX)
+			end
+			task.wait(wait)
 		end
 	end)
 end

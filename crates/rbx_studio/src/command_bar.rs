@@ -192,7 +192,7 @@ impl CommandBar {
             // The window's own ground, not a dock's: the field inside it
             // is the one lighter surface, and against black it reads as an
             // inset input rather than a second dock stacked on the first.
-            .bg(tokens::black())
+            .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
             .border_t(px(1.))
             .border_color(tokens::border())
             .text_size(tokens::text_sm())

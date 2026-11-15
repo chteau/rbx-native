@@ -174,6 +174,7 @@ mod update_planning;
 mod updater;
 mod viewport_frame;
 mod wally_client;
+mod window_blur;
 mod workspace_view;
 
 use std::borrow::Cow;
@@ -527,7 +528,7 @@ pub(crate) fn open_editor(
                 .update(cx, |shell, cx| shell.request_quit(cx))
                 .unwrap_or(true)
         });
-        cx.new(|cx| Root::new(shell, window, cx))
+        cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     })
     .expect("failed to open the main window");
     Ok(())
@@ -585,7 +586,7 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
     let opened = cx.open_window(options, |window, cx| {
         let shell = cx.new(|cx| Shell::new("Settings", place, settings, launch, user, window, cx));
         host = Some(shell.downgrade());
-        cx.new(|cx| Root::new(shell, window, cx))
+        cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     });
     let (Ok(window), Some(shell)) = (opened, host) else {
         return;

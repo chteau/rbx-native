@@ -22,6 +22,13 @@ use crate::tokens;
 pub(crate) fn startup(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
     super::set_active(pack.palette.overridden(overrides));
     widgets(pack, overrides, cx);
+    // Every window gets a Root, so this reaches each one as it opens.
+    cx.observe_new(|_: &mut gpui_kit::component::Root, window, _| {
+        if let Some(window) = window {
+            crate::window_blur::sync_hint(window);
+        }
+    })
+    .detach();
 }
 
 /// A switch while the editor is running. The caller re-resolves anything it
@@ -33,6 +40,7 @@ pub(crate) fn apply(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
     for handle in cx.windows() {
         let _ = handle.update(cx, |_, window, _| {
             window.set_background_appearance(appearance);
+            crate::window_blur::sync_hint(window);
         });
     }
     cx.refresh_windows();

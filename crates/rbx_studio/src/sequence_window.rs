@@ -182,7 +182,7 @@ impl SequenceWindow {
         cx.open_window(options, move |window, cx| {
             let view =
                 cx.new(|cx| SequenceWindow::new(shell, row, title, original, &editor, window, cx));
-            cx.new(|cx| Root::new(view, window, cx))
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
         .ok()
     }

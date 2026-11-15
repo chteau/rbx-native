@@ -153,7 +153,7 @@ impl SettingsWindow {
                 closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
                 true
             });
-            cx.new(|cx| Root::new(view, window, cx))
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
         .ok()
     }
@@ -369,6 +369,14 @@ impl Render for SettingsWindow {
                     cx.notify();
                 } else if keystroke.key == "f" && keystroke.modifiers.secondary() {
                     this.search.update(cx, |state, cx| state.focus(window, cx));
+                    cx.stop_propagation();
+                } else if keystroke.key == "w"
+                    && keystroke.modifiers.secondary()
+                    && !keystroke.modifiers.shift
+                {
+                    // Cmd+W (Ctrl+W) closes Settings like its close button.
+                    this.commit_typed(cx);
+                    window.defer(cx, |window, _| window.remove_window());
                     cx.stop_propagation();
                 }
             }))

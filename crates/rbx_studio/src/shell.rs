@@ -60,6 +60,7 @@ mod perf_view;
 mod pivot;
 mod place_merge;
 mod play;
+mod play_sandbox;
 mod playtests;
 mod plugins;
 pub(crate) mod project;
@@ -145,6 +146,7 @@ use gpui_kit::component::input::{Enter, InputEvent, InputState};
 use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
 use gpui_kit::component::{v_flex, IndexPath};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -1724,6 +1726,7 @@ impl Shell {
         };
         self.layout = layout::Layout::restore(&named.layout);
         self.last_named_layout = Some(named.name.clone());
+        self.seat_plugin_docks();
         self.save_settings();
         cx.notify();
     }
@@ -1744,6 +1747,7 @@ impl Shell {
     /// to find and delete the settings file.
     pub(crate) fn reset_layout(&mut self, cx: &mut Context<Self>) {
         self.layout = layout::Layout::default();
+        self.seat_plugin_docks();
         self.output_collapsed = false;
         self.save_settings();
         cx.notify();
@@ -1779,6 +1783,9 @@ impl Shell {
 
     /// Shuts one panel, from its tab's own cross or its dock menu.
     pub(super) fn close_panel(&mut self, panel: layout::Panel, cx: &mut Context<Self>) {
+        if let layout::Panel::Plugin(dock) = panel {
+            return self.close_plugin_dock(dock, cx);
+        }
         self.layout.close(panel);
         self.save_settings();
         cx.notify();
@@ -1792,6 +1799,12 @@ impl Shell {
         open: bool,
         cx: &mut Context<Self>,
     ) {
+        if let layout::Panel::Plugin(dock) = panel {
+            return match open {
+                true => self.open_plugin_dock(dock, cx),
+                false => self.close_plugin_dock(dock, cx),
+            };
+        }
         // Asked for by name, so the canvas stops setting it aside.
         if open {
             self.ui_unhide(panel);
@@ -2178,7 +2191,7 @@ impl Render for Shell {
         self.sync_argon_fields(window, cx);
         v_flex()
             .size_full()
-            .bg(tokens::black())
+            .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
             .font_family(tokens::font_ui())
             .text_color(tokens::text_strong())
             .track_focus(&self.root_focus)

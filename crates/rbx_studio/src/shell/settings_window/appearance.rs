@@ -6,7 +6,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
-use gpui_kit::component::{h_flex, Icon, IndexPath, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, Icon, IndexPath, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -87,17 +87,29 @@ fn theme_choices(current: &str) -> (Vec<String>, Vec<SharedString>, Option<Index
         .unwrap_or_default();
     let labels = installed
         .iter()
-        .map(|(id, manifest)| {
-            if theme::is_reserved(id) {
-                format!("{} (built-in)", manifest.name).into()
-            } else {
-                manifest.name.clone().into()
-            }
+        .map(|(id, manifest)| match theme_cards::builtin_name(id) {
+            Some(name) => name.into(),
+            None => manifest.name.clone().into(),
         })
         .collect();
     let ids: Vec<String> = installed.iter().map(|(id, _)| id.clone()).collect();
     let row = ids.iter().position(|id| id == current).map(IndexPath::new);
     (ids, labels, row, installed)
+}
+
+/// The icon pack dropdown's row for the shell's pack: an installed one by
+/// name, else the kit's dark or light variant.
+fn icon_pack_row(
+    icon_packs: &[(Option<String>, IconPack)],
+    pack: &(Option<String>, IconPack),
+) -> Option<usize> {
+    icon_packs
+        .iter()
+        .position(|(name, kind)| match (&pack.0, name) {
+            (Some(chosen), Some(name)) => chosen == name,
+            (None, None) => *kind == pack.1,
+            _ => false,
+        })
 }
 
 impl AppearanceControls {
@@ -128,13 +140,7 @@ impl AppearanceControls {
                 (None, IconPack::Light) => "Default light".into(),
             })
             .collect();
-        let pack_row = icon_packs
-            .iter()
-            .position(|(name, kind)| match (&pack.0, name) {
-                (Some(chosen), Some(name)) => chosen == name,
-                (None, None) => *kind == pack.1,
-                _ => false,
-            });
+        let pack_row = icon_pack_row(&icon_packs, &pack);
         let icon_pack = cx.new(|cx| {
             SelectState::new(
                 SearchableVec::new(pack_labels),
@@ -230,6 +236,26 @@ impl AppearanceControls {
                 }
             }),
             cx.observe_in(shell, window, |this, shell, window, cx| {
+                // A theme switch between dark and light swaps the kit's icon
+                // variant under the dropdown; keep the dropdown on it.
+                let pack = {
+                    let shell = shell.read(cx);
+                    let (_, chosen) = shell.installed_icon_packs();
+                    (chosen.map(str::to_owned), shell.icon_pack())
+                };
+                let row = icon_pack_row(&this.appearance.icon_packs, &pack);
+                if this
+                    .appearance
+                    .icon_pack
+                    .read(cx)
+                    .selected_index(cx)
+                    .map(|ix| ix.row)
+                    != row
+                {
+                    this.appearance.icon_pack.update(cx, |state, cx| {
+                        state.set_selected_index(row.map(IndexPath::new), window, cx);
+                    });
+                }
                 let install = &shell.read(cx).theme_install;
                 let running = matches!(install, Install::Running(_));
                 let done = this.appearance.installing && !running;
@@ -241,6 +267,14 @@ impl AppearanceControls {
                             .link
                             .update(cx, |state, cx| state.set_value("", window, cx));
                     }
+                    this.refresh_themes(window, cx);
+                }
+            }),
+            // A theme copied into the folder by hand (Finder, a file
+            // manager) shows up when Settings comes back to the front,
+            // without closing and reopening it.
+            cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() && this.themes_changed_on_disk() {
                     this.refresh_themes(window, cx);
                 }
             }),
@@ -332,6 +366,15 @@ impl SettingsWindow {
             state.set_items(SearchableVec::new(labels), window, cx);
             state.set_selected_index(row, window, cx);
         });
+    }
+
+    /// Whether the themes folder lists other themes, or other manifests,
+    /// than the dropdown shows.
+    fn themes_changed_on_disk(&self) -> bool {
+        let on_disk = theme::themes_dir()
+            .map(|dir| theme::installed(&dir))
+            .unwrap_or_default();
+        on_disk != self.appearance.listed
     }
 
     /// Hands the link to the shell's Install from GitHub.
@@ -473,7 +516,23 @@ impl SettingsWindow {
                 install_row,
             ],
         );
-        theme_section.head = Some(self.theme_cards(cx));
+        theme_section.head = Some(match crate::window_blur::blur_missing() {
+            true => v_flex()
+                .child(self.theme_cards(cx))
+                .child(
+                    kit::text(11.5, 16.)
+                        .px(px(16.))
+                        .pb(px(12.))
+                        .text_color(tokens::text3())
+                        .child(
+                            "Your desktop can\u{2019}t blur behind windows, so this theme \
+                             shows see-through. On GNOME, the Blur my Shell extension can \
+                             blur it.",
+                        ),
+                )
+                .into_any_element(),
+            false => self.theme_cards(cx),
+        });
 
         let config = crate::settings::default_config_dir();
         let interface = Section::new(
@@ -505,7 +564,11 @@ impl SettingsWindow {
                         .child(readout(format!("{scale:.2}\u{d7}"))),
                 )
                 .describe("Everything in the window, text included.")
-                .keys(&["Ctrl =", "Ctrl \u{2212}", "Ctrl 0"])
+                .keys(if cfg!(target_os = "macos") {
+                    &["\u{2318}=", "\u{2318}\u{2212}", "\u{2318}0"]
+                } else {
+                    &["Ctrl =", "Ctrl \u{2212}", "Ctrl 0"]
+                })
                 .changed((scale - 1.).abs() > 1e-3, |shell, cx| {
                     shell.set_font_scale(1., cx)
                 }),

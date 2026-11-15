@@ -56,7 +56,7 @@ impl Shell {
                 window.activate_window();
                 let (Some(source), Ok(view)) = (
                     source.clone(),
-                    root.view().clone().downcast::<UploadWindow>(),
+                    crate::window_blur::content(root.view(), cx).downcast::<UploadWindow>(),
                 ) else {
                     return;
                 };
@@ -109,7 +109,7 @@ impl UploadWindow {
         };
         cx.open_window(options, move |window, cx| {
             let view = cx.new(|cx| UploadWindow::new(shell, source, kind, window, cx));
-            cx.new(|cx| Root::new(view, window, cx))
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
         .ok()
     }

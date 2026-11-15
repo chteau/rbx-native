@@ -13,12 +13,16 @@
 use serde::Deserialize;
 
 use crate::error::CloudError;
+use crate::experiences::Experience;
 use crate::heartbeats::SessionCookie;
+use crate::universes::{Owner, Visibility};
 use crate::web::{self, Method, DEVELOP};
 
 const APIS: &str = "https://apis.roblox.com";
 /// Roblox's Baseplate template, what Studio's New › Baseplate opens.
 const TEMPLATE_PLACE_ID: u64 = 95206881;
+/// Listing pages read before giving up, 50 experiences each.
+const PAGES: usize = 20;
 
 /// A group the user may create experiences in.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +36,14 @@ pub struct CreatorGroup {
 pub struct CreatedExperience {
     pub universe_id: u64,
     pub root_place_id: u64,
+}
+
+/// An experience of the signed-in user, with the description the listing
+/// carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnExperience {
+    pub experience: Experience,
+    pub description: String,
 }
 
 /// The groups Studio's Publish As offers as owners.
@@ -58,6 +70,75 @@ pub fn name_experience(
     description: &str,
 ) -> Result<(), CloudError> {
     describe_at(DEVELOP, cookie, created, name, description)
+}
+
+/// Every experience the signed-in user owns, private ones included
+/// (`develop` `GET /v1/user/universes`, what Studio's Open from Roblox
+/// lists). Open Cloud has no listing that shows private experiences.
+pub fn own_experiences(cookie: &SessionCookie) -> Result<Vec<OwnExperience>, CloudError> {
+    own_experiences_at(DEVELOP, cookie)
+}
+
+fn own_experiences_at(
+    root: &str,
+    cookie: &SessionCookie,
+) -> Result<Vec<OwnExperience>, CloudError> {
+    #[derive(Deserialize)]
+    struct Item {
+        id: u64,
+        name: String,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(rename = "rootPlaceId")]
+        root_place_id: Option<u64>,
+        #[serde(rename = "privacyType")]
+        privacy: String,
+        #[serde(rename = "creatorType")]
+        creator_type: String,
+        #[serde(rename = "creatorTargetId")]
+        creator_id: u64,
+    }
+    #[derive(Deserialize)]
+    struct Page {
+        data: Vec<Item>,
+        #[serde(rename = "nextPageCursor")]
+        next: Option<String>,
+    }
+    let url = format!("{root}/v1/user/universes");
+    let mut found = Vec::new();
+    let mut cursor = String::new();
+    for _ in 0..PAGES {
+        let mut query = vec![("limit", "50"), ("isArchived", "false")];
+        if !cursor.is_empty() {
+            query.push(("cursor", cursor.as_str()));
+        }
+        let page: Page = serde_json::from_slice(&web::send(cookie, Method::Get, &url, &query)?)?;
+        found.extend(page.data.into_iter().filter_map(|item| {
+            let experience = Experience {
+                universe_id: item.id,
+                root_place_id: item.root_place_id?,
+                name: item.name,
+                visibility: match item.privacy.as_str() {
+                    "Public" => Visibility::Public,
+                    "Private" => Visibility::Private,
+                    other => Visibility::Other(other.to_owned()),
+                },
+                owner: match item.creator_type.as_str() {
+                    "Group" => Owner::Group(item.creator_id),
+                    _ => Owner::User(item.creator_id),
+                },
+            };
+            Some(OwnExperience {
+                experience,
+                description: item.description.unwrap_or_default(),
+            })
+        }));
+        match page.next {
+            Some(next) => cursor = next,
+            None => break,
+        }
+    }
+    Ok(found)
 }
 
 fn groups_at(root: &str, cookie: &SessionCookie) -> Result<Vec<CreatorGroup>, CloudError> {
@@ -150,6 +231,37 @@ mod tests {
 
     fn json(request: &str) -> serde_json::Value {
         serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap()
+    }
+
+    #[test]
+    fn own_experiences_follow_the_cursor_and_keep_private_ones() {
+        let item = |id: u64, name: &str, privacy: &str| {
+            format!(
+                r#"{{"id":{id},"name":"{name}","description":"d","rootPlaceId":{},"privacyType":"{privacy}","creatorType":"User","creatorTargetId":7}}"#,
+                id + 1
+            )
+        };
+        let first = format!(
+            r#"{{"nextPageCursor":"abc","data":[{}]}}"#,
+            item(1, "A", "Public")
+        );
+        let second = format!(
+            r#"{{"nextPageCursor":null,"data":[{}]}}"#,
+            item(2, "RbxNative Sandbox", "Private")
+        );
+        let leak = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+        let (root, served) = serve(vec![(200, "", leak(first)), (200, "", leak(second))]);
+        let found = own_experiences_at(&root, &cookie()).unwrap();
+        let requests = served.join().unwrap();
+        assert!(requests[0].starts_with("GET /v1/user/universes?limit=50&isArchived=false "));
+        assert!(requests[1].contains("cursor=abc"), "{}", requests[1]);
+        assert_eq!(found.len(), 2);
+        let second = &found[1].experience;
+        assert_eq!(second.name, "RbxNative Sandbox");
+        assert_eq!(second.visibility, Visibility::Private);
+        assert_eq!(second.root_place_id, 3);
+        assert_eq!(second.owner, Owner::User(7));
+        assert_eq!(found[1].description, "d");
     }
 
     #[test]

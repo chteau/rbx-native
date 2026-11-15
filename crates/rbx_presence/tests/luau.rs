@@ -739,3 +739,114 @@ fn announce_cross_checks_with_rust() {
     let t: String = topic.call(room).unwrap();
     assert_eq!(t, announce::topic(room));
 }
+
+/// The plugin's beacon reads the Rust side's and the other way round: same
+/// topic and fingerprint, a different key is a conflict, the same key and a
+/// goodbye are not.
+#[test]
+fn beacon_cross_checks_with_rust() {
+    use rbx_presence::beacon;
+    let lua = new_lua();
+    let now = 1_800_000_000_000u64;
+    let topic: String = func(&lua, "Beacon", "topic").call(4567.0).unwrap();
+    assert_eq!(topic, beacon::topic(4567));
+    let fp: String = func(&lua, "Beacon", "fingerprint").call("room-a").unwrap();
+    assert_eq!(fp, beacon::fingerprint("room-a"));
+
+    let theirs = beacon::fingerprint("room-b");
+    let rust = beacon::encode(&theirs, "host", "rbx-native", now - 1_000);
+    let conflict = func(&lua, "Beacon", "conflict");
+    let texts = |items: &[&str]| {
+        let t = lua.create_table().unwrap();
+        for (i, item) in items.iter().enumerate() {
+            t.set(i + 1, *item).unwrap();
+        }
+        t
+    };
+    let found: Option<String> = conflict
+        .call((fp.as_str(), "studio1", now as f64, texts(&[&rust])))
+        .unwrap();
+    assert_eq!(found.as_deref(), Some("rbx-native"));
+    let bye = beacon::encode("", "host", "rbx-native", now - 500);
+    let found: Option<String> = conflict
+        .call((fp.as_str(), "studio1", now as f64, texts(&[&rust, &bye])))
+        .unwrap();
+    assert_eq!(found, None);
+
+    let luau: String = func(&lua, "Beacon", "encode")
+        .call((theirs.as_str(), "studio1", "studio", (now - 1_000) as f64))
+        .unwrap();
+    assert_eq!(
+        beacon::conflict(&fp, "host", now, [luau.as_str()]).as_deref(),
+        Some("studio")
+    );
+    assert_eq!(
+        beacon::conflict(&theirs, "host", now, [luau.as_str()]),
+        None
+    );
+}
+
+/// rbx-native adopts the key saved on Roblox because the plugin, holding the
+/// same secret, lands in the same room: the plugin's fingerprint of a secret
+/// is the Rust side's.
+#[test]
+fn saved_key_fingerprint_matches_the_plugins() {
+    use rbx_presence::converge;
+    let lua = new_lua();
+    let secret = rbx_presence::secret::generate();
+    let place = 104_688_317_714_596u64;
+    let key: String = func(&lua, "Auth", "deriveKey")
+        .call((secret.as_str(), place as f64))
+        .unwrap();
+    let room: String = func(&lua, "Auth", "roomId").call(key).unwrap();
+    let fp: String = func(&lua, "Beacon", "fingerprint").call(room).unwrap();
+    assert_eq!(fp, converge::fingerprint(&secret, place));
+}
+
+/// Co-edit problems print once each, waiting for a host never does, and a
+/// problem that went away may print again only after `AGAIN` seconds.
+#[test]
+fn coedit_notes_print_once_and_never_for_waiting() {
+    let lua = new_lua();
+    let notes = load_module(&lua, "Notes").unwrap();
+    let again: f64 = notes.get("AGAIN").unwrap();
+    let state: Table = notes
+        .get::<Function>("new")
+        .unwrap()
+        .call(
+            lua.create_sequence_from(["Waiting for someone", "host yet"])
+                .unwrap(),
+        )
+        .unwrap();
+    let say = |text: &str, now: f64| -> bool {
+        notes
+            .get::<Function>("say")
+            .unwrap()
+            .call((state.clone(), text, now))
+            .unwrap()
+    };
+    let worked = |now: f64| {
+        notes
+            .get::<Function>("worked")
+            .unwrap()
+            .call::<()>((state.clone(), now))
+            .unwrap()
+    };
+    let waiting =
+        "Co-edit: could not read edits (Waiting for someone in RbxNative to open this place.)";
+    assert!(!say(waiting, 0.0));
+    assert!(!say(
+        "Co-edit: could not send edits (Can't reach the rbx-native host yet (HTTP 530))",
+        0.0
+    ));
+    assert!(say("Co-edit: could not read edits (HTTP 500)", 0.0));
+    assert!(!say("Co-edit: could not read edits (HTTP 500)", 1.0));
+    assert!(say("Co-edit: could not send edits (HTTP 500)", 1.0));
+    worked(again - 1.0);
+    assert!(!say(
+        "Co-edit: could not read edits (HTTP 500)",
+        again - 1.0
+    ));
+    worked(again + 1.0);
+    assert!(say("Co-edit: could not read edits (HTTP 500)", again + 1.0));
+}

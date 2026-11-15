@@ -20,6 +20,7 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
@@ -72,7 +73,7 @@ impl Shell {
             .w_full()
             .flex_1()
             .overflow_hidden()
-            .bg(tokens::black())
+            .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
             .child(
                 h_flex()
                     // Positioned, so the drop strips can be laid over it,
@@ -141,7 +142,7 @@ impl Shell {
             Panel::CallStack => self.call_stack_dock(cx),
             Panel::TerrainEditor => self.terrain_dock(window, cx),
             Panel::Collaborators => self.collaborators_dock(window, cx),
-            Panel::PluginWidgets => self.plugin_widgets_dock(window, cx),
+            Panel::Plugin(dock) => self.plugin_dock(dock, window, cx),
             Panel::InputActions => self.input_actions_dock(window, cx),
             Panel::SecurityAudit => self.security_audit_dock(cx),
             Panel::Playtests => self.playtests_dock(window, cx),

@@ -129,6 +129,8 @@ fn start(
         key: key.to_owned(),
         enc_key,
         user_id,
+        place_id: 4567,
+        beacon_from: "test".into(),
         hosting,
     })
 }
@@ -250,7 +252,7 @@ fn the_plugin_waits_then_finds_the_rbx_native_host() {
         local Crypto = script.Parent.Crypto
         local Relay = script.Parent.Relay
         local key = Auth.deriveKey("{secret}", 4567)
-        relay = Relay.new({{ kind = "hosted", url = "{ntfy}", key = key, encKey = Crypto.encKey("{secret}", 4567), room = Auth.roomId(key), userId = 7 }})
+        relay = Relay.new({{ kind = "hosted", url = "{ntfy}", key = key, encKey = Crypto.encKey("{secret}", 4567), room = Auth.roomId(key), userId = 7, placeId = 4567 }})
         local ok, err = relay:publish({{
             v = 2, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
             selection = {{ "Workspace.Baseplate" }}, edits = {{}}, seen = 0,
@@ -304,4 +306,48 @@ fn the_plugin_waits_then_finds_the_rbx_native_host() {
     assert!(found);
     let (_, host_sees) = route_and_sees(&host_events, 7, "Workspace.Baseplate");
     assert!(host_sees);
+}
+
+/// Studio and rbx-native on one place with different keys (each made its
+/// own before the place was saved) see each other's beacon and say so,
+/// instead of each waiting for the other forever.
+#[test]
+fn different_keys_on_one_place_are_reported_on_both_sides() {
+    let (ntfy, _topics) = fake_ntfy();
+    let studio_secret = secret::generate();
+    let lua = common::new_lua();
+    common::studio_stubs(&lua);
+    let setup = format!(
+        r##"
+        local Auth = script.Parent.Auth
+        local Crypto = script.Parent.Crypto
+        local Relay = script.Parent.Relay
+        local key = Auth.deriveKey("{studio_secret}", 4567)
+        relay = Relay.new({{ kind = "hosted", url = "{ntfy}", key = key, encKey = Crypto.encKey("{studio_secret}", 4567), room = Auth.roomId(key), userId = 7, placeId = 4567 }})
+        return relay:keyConflict()
+        "##
+    );
+    let alone: Option<String> = lua.load(setup).eval().unwrap();
+    assert_eq!(alone, None);
+
+    let native_secret = secret::generate();
+    let key = auth::derive_key(&native_secret, 4567);
+    let (_host, events) = start(&ntfy, &key, crypt::enc_key(&native_secret, 4567), 7, true);
+    let seen = loop {
+        match events
+            .recv_timeout(Duration::from_secs(10))
+            .expect("reports")
+        {
+            Event::KeyConflict(found) => break found,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    };
+    assert_eq!(seen.as_deref(), Some("studio"));
+
+    let found: Option<String> = lua
+        .load("relay.lastBeaconRead = -math.huge; return relay:keyConflict()")
+        .eval()
+        .unwrap();
+    assert_eq!(found.as_deref(), Some("rbx-native"));
 }

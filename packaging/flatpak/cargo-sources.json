@@ -3876,19 +3876,6 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/gpui-pre-apple/gpui-pre-apple-0.3.4.crate",
-        "sha256": "4506904f40d7f214d72d9a1603fc8dc00b9884bd9c80770f215b3d12cac771b8",
-        "dest": "cargo/vendor/gpui-pre-apple-0.3.4"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"4506904f40d7f214d72d9a1603fc8dc00b9884bd9c80770f215b3d12cac771b8\", \"files\": {}}",
-        "dest": "cargo/vendor/gpui-pre-apple-0.3.4",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/gpui-pre-collections/gpui-pre-collections-0.3.4.crate",
         "sha256": "e3c8b0623a1a129d503d16dc38f8e51f5dd82e1e381dd19ea86054b983859cfc",
         "dest": "cargo/vendor/gpui-pre-collections-0.3.4"
@@ -4118,19 +4105,6 @@
         "type": "inline",
         "contents": "{\"package\": \"567f1fb79e72c80001d9e358e9f552e2696d79ad71af76aab60da5684848fd98\", \"files\": {}}",
         "dest": "cargo/vendor/gpui-pre-wgpu-0.3.4",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/gpui-pre-windows/gpui-pre-windows-0.3.4.crate",
-        "sha256": "45918b16e62e89ef4952a6e140297f716934bf6f9b21206ad6ce54faa7316005",
-        "dest": "cargo/vendor/gpui-pre-windows-0.3.4"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"45918b16e62e89ef4952a6e140297f716934bf6f9b21206ad6ce54faa7316005\", \"files\": {}}",
-        "dest": "cargo/vendor/gpui-pre-windows-0.3.4",
         "dest-filename": ".cargo-checksum.json"
     },
     {

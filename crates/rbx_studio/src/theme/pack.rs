@@ -17,6 +17,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use gpui_kit::component::{ThemeConfig, ThemeMode, ThemeSet};
+use gpui_kit::Rgba;
 use serde::Deserialize;
 
 use super::palette;
@@ -208,11 +209,17 @@ impl ThemePack {
         };
         let (palette, warnings) = palette::build(theme_file.as_ref(), Some(&dir))?;
         let widgets = match optional_json(&dir.join("widgets.json"))? {
-            Some(json) => widgets_config(&json, palette.mode)?,
-            None if palette.mode == ThemeMode::Light => {
-                widgets_config(LIGHT_WIDGETS_JSON, ThemeMode::Light)?
-            }
-            None => widgets_config(DEFAULT_WIDGETS_JSON, ThemeMode::Dark)?,
+            Some(json) => follow_palette(widgets_config(&json, palette.mode)?, &palette, false),
+            None if palette.mode == ThemeMode::Light => follow_palette(
+                widgets_config(LIGHT_WIDGETS_JSON, ThemeMode::Light)?,
+                &palette,
+                true,
+            ),
+            None => follow_palette(
+                widgets_config(DEFAULT_WIDGETS_JSON, ThemeMode::Dark)?,
+                &palette,
+                true,
+            ),
         };
         let icons_dir = dir.join("icons");
         let icons = if icons_dir.is_dir() {
@@ -260,6 +267,55 @@ pub(super) fn widgets_config(json: &str, mode: ThemeMode) -> Result<ThemeConfig,
         .into_iter()
         .find(|theme| theme.mode == mode)
         .ok_or_else(|| format!("widgets.json defines no {} theme", mode.name()))
+}
+
+/// The widget colours a built-in `widgets.json` copies from its palette,
+/// `(widgets key, palette token)`: the Root's `background` is the window's
+/// ground, so a translucent `black` has to reach it too.
+pub(super) const PALETTE_WIDGETS: [(&str, &str); 15] = [
+    ("background", "black"),
+    ("foreground", "text"),
+    ("popover.background", "field_select"),
+    ("border", "border"),
+    ("muted.background", "field_select"),
+    ("muted.foreground", "text3"),
+    ("sidebar.background", "dock"),
+    ("secondary.foreground", "text2"),
+    ("primary.background", "check_on"),
+    ("ring", "check_on"),
+    ("selection.background", "selection"),
+    ("accent.background", "hover"),
+    ("tab_bar.background", "black"),
+    ("title_bar.background", "black"),
+    ("danger.background", "text_error"),
+];
+
+/// `config` with the [`PALETTE_WIDGETS`] colours taken from `palette`:
+/// every one when `config` is a built-in theme's borrowed as a stand-in,
+/// only those it leaves unset when it is the theme's own.
+fn follow_palette(config: ThemeConfig, palette: &Palette, replace: bool) -> ThemeConfig {
+    let Ok(mut value) = serde_json::to_value(&config) else {
+        return config;
+    };
+    let Some(colors) = value["colors"].as_object_mut() else {
+        return config;
+    };
+    for (key, token) in PALETTE_WIDGETS {
+        if replace || colors.get(key).is_none_or(serde_json::Value::is_null) {
+            colors.insert(key.to_owned(), hex_rgba(palette.color(token)).into());
+        }
+    }
+    serde_json::from_value(value).unwrap_or(config)
+}
+
+/// `#RRGGBB`, or `#RRGGBBAA` when the colour is translucent.
+pub(super) fn hex_rgba(color: Rgba) -> String {
+    let rgb = crate::accent::hex(color);
+    if color.a >= 1. {
+        rgb
+    } else {
+        format!("{rgb}{:02X}", (color.a * 255.).round() as u8)
+    }
 }
 
 pub(crate) fn themes_dir() -> Option<PathBuf> {

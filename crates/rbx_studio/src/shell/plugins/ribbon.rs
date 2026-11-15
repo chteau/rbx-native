@@ -172,7 +172,10 @@ fn plugin_tile(
         .items_center()
         .justify_center()
         .rounded(tokens::radius())
-        .bg(tokens::tile())
+        .when_some(
+            tokens::on_surface(tokens::tile(), tokens::chrome()),
+            |this, bg| this.bg(bg),
+        )
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())
         .map(|this| {

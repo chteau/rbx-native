@@ -70,15 +70,32 @@ Collaborators do not configure anything: they open the plugin and switch on
 folder `RbxNativePresence` in `ServerStorage`:
 
 - `PresenceSecret`: the shared secret (64 lower-case hex digits). The first
-  person to connect mints it automatically; everyone else reads it. The room
-  and signing key are derived from it and the `PlaceId`.
-- `RelayKind` / `RelayUrl`: which relay the team uses (see below). Unset
-  means **Auto**, which needs nothing. A place **owner** who runs their own
-  relay sets these once under "Show advanced"; every collaborator reads them
-  from the place.
+  person to switch presence on mints it automatically; everyone else reads it.
+  The room and signing key are derived from it and the `PlaceId`.
+- `RelayKind` / `RelayUrl`: which relay the team uses (see below). Switching
+  presence on writes the current choice, **Auto** unless a place **owner**
+  who runs their own relay picked another under "Show advanced". There is no
+  save button: picking a kind, or pressing Enter in or leaving the URL field,
+  writes it. Every collaborator reads them from the place.
 
-Writing any of these is an undoable edit; it reaches other collaborators only
+Writing any of these is one undoable edit; it reaches other collaborators only
 after a **Save** or **Publish**, and the widget says so.
+
+Two editors that open the place before its secret is saved each mint their
+own and end up in different rooms. So that this is never silent, each editor
+in a hosted room posts a fingerprint of its room (never the room or the
+secret) to a topic named after the place, `rbxnp-place-<hash of PlaceId>`.
+The beacon is unsigned, so it only ever explains; it reveals that a place
+uses presence and when.
+
+The key saved on Roblox wins. rbx-native can read the saved place (it has
+the Open Cloud key), Studio can't, so rbx-native is the side that moves:
+a place it opens without a key takes the saved one before minting, and when
+the beacon shows another key it reads the saved place again (its version
+first, so an unchanged place isn't downloaded twice) and switches to the key
+there. So the only step left is on the Studio side: Save to Roblox, and
+rbx-native follows within a minute. The secret itself never goes over the
+beacon or any other public channel.
 
 Anyone who can open the place file can read the secret, so an uncopylocked
 place leaks it. Treat the secret as team-wide, not as strong access control.
@@ -93,8 +110,8 @@ Three transports, all official:
   announces the tunnel's address, signed with the place key, on the room's
   ntfy.sh announce topic (`rbxnp-<room>-host`, a few messages a day). The
   plugin reads the newest announcement and connects. Studio cannot host, so
-  with nobody in rbx-native the widget says it is waiting; Studio users see
-  each other through Team Create anyway.
+  with nobody in rbx-native the widget says it is waiting for someone in
+  rbx-native; Studio users see each other through Team Create anyway.
 - **worker**: the signed-WebSocket relay in `relay/` (a Cloudflare Worker),
   which keeps the room in memory and fans out snapshots. Self-hosted.
 - **ntfy**: a plain [ntfy](https://ntfy.sh) pub/sub server, which needs no code

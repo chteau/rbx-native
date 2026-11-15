@@ -208,6 +208,7 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
             }
         }
         Input::WidgetClosed(id) => close_widget(host, id),
+        Input::WidgetOpened(id) => set_widget_enabled(host, id, true),
         Input::DebuggerChanged => {
             let after = host.shared.borrow().context.debugger.clone();
             for (lua, env) in vms(host) {
@@ -444,19 +445,14 @@ fn tick(host: &mut PluginHost) {
 /// closes anyway. Studio 0.743 does the same (its docs say the callback
 /// replaces the close, but the widget's `Enabled` still goes false).
 fn close_widget(host: &mut PluginHost, id: u32) {
-    let Some((root, key)) = host
+    let Some(root) = host
         .shared
         .borrow()
         .ui
         .widgets
         .iter()
         .find(|w| w.id == id)
-        .map(|w| {
-            (
-                w.root,
-                matches!(w.kind, WidgetKind::Dock { .. }).then(|| w.key.clone()),
-            )
-        })
+        .map(|w| w.root)
     else {
         return;
     };
@@ -475,20 +471,43 @@ fn close_widget(host: &mut PluginHost, id: u32) {
     if let (Some(callback), Some((lua, env))) = (callback, &owner) {
         report(env, scheduler::spawn(lua, callback, MultiValue::new()));
     }
+    set_widget_enabled(host, id, false);
+}
+
+/// Sets a widget's `Enabled` from the editor's side, remembered for the
+/// next session like a plugin's own write.
+fn set_widget_enabled(host: &mut PluginHost, id: u32, enabled: bool) {
+    let Some((root, key)) = host
+        .shared
+        .borrow()
+        .ui
+        .widgets
+        .iter()
+        .find(|w| w.id == id)
+        .map(|w| {
+            (
+                w.root,
+                matches!(w.kind, WidgetKind::Dock { .. }).then(|| w.key.clone()),
+            )
+        })
+    else {
+        return;
+    };
+    let owner = owner_of(host, root);
     {
         let mut shared = host.shared.borrow_mut();
         if let Some(widget) = shared.ui.widgets.iter_mut().find(|w| w.id == id) {
-            widget.enabled = false;
+            widget.enabled = enabled;
         }
         shared.ui_changed = true;
         if let (Some((_, env)), Some(key)) = (&owner, key) {
-            shared.remember_widget(&env.name, &key, false);
+            shared.remember_widget(&env.name, &key, enabled);
         }
     }
     let _ = host
         .dom
         .borrow_mut()
-        .set_property(root, "Enabled", Variant::Bool(false));
+        .set_property(root, "Enabled", Variant::Bool(enabled));
 }
 
 fn unload(host: &mut PluginHost, id: u32) {

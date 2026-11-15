@@ -147,7 +147,7 @@ pub(in crate::shell) fn registry(
     commands.extend(panels.into_iter().map(|panel| {
         command(
             "View",
-            &format!("Focus {}", panel.key()),
+            &format!("Focus {}", panel.title()),
             None,
             Run::Focus(panel),
         )

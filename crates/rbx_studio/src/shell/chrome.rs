@@ -270,7 +270,7 @@ impl Shell {
             .gap(px(2.))
             .pt(px(8.))
             .px(px(12.))
-            .bg(tokens::black())
+            .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
             .border_b_1()
             .border_color(tokens::border())
             .id("document-tabs")
@@ -349,7 +349,7 @@ impl Shell {
             .items_center()
             .gap(px(22.))
             .px(px(16.))
-            .bg(tokens::black())
+            .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 if shell.ribbon_tabs_nav.key(&event.keystroke, window, cx) {
                     cx.stop_propagation();
@@ -491,7 +491,7 @@ pub(crate) fn topbar_frame(title: SharedString) -> Div {
         .h(tokens::topbar_height())
         .flex_none()
         .items_center()
-        .bg(tokens::black())
+        .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
         .border_b(px(1.))
         .border_color(tokens::border())
         .child(native_buttons_hider())
@@ -677,7 +677,7 @@ pub(crate) fn panel_topbar(
         .h(tokens::topbar_height())
         .flex_none()
         .items_center()
-        .bg(tokens::black())
+        .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
         .child(native_buttons_hider())
         .child(super::tooltip::rehover_on_scroll())
         .child(

@@ -42,7 +42,6 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::CallStack
         | Panel::TerrainEditor
         | Panel::Collaborators
-        | Panel::PluginWidgets
         | Panel::InputActions
         | Panel::SecurityAudit
         | Panel::Playtests
@@ -51,7 +50,8 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::Layers
         | Panel::Loren
         | Panel::AvatarSettings
-        | Panel::Localization => None,
+        | Panel::Localization
+        | Panel::Plugin(_) => None,
     }
 }
 
