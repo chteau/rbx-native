@@ -6,134 +6,15 @@
 
 mod common;
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rbx_presence::client::{Client, Config, Event, Hosting, Route, Tunnel};
-use rbx_presence::relay::RelayKind;
-use rbx_presence::schema::{Client as Editor, UserState, SCHEMA_VERSION};
+use common::hosted::{fake_ntfy, start, state};
+use rbx_presence::client::{Event, Route};
 use rbx_presence::{announce, auth, crypt, secret};
-
-type Topics = Arc<Mutex<HashMap<String, Vec<String>>>>;
-
-/// `POST /<topic>` stores the body; `GET /<topic>/json` answers every stored
-/// message as ntfy's JSON lines.
-fn fake_ntfy() -> (String, Topics) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let topics: Topics = Arc::default();
-    let store = Arc::clone(&topics);
-    thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            let store = Arc::clone(&store);
-            thread::spawn(move || {
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let mut parts = line.split_whitespace();
-                let method = parts.next().unwrap_or("").to_owned();
-                let target = parts.next().unwrap_or("").to_owned();
-                let mut len = 0;
-                loop {
-                    let mut header = String::new();
-                    reader.read_line(&mut header).unwrap();
-                    if header.trim().is_empty() {
-                        break;
-                    }
-                    if let Some(v) = header.to_ascii_lowercase().strip_prefix("content-length:") {
-                        len = v.trim().parse().unwrap();
-                    }
-                }
-                let mut body = vec![0; len];
-                reader.read_exact(&mut body).unwrap();
-                let path = target.split('?').next().unwrap().trim_start_matches('/');
-                let reply = if method == "POST" {
-                    let mut topics = store.lock().unwrap();
-                    topics
-                        .entry(path.to_owned())
-                        .or_default()
-                        .push(String::from_utf8(body).unwrap());
-                    "{}".to_owned()
-                } else {
-                    let topic = path.trim_end_matches("/json");
-                    let topics = store.lock().unwrap();
-                    topics
-                        .get(topic)
-                        .into_iter()
-                        .flatten()
-                        .map(|m| {
-                            serde_json::json!({ "event": "message", "message": m }).to_string()
-                                + "\n"
-                        })
-                        .collect()
-                };
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
-            });
-        }
-    });
-    (url, topics)
-}
-
-struct Loopback;
-
-impl Tunnel for Loopback {
-    fn alive(&mut self) -> bool {
-        true
-    }
-}
-
-fn state(user_id: u64, selection: &str) -> UserState {
-    UserState {
-        v: SCHEMA_VERSION,
-        user_id,
-        name: format!("User {user_id}"),
-        color: rbx_presence::schema::color_for(user_id).to_owned(),
-        client: Editor::RbxNative,
-        camera: None,
-        selection: vec![selection.to_owned()],
-        script: None,
-        edits: Vec::new(),
-        seen: 0,
-    }
-}
-
-fn start(
-    ntfy: &str,
-    key: &str,
-    enc_key: [u8; 32],
-    user_id: u64,
-    can_host: bool,
-) -> (Client, Receiver<Event>) {
-    let hosting = can_host.then(|| {
-        Hosting(Arc::new(|port: u16| {
-            Ok((
-                format!("http://127.0.0.1:{port}"),
-                Box::new(Loopback) as Box<dyn Tunnel>,
-            ))
-        }))
-    });
-    Client::start(Config {
-        kind: RelayKind::Hosted,
-        relay_url: ntfy.to_owned(),
-        room: auth::room_id(key),
-        key: key.to_owned(),
-        enc_key,
-        user_id,
-        place_id: 4567,
-        beacon_from: "test".into(),
-        hosting,
-    })
-}
 
 /// Waits for a route event, then for a snapshot in which `other` has
 /// `selection`; returns the route.
@@ -306,6 +187,134 @@ fn the_plugin_waits_then_finds_the_rbx_native_host() {
     assert!(found);
     let (_, host_sees) = route_and_sees(&host_events, 7, "Workspace.Baseplate");
     assert!(host_sees);
+}
+
+/// The host quits without a goodbye (its tunnel answers 530): the plugin
+/// stops naming it once the grace runs out and waits for someone again,
+/// then joins the next host by itself. When that one leaves with a goodbye
+/// the plugin goes back to waiting right away.
+#[test]
+fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
+    let (ntfy, _topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let room = auth::room_id(&key);
+    // What a dead quick tunnel's address answers: Cloudflare's 530 page.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead = format!("http://{}", listener.local_addr().unwrap());
+    thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut head = [0; 4096];
+            let _ = stream.read(&mut head);
+            let page = "<html>origin unreachable</html>";
+            let _ = write!(
+                stream,
+                "HTTP/1.1 530 \r\ncontent-length: {}\r\nconnection: close\r\n\r\n{page}",
+                page.len()
+            );
+        }
+    });
+    announce::publish(&ntfy, &key, &room, &dead).unwrap();
+
+    let lua = common::new_lua();
+    common::studio_stubs(&lua);
+    let setup = format!(
+        r##"
+        local Auth = script.Parent.Auth
+        local Crypto = script.Parent.Crypto
+        local Relay = script.Parent.Relay
+        local key = Auth.deriveKey("{secret}", 4567)
+        relay = Relay.new({{ kind = "hosted", url = "{ntfy}", key = key, encKey = Crypto.encKey("{secret}", 4567), room = Auth.roomId(key), userId = 7, placeId = 4567 }})
+        function publish()
+            return relay:publish({{
+                v = 2, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
+                selection = {{ "Workspace.Baseplate" }}, edits = {{}}, seen = 0,
+            }})
+        end
+        local ok, err = publish()
+        return ok, err, relay:waiting()
+        "##
+    );
+    let (ok, err, waiting): (bool, String, bool) = lua.load(setup).eval().unwrap();
+    assert!(
+        !ok && !waiting && err.contains("Can't reach") && err.contains("530"),
+        "{err}"
+    );
+
+    // Past the grace, the next look finds the same dead address: waiting.
+    let (ok, err, waiting): (bool, String, bool) = lua
+        .load(
+            r#"
+            relay.goneSince -= 60
+            relay.lastResolve = -math.huge
+            local ok, err = publish()
+            return ok, err, relay:waiting()
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert!(
+        !ok && waiting && err.contains("Waiting for someone"),
+        "{err}"
+    );
+
+    let (host, host_events) = start(&ntfy, &key, crypt::enc_key(&secret, 4567), 8, true);
+    host.publish(state(8, "Workspace.SpawnLocation"));
+    loop {
+        match host_events
+            .recv_timeout(Duration::from_secs(10))
+            .expect("hosts")
+        {
+            Event::Route(Route::Hosting(_)) => break,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    }
+    let found: bool = lua
+        .load(
+            r#"
+            relay.lastResolve = -math.huge
+            local ok, err = publish()
+            assert(ok, err)
+            local cursor = 0
+            for _ = 1, 10 do
+                local snapshot, pollErr = relay:poll(cursor)
+                assert(snapshot, pollErr)
+                cursor = snapshot.cursor
+                for _, user in snapshot.users do
+                    if user.userId == 8 then
+                        return not relay:waiting() and relay.goneSince == nil
+                    end
+                end
+            end
+            return false
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert!(found);
+
+    drop(host);
+    let end = Instant::now() + Duration::from_secs(10);
+    while announce::find(&ntfy, &key, &room) != Ok(None) {
+        assert!(Instant::now() < end, "the host left without a goodbye");
+        thread::sleep(Duration::from_millis(100));
+    }
+    let waiting: bool = lua
+        .load(
+            r#"
+            for _ = 1, 2 do
+                publish()
+            end
+            return relay:waiting()
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert!(
+        waiting,
+        "a host that said goodbye leaves nothing to wait out"
+    );
 }
 
 /// Studio and rbx-native on one place with different keys (each made its

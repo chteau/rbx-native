@@ -155,6 +155,19 @@ local function nextBackoff(current: number): number
 	return math.min(current * 2, BACKOFF_MAX)
 end
 
+-- Waits after a failed publish or poll and returns the next backoff. While
+-- the room waits for a host the relay only looks every so often anyway, so
+-- check back each second to pick a new host up as soon as it is found.
+local function retryAfter(myRelay: any, backoff: number): number
+	if myRelay:waiting() then
+		task.wait(1)
+		return 0
+	end
+	local delay = nextBackoff(backoff)
+	task.wait(delay)
+	return delay
+end
+
 local function start()
 	stop()
 	if game.PlaceId == 0 then
@@ -248,9 +261,8 @@ local function start()
 					backoff = 0
 				else
 					showProblem(myRelay, err, minted)
-					backoff = nextBackoff(backoff)
 					lastPublish = os.clock()
-					task.wait(backoff)
+					backoff = retryAfter(myRelay, backoff)
 				end
 			end
 			task.wait(TICK)
@@ -292,8 +304,12 @@ local function start()
 				task.wait(myRelay:pollDelay())
 			else
 				showProblem(myRelay, err, minted)
-				backoff = nextBackoff(backoff)
-				task.wait(backoff)
+				if myRelay:waiting() then
+					-- The host is gone: so are its user and their markers.
+					myMarkers:render({})
+					widget:setUsers({})
+				end
+				backoff = retryAfter(myRelay, backoff)
 			end
 		end
 	end)

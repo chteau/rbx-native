@@ -14,7 +14,10 @@ local NOTE = "Presence only works for collaborators who have Studio open with th
 	.. "presence plugin running, or rbx-native itself."
 
 local HTTP_NOTE = "Presence sends your selection, camera and open script to the relay. "
-	.. "Studio asks once whether this plugin may reach that domain; allow it."
+	.. "Studio asks whether this plugin may reach each address it talks to, allow them. "
+	.. "With the default relay that's ntfy.sh, where RbxNative posts where its session is, "
+	.. "then the session itself on trycloudflare.com. That second address is new every time "
+	.. "someone opens RbxNative, so Studio asks about it again each time."
 
 type Callbacks = {
 	onToggle: () -> (),

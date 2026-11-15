@@ -38,6 +38,27 @@ local VERSION_MISMATCH =
 -- bytes, mixed with a Random stream, make a nonce that does not repeat.
 local rng = Random.new()
 
+-- Studio asks whether the plugin may reach a host on the first request to
+-- it, and asks once per request still waiting on that answer. So until a
+-- host has answered once, its requests go one at a time.
+local asking: { [string]: boolean } = {}
+local answered: { [string]: boolean } = {}
+
+local function request(options: { [string]: any }): any
+	local host = string.match(options.Url, "^%a+://([^/]+)") or options.Url
+	while asking[host] do
+		task.wait()
+	end
+	asking[host] = not answered[host]
+	local ok, res = pcall(HttpService.RequestAsync, HttpService, options)
+	asking[host] = nil
+	if not ok then
+		error(res, 0)
+	end
+	answered[host] = true
+	return res
+end
+
 local function nonceFor(): string
 	local hex = string.gsub(HttpService:GenerateGUID(false), "[^%x]", "")
 	local bytes = table.create(12)
@@ -51,6 +72,9 @@ end
 local EXPIRY_MS = 15000
 -- How often a hosted room looks for its host while it has none.
 local RESOLVE_EVERY = 15
+-- How long a host that stopped answering is still shown before the room
+-- goes back to waiting for someone in RbxNative.
+local HOST_GRACE = 10
 -- How often a hosted room reads the place's beacons while it waits.
 local BEACON_READ_EVERY = 60
 
@@ -71,6 +95,8 @@ function Relay.new(config: Config)
 		announceBase = if hosted then url else nil,
 		base = if hosted then nil else url,
 		lastResolve = -math.huge,
+		-- hosted: when the host stopped answering (os.clock), nil while it answers.
+		goneSince = nil :: number?,
 		key = config.key,
 		encKey = config.encKey,
 		room = config.room,
@@ -108,7 +134,14 @@ end
 -- Whether a hosted room is waiting for an rbx-native user to host it (not
 -- an error: nothing is wrong, nobody is there yet).
 function Relay:waiting(): boolean
-	return self.kind == "hosted" and self.base == nil
+	return self.kind == "hosted"
+		and self.base == nil
+		and (self.goneSince == nil or os.clock() - self.goneSince >= HOST_GRACE)
+end
+
+-- What a hosted room with no host to talk to says.
+function Relay:_noHost(): string
+	return if self:waiting() then WAITING else Relay.HOST_GONE
 end
 
 -- hosted: finds the host from the newest announcement, at most once every
@@ -118,12 +151,12 @@ function Relay:_resolve(): (boolean, string?)
 		return true, nil
 	end
 	if os.clock() - self.lastResolve < RESOLVE_EVERY then
-		return false, WAITING
+		return false, self:_noHost()
 	end
 	self.lastResolve = os.clock()
 	local url = string.format("%s/%s/json?poll=1&since=12h", self.announceBase, Announce.topic(self.room))
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = url, Method = "GET" })
+		return request({ Url = url, Method = "GET" })
 	end)
 	if not ok then
 		return false, tostring(res)
@@ -142,6 +175,8 @@ function Relay:_resolve(): (boolean, string?)
 	end
 	local host = Announce.newest(self.key, self.room, nowMs(), texts)
 	if not host then
+		-- The host said goodbye: nobody to wait out.
+		self.goneSince = nil
 		return false, WAITING
 	end
 	self.base = string.gsub(host, "/+$", "")
@@ -149,12 +184,16 @@ function Relay:_resolve(): (boolean, string?)
 	return true, nil
 end
 
--- hosted: the host stopped answering (left, crashed, or handed over); look
--- for it again on the next call.
+-- hosted: the host stopped answering (left, crashed, or handed over). The
+-- first time, look for a new host at once; after that every RESOLVE_EVERY,
+-- since a host that quit without a goodbye is still the newest announced.
 function Relay:_lost()
 	if self.kind == "hosted" then
 		self.base = nil
-		self.lastResolve = -math.huge
+		if self.goneSince == nil then
+			self.goneSince = os.clock()
+			self.lastResolve = -math.huge
+		end
 	end
 end
 
@@ -170,7 +209,7 @@ function Relay:keyConflict(leaving: boolean?): string?
 	if leaving or os.clock() - self.lastBeaconPost >= Beacon.EVERY then
 		self.lastBeaconPost = os.clock()
 		pcall(function()
-			HttpService:RequestAsync({
+			request({
 				Url = base,
 				Method = "POST",
 				Headers = { ["Content-Type"] = "text/plain" },
@@ -183,7 +222,7 @@ function Relay:keyConflict(leaving: boolean?): string?
 	end
 	self.lastBeaconRead = os.clock()
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = base .. "/json?poll=1&since=15m", Method = "GET" })
+		return request({ Url = base .. "/json?poll=1&since=15m", Method = "GET" })
 	end)
 	if ok and res.Success then
 		local texts = {}
@@ -208,12 +247,12 @@ function Relay:_request(method: string, suffix: string, body: string): (any?, st
 	if body ~= "" then
 		headers["Content-Type"] = "application/json"
 	end
-	local request: { [string]: any } = { Url = self.base .. path, Method = method, Headers = headers }
+	local options: { [string]: any } = { Url = self.base .. path, Method = method, Headers = headers }
 	if body ~= "" then
-		request.Body = body
+		options.Body = body
 	end
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync(request)
+		return request(options)
 	end)
 	if not ok then
 		return nil, tostring(res)
@@ -250,16 +289,19 @@ function Relay:_send(method: string, suffix: string, body: string): (any?, strin
 		-- No HTTP answer at all: the host may be gone, or its address not
 		-- reachable yet; look again shortly.
 		self:_lost()
-		err = `{Relay.HOST_GONE} ({err})`
+		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} ({err})`
 	elseif res == nil and raw and self.kind == "hosted" and (raw.StatusCode == 404 or raw.StatusCode >= 500) then
 		-- A closed tunnel answers 404/502/530 from Cloudflare's edge (an
 		-- HTML page: keep it out of the status line).
 		self:_lost()
-		err = `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
+		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
 	end
 	if res == nil and needsKey(raw) and not self.sendKey then
 		self.sendKey = true
 		res, err = self:_request(method, suffix, body)
+	end
+	if res ~= nil then
+		self.goneSince = nil
 	end
 	return res, err
 end
@@ -269,7 +311,7 @@ end
 function Relay:_ntfyPublish(state: any): (boolean, string?)
 	local body = Ntfy.fitEncode(self.key, self.encKey, self.room, self.topic, self.userId, nowMs(), state, nonceFor)
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({
+		return request({
 			Url = self.base .. "/" .. self.topic,
 			Method = "POST",
 			Headers = { ["Content-Type"] = "text/plain" },
@@ -289,7 +331,7 @@ function Relay:_ntfyPoll(): (any?, string?)
 	local since = self.lastId or "10s"
 	local url = string.format("%s/%s/json?poll=1&since=%s", self.base, self.topic, HttpService:UrlEncode(since))
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = url, Method = "GET" })
+		return request({ Url = url, Method = "GET" })
 	end)
 	if not ok then
 		return nil, tostring(res)
@@ -374,7 +416,7 @@ function Relay:journal(sinceMs: number): (any?, string?)
 	if self.kind == "ntfy" then
 		local url = string.format("%s/%s/json?poll=1&since=12h", self.base, self.topic)
 		local ok, res = pcall(function()
-			return HttpService:RequestAsync({ Url = url, Method = "GET" })
+			return request({ Url = url, Method = "GET" })
 		end)
 		if not ok then
 			return nil, tostring(res)
