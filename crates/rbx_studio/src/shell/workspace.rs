@@ -142,7 +142,7 @@ impl Shell {
             Panel::CallStack => self.call_stack_dock(cx),
             Panel::TerrainEditor => self.terrain_dock(window, cx),
             Panel::Collaborators => self.collaborators_dock(window, cx),
-            Panel::PluginWidgets => self.plugin_widgets_dock(window, cx),
+            Panel::Plugin(dock) => self.plugin_dock(dock, window, cx),
             Panel::InputActions => self.input_actions_dock(window, cx),
             Panel::SecurityAudit => self.security_audit_dock(cx),
             Panel::Playtests => self.playtests_dock(window, cx),

@@ -160,6 +160,9 @@ pub enum Input {
     /// The user closed a widget's panel: `Enabled` goes false, `BindToClose`
     /// runs.
     WidgetClosed(UiId),
+    /// The user reopened a closed dock widget from the editor: `Enabled`
+    /// goes true, as if the plugin had set it.
+    WidgetOpened(UiId),
     /// The debugger paused, resumed or its breakpoints/watches changed.
     DebuggerChanged,
     /// Where the editor drew each widget element, in widget pixels relative

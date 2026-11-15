@@ -100,6 +100,8 @@ pub(crate) enum MenuId {
     AnimTransitionTo(usize),
     /// The document strip's "+".
     DocumentAdd,
+    /// One plugin dock widget's overflow menu.
+    PluginDockOverflow(rbx_lua::plugin::UiId),
 }
 
 impl MenuId {
@@ -134,6 +136,7 @@ impl MenuId {
             MenuId::AvatarLimit => "menu-avatar-limit",
             MenuId::AvatarOverflow => "menu-avatar-overflow",
             MenuId::WallyVersion(_) => "menu-wally-version",
+            MenuId::PluginDockOverflow(_) => "menu-plugin-dock",
             MenuId::InsertPart => "menu-insert-part",
             MenuId::InsertScript => "menu-insert-script",
             MenuId::InsertGui => "menu-insert-gui",

@@ -60,7 +60,7 @@ impl PanelWindow {
             // the main window is one you tore out and then could not find.
             kind: WindowKind::Floating,
             titlebar: Some(TitlebarOptions {
-                title: Some(SharedString::from(panel.key())),
+                title: Some(SharedString::from(panel.title())),
                 appears_transparent: true,
                 ..Default::default()
             }),
@@ -149,7 +149,7 @@ impl Render for PanelWindow {
             .bg(tokens::dock())
             .text_color(tokens::text_strong())
             .child(super::chrome::panel_topbar(
-                SharedString::from(panel.key()),
+                SharedString::from(panel.title()),
                 self.grab.clone(),
                 move |_, _, cx| {
                     closing.update(cx, |shell, cx| {
@@ -224,7 +224,16 @@ impl Shell {
     }
 
     pub(super) fn sync_panel_windows(&mut self, cx: &mut Context<Self>) {
-        let wanted: Vec<Panel> = self.layout.floating().to_vec();
+        // A floating plugin dock is drawn over the editor by
+        // `plugins::float`, the way Studio's floating widgets sit, not in a
+        // window of its own.
+        let wanted: Vec<Panel> = self
+            .layout
+            .floating()
+            .iter()
+            .copied()
+            .filter(|panel| !matches!(panel, Panel::Plugin(_)))
+            .collect();
         let open: Vec<Panel> = self.panel_windows.keys().copied().collect();
         if wanted.len() == open.len() && wanted.iter().all(|panel| open.contains(panel)) {
             return;

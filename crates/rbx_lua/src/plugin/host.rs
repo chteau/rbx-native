@@ -150,7 +150,9 @@ impl PluginHost {
         self.shared.borrow().ui.clone()
     }
 
-    fn widget_owner(&self, widget: UiId) -> Option<(String, String)> {
+    /// The plugin's name and the widget's id: what identifies a widget
+    /// across sessions, where its `UiId` is only this run's.
+    pub fn widget_owner(&self, widget: UiId) -> Option<(String, String)> {
         let shared = self.shared.borrow();
         let w = shared.ui.widgets.iter().find(|w| w.id == widget)?;
         let plugin = self.plugins.iter().find(|p| p.info.id == w.plugin)?;

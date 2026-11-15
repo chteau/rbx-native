@@ -11,6 +11,7 @@
 
 mod built_in;
 mod catalog;
+mod docks;
 pub(super) use catalog::{store_client, store_icons};
 mod debugger_bridge;
 mod discover;
@@ -191,7 +192,8 @@ impl Shell {
             | Input::ActionTriggered(_)
             | Input::PromptAnswered(..)
             | Input::Handle(_)
-            | Input::WidgetClosed(_) => (true, true),
+            | Input::WidgetClosed(_)
+            | Input::WidgetOpened(_) => (true, true),
             Input::Mouse(MouseInput::Down(1)) => (true, false),
             Input::Mouse(MouseInput::Up(1)) => (false, true),
             _ => (false, false),

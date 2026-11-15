@@ -19,10 +19,14 @@
 //! this file rather than unpicking it, because nothing outside it knows
 //! the shape.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
 
 use crate::tokens;
+
+mod plugin_dock;
+pub(crate) use plugin_dock::{initial_edge, PluginDock};
 
 /// One side of the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -124,9 +128,6 @@ pub(crate) enum Panel {
     /// Who else is working on the place and where (`shell::team_presence`).
     /// Shut until asked for, like the Terrain Editor.
     Collaborators,
-    /// The plugins' dock widgets, one tab each. Shut until a plugin
-    /// enables a widget.
-    PluginWidgets,
     /// The place's `InputContext`s, actions and bindings as one table
     /// (`shell::input_panel`). Shut until asked for.
     InputActions,
@@ -159,13 +160,16 @@ pub(crate) enum Panel {
     /// Find and replace over every script in the place
     /// (`shell::find_in_place`). Shut until asked for.
     FindInPlace,
+    /// One plugin's `DockWidgetPluginGui`, a dock like any other. Not in
+    /// [`Panel::ALL`]: it joins a layout when its plugin first opens it.
+    Plugin(PluginDock),
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 23] = [
+    pub(crate) const ALL: [Panel; 22] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -177,7 +181,6 @@ impl Panel {
         Panel::CallStack,
         Panel::TerrainEditor,
         Panel::Collaborators,
-        Panel::PluginWidgets,
         Panel::InputActions,
         Panel::SecurityAudit,
         Panel::Playtests,
@@ -196,11 +199,7 @@ impl Panel {
     /// closing its torn-out window puts it back.
     pub(crate) fn home(self) -> Edge {
         match self {
-            Panel::Explorer
-            | Panel::Collaborators
-            | Panel::PluginWidgets
-            | Panel::Layers
-            | Panel::Bytecode => Edge::Right,
+            Panel::Explorer | Panel::Collaborators | Panel::Layers | Panel::Bytecode => Edge::Right,
             Panel::Properties | Panel::TerrainEditor | Panel::Toolbox => Edge::Left,
             Panel::Output
             | Panel::Viewport
@@ -217,11 +216,11 @@ impl Panel {
             | Panel::AvatarSettings
             | Panel::Localization
             | Panel::FindInPlace => Edge::Bottom,
+            Panel::Plugin(dock) => dock.home(),
         }
     }
 
-    /// The name persisted in the settings file, which is also what its tab
-    /// and its torn-out window's title bar read.
+    /// The name persisted in the settings file.
     pub(crate) fn key(self) -> &'static str {
         match self {
             Panel::Explorer => "Explorer",
@@ -235,7 +234,6 @@ impl Panel {
             Panel::CallStack => "Call Stack",
             Panel::TerrainEditor => "Terrain Editor",
             Panel::Collaborators => "Collaborators",
-            Panel::PluginWidgets => "Plugin Widgets",
             Panel::InputActions => "Input Actions",
             Panel::SecurityAudit => "Security Audit",
             Panel::Playtests => "Playtests",
@@ -247,6 +245,16 @@ impl Panel {
             Panel::Localization => "Localization",
             Panel::Toolbox => "Toolbox",
             Panel::FindInPlace => "Find in Place",
+            Panel::Plugin(dock) => dock.key(),
+        }
+    }
+
+    /// What its tab and its torn-out window's title bar read: the key,
+    /// except a plugin dock's, which reads its widget's `Title`.
+    pub(crate) fn title(self) -> Cow<'static, str> {
+        match self {
+            Panel::Plugin(dock) => Cow::Owned(dock.title()),
+            other => Cow::Borrowed(other.key()),
         }
     }
 
@@ -258,7 +266,6 @@ impl Panel {
             self,
             Panel::TerrainEditor
                 | Panel::Collaborators
-                | Panel::PluginWidgets
                 | Panel::InputActions
                 | Panel::SecurityAudit
                 | Panel::Playtests
@@ -279,8 +286,13 @@ impl Panel {
         self == Panel::Output
     }
 
+    /// A plugin dock's name is always one: its plugin may simply not have
+    /// started yet, and dropping it would lose where it was.
     fn from_key(key: &str) -> Option<Panel> {
-        Panel::ALL.into_iter().find(|panel| panel.key() == key)
+        Panel::ALL
+            .into_iter()
+            .find(|panel| panel.key() == key)
+            .or_else(|| PluginDock::from_key(key).map(Panel::Plugin))
     }
 }
 
@@ -429,6 +441,18 @@ impl Layout {
                 .is_some_and(|group| group.active() == Some(panel)),
             Home::Closed => false,
         }
+    }
+
+    /// Whether a panel has a place in this layout at all. Every native one
+    /// does; a plugin dock only once its plugin has opened it.
+    pub(crate) fn contains(&self, panel: Panel) -> bool {
+        self.closed.contains(&panel)
+            || self.floating.contains(&panel)
+            || self
+                .edges
+                .iter()
+                .flatten()
+                .any(|group| group.panels.contains(&panel))
     }
 
     /// Where a panel is. Every panel is always exactly one of these.
@@ -704,15 +728,7 @@ impl Layout {
     /// has taken it yet, the guard that keeps a file naming one panel
     /// twice from putting it in two places at once.
     fn unclaimed(&self, name: &str) -> Option<Panel> {
-        Panel::from_key(name).filter(|panel| {
-            !self.floating.contains(panel)
-                && !self.closed.contains(panel)
-                && !self
-                    .edges
-                    .iter()
-                    .flatten()
-                    .any(|group| group.panels.contains(panel))
-        })
+        Panel::from_key(name).filter(|panel| !self.contains(*panel))
     }
 
     /// This layout as the settings file stores it.

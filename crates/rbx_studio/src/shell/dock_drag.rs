@@ -30,7 +30,7 @@ impl Render for DraggedPanel {
         // else would leave you guessing what you had picked up.
         super::chrome::dock_tab(
             "dragged",
-            SharedString::from(self.0.key()),
+            SharedString::from(self.0.title()),
             true,
             false,
             |_, _, _| {},
