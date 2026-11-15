@@ -739,3 +739,49 @@ fn announce_cross_checks_with_rust() {
     let t: String = topic.call(room).unwrap();
     assert_eq!(t, announce::topic(room));
 }
+
+/// The plugin's beacon reads the Rust side's and the other way round: same
+/// topic and fingerprint, a different key is a conflict, the same key and a
+/// goodbye are not.
+#[test]
+fn beacon_cross_checks_with_rust() {
+    use rbx_presence::beacon;
+    let lua = new_lua();
+    let now = 1_800_000_000_000u64;
+    let topic: String = func(&lua, "Beacon", "topic").call(4567.0).unwrap();
+    assert_eq!(topic, beacon::topic(4567));
+    let fp: String = func(&lua, "Beacon", "fingerprint").call("room-a").unwrap();
+    assert_eq!(fp, beacon::fingerprint("room-a"));
+
+    let theirs = beacon::fingerprint("room-b");
+    let rust = beacon::encode(&theirs, "host", "rbx-native", now - 1_000);
+    let conflict = func(&lua, "Beacon", "conflict");
+    let texts = |items: &[&str]| {
+        let t = lua.create_table().unwrap();
+        for (i, item) in items.iter().enumerate() {
+            t.set(i + 1, *item).unwrap();
+        }
+        t
+    };
+    let found: Option<String> = conflict
+        .call((fp.as_str(), "studio1", now as f64, texts(&[&rust])))
+        .unwrap();
+    assert_eq!(found.as_deref(), Some("rbx-native"));
+    let bye = beacon::encode("", "host", "rbx-native", now - 500);
+    let found: Option<String> = conflict
+        .call((fp.as_str(), "studio1", now as f64, texts(&[&rust, &bye])))
+        .unwrap();
+    assert_eq!(found, None);
+
+    let luau: String = func(&lua, "Beacon", "encode")
+        .call((theirs.as_str(), "studio1", "studio", (now - 1_000) as f64))
+        .unwrap();
+    assert_eq!(
+        beacon::conflict(&fp, "host", now, [luau.as_str()]).as_deref(),
+        Some("studio")
+    );
+    assert_eq!(
+        beacon::conflict(&theirs, "host", now, [luau.as_str()]),
+        None
+    );
+}

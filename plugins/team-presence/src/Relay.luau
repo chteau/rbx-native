@@ -14,11 +14,22 @@
 local HttpService = game:GetService("HttpService")
 
 local Announce = require(script.Parent.Announce)
+local Beacon = require(script.Parent.Beacon)
 local Auth = require(script.Parent.Auth)
 local Ntfy = require(script.Parent.Ntfy)
 local Schema = require(script.Parent.Schema)
 
-export type Config = { kind: string, url: string, key: string, encKey: string, room: string, userId: number }
+export type Config = {
+	kind: string,
+	url: string,
+	key: string,
+	encKey: string,
+	room: string,
+	userId: number,
+	placeId: number,
+	-- Kept by the caller across sessions; a fresh one when absent.
+	beaconFrom: string?,
+}
 
 local VERSION_MISMATCH =
 	"The relay runs a different Team Presence version; update the plugin, rbx-native and the relay together."
@@ -40,11 +51,14 @@ end
 local EXPIRY_MS = 15000
 -- How often a hosted room looks for its host while it has none.
 local RESOLVE_EVERY = 15
-local WAITING = "Waiting for an rbx-native collaborator to open the place"
-
+-- How often a hosted room reads the place's beacons while it waits.
+local BEACON_READ_EVERY = 60
 
 local Relay = {}
 Relay.__index = Relay
+
+Relay.WAITING = "Waiting for someone in RbxNative to open this place. Studio can't host the session on its own."
+local WAITING = Relay.WAITING
 
 function Relay.new(config: Config)
 	local url = string.gsub(config.url, "/+$", "")
@@ -65,6 +79,13 @@ function Relay.new(config: Config)
 		peers = {} :: { [number]: { state: any, seen: number } },
 		cursor = 0,
 		lastId = nil :: string?,
+		-- hosted only: this editor's beacon (see Beacon) and what it last read.
+		beaconTopic = Beacon.topic(config.placeId),
+		beaconFp = Beacon.fingerprint(config.room),
+		beaconFrom = config.beaconFrom or string.sub(string.gsub(HttpService:GenerateGUID(false), "-", ""), 1, 16),
+		lastBeaconPost = -math.huge,
+		lastBeaconRead = -math.huge,
+		conflict = nil :: string?,
 	}
 	return setmetatable(self, Relay)
 end
@@ -133,6 +154,48 @@ function Relay:_lost()
 		self.base = nil
 		self.lastResolve = -math.huge
 	end
+end
+
+-- hosted: posts this editor's beacon when due (`leaving` posts the goodbye)
+-- and reads the others' at most every BEACON_READ_EVERY seconds. Returns the
+-- client ("studio" or "rbx-native") of an editor on this place using a
+-- different key, if any. Failures are ignored: the beacon only explains.
+function Relay:keyConflict(leaving: boolean?): string?
+	if self.kind ~= "hosted" then
+		return nil
+	end
+	local base = self.announceBase .. "/" .. self.beaconTopic
+	if leaving or os.clock() - self.lastBeaconPost >= Beacon.EVERY then
+		self.lastBeaconPost = os.clock()
+		pcall(function()
+			HttpService:RequestAsync({
+				Url = base,
+				Method = "POST",
+				Headers = { ["Content-Type"] = "text/plain" },
+				Body = Beacon.encode(if leaving then "" else self.beaconFp, self.beaconFrom, "studio", nowMs()),
+			})
+		end)
+	end
+	if leaving or os.clock() - self.lastBeaconRead < BEACON_READ_EVERY then
+		return self.conflict
+	end
+	self.lastBeaconRead = os.clock()
+	local ok, res = pcall(function()
+		return HttpService:RequestAsync({ Url = base .. "/json?poll=1&since=15m", Method = "GET" })
+	end)
+	if ok and res.Success then
+		local texts = {}
+		for line in string.gmatch(res.Body or "", "[^\n]+") do
+			local decoded, parsed = pcall(function()
+				return HttpService:JSONDecode(line)
+			end)
+			if decoded and type(parsed) == "table" and parsed.event == "message" and type(parsed.message) == "string" then
+				table.insert(texts, parsed.message)
+			end
+		end
+		self.conflict = Beacon.conflict(self.beaconFp, self.beaconFrom, nowMs(), texts)
+	end
+	return self.conflict
 end
 
 -- ===== Worker (signed HTTP) =====
@@ -412,6 +475,7 @@ function Relay:pollOps(since: number): (any?, string?)
 end
 
 function Relay:leave()
+	self:keyConflict(true)
 	if self.kind == "ntfy" or self:waiting() then
 		-- Nothing to delete on a dumb pub/sub (peers expire us), or no host.
 		return

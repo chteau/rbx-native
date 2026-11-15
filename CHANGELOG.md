@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-14
+
+- **Team Create never just sits there.** If you turned presence on in Studio and RbxNative on a place that had no presence key saved yet, each side made its own key and they waited in two different rooms without a word. Now each editor posts a short fingerprint of its key next to the place, and both the plugin and the Collaborators panel say when the other side has a different one, plus what to do (Save to Roblox from Studio, reopen in RbxNative from My Games). With only Studio open the plugin now says it's waiting for someone in RbxNative because Studio can't host on its own, it tells you when it just made the place's key and you need to save it to Roblox, real errors show in red instead of grey, and the plugin opens its panel the first time so the switch isn't hidden behind a toolbar button.
+
 ## 2026-11-13
 
 - **See-through themes are see-through.** A theme that gives Background or Panels some transparency used to come out solid anyway, because a layer of Default's colour sat under everything. Now the whole window follows the theme's own colours, and the top bars and panels show through the way the website's theme builder shows them.

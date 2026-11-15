@@ -46,6 +46,40 @@ fn status_text(connection: &Connection, route: Option<&rbx_presence::client::Rou
     }
 }
 
+/// The status line and whether it reads as a failure: two editors on
+/// different keys first, since each would otherwise wait for the other
+/// without a word, then the connection, with what to do about a key this
+/// editor just made while nobody has joined.
+fn status_line(presence: &super::TeamPresence) -> (String, bool) {
+    // Seeing someone means the key works: a conflict then is someone else's.
+    let conflict = presence
+        .key_conflict
+        .as_deref()
+        .filter(|_| presence.collaborators.is_empty());
+    match conflict {
+        Some("studio") => return (
+            "Studio has this place open with a different presence key, so you can't see each other. Save the place from Studio (File > Save to Roblox), then reopen it here from My Games and pick Download the published version.".into(),
+            true,
+        ),
+        Some(_) => return (
+            "Another RbxNative has this place open with a different presence key, so you can't see each other. Save it to Roblox from one side (File > Save to Roblox), then reopen it on the other from My Games and pick Download the published version.".into(),
+            true,
+        ),
+        None => {}
+    }
+    let text = status_text(&presence.connection, presence.route.as_ref());
+    if presence.minted
+        && presence.collaborators.is_empty()
+        && presence.connection != Connection::Off
+    {
+        return (
+            format!("{text}. This place had no presence key, so I made one: save it to Roblox (File > Save to Roblox) before opening it in Studio. If Studio already has it open, save from Studio instead and reopen it here from My Games."),
+            false,
+        );
+    }
+    (text, matches!(presence.connection, Connection::Rejected(_)))
+}
+
 fn plural(n: usize, one: &'static str, many: &'static str) -> &'static str {
     if n == 1 {
         one
@@ -189,8 +223,6 @@ impl Shell {
         );
 
         let enabled = self.team_presence.settings.enabled;
-        let connection = self.team_presence.connection.clone();
-        let route = self.team_presence.route.clone();
         let relay_input = self.team_presence.relay_input.clone();
         let show_advanced = self.team_presence.show_advanced;
         let owner_kind = self.team_presence.owner_kind;
@@ -280,7 +312,7 @@ impl Shell {
                     .child(resolved),
             );
 
-        let failed = matches!(connection, Connection::Rejected(_));
+        let (status_text, failed) = status_line(&self.team_presence);
         let status = h_flex().w_full().gap_2().px_2().items_center().child(
             div()
                 .flex_1()
@@ -292,7 +324,7 @@ impl Shell {
                 } else {
                     tokens::text2()
                 })
-                .child(status_text(&connection, route.as_ref())),
+                .child(status_text),
         );
 
         // The relay URL lives behind an Advanced reveal, so the dock is just

@@ -132,6 +132,12 @@ pub(super) struct TeamPresence {
     pub(super) scroll: ScrollHandle,
     /// Live co-editing, while connected with the beta switched on.
     pub(super) coedit: Option<super::coedit::Coedit>,
+    /// This editor gave the place its presence key, which collaborators only
+    /// get once the place is saved to Roblox.
+    pub(super) minted: bool,
+    /// The client ("studio" or "rbx-native") of an editor that has the place
+    /// open with a different presence key (see `rbx_presence::beacon`).
+    pub(super) key_conflict: Option<String>,
 }
 
 impl TeamPresence {
@@ -175,6 +181,8 @@ impl TeamPresence {
             presence_diff: None,
             scroll: ScrollHandle::new(),
             coedit: None,
+            minted: false,
+            key_conflict: None,
         }
     }
 }
@@ -249,10 +257,14 @@ fn quick_tunnel() -> rbx_presence::client::Hosting {
     }
 
     rbx_presence::client::Hosting(std::sync::Arc::new(|port: u16| {
-        let binary = crate::shell::play::cloudflared::program().map_err(|e| e.to_string())?;
+        // Hosting is what lets Studio in at all, so say so when it fails.
+        let failed = |e: &dyn std::fmt::Display| {
+            format!("couldn't open the tunnel Studio reaches this editor through ({e})")
+        };
+        let binary = crate::shell::play::cloudflared::program().map_err(|e| failed(&e))?;
         let tunnel = rbx_play::tunnel::TunnelProvider::Cloudflared { binary }
             .start(port, std::time::Duration::from_secs(30))
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| failed(&e))?;
         let url = tunnel.public_url.clone();
         Ok((
             url,
@@ -446,6 +458,7 @@ impl Shell {
         presence.coedit = None;
         presence.client = None;
         presence.route = None;
+        presence.key_conflict = None;
         presence.watch = None;
         presence.snapshot = None;
         presence.departed.clear();
@@ -489,7 +502,10 @@ impl Shell {
         let secret = match rbx_presence::secret::read(&self.dom) {
             Some(secret) => secret,
             None => match self.write_new_secret(cx) {
-                Some(secret) => secret,
+                Some(secret) => {
+                    self.team_presence.minted = true;
+                    secret
+                }
                 None => {
                     self.team_presence.connection = Connection::NoSecret;
                     cx.notify();
@@ -511,6 +527,8 @@ impl Shell {
             key,
             enc_key: rbx_presence::crypt::enc_key(&secret, place),
             user_id,
+            place_id: place,
+            beacon_from: Self::beacon_id(),
             // A hosted room: this editor may host it, through the bundled
             // cloudflared, when nobody else does.
             hosting: (config.kind == RelayKind::Hosted).then(quick_tunnel),
@@ -722,6 +740,7 @@ impl Shell {
                     self.coedit_route(&route);
                 }
                 Event::Rejected(why) => presence.connection = Connection::Rejected(why),
+                Event::KeyConflict(found) => presence.key_conflict = found,
             }
             changed = true;
         }
@@ -763,6 +782,24 @@ impl Shell {
     /// dir). `None` when no config directory can be determined.
     fn presence_cache_dir() -> Option<std::path::PathBuf> {
         crate::settings::default_config_dir().map(|dir| dir.join("presence"))
+    }
+
+    /// This install's `rbx_presence::beacon` sender id, kept on disk so a
+    /// reopened editor replaces its own earlier beacon rather than reading
+    /// as a second editor on another key. A fresh one when it can't be kept.
+    fn beacon_id() -> String {
+        let path = Self::presence_cache_dir().map(|dir| dir.join("beacon-id"));
+        if let Some(id) = path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()) {
+            if id.len() == 16 {
+                return id;
+            }
+        }
+        let id = rbx_presence::secret::generate()[..16].to_owned();
+        if let Some(path) = path {
+            let _ = path.parent().map(std::fs::create_dir_all);
+            let _ = std::fs::write(path, &id);
+        }
+        id
     }
 
     /// Persists the connected place's last-seen timestamp, and its snapshot

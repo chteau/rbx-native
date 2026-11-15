@@ -80,6 +80,14 @@ folder `RbxNativePresence` in `ServerStorage`:
 Writing any of these is an undoable edit; it reaches other collaborators only
 after a **Save** or **Publish**, and the widget says so.
 
+Two editors that open the place before its secret is saved each mint their
+own and end up in different rooms. So that this is never silent, each editor
+in a hosted room posts a fingerprint of its room (never the room or the
+secret) to a topic named after the place, `rbxnp-place-<hash of PlaceId>`,
+and both sides say so when they see another one: Save to Roblox from Studio,
+then reopen the place in rbx-native from My Games. The beacon is unsigned, so it
+only ever explains; it reveals that a place uses presence and when.
+
 Anyone who can open the place file can read the secret, so an uncopylocked
 place leaks it. Treat the secret as team-wide, not as strong access control.
 
@@ -93,8 +101,8 @@ Three transports, all official:
   announces the tunnel's address, signed with the place key, on the room's
   ntfy.sh announce topic (`rbxnp-<room>-host`, a few messages a day). The
   plugin reads the newest announcement and connects. Studio cannot host, so
-  with nobody in rbx-native the widget says it is waiting; Studio users see
-  each other through Team Create anyway.
+  with nobody in rbx-native the widget says it is waiting for someone in
+  rbx-native; Studio users see each other through Team Create anyway.
 - **worker**: the signed-WebSocket relay in `relay/` (a Cloudflare Worker),
   which keeps the room in memory and fans out snapshots. Self-hosted.
 - **ntfy**: a plain [ntfy](https://ntfy.sh) pub/sub server, which needs no code
