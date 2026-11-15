@@ -59,6 +59,8 @@ Relay.__index = Relay
 
 Relay.WAITING = "Waiting for someone in RbxNative to open this place. Studio can't host the session on its own."
 local WAITING = Relay.WAITING
+-- The host this room had stopped answering: also waiting, not an error.
+Relay.HOST_GONE = "Can't reach the rbx-native host yet"
 
 function Relay.new(config: Config)
 	local url = string.gsub(config.url, "/+$", "")
@@ -248,12 +250,12 @@ function Relay:_send(method: string, suffix: string, body: string): (any?, strin
 		-- No HTTP answer at all: the host may be gone, or its address not
 		-- reachable yet; look again shortly.
 		self:_lost()
-		err = `Can't reach the rbx-native host yet ({err})`
+		err = `{Relay.HOST_GONE} ({err})`
 	elseif res == nil and raw and self.kind == "hosted" and (raw.StatusCode == 404 or raw.StatusCode >= 500) then
 		-- A closed tunnel answers 404/502/530 from Cloudflare's edge (an
 		-- HTML page: keep it out of the status line).
 		self:_lost()
-		err = `Can't reach the rbx-native host yet (HTTP {raw.StatusCode})`
+		err = `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
 	end
 	if res == nil and needsKey(raw) and not self.sendKey then
 		self.sendKey = true

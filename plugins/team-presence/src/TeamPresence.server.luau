@@ -26,8 +26,8 @@ local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
 
 local NEW_KEY = Relay.WAITING
-	.. " This place had no presence key yet, so I made one: save the place (File > Save to Roblox)"
-	.. " before opening it in RbxNative."
+	.. " This place had no presence key yet, so I made one. Save the place (File > Save to Roblox)"
+	.. " and RbxNative picks it up by itself."
 
 local toolbar = plugin:CreateToolbar("rbx-native")
 local button = toolbar:CreateButton("Presence", "Show rbx-native team presence", "")
@@ -114,11 +114,14 @@ local function showProblem(myRelay: any, err: string?, minted: boolean)
 	if myRelay:waiting() then
 		local other = myRelay:keyConflict()
 		if other then
-			local who = if other == "studio" then "Another Studio" else "RbxNative"
+			-- RbxNative reads the key saved on Roblox and switches to it by
+			-- itself; another Studio can't, so it has to reopen the place.
 			widget:setStatus(
-				`{who} has this place open with a different presence key, so you can't see each other.`
-					.. " Save the place from Studio (File > Save to Roblox), then reopen it in RbxNative"
-					.. " from My Games and pick Download the published version.",
+				if other == "studio"
+					then "Another Studio has this place open with a different presence key, so you can't see each other."
+						.. " Save the place from one of them (File > Save to Roblox), then close it and open it again in the other."
+					else "RbxNative has this place open with a different presence key."
+						.. " Save the place (File > Save to Roblox) and RbxNative switches to this one by itself.",
 				true
 			)
 			return
@@ -129,6 +132,20 @@ local function showProblem(myRelay: any, err: string?, minted: boolean)
 		end
 	end
 	widget:setStatus(text, string.find(text, "yet (", 1, true) == nil)
+end
+
+-- The relay the owner setup names: the kind picked and the URL typed, a
+-- blank URL being Auto. A kind that needs a URL but has none is Auto too.
+local function ownerChoice(): (string, string)
+	local url = string.gsub(widget.urlBox.Text, "^%s*(.-)%s*$", "%1")
+	if url == "" then
+		return Defaults.communityKind, Defaults.communityUrl
+	end
+	return widget.relayKind, url
+end
+
+local function showRelay(kind: string, url: string)
+	widget:setRelay(kind, url, kind == Defaults.communityKind and url == Defaults.communityUrl)
 end
 
 local function nextBackoff(current: number): number
@@ -145,20 +162,17 @@ local function start()
 		return
 	end
 
-	-- Zero-config: the first connector mints the place's secret, everyone
-	-- else reads it. Writing it needs a Save/Publish to reach collaborators.
-	local secret = Secret.read()
-	local minted = secret == nil
-	if not secret then
-		secret = Secret.create()
-	end
+	-- Zero-config: the first editor to turn presence on puts the key and the
+	-- relay into the place, everyone else reads them. They reach
+	-- collaborators with the next save.
+	local secret, minted = Secret.ensure(ownerChoice())
 
 	-- The place names the relay; collaborators read it. A place that names
 	-- none falls back to the best-effort community instance.
 	local placeRelay = Secret.readRelay()
 	local kind = if placeRelay then placeRelay.kind else Defaults.communityKind
 	local url = if placeRelay then placeRelay.url else Defaults.communityUrl
-	widget:setRelay(kind, url, placeRelay == nil)
+	showRelay(kind, url)
 
 	local key = Auth.deriveKey(secret :: string, game.PlaceId)
 	local encKey = Crypto.encKey(secret :: string, game.PlaceId)
@@ -187,6 +201,7 @@ local function start()
 			room = Auth.roomId(key),
 			encKey = encKey,
 			name = if Players.LocalPlayer then Players.LocalPlayer.Name else tostring(ownId),
+			quiet = { Relay.WAITING, Relay.HOST_GONE },
 			onNote = function(note: string)
 				warn("[Co-edit] " .. note)
 				if generation == myGen then
@@ -315,12 +330,19 @@ widget = Widget.new(plugin, {
 		diffWindow:show(lastEntries)
 	end,
 	onSaveRelay = function(kind: string, url: string)
-		-- Owner setup: write the relay into the place (empty URL clears it).
-		if url == "" then
-			Secret.clearRelay()
-		else
-			Secret.writeRelay(kind, url)
+		-- Owner setup saves as soon as it changes. Worker and ntfy wait for
+		-- their URL; a blank one is Auto.
+		if url == "" and kind ~= Defaults.communityKind then
+			widget:setStatus(`Type the {kind} URL. It saves into the place when you press Enter or click away.`)
+			return
 		end
+		local wantKind, wantUrl = ownerChoice()
+		local current = Secret.readRelay()
+		if current and current.kind == wantKind and current.url == wantUrl then
+			return
+		end
+		Secret.writeRelay(wantKind, wantUrl)
+		showRelay(wantKind, wantUrl)
 		if enabled then
 			start()
 		end
@@ -352,9 +374,9 @@ plugin.Unloading:Connect(stop)
 
 local savedRelay = Secret.readRelay()
 if savedRelay then
-	widget:setRelay(savedRelay.kind, savedRelay.url, false)
+	showRelay(savedRelay.kind, savedRelay.url)
 else
-	widget:setRelay(Defaults.communityKind, Defaults.communityUrl, true)
+	showRelay(Defaults.communityKind, Defaults.communityUrl)
 end
 -- First run: show the widget, so the switch that turns presence on is in
 -- front of the user instead of behind a toolbar button.

@@ -785,3 +785,68 @@ fn beacon_cross_checks_with_rust() {
         None
     );
 }
+
+/// rbx-native adopts the key saved on Roblox because the plugin, holding the
+/// same secret, lands in the same room: the plugin's fingerprint of a secret
+/// is the Rust side's.
+#[test]
+fn saved_key_fingerprint_matches_the_plugins() {
+    use rbx_presence::converge;
+    let lua = new_lua();
+    let secret = rbx_presence::secret::generate();
+    let place = 104_688_317_714_596u64;
+    let key: String = func(&lua, "Auth", "deriveKey")
+        .call((secret.as_str(), place as f64))
+        .unwrap();
+    let room: String = func(&lua, "Auth", "roomId").call(key).unwrap();
+    let fp: String = func(&lua, "Beacon", "fingerprint").call(room).unwrap();
+    assert_eq!(fp, converge::fingerprint(&secret, place));
+}
+
+/// Co-edit problems print once each, waiting for a host never does, and a
+/// problem that went away may print again only after `AGAIN` seconds.
+#[test]
+fn coedit_notes_print_once_and_never_for_waiting() {
+    let lua = new_lua();
+    let notes = load_module(&lua, "Notes").unwrap();
+    let again: f64 = notes.get("AGAIN").unwrap();
+    let state: Table = notes
+        .get::<Function>("new")
+        .unwrap()
+        .call(
+            lua.create_sequence_from(["Waiting for someone", "host yet"])
+                .unwrap(),
+        )
+        .unwrap();
+    let say = |text: &str, now: f64| -> bool {
+        notes
+            .get::<Function>("say")
+            .unwrap()
+            .call((state.clone(), text, now))
+            .unwrap()
+    };
+    let worked = |now: f64| {
+        notes
+            .get::<Function>("worked")
+            .unwrap()
+            .call::<()>((state.clone(), now))
+            .unwrap()
+    };
+    let waiting =
+        "Co-edit: could not read edits (Waiting for someone in RbxNative to open this place.)";
+    assert!(!say(waiting, 0.0));
+    assert!(!say(
+        "Co-edit: could not send edits (Can't reach the rbx-native host yet (HTTP 530))",
+        0.0
+    ));
+    assert!(say("Co-edit: could not read edits (HTTP 500)", 0.0));
+    assert!(!say("Co-edit: could not read edits (HTTP 500)", 1.0));
+    assert!(say("Co-edit: could not send edits (HTTP 500)", 1.0));
+    worked(again - 1.0);
+    assert!(!say(
+        "Co-edit: could not read edits (HTTP 500)",
+        again - 1.0
+    ));
+    worked(again + 1.0);
+    assert!(say("Co-edit: could not read edits (HTTP 500)", again + 1.0));
+}
