@@ -10,7 +10,7 @@
 //! pf needs root. The root helper (`helper.sh`) is installed once, with one
 //! administrator prompt, as a launchd daemon behind a Unix socket owned by
 //! the installing user (mode 0600: no other account can reach it); after
-//! that Play shapes without asking. Settings › Files › Play removes it.
+//! that Play shapes without asking. Settings › Account › Play › Network helper removes it.
 
 #[cfg(target_os = "macos")]
 mod mac;

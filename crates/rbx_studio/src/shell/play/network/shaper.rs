@@ -122,8 +122,8 @@ pub(in crate::shell) fn unsupported() -> Option<&'static str> {
 }
 
 /// What the first shaped Play needs on this platform, for the tile's
-/// tooltip: both shapers need elevation, which the editor asks for once
-/// and keeps until it quits.
+/// tooltip: both need elevation. Windows asks once per editor session and
+/// keeps its helper until the editor quits; macOS installs its helper once.
 pub(in crate::shell) fn prerequisite() -> Option<&'static str> {
     if cfg!(windows) {
         Some(

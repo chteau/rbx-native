@@ -28,6 +28,7 @@ pub(crate) mod ui;
 mod wizard;
 
 pub(crate) use cache::{cached_games, read_icon as cached_icon};
+pub(crate) use home_window::reload_all as reload_home;
 pub(crate) use home_window::HomeWindow;
 pub(crate) use key_check::{
     summary as key_summary, KeyCheck, Summary as KeySummary, Tag as KeyTag,
