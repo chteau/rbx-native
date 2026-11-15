@@ -356,7 +356,7 @@ impl Shell {
             // Named after the instance it is showing, which is what the
             // dock's own title said before there were tabs.
             Panel::Properties => self.properties_title(),
-            other => SharedString::from(other.key()),
+            other => SharedString::from(other.title()),
         }
     }
 }

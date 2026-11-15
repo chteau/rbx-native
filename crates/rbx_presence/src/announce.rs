@@ -92,12 +92,16 @@ fn agent() -> ureq::Agent {
 
 /// Posts an announcement to `ntfy` (`https://host[/prefix]`).
 pub fn publish(ntfy: &str, key: &str, room: &str, url: &str) -> Result<(), String> {
+    post(ntfy, &topic(room), &encode(key, room, url, crate::now_ms()))
+}
+
+/// Posts `body` to `topic` on `ntfy`.
+pub(crate) fn post(ntfy: &str, topic: &str, body: &str) -> Result<(), String> {
     let base = ntfy.trim_end_matches('/');
-    let body = encode(key, room, url, crate::now_ms());
     let mut resp = agent()
-        .post(format!("{base}/{}", topic(room)))
+        .post(format!("{base}/{topic}"))
         .header("Content-Type", "text/plain")
-        .send(body.as_str())
+        .send(body)
         .map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
     let _ = resp.body_mut().read_to_string();
@@ -110,11 +114,22 @@ pub fn publish(ntfy: &str, key: &str, room: &str, url: &str) -> Result<(), Strin
 
 /// The host currently announced on `ntfy`, if any.
 pub fn find(ntfy: &str, key: &str, room: &str) -> Result<Option<Announcement>, String> {
+    let messages = messages(ntfy, &topic(room), "12h")?;
+    Ok(newest(
+        key,
+        room,
+        crate::now_ms(),
+        messages.iter().map(String::as_str),
+    ))
+}
+
+/// The message texts `topic` on `ntfy` still holds from the last `since`.
+pub(crate) fn messages(ntfy: &str, topic: &str, since: &str) -> Result<Vec<String>, String> {
     let base = ntfy.trim_end_matches('/');
     let mut resp = agent()
-        .get(format!("{base}/{}/json", topic(room)))
+        .get(format!("{base}/{topic}/json"))
         .query("poll", "1")
-        .query("since", "12h")
+        .query("since", since)
         .call()
         .map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
@@ -122,18 +137,12 @@ pub fn find(ntfy: &str, key: &str, room: &str) -> Result<Option<Announcement>, S
     if !(200..300).contains(&status) {
         return Err(format!("announce: HTTP {status}"));
     }
-    let messages: Vec<String> = body
+    Ok(body
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|v| v.get("event").and_then(|e| e.as_str()) == Some("message"))
         .filter_map(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
-        .collect();
-    Ok(newest(
-        key,
-        room,
-        crate::now_ms(),
-        messages.iter().map(String::as_str),
-    ))
+        .collect())
 }
 
 #[cfg(test)]

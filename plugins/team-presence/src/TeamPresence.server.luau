@@ -14,6 +14,7 @@ local Schema = require(script.Schema)
 local Secret = require(script.Secret)
 local Widget = require(script.Widget)
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
 local HEARTBEAT = 5
@@ -23,6 +24,10 @@ local LAST_SEEN_EVERY = 30
 local TICK = 0.2
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
+
+local NEW_KEY = Relay.WAITING
+	.. " This place had no presence key yet, so I made one. Save the place (File > Save to Roblox)"
+	.. " and RbxNative picks it up by itself."
 
 local toolbar = plugin:CreateToolbar("rbx-native")
 local button = toolbar:CreateButton("Presence", "Show rbx-native team presence", "")
@@ -90,6 +95,59 @@ local function stop()
 	end
 end
 
+-- The status line for a failed publish or poll. Never silent: waiting is
+-- said in plain words, with what to do when the two sides can't meet.
+-- This install's beacon sender id, kept so reopening the place replaces our
+-- own earlier beacon instead of reading as a second Studio on another key.
+local function beaconId(): string
+	local id = plugin:GetSetting("BeaconFrom")
+	if type(id) == "string" and #id == 16 then
+		return id
+	end
+	local fresh = string.sub(string.gsub(HttpService:GenerateGUID(false), "-", ""), 1, 16)
+	plugin:SetSetting("BeaconFrom", fresh)
+	return fresh
+end
+
+local function showProblem(myRelay: any, err: string?, minted: boolean)
+	local text = err or "Can't reach the relay"
+	if myRelay:waiting() then
+		local other = myRelay:keyConflict()
+		if other then
+			-- RbxNative reads the key saved on Roblox and switches to it by
+			-- itself; another Studio can't, so it has to reopen the place.
+			widget:setStatus(
+				if other == "studio"
+					then "Another Studio has this place open with a different presence key, so you can't see each other."
+						.. " Save the place from one of them (File > Save to Roblox), then close it and open it again in the other."
+					else "RbxNative has this place open with a different presence key."
+						.. " Save the place (File > Save to Roblox) and RbxNative switches to this one by itself.",
+				true
+			)
+			return
+		end
+		if text == Relay.WAITING then
+			widget:setStatus(if minted then NEW_KEY else text)
+			return
+		end
+	end
+	widget:setStatus(text, string.find(text, "yet (", 1, true) == nil)
+end
+
+-- The relay the owner setup names: the kind picked and the URL typed, a
+-- blank URL being Auto. A kind that needs a URL but has none is Auto too.
+local function ownerChoice(): (string, string)
+	local url = string.gsub(widget.urlBox.Text, "^%s*(.-)%s*$", "%1")
+	if url == "" then
+		return Defaults.communityKind, Defaults.communityUrl
+	end
+	return widget.relayKind, url
+end
+
+local function showRelay(kind: string, url: string)
+	widget:setRelay(kind, url, kind == Defaults.communityKind and url == Defaults.communityUrl)
+end
+
 local function nextBackoff(current: number): number
 	if current == 0 then
 		return BACKOFF_MIN
@@ -104,20 +162,17 @@ local function start()
 		return
 	end
 
-	-- Zero-config: the first connector mints the place's secret, everyone
-	-- else reads it. Writing it needs a Save/Publish to reach collaborators.
-	local secret = Secret.read()
-	if not secret then
-		secret = Secret.create()
-		widget:setStatus("Shared a key — Save or Publish once to share it")
-	end
+	-- Zero-config: the first editor to turn presence on puts the key and the
+	-- relay into the place, everyone else reads them. They reach
+	-- collaborators with the next save.
+	local secret, minted = Secret.ensure(ownerChoice())
 
 	-- The place names the relay; collaborators read it. A place that names
 	-- none falls back to the best-effort community instance.
 	local placeRelay = Secret.readRelay()
 	local kind = if placeRelay then placeRelay.kind else Defaults.communityKind
 	local url = if placeRelay then placeRelay.url else Defaults.communityUrl
-	widget:setRelay(kind, url, placeRelay == nil)
+	showRelay(kind, url)
 
 	local key = Auth.deriveKey(secret :: string, game.PlaceId)
 	local encKey = Crypto.encKey(secret :: string, game.PlaceId)
@@ -129,6 +184,8 @@ local function start()
 		encKey = encKey,
 		room = Auth.roomId(key),
 		userId = ownId,
+		placeId = game.PlaceId,
+		beaconFrom = beaconId(),
 	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
@@ -144,6 +201,7 @@ local function start()
 			room = Auth.roomId(key),
 			encKey = encKey,
 			name = if Players.LocalPlayer then Players.LocalPlayer.Name else tostring(ownId),
+			quiet = { Relay.WAITING, Relay.HOST_GONE },
 			onNote = function(note: string)
 				warn("[Co-edit] " .. note)
 				if generation == myGen then
@@ -189,7 +247,7 @@ local function start()
 					lastPublish = os.clock()
 					backoff = 0
 				else
-					widget:setStatus(err or "Publish failed", not myRelay:waiting())
+					showProblem(myRelay, err, minted)
 					backoff = nextBackoff(backoff)
 					lastPublish = os.clock()
 					task.wait(backoff)
@@ -233,7 +291,7 @@ local function start()
 				-- ntfy polls return at once; pace them so we don't spin.
 				task.wait(myRelay:pollDelay())
 			else
-				widget:setStatus(err or "Poll failed", not myRelay:waiting())
+				showProblem(myRelay, err, minted)
 				backoff = nextBackoff(backoff)
 				task.wait(backoff)
 			end
@@ -257,7 +315,7 @@ local function apply(on: boolean)
 		start()
 	else
 		stop()
-		widget:setStatus("Off")
+		widget:setStatus("Off. Switch on Share my presence to see RbxNative users.")
 	end
 end
 
@@ -272,12 +330,19 @@ widget = Widget.new(plugin, {
 		diffWindow:show(lastEntries)
 	end,
 	onSaveRelay = function(kind: string, url: string)
-		-- Owner setup: write the relay into the place (empty URL clears it).
-		if url == "" then
-			Secret.clearRelay()
-		else
-			Secret.writeRelay(kind, url)
+		-- Owner setup saves as soon as it changes. Worker and ntfy wait for
+		-- their URL; a blank one is Auto.
+		if url == "" and kind ~= Defaults.communityKind then
+			widget:setStatus(`Type the {kind} URL. It saves into the place when you press Enter or click away.`)
+			return
 		end
+		local wantKind, wantUrl = ownerChoice()
+		local current = Secret.readRelay()
+		if current and current.kind == wantKind and current.url == wantUrl then
+			return
+		end
+		Secret.writeRelay(wantKind, wantUrl)
+		showRelay(wantKind, wantUrl)
 		if enabled then
 			start()
 		end
@@ -309,8 +374,13 @@ plugin.Unloading:Connect(stop)
 
 local savedRelay = Secret.readRelay()
 if savedRelay then
-	widget:setRelay(savedRelay.kind, savedRelay.url, false)
+	showRelay(savedRelay.kind, savedRelay.url)
 else
-	widget:setRelay(Defaults.communityKind, Defaults.communityUrl, true)
+	showRelay(Defaults.communityKind, Defaults.communityUrl)
+end
+-- First run: show the widget, so the switch that turns presence on is in
+-- front of the user instead of behind a toolbar button.
+if plugin:GetSetting("Enabled") == nil then
+	widget.gui.Enabled = true
 end
 apply(plugin:GetSetting("Enabled") == true)

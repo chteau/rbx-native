@@ -1,6 +1,6 @@
-//! Plugin widgets: the Plugin Widgets dock panel (one tab per enabled
-//! `DockWidgetPluginGui`) and floating widgets drawn above the editor.
-//! Each is rendered by `render` and hit-tested on its boxes: pointer and
+//! Plugin widgets: each `DockWidgetPluginGui` is a dock of its own (see
+//! `docks`), and floating widgets are drawn above the editor. Each is
+//! rendered by `render` and hit-tested on its boxes: pointer and
 //! key input become `Input::Gui`, a `TextBox` is edited through an input
 //! field placed over it (see `edit`).
 
@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 use rbx_dom::Ref;
 use rbx_lua::plugin::{GuiEvent, GuiEventKind, Input, LayoutBox, UiId, WidgetKind};
@@ -19,8 +18,9 @@ mod edit;
 pub(crate) use edit::install_keys as install_text_box_keys;
 mod pointer;
 
-use super::{float, render};
-use crate::shell::{Panel, Shell};
+use super::render;
+use crate::shell::layout::PluginDock;
+use crate::shell::Shell;
 use crate::tokens;
 use crate::workspace_view::input::wheel_scroll;
 use pointer::Grab;
@@ -36,8 +36,8 @@ pub(crate) struct Widgets {
     pub(crate) drawn: HashMap<UiId, render::Drawn>,
     /// The layout last fed back to the plugins, per widget.
     layouts: HashMap<UiId, Vec<LayoutBox>>,
-    /// The dock tab shown.
-    pub(crate) current: Option<UiId>,
+    /// Each dock widget's panel, by this run's id.
+    pub(super) docks: HashMap<UiId, PluginDock>,
     pub(crate) renderer: Option<render::Renderer>,
     pub(super) areas: HashMap<UiId, Area>,
     /// The last revision and size asked of the renderer, and the `TextBox`
@@ -89,98 +89,6 @@ fn backdrop() -> [f32; 3] {
 }
 
 impl Shell {
-    /// The Plugin Widgets panel's content (for `workspace::panel_parts`).
-    pub(in crate::shell) fn plugin_widgets_dock(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> (Option<AnyElement>, Option<AnyElement>) {
-        let docked: Vec<(UiId, String, u64)> = self
-            .plugins
-            .ui
-            .widgets
-            .iter()
-            .filter(|w| {
-                w.enabled && matches!(w.kind, WidgetKind::Dock { .. }) && !float::is_float(&w.kind)
-            })
-            .map(|w| (w.id, w.title.clone(), w.revision))
-            .collect();
-        let Some(first) = docked.first().map(|w| w.0) else {
-            let empty = div()
-                .p(px(12.))
-                .text_color(tokens::text2())
-                .child("No plugin widget is open.");
-            return (None, Some(empty.into_any_element()));
-        };
-        let current = self
-            .plugins
-            .widgets
-            .current
-            .filter(|c| docked.iter().any(|w| w.0 == *c))
-            .unwrap_or(first);
-        self.plugins.widgets.current = Some(current);
-        let revision = docked.iter().find(|w| w.0 == current).map_or(0, |w| w.2);
-        let measured = self
-            .plugins
-            .widgets
-            .areas
-            .get(&current)
-            .and_then(|area| area.get());
-        if let Some(bounds) = measured {
-            self.request_widget_render(current, revision, pixel_size(bounds), cx);
-        }
-
-        let tabs = h_flex()
-            .w_full()
-            .border_b_1()
-            .border_color(tokens::border())
-            .children(docked.iter().map(|(id, title, _)| {
-                let id = *id;
-                let close = div()
-                    .id(ElementId::Name(format!("plugin-widget-close-{id}").into()))
-                    .px(px(4.))
-                    .text_color(tokens::text2())
-                    .hover(|s| s.text_color(tokens::text()))
-                    .child("×")
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |shell, _: &MouseDownEvent, _, cx| {
-                            cx.stop_propagation();
-                            shell.plugin_input(Input::WidgetClosed(id), cx);
-                        }),
-                    );
-                let tab = h_flex()
-                    .id(ElementId::Name(format!("plugin-widget-tab-{id}").into()))
-                    .gap(px(4.))
-                    .px(px(8.))
-                    .py(px(4.))
-                    .text_color(if id == current {
-                        tokens::text()
-                    } else {
-                        tokens::text2()
-                    })
-                    .hover(|s| s.bg(tokens::hover_subtle()))
-                    .child(title.clone())
-                    .child(close)
-                    .on_click(cx.listener(move |shell, _: &ClickEvent, _, cx| {
-                        shell.plugins.widgets.current = Some(id);
-                        cx.notify();
-                    }));
-                if id == current {
-                    tab.border_b_2().border_color(tokens::tab_active_bar())
-                } else {
-                    tab
-                }
-            }));
-        let surface = self.widget_surface(current, window, cx);
-        let content = v_flex()
-            .size_full()
-            .bg(tokens::dock())
-            .child(tabs)
-            .child(div().flex_1().min_h_0().w_full().child(surface));
-        (None, Some(content.into_any_element()))
-    }
-
     /// Floating widgets, for `plugin_overlays`.
     pub(super) fn floating_widget_overlays(
         &mut self,
@@ -251,7 +159,7 @@ impl Shell {
         overlays
     }
 
-    /// After `ui_changed`: opens the panel when a dock widget became
+    /// After `ui_changed`: brings forward a dock widget that became
     /// enabled, re-requests renders whose widget revision changed.
     pub(super) fn plugin_widgets_changed(&mut self, cx: &mut Context<Self>) {
         let widgets: Vec<(UiId, u64, bool)> = self
@@ -263,9 +171,7 @@ impl Shell {
                 (
                     w.id,
                     w.revision,
-                    w.enabled
-                        && matches!(w.kind, WidgetKind::Dock { .. })
-                        && !float::is_float(&w.kind),
+                    w.enabled && matches!(w.kind, WidgetKind::Dock { .. }),
                 )
             })
             .collect();
@@ -291,10 +197,11 @@ impl Shell {
         }
 
         let enabled: HashSet<UiId> = widgets.iter().filter(|w| w.2).map(|w| w.0).collect();
-        let opened = widgets
+        let opened: Vec<UiId> = widgets
             .iter()
-            .find(|w| w.2 && !state.enabled.contains(&w.0))
-            .map(|w| w.0);
+            .filter(|w| w.2 && !state.enabled.contains(&w.0))
+            .map(|w| w.0)
+            .collect();
         state.enabled = enabled;
         let stale: Vec<(UiId, u64, (u32, u32))> = widgets
             .iter()
@@ -303,10 +210,7 @@ impl Shell {
                 (asked != revision).then_some((id, revision, size))
             })
             .collect();
-        if let Some(id) = opened {
-            state.current = Some(id);
-            self.set_panel_open(Panel::PluginWidgets, true, cx);
-        }
+        self.sync_plugin_docks(&opened, cx);
         for (id, revision, size) in stale {
             self.request_widget_render(id, revision, size, cx);
         }

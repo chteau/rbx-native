@@ -18,6 +18,7 @@
 //! - [`client`]: the relay WebSocket, on a worker thread.
 //! - [`host`]: the relay itself, run by rbx-native behind a Cloudflare quick tunnel.
 //! - [`announce`]: where the room's host is, posted through ntfy.
+//! - [`beacon`]: which key each editor with the place open uses, so a mismatch is said.
 //! - [`catchup`]: a summary of the value-less edit journal for a reconnecting user.
 //! - [`lastseen`]: the per-place timestamp and snapshot a reconnecting user catches up from.
 
@@ -30,9 +31,11 @@ pub fn now_ms() -> u64 {
 
 pub mod announce;
 pub mod auth;
+pub mod beacon;
 pub mod catchup;
 pub mod client;
 pub mod coedit;
+pub mod converge;
 pub mod crypt;
 pub mod host;
 pub mod lastseen;

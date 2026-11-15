@@ -364,6 +364,24 @@ impl Shell {
 
     /// Unloads whatever the host runs from `path`, then, when `start`,
     /// loads the file again and starts it; the other plugins keep running.
+    /// Whether the plugin at `path` does a job RbxNative has built in: the
+    /// Team Presence plugin, by its code or by the Creator Store id the
+    /// catalog installed it under.
+    pub(super) fn plugin_built_in(
+        &self,
+        path: &std::path::Path,
+        source: &rbx_lua::plugin::PluginSource,
+    ) -> bool {
+        let from_store = self
+            .plugins
+            .catalog
+            .installs
+            .installed
+            .get(&super::built_in::TEAM_PRESENCE_ASSET)
+            .is_some_and(|record| path.file_name().is_some_and(|name| *name == *record.file));
+        from_store || super::built_in::is_team_presence(source)
+    }
+
     fn plugins_swap_file(&mut self, path: &Path, start: bool, cx: &mut Context<Self>) {
         let running: Vec<_> = self
             .plugins
@@ -386,6 +404,9 @@ impl Shell {
         }
         if start {
             match rbx_lua::plugin::read_source(path) {
+                Ok(source) if self.plugin_built_in(path, &source) => {
+                    self.plugins.built_in.insert(path.to_path_buf());
+                }
                 Ok(source) => {
                     if let Some(host) = self.plugins.host.as_mut() {
                         host.add(source);

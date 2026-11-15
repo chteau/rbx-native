@@ -166,6 +166,9 @@ impl Shell {
         if disabled {
             return ("Off".into(), false);
         }
+        if self.plugins.built_in.contains(&found.path) {
+            return (super::built_in::NOTE.into(), false);
+        }
         if found.kind == Kind::NativeWasm {
             return match self
                 .plugins

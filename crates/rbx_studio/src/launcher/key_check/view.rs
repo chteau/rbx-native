@@ -203,7 +203,7 @@ pub(in crate::launcher) fn result(
                             [
                                 "Part of the key is missing. It\u{2019}s one long line; copy it again with Copy Key To Clipboard.",
                                 "The key was deleted or regenerated on the Creator Dashboard.",
-                                "The key only allows certain IP addresses, and this network isn\u{2019}t one of them.",
+                                "The key is locked to other IP addresses. Add yours on the Creator Dashboard.",
                             ]
                             .map(|line| {
                                 h_flex()
