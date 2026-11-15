@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>RbxNative</string>
 	<key>CFBundleExecutable</key>
-	<string>rbxstudio</string>
+	<string>RbxNative</string>
 	<key>CFBundleIconFile</key>
 	<string>RbxNative</string>
 	<key>CFBundleIdentifier</key>

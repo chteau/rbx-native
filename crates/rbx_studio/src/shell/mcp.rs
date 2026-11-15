@@ -49,7 +49,7 @@ impl Shell {
                 self.output.push(
                     "MCP server",
                     Feedback::Info(format!(
-                        "studio {} listening on 127.0.0.1:{}; connect a client with `rbxstudio --mcp`",
+                        "studio {} listening on 127.0.0.1:{}; connect a client with `rbxnative --mcp`",
                         server.endpoint().studio_id,
                         server.endpoint().port
                     )),

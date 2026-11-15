@@ -23,12 +23,15 @@ jobs:
           - os: windows
             runner: windows-latest # x86_64-pc-windows-msvc
             exe: rbxstudio.exe
+            name: RbxNative.exe
           - os: macos
             runner: macos-latest # aarch64-apple-darwin
             exe: rbxstudio
+            name: RbxNative
           - os: linux
             runner: ubuntu-latest # x86_64-unknown-linux-gnu
             exe: rbxstudio
+            name: rbxnative
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +47,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # rbxstudio is the only program a tester needs: luau-lsp, cloudflared
+      # The editor is the only program a tester needs: luau-lsp, cloudflared
       # and slirp4netns are fetched by rbx_studio's build.rs and embedded,
       # Loren's runner and template are embedded by rbx_loren's, and the
       # icons, themes, fonts and API dump are compiled in. On Windows,
@@ -68,7 +71,8 @@ jobs:
           short_sha="${GITHUB_SHA::7}"
           echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
           mkdir dist
-          cp "target/release/${{ matrix.exe }}" dist/
+          # Cargo's binary is rbxstudio; it ships under the release's name.
+          cp "target/release/${{ matrix.exe }}" "dist/${{ matrix.name }}"
           if [ "${{ matrix.os }}" = windows ]; then
             .github/release/windivert.sh dist
           fi
@@ -83,6 +87,6 @@ jobs:
       # bit, which is why the README starts with `chmod +x`.
       - uses: actions/upload-artifact@v4
         with:
-          name: rbxstudio-${{ matrix.os }}-${{ env.SHORT_SHA }}
+          name: RbxNative-${{ matrix.os }}-${{ env.SHORT_SHA }}
           path: dist/
           if-no-files-found: error

@@ -43,7 +43,7 @@ pub(super) fn answer_timeout(tool: &str) -> Duration {
     }
 }
 
-pub(crate) const NOT_RUNNING: &str = "no editor is serving MCP. Open a place in rbxstudio with \
+pub(crate) const NOT_RUNNING: &str = "no editor is serving MCP. Open a place in RbxNative with \
 Settings › Beta features › MCP server switched on.";
 
 /// Asks the MCP client something, such as `sampling/createMessage`.

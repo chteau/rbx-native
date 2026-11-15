@@ -40,7 +40,7 @@ fn help_prints_the_usage_text_on_stdout_and_succeeds() {
     assert_eq!(output.status.code(), Some(0));
     let printed = stdout(&output);
     assert!(
-        printed.starts_with("usage: rbxstudio"),
+        printed.starts_with("usage: rbxnative"),
         "unexpected --help output: {printed}"
     );
     // A caller piping `--help` into a pager should not have to merge streams
@@ -59,7 +59,7 @@ fn a_usage_error_prints_on_stderr_and_exits_two() {
 
         assert_eq!(output.status.code(), Some(2), "for {arguments:?}");
         assert!(
-            stderr(&output).contains("usage: rbxstudio"),
+            stderr(&output).contains("usage: rbxnative"),
             "for {arguments:?}: {}",
             stderr(&output)
         );

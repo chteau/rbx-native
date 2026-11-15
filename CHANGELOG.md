@@ -2,6 +2,20 @@
 
 ## 2026-11-14
 
+- **Installers.** Every release now has a Windows setup (per user, no
+  admin, Start menu, optional desktop shortcut, opens .rbxl and .rbxlx
+  files, uninstalls from Settings > Apps), a macOS .dmg and a Linux
+  AppImage, next to the zip and tarballs. Or one line in a terminal:
+  `curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh` on macOS and
+  Linux, `irm https://rbxnative.chteau.bzh/install.ps1 | iex` on Windows.
+  Both check the signed checksums and can `--uninstall`. Every kind of
+  install keeps updating itself, the AppImage included. (@chteau)
+- **The program is called RbxNative.** `RbxNative.exe` on Windows,
+  `RbxNative` in the Mac app, `rbxnative` on Linux (`rbxnative --mcp`
+  works everywhere). A Linux 0.1.0 install that updates renames itself
+  and leaves `rbxstudio` as a link, so old shortcuts keep working. (@chteau)
+- **Release posts on Discord** carry the changelog, download links for
+  each OS and the install commands. (@chteau)
 - **Every plugin widget is its own dock.** The "Plugin Widgets" dock with its sub-tabs is gone. Each plugin's dock widget now gets its own tab, titled after the widget, that you can drag to any edge, tab with Explorer or Output, stack above or below another dock, or float. It opens where its `InitialDockState` says the first time, then remembers where you put it (per plugin and widget) across restarts. Closing it with its × just turns the widget off, so the plugin's toolbar button (or the command palette) brings it back in the same spot. Old saved layouts with the Plugin Widgets dock open fine, that dock is simply dropped.
 - **Team Create never just sits there.** If you turned presence on in Studio and RbxNative on a place that had no presence key saved yet, each side made its own key and they waited in two different rooms without a word. Now each editor posts a short fingerprint of its key next to the place, and both the plugin and the Collaborators panel say when the other side has a different one, plus what to do (Save to Roblox from Studio, reopen in RbxNative from My Games). With only Studio open the plugin now says it's waiting for someone in RbxNative because Studio can't host on its own, it tells you when it just made the place's key and you need to save it to Roblox, real errors show in red instead of grey, and the plugin opens its panel the first time so the switch isn't hidden behind a toolbar button.
 

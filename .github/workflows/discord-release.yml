@@ -19,36 +19,27 @@ jobs:
   post:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/release/discord-payload.jq
+          sparse-checkout-cone-mode: false
+
       - name: Fetch the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json name,tagName,url,body,publishedAt,isPrerelease > release.json
+        run: gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json name,tagName,url,body,publishedAt,isPrerelease,assets > release.json
 
+      # The embed (changelog, per-OS download links, the install one-liners)
+      # is built by discord-payload.jq, which also checks Discord's limits.
       - name: Post to Discord
         env:
           WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
           ROLE: "1569674071556366366" # Release ping
+          # The Flathub page, once the app is listed there.
+          FLATHUB: ""
         run: |
-          jq --arg role "$ROLE" --arg repo "https://github.com/$GITHUB_REPOSITORY" '
-            (.body // "" | gsub("\r"; "")) as $b
-            | (if ($b | length) > 3500 then ($b[0:3500] + "\n\n…") else $b end) as $notes
-            | {
-                username: "RbxNative",
-                content: (if .isPrerelease then null else "<@&\($role)>" end),
-                allowed_mentions: { roles: (if .isPrerelease then [] else [$role] end) },
-                embeds: [{
-                  color: 7110619,
-                  title: ((.name // .tagName) + (if .isPrerelease then " (pre-release)" else "" end)),
-                  url: .url,
-                  description: (if $notes == "" then "New release." else $notes end),
-                  timestamp: .publishedAt,
-                  footer: { text: .tagName }
-                }],
-                components: [{ type: 1, components: [
-                  { type: 2, style: 5, label: "Download", emoji: { name: "⬇️" }, url: .url },
-                  { type: 2, style: 5, label: "Changelog", emoji: { name: "📝" }, url: "\($repo)/blob/dev/CHANGELOG.md" },
-                  { type: 2, style: 5, label: "Docs", emoji: { name: "📖" }, url: "https://rbxnative.chteau.bzh/docs/" }
-                ]}]
-              }' release.json > payload.json
+          jq --arg role "$ROLE" --arg repo "https://github.com/$GITHUB_REPOSITORY" --arg flathub "$FLATHUB" \
+            -f .github/release/discord-payload.jq release.json > payload.json
+          jq '.embeds[0] | {description: (.description | length), fields: [.fields[] | .value | length]}' payload.json
           curl -fsS -H "Content-Type: application/json" -d @payload.json "$WEBHOOK?wait=true&with_components=true" -o /dev/null

@@ -109,7 +109,7 @@ fn mac_info_plist() {
   <key>CFBundleIdentifier</key><string>io.github.chteau.rbx-native.Editor</string>
   <key>CFBundleName</key><string>RbxNative</string>
   <key>CFBundleDisplayName</key><string>RbxNative</string>
-  <key>CFBundleExecutable</key><string>rbxstudio</string>
+  <key>CFBundleExecutable</key><string>RbxNative</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>{version}</string>
   <key>CFBundleVersion</key><string>{version}</string>

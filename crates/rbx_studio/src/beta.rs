@@ -56,7 +56,7 @@ pub(crate) const FEATURES: &[Feature] = &[
     Feature {
         id: crate::shell::MCP_BETA_ID,
         name: "MCP server",
-        description: "Lets an AI client drive the open place over MCP: point the client at `rbxstudio --mcp`. It can read and edit scripts, run Luau, start and stop Play, read the Output, capture the viewport, simulate player input and insert assets. Several open editors are told apart by studio ID. Edits are undo steps of their own; `http_get` and `skill` serve Roblox documentation and best-practice guides.",
+        description: "Lets an AI client drive the open place over MCP: point the client at `rbxnative --mcp`. It can read and edit scripts, run Luau, start and stop Play, read the Output, capture the viewport, simulate player input and insert assets. Several open editors are told apart by studio ID. Edits are undo steps of their own; `http_get` and `skill` serve Roblox documentation and best-practice guides.",
     },
     Feature {
         id: crate::shell::PSEUDO_LOC_BETA_ID,

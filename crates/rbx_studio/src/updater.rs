@@ -13,10 +13,13 @@
 //! Settings › Files & recovery › Updates has the switch (stored in
 //! `<config>/updates.json`) and Check now.
 
+mod compat;
 mod install;
 mod release;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_kinds;
 mod toast;
 mod verify;
 
@@ -208,6 +211,12 @@ pub(crate) fn startup() {
     };
     if let Ok(location) = install::Location::current() {
         location.clear_leftovers();
+        #[cfg(unix)]
+        if let (install::Location::Binary(exe), None) = (&location, blocked()) {
+            if let Some(new) = compat::migrate_legacy_name(exe) {
+                eprintln!("rbxstudio: renamed {} to {}", exe.display(), new.display());
+            }
+        }
     }
     let prefs = Prefs::load();
     if let Some(installed) = prefs.installed {
@@ -277,7 +286,8 @@ fn run() -> Result<Status, String> {
         return Ok(Status::Installed(version));
     }
     let target = release::TARGET.ok_or("no release builds for this platform")?;
-    let package = latest.package(&version, target)?;
+    let location = install::Location::current()?;
+    let package = latest.asset(&location.package_name(&version, target))?;
     let sums = get_text(&agent, &latest.asset(release::SUMS)?.browser_download_url)?;
     let signature = get_text(
         &agent,
@@ -286,7 +296,6 @@ fn run() -> Result<Status, String> {
     verify::signature(verify::PUBLIC_KEY, sums.as_bytes(), &signature)?;
     let expected = verify::sum_for(&sums, &package.name)?;
 
-    let location = install::Location::current()?;
     let staging = install::Staging::new(location.dir())?;
     let archive = staging.path().join(&package.name);
     let actual = download(&agent, &package.browser_download_url, &archive)?;
@@ -296,9 +305,9 @@ fn run() -> Result<Status, String> {
             package.name
         ));
     }
-    let unpacked = staging.path().join("unpacked");
-    install::unpack(&archive, &unpacked)?;
-    location.replace_from(&unpacked)?;
+    location.install(&archive, staging.path())?;
+    #[cfg(windows)]
+    compat::record_version(location.dir(), &version);
     Prefs::update(|prefs| {
         prefs.installed = Some(Installed {
             version: version.to_string(),

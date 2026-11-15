@@ -8,7 +8,7 @@ use rbx_loren::graph::{Graph, Kind, Node, Severity};
 use crate::shell::Shell;
 use crate::tokens;
 
-const EMPTY: &str = "This place has no Loren Services or Controllers. Start one from Home \u{203a} New \u{203a} Loren project, or run rbxstudio loren init.";
+const EMPTY: &str = "This place has no Loren Services or Controllers. Start one from Home \u{203a} New \u{203a} Loren project, or run rbxnative loren init.";
 
 impl Shell {
     pub(super) fn loren_body(&self, graph: &Graph, cx: &mut Context<Self>) -> AnyElement {
