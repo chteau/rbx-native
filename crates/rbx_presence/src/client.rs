@@ -388,14 +388,13 @@ impl Worker {
         }
         // Collaborators look the address up the moment it is announced; one
         // asked before the record exists caches "no such host" for many
-        // minutes. Announce only once public DNS has it.
+        // minutes. Announce only once public DNS has it, and once the tunnel
+        // actually reaches this host: cloudflared prints its address before
+        // Cloudflare's edge routes it, and a Studio whose first request gets
+        // the edge's 530 backs off before trying again.
         wait_until_resolvable(&public, Duration::from_secs(45));
-        announce::publish(
-            &self.config.relay_url,
-            &self.config.key,
-            &self.config.room,
-            &public,
-        )?;
+        wait_until_answers(&public, Duration::from_secs(20));
+        self.announce_now(&public)?;
         let _ = self
             .events
             .send(Event::Route(Route::Hosting(public.clone())));
@@ -406,6 +405,26 @@ impl Worker {
             announced: unix_ms(),
         });
         Ok(())
+    }
+
+    /// Announces `public` as the room's host, trying again a couple of times
+    /// over a few seconds: a dropped post would otherwise cost a new tunnel
+    /// and its start-up before collaborators hear of this host.
+    fn announce_now(&self, public: &str) -> Result<(), String> {
+        let mut tries = 0;
+        loop {
+            let posted = announce::publish(
+                &self.config.relay_url,
+                &self.config.key,
+                &self.config.room,
+                public,
+            );
+            tries += 1;
+            if posted.is_ok() || tries == ANNOUNCE_TRIES {
+                return posted;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 
     /// Posts this client's beacon when due and reads the others' at most once
@@ -853,6 +872,18 @@ fn wait_until_resolvable(url: &str, limit: Duration) {
             return;
         }
         thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// How many times a new host posts its announcement before giving up.
+const ANNOUNCE_TRIES: u32 = 3;
+
+/// Waits (at most `limit`) until this host's relay answers its health check
+/// through `url`, its public address.
+fn wait_until_answers(url: &str, limit: Duration) {
+    let end = Instant::now() + limit;
+    while Instant::now() < end && !reachable(url) {
+        thread::sleep(Duration::from_millis(500));
     }
 }
 

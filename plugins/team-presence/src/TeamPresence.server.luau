@@ -156,10 +156,11 @@ local function nextBackoff(current: number): number
 end
 
 -- Waits after a failed publish or poll and returns the next backoff. While
--- the room waits for a host the relay only looks every so often anyway, so
--- check back each second to pick a new host up as soon as it is found.
+-- the room has no host the relay only looks every few seconds anyway, so
+-- check back each second to pick a new host up as soon as it is found,
+-- rather than backing off from a host that just went away.
 local function retryAfter(myRelay: any, backoff: number): number
-	if myRelay:waiting() then
+	if myRelay:lookingForHost() then
 		task.wait(1)
 		return 0
 	end

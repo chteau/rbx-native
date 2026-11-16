@@ -19,8 +19,51 @@ pub struct Tunnel {
 
 impl Drop for Tunnel {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        end(&mut self.child);
+    }
+}
+
+/// Stops the tunnel and reaps it. On macOS that is the watching shell's
+/// whole process group (see [`command`]): killing the shell alone would
+/// leave cloudflared running under launchd.
+fn end(child: &mut Child) {
+    #[cfg(target_os = "macos")]
+    if let Ok(group) = i32::try_from(child.id()) {
+        // SAFETY: a plain signal to the process group the child leads.
+        unsafe { libc::kill(-group, libc::SIGTERM) };
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// macOS has no `PR_SET_PDEATHSIG`, and quitting from the menu exits
+/// without running `Tunnel`'s `Drop`: a seen-live cloudflared outlived the
+/// editor under launchd. So a shell runs it, in a process group of its own,
+/// and ends it as soon as the editor (`$0`) is gone. The tunnel inherits the
+/// piped stdout and stderr, so its URL is still read as before.
+#[cfg(any(target_os = "macos", all(test, target_os = "linux")))]
+const WATCH: &str = r#"parent=$0; "$@" & tunnel=$!; trap 'kill $tunnel 2>/dev/null' EXIT HUP INT TERM; while kill -0 "$parent" 2>/dev/null && kill -0 $tunnel 2>/dev/null; do sleep 1; done"#;
+
+/// The command that runs `program args`, watched on macOS (see [`WATCH`]).
+fn command(program: PathBuf, args: Vec<String>) -> Command {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg(WATCH)
+            .arg(std::process::id().to_string())
+            .arg(program)
+            .args(args)
+            .process_group(0);
+        command
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut command = Command::new(program);
+        command.args(args);
+        command
     }
 }
 
@@ -99,9 +142,8 @@ impl TunnelProvider {
     pub fn start(&self, port: u16, timeout: Duration) -> Result<Tunnel, TunnelError> {
         let (program, args) = self.command_line(port);
         let pattern = self.url_pattern();
-        let mut command = Command::new(program);
+        let mut command = command(program, args);
         command
-            .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -125,8 +167,7 @@ impl TunnelProvider {
         loop {
             let now = Instant::now();
             if now >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
+                end(&mut child);
                 return Err(TunnelError::Timeout);
             }
             let slice = (deadline - now).min(Duration::from_millis(50));
@@ -218,4 +259,49 @@ fn spawn_reader<R: Read + Send + 'static>(pipe: R, tx: mpsc::Sender<String>) {
 pub fn scrape_url(line: &str, pattern: &str) -> Option<String> {
     let re = Regex::new(pattern).ok()?;
     re.find(line).map(|m| m.as_str().to_owned())
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+    use std::os::unix::process::CommandExt;
+
+    fn within(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
+        let end = Instant::now() + limit;
+        while Instant::now() < end {
+            if done() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    #[test]
+    fn the_watch_shell_ends_the_tunnel_once_the_editor_is_gone() {
+        let mut editor = Command::new("sleep").arg("1").spawn().unwrap();
+        let mut watch = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(WATCH)
+            .arg(editor.id().to_string())
+            .args(["sleep", "60"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = i32::try_from(watch.id()).unwrap();
+        editor.wait().unwrap();
+        assert!(within(Duration::from_secs(5), || matches!(
+            watch.try_wait(),
+            Ok(Some(_))
+        )));
+        // SAFETY: signal 0 only asks whether anyone in the group is left.
+        let gone = within(
+            Duration::from_secs(5),
+            || unsafe { libc::kill(-group, 0) } != 0,
+        );
+        if !gone {
+            unsafe { libc::kill(-group, libc::SIGKILL) };
+        }
+        assert!(gone, "the tunnel outlived the editor");
+    }
 }

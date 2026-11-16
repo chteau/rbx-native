@@ -19,6 +19,10 @@ use crate::tokens;
 /// Shown at the top of the dock at all times, whatever the state.
 pub(super) const NOTE: &str = "Presence only works for collaborators who have Studio open with the rbx-native presence plugin running.";
 
+/// Under [`NOTE`] with the hosted relay, the one that goes through ntfy.sh
+/// and a Cloudflare quick tunnel: what Studio asks the first time.
+const STUDIO_NOTE: &str = "First time in Studio? It asks if the plugin can reach ntfy.sh, then a trycloudflare.com address. Allow both. The trycloudflare one is new every time someone opens RbxNative, so Studio asks about it again each time.";
+
 /// The status line's words for a connection.
 fn status_text(connection: &Connection, route: Option<&rbx_presence::client::Route>) -> String {
     use rbx_presence::client::Route;
@@ -249,7 +253,11 @@ impl Shell {
         let relay_input = self.team_presence.relay_input.clone();
         let show_advanced = self.team_presence.show_advanced;
         let owner_kind = self.team_presence.owner_kind;
-        let resolved = match rbx_presence::secret::read_relay(&self.dom) {
+        let relay = rbx_presence::secret::read_relay(&self.dom);
+        let hosted = relay
+            .as_ref()
+            .is_none_or(|config| config.kind == rbx_presence::relay::RelayKind::Hosted);
+        let resolved = match relay {
             Some(config) => format!("Relay: {} ({})", config.url, config.kind.as_str()),
             None => format!(
                 "Relay: {} ({})",
@@ -266,7 +274,8 @@ impl Shell {
             .rounded_sm()
             .text_size(tokens::text_xs())
             .text_color(tokens::text2())
-            .child(NOTE);
+            .child(NOTE)
+            .when(hosted, |this| this.child(div().mt_1().child(STUDIO_NOTE)));
 
         let toggle_row = h_flex()
             .w_full()

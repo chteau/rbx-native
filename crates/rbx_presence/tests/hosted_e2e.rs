@@ -241,6 +241,22 @@ fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
         "{err}"
     );
 
+    // Right after losing its host the room looks again every few seconds
+    // (a restarting RbxNative announces itself then), later every ten.
+    let (soon, later, looking): (u32, u32, bool) = lua
+        .load(
+            r#"
+            local soon = relay:_resolveEvery()
+            relay.lostAt -= 120
+            local later = relay:_resolveEvery()
+            relay.lostAt += 120
+            return soon, later, relay:lookingForHost()
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert_eq!((soon, later, looking), (3, 10, true));
+
     // Past the grace, the next look finds the same dead address: waiting.
     let (ok, err, waiting): (bool, String, bool) = lua
         .load(

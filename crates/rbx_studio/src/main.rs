@@ -343,7 +343,12 @@ fn main() {
     // default bundle the components themselves use. The Explorer's own class
     // icons are rasterized straight from `class_icons`'s embedded SVGs, not
     // painted through this asset source at all, see its own doc comment.
-    let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
+    // Closing the last window quits on macOS too, as on Linux and Windows:
+    // a Mac app left running with no window kept hosting team presence
+    // (and its tunnels) with nothing on screen to stop it.
+    let app = gpui_kit::application()
+        .with_assets(gpui_kit::assets::AllAssets)
+        .with_quit_mode(gpui_kit::QuitMode::LastWindowClosed);
     app.run(move |cx| {
         gpui_kit::init(cx);
         install_fonts(cx);

@@ -78,6 +78,11 @@ end
 local EXPIRY_MS = 15000
 -- How often a hosted room looks for its host while it has none.
 local RESOLVE_EVERY = 10
+-- How often it looks in the first RESOLVE_SOON_FOR seconds after its host
+-- went away: that is when an RbxNative coming back (a restart) announces
+-- itself. Thirty looks stay inside ntfy.sh's burst allowance.
+local RESOLVE_SOON_EVERY = 3
+local RESOLVE_SOON_FOR = 90
 -- How long a host that stopped answering is still shown before the room
 -- goes back to waiting for someone in RbxNative.
 local HOST_GRACE = 10
@@ -103,6 +108,8 @@ function Relay.new(config: Config)
 		-- The relay the last presence poll's cursor came from.
 		cursorBase = nil :: string?,
 		lastResolve = -math.huge,
+		-- hosted: when a host last stopped answering (os.clock), nil if none has.
+		lostAt = nil :: number?,
 		-- hosted: when the host stopped answering (os.clock), nil while it answers.
 		goneSince = nil :: number?,
 		key = config.key,
@@ -133,10 +140,23 @@ end
 -- A short wait between ntfy polls, so the poll loop does not spin; a
 -- hosted room with no host yet waits until it looks again.
 function Relay:pollDelay(): number
-	if self.kind == "hosted" and self.base == nil then
-		return RESOLVE_EVERY
+	if self:lookingForHost() then
+		return self:_resolveEvery()
 	end
 	return if self.kind == "ntfy" then 1 else 0
+end
+
+-- Whether a hosted room has no host to talk to right now, whatever the
+-- reason: retrying sooner than its next look for one gains nothing.
+function Relay:lookingForHost(): boolean
+	return self.kind == "hosted" and self.base == nil
+end
+
+function Relay:_resolveEvery(): number
+	if self.lostAt ~= nil and os.clock() - self.lostAt < RESOLVE_SOON_FOR then
+		return RESOLVE_SOON_EVERY
+	end
+	return RESOLVE_EVERY
 end
 
 -- Whether a hosted room is waiting for an rbx-native user to host it (not
@@ -158,7 +178,7 @@ function Relay:_resolve(): (boolean, string?)
 	if self.base ~= nil then
 		return true, nil
 	end
-	if os.clock() - self.lastResolve < RESOLVE_EVERY then
+	if os.clock() - self.lastResolve < self:_resolveEvery() then
 		return false, self:_noHost()
 	end
 	self.lastResolve = os.clock()
@@ -204,6 +224,7 @@ end
 function Relay:_lost()
 	if self.kind == "hosted" then
 		self.base = nil
+		self.lostAt = os.clock()
 		if self.goneSince == nil then
 			self.goneSince = os.clock()
 			self.lastResolve = -math.huge
