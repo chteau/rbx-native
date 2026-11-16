@@ -627,6 +627,12 @@ pub(crate) struct Shell {
     /// Whether the main window held focus last frame, so a torn-out dock
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
+    /// The editor's own window, which a torn-out dock docks back into and
+    /// is raised with. Set by every render.
+    editor_window: Option<AnyWindowHandle>,
+    /// A dock just torn out by its tab and the screen point it was let go
+    /// at, which its window opens under.
+    torn_at: Option<(layout::Panel, Point<Pixels>)>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 18],
 }
@@ -1044,6 +1050,8 @@ impl Shell {
             dialog_up: false,
             stowed_panel_windows: HashMap::new(),
             window_was_active: true,
+            editor_window: None,
+            torn_at: None,
             output_collapsed,
             mcp: None,
             mcp_jobs: mcp::Jobs::default(),
@@ -2282,7 +2290,7 @@ impl Render for Shell {
                     shell.end_resize(cx);
                     shell.scrub = None;
                     shell.end_inspector_drag();
-                    shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.end_panel_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )
@@ -2296,7 +2304,7 @@ impl Render for Shell {
                     shell.end_resize(cx);
                     shell.scrub = None;
                     shell.end_inspector_drag();
-                    shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.end_panel_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )

@@ -18,6 +18,12 @@
   stays above the editor when you click the editor, and it reopens
   exactly where it was instead of creeping up a few pixels each time.
   (@chteau)
+- **Plugin windows: right edge, restart and tear-out spot.** Pushing a
+  plugin window onto the editor's right edge by its title docks it now,
+  same as the left edge (it used to need the window's middle over the
+  editor). A plugin window left open when you quit comes back on the next
+  launch, at the spot you left it, and a tab you tear out opens right
+  under the pointer instead of in the middle of the screen. (@chteau)
 
 ## 2026-11-14
 

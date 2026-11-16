@@ -17,13 +17,18 @@ use x11rb::wrapper::ConnectionExt as _;
 
 /// Makes `window` transient for the editor, and moves it to `origin` when
 /// it has one.
-pub(super) fn settle(window: WindowHandle<Root>, origin: Option<Point<Pixels>>, cx: &mut App) {
+pub(super) fn settle(
+    window: WindowHandle<Root>,
+    editor: Option<AnyWindowHandle>,
+    origin: Option<Point<Pixels>>,
+    cx: &mut App,
+) {
     cx.spawn(async move |cx| {
         for wait in [100, 400] {
             cx.background_executor()
                 .timer(Duration::from_millis(wait))
                 .await;
-            let Some(main) = cx.update(|cx| cx.windows().first().copied()) else {
+            let Some(main) = editor else {
                 return;
             };
             let editor = main.update(cx, |_, window, _| crate::pointer_lock::window_id(window));

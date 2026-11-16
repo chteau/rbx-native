@@ -55,7 +55,8 @@ impl Shell {
 
         // Before the edges are built, so a panel torn out on the frame it
         // was dropped does not also draw itself into a dock for one frame.
-        self.sync_panel_windows(cx);
+        self.editor_window = Some(window.window_handle());
+        self.sync_panel_windows(window.is_window_active(), cx);
         self.raise_panel_windows(window, cx);
         self.sync_stats(cx);
 
