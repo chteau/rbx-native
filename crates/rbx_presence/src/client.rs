@@ -474,18 +474,21 @@ impl Worker {
                 self.hosted = None;
                 return Some(Outcome::Failed("the tunnel closed".into()));
             }
-            if let Ok(Some(newer)) = &found {
-                if newer.url != hosted.public && newer.at > hosted.announced {
-                    // Two hosted at once: the newer one keeps the room.
-                    self.hosted = None;
-                    return Some(Outcome::Failed(
-                        "another rbx-native user hosts the room".into(),
-                    ));
+            let check = match &found {
+                Ok(newest) => {
+                    host_check(&hosted.public, hosted.announced, newest.as_ref(), reachable)
                 }
+                Err(_) => HostCheck::Keep,
+            };
+            if check == HostCheck::Yield {
+                self.hosted = None;
+                return Some(Outcome::Failed(
+                    "another rbx-native user hosts the room".into(),
+                ));
             }
             let now = unix_ms();
             let due = now.saturating_sub(hosted.announced) >= announce::REANNOUNCE_MS;
-            if due
+            if (due || check == HostCheck::Reannounce)
                 && announce::publish(
                     &self.config.relay_url,
                     &self.config.key,
@@ -782,6 +785,37 @@ impl Worker {
     }
 }
 
+/// What a host does about the room's newest announcement.
+#[derive(Debug, PartialEq, Eq)]
+enum HostCheck {
+    /// It is this host's own.
+    Keep,
+    /// Another host announced since and answers: two hosted at once, and the
+    /// newer one keeps the room.
+    Yield,
+    /// A goodbye, or an address nobody answers on (a host that crashed or
+    /// quit, this editor's own earlier tunnel): announce again, so
+    /// collaborators who went there come back here.
+    Reannounce,
+}
+
+/// [`HostCheck`] for a host public at `public` since `announced`, given the
+/// newest genuine announcement (`None`: none, or a goodbye). `live` is only
+/// asked about a newer foreign address, so a stale or self-made one never
+/// takes the room away from a host that still runs.
+fn host_check(
+    public: &str,
+    announced: u64,
+    newest: Option<&announce::Announcement>,
+    live: impl FnOnce(&str) -> bool,
+) -> HostCheck {
+    match newest {
+        Some(newest) if newest.url == public => HostCheck::Keep,
+        Some(newest) if newest.at > announced && live(&newest.url) => HostCheck::Yield,
+        _ => HostCheck::Reannounce,
+    }
+}
+
 /// Waits (at most `limit`) until `url`'s host has an address in public DNS,
 /// asking Cloudflare's DNS-over-HTTPS resolver so this machine's own resolver
 /// never caches an early "no such host". Loopback addresses return at once.
@@ -855,6 +889,41 @@ mod tests {
     use crate::schema::SCHEMA_VERSION;
     use std::net::TcpListener;
     use tungstenite::handshake::server::{ErrorResponse, Request, Response};
+
+    #[test]
+    fn a_host_yields_only_to_a_newer_host_that_answers() {
+        const OURS: &str = "https://ours.trycloudflare.com";
+        let at = |url: &str, at: u64| announce::Announcement {
+            v: 1,
+            url: url.into(),
+            at,
+            sig: String::new(),
+        };
+        let never = |_: &str| -> bool { panic!("asked about our own address") };
+        assert_eq!(
+            host_check(OURS, 100, Some(&at(OURS, 99)), never),
+            HostCheck::Keep
+        );
+        let newer = at("https://other.trycloudflare.com", 200);
+        assert_eq!(
+            host_check(OURS, 100, Some(&newer), |_| true),
+            HostCheck::Yield
+        );
+        // A newer address nobody answers on (a crashed host, or this
+        // editor's own earlier tunnel) takes nothing away: announce again.
+        assert_eq!(
+            host_check(OURS, 100, Some(&newer), |_| false),
+            HostCheck::Reannounce
+        );
+        let older = at("https://other.trycloudflare.com", 50);
+        assert_eq!(
+            host_check(OURS, 100, Some(&older), |_| true),
+            HostCheck::Reannounce
+        );
+        // A goodbye after ours would leave collaborators waiting on a host
+        // that is still here.
+        assert_eq!(host_check(OURS, 100, None, never), HostCheck::Reannounce);
+    }
 
     #[test]
     fn ws_url_cases() {

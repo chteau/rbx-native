@@ -13,7 +13,8 @@ use rbx_presence::client::{Client, Config, Event, Hosting, Tunnel};
 use rbx_presence::relay::RelayKind;
 use rbx_presence::schema::{Client as Editor, UserState, SCHEMA_VERSION};
 
-pub type Topics = Arc<Mutex<HashMap<String, Vec<String>>>>;
+/// Each topic's messages, with when they were posted (unix seconds).
+pub type Topics = Arc<Mutex<HashMap<String, Vec<(String, u64)>>>>;
 
 /// `POST /<topic>` stores the body; `GET /<topic>/json` answers every stored
 /// message as ntfy's JSON lines.
@@ -49,10 +50,10 @@ pub fn fake_ntfy() -> (String, Topics) {
                 let path = target.split('?').next().unwrap().trim_start_matches('/');
                 let reply = if method == "POST" {
                     let mut topics = store.lock().unwrap();
-                    topics
-                        .entry(path.to_owned())
-                        .or_default()
-                        .push(String::from_utf8(body).unwrap());
+                    topics.entry(path.to_owned()).or_default().push((
+                        String::from_utf8(body).unwrap(),
+                        rbx_presence::now_ms() / 1000,
+                    ));
                     "{}".to_owned()
                 } else {
                     let topic = path.trim_end_matches("/json");
@@ -61,8 +62,9 @@ pub fn fake_ntfy() -> (String, Topics) {
                         .get(topic)
                         .into_iter()
                         .flatten()
-                        .map(|m| {
-                            serde_json::json!({ "event": "message", "message": m }).to_string()
+                        .map(|(m, time)| {
+                            serde_json::json!({ "event": "message", "message": m, "time": time })
+                                .to_string()
                                 + "\n"
                         })
                         .collect()

@@ -86,7 +86,7 @@ fn the_first_hosts_the_second_joins_and_the_host_says_goodbye() {
             &key,
             &room,
             rbx_presence::now_ms(),
-            messages.iter().map(String::as_str),
+            messages.iter().map(|(text, at)| (text.as_str(), at * 1000)),
         );
         if messages.len() >= 2 && latest.is_none() {
             break true;
@@ -270,13 +270,16 @@ fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
             _ => {}
         }
     }
+    // The poll loop still holds the dead host's cursor, far past anything
+    // the new host has counted: it must not sit out a whole long-poll.
+    let joining = Instant::now();
     let found: bool = lua
         .load(
             r#"
             relay.lastResolve = -math.huge
             local ok, err = publish()
             assert(ok, err)
-            local cursor = 0
+            local cursor = 1000000
             for _ = 1, 10 do
                 local snapshot, pollErr = relay:poll(cursor)
                 assert(snapshot, pollErr)
@@ -293,6 +296,11 @@ fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
         .eval()
         .unwrap();
     assert!(found);
+    assert!(
+        joining.elapsed() < rbx_presence::host::POLL_TIMEOUT / 2,
+        "joining took {:?}",
+        joining.elapsed()
+    );
 
     drop(host);
     let end = Instant::now() + Duration::from_secs(10);

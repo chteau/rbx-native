@@ -102,7 +102,7 @@ pub fn read(ntfy: &str, place_id: u64, fp: &str, from: &str) -> Result<Option<St
         fp,
         from,
         crate::now_ms(),
-        texts.iter().map(String::as_str),
+        texts.iter().map(|(text, _)| text.as_str()),
     ))
 }
 

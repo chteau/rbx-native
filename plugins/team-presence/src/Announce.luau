@@ -29,7 +29,10 @@ function Announce.allowedUrl(url: string): boolean
 end
 
 -- `text` decoded if it is a genuine, current announcement for `room`.
-function Announce.verify(key: string, room: string, now: number, text: string): any?
+-- `received` is when the ntfy server got it (unix ms): one stamped far from
+-- that comes from a machine with a wrong clock, and would turn "newest"
+-- hours later, long after its host is gone.
+function Announce.verify(key: string, room: string, now: number, received: number, text: string): any?
 	local ok, message = pcall(Json.decode, text)
 	if not ok or type(message) ~= "table" then
 		return nil
@@ -38,7 +41,11 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	if message.v ~= 1 or type(url) ~= "string" or type(at) ~= "number" or type(sig) ~= "string" then
 		return nil
 	end
-	if at > now + Announce.CLOCK_SKEW_MS or now - at > Announce.MAX_AGE_MS then
+	if
+		at > now + Announce.CLOCK_SKEW_MS
+		or now - at > Announce.MAX_AGE_MS
+		or math.abs(at - received) > Announce.CLOCK_SKEW_MS
+	then
 		return nil
 	end
 	if url ~= "" and not Announce.allowedUrl(url) then
@@ -50,12 +57,13 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	return { url = url, at = at }
 end
 
--- The host's URL from a run of announcement texts: the newest genuine one,
--- nil when there is none or the newest says the host left.
-function Announce.newest(key: string, room: string, now: number, texts: { string }): string?
+-- The host's URL from a run of announcements ({ text, time }: the message
+-- and when the server received it, unix ms): the newest genuine one, nil
+-- when there is none or the newest says the host left.
+function Announce.newest(key: string, room: string, now: number, messages: { { text: string, time: number } }): string?
 	local best: any = nil
-	for _, text in texts do
-		local message = Announce.verify(key, room, now, text)
+	for _, item in messages do
+		local message = Announce.verify(key, room, now, item.time, item.text)
 		if message and (best == nil or message.at > best.at) then
 			best = message
 		end

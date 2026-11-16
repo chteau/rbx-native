@@ -750,13 +750,17 @@ fn announce_cross_checks_with_rust() {
     let forged = announce::encode("other", room, "https://evil.example", now);
 
     let newest = func(&lua, "Announce", "newest");
-    let texts = |items: &[&str]| {
+    let received = |items: &[(&str, u64)]| {
         let t = lua.create_table().unwrap();
-        for (i, item) in items.iter().enumerate() {
-            t.set(i + 1, *item).unwrap();
+        for (i, (text, time)) in items.iter().enumerate() {
+            let item = lua.create_table().unwrap();
+            item.set("text", *text).unwrap();
+            item.set("time", *time as f64).unwrap();
+            t.set(i + 1, item).unwrap();
         }
         t
     };
+    let texts = |items: &[&str]| received(&items.iter().map(|t| (*t, now)).collect::<Vec<_>>());
     let got: Option<String> = newest
         .call((
             key.as_str(),
@@ -774,6 +778,17 @@ fn announce_cross_checks_with_rust() {
         .call((key.as_str(), room, now as f64, texts(&[&forged])))
         .unwrap();
     assert_eq!(only_forged, None);
+    // Stamped just now by a clock nine hours fast, nine hours ago.
+    let skewed = announce::encode(&key, room, "https://gone.trycloudflare.com", now);
+    let got: Option<String> = newest
+        .call((
+            key.as_str(),
+            room,
+            now as f64,
+            received(&[(&old, now - 59_000), (&skewed, now - 9 * 3_600_000)]),
+        ))
+        .unwrap();
+    assert_eq!(got.as_deref(), Some("https://old.trycloudflare.com"));
 
     let topic = func(&lua, "Announce", "topic");
     let t: String = topic.call(room).unwrap();

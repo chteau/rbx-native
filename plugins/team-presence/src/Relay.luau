@@ -43,10 +43,16 @@ local rng = Random.new()
 -- host has answered once, its requests go one at a time.
 local asking: { [string]: boolean } = {}
 local answered: { [string]: boolean } = {}
+-- How long a long-poll waits for a quick request to open a new host.
+local LONG_WAITS_FOR = 30
 
-local function request(options: { [string]: any }): any
+-- `long`: a relay long-poll, which can take 20 s to answer. It never goes
+-- first to a host: holding the line that long would hold up everything
+-- else (joining a new host would show nothing for as long).
+local function request(options: { [string]: any }, long: boolean?): any
 	local host = string.match(options.Url, "^%a+://([^/]+)") or options.Url
-	while asking[host] do
+	local giveUp = os.clock() + LONG_WAITS_FOR
+	while asking[host] or (long and not answered[host] and os.clock() < giveUp) do
 		task.wait()
 	end
 	asking[host] = not answered[host]
@@ -71,7 +77,7 @@ end
 
 local EXPIRY_MS = 15000
 -- How often a hosted room looks for its host while it has none.
-local RESOLVE_EVERY = 15
+local RESOLVE_EVERY = 10
 -- How long a host that stopped answering is still shown before the room
 -- goes back to waiting for someone in RbxNative.
 local HOST_GRACE = 10
@@ -94,6 +100,8 @@ function Relay.new(config: Config)
 		-- hosted: the announce server; `base` is the host, once found.
 		announceBase = if hosted then url else nil,
 		base = if hosted then nil else url,
+		-- The relay the last presence poll's cursor came from.
+		cursorBase = nil :: string?,
 		lastResolve = -math.huge,
 		-- hosted: when the host stopped answering (os.clock), nil while it answers.
 		goneSince = nil :: number?,
@@ -169,8 +177,14 @@ function Relay:_resolve(): (boolean, string?)
 		local decoded, parsed = pcall(function()
 			return HttpService:JSONDecode(line)
 		end)
-		if decoded and type(parsed) == "table" and parsed.event == "message" and type(parsed.message) == "string" then
-			table.insert(texts, parsed.message)
+		if
+			decoded
+			and type(parsed) == "table"
+			and parsed.event == "message"
+			and type(parsed.message) == "string"
+			and type(parsed.time) == "number"
+		then
+			table.insert(texts, { text = parsed.message, time = parsed.time * 1000 })
 		end
 	end
 	local host = Announce.newest(self.key, self.room, nowMs(), texts)
@@ -241,7 +255,7 @@ end
 
 -- ===== Worker (signed HTTP) =====
 
-function Relay:_request(method: string, suffix: string, body: string): (any?, string?, any?)
+function Relay:_request(method: string, suffix: string, body: string, long: boolean?): (any?, string?, any?)
 	local path = "/v1/rooms/" .. self.room .. suffix
 	local headers = Auth.headers(self.key, method, path, self.userId, nowMs(), body, self.sendKey)
 	if body ~= "" then
@@ -252,7 +266,7 @@ function Relay:_request(method: string, suffix: string, body: string): (any?, st
 		options.Body = body
 	end
 	local ok, res = pcall(function()
-		return request(options)
+		return request(options, long)
 	end)
 	if not ok then
 		return nil, tostring(res)
@@ -277,14 +291,14 @@ local function needsKey(res: any): boolean
 	return ok and type(decoded) == "table" and decoded.error == "key"
 end
 
-function Relay:_send(method: string, suffix: string, body: string): (any?, string?)
+function Relay:_send(method: string, suffix: string, body: string, long: boolean?): (any?, string?)
 	if self.kind == "hosted" then
 		local found, why = self:_resolve()
 		if not found then
 			return nil, why
 		end
 	end
-	local res, err, raw = self:_request(method, suffix, body)
+	local res, err, raw = self:_request(method, suffix, body, long)
 	if res == nil and raw == nil and self.kind == "hosted" then
 		-- No HTTP answer at all: the host may be gone, or its address not
 		-- reachable yet; look again shortly.
@@ -298,7 +312,7 @@ function Relay:_send(method: string, suffix: string, body: string): (any?, strin
 	end
 	if res == nil and needsKey(raw) and not self.sendKey then
 		self.sendKey = true
-		res, err = self:_request(method, suffix, body)
+		res, err = self:_request(method, suffix, body, long)
 	end
 	if res ~= nil then
 		self.goneSince = nil
@@ -395,10 +409,14 @@ function Relay:poll(cursor: number): (any?, string?)
 	if self.kind == "ntfy" then
 		return self:_ntfyPoll()
 	end
-	local res, err = self:_send("GET", string.format("/poll?since=%.0f", cursor), "")
+	-- A cursor only means something to the relay that gave it; a new host
+	-- counts from far lower, and would sit on the poll until it timed out.
+	local since = if self.base ~= nil and self.base == self.cursorBase then cursor else 0
+	local res, err = self:_send("GET", string.format("/poll?since=%.0f", since), "", true)
 	if res == nil then
 		return nil, err
 	end
+	self.cursorBase = self.base
 	local ok, snapshot = pcall(Schema.openSnapshot, self.encKey, self.room, res.Body)
 	if not ok then
 		return nil, tostring(snapshot)
@@ -504,7 +522,7 @@ function Relay:pollOps(since: number): (any?, string?)
 	if self.kind ~= "hosted" and self.kind ~= "worker" then
 		return nil, NEEDS_HOSTED
 	end
-	local res, err = self:_send("GET", string.format("/ops?since=%.0f", since), "")
+	local res, err = self:_send("GET", string.format("/ops?since=%.0f", since), "", true)
 	if res == nil then
 		return nil, err
 	end

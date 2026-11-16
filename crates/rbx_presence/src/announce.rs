@@ -18,7 +18,8 @@ use crate::auth;
 pub const MAX_AGE_MS: u64 = 12 * 60 * 60 * 1000;
 /// How often a host re-announces itself.
 pub const REANNOUNCE_MS: u64 = 3 * 60 * 60 * 1000;
-/// An announcement may be stamped this far ahead of the reader's clock.
+/// An announcement may be stamped this far ahead of the reader's clock, or
+/// this far from when the ntfy server received it.
 pub const CLOCK_SKEW_MS: u64 = 60_000;
 
 /// The announce topic of `room`: next to its presence topic, unguessable
@@ -56,27 +57,33 @@ pub fn encode(key: &str, room: &str, url: &str, at: u64) -> String {
     serde_json::to_string(&message).unwrap_or_default()
 }
 
-/// `text` if it is a genuine, current announcement for `room`.
-pub fn verify(key: &str, room: &str, now: u64, text: &str) -> Option<Announcement> {
+/// `text` if it is a genuine, current announcement for `room`. `received`
+/// is when the ntfy server got it (unix ms): a message stamped hours away
+/// from that comes from a machine whose clock is wrong (a VM or dual boot
+/// reading the hardware clock as the wrong time zone), and would otherwise
+/// turn "newest" hours later, long after its host is gone.
+pub fn verify(key: &str, room: &str, now: u64, received: u64, text: &str) -> Option<Announcement> {
     let message: Announcement = serde_json::from_str(text).ok()?;
     let expected = auth::sign(key, &canonical(room, &message.url, message.at));
-    let fresh = message.at <= now + CLOCK_SKEW_MS && now.saturating_sub(message.at) <= MAX_AGE_MS;
+    let fresh = message.at <= now + CLOCK_SKEW_MS
+        && now.saturating_sub(message.at) <= MAX_AGE_MS
+        && message.at.abs_diff(received) <= CLOCK_SKEW_MS;
     let url_ok = message.url.is_empty() || allowed_url(&message.url);
     (message.v == 1 && expected == message.sig && fresh && url_ok).then_some(message)
 }
 
-/// The host's URL from a run of announcements (oldest first or in any
-/// order): the newest genuine one, `None` when there is none or the newest
-/// says the host left.
+/// The host's URL from a run of announcements, each with when the server
+/// received it (oldest first or in any order): the newest genuine one,
+/// `None` when there is none or the newest says the host left.
 pub fn newest<'a>(
     key: &str,
     room: &str,
     now: u64,
-    texts: impl IntoIterator<Item = &'a str>,
+    messages: impl IntoIterator<Item = (&'a str, u64)>,
 ) -> Option<Announcement> {
-    texts
+    messages
         .into_iter()
-        .filter_map(|text| verify(key, room, now, text))
+        .filter_map(|(text, received)| verify(key, room, now, received, text))
         .max_by_key(|message| message.at)
         .filter(|message| !message.url.is_empty())
 }
@@ -119,12 +126,13 @@ pub fn find(ntfy: &str, key: &str, room: &str) -> Result<Option<Announcement>, S
         key,
         room,
         crate::now_ms(),
-        messages.iter().map(String::as_str),
+        messages.iter().map(|(text, at)| (text.as_str(), *at)),
     ))
 }
 
-/// The message texts `topic` on `ntfy` still holds from the last `since`.
-pub(crate) fn messages(ntfy: &str, topic: &str, since: &str) -> Result<Vec<String>, String> {
+/// The messages `topic` on `ntfy` still holds from the last `since`: each
+/// text with when the server received it (unix ms).
+pub(crate) fn messages(ntfy: &str, topic: &str, since: &str) -> Result<Vec<(String, u64)>, String> {
     let base = ntfy.trim_end_matches('/');
     let mut resp = agent()
         .get(format!("{base}/{topic}/json"))
@@ -141,7 +149,10 @@ pub(crate) fn messages(ntfy: &str, topic: &str, since: &str) -> Result<Vec<Strin
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|v| v.get("event").and_then(|e| e.as_str()) == Some("message"))
-        .filter_map(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
+        .filter_map(|v| {
+            let text = v.get("message")?.as_str()?.to_owned();
+            Some((text, v.get("time")?.as_u64()? * 1000))
+        })
         .collect())
 }
 
@@ -157,7 +168,7 @@ mod tests {
     fn the_newest_genuine_announcement_wins() {
         let old = encode(KEY, ROOM, "https://old.trycloudflare.com", NOW - 60_000);
         let new = encode(KEY, ROOM, "https://new.trycloudflare.com", NOW - 1_000);
-        let found = newest(KEY, ROOM, NOW, [new.as_str(), old.as_str()]).unwrap();
+        let found = newest(KEY, ROOM, NOW, [(new.as_str(), NOW), (old.as_str(), NOW)]).unwrap();
         assert_eq!(found.url, "https://new.trycloudflare.com");
     }
 
@@ -165,7 +176,24 @@ mod tests {
     fn a_goodbye_means_no_host() {
         let hello = encode(KEY, ROOM, "https://a.trycloudflare.com", NOW - 60_000);
         let bye = encode(KEY, ROOM, "", NOW - 1_000);
-        assert!(newest(KEY, ROOM, NOW, [hello.as_str(), bye.as_str()]).is_none());
+        assert!(newest(KEY, ROOM, NOW, [(hello.as_str(), NOW), (bye.as_str(), NOW)]).is_none());
+    }
+
+    #[test]
+    fn a_wrong_clock_announcement_never_becomes_the_newest() {
+        let live = encode(KEY, ROOM, "https://live.trycloudflare.com", NOW - 60_000);
+        // Sent nine hours ago from a clock nine hours fast: by its own stamp
+        // it is from just now, newer than the live host's.
+        let skewed = encode(KEY, ROOM, "https://gone.trycloudflare.com", NOW - 1_000);
+        let sent = NOW - 9 * 60 * 60 * 1000;
+        let found = newest(
+            KEY,
+            ROOM,
+            NOW,
+            [(live.as_str(), NOW - 59_000), (skewed.as_str(), sent)],
+        )
+        .unwrap();
+        assert_eq!(found.url, "https://live.trycloudflare.com");
     }
 
     #[test]
@@ -181,11 +209,12 @@ mod tests {
         let future = encode(KEY, ROOM, "https://x.example", NOW + CLOCK_SKEW_MS + 1);
         let plain_http = encode(KEY, ROOM, "http://evil.example", NOW);
         for text in [forged, wrong_room, stale, future, plain_http] {
-            assert!(verify(KEY, ROOM, NOW, &text).is_none(), "{text}");
+            assert!(verify(KEY, ROOM, NOW, NOW, &text).is_none(), "{text}");
         }
         let mut tampered: Announcement =
             serde_json::from_str(&encode(KEY, ROOM, "https://a.example", NOW)).unwrap();
         tampered.url = "https://b.example".into();
-        assert!(verify(KEY, ROOM, NOW, &serde_json::to_string(&tampered).unwrap()).is_none());
+        let tampered = serde_json::to_string(&tampered).unwrap();
+        assert!(verify(KEY, ROOM, NOW, NOW, &tampered).is_none());
     }
 }
