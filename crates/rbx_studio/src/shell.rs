@@ -619,6 +619,11 @@ pub(crate) struct Shell {
     /// One window per torn-out dock, kept in step with the layout by
     /// `shell::panel_window`.
     panel_windows: HashMap<layout::Panel, WindowHandle<gpui_kit::component::Root>>,
+    /// Whether one of the editor's dialogs is showing, which puts the
+    /// torn-out docks' windows away (`shell::panel_window`).
+    dialog_up: bool,
+    /// Where each window put away for a dialog was, to come back to.
+    stowed_panel_windows: HashMap<layout::Panel, Bounds<Pixels>>,
     /// Whether the main window held focus last frame, so a torn-out dock
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
@@ -1036,6 +1041,8 @@ impl Shell {
             last_named_layout: None,
             dragging_panel: None,
             panel_windows: HashMap::new(),
+            dialog_up: false,
+            stowed_panel_windows: HashMap::new(),
             window_was_active: true,
             output_collapsed,
             mcp: None,
@@ -2189,6 +2196,24 @@ impl Render for Shell {
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);
+        // Built ahead of the workspace, which puts the torn-out docks'
+        // windows away while any of these is showing.
+        let dialogs: Vec<AnyElement> = [
+            self.roblox_dialog(cx),
+            self.play_dialog(cx),
+            self.close_place_dialog(cx),
+            self.toolbox_notice_dialog(cx),
+            self.rig_dialog_overlay(cx),
+            self.animation_publish_overlay(cx),
+            self.animation_id_prompt_overlay(cx),
+            self.save_template_overlay(cx),
+            self.publish_result_overlay(cx),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let plugin_dialogs = self.plugin_dialogs(window, cx);
+        self.dialog_up = !dialogs.is_empty() || !plugin_dialogs.is_empty();
         v_flex()
             .size_full()
             .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
@@ -2316,17 +2341,10 @@ impl Render for Shell {
             // a popup nested in the tree's own scrolled, virtualised list
             // is clipped by it.
             .children(self.explorer_popups(cx))
-            .children(self.roblox_dialog(cx))
-            .children(self.play_dialog(cx))
-            .children(self.close_place_dialog(cx))
-            .children(self.toolbox_notice_dialog(cx))
-            .children(self.rig_dialog_overlay(cx))
-            .children(self.animation_publish_overlay(cx))
-            .children(self.animation_id_prompt_overlay(cx))
-            .children(self.save_template_overlay(cx))
-            .children(self.publish_result_overlay(cx))
+            .children(dialogs)
             .children(self.command_palette(cx))
-            .children(self.plugin_overlays(window, cx))
+            .children(self.floating_widget_overlays(window, cx))
+            .children(plugin_dialogs)
             .children(crate::updater::toast(cx))
             .children(self.theme_background(true))
     }

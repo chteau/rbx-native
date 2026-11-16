@@ -270,18 +270,17 @@ impl Shell {
         }
     }
 
-    /// Painted at the window root: the open prompt, floating widgets and
-    /// the Manage Plugins dialog.
-    pub(super) fn plugin_overlays(
+    /// Painted at the window root: the open prompt and the Manage Plugins
+    /// dialog.
+    pub(super) fn plugin_dialogs(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
-        let mut overlays = Vec::new();
-        overlays.extend(self.floating_widget_overlays(window, cx));
-        overlays.extend(self.plugin_prompt_overlay(window, cx));
-        overlays.extend(self.plugin_manager_overlay(window, cx));
-        overlays
+        let mut dialogs = Vec::new();
+        dialogs.extend(self.plugin_prompt_overlay(window, cx));
+        dialogs.extend(self.plugin_manager_overlay(window, cx));
+        dialogs
     }
 
     fn plugin_context(&self) -> rbx_lua::plugin::Context {

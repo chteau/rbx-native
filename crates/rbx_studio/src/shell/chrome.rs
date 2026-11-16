@@ -536,19 +536,24 @@ pub(crate) fn topbar_frame(title: SharedString) -> Div {
                 //
                 // `zoom_window` is the platform's own call
                 // (`PlatformWindow::zoom`), so this is macOS's zoom and
-                // Windows/Linux's maximize rather than one convention
-                // forced on both. It toggles on X11, Wayland and macOS;
-                // on Windows it only maximizes, which is GPUI's gap and
-                // not something this can paper over.
+                // Linux's maximize rather than one convention forced on
+                // both. Windows' double click is the system's own, below.
                 .on_mouse_move(|event: &MouseMoveEvent, window, _| {
                     if event.pressed_button == Some(MouseButton::Left) {
                         window.start_window_move();
                     }
                 })
-                .on_click(|event, window, _| {
-                    if event.click_count() >= 2 {
-                        window.zoom_window();
-                    }
+                // Windows has no `start_window_move` (GPUI leaves it a
+                // no-op there): the stretch answers the hit test as the
+                // caption instead, and the system moves the window, snaps
+                // it and maximizes or restores it on a double click.
+                .window_control_area(WindowControlArea::Drag)
+                .when(cfg!(not(target_os = "windows")), |this| {
+                    this.on_click(|event, window, _| {
+                        if event.click_count() >= 2 {
+                            window.zoom_window();
+                        }
+                    })
                 })
                 .child(
                     div()
@@ -716,6 +721,8 @@ pub(crate) fn panel_topbar(
                         window.start_window_move();
                     }
                 })
+                // Windows moves it as a caption, see `topbar_frame`.
+                .window_control_area(WindowControlArea::Drag)
                 .child(div().truncate().child(title)),
         )
         .child(

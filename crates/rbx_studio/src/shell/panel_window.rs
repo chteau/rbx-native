@@ -27,8 +27,9 @@ use super::Shell;
 #[cfg(target_os = "linux")]
 mod x11;
 
-/// How far in from one of the editor's left, right or bottom edges the top
-/// of a torn-out dock's window has to come for it to dock on that edge.
+/// How far in from the editor's left or right edge a torn-out dock's
+/// window has to come with that same side, or from its bottom edge with its
+/// top, for it to dock on that edge.
 const DROP_BAND: f32 = 48.;
 
 /// What a torn-out dock starts at. Wide enough for the Explorer's deeper
@@ -53,11 +54,15 @@ pub(crate) struct PanelWindow {
     /// Keeping where a plugin's window came to rest, see
     /// [`PanelWindow::remember_bounds`].
     remember: Option<Task<()>>,
+    /// The size the window last had: a change is a resize, a snap or a
+    /// maximize, never a drag, and none of those docks it.
+    size: Size<Pixels>,
     _moved: Subscription,
 }
 
 impl PanelWindow {
     fn open(shell: Entity<Shell>, panel: Panel, cx: &mut App) -> Option<WindowHandle<Root>> {
+        let stowed = shell.update(cx, |shell, _| shell.stowed_panel_windows.remove(&panel));
         let (bounds, min, saved) = match panel {
             Panel::Plugin(dock) => {
                 let bars = tokens::topbar_height() + tokens::dock_tabs_height();
@@ -74,6 +79,16 @@ impl PanelWindow {
                 (Bounds::centered(None, window_size, cx), None, None)
             }
         };
+        let (mut bounds, mut saved) = match stowed {
+            Some(stowed) => (stowed, Some(stowed)),
+            None => (bounds, saved),
+        };
+        // A spot in one of the editor's drop bands (saved before the editor
+        // was moved, say) would dock the window again the moment it opens.
+        if editor_bounds(cx).is_some_and(|editor| drop_edge(editor, bounds).is_some()) {
+            bounds = Bounds::centered(None, bounds.size, cx);
+            saved = None;
+        }
         let title = SharedString::from(panel.title());
         let options = WindowOptions {
             app_id: Some(crate::APP_ID.to_owned()),
@@ -107,6 +122,7 @@ impl PanelWindow {
                     grab: Rc::new(Cell::new(false)),
                     title,
                     remember: None,
+                    size: bounds.size,
                     _moved: cx.observe_window_bounds(
                         window,
                         |this: &mut PanelWindow, window, cx| {
@@ -158,20 +174,21 @@ impl PanelWindow {
 
     /// Drag back: GPUI's drag and drop is per window, so a tab can't be
     /// dragged from here into the editor. The window itself can be moved,
-    /// though, and once the top of it comes within [`DROP_BAND`] of the
-    /// editor's left, right or bottom edge the dock lands on that edge.
-    /// The middle of the editor is no drop zone, so a dock can still float
-    /// over the viewport.
+    /// though, and once its left or right side comes within [`DROP_BAND`]
+    /// of the editor's own, or its top within as much of the editor's
+    /// bottom, the dock lands on that edge. The sides rather than the
+    /// middle of the window: an editor filling the screen leaves no room
+    /// to bring a window's middle to its edge. The middle of the editor is
+    /// no drop zone, so a dock can still float over the viewport.
     fn dock_if_dropped(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let moved = window.bounds();
-        let top = point(moved.center().x, moved.top() + px(12.));
-        let Some(main) = cx.windows().first().copied() else {
+        if std::mem::replace(&mut self.size, moved.size) != moved.size {
+            return;
+        }
+        let Some(editor) = editor_bounds(cx) else {
             return;
         };
-        let Ok(editor) = main.update(cx, |_, window, _| window.bounds()) else {
-            return;
-        };
-        let Some(edge) = drop_edge(editor, top) else {
+        let Some(edge) = drop_edge(editor, moved) else {
             return;
         };
         let panel = self.panel;
@@ -181,16 +198,24 @@ impl PanelWindow {
     }
 }
 
-/// The editor edge `at` is within [`DROP_BAND`] of, inside the editor, the
-/// nearest one if it is near two.
-fn drop_edge(editor: Bounds<Pixels>, at: Point<Pixels>) -> Option<Edge> {
-    if !editor.contains(&at) {
+/// Where the editor's own window is.
+fn editor_bounds(cx: &mut App) -> Option<Bounds<Pixels>> {
+    let main = cx.windows().first().copied()?;
+    main.update(cx, |_, window, _| window.bounds()).ok()
+}
+
+/// The editor edge a window at `moved` has been brought to (see
+/// [`PanelWindow::dock_if_dropped`]), the nearest one if it is at two. Only
+/// while the top of the window is over the editor.
+fn drop_edge(editor: Bounds<Pixels>, moved: Bounds<Pixels>) -> Option<Edge> {
+    let top = moved.top() + px(12.);
+    if !editor.contains(&point(moved.center().x, top)) {
         return None;
     }
     [
-        (Edge::Left, at.x - editor.left()),
-        (Edge::Right, editor.right() - at.x),
-        (Edge::Bottom, editor.bottom() - at.y),
+        (Edge::Left, moved.left() - editor.left()),
+        (Edge::Right, editor.right() - moved.right()),
+        (Edge::Bottom, editor.bottom() - top),
     ]
     .into_iter()
     .filter(|(_, gap)| *gap < px(DROP_BAND))
@@ -296,7 +321,16 @@ impl Shell {
     /// The floating panels that get a window. A plugin dock whose widget
     /// is shut keeps its place in the layout but not its window, which
     /// comes back where it was when the widget opens again.
+    ///
+    /// None while one of the editor's dialogs is up: the dialog is drawn
+    /// inside the editor's window, and every platform keeps a floating
+    /// window above the one it belongs to, so a torn-out dock would sit
+    /// on top of the question it has to wait for. They are put away until
+    /// it is answered and come back where they were.
     fn windowed_panels(&self) -> Vec<Panel> {
+        if self.dialog_up {
+            return Vec::new();
+        }
         let shut = self.shut_plugin_docks();
         let floating = self.layout.floating().iter().copied();
         floating.filter(|panel| !shut.contains(panel)).collect()
@@ -324,11 +358,23 @@ impl Shell {
             }
             for panel in open.into_iter().filter(|panel| !wanted.contains(panel)) {
                 let window = handle.update(cx, |shell, _| shell.panel_windows.remove(&panel));
-                if let Some(window) = window {
-                    // The window is gone either way; a close that fails is
-                    // one the platform had already taken.
-                    let _ = window.update(cx, |_, window, _| window.remove_window());
-                }
+                let Some(window) = window else {
+                    continue;
+                };
+                // The window is gone either way; a close that fails is
+                // one the platform had already taken.
+                let Ok(bounds) = window.update(cx, |_, window, _| {
+                    let bounds = window.bounds();
+                    window.remove_window();
+                    bounds
+                }) else {
+                    continue;
+                };
+                handle.update(cx, |shell, _| {
+                    if shell.dialog_up {
+                        shell.stowed_panel_windows.insert(panel, bounds);
+                    }
+                });
             }
         });
     }
@@ -341,19 +387,13 @@ mod tests {
     #[::core::prelude::v1::test]
     fn a_window_brought_to_an_edge_docks_there_and_one_in_the_middle_floats() {
         let editor = Bounds::new(point(px(0.), px(0.)), size(px(1600.), px(1000.)));
-        assert_eq!(
-            drop_edge(editor, point(px(20.), px(400.))),
-            Some(Edge::Left)
-        );
-        assert_eq!(
-            drop_edge(editor, point(px(1590.), px(400.))),
-            Some(Edge::Right)
-        );
-        assert_eq!(
-            drop_edge(editor, point(px(800.), px(980.))),
-            Some(Edge::Bottom)
-        );
-        assert_eq!(drop_edge(editor, point(px(800.), px(400.))), None);
-        assert_eq!(drop_edge(editor, point(px(1700.), px(400.))), None);
+        let at = |x: f32, y: f32| Bounds::new(point(px(x), px(y)), size(px(340.), px(480.)));
+        assert_eq!(drop_edge(editor, at(20., 300.)), Some(Edge::Left));
+        // Pushed past the screen's edge, as with an editor filling it.
+        assert_eq!(drop_edge(editor, at(-120., 300.)), Some(Edge::Left));
+        assert_eq!(drop_edge(editor, at(1240., 300.)), Some(Edge::Right));
+        assert_eq!(drop_edge(editor, at(600., 960.)), Some(Edge::Bottom));
+        assert_eq!(drop_edge(editor, at(600., 300.)), None);
+        assert_eq!(drop_edge(editor, at(1500., 300.)), None);
     }
 }

@@ -1336,6 +1336,12 @@ type Color = (u8, u8, u8, u8);
 pub(crate) struct WindowBorderOffset {
     pub(crate) width_offset: Cell<i32>,
     pub(crate) height_offset: Cell<i32>,
+    // rbx-native fix: how far the client area sits in from the window's
+    // left and top edges, measured. Upstream assumes half of each offset,
+    // but a window with a hidden title bar has no frame at the top, so
+    // every reopen at saved bounds landed half the bottom frame higher.
+    left_offset: Cell<i32>,
+    top_offset: Cell<i32>,
 }
 
 impl WindowBorderOffset {
@@ -1354,6 +1360,11 @@ impl WindowBorderOffset {
             .set((window_rect.right - window_rect.left) - (client_rect.right - client_rect.left));
         self.height_offset
             .set((window_rect.bottom - window_rect.top) - (client_rect.bottom - client_rect.top));
+        // rbx-native fix, see `left_offset`.
+        let mut client_origin = POINT::default();
+        unsafe { ClientToScreen(hwnd, &mut client_origin).ok()? };
+        self.left_offset.set(client_origin.x - window_rect.left);
+        self.top_offset.set(client_origin.y - window_rect.top);
         Ok(())
     }
 }
@@ -1488,8 +1499,9 @@ fn calculate_window_rect(bounds: Bounds<DevicePixels>, border_offset: &WindowBor
         right: bounds.right().0,
         bottom: bounds.bottom().0,
     };
-    let left_offset = border_offset.width_offset.get() / 2;
-    let top_offset = border_offset.height_offset.get() / 2;
+    // rbx-native fix: the measured left/top, not half of each offset.
+    let left_offset = border_offset.left_offset.get();
+    let top_offset = border_offset.top_offset.get();
     let right_offset = border_offset.width_offset.get() - left_offset;
     let bottom_offset = border_offset.height_offset.get() - top_offset;
     rect.left -= left_offset;
@@ -1504,8 +1516,9 @@ fn calculate_client_rect(
     border_offset: &WindowBorderOffset,
     scale_factor: f32,
 ) -> Bounds<Pixels> {
-    let left_offset = border_offset.width_offset.get() / 2;
-    let top_offset = border_offset.height_offset.get() / 2;
+    // rbx-native fix: the measured left/top, not half of each offset.
+    let left_offset = border_offset.left_offset.get();
+    let top_offset = border_offset.top_offset.get();
     let right_offset = border_offset.width_offset.get() - left_offset;
     let bottom_offset = border_offset.height_offset.get() - top_offset;
     let left = rect.left + left_offset;

@@ -150,3 +150,11 @@ marked "rbx-native fix": the main and path-sprite blend states use
 Windows the DirectComposition swap chain came out opaque under every
 see-through theme. Re-apply it (two lines) when upgrading with `gpui-pre`.
 
+And one more in `src/window.rs`, marked the same way: `WindowBorderOffset`
+measures how far the client area sits in from the window's left and top
+edge (`ClientToScreen`) and `calculate_window_rect`/`calculate_client_rect`
+use that instead of half of each offset. A window with a hidden title bar
+has no frame at the top, so upstream opened it half the bottom frame
+(about 4 px at 125%) above the bounds it was given, and a window reopened
+at its saved bounds crept up every time.
+
