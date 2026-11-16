@@ -710,9 +710,34 @@ pub(crate) fn close_settings_host(shell: &Entity<Shell>, cx: &mut App) {
         return;
     }
     let window = *window;
+    drop_settings_host(vec![window], cx);
+}
+
+/// Closes Home's Settings window, loading or not, and its host, unless
+/// that host is the editor `keep` (its own Settings asked for again).
+pub(crate) fn close_home_settings(keep: EntityId, cx: &mut App) {
+    let windows = match cx.try_global::<SettingsHost>() {
+        None => return,
+        Some(SettingsHost::Loading(window)) => window.iter().map(|&w| w.into()).collect(),
+        Some(SettingsHost::Ready { window, shell }) => {
+            if shell.entity_id() == keep {
+                return;
+            }
+            let shown = shell
+                .upgrade()
+                .and_then(|shell| shell.read(cx).settings_window());
+            std::iter::once(*window).chain(shown).collect()
+        }
+    };
+    drop_settings_host(windows, cx);
+}
+
+fn drop_settings_host(windows: Vec<AnyWindowHandle>, cx: &mut App) {
     cx.remove_global::<SettingsHost>();
     cx.defer(move |cx| {
-        let _ = window.update(cx, |_, window, _| window.remove_window());
+        for window in windows {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
         let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(dir);
     });

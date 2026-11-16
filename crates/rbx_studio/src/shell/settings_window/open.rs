@@ -19,10 +19,17 @@ impl Shell {
         self.open_settings(cx);
     }
 
+    pub(crate) fn settings_window(&self) -> Option<AnyWindowHandle> {
+        self.settings_window.map(Into::into)
+    }
+
     pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
         if self.settings_opening {
             return;
         }
+        // Home's Settings, opened while this place loaded, gives way to
+        // this editor's, which applies changes to it live.
+        crate::close_home_settings(cx.entity_id(), cx);
         if let Some(existing) = self.settings_window {
             if bring_forward(existing.into(), cx) {
                 return;
@@ -123,6 +130,9 @@ pub(crate) fn fill_loading(handle: WindowHandle<Root>, shell: Entity<Shell>, cx:
         })
         .unwrap_or(false);
     if filled {
+        // Notifying the view alone left the window on "Loading settings…"
+        // on Windows until the pointer moved over it: redraw it whole.
+        let _ = handle.update(cx, |_, window, _| window.refresh());
         shell.update(cx, |shell, _| shell.settings_window = Some(handle));
     }
     filled
