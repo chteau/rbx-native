@@ -3,7 +3,7 @@
 //! the selection.
 
 use glam::Vec3;
-use gpui_kit::Context;
+use gpui_kit::{Context, KeyContext, Keystroke};
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_viewer::pick::{self, PartSurface, Ray};
 
@@ -14,6 +14,15 @@ use super::Shell;
 /// How far ahead the camera turns around when nothing is under the centre
 /// of the view.
 const EMPTY_FOCUS: f32 = 50.0;
+
+/// Focus Selection's key, which works from anywhere in the editor as in
+/// Studio, the Explorer and the docks as much as the 3D view, except while a
+/// text field (a Properties row, a script, the Command Bar) has the keyboard
+/// and the letter is being typed into it.
+pub(super) fn focus_key(keystroke: &Keystroke, contexts: &[KeyContext]) -> bool {
+    crate::shortcuts::pressed(crate::shortcuts::Command::FocusSelection, keystroke)
+        && !contexts.iter().any(|context| context.contains("Input"))
+}
 
 /// The View menu's fixed views: where the camera looks from, named the way
 /// Roblox names a part's faces (`Enum.NormalId`), so Front looks at a
@@ -123,6 +132,16 @@ pub(super) fn parts_box(dom: &WeakDom, roots: &[Ref]) -> Option<(Vec3, Vec3)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f_focuses_from_anywhere_but_a_text_field() {
+        let f = Keystroke::parse("f").unwrap();
+        let context = |source: &str| KeyContext::parse(source).unwrap();
+        assert!(focus_key(&f, &[]));
+        assert!(focus_key(&f, &[context("Workspace"), context("Tree")]));
+        assert!(!focus_key(&f, &[context("Workspace"), context("Input")]));
+        assert!(!focus_key(&Keystroke::parse("secondary-f").unwrap(), &[]));
+    }
 
     #[test]
     fn a_snap_keeps_the_focus_point_and_its_distance() {

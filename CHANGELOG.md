@@ -14,8 +14,10 @@
   from Settings restyle the open windows right away. Idle tabs stay
   readable on see-through themes. Files & Account shows your display name
   and @username and keeps the key card filled while it checks. Home shows
-  a loading dialog while a place opens and ignores double clicks. F
-  focuses the selection in the viewport. The Play sandbox keeps a name
+  a loading dialog while a place opens and ignores double clicks, and
+  Settings opened from Home comes up right away and only once. F focuses
+  the selection from anywhere in the editor, the Explorer too, as in
+  Studio, except while typing in a text field. The Play sandbox keeps a name
   you gave it and says where it came from the first time. F8 waits for
   the Roblox menu to close. The alpha readme says the Mac build is signed
   but not notarized. (@chteau)

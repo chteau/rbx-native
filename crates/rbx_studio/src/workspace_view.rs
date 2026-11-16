@@ -181,8 +181,6 @@ pub(crate) enum ViewportAction {
     /// A click on the orientation indicator's cube: turn the camera to look
     /// this way, around whatever it is looking at (see `Shell::snap_view`).
     SnapView(Vec3),
-    /// F over the view: frame the selection (see `Shell::focus_selection`).
-    FocusSelection,
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),
     /// Cursor motion with nothing held: `Shell` resolves what is under the
@@ -932,10 +930,6 @@ impl WorkspaceView {
             // so that `Alt`, the drag's Hold Orientation, with `R` turns
             // the part rather than jumping to the rotate increment field.
             if self.turn_key(&keystroke.key, keystroke.modifiers, cx) {
-                return;
-            }
-            if crate::shortcuts::pressed(crate::shortcuts::Command::FocusSelection, keystroke) {
-                cx.emit(ViewportAction::FocusSelection);
                 return;
             }
             let (key, modifiers) = tool_key(&keystroke.key, keystroke.modifiers, layout);
