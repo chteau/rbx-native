@@ -15,6 +15,7 @@ use crate::capture::{Offscreen, Rendered};
 use crate::changes::Roles;
 use crate::controller::{CameraFeel, Controller, Start, DEFAULT_SENSITIVITY};
 use crate::gizmo::Gizmo;
+use crate::gpu;
 use crate::input::{CameraInput, Input};
 use crate::load::{Loaded, Resident, Toggles};
 use crate::pick::Selected;
@@ -56,7 +57,14 @@ pub struct GuiCanvas {
 /// actually displayed, and only when [`Headless::tick`] says the view moved.
 pub struct Headless {
     offscreen: Offscreen,
+    /// The level the host asked for; what is drawn is capped by `rung`.
     quality: QualityLevel,
+    /// What the place fit in GPU memory at: its level caps every
+    /// [`Headless::set_quality`], and it steps down again when the GPU runs
+    /// out later on (see [`Headless::recover`]).
+    rung: gpu::Rung,
+    /// [`gpu::ooms`] as of the last build or step down.
+    ooms: u32,
     /// What [`Headless::set_calibration`] last set, kept for its band ends.
     calibration: crate::lighting::Calibration,
     /// What the embedder asked the renderer to show that the place itself does
@@ -160,18 +168,20 @@ impl Headless {
                 toggles,
                 ReflectionDatabase::embedded(),
                 View::default(),
+                QualityLevel::MAX,
             )
         }))
         .unwrap_or_else(|_| Err("the 3D renderer crashed building this place".to_owned()))
     }
 
     /// [`Headless::from_dom`] with the toggles, database and view given,
-    /// at the default quality and calibration.
+    /// at the default quality and calibration, and no higher than level `cap`.
     fn build(
         dom: &WeakDom,
         toggles: Toggles,
         database: ReflectionDatabase,
         view: View,
+        cap: u8,
     ) -> Result<Self, String> {
         let mut resident = Resident::streaming();
         let mut loaded = Loaded::from_dom(dom, &database, toggles, &mut resident)
@@ -190,10 +200,12 @@ impl Headless {
 
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();
-        let (offscreen, quality) = Offscreen::new(loaded.world(), QualityLevel::default(), &view)?;
+        let (offscreen, rung) = Offscreen::new(loaded.world(), cap, &view)?;
         let mut headless = Headless {
             offscreen,
-            quality,
+            quality: QualityLevel::default(),
+            rung,
+            ooms: gpu::ooms(),
             calibration: crate::lighting::Calibration::default(),
             view,
             bounds,
@@ -328,17 +340,58 @@ impl Headless {
     /// that view them, the shadow map and, where the sample count changes, the
     /// surface pipelines are rebuilt. Setting the level it is already at costs
     /// nothing.
+    ///
+    /// Never above the level the place fit in GPU memory at. After the GPU
+    /// ran out of memory, a change of level rebuilds everything rather than
+    /// re-viewing what may be invalid (see [`Headless::recover`]).
     pub fn set_quality(&mut self, level: QualityLevel) {
-        if level == self.quality {
+        if self.ooms != gpu::ooms() {
+            self.quality = level;
+            self.recover();
             return;
         }
+        let before = self.drawn_level();
         self.quality = level;
-        self.offscreen.set_quality(&self.profile());
+        if self.drawn_level() != before {
+            self.offscreen.set_quality(&self.profile());
+        }
     }
 
-    /// The current level's profile under the calibrated band ends.
+    fn drawn_level(&self) -> u8 {
+        self.quality.resolved().min(self.rung.level)
+    }
+
+    /// The drawn level's profile under the calibrated band ends.
     fn profile(&self) -> crate::quality::QualityProfile {
-        self.quality.profile_in(&self.calibration.quality_bands)
+        QualityLevel::Level(self.drawn_level()).profile_in(&self.calibration.quality_bands)
+    }
+
+    /// Steps one [`gpu::Rung`] down after the GPU ran out of memory outside a
+    /// build (a level switch, a bigger frame, assets landing), and makes again
+    /// everything that may have been left invalid: the frame targets, the
+    /// shadow maps and every bind group viewing them (through the level
+    /// switch), then the material arrays at the smaller size (through the
+    /// rebuild). One rung per call: running out again moves [`gpu::ooms`],
+    /// and the next frame steps on down.
+    fn recover(&mut self) {
+        self.ooms = gpu::ooms();
+        let from = gpu::Rung {
+            level: self.drawn_level(),
+            lean: gpu::lean().max(self.rung.lean),
+        };
+        let Some(rung) = from.step_down() else {
+            eprintln!("rbxview: out of GPU memory even at {from}, nothing smaller to try");
+            return;
+        };
+        eprintln!("rbxview: ran out of GPU memory, rebuilding at {rung}");
+        rung.apply();
+        self.rung = rung;
+        self.offscreen.drop_targets();
+        self.offscreen.set_quality(&self.profile());
+        self.offscreen.release();
+        self.offscreen.reload(self.loaded.world(), &self.view);
+        self.offscreen.release();
+        self.sync_skinning();
     }
 
     /// Recalibrates the renderer's tuned constants (see
@@ -356,9 +409,10 @@ impl Headless {
         }
     }
 
-    /// The level [`Headless::set_quality`] last set.
+    /// The level drawn: what [`Headless::set_quality`] last set, or lower
+    /// where the GPU had no memory for it.
     pub fn quality(&self) -> QualityLevel {
-        self.quality
+        QualityLevel::Level(self.drawn_level())
     }
 
     /// Swaps the viewport's main camera between perspective and orthographic
@@ -854,6 +908,9 @@ impl Headless {
     /// still in flight with [`Headless::take_frame`], or it never reaches the
     /// screen.
     pub fn render_frame(&mut self, width: u32, height: u32) -> Result<Option<Rendered>, String> {
+        if self.ooms != gpu::ooms() {
+            self.recover();
+        }
         self.offscreen.set_elapsed(self.start.elapsed());
         self.offscreen.queue_frame((width, height), self.from)
     }

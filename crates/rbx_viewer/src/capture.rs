@@ -12,7 +12,7 @@ use crate::camera::{self, Camera, Viewpoint};
 use crate::gizmo::Gizmo;
 use crate::gpu;
 use crate::pick::Selected;
-use crate::quality::{QualityLevel, QualityProfile};
+use crate::quality::QualityProfile;
 use crate::renderer::{Fill, Renderer, Segment, World};
 use crate::scene::{Bounds, Scene};
 use crate::view::View;
@@ -58,14 +58,10 @@ impl Offscreen {
     /// silently starting blank, see [`View`].
     ///
     /// Running out of GPU memory building it is not the end: it is built
-    /// again leaner (smaller material textures at the lowest quality level),
-    /// then on the next backend (see [`gpu::backend_order`]). The level it
-    /// ended up at comes back with it.
-    pub(crate) fn new(
-        world: World<'_>,
-        quality: QualityLevel,
-        view: &View,
-    ) -> Result<(Self, QualityLevel), String> {
+    /// again one [`gpu::Rung`] cheaper until it fits, starting at level
+    /// `cap`, then on the next backend (see [`gpu::backend_order`]). The rung
+    /// it ended up at comes back with it.
+    pub(crate) fn new(world: World<'_>, cap: u8, view: &View) -> Result<(Self, gpu::Rung), String> {
         let mut failure = String::from("no GPU backend to try");
         for backends in gpu::backend_order() {
             let instance = gpu::instance_for(backends);
@@ -78,16 +74,33 @@ impl Offscreen {
                     continue;
                 }
             };
-            for level in [quality, QualityLevel::Level(QualityLevel::MIN)] {
+            let mut rung = Some(gpu::Rung {
+                level: cap,
+                lean: gpu::lean(),
+            });
+            while let Some(trying) = rung {
+                trying.apply();
+                let ooms = gpu::ooms();
                 let scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-                let offscreen =
-                    Self::on_device(device.clone(), queue.clone(), world, &level.profile(), view);
-                let Some(err) = pollster::block_on(scope.pop()) else {
-                    return Ok((offscreen, level));
-                };
-                eprintln!("rbxview: building the scene at {level:?} ran out of GPU memory: {err}");
+                let offscreen = Self::on_device(
+                    device.clone(),
+                    queue.clone(),
+                    world,
+                    &trying.quality().profile(),
+                    view,
+                );
+                let caught = pollster::block_on(scope.pop());
+                // An error that slipped past the scope invalidated something
+                // just the same.
+                if caught.is_none() && gpu::ooms() == ooms {
+                    return Ok((offscreen, trying));
+                }
+                let err = caught.map_or_else(|| "Out of Memory".to_owned(), |err| err.to_string());
+                eprintln!("rbxview: building the scene at {trying} ran out of GPU memory: {err}");
                 failure = format!("the GPU ran out of memory: {err}");
-                gpu::lean_after_oom();
+                drop(offscreen);
+                gpu::release(&device, &queue);
+                rung = trying.step_down();
             }
         }
         Err(failure)
@@ -177,6 +190,20 @@ impl Offscreen {
     /// [`Renderer::set_isolated`].
     pub(crate) fn set_isolated(&mut self, isolated: bool) {
         self.renderer.set_isolated(isolated);
+    }
+
+    /// Lets go of every frame target, so the next frame makes them anew:
+    /// one the GPU ran out of memory making is invalid for good.
+    pub(crate) fn drop_targets(&mut self) {
+        self.discard();
+        self.target = None;
+        self.canvas = None;
+        self.frame = None;
+    }
+
+    /// See [`gpu::release`].
+    pub(crate) fn release(&self) {
+        gpu::release(&self.device, &self.queue);
     }
 
     /// Moves the renderer to another graphics quality level, in place: see
