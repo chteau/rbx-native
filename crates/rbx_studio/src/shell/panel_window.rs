@@ -152,7 +152,7 @@ impl PanelWindow {
             cx.background_executor()
                 .timer(Duration::from_millis(300))
                 .await;
-            let _ = shell.update(cx, |shell, _| shell.remember_plugin_window(dock, bounds));
+            shell.update(cx, |shell, _| shell.remember_plugin_window(dock, bounds));
         }));
     }
 
