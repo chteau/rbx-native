@@ -88,6 +88,14 @@ uninstall() {
 if [ "$os" = linux ]; then
   [ "$(uname -m)" = x86_64 ] || fail "RbxNative builds for x86_64 Linux only (this is $(uname -m))."
   target=x86_64-unknown-linux-gnu
+  # The build needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and up).
+  glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')
+  if [ -n "$glibc" ]; then
+    gmaj=${glibc%%.*}; gmin=${glibc#*.}; gmin=${gmin%%.*}
+    if [ "$gmaj" -lt 2 ] || { [ "$gmaj" -eq 2 ] && [ "$gmin" -lt 35 ]; }; then
+      fail "RbxNative needs glibc 2.35 or newer, this system has $glibc (Ubuntu 22.04, Debian 12, Fedora 36 or newer work)."
+    fi
+  fi
 else
   [ "$(uname -m)" = arm64 ] || fail "RbxNative builds for Apple Silicon Macs only (this is $(uname -m))."
   target=aarch64-apple-darwin
@@ -204,6 +212,27 @@ if [ -d "$linux_dir/share" ]; then
   say "RbxNative $version is installed. It's in your app menu, or run: rbxnative"
 else
   say "RbxNative $version is installed. Run: rbxnative"
+fi
+# Libraries the app loads at start. Desktops usually have them, minimal installs may not.
+# ldconfig often lives in /sbin, outside a normal user's PATH.
+ldc=$(command -v ldconfig 2>/dev/null || { [ -x /sbin/ldconfig ] && echo /sbin/ldconfig; } || true)
+missing=""
+if [ -n "$ldc" ] && "$ldc" -p >/dev/null 2>&1; then
+  for lib in libxkbcommon-x11.so.0 libvulkan.so.1; do
+    "$ldc" -p | grep -q "$lib" || missing="$missing $lib"
+  done
+fi
+if [ -n "$missing" ]; then
+  distro=$( (. /etc/os-release 2>/dev/null; echo "${ID:-} ${ID_LIKE:-}") )
+  case " $distro " in
+    *" debian "*|*" ubuntu "*) hint="sudo apt install libxkbcommon-x11-0 libvulkan1 mesa-vulkan-drivers" ;;
+    *" fedora "*|*" rhel "*) hint="sudo dnf install libxkbcommon-x11 vulkan-loader mesa-vulkan-drivers" ;;
+    *" arch "*) hint="sudo pacman -S libxkbcommon-x11 vulkan-icd-loader and your GPU's Vulkan driver (vulkan-radeon, vulkan-intel or nvidia-utils)" ;;
+    *" suse "*|*" opensuse "*) hint="sudo zypper in libxkbcommon-x11-0 libvulkan1 and libvulkan_radeon (AMD) or libvulkan_intel (Intel)" ;;
+    *) hint="install libxkbcommon-x11 and a Vulkan loader + driver from your package manager" ;;
+  esac
+  say "Heads up, missing:$missing. RbxNative won't start without them:"
+  say "  $hint"
 fi
 case ":${PATH:-}:" in
   *":$linux_bin:"*) ;;
