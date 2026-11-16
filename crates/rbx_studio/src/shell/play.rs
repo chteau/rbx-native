@@ -167,6 +167,8 @@ pub(super) struct Play {
     pub(super) confirm_close: bool,
     /// Play just made the sandbox experience and says so once.
     sandbox_notice: bool,
+    /// Output already said which sandbox Play publishes to this session.
+    origin_said: bool,
     /// The editor window Play was pressed in (X11 id or `HWND`); the client
     /// is embedded there, over the 3D view.
     main_window: Option<crate::pointer_lock::WindowId>,
@@ -218,6 +220,7 @@ impl Play {
             phase: Phase::Idle,
             confirm_close: false,
             sandbox_notice: false,
+            origin_said: false,
             main_window: None,
             gpui_window: None,
             live: live::Live::new(),
@@ -377,6 +380,7 @@ impl Shell {
                         // Logged too: the dialog can be hidden behind a
                         // Roblox window and missed.
                         if made.created {
+                            shell.play.origin_said = true;
                             shell.output.push(
                                 PLAY_SOURCE,
                                 Feedback::Output(format!(
@@ -401,6 +405,11 @@ impl Shell {
     }
 
     fn play_begin(&mut self, cx: &mut Context<Self>) {
+        if let Some(sandbox) = self.play.sandbox.filter(|_| !self.play.origin_said) {
+            self.play.origin_said = true;
+            self.output
+                .push(PLAY_SOURCE, Feedback::Output(play_sandbox::origin(sandbox)));
+        }
         self.play.attempt += 1;
         let attempt = self.play.attempt;
         self.play.phase = Phase::Starting("Checking for Roblox\u{2026}");

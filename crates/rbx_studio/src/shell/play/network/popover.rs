@@ -279,6 +279,10 @@ impl Shell {
             ui::button("network-reset", "Reset", Weight::Ghost, true).on_click(cx.listener(
                 |shell, _, window, cx| {
                     shell.play.network.reset();
+                    if let Some(popover) = &mut shell.play.network.popover {
+                        popover.saving = None;
+                        popover.save_error = None;
+                    }
                     shell.network_sync_inputs(window, cx);
                 },
             ))

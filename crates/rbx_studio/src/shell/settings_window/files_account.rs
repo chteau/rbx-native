@@ -36,7 +36,7 @@ pub(super) struct RecoveryControls {
     accounts_error: Option<SharedString>,
     /// The owner and key name last written to the accounts index, so a
     /// check is recorded once.
-    labelled: Option<(SharedString, SharedString)>,
+    labelled: Option<(SharedString, SharedString, SharedString)>,
 }
 
 impl RecoveryControls {
@@ -489,7 +489,7 @@ impl SettingsWindow {
                     "Name for test copies",
                     div().w(px(200.)).child(Input::new(&copy_input)),
                 )
-                .describe("What Play names your sandbox while it runs a test. {place} is the place\u{2019}s name; leave it empty to keep the sandbox\u{2019}s own name.")
+                .describe("What Play names a sandbox you picked yourself while it runs a test. The RbxNative Sandbox Play made for you always keeps its name. {place} is the place\u{2019}s name; leave it empty to keep the sandbox\u{2019}s own name.")
                 .changed(template != copy_name::DEFAULT, |shell, cx| {
                     shell.set_play_copy_name(copy_name::DEFAULT.to_owned(), cx)
                 })],
@@ -517,8 +517,8 @@ impl SettingsWindow {
             });
             let check = check.read(cx);
             let summary = launcher::key_summary(check, "stored in your system keychain");
-            // The last check's names stand in while this one runs, rather
-            // than a placeholder that then jumps to them.
+            // The last check's card stands in while this one runs, which
+            // only replaces it if Roblox now says something else.
             let index = key_store::accounts();
             let cached = index
                 .active
@@ -527,9 +527,13 @@ impl SettingsWindow {
             match cached {
                 Some(account) if launcher::key_checking(check) => launcher::KeySummary {
                     name: account.key_name.clone().into(),
-                    meta: format!("{} \u{b7} checking with Roblox\u{2026}", account.owner).into(),
+                    tag: (!account.ready_meta.is_empty()).then_some(KeyTag::Ready),
+                    meta: if account.ready_meta.is_empty() {
+                        format!("{} \u{b7} checking with Roblox\u{2026}", account.owner).into()
+                    } else {
+                        account.ready_meta.clone().into()
+                    },
                     owner: Some(account.owner.clone().into()),
-                    ..summary
                 },
                 _ => summary,
             }
@@ -631,9 +635,9 @@ impl SettingsWindow {
             .collect::<String>()
             .into();
         if let (Some(owner), Some(KeyTag::Ready)) = (&summary.owner, summary.tag) {
-            let labels = (owner.clone(), summary.name.clone());
+            let labels = (owner.clone(), summary.name.clone(), summary.meta.clone());
             if self.recovery.labelled.as_ref() != Some(&labels) {
-                key_store::label_active(&labels.0, &labels.1);
+                key_store::label_active(&labels.0, &labels.1, &labels.2);
                 self.recovery.labelled = Some(labels);
             }
         }

@@ -73,6 +73,14 @@ fn fetch_saved_key(
     Ok((newest, rbx_presence::secret::read(&dom)))
 }
 
+/// Whether filling in the presence key is an edit to save. Copying in the
+/// key the place already has on Roblox (`saved`, none here yet) only
+/// catches this copy up: no undo step, and quitting asks nothing. A fresh
+/// key or a new relay is the user's to save or publish.
+fn is_edit(had: bool, saved: bool) -> bool {
+    had || !saved
+}
+
 impl Shell {
     /// Makes sure the place holds the key and the relay, writing what is
     /// missing in one undoable edit: the key from the saved place when one
@@ -88,7 +96,13 @@ impl Shell {
         if let (Some(secret), Some(_)) = (&had, &relay) {
             return Some(secret.clone());
         }
-        self.push_history();
+        let edit = is_edit(had.is_some(), saved.is_some());
+        let unsaved = self.recovery.unsaved();
+        if edit {
+            self.push_history();
+        } else {
+            self.dom.take_changes();
+        }
         let minted = had.is_none() && saved.is_none();
         let secret = had
             .clone()
@@ -103,7 +117,11 @@ impl Shell {
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
         self.reflect_changes(&changes, cx);
-        self.record_history_change(changes);
+        if edit {
+            self.record_history_change(changes);
+        } else {
+            self.recovery.set_unsaved(unsaved);
+        }
         if !written {
             self.output.push(
                 "Presence",
@@ -288,8 +306,15 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::owner_relay;
+    use super::{is_edit, owner_relay};
     use rbx_presence::relay::{RelayConfig, RelayKind};
+
+    #[test]
+    fn taking_the_key_saved_on_roblox_leaves_the_place_saved() {
+        assert!(!is_edit(false, true));
+        assert!(is_edit(false, false));
+        assert!(is_edit(true, false));
+    }
 
     #[test]
     fn a_blank_url_is_auto_and_only_auto_goes_without_one() {

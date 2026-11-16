@@ -25,7 +25,15 @@ impl Shell {
         self.network_sync_inputs(window, cx);
     }
 
+    /// Save opens the name row, or closes it again when it is open.
     pub(super) fn network_start_save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(popover) = &mut self.play.network.popover {
+            if popover.saving.take().is_some() {
+                popover.save_error = None;
+                cx.notify();
+                return;
+            }
+        }
         let name = match &self.play.network.shown().choice {
             Choice::Saved(name) => name.clone(),
             _ => String::new(),

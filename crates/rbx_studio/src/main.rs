@@ -531,7 +531,18 @@ pub(crate) fn open_editor(
         cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     })
     .expect("failed to open the main window");
+    bring_to_front(cx);
     Ok(())
+}
+
+/// Makes this app the frontmost one on macOS, where nothing else does it
+/// for a binary started from a terminal, or once the keychain prompt at
+/// launch has had the keyboard: the window shows but its keys (Cmd+,,
+/// Cmd+Q) went to whichever app was in front until it was clicked.
+pub(crate) fn bring_to_front(cx: &mut App) {
+    #[cfg(target_os = "macos")]
+    cx.activate(true);
+    let _ = cx;
 }
 
 /// Home's Settings host: a hidden editor over an empty place (see

@@ -101,11 +101,14 @@ pub(crate) fn open_wizard(
         "Sign in to Roblox"
     };
     let options = options(title, (1040., 720.), None, cx);
-    cx.open_window(options, move |window, cx| {
-        let view = cx.new(|cx| wizard::Wizard::new(boot, plan, on_finish, window, cx));
-        cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
-    })
-    .ok()
+    let opened = cx
+        .open_window(options, move |window, cx| {
+            let view = cx.new(|cx| wizard::Wizard::new(boot, plan, on_finish, window, cx));
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
+        })
+        .ok();
+    crate::bring_to_front(cx);
+    opened
 }
 
 /// Home (1440×900, resizable down to 1100×700).
@@ -115,6 +118,7 @@ pub(crate) fn open_home(boot: Boot, cx: &mut App) {
         let view = cx.new(|cx| HomeWindow::new(boot, window, cx));
         cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     });
+    crate::bring_to_front(cx);
 }
 
 /// The editor's game picker (1040×720, resizable down to 760×520): Home's

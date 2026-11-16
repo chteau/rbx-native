@@ -12,6 +12,7 @@ fn add_active_adds_unlabelled_account_and_makes_it_active() {
             id,
             owner: String::new(),
             key_name: String::new(),
+            ready_meta: String::new(),
             fingerprint: "aaaa".to_owned(),
         })
     );
@@ -65,11 +66,12 @@ fn set_active_on_missing_id_is_false_and_changes_nothing() {
 fn label_active_ignores_empty_strings() {
     let mut accounts = Accounts::default();
     let (id, _) = accounts.add_active("aaaa");
-    assert!(accounts.label_active("Owner", "Key"));
-    accounts.label_active("", "Renamed");
+    assert!(accounts.label_active("Owner", "Key", "Owner · never expires"));
+    accounts.label_active("", "Renamed", "");
     let account = accounts.get(id).unwrap();
     assert_eq!(account.owner, "Owner");
     assert_eq!(account.key_name, "Renamed");
+    assert_eq!(account.ready_meta, "Owner · never expires");
 }
 
 #[test]
@@ -77,7 +79,7 @@ fn json_round_trip_preserves_index() {
     let mut accounts = Accounts::default();
     accounts.add_active("aaaa");
     let (id, _) = accounts.add_active("bbbb");
-    accounts.label_active("Owner", "Key");
+    accounts.label_active("Owner", "Key", "Owner · never expires");
     assert!(accounts.set_active(id));
     let restored = Accounts::from_json(&accounts.to_json());
     assert_eq!(restored, accounts);

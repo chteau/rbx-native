@@ -294,6 +294,9 @@ impl Shell {
         };
         if let Some(popover) = &mut self.play.network.popover {
             popover.status = status;
+            // Whatever was being named is applied now; the name row goes.
+            popover.saving = None;
+            popover.save_error = None;
         }
         cx.notify();
     }

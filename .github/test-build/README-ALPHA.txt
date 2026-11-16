@@ -4,8 +4,8 @@ rbx-native alpha test build
 Thanks for testing! This is a build straight from CI. The Windows and Linux
 builds are unsigned, and the macOS one is signed with RbxNative's own
 certificate but not notarized by Apple, so your OS will be suspicious of it
-the first time. It is a single program, nothing to install: put it in any
-folder and run it from there.
+the first time. On Windows and Linux it is a single program, nothing to
+install: put it in any folder and run it from there.
 
 Opening it
 ----------
@@ -17,12 +17,12 @@ Windows
   (WinDivert is LGPLv3, see WinDivert-LICENSE.txt).
 
 macOS (Apple Silicon)
-  The zip drops the executable bit, and macOS quarantines downloads that
-  Apple hasn't notarized, so in a Terminal, in the folder you unzipped into:
-    chmod +x RbxNative
-    xattr -dr com.apple.quarantine RbxNative
-    ./RbxNative
-  Or right-click RbxNative in Finder, choose Open, then Open again.
+  Open the .dmg and drag RbxNative onto Applications, replacing the one
+  already there. macOS quarantines downloads that Apple hasn't notarized,
+  so the first time, right-click RbxNative in Applications, choose Open,
+  then Open again. Or, in a Terminal:
+    xattr -dr com.apple.quarantine /Applications/RbxNative.app
+    open /Applications/RbxNative.app
 
 Linux (x86_64, X11)
   It needs the X11/xkbcommon/fontconfig libraries and a Vulkan driver.

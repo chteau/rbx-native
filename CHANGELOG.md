@@ -20,7 +20,13 @@
   Studio, except while typing in a text field. The Play sandbox keeps a name
   you gave it and says where it came from the first time. F8 waits for
   the Roblox menu to close. The alpha readme says the Mac build is signed
-  but not notarized. (@chteau)
+  but not notarized. From the Mac retest: Home comes to the front so Cmd+,
+  and Cmd+Q reach it, opening a place no longer marks it unsaved by copying
+  in the presence key it already has on Roblox, the key card shows its last
+  ready state straight away while it checks again, the first Play says
+  which sandbox it publishes to, F8 pressed with the Roblox menu open opens
+  the panel once the menu closes on the Mac too, and the network popover's
+  name row goes away once a preset is saved or applied. (@chteau)
 
 ## 2026-11-14
 
