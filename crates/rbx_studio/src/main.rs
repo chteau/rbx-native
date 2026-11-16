@@ -581,7 +581,7 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
     cx.set_global(SettingsHost::Loading(Some(window)));
     cx.spawn(async move |cx| {
         let loaded = cx.background_spawn(async { settings_place() }).await;
-        let _ = cx.update(|cx| host_settings(window, loaded, cx));
+        cx.update(|cx| host_settings(window, loaded, cx));
     })
     .detach();
 }
