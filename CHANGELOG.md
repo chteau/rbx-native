@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-16
+
+- **Windows: menus show over the running game, Save As opens centred.**
+  Menus, context menus and popovers over the 3D view used to draw under
+  the embedded Roblox window; they're now cut out of it while open. File
+  dialogs open in the middle of the editor instead of the screen's corner,
+  and killing the editor no longer leaves the embedded game running
+  without a window. (@chteau)
+
 ## 2026-11-14
 
 - **Installers.** Every release now has a Windows setup (per user, no
