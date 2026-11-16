@@ -1291,10 +1291,24 @@ impl Shell {
         }
         // macOS: one helper connection per Play, closed here so its rules go
         // with the test. The installed helper means reconnecting costs no
-        // prompt (Linux keeps its namespace, Windows its elevated helper).
+        // prompt (Linux keeps its namespace). Windows keeps its elevated
+        // helper for the same reason, a second UAC prompt per Play, but has
+        // it let go of the WinDivert driver until the next shaped Play.
         #[cfg(target_os = "macos")]
         {
             self.play.network.shaper = None;
+        }
+        #[cfg(windows)]
+        {
+            let idled = self
+                .play
+                .network
+                .shaper
+                .as_mut()
+                .map(|shaper| shaper.idle());
+            if matches!(idled, Some(Err(_))) {
+                self.play.network.shaper = None;
+            }
         }
         self.play.job_id = None;
         self.play.stats = PlayStats::default();

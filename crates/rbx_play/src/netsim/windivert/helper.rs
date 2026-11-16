@@ -3,10 +3,16 @@
 //!
 //! It talks to the editor over a named pipe with the integer line protocol
 //! from `netsim::lines`, and exits as soon as the editor process goes away.
+//!
+//! It outlives a Play on purpose: starting it again would mean a second
+//! administrator prompt on every shaped Play. What it lets go of at Stop
+//! (`idle`) is the driver: every WinDivert handle closes and the service
+//! is stopped, then the next `out`/`in` loads it again.
 
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -36,6 +42,8 @@ struct Lines {
 }
 
 struct Shared {
+    /// False between a Play's Stop (`idle`) and the next conditions.
+    active: AtomicBool,
     conditions: Mutex<NetConditions>,
     lines: Mutex<Lines>,
     wake: Condvar,
@@ -86,6 +94,7 @@ fn serve(args: &[String]) -> i32 {
     }
 
     let shared = Arc::new(Shared {
+        active: AtomicBool::new(true),
         conditions: Mutex::new(NetConditions::default()),
         lines: Mutex::new(Lines {
             out: DelayLine::new(),
@@ -113,11 +122,17 @@ fn serve(args: &[String]) -> i32 {
         let reply: &[u8] = match lines::parse(&line) {
             Some(Line::Out(w)) => {
                 lock(&shared.conditions).outbound = w.to_way();
+                shared.active.store(true, Ordering::Relaxed);
                 b"ok out\n"
             }
             Some(Line::In(w)) => {
                 lock(&shared.conditions).inbound = w.to_way();
+                shared.active.store(true, Ordering::Relaxed);
                 b"ok in\n"
+            }
+            Some(Line::Idle) => {
+                shared.active.store(false, Ordering::Relaxed);
+                b"ok idle\n"
             }
             Some(Line::Stop) => return 0,
             _ => b"error out malformed\n",
@@ -170,12 +185,27 @@ fn watch_parent(pid: u32) {
 /// handle first and only then shuts the old one's receive side: packets are
 /// never left undiverted in between, and the old handle stays alive (via
 /// queued items) until its delayed packets are reinjected.
+///
+/// While idle no port is diverted, so the last handle closes and the driver
+/// is stopped; going active again notes its state before the next open
+/// loads it.
 fn port_watcher(api: &Arc<Api>, shared: &Arc<Shared>) {
     let mut ports: Vec<u16> = Vec::new();
     let mut current: Option<Arc<Handle>> = None;
     let mut priority: i16 = 1;
+    // The start-up probe loaded it.
+    let mut loaded = true;
     loop {
-        let now = udp::ports_of(&udp::client_pids());
+        let active = shared.active.load(Ordering::Relaxed);
+        if active && !loaded {
+            driver::note_state();
+            loaded = true;
+        }
+        let now = if active {
+            udp::ports_of(&udp::client_pids())
+        } else {
+            Vec::new()
+        };
         if now != ports {
             let next_priority = if priority == 1 { 2 } else { 1 };
             let next = if now.is_empty() {
@@ -197,6 +227,10 @@ fn port_watcher(api: &Arc<Api>, shared: &Arc<Shared>) {
                 priority = next_priority;
                 ports = now;
             }
+        }
+        if !active && loaded && current.is_none() {
+            driver::release();
+            loaded = false;
         }
         std::thread::sleep(PORT_POLL);
     }
@@ -321,7 +355,9 @@ mod driver {
         OURS.store(!running, Ordering::Relaxed);
     }
 
-    /// Stops the driver if this helper started it.
+    /// Stops the driver if this helper started it. Asked while handles are
+    /// still open (packets waiting in the delay lines hold the old one),
+    /// Windows finishes the stop once the last of them closes.
     pub(super) fn release() {
         if !OURS.swap(false, Ordering::Relaxed) {
             return;

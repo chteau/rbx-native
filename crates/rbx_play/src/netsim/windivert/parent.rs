@@ -208,6 +208,21 @@ impl Shaper {
         Ok(())
     }
 
+    /// Play stopped: the helper closes its WinDivert handles and stops the
+    /// driver, and stays up so the next shaped Play needs no second
+    /// administrator prompt. The next [`Shaper::apply`] loads the driver
+    /// again.
+    pub fn idle(&mut self) -> Result<(), ShaperError> {
+        self.pipe
+            .write_all(b"idle\n")
+            .and_then(|()| self.pipe.flush())
+            .map_err(|e| err(format!("helper pipe failed: {e}")))?;
+        match self.read_line()?.as_str() {
+            "ok idle" => Ok(()),
+            reply => Err(err(reply)),
+        }
+    }
+
     /// Whether the elevated helper process is still running.
     pub fn alive(&mut self) -> bool {
         process_running(self.process)
