@@ -62,32 +62,10 @@ case "$target" in
     ;;
   *apple-darwin)
     app="$stage/RbxNative.app"
-    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-    cp "$bin/rbxstudio" "$app/Contents/MacOS/RbxNative"
-    # Made by make-icns.sh from the Flatpak's app SVG.
-    cp .github/release/RbxNative.icns "$app/Contents/Resources/RbxNative.icns"
-    chmod 755 "$app/Contents/MacOS/RbxNative"
-    sed "s/@VERSION@/$version/g" .github/release/Info.plist > "$app/Contents/Info.plist"
-    # RbxNative's own certificate (ad-hoc without the secrets): the same
-    # identity every release keeps Keychain and Accessibility grants.
-    .github/release/macos-sign.sh "$app"
+    .github/release/macos-app.sh "$bin/rbxstudio" "$version" "$app"
     # Without this, macOS tar adds ._* AppleDouble files that break the seal.
     COPYFILE_DISABLE=1 tar -C "$work" -czf "$out/$name.tar.gz" "$name"
-
-    dmg_root="$work/dmg"
-    mkdir "$dmg_root"
-    ditto "$app" "$dmg_root/RbxNative.app"
-    ln -s /Applications "$dmg_root/Applications"
-    dmg="$out/RbxNative-$version-macos-arm64.dmg"
-    # hdiutil on CI runners sometimes fails with "Resource busy"; a retry
-    # gets through.
-    for attempt in 1 2 3; do
-      hdiutil create -volname "RbxNative" -srcfolder "$dmg_root" -fs HFS+ \
-        -format UDZO -ov "$dmg" && break
-      [ "$attempt" = 3 ] && exit 1
-      sleep 5
-    done
-    .github/release/macos-sign.sh "$dmg"
+    .github/release/macos-dmg.sh "$app" "$out/RbxNative-$version-macos-arm64.dmg"
     ;;
   *)
     cp "$bin/rbxstudio" "$stage/rbxnative"
