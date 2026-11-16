@@ -181,6 +181,10 @@ impl Embedded {
                 return Err(failed("SetParent"));
             }
         }
+        let mut pid = 0u32;
+        // SAFETY: `pid` is a valid out pointer.
+        unsafe { GetWindowThreadProcessId(h, &mut pid) };
+        crate::child_job::kill_pid_with_editor(pid);
         let this = Embedded {
             window,
             style,

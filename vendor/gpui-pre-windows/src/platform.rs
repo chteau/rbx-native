@@ -1426,15 +1426,23 @@ fn file_save_dialog(
 
 /// rbx-native addition: shows a file dialog centred over `owner`. The shell
 /// puts it at the owner's top-left corner, which for an editor filling the
-/// screen is the screen's corner, far from where the click was. A CBT hook
-/// on this thread moves the dialog as it first activates: it is placed by
-/// then, and the move happens before it is drawn, however slow it is to load.
+/// screen is the screen's corner, far from where the click was. A hook on
+/// this thread moves the dialog as it is about to show: it has its final
+/// size by then (it grows to its remembered size after it first activates)
+/// and is not drawn yet, however slow it is to load.
 fn show_centered(dialog: &IFileDialog, owner: Option<HWND>) -> Result<()> {
     let hook = owner.and_then(|owner| {
         DIALOG_OWNER.set(Some(owner.0 as isize));
-        unsafe { SetWindowsHookExW(WH_CBT, Some(center_on_activate), None, GetCurrentThreadId()) }
-            .context("failed to hook the file dialog")
-            .log_err()
+        unsafe {
+            SetWindowsHookExW(
+                WH_CALLWNDPROCRET,
+                Some(center_on_show),
+                None,
+                GetCurrentThreadId(),
+            )
+        }
+        .context("failed to hook the file dialog")
+        .log_err()
     });
     let shown = unsafe { dialog.Show(owner) };
     if let Some(hook) = hook {
@@ -1450,17 +1458,20 @@ thread_local! {
     static DIALOG_OWNER: Cell<Option<isize>> = const { Cell::new(None) };
 }
 
-/// rbx-native addition, see [`show_centered`]. The first top-level window
-/// other than the owner to activate on this thread is the dialog.
-unsafe extern "system" fn center_on_activate(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code == HCBT_ACTIVATE as i32 {
-        let window = HWND(wparam.0 as _);
-        if let Some(owner) = DIALOG_OWNER.get().map(|owner| HWND(owner as _))
-            && window != owner
-            && unsafe { GetAncestor(window, GA_ROOT) } == window
+/// rbx-native addition, see [`show_centered`]. The dialog is the window
+/// owned by the editor that gets shown; matching the owner, rather than
+/// taking whatever activates first, leaves other windows on this thread
+/// alone.
+unsafe extern "system" fn center_on_show(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        let message = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
+        if message.message == WM_SHOWWINDOW
+            && message.wParam.0 != 0
+            && let Some(owner) = DIALOG_OWNER.get().map(|owner| HWND(owner as _))
+            && unsafe { GetWindow(message.hwnd, GW_OWNER) }.is_ok_and(|window| window == owner)
         {
             DIALOG_OWNER.set(None);
-            center_over(window, owner).log_err();
+            center_over(message.hwnd, owner).log_err();
         }
     }
     unsafe { CallNextHookEx(None, code, wparam, lparam) }

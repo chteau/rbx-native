@@ -201,6 +201,18 @@ pub(super) struct Play {
     /// Sober said it can't join games during this run of the editor and
     /// Roséline took over; later Plays go straight to Roséline.
     sober_down: bool,
+    /// The window `RBX_PLAY_EMBED_TEST` embedded, once attached.
+    #[cfg(windows)]
+    embed_test: Option<EmbedTest>,
+}
+
+/// `Shell::play_embed_test`'s window, kept where `play_update_holes` finds
+/// it like a running session's.
+#[cfg(windows)]
+struct EmbedTest {
+    embedded: rbx_play::embed::Embedded,
+    rect: session::rbx_play_rect::Rect,
+    corner: u32,
 }
 
 impl Play {
@@ -233,6 +245,8 @@ impl Play {
             attempt: 0,
             pending_launcher: None,
             sober_down: false,
+            #[cfg(windows)]
+            embed_test: None,
         }
     }
 }
@@ -828,6 +842,8 @@ impl Shell {
             return;
         }
         self.play.main_window = crate::pointer_lock::window_id(window);
+        self.play.gpui_window = Some(window.window_handle().window_id());
+        self.play.scale = window.scale_factor();
         cx.spawn(async move |this, cx| {
             let target = loop {
                 cx.background_executor().timer(POLL).await;
@@ -853,16 +869,31 @@ impl Shell {
                 Err(err) => return eprintln!("rbxstudio: embed test: {err}"),
             };
             eprintln!("rbxstudio: embed test: attached at {:?}", target.rect);
-            let mut last = target.rect;
-            while embedded.alive() {
+            let _ = this.update(cx, |shell, cx| {
+                shell.play.embed_test = Some(EmbedTest {
+                    embedded,
+                    rect: target.rect,
+                    corner: target.corner,
+                });
+                cx.notify();
+            });
+            loop {
                 cx.background_executor().timer(POLL).await;
-                let Ok(Some(target)) = this.update(cx, |shell, cx| shell.play_embed_target(cx))
-                else {
-                    break;
-                };
-                if target.rect != last {
-                    let _ = embedded.set_rect(target.rect);
-                    last = target.rect;
+                let alive = this.update(cx, |shell, cx| {
+                    let target = shell.play_embed_target(cx);
+                    let test = shell.play.embed_test.as_mut()?;
+                    let target = target.filter(|_| test.embedded.alive())?;
+                    if target.rect != test.rect {
+                        let _ = test.embedded.set_rect(target.rect);
+                        test.rect = target.rect;
+                    }
+                    test.corner = target.corner;
+                    shell.play_update_holes();
+                    Some(())
+                });
+                if !matches!(alive, Ok(Some(()))) {
+                    let _ = this.update(cx, |shell, _| shell.play.embed_test = None);
+                    return;
                 }
             }
         })
@@ -1161,21 +1192,35 @@ impl Shell {
         })
     }
 
+    /// A window is embedded over the 3D view (a running Play, or
+    /// `RBX_PLAY_EMBED_TEST`), so popups need cutting out of it each frame.
+    #[cfg(any(target_os = "linux", windows))]
+    pub(in crate::shell) fn play_embedding(&self) -> bool {
+        #[cfg(windows)]
+        if self.play.embed_test.is_some() {
+            return true;
+        }
+        self.play.phase == Phase::Running
+    }
+
     /// Cuts the editor's popups out of the embedded game window, so they
     /// show above it (`gpui_base::occlusion` records where they were
     /// painted). Called after every frame while embedded and on each poll.
     #[cfg(any(target_os = "linux", windows))]
     pub(in crate::shell) fn play_update_holes(&mut self) {
-        let (Some(window), Some(running)) = (self.play.gpui_window, self.play.session.as_ref())
+        let embedded = self.play.session.as_ref().and_then(|running| {
+            let embedded = running.embedded.as_ref().filter(|_| !running.hidden)?;
+            Some((embedded, running.last_rect?, running.corner))
+        });
+        #[cfg(windows)]
+        let embedded = embedded.or_else(|| {
+            let test = self.play.embed_test.as_ref()?;
+            Some((&test.embedded, test.rect, test.corner))
+        });
+        let (Some(window), Some((embedded, rect, corner))) = (self.play.gpui_window, embedded)
         else {
             return;
         };
-        let (Some(embedded), Some(rect)) = (&running.embedded, running.last_rect) else {
-            return;
-        };
-        if running.hidden {
-            return;
-        }
         let scale = self.play.scale;
         let mut holes: Vec<rbx_play::embed::Rect> = gpui_base::occlusion::rects(window)
             .into_iter()
@@ -1196,7 +1241,7 @@ impl Shell {
             })
             .collect();
         holes.extend(
-            crate::device_sim::corner_holes(rect.width, rect.height, running.corner)
+            crate::device_sim::corner_holes(rect.width, rect.height, corner)
                 .into_iter()
                 .map(|hole| rbx_play::embed::Rect {
                     x: hole.x,
