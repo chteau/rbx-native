@@ -29,7 +29,9 @@ jobs:
             exe: rbxstudio
             name: RbxNative
           - os: linux
-            runner: ubuntu-latest # x86_64-unknown-linux-gnu
+            # Oldest runner GitHub still has, same as release.yml, so testers on
+            # older distros (glibc 2.35+) can run it.
+            runner: ubuntu-22.04 # x86_64-unknown-linux-gnu
             exe: rbxstudio
             name: rbxnative
     steps:
