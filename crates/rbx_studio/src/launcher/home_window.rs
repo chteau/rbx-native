@@ -75,6 +75,11 @@ pub(super) enum Dialog {
     Downloading {
         experience: Experience,
     },
+    /// The editor is loading `name`: Home blocks while it does, so this is
+    /// on screen first.
+    Opening {
+        name: String,
+    },
     Error {
         experience: Option<Experience>,
         title: String,

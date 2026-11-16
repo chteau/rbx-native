@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-16
+
+- **Polish from the Mac and Windows test runs.** The graph view follows the
+  theme (canvas, nodes, pins and headers, light themes too) and says
+  "syntax error on line N" instead of "no errors" when the script won't
+  parse. Manage Plugins uses the same toggles as Settings. A plugin's
+  own UI parented to nil (F3X's dock, Lemonade's widgets) no longer marks
+  the place unsaved or draws a stray strip over the viewport, and
+  `Destroying` fires before an instance goes, so Fusion plugins clean up
+  without "Parent property is locked" errors. Network Reset goes back to
+  Off. Clicking a breakpoint in the gutter removes it. Theme changes made
+  from Settings restyle the open windows right away. Idle tabs stay
+  readable on see-through themes. Files & Account shows your display name
+  and @username and keeps the key card filled while it checks. Home shows
+  a loading dialog while a place opens and ignores double clicks. F
+  focuses the selection in the viewport. The Play sandbox keeps a name
+  you gave it and says where it came from the first time. F8 waits for
+  the Roblox menu to close. The alpha readme says the Mac build is signed
+  but not notarized. (@chteau)
+
 ## 2026-11-14
 
 - **Installers.** Every release now has a Windows setup (per user, no

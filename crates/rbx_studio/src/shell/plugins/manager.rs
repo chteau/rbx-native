@@ -15,7 +15,6 @@ use super::catalog::Tab;
 use super::discover::{self, Found, Kind};
 use crate::launcher::ui::{self, Weight};
 use crate::shell::Shell;
-use crate::tokens;
 
 mod installed;
 
@@ -115,25 +114,6 @@ pub(super) fn kind_label(kind: &Kind) -> &'static str {
         Kind::Roblox => "Roblox",
         Kind::NativeLuau => "Native Luau",
         Kind::NativeWasm => "Native WASM",
-    }
-}
-
-pub(super) fn switch(id: SharedString, on: bool) -> Stateful<Div> {
-    let track = div()
-        .id(id)
-        .w(px(34.))
-        .h(px(18.))
-        .rounded_full()
-        .cursor_pointer()
-        .flex()
-        .items_center()
-        .px(px(2.))
-        .bg(if on { ui::accent() } else { tokens::border() });
-    let thumb = div().size(px(14.)).rounded_full().bg(tokens::text());
-    if on {
-        track.justify_end().child(thumb)
-    } else {
-        track.justify_start().child(thumb)
     }
 }
 

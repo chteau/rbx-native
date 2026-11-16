@@ -31,12 +31,12 @@ fn editing_a_value_makes_it_custom_but_reshowing_it_does_not() {
 }
 
 #[test]
-fn reset_stages_ideal_fiber_without_applying() {
+fn reset_stages_off_without_applying() {
     let mut network = NetworkSim::new(Vec::new());
     network.stage(Choice::BuiltIn(4));
     network.commit();
     network.reset();
-    assert_eq!(network.shown().choice, Choice::BuiltIn(0));
+    assert_eq!(network.shown().choice, Choice::Off);
     assert_eq!(network.applied.choice, Choice::BuiltIn(4));
 }
 
@@ -60,7 +60,7 @@ fn save_rejects_reserved_names_and_replaces_its_own() {
 }
 
 #[test]
-fn delete_removes_the_saved_preset_and_stages_ideal_fiber() {
+fn delete_removes_the_saved_preset_and_stages_off() {
     let mut network = NetworkSim::new(Vec::new());
     network.edit(Way::Outbound, Field::Jitter, 5.0);
     network.save("Jittery").unwrap();
@@ -70,6 +70,6 @@ fn delete_removes_the_saved_preset_and_stages_ideal_fiber() {
     network.stage(Choice::Saved("Jittery".to_owned()));
     assert!(network.delete());
     assert!(network.saved.is_empty());
-    assert_eq!(network.shown().choice, Choice::BuiltIn(0));
+    assert_eq!(network.shown().choice, Choice::Off);
     assert!(!network.delete());
 }

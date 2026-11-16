@@ -327,6 +327,12 @@ impl WeakDom {
         });
     }
 
+    /// Every instance parented to nil (the tops only, not their
+    /// descendants), in no particular order.
+    pub fn unparented_refs(&self) -> impl Iterator<Item = Ref> + '_ {
+        self.unparented.iter().copied()
+    }
+
     /// Moves `child` to sit right after `anchor` among their shared parent's
     /// children (or among the roots). A no-op unless the two are distinct
     /// siblings. Logs nothing of its own: it is meant for a child whose

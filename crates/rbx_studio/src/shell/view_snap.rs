@@ -1,8 +1,10 @@
 //! Snapping the camera square-on: a click on the orientation indicator's
-//! cube, or one of the View menu's fixed views.
+//! cube, or one of the View menu's fixed views; and Focus (F), which frames
+//! the selection.
 
 use glam::Vec3;
 use gpui_kit::Context;
+use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_viewer::pick::{self, PartSurface, Ray};
 
 use crate::workspace_view::snapped_forward;
@@ -66,10 +68,56 @@ impl Shell {
             .look_at(eye.to_array(), target.to_array());
     }
 
+    /// Focus: frames everything selected, a model as the box round all its
+    /// parts, keeping the way the camera looks, as Studio's F does.
+    pub(super) fn focus_selection(&mut self, cx: &mut Context<Self>) {
+        let Some((low, high)) = parts_box(&self.dom, self.selected_all()) else {
+            return;
+        };
+        let view = self.viewport.read(cx);
+        let Some(pose) = view.pose() else {
+            return;
+        };
+        let centre = (low + high) * 0.5;
+        let reach = ((high - low).length() * 0.5).max(1.0);
+        // Far enough that the box's bounding sphere fits the view's height.
+        let distance = reach / (pose.fov_degrees.to_radians() * 0.5).sin();
+        let eye = centre - pose.basis().0 * distance;
+        view.look_at(eye.to_array(), centre.to_array());
+    }
+
     /// The View menu's Top, Front and Right.
     pub(crate) fn preset_view(&mut self, view: PresetView, cx: &mut Context<Self>) {
         self.snap_view(view.forward(), cx);
     }
+}
+
+/// The world box round every part under (and including) `roots`, each
+/// part's own box turned by its rotation; `None` when there is no part.
+pub(super) fn parts_box(dom: &WeakDom, roots: &[Ref]) -> Option<(Vec3, Vec3)> {
+    let (mut low, mut high) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    let mut pending = roots.to_vec();
+    while let Some(at) = pending.pop() {
+        let Some(instance) = dom.get(at) else {
+            continue;
+        };
+        pending.extend_from_slice(instance.children());
+        let properties = instance.properties();
+        let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
+            continue;
+        };
+        let size = match properties.get("size") {
+            Some(Variant::Vector3(size)) => Vec3::new(size.x, size.y, size.z),
+            _ => Vec3::ONE,
+        };
+        let r = cframe.rotation;
+        let row = |i: usize| Vec3::new(r[i], r[i + 1], r[i + 2]).abs().dot(size * 0.5);
+        let half = Vec3::new(row(0), row(3), row(6));
+        let centre = Vec3::new(cframe.position.x, cframe.position.y, cframe.position.z);
+        low = low.min(centre - half);
+        high = high.max(centre + half);
+    }
+    (low.x <= high.x).then_some((low, high))
 }
 
 #[cfg(test)]
@@ -91,5 +139,38 @@ mod tests {
         assert_eq!(PresetView::Front.forward(), Vec3::Z);
         assert_eq!(PresetView::Right.forward(), Vec3::NEG_X);
         assert_eq!(PresetView::Top.forward(), Vec3::NEG_Y);
+    }
+
+    #[test]
+    fn the_focus_box_holds_every_part_turned_by_its_rotation() {
+        use rbx_dom::{CFrameData, Vector3Data};
+        let v = |x, y, z| Vector3Data { x, y, z };
+        let mut dom = WeakDom::new();
+        let model = dom.new_instance("Model", "Model", None);
+        let flat = dom.new_instance("Part", "Flat", Some(model));
+        let _ = dom.set_property(
+            flat,
+            "CFrame",
+            Variant::CFrame(CFrameData {
+                position: v(0.0, 0.0, 0.0),
+                rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            }),
+        );
+        let _ = dom.set_property(flat, "size", Variant::Vector3(v(4.0, 2.0, 2.0)));
+        // A quarter turn about Y: its 4 studs now run along Z.
+        let turned = dom.new_instance("Part", "Turned", Some(model));
+        let _ = dom.set_property(
+            turned,
+            "CFrame",
+            Variant::CFrame(CFrameData {
+                position: v(10.0, 0.0, 0.0),
+                rotation: [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
+            }),
+        );
+        let _ = dom.set_property(turned, "size", Variant::Vector3(v(4.0, 2.0, 2.0)));
+        let (low, high) = parts_box(&dom, &[model]).unwrap();
+        assert!((low - Vec3::new(-2.0, -1.0, -2.0)).length() < 1e-4, "{low}");
+        assert!((high - Vec3::new(11.0, 1.0, 2.0)).length() < 1e-4, "{high}");
+        assert!(parts_box(&dom, &[]).is_none());
     }
 }

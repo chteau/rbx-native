@@ -266,6 +266,33 @@ impl HomeWindow {
                 )
                 .into_any_element()
             }
+            Dialog::Opening { name } => {
+                let icon = div()
+                    .size(px(44.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(8.))
+                    .bg(tokens::field_select())
+                    .text_color(tokens::text2())
+                    .child(ui::icon("folder-open", 20.));
+                let body = div()
+                    .pt(px(18.))
+                    .pr(px(20.))
+                    .pl(px(78.))
+                    .child(indeterminate_bar())
+                    .into_any_element();
+                ui::dialog(
+                    520.,
+                    icon.into_any_element(),
+                    format!("Opening {name}"),
+                    "Loading the place into the editor.",
+                    Some(body),
+                    Vec::new(),
+                )
+                .into_any_element()
+            }
             Dialog::Error {
                 experience,
                 title,

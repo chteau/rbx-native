@@ -23,7 +23,8 @@
 //! 5. Publish with `rbx_cloud::Client::publish_place(…, Published)` (key
 //!    from `ApiKey::from_env_or_config`), then rename the sandbox place to
 //!    `copy_name::render(template, place name)` when that differs from the
-//!    name applied earlier this session; a failed rename only warns.
+//!    name applied earlier this session, except that the sandbox Play made
+//!    keeps "RbxNative Sandbox"; a failed rename only warns.
 //! 6. Launch `ClientProcess::spawn_with(launcher, &join_uri(place, session),
 //!    &play_client_options())`,
 //!    after reading `Embedded::existing_clients()` (Linux) to ignore.
@@ -373,6 +374,18 @@ impl Shell {
                         if let Some(warning) = made.warning {
                             shell.output.push(PLAY_SOURCE, Feedback::Warning(warning));
                         }
+                        // Logged too: the dialog can be hidden behind a
+                        // Roblox window and missed.
+                        if made.created {
+                            shell.output.push(
+                                PLAY_SOURCE,
+                                Feedback::Output(format!(
+                                    "Made a private sandbox for Play: an experience called \u{201c}{}\u{201d} on your account. You can change it in {}.",
+                                    play_sandbox::NAME,
+                                    play_sandbox::SETTING
+                                )),
+                            );
+                        }
                         shell.play.sandbox_notice = made.created;
                         shell.play.phase = Phase::Idle;
                         shell.play_begin(cx);
@@ -611,6 +624,15 @@ impl Shell {
                             "Old test servers could not be restarted ({err}); give your API key the \
                              universe:write scope so Play never lands in a stale server."
                         )
+                    });
+                    // The sandbox Play made for the user keeps its own name
+                    // (and gets it back if an older build renamed it).
+                    let wanted = wanted.and_then(|name| match client.universe(universe_id) {
+                        Ok(universe) if play_sandbox::is_made(&universe.description) => {
+                            (universe.display_name != play_sandbox::NAME)
+                                .then(|| play_sandbox::NAME.to_owned())
+                        }
+                        _ => Some(name),
                     });
                     let rename = wanted.map(|name| {
                         let update = PlaceUpdate {

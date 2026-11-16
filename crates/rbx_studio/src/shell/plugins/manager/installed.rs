@@ -7,8 +7,9 @@ use gpui_kit::*;
 
 use super::super::catalog::view::{row_frame, search_field, BODY_HEIGHT};
 use super::super::catalog::Tab;
-use super::{kind_label, load_prefs, save_prefs, switch};
+use super::{kind_label, load_prefs, save_prefs};
 use crate::launcher::ui;
+use crate::shell::settings_window::kit;
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -52,7 +53,9 @@ impl Shell {
             let key = found.path.to_string_lossy().to_string();
             let disabled = self.plugins.disabled.contains(&key);
             let (status, is_error) = self.plugin_status(found, disabled);
-            let toggle = switch(format!("plugin-switch-{index}").into(), !disabled).on_click(
+            let toggle = kit::toggle(
+                ("plugin-switch", index),
+                !disabled,
                 cx.listener(move |shell, _, _, cx| {
                     let mut prefs = load_prefs();
                     if !shell.plugins.disabled.remove(&key) {
@@ -179,16 +182,16 @@ impl Shell {
             )
             .child(ui::icon("chevron-right", 14.));
         let studio_row = row_frame("plugin-load-studio-row")
-            .child(
-                switch("plugin-load-studio".into(), load_studio).on_click(cx.listener(
-                    |_, _, _, cx| {
-                        let mut prefs = load_prefs();
-                        prefs.load_studio = !prefs.load_studio;
-                        save_prefs(&prefs);
-                        cx.notify();
-                    },
-                )),
-            )
+            .child(kit::toggle(
+                "plugin-load-studio",
+                load_studio,
+                cx.listener(|_, _, _, cx| {
+                    let mut prefs = load_prefs();
+                    prefs.load_studio = !prefs.load_studio;
+                    save_prefs(&prefs);
+                    cx.notify();
+                }),
+            ))
             .child(
                 v_flex()
                     .flex_1()

@@ -192,7 +192,8 @@ impl Firing<'_> {
 /// change from nil; `Removed` →
 /// `Destroying` on the instance. Only connected signals cost anything.
 pub(crate) fn fire_changes(lua: &Lua, changes: &[Change], first: Option<u64>) -> Result<()> {
-    let ctx = engine(lua).ctx.clone();
+    let engine = engine(lua);
+    let ctx = engine.ctx.clone();
     for (index, change) in changes.iter().enumerate() {
         let firing = Firing {
             lua,
@@ -216,9 +217,34 @@ pub(crate) fn fire_changes(lua: &Lua, changes: &[Change], first: Option<u64>) ->
                     firing.parent(*referent, None, parent)?;
                 }
             }
-            Change::Removed(referent) => firing.emit(*referent, "Destroying", &[])?,
+            Change::Removed(referent) => {
+                if !engine.destroyed.borrow_mut().remove(referent) {
+                    firing.emit(*referent, "Destroying", &[])?;
+                }
+            }
             Change::Class(_) => {}
         }
+    }
+    Ok(())
+}
+
+/// `Destroying` on `root` and every descendant, fired by `Destroy` before
+/// anything is removed, as Studio does: a handler still finds the tree
+/// whole. Fusion's cleanup (Lemonade's widget) unparents each child from
+/// its `Destroying`, which fails on a child already gone. The `Removed`
+/// these leave in the change log then fires nothing more in this VM.
+/// A VM with no engine (the command bar's) has no listeners to tell.
+pub(crate) fn destroying(lua: &Lua, root: Ref) -> Result<()> {
+    let Some(engine) = lua
+        .app_data_ref::<std::rc::Rc<super::Engine>>()
+        .map(|e| e.clone())
+    else {
+        return Ok(());
+    };
+    let refs = subtree(&engine.ctx.dom(), root);
+    engine.destroyed.borrow_mut().extend(refs.iter().copied());
+    for referent in refs {
+        signal::fire(lua, &instance_key(referent, "Destroying"), &[])?;
     }
     Ok(())
 }

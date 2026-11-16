@@ -515,7 +515,24 @@ impl SettingsWindow {
                 cx.observe(&check, |_, _, cx| cx.notify()).detach();
                 check
             });
-            launcher::key_summary(check.read(cx), "stored in your system keychain")
+            let check = check.read(cx);
+            let summary = launcher::key_summary(check, "stored in your system keychain");
+            // The last check's names stand in while this one runs, rather
+            // than a placeholder that then jumps to them.
+            let index = key_store::accounts();
+            let cached = index
+                .active
+                .and_then(|id| index.get(id))
+                .filter(|account| !account.owner.is_empty() && !account.key_name.is_empty());
+            match cached {
+                Some(account) if launcher::key_checking(check) => launcher::KeySummary {
+                    name: account.key_name.clone().into(),
+                    meta: format!("{} \u{b7} checking with Roblox\u{2026}", account.owner).into(),
+                    owner: Some(account.owner.clone().into()),
+                    ..summary
+                },
+                _ => summary,
+            }
         };
         let name: SharedString = match &summary.owner {
             Some(_) => format!("Open Cloud key \u{201c}{}\u{201d}", summary.name).into(),
@@ -802,16 +819,16 @@ impl SettingsWindow {
                     .child(error.clone()),
             );
         }
-        let signed_in = self.shell.read(cx).studio_presence.session.is_some();
-        let user_id = self.shell.read(cx).studio_presence.user_id;
-        let presence = self.shell.read(cx).studio_presence.enabled;
-        let status = if signed_in {
-            match user_id {
-                Some(id) => format!("Signed in as user {id}"),
-                None => "Signed in".to_string(),
+        let studio_presence = &self.shell.read(cx).studio_presence;
+        let signed_in = studio_presence.session.is_some();
+        let presence = studio_presence.enabled;
+        let status = match (signed_in, &studio_presence.user_names) {
+            (false, _) => String::new(),
+            (true, Some((name, display))) if name.is_empty() || name == display => {
+                format!("Signed in as {display}")
             }
-        } else {
-            String::new()
+            (true, Some((name, display))) => format!("Signed in as {display} (@{name})"),
+            (true, None) => "Signed in".to_string(),
         };
         let sign_in_control = if signed_in {
             h_flex()

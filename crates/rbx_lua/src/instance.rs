@@ -362,8 +362,11 @@ impl UserData for LuaInstance {
                 None => Err(this.not_a_member("PivotTo")),
             }
         });
-        methods.add_method("Destroy", |_, this, ()| {
+        methods.add_method("Destroy", |lua, this, ()| {
             this.ctx.check_write(this.referent)?;
+            if this.ctx.dom().get(this.referent).is_some() {
+                crate::engine::changes::destroying(lua, this.referent)?;
+            }
             let mut dom = this.ctx.dom_mut();
             // A model losing its `PrimaryPart` keeps the pivot it had.
             crate::pivot::keep_pivots(&mut dom, this.ctx.database(), &[this.referent])

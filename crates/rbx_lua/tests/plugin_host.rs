@@ -666,3 +666,60 @@ fn a_widget_sound_plays_without_error() {
     let (_f, out) = started("sound", src);
     assert!(texts(&out, OutputKind::Print).contains(&"sound ok".to_string()));
 }
+
+#[test]
+fn a_gui_parented_to_nil_never_reaches_the_editor() {
+    // F3X builds its UI under a `ScreenGui` it never parents, and tears it
+    // down later: neither is an edit to the place nor a screen to draw.
+    let src = r#"
+        local gui = Instance.new("ScreenGui")
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.fromOffset(200, 200)
+        frame.Parent = gui
+        task.wait()
+        frame.BackgroundColor3 = Color3.new(1, 0, 0)
+        task.wait()
+        gui:Destroy()
+        print("gone")
+    "#;
+    let (f, out) = started("nilgui", src);
+    assert!(
+        texts(&out, OutputKind::Error).is_empty(),
+        "{:?}",
+        out.output
+    );
+    assert_eq!(texts(&out, OutputKind::Print), vec!["gone".to_string()]);
+    assert!(out.changes.is_empty(), "{:?}", out.changes);
+    for r in all_refs(&f.dom) {
+        assert_ne!(f.dom.get(r).unwrap().class(), "ScreenGui");
+    }
+}
+
+#[test]
+fn destroying_fires_while_the_children_are_still_there() {
+    // Fusion's cleanup (Lemonade) unparents each child from `Destroying`.
+    let src = r#"
+        local folder = Instance.new("Folder")
+        local child = Instance.new("Part")
+        child.Parent = folder
+        local heard = 0
+        folder.Destroying:Connect(function()
+            heard += 1
+            print(child.Parent == folder)
+            child.Parent = nil
+        end)
+        folder:Destroy()
+        task.wait()
+        print(heard)
+    "#;
+    let (_f, out) = started("destroying", src);
+    assert!(
+        texts(&out, OutputKind::Error).is_empty(),
+        "{:?}",
+        out.output
+    );
+    assert_eq!(
+        texts(&out, OutputKind::Print),
+        vec!["true".to_string(), "1".to_string()]
+    );
+}

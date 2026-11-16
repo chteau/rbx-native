@@ -28,16 +28,22 @@ pub(in crate::shell) struct Made {
     pub(in crate::shell) warning: Option<String>,
 }
 
+/// Whether `description` is the one [`provision`] gives the sandbox it
+/// makes: Play keeps that experience called [`NAME`] rather than naming it
+/// after each test copy, so it stays findable in the user's creations.
+pub(in crate::shell) fn is_made(description: &str) -> bool {
+    description == DESCRIPTION
+}
+
 /// The user's own experience called [`NAME`], or carrying its description:
-/// Play renames the sandbox to the test copy's name while it runs, so the
-/// name alone stops matching after the first test. The lowest universe id
-/// when there are several.
+/// older builds renamed the sandbox to the test copy's name, so the name
+/// alone may not match. The lowest universe id when there are several.
 pub(in crate::shell) fn find_existing(listing: &[OwnExperience]) -> Option<&OwnExperience> {
     listing
         .iter()
         .filter(|e| {
             matches!(e.experience.owner, Owner::User(_))
-                && (e.experience.name == NAME || e.description == DESCRIPTION)
+                && (e.experience.name == NAME || is_made(&e.description))
         })
         .min_by_key(|e| e.experience.universe_id)
 }

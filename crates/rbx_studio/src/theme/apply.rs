@@ -37,13 +37,18 @@ pub(crate) fn apply(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
     super::set_active(pack.palette.overridden(overrides));
     widgets(pack, overrides, cx);
     let appearance = pack.palette.effects.window;
-    for handle in cx.windows() {
-        let _ = handle.update(cx, |_, window, _| {
-            window.set_background_appearance(appearance);
-            crate::window_blur::sync_hint(window);
-        });
-    }
-    cx.refresh_windows();
+    // Deferred: a switch made from a window (Settings) runs inside that
+    // window's update, and updating a window from within its own update
+    // fails, which left Settings in the old window style until reopened.
+    cx.defer(move |cx| {
+        for handle in cx.windows() {
+            let _ = handle.update(cx, |_, window, _| {
+                window.set_background_appearance(appearance);
+                crate::window_blur::sync_hint(window);
+            });
+        }
+        cx.refresh_windows();
+    });
 }
 
 /// In the order startup always ran these: the fonts are named before

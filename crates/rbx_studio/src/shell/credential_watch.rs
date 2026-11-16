@@ -68,7 +68,7 @@ impl Shell {
         if reports.session {
             self.stop_studio_presence();
             self.studio_presence.session = None;
-            self.studio_presence.user_id = None;
+            self.set_presence_user(None, cx);
         }
         let from_env = key_from_env();
         cx.spawn(async move |this, cx| {

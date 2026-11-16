@@ -1,9 +1,11 @@
 rbx-native alpha test build
 ===========================
 
-Thanks for testing! This is an unsigned build straight from CI, so your OS
-will be suspicious of it the first time. It is a single program, nothing to
-install: put it in any folder and run it from there.
+Thanks for testing! This is a build straight from CI. The Windows and Linux
+builds are unsigned, and the macOS one is signed with RbxNative's own
+certificate but not notarized by Apple, so your OS will be suspicious of it
+the first time. It is a single program, nothing to install: put it in any
+folder and run it from there.
 
 Opening it
 ----------
@@ -15,8 +17,8 @@ Windows
   (WinDivert is LGPLv3, see WinDivert-LICENSE.txt).
 
 macOS (Apple Silicon)
-  The zip drops the executable bit and macOS quarantines downloads, so in a
-  Terminal, in the folder you unzipped into:
+  The zip drops the executable bit, and macOS quarantines downloads that
+  Apple hasn't notarized, so in a Terminal, in the folder you unzipped into:
     chmod +x RbxNative
     xattr -dr com.apple.quarantine RbxNative
     ./RbxNative

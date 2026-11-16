@@ -8,6 +8,7 @@
 -- The server half relays what the probe already collects (logs from both
 -- sides, stats, debugger pauses) to the tester; the client half draws it.
 
+local GuiService = game:GetService("GuiService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -749,10 +750,23 @@ function M.client(remote, Debug)
 		errorsBadge.Text = "0"
 		refilter()
 	end)
+	-- Roblox's own menu draws over anything a game can, so F8 pressed while
+	-- it is open is kept until it closes rather than toggling unseen.
+	local openAfterMenu = false
 	UserInputService.InputBegan:Connect(function(input, processed)
 		-- `processed` is also true when Roblox's own UI has the keyboard
 		-- (a menu, a toast), which ate F8 once; only typing should.
 		if input.KeyCode == TOGGLE_KEY and not UserInputService:GetFocusedTextBox() then
+			if GuiService.MenuIsOpen then
+				openAfterMenu = not openAfterMenu
+			else
+				setOpen(not panel.Visible)
+			end
+		end
+	end)
+	GuiService.MenuClosed:Connect(function()
+		if openAfterMenu then
+			openAfterMenu = false
 			setOpen(not panel.Visible)
 		end
 	end)

@@ -132,6 +132,7 @@ commands! {
     CameraRight, "camera_right", "Camera Right", Camera, ["d", "right"];
     CameraUp, "camera_up", "Camera Up", Camera, ["e"];
     CameraDown, "camera_down", "Camera Down", Camera, ["q"];
+    FocusSelection, "focus_selection", "Focus Selection", Camera, ["f"];
     TerrainBrush, "terrain_brush", "Hold for Brush", Terrain, ["b"];
     TerrainDelete, "terrain_delete", "Delete Region", Terrain, ["delete", "backspace"];
     FindFunction, "find_function", "Go to Function", Script, ["alt-f"];

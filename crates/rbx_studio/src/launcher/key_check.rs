@@ -287,6 +287,11 @@ pub(crate) struct Summary {
     pub(crate) owner: Option<SharedString>,
 }
 
+/// Whether the check is still waiting on Roblox.
+pub(crate) fn checking(check: &KeyCheck) -> bool {
+    matches!(check.status, Status::Running)
+}
+
 pub(crate) fn summary(check: &KeyCheck, tail: &str) -> Summary {
     let summary = |name: &str, tag, meta: String| Summary {
         name: name.to_owned().into(),

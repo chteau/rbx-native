@@ -197,9 +197,10 @@ impl NetworkSim {
         true
     }
 
-    /// Studio's Reset: stages Ideal Fiber, which still needs Apply.
+    /// Reset: stages Off, which still needs Apply. Studio stages its own
+    /// default, Ideal Fiber; ours is Off (see the module doc).
     pub(in crate::shell) fn reset(&mut self) {
-        *self.staged_mut() = Setting::built_in(0);
+        *self.staged_mut() = Setting::OFF;
     }
 
     /// Why `name` cannot be saved, or whether it would replace one.
@@ -231,8 +232,8 @@ impl NetworkSim {
         Ok(())
     }
 
-    /// Studio's Delete: removes the staged saved preset and stages Ideal
-    /// Fiber, which the caller applies at once.
+    /// Studio's Delete: removes the staged saved preset and stages Off, as
+    /// [`NetworkSim::reset`] does, which the caller applies at once.
     pub(in crate::shell) fn delete(&mut self) -> bool {
         let Choice::Saved(name) = &self.shown().choice else {
             return false;
