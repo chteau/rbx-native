@@ -1,7 +1,8 @@
 //! The Network Simulator: the Test ribbon's Network pill and its popover,
 //! shaped like Studio's (`studio/network-simulator.md`). Picking a preset or
-//! editing a value only stages it; Apply makes it the applied setting and,
-//! mid-test, changes the running client's network at once.
+//! editing a value only stages it; Apply, or closing the popover (unlike
+//! Studio, which drops it), makes it the applied setting and, mid-test,
+//! changes the running client's network at once.
 //!
 //! What it shapes, honestly: the Roblox client's UDP game traffic
 //! (`rbx_play::netsim`), so the game itself lags, as in Studio. Not the
@@ -126,7 +127,7 @@ fn way_mut(conditions: &mut NetConditions, way: Way) -> &mut OneWay {
 pub(in crate::shell) struct NetworkSim {
     pub(in crate::shell) saved: Vec<SavedNetworkPreset>,
     pub(in crate::shell) applied: Setting,
-    /// The popover's edits while it is open; dismissing it drops them.
+    /// The popover's edits while it is open; dismissing it applies them.
     pub(in crate::shell) staged: Option<Setting>,
     /// The running client was launched inside the shaper, so Apply reaches
     /// it; otherwise an applied preset waits for the next Play.
