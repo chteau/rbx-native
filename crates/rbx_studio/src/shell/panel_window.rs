@@ -32,6 +32,10 @@ mod x11;
 /// top, for it to dock on that edge.
 const DROP_BAND: f32 = 48.;
 
+/// How long a window has to stay put before a drop is read, see
+/// [`PanelWindow::dock_if_dropped`].
+const SETTLE_MS: u64 = 150;
+
 /// What a torn-out dock starts at. Wide enough for the Explorer's deeper
 /// rows and the Properties name column at the scale the shell is using.
 const WINDOW_WIDTH: f32 = 340.;
@@ -57,6 +61,11 @@ pub(crate) struct PanelWindow {
     /// The size the window last had: a change is a resize, a snap or a
     /// maximize, never a drag, and none of those docks it.
     size: Size<Pixels>,
+    /// Whether the size changed since the window last came to rest.
+    resized: bool,
+    /// The dock check, run once the window has stopped moving, see
+    /// [`PanelWindow::dock_if_dropped`].
+    settle: Option<Task<()>>,
     _moved: Subscription,
 }
 
@@ -123,6 +132,8 @@ impl PanelWindow {
                     title,
                     remember: None,
                     size: bounds.size,
+                    resized: false,
+                    settle: None,
                     _moved: cx.observe_window_bounds(
                         window,
                         |this: &mut PanelWindow, window, cx| {
@@ -179,22 +190,32 @@ impl PanelWindow {
     /// bottom, the dock lands on that edge. The sides rather than the
     /// middle of the window: an editor filling the screen leaves no room
     /// to bring a window's middle to its edge. The middle of the editor is
-    /// no drop zone, so a dock can still float over the viewport.
+    /// no drop zone, so a dock can still float over the viewport. The window
+    /// has to stay there a moment ([`SETTLE_MS`]) without changing size.
     fn dock_if_dropped(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let moved = window.bounds();
-        if std::mem::replace(&mut self.size, moved.size) != moved.size {
-            return;
-        }
-        let Some(editor) = editor_bounds(cx) else {
-            return;
-        };
-        let Some(edge) = drop_edge(editor, moved) else {
-            return;
-        };
-        let panel = self.panel;
-        self.shell.update(cx, |shell, cx| {
-            shell.land_panel(panel, Landing::NewGroup { edge, group: 0 }, cx);
-        });
+        let size = window.bounds().size;
+        self.resized |= std::mem::replace(&mut self.size, size) != size;
+        // Windows reports a snap as a move and then a resize, so the check
+        // waits for the window to stop: a snap's first half would otherwise
+        // read as a window brought to the editor's edge.
+        self.settle = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(SETTLE_MS))
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if std::mem::take(&mut this.resized) {
+                    return;
+                }
+                let Some(edge) = editor_bounds(cx).and_then(|e| drop_edge(e, window.bounds()))
+                else {
+                    return;
+                };
+                let panel = this.panel;
+                this.shell.update(cx, |shell, cx| {
+                    shell.land_panel(panel, Landing::NewGroup { edge, group: 0 }, cx);
+                });
+            });
+        }));
     }
 }
 

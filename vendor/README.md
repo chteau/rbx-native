@@ -158,3 +158,10 @@ has no frame at the top, so upstream opened it half the bottom frame
 (about 4 px at 125%) above the bounds it was given, and a window reopened
 at its saved bounds crept up every time.
 
+And, in the same file, a `WindowKind::Floating` window is created owned by
+the root owner of the window active when it opens (`GetActiveWindow`,
+`GetAncestor(GA_ROOTOWNER)`) and without `WS_EX_APPWINDOW`. Upstream made it
+a plain top-level window, so a torn-out plugin dock went behind the editor
+the moment the editor was clicked. Owned, it stays above the editor, hides
+with it when minimized and has no taskbar button of its own.
+

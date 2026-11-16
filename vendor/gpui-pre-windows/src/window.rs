@@ -454,6 +454,19 @@ impl WindowsWindow {
         } else {
             None
         };
+        // rbx-native fix: a floating window is owned by the app's window that
+        // was active when it opened (its root owner, so closing another
+        // floating window never takes this one with it), which keeps it above
+        // that window as `WindowKind::Floating` promises. Upstream left it a
+        // plain top-level window that the editor covered once clicked.
+        let owner_hwnd = if params.kind == WindowKind::Floating {
+            let active = unsafe { GetActiveWindow() };
+            (!active.is_invalid())
+                .then(|| unsafe { GetAncestor(active, GA_ROOTOWNER) })
+                .filter(|owner| !owner.is_invalid())
+        } else {
+            parent_hwnd
+        };
         let hide_title_bar = params
             .titlebar
             .as_ref()
@@ -483,6 +496,9 @@ impl WindowsWindow {
             let dwexstyle = if params.kind == WindowKind::Dialog {
                 dwstyle |= WS_POPUP | WS_CAPTION;
                 WS_EX_DLGMODALFRAME
+            } else if owner_hwnd.is_some() {
+                // rbx-native fix: an owned floating window stays off the taskbar.
+                WINDOW_EX_STYLE(0)
             } else {
                 WS_EX_APPWINDOW
             };
@@ -535,7 +551,7 @@ impl WindowsWindow {
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
-                parent_hwnd,
+                owner_hwnd,
                 None,
                 Some(hinstance.into()),
                 Some(&context as *const _ as *const _),

@@ -13,9 +13,11 @@
   it again right where it was. Torn-out windows step aside while the
   editor asks you something (Save changes? and friends) so they never
   cover the prompt. On Windows our own title bars can be dragged now
-  (editor, Settings, every window with our top bar), snap included, and a
-  plugin window reopens exactly where it was instead of creeping up a few
-  pixels each time. (@chteau)
+  (editor, Settings, every window with our top bar), snap included (a
+  snapped plugin window stays a window, it doesn't dock), a plugin window
+  stays above the editor when you click the editor, and it reopens
+  exactly where it was instead of creeping up a few pixels each time.
+  (@chteau)
 
 ## 2026-11-14
 
