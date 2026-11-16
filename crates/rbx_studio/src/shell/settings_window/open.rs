@@ -23,11 +23,8 @@ impl Shell {
         if self.settings_opening {
             return;
         }
-        if let Some(existing) = &self.settings_window {
-            if existing
-                .update(cx, |_, window, _| window.activate_window())
-                .is_ok()
-            {
+        if let Some(existing) = self.settings_window {
+            if bring_forward(existing.into(), cx) {
                 return;
             }
         }
@@ -52,6 +49,17 @@ impl Shell {
             });
         });
     }
+}
+
+/// Activates `window`; false once it has closed. A key typed in that very
+/// window (Alt+S with Settings focused) is handled while the window is
+/// being updated, when updating it again fails although it is open, so the
+/// active window counts as already forward.
+pub(crate) fn bring_forward(window: AnyWindowHandle, cx: &mut App) -> bool {
+    cx.active_window() == Some(window)
+        || window
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
 }
 
 /// The window's content: the title bar alone until [`fill_loading`] gives

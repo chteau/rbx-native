@@ -566,10 +566,7 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
             let Some(window) = *window else {
                 return;
             };
-            if window
-                .update(cx, |_, window, _| window.activate_window())
-                .is_ok()
-            {
+            if shell::bring_settings_forward(window.into(), cx) {
                 return;
             }
         }

@@ -95,7 +95,8 @@ pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use script_folds::FoldMemory;
 pub(crate) use settings_window::open::{
-    fill_loading as fill_loading_settings, open_loading as open_loading_settings,
+    bring_forward as bring_settings_forward, fill_loading as fill_loading_settings,
+    open_loading as open_loading_settings,
 };
 pub(crate) use view_snap::PresetView;
 mod toolbox;
