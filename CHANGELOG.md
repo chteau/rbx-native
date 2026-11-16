@@ -8,6 +8,19 @@
   dialogs open in the middle of the editor instead of the screen's corner,
   and killing the editor no longer leaves the embedded game running
   without a window. (@chteau)
+- **Low-memory GPUs step down until the place draws.** Running out of GPU
+  memory now walks down smaller materials, lower quality levels and no
+  shadows until the scene fits, instead of trying twice and leaving the
+  3D view empty. Running out later (a quality change, a bigger window)
+  rebuilds one step lower too, and picking a quality level by hand after
+  that rebuilds for real. (@chteau)
+- **Network simulation lets go of the WinDivert driver at Stop.** The
+  driver used to keep running until the editor quit; now it's unloaded
+  when Play stops and loaded again on the next shaped Play, still with
+  no second admin prompt. (@chteau)
+- **File menu rows without the blank gaps.** Save to File, Save to Roblox,
+  Publish to Roblox and Delete keep their bigger click target but now say
+  what they do on a second line instead of sitting in empty space. (@chteau)
 
 ## 2026-11-14
 

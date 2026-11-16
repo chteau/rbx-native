@@ -8,9 +8,9 @@
 //! an action item keeps its checked and disabled state, a separator stays a
 //! separator, and the component still owns everything below that.
 
-use gpui_kit::component::h_flex;
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -22,17 +22,27 @@ use crate::tokens;
 /// navigation, so these rows are drawn as elements 44px tall (WCAG 2.5.5)
 /// with the shortcut hint rendered the way the toolkit's own rows do.
 ///
+/// A bare label centred in 44px read as blank gaps around these rows
+/// between the 26px ones, so each carries a second line saying what it
+/// does: the height is the target, and now it holds something.
+///
 /// A row whose command lives in the shortcuts registry is drawn the same
 /// way at its ordinary height: the toolkit only finds a hint in GPUI's
 /// keymap, and most of those commands (New, Open, Undo, Copy…) are keys
 /// `Shell` matches itself, so the registry is the only place that knows
 /// them and the toolkit's own row would show none.
-pub(super) const PRIMARY_ROWS: [&str; 4] = [
-    "Save to File",
-    "Save to Roblox",
-    "Publish to Roblox",
-    "Delete",
+pub(super) const PRIMARY_ROWS: [(&str, &str); 4] = [
+    ("Save to File", "Writes back to this file"),
+    ("Save to Roblox", "A new version, not live yet"),
+    ("Publish to Roblox", "A new version, live for players"),
+    ("Delete", "Removes the selection"),
 ];
+
+fn primary_detail(name: &str) -> Option<&'static str> {
+    PRIMARY_ROWS
+        .iter()
+        .find_map(|(row, detail)| (*row == name).then_some(*detail))
+}
 
 /// How far down the window a dropdown starts (the title bar, the menu row
 /// and the popup's own offset), plus the anchor's 8px margin below it.
@@ -60,11 +70,12 @@ pub(super) fn dropdown(
                 checked,
                 disabled,
                 ..
-            } if PRIMARY_ROWS.contains(&name.as_ref())
+            } if primary_detail(name).is_some()
                 || crate::shortcuts::command_for_action(action.as_ref()).is_some() =>
             {
                 let (label, shortcut_action) = (name.clone(), action.boxed_clone());
-                let row_height = if PRIMARY_ROWS.contains(&name.as_ref()) {
+                let detail = primary_detail(name);
+                let row_height = if detail.is_some() {
                     tokens::primary_target()
                 } else {
                     px(0.)
@@ -92,7 +103,9 @@ pub(super) fn dropdown(
                             .items_center()
                             .justify_between()
                             .gap_3()
-                            .child(label.clone())
+                            .child(v_flex().child(label.clone()).children(detail.map(|detail| {
+                                div().text_xs().text_color(tokens::text3()).child(detail)
+                            })))
                             .children(
                                 hint.map(|kbd| kbd.p_0().border_0().bg(gpui::transparent_white())),
                             )
