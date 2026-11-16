@@ -44,11 +44,37 @@ fn end(child: &mut Child) {
 #[cfg(any(target_os = "macos", all(test, target_os = "linux")))]
 const WATCH: &str = r#"parent=$0; "$@" & tunnel=$!; trap 'kill $tunnel 2>/dev/null' EXIT HUP INT TERM; while kill -0 "$parent" 2>/dev/null && kill -0 $tunnel 2>/dev/null; do sleep 1; done"#;
 
+/// Fails like a direct spawn would when `program` can't be found, since the
+/// watching shell itself always starts and would only hide that.
+#[cfg(any(target_os = "macos", all(test, target_os = "linux")))]
+fn find_program(program: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let runnable = |path: &std::path::Path| {
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    let found = if program.components().count() > 1 {
+        runnable(program)
+    } else {
+        std::env::var_os("PATH").is_some_and(|path| {
+            std::env::split_paths(&path).any(|dir| runnable(&dir.join(program)))
+        })
+    };
+    if found {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("{} not found", program.display()),
+        ))
+    }
+}
+
 /// The command that runs `program args`, watched on macOS (see [`WATCH`]).
-fn command(program: PathBuf, args: Vec<String>) -> Command {
+fn command(program: PathBuf, args: Vec<String>) -> std::io::Result<Command> {
     #[cfg(target_os = "macos")]
     {
         use std::os::unix::process::CommandExt;
+        find_program(&program)?;
         let mut command = Command::new("/bin/sh");
         command
             .arg("-c")
@@ -57,13 +83,13 @@ fn command(program: PathBuf, args: Vec<String>) -> Command {
             .arg(program)
             .args(args)
             .process_group(0);
-        command
+        Ok(command)
     }
     #[cfg(not(target_os = "macos"))]
     {
         let mut command = Command::new(program);
         command.args(args);
-        command
+        Ok(command)
     }
 }
 
@@ -142,7 +168,7 @@ impl TunnelProvider {
     pub fn start(&self, port: u16, timeout: Duration) -> Result<Tunnel, TunnelError> {
         let (program, args) = self.command_line(port);
         let pattern = self.url_pattern();
-        let mut command = command(program, args);
+        let mut command = command(program, args).map_err(TunnelError::Spawn)?;
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -265,6 +291,15 @@ pub fn scrape_url(line: &str, pattern: &str) -> Option<String> {
 mod tests {
     use super::*;
     use std::os::unix::process::CommandExt;
+
+    #[test]
+    fn find_program_matches_a_direct_spawn() {
+        assert!(find_program(std::path::Path::new("/bin/sh")).is_ok());
+        assert!(find_program(std::path::Path::new("sh")).is_ok());
+        let missing = find_program(std::path::Path::new("/nonexistent/no-such-tunnel"));
+        assert_eq!(missing.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        assert!(find_program(std::path::Path::new("rbx-play-no-such-tunnel")).is_err());
+    }
 
     fn within(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
         let end = Instant::now() + limit;
