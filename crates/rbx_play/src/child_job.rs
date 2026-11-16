@@ -10,9 +10,12 @@
 //!
 //! Only these processes go in, not the editor itself: a job holding the
 //! editor would also take down whatever it opens through the shell (the
-//! browser, a relaunched editor). The Play client joins once its window is
-//! embedded: that window dies with the editor's, and the client would keep
-//! running without one.
+//! browser, a relaunched editor). The Play client gets a job of its own
+//! once its window is embedded: that window dies with the editor's, and the
+//! client would keep running without one. Its own, because a process already
+//! in a job (the shell may start Roblox in one) can only join a job that is
+//! empty or nested in its own, so sharing one would lock out whichever of
+//! it and the editor's children came second.
 
 /// Ties `child` to the editor's lifetime. Failing only logs: the child
 /// still runs, it just may outlive a crash.
@@ -52,38 +55,41 @@ mod windows {
         OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
     };
 
-    /// The job's handle as an integer (`HANDLE` is a pointer, not `Sync`),
-    /// or the error that kept it from existing. Never closed: that is the
-    /// kernel's job when this process ends.
+    /// The editor's children's job, see [`new_job`].
     fn job() -> Result<usize, u32> {
         static JOB: OnceLock<Result<usize, u32>> = OnceLock::new();
-        *JOB.get_or_init(|| {
-            // SAFETY: plain Win32 calls; the info struct is zeroed and sized
-            // for its class, and a null job is checked first.
-            unsafe {
-                let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-                if job.is_null() {
-                    return Err(GetLastError());
-                }
-                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-                let ok = SetInformationJobObject(
-                    job,
-                    JobObjectExtendedLimitInformation,
-                    &info as *const _ as *const _,
-                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                );
-                if ok == 0 {
-                    return Err(GetLastError());
-                }
-                Ok(job as usize)
+        *JOB.get_or_init(new_job)
+    }
+
+    /// A kill-on-close job's handle as an integer (`HANDLE` is a pointer,
+    /// not `Sync`), or the error that kept it from existing. Never closed:
+    /// that is the kernel's job when this process ends.
+    fn new_job() -> Result<usize, u32> {
+        // SAFETY: plain Win32 calls; the info struct is zeroed and sized
+        // for its class, and a null job is checked first.
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return Err(GetLastError());
             }
-        })
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const _,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if ok == 0 {
+                return Err(GetLastError());
+            }
+            Ok(job as usize)
+        }
     }
 
     pub(super) fn assign(child: &std::process::Child) -> Result<(), u32> {
         // SAFETY: `child` owns the handle for the call.
-        unsafe { assign_handle(child.as_raw_handle() as _) }
+        unsafe { assign_handle(job()?, child.as_raw_handle() as _) }
     }
 
     pub(super) fn assign_pid(pid: u32) -> Result<(), u32> {
@@ -93,7 +99,7 @@ mod windows {
             if process.is_null() {
                 return Err(GetLastError());
             }
-            let assigned = assign_handle(process);
+            let assigned = new_job().and_then(|job| assign_handle(job, process));
             CloseHandle(process);
             assigned
         }
@@ -102,8 +108,7 @@ mod windows {
     /// # Safety
     /// `process` must be a live process handle with `PROCESS_SET_QUOTA` and
     /// `PROCESS_TERMINATE` access.
-    unsafe fn assign_handle(process: HANDLE) -> Result<(), u32> {
-        let job = job()?;
+    unsafe fn assign_handle(job: usize, process: HANDLE) -> Result<(), u32> {
         // SAFETY: the job is never closed; the caller vouches for `process`.
         let ok = unsafe { AssignProcessToJobObject(job as _, process) };
         if ok == 0 {
