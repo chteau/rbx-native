@@ -237,6 +237,8 @@ pub(crate) struct Shell {
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     icon_pack: IconPack,
+    /// The user chose `icon_pack`, so a theme switch leaves it alone.
+    icon_pack_picked: bool,
     /// Which installed icon pack (see `crate::packs`) is drawn over the kit,
     /// and every pack found at startup for the Explorer menu to list,
     /// listed once because the menu is rebuilt every frame.
@@ -652,6 +654,7 @@ impl Shell {
             selection_occluded,
             light_guides,
             icon_pack,
+            icon_pack_picked,
             unfocused_fps,
             font_scale,
             calibration,
@@ -901,6 +904,7 @@ impl Shell {
             light_guides,
             light_guides_sent: Vec::new(),
             icon_pack,
+            icon_pack_picked,
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
             theme_watch: crate::theme::Watch::new(user.theme.dir.clone()),
@@ -1975,7 +1979,9 @@ impl Shell {
     /// rows and their expansion state are untouched, only which sprite each
     /// one points at changes (see `Explorer::set_icon_pack`).
     fn set_icon_pack(&mut self, pack: IconPack, cx: &mut Context<Self>) {
+        self.icon_pack_picked = true;
         if pack == self.icon_pack {
+            self.save_settings();
             return;
         }
 
@@ -2059,6 +2065,7 @@ impl Shell {
             selection_occluded: self.selection_occluded,
             light_guides: self.light_guides,
             icon_pack: self.icon_pack,
+            icon_pack_picked: self.icon_pack_picked,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
             calibration: self.calibration,

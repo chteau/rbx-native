@@ -400,15 +400,12 @@ fn main() {
     });
 }
 
-/// A light theme draws the kit's light icons, as switching to one does (see
-/// `Shell::reload_theme`), whatever an earlier session left behind.
+/// The theme's icon variant unless the user picked one, as switching theme
+/// does (see `Shell::reload_theme`).
 fn themed(settings: Settings, mode: ThemeMode) -> Settings {
-    match mode {
-        ThemeMode::Light => Settings {
-            icon_pack: IconPack::Light,
-            ..settings
-        },
-        ThemeMode::Dark => settings,
+    Settings {
+        icon_pack: settings::icon_pack_for(mode, settings.icon_pack, settings.icon_pack_picked),
+        ..settings
     }
 }
 

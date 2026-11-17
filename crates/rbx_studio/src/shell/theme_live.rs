@@ -2,11 +2,9 @@
 //! `appearance.json` names it, re-applying the active one the moment its
 //! files are saved, and painting its background image.
 
-use gpui_kit::component::ThemeMode;
 use gpui_kit::*;
 
 use super::Shell;
-use crate::class_icons::IconPack;
 use crate::packs::{self, IconOverlay};
 use crate::theme::{self, ThemePack};
 
@@ -53,14 +51,15 @@ impl Shell {
         }
         self.theme_watch.retarget(pack.dir.clone());
         theme::apply(&pack, &overrides, cx);
-        // The kit's icons come in a variant for each ground; a switch
-        // between a dark and a light theme takes the one that suits it,
-        // which the Explorer's menu can still change afterwards.
-        if pack.palette.mode != self.theme.palette.mode {
-            self.icon_pack = match pack.palette.mode {
-                ThemeMode::Dark => IconPack::Dark,
-                ThemeMode::Light => IconPack::Light,
-            };
+        // The kit's icons come in a variant for each ground; a theme takes
+        // the one that suits it until the user picks one themselves.
+        let icon_pack = crate::settings::icon_pack_for(
+            pack.palette.mode,
+            self.icon_pack,
+            self.icon_pack_picked,
+        );
+        if icon_pack != self.icon_pack {
+            self.icon_pack = icon_pack;
             self.save_settings();
         }
 

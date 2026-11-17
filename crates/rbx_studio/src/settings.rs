@@ -13,6 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
+use gpui_kit::component::ThemeMode;
 use rbx_viewer::QualityLevel;
 
 use crate::class_icons::IconPack;
@@ -57,6 +58,9 @@ pub(crate) struct Settings {
     /// anyone who finds them in the way to turn them off in settings.
     pub(crate) light_guides: bool,
     pub(crate) icon_pack: IconPack,
+    /// Whether the user chose `icon_pack` (the Explorer menu or Settings).
+    /// Until they do, it follows the theme's ground, see [`icon_pack_for`].
+    pub(crate) icon_pack_picked: bool,
     /// The render loop's frame rate cap while the window is unfocused, see
     /// `pacing::FocusPacing`.
     pub(crate) unfocused_fps: UnfocusedFps,
@@ -234,6 +238,7 @@ impl Default for Settings {
             selection_occluded: false,
             light_guides: true,
             icon_pack: IconPack::Dark,
+            icon_pack_picked: false,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
             calibration: rbx_viewer::Calibration::default(),
@@ -420,6 +425,10 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
         icon_pack,
+        icon_pack_picked: value
+            .get("icon_pack_picked")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         unfocused_fps,
         font_scale,
         calibration: read_calibration(&value),
@@ -800,6 +809,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     });
     // Outside the literal: `json!` hits the macro recursion limit at this size.
     value["play_copy_name"] = settings.play_copy_name.clone().into();
+    value["icon_pack_picked"] = settings.icon_pack_picked.into();
     value["insert_anchored"] = settings.insert_anchored.into();
     value["output_rich_text"] = settings.output_rich_text.into();
     value["playtest_rate_hz"] = settings.playtest_rate_hz.into();
@@ -823,6 +833,16 @@ fn format_quality(quality: QualityLevel) -> String {
     match quality {
         QualityLevel::Automatic => "Automatic".to_string(),
         QualityLevel::Level(level) => format!("Level{level:02}"),
+    }
+}
+
+/// The kit's icon variant under a theme of `mode`: the one the user picked,
+/// or else the one that suits the theme's ground.
+pub(crate) fn icon_pack_for(mode: ThemeMode, current: IconPack, picked: bool) -> IconPack {
+    match mode {
+        _ if picked => current,
+        ThemeMode::Dark => IconPack::Dark,
+        ThemeMode::Light => IconPack::Light,
     }
 }
 
@@ -943,6 +963,25 @@ mod tests {
     }
 
     #[test]
+    fn a_theme_switch_keeps_a_picked_icon_pack() {
+        for mode in [ThemeMode::Dark, ThemeMode::Light] {
+            for pack in [IconPack::Dark, IconPack::Light] {
+                assert_eq!(icon_pack_for(mode, pack, true), pack);
+            }
+        }
+        // Light, Default, Light again with nothing picked follows each one.
+        let mut pack = IconPack::Dark;
+        for (mode, expected) in [
+            (ThemeMode::Light, IconPack::Light),
+            (ThemeMode::Dark, IconPack::Dark),
+            (ThemeMode::Light, IconPack::Light),
+        ] {
+            pack = icon_pack_for(mode, pack, false);
+            assert_eq!(pack, expected);
+        }
+    }
+
+    #[test]
     fn round_trips_through_disk() {
         let path = temp_settings_path();
         let settings = Settings {
@@ -953,6 +992,7 @@ mod tests {
             selection_occluded: true,
             light_guides: false,
             icon_pack: IconPack::Light,
+            icon_pack_picked: true,
             unfocused_fps: UnfocusedFps::Fps25,
             font_scale: 1.25,
             argon_address: "argon.example.com:9000".to_owned(),
