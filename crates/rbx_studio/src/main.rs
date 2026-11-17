@@ -561,9 +561,8 @@ impl Global for SettingsHost {}
 /// Studio Settings with no place open. The Settings window is built around
 /// an editor (it applies every change to one live), so Home gets a hidden
 /// one over an empty place that starts no plugins, presence or MCP, never
-/// takes the menus, and goes when Settings closes. That editor's renderer
-/// takes seconds to build on a software GPU, so the window opens first and
-/// its pages fill in once the place has loaded off the UI thread.
+/// takes the menus, and goes when Settings closes. The window opens first
+/// and its pages fill in once that place has loaded off the UI thread.
 pub(crate) fn open_settings_from_home(cx: &mut App) {
     match cx.try_global::<SettingsHost>() {
         Some(SettingsHost::Ready { shell, .. }) => {
@@ -597,8 +596,10 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
     .detach();
 }
 
-/// The temporary place Home's Settings host edits, and its viewer: built
-/// off the UI thread, since its renderer takes seconds on a software GPU.
+/// The temporary place Home's Settings host edits, and its viewer. The
+/// host is never shown, so its viewer draws nothing: a real renderer took
+/// 15 to 25 s to compile its pipelines on a laptop GPU, all of it spent
+/// before Settings could fill in.
 fn settings_place() -> Result<(PathBuf, Headless), String> {
     let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
     let path = dir.join("Settings.rbxlx");
@@ -611,7 +612,7 @@ fn settings_place() -> Result<(PathBuf, Headless), String> {
             )
         })
         .map_err(|err| err.to_string())?;
-    let viewer = Headless::load(&path, true)?;
+    let viewer = Headless::load_undrawn(&path)?;
     Ok((path, viewer))
 }
 
@@ -659,18 +660,6 @@ fn host_settings(
         cx.remove_global::<SettingsHost>();
         return;
     };
-    // GPUI's Linux back end maps every window whatever `show` says, some
-    // time after it opens: take it off again once that has happened.
-    #[cfg(target_os = "linux")]
-    cx.spawn(async move |cx| {
-        for wait in [100, 400, 1500] {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(wait))
-                .await;
-            let _ = hidden.update(cx, |_, window, _| unmap_x11(window));
-        }
-    })
-    .detach();
     cx.set_global(SettingsHost::Ready {
         window: hidden.into(),
         shell: shell.clone(),
@@ -679,20 +668,6 @@ fn host_settings(
         if !shell::fill_loading_settings(window, shell.clone(), cx) {
             close_settings_host(&shell, cx);
         }
-    }
-}
-
-/// Takes `window` off the X11 screen; nothing on Wayland.
-#[cfg(target_os = "linux")]
-fn unmap_x11(window: &Window) {
-    use x11rb::protocol::xproto::ConnectionExt as _;
-    let Some(id) = pointer_lock::window_id(window) else {
-        return;
-    };
-    if let Ok((connection, _)) = x11rb::connect(None) {
-        // Waited on: a request left in the buffer as the connection drops
-        // never reached the server.
-        let _ = connection.unmap_window(id).map(|cookie| cookie.check());
     }
 }
 

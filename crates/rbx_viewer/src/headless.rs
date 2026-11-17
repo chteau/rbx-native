@@ -142,6 +142,29 @@ impl Headless {
         Headless::from_dom(&dom, textures).map_err(|err| format!("{err} in {path:?}"))
     }
 
+    /// [`Headless::load`] on wgpu's no-op device: no adapter, no driver and
+    /// no shader compiled, so it returns at once and draws nothing. For a
+    /// host that never shows its place, where a real renderer only cost
+    /// seconds (tens on a laptop GPU compiling every pipeline).
+    pub fn load_undrawn(path: &Path) -> Result<Self, String> {
+        let dom = crate::load::read_place(path)?;
+        let device = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        Headless::build(
+            &dom,
+            Toggles {
+                textures: false,
+                materials: false,
+                lights: true,
+                clock_time: None,
+                show_development_gui: false,
+            },
+            ReflectionDatabase::embedded(),
+            View::default(),
+            Some(device),
+        )
+        .map_err(|err| format!("{err} in {path:?}"))
+    }
+
     /// [`Headless::load`] for a tree already in memory, e.g. one plugin
     /// widget's GUI, drawn on its own with [`Headless::render_gui`].
     pub fn from_dom(dom: &WeakDom, textures: bool) -> Result<Self, String> {
@@ -157,16 +180,19 @@ impl Headless {
             toggles,
             ReflectionDatabase::embedded(),
             View::default(),
+            None,
         )
     }
 
     /// [`Headless::from_dom`] with the toggles, database and view given,
-    /// at the default quality and calibration.
+    /// at the default quality and calibration, on `device` or, without one,
+    /// a GPU of its own.
     fn build(
         dom: &WeakDom,
         toggles: Toggles,
         database: ReflectionDatabase,
         view: View,
+        device: Option<(wgpu::Device, wgpu::Queue)>,
     ) -> Result<Self, String> {
         let mut resident = Resident::streaming();
         let mut loaded = Loaded::from_dom(dom, &database, toggles, &mut resident)
@@ -187,7 +213,12 @@ impl Headless {
         let uploaded_material_layers = loaded.scene().materials().layers();
         let quality = QualityLevel::default();
         let mut headless = Headless {
-            offscreen: Offscreen::new(loaded.world(), &quality.profile(), &view)?,
+            offscreen: match device {
+                Some((device, queue)) => {
+                    Offscreen::on_device(device, queue, loaded.world(), &quality.profile(), &view)
+                }
+                None => Offscreen::new(loaded.world(), &quality.profile(), &view)?,
+            },
             quality,
             calibration: crate::lighting::Calibration::default(),
             view,

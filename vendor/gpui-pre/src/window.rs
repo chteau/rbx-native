@@ -1972,7 +1972,11 @@ impl Window {
             platform_window.set_app_id(&app_id);
         }
 
-        platform_window.map_window().unwrap();
+        // rbx-native addition: a window opened hidden stays unmapped, as it
+        // already does on Windows and macOS.
+        if show {
+            platform_window.map_window().unwrap();
+        }
 
         Ok(Window {
             handle,
