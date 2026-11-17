@@ -26,7 +26,7 @@ local HEARTBEAT = 5
 -- How often the last-seen time is saved while connected: what arrives while
 -- connected is seen live, so the next catch-up starts after it.
 local LAST_SEEN_EVERY = 30
-local TICK = 0.2
+local TICK = 1 / 5
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
 
@@ -160,6 +160,20 @@ local function nextBackoff(current: number): number
 	return math.min(current * 2, BACKOFF_MAX)
 end
 
+-- Waits after a failed publish or poll and returns the next backoff. While
+-- the room has no host the relay only looks every few seconds anyway, so
+-- check back each second to pick a new host up as soon as it is found,
+-- rather than backing off from a host that just went away.
+local function retryAfter(myRelay: any, backoff: number): number
+	if myRelay:lookingForHost() then
+		task.wait(1)
+		return 0
+	end
+	local delay = nextBackoff(backoff)
+	task.wait(delay)
+	return delay
+end
+
 local function start()
 	stop()
 	if game.PlaceId == 0 then
@@ -191,6 +205,10 @@ local function start()
 		userId = ownId,
 		placeId = game.PlaceId,
 		beaconFrom = beaconId(),
+		loopbackOk = plugin:GetSetting(&quot;LoopbackOk&quot;) == true,
+		onLoopback = function()
+			plugin:SetSetting(&quot;LoopbackOk&quot;, true)
+		end,
 	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
@@ -239,7 +257,7 @@ local function start()
 	end)
 
 	task.spawn(function()
-		local lastPublish = 0.0
+		local lastPublish = 0
 		local backoff = 0
 		while generation == myGen do
 			if myCapture:isDirty() or os.clock() - lastPublish &gt;= HEARTBEAT then
@@ -253,9 +271,12 @@ local function start()
 					backoff = 0
 				else
 					showProblem(myRelay, err, minted)
-					backoff = nextBackoff(backoff)
-					lastPublish = os.clock()
-					task.wait(backoff)
+					-- With no host, go again right after the retry wait: the
+					-- poll loop's long-poll waits for this request to open a
+					-- host it just found, so a heartbeat's wait here would
+					-- hold the rejoin up by as long.
+					lastPublish = if myRelay:lookingForHost() then -math.huge else os.clock()
+					backoff = retryAfter(myRelay, backoff)
 				end
 			end
 			task.wait(TICK)
@@ -297,8 +318,12 @@ local function start()
 				task.wait(myRelay:pollDelay())
 			else
 				showProblem(myRelay, err, minted)
-				backoff = nextBackoff(backoff)
-				task.wait(backoff)
+				if myRelay:waiting() then
+					-- The host is gone: so are its user and their markers.
+					myMarkers:render({})
+					widget:setUsers({})
+				end
+				backoff = retryAfter(myRelay, backoff)
 			end
 		end
 	end)
@@ -419,13 +444,23 @@ local function canonical(room: string, url: string, at: number): string
 	return string.format(&quot;rbx-presence/announce/v1\n%s\n%s\n%.0f&quot;, room, url, at)
 end
 
+-- The loopback port an rbx-native host on this computer serves `room` on,
+-- mirrored from announce.rs: Studio asks about 127.0.0.1 once, where the
+-- tunnel's address is new every time RbxNative starts.
+function Announce.loopbackPort(room: string): number
+	return 40960 + (tonumber(string.sub(room, 1, 4), 16) or 0) % 8192
+end
+
 -- Whether `url` may be connected to: public HTTPS, or this machine.
 function Announce.allowedUrl(url: string): boolean
 	return string.sub(url, 1, 8) == &quot;https://&quot; or string.sub(url, 1, 17) == &quot;http://127.0.0.1:&quot;
 end
 
 -- `text` decoded if it is a genuine, current announcement for `room`.
-function Announce.verify(key: string, room: string, now: number, text: string): any?
+-- `received` is when the ntfy server got it (unix ms): one stamped far from
+-- that comes from a machine with a wrong clock, and would turn &quot;newest&quot;
+-- hours later, long after its host is gone.
+function Announce.verify(key: string, room: string, now: number, received: number, text: string): any?
 	local ok, message = pcall(Json.decode, text)
 	if not ok or type(message) ~= &quot;table&quot; then
 		return nil
@@ -434,7 +469,11 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	if message.v ~= 1 or type(url) ~= &quot;string&quot; or type(at) ~= &quot;number&quot; or type(sig) ~= &quot;string&quot; then
 		return nil
 	end
-	if at &gt; now + Announce.CLOCK_SKEW_MS or now - at &gt; Announce.MAX_AGE_MS then
+	if
+		at &gt; now + Announce.CLOCK_SKEW_MS
+		or now - at &gt; Announce.MAX_AGE_MS
+		or math.abs(at - received) &gt; Announce.CLOCK_SKEW_MS
+	then
 		return nil
 	end
 	if url ~= &quot;&quot; and not Announce.allowedUrl(url) then
@@ -446,12 +485,13 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	return { url = url, at = at }
 end
 
--- The host's URL from a run of announcement texts: the newest genuine one,
--- nil when there is none or the newest says the host left.
-function Announce.newest(key: string, room: string, now: number, texts: { string }): string?
+-- The host's URL from a run of announcements ({ text, time }: the message
+-- and when the server received it, unix ms): the newest genuine one, nil
+-- when there is none or the newest says the host left.
+function Announce.newest(key: string, room: string, now: number, messages: { { text: string, time: number } }): string?
 	local best: any = nil
-	for _, text in texts do
-		local message = Announce.verify(key, room, now, text)
+	for _, item in messages do
+		local message = Announce.verify(key, room, now, item.time, item.text)
 		if message and (best == nil or message.at &gt; best.at) then
 			best = message
 		end
@@ -613,9 +653,9 @@ local Edits = require(script.Parent.Edits)
 local Paths = require(script.Parent.Paths)
 local Schema = require(script.Parent.Schema)
 
-local SAMPLE_INTERVAL = 0.2
-local MOVE_STUDS = 0.05
-local TURN_RADIANS = math.rad(0.5)
+local SAMPLE_INTERVAL = 1 / 5
+local MOVE_STUDS = 1 / 20
+local TURN_RADIANS = math.rad(1 / 2)
 local MAX_WATCHED = 50
 local VALUE_CUT = 80
 
@@ -1122,8 +1162,8 @@ local Notes = require(script.Parent.Notes)
 local Paths = require(script.Parent.Paths)
 local Sync = require(script.Parent.CoeditSync)
 
-local FLUSH_EVERY = 0.3
-local POLL_EVERY = 0.5
+local FLUSH_EVERY = 3 / 10
+local POLL_EVERY = 1 / 2
 -- The longest wait between polls while the relay can't be read.
 local POLL_BACKOFF_MAX = 10
 
@@ -6945,7 +6985,7 @@ local function post(self: any, body: string, fill: boolean): (boolean, string?)
 			return true, nil
 		end
 		lastError = if okPost then err else tostring(ok)
-		task.wait(0.5 * 2 ^ (attempt - 1))
+		task.wait(2 ^ (attempt - 2))
 	end
 	return false, lastError
 end
@@ -7146,9 +7186,9 @@ local function encodeInner(value: any, valueType: string?, targetOf: (Instance) 
 	elseif kind == &quot;Color3&quot; then
 		if valueType == &quot;Color3uint8&quot; then
 			return wrap(&quot;Color3uint8&quot;, {
-				math.clamp(math.floor(value.R * 255 + 0.5), 0, 255),
-				math.clamp(math.floor(value.G * 255 + 0.5), 0, 255),
-				math.clamp(math.floor(value.B * 255 + 0.5), 0, 255),
+				math.clamp(math.floor(value.R * 255 + 1 / 2), 0, 255),
+				math.clamp(math.floor(value.G * 255 + 1 / 2), 0, 255),
+				math.clamp(math.floor(value.B * 255 + 1 / 2), 0, 255),
 			})
 		end
 		return wrap(&quot;Color3&quot;, { value.R, value.G, value.B })
@@ -7801,7 +7841,7 @@ local function format(value: any): (string, Color3?)
 	elseif kind == &quot;number&quot; then
 		local text = string.format(&quot;%.3f&quot;, value)
 		text = string.gsub(text, &quot;0+$&quot;, &quot;&quot;)
-		text = string.gsub(text, &quot;%.$&quot;, &quot;&quot;)
+		text = string.gsub(text, &quot;[%.,]$&quot;, &quot;&quot;)
 		return text, nil
 	elseif kind == &quot;string&quot; then
 		local first = string.match(value, &quot;^[^\n]*&quot;) or &quot;&quot;
@@ -7887,7 +7927,7 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 
 	local tile = Instance.new(&quot;TextLabel&quot;)
 	tile.Size = UDim2.fromOffset(28, 28)
-	tile.Position = UDim2.new(0, 0, 0.5, -14)
+	tile.Position = UDim2.new(0, 0, 1 / 2, -14)
 	Ui.fill(tile, &quot;accent_soft&quot;)
 	Ui.corner(tile, Ui.RADIUS_TILE)
 	tile.FontFace = Ui.FONT_BOLD
@@ -7909,8 +7949,8 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 
 	local controls = Instance.new(&quot;Frame&quot;)
 	controls.BackgroundTransparency = 1
-	controls.AnchorPoint = Vector2.new(1, 0.5)
-	controls.Position = UDim2.fromScale(1, 0.5)
+	controls.AnchorPoint = Vector2.new(1, 1 / 2)
+	controls.Position = UDim2.fromScale(1, 1 / 2)
 	controls.Size = UDim2.fromOffset(460, 28)
 	controls.Parent = header
 	local controlsList = Ui.list(controls, 12, true)
@@ -7981,8 +8021,8 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 	note.Size = UDim2.new(1, -120, 1, 0)
 	local close = Ui.button(footer, &quot;Close&quot;, true)
 	close.Size = UDim2.fromOffset(96, 34)
-	close.AnchorPoint = Vector2.new(1, 0.5)
-	close.Position = UDim2.fromScale(1, 0.5)
+	close.AnchorPoint = Vector2.new(1, 1 / 2)
+	close.Position = UDim2.fromScale(1, 1 / 2)
 	close.Activated:Connect(function()
 		gui.Enabled = false
 	end)
@@ -8159,7 +8199,7 @@ function DiffWindow.listRow(self: DiffWindow, change: Changes.Change, marker: st
 	mark.Size = UDim2.new(0, 10, 1, 0)
 	local instance = self.found[change.path]
 	local icon = Ui.classIcon(row, if instance then instance.ClassName else &quot;Folder&quot;, 16)
-	icon.Position = UDim2.new(0, 26, 0.5, -8)
+	icon.Position = UDim2.new(0, 26, 1 / 2, -8)
 
 	local name = Ui.text(row, change.name, { size = Ui.TEXT_SM, font = if selected then Ui.FONT_SEMIBOLD else Ui.FONT, wrap = false })
 	name.Position = UDim2.fromOffset(50, 4)
@@ -8590,6 +8630,27 @@ local function encodeString(s: string): string
 	return '&quot;' .. escaped .. '&quot;'
 end
 
+-- Studio formats and parses numbers in the system locale on some machines:
+-- on a French Mac `tonumber(&quot;0.5&quot;)` fails and `%g` writes &quot;0,5&quot;. JSON always
+-- uses &quot;.&quot;, so swap in whatever this Studio uses on the way in and out.
+local FORMAT_POINT = string.match(string.format(&quot;%.1f&quot;, 1 / 2), &quot;^0(%D)5$&quot;) or &quot;.&quot;
+local PARSE_POINT = if tonumber(&quot;0.5&quot;) == 1 / 2 or tonumber(&quot;0,5&quot;) ~= 1 / 2 then &quot;.&quot; else &quot;,&quot;
+
+local function formatNumber(pattern: string, n: number): string
+	local text = string.format(pattern, n)
+	if FORMAT_POINT ~= &quot;.&quot; then
+		text = string.gsub(text, &quot;%&quot; .. FORMAT_POINT, &quot;.&quot;)
+	end
+	return text
+end
+
+local function parseNumberText(text: string): number?
+	if PARSE_POINT ~= &quot;.&quot; then
+		text = string.gsub(text, &quot;%.&quot;, PARSE_POINT)
+	end
+	return tonumber(text)
+end
+
 local function encodeNumber(n: number): string
 	if n ~= n or n == math.huge or n == -math.huge then
 		error(&quot;cannot encode non-finite number&quot;)
@@ -8600,11 +8661,11 @@ local function encodeNumber(n: number): string
 	if n % 1 == 0 and math.abs(n) &lt; 2 ^ 53 then
 		return string.format(&quot;%.0f&quot;, n)
 	end
-	local short = string.format(&quot;%.14g&quot;, n)
-	if tonumber(short) == n then
+	local short = formatNumber(&quot;%.14g&quot;, n)
+	if parseNumberText(short) == n then
 		return short
 	end
-	return string.format(&quot;%.17g&quot;, n)
+	return formatNumber(&quot;%.17g&quot;, n)
 end
 
 local function encodeValue(value: any, out: {string})
@@ -8735,7 +8796,7 @@ local parseValue
 
 local function parseNumber(text: string, pos: number): (number, number)
 	local literal = text:match(&quot;^-?%d+%.?%d*[eE]?[+-]?%d*&quot;, pos)
-	local n = literal and tonumber(literal)
+	local n = literal and parseNumberText(literal)
 	if not literal or not n then
 		fail(text, pos, &quot;bad number&quot;)
 	end
@@ -8891,9 +8952,9 @@ local function makeCamera(folder: Folder, user: any): Part
 	part.CanQuery = false
 	part.CanTouch = false
 	part.Locked = true
-	part.Size = Vector3.new(1, 0.6, 1.5)
+	part.Size = Vector3.new(1, 3 / 5, 3 / 2)
 	part.Material = Enum.Material.Neon
-	part.Transparency = 0.3
+	part.Transparency = 3 / 10
 	part.Name = &quot;Camera&quot;
 
 	local gui = Instance.new(&quot;BillboardGui&quot;)
@@ -8911,7 +8972,7 @@ local function makeCamera(folder: Folder, user: any): Part
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.BuilderSansBold
 	label.TextSize = 16
-	label.TextStrokeTransparency = 0.5
+	label.TextStrokeTransparency = 1 / 2
 	label.Parent = gui
 
 	part.Parent = folder
@@ -8939,7 +9000,7 @@ function Markers.render(self: Markers, users: { any })
 					if not box then
 						local created = Instance.new(&quot;SelectionBox&quot;)
 						created.Archivable = false
-						created.LineThickness = 0.05
+						created.LineThickness = 1 / 20
 						created.SurfaceTransparency = 1
 						created.Parent = folder
 						self.items[key] = created
@@ -9287,6 +9348,11 @@ export type Config = {
 	placeId: number,
 	-- Kept by the caller across sessions; a fresh one when absent.
 	beaconFrom: string?,
+	-- hosted: a host on this computer has answered on its loopback port
+	-- before (kept by the caller), so look there first; `onLoopback` is told
+	-- the first time one does.
+	loopbackOk: boolean?,
+	onLoopback: (() -&gt; ())?,
 }
 
 local VERSION_MISMATCH =
@@ -9295,6 +9361,33 @@ local VERSION_MISMATCH =
 -- Plugins have no CSPRNG API. A v4 GUID is 122 random bits, so 12 of its 16
 -- bytes, mixed with a Random stream, make a nonce that does not repeat.
 local rng = Random.new()
+
+-- Studio asks whether the plugin may reach a host on the first request to
+-- it, and asks once per request still waiting on that answer. So until a
+-- host has answered once, its requests go one at a time.
+local asking: { [string]: boolean } = {}
+local answered: { [string]: boolean } = {}
+-- How long a long-poll waits for a quick request to open a new host.
+local LONG_WAITS_FOR = 30
+
+-- `long`: a relay long-poll, which can take 20 s to answer. It never goes
+-- first to a host: holding the line that long would hold up everything
+-- else (joining a new host would show nothing for as long).
+local function request(options: { [string]: any }, long: boolean?): any
+	local host = string.match(options.Url, &quot;^%a+://([^/]+)&quot;) or options.Url
+	local giveUp = os.clock() + LONG_WAITS_FOR
+	while asking[host] or (long and not answered[host] and os.clock() &lt; giveUp) do
+		task.wait()
+	end
+	asking[host] = not answered[host]
+	local ok, res = pcall(HttpService.RequestAsync, HttpService, options)
+	asking[host] = nil
+	if not ok then
+		error(res, 0)
+	end
+	answered[host] = true
+	return res
+end
 
 local function nonceFor(): string
 	local hex = string.gsub(HttpService:GenerateGUID(false), &quot;[^%x]&quot;, &quot;&quot;)
@@ -9308,7 +9401,18 @@ end
 
 local EXPIRY_MS = 15000
 -- How often a hosted room looks for its host while it has none.
-local RESOLVE_EVERY = 15
+local RESOLVE_EVERY = 10
+-- How often it looks in the first RESOLVE_SOON_FOR seconds after its host
+-- went away: that is when an RbxNative coming back (a restart) announces
+-- itself. Thirty looks stay inside ntfy.sh's burst allowance.
+local RESOLVE_SOON_EVERY = 3
+local RESOLVE_SOON_FOR = 90
+-- How often a hosted room with no host looks on this computer's loopback
+-- port: a refused connection costs nothing.
+local LOOPBACK_EVERY = 1
+-- How long a host that stopped answering is still shown before the room
+-- goes back to waiting for someone in RbxNative.
+local HOST_GRACE = 10
 -- How often a hosted room reads the place's beacons while it waits.
 local BEACON_READ_EVERY = 60
 
@@ -9328,7 +9432,18 @@ function Relay.new(config: Config)
 		-- hosted: the announce server; `base` is the host, once found.
 		announceBase = if hosted then url else nil,
 		base = if hosted then nil else url,
+		-- The relay the last presence poll's cursor came from.
+		cursorBase = nil :: string?,
 		lastResolve = -math.huge,
+		-- hosted: where a host on this computer would answer (see _loopback).
+		loopback = if hosted then `http://127.0.0.1:{Announce.loopbackPort(config.room)}` else nil,
+		loopbackOk = config.loopbackOk == true,
+		onLoopback = config.onLoopback,
+		lastLoopback = -math.huge,
+		-- hosted: when a host last stopped answering (os.clock), nil if none has.
+		lostAt = nil :: number?,
+		-- hosted: when the host stopped answering (os.clock), nil while it answers.
+		goneSince = nil :: number?,
 		key = config.key,
 		encKey = config.encKey,
 		room = config.room,
@@ -9357,31 +9472,82 @@ end
 -- A short wait between ntfy polls, so the poll loop does not spin; a
 -- hosted room with no host yet waits until it looks again.
 function Relay:pollDelay(): number
-	if self.kind == &quot;hosted&quot; and self.base == nil then
-		return RESOLVE_EVERY
+	if self:lookingForHost() then
+		return self:_resolveEvery()
 	end
 	return if self.kind == &quot;ntfy&quot; then 1 else 0
+end
+
+-- Whether a hosted room has no host to talk to right now, whatever the
+-- reason: retrying sooner than its next look for one gains nothing.
+function Relay:lookingForHost(): boolean
+	return self.kind == &quot;hosted&quot; and self.base == nil
+end
+
+function Relay:_resolveEvery(): number
+	if self.lostAt ~= nil and os.clock() - self.lostAt &lt; RESOLVE_SOON_FOR then
+		return RESOLVE_SOON_EVERY
+	end
+	return RESOLVE_EVERY
 end
 
 -- Whether a hosted room is waiting for an rbx-native user to host it (not
 -- an error: nothing is wrong, nobody is there yet).
 function Relay:waiting(): boolean
-	return self.kind == &quot;hosted&quot; and self.base == nil
+	return self.kind == &quot;hosted&quot;
+		and self.base == nil
+		and (self.goneSince == nil or os.clock() - self.goneSince &gt;= HOST_GRACE)
 end
 
--- hosted: finds the host from the newest announcement, at most once every
--- RESOLVE_EVERY seconds. True when there is one to talk to.
+-- What a hosted room with no host to talk to says.
+function Relay:_noHost(): string
+	return if self:waiting() then WAITING else Relay.HOST_GONE
+end
+
+-- hosted: whether an rbx-native host on this computer serves the room on
+-- its loopback port, at most once every LOOPBACK_EVERY; if so, talk to it
+-- there. Studio asks about 127.0.0.1 once, where it would ask about the
+-- tunnel's new address every time RbxNative starts, and the host listens
+-- there before its tunnel is even up.
+function Relay:_loopback(): boolean
+	if os.clock() - self.lastLoopback &lt; LOOPBACK_EVERY then
+		return false
+	end
+	self.lastLoopback = os.clock()
+	local ok, res = pcall(function()
+		return request({ Url = `{self.loopback}/v1/rooms/{self.room}/health`, Method = &quot;GET&quot; })
+	end)
+	if not ok or res.StatusCode ~= 200 then
+		return false
+	end
+	self.base = self.loopback
+	self.sendKey = true
+	if not self.loopbackOk then
+		self.loopbackOk = true
+		if self.onLoopback then
+			self.onLoopback()
+		end
+	end
+	return true
+end
+
+-- hosted: finds the host, on this computer (see _loopback) or from the
+-- newest announcement, at most once every RESOLVE_EVERY seconds. True when
+-- there is one to talk to.
 function Relay:_resolve(): (boolean, string?)
 	if self.base ~= nil then
 		return true, nil
 	end
-	if os.clock() - self.lastResolve &lt; RESOLVE_EVERY then
-		return false, WAITING
+	if self.loopbackOk and self:_loopback() then
+		return true, nil
+	end
+	if os.clock() - self.lastResolve &lt; self:_resolveEvery() then
+		return false, self:_noHost()
 	end
 	self.lastResolve = os.clock()
 	local url = string.format(&quot;%s/%s/json?poll=1&amp;since=12h&quot;, self.announceBase, Announce.topic(self.room))
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = url, Method = &quot;GET&quot; })
+		return request({ Url = url, Method = &quot;GET&quot; })
 	end)
 	if not ok then
 		return false, tostring(res)
@@ -9394,25 +9560,46 @@ function Relay:_resolve(): (boolean, string?)
 		local decoded, parsed = pcall(function()
 			return HttpService:JSONDecode(line)
 		end)
-		if decoded and type(parsed) == &quot;table&quot; and parsed.event == &quot;message&quot; and type(parsed.message) == &quot;string&quot; then
-			table.insert(texts, parsed.message)
+		if
+			decoded
+			and type(parsed) == &quot;table&quot;
+			and parsed.event == &quot;message&quot;
+			and type(parsed.message) == &quot;string&quot;
+			and type(parsed.time) == &quot;number&quot;
+		then
+			table.insert(texts, { text = parsed.message, time = parsed.time * 1000 })
 		end
 	end
 	local host = Announce.newest(self.key, self.room, nowMs(), texts)
 	if not host then
+		-- The host said goodbye: nobody to wait out.
+		self.goneSince = nil
 		return false, WAITING
+	end
+	-- Someone hosts: maybe on this computer. Asking costs a one-time
+	-- 127.0.0.1 prompt even when they're elsewhere.
+	if not self.loopbackOk then
+		self.lastLoopback = -math.huge
+		if self:_loopback() then
+			return true, nil
+		end
 	end
 	self.base = string.gsub(host, &quot;/+$&quot;, &quot;&quot;)
 	self.sendKey = true
 	return true, nil
 end
 
--- hosted: the host stopped answering (left, crashed, or handed over); look
--- for it again on the next call.
+-- hosted: the host stopped answering (left, crashed, or handed over). The
+-- first time, look for a new host at once; after that every RESOLVE_EVERY,
+-- since a host that quit without a goodbye is still the newest announced.
 function Relay:_lost()
 	if self.kind == &quot;hosted&quot; then
 		self.base = nil
-		self.lastResolve = -math.huge
+		self.lostAt = os.clock()
+		if self.goneSince == nil then
+			self.goneSince = os.clock()
+			self.lastResolve = -math.huge
+		end
 	end
 end
 
@@ -9428,7 +9615,7 @@ function Relay:keyConflict(leaving: boolean?): string?
 	if leaving or os.clock() - self.lastBeaconPost &gt;= Beacon.EVERY then
 		self.lastBeaconPost = os.clock()
 		pcall(function()
-			HttpService:RequestAsync({
+			request({
 				Url = base,
 				Method = &quot;POST&quot;,
 				Headers = { [&quot;Content-Type&quot;] = &quot;text/plain&quot; },
@@ -9441,7 +9628,7 @@ function Relay:keyConflict(leaving: boolean?): string?
 	end
 	self.lastBeaconRead = os.clock()
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = base .. &quot;/json?poll=1&amp;since=15m&quot;, Method = &quot;GET&quot; })
+		return request({ Url = base .. &quot;/json?poll=1&amp;since=15m&quot;, Method = &quot;GET&quot; })
 	end)
 	if ok and res.Success then
 		local texts = {}
@@ -9460,18 +9647,18 @@ end
 
 -- ===== Worker (signed HTTP) =====
 
-function Relay:_request(method: string, suffix: string, body: string): (any?, string?, any?)
+function Relay:_request(method: string, suffix: string, body: string, long: boolean?): (any?, string?, any?)
 	local path = &quot;/v1/rooms/&quot; .. self.room .. suffix
 	local headers = Auth.headers(self.key, method, path, self.userId, nowMs(), body, self.sendKey)
 	if body ~= &quot;&quot; then
 		headers[&quot;Content-Type&quot;] = &quot;application/json&quot;
 	end
-	local request: { [string]: any } = { Url = self.base .. path, Method = method, Headers = headers }
+	local options: { [string]: any } = { Url = self.base .. path, Method = method, Headers = headers }
 	if body ~= &quot;&quot; then
-		request.Body = body
+		options.Body = body
 	end
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync(request)
+		return request(options, long)
 	end)
 	if not ok then
 		return nil, tostring(res)
@@ -9496,28 +9683,31 @@ local function needsKey(res: any): boolean
 	return ok and type(decoded) == &quot;table&quot; and decoded.error == &quot;key&quot;
 end
 
-function Relay:_send(method: string, suffix: string, body: string): (any?, string?)
+function Relay:_send(method: string, suffix: string, body: string, long: boolean?): (any?, string?)
 	if self.kind == &quot;hosted&quot; then
 		local found, why = self:_resolve()
 		if not found then
 			return nil, why
 		end
 	end
-	local res, err, raw = self:_request(method, suffix, body)
+	local res, err, raw = self:_request(method, suffix, body, long)
 	if res == nil and raw == nil and self.kind == &quot;hosted&quot; then
 		-- No HTTP answer at all: the host may be gone, or its address not
 		-- reachable yet; look again shortly.
 		self:_lost()
-		err = `{Relay.HOST_GONE} ({err})`
+		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} ({err})`
 	elseif res == nil and raw and self.kind == &quot;hosted&quot; and (raw.StatusCode == 404 or raw.StatusCode &gt;= 500) then
 		-- A closed tunnel answers 404/502/530 from Cloudflare's edge (an
 		-- HTML page: keep it out of the status line).
 		self:_lost()
-		err = `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
+		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
 	end
 	if res == nil and needsKey(raw) and not self.sendKey then
 		self.sendKey = true
-		res, err = self:_request(method, suffix, body)
+		res, err = self:_request(method, suffix, body, long)
+	end
+	if res ~= nil then
+		self.goneSince = nil
 	end
 	return res, err
 end
@@ -9527,7 +9717,7 @@ end
 function Relay:_ntfyPublish(state: any): (boolean, string?)
 	local body = Ntfy.fitEncode(self.key, self.encKey, self.room, self.topic, self.userId, nowMs(), state, nonceFor)
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({
+		return request({
 			Url = self.base .. &quot;/&quot; .. self.topic,
 			Method = &quot;POST&quot;,
 			Headers = { [&quot;Content-Type&quot;] = &quot;text/plain&quot; },
@@ -9547,7 +9737,7 @@ function Relay:_ntfyPoll(): (any?, string?)
 	local since = self.lastId or &quot;10s&quot;
 	local url = string.format(&quot;%s/%s/json?poll=1&amp;since=%s&quot;, self.base, self.topic, HttpService:UrlEncode(since))
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = url, Method = &quot;GET&quot; })
+		return request({ Url = url, Method = &quot;GET&quot; })
 	end)
 	if not ok then
 		return nil, tostring(res)
@@ -9611,10 +9801,14 @@ function Relay:poll(cursor: number): (any?, string?)
 	if self.kind == &quot;ntfy&quot; then
 		return self:_ntfyPoll()
 	end
-	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/poll?since=%.0f&quot;, cursor), &quot;&quot;)
+	-- A cursor only means something to the relay that gave it; a new host
+	-- counts from far lower, and would sit on the poll until it timed out.
+	local since = if self.base ~= nil and self.base == self.cursorBase then cursor else 0
+	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/poll?since=%.0f&quot;, since), &quot;&quot;, true)
 	if res == nil then
 		return nil, err
 	end
+	self.cursorBase = self.base
 	local ok, snapshot = pcall(Schema.openSnapshot, self.encKey, self.room, res.Body)
 	if not ok then
 		return nil, tostring(snapshot)
@@ -9632,7 +9826,7 @@ function Relay:journal(sinceMs: number): (any?, string?)
 	if self.kind == &quot;ntfy&quot; then
 		local url = string.format(&quot;%s/%s/json?poll=1&amp;since=12h&quot;, self.base, self.topic)
 		local ok, res = pcall(function()
-			return HttpService:RequestAsync({ Url = url, Method = &quot;GET&quot; })
+			return request({ Url = url, Method = &quot;GET&quot; })
 		end)
 		if not ok then
 			return nil, tostring(res)
@@ -9720,7 +9914,7 @@ function Relay:pollOps(since: number): (any?, string?)
 	if self.kind ~= &quot;hosted&quot; and self.kind ~= &quot;worker&quot; then
 		return nil, NEEDS_HOSTED
 	end
-	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/ops?since=%.0f&quot;, since), &quot;&quot;)
+	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/ops?since=%.0f&quot;, since), &quot;&quot;, true)
 	if res == nil then
 		return nil, err
 	end
@@ -10239,97 +10433,97 @@ return Sha256
 -- Colours are { r, g, b, alpha } with r, g, b in 0-255 and alpha in 0-1.
 return {
 	colors = {
-		accent_hover = { 115, 133, 221, 1.000 },
-		accent_line = { 108, 127, 219, 0.550 },
-		accent_soft = { 108, 127, 219, 0.120 },
-		avatar = { 44, 48, 80, 1.000 },
-		avatar_on_accent = { 42, 45, 74, 1.000 },
-		axis_x = { 255, 143, 143, 1.000 },
-		axis_y = { 147, 224, 143, 1.000 },
-		axis_z = { 143, 184, 255, 1.000 },
-		black = { 10, 10, 11, 1.000 },
-		border = { 255, 255, 255, 0.059 },
-		border2 = { 255, 255, 255, 0.110 },
-		check_off_border = { 138, 138, 138, 1.000 },
-		check_on = { 108, 127, 219, 1.000 },
-		chrome = { 18, 18, 19, 1.000 },
-		danger_hover = { 138, 90, 85, 1.000 },
-		diff_add = { 116, 201, 143, 1.000 },
-		diff_add_gutter = { 116, 201, 143, 0.161 },
-		diff_add_pill = { 116, 201, 143, 0.122 },
-		diff_add_soft = { 116, 201, 143, 0.102 },
-		diff_remove_gutter = { 224, 108, 108, 0.161 },
-		diff_remove_pill = { 224, 108, 108, 0.122 },
-		diff_remove_soft = { 224, 108, 108, 0.102 },
-		dock = { 18, 18, 19, 1.000 },
-		error_soft = { 224, 108, 108, 0.120 },
-		field_select = { 25, 26, 28, 1.000 },
-		hover = { 255, 255, 255, 0.051 },
-		hover_faint = { 255, 255, 255, 0.016 },
-		hover_subtle = { 255, 255, 255, 0.031 },
-		knob = { 255, 255, 255, 1.000 },
-		menu_bar = { 10, 10, 11, 1.000 },
-		output_client = { 93, 169, 246, 1.000 },
-		output_info = { 111, 177, 252, 1.000 },
-		output_server = { 108, 203, 126, 1.000 },
-		ribbon_tab_active = { 255, 255, 255, 0.102 },
-		secondary_hover = { 32, 33, 35, 1.000 },
-		selection = { 108, 127, 219, 0.722 },
-		shadow = { 0, 0, 0, 0.400 },
-		slide_backdrop = { 19, 19, 20, 1.000 },
-		tab_active_bar = { 108, 127, 219, 1.000 },
-		text = { 226, 226, 230, 1.000 },
-		text2 = { 143, 143, 151, 1.000 },
-		text3 = { 92, 92, 99, 1.000 },
-		text_disabled = { 92, 92, 99, 1.000 },
-		text_error = { 224, 108, 108, 1.000 },
-		text_full = { 226, 226, 230, 1.000 },
-		text_label = { 143, 143, 151, 1.000 },
-		text_muted = { 143, 143, 151, 1.000 },
-		text_placeholder = { 92, 92, 99, 1.000 },
-		text_strong = { 226, 226, 230, 1.000 },
-		tile = { 18, 18, 19, 1.000 },
-		tool_align = { 201, 168, 255, 1.000 },
-		tool_local = { 143, 224, 216, 1.000 },
-		tool_move = { 143, 224, 176, 1.000 },
-		tool_pivot = { 198, 242, 143, 1.000 },
-		tool_rotate = { 255, 201, 143, 1.000 },
-		tool_scale = { 255, 155, 155, 1.000 },
-		tool_select = { 143, 184, 255, 1.000 },
-		tool_sun = { 255, 232, 143, 1.000 },
-		tool_transform = { 255, 155, 224, 1.000 },
-		track = { 255, 255, 255, 0.102 },
-		veil = { 0, 0, 0, 0.549 },
-		viewport_axis_x = { 230, 41, 41, 1.000 },
-		viewport_axis_y = { 41, 199, 56, 1.000 },
-		viewport_axis_z = { 51, 92, 242, 1.000 },
-		viewport_background = { 28, 29, 32, 1.000 },
-		viewport_badge = { 20, 21, 26, 0.878 },
-		viewport_badge_text = { 228, 229, 233, 1.000 },
-		viewport_bone = { 206, 206, 206, 0.902 },
-		viewport_bone_selected = { 111, 173, 249, 1.000 },
-		viewport_brush_add = { 137, 206, 255, 1.000 },
-		viewport_brush_region = { 249, 225, 124, 1.000 },
-		viewport_brush_subtract = { 255, 137, 124, 1.000 },
-		viewport_grid_axis_x = { 221, 69, 80, 1.000 },
-		viewport_grid_axis_z = { 89, 144, 234, 1.000 },
-		viewport_grid_major = { 82, 82, 82, 1.000 },
-		viewport_grid_minor = { 66, 66, 66, 1.000 },
-		viewport_guide = { 255, 255, 255, 1.000 },
-		viewport_guide_active = { 255, 255, 0, 1.000 },
-		viewport_hover = { 250, 166, 39, 0.549 },
-		viewport_joint = { 255, 173, 63, 1.000 },
-		viewport_joint_selected = { 255, 239, 89, 1.000 },
-		viewport_measure_lit = { 0, 139, 234, 1.000 },
-		viewport_orient_body = { 91, 143, 212, 0.302 },
-		viewport_orient_rim = { 157, 196, 255, 0.400 },
-		viewport_preview = { 144, 226, 161, 0.502 },
-		viewport_readout = { 37, 37, 37, 1.000 },
-		viewport_readout_border = { 0, 0, 0, 1.000 },
-		viewport_readout_text = { 255, 255, 255, 1.000 },
-		viewport_selection = { 92, 181, 245, 1.000 },
-		warning = { 217, 165, 91, 1.000 },
-		wash_faint = { 255, 255, 255, 0.039 },
+		accent_hover = { 115, 133, 221, 1 },
+		accent_line = { 108, 127, 219, 11 / 20 },
+		accent_soft = { 108, 127, 219, 3 / 25 },
+		avatar = { 44, 48, 80, 1 },
+		avatar_on_accent = { 42, 45, 74, 1 },
+		axis_x = { 255, 143, 143, 1 },
+		axis_y = { 147, 224, 143, 1 },
+		axis_z = { 143, 184, 255, 1 },
+		black = { 10, 10, 11, 1 },
+		border = { 255, 255, 255, 59 / 1000 },
+		border2 = { 255, 255, 255, 11 / 100 },
+		check_off_border = { 138, 138, 138, 1 },
+		check_on = { 108, 127, 219, 1 },
+		chrome = { 18, 18, 19, 1 },
+		danger_hover = { 138, 90, 85, 1 },
+		diff_add = { 116, 201, 143, 1 },
+		diff_add_gutter = { 116, 201, 143, 161 / 1000 },
+		diff_add_pill = { 116, 201, 143, 61 / 500 },
+		diff_add_soft = { 116, 201, 143, 51 / 500 },
+		diff_remove_gutter = { 224, 108, 108, 161 / 1000 },
+		diff_remove_pill = { 224, 108, 108, 61 / 500 },
+		diff_remove_soft = { 224, 108, 108, 51 / 500 },
+		dock = { 18, 18, 19, 1 },
+		error_soft = { 224, 108, 108, 3 / 25 },
+		field_select = { 25, 26, 28, 1 },
+		hover = { 255, 255, 255, 51 / 1000 },
+		hover_faint = { 255, 255, 255, 2 / 125 },
+		hover_subtle = { 255, 255, 255, 31 / 1000 },
+		knob = { 255, 255, 255, 1 },
+		menu_bar = { 10, 10, 11, 1 },
+		output_client = { 93, 169, 246, 1 },
+		output_info = { 111, 177, 252, 1 },
+		output_server = { 108, 203, 126, 1 },
+		ribbon_tab_active = { 255, 255, 255, 51 / 500 },
+		secondary_hover = { 32, 33, 35, 1 },
+		selection = { 108, 127, 219, 361 / 500 },
+		shadow = { 0, 0, 0, 2 / 5 },
+		slide_backdrop = { 19, 19, 20, 1 },
+		tab_active_bar = { 108, 127, 219, 1 },
+		text = { 226, 226, 230, 1 },
+		text2 = { 143, 143, 151, 1 },
+		text3 = { 92, 92, 99, 1 },
+		text_disabled = { 92, 92, 99, 1 },
+		text_error = { 224, 108, 108, 1 },
+		text_full = { 226, 226, 230, 1 },
+		text_label = { 143, 143, 151, 1 },
+		text_muted = { 143, 143, 151, 1 },
+		text_placeholder = { 92, 92, 99, 1 },
+		text_strong = { 226, 226, 230, 1 },
+		tile = { 18, 18, 19, 1 },
+		tool_align = { 201, 168, 255, 1 },
+		tool_local = { 143, 224, 216, 1 },
+		tool_move = { 143, 224, 176, 1 },
+		tool_pivot = { 198, 242, 143, 1 },
+		tool_rotate = { 255, 201, 143, 1 },
+		tool_scale = { 255, 155, 155, 1 },
+		tool_select = { 143, 184, 255, 1 },
+		tool_sun = { 255, 232, 143, 1 },
+		tool_transform = { 255, 155, 224, 1 },
+		track = { 255, 255, 255, 51 / 500 },
+		veil = { 0, 0, 0, 549 / 1000 },
+		viewport_axis_x = { 230, 41, 41, 1 },
+		viewport_axis_y = { 41, 199, 56, 1 },
+		viewport_axis_z = { 51, 92, 242, 1 },
+		viewport_background = { 28, 29, 32, 1 },
+		viewport_badge = { 20, 21, 26, 439 / 500 },
+		viewport_badge_text = { 228, 229, 233, 1 },
+		viewport_bone = { 206, 206, 206, 451 / 500 },
+		viewport_bone_selected = { 111, 173, 249, 1 },
+		viewport_brush_add = { 137, 206, 255, 1 },
+		viewport_brush_region = { 249, 225, 124, 1 },
+		viewport_brush_subtract = { 255, 137, 124, 1 },
+		viewport_grid_axis_x = { 221, 69, 80, 1 },
+		viewport_grid_axis_z = { 89, 144, 234, 1 },
+		viewport_grid_major = { 82, 82, 82, 1 },
+		viewport_grid_minor = { 66, 66, 66, 1 },
+		viewport_guide = { 255, 255, 255, 1 },
+		viewport_guide_active = { 255, 255, 0, 1 },
+		viewport_hover = { 250, 166, 39, 549 / 1000 },
+		viewport_joint = { 255, 173, 63, 1 },
+		viewport_joint_selected = { 255, 239, 89, 1 },
+		viewport_measure_lit = { 0, 139, 234, 1 },
+		viewport_orient_body = { 91, 143, 212, 151 / 500 },
+		viewport_orient_rim = { 157, 196, 255, 2 / 5 },
+		viewport_preview = { 144, 226, 161, 251 / 500 },
+		viewport_readout = { 37, 37, 37, 1 },
+		viewport_readout_border = { 0, 0, 0, 1 },
+		viewport_readout_text = { 255, 255, 255, 1 },
+		viewport_selection = { 92, 181, 245, 1 },
+		warning = { 217, 165, 91, 1 },
+		wash_faint = { 255, 255, 255, 39 / 1000 },
 	},
 	sizes = {
 		checkbox_target = 26,
@@ -10369,7 +10563,7 @@ return {
 		row_padding = 4,
 		section_gap = 7,
 		section_height = 14,
-		select_inset = 5.5,
+		select_inset = 11 / 2,
 		separator_height = 58,
 		slider_min_width = 60,
 		slider_rail = 6,
@@ -10378,13 +10572,13 @@ return {
 		strip_field_height = 27,
 		tab_add_width = 42,
 		tabs_height = 42,
-		text_action = 12.5,
+		text_action = 25 / 2,
 		text_badge = 11,
 		text_ghost = 11,
 		text_lg = 13,
 		text_md = 12,
-		text_sm = 11.5,
-		text_xs = 10.5,
+		text_sm = 23 / 2,
+		text_xs = 21 / 2,
 		text_xxs = 10,
 		tile_width = 56,
 		toggle_height = 17,
@@ -10635,14 +10829,14 @@ function Ui.switch(parent: Instance?, onClick: () -&gt; (), order: number?): Swi
 	Ui.corner(track, 999)
 	local knob = Instance.new(&quot;Frame&quot;)
 	knob.Size = UDim2.fromOffset(12, 12)
-	knob.AnchorPoint = Vector2.new(0, 0.5)
+	knob.AnchorPoint = Vector2.new(0, 1 / 2)
 	knob.BorderSizePixel = 0
 	knob.BackgroundColor3 = Ui.color(&quot;knob&quot;)
 	Ui.corner(knob, 999)
 	knob.Parent = track
 	local function set(on: boolean)
 		Ui.fill(track, if on then &quot;check_on&quot; else &quot;track&quot;)
-		knob.Position = if on then UDim2.new(1, -14, 0.5, 0) else UDim2.new(0, 2, 0.5, 0)
+		knob.Position = if on then UDim2.new(1, -14, 1 / 2, 0) else UDim2.new(0, 2, 1 / 2, 0)
 	end
 	set(false)
 	track.Activated:Connect(onClick)
@@ -10760,7 +10954,11 @@ local NOTE = &quot;Presence only works for collaborators who have Studio open wi
 	.. &quot;presence plugin running, or rbx-native itself.&quot;
 
 local HTTP_NOTE = &quot;Presence sends your selection, camera and open script to the relay. &quot;
-	.. &quot;Studio asks once whether this plugin may reach that domain; allow it.&quot;
+	.. &quot;Studio asks whether this plugin may reach each address it talks to, allow them. &quot;
+	.. &quot;With the default relay that's ntfy.sh, where RbxNative posts where its session is, &quot;
+	.. &quot;and 127.0.0.1, where RbxNative on this computer runs it. Someone in RbxNative on &quot;
+	.. &quot;another computer runs it on trycloudflare.com instead, at an address that's new every &quot;
+	.. &quot;time they open RbxNative, so Studio asks about that one each time.&quot;
 
 type Callbacks = {
 	onToggle: () -&gt; (),
@@ -10846,8 +11044,8 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	local switch = Ui.switch(switchLane, function()
 		callbacks.onToggle()
 	end)
-	switch.frame.AnchorPoint = Vector2.new(0, 0.5)
-	switch.frame.Position = UDim2.fromScale(0, 0.5)
+	switch.frame.AnchorPoint = Vector2.new(0, 1 / 2)
+	switch.frame.Position = UDim2.fromScale(0, 1 / 2)
 	local shareText = Ui.frame(shareRow, 2)
 	shareText.Size = UDim2.new(1, -(28 + Ui.GAP), 0, 0)
 	Ui.list(shareText, 2)
@@ -10904,7 +11102,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	urlBox.Parent = owner
 	urlBox.Focused:Connect(function()
 		urlStroke.Color = Ui.color(&quot;check_on&quot;)
-		urlStroke.Transparency = 0.45
+		urlStroke.Transparency = 9 / 20
 	end)
 	urlBox.FocusLost:Connect(function()
 		urlStroke.Color = Ui.color(&quot;border&quot;)
