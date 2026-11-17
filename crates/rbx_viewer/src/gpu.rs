@@ -83,24 +83,83 @@ pub(crate) fn ooms() -> u32 {
     OOMS.load(Ordering::Relaxed)
 }
 
-/// One way of building a place on the GPU: a graphics quality level and a
-/// material size (a [`LEAN`]).
+/// How far the sun's shadow map has been cut down, in halvings of its side,
+/// `SHADOW_OFF` being no shadows at all. Only ever goes up, like [`LEAN`].
+static SHADOW_CUT: AtomicU8 = AtomicU8::new(0);
+
+/// Halvings of the sun map before shadows go.
+const MAX_SHADOW_CUT: u8 = 3;
+
+/// The [`Rung::shadow`] that casts no shadows.
+pub(crate) const SHADOW_OFF: u8 = MAX_SHADOW_CUT + 1;
+
+/// No sun map is cut below this side.
+const MIN_SHADOW_SIDE: u32 = 256;
+
+/// The level the host last asked to draw at. A place built after that
+/// (a reopen, a plugin widget) starts there rather than at the top and
+/// walking down from it.
+static PREFERRED_LEVEL: AtomicU8 = AtomicU8::new(QualityLevel::MAX);
+
+pub(crate) fn prefer_level(level: QualityLevel) {
+    PREFERRED_LEVEL.store(level.resolved(), Ordering::Relaxed);
+}
+
+/// `RBX_GPU_BUDGET_MB=n` pretends the GPU holds `n` MB: a build whose shadow
+/// map and material arrays add up to more counts as out of memory, so the
+/// walk down a small card takes can be watched on any machine.
+const BUDGET_VARIABLE: &str = "RBX_GPU_BUDGET_MB";
+
+fn budget_bytes() -> Option<u64> {
+    let mb = std::env::var(BUDGET_VARIABLE)
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()?;
+    Some(mb << 20)
+}
+
+/// One way of building a place on the GPU: a graphics quality level, a
+/// material size (a [`LEAN`]) and a sun map cut (a [`SHADOW_CUT`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Rung {
     pub(crate) level: u8,
     pub(crate) lean: u8,
+    pub(crate) shadow: u8,
 }
 
 impl Rung {
+    /// Where a build starts: no higher than `cap` or the level last asked
+    /// for, at the sizes earlier out-of-memory steps settled on.
+    pub(crate) fn start(cap: u8) -> Rung {
+        Rung {
+            level: cap.min(PREFERRED_LEVEL.load(Ordering::Relaxed)),
+            lean: lean(),
+            shadow: SHADOW_CUT.load(Ordering::Relaxed),
+        }
+    }
+
     /// What to build at after this ran out of GPU memory, or `None` at the
-    /// bottom. Materials go to 256 px first: they are most of what a place
-    /// allocates and the cheapest to lose. Then the level halves down to the
-    /// lowest, which shrinks the shadow map, drops multisampling and post
-    /// effects, and in the bottom bands drops shadows altogether. Then the
-    /// materials halve again down to 64 px.
+    /// bottom. The sun map is what allocates one big texture at once, so it
+    /// halves first, down to 256 px. Then materials go to 256 px, then the
+    /// shadows go, then the level halves down to the lowest (multisampling
+    /// and post effects), then the materials halve again down to 64 px.
     pub(crate) fn step_down(self) -> Option<Rung> {
+        let side = self.sun_side(self.shadow);
+        if self.shadow < MAX_SHADOW_CUT && side > MIN_SHADOW_SIDE {
+            return Some(Rung {
+                shadow: self.shadow + 1,
+                ..self
+            });
+        }
         if self.lean < 2 {
             return Some(Rung { lean: 2, ..self });
+        }
+        if self.shadow < SHADOW_OFF && side > 0 {
+            return Some(Rung {
+                shadow: SHADOW_OFF,
+                ..self
+            });
         }
         if self.level > QualityLevel::MIN {
             let level = (self.level / 2).max(QualityLevel::MIN);
@@ -112,13 +171,58 @@ impl Rung {
         })
     }
 
-    /// Makes material uploads from here on use this rung's size.
+    /// The sun map side this level gets after `cut` halvings, 0 where it
+    /// casts no shadows.
+    fn sun_side(self, cut: u8) -> u32 {
+        let profile = QualityLevel::Level(self.level).profile();
+        if !profile.shadows || cut >= SHADOW_OFF {
+            return 0;
+        }
+        (profile.shadow_map_size >> cut)
+            .max(MIN_SHADOW_SIDE)
+            .min(profile.shadow_map_size)
+    }
+
+    /// Makes material uploads and sun maps from here on use this rung's size.
     pub(crate) fn apply(self) {
         lean_at_least(self.lean);
+        SHADOW_CUT.fetch_max(self.shadow, Ordering::Relaxed);
     }
 
     pub(crate) fn quality(self) -> QualityLevel {
         QualityLevel::Level(self.level)
+    }
+
+    /// `profile` for a level at or under this rung's, with the sun map cut.
+    pub(crate) fn limit(
+        self,
+        mut profile: crate::quality::QualityProfile,
+    ) -> crate::quality::QualityProfile {
+        if self.shadow >= SHADOW_OFF {
+            profile.shadows = false;
+        } else {
+            profile.shadow_map_size = (profile.shadow_map_size >> self.shadow)
+                .max(MIN_SHADOW_SIDE)
+                .min(profile.shadow_map_size);
+        }
+        profile
+    }
+
+    /// The profile a build at this rung uses.
+    pub(crate) fn profile(self) -> crate::quality::QualityProfile {
+        self.limit(self.quality().profile())
+    }
+
+    /// Whether the pretend budget (see [`BUDGET_VARIABLE`]) is too small for
+    /// this rung with `layers` material layers.
+    pub(crate) fn over_budget(self, layers: usize) -> bool {
+        let Some(budget) = budget_bytes() else {
+            return false;
+        };
+        let side = u64::from(self.sun_side(self.shadow));
+        let material = u64::from(resolution_at(self.lean));
+        let bytes = side * side * 4 + layers as u64 * 4 * material * material * 4 * 4 / 3;
+        bytes > budget
     }
 }
 
@@ -129,7 +233,11 @@ impl std::fmt::Display for Rung {
             "Level{:02} with {} px materials",
             self.level,
             resolution_at(self.lean)
-        )
+        )?;
+        match self.sun_side(self.shadow) {
+            0 => write!(f, ", no shadows"),
+            side => write!(f, ", {side} px shadows"),
+        }
     }
 }
 
@@ -272,70 +380,109 @@ pub(crate) fn for_tests() -> Option<(wgpu::Device, wgpu::Queue)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Rung, MAX_LEAN};
+    use super::{Rung, MAX_LEAN, SHADOW_OFF};
     use crate::quality::QualityLevel;
 
     fn ladder(from: Rung) -> Vec<Rung> {
         std::iter::successors(Some(from), |rung| rung.step_down()).collect()
     }
 
-    #[test]
-    fn materials_shrink_to_256_before_the_level_drops() {
-        let rungs = ladder(Rung { level: 21, lean: 1 });
-        assert_eq!(rungs[1], Rung { level: 21, lean: 2 });
-        assert_eq!(rungs[2], Rung { level: 10, lean: 2 });
+    fn r(level: u8, lean: u8, shadow: u8) -> Rung {
+        Rung {
+            level,
+            lean,
+            shadow,
+        }
     }
 
     #[test]
-    fn the_level_halves_to_the_lowest_then_materials_shrink_to_the_end() {
-        let levels: Vec<(u8, u8)> = ladder(Rung { level: 21, lean: 0 })
+    fn the_sun_map_shrinks_before_materials_then_shadows_go_before_the_level_drops() {
+        let steps: Vec<_> = ladder(r(21, 1, 0))
             .iter()
-            .map(|rung| (rung.level, rung.lean))
+            .map(|rung| (rung.level, rung.lean, rung.shadow))
             .collect();
         assert_eq!(
-            levels,
+            steps[..8],
             [
-                (21, 0),
-                (21, 2),
-                (10, 2),
-                (5, 2),
-                (2, 2),
-                (1, 2),
-                (1, 3),
-                (1, 4)
+                (21, 1, 0),
+                (21, 1, 1),
+                (21, 1, 2),
+                (21, 1, 3),
+                (21, 2, 3),
+                (21, 2, SHADOW_OFF),
+                (10, 2, SHADOW_OFF),
+                (5, 2, SHADOW_OFF)
             ]
         );
     }
 
     #[test]
+    fn a_level_without_shadows_skips_the_sun_map_steps() {
+        let steps: Vec<_> = ladder(r(1, 0, 0))
+            .iter()
+            .map(|rung| (rung.lean, rung.shadow))
+            .collect();
+        assert_eq!(steps, [(0, 0), (2, 0), (3, 0), (4, 0)]);
+    }
+
+    #[test]
+    fn the_sun_map_halves_three_times_then_goes() {
+        // Level 11 has a 4096 map.
+        let sides: Vec<_> = ladder(r(11, 2, 0))
+            .iter()
+            .take_while(|rung| rung.level == 11)
+            .map(|rung| rung.sun_side(rung.shadow))
+            .collect();
+        assert_eq!(sides, [4096, 2048, 1024, 512, 0]);
+    }
+
+    #[test]
     fn the_bottom_rung_has_nothing_below_it() {
-        let bottom = Rung {
-            level: QualityLevel::MIN,
-            lean: MAX_LEAN,
-        };
-        assert_eq!(bottom.step_down(), None);
+        assert_eq!(r(QualityLevel::MIN, MAX_LEAN, 0).step_down(), None);
     }
 
     #[test]
     fn every_ladder_ends_and_never_climbs() {
         for level in QualityLevel::MIN..=QualityLevel::MAX {
             for lean in 0..=MAX_LEAN {
-                let rungs = ladder(Rung { level, lean });
-                assert!(rungs.len() <= 12);
+                let rungs = ladder(r(level, lean, 0));
+                assert!(rungs.len() <= 20);
                 for pair in rungs.windows(2) {
-                    assert!(pair[1].level <= pair[0].level && pair[1].lean >= pair[0].lean);
+                    assert!(
+                        pair[1].level <= pair[0].level
+                            && pair[1].lean >= pair[0].lean
+                            && pair[1].shadow >= pair[0].shadow
+                    );
                     assert_ne!(pair[0], pair[1]);
                 }
-                assert_eq!(rungs.last().map(|r| (r.level, r.lean)), Some((1, MAX_LEAN)));
+                let last = rungs.last().unwrap();
+                assert_eq!((last.level, last.lean), (1, MAX_LEAN));
             }
         }
     }
 
     #[test]
-    fn a_rung_names_its_level_and_material_size() {
+    fn a_rung_names_what_it_builds() {
         assert_eq!(
-            Rung { level: 1, lean: 3 }.to_string(),
-            "Level01 with 128 px materials"
+            r(1, 3, 0).to_string(),
+            "Level01 with 128 px materials, no shadows"
+        );
+        assert_eq!(
+            r(21, 2, 2).to_string(),
+            format!(
+                "Level21 with 256 px materials, {} px shadows",
+                r(21, 2, 2).sun_side(2)
+            )
+        );
+    }
+
+    #[test]
+    fn a_dropped_sun_map_is_one_texel_and_a_cut_one_is_smaller() {
+        let full = QualityLevel::Level(11).profile();
+        assert!(!r(11, 0, SHADOW_OFF).limit(full).shadows);
+        assert_eq!(
+            r(11, 0, 2).limit(full).shadow_map_size,
+            full.shadow_map_size / 4
         );
     }
 }

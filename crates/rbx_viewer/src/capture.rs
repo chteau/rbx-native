@@ -74,10 +74,8 @@ impl Offscreen {
                     continue;
                 }
             };
-            let mut rung = Some(gpu::Rung {
-                level: cap,
-                lean: gpu::lean(),
-            });
+            let first = gpu::Rung::start(cap);
+            let mut rung = Some(first);
             while let Some(trying) = rung {
                 trying.apply();
                 let ooms = gpu::ooms();
@@ -86,13 +84,17 @@ impl Offscreen {
                     device.clone(),
                     queue.clone(),
                     world,
-                    &trying.quality().profile(),
+                    &trying.profile(),
                     view,
                 );
                 let caught = pollster::block_on(scope.pop());
                 // An error that slipped past the scope invalidated something
                 // just the same.
-                if caught.is_none() && gpu::ooms() == ooms {
+                let simulated = trying.over_budget(world.scene.materials().layers());
+                if caught.is_none() && gpu::ooms() == ooms && !simulated {
+                    if trying != first {
+                        eprintln!("rbxview: built the scene at {trying}");
+                    }
                     return Ok((offscreen, trying));
                 }
                 let err = caught.map_or_else(|| "Out of Memory".to_owned(), |err| err.to_string());

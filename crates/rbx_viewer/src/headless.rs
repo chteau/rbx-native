@@ -345,6 +345,7 @@ impl Headless {
     /// ran out of memory, a change of level rebuilds everything rather than
     /// re-viewing what may be invalid (see [`Headless::recover`]).
     pub fn set_quality(&mut self, level: QualityLevel) {
+        gpu::prefer_level(level);
         if self.ooms != gpu::ooms() {
             self.quality = level;
             self.recover();
@@ -363,7 +364,9 @@ impl Headless {
 
     /// The drawn level's profile under the calibrated band ends.
     fn profile(&self) -> crate::quality::QualityProfile {
-        QualityLevel::Level(self.drawn_level()).profile_in(&self.calibration.quality_bands)
+        self.rung.limit(
+            QualityLevel::Level(self.drawn_level()).profile_in(&self.calibration.quality_bands),
+        )
     }
 
     /// Steps one [`gpu::Rung`] down after the GPU ran out of memory outside a
@@ -378,6 +381,7 @@ impl Headless {
         let from = gpu::Rung {
             level: self.drawn_level(),
             lean: gpu::lean().max(self.rung.lean),
+            ..self.rung
         };
         let Some(rung) = from.step_down() else {
             eprintln!("rbxview: out of GPU memory even at {from}, nothing smaller to try");
