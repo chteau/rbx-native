@@ -27,6 +27,9 @@
   which sandbox it publishes to, F8 pressed with the Roblox menu open opens
   the panel once the menu closes on the Mac too, and the network popover's
   name row goes away once a preset is saved or applied. (@chteau)
+- **Mac retest, round 4.** Updating from a build before the icon pack
+  fix no longer swaps a Dark icon pack you had for Light just because the
+  theme is light: an older settings file keeps the pack it stored. (@chteau)
 
 ## 2026-11-14
 

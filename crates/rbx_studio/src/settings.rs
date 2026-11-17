@@ -60,7 +60,9 @@ pub(crate) struct Settings {
     pub(crate) icon_pack: IconPack,
     /// Whether the user chose `icon_pack` (the Explorer menu or Settings).
     /// Until they do, it follows the theme's ground, see [`icon_pack_for`].
-    pub(crate) icon_pack_picked: bool,
+    /// `None` only for a file written before the field existed, which
+    /// [`Settings::themed`] settles.
+    pub(crate) icon_pack_picked: Option<bool>,
     /// The render loop's frame rate cap while the window is unfocused, see
     /// `pacing::FocusPacing`.
     pub(crate) unfocused_fps: UnfocusedFps,
@@ -238,7 +240,7 @@ impl Default for Settings {
             selection_occluded: false,
             light_guides: true,
             icon_pack: IconPack::Dark,
-            icon_pack_picked: false,
+            icon_pack_picked: Some(false),
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
             calibration: rbx_viewer::Calibration::default(),
@@ -305,6 +307,23 @@ impl Settings {
     pub(crate) fn save(&self) -> Result<(), SettingsError> {
         let path = default_settings_path().ok_or(SettingsError::NoConfigDir)?;
         save_to(self, &path)
+    }
+
+    /// The theme's icon variant unless the user picked one, as switching
+    /// theme does. A file from before `icon_pack_picked` keeps the pack it
+    /// stored: one that differs from the theme's counts as picked. Returns
+    /// whether that migration happened, so the caller can save it.
+    pub(crate) fn themed(self, mode: ThemeMode) -> (Settings, bool) {
+        let migrated = self.icon_pack_picked.is_none();
+        let picked = self
+            .icon_pack_picked
+            .unwrap_or_else(|| self.icon_pack != icon_pack_for(mode, self.icon_pack, false));
+        let settings = Settings {
+            icon_pack: icon_pack_for(mode, self.icon_pack, picked),
+            icon_pack_picked: Some(picked),
+            ..self
+        };
+        (settings, migrated)
     }
 }
 
@@ -425,10 +444,11 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
         icon_pack,
-        icon_pack_picked: value
-            .get("icon_pack_picked")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
+        // An older file that stored a pack but not this: left to `themed`.
+        icon_pack_picked: match value.get("icon_pack_picked").and_then(|v| v.as_bool()) {
+            None if value.get("icon_pack").is_some() => None,
+            picked => Some(picked.unwrap_or(false)),
+        },
         unfocused_fps,
         font_scale,
         calibration: read_calibration(&value),
@@ -809,7 +829,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     });
     // Outside the literal: `json!` hits the macro recursion limit at this size.
     value["play_copy_name"] = settings.play_copy_name.clone().into();
-    value["icon_pack_picked"] = settings.icon_pack_picked.into();
+    value["icon_pack_picked"] = settings.icon_pack_picked.unwrap_or(false).into();
     value["insert_anchored"] = settings.insert_anchored.into();
     value["output_rich_text"] = settings.output_rich_text.into();
     value["playtest_rate_hz"] = settings.playtest_rate_hz.into();
@@ -982,6 +1002,43 @@ mod tests {
     }
 
     #[test]
+    fn an_old_file_keeps_its_icon_pack_under_any_theme() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for (stored, mode, picked) in [
+            ("Dark", ThemeMode::Light, true),
+            ("Light", ThemeMode::Dark, true),
+            ("Dark", ThemeMode::Dark, false),
+            ("Light", ThemeMode::Light, false),
+        ] {
+            std::fs::write(&path, format!(r#"{{"icon_pack":"{stored}"}}"#)).unwrap();
+            let loaded = load_from(&path);
+            assert_eq!(loaded.icon_pack_picked, None);
+            let pack = loaded.icon_pack;
+            let (settings, migrated) = loaded.themed(mode);
+            assert!(migrated);
+            assert_eq!(settings.icon_pack, pack);
+            assert_eq!(settings.icon_pack_picked, Some(picked));
+            save_to(&settings, &path).unwrap();
+            let (again, migrated) = load_from(&path).themed(mode);
+            assert!(!migrated);
+            assert_eq!(
+                (again.icon_pack, again.icon_pack_picked),
+                (pack, Some(picked))
+            );
+        }
+        // No stored pack at all is a fresh file: it follows the theme.
+        std::fs::write(&path, "{}").unwrap();
+        let (fresh, migrated) = load_from(&path).themed(ThemeMode::Light);
+        assert!(!migrated);
+        assert_eq!(
+            (fresh.icon_pack, fresh.icon_pack_picked),
+            (IconPack::Light, Some(false))
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn round_trips_through_disk() {
         let path = temp_settings_path();
         let settings = Settings {
@@ -992,7 +1049,7 @@ mod tests {
             selection_occluded: true,
             light_guides: false,
             icon_pack: IconPack::Light,
-            icon_pack_picked: true,
+            icon_pack_picked: Some(true),
             unfocused_fps: UnfocusedFps::Fps25,
             font_scale: 1.25,
             argon_address: "argon.example.com:9000".to_owned(),

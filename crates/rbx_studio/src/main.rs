@@ -400,13 +400,15 @@ fn main() {
     });
 }
 
-/// The theme's icon variant unless the user picked one, as switching theme
-/// does (see `Shell::reload_theme`).
+/// [`Settings::themed`], saving a settled old file so it is settled once.
 fn themed(settings: Settings, mode: ThemeMode) -> Settings {
-    Settings {
-        icon_pack: settings::icon_pack_for(mode, settings.icon_pack, settings.icon_pack_picked),
-        ..settings
+    let (settings, migrated) = settings.themed(mode);
+    if migrated {
+        if let Err(err) = settings.save() {
+            eprintln!("rbxstudio: could not save settings: {err}");
+        }
     }
+    settings
 }
 
 /// File › Close Place's way back: Home again, with a boot read from disk as
