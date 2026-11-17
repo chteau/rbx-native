@@ -280,7 +280,11 @@ export class RoomObject implements DurableObject {
         return;
       }
       entry.client = parsed.client;
-      if (this.room.put(parsed, Date.now())) {
+      const refused = this.room.put(parsed, Date.now());
+      // Over the rate: drop this state and keep the socket; the next
+      // heartbeat carries it again. Closing made the sender reconnect in a loop.
+      if (refused?.status === 429) return;
+      if (refused) {
         server.close(1008, "refused");
         return;
       }

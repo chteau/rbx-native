@@ -374,6 +374,10 @@ fn socket(shared: &Arc<Shared>, mut stream: TcpStream, request: &Request, user_i
                             }
                             shared.changed();
                         }
+                        // Over the rate: drop this one state and keep the
+                        // socket, as the next heartbeat carries it again.
+                        // Closing made the sender reconnect again and again.
+                        Err(fault) if fault.status == 429 => {}
                         Err(_) => {
                             let _ = ws.close(None);
                             break;

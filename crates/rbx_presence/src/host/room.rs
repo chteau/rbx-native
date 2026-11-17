@@ -46,7 +46,8 @@ struct Held {
 pub struct Room {
     pub cursor: u64,
     users: HashMap<(u64, Client), Sealed>,
-    buckets: HashMap<u64, Bucket>,
+    /// Per sender: Studio and rbx-native of one user each get the full rate.
+    buckets: HashMap<(u64, Client), Bucket>,
     last_ts: HashMap<u64, u64>,
     journal: Vec<Held>,
 }
@@ -56,10 +57,10 @@ impl Room {
     /// advances the cursor; refused when the user is over their rate or the
     /// room is full.
     pub fn put(&mut self, state: Sealed, now: u64) -> Result<(), Refusal> {
-        if !self.take(state.user_id, now) {
+        let key = (state.user_id, state.client);
+        if !self.take(key, now) {
             return Err(Refusal::new(429, "rate"));
         }
-        let key = (state.user_id, state.client);
         if !self.users.contains_key(&key) && self.users.len() >= MAX_USERS {
             return Err(Refusal::new(403, "full"));
         }
@@ -170,13 +171,13 @@ impl Room {
 
     fn forget_if_gone(&mut self, user_id: u64) {
         if !self.users.keys().any(|(id, _)| *id == user_id) {
-            self.buckets.remove(&user_id);
+            self.buckets.retain(|(id, _), _| *id != user_id);
             self.last_ts.remove(&user_id);
         }
     }
 
-    fn take(&mut self, user_id: u64, now: u64) -> bool {
-        let bucket = self.buckets.entry(user_id).or_insert(Bucket {
+    fn take(&mut self, sender: (u64, Client), now: u64) -> bool {
+        let bucket = self.buckets.entry(sender).or_insert(Bucket {
             tokens: RATE_BURST,
             at: now,
         });
@@ -298,6 +299,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(room.snapshot().users.len(), 2);
+        // Each editor has its own rate: a busy Studio leaves rbx-native's.
+        for _ in 0..RATE_BURST as usize {
+            let _ = room.put(user(1), 200);
+        }
+        assert_eq!(room.put(user(1), 200), Err(Refusal::new(429, "rate")));
+        let native = || Sealed {
+            client: Client::RbxNative,
+            ..user(1)
+        };
+        room.put(native(), 200).unwrap();
         assert!(room.remove(1, Client::RbxNative));
         assert_eq!(room.snapshot().users[0].client, Client::Studio);
     }

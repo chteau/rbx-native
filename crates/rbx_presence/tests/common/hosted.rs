@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -110,14 +111,38 @@ pub fn start(
     user_id: u64,
     can_host: bool,
 ) -> (Client, Receiver<Event>) {
-    let hosting = can_host.then(|| {
-        Hosting(Arc::new(|port: u16| {
-            Ok((
-                format!("http://127.0.0.1:{port}"),
-                Box::new(Loopback) as Box<dyn Tunnel>,
-            ))
-        }))
-    });
+    let hosting = can_host.then(|| loopback(Arc::default()));
+    start_with(ntfy, key, enc_key, user_id, hosting)
+}
+
+/// A host whose tunnel opens count up in `opens`.
+pub fn start_counting(
+    ntfy: &str,
+    key: &str,
+    enc_key: [u8; 32],
+    user_id: u64,
+    opens: Arc<AtomicUsize>,
+) -> (Client, Receiver<Event>) {
+    start_with(ntfy, key, enc_key, user_id, Some(loopback(opens)))
+}
+
+fn loopback(opens: Arc<AtomicUsize>) -> Hosting {
+    Hosting(Arc::new(move |port: u16| {
+        opens.fetch_add(1, Ordering::SeqCst);
+        Ok((
+            format!("http://127.0.0.1:{port}"),
+            Box::new(Loopback) as Box<dyn Tunnel>,
+        ))
+    }))
+}
+
+pub fn start_with(
+    ntfy: &str,
+    key: &str,
+    enc_key: [u8; 32],
+    user_id: u64,
+    hosting: Option<Hosting>,
+) -> (Client, Receiver<Event>) {
     Client::start(Config {
         kind: RelayKind::Hosted,
         relay_url: ntfy.to_owned(),

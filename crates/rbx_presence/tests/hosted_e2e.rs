@@ -384,3 +384,117 @@ fn different_keys_on_one_place_are_reported_on_both_sides() {
         .unwrap();
     assert_eq!(found.as_deref(), Some("rbx-native"));
 }
+
+/// One user in Studio and rbx-native at once, both busy: Studio's posts
+/// never cost the host's own socket (the room rates each editor on its
+/// own), and the host keeps the one tunnel it opened.
+#[test]
+fn a_busy_studio_of_the_same_user_keeps_the_host_socket_and_tunnel() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let (ntfy, _topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
+    let room = auth::room_id(&key);
+    let opens = Arc::new(AtomicUsize::new(0));
+    let (host, events) = common::hosted::start_counting(&ntfy, &key, enc, 7, Arc::clone(&opens));
+    let url = loop {
+        match events.recv_timeout(Duration::from_secs(10)).expect("hosts") {
+            Event::Route(Route::Hosting(url)) => break url,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    };
+
+    let studio = {
+        let (url, key, room) = (url.clone(), key.clone(), room.clone());
+        thread::spawn(move || {
+            let mut state = state(7, "Workspace.Baseplate");
+            state.client = rbx_presence::schema::Client::Studio;
+            let path = format!("/v1/rooms/{room}/state");
+            for _ in 0..48 {
+                let sealed = rbx_presence::seal::seal_state(&enc, &room, &state);
+                let body = serde_json::to_string(&sealed).unwrap();
+                common::signed_request(&url, &key, 7, "POST", &path, &body);
+                thread::sleep(Duration::from_millis(125));
+            }
+        })
+    };
+    let end = Instant::now() + Duration::from_secs(7);
+    let mut n = 0;
+    while Instant::now() < end {
+        n += 1;
+        host.publish(state(7, &format!("Workspace.Part{n}")));
+        while let Ok(event) = events.try_recv() {
+            assert!(
+                !matches!(event, Event::Disconnected(_) | Event::Route(_)),
+                "{event:?}"
+            );
+        }
+        thread::sleep(Duration::from_millis(150));
+    }
+    studio.join().unwrap();
+    assert_eq!(opens.load(Ordering::SeqCst), 1);
+}
+
+/// The host's own relay drops its socket (here: the room is full when it
+/// first sends). It reconnects to the same relay through the same tunnel:
+/// a relay reconnect never opens a new tunnel, so Studio never has to allow
+/// a new address for it.
+#[test]
+fn a_relay_reconnect_keeps_the_tunnel_url() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let (ntfy, _topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
+    let room = auth::room_id(&key);
+    let opens = Arc::new(AtomicUsize::new(0));
+    let (host, events) = common::hosted::start_counting(&ntfy, &key, enc, 7, Arc::clone(&opens));
+    let url = loop {
+        match events.recv_timeout(Duration::from_secs(10)).expect("hosts") {
+            Event::Route(Route::Hosting(url)) => break url,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    };
+
+    let path = format!("/v1/rooms/{room}/state");
+    let mut others = Vec::new();
+    for user in 100.. {
+        let sealed = rbx_presence::seal::seal_state(&enc, &room, &state(user, "Workspace"));
+        let body = serde_json::to_string(&sealed).unwrap();
+        let (status, _) = common::signed_request(&url, &key, user, "POST", &path, &body);
+        if status != 200 {
+            assert_eq!(status, 403, "fills up");
+            break;
+        }
+        others.push(user);
+    }
+    host.publish(state(7, "Workspace.Baseplate"));
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        match events.recv_timeout(end - Instant::now()).expect("drops") {
+            Event::Disconnected(why) => {
+                assert_eq!(why, "relay closed the connection");
+                break;
+            }
+            Event::Route(route) => panic!("{route:?}"),
+            _ => {}
+        }
+    }
+
+    let gone = format!("{path}?client=rbx-native");
+    for user in others {
+        common::signed_request(&url, &key, user, "DELETE", &gone, "");
+    }
+    host.publish(state(7, "Workspace.SpawnLocation"));
+    let (route, sees) = route_and_sees(&events, 7, "Workspace.SpawnLocation");
+    assert_eq!(route, None, "a reconnect keeps the route");
+    assert!(sees);
+    assert_eq!(opens.load(Ordering::SeqCst), 1);
+}
