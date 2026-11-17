@@ -31,7 +31,11 @@
   fix no longer swaps a Dark icon pack you had for Light just because the
   theme is light: an older settings file keeps the pack it stored. The Mac
   build is signed with a designated requirement pinned to its identifier
-  and signing certificate, so it reads the same in every build. (@chteau)
+  and signing certificate, so it reads the same in every build. The
+  Network button and popover only say the first shaped Play asks for a
+  password (Mac) or administrator approval (Windows) while it still will:
+  not once the Mac helper is installed, not once this window's Windows
+  helper runs. (@chteau)
 
 ## 2026-11-14
 

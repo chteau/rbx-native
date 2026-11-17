@@ -17,19 +17,23 @@ use crate::tokens;
 const WIDTH: f32 = 340.;
 
 /// What shaping touches, and what this OS needs for it (Windows used to be
-/// told it needed Sober or Roséline, the Linux clients).
+/// told it needed Sober or Roséline, the Linux clients). [`footnote`] adds
+/// the elevation the next shaped Play still asks for.
+const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
+     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed.";
 #[cfg(windows)]
-const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
-     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Uses the bundled \
-     WinDivert, and asks for administrator approval the first time.";
+const NEEDS: &str = " Uses the bundled WinDivert.";
 #[cfg(target_os = "macos")]
-const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
-     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Asks for your \
-     password once, to install its helper.";
+const NEEDS: &str = "";
 #[cfg(not(any(windows, target_os = "macos")))]
-const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
-     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs Sober or \
-     Ros\u{e9}line.";
+const NEEDS: &str = " Needs Sober or Ros\u{e9}line.";
+
+fn footnote(helper_running: bool) -> String {
+    match super::elevation(helper_running) {
+        Some(e) => format!("{FOOTNOTE}{NEEDS} The first shaped Play {e}."),
+        None => format!("{FOOTNOTE}{NEEDS}"),
+    }
+}
 const ROWS: [(Field, &str, &str); 3] = [
     (Field::Latency, "Latency", "ms"),
     (Field::Jitter, "Jitter", "ms"),
@@ -47,6 +51,9 @@ pub(in crate::shell) struct Popover {
     pub(in crate::shell) status: Option<String>,
     /// Held by the popover itself, so Esc reaches it with no field focused.
     pub(super) focus: FocusHandle,
+    /// [`FOOTNOTE`] as it stood when the popover opened (macOS reads a
+    /// file to know).
+    footnote: String,
     pub(super) _subscriptions: Vec<Subscription>,
 }
 
@@ -103,6 +110,7 @@ impl Shell {
             saving: None,
             save_error: None,
             status: None,
+            footnote: footnote(self.play.network.helper_running()),
             _subscriptions: subscriptions,
         });
         cx.notify();
@@ -166,8 +174,9 @@ impl Shell {
         )
         .tooltip({
             let name = network.shown().name();
+            let running = network.helper_running();
             move |window, cx| {
-                let text = match super::prerequisite() {
+                let text = match super::prerequisite(running) {
                     Some(needs) => format!("Network simulation: {name} ({needs})"),
                     None => format!("Network simulation: {name}"),
                 };
@@ -415,7 +424,7 @@ impl Shell {
             .child(
                 ui::text(10.5, 14.)
                     .text_color(tokens::text3())
-                    .child(FOOTNOTE),
+                    .child(popover.footnote.clone()),
             )
             .when_some(popover.status.clone(), |this, status| {
                 this.child(ui::text(11., 14.).text_color(tokens::text2()).child(status))

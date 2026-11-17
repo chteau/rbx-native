@@ -16,7 +16,7 @@
 mod mac;
 
 #[cfg(target_os = "macos")]
-pub use mac::{helper_installed, remove_helper, Shaper};
+pub use mac::{helper_current, helper_installed, remove_helper, Shaper};
 
 pub(crate) const HELPER: &str = include_str!("dummynet/helper.sh");
 
@@ -31,11 +31,15 @@ pub(crate) const SOCKET: &str = "/var/run/io.github.chteau.rbx-native.netsim.soc
 /// The `VERSION=` the bundled helper declares; an installed helper saying
 /// another one in its `hello` line is replaced.
 pub(crate) fn helper_version() -> u32 {
-    HELPER
+    declared_version(HELPER).expect("helper.sh declares VERSION=<n>")
+}
+
+/// The `VERSION=` a helper script declares.
+pub(crate) fn declared_version(script: &str) -> Option<u32> {
+    script
         .lines()
         .find_map(|l| l.strip_prefix("VERSION="))
         .and_then(|v| v.trim().parse().ok())
-        .expect("helper.sh declares VERSION=<n>")
 }
 
 /// The daemon's launchd property list: one helper run per connection
