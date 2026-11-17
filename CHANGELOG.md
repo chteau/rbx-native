@@ -2,6 +2,7 @@
 
 ## 2026-11-17
 
+- **Studio sees you right away when you open the place in RbxNative.** On the same computer Studio said "Connected · 0 rbx-native" about 4 s after RbxNative opened, but you only showed up 10 to 30 s in. RbxNative joined its own room only after its tunnel was up and announced, and Studio doesn't need either of those. Now it joins on the loopback port as soon as the room is up, and the tunnel comes up in the background for collaborators on other computers. (@chteau)
 - **Studio gets back to RbxNative in seconds, and stops asking.** Quit and reopen RbxNative and Studio's Team Presence plugin used to sit on "Waiting..." for up to a minute, then ask again whether it could reach a brand new trycloudflare.com address, so nobody at Studio meant no rejoin at all. RbxNative's own check that the new address existed made Cloudflare's DNS remember it as missing for a minute; it now asks Cloudflare's name servers directly, so the address goes out about 8 s after the tunnel starts. And with Studio on the same computer, the plugin now talks to RbxNative on 127.0.0.1, which Studio asks about once, so it reconnects by itself about 5 s after RbxNative opens, before the tunnel is even up. Someone in RbxNative on another computer is still reached through the tunnel, so Studio asks about that address each time they open RbxNative. Needs the updated plugin. (@chteau)
 
 ## 2026-11-14
