@@ -65,6 +65,12 @@ web-time = "1.1"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rbx_cloud = { path = "../rbx_cloud" }
 
+# DX12 compiles shaders with DXC linked in. Without it wgpu falls back to FXC,
+# which took the 512 MB laptop ~20 s to build every pipeline when a place
+# opened. Only pulled in on Windows MSVC (see wgpu-hal's Cargo.toml).
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "30.0", features = ["static-dxc"] }
+
 # The browser build (see `web`); every one already in `Cargo.lock` through wgpu
 # and winit.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

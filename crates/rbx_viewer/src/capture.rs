@@ -86,6 +86,7 @@ impl Offscreen {
                 trying.apply();
                 let ooms = gpu::ooms();
                 let scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+                let started = std::time::Instant::now();
                 let offscreen = Self::on_device(
                     device.clone(),
                     queue.clone(),
@@ -98,7 +99,13 @@ impl Offscreen {
                 // just the same.
                 let simulated = trying.over_budget(world.scene.materials().layers());
                 if caught.is_none() && gpu::ooms() == ooms && !simulated {
-                    eprintln!("rbxview: built the scene at {trying}");
+                    // The time is mostly compiling pipelines: what a slow
+                    // shader compiler shows up in (see the static-dxc note
+                    // in Cargo.toml).
+                    eprintln!(
+                        "rbxview: built the scene at {trying} in {} ms",
+                        started.elapsed().as_millis()
+                    );
                     return Ok((offscreen, trying, trying.ceiling(first, cap)));
                 }
                 let err = caught.map_or_else(|| "Out of Memory".to_owned(), |err| err.to_string());

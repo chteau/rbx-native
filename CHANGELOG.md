@@ -20,6 +20,10 @@
   still pick a higher one later. Integrated GPUs also start with a 4096
   px shadow map instead of 8192, so a small card opens without GPU
   errors in the log. (@chteau)
+- **Windows opens places faster.** The DirectX 12 path now compiles its
+  shaders with DXC built into the editor instead of the old FXC compiler,
+  which spent most of the 20+ seconds a place took to open on a low-end
+  laptop. The log now says how long building the scene took. (@chteau)
 - **Network simulation lets go of the WinDivert driver at Stop.** The
   driver used to keep running until the editor quit; now it's unloaded
   when Play stops and loaded again on the next shaped Play, still with
