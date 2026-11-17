@@ -28,9 +28,14 @@
   opens fully inside that screen's work area, its title bar still under
   the pointer where there's room, and a window that was snapped or
   maximized no longer hands that size to the next tear-out. (@chteau)
-- **Plugin windows left open at quit.** A plugin window still up after the
-  editor closed no longer counts as you closing the widget, so it comes
-  back next launch. If a plugin's window doesn't come back, check the
+- **Plugin windows close with the editor.** Closing the editor used to
+  leave a floating plugin window on screen, and RbxNative plus the presence
+  tunnel kept running until you closed that too. Now the editor's plugin
+  windows go with it (once its save prompt is answered, Cancel keeps
+  everything), the app quits, and each widget comes back open next launch
+  at exactly the spot you left it. A saved spot that's on screen isn't
+  nudged anymore either, it was landing 5 px up on a Mac with the Dock at
+  the bottom. If a plugin's window doesn't come back, check the
   plugin itself: Lemonade, for one, shuts its widget on every launch until
   you click "I'm ready" on its welcome card (its × only hides the card).
   (@chteau)

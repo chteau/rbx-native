@@ -107,7 +107,8 @@ impl PanelWindow {
             (None, Some(at)) => Bounds::new(at - tear_out_grip(), bounds.size),
             (None, None) => bounds,
         };
-        let bounds = keep_on_screen(bounds, work_area(torn_at.unwrap_or(bounds.center()), cx));
+        let screen = screen_at(torn_at.unwrap_or(bounds.center()), cx);
+        let bounds = put_back(bounds, screen, torn_at.is_some());
         let placed =
             (stowed.is_some() || torn_at.is_some() || saved.is_some()).then_some(bounds.origin);
         let title = SharedString::from(panel.title());
@@ -133,7 +134,10 @@ impl PanelWindow {
         let window = cx
             .open_window(options, move |window, cx| {
                 let closing = shell.clone();
-                window.on_window_should_close(cx, move |_, cx| close(&closing, panel, cx));
+                window.on_window_should_close(cx, move |_, cx| {
+                    close(&closing, panel, cx);
+                    false
+                });
                 let view = cx.new(|cx| PanelWindow {
                     shell,
                     panel,
@@ -167,20 +171,49 @@ impl PanelWindow {
 /// back where it started rather than disappearing, since a panel you cannot
 /// get back is a panel the editor has lost. A plugin's window is its
 /// widget, so closing it is the widget's `Enabled` going false, and its
-/// toolbar button opens it again where it was left. One outliving the
-/// editor's window is left over from a quit: it just goes, and its widget
-/// stays open for the next session, as in Studio.
-fn close(shell: &Entity<Shell>, panel: Panel, cx: &mut App) -> bool {
-    shell.update(cx, |shell, cx| {
-        let editor = shell.editor_window;
-        if !editor.is_some_and(|editor| cx.windows().contains(&editor)) {
-            return true;
+/// toolbar button opens it again where it was left.
+fn close(shell: &Entity<Shell>, panel: Panel, cx: &mut App) {
+    shell.update(cx, |shell, cx| match panel {
+        Panel::Plugin(_) => shell.close_panel(panel, cx),
+        _ => shell.set_panel_open(panel, true, cx),
+    });
+}
+
+/// The editor's window going (closed for good, its save prompt answered)
+/// takes its torn-out docks' windows with it. Nothing else closes them on
+/// Linux or macOS, and one left over kept the app, its plugins and the
+/// presence tunnel running with no editor. Each goes without its own
+/// close, so a plugin's widget stays open, and where it was is kept first
+/// (the move's own keep may still be waiting), so it comes back there next
+/// launch. With them gone the last window closing quits as usual.
+pub(super) fn close_with_editor(window: &Window, cx: &mut Context<Shell>) -> Subscription {
+    let editor = window.window_handle().window_id();
+    let shell = cx.weak_entity();
+    cx.on_window_closed(move |cx, closed| {
+        if closed != editor {
+            return;
         }
-        match panel {
-            Panel::Plugin(_) => shell.close_panel(panel, cx),
-            _ => shell.set_panel_open(panel, true, cx),
-        }
-        false
+        let shell = shell.clone();
+        // Not from inside the platform's removal of the editor's window.
+        cx.defer(move |cx| {
+            let Some(shell) = shell.upgrade() else {
+                return;
+            };
+            let windows: Vec<_> =
+                shell.update(cx, |shell, _| shell.panel_windows.drain().collect());
+            for (panel, window) in windows {
+                let Ok(bounds) = window.update(cx, |_, window, _| {
+                    let bounds = window.window_bounds().get_bounds();
+                    window.remove_window();
+                    bounds
+                }) else {
+                    continue;
+                };
+                if let Panel::Plugin(dock) = panel {
+                    shell.update(cx, |shell, _| shell.remember_plugin_window(dock, bounds));
+                }
+            }
+        });
     })
 }
 
@@ -267,13 +300,14 @@ fn tear_out_grip() -> Point<Pixels> {
     point(frame + px(60.), frame + tokens::topbar_height() / 2.)
 }
 
-/// The work area (the screen less its taskbar) of the display under `at`.
-fn work_area(at: Point<Pixels>, cx: &App) -> Option<Bounds<Pixels>> {
+/// The display under `at`: all of it, and its work area (less the taskbar
+/// or the Dock).
+fn screen_at(at: Point<Pixels>, cx: &App) -> Option<(Bounds<Pixels>, Bounds<Pixels>)> {
     cx.displays()
         .into_iter()
         .find(|display| display.bounds().contains(&at))
         .or_else(|| cx.primary_display())
-        .map(|display| display.visible_bounds())
+        .map(|display| (display.bounds(), display.visible_bounds()))
 }
 
 /// `bounds` shrunk to fit `area` and slid inside it. A tear-out held near
@@ -295,6 +329,21 @@ fn keep_on_screen(bounds: Bounds<Pixels>, area: Option<Bounds<Pixels>>) -> Bound
         .min(area.bottom() - size.height)
         .max(area.top());
     Bounds::new(point(x, y), size)
+}
+
+/// Where a window opens on `screen` (all of it, and its work area): a
+/// tear-out inside the work area, and one put back where it was left
+/// exactly there while it is on its screen, since the work area leaves out
+/// the Dock and the taskbar, which a window may be left over.
+fn put_back(
+    bounds: Bounds<Pixels>,
+    screen: Option<(Bounds<Pixels>, Bounds<Pixels>)>,
+    torn: bool,
+) -> Bounds<Pixels> {
+    match screen {
+        Some((full, _)) if !torn && full.intersect(&bounds) == bounds => bounds,
+        _ => keep_on_screen(bounds, screen.map(|(_, work_area)| work_area)),
+    }
 }
 
 /// The editor edge a window at `moved` has been brought to (see
@@ -359,11 +408,7 @@ impl Render for PanelWindow {
                     .child(super::chrome::panel_topbar(
                         title,
                         self.grab.clone(),
-                        move |_, window, cx| {
-                            if close(&closing, panel, cx) {
-                                window.remove_window();
-                            }
-                        },
+                        move |_, _, cx| close(&closing, panel, cx),
                     )),
             )
             // The same strip a docked panel wears, minus the tabs: there
@@ -532,6 +577,26 @@ mod tests {
         // Already on screen: untouched.
         let fine = Bounds::new(point(px(100.), px(100.)), size(px(300.), px(300.)));
         assert_eq!(keep_on_screen(fine, Some(area)), fine);
+    }
+
+    /// The Mac retest: Lemonade left at (610,723) 420x300, over the Dock's
+    /// strip of a 1710x1107 screen, came back 5 px up.
+    #[::core::prelude::v1::test]
+    fn a_window_left_on_screen_comes_back_exactly_there() {
+        let full = Bounds::new(point(px(0.), px(0.)), size(px(1710.), px(1107.)));
+        let work_area = Bounds::new(point(px(0.), px(38.)), size(px(1710.), px(980.)));
+        let screen = Some((full, work_area));
+        let left = Bounds::new(point(px(610.), px(723.)), size(px(420.), px(300.)));
+        assert_eq!(put_back(left, screen, false), left);
+        // Torn out there, it keeps clear of the Dock.
+        assert_eq!(
+            put_back(left, screen, true).origin,
+            point(px(610.), px(718.))
+        );
+        // Left running off the screen, it comes back inside the work area.
+        let off = Bounds::new(point(px(1500.), px(900.)), size(px(420.), px(300.)));
+        let back = put_back(off, screen, false);
+        assert_eq!(back.origin, point(px(1290.), px(718.)));
     }
 
     #[::core::prelude::v1::test]

@@ -634,7 +634,7 @@ pub(crate) struct Shell {
     /// at, which its window opens under.
     torn_at: Option<(layout::Panel, Point<Pixels>)>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 18],
+    _subscriptions: [Subscription; 19],
 }
 
 impl Shell {
@@ -875,6 +875,7 @@ impl Shell {
         let window_activated = cx.observe_window_activation(window, |shell, window, cx| {
             shell.discord_window_activation(window.is_window_active(), cx);
         });
+        let editor_closed = panel_window::close_with_editor(window, cx);
         // Every keystroke cancels a bare Alt tap, a bound one too: Alt+S runs
         // its action before any key listener sees the S, and without this
         // the Alt coming back up read as a tap and left the menu bar focused
@@ -1092,6 +1093,7 @@ impl Shell {
                 rig_user_entered,
                 window_activated,
                 alt_chorded,
+                editor_closed,
             ],
         };
 
