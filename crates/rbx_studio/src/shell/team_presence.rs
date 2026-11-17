@@ -290,6 +290,29 @@ fn quick_tunnel() -> rbx_presence::client::Hosting {
     }))
 }
 
+/// An API key arrived after editors opened (a Keychain prompt answered after
+/// startup stopped waiting, or a key saved from Home): every editor retries
+/// the presence it could not start without it.
+pub(crate) fn key_arrived(cx: &mut App) {
+    for window in cx.windows() {
+        let Some(root) = window.downcast::<gpui_kit::component::Root>() else {
+            continue;
+        };
+        let _ = root.update(cx, |root, _, cx| {
+            let view = crate::window_blur::content(root.view(), cx);
+            if let Ok(shell) = view.downcast::<Shell>() {
+                shell.update(cx, |shell, cx| shell.retry_presence_after_key(cx));
+            }
+        });
+    }
+}
+
+/// Whether presence is on yet never started a client, so it may have
+/// stopped at a step the API key answers.
+fn stalled_without_key(enabled: bool, connection: &Connection, has_client: bool) -> bool {
+    enabled && !has_client && !matches!(connection, Connection::Off | Connection::Mock)
+}
+
 pub(super) fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -368,6 +391,23 @@ impl Shell {
         {
             self.connect_presence(cx);
         }
+    }
+
+    /// The saved API key loaded after this editor opened: presence that
+    /// stopped for want of it (who owns the key, the place's saved presence
+    /// key) tries again.
+    fn retry_presence_after_key(&mut self, cx: &mut Context<Self>) {
+        let presence = &mut self.team_presence;
+        if !stalled_without_key(
+            presence.settings.enabled,
+            &presence.connection,
+            presence.client.is_some(),
+        ) {
+            return;
+        }
+        presence.key_user_asked = false;
+        presence.key_check.asked_on_connect = false;
+        self.connect_presence(cx);
     }
 
     /// The dock's on/off switch; saves settings, connects or disconnects.
@@ -644,10 +684,14 @@ impl Shell {
                 .ok()
                 .filter(|&id| id != 0);
             let _ = this.update(cx, |shell, cx| {
-                shell.team_presence.key_user = owner;
-                if shell.team_presence.settings.enabled
-                    && shell.team_presence.connection == Connection::Connecting
-                    && shell.team_presence.client.is_none()
+                let presence = &mut shell.team_presence;
+                presence.key_user = owner.or(presence.key_user);
+                if presence.settings.enabled
+                    && matches!(
+                        presence.connection,
+                        Connection::Connecting | Connection::NoUser
+                    )
+                    && presence.client.is_none()
                 {
                     shell.connect_presence(cx);
                 }
@@ -885,8 +929,19 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::drop_defaults;
+    use super::{drop_defaults, stalled_without_key, Connection};
     use rbx_dom::{Variant, Vector3Data, WeakDom};
+
+    #[test]
+    fn only_presence_that_never_started_retries_when_the_key_lands() {
+        assert!(stalled_without_key(true, &Connection::NoUser, false));
+        assert!(stalled_without_key(true, &Connection::NoSecret, false));
+        assert!(stalled_without_key(true, &Connection::Connecting, false));
+        assert!(!stalled_without_key(true, &Connection::Connecting, true));
+        assert!(!stalled_without_key(true, &Connection::Connected, true));
+        assert!(!stalled_without_key(false, &Connection::Off, false));
+        assert!(!stalled_without_key(true, &Connection::Mock, false));
+    }
 
     #[test]
     fn an_added_part_shows_only_what_was_set() {
