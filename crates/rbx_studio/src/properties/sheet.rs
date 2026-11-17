@@ -17,9 +17,10 @@
 //!   show one value twice, or, per its own `deprecation_message` in
 //!   creator-docs, superseded or inert (`Sound.Pitch` for `PlaybackSpeed`,
 //!   `FormFactorPart.FormFactor`, which "no longer does anything").
-//! - Security and `NotScriptable` keep nothing out: creator-docs describes
-//!   `Lighting.Technology`, `NotScriptable`, `RobloxScriptSecurity`, as
-//!   "only modifiable in Studio", which is to say in this panel.
+//! - Security and `NotScriptable` keep nothing out: `MaterialService`'s
+//!   `GrassName` and friends are `NotScriptable` and `RobloxSecurity`, and
+//!   creator-docs points scripts at `SetBaseMaterialOverride` instead, so
+//!   this panel is where they get set.
 //!
 //! A property with neither a stored value nor a recorded default is left
 //! out too: what `Mass` or `AssemblyLinearVelocity` hold is computed by a
