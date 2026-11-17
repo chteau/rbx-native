@@ -1519,6 +1519,9 @@ impl Shell {
         if mode == self.quality_choice {
             return;
         }
+        // A place built from here on (a reopen, a plugin widget) starts
+        // there too, not only the viewport already open.
+        rbx_viewer::prefer_level(mode);
         self.viewport
             .update(cx, |viewport, cx| viewport.set_quality(mode, cx));
         self.quality_choice = mode;

@@ -96,12 +96,51 @@ pub(crate) const SHADOW_OFF: u8 = MAX_SHADOW_CUT + 1;
 /// No sun map is cut below this side.
 const MIN_SHADOW_SIDE: u32 = 256;
 
+/// The biggest sun map this GPU starts with (see [`shadow_side_cap`]).
+static SHADOW_SIDE_CAP: AtomicU32 = AtomicU32::new(u32::MAX);
+
+/// The sun map a small-memory GPU starts at. An 8192 px map is 256 MB on
+/// its own, half of the 512 MB laptop iGPU that failed; that laptop built
+/// Level21 fine at 4096.
+const SMALL_GPU_SHADOW_SIDE: u32 = 4096;
+
+/// Whether the adapter has little memory of its own: integrated, except
+/// Apple's, which share all of memory. `RBX_GPU_LEAN` (see [`pinned_lean`])
+/// pins the answer either way.
+fn small_memory(device_type: wgpu::DeviceType, backend: wgpu::Backend) -> bool {
+    pinned_lean().map_or(
+        device_type == wgpu::DeviceType::IntegratedGpu && backend != wgpu::Backend::Metal,
+        |lean| lean > 0,
+    )
+}
+
+/// The biggest sun map side to start at, so a small GPU's first build
+/// already fits rather than failing and walking down from 8192.
+fn shadow_side_cap(small: bool, max_texture_side: u32) -> u32 {
+    let cap = if small {
+        SMALL_GPU_SHADOW_SIDE
+    } else {
+        u32::MAX
+    };
+    cap.min(max_texture_side)
+}
+
+/// `full` cut `cut` times, never past this GPU's cap or under
+/// [`MIN_SHADOW_SIDE`] (unless `full` itself is smaller).
+fn cut_side(full: u32, cut: u8, cap: u32) -> u32 {
+    let base = full.min(cap);
+    (base >> cut).max(MIN_SHADOW_SIDE).min(base)
+}
+
 /// The level the host last asked to draw at. A place built after that
 /// (a reopen, a plugin widget) starts there rather than at the top and
 /// walking down from it.
 static PREFERRED_LEVEL: AtomicU8 = AtomicU8::new(QualityLevel::MAX);
 
-pub(crate) fn prefer_level(level: QualityLevel) {
+/// Builds from here on start at or under `level`. The editor calls it with
+/// the saved quality before it opens a place, so a Manual 1 never builds at
+/// the top first.
+pub fn prefer_level(level: QualityLevel) {
     PREFERRED_LEVEL.store(level.resolved(), Ordering::Relaxed);
 }
 
@@ -132,10 +171,26 @@ impl Rung {
     /// Where a build starts: no higher than `cap` or the level last asked
     /// for, at the sizes earlier out-of-memory steps settled on.
     pub(crate) fn start(cap: u8) -> Rung {
+        Rung::starting(cap, PREFERRED_LEVEL.load(Ordering::Relaxed))
+    }
+
+    fn starting(cap: u8, preferred: u8) -> Rung {
         Rung {
-            level: cap.min(PREFERRED_LEVEL.load(Ordering::Relaxed)),
+            level: cap.min(preferred),
             lean: lean(),
             shadow: SHADOW_CUT.load(Ordering::Relaxed),
+        }
+    }
+
+    /// The level a place built at this rung, after starting at `first`, may
+    /// be drawn up to: `cap` when the first try fit (it only started lower
+    /// because a lower level was asked for), this rung's level when running
+    /// out of memory walked down to it.
+    pub(crate) fn ceiling(self, first: Rung, cap: u8) -> u8 {
+        if self == first {
+            cap
+        } else {
+            self.level
         }
     }
 
@@ -178,9 +233,11 @@ impl Rung {
         if !profile.shadows || cut >= SHADOW_OFF {
             return 0;
         }
-        (profile.shadow_map_size >> cut)
-            .max(MIN_SHADOW_SIDE)
-            .min(profile.shadow_map_size)
+        cut_side(
+            profile.shadow_map_size,
+            cut,
+            SHADOW_SIDE_CAP.load(Ordering::Relaxed),
+        )
     }
 
     /// Makes material uploads and sun maps from here on use this rung's size.
@@ -201,9 +258,11 @@ impl Rung {
         if self.shadow >= SHADOW_OFF {
             profile.shadows = false;
         } else {
-            profile.shadow_map_size = (profile.shadow_map_size >> self.shadow)
-                .max(MIN_SHADOW_SIDE)
-                .min(profile.shadow_map_size);
+            profile.shadow_map_size = cut_side(
+                profile.shadow_map_size,
+                self.shadow,
+                SHADOW_SIDE_CAP.load(Ordering::Relaxed),
+            );
         }
         profile
     }
@@ -314,14 +373,16 @@ pub fn describe_adapter() -> Result<String, String> {
 /// rather than panicking (see [`log_error`]).
 pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue), String> {
     let info = adapter.get_info();
-    // Apple's GPUs share all of memory; everything else integrated has a
-    // small carve-out (512 MB on the laptop that crashed).
-    if info.device_type == wgpu::DeviceType::IntegratedGpu
-        && info.backend != wgpu::Backend::Metal
-        && pinned_lean().is_none()
-    {
+    // Everything integrated but Apple's has a small carve-out (512 MB on the
+    // laptop that crashed).
+    let small = small_memory(info.device_type, info.backend);
+    if small && pinned_lean().is_none() {
         lean_at_least(1);
     }
+    SHADOW_SIDE_CAP.store(
+        shadow_side_cap(small, adapter.limits().max_texture_dimension_2d),
+        Ordering::Relaxed,
+    );
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("rbxview"),
         // Small allocator blocks rather than wgpu's default 128-256 MB ones:
@@ -380,7 +441,7 @@ pub(crate) fn for_tests() -> Option<(wgpu::Device, wgpu::Queue)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Rung, MAX_LEAN, SHADOW_OFF};
+    use super::{cut_side, shadow_side_cap, small_memory, Rung, MAX_LEAN, SHADOW_OFF};
     use crate::quality::QualityLevel;
 
     fn ladder(from: Rung) -> Vec<Rung> {
@@ -484,5 +545,40 @@ mod tests {
             r(11, 0, 2).limit(full).shadow_map_size,
             full.shadow_map_size / 4
         );
+    }
+
+    #[test]
+    fn a_saved_low_level_is_where_the_first_build_starts() {
+        let manual_1 = QualityLevel::Level(1).resolved();
+        assert_eq!(Rung::starting(QualityLevel::MAX, manual_1).level, 1);
+        assert_eq!(Rung::starting(5, QualityLevel::MAX).level, 5);
+    }
+
+    #[test]
+    fn a_build_that_fit_can_go_up_to_the_cap_and_one_that_walked_down_cannot() {
+        let first = r(1, 1, 0);
+        assert_eq!(first.ceiling(first, 21), 21);
+        assert_eq!(r(1, 2, 0).ceiling(first, 21), 1);
+        assert_eq!(r(10, 2, SHADOW_OFF).ceiling(r(21, 1, 0), 21), 10);
+    }
+
+    #[test]
+    fn a_small_gpu_starts_with_a_sun_map_that_fits() {
+        use wgpu::{Backend, DeviceType};
+        // Only meaningful without RBX_GPU_LEAN pinning the answer.
+        if std::env::var("RBX_GPU_LEAN").is_err() {
+            assert!(small_memory(DeviceType::IntegratedGpu, Backend::Dx12));
+            assert!(small_memory(DeviceType::IntegratedGpu, Backend::Vulkan));
+            assert!(!small_memory(DeviceType::IntegratedGpu, Backend::Metal));
+            assert!(!small_memory(DeviceType::DiscreteGpu, Backend::Dx12));
+        }
+        let small = shadow_side_cap(true, 16384);
+        assert_eq!(small, 4096);
+        assert_eq!(cut_side(8192, 0, small), 4096);
+        assert_eq!(cut_side(8192, 1, small), 2048);
+        assert_eq!(cut_side(2048, 0, small), 2048);
+        assert_eq!(cut_side(8192, 0, shadow_side_cap(false, 16384)), 8192);
+        // A GPU whose textures top out under the map is capped there too.
+        assert_eq!(cut_side(8192, 0, shadow_side_cap(false, 4096)), 4096);
     }
 }

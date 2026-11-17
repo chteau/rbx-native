@@ -59,9 +59,15 @@ impl Offscreen {
     ///
     /// Running out of GPU memory building it is not the end: it is built
     /// again one [`gpu::Rung`] cheaper until it fits, starting at level
-    /// `cap`, then on the next backend (see [`gpu::backend_order`]). The rung
-    /// it ended up at comes back with it.
-    pub(crate) fn new(world: World<'_>, cap: u8, view: &View) -> Result<(Self, gpu::Rung), String> {
+    /// `cap` (or the level last asked for, see [`gpu::prefer_level`]), then
+    /// on the next backend (see [`gpu::backend_order`]). The rung it ended up
+    /// at comes back with it, and the highest level it may be drawn at (see
+    /// [`gpu::Rung::ceiling`]).
+    pub(crate) fn new(
+        world: World<'_>,
+        cap: u8,
+        view: &View,
+    ) -> Result<(Self, gpu::Rung, u8), String> {
         let mut failure = String::from("no GPU backend to try");
         for backends in gpu::backend_order() {
             let instance = gpu::instance_for(backends);
@@ -92,10 +98,8 @@ impl Offscreen {
                 // just the same.
                 let simulated = trying.over_budget(world.scene.materials().layers());
                 if caught.is_none() && gpu::ooms() == ooms && !simulated {
-                    if trying != first {
-                        eprintln!("rbxview: built the scene at {trying}");
-                    }
-                    return Ok((offscreen, trying));
+                    eprintln!("rbxview: built the scene at {trying}");
+                    return Ok((offscreen, trying, trying.ceiling(first, cap)));
                 }
                 let err = caught.map_or_else(|| "Out of Memory".to_owned(), |err| err.to_string());
                 eprintln!("rbxview: building the scene at {trying} ran out of GPU memory: {err}");

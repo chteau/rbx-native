@@ -14,6 +14,12 @@
   3D view empty. Running out later (a quality change, a bigger window)
   rebuilds one step lower too, and picking a quality level by hand after
   that rebuilds for real. (@chteau)
+- **A saved low quality is where the place starts.** Opening a place with
+  Manual 1 saved used to build it at the top level first and walk down
+  from there; now the first build is already at your level, and you can
+  still pick a higher one later. Integrated GPUs also start with a 4096
+  px shadow map instead of 8192, so a small card opens without GPU
+  errors in the log. (@chteau)
 - **Network simulation lets go of the WinDivert driver at Stop.** The
   driver used to keep running until the editor quit; now it's unloaded
   when Play stops and loaded again on the next shaped Play, still with

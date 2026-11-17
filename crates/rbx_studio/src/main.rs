@@ -306,6 +306,9 @@ fn main() {
         quality,
         ..settings
     };
+    // Before any place is built: the first build starts at this level
+    // instead of the top, which a small GPU may not even fit.
+    rbx_viewer::prefer_level(quality);
 
     // A flag wins over the variable it supersedes: a wrapper script that
     // exports one and then passes the other meant the one it spelled out on

@@ -200,11 +200,14 @@ impl Headless {
 
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();
-        let (offscreen, rung) = Offscreen::new(loaded.world(), cap, &view)?;
+        let (offscreen, built, ceiling) = Offscreen::new(loaded.world(), cap, &view)?;
         let mut headless = Headless {
             offscreen,
-            quality: QualityLevel::default(),
-            rung,
+            quality: QualityLevel::Level(built.level),
+            rung: gpu::Rung {
+                level: ceiling,
+                ..built
+            },
             ooms: gpu::ooms(),
             calibration: crate::lighting::Calibration::default(),
             view,
