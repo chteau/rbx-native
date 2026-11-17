@@ -793,6 +793,16 @@ fn announce_cross_checks_with_rust() {
     let topic = func(&lua, "Announce", "topic");
     let t: String = topic.call(room).unwrap();
     assert_eq!(t, announce::topic(room));
+
+    let loopback = func(&lua, "Announce", "loopbackPort");
+    for room in [
+        room,
+        "ffffffffffffffffffffffffffffffff",
+        "00000000000000000000000000000000",
+    ] {
+        let port: u16 = loopback.call(room).unwrap();
+        assert_eq!(port, announce::loopback_port(room));
+    }
 }
 
 /// The plugin's beacon reads the Rust side's and the other way round: same

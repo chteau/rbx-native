@@ -23,6 +23,13 @@ local function canonical(room: string, url: string, at: number): string
 	return string.format("rbx-presence/announce/v1\n%s\n%s\n%.0f", room, url, at)
 end
 
+-- The loopback port an rbx-native host on this computer serves `room` on,
+-- mirrored from announce.rs: Studio asks about 127.0.0.1 once, where the
+-- tunnel's address is new every time RbxNative starts.
+function Announce.loopbackPort(room: string): number
+	return 40960 + (tonumber(string.sub(room, 1, 4), 16) or 0) % 8192
+end
+
 -- Whether `url` may be connected to: public HTTPS, or this machine.
 function Announce.allowedUrl(url: string): boolean
 	return string.sub(url, 1, 8) == "https://" or string.sub(url, 1, 17) == "http://127.0.0.1:"

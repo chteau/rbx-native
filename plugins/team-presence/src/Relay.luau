@@ -29,6 +29,11 @@ export type Config = {
 	placeId: number,
 	-- Kept by the caller across sessions; a fresh one when absent.
 	beaconFrom: string?,
+	-- hosted: a host on this computer has answered on its loopback port
+	-- before (kept by the caller), so look there first; `onLoopback` is told
+	-- the first time one does.
+	loopbackOk: boolean?,
+	onLoopback: (() -> ())?,
 }
 
 local VERSION_MISMATCH =
@@ -83,6 +88,9 @@ local RESOLVE_EVERY = 10
 -- itself. Thirty looks stay inside ntfy.sh's burst allowance.
 local RESOLVE_SOON_EVERY = 3
 local RESOLVE_SOON_FOR = 90
+-- How often a hosted room with no host looks on this computer's loopback
+-- port: a refused connection costs nothing.
+local LOOPBACK_EVERY = 1
 -- How long a host that stopped answering is still shown before the room
 -- goes back to waiting for someone in RbxNative.
 local HOST_GRACE = 10
@@ -108,6 +116,11 @@ function Relay.new(config: Config)
 		-- The relay the last presence poll's cursor came from.
 		cursorBase = nil :: string?,
 		lastResolve = -math.huge,
+		-- hosted: where a host on this computer would answer (see _loopback).
+		loopback = if hosted then `http://127.0.0.1:{Announce.loopbackPort(config.room)}` else nil,
+		loopbackOk = config.loopbackOk == true,
+		onLoopback = config.onLoopback,
+		lastLoopback = -math.huge,
 		-- hosted: when a host last stopped answering (os.clock), nil if none has.
 		lostAt = nil :: number?,
 		-- hosted: when the host stopped answering (os.clock), nil while it answers.
@@ -172,10 +185,41 @@ function Relay:_noHost(): string
 	return if self:waiting() then WAITING else Relay.HOST_GONE
 end
 
--- hosted: finds the host from the newest announcement, at most once every
--- RESOLVE_EVERY seconds. True when there is one to talk to.
+-- hosted: whether an rbx-native host on this computer serves the room on
+-- its loopback port, at most once every LOOPBACK_EVERY; if so, talk to it
+-- there. Studio asks about 127.0.0.1 once, where it would ask about the
+-- tunnel's new address every time RbxNative starts, and the host listens
+-- there before its tunnel is even up.
+function Relay:_loopback(): boolean
+	if os.clock() - self.lastLoopback < LOOPBACK_EVERY then
+		return false
+	end
+	self.lastLoopback = os.clock()
+	local ok, res = pcall(function()
+		return request({ Url = `{self.loopback}/v1/rooms/{self.room}/health`, Method = "GET" })
+	end)
+	if not ok or res.StatusCode ~= 200 then
+		return false
+	end
+	self.base = self.loopback
+	self.sendKey = true
+	if not self.loopbackOk then
+		self.loopbackOk = true
+		if self.onLoopback then
+			self.onLoopback()
+		end
+	end
+	return true
+end
+
+-- hosted: finds the host, on this computer (see _loopback) or from the
+-- newest announcement, at most once every RESOLVE_EVERY seconds. True when
+-- there is one to talk to.
 function Relay:_resolve(): (boolean, string?)
 	if self.base ~= nil then
+		return true, nil
+	end
+	if self.loopbackOk and self:_loopback() then
 		return true, nil
 	end
 	if os.clock() - self.lastResolve < self:_resolveEvery() then
@@ -212,6 +256,14 @@ function Relay:_resolve(): (boolean, string?)
 		-- The host said goodbye: nobody to wait out.
 		self.goneSince = nil
 		return false, WAITING
+	end
+	-- Someone hosts: maybe on this computer. Asking costs a one-time
+	-- 127.0.0.1 prompt even when they're elsewhere.
+	if not self.loopbackOk then
+		self.lastLoopback = -math.huge
+		if self:_loopback() then
+			return true, nil
+		end
 	end
 	self.base = string.gsub(host, "/+$", "")
 	self.sendKey = true

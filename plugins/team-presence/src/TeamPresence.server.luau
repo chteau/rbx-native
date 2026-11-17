@@ -200,6 +200,10 @@ local function start()
 		userId = ownId,
 		placeId = game.PlaceId,
 		beaconFrom = beaconId(),
+		loopbackOk = plugin:GetSetting("LoopbackOk") == true,
+		onLoopback = function()
+			plugin:SetSetting("LoopbackOk", true)
+		end,
 	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
@@ -262,7 +266,11 @@ local function start()
 					backoff = 0
 				else
 					showProblem(myRelay, err, minted)
-					lastPublish = os.clock()
+					-- With no host, go again right after the retry wait: the
+					-- poll loop's long-poll waits for this request to open a
+					-- host it just found, so a heartbeat's wait here would
+					-- hold the rejoin up by as long.
+					lastPublish = if myRelay:lookingForHost() then -math.huge else os.clock()
 					backoff = retryAfter(myRelay, backoff)
 				end
 			end

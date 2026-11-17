@@ -381,7 +381,7 @@ impl Worker {
     }
 
     fn start_hosting(&mut self, hosting: &Hosting) -> Result<(), String> {
-        let host = host::Host::start(&self.config.key).map_err(|e| e.to_string())?;
+        let host = self.start_host().map_err(|e| e.to_string())?;
         let (public, tunnel) = (hosting.0)(host.port())?;
         if !announce::allowed_url(&public) {
             return Err(format!("the tunnel gave an unusable address: {public}"));
@@ -392,8 +392,15 @@ impl Worker {
         // actually reaches this host: cloudflared prints its address before
         // Cloudflare's edge routes it, and a Studio whose first request gets
         // the edge's 530 backs off before trying again.
-        wait_until_resolvable(&public, Duration::from_secs(45));
-        wait_until_answers(&public, Duration::from_secs(20));
+        //
+        // A client dropped meanwhile (presence restarted, the app quit) stops
+        // here: announcing anyway, then saying goodbye, would bury the
+        // announcement of the worker that replaced it.
+        let mut wanted = || self.drain();
+        let ready = wait_until_resolvable(&public, Duration::from_secs(45), &mut wanted);
+        if !ready || !wait_until_answers(&public, Duration::from_secs(20), &mut wanted) {
+            return Err("presence stopped".into());
+        }
         self.announce_now(&public)?;
         let _ = self
             .events
@@ -405,6 +412,23 @@ impl Worker {
             announced: unix_ms(),
         });
         Ok(())
+    }
+
+    /// The relay, on the room's loopback port so Studio on this computer
+    /// finds it without the tunnel. A presence restart can leave the worker
+    /// it replaced still holding that port for a moment, so it is asked for
+    /// a few times before any free port does.
+    fn start_host(&mut self) -> std::io::Result<host::Host> {
+        let port = announce::loopback_port(&self.config.room);
+        for _ in 0..LOOPBACK_TRIES {
+            if let Ok(host) = host::Host::start_on(&self.config.key, port) {
+                return Ok(host);
+            }
+            if !self.wait(Duration::from_millis(500)) {
+                return Err(std::io::Error::other("presence stopped"));
+            }
+        }
+        host::Host::start(&self.config.key)
     }
 
     /// Announces `public` as the room's host, trying again a couple of times
@@ -470,6 +494,14 @@ impl Worker {
     /// then closes the tunnel and the relay.
     fn stop_hosting(&mut self) {
         if let Some(hosted) = self.hosted.take() {
+            // A newer host announced since (this editor's own next worker,
+            // after a presence restart): a goodbye now would hide it.
+            let ntfy = &self.config.relay_url;
+            if let Ok(Some(newest)) = announce::find(ntfy, &self.config.key, &self.config.room) {
+                if newest.url != hosted.public {
+                    return;
+                }
+            }
             let _ = announce::publish(
                 &self.config.relay_url,
                 &self.config.key,
@@ -836,55 +868,61 @@ fn host_check(
 }
 
 /// Waits (at most `limit`) until `url`'s host has an address in public DNS,
-/// asking Cloudflare's DNS-over-HTTPS resolver so this machine's own resolver
-/// never caches an early "no such host". Loopback addresses return at once.
-fn wait_until_resolvable(url: &str, limit: Duration) {
+/// asking its zone's own name servers (see [`crate::dns`]) so no resolver
+/// caches an early "no such host". Loopback addresses return at once. Where
+/// those servers can't be asked (UDP blocked), it waits a few seconds, about
+/// as long as a new quick tunnel's name takes to appear. False when `wanted`
+/// says to stop.
+fn wait_until_resolvable(url: &str, limit: Duration, wanted: &mut dyn FnMut() -> bool) -> bool {
     let Some(host) = url
         .strip_prefix("https://")
         .map(|rest| rest.split(['/', ':']).next().unwrap_or(rest))
     else {
-        return;
+        return true;
     };
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(5)))
-        .build()
-        .into();
+    let servers = crate::dns::name_servers(host);
     let end = Instant::now() + limit;
+    let blind = Instant::now() + UNASKED_WAIT;
     while Instant::now() < end {
-        let answered = agent
-            .get("https://cloudflare-dns.com/dns-query")
-            .query("name", host)
-            .query("type", "A")
-            .header("Accept", "application/dns-json")
-            .call()
-            .ok()
-            .and_then(|mut resp| resp.body_mut().read_to_string().ok())
-            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
-            .is_some_and(|json| {
-                json.get("Status").and_then(|s| s.as_u64()) == Some(0)
-                    && json
-                        .get("Answer")
-                        .and_then(|a| a.as_array())
-                        .is_some_and(|a| !a.is_empty())
-            });
-        if answered {
-            return;
+        if !wanted() {
+            return false;
         }
-        thread::sleep(Duration::from_secs(1));
+        let answers: Vec<Option<bool>> = servers
+            .iter()
+            .take(2)
+            .map(|&server| crate::dns::has_address(host, server))
+            .collect();
+        if answers.contains(&Some(true)) {
+            return true;
+        }
+        if answers.iter().all(Option::is_none) && Instant::now() >= blind {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(500));
     }
+    true
 }
+
+/// How long [`wait_until_resolvable`] waits when no name server answers.
+const UNASKED_WAIT: Duration = Duration::from_secs(5);
+
+/// How many times [`Worker::start_host`] asks for the loopback port.
+const LOOPBACK_TRIES: u32 = 6;
 
 /// How many times a new host posts its announcement before giving up.
 const ANNOUNCE_TRIES: u32 = 3;
 
 /// Waits (at most `limit`) until this host's relay answers its health check
-/// through `url`, its public address.
-fn wait_until_answers(url: &str, limit: Duration) {
+/// through `url`, its public address. False when `wanted` says to stop.
+fn wait_until_answers(url: &str, limit: Duration, wanted: &mut dyn FnMut() -> bool) -> bool {
     let end = Instant::now() + limit;
     while Instant::now() < end && !reachable(url) {
+        if !wanted() {
+            return false;
+        }
         thread::sleep(Duration::from_millis(500));
     }
+    true
 }
 
 /// Whether a relay answers its health check (a host that crashed leaves its

@@ -57,6 +57,19 @@ pub fn encode(key: &str, room: &str, url: &str, at: u64) -> String {
     serde_json::to_string(&message).unwrap_or_default()
 }
 
+/// The loopback port a host on this computer serves `room` on, so Studio
+/// on the same computer reaches it at `127.0.0.1`, an address it asks about
+/// once, rather than through the tunnel, whose address is new every time
+/// RbxNative starts. Derived from the room id (hex), below the ports the
+/// system hands out by itself.
+pub fn loopback_port(room: &str) -> u16 {
+    let word = room
+        .get(..4)
+        .and_then(|hex| u16::from_str_radix(hex, 16).ok())
+        .unwrap_or(0);
+    40960 + word % 8192
+}
+
 /// `text` if it is a genuine, current announcement for `room`. `received`
 /// is when the ntfy server got it (unix ms): a message stamped hours away
 /// from that comes from a machine whose clock is wrong (a VM or dual boot
@@ -163,6 +176,13 @@ mod tests {
     const KEY: &str = "k3y";
     const ROOM: &str = "0123456789abcdef0123456789abcdef";
     const NOW: u64 = 1_800_000_000_000;
+
+    #[test]
+    fn the_loopback_port_comes_from_the_room() {
+        assert_eq!(loopback_port(ROOM), 40960 + 0x0123);
+        assert_eq!(loopback_port("ffff"), 40960 + 8191);
+        assert_eq!(loopback_port(""), 40960);
+    }
 
     #[test]
     fn the_newest_genuine_announcement_wins() {

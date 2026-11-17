@@ -498,3 +498,46 @@ fn a_relay_reconnect_keeps_the_tunnel_url() {
     assert!(sees);
     assert_eq!(opens.load(Ordering::SeqCst), 1);
 }
+
+/// A host that leaves after another took the room over (its own next
+/// worker, after presence restarted) keeps quiet: a goodbye would hide the
+/// newer host until its next route check, a minute later.
+#[test]
+fn a_leaving_host_never_buries_a_newer_host() {
+    let (ntfy, topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
+    let room = auth::room_id(&key);
+
+    let (ana, ana_events) = start(&ntfy, &key, enc, 1, true);
+    loop {
+        match ana_events
+            .recv_timeout(Duration::from_secs(10))
+            .expect("ana routes")
+        {
+            Event::Route(Route::Hosting(_)) => break,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    }
+    thread::sleep(Duration::from_millis(5));
+    announce::publish(&ntfy, &key, &room, "http://127.0.0.1:9").unwrap();
+    drop(ana);
+    // Ana's worker is gone once its events channel closes.
+    while ana_events.recv_timeout(Duration::from_secs(10)).is_ok() {}
+
+    let messages = topics
+        .lock()
+        .unwrap()
+        .get(&announce::topic(&room))
+        .cloned()
+        .unwrap_or_default();
+    let latest = announce::newest(
+        &key,
+        &room,
+        rbx_presence::now_ms(),
+        messages.iter().map(|(text, at)| (text.as_str(), at * 1000)),
+    );
+    assert_eq!(latest.map(|a| a.url).as_deref(), Some("http://127.0.0.1:9"));
+}

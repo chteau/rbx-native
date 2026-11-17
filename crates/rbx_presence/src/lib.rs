@@ -37,6 +37,7 @@ pub mod client;
 pub mod coedit;
 pub mod converge;
 pub mod crypt;
+mod dns;
 pub mod host;
 pub mod lastseen;
 pub mod ntfy;

@@ -97,7 +97,17 @@ impl Host {
     /// [`Host::start`] whose empty op log waits `grace` ms for a peer to
     /// hand it the room's log before taking new posts.
     pub fn with_claim_grace(key: &str, grace: u64) -> std::io::Result<Host> {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
+        Host::bind(key, grace, 0)
+    }
+
+    /// [`Host::start`] on loopback `port` only (see
+    /// [`crate::announce::loopback_port`]), failing when it is taken.
+    pub fn start_on(key: &str, port: u16) -> std::io::Result<Host> {
+        Host::bind(key, CLAIM_GRACE_MS, port)
+    }
+
+    fn bind(key: &str, grace: u64, port: u16) -> std::io::Result<Host> {
+        let listener = TcpListener::bind(("127.0.0.1", port))?;
         let addr = listener.local_addr()?;
         let shared = Arc::new(Shared {
             key: key.to_owned(),
@@ -201,6 +211,11 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
         return respond(&mut stream, 404, "\"not found\"");
     };
     let method = request.method.as_str();
+    // Unsigned, so Studio can tell this room's host on this computer from
+    // anything else listening on its loopback port.
+    if method == "GET" && route == "health" {
+        return respond(&mut stream, 200, "\"ok\"");
+    }
     let allowed = matches!(
         (route.as_str(), method),
         ("state", "POST" | "DELETE")

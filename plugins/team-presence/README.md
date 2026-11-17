@@ -152,11 +152,15 @@ Copy the `.rbxmx` into the local Plugins folder and restart Studio:
 - Linux (Vinegar): `~/.var/app/org.vinegarhq.Vinegar/data/vinegar/prefixes/studio/drive_c/users/<you>/AppData/Local/Roblox/Plugins`
 
 A Creator Store install asks for HTTP permission per address: ntfy.sh first
-(where the host posts its address), then the host's `*.trycloudflare.com`
-address. Allow both, otherwise the plugin can't reach the relay. A quick
-tunnel's address is new every time someone opens RbxNative, so Studio asks
-about that one again each session; a stable address would need a named
-tunnel or a Worker on someone's own Cloudflare account. Until a host answers
+(where the host posts its address), then 127.0.0.1 once a host shows up.
+An rbx-native host also serves the room on a loopback port derived from the
+room id, so Studio on the same computer talks to it there, asks about it
+once, and rejoins by itself within a couple of seconds of RbxNative
+starting again, before the tunnel is even up. A host on another computer is
+only reachable through its `*.trycloudflare.com` address, which is new
+every time that person opens RbxNative, so Studio asks about that one each
+session; a stable address there would need a named tunnel or a Worker on
+someone's own Cloudflare account. Until a host answers
 once, the plugin sends its requests to it one at a time, since Studio opens
 one prompt per request waiting on the answer. A plugin file dropped in the
 local Plugins folder isn't asked at all.

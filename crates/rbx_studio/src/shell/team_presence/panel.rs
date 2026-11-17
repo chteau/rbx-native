@@ -21,7 +21,7 @@ pub(super) const NOTE: &str = "Presence only works for collaborators who have St
 
 /// Under [`NOTE`] with the hosted relay, the one that goes through ntfy.sh
 /// and a Cloudflare quick tunnel: what Studio asks the first time.
-const STUDIO_NOTE: &str = "First time in Studio? It asks if the plugin can reach ntfy.sh, then a trycloudflare.com address. Allow both. The trycloudflare one is new every time someone opens RbxNative, so Studio asks about it again each time.";
+const STUDIO_NOTE: &str = "First time in Studio? It asks if the plugin can reach ntfy.sh and 127.0.0.1. Allow both. With RbxNative on the same computer, that's all it ever asks. For someone in RbxNative on another computer, it also asks about a trycloudflare.com address, new every time they open RbxNative.";
 
 /// The status line's words for a connection.
 fn status_text(connection: &Connection, route: Option<&rbx_presence::client::Route>) -> String {
