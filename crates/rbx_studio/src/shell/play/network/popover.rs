@@ -45,6 +45,8 @@ pub(in crate::shell) struct Popover {
     pub(super) save_error: Option<&'static str>,
     /// The last Apply's outcome when it needs saying.
     pub(in crate::shell) status: Option<String>,
+    /// Held by the popover itself, so Esc reaches it with no field focused.
+    pub(super) focus: FocusHandle,
     pub(super) _subscriptions: Vec<Subscription>,
 }
 
@@ -92,7 +94,10 @@ impl Shell {
                 inputs.push((way, field, input));
             }
         }
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
         self.play.network.popover = Some(Popover {
+            focus,
             inputs,
             menu_open: false,
             saving: None,
@@ -381,6 +386,7 @@ impl Shell {
                 inset: false,
             }])
             .text_color(tokens::text())
+            .track_focus(&popover.focus)
             .on_mouse_down_out(cx.listener(|shell, _, _, cx| shell.network_close(cx)))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
