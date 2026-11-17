@@ -39,6 +39,13 @@
   plugin itself: Lemonade, for one, shuts its widget on every launch until
   you click "I'm ready" on its welcome card (its × only hides the card).
   (@chteau)
+- **Snapped plugin windows tear out at their normal size, for real.**
+  Maximize or snap a plugin window (Aero snap on Windows, Zoom or tiling on
+  a Mac, your window manager's maximize on Linux), dock it, tear it out
+  again and it could still come back that big, Linux and Mac hand over the
+  big rect as if it was the normal one. Now a window that fills the screen's
+  height or a quarter of it isn't remembered at all, so the next tear-out
+  opens at the last normal size. (@chteau)
 
 ## 2026-11-14
 

@@ -46,6 +46,10 @@ const WINDOW_HEIGHT: f32 = 480.;
 /// side on Linux, not public), for a plugin window sized to its content.
 const WINDOW_FRAME: f32 = 40.;
 
+/// How close to a work area edge a window's edge reads as touching it:
+/// Windows leaves a few px of invisible frame around a snapped window.
+const SNAP_SLACK: f32 = 16.;
+
 /// One torn-out dock's window.
 pub(crate) struct PanelWindow {
     shell: Entity<Shell>,
@@ -202,14 +206,14 @@ pub(super) fn close_with_editor(window: &Window, cx: &mut Context<Shell>) -> Sub
             let windows: Vec<_> =
                 shell.update(cx, |shell, _| shell.panel_windows.drain().collect());
             for (panel, window) in windows {
-                let Ok(bounds) = window.update(cx, |_, window, _| {
-                    let bounds = window.window_bounds().get_bounds();
+                let Ok(bounds) = window.update(cx, |_, window, cx| {
+                    let bounds = resting_rect(window, cx);
                     window.remove_window();
                     bounds
                 }) else {
                     continue;
                 };
-                if let Panel::Plugin(dock) = panel {
+                if let (Panel::Plugin(dock), Some(bounds)) = (panel, bounds) {
                     shell.update(cx, |shell, _| shell.remember_plugin_window(dock, bounds));
                 }
             }
@@ -220,20 +224,22 @@ pub(super) fn close_with_editor(window: &Window, cx: &mut Context<Shell>) -> Sub
 impl PanelWindow {
     /// Keeps where a plugin's window was left. Every step of a move lands
     /// here and each keep rewrites the plugin's settings file, so only the
-    /// place it comes to rest is written.
+    /// place it comes to rest is written, and only if it rests there as a
+    /// normal window (see [`resting_rect`]).
     fn remember_bounds(&mut self, window: &Window, cx: &mut Context<Self>) {
         let Panel::Plugin(dock) = self.panel else {
             return;
         };
-        // The restored rect, not a maximized or snapped one: kept, that
-        // opened the next tear-out filling the screen.
-        let bounds = window.window_bounds().get_bounds();
-        let shell = self.shell.clone();
-        self.remember = Some(cx.spawn(async move |_, cx| {
+        self.remember = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(300))
                 .await;
-            shell.update(cx, |shell, _| shell.remember_plugin_window(dock, bounds));
+            let _ = this.update_in(cx, |this, window, cx| {
+                if let Some(bounds) = resting_rect(window, cx) {
+                    this.shell
+                        .update(cx, |shell, _| shell.remember_plugin_window(dock, bounds));
+                }
+            });
         }));
     }
 
@@ -281,6 +287,47 @@ impl PanelWindow {
             });
         }));
     }
+}
+
+/// The rect worth keeping for a plugin's window, or none while it is
+/// maximized, zoomed, fullscreen or snapped, so the last normal one stands.
+fn resting_rect(window: &Window, cx: &App) -> Option<Bounds<Pixels>> {
+    let work_area = window.display(cx).map(|display| display.visible_bounds());
+    normal_rect(window.window_bounds(), window.is_maximized(), work_area)
+}
+
+/// `state` as a normal window's rect. Windows hands back the pre-snap rect
+/// for a snapped or maximized window already (`rcNormalPosition`), but X11
+/// reports a maximized window at its maximized size and a Mac a zoomed or
+/// tiled one as plain `Windowed`, so the restore rect can't be trusted: a
+/// window spanning the work area's full height (maximized, zoomed, a half
+/// or third snap, a vertical maximize) or filling one of its quarters is a
+/// snapped one.
+fn normal_rect(
+    state: WindowBounds,
+    maximized: bool,
+    work_area: Option<Bounds<Pixels>>,
+) -> Option<Bounds<Pixels>> {
+    let WindowBounds::Windowed(bounds) = state else {
+        return None;
+    };
+    if maximized {
+        return None;
+    }
+    let Some(area) = work_area else {
+        return Some(bounds);
+    };
+    let near = |a: Pixels, b: Pixels| (a - b).abs() <= px(SNAP_SLACK);
+    let (top, bottom) = (
+        near(bounds.top(), area.top()),
+        near(bounds.bottom(), area.bottom()),
+    );
+    let side = near(bounds.left(), area.left()) || near(bounds.right(), area.right());
+    let quarter = side
+        && (top || bottom)
+        && near(bounds.size.width, area.size.width / 2.)
+        && near(bounds.size.height, area.size.height / 2.);
+    (!(top && bottom) && !quarter).then_some(bounds)
 }
 
 /// Where the editor's own window is.
@@ -577,6 +624,45 @@ mod tests {
         // Already on screen: untouched.
         let fine = Bounds::new(point(px(100.), px(100.)), size(px(300.), px(300.)));
         assert_eq!(keep_on_screen(fine, Some(area)), fine);
+    }
+
+    /// The Windows retest: Lemonade snapped or maximized, docked and torn
+    /// out again came back at the snapped size.
+    #[::core::prelude::v1::test]
+    fn only_a_normal_window_rect_is_kept() {
+        let area = Some(Bounds::new(
+            point(px(0.), px(0.)),
+            size(px(1920.), px(1040.)),
+        ));
+        let rect =
+            |x: f32, y: f32, w: f32, h: f32| Bounds::new(point(px(x), px(y)), size(px(w), px(h)));
+        let normal = rect(610., 300., 420., 300.);
+        let kept = |state, maximized| normal_rect(state, maximized, area);
+        assert_eq!(kept(WindowBounds::Windowed(normal), false), Some(normal));
+        assert_eq!(kept(WindowBounds::Maximized(normal), true), None);
+        assert_eq!(kept(WindowBounds::Fullscreen(normal), false), None);
+        // X11 says maximized but hands back the maximized rect.
+        let full = rect(0., 0., 1920., 1040.);
+        assert_eq!(kept(WindowBounds::Windowed(full), true), None);
+        // A Mac's zoom, Windows' half, third and quarter snaps.
+        for snapped in [
+            full,
+            rect(-7., 0., 974., 1047.),
+            rect(1280., 0., 640., 1040.),
+            rect(960., 520., 960., 520.),
+        ] {
+            assert_eq!(kept(WindowBounds::Windowed(snapped), false), None);
+        }
+        // Pushed into a corner by hand at its own size: still a window.
+        let cornered = rect(0., 0., 420., 300.);
+        assert_eq!(
+            kept(WindowBounds::Windowed(cornered), false),
+            Some(cornered)
+        );
+        assert_eq!(
+            normal_rect(WindowBounds::Windowed(full), false, None),
+            Some(full)
+        );
     }
 
     /// The Mac retest: Lemonade left at (610,723) 420x300, over the Dock's
