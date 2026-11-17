@@ -29,7 +29,9 @@
   name row goes away once a preset is saved or applied. (@chteau)
 - **Mac retest, round 4.** Updating from a build before the icon pack
   fix no longer swaps a Dark icon pack you had for Light just because the
-  theme is light: an older settings file keeps the pack it stored. (@chteau)
+  theme is light: an older settings file keeps the pack it stored. The Mac
+  build is signed with a designated requirement pinned to its identifier
+  and signing certificate, so it reads the same in every build. (@chteau)
 
 ## 2026-11-14
 

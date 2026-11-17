@@ -46,5 +46,11 @@ if [ -z "$hash" ]; then
   security find-identity "$keychain"
   exit 1
 fi
-codesign --force ${deep[@]+"${deep[@]}"} --sign "$hash" --keychain "$keychain" --identifier "$identifier" --timestamp=none "$target"
+# Pin the designated requirement to the identifier and this certificate (the
+# SHA-1 find-identity printed above), so it is the same text in every build
+# and never falls back to one build's cdhash. Keychain ACLs and TCC
+# (Accessibility) match code against it.
+requirement="designated => identifier \"$identifier\" and certificate leaf = H\"$hash\""
+codesign --force ${deep[@]+"${deep[@]}"} --sign "$hash" --keychain "$keychain" --identifier "$identifier" --requirements "=$requirement" --timestamp=none "$target"
 codesign -dvv "$target" 2>&1 | grep -E "Identifier|Authority|Signature"
+codesign -d -r- "$target" 2>&1 | grep designated
