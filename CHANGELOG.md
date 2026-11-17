@@ -28,6 +28,12 @@
   opens fully inside that screen's work area, its title bar still under
   the pointer where there's room, and a window that was snapped or
   maximized no longer hands that size to the next tear-out. (@chteau)
+- **Plugin windows left open at quit.** A plugin window still up after the
+  editor closed no longer counts as you closing the widget, so it comes
+  back next launch. If a plugin's window doesn't come back, check the
+  plugin itself: Lemonade, for one, shuts its widget on every launch until
+  you click "I'm ready" on its welcome card (its × only hides the card).
+  (@chteau)
 
 ## 2026-11-14
 

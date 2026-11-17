@@ -133,10 +133,7 @@ impl PanelWindow {
         let window = cx
             .open_window(options, move |window, cx| {
                 let closing = shell.clone();
-                window.on_window_should_close(cx, move |_, cx| {
-                    close(&closing, panel, cx);
-                    false
-                });
+                window.on_window_should_close(cx, move |_, cx| close(&closing, panel, cx));
                 let view = cx.new(|cx| PanelWindow {
                     shell,
                     panel,
@@ -170,12 +167,21 @@ impl PanelWindow {
 /// back where it started rather than disappearing, since a panel you cannot
 /// get back is a panel the editor has lost. A plugin's window is its
 /// widget, so closing it is the widget's `Enabled` going false, and its
-/// toolbar button opens it again where it was left.
-fn close(shell: &Entity<Shell>, panel: Panel, cx: &mut App) {
-    shell.update(cx, |shell, cx| match panel {
-        Panel::Plugin(_) => shell.close_panel(panel, cx),
-        _ => shell.set_panel_open(panel, true, cx),
-    });
+/// toolbar button opens it again where it was left. One outliving the
+/// editor's window is left over from a quit: it just goes, and its widget
+/// stays open for the next session, as in Studio.
+fn close(shell: &Entity<Shell>, panel: Panel, cx: &mut App) -> bool {
+    shell.update(cx, |shell, cx| {
+        let editor = shell.editor_window;
+        if !editor.is_some_and(|editor| cx.windows().contains(&editor)) {
+            return true;
+        }
+        match panel {
+            Panel::Plugin(_) => shell.close_panel(panel, cx),
+            _ => shell.set_panel_open(panel, true, cx),
+        }
+        false
+    })
 }
 
 impl PanelWindow {
@@ -353,7 +359,11 @@ impl Render for PanelWindow {
                     .child(super::chrome::panel_topbar(
                         title,
                         self.grab.clone(),
-                        move |_, _, cx| close(&closing, panel, cx),
+                        move |_, window, cx| {
+                            if close(&closing, panel, cx) {
+                                window.remove_window();
+                            }
+                        },
                     )),
             )
             // The same strip a docked panel wears, minus the tabs: there
