@@ -107,6 +107,7 @@ impl PanelWindow {
             (None, Some(at)) => Bounds::new(at - tear_out_grip(), bounds.size),
             (None, None) => bounds,
         };
+        let bounds = keep_on_screen(bounds, work_area(torn_at.unwrap_or(bounds.center()), cx));
         let placed =
             (stowed.is_some() || torn_at.is_some() || saved.is_some()).then_some(bounds.origin);
         let title = SharedString::from(panel.title());
@@ -185,7 +186,9 @@ impl PanelWindow {
         let Panel::Plugin(dock) = self.panel else {
             return;
         };
-        let bounds = window.bounds();
+        // The restored rect, not a maximized or snapped one: kept, that
+        // opened the next tear-out filling the screen.
+        let bounds = window.window_bounds().get_bounds();
         let shell = self.shell.clone();
         self.remember = Some(cx.spawn(async move |_, cx| {
             cx.background_executor()
@@ -256,6 +259,36 @@ fn tear_out_grip() -> Point<Pixels> {
         px(0.)
     };
     point(frame + px(60.), frame + tokens::topbar_height() / 2.)
+}
+
+/// The work area (the screen less its taskbar) of the display under `at`.
+fn work_area(at: Point<Pixels>, cx: &App) -> Option<Bounds<Pixels>> {
+    cx.displays()
+        .into_iter()
+        .find(|display| display.bounds().contains(&at))
+        .or_else(|| cx.primary_display())
+        .map(|display| display.visible_bounds())
+}
+
+/// `bounds` shrunk to fit `area` and slid inside it. A tear-out held near
+/// the screen's right edge keeps its bar under the pointer; near the
+/// bottom it moves up.
+fn keep_on_screen(bounds: Bounds<Pixels>, area: Option<Bounds<Pixels>>) -> Bounds<Pixels> {
+    let Some(area) = area else {
+        return bounds;
+    };
+    let size = bounds.size.min(&area.size);
+    let x = bounds
+        .origin
+        .x
+        .min(area.right() - size.width)
+        .max(area.left());
+    let y = bounds
+        .origin
+        .y
+        .min(area.bottom() - size.height)
+        .max(area.top());
+    Bounds::new(point(x, y), size)
 }
 
 /// The editor edge a window at `moved` has been brought to (see
@@ -469,6 +502,27 @@ impl Shell {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Windows retest: torn out at (1650,600) on a 1920x1080 screen,
+    /// the window ran past both edges.
+    #[::core::prelude::v1::test]
+    fn a_tear_out_stays_on_its_screen() {
+        let area = Bounds::new(point(px(0.), px(0.)), size(px(1920.), px(1040.)));
+        let torn = Bounds::new(point(px(1566.), px(579.)), size(px(499.), px(502.)));
+        let kept = keep_on_screen(torn, Some(area));
+        assert_eq!(kept.origin, point(px(1421.), px(538.)));
+        assert_eq!(kept.size, torn.size);
+        // Wider than the screen: shrunk to it.
+        let huge = Bounds::new(point(px(-50.), px(20.)), size(px(2400.), px(400.)));
+        let kept = keep_on_screen(huge, Some(area));
+        assert_eq!(
+            kept,
+            Bounds::new(point(px(0.), px(20.)), size(px(1920.), px(400.)))
+        );
+        // Already on screen: untouched.
+        let fine = Bounds::new(point(px(100.), px(100.)), size(px(300.), px(300.)));
+        assert_eq!(keep_on_screen(fine, Some(area)), fine);
+    }
 
     #[::core::prelude::v1::test]
     fn a_window_brought_to_an_edge_docks_there_and_one_in_the_middle_floats() {

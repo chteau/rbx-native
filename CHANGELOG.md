@@ -24,6 +24,10 @@
   editor). A plugin window left open when you quit comes back on the next
   launch, at the spot you left it, and a tab you tear out opens right
   under the pointer instead of in the middle of the screen. (@chteau)
+- **Torn-out windows stay on screen.** A tab torn out near a screen edge
+  opens fully inside that screen's work area, its title bar still under
+  the pointer where there's room, and a window that was snapped or
+  maximized no longer hands that size to the next tear-out. (@chteau)
 
 ## 2026-11-14
 
