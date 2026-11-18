@@ -42,3 +42,9 @@ td { color: var(--white); }
   .copy { display: none; }
   article pre:has(.copy) { padding-right: 20px; }
 }
+.shot { margin: 14px 0 18px; }
+.shot img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+article table { display: block; overflow-x: auto; }
+.shots { margin: 14px 0 18px; }
+.shots summary { cursor: pointer; color: var(--white); font-weight: 600; }
+.shots summary::marker { color: var(--dim); }

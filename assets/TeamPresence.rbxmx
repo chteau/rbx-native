@@ -19,15 +19,20 @@ local Schema = require(script.Schema)
 local Secret = require(script.Secret)
 local Widget = require(script.Widget)
 
+local HttpService = game:GetService(&quot;HttpService&quot;)
 local Players = game:GetService(&quot;Players&quot;)
 
 local HEARTBEAT = 5
 -- How often the last-seen time is saved while connected: what arrives while
 -- connected is seen live, so the next catch-up starts after it.
 local LAST_SEEN_EVERY = 30
-local TICK = 0.2
+local TICK = 1 / 5
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
+
+local NEW_KEY = Relay.WAITING
+	.. &quot; This place had no presence key yet, so I made one. Save the place (File &gt; Save to Roblox)&quot;
+	.. &quot; and RbxNative picks it up by itself.&quot;
 
 local toolbar = plugin:CreateToolbar(&quot;rbx-native&quot;)
 local button = toolbar:CreateButton(&quot;Presence&quot;, &quot;Show rbx-native team presence&quot;, &quot;&quot;)
@@ -95,11 +100,78 @@ local function stop()
 	end
 end
 
+-- The status line for a failed publish or poll. Never silent: waiting is
+-- said in plain words, with what to do when the two sides can't meet.
+-- This install's beacon sender id, kept so reopening the place replaces our
+-- own earlier beacon instead of reading as a second Studio on another key.
+local function beaconId(): string
+	local id = plugin:GetSetting(&quot;BeaconFrom&quot;)
+	if type(id) == &quot;string&quot; and #id == 16 then
+		return id
+	end
+	local fresh = string.sub(string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;), 1, 16)
+	plugin:SetSetting(&quot;BeaconFrom&quot;, fresh)
+	return fresh
+end
+
+local function showProblem(myRelay: any, err: string?, minted: boolean)
+	local text = err or &quot;Can't reach the relay&quot;
+	if myRelay:waiting() then
+		local other = myRelay:keyConflict()
+		if other then
+			-- RbxNative reads the key saved on Roblox and switches to it by
+			-- itself; another Studio can't, so it has to reopen the place.
+			widget:setStatus(
+				if other == &quot;studio&quot;
+					then &quot;Another Studio has this place open with a different presence key, so you can't see each other.&quot;
+						.. &quot; Save the place from one of them (File &gt; Save to Roblox), then close it and open it again in the other.&quot;
+					else &quot;RbxNative has this place open with a different presence key.&quot;
+						.. &quot; Save the place (File &gt; Save to Roblox) and RbxNative switches to this one by itself.&quot;,
+				true
+			)
+			return
+		end
+		if text == Relay.WAITING then
+			widget:setStatus(if minted then NEW_KEY else text)
+			return
+		end
+	end
+	widget:setStatus(text, string.find(text, &quot;yet (&quot;, 1, true) == nil)
+end
+
+-- The relay the owner setup names: the kind picked and the URL typed, a
+-- blank URL being Auto. A kind that needs a URL but has none is Auto too.
+local function ownerChoice(): (string, string)
+	local url = string.gsub(widget.urlBox.Text, &quot;^%s*(.-)%s*$&quot;, &quot;%1&quot;)
+	if url == &quot;&quot; then
+		return Defaults.communityKind, Defaults.communityUrl
+	end
+	return widget.relayKind, url
+end
+
+local function showRelay(kind: string, url: string)
+	widget:setRelay(kind, url, kind == Defaults.communityKind and url == Defaults.communityUrl)
+end
+
 local function nextBackoff(current: number): number
 	if current == 0 then
 		return BACKOFF_MIN
 	end
 	return math.min(current * 2, BACKOFF_MAX)
+end
+
+-- Waits after a failed publish or poll and returns the next backoff. While
+-- the room has no host the relay only looks every few seconds anyway, so
+-- check back each second to pick a new host up as soon as it is found,
+-- rather than backing off from a host that just went away.
+local function retryAfter(myRelay: any, backoff: number): number
+	if myRelay:lookingForHost() then
+		task.wait(1)
+		return 0
+	end
+	local delay = nextBackoff(backoff)
+	task.wait(delay)
+	return delay
 end
 
 local function start()
@@ -109,20 +181,17 @@ local function start()
 		return
 	end
 
-	-- Zero-config: the first connector mints the place's secret, everyone
-	-- else reads it. Writing it needs a Save/Publish to reach collaborators.
-	local secret = Secret.read()
-	if not secret then
-		secret = Secret.create()
-		widget:setStatus(&quot;Shared a key — Save or Publish once to share it&quot;)
-	end
+	-- Zero-config: the first editor to turn presence on puts the key and the
+	-- relay into the place, everyone else reads them. They reach
+	-- collaborators with the next save.
+	local secret, minted = Secret.ensure(ownerChoice())
 
 	-- The place names the relay; collaborators read it. A place that names
 	-- none falls back to the best-effort community instance.
 	local placeRelay = Secret.readRelay()
 	local kind = if placeRelay then placeRelay.kind else Defaults.communityKind
 	local url = if placeRelay then placeRelay.url else Defaults.communityUrl
-	widget:setRelay(kind, url, placeRelay == nil)
+	showRelay(kind, url)
 
 	local key = Auth.deriveKey(secret :: string, game.PlaceId)
 	local encKey = Crypto.encKey(secret :: string, game.PlaceId)
@@ -134,6 +203,18 @@ local function start()
 		encKey = encKey,
 		room = Auth.roomId(key),
 		userId = ownId,
+		placeId = game.PlaceId,
+		beaconFrom = beaconId(),
+		loopbackOk = plugin:GetSetting(&quot;LoopbackOk&quot;) == true,
+		-- Kept too, so a Studio opened after RbxNative was killed still
+		-- knows its leftover announcement for one from this computer.
+		localHost = plugin:GetSetting(&quot;LoopbackHost&quot;),
+		onLoopback = function(host: string?)
+			plugin:SetSetting(&quot;LoopbackOk&quot;, true)
+			if host then
+				plugin:SetSetting(&quot;LoopbackHost&quot;, host)
+			end
+		end,
 	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
@@ -149,6 +230,7 @@ local function start()
 			room = Auth.roomId(key),
 			encKey = encKey,
 			name = if Players.LocalPlayer then Players.LocalPlayer.Name else tostring(ownId),
+			quiet = { Relay.WAITING, Relay.HOST_GONE },
 			onNote = function(note: string)
 				warn(&quot;[Co-edit] &quot; .. note)
 				if generation == myGen then
@@ -181,7 +263,7 @@ local function start()
 	end)
 
 	task.spawn(function()
-		local lastPublish = 0.0
+		local lastPublish = 0
 		local backoff = 0
 		while generation == myGen do
 			if myCapture:isDirty() or os.clock() - lastPublish &gt;= HEARTBEAT then
@@ -194,10 +276,13 @@ local function start()
 					lastPublish = os.clock()
 					backoff = 0
 				else
-					widget:setStatus(err or &quot;Publish failed&quot;, not myRelay:waiting())
-					backoff = nextBackoff(backoff)
-					lastPublish = os.clock()
-					task.wait(backoff)
+					showProblem(myRelay, err, minted)
+					-- With no host, go again right after the retry wait: the
+					-- poll loop's long-poll waits for this request to open a
+					-- host it just found, so a heartbeat's wait here would
+					-- hold the rejoin up by as long.
+					lastPublish = if myRelay:lookingForHost() then -math.huge else os.clock()
+					backoff = retryAfter(myRelay, backoff)
 				end
 			end
 			task.wait(TICK)
@@ -238,9 +323,13 @@ local function start()
 				-- ntfy polls return at once; pace them so we don't spin.
 				task.wait(myRelay:pollDelay())
 			else
-				widget:setStatus(err or &quot;Poll failed&quot;, not myRelay:waiting())
-				backoff = nextBackoff(backoff)
-				task.wait(backoff)
+				showProblem(myRelay, err, minted)
+				if myRelay:waiting() then
+					-- The host is gone: so are its user and their markers.
+					myMarkers:render({})
+					widget:setUsers({})
+				end
+				backoff = retryAfter(myRelay, backoff)
 			end
 		end
 	end)
@@ -262,7 +351,7 @@ local function apply(on: boolean)
 		start()
 	else
 		stop()
-		widget:setStatus(&quot;Off&quot;)
+		widget:setStatus(&quot;Off. Switch on Share my presence to see RbxNative users.&quot;)
 	end
 end
 
@@ -277,12 +366,19 @@ widget = Widget.new(plugin, {
 		diffWindow:show(lastEntries)
 	end,
 	onSaveRelay = function(kind: string, url: string)
-		-- Owner setup: write the relay into the place (empty URL clears it).
-		if url == &quot;&quot; then
-			Secret.clearRelay()
-		else
-			Secret.writeRelay(kind, url)
+		-- Owner setup saves as soon as it changes. Worker and ntfy wait for
+		-- their URL; a blank one is Auto.
+		if url == &quot;&quot; and kind ~= Defaults.communityKind then
+			widget:setStatus(`Type the {kind} URL. It saves into the place when you press Enter or click away.`)
+			return
 		end
+		local wantKind, wantUrl = ownerChoice()
+		local current = Secret.readRelay()
+		if current and current.kind == wantKind and current.url == wantUrl then
+			return
+		end
+		Secret.writeRelay(wantKind, wantUrl)
+		showRelay(wantKind, wantUrl)
 		if enabled then
 			start()
 		end
@@ -314,9 +410,14 @@ plugin.Unloading:Connect(stop)
 
 local savedRelay = Secret.readRelay()
 if savedRelay then
-	widget:setRelay(savedRelay.kind, savedRelay.url, false)
+	showRelay(savedRelay.kind, savedRelay.url)
 else
-	widget:setRelay(Defaults.communityKind, Defaults.communityUrl, true)
+	showRelay(Defaults.communityKind, Defaults.communityUrl)
+end
+-- First run: show the widget, so the switch that turns presence on is in
+-- front of the user instead of behind a toolbar button.
+if plugin:GetSetting(&quot;Enabled&quot;) == nil then
+	widget.gui.Enabled = true
 end
 apply(plugin:GetSetting(&quot;Enabled&quot;) == true)
 </ProtectedString>
@@ -330,6 +431,8 @@ apply(plugin:GetSetting(&quot;Enabled&quot;) == true)
 --! Cloudflare quick tunnel and posts its address, signed with the place key,
 --! to the room's announce topic on ntfy; the plugin reads the newest genuine
 --! one and talks to that relay. An empty url is the host saying goodbye.
+--! `host` is the id the host answers its loopback health check with, outside
+--! the signature (see announce.rs).
 --! Pure (no HttpService): the Luau tests check it against the Rust encoder.
 
 local Auth = require(script.Parent.Auth)
@@ -349,13 +452,23 @@ local function canonical(room: string, url: string, at: number): string
 	return string.format(&quot;rbx-presence/announce/v1\n%s\n%s\n%.0f&quot;, room, url, at)
 end
 
+-- The loopback port an rbx-native host on this computer serves `room` on,
+-- mirrored from announce.rs: Studio asks about 127.0.0.1 once, where the
+-- tunnel's address is new every time RbxNative starts.
+function Announce.loopbackPort(room: string): number
+	return 40960 + (tonumber(string.sub(room, 1, 4), 16) or 0) % 8192
+end
+
 -- Whether `url` may be connected to: public HTTPS, or this machine.
 function Announce.allowedUrl(url: string): boolean
 	return string.sub(url, 1, 8) == &quot;https://&quot; or string.sub(url, 1, 17) == &quot;http://127.0.0.1:&quot;
 end
 
 -- `text` decoded if it is a genuine, current announcement for `room`.
-function Announce.verify(key: string, room: string, now: number, text: string): any?
+-- `received` is when the ntfy server got it (unix ms): one stamped far from
+-- that comes from a machine with a wrong clock, and would turn &quot;newest&quot;
+-- hours later, long after its host is gone.
+function Announce.verify(key: string, room: string, now: number, received: number, text: string): any?
 	local ok, message = pcall(Json.decode, text)
 	if not ok or type(message) ~= &quot;table&quot; then
 		return nil
@@ -364,7 +477,11 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	if message.v ~= 1 or type(url) ~= &quot;string&quot; or type(at) ~= &quot;number&quot; or type(sig) ~= &quot;string&quot; then
 		return nil
 	end
-	if at &gt; now + Announce.CLOCK_SKEW_MS or now - at &gt; Announce.MAX_AGE_MS then
+	if
+		at &gt; now + Announce.CLOCK_SKEW_MS
+		or now - at &gt; Announce.MAX_AGE_MS
+		or math.abs(at - received) &gt; Announce.CLOCK_SKEW_MS
+	then
 		return nil
 	end
 	if url ~= &quot;&quot; and not Announce.allowedUrl(url) then
@@ -373,23 +490,29 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	if Auth.sign(key, canonical(room, url, at)) ~= sig then
 		return nil
 	end
-	return { url = url, at = at }
+	return { url = url, at = at, host = if type(message.host) == &quot;string&quot; then message.host else nil }
 end
 
--- The host's URL from a run of announcement texts: the newest genuine one,
--- nil when there is none or the newest says the host left.
-function Announce.newest(key: string, room: string, now: number, texts: { string }): string?
+-- The host's URL and id from a run of announcements ({ text, time }: the
+-- message and when the server received it, unix ms): the newest genuine
+-- one, nil when there is none or the newest says the host left.
+function Announce.newest(
+	key: string,
+	room: string,
+	now: number,
+	messages: { { text: string, time: number } }
+): (string?, string?)
 	local best: any = nil
-	for _, text in texts do
-		local message = Announce.verify(key, room, now, text)
+	for _, item in messages do
+		local message = Announce.verify(key, room, now, item.time, item.text)
 		if message and (best == nil or message.at &gt; best.at) then
 			best = message
 		end
 	end
 	if best == nil or best.url == &quot;&quot; then
-		return nil
+		return nil, nil
 	end
-	return best.url
+	return best.url, best.host
 end
 
 return Announce
@@ -453,6 +576,81 @@ return Auth
     </Item>
     <Item class="ModuleScript" referent="RBX3">
       <Properties>
+        <string name="Name">Beacon</string>
+        <ProtectedString name="Source">--!strict
+--! Which presence key each editor with this place open uses, mirrored from
+--! crates/rbx_presence/src/beacon.rs. The key lives in the place, so two
+--! editors can end up with different ones (each made its own because the
+--! place had none saved yet, or one opened an older copy) and would wait for
+--! each other forever. Each editor posts a short fingerprint of its room to
+--! a topic named after the place; seeing another fingerprint there is how
+--! that gets said out loud. Pure (no HttpService): the Luau tests check it
+--! against the Rust encoder.
+
+local Json = require(script.Parent.Json)
+local Sha256 = require(script.Parent.Sha256)
+
+local Beacon = {}
+
+-- How long a beacon counts; each editor posts again well within it.
+Beacon.FRESH_MS = 25 * 60 * 1000
+Beacon.CLOCK_SKEW_MS = 60000
+-- Seconds between this editor's own beacons.
+Beacon.EVERY = 10 * 60
+
+function Beacon.topic(placeId: number): string
+	return &quot;rbxnp-place-&quot; .. string.sub(Sha256.hex(string.format(&quot;rbx-presence/place/v1/%.0f&quot;, placeId)), 1, 32)
+end
+
+-- Says which key without saying which room, so the place's topic does not
+-- point at the room's.
+function Beacon.fingerprint(room: string): string
+	return string.sub(Sha256.hex(&quot;rbx-presence/fingerprint/v1/&quot; .. room), 1, 16)
+end
+
+-- `fp` empty says the sender left.
+function Beacon.encode(fp: string, from: string, client: string, at: number): string
+	return Json.encode({ v = 1, fp = fp, from = from, client = client, at = at })
+end
+
+-- The client (&quot;studio&quot; or &quot;rbx-native&quot;) of the newest current beacon from
+-- another sender whose key differs from `fp`, or nil.
+function Beacon.conflict(fp: string, from: string, now: number, texts: { string }): string?
+	local newest: { [string]: any } = {}
+	for _, text in texts do
+		local ok, m = pcall(Json.decode, text)
+		if
+			ok
+			and type(m) == &quot;table&quot;
+			and m.v == 1
+			and type(m.fp) == &quot;string&quot;
+			and type(m.from) == &quot;string&quot;
+			and type(m.client) == &quot;string&quot;
+			and type(m.at) == &quot;number&quot;
+			and m.from ~= from
+		then
+			local best = newest[m.from]
+			if best == nil or m.at &gt; best.at then
+				newest[m.from] = m
+			end
+		end
+	end
+	local found: any = nil
+	for _, m in newest do
+		local current = now - m.at &lt;= Beacon.FRESH_MS and m.at &lt;= now + Beacon.CLOCK_SKEW_MS
+		if current and m.fp ~= &quot;&quot; and m.fp ~= fp and (found == nil or m.at &gt; found.at) then
+			found = m
+		end
+	end
+	return if found then found.client else nil
+end
+
+return Beacon
+</ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="ModuleScript" referent="RBX4">
+      <Properties>
         <string name="Name">Capture</string>
         <ProtectedString name="Source">--!strict
 --! Collects the local user's presence (camera, selection, open script, recent edits) and tracks when it changed.
@@ -468,9 +666,9 @@ local Edits = require(script.Parent.Edits)
 local Paths = require(script.Parent.Paths)
 local Schema = require(script.Parent.Schema)
 
-local SAMPLE_INTERVAL = 0.2
-local MOVE_STUDS = 0.05
-local TURN_RADIANS = math.rad(0.5)
+local SAMPLE_INTERVAL = 1 / 5
+local MOVE_STUDS = 1 / 20
+local TURN_RADIANS = math.rad(1 / 2)
 local MAX_WATCHED = 50
 local VALUE_CUT = 80
 
@@ -663,7 +861,7 @@ return Capture
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX4">
+    <Item class="ModuleScript" referent="RBX5">
       <Properties>
         <string name="Name">Catchup</string>
         <ProtectedString name="Source">--!strict
@@ -836,7 +1034,7 @@ return Catchup
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX5">
+    <Item class="ModuleScript" referent="RBX6">
       <Properties>
         <string name="Name">Changes</string>
         <ProtectedString name="Source">--!strict
@@ -961,7 +1159,7 @@ return Changes
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX6">
+    <Item class="ModuleScript" referent="RBX7">
       <Properties>
         <string name="Name">Coedit</string>
         <ProtectedString name="Source">-- Live co-editing in Studio: captures local edits under the tracked roots
@@ -973,11 +1171,14 @@ local Apply = require(script.Parent.CoeditApply)
 local Collect = require(script.Parent.CoeditCollect)
 local CoeditCore = require(script.Parent.CoeditCore)
 local Kept = require(script.Parent.CoeditKept)
+local Notes = require(script.Parent.Notes)
 local Paths = require(script.Parent.Paths)
 local Sync = require(script.Parent.CoeditSync)
 
-local FLUSH_EVERY = 0.3
-local POLL_EVERY = 0.5
+local FLUSH_EVERY = 3 / 10
+local POLL_EVERY = 1 / 2
+-- The longest wait between polls while the relay can't be read.
+local POLL_BACKOFF_MAX = 10
 
 local ROOTS = {
 	&quot;Workspace&quot;,
@@ -1003,6 +1204,8 @@ export type Options = {
 	encKey: string,
 	name: string,
 	onNote: (string) -&gt; (),
+	-- A note containing any of these is a state the panel shows, never printed.
+	quiet: { string }?,
 }
 
 local Coedit = {}
@@ -1045,11 +1248,14 @@ function Coedit.new(options: Options)
 		since = 0,
 		kept = Kept.new(),
 		batchCount = 0,
+		notes = Notes.new(options.quiet),
 	}, Coedit)
 end
 
 function Coedit.note(self: any, text: string)
-	pcall(self.options.onNote, text)
+	if Notes.say(self.notes, text, os.clock()) then
+		pcall(self.options.onNote, text)
+	end
 end
 
 function Coedit.isTracked(self: any, inst: Instance): boolean
@@ -1283,12 +1489,19 @@ function Coedit.start(self: any)
 		end
 	end)
 	task.spawn(function()
+		local wait = POLL_EVERY
 		while self.running do
-			local okPoll, pollErr = pcall(self.poll, self)
+			local okPoll, result = pcall(self.poll, self)
 			if not okPoll then
-				self:note(&quot;Co-edit: &quot; .. tostring(pollErr))
+				self:note(&quot;Co-edit: &quot; .. tostring(result))
 			end
-			task.wait(POLL_EVERY)
+			if okPoll and result then
+				wait = POLL_EVERY
+				Notes.worked(self.notes, os.clock())
+			else
+				wait = math.min(wait * 2, POLL_BACKOFF_MAX)
+			end
+			task.wait(wait)
 		end
 	end)
 end
@@ -1317,7 +1530,7 @@ return Coedit
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX7">
+    <Item class="ModuleScript" referent="RBX8">
       <Properties>
         <string name="Name">CoeditApply</string>
         <ProtectedString name="Source">-- Applies co-edit batches from the relay log to the place, in log order,
@@ -1640,7 +1853,7 @@ return Apply
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX8">
+    <Item class="ModuleScript" referent="RBX9">
       <Properties>
         <string name="Name">CoeditClasses</string>
         <ProtectedString name="Source">--!strict
@@ -6078,7 +6291,7 @@ return {
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX9">
+    <Item class="ModuleScript" referent="RBX10">
       <Properties>
         <string name="Name">CoeditCollect</string>
         <ProtectedString name="Source">-- Turns what changed in Studio since the last flush into ops: deletes,
@@ -6278,7 +6491,7 @@ return Collect
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX10">
+    <Item class="ModuleScript" referent="RBX11">
       <Properties>
         <string name="Name">CoeditCore</string>
         <ProtectedString name="Source">--!strict
@@ -6629,7 +6842,7 @@ return CoeditCore
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX11">
+    <Item class="ModuleScript" referent="RBX12">
       <Properties>
         <string name="Name">CoeditKept</string>
         <ProtectedString name="Source">--!strict
@@ -6741,7 +6954,7 @@ return Kept
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX12">
+    <Item class="ModuleScript" referent="RBX13">
       <Properties>
         <string name="Name">CoeditSync</string>
         <ProtectedString name="Source">-- Co-editing's traffic with the relay: sends batches to the op log (sealed
@@ -6785,7 +6998,7 @@ local function post(self: any, body: string, fill: boolean): (boolean, string?)
 			return true, nil
 		end
 		lastError = if okPost then err else tostring(ok)
-		task.wait(0.5 * 2 ^ (attempt - 1))
+		task.wait(2 ^ (attempt - 2))
 	end
 	return false, lastError
 end
@@ -6856,14 +7069,15 @@ function Sync.authorOf(_self: any, actor: any): string
 	return &quot;user &quot; .. userId .. &quot; (&quot; .. client .. &quot;)&quot;
 end
 
-function Sync.poll(self: any)
+-- True when the relay answered.
+function Sync.poll(self: any): boolean
 	local options = self.options
 	local okPoll, result, err = pcall(options.relay.pollOps, options.relay, self.since)
 	if not okPoll or result == nil then
 		if not okPoll or err ~= nil then
 			self:note(&quot;Co-edit: could not read edits (&quot; .. tostring(if okPoll then err else result) .. &quot;)&quot;)
 		end
-		return
+		return false
 	end
 	-- A relay may carry on the log we read, lack some or all of it (a new
 	-- host: hand it over), or run another (read that from its start; what
@@ -6871,13 +7085,13 @@ function Sync.poll(self: any)
 	local step, missing = self.kept:step(result)
 	if step == &quot;fill&quot; then
 		handOver(self, missing :: { any })
-		return
+		return true
 	elseif step == &quot;restart&quot; then
 		self.kept:restart(result.log)
 		self.since = 0
 		self.reassembler = CoeditCore.Reassembler.new()
 		self.state.registers = CoeditCore.Registers.new()
-		return
+		return true
 	end
 	local log = if type(result.log) == &quot;string&quot; then result.log else &quot;&quot;
 	local entries = type(result.entries) == &quot;table&quot; and result.entries or {}
@@ -6921,13 +7135,14 @@ function Sync.poll(self: any)
 			end
 		end
 	end
+	return true
 end
 
 return Sync
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX13">
+    <Item class="ModuleScript" referent="RBX14">
       <Properties>
         <string name="Name">CoeditValue</string>
         <ProtectedString name="Source">--!strict
@@ -6984,9 +7199,9 @@ local function encodeInner(value: any, valueType: string?, targetOf: (Instance) 
 	elseif kind == &quot;Color3&quot; then
 		if valueType == &quot;Color3uint8&quot; then
 			return wrap(&quot;Color3uint8&quot;, {
-				math.clamp(math.floor(value.R * 255 + 0.5), 0, 255),
-				math.clamp(math.floor(value.G * 255 + 0.5), 0, 255),
-				math.clamp(math.floor(value.B * 255 + 0.5), 0, 255),
+				math.clamp(math.floor(value.R * 255 + 1 / 2), 0, 255),
+				math.clamp(math.floor(value.G * 255 + 1 / 2), 0, 255),
+				math.clamp(math.floor(value.B * 255 + 1 / 2), 0, 255),
 			})
 		end
 		return wrap(&quot;Color3&quot;, { value.R, value.G, value.B })
@@ -7177,7 +7392,7 @@ return CoeditValue
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX14">
+    <Item class="ModuleScript" referent="RBX15">
       <Properties>
         <string name="Name">Crypto</string>
         <ProtectedString name="Source">--!strict
@@ -7572,7 +7787,7 @@ return Crypto
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX15">
+    <Item class="ModuleScript" referent="RBX16">
       <Properties>
         <string name="Name">Defaults</string>
         <ProtectedString name="Source">--!strict
@@ -7585,7 +7800,7 @@ return {
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX16">
+    <Item class="ModuleScript" referent="RBX17">
       <Properties>
         <string name="Name">DiffWindow</string>
         <ProtectedString name="Source">--!strict
@@ -7639,7 +7854,7 @@ local function format(value: any): (string, Color3?)
 	elseif kind == &quot;number&quot; then
 		local text = string.format(&quot;%.3f&quot;, value)
 		text = string.gsub(text, &quot;0+$&quot;, &quot;&quot;)
-		text = string.gsub(text, &quot;%.$&quot;, &quot;&quot;)
+		text = string.gsub(text, &quot;[%.,]$&quot;, &quot;&quot;)
 		return text, nil
 	elseif kind == &quot;string&quot; then
 		local first = string.match(value, &quot;^[^\n]*&quot;) or &quot;&quot;
@@ -7725,7 +7940,7 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 
 	local tile = Instance.new(&quot;TextLabel&quot;)
 	tile.Size = UDim2.fromOffset(28, 28)
-	tile.Position = UDim2.new(0, 0, 0.5, -14)
+	tile.Position = UDim2.new(0, 0, 1 / 2, -14)
 	Ui.fill(tile, &quot;accent_soft&quot;)
 	Ui.corner(tile, Ui.RADIUS_TILE)
 	tile.FontFace = Ui.FONT_BOLD
@@ -7747,8 +7962,8 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 
 	local controls = Instance.new(&quot;Frame&quot;)
 	controls.BackgroundTransparency = 1
-	controls.AnchorPoint = Vector2.new(1, 0.5)
-	controls.Position = UDim2.fromScale(1, 0.5)
+	controls.AnchorPoint = Vector2.new(1, 1 / 2)
+	controls.Position = UDim2.fromScale(1, 1 / 2)
 	controls.Size = UDim2.fromOffset(460, 28)
 	controls.Parent = header
 	local controlsList = Ui.list(controls, 12, true)
@@ -7819,8 +8034,8 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 	note.Size = UDim2.new(1, -120, 1, 0)
 	local close = Ui.button(footer, &quot;Close&quot;, true)
 	close.Size = UDim2.fromOffset(96, 34)
-	close.AnchorPoint = Vector2.new(1, 0.5)
-	close.Position = UDim2.fromScale(1, 0.5)
+	close.AnchorPoint = Vector2.new(1, 1 / 2)
+	close.Position = UDim2.fromScale(1, 1 / 2)
 	close.Activated:Connect(function()
 		gui.Enabled = false
 	end)
@@ -7997,7 +8212,7 @@ function DiffWindow.listRow(self: DiffWindow, change: Changes.Change, marker: st
 	mark.Size = UDim2.new(0, 10, 1, 0)
 	local instance = self.found[change.path]
 	local icon = Ui.classIcon(row, if instance then instance.ClassName else &quot;Folder&quot;, 16)
-	icon.Position = UDim2.new(0, 26, 0.5, -8)
+	icon.Position = UDim2.new(0, 26, 1 / 2, -8)
 
 	local name = Ui.text(row, change.name, { size = Ui.TEXT_SM, font = if selected then Ui.FONT_SEMIBOLD else Ui.FONT, wrap = false })
 	name.Position = UDim2.fromOffset(50, 4)
@@ -8205,7 +8420,7 @@ return DiffWindow
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX17">
+    <Item class="ModuleScript" referent="RBX18">
       <Properties>
         <string name="Name">Edits</string>
         <ProtectedString name="Source">--!strict
@@ -8341,7 +8556,7 @@ return Edits
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX18">
+    <Item class="ModuleScript" referent="RBX19">
       <Properties>
         <string name="Name">Hmac</string>
         <ProtectedString name="Source">--!strict
@@ -8373,7 +8588,7 @@ return Hmac
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX19">
+    <Item class="ModuleScript" referent="RBX20">
       <Properties>
         <string name="Name">Json</string>
         <ProtectedString name="Source">--!strict
@@ -8428,6 +8643,27 @@ local function encodeString(s: string): string
 	return '&quot;' .. escaped .. '&quot;'
 end
 
+-- Studio formats and parses numbers in the system locale on some machines:
+-- on a French Mac `tonumber(&quot;0.5&quot;)` fails and `%g` writes &quot;0,5&quot;. JSON always
+-- uses &quot;.&quot;, so swap in whatever this Studio uses on the way in and out.
+local FORMAT_POINT = string.match(string.format(&quot;%.1f&quot;, 1 / 2), &quot;^0(%D)5$&quot;) or &quot;.&quot;
+local PARSE_POINT = if tonumber(&quot;0.5&quot;) == 1 / 2 or tonumber(&quot;0,5&quot;) ~= 1 / 2 then &quot;.&quot; else &quot;,&quot;
+
+local function formatNumber(pattern: string, n: number): string
+	local text = string.format(pattern, n)
+	if FORMAT_POINT ~= &quot;.&quot; then
+		text = string.gsub(text, &quot;%&quot; .. FORMAT_POINT, &quot;.&quot;)
+	end
+	return text
+end
+
+local function parseNumberText(text: string): number?
+	if PARSE_POINT ~= &quot;.&quot; then
+		text = string.gsub(text, &quot;%.&quot;, PARSE_POINT)
+	end
+	return tonumber(text)
+end
+
 local function encodeNumber(n: number): string
 	if n ~= n or n == math.huge or n == -math.huge then
 		error(&quot;cannot encode non-finite number&quot;)
@@ -8438,11 +8674,11 @@ local function encodeNumber(n: number): string
 	if n % 1 == 0 and math.abs(n) &lt; 2 ^ 53 then
 		return string.format(&quot;%.0f&quot;, n)
 	end
-	local short = string.format(&quot;%.14g&quot;, n)
-	if tonumber(short) == n then
+	local short = formatNumber(&quot;%.14g&quot;, n)
+	if parseNumberText(short) == n then
 		return short
 	end
-	return string.format(&quot;%.17g&quot;, n)
+	return formatNumber(&quot;%.17g&quot;, n)
 end
 
 local function encodeValue(value: any, out: {string})
@@ -8573,7 +8809,7 @@ local parseValue
 
 local function parseNumber(text: string, pos: number): (number, number)
 	local literal = text:match(&quot;^-?%d+%.?%d*[eE]?[+-]?%d*&quot;, pos)
-	local n = literal and tonumber(literal)
+	local n = literal and parseNumberText(literal)
 	if not literal or not n then
 		fail(text, pos, &quot;bad number&quot;)
 	end
@@ -8658,7 +8894,7 @@ return Json
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX20">
+    <Item class="ModuleScript" referent="RBX21">
       <Properties>
         <string name="Name">Markers</string>
         <ProtectedString name="Source">--!strict
@@ -8729,9 +8965,9 @@ local function makeCamera(folder: Folder, user: any): Part
 	part.CanQuery = false
 	part.CanTouch = false
 	part.Locked = true
-	part.Size = Vector3.new(1, 0.6, 1.5)
+	part.Size = Vector3.new(1, 3 / 5, 3 / 2)
 	part.Material = Enum.Material.Neon
-	part.Transparency = 0.3
+	part.Transparency = 3 / 10
 	part.Name = &quot;Camera&quot;
 
 	local gui = Instance.new(&quot;BillboardGui&quot;)
@@ -8749,7 +8985,7 @@ local function makeCamera(folder: Folder, user: any): Part
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.BuilderSansBold
 	label.TextSize = 16
-	label.TextStrokeTransparency = 0.5
+	label.TextStrokeTransparency = 1 / 2
 	label.Parent = gui
 
 	part.Parent = folder
@@ -8777,7 +9013,7 @@ function Markers.render(self: Markers, users: { any })
 					if not box then
 						local created = Instance.new(&quot;SelectionBox&quot;)
 						created.Archivable = false
-						created.LineThickness = 0.05
+						created.LineThickness = 1 / 20
 						created.SurfaceTransparency = 1
 						created.Parent = folder
 						self.items[key] = created
@@ -8824,7 +9060,58 @@ return Markers
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX21">
+    <Item class="ModuleScript" referent="RBX22">
+      <Properties>
+        <string name="Name">Notes</string>
+        <ProtectedString name="Source">--!strict
+--! Which co-edit problems reach Studio's Output. Co-editing polls twice a
+--! second, so a problem that lasts would print the same line over and over:
+--! each distinct one prints once, and again only after co-editing worked
+--! for a while. Waiting for someone in RbxNative to host (or for a host
+--! that left to be replaced) is a state the panel's status line already
+--! shows, not a problem. Pure, so the Luau
+--! tests drive it with their own clock.
+
+local Notes = {}
+
+-- Seconds before a problem that went away may be printed again.
+Notes.AGAIN = 60
+
+export type State = { quiet: { string }, said: { [string]: number } }
+
+function Notes.new(quiet: { string }?): State
+	return { quiet = quiet or {}, said = {} }
+end
+
+-- Whether `text` should be printed now.
+function Notes.say(state: State, text: string, now: number): boolean
+	for _, quiet in state.quiet do
+		if string.find(text, quiet, 1, true) ~= nil then
+			return false
+		end
+	end
+	if state.said[text] ~= nil then
+		return false
+	end
+	state.said[text] = now
+	return true
+end
+
+-- Co-editing reached the relay: problems printed long enough ago may be
+-- printed again if they come back.
+function Notes.worked(state: State, now: number)
+	for text, at in state.said do
+		if now - at &gt;= Notes.AGAIN then
+			state.said[text] = nil
+		end
+	end
+end
+
+return Notes
+</ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="ModuleScript" referent="RBX23">
       <Properties>
         <string name="Name">Ntfy</string>
         <ProtectedString name="Source">--!strict
@@ -8943,7 +9230,7 @@ return Ntfy
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX22">
+    <Item class="ModuleScript" referent="RBX24">
       <Properties>
         <string name="Name">Paths</string>
         <ProtectedString name="Source">--!strict
@@ -9040,7 +9327,7 @@ return Paths
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX23">
+    <Item class="ModuleScript" referent="RBX25">
       <Properties>
         <string name="Name">Relay</string>
         <ProtectedString name="Source">--!strict
@@ -9059,11 +9346,33 @@ return Paths
 local HttpService = game:GetService(&quot;HttpService&quot;)
 
 local Announce = require(script.Parent.Announce)
+local Beacon = require(script.Parent.Beacon)
 local Auth = require(script.Parent.Auth)
 local Ntfy = require(script.Parent.Ntfy)
 local Schema = require(script.Parent.Schema)
 
-export type Config = { kind: string, url: string, key: string, encKey: string, room: string, userId: number }
+export type Config = {
+	kind: string,
+	url: string,
+	key: string,
+	encKey: string,
+	room: string,
+	userId: number,
+	placeId: number,
+	-- Kept by the caller across sessions; a fresh one when absent.
+	beaconFrom: string?,
+	-- hosted: a host on this computer has answered on its loopback port
+	-- before (kept by the caller), so look there first, and the id the last
+	-- one gave; `onLoopback` is told the first time one answers and the id
+	-- of each new one.
+	loopbackOk: boolean?,
+	localHost: string?,
+	onLoopback: ((host: string?) -&gt; ())?,
+}
+
+-- A request given up before it went out: the room moved to another host
+-- (or lost this one) while it waited its turn. Callers ask again.
+local MOVED = &quot;The room's host changed; asking again&quot;
 
 local VERSION_MISMATCH =
 	&quot;The relay runs a different Team Presence version; update the plugin, rbx-native and the relay together.&quot;
@@ -9071,6 +9380,37 @@ local VERSION_MISMATCH =
 -- Plugins have no CSPRNG API. A v4 GUID is 122 random bits, so 12 of its 16
 -- bytes, mixed with a Random stream, make a nonce that does not repeat.
 local rng = Random.new()
+
+-- Studio asks whether the plugin may reach a host on the first request to
+-- it, and asks once per request still waiting on that answer. So until a
+-- host has answered once, its requests go one at a time.
+local asking: { [string]: boolean } = {}
+local answered: { [string]: boolean } = {}
+-- How long a long-poll waits for a quick request to open a new host.
+local LONG_WAITS_FOR = 30
+
+-- `long`: a relay long-poll, which can take 20 s to answer. It never goes
+-- first to a host: holding the line that long would hold up everything
+-- else (joining a new host would show nothing for as long). `wanted` is
+-- asked while it waits its turn; nil (no request made) once it says no.
+local function request(options: { [string]: any }, long: boolean?, wanted: (() -&gt; boolean)?): any?
+	local host = string.match(options.Url, &quot;^%a+://([^/]+)&quot;) or options.Url
+	local giveUp = os.clock() + LONG_WAITS_FOR
+	while asking[host] or (long and not answered[host] and os.clock() &lt; giveUp) do
+		task.wait()
+		if wanted and not wanted() then
+			return nil
+		end
+	end
+	asking[host] = not answered[host]
+	local ok, res = pcall(HttpService.RequestAsync, HttpService, options)
+	asking[host] = nil
+	if not ok then
+		error(res, 0)
+	end
+	answered[host] = true
+	return res
+end
 
 local function nonceFor(): string
 	local hex = string.gsub(HttpService:GenerateGUID(false), &quot;[^%x]&quot;, &quot;&quot;)
@@ -9083,13 +9423,44 @@ local function nonceFor(): string
 end
 
 local EXPIRY_MS = 15000
--- How often a hosted room looks for its host while it has none.
-local RESOLVE_EVERY = 15
-local WAITING = &quot;Waiting for an rbx-native collaborator to open the place&quot;
-
+-- How often a hosted room with no host reads the announce topic on ntfy.
+-- ntfy.sh gives an address a burst of 60 requests, then one per 5 s, and
+-- RbxNative on the same address spends from the same budget.
+local RESOLVE_EVERY = 20
+-- How often it reads it in the first RESOLVE_SOON_FOR seconds after its
+-- host went away: that is when an RbxNative coming back (a restart)
+-- announces itself. Twelve reads, about what the budget refills meanwhile.
+local RESOLVE_SOON_EVERY = 5
+local RESOLVE_SOON_FOR = 60
+-- How often it reads it once an RbxNative on this computer has served the
+-- room: one restarting here comes back on the loopback port, looked at
+-- every LOOPBACK_EVERY, so ntfy only has to turn up hosts elsewhere.
+local RESOLVE_LOCAL_EVERY = 30
+-- After a 429 from ntfy, ntfy requests hold off for the Retry-After it
+-- asked for, or this long doubling up to NTFY_BACKOFF_MAX when it gave
+-- none: polling on through the refusals keeps the budget empty, RbxNative's
+-- announcement included. A refused post only holds posts back: ntfy.sh
+-- also caps messages at 250 a day, and once those run out it asks for
+-- hours while reads still go through.
+local NTFY_BACKOFF_MIN = 30
+local NTFY_BACKOFF_MAX = 300
+local RATE_LIMITED = &quot;ntfy is rate limiting this address; trying again later&quot;
+-- How often a hosted room with no host looks on this computer's loopback
+-- port: a refused connection costs nothing.
+local LOOPBACK_EVERY = 1
+-- How long a host that stopped answering is still shown before the room
+-- goes back to waiting for someone in RbxNative.
+local HOST_GRACE = 10
+-- How often a hosted room reads the place's beacons while it waits.
+local BEACON_READ_EVERY = 120
 
 local Relay = {}
 Relay.__index = Relay
+
+Relay.WAITING = &quot;Waiting for someone in RbxNative to open this place. Studio can't host the session on its own.&quot;
+local WAITING = Relay.WAITING
+-- The host this room had stopped answering: also waiting, not an error.
+Relay.HOST_GONE = &quot;Can't reach the rbx-native host yet&quot;
 
 function Relay.new(config: Config)
 	local url = string.gsub(config.url, &quot;/+$&quot;, &quot;&quot;)
@@ -9099,7 +9470,23 @@ function Relay.new(config: Config)
 		-- hosted: the announce server; `base` is the host, once found.
 		announceBase = if hosted then url else nil,
 		base = if hosted then nil else url,
+		-- The relay the last presence poll's cursor came from.
+		cursorBase = nil :: string?,
 		lastResolve = -math.huge,
+		-- hosted: where a host on this computer would answer (see _loopback).
+		loopback = if hosted then `http://127.0.0.1:{Announce.loopbackPort(config.room)}` else nil,
+		loopbackOk = config.loopbackOk == true,
+		localHost = config.localHost,
+		onLoopback = config.onLoopback,
+		lastLoopback = -math.huge,
+		-- No ntfy request of each method before this (os.clock), and the
+		-- last hold.
+		ntfyUntil = { GET = -math.huge, POST = -math.huge },
+		ntfyBackoff = 0,
+		-- hosted: when a host last stopped answering (os.clock), nil if none has.
+		lostAt = nil :: number?,
+		-- hosted: when the host stopped answering (os.clock), nil while it answers.
+		goneSince = nil :: number?,
 		key = config.key,
 		encKey = config.encKey,
 		room = config.room,
@@ -9110,6 +9497,13 @@ function Relay.new(config: Config)
 		peers = {} :: { [number]: { state: any, seen: number } },
 		cursor = 0,
 		lastId = nil :: string?,
+		-- hosted only: this editor's beacon (see Beacon) and what it last read.
+		beaconTopic = Beacon.topic(config.placeId),
+		beaconFp = Beacon.fingerprint(config.room),
+		beaconFrom = config.beaconFrom or string.sub(string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;), 1, 16),
+		lastBeaconPost = -math.huge,
+		lastBeaconRead = -math.huge,
+		conflict = nil :: string?,
 	}
 	return setmetatable(self, Relay)
 end
@@ -9121,34 +9515,121 @@ end
 -- A short wait between ntfy polls, so the poll loop does not spin; a
 -- hosted room with no host yet waits until it looks again.
 function Relay:pollDelay(): number
-	if self.kind == &quot;hosted&quot; and self.base == nil then
-		return RESOLVE_EVERY
+	if self:lookingForHost() then
+		return self:_resolveEvery()
 	end
 	return if self.kind == &quot;ntfy&quot; then 1 else 0
+end
+
+-- Whether a hosted room has no host to talk to right now, whatever the
+-- reason: retrying sooner than its next look for one gains nothing.
+function Relay:lookingForHost(): boolean
+	return self.kind == &quot;hosted&quot; and self.base == nil
+end
+
+function Relay:_resolveEvery(): number
+	if self.loopbackOk then
+		return RESOLVE_LOCAL_EVERY
+	end
+	if self.lostAt ~= nil and os.clock() - self.lostAt &lt; RESOLVE_SOON_FOR then
+		return RESOLVE_SOON_EVERY
+	end
+	return RESOLVE_EVERY
 end
 
 -- Whether a hosted room is waiting for an rbx-native user to host it (not
 -- an error: nothing is wrong, nobody is there yet).
 function Relay:waiting(): boolean
-	return self.kind == &quot;hosted&quot; and self.base == nil
+	return self.kind == &quot;hosted&quot;
+		and self.base == nil
+		and (self.goneSince == nil or os.clock() - self.goneSince &gt;= HOST_GRACE)
 end
 
--- hosted: finds the host from the newest announcement, at most once every
--- RESOLVE_EVERY seconds. True when there is one to talk to.
+-- What a hosted room with no host to talk to says.
+function Relay:_noHost(): string
+	return if self:waiting() then WAITING else Relay.HOST_GONE
+end
+
+-- An ntfy request (pcall-style: ok and the response, or not and why),
+-- holding off after a 429 (see NTFY_BACKOFF_MIN).
+function Relay:_ntfy(options: { [string]: any }): (boolean, any)
+	if os.clock() &lt; self.ntfyUntil[options.Method] then
+		return false, RATE_LIMITED
+	end
+	local ok, res = pcall(request, options)
+	if not ok or res.StatusCode ~= 429 then
+		if ok then
+			self.ntfyBackoff = 0
+		end
+		return ok, res
+	end
+	local asked = 0
+	for name, value in res.Headers or {} do
+		if string.lower(name) == &quot;retry-after&quot; then
+			asked = tonumber(value) or 0
+		end
+	end
+	self.ntfyBackoff = math.clamp(self.ntfyBackoff * 2, NTFY_BACKOFF_MIN, NTFY_BACKOFF_MAX)
+	local hold = os.clock() + math.max(asked, self.ntfyBackoff)
+	for method, held in self.ntfyUntil do
+		if method == options.Method or options.Method == &quot;GET&quot; then
+			self.ntfyUntil[method] = math.max(held, hold)
+		end
+	end
+	return false, RATE_LIMITED
+end
+
+-- hosted: whether an rbx-native host on this computer serves the room on
+-- its loopback port, at most once every LOOPBACK_EVERY; if so, talk to it
+-- there. Studio asks about 127.0.0.1 once, where it would ask about the
+-- tunnel's new address every time RbxNative starts, and the host listens
+-- there before its tunnel is even up.
+function Relay:_loopback(): boolean
+	if os.clock() - self.lastLoopback &lt; LOOPBACK_EVERY then
+		return false
+	end
+	self.lastLoopback = os.clock()
+	local ok, res = pcall(function()
+		return request({ Url = `{self.loopback}/v1/rooms/{self.room}/health`, Method = &quot;GET&quot; })
+	end)
+	if not ok or res.StatusCode ~= 200 then
+		return false
+	end
+	self.base = self.loopback
+	self.sendKey = true
+	-- Older hosts answer a bare &quot;ok&quot;.
+	local decoded, parsed = pcall(function()
+		return HttpService:JSONDecode(res.Body)
+	end)
+	local id = if decoded and type(parsed) == &quot;table&quot; and type(parsed.host) == &quot;string&quot; then parsed.host else nil
+	if not self.loopbackOk or (id ~= nil and id ~= self.localHost) then
+		self.loopbackOk = true
+		self.localHost = id or self.localHost
+		if self.onLoopback then
+			self.onLoopback(id)
+		end
+	end
+	return true
+end
+
+-- hosted: finds the host, on this computer (see _loopback) or from the
+-- newest announcement, at most once every RESOLVE_EVERY seconds. True when
+-- there is one to talk to.
 function Relay:_resolve(): (boolean, string?)
 	if self.base ~= nil then
 		return true, nil
 	end
-	if os.clock() - self.lastResolve &lt; RESOLVE_EVERY then
-		return false, WAITING
+	if self.loopbackOk and self:_loopback() then
+		return true, nil
+	end
+	if os.clock() - self.lastResolve &lt; self:_resolveEvery() then
+		return false, self:_noHost()
 	end
 	self.lastResolve = os.clock()
 	local url = string.format(&quot;%s/%s/json?poll=1&amp;since=12h&quot;, self.announceBase, Announce.topic(self.room))
-	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = url, Method = &quot;GET&quot; })
-	end)
+	local ok, res = self:_ntfy({ Url = url, Method = &quot;GET&quot; })
 	if not ok then
-		return false, tostring(res)
+		return false, if res == RATE_LIMITED then self:_noHost() else tostring(res)
 	end
 	if not res.Success then
 		return false, string.format(&quot;announce HTTP %d&quot;, res.StatusCode)
@@ -9158,12 +9639,37 @@ function Relay:_resolve(): (boolean, string?)
 		local decoded, parsed = pcall(function()
 			return HttpService:JSONDecode(line)
 		end)
-		if decoded and type(parsed) == &quot;table&quot; and parsed.event == &quot;message&quot; and type(parsed.message) == &quot;string&quot; then
-			table.insert(texts, parsed.message)
+		if
+			decoded
+			and type(parsed) == &quot;table&quot;
+			and parsed.event == &quot;message&quot;
+			and type(parsed.message) == &quot;string&quot;
+			and type(parsed.time) == &quot;number&quot;
+		then
+			table.insert(texts, { text = parsed.message, time = parsed.time * 1000 })
 		end
 	end
-	local host = Announce.newest(self.key, self.room, nowMs(), texts)
+	local host, hostId = Announce.newest(self.key, self.room, nowMs(), texts)
 	if not host then
+		-- The host said goodbye: nobody to wait out.
+		self.goneSince = nil
+		return false, WAITING
+	end
+	local ours = hostId ~= nil and hostId == self.localHost
+	-- Someone hosts: maybe on this computer. Asking costs a one-time
+	-- 127.0.0.1 prompt even when they're elsewhere.
+	if not self.loopbackOk or ours then
+		self.lastLoopback = -math.huge
+		if self:_loopback() then
+			return true, nil
+		end
+	end
+	if ours then
+		-- Announced by an RbxNative on this computer that is gone from the
+		-- loopback port without a goodbye (killed). Its tunnel is dead too,
+		-- and asking for it costs a prompt; a new RbxNative here comes back
+		-- on the loopback port before it announces anything.
+		self.goneSince = nil
 		return false, WAITING
 	end
 	self.base = string.gsub(host, &quot;/+$&quot;, &quot;&quot;)
@@ -9171,32 +9677,83 @@ function Relay:_resolve(): (boolean, string?)
 	return true, nil
 end
 
--- hosted: the host stopped answering (left, crashed, or handed over); look
--- for it again on the next call.
-function Relay:_lost()
-	if self.kind == &quot;hosted&quot; then
+-- hosted: the host at `base` stopped answering (left, crashed, or handed
+-- over). The first time, look for a new host at once; after that every
+-- RESOLVE_EVERY, since a host that quit without a goodbye is still the
+-- newest announced. A late failure from a host the room already left says
+-- nothing about the one it talks to now.
+function Relay:_lost(base: string?)
+	if self.kind == &quot;hosted&quot; and self.base == base then
 		self.base = nil
-		self.lastResolve = -math.huge
+		self.lostAt = os.clock()
+		if self.goneSince == nil then
+			self.goneSince = os.clock()
+			self.lastResolve = -math.huge
+		end
 	end
+end
+
+-- hosted: posts this editor's beacon when due (`leaving` posts the goodbye)
+-- and reads the others' at most every BEACON_READ_EVERY seconds. Returns the
+-- client (&quot;studio&quot; or &quot;rbx-native&quot;) of an editor on this place using a
+-- different key, if any. Failures are ignored: the beacon only explains.
+function Relay:keyConflict(leaving: boolean?): string?
+	if self.kind ~= &quot;hosted&quot; then
+		return nil
+	end
+	local base = self.announceBase .. &quot;/&quot; .. self.beaconTopic
+	if leaving or os.clock() - self.lastBeaconPost &gt;= Beacon.EVERY then
+		self.lastBeaconPost = os.clock()
+		self:_ntfy({
+			Url = base,
+			Method = &quot;POST&quot;,
+			Headers = { [&quot;Content-Type&quot;] = &quot;text/plain&quot; },
+			Body = Beacon.encode(if leaving then &quot;&quot; else self.beaconFp, self.beaconFrom, &quot;studio&quot;, nowMs()),
+		})
+	end
+	if leaving or os.clock() - self.lastBeaconRead &lt; BEACON_READ_EVERY then
+		return self.conflict
+	end
+	self.lastBeaconRead = os.clock()
+	local ok, res = self:_ntfy({ Url = base .. &quot;/json?poll=1&amp;since=15m&quot;, Method = &quot;GET&quot; })
+	if ok and res.Success then
+		local texts = {}
+		for line in string.gmatch(res.Body or &quot;&quot;, &quot;[^\n]+&quot;) do
+			local decoded, parsed = pcall(function()
+				return HttpService:JSONDecode(line)
+			end)
+			if decoded and type(parsed) == &quot;table&quot; and parsed.event == &quot;message&quot; and type(parsed.message) == &quot;string&quot; then
+				table.insert(texts, parsed.message)
+			end
+		end
+		self.conflict = Beacon.conflict(self.beaconFp, self.beaconFrom, nowMs(), texts)
+	end
+	return self.conflict
 end
 
 -- ===== Worker (signed HTTP) =====
 
-function Relay:_request(method: string, suffix: string, body: string): (any?, string?, any?)
+function Relay:_request(method: string, suffix: string, body: string, long: boolean?): (any?, string?, any?)
 	local path = &quot;/v1/rooms/&quot; .. self.room .. suffix
 	local headers = Auth.headers(self.key, method, path, self.userId, nowMs(), body, self.sendKey)
 	if body ~= &quot;&quot; then
 		headers[&quot;Content-Type&quot;] = &quot;application/json&quot;
 	end
-	local request: { [string]: any } = { Url = self.base .. path, Method = method, Headers = headers }
+	local base = self.base
+	local options: { [string]: any } = { Url = base .. path, Method = method, Headers = headers }
 	if body ~= &quot;&quot; then
-		request.Body = body
+		options.Body = body
 	end
 	local ok, res = pcall(function()
-		return HttpService:RequestAsync(request)
+		return request(options, long, function()
+			return self.base == base
+		end)
 	end)
 	if not ok then
 		return nil, tostring(res)
+	end
+	if res == nil then
+		return nil, MOVED
 	end
 	if not res.Success then
 		if res.StatusCode == 400 and string.find(res.Body or &quot;&quot;, &quot;version&quot;, 1, true) then
@@ -9218,28 +9775,35 @@ local function needsKey(res: any): boolean
 	return ok and type(decoded) == &quot;table&quot; and decoded.error == &quot;key&quot;
 end
 
-function Relay:_send(method: string, suffix: string, body: string): (any?, string?)
+function Relay:_send(method: string, suffix: string, body: string, long: boolean?): (any?, string?)
 	if self.kind == &quot;hosted&quot; then
 		local found, why = self:_resolve()
 		if not found then
 			return nil, why
 		end
 	end
-	local res, err, raw = self:_request(method, suffix, body)
+	local base = self.base
+	local res, err, raw = self:_request(method, suffix, body, long)
+	if err == MOVED then
+		return nil, err
+	end
 	if res == nil and raw == nil and self.kind == &quot;hosted&quot; then
 		-- No HTTP answer at all: the host may be gone, or its address not
 		-- reachable yet; look again shortly.
-		self:_lost()
-		err = `Can't reach the rbx-native host yet ({err})`
+		self:_lost(base)
+		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} ({err})`
 	elseif res == nil and raw and self.kind == &quot;hosted&quot; and (raw.StatusCode == 404 or raw.StatusCode &gt;= 500) then
 		-- A closed tunnel answers 404/502/530 from Cloudflare's edge (an
 		-- HTML page: keep it out of the status line).
-		self:_lost()
-		err = `Can't reach the rbx-native host yet (HTTP {raw.StatusCode})`
+		self:_lost(base)
+		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
 	end
 	if res == nil and needsKey(raw) and not self.sendKey then
 		self.sendKey = true
-		res, err = self:_request(method, suffix, body)
+		res, err = self:_request(method, suffix, body, long)
+	end
+	if res ~= nil then
+		self.goneSince = nil
 	end
 	return res, err
 end
@@ -9248,14 +9812,12 @@ end
 
 function Relay:_ntfyPublish(state: any): (boolean, string?)
 	local body = Ntfy.fitEncode(self.key, self.encKey, self.room, self.topic, self.userId, nowMs(), state, nonceFor)
-	local ok, res = pcall(function()
-		return HttpService:RequestAsync({
-			Url = self.base .. &quot;/&quot; .. self.topic,
-			Method = &quot;POST&quot;,
-			Headers = { [&quot;Content-Type&quot;] = &quot;text/plain&quot; },
-			Body = body,
-		})
-	end)
+	local ok, res = self:_ntfy({
+		Url = self.base .. &quot;/&quot; .. self.topic,
+		Method = &quot;POST&quot;,
+		Headers = { [&quot;Content-Type&quot;] = &quot;text/plain&quot; },
+		Body = body,
+	})
 	if not ok then
 		return false, tostring(res)
 	end
@@ -9268,9 +9830,7 @@ end
 function Relay:_ntfyPoll(): (any?, string?)
 	local since = self.lastId or &quot;10s&quot;
 	local url = string.format(&quot;%s/%s/json?poll=1&amp;since=%s&quot;, self.base, self.topic, HttpService:UrlEncode(since))
-	local ok, res = pcall(function()
-		return HttpService:RequestAsync({ Url = url, Method = &quot;GET&quot; })
-	end)
+	local ok, res = self:_ntfy({ Url = url, Method = &quot;GET&quot; })
 	if not ok then
 		return nil, tostring(res)
 	end
@@ -9323,6 +9883,9 @@ function Relay:publish(state: any): (boolean, string?)
 		return self:_ntfyPublish(state)
 	end
 	local res, err = self:_send(&quot;POST&quot;, &quot;/state&quot;, Schema.sealState(self.encKey, self.room, state, nonceFor))
+	if err == MOVED then
+		return self:publish(state)
+	end
 	if res == nil then
 		return false, err
 	end
@@ -9333,10 +9896,18 @@ function Relay:poll(cursor: number): (any?, string?)
 	if self.kind == &quot;ntfy&quot; then
 		return self:_ntfyPoll()
 	end
-	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/poll?since=%.0f&quot;, cursor), &quot;&quot;)
+	-- A cursor only means something to the relay that gave it; a new host
+	-- counts from far lower, and would sit on the poll until it timed out.
+	local since = if self.base ~= nil and self.base == self.cursorBase then cursor else 0
+	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/poll?since=%.0f&quot;, since), &quot;&quot;, true)
+	if err == MOVED then
+		-- Again from the top: the cursor belongs to the host it left.
+		return self:poll(cursor)
+	end
 	if res == nil then
 		return nil, err
 	end
+	self.cursorBase = self.base
 	local ok, snapshot = pcall(Schema.openSnapshot, self.encKey, self.room, res.Body)
 	if not ok then
 		return nil, tostring(snapshot)
@@ -9353,9 +9924,7 @@ end
 function Relay:journal(sinceMs: number): (any?, string?)
 	if self.kind == &quot;ntfy&quot; then
 		local url = string.format(&quot;%s/%s/json?poll=1&amp;since=12h&quot;, self.base, self.topic)
-		local ok, res = pcall(function()
-			return HttpService:RequestAsync({ Url = url, Method = &quot;GET&quot; })
-		end)
+		local ok, res = self:_ntfy({ Url = url, Method = &quot;GET&quot; })
 		if not ok then
 			return nil, tostring(res)
 		end
@@ -9442,7 +10011,10 @@ function Relay:pollOps(since: number): (any?, string?)
 	if self.kind ~= &quot;hosted&quot; and self.kind ~= &quot;worker&quot; then
 		return nil, NEEDS_HOSTED
 	end
-	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/ops?since=%.0f&quot;, since), &quot;&quot;)
+	local res, err = self:_send(&quot;GET&quot;, string.format(&quot;/ops?since=%.0f&quot;, since), &quot;&quot;, true)
+	if err == MOVED then
+		return self:pollOps(since)
+	end
 	if res == nil then
 		return nil, err
 	end
@@ -9457,6 +10029,7 @@ function Relay:pollOps(since: number): (any?, string?)
 end
 
 function Relay:leave()
+	self:keyConflict(true)
 	if self.kind == &quot;ntfy&quot; or self:waiting() then
 		-- Nothing to delete on a dumb pub/sub (peers expire us), or no host.
 		return
@@ -9468,7 +10041,7 @@ return Relay
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX24">
+    <Item class="ModuleScript" referent="RBX26">
       <Properties>
         <string name="Name">Schema</string>
         <ProtectedString name="Source">--!strict
@@ -9748,7 +10321,7 @@ return Schema
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX25">
+    <Item class="ModuleScript" referent="RBX27">
       <Properties>
         <string name="Name">Secret</string>
         <ProtectedString name="Source">--!strict
@@ -9788,16 +10361,34 @@ function Secret.read(): string?
 	return nil
 end
 
-function Secret.create(): string
-	local secret = string.lower(
-		string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;) .. string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;)
-	)
-	local id = ChangeHistoryService:TryBeginRecording(&quot;Create presence key&quot;)
-	ensureFolder():SetAttribute(ATTRIBUTE, secret)
+-- Turning presence on puts everything collaborators need into the place,
+-- in one undo step: the key (made here when the place has none) and the
+-- relay (`kind`, `url`, when the place names none). Returns the key and
+-- whether it was just made. Both reach collaborators with the next save.
+function Secret.ensure(kind: string, url: string): (string, boolean)
+	local secret = Secret.read()
+	local relay = Secret.readRelay()
+	if secret ~= nil and relay ~= nil then
+		return secret, false
+	end
+	local id = ChangeHistoryService:TryBeginRecording(&quot;Set up presence&quot;)
+	local folder = ensureFolder()
+	local minted = secret == nil
+	if secret == nil then
+		secret = string.lower(
+			string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;)
+				.. string.gsub(HttpService:GenerateGUID(false), &quot;-&quot;, &quot;&quot;)
+		)
+		folder:SetAttribute(ATTRIBUTE, secret)
+	end
+	if relay == nil then
+		folder:SetAttribute(RELAY_KIND, kind)
+		folder:SetAttribute(RELAY_URL, url)
+	end
 	if id then
 		ChangeHistoryService:FinishRecording(id, Enum.FinishRecordingOperation.Commit)
 	end
-	return secret
+	return secret :: string, minted
 end
 
 -- The relay the place names, if any: a known kind and a non-empty URL.
@@ -9814,7 +10405,7 @@ function Secret.readRelay(): { kind: string, url: string }?
 	return nil
 end
 
--- Owner setup: writes the relay into the place for every collaborator.
+-- Writes the relay into the place for every collaborator.
 function Secret.writeRelay(kind: string, url: string)
 	local id = ChangeHistoryService:TryBeginRecording(&quot;Set presence relay&quot;)
 	local folder = ensureFolder()
@@ -9825,24 +10416,11 @@ function Secret.writeRelay(kind: string, url: string)
 	end
 end
 
-function Secret.clearRelay()
-	local folder = ServerStorage:FindFirstChild(FOLDER)
-	if folder == nil then
-		return
-	end
-	local id = ChangeHistoryService:TryBeginRecording(&quot;Clear presence relay&quot;)
-	folder:SetAttribute(RELAY_KIND, nil)
-	folder:SetAttribute(RELAY_URL, nil)
-	if id then
-		ChangeHistoryService:FinishRecording(id, Enum.FinishRecordingOperation.Commit)
-	end
-end
-
 return Secret
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX26">
+    <Item class="ModuleScript" referent="RBX28">
       <Properties>
         <string name="Name">Sha256</string>
         <ProtectedString name="Source">--!strict
@@ -9947,7 +10525,7 @@ return Sha256
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX27">
+    <Item class="ModuleScript" referent="RBX29">
       <Properties>
         <string name="Name">Theme</string>
         <ProtectedString name="Source">--!strict
@@ -9955,97 +10533,97 @@ return Sha256
 -- Colours are { r, g, b, alpha } with r, g, b in 0-255 and alpha in 0-1.
 return {
 	colors = {
-		accent_hover = { 115, 133, 221, 1.000 },
-		accent_line = { 108, 127, 219, 0.550 },
-		accent_soft = { 108, 127, 219, 0.120 },
-		avatar = { 44, 48, 80, 1.000 },
-		avatar_on_accent = { 42, 45, 74, 1.000 },
-		axis_x = { 255, 143, 143, 1.000 },
-		axis_y = { 147, 224, 143, 1.000 },
-		axis_z = { 143, 184, 255, 1.000 },
-		black = { 10, 10, 11, 1.000 },
-		border = { 255, 255, 255, 0.059 },
-		border2 = { 255, 255, 255, 0.110 },
-		check_off_border = { 138, 138, 138, 1.000 },
-		check_on = { 108, 127, 219, 1.000 },
-		chrome = { 18, 18, 19, 1.000 },
-		danger_hover = { 138, 90, 85, 1.000 },
-		diff_add = { 116, 201, 143, 1.000 },
-		diff_add_gutter = { 116, 201, 143, 0.161 },
-		diff_add_pill = { 116, 201, 143, 0.122 },
-		diff_add_soft = { 116, 201, 143, 0.102 },
-		diff_remove_gutter = { 224, 108, 108, 0.161 },
-		diff_remove_pill = { 224, 108, 108, 0.122 },
-		diff_remove_soft = { 224, 108, 108, 0.102 },
-		dock = { 18, 18, 19, 1.000 },
-		error_soft = { 224, 108, 108, 0.120 },
-		field_select = { 25, 26, 28, 1.000 },
-		hover = { 255, 255, 255, 0.051 },
-		hover_faint = { 255, 255, 255, 0.016 },
-		hover_subtle = { 255, 255, 255, 0.031 },
-		knob = { 255, 255, 255, 1.000 },
-		menu_bar = { 10, 10, 11, 1.000 },
-		output_client = { 93, 169, 246, 1.000 },
-		output_info = { 111, 177, 252, 1.000 },
-		output_server = { 108, 203, 126, 1.000 },
-		ribbon_tab_active = { 255, 255, 255, 0.102 },
-		secondary_hover = { 32, 33, 35, 1.000 },
-		selection = { 108, 127, 219, 0.722 },
-		shadow = { 0, 0, 0, 0.400 },
-		slide_backdrop = { 19, 19, 20, 1.000 },
-		tab_active_bar = { 108, 127, 219, 1.000 },
-		text = { 226, 226, 230, 1.000 },
-		text2 = { 143, 143, 151, 1.000 },
-		text3 = { 92, 92, 99, 1.000 },
-		text_disabled = { 92, 92, 99, 1.000 },
-		text_error = { 224, 108, 108, 1.000 },
-		text_full = { 226, 226, 230, 1.000 },
-		text_label = { 143, 143, 151, 1.000 },
-		text_muted = { 143, 143, 151, 1.000 },
-		text_placeholder = { 92, 92, 99, 1.000 },
-		text_strong = { 226, 226, 230, 1.000 },
-		tile = { 18, 18, 19, 1.000 },
-		tool_align = { 201, 168, 255, 1.000 },
-		tool_local = { 143, 224, 216, 1.000 },
-		tool_move = { 143, 224, 176, 1.000 },
-		tool_pivot = { 198, 242, 143, 1.000 },
-		tool_rotate = { 255, 201, 143, 1.000 },
-		tool_scale = { 255, 155, 155, 1.000 },
-		tool_select = { 143, 184, 255, 1.000 },
-		tool_sun = { 255, 232, 143, 1.000 },
-		tool_transform = { 255, 155, 224, 1.000 },
-		track = { 255, 255, 255, 0.102 },
-		veil = { 0, 0, 0, 0.549 },
-		viewport_axis_x = { 230, 41, 41, 1.000 },
-		viewport_axis_y = { 41, 199, 56, 1.000 },
-		viewport_axis_z = { 51, 92, 242, 1.000 },
-		viewport_background = { 28, 29, 32, 1.000 },
-		viewport_badge = { 20, 21, 26, 0.878 },
-		viewport_badge_text = { 228, 229, 233, 1.000 },
-		viewport_bone = { 206, 206, 206, 0.902 },
-		viewport_bone_selected = { 111, 173, 249, 1.000 },
-		viewport_brush_add = { 137, 206, 255, 1.000 },
-		viewport_brush_region = { 249, 225, 124, 1.000 },
-		viewport_brush_subtract = { 255, 137, 124, 1.000 },
-		viewport_grid_axis_x = { 221, 69, 80, 1.000 },
-		viewport_grid_axis_z = { 89, 144, 234, 1.000 },
-		viewport_grid_major = { 82, 82, 82, 1.000 },
-		viewport_grid_minor = { 66, 66, 66, 1.000 },
-		viewport_guide = { 255, 255, 255, 1.000 },
-		viewport_guide_active = { 255, 255, 0, 1.000 },
-		viewport_hover = { 250, 166, 39, 0.549 },
-		viewport_joint = { 255, 173, 63, 1.000 },
-		viewport_joint_selected = { 255, 239, 89, 1.000 },
-		viewport_measure_lit = { 0, 139, 234, 1.000 },
-		viewport_orient_body = { 91, 143, 212, 0.302 },
-		viewport_orient_rim = { 157, 196, 255, 0.400 },
-		viewport_preview = { 144, 226, 161, 0.502 },
-		viewport_readout = { 37, 37, 37, 1.000 },
-		viewport_readout_border = { 0, 0, 0, 1.000 },
-		viewport_readout_text = { 255, 255, 255, 1.000 },
-		viewport_selection = { 92, 181, 245, 1.000 },
-		warning = { 217, 165, 91, 1.000 },
-		wash_faint = { 255, 255, 255, 0.039 },
+		accent_hover = { 115, 133, 221, 1 },
+		accent_line = { 108, 127, 219, 11 / 20 },
+		accent_soft = { 108, 127, 219, 3 / 25 },
+		avatar = { 44, 48, 80, 1 },
+		avatar_on_accent = { 42, 45, 74, 1 },
+		axis_x = { 255, 143, 143, 1 },
+		axis_y = { 147, 224, 143, 1 },
+		axis_z = { 143, 184, 255, 1 },
+		black = { 10, 10, 11, 1 },
+		border = { 255, 255, 255, 59 / 1000 },
+		border2 = { 255, 255, 255, 11 / 100 },
+		check_off_border = { 138, 138, 138, 1 },
+		check_on = { 108, 127, 219, 1 },
+		chrome = { 18, 18, 19, 1 },
+		danger_hover = { 138, 90, 85, 1 },
+		diff_add = { 116, 201, 143, 1 },
+		diff_add_gutter = { 116, 201, 143, 161 / 1000 },
+		diff_add_pill = { 116, 201, 143, 61 / 500 },
+		diff_add_soft = { 116, 201, 143, 51 / 500 },
+		diff_remove_gutter = { 224, 108, 108, 161 / 1000 },
+		diff_remove_pill = { 224, 108, 108, 61 / 500 },
+		diff_remove_soft = { 224, 108, 108, 51 / 500 },
+		dock = { 18, 18, 19, 1 },
+		error_soft = { 224, 108, 108, 3 / 25 },
+		field_select = { 25, 26, 28, 1 },
+		hover = { 255, 255, 255, 51 / 1000 },
+		hover_faint = { 255, 255, 255, 2 / 125 },
+		hover_subtle = { 255, 255, 255, 31 / 1000 },
+		knob = { 255, 255, 255, 1 },
+		menu_bar = { 10, 10, 11, 1 },
+		output_client = { 93, 169, 246, 1 },
+		output_info = { 111, 177, 252, 1 },
+		output_server = { 108, 203, 126, 1 },
+		ribbon_tab_active = { 255, 255, 255, 51 / 500 },
+		secondary_hover = { 32, 33, 35, 1 },
+		selection = { 108, 127, 219, 361 / 500 },
+		shadow = { 0, 0, 0, 2 / 5 },
+		slide_backdrop = { 19, 19, 20, 1 },
+		tab_active_bar = { 108, 127, 219, 1 },
+		text = { 226, 226, 230, 1 },
+		text2 = { 143, 143, 151, 1 },
+		text3 = { 92, 92, 99, 1 },
+		text_disabled = { 92, 92, 99, 1 },
+		text_error = { 224, 108, 108, 1 },
+		text_full = { 226, 226, 230, 1 },
+		text_label = { 143, 143, 151, 1 },
+		text_muted = { 143, 143, 151, 1 },
+		text_placeholder = { 92, 92, 99, 1 },
+		text_strong = { 226, 226, 230, 1 },
+		tile = { 18, 18, 19, 1 },
+		tool_align = { 201, 168, 255, 1 },
+		tool_local = { 143, 224, 216, 1 },
+		tool_move = { 143, 224, 176, 1 },
+		tool_pivot = { 198, 242, 143, 1 },
+		tool_rotate = { 255, 201, 143, 1 },
+		tool_scale = { 255, 155, 155, 1 },
+		tool_select = { 143, 184, 255, 1 },
+		tool_sun = { 255, 232, 143, 1 },
+		tool_transform = { 255, 155, 224, 1 },
+		track = { 255, 255, 255, 51 / 500 },
+		veil = { 0, 0, 0, 549 / 1000 },
+		viewport_axis_x = { 230, 41, 41, 1 },
+		viewport_axis_y = { 41, 199, 56, 1 },
+		viewport_axis_z = { 51, 92, 242, 1 },
+		viewport_background = { 28, 29, 32, 1 },
+		viewport_badge = { 20, 21, 26, 439 / 500 },
+		viewport_badge_text = { 228, 229, 233, 1 },
+		viewport_bone = { 206, 206, 206, 451 / 500 },
+		viewport_bone_selected = { 111, 173, 249, 1 },
+		viewport_brush_add = { 137, 206, 255, 1 },
+		viewport_brush_region = { 249, 225, 124, 1 },
+		viewport_brush_subtract = { 255, 137, 124, 1 },
+		viewport_grid_axis_x = { 221, 69, 80, 1 },
+		viewport_grid_axis_z = { 89, 144, 234, 1 },
+		viewport_grid_major = { 82, 82, 82, 1 },
+		viewport_grid_minor = { 66, 66, 66, 1 },
+		viewport_guide = { 255, 255, 255, 1 },
+		viewport_guide_active = { 255, 255, 0, 1 },
+		viewport_hover = { 250, 166, 39, 549 / 1000 },
+		viewport_joint = { 255, 173, 63, 1 },
+		viewport_joint_selected = { 255, 239, 89, 1 },
+		viewport_measure_lit = { 0, 139, 234, 1 },
+		viewport_orient_body = { 91, 143, 212, 151 / 500 },
+		viewport_orient_rim = { 157, 196, 255, 2 / 5 },
+		viewport_preview = { 144, 226, 161, 251 / 500 },
+		viewport_readout = { 37, 37, 37, 1 },
+		viewport_readout_border = { 0, 0, 0, 1 },
+		viewport_readout_text = { 255, 255, 255, 1 },
+		viewport_selection = { 92, 181, 245, 1 },
+		warning = { 217, 165, 91, 1 },
+		wash_faint = { 255, 255, 255, 39 / 1000 },
 	},
 	sizes = {
 		checkbox_target = 26,
@@ -10085,7 +10663,7 @@ return {
 		row_padding = 4,
 		section_gap = 7,
 		section_height = 14,
-		select_inset = 5.5,
+		select_inset = 11 / 2,
 		separator_height = 58,
 		slider_min_width = 60,
 		slider_rail = 6,
@@ -10094,13 +10672,13 @@ return {
 		strip_field_height = 27,
 		tab_add_width = 42,
 		tabs_height = 42,
-		text_action = 12.5,
+		text_action = 25 / 2,
 		text_badge = 11,
 		text_ghost = 11,
 		text_lg = 13,
 		text_md = 12,
-		text_sm = 11.5,
-		text_xs = 10.5,
+		text_sm = 23 / 2,
+		text_xs = 21 / 2,
 		text_xxs = 10,
 		tile_width = 56,
 		toggle_height = 17,
@@ -10114,7 +10692,7 @@ return {
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX28">
+    <Item class="ModuleScript" referent="RBX30">
       <Properties>
         <string name="Name">Ui</string>
         <ProtectedString name="Source">--!strict
@@ -10351,14 +10929,14 @@ function Ui.switch(parent: Instance?, onClick: () -&gt; (), order: number?): Swi
 	Ui.corner(track, 999)
 	local knob = Instance.new(&quot;Frame&quot;)
 	knob.Size = UDim2.fromOffset(12, 12)
-	knob.AnchorPoint = Vector2.new(0, 0.5)
+	knob.AnchorPoint = Vector2.new(0, 1 / 2)
 	knob.BorderSizePixel = 0
 	knob.BackgroundColor3 = Ui.color(&quot;knob&quot;)
 	Ui.corner(knob, 999)
 	knob.Parent = track
 	local function set(on: boolean)
 		Ui.fill(track, if on then &quot;check_on&quot; else &quot;track&quot;)
-		knob.Position = if on then UDim2.new(1, -14, 0.5, 0) else UDim2.new(0, 2, 0.5, 0)
+		knob.Position = if on then UDim2.new(1, -14, 1 / 2, 0) else UDim2.new(0, 2, 1 / 2, 0)
 	end
 	set(false)
 	track.Activated:Connect(onClick)
@@ -10457,7 +11035,7 @@ return Ui
 </ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX29">
+    <Item class="ModuleScript" referent="RBX31">
       <Properties>
         <string name="Name">Widget</string>
         <ProtectedString name="Source">--!strict
@@ -10476,7 +11054,11 @@ local NOTE = &quot;Presence only works for collaborators who have Studio open wi
 	.. &quot;presence plugin running, or rbx-native itself.&quot;
 
 local HTTP_NOTE = &quot;Presence sends your selection, camera and open script to the relay. &quot;
-	.. &quot;Studio asks once whether this plugin may reach that domain; allow it.&quot;
+	.. &quot;Studio asks whether this plugin may reach each address it talks to, allow them. &quot;
+	.. &quot;With the default relay that's ntfy.sh, where RbxNative posts where its session is, &quot;
+	.. &quot;and 127.0.0.1, where RbxNative on this computer runs it. Someone in RbxNative on &quot;
+	.. &quot;another computer runs it on trycloudflare.com instead, at an address that's new every &quot;
+	.. &quot;time they open RbxNative, so Studio asks about that one each time.&quot;
 
 type Callbacks = {
 	onToggle: () -&gt; (),
@@ -10562,8 +11144,8 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	local switch = Ui.switch(switchLane, function()
 		callbacks.onToggle()
 	end)
-	switch.frame.AnchorPoint = Vector2.new(0, 0.5)
-	switch.frame.Position = UDim2.fromScale(0, 0.5)
+	switch.frame.AnchorPoint = Vector2.new(0, 1 / 2)
+	switch.frame.Position = UDim2.fromScale(0, 1 / 2)
 	local shareText = Ui.frame(shareRow, 2)
 	shareText.Size = UDim2.new(1, -(28 + Ui.GAP), 0, 0)
 	Ui.list(shareText, 2)
@@ -10586,7 +11168,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	local owner = Ui.frame(scroll, 5)
 	owner.Visible = false
 	Ui.list(owner, 6)
-	Ui.text(owner, &quot;Owner setup — saved into the place for everyone&quot;, { size = Ui.TEXT_XS, color = &quot;text3&quot;, order = 1 })
+	Ui.text(owner, &quot;Owner setup, saved into the place as you change it&quot;, { size = Ui.TEXT_XS, color = &quot;text3&quot;, order = 1 })
 
 	local kinds = Instance.new(&quot;Frame&quot;)
 	kinds.LayoutOrder = 2
@@ -10620,15 +11202,13 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	urlBox.Parent = owner
 	urlBox.Focused:Connect(function()
 		urlStroke.Color = Ui.color(&quot;check_on&quot;)
-		urlStroke.Transparency = 0.45
+		urlStroke.Transparency = 9 / 20
 	end)
 	urlBox.FocusLost:Connect(function()
 		urlStroke.Color = Ui.color(&quot;border&quot;)
 		urlStroke.Transparency = Ui.alpha(&quot;border&quot;)
 	end)
 
-	local saveButton = Ui.button(owner, &quot;Save to place&quot;, false, 4)
-	saveButton.Size = UDim2.fromOffset(110, 28)
 	local resolved = Ui.text(owner, &quot;&quot;, { size = Ui.TEXT_XS, color = &quot;text3&quot;, order = 5 })
 
 	local httpNote = Ui.card(scroll, 6)
@@ -10676,6 +11256,11 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 	}, Widget)
 	self:showKind()
 
+	-- Owner setup has no save button: each change goes into the place.
+	local function save()
+		callbacks.onSaveRelay(self.relayKind, (string.gsub(urlBox.Text, &quot;^%s*(.-)%s*$&quot;, &quot;%1&quot;)))
+	end
+
 	table.insert(
 		self.connections,
 		advanced.Activated:Connect(function()
@@ -10688,6 +11273,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindHosted.Activated:Connect(function()
 			self.relayKind = &quot;hosted&quot;
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
@@ -10695,6 +11281,7 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindWorker.Activated:Connect(function()
 			self.relayKind = &quot;worker&quot;
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
@@ -10702,13 +11289,12 @@ function Widget.new(plugin: Plugin, callbacks: Callbacks): Widget
 		kindNtfy.Activated:Connect(function()
 			self.relayKind = &quot;ntfy&quot;
 			self:showKind()
+			save()
 		end)
 	)
 	table.insert(
 		self.connections,
-		saveButton.Activated:Connect(function()
-			callbacks.onSaveRelay(self.relayKind, (string.gsub(urlBox.Text, &quot;^%s*(.-)%s*$&quot;, &quot;%1&quot;)))
-		end)
+		urlBox.FocusLost:Connect(save)
 	)
 	table.insert(
 		self.connections,
@@ -10748,7 +11334,7 @@ function Widget.setRelay(self: Widget, kind: string, url: string, isCommunity: b
 		self.urlBox.Text = url
 		self.resolved.Text = `Relay: {url} ({kind})`
 	else
-		self.resolved.Text = &quot;Relay: Auto — hosted by whoever opens the place in rbx-native, no account needed&quot;
+		self.resolved.Text = &quot;Relay: Auto, hosted by whoever opens the place in RbxNative, no account needed&quot;
 	end
 end
 
