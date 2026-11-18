@@ -1,40 +1,24 @@
-// One button per system, the visitor's own first and filled in. Each gets the
-// newest release's file for it, best kind first. If GitHub doesn't answer they
-// stay on the install guide's section for that system.
+// One button per system, Linux first: it's what RbxNative was built for.
+// Each gets the newest release's file for it, best kind first. If GitHub
+// doesn't answer they stay on the install guide's section for that system.
 const systems = {
-  windows: { name: "Windows", kinds: [/-windows-x64-setup\.exe$/] },
-  macos: { name: "macOS", kinds: [/-macos-arm64\.dmg$/] },
-  linux: { name: "Linux", kinds: [/-x86_64\.AppImage$/, /x86_64-unknown-linux-gnu\.tar\.gz$/] },
+  linux: [/-x86_64\.AppImage$/, /x86_64-unknown-linux-gnu\.tar\.gz$/],
+  macos: [/-macos-arm64\.dmg$/],
+  windows: [/-windows-x64-setup\.exe$/],
 };
-const mine = /Windows/.test(navigator.userAgent)
-  ? "windows"
-  : /Macintosh|Mac OS X/.test(navigator.userAgent)
-    ? "macos"
-    : /Linux|X11/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent)
-      ? "linux"
-      : null;
-const row = document.getElementById("downloads");
-const buttons = [...row.querySelectorAll("a[data-os]")];
-if (mine) {
-  for (const button of buttons) {
-    const own = button.dataset.os === mine;
-    button.className = own ? "primary" : "secondary";
-    button.textContent = own ? "Download for " + systems[mine].name : systems[button.dataset.os].name;
-  }
-  row.prepend(buttons.find((b) => b.dataset.os === mine), " ");
-}
+const buttons = [...document.querySelectorAll("#downloads a[data-os]")];
 fetch("https://api.github.com/repos/chteau/rbx-native/releases?per_page=10")
   .then((reply) => (reply.ok ? reply.json() : []))
   .then((releases) => {
     let tag = null;
     for (const button of buttons) {
-      const { kinds } = systems[button.dataset.os];
+      const kinds = systems[button.dataset.os];
       for (const release of releases) {
         if (release.draft) continue;
         const kind = kinds.find((k) => release.assets.some((a) => k.test(a.name)));
         if (!kind) continue;
         button.href = release.assets.find((a) => kind.test(a.name)).browser_download_url;
-        if (button.dataset.os === mine || !tag) tag = release.tag_name;
+        if (button.dataset.os === "linux" || !tag) tag = release.tag_name;
         break;
       }
     }
