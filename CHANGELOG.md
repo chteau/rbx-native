@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-18
+
+- **Docked tool panels stay put.** Collaborators, Terrain Editor, Toolbox
+  and the other panels that start shut got dropped from their dock on
+  launch, and the next settings save wrote them down as closed even
+  though you never closed them. They open where you left them now. (@chteau)
+
 ## 2026-11-14
 
 - **Installers.** Every release now has a Windows setup (per user, no
