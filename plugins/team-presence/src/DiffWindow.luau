@@ -49,7 +49,7 @@ local function format(value: any): (string, Color3?)
 	elseif kind == "number" then
 		local text = string.format("%.3f", value)
 		text = string.gsub(text, "0+$", "")
-		text = string.gsub(text, "%.$", "")
+		text = string.gsub(text, "[%.,]$", "")
 		return text, nil
 	elseif kind == "string" then
 		local first = string.match(value, "^[^\n]*") or ""
@@ -135,7 +135,7 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 
 	local tile = Instance.new("TextLabel")
 	tile.Size = UDim2.fromOffset(28, 28)
-	tile.Position = UDim2.new(0, 0, 0.5, -14)
+	tile.Position = UDim2.new(0, 0, 1 / 2, -14)
 	Ui.fill(tile, "accent_soft")
 	Ui.corner(tile, Ui.RADIUS_TILE)
 	tile.FontFace = Ui.FONT_BOLD
@@ -157,8 +157,8 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 
 	local controls = Instance.new("Frame")
 	controls.BackgroundTransparency = 1
-	controls.AnchorPoint = Vector2.new(1, 0.5)
-	controls.Position = UDim2.fromScale(1, 0.5)
+	controls.AnchorPoint = Vector2.new(1, 1 / 2)
+	controls.Position = UDim2.fromScale(1, 1 / 2)
 	controls.Size = UDim2.fromOffset(460, 28)
 	controls.Parent = header
 	local controlsList = Ui.list(controls, 12, true)
@@ -229,8 +229,8 @@ function DiffWindow.new(plugin: Plugin): DiffWindow
 	note.Size = UDim2.new(1, -120, 1, 0)
 	local close = Ui.button(footer, "Close", true)
 	close.Size = UDim2.fromOffset(96, 34)
-	close.AnchorPoint = Vector2.new(1, 0.5)
-	close.Position = UDim2.fromScale(1, 0.5)
+	close.AnchorPoint = Vector2.new(1, 1 / 2)
+	close.Position = UDim2.fromScale(1, 1 / 2)
 	close.Activated:Connect(function()
 		gui.Enabled = false
 	end)
@@ -407,7 +407,7 @@ function DiffWindow.listRow(self: DiffWindow, change: Changes.Change, marker: st
 	mark.Size = UDim2.new(0, 10, 1, 0)
 	local instance = self.found[change.path]
 	local icon = Ui.classIcon(row, if instance then instance.ClassName else "Folder", 16)
-	icon.Position = UDim2.new(0, 26, 0.5, -8)
+	icon.Position = UDim2.new(0, 26, 1 / 2, -8)
 
 	local name = Ui.text(row, change.name, { size = Ui.TEXT_SM, font = if selected then Ui.FONT_SEMIBOLD else Ui.FONT, wrap = false })
 	name.Position = UDim2.fromOffset(50, 4)

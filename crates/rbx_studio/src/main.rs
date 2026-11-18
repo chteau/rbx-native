@@ -209,6 +209,11 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
+/// How long quitting waits for team presence to leave its room: a couple of
+/// small ntfy posts and the tunnel closing. With ntfy out of reach the posts
+/// are left behind rather than holding the quit up.
+const PRESENCE_LEAVE_LIMIT: std::time::Duration = std::time::Duration::from_millis(300);
+
 /// Run from a terminal, a GUI-subsystem program gets no stdout or stderr, so
 /// `--help`, `loren` and errors would print nowhere. Attach to the parent's
 /// console in that case. Handles a parent already gave us (an MCP client's
@@ -339,7 +344,12 @@ fn main() {
     // default bundle the components themselves use. The Explorer's own class
     // icons are rasterized straight from `class_icons`'s embedded SVGs, not
     // painted through this asset source at all, see its own doc comment.
-    let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
+    // Closing the last window quits on macOS too, as on Linux and Windows:
+    // a Mac app left running with no window kept hosting team presence
+    // (and its tunnels) with nothing on screen to stop it.
+    let app = gpui_kit::application()
+        .with_assets(gpui_kit::assets::AllAssets)
+        .with_quit_mode(gpui_kit::QuitMode::LastWindowClosed);
     app.run(move |cx| {
         gpui_kit::init(cx);
         install_fonts(cx);
@@ -350,6 +360,14 @@ fn main() {
         workspace_view::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
         menu_bar::install_app(cx);
+        // Quitting ends every thread with the process: give team presence a
+        // moment to leave its room first, so a host's goodbye reaches the
+        // others instead of leaving them on a dead address.
+        cx.on_app_quit(|_| {
+            rbx_presence::client::leave_all(PRESENCE_LEAVE_LIMIT);
+            async {}
+        })
+        .detach();
         // Only a bare launch: opening a place blocks this thread, which
         // would freeze the logo mid-spin.
         let splash = path.is_none().then(|| splash::open(cx)).flatten();

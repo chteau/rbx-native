@@ -240,3 +240,28 @@ fn the_plugin_and_the_editor_see_each_other() {
     assert!(plugin_saw_editor);
     assert!(sees(&editor_events, 7, "Workspace.Baseplate"));
 }
+
+/// The host Studio finds on this computer answers its room's health check
+/// on the room's loopback port, and nothing for another room.
+#[test]
+fn a_host_on_its_loopback_port_answers_for_its_room_only() {
+    let key = auth::derive_key("loopback-secret", 7);
+    let room = auth::room_id(&key);
+    let port = rbx_presence::announce::loopback_port(&room);
+    let _host = rbx_presence::host::Host::start_on(&key, port, "h").expect("port free");
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let status = |room: &str| {
+        agent
+            .get(format!("http://127.0.0.1:{port}/v1/rooms/{room}/health"))
+            .call()
+            .unwrap()
+            .status()
+            .as_u16()
+    };
+    assert_eq!(status(&room), 200);
+    assert_eq!(status("0123456789abcdef0123456789abcdef"), 404);
+    assert!(rbx_presence::host::Host::start_on(&key, port, "h").is_err());
+}

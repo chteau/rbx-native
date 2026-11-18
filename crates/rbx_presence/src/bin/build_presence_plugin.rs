@@ -9,6 +9,10 @@ use std::path::{Path, PathBuf};
 
 use rbx_dom::{Variant, WeakDom};
 
+#[cfg(test)]
+#[path = "build_presence_plugin/decimals.rs"]
+mod decimals;
+
 const MAIN_FILE: &str = "TeamPresence.server.luau";
 const SOURCE_OPEN: &str = "<string name=\"Source\">";
 const SOURCE_CLOSE: &str = "</string>";
@@ -62,6 +66,22 @@ fn resolve_color(
     Some((byte(0)?, byte(2)?, byte(4)?, alpha))
 }
 
+/// `value` as Luau source with no decimal point: Studio parses number
+/// literals in the system locale on some machines, and on a French Mac
+/// `0.5` is a syntax error that stops the whole plugin. Three decimals are
+/// all a theme needs.
+fn luau_number(value: f64) -> String {
+    let thousandths = (value * 1000.0).round() as i64;
+    let (mut a, mut b) = (thousandths.abs(), 1000);
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    match 1000 / a {
+        1 => format!("{}", thousandths / a),
+        den => format!("{} / {den}", thousandths / a),
+    }
+}
+
 /// The generated `Theme` module: every colour and size of rbx-native's
 /// default theme, so the plugin cannot drift from the editor's look.
 fn theme_source(json: &str) -> Result<String, Box<dyn Error>> {
@@ -77,7 +97,10 @@ fn theme_source(json: &str) -> Result<String, Box<dyn Error>> {
     names.sort();
     for name in names {
         if let Some((r, g, b, a)) = resolve_color(name, colors, 0) {
-            out.push_str(&format!("\t\t{name} = {{ {r}, {g}, {b}, {a:.3} }},\n"));
+            out.push_str(&format!(
+                "\t\t{name} = {{ {r}, {g}, {b}, {} }},\n",
+                luau_number(a)
+            ));
         }
     }
     out.push_str("\t},\n\tsizes = {\n");
@@ -86,7 +109,7 @@ fn theme_source(json: &str) -> Result<String, Box<dyn Error>> {
         names.sort();
         for name in names {
             if let Some(value) = sizes[name].as_f64() {
-                out.push_str(&format!("\t\t{name} = {value},\n"));
+                out.push_str(&format!("\t\t{name} = {},\n", luau_number(value)));
             }
         }
     }
@@ -322,8 +345,8 @@ mod tests {
             .expect("generated Theme module");
         match theme.properties().get("Source") {
             Some(Variant::String(got)) => {
-                assert!(got.contains("dock = { 18, 18, 19, 1.000 }"), "{got}");
-                assert!(got.contains("check_on = { 108, 127, 219, 1.000 }"));
+                assert!(got.contains("dock = { 18, 18, 19, 1 }"), "{got}");
+                assert!(got.contains("check_on = { 108, 127, 219, 1 }"));
             }
             other => panic!("Theme: unexpected Source {other:?}"),
         }
@@ -361,13 +384,14 @@ mod tests {
 
     #[test]
     fn theme_references_and_alpha_resolve() {
-        let json = r##"{"colors":{"a":"#6C7FDB","b":"@a/0.12","c":"@b","d":"#FFFFFF0F","e":"@nope"},"sizes":{"radius":5}}"##;
+        let json = r##"{"colors":{"a":"#6C7FDB","b":"@a/0.12","c":"@b","d":"#FFFFFF0F","e":"@nope"},"sizes":{"radius":5,"gap":1.5}}"##;
         let src = theme_source(json).unwrap();
-        assert!(src.contains("a = { 108, 127, 219, 1.000 }"));
-        assert!(src.contains("b = { 108, 127, 219, 0.120 }"));
-        assert!(src.contains("c = { 108, 127, 219, 0.120 }"));
-        assert!(src.contains("d = { 255, 255, 255, 0.059 }"));
+        assert!(src.contains("a = { 108, 127, 219, 1 }"));
+        assert!(src.contains("b = { 108, 127, 219, 3 / 25 }"));
+        assert!(src.contains("c = { 108, 127, 219, 3 / 25 }"));
+        assert!(src.contains("d = { 255, 255, 255, 59 / 1000 }"));
         assert!(!src.contains("e = "));
         assert!(src.contains("radius = 5,"));
+        assert!(src.contains("gap = 3 / 2,"));
     }
 }

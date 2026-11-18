@@ -50,6 +50,27 @@ local function encodeString(s: string): string
 	return '"' .. escaped .. '"'
 end
 
+-- Studio formats and parses numbers in the system locale on some machines:
+-- on a French Mac `tonumber("0.5")` fails and `%g` writes "0,5". JSON always
+-- uses ".", so swap in whatever this Studio uses on the way in and out.
+local FORMAT_POINT = string.match(string.format("%.1f", 1 / 2), "^0(%D)5$") or "."
+local PARSE_POINT = if tonumber("0.5") == 1 / 2 or tonumber("0,5") ~= 1 / 2 then "." else ","
+
+local function formatNumber(pattern: string, n: number): string
+	local text = string.format(pattern, n)
+	if FORMAT_POINT ~= "." then
+		text = string.gsub(text, "%" .. FORMAT_POINT, ".")
+	end
+	return text
+end
+
+local function parseNumberText(text: string): number?
+	if PARSE_POINT ~= "." then
+		text = string.gsub(text, "%.", PARSE_POINT)
+	end
+	return tonumber(text)
+end
+
 local function encodeNumber(n: number): string
 	if n ~= n or n == math.huge or n == -math.huge then
 		error("cannot encode non-finite number")
@@ -60,11 +81,11 @@ local function encodeNumber(n: number): string
 	if n % 1 == 0 and math.abs(n) < 2 ^ 53 then
 		return string.format("%.0f", n)
 	end
-	local short = string.format("%.14g", n)
-	if tonumber(short) == n then
+	local short = formatNumber("%.14g", n)
+	if parseNumberText(short) == n then
 		return short
 	end
-	return string.format("%.17g", n)
+	return formatNumber("%.17g", n)
 end
 
 local function encodeValue(value: any, out: {string})
@@ -195,7 +216,7 @@ local parseValue
 
 local function parseNumber(text: string, pos: number): (number, number)
 	local literal = text:match("^-?%d+%.?%d*[eE]?[+-]?%d*", pos)
-	local n = literal and tonumber(literal)
+	local n = literal and parseNumberText(literal)
 	if not literal or not n then
 		fail(text, pos, "bad number")
 	end

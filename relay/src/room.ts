@@ -31,13 +31,14 @@ export class Room {
   cursor = 0;
   /** Keyed by {@link senderKey}: one user can be in Studio and rbx-native at once. */
   private users = new Map<string, Sealed>();
-  private buckets = new Map<number, Bucket>();
+  /** Per sender too: Studio and rbx-native of one user each get the full rate. */
+  private buckets = new Map<string, Bucket>();
   private lastTs = new Map<number, number>();
   private journal: Held[] = [];
 
   put(state: Sealed, now: number): Refusal | null {
-    if (!this.take(state.userId, now)) return { status: 429, error: "rate" };
     const key = senderKey(state.userId, state.client);
+    if (!this.take(key, now)) return { status: 429, error: "rate" };
     if (!this.users.has(key) && this.users.size >= MAX_USERS) {
       return { status: 403, error: "full" };
     }
@@ -74,7 +75,7 @@ export class Room {
   remove(userId: number, client: Client): boolean {
     const had = this.users.delete(senderKey(userId, client));
     if (!this.hasUser(userId)) {
-      this.buckets.delete(userId);
+      this.forgetBuckets(userId);
       this.lastTs.delete(userId);
     }
     if (had) this.cursor++;
@@ -88,7 +89,7 @@ export class Room {
         this.users.delete(key);
         dropped = true;
         if (!this.hasUser(user.userId)) {
-          this.buckets.delete(user.userId);
+          this.forgetBuckets(user.userId);
           this.lastTs.delete(user.userId);
         }
       }
@@ -136,14 +137,20 @@ export class Room {
     return this.users.size === 0;
   }
 
-  private take(userId: number, now: number): boolean {
-    const b = this.buckets.get(userId) ?? { tokens: RATE_BURST, at: now };
+  private forgetBuckets(userId: number): void {
+    for (const client of ["studio", "rbx-native"] as const) {
+      this.buckets.delete(senderKey(userId, client));
+    }
+  }
+
+  private take(key: string, now: number): boolean {
+    const b = this.buckets.get(key) ?? { tokens: RATE_BURST, at: now };
     const elapsed = Math.max(0, now - b.at) / 1000;
     b.tokens = Math.min(RATE_BURST, b.tokens + elapsed * RATE_PER_SECOND);
     b.at = now;
     const ok = b.tokens >= 1;
     if (ok) b.tokens -= 1;
-    this.buckets.set(userId, b);
+    this.buckets.set(key, b);
     return ok;
   }
 }

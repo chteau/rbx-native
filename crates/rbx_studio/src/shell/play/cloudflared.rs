@@ -38,6 +38,14 @@ pub(crate) fn program() -> io::Result<PathBuf> {
     unpack(ZIP, &dir, ENTRY, EXECUTABLE, LICENSE)
 }
 
+/// Where a quick tunnel refusal (trycloudflare's 429) is remembered, shared
+/// by Play and team presence and kept across launches, so neither asks
+/// again until the wait is over (see `rbx_play::tunnel::Cooldown`).
+pub(crate) fn cooldown() -> rbx_play::tunnel::Cooldown {
+    let dir = crate::settings::default_config_dir().unwrap_or_else(std::env::temp_dir);
+    rbx_play::tunnel::Cooldown::new(dir.join("tunnel_cooldown"))
+}
+
 /// Writes zip entry `entry` into `dir` as the executable `executable`, with
 /// `license` beside it as `LICENSE.txt`.
 pub(super) fn unpack(

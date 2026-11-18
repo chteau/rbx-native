@@ -6,134 +6,15 @@
 
 mod common;
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rbx_presence::client::{Client, Config, Event, Hosting, Route, Tunnel};
-use rbx_presence::relay::RelayKind;
-use rbx_presence::schema::{Client as Editor, UserState, SCHEMA_VERSION};
+use common::hosted::{fake_ntfy, start, state};
+use rbx_presence::client::{Event, Route};
 use rbx_presence::{announce, auth, crypt, secret};
-
-type Topics = Arc<Mutex<HashMap<String, Vec<String>>>>;
-
-/// `POST /<topic>` stores the body; `GET /<topic>/json` answers every stored
-/// message as ntfy's JSON lines.
-fn fake_ntfy() -> (String, Topics) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let topics: Topics = Arc::default();
-    let store = Arc::clone(&topics);
-    thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            let store = Arc::clone(&store);
-            thread::spawn(move || {
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let mut parts = line.split_whitespace();
-                let method = parts.next().unwrap_or("").to_owned();
-                let target = parts.next().unwrap_or("").to_owned();
-                let mut len = 0;
-                loop {
-                    let mut header = String::new();
-                    reader.read_line(&mut header).unwrap();
-                    if header.trim().is_empty() {
-                        break;
-                    }
-                    if let Some(v) = header.to_ascii_lowercase().strip_prefix("content-length:") {
-                        len = v.trim().parse().unwrap();
-                    }
-                }
-                let mut body = vec![0; len];
-                reader.read_exact(&mut body).unwrap();
-                let path = target.split('?').next().unwrap().trim_start_matches('/');
-                let reply = if method == "POST" {
-                    let mut topics = store.lock().unwrap();
-                    topics
-                        .entry(path.to_owned())
-                        .or_default()
-                        .push(String::from_utf8(body).unwrap());
-                    "{}".to_owned()
-                } else {
-                    let topic = path.trim_end_matches("/json");
-                    let topics = store.lock().unwrap();
-                    topics
-                        .get(topic)
-                        .into_iter()
-                        .flatten()
-                        .map(|m| {
-                            serde_json::json!({ "event": "message", "message": m }).to_string()
-                                + "\n"
-                        })
-                        .collect()
-                };
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
-            });
-        }
-    });
-    (url, topics)
-}
-
-struct Loopback;
-
-impl Tunnel for Loopback {
-    fn alive(&mut self) -> bool {
-        true
-    }
-}
-
-fn state(user_id: u64, selection: &str) -> UserState {
-    UserState {
-        v: SCHEMA_VERSION,
-        user_id,
-        name: format!("User {user_id}"),
-        color: rbx_presence::schema::color_for(user_id).to_owned(),
-        client: Editor::RbxNative,
-        camera: None,
-        selection: vec![selection.to_owned()],
-        script: None,
-        edits: Vec::new(),
-        seen: 0,
-    }
-}
-
-fn start(
-    ntfy: &str,
-    key: &str,
-    enc_key: [u8; 32],
-    user_id: u64,
-    can_host: bool,
-) -> (Client, Receiver<Event>) {
-    let hosting = can_host.then(|| {
-        Hosting(Arc::new(|port: u16| {
-            Ok((
-                format!("http://127.0.0.1:{port}"),
-                Box::new(Loopback) as Box<dyn Tunnel>,
-            ))
-        }))
-    });
-    Client::start(Config {
-        kind: RelayKind::Hosted,
-        relay_url: ntfy.to_owned(),
-        room: auth::room_id(key),
-        key: key.to_owned(),
-        enc_key,
-        user_id,
-        place_id: 4567,
-        beacon_from: "test".into(),
-        hosting,
-    })
-}
 
 /// Waits for a route event, then for a snapshot in which `other` has
 /// `selection`; returns the route.
@@ -205,7 +86,7 @@ fn the_first_hosts_the_second_joins_and_the_host_says_goodbye() {
             &key,
             &room,
             rbx_presence::now_ms(),
-            messages.iter().map(String::as_str),
+            messages.iter().map(|(text, at)| (text.as_str(), at * 1000)),
         );
         if messages.len() >= 2 && latest.is_none() {
             break true;
@@ -308,6 +189,158 @@ fn the_plugin_waits_then_finds_the_rbx_native_host() {
     assert!(host_sees);
 }
 
+/// The host quits without a goodbye (its tunnel answers 530): the plugin
+/// stops naming it once the grace runs out and waits for someone again,
+/// then joins the next host by itself. When that one leaves with a goodbye
+/// the plugin goes back to waiting right away.
+#[test]
+fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
+    let (ntfy, _topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let room = auth::room_id(&key);
+    // What a dead quick tunnel's address answers: Cloudflare's 530 page.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead = format!("http://{}", listener.local_addr().unwrap());
+    thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut head = [0; 4096];
+            let _ = stream.read(&mut head);
+            let page = "<html>origin unreachable</html>";
+            let _ = write!(
+                stream,
+                "HTTP/1.1 530 \r\ncontent-length: {}\r\nconnection: close\r\n\r\n{page}",
+                page.len()
+            );
+        }
+    });
+    announce::publish(&ntfy, &key, &room, &dead, "").unwrap();
+
+    let lua = common::new_lua();
+    common::studio_stubs(&lua);
+    let setup = format!(
+        r##"
+        local Auth = script.Parent.Auth
+        local Crypto = script.Parent.Crypto
+        local Relay = script.Parent.Relay
+        local key = Auth.deriveKey("{secret}", 4567)
+        relay = Relay.new({{ kind = "hosted", url = "{ntfy}", key = key, encKey = Crypto.encKey("{secret}", 4567), room = Auth.roomId(key), userId = 7, placeId = 4567 }})
+        function publish()
+            return relay:publish({{
+                v = 2, userId = 7, name = "Ana", color = "#e8590c", client = "studio",
+                selection = {{ "Workspace.Baseplate" }}, edits = {{}}, seen = 0,
+            }})
+        end
+        local ok, err = publish()
+        return ok, err, relay:waiting()
+        "##
+    );
+    let (ok, err, waiting): (bool, String, bool) = lua.load(setup).eval().unwrap();
+    assert!(
+        !ok && !waiting && err.contains("Can't reach") && err.contains("530"),
+        "{err}"
+    );
+
+    // Right after losing its host the room looks again every few seconds
+    // (a restarting RbxNative announces itself then), later every twenty.
+    let (soon, later, looking): (u32, u32, bool) = lua
+        .load(
+            r#"
+            local soon = relay:_resolveEvery()
+            relay.lostAt -= 120
+            local later = relay:_resolveEvery()
+            relay.lostAt += 120
+            return soon, later, relay:lookingForHost()
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert_eq!((soon, later, looking), (5, 20, true));
+
+    // Past the grace, the next look finds the same dead address: waiting.
+    let (ok, err, waiting): (bool, String, bool) = lua
+        .load(
+            r#"
+            relay.goneSince -= 60
+            relay.lastResolve = -math.huge
+            local ok, err = publish()
+            return ok, err, relay:waiting()
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert!(
+        !ok && waiting && err.contains("Waiting for someone"),
+        "{err}"
+    );
+
+    let (host, host_events) = start(&ntfy, &key, crypt::enc_key(&secret, 4567), 8, true);
+    host.publish(state(8, "Workspace.SpawnLocation"));
+    loop {
+        match host_events
+            .recv_timeout(Duration::from_secs(10))
+            .expect("hosts")
+        {
+            Event::Route(Route::Hosting(_)) => break,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    }
+    // The poll loop still holds the dead host's cursor, far past anything
+    // the new host has counted: it must not sit out a whole long-poll.
+    let joining = Instant::now();
+    let found: bool = lua
+        .load(
+            r#"
+            relay.lastResolve = -math.huge
+            local ok, err = publish()
+            assert(ok, err)
+            local cursor = 1000000
+            for _ = 1, 10 do
+                local snapshot, pollErr = relay:poll(cursor)
+                assert(snapshot, pollErr)
+                cursor = snapshot.cursor
+                for _, user in snapshot.users do
+                    if user.userId == 8 then
+                        return not relay:waiting() and relay.goneSince == nil
+                    end
+                end
+            end
+            return false
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert!(found);
+    assert!(
+        joining.elapsed() < rbx_presence::host::POLL_TIMEOUT / 2,
+        "joining took {:?}",
+        joining.elapsed()
+    );
+
+    drop(host);
+    let end = Instant::now() + Duration::from_secs(10);
+    while announce::find(&ntfy, &key, &room) != Ok(None) {
+        assert!(Instant::now() < end, "the host left without a goodbye");
+        thread::sleep(Duration::from_millis(100));
+    }
+    let waiting: bool = lua
+        .load(
+            r#"
+            for _ = 1, 2 do
+                publish()
+            end
+            return relay:waiting()
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert!(
+        waiting,
+        "a host that said goodbye leaves nothing to wait out"
+    );
+}
+
 /// Studio and rbx-native on one place with different keys (each made its
 /// own before the place was saved) see each other's beacon and say so,
 /// instead of each waiting for the other forever.
@@ -350,4 +383,161 @@ fn different_keys_on_one_place_are_reported_on_both_sides() {
         .eval()
         .unwrap();
     assert_eq!(found.as_deref(), Some("rbx-native"));
+}
+
+/// One user in Studio and rbx-native at once, both busy: Studio's posts
+/// never cost the host's own socket (the room rates each editor on its
+/// own), and the host keeps the one tunnel it opened.
+#[test]
+fn a_busy_studio_of_the_same_user_keeps_the_host_socket_and_tunnel() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let (ntfy, _topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
+    let room = auth::room_id(&key);
+    let opens = Arc::new(AtomicUsize::new(0));
+    let (host, events) = common::hosted::start_counting(&ntfy, &key, enc, 7, Arc::clone(&opens));
+    let url = loop {
+        match events.recv_timeout(Duration::from_secs(10)).expect("hosts") {
+            Event::Route(Route::Hosting(url)) => break url,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    };
+
+    let studio = {
+        let (url, key, room) = (url.clone(), key.clone(), room.clone());
+        thread::spawn(move || {
+            let mut state = state(7, "Workspace.Baseplate");
+            state.client = rbx_presence::schema::Client::Studio;
+            let path = format!("/v1/rooms/{room}/state");
+            for _ in 0..48 {
+                let sealed = rbx_presence::seal::seal_state(&enc, &room, &state);
+                let body = serde_json::to_string(&sealed).unwrap();
+                common::signed_request(&url, &key, 7, "POST", &path, &body);
+                thread::sleep(Duration::from_millis(125));
+            }
+        })
+    };
+    let end = Instant::now() + Duration::from_secs(7);
+    let mut n = 0;
+    while Instant::now() < end {
+        n += 1;
+        host.publish(state(7, &format!("Workspace.Part{n}")));
+        while let Ok(event) = events.try_recv() {
+            assert!(
+                !matches!(event, Event::Disconnected(_) | Event::Route(_)),
+                "{event:?}"
+            );
+        }
+        thread::sleep(Duration::from_millis(150));
+    }
+    studio.join().unwrap();
+    assert_eq!(opens.load(Ordering::SeqCst), 1);
+}
+
+/// The host's own relay drops its socket (here: the room is full when it
+/// first sends). It reconnects to the same relay through the same tunnel:
+/// a relay reconnect never opens a new tunnel, so Studio never has to allow
+/// a new address for it.
+#[test]
+fn a_relay_reconnect_keeps_the_tunnel_url() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let (ntfy, _topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
+    let room = auth::room_id(&key);
+    let opens = Arc::new(AtomicUsize::new(0));
+    let (host, events) = common::hosted::start_counting(&ntfy, &key, enc, 7, Arc::clone(&opens));
+    let url = loop {
+        match events.recv_timeout(Duration::from_secs(10)).expect("hosts") {
+            Event::Route(Route::Hosting(url)) => break url,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    };
+
+    let path = format!("/v1/rooms/{room}/state");
+    let mut others = Vec::new();
+    for user in 100.. {
+        let sealed = rbx_presence::seal::seal_state(&enc, &room, &state(user, "Workspace"));
+        let body = serde_json::to_string(&sealed).unwrap();
+        let (status, _) = common::signed_request(&url, &key, user, "POST", &path, &body);
+        if status != 200 {
+            assert_eq!(status, 403, "fills up");
+            break;
+        }
+        others.push(user);
+    }
+    host.publish(state(7, "Workspace.Baseplate"));
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        match events.recv_timeout(end - Instant::now()).expect("drops") {
+            Event::Disconnected(why) => {
+                assert_eq!(why, "relay closed the connection");
+                break;
+            }
+            Event::Route(route) => panic!("{route:?}"),
+            _ => {}
+        }
+    }
+
+    let gone = format!("{path}?client=rbx-native");
+    for user in others {
+        common::signed_request(&url, &key, user, "DELETE", &gone, "");
+    }
+    host.publish(state(7, "Workspace.SpawnLocation"));
+    let (route, sees) = route_and_sees(&events, 7, "Workspace.SpawnLocation");
+    assert_eq!(route, None, "a reconnect keeps the route");
+    assert!(sees);
+    assert_eq!(opens.load(Ordering::SeqCst), 1);
+}
+
+/// A host that leaves after another took the room over (its own next
+/// worker, after presence restarted) keeps quiet: a goodbye would hide the
+/// newer host until its next route check, a minute later.
+#[test]
+fn a_leaving_host_never_buries_a_newer_host() {
+    let (ntfy, topics) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
+    let room = auth::room_id(&key);
+
+    let (ana, ana_events) = start(&ntfy, &key, enc, 1, true);
+    loop {
+        match ana_events
+            .recv_timeout(Duration::from_secs(10))
+            .expect("ana routes")
+        {
+            Event::Route(Route::Hosting(_)) => break,
+            Event::Rejected(why) => panic!("{why}"),
+            _ => {}
+        }
+    }
+    thread::sleep(Duration::from_millis(5));
+    announce::publish(&ntfy, &key, &room, "http://127.0.0.1:9", "").unwrap();
+    drop(ana);
+    // Ana's worker is gone once its events channel closes.
+    while ana_events.recv_timeout(Duration::from_secs(10)).is_ok() {}
+
+    let messages = topics
+        .lock()
+        .unwrap()
+        .get(&announce::topic(&room))
+        .cloned()
+        .unwrap_or_default();
+    let latest = announce::newest(
+        &key,
+        &room,
+        rbx_presence::now_ms(),
+        messages.iter().map(|(text, at)| (text.as_str(), at * 1000)),
+    );
+    assert_eq!(latest.map(|a| a.url).as_deref(), Some("http://127.0.0.1:9"));
 }

@@ -75,6 +75,8 @@ pub(super) struct TeamPresence {
     pub(super) connection: Connection,
     /// In a hosted room: whether this editor hosts it or joined another's.
     pub(super) route: Option<rbx_presence::client::Route>,
+    /// Hosting, but the tunnel is off until its next try.
+    pub(super) remote_paused: Option<rbx_presence::client::Paused>,
     /// Collaborators' round Roblox headshots, fetched once per user.
     pub(super) avatars: std::collections::HashMap<u64, std::sync::Arc<gpui_kit::RenderImage>>,
     /// Users whose headshot was asked for (fetched, in flight or failed).
@@ -170,6 +172,7 @@ impl TeamPresence {
             settings,
             connection: Connection::Off,
             route: None,
+            remote_paused: None,
             avatars: std::collections::HashMap::new(),
             avatar_asked: std::collections::HashSet::new(),
             relay_input,
@@ -273,21 +276,57 @@ fn quick_tunnel() -> rbx_presence::client::Hosting {
         }
     }
 
+    use crate::shell::play::cloudflared;
+    use rbx_play::tunnel::TunnelError;
+    use rbx_presence::client::TunnelRefused;
+
     rbx_presence::client::Hosting(std::sync::Arc::new(|port: u16| {
-        // Hosting is what lets Studio in at all, so say so when it fails.
         let failed = |e: &dyn std::fmt::Display| {
-            format!("couldn't open the tunnel Studio reaches this editor through ({e})")
+            TunnelRefused::from(format!("couldn't open the tunnel ({e})"))
         };
-        let binary = crate::shell::play::cloudflared::program().map_err(|e| failed(&e))?;
+        let binary = cloudflared::program().map_err(|e| failed(&e))?;
         let tunnel = rbx_play::tunnel::TunnelProvider::Cloudflared { binary }
-            .start(port, std::time::Duration::from_secs(30))
-            .map_err(|e| failed(&e))?;
+            .start_gated(
+                port,
+                std::time::Duration::from_secs(30),
+                &cloudflared::cooldown(),
+            )
+            .map_err(|e| match e {
+                TunnelError::RateLimited { retry_in } => TunnelRefused {
+                    why: "Cloudflare is rate limiting this network".into(),
+                    retry_in: Some(retry_in),
+                },
+                e => failed(&e),
+            })?;
         let url = tunnel.public_url.clone();
         Ok((
             url,
             Box::new(Quick(tunnel)) as Box<dyn rbx_presence::client::Tunnel>,
         ))
     }))
+}
+
+/// An API key arrived after editors opened (a Keychain prompt answered after
+/// startup stopped waiting, or a key saved from Home): every editor retries
+/// the presence it could not start without it.
+pub(crate) fn key_arrived(cx: &mut App) {
+    for window in cx.windows() {
+        let Some(root) = window.downcast::<gpui_kit::component::Root>() else {
+            continue;
+        };
+        let _ = root.update(cx, |root, _, cx| {
+            let view = crate::window_blur::content(root.view(), cx);
+            if let Ok(shell) = view.downcast::<Shell>() {
+                shell.update(cx, |shell, cx| shell.retry_presence_after_key(cx));
+            }
+        });
+    }
+}
+
+/// Whether presence is on yet never started a client, so it may have
+/// stopped at a step the API key answers.
+fn stalled_without_key(enabled: bool, connection: &Connection, has_client: bool) -> bool {
+    enabled && !has_client && !matches!(connection, Connection::Off | Connection::Mock)
 }
 
 pub(super) fn now_ms() -> u64 {
@@ -370,6 +409,23 @@ impl Shell {
         }
     }
 
+    /// The saved API key loaded after this editor opened: presence that
+    /// stopped for want of it (who owns the key, the place's saved presence
+    /// key) tries again.
+    fn retry_presence_after_key(&mut self, cx: &mut Context<Self>) {
+        let presence = &mut self.team_presence;
+        if !stalled_without_key(
+            presence.settings.enabled,
+            &presence.connection,
+            presence.client.is_some(),
+        ) {
+            return;
+        }
+        presence.key_user_asked = false;
+        presence.key_check.asked_on_connect = false;
+        self.connect_presence(cx);
+    }
+
     /// The dock's on/off switch; saves settings, connects or disconnects.
     pub(super) fn set_team_presence_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.team_presence.settings.enabled = enabled;
@@ -414,6 +470,7 @@ impl Shell {
         presence.coedit = None;
         presence.client = None;
         presence.route = None;
+        presence.remote_paused = None;
         presence.key_conflict = None;
         presence.watch = None;
         presence.snapshot = None;
@@ -644,10 +701,14 @@ impl Shell {
                 .ok()
                 .filter(|&id| id != 0);
             let _ = this.update(cx, |shell, cx| {
-                shell.team_presence.key_user = owner;
-                if shell.team_presence.settings.enabled
-                    && shell.team_presence.connection == Connection::Connecting
-                    && shell.team_presence.client.is_none()
+                let presence = &mut shell.team_presence;
+                presence.key_user = owner.or(presence.key_user);
+                if presence.settings.enabled
+                    && matches!(
+                        presence.connection,
+                        Connection::Connecting | Connection::NoUser
+                    )
+                    && presence.client.is_none()
                 {
                     shell.connect_presence(cx);
                 }
@@ -693,11 +754,13 @@ impl Shell {
                 }
                 Event::Disconnected(why) => presence.connection = Connection::Retrying(why),
                 Event::Route(route) => {
+                    presence.remote_paused = None;
                     presence.route = Some(route.clone());
                     self.coedit_route(&route);
                 }
                 Event::Rejected(why) => presence.connection = Connection::Rejected(why),
                 Event::KeyConflict(found) => presence.key_conflict = found,
+                Event::RemotePaused(paused) => presence.remote_paused = Some(paused),
             }
             changed = true;
         }
@@ -885,8 +948,19 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::drop_defaults;
+    use super::{drop_defaults, stalled_without_key, Connection};
     use rbx_dom::{Variant, Vector3Data, WeakDom};
+
+    #[test]
+    fn only_presence_that_never_started_retries_when_the_key_lands() {
+        assert!(stalled_without_key(true, &Connection::NoUser, false));
+        assert!(stalled_without_key(true, &Connection::NoSecret, false));
+        assert!(stalled_without_key(true, &Connection::Connecting, false));
+        assert!(!stalled_without_key(true, &Connection::Connecting, true));
+        assert!(!stalled_without_key(true, &Connection::Connected, true));
+        assert!(!stalled_without_key(false, &Connection::Off, false));
+        assert!(!stalled_without_key(true, &Connection::Mock, false));
+    }
 
     #[test]
     fn an_added_part_shows_only_what_was_set() {

@@ -139,7 +139,10 @@ port, the editor's bundled `cloudflared` opens a Cloudflare quick tunnel
 to it (no account), and `announce` posts the tunnel's address, signed with
 the place key, to the room's announce topic on ntfy.sh. Everyone else, the
 Studio plugin included, reads the newest genuine announcement and talks to
-that relay; a host that leaves posts a goodbye. ntfy carries only these few
+that relay; a host that leaves posts a goodbye. The host listens on
+`announce::loopback_port(room)` when it's free, so Studio on the same
+computer finds it at `127.0.0.1` without the tunnel (one HTTP permission
+prompt ever, instead of one per tunnel address). ntfy carries only these few
 messages a day, far under its 250/day anonymous limit (live presence over
 public ntfy.sh is not workable; see `relay.rs`).
 

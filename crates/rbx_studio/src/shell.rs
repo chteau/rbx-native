@@ -94,6 +94,7 @@ pub(crate) use plugins::install_text_box_keys;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use script_folds::FoldMemory;
+pub(crate) use team_presence::key_arrived;
 pub(crate) use view_snap::PresetView;
 mod toolbox;
 mod tree_keys;
