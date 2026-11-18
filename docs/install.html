@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install - RbxNative docs</title>
-<meta name="description" content="Linux x86_64 for now. macOS and Windows releases are upcoming.">
+<meta name="description" content="Install RbxNative on Windows, macOS or Linux: one command in a terminal, or an installer.">
 <meta name="theme-color" content="#0a0a0b">
 <link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../style.css">
@@ -14,8 +14,11 @@
 <nav class="nav solid">
   <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
   <div class="nav-links">
-    <a href="index.html">Docs</a>
-    <a href="install.html">Install</a>
+    <a class="nav-wide" href="../index.html#features">Features</a>
+    <a href="../docs/index.html">Docs</a>
+    <a class="nav-mid" aria-current="page" href="../docs/install.html">Install</a>
+    <a class="nav-wide" href="../theme-builder/">Theme builder</a>
+    <a class="nav-wide" href="../index.html#team-create">Studio plugin</a>
     <a href="https://github.com/chteau/rbx-native">GitHub</a>
     <a class="nav-dc" href="https://discord.gg/5KSmhcqHt5" aria-label="Discord"><svg class="dc" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg><span>Discord</span></a>
   </div>
@@ -24,19 +27,79 @@
 <aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html" class="on" aria-current="page">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><span>Project</span><a href="https://discord.gg/5KSmhcqHt5">Discord</a><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="https://github.com/chteau/rbx-native/blob/dev/CHANGELOG.md">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a><a href="../contributors.html">Contributors</a></aside>
 <article>
 <h1>Install</h1>
-<p class="sub">Linux x86_64 for now. macOS and Windows releases are upcoming.</p>
-<h2 id="download">Download</h2>
-<p>The <a href="https://github.com/chteau/rbx-native/releases/latest">latest release</a> has a tarball, nothing to install system-wide.</p>
-<pre><code>curl -LO https://github.com/chteau/rbx-native/releases/download/v0.1.0/rbxstudio-0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -LO https://github.com/chteau/rbx-native/releases/download/v0.1.0/SHA256SUMS
-sha256sum -c SHA256SUMS
+<p class="sub">Windows, macOS and Linux. Installs for you only, no admin, and keeps itself up to date.</p>
+<h2 id="terminal">From a terminal</h2>
+<p>One line. It grabs the latest release, checks it against the signed checksums and installs it.</p>
+<p>macOS and Linux:</p>
+<pre><code>curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh</code></pre>
+<p>Windows, in PowerShell:</p>
+<pre><code>irm https://rbxnative.chteau.bzh/install.ps1 | iex</code></pre>
+<p>Where it goes:</p>
+<ul>
+<li>Linux: <code>~/.local/share/rbxnative</code>, a <code>rbxnative</code> command in <code>~/.local/bin</code>, and an app menu entry that opens .rbxl and .rbxlx files.</li>
+<li>macOS: <code>~/Applications/RbxNative.app</code>. Apple Silicon only.</li>
+<li>Windows: <code>%LOCALAPPDATA%\Programs\RbxNative</code> with a Start menu shortcut, the same folder the setup uses.</li>
+</ul>
+<p>If <a href="https://jedisct1.github.io/minisign/">minisign</a> is installed, the script also checks the checksums' signature, with the same key the updater uses. Without it, it still checks the hash.</p>
+<p>A specific version:</p>
+<pre><code>curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh -s -- --version 0.2.0</code></pre>
+<pre><code>$env:RBXNATIVE_VERSION = '0.2.0'
+irm https://rbxnative.chteau.bzh/install.ps1 | iex</code></pre>
+<p>Removing it again. That only takes what the script added, your settings, places and saved keys stay.</p>
+<pre><code>curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh -s -- --uninstall</code></pre>
+<pre><code>$s = irm https://rbxnative.chteau.bzh/install.ps1
+&amp; ([scriptblock]::Create($s)) -Uninstall</code></pre>
+<p>Want to read it first? <a href="../install.sh">install.sh</a> and <a href="../install.ps1">install.ps1</a>. They're also attached to every release.</p>
+<h2 id="installers">Installers</h2>
+<p>Rather click through something? The <a href="https://github.com/chteau/rbx-native/releases/latest">latest release</a> has these:</p>
+<table>
+<tr><th>System</th><th>File</th><th>What it does</th></tr>
+<tr><td>Windows 10/11 x64</td><td><a data-asset="-windows-x64-setup.exe" href="https://github.com/chteau/rbx-native/releases/latest">Setup (.exe)</a></td><td>Per-user install, Start menu entry, optional desktop shortcut, opens .rbxl and .rbxlx. Uninstall from Settings, Apps.</td></tr>
+<tr><td>macOS, Apple Silicon</td><td><a data-asset="-macos-arm64.dmg" href="https://github.com/chteau/rbx-native/releases/latest">Disk image (.dmg)</a></td><td>Drag RbxNative to Applications.</td></tr>
+<tr><td>Linux x86_64</td><td><a data-asset="-x86_64.AppImage" href="https://github.com/chteau/rbx-native/releases/latest">AppImage</a></td><td>One file. Make it executable and run it. Updates replace the file.</td></tr>
+</table>
+<p>None of them are signed with a paid certificate yet, so the first launch gets a warning:</p>
+<ul>
+<li>Windows SmartScreen says "Windows protected your PC". Click More info, then Run anyway.</li>
+<li>macOS says it can't check the app. Right-click RbxNative in Applications, Open, then Open again. The terminal install skips this.</li>
+<li>The AppImage needs FUSE, most desktops have it. If not, run it with <code>--appimage-extract-and-run</code>.</li>
+</ul>
+<h2 id="systems">What's different on each system</h2>
+<p>Same editor everywhere, but each system has a few things to know.</p>
+<h3 id="windows">Windows</h3>
+<ul>
+<li>Windows 10 or 11, x64. No ARM build yet.</li>
+<li>SmartScreen warns on the first launch of the setup, the installer isn't signed with a paid certificate. More info, then Run anyway.</li>
+<li>Play runs the Roblox client inside the editor's 3D view.</li>
+<li>The network simulator uses the WinDivert driver, so Windows asks for admin the first time you shape a Play. It lets go of the driver when Play stops.</li>
+</ul>
+<h3 id="macos">macOS</h3>
+<ul>
+<li>Apple Silicon only (M1 and newer).</li>
+<li>The app is signed but not notarized, so the first open from the disk image gets "can't check the app". Right-click RbxNative in Applications, Open, then Open again. The terminal install skips this.</li>
+<li>After each update macOS asks once for your login password so RbxNative can read your saved Roblox key from the Keychain. Pick Always Allow and it stays quiet until the next version.</li>
+<li>macOS can't put another app inside a window, so Play runs the game in the Roblox app next to the editor. F8 or the RbxNative button in the game opens the panel.</li>
+<li>The network simulator asks for admin once, the first time you shape a Play.</li>
+</ul>
+<h3 id="linux">Linux</h3>
+<ul>
+<li>x86_64. X11 is the main target. Wayland works but the cursor doesn't get captured, so anything that needs pointer lock won't feel right.</li>
+<li>Play needs <a href="https://sober.vinegarhq.org">Sober</a>, Roblox doesn't ship a Linux client.</li>
+<li>The AppImage needs FUSE, most desktops have it. If not, run it with <code>--appimage-extract-and-run</code>.</li>
+<li>The Flatpak can't run programs on the host, so the network simulator, the controller emulator and device simulation aren't in it.</li>
+</ul>
+<h2 id="portable">Portable</h2>
+<p>Every release also has a plain zip (Windows) or tarball (macOS, Linux). Unpack it anywhere you can write to and run it from there, nothing else to install.</p>
+<pre><code>curl -LO https://github.com/chteau/rbx-native/releases/download/v0.2.0/RbxNative-0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/chteau/rbx-native/releases/download/v0.2.0/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
 
-tar xzf rbxstudio-0.1.0-x86_64-unknown-linux-gnu.tar.gz
-cd rbxstudio-0.1.0-x86_64-unknown-linux-gnu
-./rbxstudio</code></pre>
-<p>X11 is the main target. Wayland works but the cursor doesn't get captured, so anything that needs pointer lock won't feel right.</p>
+tar xzf RbxNative-0.2.0-x86_64-unknown-linux-gnu.tar.gz
+./RbxNative-0.2.0-x86_64-unknown-linux-gnu/rbxnative</code></pre>
+<p>Swap the version for the <a href="https://github.com/chteau/rbx-native/releases/latest">latest one</a>. 0.1.0 called the program <code>rbxstudio</code>. An old install renames itself when it updates and keeps <code>rbxstudio</code> as a link.</p>
 <h2 id="updates">Updates</h2>
 <p>RbxNative updates itself. On launch it checks the latest GitHub release in the background, downloads a newer one, checks the minisign signature and the hash, and swaps it in for the next launch. Nothing blocks startup, and offline it just moves on.</p>
+<p>That works for every install above: the setup, the terminal install, the portable folder, the app in Applications and the AppImage.</p>
 <p>The switch and a Check now button are in Settings, Files &amp; recovery, Updates. It stays off when the install folder isn't writable, in a Flatpak, and in dev builds.</p>
 <h2 id="source">Build from source</h2>
 <p>You need Rust 1.96 or newer from <a href="https://rustup.rs">rustup.rs</a>. First build takes a while, it's a big project.</p>
@@ -55,5 +118,18 @@ cargo build --release -p rbx_studio --bin rbxstudio
 </article>
 </div>
 <script src="docs.js"></script>
+<script>
+// Points the installer links at the latest release's files; they stay on the release page if GitHub doesn't answer.
+fetch("https://api.github.com/repos/chteau/rbx-native/releases/latest")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((release) => {
+    if (!release) return;
+    document.querySelectorAll("a[data-asset]").forEach((a) => {
+      const asset = release.assets.find((x) => x.name.endsWith(a.dataset.asset));
+      if (asset) a.href = asset.browser_download_url;
+    });
+  })
+  .catch(() => {});
+</script>
 </body>
 </html>
