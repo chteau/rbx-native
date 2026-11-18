@@ -114,10 +114,11 @@ h2 { margin: 0 0 18px; color: var(--white); font-size: clamp(26px, 2.6vw, 34px);
 .motion .wipe.reveal.in { clip-path: inset(-2px -2px -40px -2px); }
 
 /* One section per feature, sides swapping. */
-.feature { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 8fr); gap: clamp(20px, 5vw, 72px); align-items: center; padding: clamp(22px, 3vw, 40px) 0; }
+.feature { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(20px, 5vw, 72px); align-items: center; padding: clamp(22px, 3vw, 40px) 0; }
 .feature:nth-of-type(even) { grid-template-columns: minmax(0, 8fr) minmax(0, 3fr); }
 .feature:nth-of-type(even) .feature-text { order: 2; }
 .feature p { margin: 0; color: var(--body); }
+.feature p + p { margin-top: 12px; }
 h3 { margin: 0 0 8px; color: var(--white); font-size: 23px; line-height: 30px; font-weight: 600; letter-spacing: -.02em; }
 h3 .line > span { display: flex; align-items: center; gap: 11px; }
 .frame { aspect-ratio: 16 / 10; border-radius: 5px; overflow: hidden; background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
