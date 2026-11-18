@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 
 use super::{
-    helper_version, install_command, osascript_args, parse_lsof_udp, plist, uninstall_command,
-    HELPER, PLIST_PATH, SOCKET,
+    declared_version, helper_version, install_command, osascript_args, parse_lsof_udp, plist,
+    uninstall_command, HELPER, HELPER_PATH, PLIST_PATH, SOCKET,
 };
 use crate::netsim::lines;
 use crate::netsim::{NetConditions, ShaperError};
@@ -34,6 +34,12 @@ const PORT_POLL: Duration = Duration::from_millis(500);
 /// Whether the network helper daemon is installed (Settings offers removal).
 pub fn helper_installed() -> bool {
     Path::new(PLIST_PATH).exists()
+}
+
+/// Whether the installed helper is this build's version, so a shaped Play
+/// won't ask for the password to install it.
+pub fn helper_current() -> bool {
+    fs::read_to_string(HELPER_PATH).is_ok_and(|s| declared_version(&s) == Some(helper_version()))
 }
 
 /// Stops and deletes the helper daemon, behind one administrator prompt.

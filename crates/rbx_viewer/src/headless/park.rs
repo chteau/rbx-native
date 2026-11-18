@@ -18,6 +18,9 @@ use crate::view::View;
 /// and every asset are gone.
 pub struct Parked {
     quality: QualityLevel,
+    /// The level the place fit in GPU memory at, so coming back does not
+    /// run out all over again.
+    cap: u8,
     calibration: Calibration,
     view: View,
     feel: CameraFeel,
@@ -34,6 +37,7 @@ impl Headless {
     pub fn park(self) -> Parked {
         Parked {
             quality: self.quality,
+            cap: self.rung.level,
             calibration: self.calibration,
             speed: self.controller.speed(),
             view: self.view,
@@ -51,7 +55,8 @@ impl Parked {
     /// quality and calibration it was parked with. Assets are asked for
     /// again, as on a first load.
     pub fn resume(self, dom: &WeakDom) -> Result<Headless, String> {
-        let mut headless = Headless::build(dom, self.toggles, self.database, self.view)?;
+        let mut headless =
+            Headless::build(dom, self.toggles, self.database, self.view, self.cap, None)?;
         headless.set_calibration(self.calibration);
         headless.set_quality(self.quality);
         headless.feel = self.feel;

@@ -11,7 +11,9 @@
 
 use std::collections::HashMap;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +27,9 @@ use crate::schema::{
     self, Client as Editor, SealedSnapshot, Snapshot, UserState, EXPIRY_MS, HEARTBEAT_MS,
 };
 use crate::{announce, auth, host, ntfy, seal};
+use going::{Going, Topic};
+
+mod going;
 
 /// What a client reports when the relay refuses its wire version.
 pub const VERSION_MISMATCH: &str = "The relay runs a different Team Presence version; update rbx-native, the plugin and the relay together.";
@@ -48,6 +53,11 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// How often the ntfy transport publishes-then-polls; presence is best-effort
 /// on a shared public server, so a second's latency is fine.
 const NTFY_POLL: Duration = Duration::from_secs(1);
+/// The first wait before trying a tunnel again after it failed (for any
+/// reason but a rate limit, which says how long), doubling up to
+/// [`TUNNEL_RETRY_MAX`].
+const TUNNEL_RETRY_START: Duration = Duration::from_secs(15);
+const TUNNEL_RETRY_MAX: Duration = Duration::from_secs(10 * 60);
 
 /// Unix milliseconds now, or 0 if the clock is before the epoch.
 fn unix_ms() -> u64 {
@@ -64,7 +74,41 @@ pub trait Tunnel: Send {
 
 /// Opens a [`Tunnel`] to `127.0.0.1:<port>` and returns its public
 /// `https://` URL. Supplied by the editor, which ships `cloudflared`.
-pub type OpenTunnel = dyn Fn(u16) -> Result<(String, Box<dyn Tunnel>), String> + Send + Sync;
+pub type OpenTunnel = dyn Fn(u16) -> Result<(String, Box<dyn Tunnel>), TunnelRefused> + Send + Sync;
+
+/// Why a host's tunnel didn't open (or going public through it failed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TunnelRefused {
+    pub why: String,
+    /// Set when the tunnel service rate limits this network: no new tunnel
+    /// before this much time has passed.
+    pub retry_in: Option<Duration>,
+}
+
+impl From<String> for TunnelRefused {
+    fn from(why: String) -> Self {
+        TunnelRefused {
+            why,
+            retry_in: None,
+        }
+    }
+}
+
+impl From<&str> for TunnelRefused {
+    fn from(why: &str) -> Self {
+        why.to_owned().into()
+    }
+}
+
+/// See [`Event::RemotePaused`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Paused {
+    pub why: String,
+    /// The tunnel service rate limits this network.
+    pub rate_limited: bool,
+    /// When the tunnel is tried again (unix ms).
+    pub retry_at_ms: u64,
+}
 
 /// How a [`RelayKind::Hosted`] client may host the room itself; without
 /// one (or when it fails) the client only joins an announced host.
@@ -136,11 +180,44 @@ pub enum Event {
     /// editor that has the place open with a different presence key, or
     /// `None` once there is none (see [`crate::beacon`]).
     KeyConflict(Option<String>),
+    /// [`RelayKind::Hosted`], while hosting: the tunnel didn't open (or
+    /// closed), so only Studio on this computer, on the loopback port,
+    /// reaches this host until the next try. The next [`Event::Route`]
+    /// supersedes it.
+    RemotePaused(Paused),
 }
 
 /// The handle; dropping it stops the worker.
 pub struct Client {
     states: Sender<UserState>,
+}
+
+/// How many workers are still running, so quitting can wait for them.
+static RUNNING: Mutex<usize> = Mutex::new(0);
+static STOPPED: Condvar = Condvar::new();
+/// Set once the app quits: every worker leaves its room.
+static QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// For quitting the app: makes every worker leave its room (a host says
+/// goodbye on the announce topic and closes its tunnel) and waits up to
+/// `limit` for them. The process ending would otherwise cut them off first
+/// and leave guests on a dead address. Keep `limit` short: a worker stuck
+/// on an unreachable ntfy is simply left behind. True when all of them left.
+pub fn leave_all(limit: Duration) -> bool {
+    QUITTING.store(true, Ordering::Relaxed);
+    let end = Instant::now() + limit;
+    let mut running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
+    while *running > 0 {
+        let left = end.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        running = STOPPED
+            .wait_timeout(running, left)
+            .unwrap_or_else(PoisonError::into_inner)
+            .0;
+    }
+    true
 }
 
 /// `relay_url` with `https` → `wss`, `http` → `ws`, plus
@@ -160,7 +237,12 @@ impl Client {
     pub fn start(config: Config) -> (Client, Receiver<Event>) {
         let (states, state_rx) = mpsc::channel();
         let (event_tx, events) = mpsc::channel();
-        thread::spawn(move || run(config, state_rx, event_tx));
+        *RUNNING.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        thread::spawn(move || {
+            run(config, state_rx, event_tx);
+            *RUNNING.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+            STOPPED.notify_all();
+        });
         (Client { states }, events)
     }
 
@@ -204,13 +286,24 @@ struct Worker {
     key_conflict: Option<String>,
 }
 
-/// The relay this client runs for the room, and its public tunnel.
+/// The relay this client runs for the room, and how far it is public.
 struct Hosted {
     host: host::Host,
+    /// Until the host is public: the thread making it so.
+    going: Option<Going>,
+    /// Once announced: the tunnel and its address.
+    public: Option<Announced>,
+    /// After the tunnel failed: when to try again, and the wait after the
+    /// next failure.
+    retry_at: Option<Instant>,
+    retry_wait: Duration,
+}
+
+struct Announced {
     tunnel: Box<dyn Tunnel>,
-    public: String,
+    url: String,
     /// When the address was last announced (unix ms).
-    announced: u64,
+    at: u64,
 }
 
 /// How often a hosted-room client re-checks the announcements (a host to
@@ -256,15 +349,18 @@ fn run(config: Config, states: Receiver<UserState>, events: Sender<Event>) {
 
 impl Worker {
     /// Sleeps for `total` while still collecting published states; false when
-    /// the client is gone.
+    /// the client is gone or the app quits.
     fn wait(&mut self, total: Duration) -> bool {
         let end = Instant::now() + total;
         loop {
+            if QUITTING.load(Ordering::Relaxed) {
+                return false;
+            }
             let left = end.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 return true;
             }
-            match self.states.recv_timeout(left) {
+            match self.states.recv_timeout(left.min(READ_TIMEOUT)) {
                 Ok(state) => self.take(state),
                 Err(RecvTimeoutError::Timeout) => return true,
                 Err(RecvTimeoutError::Disconnected) => return false,
@@ -277,8 +373,12 @@ impl Worker {
         self.dirty = true;
     }
 
-    /// Pulls every pending state; false when the client is gone.
+    /// Pulls every pending state; false when the client is gone or the app
+    /// quits.
     fn drain(&mut self) -> bool {
+        if QUITTING.load(Ordering::Relaxed) {
+            return false;
+        }
         loop {
             match self.states.try_recv() {
                 Ok(state) => self.take(state),
@@ -308,7 +408,12 @@ impl Worker {
         if self.hosted.is_none() {
             let ntfy = self.config.relay_url.clone();
             match announce::find(&ntfy, &self.config.key, &self.config.room) {
-                Err(why) => return Outcome::Failed(why),
+                // ntfy refusing (its rate limit) or out of reach says nothing
+                // about a host, and one that can host still serves Studio on
+                // this computer from the loopback port meanwhile. Should a
+                // host elsewhere turn out to be up, the newer one wins
+                // (see host_check) once this one gets its announcement out.
+                Err(why) if self.config.hosting.is_none() => return Outcome::Failed(why),
                 Ok(Some(found)) if reachable(&found.url) => {
                     self.joined = Some(found.url.clone());
                     if self
@@ -320,7 +425,7 @@ impl Worker {
                     }
                     return self.worker_session(&found.url, delay);
                 }
-                Ok(_) => {
+                _ => {
                     self.joined = None;
                     let Some(hosting) = self.config.hosting.clone() else {
                         if self.events.send(Event::Route(Route::Waiting)).is_err() {
@@ -340,32 +445,100 @@ impl Worker {
         self.worker_session(&local, delay)
     }
 
+    /// Starts the room's relay and sends it off to go public. The session
+    /// joins it on the loopback port meanwhile, so Studio on this computer
+    /// sees this editor at once, not after the tunnel and its announcement.
     fn start_hosting(&mut self, hosting: &Hosting) -> Result<(), String> {
-        let host = host::Host::start(&self.config.key).map_err(|e| e.to_string())?;
-        let (public, tunnel) = (hosting.0)(host.port())?;
-        if !announce::allowed_url(&public) {
-            return Err(format!("the tunnel gave an unusable address: {public}"));
-        }
-        // Collaborators look the address up the moment it is announced; one
-        // asked before the record exists caches "no such host" for many
-        // minutes. Announce only once public DNS has it.
-        wait_until_resolvable(&public, Duration::from_secs(45));
-        announce::publish(
-            &self.config.relay_url,
-            &self.config.key,
-            &self.config.room,
-            &public,
-        )?;
-        let _ = self
-            .events
-            .send(Event::Route(Route::Hosting(public.clone())));
+        let host = self.start_host().map_err(|e| e.to_string())?;
+        let going = Going::start(hosting, host.port(), host.id().to_owned(), self.topic());
         self.hosted = Some(Hosted {
             host,
-            tunnel,
-            public,
-            announced: unix_ms(),
+            going: Some(going),
+            public: None,
+            retry_at: None,
+            retry_wait: TUNNEL_RETRY_START,
         });
         Ok(())
+    }
+
+    /// Takes the outcome of going public once there is one, and goes public
+    /// again once a failed try's wait is over. A failure keeps the relay on
+    /// the loopback port, so Studio on this computer stays connected.
+    fn check_going(&mut self) {
+        let topic = self.topic();
+        let Some(hosted) = self.hosted.as_mut() else {
+            return;
+        };
+        if hosted.going.is_none() {
+            if hosted.public.is_none() && hosted.retry_at.is_some_and(|at| Instant::now() >= at) {
+                hosted.retry_at = None;
+                if let Some(hosting) = &self.config.hosting {
+                    let id = hosted.host.id().to_owned();
+                    hosted.going = Some(Going::start(hosting, hosted.host.port(), id, topic));
+                }
+            }
+            return;
+        }
+        let Some(went) = hosted.going.as_ref().and_then(Going::poll) else {
+            return;
+        };
+        hosted.going = None;
+        match went {
+            Ok((url, tunnel)) => {
+                let _ = self.events.send(Event::Route(Route::Hosting(url.clone())));
+                hosted.retry_wait = TUNNEL_RETRY_START;
+                hosted.public = Some(Announced {
+                    tunnel,
+                    url,
+                    at: unix_ms(),
+                });
+            }
+            Err(refused) => self.tunnel_failed(refused),
+        }
+    }
+
+    /// Schedules the next try at going public: when the tunnel service
+    /// said (a rate limit), else after a wait that doubles on every failure
+    /// in a row, so a tunnel that won't open isn't asked for in a loop.
+    fn tunnel_failed(&mut self, refused: TunnelRefused) {
+        let Some(hosted) = self.hosted.as_mut() else {
+            return;
+        };
+        hosted.public = None;
+        let wait = refused.retry_in.unwrap_or(hosted.retry_wait);
+        hosted.retry_wait = (hosted.retry_wait * 2).min(TUNNEL_RETRY_MAX);
+        hosted.retry_at = Some(Instant::now() + wait);
+        let _ = self.events.send(Event::RemotePaused(Paused {
+            why: refused.why,
+            rate_limited: refused.retry_in.is_some(),
+            retry_at_ms: unix_ms() + wait.as_millis() as u64,
+        }));
+    }
+
+    fn topic(&self) -> Topic {
+        Topic {
+            ntfy: self.config.relay_url.clone(),
+            key: self.config.key.clone(),
+            room: self.config.room.clone(),
+        }
+    }
+
+    /// The relay, on the room's loopback port so Studio on this computer
+    /// finds it without the tunnel. A presence restart can leave the worker
+    /// it replaced still holding that port for a moment, so it is asked for
+    /// a few times before any free port does.
+    fn start_host(&mut self) -> std::io::Result<host::Host> {
+        let port = announce::loopback_port(&self.config.room);
+        for _ in 0..LOOPBACK_TRIES {
+            let id = announce::host_id(&self.config.beacon_from);
+            if let Ok(host) = host::Host::start_on(&self.config.key, port, &id) {
+                return Ok(host);
+            }
+            if !self.wait(Duration::from_millis(500)) {
+                return Err(std::io::Error::other("presence stopped"));
+            }
+        }
+        host::Host::start(&self.config.key)
     }
 
     /// Posts this client's beacon when due and reads the others' at most once
@@ -408,16 +581,19 @@ impl Worker {
     }
 
     /// Leaves the room's hosting: says goodbye so guests look again at once,
-    /// then closes the tunnel and the relay.
+    /// then closes the tunnel and the relay. Quitting skips checking for a
+    /// newer host first, one request fewer before the app exits.
     fn stop_hosting(&mut self) {
-        if let Some(hosted) = self.hosted.take() {
-            let _ = announce::publish(
-                &self.config.relay_url,
-                &self.config.key,
-                &self.config.room,
-                "",
+        if let Some(Hosted {
+            public: Some(public),
+            ..
+        }) = self.hosted.take()
+        {
+            going::goodbye(
+                &self.topic(),
+                &public.url,
+                !QUITTING.load(Ordering::Relaxed),
             );
-            drop(hosted);
         }
     }
 
@@ -430,31 +606,51 @@ impl Worker {
         }
         let found = announce::find(&self.config.relay_url, &self.config.key, &self.config.room);
         if let Some(hosted) = &mut self.hosted {
-            if !hosted.tunnel.alive() {
-                self.hosted = None;
-                return Some(Outcome::Failed("the tunnel closed".into()));
+            let Some(public) = &mut hosted.public else {
+                // Only on loopback, waiting to try the tunnel again: a host
+                // elsewhere that is public serves everyone, so join it.
+                let local = hosted.host.local_url();
+                return match &found {
+                    Ok(Some(newest))
+                        if hosted.going.is_none()
+                            && newest.url != local
+                            && reachable(&newest.url) =>
+                    {
+                        self.hosted = None;
+                        Some(Outcome::Failed(
+                            "another rbx-native user hosts the room".into(),
+                        ))
+                    }
+                    _ => None,
+                };
+            };
+            if !public.tunnel.alive() {
+                self.tunnel_failed("the tunnel closed".into());
+                return None;
             }
-            if let Ok(Some(newer)) = &found {
-                if newer.url != hosted.public && newer.at > hosted.announced {
-                    // Two hosted at once: the newer one keeps the room.
-                    self.hosted = None;
-                    return Some(Outcome::Failed(
-                        "another rbx-native user hosts the room".into(),
-                    ));
-                }
+            let check = match &found {
+                Ok(newest) => host_check(&public.url, public.at, newest.as_ref(), reachable),
+                Err(_) => HostCheck::Keep,
+            };
+            if check == HostCheck::Yield {
+                self.hosted = None;
+                return Some(Outcome::Failed(
+                    "another rbx-native user hosts the room".into(),
+                ));
             }
             let now = unix_ms();
-            let due = now.saturating_sub(hosted.announced) >= announce::REANNOUNCE_MS;
-            if due
+            let due = now.saturating_sub(public.at) >= announce::REANNOUNCE_MS;
+            if (due || check == HostCheck::Reannounce)
                 && announce::publish(
                     &self.config.relay_url,
                     &self.config.key,
                     &self.config.room,
-                    &hosted.public,
+                    &public.url,
+                    hosted.host.id(),
                 )
                 .is_ok()
             {
-                hosted.announced = now;
+                public.at = now;
             }
             return None;
         }
@@ -499,6 +695,7 @@ impl Worker {
                 let _ = socket.close(None);
                 return Outcome::Stopped;
             }
+            self.check_going();
             if self.config.kind == RelayKind::Hosted && last_check.elapsed() >= ROUTE_CHECK {
                 last_check = Instant::now();
                 if let Some(outcome) = self.check_route() {
@@ -742,45 +939,39 @@ impl Worker {
     }
 }
 
-/// Waits (at most `limit`) until `url`'s host has an address in public DNS,
-/// asking Cloudflare's DNS-over-HTTPS resolver so this machine's own resolver
-/// never caches an early "no such host". Loopback addresses return at once.
-fn wait_until_resolvable(url: &str, limit: Duration) {
-    let Some(host) = url
-        .strip_prefix("https://")
-        .map(|rest| rest.split(['/', ':']).next().unwrap_or(rest))
-    else {
-        return;
-    };
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(5)))
-        .build()
-        .into();
-    let end = Instant::now() + limit;
-    while Instant::now() < end {
-        let answered = agent
-            .get("https://cloudflare-dns.com/dns-query")
-            .query("name", host)
-            .query("type", "A")
-            .header("Accept", "application/dns-json")
-            .call()
-            .ok()
-            .and_then(|mut resp| resp.body_mut().read_to_string().ok())
-            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
-            .is_some_and(|json| {
-                json.get("Status").and_then(|s| s.as_u64()) == Some(0)
-                    && json
-                        .get("Answer")
-                        .and_then(|a| a.as_array())
-                        .is_some_and(|a| !a.is_empty())
-            });
-        if answered {
-            return;
-        }
-        thread::sleep(Duration::from_secs(1));
+/// What a host does about the room's newest announcement.
+#[derive(Debug, PartialEq, Eq)]
+enum HostCheck {
+    /// It is this host's own.
+    Keep,
+    /// Another host announced since and answers: two hosted at once, and the
+    /// newer one keeps the room.
+    Yield,
+    /// A goodbye, or an address nobody answers on (a host that crashed or
+    /// quit, this editor's own earlier tunnel): announce again, so
+    /// collaborators who went there come back here.
+    Reannounce,
+}
+
+/// [`HostCheck`] for a host public at `public` since `announced`, given the
+/// newest genuine announcement (`None`: none, or a goodbye). `live` is only
+/// asked about a newer foreign address, so a stale or self-made one never
+/// takes the room away from a host that still runs.
+fn host_check(
+    public: &str,
+    announced: u64,
+    newest: Option<&announce::Announcement>,
+    live: impl FnOnce(&str) -> bool,
+) -> HostCheck {
+    match newest {
+        Some(newest) if newest.url == public => HostCheck::Keep,
+        Some(newest) if newest.at > announced && live(&newest.url) => HostCheck::Yield,
+        _ => HostCheck::Reannounce,
     }
 }
+
+/// How many times [`Worker::start_host`] asks for the loopback port.
+const LOOPBACK_TRIES: u32 = 6;
 
 /// Whether a relay answers its health check (a host that crashed leaves its
 /// last announcement behind).
@@ -815,6 +1006,42 @@ mod tests {
     use crate::schema::SCHEMA_VERSION;
     use std::net::TcpListener;
     use tungstenite::handshake::server::{ErrorResponse, Request, Response};
+
+    #[test]
+    fn a_host_yields_only_to_a_newer_host_that_answers() {
+        const OURS: &str = "https://ours.trycloudflare.com";
+        let at = |url: &str, at: u64| announce::Announcement {
+            v: 1,
+            url: url.into(),
+            at,
+            sig: String::new(),
+            host: String::new(),
+        };
+        let never = |_: &str| -> bool { panic!("asked about our own address") };
+        assert_eq!(
+            host_check(OURS, 100, Some(&at(OURS, 99)), never),
+            HostCheck::Keep
+        );
+        let newer = at("https://other.trycloudflare.com", 200);
+        assert_eq!(
+            host_check(OURS, 100, Some(&newer), |_| true),
+            HostCheck::Yield
+        );
+        // A newer address nobody answers on (a crashed host, or this
+        // editor's own earlier tunnel) takes nothing away: announce again.
+        assert_eq!(
+            host_check(OURS, 100, Some(&newer), |_| false),
+            HostCheck::Reannounce
+        );
+        let older = at("https://other.trycloudflare.com", 50);
+        assert_eq!(
+            host_check(OURS, 100, Some(&older), |_| true),
+            HostCheck::Reannounce
+        );
+        // A goodbye after ours would leave collaborators waiting on a host
+        // that is still here.
+        assert_eq!(host_check(OURS, 100, None, never), HostCheck::Reannounce);
+    }
 
     #[test]
     fn ws_url_cases() {

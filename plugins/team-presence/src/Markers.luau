@@ -66,9 +66,9 @@ local function makeCamera(folder: Folder, user: any): Part
 	part.CanQuery = false
 	part.CanTouch = false
 	part.Locked = true
-	part.Size = Vector3.new(1, 0.6, 1.5)
+	part.Size = Vector3.new(1, 3 / 5, 3 / 2)
 	part.Material = Enum.Material.Neon
-	part.Transparency = 0.3
+	part.Transparency = 3 / 10
 	part.Name = "Camera"
 
 	local gui = Instance.new("BillboardGui")
@@ -86,7 +86,7 @@ local function makeCamera(folder: Folder, user: any): Part
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.BuilderSansBold
 	label.TextSize = 16
-	label.TextStrokeTransparency = 0.5
+	label.TextStrokeTransparency = 1 / 2
 	label.Parent = gui
 
 	part.Parent = folder
@@ -114,7 +114,7 @@ function Markers.render(self: Markers, users: { any })
 					if not box then
 						local created = Instance.new("SelectionBox")
 						created.Archivable = false
-						created.LineThickness = 0.05
+						created.LineThickness = 1 / 20
 						created.SurfaceTransparency = 1
 						created.Parent = folder
 						self.items[key] = created

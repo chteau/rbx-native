@@ -21,7 +21,7 @@ local HEARTBEAT = 5
 -- How often the last-seen time is saved while connected: what arrives while
 -- connected is seen live, so the next catch-up starts after it.
 local LAST_SEEN_EVERY = 30
-local TICK = 0.2
+local TICK = 1 / 5
 local BACKOFF_MIN = 1
 local BACKOFF_MAX = 30
 
@@ -155,6 +155,20 @@ local function nextBackoff(current: number): number
 	return math.min(current * 2, BACKOFF_MAX)
 end
 
+-- Waits after a failed publish or poll and returns the next backoff. While
+-- the room has no host the relay only looks every few seconds anyway, so
+-- check back each second to pick a new host up as soon as it is found,
+-- rather than backing off from a host that just went away.
+local function retryAfter(myRelay: any, backoff: number): number
+	if myRelay:lookingForHost() then
+		task.wait(1)
+		return 0
+	end
+	local delay = nextBackoff(backoff)
+	task.wait(delay)
+	return delay
+end
+
 local function start()
 	stop()
 	if game.PlaceId == 0 then
@@ -186,6 +200,16 @@ local function start()
 		userId = ownId,
 		placeId = game.PlaceId,
 		beaconFrom = beaconId(),
+		loopbackOk = plugin:GetSetting("LoopbackOk") == true,
+		-- Kept too, so a Studio opened after RbxNative was killed still
+		-- knows its leftover announcement for one from this computer.
+		localHost = plugin:GetSetting("LoopbackHost"),
+		onLoopback = function(host: string?)
+			plugin:SetSetting("LoopbackOk", true)
+			if host then
+				plugin:SetSetting("LoopbackHost", host)
+			end
+		end,
 	})
 	local myCapture = Capture.new()
 	local myMarkers = Markers.new()
@@ -234,7 +258,7 @@ local function start()
 	end)
 
 	task.spawn(function()
-		local lastPublish = 0.0
+		local lastPublish = 0
 		local backoff = 0
 		while generation == myGen do
 			if myCapture:isDirty() or os.clock() - lastPublish >= HEARTBEAT then
@@ -248,9 +272,12 @@ local function start()
 					backoff = 0
 				else
 					showProblem(myRelay, err, minted)
-					backoff = nextBackoff(backoff)
-					lastPublish = os.clock()
-					task.wait(backoff)
+					-- With no host, go again right after the retry wait: the
+					-- poll loop's long-poll waits for this request to open a
+					-- host it just found, so a heartbeat's wait here would
+					-- hold the rejoin up by as long.
+					lastPublish = if myRelay:lookingForHost() then -math.huge else os.clock()
+					backoff = retryAfter(myRelay, backoff)
 				end
 			end
 			task.wait(TICK)
@@ -292,8 +319,12 @@ local function start()
 				task.wait(myRelay:pollDelay())
 			else
 				showProblem(myRelay, err, minted)
-				backoff = nextBackoff(backoff)
-				task.wait(backoff)
+				if myRelay:waiting() then
+					-- The host is gone: so are its user and their markers.
+					myMarkers:render({})
+					widget:setUsers({})
+				end
+				backoff = retryAfter(myRelay, backoff)
 			end
 		end
 	end)

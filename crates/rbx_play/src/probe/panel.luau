@@ -8,6 +8,7 @@
 -- The server half relays what the probe already collects (logs from both
 -- sides, stats, debugger pauses) to the tester; the client half draws it.
 
+local GuiService = game:GetService("GuiService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -749,11 +750,37 @@ function M.client(remote, Debug)
 		errorsBadge.Text = "0"
 		refilter()
 	end)
-	UserInputService.InputBegan:Connect(function(input, processed)
-		-- `processed` is also true when Roblox's own UI has the keyboard
-		-- (a menu, a toast), which ate F8 once; only typing should.
-		if input.KeyCode == TOGGLE_KEY and not UserInputService:GetFocusedTextBox() then
+	-- Roblox's own menu draws over anything a game can, so F8 pressed while
+	-- it is open opens the panel once it closes rather than unseen. The
+	-- menu can keep F8 from `InputBegan` altogether (the macOS player
+	-- does), so the key is also read each frame while it is up, and its
+	-- closing is watched the same way rather than trusting `MenuClosed`.
+	local openAfterMenu = false
+	local function toggle()
+		if UserInputService:GetFocusedTextBox() then
+			return
+		end
+		if GuiService.MenuIsOpen then
+			openAfterMenu = true
+		else
 			setOpen(not panel.Visible)
+		end
+	end
+	UserInputService.InputBegan:Connect(function(input)
+		-- Not gated on `processed`: that is also true when Roblox's own UI
+		-- has the keyboard (a menu, a toast), which ate F8 once.
+		if input.KeyCode == TOGGLE_KEY then
+			toggle()
+		end
+	end)
+	RunService.RenderStepped:Connect(function()
+		if GuiService.MenuIsOpen then
+			if UserInputService:IsKeyDown(TOGGLE_KEY) then
+				toggle()
+			end
+		elseif openAfterMenu then
+			openAfterMenu = false
+			setOpen(true)
 		end
 	end)
 

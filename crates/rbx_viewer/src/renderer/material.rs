@@ -16,6 +16,8 @@ use crate::scene::{Catalog, Maps};
 /// The arrays are always built at this size whatever the quality level asks for:
 /// a level that lowers texture resolution only moves the *view* down the mip
 /// chain (see [`Materials::set_quality`]), so switching level re-uploads nothing.
+/// Full size of a layer; a GPU short on memory gets less, see
+/// [`crate::gpu::material_resolution`].
 const RESOLUTION: u32 = 1024;
 const CHANNELS: usize = 4;
 
@@ -141,10 +143,13 @@ impl Materials {
     /// Whether the arrays already hold exactly what `catalog` would upload,
     /// every layer, every map, in the same order, so every instance buffer's
     /// layer index still points at the right texels. This is the whole of the
-    /// arrays' identity: their size is fixed (see [`RESOLUTION`]) and the
+    /// arrays' identity, along with their size, which only changes when the
+    /// GPU ran out of memory (see [`crate::gpu::material_resolution`]); the
     /// quality level only re-views them.
     pub(super) fn holds(&self, catalog: &Catalog) -> bool {
         self.maps == catalog.resolved_maps()
+            && self.arrays.first().map(wgpu::Texture::width)
+                == Some(crate::gpu::material_resolution())
     }
 
     /// Re-views the packs at the new texture cap and rebuilds the sampler at the
@@ -171,8 +176,9 @@ fn bind(
     // Repeat, not clamp: a material is a tiling pattern, and the whole point
     // of studs-per-tile is that the UVs run well past 1.
     let sampler = texture::sampler(device, wgpu::AddressMode::Repeat, quality.anisotropy);
-    let levels = mip_levels(RESOLUTION);
-    let base = texture::skipped(RESOLUTION, levels, quality.texture_max_size);
+    let side = arrays.first().map_or(RESOLUTION, wgpu::Texture::width);
+    let levels = mip_levels(side);
+    let base = texture::skipped(side, levels, quality.texture_max_size);
     let views: Vec<wgpu::TextureView> = arrays
         .iter()
         .map(|array| {
@@ -218,10 +224,11 @@ fn array(
     old: Option<(&wgpu::Texture, &[Maps])>,
 ) -> wgpu::Texture {
     let layers = u32::try_from(catalog.layers()).unwrap_or(1).max(1);
-    let levels = mip_levels(RESOLUTION);
+    let resolution = crate::gpu::material_resolution();
+    let levels = mip_levels(resolution);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("rbxview material array"),
-        size: extent(layers, RESOLUTION),
+        size: extent(layers, resolution),
         mip_level_count: levels,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -235,7 +242,7 @@ fn array(
     // `None` matches `None`: a layer with no such map is the neutral chain
     // in either array.
     let held = |layer: usize| -> Option<(&wgpu::Texture, u32)> {
-        let (texture, old_maps) = old?;
+        let (texture, old_maps) = old.filter(|(old, _)| old.width() == resolution)?;
         let map = &maps.get(layer)?[kind.index()];
         let found = old_maps
             .iter()
@@ -249,7 +256,7 @@ fn array(
     for layer in 0..layers {
         if let Some((source, from)) = held(layer as usize) {
             for level in 0..levels {
-                let side = RESOLUTION >> level;
+                let side = resolution >> level;
                 encoder.copy_texture_to_texture(
                     layer_copy(source, from, level),
                     layer_copy(&texture, layer, level),
@@ -259,9 +266,9 @@ fn array(
             continue;
         }
         let chain = match catalog.image(layer as usize, kind) {
-            Some(image) => texture::mip_chain(&fit(image, RESOLUTION)),
+            Some(image) => texture::mip_chain(&fit(image, resolution)),
             None => blank
-                .get_or_insert_with(|| texture::mip_chain(&solid(neutral(kind), RESOLUTION)))
+                .get_or_insert_with(|| texture::mip_chain(&solid(neutral(kind), resolution)))
                 .clone(),
         };
         write(queue, &texture, layer, &chain);
@@ -415,7 +422,7 @@ mod tests {
         texture: &wgpu::Texture,
         level: u32,
     ) -> Vec<u8> {
-        let side = RESOLUTION >> level;
+        let side = texture.width() >> level;
         let row = side * CHANNELS as u32;
         let layers = texture.depth_or_array_layers();
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {

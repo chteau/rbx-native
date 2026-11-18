@@ -13,7 +13,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::{h_flex, v_flex, Root};
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
 use crate::tokens;
@@ -28,6 +28,7 @@ mod dragger;
 mod files_account;
 pub(super) mod kit;
 mod nav;
+pub(super) mod open;
 mod page;
 mod panels;
 mod search;
@@ -93,41 +94,9 @@ pub(crate) struct SettingsWindow {
     _subscriptions: Vec<Subscription>,
 }
 
-impl Shell {
-    /// Brings the Settings window forward, opening it if it isn't.
-    /// Opens Settings on the page named `key` (as `Page::from_key` reads
-    /// it). A window already open is only brought forward.
-    pub(crate) fn open_settings_on(&mut self, key: &'static str, cx: &mut Context<Self>) {
-        self.settings_open_on = Some(key);
-        self.open_settings(cx);
-    }
-
-    pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
-        if let Some(existing) = &self.settings_window {
-            if existing
-                .update(cx, |_, window, _| window.activate_window())
-                .is_ok()
-            {
-                return;
-            }
-        }
-        // An install error belongs to the window it was shown in.
-        if matches!(self.theme_install, ThemeInstall::Failed(_)) {
-            self.theme_install = ThemeInstall::Idle;
-        }
-        // Deferred: opening a window renders it at once, and its first
-        // render reads this `Shell`, which is still being updated here.
-        let shell = cx.entity();
-        cx.defer(move |cx| {
-            let opened = SettingsWindow::open(shell.clone(), cx);
-            shell.update(cx, |shell, _| shell.settings_window = opened);
-        });
-    }
-}
-
 impl SettingsWindow {
-    fn open(shell: Entity<Shell>, cx: &mut App) -> Option<WindowHandle<Root>> {
-        let options = WindowOptions {
+    fn options(cx: &App) -> WindowOptions {
+        WindowOptions {
             app_id: Some(crate::APP_ID.to_owned()),
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
@@ -145,17 +114,17 @@ impl SettingsWindow {
             window_decorations: Some(WindowDecorations::Client),
             window_background: crate::theme::active().effects.window,
             ..Default::default()
-        };
-        cx.open_window(options, move |window, cx| {
-            let view = cx.new(|cx| SettingsWindow::new(shell, window, cx));
-            let closing = view.downgrade();
-            window.on_window_should_close(cx, move |_, cx| {
-                closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
-                true
-            });
-            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
-        })
-        .ok()
+        }
+    }
+
+    fn build(shell: Entity<Shell>, window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let view = cx.new(|cx| SettingsWindow::new(shell, window, cx));
+        let closing = view.downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            closing.update(cx, |this, cx| this.commit_typed(cx)).ok();
+            true
+        });
+        view
     }
 
     /// The number fields with their settings' values.

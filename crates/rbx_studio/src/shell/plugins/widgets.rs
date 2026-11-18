@@ -89,8 +89,8 @@ fn backdrop() -> [f32; 3] {
 }
 
 impl Shell {
-    /// Floating widgets, for `plugin_overlays`.
-    pub(super) fn floating_widget_overlays(
+    /// Floating widgets, painted at the window root.
+    pub(in crate::shell) fn floating_widget_overlays(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,

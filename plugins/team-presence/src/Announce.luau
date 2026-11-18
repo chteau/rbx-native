@@ -4,6 +4,8 @@
 --! Cloudflare quick tunnel and posts its address, signed with the place key,
 --! to the room's announce topic on ntfy; the plugin reads the newest genuine
 --! one and talks to that relay. An empty url is the host saying goodbye.
+--! `host` is the id the host answers its loopback health check with, outside
+--! the signature (see announce.rs).
 --! Pure (no HttpService): the Luau tests check it against the Rust encoder.
 
 local Auth = require(script.Parent.Auth)
@@ -23,13 +25,23 @@ local function canonical(room: string, url: string, at: number): string
 	return string.format("rbx-presence/announce/v1\n%s\n%s\n%.0f", room, url, at)
 end
 
+-- The loopback port an rbx-native host on this computer serves `room` on,
+-- mirrored from announce.rs: Studio asks about 127.0.0.1 once, where the
+-- tunnel's address is new every time RbxNative starts.
+function Announce.loopbackPort(room: string): number
+	return 40960 + (tonumber(string.sub(room, 1, 4), 16) or 0) % 8192
+end
+
 -- Whether `url` may be connected to: public HTTPS, or this machine.
 function Announce.allowedUrl(url: string): boolean
 	return string.sub(url, 1, 8) == "https://" or string.sub(url, 1, 17) == "http://127.0.0.1:"
 end
 
 -- `text` decoded if it is a genuine, current announcement for `room`.
-function Announce.verify(key: string, room: string, now: number, text: string): any?
+-- `received` is when the ntfy server got it (unix ms): one stamped far from
+-- that comes from a machine with a wrong clock, and would turn "newest"
+-- hours later, long after its host is gone.
+function Announce.verify(key: string, room: string, now: number, received: number, text: string): any?
 	local ok, message = pcall(Json.decode, text)
 	if not ok or type(message) ~= "table" then
 		return nil
@@ -38,7 +50,11 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	if message.v ~= 1 or type(url) ~= "string" or type(at) ~= "number" or type(sig) ~= "string" then
 		return nil
 	end
-	if at > now + Announce.CLOCK_SKEW_MS or now - at > Announce.MAX_AGE_MS then
+	if
+		at > now + Announce.CLOCK_SKEW_MS
+		or now - at > Announce.MAX_AGE_MS
+		or math.abs(at - received) > Announce.CLOCK_SKEW_MS
+	then
 		return nil
 	end
 	if url ~= "" and not Announce.allowedUrl(url) then
@@ -47,23 +63,29 @@ function Announce.verify(key: string, room: string, now: number, text: string): 
 	if Auth.sign(key, canonical(room, url, at)) ~= sig then
 		return nil
 	end
-	return { url = url, at = at }
+	return { url = url, at = at, host = if type(message.host) == "string" then message.host else nil }
 end
 
--- The host's URL from a run of announcement texts: the newest genuine one,
--- nil when there is none or the newest says the host left.
-function Announce.newest(key: string, room: string, now: number, texts: { string }): string?
+-- The host's URL and id from a run of announcements ({ text, time }: the
+-- message and when the server received it, unix ms): the newest genuine
+-- one, nil when there is none or the newest says the host left.
+function Announce.newest(
+	key: string,
+	room: string,
+	now: number,
+	messages: { { text: string, time: number } }
+): (string?, string?)
 	local best: any = nil
-	for _, text in texts do
-		local message = Announce.verify(key, room, now, text)
+	for _, item in messages do
+		local message = Announce.verify(key, room, now, item.time, item.text)
 		if message and (best == nil or message.at > best.at) then
 			best = message
 		end
 	end
 	if best == nil or best.url == "" then
-		return nil
+		return nil, nil
 	end
-	return best.url
+	return best.url, best.host
 end
 
 return Announce

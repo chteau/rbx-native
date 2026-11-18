@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 
 #[allow(dead_code)]
+pub mod hosted;
+#[allow(dead_code)]
 pub mod studio;
 
 use mlua::{Lua, Table, Value};

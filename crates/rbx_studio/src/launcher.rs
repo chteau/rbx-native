@@ -31,7 +31,8 @@ pub(crate) use cache::{cached_games, read_icon as cached_icon};
 pub(crate) use home_window::reload_all as reload_home;
 pub(crate) use home_window::HomeWindow;
 pub(crate) use key_check::{
-    summary as key_summary, KeyCheck, Summary as KeySummary, Tag as KeyTag,
+    checking as key_checking, summary as key_summary, KeyCheck, Summary as KeySummary,
+    Tag as KeyTag,
 };
 
 /// A check of the stored key, started now, Settings › Account's card.
@@ -52,8 +53,7 @@ fn options(
     let window_size = gpui_kit::size(tokens::scaled_width(size.0), tokens::scaled_width(size.1));
     WindowOptions {
         app_id: Some(crate::APP_ID.to_owned()),
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-            None,
+        window_bounds: Some(WindowBounds::Windowed(crate::fit_to_screen(
             window_size,
             cx,
         ))),
@@ -100,20 +100,25 @@ pub(crate) fn open_wizard(
         "Sign in to Roblox"
     };
     let options = options(title, (1040., 720.), None, cx);
-    cx.open_window(options, move |window, cx| {
-        let view = cx.new(|cx| wizard::Wizard::new(boot, plan, on_finish, window, cx));
-        cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
-    })
-    .ok()
+    let opened = cx
+        .open_window(options, move |window, cx| {
+            let view = cx.new(|cx| wizard::Wizard::new(boot, plan, on_finish, window, cx));
+            cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
+        })
+        .ok();
+    crate::bring_to_front(cx);
+    opened
 }
 
 /// Home (1440×900, resizable down to 1100×700).
 pub(crate) fn open_home(boot: Boot, cx: &mut App) {
     let options = options("RbxNative", (1440., 900.), Some((1100., 700.)), cx);
     let _ = cx.open_window(options, move |window, cx| {
+        crate::mark_primary(window, cx);
         let view = cx.new(|cx| HomeWindow::new(boot, window, cx));
         cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     });
+    crate::bring_to_front(cx);
 }
 
 /// The editor's game picker (1040×720, resizable down to 760×520): Home's

@@ -79,6 +79,10 @@ const ACCOUNT: &str = "open-cloud-api-key";
 /// no keyring behind it) would otherwise keep the splash up forever.
 const RESTORE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Milliseconds [`restore_at_startup`] holds its read back, standing in for
+/// a Keychain prompt nobody has answered yet, to test the late answer.
+const DELAY_VARIABLE: &str = "RBX_NATIVE_KEYRING_DELAY_MS";
+
 /// Set when [`restore_at_startup`] gave up on the store, so Home can say
 /// why no key was loaded instead of claiming there is none.
 static STALLED: AtomicBool = AtomicBool::new(false);
@@ -92,6 +96,14 @@ pub(crate) async fn restore_at_startup(cx: &mut AsyncApp) -> Option<bool> {
     let executor = cx.background_executor().clone();
     let (tx, rx) = futures::channel::oneshot::channel();
     cx.spawn(async move |cx| {
+        if let Some(ms) = std::env::var(DELAY_VARIABLE)
+            .ok()
+            .and_then(|ms| ms.parse().ok())
+        {
+            cx.background_executor()
+                .timer(Duration::from_millis(ms))
+                .await;
+        }
         let has_key = restore(cx).await;
         if let Err(has_key) = tx.send(has_key) {
             // Startup stopped waiting: this is the late answer.
@@ -99,7 +111,10 @@ pub(crate) async fn restore_at_startup(cx: &mut AsyncApp) -> Option<bool> {
             eprintln!(
                 "rbxstudio: the OS credential store answered after all; key loaded: {has_key}"
             );
-            cx.update(crate::launcher::reload_home);
+            cx.update(|cx| {
+                crate::launcher::reload_home(cx);
+                crate::shell::key_arrived(cx);
+            });
         }
     })
     .detach();
@@ -161,6 +176,7 @@ pub(crate) async fn save(key: ApiKey, cx: &mut AsyncApp) -> anyhow::Result<()> {
     write_credentials(URL, ACCOUNT, secret, cx).await?;
     record_active(key.expose_secret(), cx).await;
     ApiKey::install(Some(key));
+    cx.update(crate::shell::key_arrived);
     Ok(())
 }
 
@@ -203,10 +219,10 @@ pub(crate) fn accounts() -> accounts::Accounts {
 
 /// Names the active account after a successful key check, writing the
 /// index only when something changed.
-pub(crate) fn label_active(owner: &str, key_name: &str) {
+pub(crate) fn label_active(owner: &str, key_name: &str, ready_meta: &str) {
     let before = accounts();
     let mut index = before.clone();
-    if index.label_active(owner, key_name) && index != before {
+    if index.label_active(owner, key_name, ready_meta) && index != before {
         save_index(&index);
     }
 }

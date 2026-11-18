@@ -94,6 +94,11 @@ pub(crate) use plugins::install_text_box_keys;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use script_folds::FoldMemory;
+pub(crate) use settings_window::open::{
+    bring_forward as bring_settings_forward, fill_loading as fill_loading_settings,
+    open_loading as open_loading_settings,
+};
+pub(crate) use team_presence::key_arrived;
 pub(crate) use view_snap::PresetView;
 mod toolbox;
 mod tree_keys;
@@ -233,6 +238,8 @@ pub(crate) struct Shell {
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     icon_pack: IconPack,
+    /// The user chose `icon_pack`, so a theme switch leaves it alone.
+    icon_pack_picked: bool,
     /// Which installed icon pack (see `crate::packs`) is drawn over the kit,
     /// and every pack found at startup for the Explorer menu to list,
     /// listed once because the menu is rebuilt every frame.
@@ -294,6 +301,9 @@ pub(crate) struct Shell {
     argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Studio Settings, while open, see `settings_window`.
     settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Settings is opening: its window opens a frame later (see
+    /// `Shell::open_settings`).
+    settings_opening: bool,
     /// Script Templates, while open, see `templates_window`.
     templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Customize Shortcuts, while open, see `shortcuts_window`.
@@ -619,11 +629,22 @@ pub(crate) struct Shell {
     /// One window per torn-out dock, kept in step with the layout by
     /// `shell::panel_window`.
     panel_windows: HashMap<layout::Panel, WindowHandle<gpui_kit::component::Root>>,
+    /// Whether one of the editor's dialogs is showing, which puts the
+    /// torn-out docks' windows away (`shell::panel_window`).
+    dialog_up: bool,
+    /// Where each window put away for a dialog was, to come back to.
+    stowed_panel_windows: HashMap<layout::Panel, Bounds<Pixels>>,
     /// Whether the main window held focus last frame, so a torn-out dock
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
+    /// The editor's own window, which a torn-out dock docks back into and
+    /// is raised with. Set by every render.
+    editor_window: Option<AnyWindowHandle>,
+    /// A dock just torn out by its tab and the screen point it was let go
+    /// at, which its window opens under.
+    torn_at: Option<(layout::Panel, Point<Pixels>)>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 18],
+    _subscriptions: [Subscription; 19],
 }
 
 impl Shell {
@@ -645,6 +666,7 @@ impl Shell {
             selection_occluded,
             light_guides,
             icon_pack,
+            icon_pack_picked,
             unfocused_fps,
             font_scale,
             calibration,
@@ -864,6 +886,7 @@ impl Shell {
         let window_activated = cx.observe_window_activation(window, |shell, window, cx| {
             shell.discord_window_activation(window.is_window_active(), cx);
         });
+        let editor_closed = panel_window::close_with_editor(window, cx);
         // Every keystroke cancels a bare Alt tap, a bound one too: Alt+S runs
         // its action before any key listener sees the S, and without this
         // the Alt coming back up read as a tap and left the menu bar focused
@@ -894,6 +917,7 @@ impl Shell {
             light_guides,
             light_guides_sent: Vec::new(),
             icon_pack,
+            icon_pack_picked: icon_pack_picked.unwrap_or(false),
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
             theme_watch: crate::theme::Watch::new(user.theme.dir.clone()),
@@ -914,6 +938,7 @@ impl Shell {
             sequence: None,
             argon_diff: None,
             settings_window: None,
+            settings_opening: false,
             templates_window: None,
             shortcuts_window: None,
             require_graph_window: None,
@@ -1036,7 +1061,11 @@ impl Shell {
             last_named_layout: None,
             dragging_panel: None,
             panel_windows: HashMap::new(),
+            dialog_up: false,
+            stowed_panel_windows: HashMap::new(),
             window_was_active: true,
+            editor_window: None,
+            torn_at: None,
             output_collapsed,
             mcp: None,
             mcp_jobs: mcp::Jobs::default(),
@@ -1077,6 +1106,7 @@ impl Shell {
                 rig_user_entered,
                 window_activated,
                 alt_chorded,
+                editor_closed,
             ],
         };
 
@@ -1282,6 +1312,11 @@ impl Shell {
         // mutation above, through the exact undo path a keypress would use,
         // a screenshot aid proving a just-applied mutation was reverted.
         shell.apply_debug_undo(cx);
+
+        // `RBX_PLAY_EMBED_TEST` (see `shell::play`): embeds another program
+        // over the 3D view, to check embedding without Roblox.
+        #[cfg(windows)]
+        shell.play_embed_test(window, cx);
 
         // `RBX_STUDIO_SETTINGS` (see `shell::settings_window`): opens Studio
         // Settings with the editor, for a capture.
@@ -1514,6 +1549,9 @@ impl Shell {
         if mode == self.quality_choice {
             return;
         }
+        // A place built from here on (a reopen, a plugin widget) starts
+        // there too, not only the viewport already open.
+        rbx_viewer::prefer_level(mode);
         self.viewport
             .update(cx, |viewport, cx| viewport.set_quality(mode, cx));
         self.quality_choice = mode;
@@ -1967,7 +2005,9 @@ impl Shell {
     /// rows and their expansion state are untouched, only which sprite each
     /// one points at changes (see `Explorer::set_icon_pack`).
     fn set_icon_pack(&mut self, pack: IconPack, cx: &mut Context<Self>) {
+        self.icon_pack_picked = true;
         if pack == self.icon_pack {
+            self.save_settings();
             return;
         }
 
@@ -2051,6 +2091,7 @@ impl Shell {
             selection_occluded: self.selection_occluded,
             light_guides: self.light_guides,
             icon_pack: self.icon_pack,
+            icon_pack_picked: Some(self.icon_pack_picked),
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
             calibration: self.calibration,
@@ -2151,7 +2192,7 @@ impl Render for Shell {
         // areas out of the embedded game window once the frame is drawn.
         gpui_base::occlusion::begin_frame(window.window_handle().window_id());
         #[cfg(any(target_os = "linux", windows))]
-        if self.play.phase == play::Phase::Running {
+        if self.play_embedding() {
             let shell = cx.entity().downgrade();
             window.on_next_frame(move |_, cx| {
                 let _ = shell.update(cx, |shell, _| shell.play_update_holes());
@@ -2189,6 +2230,24 @@ impl Render for Shell {
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);
+        // Built ahead of the workspace, which puts the torn-out docks'
+        // windows away while any of these is showing.
+        let dialogs: Vec<AnyElement> = [
+            self.roblox_dialog(cx),
+            self.play_dialog(cx),
+            self.close_place_dialog(cx),
+            self.toolbox_notice_dialog(cx),
+            self.rig_dialog_overlay(cx),
+            self.animation_publish_overlay(cx),
+            self.animation_id_prompt_overlay(cx),
+            self.save_template_overlay(cx),
+            self.publish_result_overlay(cx),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let plugin_dialogs = self.plugin_dialogs(window, cx);
+        self.dialog_up = !dialogs.is_empty() || !plugin_dialogs.is_empty();
         v_flex()
             .size_full()
             .when_some(tokens::on_ground(tokens::black()), |this, bg| this.bg(bg))
@@ -2257,7 +2316,7 @@ impl Render for Shell {
                     shell.end_resize(cx);
                     shell.scrub = None;
                     shell.end_inspector_drag();
-                    shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.end_panel_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )
@@ -2271,7 +2330,7 @@ impl Render for Shell {
                     shell.end_resize(cx);
                     shell.scrub = None;
                     shell.end_inspector_drag();
-                    shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.end_panel_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )
@@ -2316,17 +2375,10 @@ impl Render for Shell {
             // a popup nested in the tree's own scrolled, virtualised list
             // is clipped by it.
             .children(self.explorer_popups(cx))
-            .children(self.roblox_dialog(cx))
-            .children(self.play_dialog(cx))
-            .children(self.close_place_dialog(cx))
-            .children(self.toolbox_notice_dialog(cx))
-            .children(self.rig_dialog_overlay(cx))
-            .children(self.animation_publish_overlay(cx))
-            .children(self.animation_id_prompt_overlay(cx))
-            .children(self.save_template_overlay(cx))
-            .children(self.publish_result_overlay(cx))
+            .children(dialogs)
             .children(self.command_palette(cx))
-            .children(self.plugin_overlays(window, cx))
+            .children(self.floating_widget_overlays(window, cx))
+            .children(plugin_dialogs)
             .children(crate::updater::toast(cx))
             .children(self.theme_background(true))
     }

@@ -13,6 +13,9 @@ impl HomeWindow {
     /// In the game picker, the experience is handed over and the picker
     /// closes instead; nothing is downloaded.
     pub(super) fn open_experience(&mut self, experience: Experience, cx: &mut Context<Self>) {
+        if self.opening || matches!(self.dialog, Some(Dialog::Downloading { .. })) {
+            return;
+        }
         if !self.hand_over(experience.clone(), None, cx) {
             match home::local_copy(&experience) {
                 Some(path) => {
@@ -61,15 +64,16 @@ impl HomeWindow {
             experience: experience.clone(),
         });
         cx.notify();
-        let Some(key) = ApiKey::from_env_or_config() else {
-            return;
-        };
-        let client = Client::new(Some(key));
         cx.spawn(async move |this, cx| {
+            // The keyring read too: it can take seconds, and the dialog has
+            // to paint first.
             let result = cx
                 .background_spawn({
                     let experience = experience.clone();
-                    async move { home::open_experience(&client, &experience, replace) }
+                    async move {
+                        let client = Client::new(Some(stored_key()?));
+                        home::open_experience(&client, &experience, replace)
+                    }
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
@@ -109,15 +113,16 @@ impl HomeWindow {
             experience: experience.clone(),
         });
         cx.notify();
-        let Some(key) = ApiKey::from_env_or_config() else {
-            return;
-        };
-        let client = Client::new(Some(key));
         cx.spawn(async move |this, cx| {
+            // The keyring read too: it can take seconds, and the dialog has
+            // to paint first.
             let result = cx
                 .background_spawn({
                     let experience = experience.clone();
-                    async move { home::open_whole_game(&client, &experience) }
+                    async move {
+                        let client = Client::new(Some(stored_key()?));
+                        home::open_whole_game(&client, &experience)
+                    }
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
@@ -157,9 +162,16 @@ impl HomeWindow {
     /// dialog closing paints first and the blocking load doesn't run inside
     /// a click handler.
     pub(super) fn open_path_later(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.opening = true;
+        self.dialog = Some(Dialog::Opening {
+            name: file_name(&path),
+        });
+        cx.notify();
         cx.spawn(async move |this, cx| {
+            // Long enough for the Opening dialog to be painted before the
+            // load blocks this thread.
             cx.background_executor()
-                .timer(std::time::Duration::from_millis(16))
+                .timer(std::time::Duration::from_millis(100))
                 .await;
             let _ = this.update(cx, |this, cx| this.open_path(&path, cx));
         })
@@ -168,6 +180,8 @@ impl HomeWindow {
 
     pub(super) fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
         let Some(boot) = self.boot.borrow_mut().take() else {
+            self.opening = false;
+            self.dialog = None;
             return;
         };
         match crate::open_editor(path, boot, cx) {
@@ -194,6 +208,9 @@ impl HomeWindow {
     }
 
     pub(super) fn open_recent(&mut self, place: &RecentPlace, cx: &mut Context<Self>) {
+        if self.opening {
+            return;
+        }
         self.open_path_later(place.path.clone(), cx);
     }
 
@@ -462,6 +479,14 @@ fn download_reason(status: Option<u16>, message: &str) -> String {
         Some(404) => "The place doesn\u{2019}t exist any more".to_string(),
         _ => message.to_string(),
     }
+}
+
+/// The stored key, or the error the download dialog shows without one.
+fn stored_key() -> Result<ApiKey, OpenError> {
+    ApiKey::from_env_or_config().ok_or_else(|| OpenError {
+        status: None,
+        message: "no Open Cloud key is stored".to_string(),
+    })
 }
 
 #[cfg(test)]

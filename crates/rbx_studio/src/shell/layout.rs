@@ -666,9 +666,13 @@ impl Layout {
     /// therefore opens the editor rather than stopping it, which is how
     /// `Settings::load` already treats every other field.
     pub(crate) fn restore(saved: &SavedLayout) -> Self {
+        // Nothing starts shut either: the default's closed tool panels
+        // would count as claimed and drop a docked Collaborators (say)
+        // from the file, which the next save then writes as closed.
         let mut layout = Layout {
             edges: Default::default(),
             floating: Vec::new(),
+            closed: Vec::new(),
             ..Layout::default()
         };
 

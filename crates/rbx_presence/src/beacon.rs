@@ -90,7 +90,12 @@ pub fn conflict<'a>(
 }
 
 /// Posts this editor's beacon to `place_id`'s topic on `ntfy`.
-pub fn publish(ntfy: &str, place_id: u64, fp: &str, from: &str) -> Result<(), String> {
+pub fn publish(
+    ntfy: &str,
+    place_id: u64,
+    fp: &str,
+    from: &str,
+) -> Result<(), crate::announce::PostError> {
     let body = encode(fp, from, "rbx-native", crate::now_ms());
     crate::announce::post(ntfy, &topic(place_id), &body)
 }
@@ -102,7 +107,7 @@ pub fn read(ntfy: &str, place_id: u64, fp: &str, from: &str) -> Result<Option<St
         fp,
         from,
         crate::now_ms(),
-        texts.iter().map(String::as_str),
+        texts.iter().map(|(text, _)| text.as_str()),
     ))
 }
 

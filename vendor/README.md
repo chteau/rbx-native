@@ -99,7 +99,8 @@ areas out of the embedded Roblox window (X Shape), so popups draw above it.
 Unmodified crates.io 0.3.4 source (its `examples/`, `tests/` and `docs/`
 dropped, and their `[[example]]`/`[[test]]` entries with them), patched in
 through the root `Cargo.toml`'s `[patch.crates-io]`, plus hover styles that
-ease instead of snapping, each piece marked "rbx-native addition":
+ease instead of snapping and one window fix, each piece marked "rbx-native
+addition":
 
 - `src/hover_transition.rs` (new): the `HoverTransition` global (a
   duration), `HoverFade` (one element's blend: which way it is heading and
@@ -113,6 +114,9 @@ ease instead of snapping, each piece marked "rbx-native addition":
   them outright, and `InteractiveElementState` keeps the two `HoverFade`s.
   A running fade asks for the next frame; a settled one asks for nothing.
 - `src/gpui.rs`: the module and its re-export.
+- `src/window.rs`: `Window::new` maps the platform window only when
+  `WindowOptions::show` asks for it. X11 and Wayland mapped every window
+  regardless, so Home's hidden Settings host flashed over the screen.
 
 GPUI has no property transitions of its own, so this is what lets every
 `hover`/`group_hover` style in the editor — and in `gpui-base`'s widgets —
@@ -125,7 +129,7 @@ this crate's own tests need fonts from outside it and do not build here.
 
 To upgrade GPUI: re-copy the matching `gpui-pre` from
 `~/.cargo/registry/src/*/`, drop the example and test targets from its
-`Cargo.toml`, re-apply the three marked pieces, and bump the version.
+`Cargo.toml`, re-apply the marked pieces, and bump the version.
 
 ## `gpui-pre-apple` (0.3.4, Apache-2.0, `zed-industries/zed`'s `gpui_apple` as published)
 
@@ -149,4 +153,30 @@ marked "rbx-native fix": the main and path-sprite blend states use
 `D3D11_BLEND_ONE`. Upstream adds the alphas of stacked shapes, so on
 Windows the DirectComposition swap chain came out opaque under every
 see-through theme. Re-apply it (two lines) when upgrading with `gpui-pre`.
+
+Also marked "rbx-native fix", in `src/directx_renderer.rs`:
+`CreateTargetForHwnd` gets `topmost: false`, so the editor's composition
+tree sits behind child windows. Upstream draws it on top, which hid the
+embedded Roblox client (a child `HWND` over the 3D view) under the editor.
+
+And in `src/platform.rs`, the save dialog's file types come from the
+suggested name's extension (`place.rbxl` offers Roblox place, Roblox XML
+place, then All files) instead of only "All files", and a dialog with no
+active window of ours to hang off uses our first window, so it opens over
+the editor rather than in the screen's corner.
+
+And one more in `src/window.rs`, marked the same way: `WindowBorderOffset`
+measures how far the client area sits in from the window's left and top
+edge (`ClientToScreen`) and `calculate_window_rect`/`calculate_client_rect`
+use that instead of half of each offset. A window with a hidden title bar
+has no frame at the top, so upstream opened it half the bottom frame
+(about 4 px at 125%) above the bounds it was given, and a window reopened
+at its saved bounds crept up every time.
+
+And, in the same file, a `WindowKind::Floating` window is created owned by
+the root owner of the window active when it opens (`GetActiveWindow`,
+`GetAncestor(GA_ROOTOWNER)`) and without `WS_EX_APPWINDOW`. Upstream made it
+a plain top-level window, so a torn-out plugin dock went behind the editor
+the moment the editor was clicked. Owned, it stays above the editor, hides
+with it when minimized and has no taskbar button of its own.
 

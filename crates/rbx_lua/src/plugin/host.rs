@@ -159,9 +159,9 @@ impl PluginHost {
         Some((plugin.info.name.clone(), w.key.clone()))
     }
 
-    /// Where a floating dock widget was last left (`[x, y, width, height]`
-    /// in window pixels), kept in its plugin's settings like Studio keeps
-    /// its layout between sessions.
+    /// Where a floating dock widget's window was last left (`[x, y, width,
+    /// height]` in screen pixels), kept in its plugin's settings like
+    /// Studio keeps its layout between sessions.
     pub fn widget_rect(&self, widget: UiId) -> Option<[f32; 4]> {
         let (name, key) = self.widget_owner(widget)?;
         self.shared.borrow().widget_rect(&name, &key)

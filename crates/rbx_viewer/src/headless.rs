@@ -15,6 +15,7 @@ use crate::capture::{Offscreen, Rendered};
 use crate::changes::Roles;
 use crate::controller::{CameraFeel, Controller, Start, DEFAULT_SENSITIVITY};
 use crate::gizmo::Gizmo;
+use crate::gpu;
 use crate::input::{CameraInput, Input};
 use crate::load::{Loaded, Resident, Toggles};
 use crate::pick::Selected;
@@ -25,6 +26,8 @@ use crate::view::View;
 
 mod assets;
 mod park;
+#[cfg(test)]
+mod tests;
 
 pub use park::Parked;
 
@@ -56,7 +59,14 @@ pub struct GuiCanvas {
 /// actually displayed, and only when [`Headless::tick`] says the view moved.
 pub struct Headless {
     offscreen: Offscreen,
+    /// The level the host asked for; what is drawn is capped by `rung`.
     quality: QualityLevel,
+    /// What the place fit in GPU memory at: its level caps every
+    /// [`Headless::set_quality`], and it steps down again when the GPU runs
+    /// out later on (see [`Headless::recover`]).
+    rung: gpu::Rung,
+    /// [`gpu::ooms`] as of the last build or step down.
+    ooms: u32,
     /// What [`Headless::set_calibration`] last set, kept for its band ends.
     calibration: crate::lighting::Calibration,
     /// What the embedder asked the renderer to show that the place itself does
@@ -142,6 +152,30 @@ impl Headless {
         Headless::from_dom(&dom, textures).map_err(|err| format!("{err} in {path:?}"))
     }
 
+    /// [`Headless::load`] on wgpu's no-op device: no adapter, no driver and
+    /// no shader compiled, so it returns at once and draws nothing. For a
+    /// host that never shows its place, where a real renderer only cost
+    /// seconds (tens on a laptop GPU compiling every pipeline).
+    pub fn load_undrawn(path: &Path) -> Result<Self, String> {
+        let dom = crate::load::read_place(path)?;
+        let device = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        Headless::build(
+            &dom,
+            Toggles {
+                textures: false,
+                materials: false,
+                lights: true,
+                clock_time: None,
+                show_development_gui: false,
+            },
+            ReflectionDatabase::embedded(),
+            View::default(),
+            QualityLevel::MAX,
+            Some(device),
+        )
+        .map_err(|err| format!("{err} in {path:?}"))
+    }
+
     /// [`Headless::load`] for a tree already in memory, e.g. one plugin
     /// widget's GUI, drawn on its own with [`Headless::render_gui`].
     pub fn from_dom(dom: &WeakDom, textures: bool) -> Result<Self, String> {
@@ -152,21 +186,31 @@ impl Headless {
             clock_time: None,
             show_development_gui: false,
         };
-        Headless::build(
-            dom,
-            toggles,
-            ReflectionDatabase::embedded(),
-            View::default(),
-        )
+        // An embedder builds this from a UI callback, where a panic aborts
+        // the whole process instead of unwinding (any Win32 window message).
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Headless::build(
+                dom,
+                toggles,
+                ReflectionDatabase::embedded(),
+                View::default(),
+                QualityLevel::MAX,
+                None,
+            )
+        }))
+        .unwrap_or_else(|_| Err("the 3D renderer crashed building this place".to_owned()))
     }
 
     /// [`Headless::from_dom`] with the toggles, database and view given,
-    /// at the default quality and calibration.
+    /// at the default quality and calibration, no higher than level `cap`,
+    /// on `device` or, without one, a GPU of its own.
     fn build(
         dom: &WeakDom,
         toggles: Toggles,
         database: ReflectionDatabase,
         view: View,
+        cap: u8,
+        device: Option<(wgpu::Device, wgpu::Queue)>,
     ) -> Result<Self, String> {
         let mut resident = Resident::streaming();
         let mut loaded = Loaded::from_dom(dom, &database, toggles, &mut resident)
@@ -185,10 +229,26 @@ impl Headless {
 
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();
-        let quality = QualityLevel::default();
+        // A device handed in is shared or never drawn on (wgpu's no-op one
+        // for a host that is never shown), so it doesn't walk down the
+        // out-of-memory rungs: only a GPU of our own does.
+        let (offscreen, built, ceiling) = match device {
+            Some((device, queue)) => {
+                let rung = gpu::Rung::start(cap);
+                let offscreen =
+                    Offscreen::on_device(device, queue, loaded.world(), &rung.profile(), &view);
+                (offscreen, rung, cap)
+            }
+            None => Offscreen::new(loaded.world(), cap, &view)?,
+        };
         let mut headless = Headless {
-            offscreen: Offscreen::new(loaded.world(), &quality.profile(), &view)?,
-            quality,
+            offscreen,
+            quality: QualityLevel::Level(built.level),
+            rung: gpu::Rung {
+                level: ceiling,
+                ..built
+            },
+            ooms: gpu::ooms(),
             calibration: crate::lighting::Calibration::default(),
             view,
             bounds,
@@ -323,17 +383,62 @@ impl Headless {
     /// that view them, the shadow map and, where the sample count changes, the
     /// surface pipelines are rebuilt. Setting the level it is already at costs
     /// nothing.
+    ///
+    /// Never above the level the place fit in GPU memory at. After the GPU
+    /// ran out of memory, a change of level rebuilds everything rather than
+    /// re-viewing what may be invalid (see [`Headless::recover`]).
     pub fn set_quality(&mut self, level: QualityLevel) {
-        if level == self.quality {
+        gpu::prefer_level(level);
+        if self.ooms != gpu::ooms() {
+            self.quality = level;
+            self.recover();
             return;
         }
+        let before = self.drawn_level();
         self.quality = level;
-        self.offscreen.set_quality(&self.profile());
+        if self.drawn_level() != before {
+            self.offscreen.set_quality(&self.profile());
+        }
     }
 
-    /// The current level's profile under the calibrated band ends.
+    fn drawn_level(&self) -> u8 {
+        self.quality.resolved().min(self.rung.level)
+    }
+
+    /// The drawn level's profile under the calibrated band ends.
     fn profile(&self) -> crate::quality::QualityProfile {
-        self.quality.profile_in(&self.calibration.quality_bands)
+        self.rung.limit(
+            QualityLevel::Level(self.drawn_level()).profile_in(&self.calibration.quality_bands),
+        )
+    }
+
+    /// Steps one [`gpu::Rung`] down after the GPU ran out of memory outside a
+    /// build (a level switch, a bigger frame, assets landing), and makes again
+    /// everything that may have been left invalid: the frame targets, the
+    /// shadow maps and every bind group viewing them (through the level
+    /// switch), then the material arrays at the smaller size (through the
+    /// rebuild). One rung per call: running out again moves [`gpu::ooms`],
+    /// and the next frame steps on down.
+    fn recover(&mut self) {
+        self.ooms = gpu::ooms();
+        let from = gpu::Rung {
+            level: self.drawn_level(),
+            lean: gpu::lean().max(self.rung.lean),
+            ..self.rung
+        };
+        let Some(rung) = from.step_down() else {
+            eprintln!("rbxview: out of GPU memory even at {from}, nothing smaller to try");
+            return;
+        };
+        eprintln!("rbxview: ran out of GPU memory, rebuilding at {rung}");
+        rung.apply();
+        self.rung = rung;
+        self.offscreen.drop_targets();
+        self.offscreen.set_quality(&self.profile());
+        self.offscreen.release();
+        self.offscreen.reload(self.loaded.world(), &self.view);
+        self.offscreen.release();
+        self.sync_skinning();
     }
 
     /// Recalibrates the renderer's tuned constants (see
@@ -351,9 +456,10 @@ impl Headless {
         }
     }
 
-    /// The level [`Headless::set_quality`] last set.
+    /// The level drawn: what [`Headless::set_quality`] last set, or lower
+    /// where the GPU had no memory for it.
     pub fn quality(&self) -> QualityLevel {
-        self.quality
+        QualityLevel::Level(self.drawn_level())
     }
 
     /// Swaps the viewport's main camera between perspective and orthographic
@@ -849,6 +955,9 @@ impl Headless {
     /// still in flight with [`Headless::take_frame`], or it never reaches the
     /// screen.
     pub fn render_frame(&mut self, width: u32, height: u32) -> Result<Option<Rendered>, String> {
+        if self.ooms != gpu::ooms() {
+            self.recover();
+        }
         self.offscreen.set_elapsed(self.start.elapsed());
         self.offscreen.queue_frame((width, height), self.from)
     }

@@ -354,6 +354,31 @@ pub(crate) fn text_disabled() -> Rgba {
     theme::color("text_disabled")
 }
 
+/// An inactive tab's label: `idle` on an opaque window, but on a see-through
+/// or blurred one whatever the desktop shows through the panel sits behind
+/// it too, so the label is pulled toward [`text`] until it clears 7:1
+/// against the panel's own colour.
+pub(crate) fn text_tab_idle(idle: Rgba) -> Rgba {
+    if theme::active().effects.window == gpui_kit::WindowBackgroundAppearance::Opaque {
+        return idle;
+    }
+    let panel = Rgba { a: 1., ..dock() };
+    let full = text();
+    (0..=10)
+        .map(|step| {
+            let t = step as f32 / 10.;
+            let mix = |a: f32, b: f32| a + (b - a) * t;
+            Rgba {
+                r: mix(idle.r, full.r),
+                g: mix(idle.g, full.g),
+                b: mix(idle.b, full.b),
+                a: mix(idle.a, full.a),
+            }
+        })
+        .find(|label| crate::accent::contrast(*label, panel) >= 7.)
+        .unwrap_or(full)
+}
+
 // ----------------------------------------------------------- tool accents
 
 /// One pastel per transform tool, used **only** on that tool's own ribbon

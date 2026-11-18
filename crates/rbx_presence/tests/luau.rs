@@ -110,6 +110,46 @@ fn data_json_round_trip() {
     }
 }
 
+/// Studio on a French Mac formats and parses numbers with a decimal comma;
+/// JSON on the wire must still use a point both ways.
+#[test]
+fn data_json_with_a_decimal_comma_locale() {
+    let lua = new_lua();
+    lua.load(
+        r#"
+        local format, parse = string.format, tonumber
+        string.format = function(pattern, ...)
+            local text = format(pattern, ...)
+            if string.find(pattern, "%%[%d.]*[fgeE]") then
+                text = string.gsub(text, "%.", ",")
+            end
+            return text
+        end
+        tonumber = function(text, base)
+            if base == nil and type(text) == "string" then
+                if string.find(text, ".", 1, true) then
+                    return nil
+                end
+                text = string.gsub(text, ",", ".")
+            end
+            return parse(text, base)
+        end
+        "#,
+    )
+    .exec()
+    .unwrap();
+    assert!(fixture_text("state_studio.json").contains("0.25"));
+    let decode = func(&lua, "Json", "decode");
+    let encode = func(&lua, "Json", "encode");
+    for name in ["state_studio.json", "state_native.json", "snapshot.json"] {
+        let text = fixture_text(name);
+        let text = text.trim();
+        let value: Value = decode.call(text).unwrap();
+        let again: String = encode.call(value).unwrap();
+        assert_eq!(again, text, "{name}");
+    }
+}
+
 #[test]
 fn data_schema() {
     let lua = new_lua();
@@ -704,19 +744,29 @@ fn announce_cross_checks_with_rust() {
     let key = "k".repeat(64);
     let room = "0123456789abcdef0123456789abcdef";
     let now = 1_800_000_000_000u64;
-    let old = announce::encode(&key, room, "https://old.trycloudflare.com", now - 60_000);
-    let new = announce::encode(&key, room, "https://new.trycloudflare.com", now - 1_000);
-    let bye = announce::encode(&key, room, "", now - 500);
-    let forged = announce::encode("other", room, "https://evil.example", now);
+    let old = announce::encode(
+        &key,
+        room,
+        "https://old.trycloudflare.com",
+        "",
+        now - 60_000,
+    );
+    let new = announce::encode(&key, room, "https://new.trycloudflare.com", "", now - 1_000);
+    let bye = announce::encode(&key, room, "", "", now - 500);
+    let forged = announce::encode("other", room, "https://evil.example", "", now);
 
     let newest = func(&lua, "Announce", "newest");
-    let texts = |items: &[&str]| {
+    let received = |items: &[(&str, u64)]| {
         let t = lua.create_table().unwrap();
-        for (i, item) in items.iter().enumerate() {
-            t.set(i + 1, *item).unwrap();
+        for (i, (text, time)) in items.iter().enumerate() {
+            let item = lua.create_table().unwrap();
+            item.set("text", *text).unwrap();
+            item.set("time", *time as f64).unwrap();
+            t.set(i + 1, item).unwrap();
         }
         t
     };
+    let texts = |items: &[&str]| received(&items.iter().map(|t| (*t, now)).collect::<Vec<_>>());
     let got: Option<String> = newest
         .call((
             key.as_str(),
@@ -734,10 +784,31 @@ fn announce_cross_checks_with_rust() {
         .call((key.as_str(), room, now as f64, texts(&[&forged])))
         .unwrap();
     assert_eq!(only_forged, None);
+    // Stamped just now by a clock nine hours fast, nine hours ago.
+    let skewed = announce::encode(&key, room, "https://gone.trycloudflare.com", "", now);
+    let got: Option<String> = newest
+        .call((
+            key.as_str(),
+            room,
+            now as f64,
+            received(&[(&old, now - 59_000), (&skewed, now - 9 * 3_600_000)]),
+        ))
+        .unwrap();
+    assert_eq!(got.as_deref(), Some("https://old.trycloudflare.com"));
 
     let topic = func(&lua, "Announce", "topic");
     let t: String = topic.call(room).unwrap();
     assert_eq!(t, announce::topic(room));
+
+    let loopback = func(&lua, "Announce", "loopbackPort");
+    for room in [
+        room,
+        "ffffffffffffffffffffffffffffffff",
+        "00000000000000000000000000000000",
+    ] {
+        let port: u16 = loopback.call(room).unwrap();
+        assert_eq!(port, announce::loopback_port(room));
+    }
 }
 
 /// The plugin's beacon reads the Rust side's and the other way round: same

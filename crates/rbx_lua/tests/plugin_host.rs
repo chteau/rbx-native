@@ -97,6 +97,12 @@ impl Fixture {
         self.host.dispatch(&mut self.dom, ctx, input)
     }
 
+    /// `input` to another host over this fixture's DOM: a later session.
+    fn send_with(&mut self, host: &mut PluginHost, input: Input) -> Outcome {
+        let ctx = self.context();
+        host.dispatch(&mut self.dom, ctx, input)
+    }
+
     fn send_ctx(&mut self, ctx: Context, input: Input) -> Outcome {
         self.host.dispatch(&mut self.dom, ctx, input)
     }
@@ -654,6 +660,49 @@ fn dock_widgets_restore_and_bind_to_close() {
     assert!(texts(&out, OutputKind::Print).contains(&"start true false false".to_string()));
 }
 
+/// The Windows retest: a widget left open at quit has to come back open.
+/// The saved `Enabled` is restored before the plugin's own code sees the
+/// widget, starting up never writes it back as the info's default, and
+/// only a write by the plugin itself (Lemonade shuts its widget until its
+/// onboarding is done) closes it again, as in Studio.
+#[test]
+fn a_widget_left_open_is_restored_before_the_plugin_reads_it() {
+    let src = r#"
+        local w = plugin:CreateDockWidgetPluginGui("w", DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, false, 200, 100, 100, 50))
+        print("restored", w.Enabled)
+        if plugin:GetSetting("gate") then w.Enabled = false end
+    "#;
+    let (mut f, _) = started("restore_order", src);
+    let id = f.host.ui().widgets[0].id;
+    f.send(Input::WidgetOpened(id));
+    let file = f._dir.0.join("TestPlugin.json");
+    let saved = |file: &std::path::Path| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
+    };
+    let rerun = |f: &mut Fixture| {
+        let mut next = PluginHost::new(ReflectionDatabase::embedded(), Some(f._dir.0.clone()));
+        next.add(roblox(src));
+        let mut out = f.send_with(&mut next, Input::Start);
+        for _ in 0..4 {
+            out.output
+                .extend(f.send_with(&mut next, Input::Tick).output);
+        }
+        (next, out)
+    };
+
+    let (next, out) = rerun(&mut f);
+    assert!(texts(&out, OutputKind::Print).contains(&"restored true".to_string()));
+    assert!(next.ui().widgets[0].enabled);
+    assert_eq!(saved(&file)["__rbxnative_widgets"]["w"], true);
+
+    let mut map = saved(&file);
+    map["gate"] = serde_json::Value::Bool(true);
+    std::fs::write(&file, map.to_string()).unwrap();
+    let (next, _) = rerun(&mut f);
+    assert!(!next.ui().widgets[0].enabled);
+    assert_eq!(saved(&file)["__rbxnative_widgets"]["w"], false);
+}
+
 /// Selection To Camera plays a click sound from its widget; that must not
 /// stop its script.
 #[test]
@@ -665,4 +714,61 @@ fn a_widget_sound_plays_without_error() {
     "#;
     let (_f, out) = started("sound", src);
     assert!(texts(&out, OutputKind::Print).contains(&"sound ok".to_string()));
+}
+
+#[test]
+fn a_gui_parented_to_nil_never_reaches_the_editor() {
+    // F3X builds its UI under a `ScreenGui` it never parents, and tears it
+    // down later: neither is an edit to the place nor a screen to draw.
+    let src = r#"
+        local gui = Instance.new("ScreenGui")
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.fromOffset(200, 200)
+        frame.Parent = gui
+        task.wait()
+        frame.BackgroundColor3 = Color3.new(1, 0, 0)
+        task.wait()
+        gui:Destroy()
+        print("gone")
+    "#;
+    let (f, out) = started("nilgui", src);
+    assert!(
+        texts(&out, OutputKind::Error).is_empty(),
+        "{:?}",
+        out.output
+    );
+    assert_eq!(texts(&out, OutputKind::Print), vec!["gone".to_string()]);
+    assert!(out.changes.is_empty(), "{:?}", out.changes);
+    for r in all_refs(&f.dom) {
+        assert_ne!(f.dom.get(r).unwrap().class(), "ScreenGui");
+    }
+}
+
+#[test]
+fn destroying_fires_while_the_children_are_still_there() {
+    // Fusion's cleanup (Lemonade) unparents each child from `Destroying`.
+    let src = r#"
+        local folder = Instance.new("Folder")
+        local child = Instance.new("Part")
+        child.Parent = folder
+        local heard = 0
+        folder.Destroying:Connect(function()
+            heard += 1
+            print(child.Parent == folder)
+            child.Parent = nil
+        end)
+        folder:Destroy()
+        task.wait()
+        print(heard)
+    "#;
+    let (_f, out) = started("destroying", src);
+    assert!(
+        texts(&out, OutputKind::Error).is_empty(),
+        "{:?}",
+        out.output
+    );
+    assert_eq!(
+        texts(&out, OutputKind::Print),
+        vec!["true".to_string(), "1".to_string()]
+    );
 }

@@ -46,6 +46,9 @@ impl Shell {
             self.filter
                 .update(cx, |filter, cx| filter.focus(window, cx));
         }
+        if super::view_snap::focus_key(keystroke, &window.context_stack()) {
+            self.focus_selection(cx);
+        }
         if crate::shortcuts::pressed(crate::shortcuts::Command::Fullbright, keystroke) {
             self.set_fullbright(!self.fullbright, cx);
         }

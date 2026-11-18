@@ -97,6 +97,13 @@ describe("Room", () => {
     expect(room.put(user(1), 1000)).toBeNull();
   });
 
+  it("rates Studio and rbx-native of one user apart", () => {
+    const room = new Room();
+    for (let i = 0; i < RATE_BURST; i++) room.put(user(1), 0);
+    expect(room.put(user(1), 0)).toEqual({ status: 429, error: "rate" });
+    expect(room.put({ ...user(1), client: "rbx-native" }, 0)).toBeNull();
+  });
+
   it("refuses a new user when full but accepts existing ones", () => {
     const room = new Room();
     for (let i = 0; i < MAX_USERS; i++) room.put(user(i), 0);

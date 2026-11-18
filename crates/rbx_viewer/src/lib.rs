@@ -69,7 +69,7 @@ pub use controller::{CameraFeel, Flight};
 pub use gizmo::Gizmo;
 // Only so a report (`examples/bench`) can label its numbers with the GPU that
 // produced them; nothing in the render path itself asks for this.
-pub use gpu::describe_adapter;
+pub use gpu::{describe_adapter, prefer_level};
 #[cfg(not(target_arch = "wasm32"))]
 pub use headless::{GuiCanvas, Headless, Parked};
 pub use input::{CameraInput, CameraKey};

@@ -34,12 +34,13 @@ impl Lot {
             .map(|&root| subtree(&self.parked, root))
             .collect();
         let left: HashSet<Ref> = self.parked.move_subtrees(&roots, dom).into_iter().collect();
-        let hidden = roots
+        let mut hidden: HashSet<Ref> = roots
             .iter()
             .zip(subtrees)
             .filter(|(root, _)| !left.contains(root))
             .flat_map(|(_, refs)| refs)
             .collect();
+        hidden.extend(detached(dom));
         Merge {
             hidden,
             place_roots,
@@ -47,11 +48,12 @@ impl Lot {
     }
 
     /// Parks every root of `dom` that is not in `merge.place_roots` (the
-    /// plugin roots merged back, plus whatever a plugin created or
-    /// parented to `nil`), then returns `log` rewritten for the editor:
+    /// plugin roots merged back, plus any new root), then returns `log`
+    /// rewritten for the editor, where "hidden" means parked or parented
+    /// to `nil` (see [`detached`]):
     /// - a change about an instance hidden before (or created during the
     ///   dispatch) and hidden after is dropped;
-    /// - an instance visible before and parked now is reported `Removed`,
+    /// - an instance visible before and hidden now is reported `Removed`,
     ///   itself and every descendant, once, at its first mention;
     /// - an instance hidden before and visible now (a plugin parented it
     ///   into the place) is reported `Added`, itself and every descendant,
@@ -73,7 +75,9 @@ impl Lot {
             .copied()
             .filter(|root| !merge.place_roots.contains(root))
             .collect();
-        let hidden_after = park.iter().flat_map(|&root| subtree(dom, root)).collect();
+        let mut hidden_after: HashSet<Ref> =
+            park.iter().flat_map(|&root| subtree(dom, root)).collect();
+        hidden_after.extend(detached(dom));
         let created = log
             .iter()
             .filter_map(|change| match change {
@@ -166,6 +170,17 @@ impl View {
         }
         out
     }
+}
+
+/// Every instance parented to nil in `dom`, descendants included. They
+/// stay in the place DOM (see `WeakDom::unparent`) but the editor can't
+/// see them any more than a parked one: F3X builds its whole UI under a
+/// `ScreenGui` it never parents, and a change to it is no edit to the
+/// place, nor a screen for the viewport to draw.
+fn detached(dom: &WeakDom) -> Vec<Ref> {
+    dom.unparented_refs()
+        .flat_map(|top| subtree(dom, top))
+        .collect()
 }
 
 /// Every referent in the subtree under `root` (root included), in `dom`.

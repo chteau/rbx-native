@@ -17,23 +17,29 @@ use crate::tokens;
 const WIDTH: f32 = 340.;
 
 /// What shaping touches, and what this OS needs for it (Windows used to be
-/// told it needed Sober or Roséline, the Linux clients).
+/// told it needed Sober or Roséline, the Linux clients). [`footnote`] adds
+/// the elevation the next shaped Play still asks for.
+const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
+     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed.";
 #[cfg(windows)]
-const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
-     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Uses the bundled \
-     WinDivert, and asks for administrator approval the first time.";
+const NEEDS: &str = " Uses the bundled WinDivert.";
 #[cfg(target_os = "macos")]
-const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
-     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Asks for your \
-     password once, to install its helper.";
+const NEEDS: &str = "";
 #[cfg(not(any(windows, target_os = "macos")))]
-const FOOTNOTE: &str = "Shapes the Roblox client\u{2019}s UDP game traffic, so the game itself \
-     lags. Downloads (TCP) and this editor\u{2019}s live view are not slowed. Needs Sober or \
-     Ros\u{e9}line.";
+const NEEDS: &str = " Needs Sober or Ros\u{e9}line.";
+
+fn footnote(helper_running: bool) -> String {
+    match super::elevation(helper_running) {
+        Some(e) => format!("{FOOTNOTE}{NEEDS} The first shaped Play {e}."),
+        None => format!("{FOOTNOTE}{NEEDS}"),
+    }
+}
 const ROWS: [(Field, &str, &str); 3] = [
     (Field::Latency, "Latency", "ms"),
     (Field::Jitter, "Jitter", "ms"),
-    (Field::Loss, "Packet loss", "%"),
+    // Studio's own cap (`netsim::MAX_LOSS_PERCENT`): typing 2 silently
+    // came back as 0.50, so the label says where it stops.
+    (Field::Loss, "Packet loss (max 0.5)", "%"),
 ];
 
 /// The open popover's widgets; the values themselves live in `staged`.
@@ -45,6 +51,11 @@ pub(in crate::shell) struct Popover {
     pub(super) save_error: Option<&'static str>,
     /// The last Apply's outcome when it needs saying.
     pub(in crate::shell) status: Option<String>,
+    /// Held by the popover itself, so Esc reaches it with no field focused.
+    pub(super) focus: FocusHandle,
+    /// [`FOOTNOTE`] as it stood when the popover opened (macOS reads a
+    /// file to know).
+    footnote: String,
     pub(super) _subscriptions: Vec<Subscription>,
 }
 
@@ -92,20 +103,33 @@ impl Shell {
                 inputs.push((way, field, input));
             }
         }
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
         self.play.network.popover = Some(Popover {
+            focus,
             inputs,
             menu_open: false,
             saving: None,
             save_error: None,
             status: None,
+            footnote: footnote(self.play.network.helper_running()),
             _subscriptions: subscriptions,
         });
         cx.notify();
     }
 
-    /// Studio's dismissal: staged edits are dropped, the pill shows the
-    /// applied setting again.
+    /// Dismissal (click outside, the tile, Esc) applies a staged change.
+    /// Studio drops it, which made it easy to pick a preset, close the
+    /// popover and Play unshaped thinking the preset was set.
     fn network_close(&mut self, cx: &mut Context<Self>) {
+        let network = &self.play.network;
+        if network
+            .staged
+            .as_ref()
+            .is_some_and(|staged| *staged != network.applied)
+        {
+            self.network_apply(cx);
+        }
         if self.play.network.popover.take().is_some() {
             self.play.network.closed_at = Some(std::time::Instant::now());
         }
@@ -152,8 +176,9 @@ impl Shell {
         )
         .tooltip({
             let name = network.shown().name();
+            let running = network.helper_running();
             move |window, cx| {
-                let text = match super::prerequisite() {
+                let text = match super::prerequisite(running) {
                     Some(needs) => format!("Network simulation: {name} ({needs})"),
                     None => format!("Network simulation: {name}"),
                 };
@@ -279,6 +304,10 @@ impl Shell {
             ui::button("network-reset", "Reset", Weight::Ghost, true).on_click(cx.listener(
                 |shell, _, window, cx| {
                     shell.play.network.reset();
+                    if let Some(popover) = &mut shell.play.network.popover {
+                        popover.saving = None;
+                        popover.save_error = None;
+                    }
                     shell.network_sync_inputs(window, cx);
                 },
             ))
@@ -368,7 +397,14 @@ impl Shell {
                 inset: false,
             }])
             .text_color(tokens::text())
+            .track_focus(&popover.focus)
             .on_mouse_down_out(cx.listener(|shell, _, _, cx| shell.network_close(cx)))
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" {
+                    shell.network_close(cx);
+                    cx.stop_propagation();
+                }
+            }))
             .child(
                 h_flex()
                     .gap(px(8.))
@@ -390,7 +426,7 @@ impl Shell {
             .child(
                 ui::text(10.5, 14.)
                     .text_color(tokens::text3())
-                    .child(FOOTNOTE),
+                    .child(popover.footnote.clone()),
             )
             .when_some(popover.status.clone(), |this, status| {
                 this.child(ui::text(11., 14.).text_color(tokens::text2()).child(status))

@@ -11,8 +11,8 @@ local Notes = require(script.Parent.Notes)
 local Paths = require(script.Parent.Paths)
 local Sync = require(script.Parent.CoeditSync)
 
-local FLUSH_EVERY = 0.3
-local POLL_EVERY = 0.5
+local FLUSH_EVERY = 3 / 10
+local POLL_EVERY = 1 / 2
 -- The longest wait between polls while the relay can't be read.
 local POLL_BACKOFF_MAX = 10
 

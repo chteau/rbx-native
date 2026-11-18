@@ -3,11 +3,11 @@
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
 
@@ -19,8 +19,77 @@ pub struct Tunnel {
 
 impl Drop for Tunnel {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        end(&mut self.child);
+    }
+}
+
+/// Stops the tunnel and reaps it. On macOS that is the watching shell's
+/// whole process group (see [`command`]): killing the shell alone would
+/// leave cloudflared running under launchd.
+fn end(child: &mut Child) {
+    #[cfg(target_os = "macos")]
+    if let Ok(group) = i32::try_from(child.id()) {
+        // SAFETY: a plain signal to the process group the child leads.
+        unsafe { libc::kill(-group, libc::SIGTERM) };
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// macOS has no `PR_SET_PDEATHSIG`, and quitting from the menu exits
+/// without running `Tunnel`'s `Drop`: a seen-live cloudflared outlived the
+/// editor under launchd. So a shell runs it, in a process group of its own,
+/// and ends it as soon as the editor (`$0`) is gone. The tunnel inherits the
+/// piped stdout and stderr, so its URL is still read as before.
+#[cfg(any(target_os = "macos", all(test, target_os = "linux")))]
+const WATCH: &str = r#"parent=$0; "$@" & tunnel=$!; trap 'kill $tunnel 2>/dev/null' EXIT HUP INT TERM; while kill -0 "$parent" 2>/dev/null && kill -0 $tunnel 2>/dev/null; do sleep 1; done"#;
+
+/// Fails like a direct spawn would when `program` can't be found, since the
+/// watching shell itself always starts and would only hide that.
+#[cfg(any(target_os = "macos", all(test, target_os = "linux")))]
+fn find_program(program: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let runnable = |path: &std::path::Path| {
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    let found = if program.components().count() > 1 {
+        runnable(program)
+    } else {
+        std::env::var_os("PATH").is_some_and(|path| {
+            std::env::split_paths(&path).any(|dir| runnable(&dir.join(program)))
+        })
+    };
+    if found {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("{} not found", program.display()),
+        ))
+    }
+}
+
+/// The command that runs `program args`, watched on macOS (see [`WATCH`]).
+fn command(program: PathBuf, args: Vec<String>) -> std::io::Result<Command> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::process::CommandExt;
+        find_program(&program)?;
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg(WATCH)
+            .arg(std::process::id().to_string())
+            .arg(program)
+            .args(args)
+            .process_group(0);
+        Ok(command)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut command = Command::new(program);
+        command.args(args);
+        Ok(command)
     }
 }
 
@@ -32,6 +101,22 @@ pub enum TunnelError {
     Exited(String),
     /// No URL within the timeout; the child is killed.
     Timeout,
+    /// The tunnel service refused this network for asking too often (a
+    /// trycloudflare 429), now or on a recent try, so nothing was started.
+    RateLimited { retry_in: Duration },
+}
+
+impl TunnelError {
+    /// Whether the tunnel exited because its service answered 429.
+    fn says_rate_limited(&self) -> bool {
+        let TunnelError::Exited(lines) = self else {
+            return false;
+        };
+        let lower = lines.to_ascii_lowercase();
+        lower.contains("status 429")
+            || lower.contains("429 too many requests")
+            || lower.contains("status code: 429")
+    }
 }
 
 impl std::fmt::Display for TunnelError {
@@ -42,6 +127,11 @@ impl std::fmt::Display for TunnelError {
                 write!(f, "the tunnel exited before giving a URL:\n{lines}")
             }
             TunnelError::Timeout => f.write_str("the tunnel gave no URL in time"),
+            TunnelError::RateLimited { retry_in } => write!(
+                f,
+                "Cloudflare is rate limiting quick tunnels from this network, try again in {}",
+                minutes(*retry_in)
+            ),
         }
     }
 }
@@ -99,9 +189,8 @@ impl TunnelProvider {
     pub fn start(&self, port: u16, timeout: Duration) -> Result<Tunnel, TunnelError> {
         let (program, args) = self.command_line(port);
         let pattern = self.url_pattern();
-        let mut command = Command::new(program);
+        let mut command = command(program, args).map_err(TunnelError::Spawn)?;
         command
-            .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -110,6 +199,7 @@ impl TunnelProvider {
         #[cfg(windows)]
         std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000);
         let mut child = command.spawn().map_err(TunnelError::Spawn)?;
+        crate::child_job::kill_with_editor(&child);
 
         let (tx, rx) = mpsc::channel::<String>();
         if let Some(out) = child.stdout.take() {
@@ -125,8 +215,7 @@ impl TunnelProvider {
         loop {
             let now = Instant::now();
             if now >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
+                end(&mut child);
                 return Err(TunnelError::Timeout);
             }
             let slice = (deadline - now).min(Duration::from_millis(50));
@@ -154,6 +243,29 @@ impl TunnelProvider {
                     }
                 }
             }
+        }
+    }
+
+    /// [`TunnelProvider::start`], unless `cooldown` says the service refused
+    /// this network recently; a refusal now is recorded there.
+    pub fn start_gated(
+        &self,
+        port: u16,
+        timeout: Duration,
+        cooldown: &Cooldown,
+    ) -> Result<Tunnel, TunnelError> {
+        if let Some(retry_in) = cooldown.remaining() {
+            return Err(TunnelError::RateLimited { retry_in });
+        }
+        match self.start(port, timeout) {
+            Ok(tunnel) => {
+                cooldown.clear();
+                Ok(tunnel)
+            }
+            Err(e) if e.says_rate_limited() => Err(TunnelError::RateLimited {
+                retry_in: cooldown.refused(),
+            }),
+            Err(e) => Err(e),
         }
     }
 
@@ -190,6 +302,74 @@ impl TunnelProvider {
     }
 }
 
+/// "N min", rounded up, for a wait shown to the user.
+pub fn minutes(wait: Duration) -> String {
+    format!("{} min", wait.as_millis().div_ceil(60_000).max(1))
+}
+
+/// Remembers, in a file, how long quick tunnels are off after the service
+/// refused this network, so every start (presence, Play, a relaunch) waits
+/// it out instead of asking again: trycloudflare keeps refusing for over
+/// an hour when it is asked on through its limit.
+pub struct Cooldown {
+    path: PathBuf,
+}
+
+/// The first wait after a refusal, doubling on each refusal in a row up to
+/// [`COOLDOWN_MAX`]. A tunnel that starts clears it.
+pub const COOLDOWN_START: Duration = Duration::from_secs(5 * 60);
+pub const COOLDOWN_MAX: Duration = Duration::from_secs(60 * 60);
+
+impl Cooldown {
+    pub fn new(path: impl Into<PathBuf>) -> Cooldown {
+        Cooldown { path: path.into() }
+    }
+
+    /// `(until, next wait)` in unix seconds and seconds, if a refusal is on file.
+    fn read(&self) -> Option<(u64, u64)> {
+        let text = std::fs::read_to_string(&self.path).ok()?;
+        let mut parts = text.split_whitespace().map(str::parse::<u64>);
+        Some((parts.next()?.ok()?, parts.next()?.ok()?))
+    }
+
+    /// How long until tunnels may be asked for again, if they are off.
+    pub fn remaining(&self) -> Option<Duration> {
+        let (until, _) = self.read()?;
+        let left = until.checked_sub(unix_secs())?;
+        (left > 0).then(|| Duration::from_secs(left))
+    }
+
+    /// Records a refusal and returns how long tunnels are now off.
+    pub fn refused(&self) -> Duration {
+        let wait = self
+            .read()
+            .map_or(COOLDOWN_START, |(_, next)| Duration::from_secs(next))
+            .clamp(COOLDOWN_START, COOLDOWN_MAX);
+        let next = (wait * 2).min(COOLDOWN_MAX);
+        let until = unix_secs() + wait.as_secs();
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(&self.path, format!("{until} {}\n", next.as_secs()));
+        wait
+    }
+
+    /// A tunnel started: the next refusal starts from [`COOLDOWN_START`].
+    pub fn clear(&self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 const KEPT_LINES: usize = 20;
 
 fn remember(last: &mut VecDeque<String>, line: String) {
@@ -218,4 +398,58 @@ fn spawn_reader<R: Read + Send + 'static>(pipe: R, tx: mpsc::Sender<String>) {
 pub fn scrape_url(line: &str, pattern: &str) -> Option<String> {
     let re = Regex::new(pattern).ok()?;
     re.find(line).map(|m| m.as_str().to_owned())
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+    use std::os::unix::process::CommandExt;
+
+    #[test]
+    fn find_program_matches_a_direct_spawn() {
+        assert!(find_program(std::path::Path::new("/bin/sh")).is_ok());
+        assert!(find_program(std::path::Path::new("sh")).is_ok());
+        let missing = find_program(std::path::Path::new("/nonexistent/no-such-tunnel"));
+        assert_eq!(missing.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        assert!(find_program(std::path::Path::new("rbx-play-no-such-tunnel")).is_err());
+    }
+
+    fn within(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
+        let end = Instant::now() + limit;
+        while Instant::now() < end {
+            if done() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    #[test]
+    fn the_watch_shell_ends_the_tunnel_once_the_editor_is_gone() {
+        let mut editor = Command::new("sleep").arg("1").spawn().unwrap();
+        let mut watch = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(WATCH)
+            .arg(editor.id().to_string())
+            .args(["sleep", "60"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = i32::try_from(watch.id()).unwrap();
+        editor.wait().unwrap();
+        assert!(within(Duration::from_secs(5), || matches!(
+            watch.try_wait(),
+            Ok(Some(_))
+        )));
+        // SAFETY: signal 0 only asks whether anyone in the group is left.
+        let gone = within(
+            Duration::from_secs(5),
+            || unsafe { libc::kill(-group, 0) } != 0,
+        );
+        if !gone {
+            unsafe { libc::kill(-group, libc::SIGKILL) };
+        }
+        assert!(gone, "the tunnel outlived the editor");
+    }
 }

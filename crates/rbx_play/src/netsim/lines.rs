@@ -1,5 +1,6 @@
 //! The integer line protocol the macOS and Windows helpers read from the
-//! editor: `out L J P`, `in L J P`, `ports ...` and `stop`, one per line.
+//! editor: `out L J P`, `in L J P`, `ports ...`, `idle` and `stop`, one
+//! per line.
 //!
 //! The reader runs elevated, so the grammar is deliberately tiny: digits
 //! only, no sign, no leading zero, single spaces. Nothing read is ever
@@ -49,6 +50,8 @@ pub(crate) enum Line {
     Out(WayUs),
     In(WayUs),
     Ports(Vec<u16>),
+    /// Play stopped: let go of the driver until the next `out`/`in`.
+    Idle,
     Stop,
 }
 
@@ -104,6 +107,7 @@ pub(crate) fn parse(line: &str) -> Option<Line> {
         "out" => way(&args).map(Line::Out),
         "in" => way(&args).map(Line::In),
         "stop" => args.is_empty().then_some(Line::Stop),
+        "idle" => args.is_empty().then_some(Line::Idle),
         "ports" => {
             if args.len() > MAX_PORTS {
                 return None;
@@ -179,6 +183,7 @@ mod tests {
     #[test]
     fn accepts_valid_lines() {
         assert_eq!(parse("stop\r\n"), Some(Line::Stop));
+        assert_eq!(parse("idle\n"), Some(Line::Idle));
         assert_eq!(parse("ports"), Some(Line::Ports(vec![])));
         assert_eq!(
             parse("ports 443 65535"),
@@ -201,6 +206,7 @@ mod tests {
             "",
             "go",
             "stop now",
+            "idle 1",
             "out 1 2",
             "out 1 2 3 4",
             "out 01 2 3",

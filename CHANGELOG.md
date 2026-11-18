@@ -1,5 +1,138 @@
 # Changelog
 
+## 2026-11-18
+
+- **Cloudflare rate limits and a dead ntfy.sh don't wreck Team Presence, Play or quitting anymore.** After a lot of relaunches trycloudflare started answering "quick tunnel provisioning failed with status 429" and every launch asked again, so it kept refusing for over an hour, and Play just failed with the raw cloudflared output. Now a 429 turns quick tunnels off for 5 min (doubling up to an hour if it keeps happening), remembered across launches and shared by Team Presence and Play, so nothing asks Cloudflare again before then. While the tunnel is off you keep hosting on 127.0.0.1, so Studio on the same computer still sees you, and the Collaborators panel says "Remote collaborators paused: Cloudflare is rate limiting this network, retrying in N min". Any other tunnel failure retries after 15 s, doubling up to 10 min, instead of tearing the room down every few seconds. Play says Cloudflare is rate limiting this network and when to try again. Quitting with ntfy.sh unreachable took over 3 s because it waited on the goodbye post, now it waits 300 ms at most and skips an extra lookup on the way out. (@chteau)
+- **Studio on the same computer stays on 127.0.0.1, even after RbxNative crashes, and goes easy on ntfy.sh.** Kill RbxNative (no goodbye) and relaunch it, and Studio went for the dead host's trycloudflare.com address, so a store install asked for permission to reach it and sat on "Can't reach the rbx-native host yet" while the new RbxNative was already up on 127.0.0.1. The loopback port now answers with an id of the RbxNative install and its announcements carry the same id, so Studio knows a leftover address from its own computer and keeps waiting on 127.0.0.1. A request still queued for a host Studio already left is dropped and asked again, which was the one 26 s rejoin in six. Studio also drained ntfy.sh's per-address budget (429s right after a few relaunches), and once that happened RbxNative couldn't even start hosting. Now the plugin doesn't touch ntfy at all while 127.0.0.1 answers, reads it every 5 to 30 s while it waits (was every 3 s), and holds off for the Retry-After or 30 s doubling to 5 min after a 429. RbxNative hosts on the loopback port even when ntfy refuses, and keeps retrying its announcement with backoff instead of tearing the tunnel down after three tries. The Team Presence plugin needs a new store release for this. (@chteau)
+- **A viewer on a GPU it was handed skips the out-of-memory walk.** The
+  hidden editor behind Settings from Home builds on wgpu's no-op device,
+  which never runs out of memory, so it now builds once at the starting
+  quality rung instead of going through the step-down ladder meant for
+  a real GPU. (@chteau)
+- **Docked tool panels stay put.** Collaborators, Terrain Editor, Toolbox
+  and the other panels that start shut got dropped from their dock on
+  launch, and the next settings save wrote them down as closed even
+  though you never closed them. They open where you left them now. (@chteau)
+
+## 2026-11-17
+
+- **Studio sees you right away when you open the place in RbxNative.** On the same computer Studio said "Connected · 0 rbx-native" about 4 s after RbxNative opened, but you only showed up 10 to 30 s in. RbxNative joined its own room only after its tunnel was up and announced, and Studio doesn't need either of those. Now it joins on the loopback port as soon as the room is up, and the tunnel comes up in the background for collaborators on other computers. (@chteau)
+- **Team Presence starts when the key shows up late.** If the Keychain answered after launch, or you saved a key from Home with a place already open, Home got the key but Team Presence stayed on "sign in" until you restarted. Open editors now retry presence as soon as the key is there. (@chteau)
+- **Studio gets back to RbxNative in seconds, and stops asking.** Quit and reopen RbxNative and Studio's Team Presence plugin used to sit on "Waiting..." for up to a minute, then ask again whether it could reach a brand new trycloudflare.com address, so nobody at Studio meant no rejoin at all. RbxNative's own check that the new address existed made Cloudflare's DNS remember it as missing for a minute; it now asks Cloudflare's name servers directly, so the address goes out about 8 s after the tunnel starts. And with Studio on the same computer, the plugin now talks to RbxNative on 127.0.0.1, which Studio asks about once, so it reconnects by itself about 5 s after RbxNative opens, before the tunnel is even up. Someone in RbxNative on another computer is still reached through the tunnel, so Studio asks about that address each time they open RbxNative. Needs the updated plugin. (@chteau)
+
+## 2026-11-16
+
+- **Polish from the Mac and Windows test runs.** The graph view follows the
+  theme (canvas, nodes, pins and headers, light themes too) and says
+  "syntax error on line N" instead of "no errors" when the script won't
+  parse. Manage Plugins uses the same toggles as Settings. A plugin's
+  own UI parented to nil (F3X's dock, Lemonade's widgets) no longer marks
+  the place unsaved or draws a stray strip over the viewport, and
+  `Destroying` fires before an instance goes, so Fusion plugins clean up
+  without "Parent property is locked" errors. Network Reset goes back to
+  Off. Clicking a breakpoint in the gutter removes it. Theme changes made
+  from Settings restyle the open windows right away. Idle tabs stay
+  readable on see-through themes. Files & Account shows your display name
+  and @username and keeps the key card filled while it checks. Home shows
+  a loading dialog while a place opens and ignores double clicks, and
+  Settings opened from Home comes up right away and only once. F focuses
+  the selection from anywhere in the editor, the Explorer too, as in
+  Studio, except while typing in a text field. The Play sandbox keeps a name
+  you gave it and says where it came from the first time. F8 waits for
+  the Roblox menu to close. The alpha readme says the Mac build is signed
+  but not notarized. From the Mac retest: Home comes to the front so Cmd+,
+  and Cmd+Q reach it, opening a place no longer marks it unsaved by copying
+  in the presence key it already has on Roblox, the key card shows its last
+  ready state straight away while it checks again, the first Play says
+  which sandbox it publishes to, F8 pressed with the Roblox menu open opens
+  the panel once the menu closes on the Mac too, and the network popover's
+  name row goes away once a preset is saved or applied. (@chteau)
+- **Windows: menus show over the running game, Save As opens centred.**
+  Menus, context menus and popovers over the 3D view used to draw under
+  the embedded Roblox window; they're now cut out of it while open. File
+  dialogs open in the middle of the editor instead of the screen's corner,
+  and killing the editor no longer leaves the embedded game running
+  without a window. (@chteau)
+- **Low-memory GPUs step down until the place draws.** Running out of GPU
+  memory now walks down smaller materials, lower quality levels and no
+  shadows until the scene fits, instead of trying twice and leaving the
+  3D view empty. Running out later (a quality change, a bigger window)
+  rebuilds one step lower too, and picking a quality level by hand after
+  that rebuilds for real. (@chteau)
+- **A saved low quality is where the place starts.** Opening a place with
+  Manual 1 saved used to build it at the top level first and walk down
+  from there; now the first build is already at your level, and you can
+  still pick a higher one later. Integrated GPUs also start with a 4096
+  px shadow map instead of 8192, so a small card opens without GPU
+  errors in the log. (@chteau)
+- **Windows opens places faster.** The DirectX 12 path now compiles its
+  shaders with DXC built into the editor instead of the old FXC compiler,
+  which spent most of the 20+ seconds a place took to open on a low-end
+  laptop. The log now says how long building the scene took. (@chteau)
+- **Network simulation lets go of the WinDivert driver at Stop.** The
+  driver used to keep running until the editor quit; now it's unloaded
+  when Play stops and loaded again on the next shaped Play, still with
+  no second admin prompt. (@chteau)
+- **File menu rows without the blank gaps.** Save to File, Save to Roblox,
+  Publish to Roblox and Delete keep their bigger click target but now say
+  what they do on a second line instead of sitting in empty space. (@chteau)
+- **Mac retest, round 4.** Updating from a build before the icon pack
+  fix no longer swaps a Dark icon pack you had for Light just because the
+  theme is light: an older settings file keeps the pack it stored. The Mac
+  build is signed with a designated requirement pinned to its identifier
+  and signing certificate, so it reads the same in every build. The
+  Network button and popover only say the first shaped Play asks for a
+  password (Mac) or administrator approval (Windows) while it still will:
+  not once the Mac helper is installed, not once this window's Windows
+  helper runs. (@chteau)
+
+## 2026-11-15
+
+- **Plugin widgets tear out into their own windows.** Drag a plugin's tab
+  out of the editor, or pick Float in its menu, and it gets a real window
+  with our own title bar, same as Explorer or Output. Push the window
+  against the editor's left or right edge, or its top down onto the
+  bottom edge, to dock it again. A widget that asks to float
+  (`InitialDockState.Float`) opens in its own window too. The window
+  remembers where you left it per widget, across restarts, and closing it
+  closes the widget (`BindToClose` fires) until its toolbar button opens
+  it again right where it was. Torn-out windows step aside while the
+  editor asks you something (Save changes? and friends) so they never
+  cover the prompt. On Windows our own title bars can be dragged now
+  (editor, Settings, every window with our top bar), snap included (a
+  snapped plugin window stays a window, it doesn't dock), a plugin window
+  stays above the editor when you click the editor, and it reopens
+  exactly where it was instead of creeping up a few pixels each time.
+  (@chteau)
+- **Plugin windows: right edge, restart and tear-out spot.** Pushing a
+  plugin window onto the editor's right edge by its title docks it now,
+  same as the left edge (it used to need the window's middle over the
+  editor). A plugin window left open when you quit comes back on the next
+  launch, at the spot you left it, and a tab you tear out opens right
+  under the pointer instead of in the middle of the screen. (@chteau)
+- **Torn-out windows stay on screen.** A tab torn out near a screen edge
+  opens fully inside that screen's work area, its title bar still under
+  the pointer where there's room, and a window that was snapped or
+  maximized no longer hands that size to the next tear-out. (@chteau)
+- **Plugin windows close with the editor.** Closing the editor used to
+  leave a floating plugin window on screen, and RbxNative plus the presence
+  tunnel kept running until you closed that too. Now the editor's plugin
+  windows go with it (once its save prompt is answered, Cancel keeps
+  everything), the app quits, and each widget comes back open next launch
+  at exactly the spot you left it. A saved spot that's on screen isn't
+  nudged anymore either, it was landing 5 px up on a Mac with the Dock at
+  the bottom. If a plugin's window doesn't come back, check the
+  plugin itself: Lemonade, for one, shuts its widget on every launch until
+  you click "I'm ready" on its welcome card (its × only hides the card).
+  (@chteau)
+- **Snapped plugin windows tear out at their normal size, for real.**
+  Maximize or snap a plugin window (Aero snap on Windows, Zoom or tiling on
+  a Mac, your window manager's maximize on Linux), dock it, tear it out
+  again and it could still come back that big, Linux and Mac hand over the
+  big rect as if it was the normal one. Now a window that fills the screen's
+  height or a quarter of it isn't remembered at all, so the next tear-out
+  opens at the last normal size. (@chteau)
+
 ## 2026-11-14
 
 - **Installers.** Every release now has a Windows setup (per user, no
@@ -609,6 +742,7 @@
   got refused before this; it publishes fine. Heads up, Studio's own save
   limit is 100 MB, so a place between the two plays here but won't save
   from Studio. (@chteau)
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**

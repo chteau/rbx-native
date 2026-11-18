@@ -39,7 +39,7 @@ local function post(self: any, body: string, fill: boolean): (boolean, string?)
 			return true, nil
 		end
 		lastError = if okPost then err else tostring(ok)
-		task.wait(0.5 * 2 ^ (attempt - 1))
+		task.wait(2 ^ (attempt - 2))
 	end
 	return false, lastError
 end

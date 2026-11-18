@@ -155,7 +155,7 @@ impl Shadows {
             casters::mesh_batches(device, scene.resolved_file_meshes(), &mut Vec::new());
 
         Shadows {
-            view: map(device, quality.shadow_map_size),
+            view: map(device, sun_side(quality)),
             // Linear filtering on a comparison sampler is the hardware's own
             // 2x2 PCF: every tap of the kernel already comes back partly lit.
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
@@ -203,7 +203,7 @@ impl Shadows {
     /// The caller must rebind every bind group holding the old views or the old
     /// [`Shadows::local_view`]/light buffer.
     pub(super) fn set_quality(&mut self, device: &wgpu::Device, quality: &QualityProfile) {
-        self.view = map(device, quality.shadow_map_size);
+        self.view = map(device, sun_side(quality));
         let (view, layers) = local_map(device, quality.local_shadow_lights_max);
         self.local_view = view;
         self.local_layers = layers;
@@ -537,11 +537,21 @@ impl Shadows {
     }
 }
 
+/// The sun's map side at `quality`: one texel where the level casts no
+/// shadows, which is the level a GPU short on memory steps down to.
+fn sun_side(quality: &QualityProfile) -> u32 {
+    if quality.shadows {
+        quality.shadow_map_size
+    } else {
+        1
+    }
+}
+
 /// The depth map itself.
 ///
 /// Allocated even where the level casts no shadows: the bind group is shared by
 /// every surface pipeline, and a missing texture would mean a second layout
-/// rather than one unread kilobyte of depth.
+/// rather than one unread texel of depth (see [`sun_side`]).
 fn map(device: &wgpu::Device, side: u32) -> wgpu::TextureView {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("rbxview shadow map"),

@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::*;
 use rbx_assets::{AssetCache, AssetRef};
-use rbx_dom::{Change, Ref, Snapshot, Variant, WeakDom};
+use rbx_dom::{Change, Ref, Snapshot, WeakDom};
 use rbx_viewer::perf::{Metric, Metrics, Report};
 
 use super::Shell;
@@ -309,28 +309,9 @@ impl Shell {
     /// round its parts: a click on one of the dock's costliest lists.
     pub(super) fn perf_focus(&mut self, target: Ref, cx: &mut Context<Self>) {
         self.select(target, cx);
-        let (mut low, mut high) = (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
-        let mut pending = vec![target];
-        while let Some(at) = pending.pop() {
-            let Some(instance) = self.dom.get(at) else {
-                continue;
-            };
-            pending.extend_from_slice(instance.children());
-            let properties = instance.properties();
-            let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
-                continue;
-            };
-            let centre = glam::Vec3::new(cframe.position.x, cframe.position.y, cframe.position.z);
-            let half = match properties.get("size") {
-                Some(Variant::Vector3(size)) => glam::Vec3::new(size.x, size.y, size.z) * 0.5,
-                _ => glam::Vec3::splat(0.5),
-            };
-            low = low.min(centre - half);
-            high = high.max(centre + half);
-        }
-        if low.x > high.x {
+        let Some((low, high)) = super::view_snap::parts_box(&self.dom, &[target]) else {
             return;
-        }
+        };
         let centre = (low + high) * 0.5;
         let reach = ((high - low).length() * 0.5).max(2.0);
         let eye = centre + glam::Vec3::new(-0.55, 0.45, -1.0).normalize() * reach * 3.0;

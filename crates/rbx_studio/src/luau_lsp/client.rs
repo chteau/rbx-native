@@ -32,6 +32,7 @@ impl Client {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()?;
+        rbx_play::child_job::kill_with_editor(&child);
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             return Err(io::Error::other("the server's stdio was not piped"));
         };

@@ -86,10 +86,10 @@ fn test_place_rbxl_nests_spawn_location_under_workspace() {
 
 // Golden dumps: each fixture's full rendering, checked in under
 // `assets/tests/dumps/`. The API dump only reaches this output through enum
-// names, so the nightly API-dump sync reruns this against Studio's newest dump
-// before committing it, a renamed or dropped enum item fails here rather than
-// in a user's place. `UPDATE_DUMPS=1 cargo test -p rbx_parser_cli` rewrites
-// them after an intended change.
+// names, so a renamed or dropped enum item (or a property Roblox removed,
+// which then prints its raw ordinal) shows up here. The nightly API-dump sync
+// rewrites them with `UPDATE_DUMPS=1 cargo test -p rbx_parser_cli` and puts
+// the drift in its PR; run the same after an intended change.
 #[test]
 fn fixtures_render_as_their_reference_dumps() {
     let dumps = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tests/dumps");

@@ -106,7 +106,7 @@ pub(super) fn minimap(
         .bottom(px(12.0))
         .w(px(MINIMAP[0]))
         .h(px(MINIMAP[1]))
-        .bg(rgba(0x16171aee))
+        .bg(tokens::dock())
         .border_1()
         .border_color(tokens::border())
         .rounded(tokens::radius())

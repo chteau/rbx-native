@@ -121,18 +121,42 @@ pub(in crate::shell) fn unsupported() -> Option<&'static str> {
     }
 }
 
-/// What the first shaped Play needs on this platform, for the tile's
-/// tooltip: both need elevation. Windows asks once per editor session and
-/// keeps its helper until the editor quits; macOS installs its helper once.
-pub(in crate::shell) fn prerequisite() -> Option<&'static str> {
-    if cfg!(windows) {
-        Some(
-            "uses the WinDivert.dll and WinDivert64.sys shipped next to the editor; \
-             the first shaped Play asks for administrator approval",
-        )
-    } else if cfg!(target_os = "macos") {
-        Some("the first shaped Play installs a small root helper (pf and dummynet need root) and asks for your password once")
+/// What the next shaped Play still asks for, finishing "the first shaped
+/// Play ...", or `None` once it won't ask. Windows starts its elevated
+/// helper once per editor window and keeps it until the window goes;
+/// macOS installs its helper once (and again after it changes).
+pub(in crate::shell) fn elevation(helper_running: bool) -> Option<&'static str> {
+    if helper_running {
+        None
+    } else if cfg!(windows) {
+        Some("in this window asks for administrator approval")
+    } else if cfg!(target_os = "macos") && !helper_current() {
+        Some("installs a small root helper (pf and dummynet need root) and asks for your password once")
     } else {
         None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn helper_current() -> bool {
+    rbx_play::netsim::dummynet::helper_current()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn helper_current() -> bool {
+    false
+}
+
+/// What shaping needs on this platform, for the tile's tooltip.
+pub(in crate::shell) fn prerequisite(helper_running: bool) -> Option<String> {
+    let elevation = elevation(helper_running).map(|e| format!("the first shaped Play {e}"));
+    if cfg!(windows) {
+        let shipped = "uses the WinDivert.dll and WinDivert64.sys shipped next to the editor";
+        Some(match elevation {
+            Some(e) => format!("{shipped}; {e}"),
+            None => shipped.to_owned(),
+        })
+    } else {
+        elevation
     }
 }

@@ -42,13 +42,17 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 ] }
 # Hashes of the network helper's files, checked after the root install.
 sha2 = "0.10"
+# Ending the tunnel's process group (`tunnel`); already in the tree.
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 # Embedding RobloxPlayerBeta's window; same version rbx_studio uses. The
 # network simulator adds: WinDivert.dll loaded at runtime (LibraryLoader),
 # the elevated helper (Shell, Registry for SHELLEXECUTEINFOW, Pipes,
-# FileSystem, IO, Security), the client's UDP ports (IpHelper, WinSock) and
-# a 1 ms timer (Media).
+# FileSystem, IO, Security), the client's UDP ports (IpHelper, WinSock), a
+# 1 ms timer (Media) and stopping the WinDivert driver (Services). Whether
+# Roblox still runs after the shell hand-off (ToolHelp) and child processes
+# dying with the editor (JobObjects).
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -58,10 +62,13 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_Storage_Xps",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_IO",
+    "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",
     "Win32_System_Pipes",
     "Win32_System_Registry",
+    "Win32_System_Services",
     "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",

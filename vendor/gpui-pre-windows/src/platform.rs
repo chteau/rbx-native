@@ -22,7 +22,7 @@ use windows::{
         Foundation::*,
         Graphics::{Direct3D11::ID3D11Device, Gdi::*},
         Security::Credentials::*,
-        System::{Com::*, LibraryLoader::*, Ole::*, Power::*, SystemInformation::*},
+        System::{Com::*, LibraryLoader::*, Ole::*, Power::*, SystemInformation::*, Threading::GetCurrentThreadId},
         UI::{Input::KeyboardAndMouse::*, Shell::*, WindowsAndMessaging::*},
     },
     core::*,
@@ -298,14 +298,15 @@ impl WindowsPlatform {
     }
 
     fn find_current_active_window(&self) -> Option<HWND> {
-        let active_window_hwnd = unsafe { GetActiveWindow() };
-        if active_window_hwnd.is_invalid() {
-            return None;
-        }
-        self.raw_window_handles
-            .read()
-            .iter()
-            .find(|hwnd| hwnd.as_raw() == active_window_hwnd)
+        let handles = self.raw_window_handles.read();
+        // rbx-native fix: a dialog with no owner opens in the screen's
+        // corner. When the active window isn't one of ours (a menu click
+        // can leave none active), the foreground one or our first will do.
+        [unsafe { GetActiveWindow() }, unsafe { GetForegroundWindow() }]
+            .into_iter()
+            .filter(|hwnd| !hwnd.is_invalid())
+            .find_map(|wanted| handles.iter().find(|hwnd| hwnd.as_raw() == wanted))
+            .or_else(|| handles.first())
             .map(|hwnd| hwnd.as_raw())
     }
 
@@ -1327,7 +1328,7 @@ fn file_open_dialog(
             folder_dialog.SetOkButtonLabel(&HSTRING::from(prompt))?;
         }
 
-        if folder_dialog.Show(window).is_err() {
+        if show_centered(&folder_dialog, window).is_err() {
             // User cancelled
             return Ok(None);
         }
@@ -1373,6 +1374,10 @@ fn file_save_dialog(
         };
     }
 
+    let suggested_extension = suggested_name.as_deref().and_then(|name| {
+        let (stem, extension) = name.rsplit_once('.')?;
+        (!stem.is_empty() && !extension.is_empty()).then(|| extension.to_ascii_lowercase())
+    });
     if let Some(suggested_name) = suggested_name {
         unsafe {
             dialog
@@ -1382,12 +1387,29 @@ fn file_save_dialog(
         };
     }
 
+    // rbx-native fix: offer the suggested name's own type (and its sibling
+    // format) before "All files", which used to be the only choice.
+    let extension = suggested_extension.as_deref();
+    let types: Vec<(HSTRING, HSTRING)> = save_file_types(extension)
+        .into_iter()
+        .map(|(name, spec)| (HSTRING::from(name), HSTRING::from(spec)))
+        .collect();
+    let specs: Vec<Common::COMDLG_FILTERSPEC> = types
+        .iter()
+        .map(|(name, spec)| Common::COMDLG_FILTERSPEC {
+            pszName: PCWSTR(name.as_ptr()),
+            pszSpec: PCWSTR(spec.as_ptr()),
+        })
+        .collect();
     unsafe {
-        dialog.SetFileTypes(&[Common::COMDLG_FILTERSPEC {
-            pszName: windows::core::w!("All files"),
-            pszSpec: windows::core::w!("*.*"),
-        }])?;
-        if dialog.Show(window).is_err() {
+        dialog.SetFileTypes(&specs)?;
+        if let Some(extension) = extension {
+            dialog
+                .SetDefaultExtension(&HSTRING::from(extension))
+                .context("failed to set the default extension")
+                .log_err();
+        }
+        if show_centered(&dialog, window).is_err() {
             // User cancelled
             return Ok(None);
         }
@@ -1400,6 +1422,112 @@ fn file_save_dialog(
         string
     };
     Ok(Some(PathBuf::from(file_path_string)))
+}
+
+/// rbx-native addition: shows a file dialog centred over `owner`. The shell
+/// puts it at the owner's top-left corner, which for an editor filling the
+/// screen is the screen's corner, far from where the click was. A hook on
+/// this thread moves the dialog as it is about to show: it has its final
+/// size by then (it grows to its remembered size after it first activates)
+/// and is not drawn yet, however slow it is to load.
+fn show_centered(dialog: &IFileDialog, owner: Option<HWND>) -> Result<()> {
+    let hook = owner.and_then(|owner| {
+        DIALOG_OWNER.set(Some(owner.0 as isize));
+        unsafe {
+            SetWindowsHookExW(
+                WH_CALLWNDPROCRET,
+                Some(center_on_show),
+                None,
+                GetCurrentThreadId(),
+            )
+        }
+        .context("failed to hook the file dialog")
+        .log_err()
+    });
+    let shown = unsafe { dialog.Show(owner) };
+    if let Some(hook) = hook {
+        unsafe { UnhookWindowsHookEx(hook) }.log_err();
+    }
+    DIALOG_OWNER.set(None);
+    Ok(shown?)
+}
+
+thread_local! {
+    /// The window [`show_centered`] is waiting to centre a dialog over,
+    /// cleared once it has.
+    static DIALOG_OWNER: Cell<Option<isize>> = const { Cell::new(None) };
+}
+
+/// rbx-native addition, see [`show_centered`]. The dialog is the window
+/// owned by the editor that gets shown; matching the owner, rather than
+/// taking whatever activates first, leaves other windows on this thread
+/// alone.
+unsafe extern "system" fn center_on_show(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        let message = unsafe { &*(lparam.0 as *const CWPRETSTRUCT) };
+        if message.message == WM_SHOWWINDOW
+            && message.wParam.0 != 0
+            && let Some(owner) = DIALOG_OWNER.get().map(|owner| HWND(owner as _))
+            && unsafe { GetWindow(message.hwnd, GW_OWNER) }.is_ok_and(|window| window == owner)
+        {
+            DIALOG_OWNER.set(None);
+            center_over(message.hwnd, owner).log_err();
+        }
+    }
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+/// rbx-native addition, see [`show_centered`]: moves `window` to the middle
+/// of `owner`, kept inside the owner's monitor work area.
+fn center_over(window: HWND, owner: HWND) -> windows::core::Result<()> {
+    let mut outer = RECT::default();
+    let mut inner = RECT::default();
+    let mut monitor = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    unsafe {
+        GetWindowRect(owner, &mut outer)?;
+        GetWindowRect(window, &mut inner)?;
+        let _ = GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut monitor);
+    }
+    let (width, height) = (inner.right - inner.left, inner.bottom - inner.top);
+    let work = monitor.rcWork;
+    let x = ((outer.left + outer.right - width) / 2)
+        .clamp(work.left, (work.right - width).max(work.left));
+    let y = ((outer.top + outer.bottom - height) / 2)
+        .clamp(work.top, (work.bottom - height).max(work.top));
+    unsafe { SetWindowPos(window, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) }
+}
+
+/// rbx-native addition: the save dialog's (name, pattern) rows for a file
+/// named `*.extension`, its own type first, "All files" last.
+fn save_file_types(extension: Option<&str>) -> Vec<(String, String)> {
+    let family: &[(&str, &str)] = match extension {
+        Some("rbxl" | "rbxlx") => &[("rbxl", "Roblox place"), ("rbxlx", "Roblox XML place")],
+        Some("rbxm" | "rbxmx") => &[("rbxm", "Roblox model"), ("rbxmx", "Roblox XML model")],
+        Some("fbx") => &[("fbx", "FBX model")],
+        Some("obj") => &[("obj", "OBJ model")],
+        Some("gltf" | "glb") => &[("glb", "glTF binary"), ("gltf", "glTF")],
+        Some("lua" | "luau") => &[("luau", "Luau script"), ("lua", "Lua script")],
+        _ => &[],
+    };
+    let mut rows: Vec<(String, String)> = family
+        .iter()
+        .map(|(ext, name)| (format!("{name} (*.{ext})"), format!("*.{ext}")))
+        .collect();
+    if let Some(at) = rows.iter().position(|(_, spec)| Some(&spec[2..]) == extension) {
+        let own = rows.remove(at);
+        rows.insert(0, own);
+    }
+    if let Some(extension) = extension.filter(|_| rows.is_empty()) {
+        rows.push((
+            format!("{} file (*.{extension})", extension.to_ascii_uppercase()),
+            format!("*.{extension}"),
+        ));
+    }
+    rows.push(("All files (*.*)".to_owned(), "*.*".to_owned()));
+    rows
 }
 
 fn load_icon() -> Result<HICON> {

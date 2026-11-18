@@ -23,7 +23,7 @@ Workspace "Workspace" (0)
   GravityDirection = (0, -1, 0)
   HistoryId = 00000000000000000000000000000000
   IKControlConstraintSupport = 0 (Default)
-  ImprovedAnimationConstraint = 0 (Default)
+  ImprovedAnimationConstraint = 0
   ImprovedPhysicsReplication = 0 (Default)
   LayeredClothingCacheOptimizations = 0 (Default)
   LevelOfDetail = 0 (Automatic)
@@ -42,7 +42,7 @@ Workspace "Workspace" (0)
   PlayerCharacterDestroyBehavior = 0 (Default)
   PlayerScriptsUseInputActionSystem = 2 (Enabled)
   PredictiveStreamingMode = 0 (Default)
-  PrimalPhysicsSolver = 0 (Default)
+  PrimalPhysicsSolver = 0
   RejectCharacterDeletions = 0 (Default)
   RenderingCacheOptimizations = 0 (Default)
   ReplicateInstanceDestroySetting = 0 (Default)
@@ -65,7 +65,7 @@ Workspace "Workspace" (0)
   TouchesUseCollisionGroups = false
   UniqueId = 000000020ab801660684263dab2af0f1
   UseFixedSimulation = 0 (Default)
-  UseInputSink = 0 (Default)
+  UseInputSink = 0
   UseNewLuauTypeSolver = 2 (Enabled)
   ValidateEnabledProximityPrompt = 0 (Default)
   Wind = 0

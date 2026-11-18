@@ -209,6 +209,11 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
+/// How long quitting waits for team presence to leave its room: a couple of
+/// small ntfy posts and the tunnel closing. With ntfy out of reach the posts
+/// are left behind rather than holding the quit up.
+const PRESENCE_LEAVE_LIMIT: std::time::Duration = std::time::Duration::from_millis(300);
+
 /// Run from a terminal, a GUI-subsystem program gets no stdout or stderr, so
 /// `--help`, `loren` and errors would print nowhere. Attach to the parent's
 /// console in that case. Handles a parent already gave us (an MCP client's
@@ -306,6 +311,9 @@ fn main() {
         quality,
         ..settings
     };
+    // Before any place is built: the first build starts at this level
+    // instead of the top, which a small GPU may not even fit.
+    rbx_viewer::prefer_level(quality);
 
     // A flag wins over the variable it supersedes: a wrapper script that
     // exports one and then passes the other meant the one it spelled out on
@@ -339,7 +347,12 @@ fn main() {
     // default bundle the components themselves use. The Explorer's own class
     // icons are rasterized straight from `class_icons`'s embedded SVGs, not
     // painted through this asset source at all, see its own doc comment.
-    let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
+    // Closing the last window quits on macOS too, as on Linux and Windows:
+    // a Mac app left running with no window kept hosting team presence
+    // (and its tunnels) with nothing on screen to stop it.
+    let app = gpui_kit::application()
+        .with_assets(gpui_kit::assets::AllAssets)
+        .with_quit_mode(gpui_kit::QuitMode::LastWindowClosed);
     app.run(move |cx| {
         gpui_kit::init(cx);
         install_fonts(cx);
@@ -350,6 +363,14 @@ fn main() {
         workspace_view::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
         menu_bar::install_app(cx);
+        // Quitting ends every thread with the process: give team presence a
+        // moment to leave its room first, so a host's goodbye reaches the
+        // others instead of leaving them on a dead address.
+        cx.on_app_quit(|_| {
+            rbx_presence::client::leave_all(PRESENCE_LEAVE_LIMIT);
+            async {}
+        })
+        .detach();
         // Only a bare launch: opening a place blocks this thread, which
         // would freeze the logo mid-spin.
         let splash = path.is_none().then(|| splash::open(cx)).flatten();
@@ -400,16 +421,15 @@ fn main() {
     });
 }
 
-/// A light theme draws the kit's light icons, as switching to one does (see
-/// `Shell::reload_theme`), whatever an earlier session left behind.
+/// [`Settings::themed`], saving a settled old file so it is settled once.
 fn themed(settings: Settings, mode: ThemeMode) -> Settings {
-    match mode {
-        ThemeMode::Light => Settings {
-            icon_pack: IconPack::Light,
-            ..settings
-        },
-        ThemeMode::Dark => settings,
+    let (settings, migrated) = settings.themed(mode);
+    if migrated {
+        if let Err(err) = settings.save() {
+            eprintln!("rbxstudio: could not save settings: {err}");
+        }
     }
+    settings
 }
 
 /// File › Close Place's way back: Home again, with a boot read from disk as
@@ -521,6 +541,7 @@ pub(crate) fn open_editor(
     );
     let options = window_options(&title, cx);
     cx.open_window(options, |window, cx| {
+        mark_primary(window, cx);
         let shell = cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));
         let closing = shell.downgrade();
         window.on_window_should_close(cx, move |_, cx| {
@@ -531,14 +552,57 @@ pub(crate) fn open_editor(
         cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     })
     .expect("failed to open the main window");
+    bring_to_front(cx);
     Ok(())
+}
+
+/// Makes this app the frontmost one on macOS, where nothing else does it
+/// for a binary started from a terminal, or once the keychain prompt at
+/// launch has had the keyboard: the window shows but its keys (Cmd+,,
+/// Cmd+Q) went to whichever app was in front until it was clicked.
+pub(crate) fn bring_to_front(cx: &mut App) {
+    #[cfg(target_os = "macos")]
+    cx.activate(true);
+    let _ = cx;
+}
+
+/// The windows the app lives for: editors and Home. Settings and the other
+/// secondary windows don't keep it running on their own; GPUI only quits
+/// once every window is gone, so closing the editor with Settings open used
+/// to leave a process holding nothing but Settings.
+#[derive(Default)]
+struct PrimaryWindows(std::collections::HashSet<WindowId>);
+
+impl Global for PrimaryWindows {}
+
+/// Counts `window` as primary: when the last primary window closes the app
+/// quits, whatever else is open. Not on macOS, where an app outlives its
+/// windows.
+pub(crate) fn mark_primary(window: &Window, cx: &mut App) {
+    if !cx.has_global::<PrimaryWindows>() {
+        cx.set_global(PrimaryWindows::default());
+        cx.on_window_closed(|cx, id| {
+            let primary = cx.global_mut::<PrimaryWindows>();
+            if primary.0.remove(&id) && primary.0.is_empty() && cfg!(not(target_os = "macos")) {
+                cx.quit();
+            }
+        })
+        .detach();
+    }
+    cx.global_mut::<PrimaryWindows>()
+        .0
+        .insert(window.window_handle().window_id());
 }
 
 /// Home's Settings host: a hidden editor over an empty place (see
 /// [`open_settings_from_home`]), alive while its Settings window is.
-struct SettingsHost {
-    window: AnyWindowHandle,
-    shell: WeakEntity<Shell>,
+enum SettingsHost {
+    /// The Settings window is up (or opening) and its host still loading.
+    Loading(Option<WindowHandle<Root>>),
+    Ready {
+        window: AnyWindowHandle,
+        shell: WeakEntity<Shell>,
+    },
 }
 
 impl Global for SettingsHost {}
@@ -546,25 +610,74 @@ impl Global for SettingsHost {}
 /// Studio Settings with no place open. The Settings window is built around
 /// an editor (it applies every change to one live), so Home gets a hidden
 /// one over an empty place that starts no plugins, presence or MCP, never
-/// takes the menus, and goes when Settings closes.
+/// takes the menus, and goes when Settings closes. The window opens first
+/// and its pages fill in once that place has loaded off the UI thread.
 pub(crate) fn open_settings_from_home(cx: &mut App) {
-    if let Some(host) = cx.try_global::<SettingsHost>() {
-        if let Some(shell) = host.shell.upgrade() {
-            shell.update(cx, |shell, cx| shell.open_settings(cx));
-            return;
+    match cx.try_global::<SettingsHost>() {
+        Some(SettingsHost::Ready { shell, .. }) => {
+            if let Some(shell) = shell.upgrade() {
+                shell.update(cx, |shell, cx| shell.open_settings(cx));
+                return;
+            }
         }
+        Some(SettingsHost::Loading(window)) => {
+            // One closed before its host loaded starts over.
+            let Some(window) = *window else {
+                return;
+            };
+            if shell::bring_settings_forward(window.into(), cx) {
+                return;
+            }
+        }
+        None => {}
     }
+    // Claimed before the window opens, so no second press opens another.
+    cx.set_global(SettingsHost::Loading(None));
+    let Some(window) = shell::open_loading_settings(cx) else {
+        cx.remove_global::<SettingsHost>();
+        return;
+    };
+    cx.set_global(SettingsHost::Loading(Some(window)));
+    cx.spawn(async move |cx| {
+        let loaded = cx.background_spawn(async { settings_place() }).await;
+        cx.update(|cx| host_settings(window, loaded, cx));
+    })
+    .detach();
+}
+
+/// The temporary place Home's Settings host edits, and its viewer. The
+/// host is never shown, so its viewer draws nothing: a real renderer took
+/// 15 to 25 s to compile its pipelines on a laptop GPU, all of it spent
+/// before Settings could fill in.
+fn settings_place() -> Result<(PathBuf, Headless), String> {
     let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
     let path = dir.join("Settings.rbxlx");
-    let written = std::fs::create_dir_all(&dir).and_then(|()| {
-        std::fs::write(
-            &path,
-            "<roblox version=\"4\"><Item class=\"Workspace\" referent=\"RBX0\">\
-             <Properties><string name=\"Name\">Workspace</string></Properties></Item></roblox>",
-        )
-    });
-    if let Err(err) = written {
-        eprintln!("rbxstudio: could not open Settings from Home: {err}");
+    std::fs::create_dir_all(&dir)
+        .and_then(|()| {
+            std::fs::write(
+                &path,
+                "<roblox version=\"4\"><Item class=\"Workspace\" referent=\"RBX0\">\
+                 <Properties><string name=\"Name\">Workspace</string></Properties></Item></roblox>",
+            )
+        })
+        .map_err(|err| err.to_string())?;
+    let viewer = Headless::load_undrawn(&path)?;
+    Ok((path, viewer))
+}
+
+/// Builds Home's Settings host once its place has loaded and fills
+/// `window` with its Settings.
+fn host_settings(
+    window: WindowHandle<Root>,
+    loaded: Result<(PathBuf, Headless), String>,
+    cx: &mut App,
+) {
+    // Closed and opened again while this loaded: the newer load fills it.
+    let current = matches!(
+        cx.try_global::<SettingsHost>(),
+        Some(SettingsHost::Loading(Some(open))) if *open == window
+    );
+    if !current {
         return;
     }
     let EditorBoot { settings, user, .. } = fresh_boot();
@@ -572,10 +685,14 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
         settings_only: true,
         ..Launch::default()
     };
-    let place = match load(&path, &launch, settings.icon_pack) {
+    let place = match loaded
+        .and_then(|(path, viewer)| load_viewed(&path, viewer, &launch, settings.icon_pack))
+    {
         Ok(place) => place,
         Err(err) => {
             eprintln!("rbxstudio: could not open Settings from Home: {err}");
+            cx.remove_global::<SettingsHost>();
+            let _ = window.update(cx, |_, window, _| window.remove_window());
             return;
         }
     };
@@ -588,57 +705,63 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
         host = Some(shell.downgrade());
         cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     });
-    let (Ok(window), Some(shell)) = (opened, host) else {
+    let (Ok(hidden), Some(shell)) = (opened, host) else {
+        cx.remove_global::<SettingsHost>();
         return;
     };
-    // GPUI's Linux back end maps every window whatever `show` says, some
-    // time after it opens: take it off again once that has happened.
-    #[cfg(target_os = "linux")]
-    cx.spawn(async move |cx| {
-        for wait in [100, 400, 1500] {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(wait))
-                .await;
-            let _ = window.update(cx, |_, window, _| unmap_x11(window));
-        }
-    })
-    .detach();
-    cx.set_global(SettingsHost {
-        window: window.into(),
+    cx.set_global(SettingsHost::Ready {
+        window: hidden.into(),
         shell: shell.clone(),
     });
     if let Some(shell) = shell.upgrade() {
-        shell.update(cx, |shell, cx| shell.open_settings(cx));
-    }
-}
-
-/// Takes `window` off the X11 screen; nothing on Wayland.
-#[cfg(target_os = "linux")]
-fn unmap_x11(window: &Window) {
-    use x11rb::protocol::xproto::ConnectionExt as _;
-    let Some(id) = pointer_lock::window_id(window) else {
-        return;
-    };
-    if let Ok((connection, _)) = x11rb::connect(None) {
-        // Waited on: a request left in the buffer as the connection drops
-        // never reached the server.
-        let _ = connection.unmap_window(id).map(|cookie| cookie.check());
+        if !shell::fill_loading_settings(window, shell.clone(), cx) {
+            close_settings_host(&shell, cx);
+        }
     }
 }
 
 /// Called as a Settings window closes: when `shell` is Home's hidden host,
 /// it goes too, with its temporary place.
 pub(crate) fn close_settings_host(shell: &Entity<Shell>, cx: &mut App) {
-    let Some(host) = cx.try_global::<SettingsHost>() else {
+    let Some(SettingsHost::Ready {
+        window,
+        shell: host,
+    }) = cx.try_global::<SettingsHost>()
+    else {
         return;
     };
-    if host.shell.entity_id() != shell.entity_id() {
+    if host.entity_id() != shell.entity_id() {
         return;
     }
-    let window = host.window;
+    let window = *window;
+    drop_settings_host(vec![window], cx);
+}
+
+/// Closes Home's Settings window, loading or not, and its host, unless
+/// that host is the editor `keep` (its own Settings asked for again).
+pub(crate) fn close_home_settings(keep: EntityId, cx: &mut App) {
+    let windows = match cx.try_global::<SettingsHost>() {
+        None => return,
+        Some(SettingsHost::Loading(window)) => window.iter().map(|&w| w.into()).collect(),
+        Some(SettingsHost::Ready { window, shell }) => {
+            if shell.entity_id() == keep {
+                return;
+            }
+            let shown = shell
+                .upgrade()
+                .and_then(|shell| shell.read(cx).settings_window());
+            std::iter::once(*window).chain(shown).collect()
+        }
+    };
+    drop_settings_host(windows, cx);
+}
+
+fn drop_settings_host(windows: Vec<AnyWindowHandle>, cx: &mut App) {
     cx.remove_global::<SettingsHost>();
     cx.defer(move |cx| {
-        let _ = window.update(cx, |_, window, _| window.remove_window());
+        for window in windows {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
         let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(dir);
     });
@@ -707,6 +830,18 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
     // An Argon/Rojo project opens as the place it builds.
     let imported = shell::project::place_for(path)?;
     let path = imported.as_deref().unwrap_or(path);
+    let viewer = Headless::load(path, true)?;
+    load_viewed(path, viewer, launch, icon_pack)
+}
+
+/// [`load`] with its viewer, the slow part (it builds a renderer), already
+/// built.
+fn load_viewed(
+    path: &Path,
+    viewer: Headless,
+    launch: &Launch,
+    icon_pack: IconPack,
+) -> Result<Place, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
     let format = Format::sniff(&bytes);
     launch.say(format!(
@@ -733,7 +868,7 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
             .as_deref()
             .and_then(|target| explorer::resolve(&dom, target)),
         camera: PlaceCamera::from_dom(&dom),
-        viewer: Headless::load(path, true)?,
+        viewer,
         properties: Properties::new(database.clone()),
         dom,
         database,
@@ -743,26 +878,29 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
     })
 }
 
-fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
-    let wanted = size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1));
-    // No bigger than the screen minus the taskbar or dock: at 1600x900 or
-    // on a 1366x768 laptop the bottom rows (the Command Bar) used to sit
-    // under the Windows taskbar.
-    let bounds = match cx.primary_display() {
-        Some(display) => {
-            let area = display.visible_bounds();
-            let fitted = wanted.min(&area.size);
-            let center = area.center();
-            Bounds::new(
-                point(
-                    center.x - fitted.width / 2.0,
-                    center.y - fitted.height / 2.0,
-                ),
-                fitted,
-            )
-        }
-        None => Bounds::centered(None, wanted, cx),
+/// `wanted` centred on the primary screen's work area and no bigger than
+/// it: at 1600x900, on a 1366x768 laptop or at 1080p with 125 % scaling the
+/// title bar used to land off the top and the bottom rows (the Command Bar)
+/// under the Windows taskbar. The area is in logical pixels, so the display
+/// scale is already in it.
+pub(crate) fn fit_to_screen(wanted: Size<Pixels>, cx: &App) -> Bounds<Pixels> {
+    let Some(display) = cx.primary_display() else {
+        return Bounds::centered(None, wanted, cx);
     };
+    let area = display.visible_bounds();
+    let fitted = wanted.min(&area.size);
+    let center = area.center();
+    Bounds::new(
+        point(
+            center.x - fitted.width / 2.0,
+            center.y - fitted.height / 2.0,
+        ),
+        fitted,
+    )
+}
+
+fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
+    let bounds = fit_to_screen(size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
 
     WindowOptions {
         app_id: Some(crate::APP_ID.to_owned()),

@@ -1,10 +1,10 @@
 //! Breakpoints in the Script Editor's gutter: the icons and what clicking
 //! them does. The right-click menu is `breakpoint_menu`.
 //!
-//! Studio's gutter, per `studio/debugging.md`: a click on an empty line
-//! inserts a breakpoint, a click on its icon disables or re-enables it, a
-//! middle-click deletes it, and right-click offers the four kinds and the
-//! edit window. Icons: a red circle, a circled `=` for a conditional one, a
+//! Studio's gutter: a click on an empty line inserts a breakpoint, a click
+//! (or middle-click) on its icon deletes it, and right-click offers the four
+//! kinds, Disable/Enable and the edit window. `studio/debugging.md` still
+//! says a click disables, but current Studio deletes, and so does this. Icons: a red circle, a circled `=` for a conditional one, a
 //! red diamond for a logpoint, each hollow while disabled.
 
 use std::collections::HashMap;
@@ -85,9 +85,10 @@ impl Shell {
     ) {
         let exists = self.debug.breakpoints.get(script, line).is_some();
         match button {
-            MouseButton::Left if exists => self.debug.breakpoints.toggle_enabled(script, line),
+            MouseButton::Left | MouseButton::Middle if exists => {
+                self.debug.breakpoints.remove(script, line)
+            }
             MouseButton::Left => self.debug.breakpoints.insert(script, line, Kind::Standard),
-            MouseButton::Middle => self.debug.breakpoints.remove(script, line),
             MouseButton::Right => {
                 self.debug.menu = Some(Menu::new(script, line, position));
                 cx.notify();

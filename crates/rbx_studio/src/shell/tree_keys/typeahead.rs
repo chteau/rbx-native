@@ -37,6 +37,13 @@ pub(in crate::shell) struct Typeahead {
 }
 
 impl Typeahead {
+    /// Whether a query is still being typed, so a letter that is also a
+    /// command key extends it rather than running the command.
+    pub(in crate::shell) fn running(&self, now: Instant) -> bool {
+        self.last
+            .is_some_and(|last| now.duration_since(last) <= TYPEAHEAD_TIMEOUT)
+    }
+
     /// Adds `c`, starting a fresh query if the last keystroke has gone
     /// stale, and returns the string to match rows against.
     pub(in crate::shell) fn push(&mut self, c: char, now: Instant) -> &str {

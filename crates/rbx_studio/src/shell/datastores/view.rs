@@ -321,7 +321,7 @@ impl DataStoresWindow {
                     )
                     .child(
                         div().text_color(tokens::text2()).child(
-                            "This place isn\u{2019}t linked to Roblox and no Play sandbox is set (Settings \u{203a} Files & Account). Choose one of your experiences to browse its data.",
+                            "This place isn\u{2019}t linked to Roblox and no Play sandbox is set (Settings \u{203a} Account). Choose one of your experiences to browse its data.",
                         ),
                     )
                     .child(

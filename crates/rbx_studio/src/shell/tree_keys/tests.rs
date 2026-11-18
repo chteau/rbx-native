@@ -104,6 +104,18 @@ fn type_ahead_jumps_to_the_next_row_starting_with_what_was_typed() {
     assert_eq!(typeahead_target(&labels, 0, "zz"), None);
 }
 
+/// A search under way keeps taking letters, F included; once it has gone
+/// stale F is Focus Selection again.
+#[test]
+fn a_search_runs_only_until_it_goes_stale() {
+    let start = Instant::now();
+    let mut typeahead = Typeahead::default();
+    assert!(!typeahead.running(start));
+    typeahead.push('l', start);
+    assert!(typeahead.running(start + Duration::from_millis(500)));
+    assert!(!typeahead.running(start + Duration::from_secs(2)));
+}
+
 /// One letter pressed repeatedly walks the matches rather than sticking on
 /// the first, which is how every file manager behaves, and the only way a
 /// single letter is useful in a tree with several `Part`s.

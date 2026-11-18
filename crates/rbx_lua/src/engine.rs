@@ -59,6 +59,9 @@ pub(crate) struct Engine {
     pub(crate) scheduler: RefCell<Scheduler>,
     pub(crate) signals: RefCell<Signals>,
     pub(crate) modules: RefCell<Modules>,
+    /// Instances whose `Destroying` already fired from `Destroy` itself
+    /// (see `changes::destroying`), so their `Removed` doesn't fire it again.
+    pub(crate) destroyed: RefCell<std::collections::HashSet<Ref>>,
 }
 
 impl Engine {
@@ -69,6 +72,7 @@ impl Engine {
             scheduler: RefCell::default(),
             signals: RefCell::default(),
             modules: RefCell::default(),
+            destroyed: RefCell::default(),
         })
     }
 }

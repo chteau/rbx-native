@@ -387,6 +387,7 @@ pub(crate) fn open_game(
     let options = crate::window_options(&title, cx);
     let path = path.to_path_buf();
     cx.open_window(options, |window, cx| {
+        crate::mark_primary(window, cx);
         let game = cx.new(|cx| GameWorkspace::new(path, manifest, first, place, boot, window, cx));
         let closing = game.downgrade();
         window.on_window_should_close(cx, move |_, cx| {
