@@ -55,7 +55,8 @@ impl Parked {
     /// quality and calibration it was parked with. Assets are asked for
     /// again, as on a first load.
     pub fn resume(self, dom: &WeakDom) -> Result<Headless, String> {
-        let mut headless = Headless::build(dom, self.toggles, self.database, self.view, self.cap)?;
+        let mut headless =
+            Headless::build(dom, self.toggles, self.database, self.view, self.cap, None)?;
         headless.set_calibration(self.calibration);
         headless.set_quality(self.quality);
         headless.feel = self.feel;

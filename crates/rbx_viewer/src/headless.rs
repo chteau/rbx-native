@@ -26,6 +26,8 @@ use crate::view::View;
 
 mod assets;
 mod park;
+#[cfg(test)]
+mod tests;
 
 pub use park::Parked;
 
@@ -169,19 +171,22 @@ impl Headless {
                 ReflectionDatabase::embedded(),
                 View::default(),
                 QualityLevel::MAX,
+                None,
             )
         }))
         .unwrap_or_else(|_| Err("the 3D renderer crashed building this place".to_owned()))
     }
 
     /// [`Headless::from_dom`] with the toggles, database and view given,
-    /// at the default quality and calibration, and no higher than level `cap`.
+    /// at the default quality and calibration, no higher than level `cap`,
+    /// on `device` or, without one, a GPU of its own.
     fn build(
         dom: &WeakDom,
         toggles: Toggles,
         database: ReflectionDatabase,
         view: View,
         cap: u8,
+        device: Option<(wgpu::Device, wgpu::Queue)>,
     ) -> Result<Self, String> {
         let mut resident = Resident::streaming();
         let mut loaded = Loaded::from_dom(dom, &database, toggles, &mut resident)
@@ -200,7 +205,18 @@ impl Headless {
 
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();
-        let (offscreen, built, ceiling) = Offscreen::new(loaded.world(), cap, &view)?;
+        // A device handed in is shared or never drawn on (wgpu's no-op one
+        // for a host that is never shown), so it doesn't walk down the
+        // out-of-memory rungs: only a GPU of our own does.
+        let (offscreen, built, ceiling) = match device {
+            Some((device, queue)) => {
+                let rung = gpu::Rung::start(cap);
+                let offscreen =
+                    Offscreen::on_device(device, queue, loaded.world(), &rung.profile(), &view);
+                (offscreen, rung, cap)
+            }
+            None => Offscreen::new(loaded.world(), cap, &view)?,
+        };
         let mut headless = Headless {
             offscreen,
             quality: QualityLevel::Level(built.level),

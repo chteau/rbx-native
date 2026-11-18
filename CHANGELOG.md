@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-18
+
+- **A viewer on a GPU it was handed skips the out-of-memory walk.** The
+  hidden editor behind Settings from Home builds on wgpu's no-op device,
+  which never runs out of memory, so it now builds once at the starting
+  quality rung instead of going through the step-down ladder meant for
+  a real GPU. (@chteau)
+
 ## 2026-11-16
 
 - **Windows: menus show over the running game, Save As opens centred.**

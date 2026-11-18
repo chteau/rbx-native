@@ -84,3 +84,5 @@ console_error_panic_hook = "0.1"
 # `batch`'s own tests write throwaway place files to disk; already resolved in
 # the lockfile via `rbx_parser_cli`'s dev-dependency of the same name.
 tempfile = "3"
+# wgpu's no-op device, for building a `Headless` in tests without a GPU.
+wgpu = { version = "30.0", features = ["noop"] }
