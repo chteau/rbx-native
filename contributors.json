@@ -1,0 +1,10 @@
+{
+  "_readme": "People on the contributor wall (contributors.html). Code contributors come from GitHub on their own, add them here only to give them roles or a different name. Everyone else (testing, design, ideas, translations) goes here by hand. Fields: name, github (login, gives the avatar and link) or url, roles. Roles: code, testing, design, ideas, docs, translation, framework.",
+  "people": [
+    { "github": "Vikmanou", "roles": ["code"] },
+    { "github": "jleeclient", "roles": ["code"] },
+    { "name": "fabi", "github": "fabideveloper", "roles": ["framework"], "note": "Loren, the built-in game framework" },
+    { "name": "MiniDev", "url": "https://vm.tiktok.com/ZN8AFbRwp/", "roles": ["ideas"], "note": "the Icon Updater idea" }
+  ],
+  "skip": []
+}

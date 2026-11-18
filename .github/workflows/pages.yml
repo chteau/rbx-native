@@ -4,6 +4,9 @@ name: pages
 on:
   push:
     branches: [website]
+  # Daily, so the contributor wall picks up new GitHub contributors.
+  schedule:
+    - cron: "17 4 * * *"
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +23,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Contributor wall
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/contributors.py contributors.html contributors.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
