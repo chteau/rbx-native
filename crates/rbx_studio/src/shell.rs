@@ -94,6 +94,10 @@ pub(crate) use plugins::install_text_box_keys;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use script_folds::FoldMemory;
+pub(crate) use settings_window::open::{
+    bring_forward as bring_settings_forward, fill_loading as fill_loading_settings,
+    open_loading as open_loading_settings,
+};
 pub(crate) use team_presence::key_arrived;
 pub(crate) use view_snap::PresetView;
 mod toolbox;
@@ -295,6 +299,9 @@ pub(crate) struct Shell {
     argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Studio Settings, while open, see `settings_window`.
     settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Settings is opening: its window opens a frame later (see
+    /// `Shell::open_settings`).
+    settings_opening: bool,
     /// Script Templates, while open, see `templates_window`.
     templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Customize Shortcuts, while open, see `shortcuts_window`.
@@ -915,6 +922,7 @@ impl Shell {
             sequence: None,
             argon_diff: None,
             settings_window: None,
+            settings_opening: false,
             templates_window: None,
             shortcuts_window: None,
             require_graph_window: None,

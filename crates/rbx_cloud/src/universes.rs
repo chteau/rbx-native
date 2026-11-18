@@ -25,6 +25,7 @@ pub enum Owner {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Universe {
     pub display_name: String,
+    pub description: String,
     pub visibility: Visibility,
     pub owner: Owner,
     pub root_place_id: u64,
@@ -34,6 +35,8 @@ pub struct Universe {
 struct UniverseRaw {
     #[serde(rename = "displayName")]
     display_name: String,
+    #[serde(default)]
+    description: String,
     visibility: String,
     #[serde(default)]
     user: Option<String>,
@@ -66,6 +69,7 @@ fn parse_universe(raw: UniverseRaw) -> Result<Universe, CloudError> {
     })?;
     Ok(Universe {
         display_name: raw.display_name,
+        description: raw.description,
         visibility: parse_visibility(&raw.visibility),
         owner,
         root_place_id,
@@ -126,6 +130,7 @@ mod tests {
     #[test]
     fn parses_a_group_owned_universe() {
         let raw = UniverseRaw {
+            description: String::new(),
             display_name: "Group Place".to_string(),
             visibility: "PUBLIC".to_string(),
             user: None,
@@ -148,6 +153,7 @@ mod tests {
     #[test]
     fn missing_owner_is_an_unexpected_shape_error() {
         let raw = UniverseRaw {
+            description: String::new(),
             display_name: "No Owner".to_string(),
             visibility: "PUBLIC".to_string(),
             user: None,
@@ -163,6 +169,7 @@ mod tests {
     #[test]
     fn malformed_root_place_path_is_an_unexpected_shape_error() {
         let raw = UniverseRaw {
+            description: String::new(),
             display_name: "Bad Root".to_string(),
             visibility: "PUBLIC".to_string(),
             user: Some("users/1".to_string()),

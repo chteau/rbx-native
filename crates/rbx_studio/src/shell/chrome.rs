@@ -373,7 +373,10 @@ impl Shell {
                                     this.text_color(tokens::check_on())
                                         .font_weight(tokens::WEIGHT_BOLD)
                                 } else {
-                                    this.text_color(tokens::text_placeholder()).hover(|this| {
+                                    this.text_color(tokens::text_tab_idle(
+                                        tokens::text_placeholder(),
+                                    ))
+                                    .hover(|this| {
                                         tokens::hover_fx(this).text_color(tokens::text_full())
                                     })
                                 }
@@ -427,7 +430,7 @@ fn document_tab(
         .text_color(if active {
             tokens::text_full()
         } else {
-            tokens::text_placeholder()
+            tokens::text_tab_idle(tokens::text_placeholder())
         })
         .when(active, |this| {
             this.bg(tokens::dock())
@@ -811,7 +814,7 @@ pub(super) fn tab_pill(
                 // An unselected tab keeps the dock's own ground rather than
                 // a second fill: two pills side by side in different greys
                 // read as two docks, not as one dock's two tabs.
-                this.text_color(tokens::text_muted())
+                this.text_color(tokens::text_tab_idle(tokens::text_muted()))
                     .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
             }
         })

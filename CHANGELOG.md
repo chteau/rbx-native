@@ -10,6 +10,33 @@
 - **Studio sees you right away when you open the place in RbxNative.** On the same computer Studio said "Connected · 0 rbx-native" about 4 s after RbxNative opened, but you only showed up 10 to 30 s in. RbxNative joined its own room only after its tunnel was up and announced, and Studio doesn't need either of those. Now it joins on the loopback port as soon as the room is up, and the tunnel comes up in the background for collaborators on other computers. (@chteau)
 - **Team Presence starts when the key shows up late.** If the Keychain answered after launch, or you saved a key from Home with a place already open, Home got the key but Team Presence stayed on "sign in" until you restarted. Open editors now retry presence as soon as the key is there. (@chteau)
 - **Studio gets back to RbxNative in seconds, and stops asking.** Quit and reopen RbxNative and Studio's Team Presence plugin used to sit on "Waiting..." for up to a minute, then ask again whether it could reach a brand new trycloudflare.com address, so nobody at Studio meant no rejoin at all. RbxNative's own check that the new address existed made Cloudflare's DNS remember it as missing for a minute; it now asks Cloudflare's name servers directly, so the address goes out about 8 s after the tunnel starts. And with Studio on the same computer, the plugin now talks to RbxNative on 127.0.0.1, which Studio asks about once, so it reconnects by itself about 5 s after RbxNative opens, before the tunnel is even up. Someone in RbxNative on another computer is still reached through the tunnel, so Studio asks about that address each time they open RbxNative. Needs the updated plugin. (@chteau)
+## 2026-11-16
+
+- **Polish from the Mac and Windows test runs.** The graph view follows the
+  theme (canvas, nodes, pins and headers, light themes too) and says
+  "syntax error on line N" instead of "no errors" when the script won't
+  parse. Manage Plugins uses the same toggles as Settings. A plugin's
+  own UI parented to nil (F3X's dock, Lemonade's widgets) no longer marks
+  the place unsaved or draws a stray strip over the viewport, and
+  `Destroying` fires before an instance goes, so Fusion plugins clean up
+  without "Parent property is locked" errors. Network Reset goes back to
+  Off. Clicking a breakpoint in the gutter removes it. Theme changes made
+  from Settings restyle the open windows right away. Idle tabs stay
+  readable on see-through themes. Files & Account shows your display name
+  and @username and keeps the key card filled while it checks. Home shows
+  a loading dialog while a place opens and ignores double clicks, and
+  Settings opened from Home comes up right away and only once. F focuses
+  the selection from anywhere in the editor, the Explorer too, as in
+  Studio, except while typing in a text field. The Play sandbox keeps a name
+  you gave it and says where it came from the first time. F8 waits for
+  the Roblox menu to close. The alpha readme says the Mac build is signed
+  but not notarized. From the Mac retest: Home comes to the front so Cmd+,
+  and Cmd+Q reach it, opening a place no longer marks it unsaved by copying
+  in the presence key it already has on Roblox, the key card shows its last
+  ready state straight away while it checks again, the first Play says
+  which sandbox it publishes to, F8 pressed with the Roblox menu open opens
+  the panel once the menu closes on the Mac too, and the network popover's
+  name row goes away once a preset is saved or applied. (@chteau)
 
 ## 2026-11-14
 

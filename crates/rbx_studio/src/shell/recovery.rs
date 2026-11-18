@@ -100,6 +100,12 @@ impl Recovery {
     pub(super) fn unsaved(&self) -> bool {
         self.unsaved
     }
+
+    /// Puts back what [`Recovery::unsaved`] said before a write that only
+    /// brought this copy in line with the place on Roblox.
+    pub(super) fn set_unsaved(&mut self, unsaved: bool) {
+        self.unsaved = unsaved;
+    }
 }
 
 impl Shell {

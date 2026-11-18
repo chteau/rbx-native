@@ -19,6 +19,8 @@ pub(super) struct StudioPresence {
     /// The Roblox user that session belongs to, when known (sign-in tells
     /// it; a restored session does not until a pulse succeeds).
     pub(super) user_id: Option<u64>,
+    /// That user's `(username, display name)`, once looked up.
+    pub(super) user_names: Option<(String, String)>,
     /// Running while enabled and signed in.
     pulser: Option<Pulser>,
     /// Drains the pulser's events and re-reads the location every
@@ -34,6 +36,7 @@ impl StudioPresence {
             enabled,
             session: None,
             user_id: None,
+            user_names: None,
             pulser: None,
             watch: None,
             last: StudioLocation { place: None },
@@ -69,13 +72,38 @@ impl Shell {
                 .ok();
             let _ = this.update(cx, |shell, cx| {
                 shell.studio_presence.session = Some(session);
-                shell.studio_presence.user_id = user_id;
+                shell.set_presence_user(user_id, cx);
                 if shell.studio_presence.enabled {
                     shell.start_studio_presence(cx);
                 }
                 shell.retry_presence_after_sign_in(cx);
                 // Windows opened before the keyring answered follow the shell.
                 cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Who the session belongs to, and their names looked up so Settings
+    /// can say who is signed in rather than a bare id.
+    pub(super) fn set_presence_user(&mut self, user_id: Option<u64>, cx: &mut Context<Self>) {
+        self.studio_presence.user_id = user_id;
+        self.studio_presence.user_names = None;
+        let Some(user_id) = user_id else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            let names = cx
+                .background_executor()
+                .spawn(async move { rbx_cloud::Client::new(None).user_names(user_id) })
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                if let Ok(names) = names {
+                    if shell.studio_presence.user_id == Some(user_id) {
+                        shell.studio_presence.user_names = Some(names);
+                        cx.notify();
+                    }
+                }
             });
         })
         .detach();
@@ -102,7 +130,7 @@ impl Shell {
                 if signed_out {
                     shell.stop_studio_presence();
                     shell.studio_presence.session = None;
-                    shell.studio_presence.user_id = None;
+                    shell.set_presence_user(None, cx);
                     rbx_cloud::expiry::report_session_refused();
                     cx.notify();
                     return true;
@@ -169,7 +197,7 @@ impl Shell {
         })
         .detach();
         self.studio_presence.session = Some(session);
-        self.studio_presence.user_id = Some(user_id);
+        self.set_presence_user(Some(user_id), cx);
         if self.studio_presence.enabled {
             self.start_studio_presence(cx);
         }
@@ -182,7 +210,7 @@ impl Shell {
     pub(in crate::shell) fn roblox_sign_out(&mut self, cx: &mut Context<Self>) {
         self.stop_studio_presence();
         self.studio_presence.session = None;
-        self.studio_presence.user_id = None;
+        self.set_presence_user(None, cx);
         cx.spawn(async move |this, cx| {
             if let Err(error) = crate::key_store::forget_session(cx).await {
                 let _ = this.update(cx, |shell, cx| {

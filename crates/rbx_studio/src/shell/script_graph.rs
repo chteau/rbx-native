@@ -425,7 +425,13 @@ impl Shell {
                 let found = problems(graph, &editor.origins);
                 parts.push(match (&editor.notice, found.first()) {
                     (Some(notice), _) => notice.clone(),
-                    (None, None) => "no errors".into(),
+                    // The canvas is the one code block standing in for a
+                    // script that does not parse; the graph has nothing
+                    // wrong with it, the code does.
+                    (None, None) => match &editor.broken {
+                        Some(broken) => format!("syntax error on line {}", broken.line),
+                        None => "no errors".into(),
+                    },
                     // The first one named: the node at fault is outlined,
                     // but not while it is the one selected.
                     (None, Some(first)) => {

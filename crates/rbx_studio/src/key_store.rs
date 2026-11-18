@@ -219,10 +219,10 @@ pub(crate) fn accounts() -> accounts::Accounts {
 
 /// Names the active account after a successful key check, writing the
 /// index only when something changed.
-pub(crate) fn label_active(owner: &str, key_name: &str) {
+pub(crate) fn label_active(owner: &str, key_name: &str, ready_meta: &str) {
     let before = accounts();
     let mut index = before.clone();
-    if index.label_active(owner, key_name) && index != before {
+    if index.label_active(owner, key_name, ready_meta) && index != before {
         save_index(&index);
     }
 }

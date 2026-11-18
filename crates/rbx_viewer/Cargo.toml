@@ -30,7 +30,8 @@ rbx_assets = { path = "../rbx_assets" }
 rbx_materials = { path = "../rbx_materials" }
 rbx_mesh = { path = "../rbx_mesh" }
 rbx_terrain = { path = "../rbx_terrain" }
-wgpu = "30.0"
+# `noop` for a hidden host's viewer, see `Headless::load_undrawn`.
+wgpu = { version = "30.0", features = ["noop"] }
 winit = "0.30"
 glam = "0.33"
 bytemuck = { version = "1.25", features = ["derive"] }

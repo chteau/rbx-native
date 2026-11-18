@@ -124,7 +124,7 @@ impl Breakpoints {
         }
     }
 
-    /// Clicking a breakpoint's icon: enabled ↔ disabled.
+    /// The menu's Disable/Enable Breakpoint: enabled ↔ disabled.
     pub(crate) fn toggle_enabled(&mut self, script: Ref, line: u32) {
         if let Some(stored) = self
             .scripts

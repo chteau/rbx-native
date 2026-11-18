@@ -1,7 +1,8 @@
 //! The Network Simulator: the Test ribbon's Network pill and its popover,
 //! shaped like Studio's (`studio/network-simulator.md`). Picking a preset or
-//! editing a value only stages it; Apply makes it the applied setting and,
-//! mid-test, changes the running client's network at once.
+//! editing a value only stages it; Apply, or closing the popover (unlike
+//! Studio, which drops it), makes it the applied setting and, mid-test,
+//! changes the running client's network at once.
 //!
 //! What it shapes, honestly: the Roblox client's UDP game traffic
 //! (`rbx_play::netsim`), so the game itself lags, as in Studio. Not the
@@ -126,7 +127,7 @@ fn way_mut(conditions: &mut NetConditions, way: Way) -> &mut OneWay {
 pub(in crate::shell) struct NetworkSim {
     pub(in crate::shell) saved: Vec<SavedNetworkPreset>,
     pub(in crate::shell) applied: Setting,
-    /// The popover's edits while it is open; dismissing it drops them.
+    /// The popover's edits while it is open; dismissing it applies them.
     pub(in crate::shell) staged: Option<Setting>,
     /// The running client was launched inside the shaper, so Apply reaches
     /// it; otherwise an applied preset waits for the next Play.
@@ -197,9 +198,10 @@ impl NetworkSim {
         true
     }
 
-    /// Studio's Reset: stages Ideal Fiber, which still needs Apply.
+    /// Reset: stages Off, which still needs Apply. Studio stages its own
+    /// default, Ideal Fiber; ours is Off (see the module doc).
     pub(in crate::shell) fn reset(&mut self) {
-        *self.staged_mut() = Setting::built_in(0);
+        *self.staged_mut() = Setting::OFF;
     }
 
     /// Why `name` cannot be saved, or whether it would replace one.
@@ -231,8 +233,8 @@ impl NetworkSim {
         Ok(())
     }
 
-    /// Studio's Delete: removes the staged saved preset and stages Ideal
-    /// Fiber, which the caller applies at once.
+    /// Studio's Delete: removes the staged saved preset and stages Off, as
+    /// [`NetworkSim::reset`] does, which the caller applies at once.
     pub(in crate::shell) fn delete(&mut self) -> bool {
         let Choice::Saved(name) = &self.shown().choice else {
             return false;
@@ -293,6 +295,9 @@ impl Shell {
         };
         if let Some(popover) = &mut self.play.network.popover {
             popover.status = status;
+            // Whatever was being named is applied now; the name row goes.
+            popover.saving = None;
+            popover.save_error = None;
         }
         cx.notify();
     }

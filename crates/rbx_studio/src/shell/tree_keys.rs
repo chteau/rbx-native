@@ -273,8 +273,17 @@ impl Shell {
             return self.apply_tree_nav(nav, len, focused, cx);
         }
 
+        let now = Instant::now();
+        // F frames the selection from here too, as in Studio (see
+        // `view_snap::focus_key`); only a search already under way takes it
+        // as a letter.
+        if crate::shortcuts::pressed(crate::shortcuts::Command::FocusSelection, keystroke)
+            && !self.typeahead.running(now)
+        {
+            return false;
+        }
         if let Some(c) = typeahead_char(keystroke) {
-            let query = self.typeahead.push(c, Instant::now()).to_owned();
+            let query = self.typeahead.push(c, now).to_owned();
             let labels = self.tree_labels(cx);
             if let Some(target) = typeahead_target(&labels, focused, &query) {
                 let tree = self.tree.clone();

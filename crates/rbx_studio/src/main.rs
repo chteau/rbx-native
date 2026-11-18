@@ -549,14 +549,29 @@ pub(crate) fn open_editor(
         cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     })
     .expect("failed to open the main window");
+    bring_to_front(cx);
     Ok(())
+}
+
+/// Makes this app the frontmost one on macOS, where nothing else does it
+/// for a binary started from a terminal, or once the keychain prompt at
+/// launch has had the keyboard: the window shows but its keys (Cmd+,,
+/// Cmd+Q) went to whichever app was in front until it was clicked.
+pub(crate) fn bring_to_front(cx: &mut App) {
+    #[cfg(target_os = "macos")]
+    cx.activate(true);
+    let _ = cx;
 }
 
 /// Home's Settings host: a hidden editor over an empty place (see
 /// [`open_settings_from_home`]), alive while its Settings window is.
-struct SettingsHost {
-    window: AnyWindowHandle,
-    shell: WeakEntity<Shell>,
+enum SettingsHost {
+    /// The Settings window is up (or opening) and its host still loading.
+    Loading(Option<WindowHandle<Root>>),
+    Ready {
+        window: AnyWindowHandle,
+        shell: WeakEntity<Shell>,
+    },
 }
 
 impl Global for SettingsHost {}
@@ -564,25 +579,74 @@ impl Global for SettingsHost {}
 /// Studio Settings with no place open. The Settings window is built around
 /// an editor (it applies every change to one live), so Home gets a hidden
 /// one over an empty place that starts no plugins, presence or MCP, never
-/// takes the menus, and goes when Settings closes.
+/// takes the menus, and goes when Settings closes. The window opens first
+/// and its pages fill in once that place has loaded off the UI thread.
 pub(crate) fn open_settings_from_home(cx: &mut App) {
-    if let Some(host) = cx.try_global::<SettingsHost>() {
-        if let Some(shell) = host.shell.upgrade() {
-            shell.update(cx, |shell, cx| shell.open_settings(cx));
-            return;
+    match cx.try_global::<SettingsHost>() {
+        Some(SettingsHost::Ready { shell, .. }) => {
+            if let Some(shell) = shell.upgrade() {
+                shell.update(cx, |shell, cx| shell.open_settings(cx));
+                return;
+            }
         }
+        Some(SettingsHost::Loading(window)) => {
+            // One closed before its host loaded starts over.
+            let Some(window) = *window else {
+                return;
+            };
+            if shell::bring_settings_forward(window.into(), cx) {
+                return;
+            }
+        }
+        None => {}
     }
+    // Claimed before the window opens, so no second press opens another.
+    cx.set_global(SettingsHost::Loading(None));
+    let Some(window) = shell::open_loading_settings(cx) else {
+        cx.remove_global::<SettingsHost>();
+        return;
+    };
+    cx.set_global(SettingsHost::Loading(Some(window)));
+    cx.spawn(async move |cx| {
+        let loaded = cx.background_spawn(async { settings_place() }).await;
+        cx.update(|cx| host_settings(window, loaded, cx));
+    })
+    .detach();
+}
+
+/// The temporary place Home's Settings host edits, and its viewer. The
+/// host is never shown, so its viewer draws nothing: a real renderer took
+/// 15 to 25 s to compile its pipelines on a laptop GPU, all of it spent
+/// before Settings could fill in.
+fn settings_place() -> Result<(PathBuf, Headless), String> {
     let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
     let path = dir.join("Settings.rbxlx");
-    let written = std::fs::create_dir_all(&dir).and_then(|()| {
-        std::fs::write(
-            &path,
-            "<roblox version=\"4\"><Item class=\"Workspace\" referent=\"RBX0\">\
-             <Properties><string name=\"Name\">Workspace</string></Properties></Item></roblox>",
-        )
-    });
-    if let Err(err) = written {
-        eprintln!("rbxstudio: could not open Settings from Home: {err}");
+    std::fs::create_dir_all(&dir)
+        .and_then(|()| {
+            std::fs::write(
+                &path,
+                "<roblox version=\"4\"><Item class=\"Workspace\" referent=\"RBX0\">\
+                 <Properties><string name=\"Name\">Workspace</string></Properties></Item></roblox>",
+            )
+        })
+        .map_err(|err| err.to_string())?;
+    let viewer = Headless::load_undrawn(&path)?;
+    Ok((path, viewer))
+}
+
+/// Builds Home's Settings host once its place has loaded and fills
+/// `window` with its Settings.
+fn host_settings(
+    window: WindowHandle<Root>,
+    loaded: Result<(PathBuf, Headless), String>,
+    cx: &mut App,
+) {
+    // Closed and opened again while this loaded: the newer load fills it.
+    let current = matches!(
+        cx.try_global::<SettingsHost>(),
+        Some(SettingsHost::Loading(Some(open))) if *open == window
+    );
+    if !current {
         return;
     }
     let EditorBoot { settings, user, .. } = fresh_boot();
@@ -590,10 +654,14 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
         settings_only: true,
         ..Launch::default()
     };
-    let place = match load(&path, &launch, settings.icon_pack) {
+    let place = match loaded
+        .and_then(|(path, viewer)| load_viewed(&path, viewer, &launch, settings.icon_pack))
+    {
         Ok(place) => place,
         Err(err) => {
             eprintln!("rbxstudio: could not open Settings from Home: {err}");
+            cx.remove_global::<SettingsHost>();
+            let _ = window.update(cx, |_, window, _| window.remove_window());
             return;
         }
     };
@@ -606,57 +674,63 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
         host = Some(shell.downgrade());
         cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     });
-    let (Ok(window), Some(shell)) = (opened, host) else {
+    let (Ok(hidden), Some(shell)) = (opened, host) else {
+        cx.remove_global::<SettingsHost>();
         return;
     };
-    // GPUI's Linux back end maps every window whatever `show` says, some
-    // time after it opens: take it off again once that has happened.
-    #[cfg(target_os = "linux")]
-    cx.spawn(async move |cx| {
-        for wait in [100, 400, 1500] {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(wait))
-                .await;
-            let _ = window.update(cx, |_, window, _| unmap_x11(window));
-        }
-    })
-    .detach();
-    cx.set_global(SettingsHost {
-        window: window.into(),
+    cx.set_global(SettingsHost::Ready {
+        window: hidden.into(),
         shell: shell.clone(),
     });
     if let Some(shell) = shell.upgrade() {
-        shell.update(cx, |shell, cx| shell.open_settings(cx));
-    }
-}
-
-/// Takes `window` off the X11 screen; nothing on Wayland.
-#[cfg(target_os = "linux")]
-fn unmap_x11(window: &Window) {
-    use x11rb::protocol::xproto::ConnectionExt as _;
-    let Some(id) = pointer_lock::window_id(window) else {
-        return;
-    };
-    if let Ok((connection, _)) = x11rb::connect(None) {
-        // Waited on: a request left in the buffer as the connection drops
-        // never reached the server.
-        let _ = connection.unmap_window(id).map(|cookie| cookie.check());
+        if !shell::fill_loading_settings(window, shell.clone(), cx) {
+            close_settings_host(&shell, cx);
+        }
     }
 }
 
 /// Called as a Settings window closes: when `shell` is Home's hidden host,
 /// it goes too, with its temporary place.
 pub(crate) fn close_settings_host(shell: &Entity<Shell>, cx: &mut App) {
-    let Some(host) = cx.try_global::<SettingsHost>() else {
+    let Some(SettingsHost::Ready {
+        window,
+        shell: host,
+    }) = cx.try_global::<SettingsHost>()
+    else {
         return;
     };
-    if host.shell.entity_id() != shell.entity_id() {
+    if host.entity_id() != shell.entity_id() {
         return;
     }
-    let window = host.window;
+    let window = *window;
+    drop_settings_host(vec![window], cx);
+}
+
+/// Closes Home's Settings window, loading or not, and its host, unless
+/// that host is the editor `keep` (its own Settings asked for again).
+pub(crate) fn close_home_settings(keep: EntityId, cx: &mut App) {
+    let windows = match cx.try_global::<SettingsHost>() {
+        None => return,
+        Some(SettingsHost::Loading(window)) => window.iter().map(|&w| w.into()).collect(),
+        Some(SettingsHost::Ready { window, shell }) => {
+            if shell.entity_id() == keep {
+                return;
+            }
+            let shown = shell
+                .upgrade()
+                .and_then(|shell| shell.read(cx).settings_window());
+            std::iter::once(*window).chain(shown).collect()
+        }
+    };
+    drop_settings_host(windows, cx);
+}
+
+fn drop_settings_host(windows: Vec<AnyWindowHandle>, cx: &mut App) {
     cx.remove_global::<SettingsHost>();
     cx.defer(move |cx| {
-        let _ = window.update(cx, |_, window, _| window.remove_window());
+        for window in windows {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
         let dir = std::env::temp_dir().join(format!("rbxnative-settings-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(dir);
     });
@@ -725,6 +799,18 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
     // An Argon/Rojo project opens as the place it builds.
     let imported = shell::project::place_for(path)?;
     let path = imported.as_deref().unwrap_or(path);
+    let viewer = Headless::load(path, true)?;
+    load_viewed(path, viewer, launch, icon_pack)
+}
+
+/// [`load`] with its viewer, the slow part (it builds a renderer), already
+/// built.
+fn load_viewed(
+    path: &Path,
+    viewer: Headless,
+    launch: &Launch,
+    icon_pack: IconPack,
+) -> Result<Place, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
     let format = Format::sniff(&bytes);
     launch.say(format!(
@@ -751,7 +837,7 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
             .as_deref()
             .and_then(|target| explorer::resolve(&dom, target)),
         camera: PlaceCamera::from_dom(&dom),
-        viewer: Headless::load(path, true)?,
+        viewer,
         properties: Properties::new(database.clone()),
         dom,
         database,

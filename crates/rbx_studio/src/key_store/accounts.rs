@@ -23,6 +23,10 @@ pub(crate) struct Account {
     /// The key's name on Roblox, once known; empty before.
     #[serde(default)]
     pub(crate) key_name: String,
+    /// The key card's line from the last check that found the key ready,
+    /// shown as is while the next one runs; empty before.
+    #[serde(default)]
+    pub(crate) ready_meta: String,
     /// [`fingerprint`] of the secret, to recognise a key saved twice.
     #[serde(default)]
     pub(crate) fingerprint: String,
@@ -97,6 +101,7 @@ impl Accounts {
             id,
             owner: String::new(),
             key_name: String::new(),
+            ready_meta: String::new(),
             fingerprint: fingerprint.to_owned(),
         });
         self.active = Some(id);
@@ -122,7 +127,7 @@ impl Accounts {
     }
 
     /// Names the active account; empty strings leave a field as it was.
-    pub(crate) fn label_active(&mut self, owner: &str, key_name: &str) -> bool {
+    pub(crate) fn label_active(&mut self, owner: &str, key_name: &str, ready_meta: &str) -> bool {
         let Some(id) = self.active else {
             return false;
         };
@@ -134,6 +139,9 @@ impl Accounts {
         }
         if !key_name.is_empty() {
             account.key_name = key_name.to_owned();
+        }
+        if !ready_meta.is_empty() {
+            account.ready_meta = ready_meta.to_owned();
         }
         true
     }

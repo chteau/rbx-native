@@ -40,6 +40,8 @@ fn parse_places_page(
 
 #[derive(Deserialize)]
 struct UserRaw {
+    #[serde(default)]
+    name: String,
     #[serde(rename = "displayName")]
     display_name: String,
 }
@@ -138,6 +140,13 @@ impl Client {
     /// A user's display name (`users.roblox.com/v1/users/{id}`, anonymous),
     /// what the wizard shows for a key's `authorized_user_id`.
     pub fn user_display_name(&self, user_id: u64) -> Result<String, CloudError> {
+        self.user_names(user_id)
+            .map(|(_, display_name)| display_name)
+    }
+
+    /// A user's `(username, display name)`, from the same anonymous lookup
+    /// as [`Client::user_display_name`].
+    pub fn user_names(&self, user_id: u64) -> Result<(String, String), CloudError> {
         let url = format!("https://users.roblox.com/v1/users/{user_id}");
         let response = self.get_raw(&url, false, true)?;
         if !(200..300).contains(&response.status) {
@@ -148,7 +157,7 @@ impl Client {
             ));
         }
         let raw: UserRaw = serde_json::from_slice(&response.body)?;
-        Ok(raw.display_name)
+        Ok((raw.name, raw.display_name))
     }
 
     /// Display names for many users at once (anonymous). A deleted account

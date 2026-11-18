@@ -13,11 +13,21 @@ pub(in crate::shell) const NAME: &str = "RbxNative Sandbox";
 const DESCRIPTION: &str =
     "RbxNative's Play sandbox. Play publishes test copies here, so it is safe to leave private.";
 
-pub(in crate::shell) const SETTING: &str = "Settings \u{203a} Files & Account \u{203a} Play";
+pub(in crate::shell) const SETTING: &str = "Settings \u{203a} Account \u{203a} Play";
 
 /// Where the experience is managed.
 pub(in crate::shell) fn dashboard_url(universe_id: u64) -> String {
     format!("https://create.roblox.com/dashboard/creations/experiences/{universe_id}/overview")
+}
+
+/// The Output line the session's first Play starts with, so the experience
+/// a test lands in is never a mystery.
+pub(in crate::shell) fn origin(sandbox: PlaySandbox) -> String {
+    format!(
+        "Play publishes test copies to your sandbox experience (place {}): {}. You can change it in {SETTING}.",
+        sandbox.place_id,
+        dashboard_url(sandbox.universe_id)
+    )
 }
 
 pub(in crate::shell) struct Made {
@@ -28,16 +38,22 @@ pub(in crate::shell) struct Made {
     pub(in crate::shell) warning: Option<String>,
 }
 
+/// Whether `description` is the one [`provision`] gives the sandbox it
+/// makes: Play keeps that experience called [`NAME`] rather than naming it
+/// after each test copy, so it stays findable in the user's creations.
+pub(in crate::shell) fn is_made(description: &str) -> bool {
+    description == DESCRIPTION
+}
+
 /// The user's own experience called [`NAME`], or carrying its description:
-/// Play renames the sandbox to the test copy's name while it runs, so the
-/// name alone stops matching after the first test. The lowest universe id
-/// when there are several.
+/// older builds renamed the sandbox to the test copy's name, so the name
+/// alone may not match. The lowest universe id when there are several.
 pub(in crate::shell) fn find_existing(listing: &[OwnExperience]) -> Option<&OwnExperience> {
     listing
         .iter()
         .filter(|e| {
             matches!(e.experience.owner, Owner::User(_))
-                && (e.experience.name == NAME || e.description == DESCRIPTION)
+                && (e.experience.name == NAME || is_made(&e.description))
         })
         .min_by_key(|e| e.experience.universe_id)
 }
@@ -74,7 +90,7 @@ pub(in crate::shell) fn provision(
 ) -> Result<Made, String> {
     let Some(key) = key else {
         return Err(format!(
-            "Play needs an API key to make its sandbox. Add one in Settings \u{203a} Files & Account, or paste a place link in {SETTING}."
+            "Play needs an API key to make its sandbox. Add one in Settings \u{203a} Account, or paste a place link in {SETTING}."
         ));
     };
     let client = Client::new(Some(key));
@@ -96,7 +112,7 @@ pub(in crate::shell) fn provision(
         || {
             let Some(cookie) = &session else {
                 return Err(format!(
-                    "Making the sandbox needs your Roblox sign-in. Sign in under Settings \u{203a} Files & Account, or paste a place link in {SETTING}."
+                    "Making the sandbox needs your Roblox sign-in. Sign in under Settings \u{203a} Account, or paste a place link in {SETTING}."
                 ));
             };
             create(&client, cookie)
@@ -107,7 +123,7 @@ pub(in crate::shell) fn provision(
 fn create(client: &Client, cookie: &SessionCookie) -> Result<Made, String> {
     let created = rbx_cloud::create_experience(cookie, None).map_err(|err| match err {
         rbx_cloud::CloudError::Refused { status: 401, .. } => {
-            "Your Roblox sign-in has expired: sign in again in Settings \u{203a} Files & Account."
+            "Your Roblox sign-in has expired: sign in again in Settings \u{203a} Account."
                 .to_owned()
         }
         other => format!("Roblox refused to make the sandbox ({other}). Paste a place link in {SETTING} instead."),
@@ -144,6 +160,17 @@ fn create(client: &Client, cookie: &SessionCookie) -> Result<Made, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_origin_line_names_the_place_and_where_to_manage_it() {
+        let line = origin(PlaySandbox {
+            universe_id: 7,
+            place_id: 42,
+        });
+        assert!(line.contains("place 42"));
+        assert!(line.contains(&dashboard_url(7)));
+        assert!(line.contains(SETTING));
+    }
 
     fn experience(universe_id: u64, name: &str, owner: Owner) -> OwnExperience {
         OwnExperience {

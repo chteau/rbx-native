@@ -36,7 +36,7 @@ pub(super) struct RecoveryControls {
     accounts_error: Option<SharedString>,
     /// The owner and key name last written to the accounts index, so a
     /// check is recorded once.
-    labelled: Option<(SharedString, SharedString)>,
+    labelled: Option<(SharedString, SharedString, SharedString)>,
 }
 
 impl RecoveryControls {
@@ -489,7 +489,7 @@ impl SettingsWindow {
                     "Name for test copies",
                     div().w(px(200.)).child(Input::new(&copy_input)),
                 )
-                .describe("What Play names your sandbox while it runs a test. {place} is the place\u{2019}s name; leave it empty to keep the sandbox\u{2019}s own name.")
+                .describe("What Play names a sandbox you picked yourself while it runs a test. The RbxNative Sandbox Play made for you always keeps its name. {place} is the place\u{2019}s name; leave it empty to keep the sandbox\u{2019}s own name.")
                 .changed(template != copy_name::DEFAULT, |shell, cx| {
                     shell.set_play_copy_name(copy_name::DEFAULT.to_owned(), cx)
                 })],
@@ -515,7 +515,28 @@ impl SettingsWindow {
                 cx.observe(&check, |_, _, cx| cx.notify()).detach();
                 check
             });
-            launcher::key_summary(check.read(cx), "stored in your system keychain")
+            let check = check.read(cx);
+            let summary = launcher::key_summary(check, "stored in your system keychain");
+            // The last check's card stands in while this one runs, which
+            // only replaces it if Roblox now says something else.
+            let index = key_store::accounts();
+            let cached = index
+                .active
+                .and_then(|id| index.get(id))
+                .filter(|account| !account.owner.is_empty() && !account.key_name.is_empty());
+            match cached {
+                Some(account) if launcher::key_checking(check) => launcher::KeySummary {
+                    name: account.key_name.clone().into(),
+                    tag: (!account.ready_meta.is_empty()).then_some(KeyTag::Ready),
+                    meta: if account.ready_meta.is_empty() {
+                        format!("{} \u{b7} checking with Roblox\u{2026}", account.owner).into()
+                    } else {
+                        account.ready_meta.clone().into()
+                    },
+                    owner: Some(account.owner.clone().into()),
+                },
+                _ => summary,
+            }
         };
         let name: SharedString = match &summary.owner {
             Some(_) => format!("Open Cloud key \u{201c}{}\u{201d}", summary.name).into(),
@@ -614,9 +635,9 @@ impl SettingsWindow {
             .collect::<String>()
             .into();
         if let (Some(owner), Some(KeyTag::Ready)) = (&summary.owner, summary.tag) {
-            let labels = (owner.clone(), summary.name.clone());
+            let labels = (owner.clone(), summary.name.clone(), summary.meta.clone());
             if self.recovery.labelled.as_ref() != Some(&labels) {
-                key_store::label_active(&labels.0, &labels.1);
+                key_store::label_active(&labels.0, &labels.1, &labels.2);
                 self.recovery.labelled = Some(labels);
             }
         }
@@ -802,16 +823,16 @@ impl SettingsWindow {
                     .child(error.clone()),
             );
         }
-        let signed_in = self.shell.read(cx).studio_presence.session.is_some();
-        let user_id = self.shell.read(cx).studio_presence.user_id;
-        let presence = self.shell.read(cx).studio_presence.enabled;
-        let status = if signed_in {
-            match user_id {
-                Some(id) => format!("Signed in as user {id}"),
-                None => "Signed in".to_string(),
+        let studio_presence = &self.shell.read(cx).studio_presence;
+        let signed_in = studio_presence.session.is_some();
+        let presence = studio_presence.enabled;
+        let status = match (signed_in, &studio_presence.user_names) {
+            (false, _) => String::new(),
+            (true, Some((name, display))) if name.is_empty() || name == display => {
+                format!("Signed in as {display}")
             }
-        } else {
-            String::new()
+            (true, Some((name, display))) => format!("Signed in as {display} (@{name})"),
+            (true, None) => "Signed in".to_string(),
         };
         let sign_in_control = if signed_in {
             h_flex()

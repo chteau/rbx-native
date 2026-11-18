@@ -103,9 +103,18 @@ impl Shell {
         cx.notify();
     }
 
-    /// Studio's dismissal: staged edits are dropped, the pill shows the
-    /// applied setting again.
+    /// Dismissal (click outside, the tile, Esc) applies a staged change.
+    /// Studio drops it, which made it easy to pick a preset, close the
+    /// popover and Play unshaped thinking the preset was set.
     fn network_close(&mut self, cx: &mut Context<Self>) {
+        let network = &self.play.network;
+        if network
+            .staged
+            .as_ref()
+            .is_some_and(|staged| *staged != network.applied)
+        {
+            self.network_apply(cx);
+        }
         if self.play.network.popover.take().is_some() {
             self.play.network.closed_at = Some(std::time::Instant::now());
         }
@@ -279,6 +288,10 @@ impl Shell {
             ui::button("network-reset", "Reset", Weight::Ghost, true).on_click(cx.listener(
                 |shell, _, window, cx| {
                     shell.play.network.reset();
+                    if let Some(popover) = &mut shell.play.network.popover {
+                        popover.saving = None;
+                        popover.save_error = None;
+                    }
                     shell.network_sync_inputs(window, cx);
                 },
             ))
@@ -369,6 +382,12 @@ impl Shell {
             }])
             .text_color(tokens::text())
             .on_mouse_down_out(cx.listener(|shell, _, _, cx| shell.network_close(cx)))
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" {
+                    shell.network_close(cx);
+                    cx.stop_propagation();
+                }
+            }))
             .child(
                 h_flex()
                     .gap(px(8.))

@@ -99,7 +99,8 @@ areas out of the embedded Roblox window (X Shape), so popups draw above it.
 Unmodified crates.io 0.3.4 source (its `examples/`, `tests/` and `docs/`
 dropped, and their `[[example]]`/`[[test]]` entries with them), patched in
 through the root `Cargo.toml`'s `[patch.crates-io]`, plus hover styles that
-ease instead of snapping, each piece marked "rbx-native addition":
+ease instead of snapping and one window fix, each piece marked "rbx-native
+addition":
 
 - `src/hover_transition.rs` (new): the `HoverTransition` global (a
   duration), `HoverFade` (one element's blend: which way it is heading and
@@ -113,6 +114,9 @@ ease instead of snapping, each piece marked "rbx-native addition":
   them outright, and `InteractiveElementState` keeps the two `HoverFade`s.
   A running fade asks for the next frame; a settled one asks for nothing.
 - `src/gpui.rs`: the module and its re-export.
+- `src/window.rs`: `Window::new` maps the platform window only when
+  `WindowOptions::show` asks for it. X11 and Wayland mapped every window
+  regardless, so Home's hidden Settings host flashed over the screen.
 
 GPUI has no property transitions of its own, so this is what lets every
 `hover`/`group_hover` style in the editor — and in `gpui-base`'s widgets —
@@ -125,7 +129,7 @@ this crate's own tests need fonts from outside it and do not build here.
 
 To upgrade GPUI: re-copy the matching `gpui-pre` from
 `~/.cargo/registry/src/*/`, drop the example and test targets from its
-`Cargo.toml`, re-apply the three marked pieces, and bump the version.
+`Cargo.toml`, re-apply the marked pieces, and bump the version.
 
 ## `gpui-pre-apple` (0.3.4, Apache-2.0, `zed-industries/zed`'s `gpui_apple` as published)
 
