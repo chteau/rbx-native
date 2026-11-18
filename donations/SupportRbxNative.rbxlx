@@ -3,30 +3,30 @@
   <Item class="Workspace" referent="RBX1">
     <Properties>
       <string name="Name">Workspace</string>
-      <Ref name="CurrentCamera">RBX9</Ref>
+      <Ref name="CurrentCamera">RBX2</Ref>
     </Properties>
-    <Item class="Camera" referent="RBX9">
+    <Item class="Camera" referent="RBX2">
       <Properties>
         <string name="Name">Camera</string>
         <CoordinateFrame name="CFrame">
           <X>75.04819</X>
           <Y>46.847763</Y>
           <Z>66.79113</Z>
-          <R00>0.66481763</R00>
-          <R01>-0.31569827</R01>
-          <R02>0.67701703</R02>
+          <R00>0.6648188</R00>
+          <R01>-0.31569776</R01>
+          <R02>0.67701614</R02>
           <R10>0</R10>
-          <R11>0.9063077</R11>
-          <R12>0.42261827</R12>
-          <R20>-0.7470057</R20>
-          <R21>-0.28096408</R21>
-          <R22>0.60252935</R22>
+          <R11>0.9063078</R11>
+          <R12>0.4226182</R12>
+          <R20>-0.7470046</R20>
+          <R21>-0.28096455</R21>
+          <R22>0.6025305</R22>
         </CoordinateFrame>
         <float name="FieldOfView">70</float>
       </Properties>
     </Item>
   </Item>
-  <Item class="Players" referent="RBX2">
+  <Item class="Players" referent="RBX3">
     <Properties>
       <string name="Name">Players</string>
       <bool name="CharacterAutoLoads">false</bool>
@@ -36,7 +36,7 @@
     <Properties>
       <string name="Name">ReplicatedStorage</string>
     </Properties>
-    <Item class="ModuleScript" referent="RBX3">
+    <Item class="ModuleScript" referent="RBX5">
       <Properties>
         <string name="Name">Config</string>
         <ProtectedString name="Source">--!strict
@@ -45,7 +45,7 @@
 -- Products. Prices come from Roblox at run time, so they're set there only.
 return {
 	-- Developer product ids, cheapest first. One button each.
-	products = {} :: { number },
+	products = { 3733101617, 3733101622, 3733101623, 3733101624, 3733101628 } :: { number },
 	-- How many donors the board lists.
 	boardSize = 20,
 	-- How often the server re-reads the board, in seconds.
@@ -59,7 +59,7 @@ return {
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="RBX5">
+    <Item class="Script" referent="RBX7">
       <Properties>
         <string name="Name">Donations</string>
         <ProtectedString name="Source">--!strict
@@ -191,7 +191,7 @@ end)
       <string name="Name">StarterPlayer</string>
     </Properties>
   </Item>
-  <Item class="ReplicatedFirst" referent="RBX11">
+  <Item class="ReplicatedFirst" referent="RBX9">
     <Properties>
       <string name="Name">ReplicatedFirst</string>
     </Properties>

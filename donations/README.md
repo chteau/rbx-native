@@ -35,24 +35,37 @@ made and playtested in RbxNative. Open it there to change it.
 Before it's published, DataStores don't exist: the screen shows "Donations
 open soon" and the server warns that donations are off. That's expected.
 
-## Setting it up (once)
+## Where it lives
 
-1. **Create the group** on Roblox (it costs 100 Robux), e.g. "RbxNative".
-   Every maintainer in `maintainers.json` joins it.
-2. **Publish it under the group from RbxNative**: open
-   `SupportRbxNative.rbxlx`, File, Publish to Roblox As, new experience,
-   pick the group as the owner, name it "Support RbxNative". Make it public.
-3. **Make the developer products** in Creator Dashboard, the experience,
-   Monetization, Developer Products. Suggested: 25, 100, 500, 1000, 5000
-   Robux, named "Donation". (RbxNative can't make them yet.)
-4. **Put their ids in `ReplicatedStorage.Config`** in RbxNative and publish
-   again.
-5. **Set the payouts**: group, Configure Group, Revenue, Payouts, Recurring
+- Experience: **Support RbxNative**, owned by the RbxNative group
+  (universe 10777554279, place 80837532461766),
+  https://www.roblox.com/games/80837532461766
+- Developer products (all "Donation N", on sale):
+  25 = 3733101617, 100 = 3733101622, 500 = 3733101623,
+  1000 = 3733101624, 5000 = 3733101628. They're in
+  `ReplicatedStorage.Config` already.
+
+It was published from RbxNative (File, Publish to Roblox, New experience,
+group as the owner). The products came from Open Cloud's developer
+products endpoint with an API key that has `developer-product:write`,
+since RbxNative's Game Settings can't make them yet.
+
+## Still to do by hand
+
+1. **Maturity & Compliance Questionnaire** on the Creator Hub, then make it
+   public (RbxNative's Game Settings, Permissions, Playability, or the Hub).
+2. **Payouts**: group, Configure Group, Revenue, Payouts, Recurring
    Payouts. Add each maintainer with their share from `maintainers.json`.
-   Roblox has its own rules here (for example how long someone has to be
-   in the group first, and Robux sitting as pending for a while before it
-   can be paid). Check the current ones there.
-6. **Link it** from the website and the README.
+   Roblox has its own rules here (how long someone has to be in the group
+   first, Robux pending for a while before it can be paid). Every
+   maintainer has to be in the group.
+3. **Link it** from the website and the README.
+
+## Changing the place
+
+Open `SupportRbxNative.rbxlx` in RbxNative, link it to place
+80837532461766 (File, Publish to Roblox, Add by link) and publish. Save it
+back here as `.rbxlx` in a PR.
 
 Maintainers turn Robux into money through DevEx if they qualify, on their
 own account. Their share is their income to declare.
