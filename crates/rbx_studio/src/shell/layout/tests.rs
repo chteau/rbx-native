@@ -648,6 +648,39 @@ fn a_closed_panel_stays_closed_across_a_round_trip() {
     assert_eq!(restored, layout);
 }
 
+/// A tool panel that starts shut but was docked when the file was saved
+/// comes back docked, and showing if it was the dock's tab.
+#[test]
+fn a_docked_tool_panel_stays_docked_across_a_round_trip() {
+    let mut layout = Layout::default();
+    layout.open(Panel::Collaborators);
+    let mut file = layout.saved();
+    file.edges = vec![SavedEdge {
+        edge: Edge::Right,
+        groups: vec![SavedGroup {
+            panels: vec!["Explorer".into(), "Collaborators".into()],
+            active: 1,
+        }],
+        size: 0.,
+    }];
+
+    let restored = Layout::restore(&file);
+
+    assert_eq!(
+        restored.home_of(Panel::Collaborators),
+        Home::Docked {
+            edge: Edge::Right,
+            group: 0
+        }
+    );
+    assert!(restored.is_showing(Panel::Collaborators));
+    assert!(!restored
+        .saved()
+        .closed
+        .contains(&"Collaborators".to_owned()));
+    assert_eq!(Layout::restore(&restored.saved()), restored);
+}
+
 /// A settings file from a version that knew a panel this one doesn't must
 /// open the editor, not stop it.
 #[test]
@@ -655,7 +688,7 @@ fn an_unknown_panel_name_is_dropped_rather_than_refused() {
     let file = saved(vec![
         edge(
             Edge::Left,
-            &[&["Properties", "Terrain Editor"]],
+            &[&["Properties", "A Future Panel"]],
             Edge::Left.default_size(),
         ),
         edge(Edge::Right, &[&["Explorer"]], Edge::Right.default_size()),
@@ -738,7 +771,7 @@ fn an_active_index_past_the_end_walks_back_to_a_real_tab() {
         SavedEdge {
             edge: Edge::Left,
             groups: vec![SavedGroup {
-                panels: vec!["Properties".to_owned(), "Terrain Editor".to_owned()],
+                panels: vec!["Properties".to_owned(), "A Future Panel".to_owned()],
                 active: 1,
             }],
             size: 300.,
