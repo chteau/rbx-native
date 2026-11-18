@@ -28,7 +28,7 @@ made and playtested in RbxNative. Open it there to change it.
   to an OrderedDataStore for the donor board.
 - `ReplicatedFirst.DonateUI`: the screen. An animated indigo backdrop with
   drifting particles, what the money is for, quick buttons, a custom amount,
-  the top 100 donors, quiet music with an on/off switch, a thank-you after
+  the top 100 donors, quiet music, a thank-you after
   paying. Characters don't
   load (`Players.CharacterAutoLoads` is off), so there's nothing else to the
   place, and the script lives in ReplicatedFirst because nothing would copy

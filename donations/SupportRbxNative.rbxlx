@@ -228,7 +228,7 @@ end)
         <ProtectedString name="Source">--!strict
 -- The whole place is this screen: an animated indigo backdrop with drifting
 -- particles, what the money is for, quick buttons and a custom amount, the
--- top donors, soft music and a thank-you after a purchase. Characters don't
+-- top donors, quiet music and a thank-you after a purchase. Characters don't
 -- load (Players.CharacterAutoLoads is off), so there's no world, only this.
 local HttpService = game:GetService(&quot;HttpService&quot;)
 local MarketplaceService = game:GetService(&quot;MarketplaceService&quot;)
@@ -236,7 +236,6 @@ local Players = game:GetService(&quot;Players&quot;)
 local ReplicatedStorage = game:GetService(&quot;ReplicatedStorage&quot;)
 local RunService = game:GetService(&quot;RunService&quot;)
 local SoundService = game:GetService(&quot;SoundService&quot;)
-local TweenService = game:GetService(&quot;TweenService&quot;)
 
 local Config = require(ReplicatedStorage:WaitForChild(&quot;Config&quot;))
 local remotes = ReplicatedStorage:WaitForChild(&quot;Donations&quot;)
@@ -396,39 +395,19 @@ RunService.RenderStepped:Connect(function(step: number)
 	end
 end)
 
--- The card, a bit bigger than before and scrolling on short screens.
-local holder = make(&quot;ScrollingFrame&quot;, {
-	BackgroundTransparency = 1,
-	BorderSizePixel = 0,
-	Size = UDim2.fromScale(1, 1),
-	CanvasSize = UDim2.new(),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-	ScrollBarThickness = 4,
-	ScrollBarImageColor3 = WHITE,
-	ScrollBarImageTransparency = 0.6,
-	Parent = screen,
-}, {
-	make(&quot;UIListLayout&quot;, {
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-	}),
-	make(&quot;UIPadding&quot;, {
-		PaddingTop = UDim.new(0, 72),
-		PaddingBottom = UDim.new(0, 72),
-		PaddingLeft = UDim.new(0, 16),
-		PaddingRight = UDim.new(0, 16),
-	}),
-})
-
+-- The card, dead centre: AnchorPoint and Position both 0.5, 0.5 on the
+-- screen itself. On a screen too short for it, a UIScale shrinks it to fit
+-- instead of scrolling.
 local card = make(&quot;Frame&quot;, {
 	BackgroundColor3 = PANEL,
 	BackgroundTransparency = 0.08,
-	Size = UDim2.fromScale(1, 0),
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(1, -32, 0, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
-	Parent = holder,
+	Parent = screen,
 }, {
 	corner(14),
-	make(&quot;UIStroke&quot;, { Color = INDIGO, Transparency = 0.55, Thickness = 1 }),
 	make(&quot;UISizeConstraint&quot;, { MaxSize = Vector2.new(720, math.huge) }),
 	make(&quot;UIPadding&quot;, {
 		PaddingTop = UDim.new(0, 36),
@@ -438,6 +417,14 @@ local card = make(&quot;Frame&quot;, {
 	}),
 	make(&quot;UIListLayout&quot;, { Padding = UDim.new(0, 16), SortOrder = Enum.SortOrder.LayoutOrder }),
 })
+local fit = make(&quot;UIScale&quot;, { Parent = card })
+local function refit()
+	local room = screen.AbsoluteSize.Y - 32
+	local tall = card.AbsoluteSize.Y / fit.Scale
+	fit.Scale = if tall &gt; room and tall &gt; 0 then room / tall else 1
+end
+card:GetPropertyChangedSignal(&quot;AbsoluteSize&quot;):Connect(refit)
+screen:GetPropertyChangedSignal(&quot;AbsoluteSize&quot;):Connect(refit)
 
 text({ Text = &quot;Support RbxNative&quot;, TextSize = 38, FontFace = BOLD, LayoutOrder = 1, Parent = card })
 text({
@@ -467,7 +454,16 @@ if #Config.products == 0 then
 	text({ Text = &quot;Donations open soon.&quot;, TextSize = 18, TextColor3 = DIM, Parent = quick })
 end
 for order, id in Config.products do
-	local made = button({ Text = &quot;…&quot;, Size = UDim2.fromOffset(118, 48), LayoutOrder = order, Parent = quick }, order == 1)
+	-- Five per row, sharing the width exactly: 5 × (20% − 8) + 4 gaps of 10.
+	local made = button({
+		Text = &quot;…&quot;,
+		Size = UDim2.new(0.2, -8, 0, 48),
+		TextScaled = true,
+		LayoutOrder = order,
+		Parent = quick,
+	}, order == 1)
+	make(&quot;UITextSizeConstraint&quot;, { MaxTextSize = 18, Parent = made })
+	make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6), PaddingTop = UDim.new(0, 13), PaddingBottom = UDim.new(0, 13), Parent = made })
 	task.spawn(function()
 		local ok, info = pcall(MarketplaceService.GetProductInfoAsync, MarketplaceService, id, Enum.InfoType.Product)
 		if ok and info and info.PriceInRobux then
@@ -722,8 +718,7 @@ end
 board.Changed:Connect(showBoard)
 showBoard()
 
--- Music, looping quietly, with a switch in the bottom corner (Roblox's own
--- buttons own the top ones).
+-- Music, looping quietly the whole time.
 local music = make(&quot;Sound&quot;, {
 	Name = &quot;Music&quot;,
 	SoundId = Config.music,
@@ -732,21 +727,6 @@ local music = make(&quot;Sound&quot;, {
 	Parent = SoundService,
 })
 music:Play()
-local mute = button({
-	Text = &quot;Music: on&quot;,
-	TextSize = 15,
-	AnchorPoint = Vector2.new(1, 1),
-	Position = UDim2.new(1, -16, 1, -16),
-	Size = UDim2.fromOffset(120, 36),
-	Parent = screen,
-}, false)
-mute.BackgroundTransparency = 0.2
-local muted = false
-mute.Activated:Connect(function()
-	muted = not muted
-	TweenService:Create(music, TweenInfo.new(0.4), { Volume = if muted then 0 else Config.musicVolume }):Play()
-	mute.Text = if muted then &quot;Music: off&quot; else &quot;Music: on&quot;
-end)
 
 local toast = make(&quot;TextLabel&quot;, {
 	BackgroundColor3 = INDIGO,
