@@ -14,6 +14,7 @@ article h1 { font-size: 36px; line-height: 1.12; letter-spacing: -.03em; margin:
 .sub { color: var(--dim); margin-bottom: 28px; }
 article .lead { font-size: 17px; line-height: 27px; }
 article h2 { font-size: 21px; line-height: 28px; letter-spacing: -.015em; margin: 36px 0 10px; scroll-margin-top: 84px; }
+article h3 { font-size: 16px; line-height: 24px; margin: 24px 0 6px; scroll-margin-top: 84px; }
 article p { max-width: none; }
 article ol, article ul { margin: 0 0 16px; padding-left: 22px; }
 article li { margin: 5px 0; }

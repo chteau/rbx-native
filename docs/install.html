@@ -61,6 +61,30 @@ irm https://rbxnative.chteau.bzh/install.ps1 | iex</code></pre>
 <li>macOS says it can't check the app. Right-click RbxNative in Applications, Open, then Open again. The terminal install skips this.</li>
 <li>The AppImage needs FUSE, most desktops have it. If not, run it with <code>--appimage-extract-and-run</code>.</li>
 </ul>
+<h2 id="systems">What's different on each system</h2>
+<p>Same editor everywhere, but each system has a few things to know.</p>
+<h3 id="windows">Windows</h3>
+<ul>
+<li>Windows 10 or 11, x64. No ARM build yet.</li>
+<li>SmartScreen warns on the first launch of the setup, the installer isn't signed with a paid certificate. More info, then Run anyway.</li>
+<li>Play runs the Roblox client inside the editor's 3D view.</li>
+<li>The network simulator uses the WinDivert driver, so Windows asks for admin the first time you shape a Play. It lets go of the driver when Play stops.</li>
+</ul>
+<h3 id="macos">macOS</h3>
+<ul>
+<li>Apple Silicon only (M1 and newer).</li>
+<li>The app is signed but not notarized, so the first open from the disk image gets "can't check the app". Right-click RbxNative in Applications, Open, then Open again. The terminal install skips this.</li>
+<li>After each update macOS asks once for your login password so RbxNative can read your saved Roblox key from the Keychain. Pick Always Allow and it stays quiet until the next version.</li>
+<li>macOS can't put another app inside a window, so Play runs the game in the Roblox app next to the editor. F8 or the RbxNative button in the game opens the panel.</li>
+<li>The network simulator asks for admin once, the first time you shape a Play.</li>
+</ul>
+<h3 id="linux">Linux</h3>
+<ul>
+<li>x86_64. X11 is the main target. Wayland works but the cursor doesn't get captured, so anything that needs pointer lock won't feel right.</li>
+<li>Play needs <a href="https://sober.vinegarhq.org">Sober</a>, Roblox doesn't ship a Linux client.</li>
+<li>The AppImage needs FUSE, most desktops have it. If not, run it with <code>--appimage-extract-and-run</code>.</li>
+<li>The Flatpak can't run programs on the host, so the network simulator, the controller emulator and device simulation aren't in it.</li>
+</ul>
 <h2 id="portable">Portable</h2>
 <p>Every release also has a plain zip (Windows) or tarball (macOS, Linux). Unpack it anywhere you can write to and run it from there, nothing else to install.</p>
 <pre><code>curl -LO https://github.com/chteau/rbx-native/releases/download/v0.2.0/RbxNative-0.2.0-x86_64-unknown-linux-gnu.tar.gz
@@ -70,7 +94,6 @@ sha256sum -c --ignore-missing SHA256SUMS
 tar xzf RbxNative-0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./RbxNative-0.2.0-x86_64-unknown-linux-gnu/rbxnative</code></pre>
 <p>Swap the version for the <a href="https://github.com/chteau/rbx-native/releases/latest">latest one</a>. 0.1.0 called the program <code>rbxstudio</code>. An old install renames itself when it updates and keeps <code>rbxstudio</code> as a link.</p>
-<p>X11 is the main target on Linux. Wayland works but the cursor doesn't get captured, so anything that needs pointer lock won't feel right.</p>
 <h2 id="updates">Updates</h2>
 <p>RbxNative updates itself. On launch it checks the latest GitHub release in the background, downloads a newer one, checks the minisign signature and the hash, and swaps it in for the next launch. Nothing blocks startup, and offline it just moves on.</p>
 <p>That works for every install above: the setup, the terminal install, the portable folder, the app in Applications and the AppImage.</p>

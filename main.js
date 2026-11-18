@@ -1,25 +1,46 @@
-// The newest release with a build for this visitor's system gets the direct
-// link, best kind first. If GitHub doesn't answer the page still points at
-// releases/latest.
-const system = /Windows/.test(navigator.userAgent)
-  ? { name: "Windows", kinds: [/-windows-x64-setup\.exe$/] }
+// One button per system, the visitor's own first and filled in. Each gets the
+// newest release's file for it, best kind first. If GitHub doesn't answer they
+// stay on the install guide's section for that system.
+const systems = {
+  windows: { name: "Windows", kinds: [/-windows-x64-setup\.exe$/] },
+  macos: { name: "macOS", kinds: [/-macos-arm64\.dmg$/] },
+  linux: { name: "Linux", kinds: [/-x86_64\.AppImage$/, /x86_64-unknown-linux-gnu\.tar\.gz$/] },
+};
+const mine = /Windows/.test(navigator.userAgent)
+  ? "windows"
   : /Macintosh|Mac OS X/.test(navigator.userAgent)
-    ? { name: "macOS", kinds: [/-macos-arm64\.dmg$/] }
-    : { name: "Linux", kinds: [/-x86_64\.AppImage$/, /x86_64-unknown-linux-gnu\.tar\.gz$/] };
+    ? "macos"
+    : /Linux|X11/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent)
+      ? "linux"
+      : null;
+const row = document.getElementById("downloads");
+const buttons = [...row.querySelectorAll("a[data-os]")];
+if (mine) {
+  for (const button of buttons) {
+    const own = button.dataset.os === mine;
+    button.className = own ? "primary" : "secondary";
+    button.textContent = own ? "Download for " + systems[mine].name : systems[button.dataset.os].name;
+  }
+  row.prepend(buttons.find((b) => b.dataset.os === mine), " ");
+}
 fetch("https://api.github.com/repos/chteau/rbx-native/releases?per_page=10")
   .then((reply) => (reply.ok ? reply.json() : []))
   .then((releases) => {
-    for (const release of releases) {
-      if (release.draft) continue;
-      const kind = system.kinds.find((k) => release.assets.some((a) => k.test(a.name)));
-      if (!kind) continue;
-      const asset = release.assets.find((a) => kind.test(a.name));
-      const button = document.getElementById("download");
-      button.href = asset.browser_download_url;
-      button.textContent = "Download for " + system.name;
+    let tag = null;
+    for (const button of buttons) {
+      const { kinds } = systems[button.dataset.os];
+      for (const release of releases) {
+        if (release.draft) continue;
+        const kind = kinds.find((k) => release.assets.some((a) => k.test(a.name)));
+        if (!kind) continue;
+        button.href = release.assets.find((a) => kind.test(a.name)).browser_download_url;
+        if (button.dataset.os === mine || !tag) tag = release.tag_name;
+        break;
+      }
+    }
+    if (tag) {
       document.getElementById("download-note").innerHTML =
-        release.tag_name + ". Other systems and the one-line install are in the <a href=\"docs/install.html\">install guide</a>.";
-      return;
+        tag + ". Each system has its own quirks, they're in the <a href=\"docs/install.html#systems\">install guide</a>.";
     }
   })
   .catch(() => {});
