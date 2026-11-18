@@ -1,4 +1,6 @@
-# Posts every published release to the Discord #releases channel.
+# Posts every published release to the Discord #releases channel. release.yml
+# starts it with workflow_dispatch once it publishes (its own release doesn't
+# fire `release: published`); a release made by hand fires that event.
 # Needs the DISCORD_RELEASES_WEBHOOK repo secret (a webhook made by the server's bot,
 # so the link buttons render).
 name: Discord release post
