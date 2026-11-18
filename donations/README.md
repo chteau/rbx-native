@@ -19,15 +19,17 @@ donation that bought something would be a sale.
 [`SupportRbxNative.rbxlx`](SupportRbxNative.rbxlx) is the whole place,
 made and playtested in RbxNative. Open it there to change it.
 
-- `ReplicatedStorage.Config`: the developer product ids, cheapest first.
-  The only thing to fill in. Prices are set on Roblox, the buttons read
-  them from there.
+- `ReplicatedStorage.Config`: the developer product ids (quick buttons and
+  custom-amount pieces), board size, the music track. Prices are set on
+  Roblox, the buttons read them from there.
 - `ServerScriptService.Donations`: takes the purchases. Each donor's record
   keeps the receipts it counted, so a receipt Roblox hands over twice counts
   once, and a purchase is only granted after that record is saved. Totals go
   to an OrderedDataStore for the donor board.
-- `ReplicatedFirst.DonateUI`: the screen. What the money is for, one button
-  per product, the top 20 donors, a thank-you after paying. Characters don't
+- `ReplicatedFirst.DonateUI`: the screen. An animated indigo backdrop with
+  drifting particles, what the money is for, quick buttons, a custom amount,
+  the top 100 donors, quiet music with an on/off switch, a thank-you after
+  paying. Characters don't
   load (`Players.CharacterAutoLoads` is off), so there's nothing else to the
   place, and the script lives in ReplicatedFirst because nothing would copy
   it out of StarterGui without a character.
