@@ -1,6 +1,9 @@
 {
-  "_readme": "Official maintainers and their share of Robux donations, in percent. Copy these into the group's recurring payouts (README.md). Changes go through a PR so everyone sees them. Shares must add up to 100.",
+  "_readme": "Official maintainers (the repo's collaborators) and their share of Robux donations, in percent. The group's recurring payouts copy these (README.md). Changes go through a PR so everyone sees them. Shares add up to 100.",
   "maintainers": [
-    { "name": "Chteau", "roblox": "Cheeteau", "github": "chteau", "share": 100 }
+    { "name": "Chee", "github": "chteau", "roblox": "Cheeteau", "share": 70 },
+    { "name": "Viken", "github": "Vikmanou", "roblox": "Syveric", "share": 15 },
+    { "name": "OnlyQualityGames", "github": "jleeclient", "roblox": "OnlyQualityGames", "share": 7.5 },
+    { "name": "Fabian", "github": "fabideveloper", "roblox": "suntFabian", "share": 7.5 }
   ]
 }
