@@ -1,0 +1,6 @@
+{
+  "_readme": "Official maintainers and their share of Robux donations, in percent. Copy these into the group's recurring payouts (README.md). Changes go through a PR so everyone sees them. Shares must add up to 100.",
+  "maintainers": [
+    { "name": "Chteau", "roblox": "Cheeteau", "github": "chteau", "share": 100 }
+  ]
+}
