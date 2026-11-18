@@ -1,0 +1,39 @@
+{
+  "_readme": "People on the contributor wall (contributors.html, and the first four on the home page). Code contributors come from GitHub on their own, add them here only to give them roles, a different name, or the maintainer mark. Everyone else (testing, design, translations) goes here by hand. Fields: name, github (login, gives the avatar and link) or url, roles, maintainer (true only for the official maintainers, the original team: they come first and get the indigo border). Roles: code, testing, design, docs, translation, framework.",
+  "people": [
+    {
+      "github": "chteau",
+      "roles": [
+        "code"
+      ],
+      "maintainer": true,
+      "note": "Started it, most of the editor"
+    },
+    {
+      "github": "Vikmanou",
+      "roles": [
+        "code"
+      ],
+      "maintainer": true,
+      "note": "The MCP server, graph mode, auto-recovery"
+    },
+    {
+      "github": "jleeclient",
+      "roles": [
+        "code"
+      ],
+      "maintainer": true,
+      "note": "Windows support and texture fallback"
+    },
+    {
+      "name": "fabi",
+      "github": "fabideveloper",
+      "roles": [
+        "framework"
+      ],
+      "note": "Loren, the built-in game framework",
+      "maintainer": true
+    }
+  ],
+  "skip": []
+}
