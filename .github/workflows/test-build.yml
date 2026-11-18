@@ -1,10 +1,10 @@
 name: Test build
 
 # Hand-dispatched alpha builds for testers on Windows, macOS and Linux. Not
-# the release pipeline: nothing is packaged as an installer or
-# published as a GitHub Release (macOS is signed with our own cert, see
-# release/macos-sign.sh); each OS gets one workflow artifact zip that
-# expires with the run.
+# the release pipeline: nothing is published as a GitHub Release, and only
+# macOS is packaged (the signed RbxNative.app in a disk image, as releases
+# ship it, see release/macos-app.sh); each OS gets one workflow artifact
+# zip that expires with the run.
 on:
   workflow_dispatch:
 
@@ -29,7 +29,9 @@ jobs:
             exe: rbxstudio
             name: RbxNative
           - os: linux
-            runner: ubuntu-latest # x86_64-unknown-linux-gnu
+            # Oldest runner GitHub still has, same as release.yml, so testers on
+            # older distros (glibc 2.35+) can run it.
+            runner: ubuntu-22.04 # x86_64-unknown-linux-gnu
             exe: rbxstudio
             name: rbxnative
     steps:
@@ -56,14 +58,20 @@ jobs:
       - name: cargo build --release
         run: cargo build --release -p rbx_studio --bin rbxstudio
 
-      # Same identity every build, so Keychain and Accessibility grants
-      # survive an update (see the script).
-      - name: Sign (macOS)
+      # The release's signed app in a disk image: a bare binary copied into
+      # an installed RbxNative.app breaks the bundle's signature. Same
+      # identity every build, so Keychain and Accessibility grants survive
+      # an update (see macos-sign.sh).
+      - name: App and disk image (macOS)
         if: matrix.os == 'macos'
         env:
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
-        run: .github/release/macos-sign.sh target/release/rbxstudio
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/rbx_studio/Cargo.toml | head -n 1)"
+          app="$RUNNER_TEMP/app/RbxNative.app"
+          .github/release/macos-app.sh target/release/rbxstudio "$version" "$app"
+          .github/release/macos-dmg.sh "$app" "$RUNNER_TEMP/RbxNative.dmg"
 
       - name: Stage the artifact
         shell: bash
@@ -71,8 +79,12 @@ jobs:
           short_sha="${GITHUB_SHA::7}"
           echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
           mkdir dist
-          # Cargo's binary is rbxstudio; it ships under the release's name.
-          cp "target/release/${{ matrix.exe }}" "dist/${{ matrix.name }}"
+          if [ "${{ matrix.os }}" = macos ]; then
+            cp "$RUNNER_TEMP/RbxNative.dmg" "dist/RbxNative-$short_sha.dmg"
+          else
+            # Cargo's binary is rbxstudio; it ships under the release's name.
+            cp "target/release/${{ matrix.exe }}" "dist/${{ matrix.name }}"
+          fi
           if [ "${{ matrix.os }}" = windows ]; then
             .github/release/windivert.sh dist
           fi
@@ -83,8 +95,9 @@ jobs:
           } > dist/README-ALPHA.txt
 
       # upload-artifact zips `dist/` itself, so the download is one zip with
-      # the binary and the README at its root. Zip drops the Unix executable
-      # bit, which is why the README starts with `chmod +x`.
+      # the program and the README at its root. Zip drops the Unix
+      # executable bit, which is why the README says `chmod +x` on Linux; a
+      # disk image keeps the app inside it whole.
       - uses: actions/upload-artifact@v4
         with:
           name: RbxNative-${{ matrix.os }}-${{ env.SHORT_SHA }}
