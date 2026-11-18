@@ -1,0 +1,757 @@
+<roblox version="4">
+  <Meta name="ExplicitAutoJoints">true</Meta>
+  <Item class="Workspace" referent="RBX1">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <Ref name="CurrentCamera">RBX2</Ref>
+    </Properties>
+    <Item class="Camera" referent="RBX2">
+      <Properties>
+        <string name="Name">Camera</string>
+        <CoordinateFrame name="CFrame">
+          <X>75.04819</X>
+          <Y>46.847763</Y>
+          <Z>66.79113</Z>
+          <R00>0.6648188</R00>
+          <R01>-0.31569776</R01>
+          <R02>0.67701614</R02>
+          <R10>0</R10>
+          <R11>0.9063078</R11>
+          <R12>0.4226182</R12>
+          <R20>-0.7470046</R20>
+          <R21>-0.28096455</R21>
+          <R22>0.6025305</R22>
+        </CoordinateFrame>
+        <float name="FieldOfView">70</float>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="Players" referent="RBX3">
+    <Properties>
+      <string name="Name">Players</string>
+      <bool name="CharacterAutoLoads">false</bool>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="RBX4">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="ModuleScript" referent="RBX5">
+      <Properties>
+        <string name="Name">Config</string>
+        <ProtectedString name="Source">--!strict
+-- The donation place's settings. Product ids come from the experience's
+-- developer products (donations/README.md lists them); prices come from
+-- Roblox at run time.
+return {
+	-- The quick buttons, cheapest first. One button each.
+	products = { 3733101617, 3733101622, 3733101623, 3733101624, 3733101628 } :: { number },
+	-- Price -&gt; product id, for a custom amount. Roblox can only charge a
+	-- product's own price, so a custom amount is split into these (biggest
+	-- first) and bought one after another.
+	denominations = {
+		[1] = 3733110798,
+		[2] = 3733110804,
+		[5] = 3733110807,
+		[10] = 3733110812,
+		[20] = 3733110816,
+		[50] = 3733110819,
+		[100] = 3733101622,
+		[200] = 3733110823,
+		[500] = 3733101623,
+		[1000] = 3733101624,
+		[2000] = 3733110826,
+		[5000] = 3733101628,
+		[10000] = 3733110832,
+	} :: { [number]: number },
+	-- Most purchases one custom amount may take.
+	maxSplit = 8,
+	-- How many donors the board lists (Roblox reads at most 100 at once).
+	boardSize = 100,
+	-- How often the server re-reads the board, in seconds.
+	boardEvery = 60,
+	-- Background music: &quot;Calm down, everything is fine. (ambient)&quot; by
+	-- DistrokidOfficial, licensed for any experience.
+	music = &quot;rbxassetid://93955641826556&quot;,
+	musicVolume = 0.35,
+}
+</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="RBX6">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Script" referent="RBX7">
+      <Properties>
+        <string name="Name">Donations</string>
+        <ProtectedString name="Source">--!strict
+-- Takes the Robux. Every product in Config.products and Config.denominations
+-- is a donation: nothing unlocks, the buyer gets a thank-you and a spot on
+-- the donor board. The money goes to the group that owns this place, and the
+-- group pays the maintainers out by percentage (donations/README.md).
+local DataStoreService = game:GetService(&quot;DataStoreService&quot;)
+local MarketplaceService = game:GetService(&quot;MarketplaceService&quot;)
+local Players = game:GetService(&quot;Players&quot;)
+local ReplicatedStorage = game:GetService(&quot;ReplicatedStorage&quot;)
+
+local Config = require(ReplicatedStorage:WaitForChild(&quot;Config&quot;))
+
+local remotes = Instance.new(&quot;Folder&quot;)
+remotes.Name = &quot;Donations&quot;
+local thanked = Instance.new(&quot;RemoteEvent&quot;)
+thanked.Name = &quot;Thanked&quot;
+thanked.Parent = remotes
+local board = Instance.new(&quot;StringValue&quot;)
+board.Name = &quot;Board&quot;
+board.Value = &quot;[]&quot;
+board.Parent = remotes
+remotes.Parent = ReplicatedStorage
+
+-- Per donor: their total and the last receipts counted in it, and the same
+-- totals sorted for the board. Unpublished (a Studio playtest) Roblox has no
+-- DataStores and throws here, so the screen still comes up, just without
+-- taking donations.
+local storesOk, donors, totals = pcall(function()
+	return DataStoreService:GetDataStore(&quot;Donors&quot;), DataStoreService:GetOrderedDataStore(&quot;DonorTotals&quot;)
+end)
+if not storesOk then
+	warn(&quot;donations off, no DataStores here:&quot;, donors)
+end
+local KEEP_RECEIPTS = 50
+
+local donation: { [number]: boolean } = {}
+for _, id in Config.products do
+	donation[id] = true
+end
+for _, id in Config.denominations do
+	donation[id] = true
+end
+
+type Donor = { total: number, receipts: { string } }
+
+-- Roblox can hand the same receipt over more than once (a server closing
+-- mid-purchase, a retry), so the donor's record keeps the receipts it has
+-- counted and skips one it has seen. The purchase is only granted once that
+-- record is saved; the board copy is a plain overwrite, safe to repeat.
+MarketplaceService.ProcessReceipt = function(receipt)
+	if not storesOk or not donation[receipt.ProductId] then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	local key = tostring(receipt.PlayerId)
+	local total = 0
+	local ok, err = pcall(function()
+		donors:UpdateAsync(key, function(saved: Donor?): Donor?
+			local donor: Donor = saved or { total = 0, receipts = {} }
+			if table.find(donor.receipts, receipt.PurchaseId) then
+				total = donor.total
+				return nil
+			end
+			donor.total += receipt.CurrencySpent
+			table.insert(donor.receipts, receipt.PurchaseId)
+			if #donor.receipts &gt; KEEP_RECEIPTS then
+				table.remove(donor.receipts, 1)
+			end
+			total = donor.total
+			return donor
+		end)
+	end)
+	if not ok then
+		warn(&quot;donation not saved yet, Roblox will retry:&quot;, err)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	pcall(function()
+		totals:SetAsync(key, total)
+	end)
+	local player = Players:GetPlayerByUserId(receipt.PlayerId)
+	if player then
+		thanked:FireClient(player, receipt.CurrencySpent)
+	end
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+
+local names: { [number]: string } = {}
+local function nameOf(userId: number): string
+	local known = names[userId]
+	if known then
+		return known
+	end
+	local ok, name = pcall(Players.GetNameFromUserIdAsync, Players, userId)
+	local found = if ok and type(name) == &quot;string&quot; then name else &quot;Someone&quot;
+	names[userId] = found
+	return found
+end
+
+local function refreshBoard()
+	if not storesOk then
+		return
+	end
+	local ok, pages = pcall(function()
+		return totals:GetSortedAsync(false, Config.boardSize)
+	end)
+	if not ok then
+		return
+	end
+	local rows = {}
+	for _, entry in pages:GetCurrentPage() do
+		local userId = tonumber(entry.key)
+		if userId then
+			table.insert(rows, { name = nameOf(userId), robux = entry.value })
+		end
+	end
+	board.Value = game:GetService(&quot;HttpService&quot;):JSONEncode(rows)
+end
+
+task.spawn(function()
+	while true do
+		refreshBoard()
+		task.wait(Config.boardEvery)
+	end
+end)
+</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="RBX8">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedFirst" referent="RBX9">
+    <Properties>
+      <string name="Name">ReplicatedFirst</string>
+    </Properties>
+    <Item class="LocalScript" referent="RBX10">
+      <Properties>
+        <string name="Name">DonateUI</string>
+        <ProtectedString name="Source">--!strict
+-- The whole place is this screen: an animated indigo backdrop with drifting
+-- particles, what the money is for, quick buttons and a custom amount, the
+-- top donors, quiet music and a thank-you after a purchase. Characters don't
+-- load (Players.CharacterAutoLoads is off), so there's no world, only this.
+local HttpService = game:GetService(&quot;HttpService&quot;)
+local MarketplaceService = game:GetService(&quot;MarketplaceService&quot;)
+local Players = game:GetService(&quot;Players&quot;)
+local ReplicatedStorage = game:GetService(&quot;ReplicatedStorage&quot;)
+local RunService = game:GetService(&quot;RunService&quot;)
+local SoundService = game:GetService(&quot;SoundService&quot;)
+
+local Config = require(ReplicatedStorage:WaitForChild(&quot;Config&quot;))
+local remotes = ReplicatedStorage:WaitForChild(&quot;Donations&quot;)
+local thanked = remotes:WaitForChild(&quot;Thanked&quot;) :: RemoteEvent
+local board = remotes:WaitForChild(&quot;Board&quot;) :: StringValue
+
+local player = Players.LocalPlayer
+
+-- The editor's colours (assets/themes/default/theme.json), plus two deeper
+-- blues for the backdrop.
+local BLACK = Color3.fromRGB(10, 10, 11)
+local PANEL = Color3.fromRGB(18, 18, 19)
+local FIELD = Color3.fromRGB(28, 28, 31)
+local LINE = Color3.fromRGB(44, 44, 46)
+local WHITE = Color3.fromRGB(244, 244, 246)
+local DIM = Color3.fromRGB(166, 166, 174)
+local INDIGO = Color3.fromRGB(108, 127, 219)
+local INDIGO_UP = Color3.fromRGB(127, 144, 228)
+local NAVY = Color3.fromRGB(12, 16, 38)
+local DEEP = Color3.fromRGB(32, 44, 112)
+local FONT = Font.fromEnum(Enum.Font.BuilderSans)
+local BOLD = Font.fromEnum(Enum.Font.BuilderSansBold)
+
+local function make(class: string, props: { [string]: any }, children: { Instance }?): any
+	local object = Instance.new(class)
+	for key, value in props do
+		(object :: any)[key] = value
+	end
+	for _, child in (children or {}) :: { Instance } do
+		child.Parent = object
+	end
+	return object
+end
+
+local function corner(radius: number)
+	return make(&quot;UICorner&quot;, { CornerRadius = UDim.new(0, radius) })
+end
+
+local function text(props: { [string]: any }): TextLabel
+	local label = make(&quot;TextLabel&quot;, {
+		BackgroundTransparency = 1,
+		FontFace = FONT,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.fromScale(1, 0),
+	})
+	for key, value in props do
+		(label :: any)[key] = value
+	end
+	return label
+end
+
+local function button(props: { [string]: any }, primary: boolean): TextButton
+	local made = make(&quot;TextButton&quot;, {
+		BackgroundColor3 = if primary then WHITE else FIELD,
+		TextColor3 = if primary then BLACK else WHITE,
+		FontFace = BOLD,
+		TextSize = 18,
+		AutoButtonColor = true,
+	}, { corner(8), make(&quot;UIStroke&quot;, { Color = LINE, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }) })
+	for key, value in props do
+		(made :: any)[key] = value
+	end
+	return made
+end
+
+local screen = make(&quot;ScreenGui&quot;, {
+	Name = &quot;Donate&quot;,
+	IgnoreGuiInset = true,
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+})
+
+-- Backdrop: a slowly turning navy-to-indigo gradient, two big soft glows
+-- that wander, and small particles rising like dust in light.
+local backdrop = make(&quot;Frame&quot;, {
+	BackgroundColor3 = WHITE,
+	Size = UDim2.fromScale(1, 1),
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	Parent = screen,
+})
+local gradient = make(&quot;UIGradient&quot;, {
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, NAVY),
+		ColorSequenceKeypoint.new(0.55, DEEP),
+		ColorSequenceKeypoint.new(1, INDIGO),
+	}),
+	Parent = backdrop,
+})
+
+-- Soft glows: stacked circles, each faint, so the middle builds up brighter
+-- than the edge (a UIGradient only fades in a straight line).
+local glows: { Frame } = {}
+for index = 1, 2 do
+	local glow = make(&quot;Frame&quot;, {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromScale(0.75, 0.75),
+		Parent = backdrop,
+	}, { make(&quot;UIAspectRatioConstraint&quot;, {}) })
+	for ring = 1, 16 do
+		make(&quot;Frame&quot;, {
+			BackgroundColor3 = if index == 1 then INDIGO_UP else INDIGO,
+			BackgroundTransparency = 0.975,
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1 - (ring - 1) * 0.055, 1 - (ring - 1) * 0.055),
+			Parent = glow,
+		}, { make(&quot;UICorner&quot;, { CornerRadius = UDim.new(1, 0) }) })
+	end
+	glows[index] = glow
+end
+
+type Particle = { frame: Frame, x: number, y: number, speed: number, sway: number, phase: number }
+local particles: { Particle } = {}
+local random = Random.new()
+for _ = 1, 48 do
+	local size = random:NextInteger(2, 6)
+	local frame = make(&quot;Frame&quot;, {
+		BackgroundColor3 = if random:NextNumber() &lt; 0.7 then WHITE else INDIGO_UP,
+		BackgroundTransparency = random:NextNumber(0.35, 0.8),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(size, size),
+		BorderSizePixel = 0,
+		Parent = backdrop,
+	}, { make(&quot;UICorner&quot;, { CornerRadius = UDim.new(1, 0) }) })
+	table.insert(particles, {
+		frame = frame,
+		x = random:NextNumber(),
+		y = random:NextNumber(),
+		-- Screen heights per second: the slowest take about a minute.
+		speed = random:NextNumber(0.015, 0.05),
+		sway = random:NextNumber(0.004, 0.02),
+		phase = random:NextNumber(0, math.pi * 2),
+	})
+end
+
+local clock = 0
+RunService.RenderStepped:Connect(function(step: number)
+	clock += step
+	gradient.Rotation = 35 + math.sin(clock * 0.08) * 25
+	gradient.Offset = Vector2.new(math.sin(clock * 0.05) * 0.15, math.cos(clock * 0.06) * 0.1)
+	glows[1].Position = UDim2.fromScale(0.25 + math.sin(clock * 0.11) * 0.12, 0.3 + math.cos(clock * 0.09) * 0.1)
+	glows[2].Position = UDim2.fromScale(0.75 + math.cos(clock * 0.07) * 0.12, 0.72 + math.sin(clock * 0.1) * 0.1)
+	for _, particle in particles do
+		particle.y -= particle.speed * step
+		if particle.y &lt; -0.02 then
+			particle.y = 1.02
+			particle.x = random:NextNumber()
+		end
+		local x = particle.x + math.sin(clock * 0.6 + particle.phase) * particle.sway
+		particle.frame.Position = UDim2.fromScale(x, particle.y)
+	end
+end)
+
+-- The card, dead centre: AnchorPoint and Position both 0.5, 0.5 on the
+-- screen itself. On a screen too short for it, a UIScale shrinks it to fit
+-- instead of scrolling.
+local card = make(&quot;Frame&quot;, {
+	BackgroundColor3 = PANEL,
+	BackgroundTransparency = 0.08,
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(1, -32, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	Parent = screen,
+}, {
+	corner(14),
+	make(&quot;UISizeConstraint&quot;, { MaxSize = Vector2.new(720, math.huge) }),
+	make(&quot;UIPadding&quot;, {
+		PaddingTop = UDim.new(0, 36),
+		PaddingBottom = UDim.new(0, 36),
+		PaddingLeft = UDim.new(0, 36),
+		PaddingRight = UDim.new(0, 36),
+	}),
+	make(&quot;UIListLayout&quot;, { Padding = UDim.new(0, 16), SortOrder = Enum.SortOrder.LayoutOrder }),
+})
+local fit = make(&quot;UIScale&quot;, { Parent = card })
+local function refit()
+	local room = screen.AbsoluteSize.Y - 32
+	local tall = card.AbsoluteSize.Y / fit.Scale
+	fit.Scale = if tall &gt; room and tall &gt; 0 then room / tall else 1
+end
+card:GetPropertyChangedSignal(&quot;AbsoluteSize&quot;):Connect(refit)
+screen:GetPropertyChangedSignal(&quot;AbsoluteSize&quot;):Connect(refit)
+
+text({ Text = &quot;Support RbxNative&quot;, TextSize = 38, FontFace = BOLD, LayoutOrder = 1, Parent = card })
+text({
+	Text = &quot;RbxNative is a free, open source Roblox editor. Every Robux here goes to its maintainers. A donation doesn't unlock anything, it keeps the project going. Thank you!&quot;,
+	TextSize = 19,
+	TextColor3 = DIM,
+	LayoutOrder = 2,
+	Parent = card,
+})
+
+local quick = make(&quot;Frame&quot;, {
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	LayoutOrder = 3,
+	Parent = card,
+}, {
+	make(&quot;UIListLayout&quot;, {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Wraps = true,
+		Padding = UDim.new(0, 10),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}),
+})
+
+if #Config.products == 0 then
+	text({ Text = &quot;Donations open soon.&quot;, TextSize = 18, TextColor3 = DIM, Parent = quick })
+end
+for order, id in Config.products do
+	-- Five per row, sharing the width exactly: 5 × (20% − 8) + 4 gaps of 10.
+	local made = button({
+		Text = &quot;…&quot;,
+		Size = UDim2.new(0.2, -8, 0, 48),
+		TextScaled = true,
+		LayoutOrder = order,
+		Parent = quick,
+	}, order == 1)
+	make(&quot;UITextSizeConstraint&quot;, { MaxTextSize = 18, Parent = made })
+	make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6), PaddingTop = UDim.new(0, 13), PaddingBottom = UDim.new(0, 13), Parent = made })
+	task.spawn(function()
+		local ok, info = pcall(MarketplaceService.GetProductInfoAsync, MarketplaceService, id, Enum.InfoType.Product)
+		if ok and info and info.PriceInRobux then
+			made.Text = &quot;R$ &quot; .. tostring(info.PriceInRobux)
+		else
+			made.Visible = false
+		end
+	end)
+	made.Activated:Connect(function()
+		MarketplaceService:PromptProductPurchase(player, id)
+	end)
+end
+
+-- Custom amount: Roblox only charges a product's own price, so the amount is
+-- split into Config.denominations, biggest first, and each part is its own
+-- purchase. The hint says how many before anything is asked.
+local prices: { number } = {}
+for price in Config.denominations do
+	table.insert(prices, price)
+end
+table.sort(prices, function(a, b)
+	return a &gt; b
+end)
+
+local function split(amount: number): { number }
+	local parts = {}
+	local left = amount
+	for _, price in prices do
+		while left &gt;= price do
+			table.insert(parts, price)
+			left -= price
+		end
+	end
+	if left &gt; 0 then
+		return {}
+	end
+	return parts
+end
+
+local custom = make(&quot;Frame&quot;, {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 48),
+	LayoutOrder = 4,
+	Visible = #prices &gt; 0,
+	Parent = card,
+}, {
+	make(&quot;UIListLayout&quot;, {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, 10),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}),
+})
+local amountBox = make(&quot;TextBox&quot;, {
+	BackgroundColor3 = FIELD,
+	TextColor3 = WHITE,
+	PlaceholderText = &quot;Custom amount (R$)&quot;,
+	PlaceholderColor3 = DIM,
+	Text = &quot;&quot;,
+	FontFace = FONT,
+	TextSize = 18,
+	ClearTextOnFocus = false,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Size = UDim2.new(1, -140, 1, 0),
+	LayoutOrder = 1,
+	Parent = custom,
+}, {
+	corner(8),
+	make(&quot;UIStroke&quot;, { Color = LINE, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
+	make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14) }),
+})
+local give = button({ Text = &quot;Donate&quot;, Size = UDim2.new(0, 130, 1, 0), LayoutOrder = 2, Parent = custom }, true)
+give.BackgroundColor3 = INDIGO
+give.TextColor3 = WHITE
+local hint = text({ Text = &quot;&quot;, TextSize = 16, TextColor3 = DIM, LayoutOrder = 5, Visible = false, Parent = card })
+
+local function plan(): { number }?
+	local amount = tonumber(amountBox.Text)
+	hint.Visible = amountBox.Text ~= &quot;&quot;
+	if not amount or amount &lt; 1 or amount ~= math.floor(amount) then
+		hint.Text = &quot;A whole number of Robux, 1 or more.&quot;
+		return nil
+	end
+	local parts = split(amount)
+	if #parts == 0 then
+		hint.Text = &quot;That amount can't be made from the products here.&quot;
+		return nil
+	end
+	if #parts &gt; Config.maxSplit then
+		hint.Text = string.format(
+			&quot;That takes %d purchases in a row. Try a rounder number, at most %d at a time.&quot;,
+			#parts,
+			Config.maxSplit
+		)
+		return nil
+	end
+	if #parts == 1 then
+		hint.Text = &quot;One purchase.&quot;
+	else
+		local words = {}
+		for _, price in parts do
+			table.insert(words, tostring(price))
+		end
+		hint.Text = string.format(&quot;%d purchases in a row: %s.&quot;, #parts, table.concat(words, &quot; + &quot;))
+	end
+	return parts
+end
+amountBox:GetPropertyChangedSignal(&quot;Text&quot;):Connect(function()
+	local digits = string.gsub(amountBox.Text, &quot;%D&quot;, &quot;&quot;)
+	if digits ~= amountBox.Text then
+		amountBox.Text = digits
+		return
+	end
+	plan()
+end)
+
+local buying = false
+give.Activated:Connect(function()
+	local parts = plan()
+	if not parts or buying then
+		return
+	end
+	buying = true
+	give.Text = &quot;…&quot;
+	for index, price in parts do
+		hint.Text = string.format(&quot;Purchase %d of %d: R$ %d&quot;, index, #parts, price)
+		local id = Config.denominations[price]
+		MarketplaceService:PromptProductPurchase(player, id)
+		local done = false
+		local bought = false
+		local connection = MarketplaceService.PromptProductPurchaseFinished:Connect(
+			function(userId: number, productId: number, isPurchased: boolean)
+				if userId == player.UserId and productId == id then
+					done, bought = true, isPurchased
+				end
+			end
+		)
+		while not done do
+			task.wait()
+		end
+		connection:Disconnect()
+		if not bought then
+			hint.Text = if index == 1 then &quot;Cancelled.&quot; else string.format(&quot;Stopped after %d of %d.&quot;, index - 1, #parts)
+			break
+		end
+		if index == #parts then
+			hint.Text = &quot;All done, thank you!&quot;
+		end
+	end
+	give.Text = &quot;Donate&quot;
+	buying = false
+end)
+
+-- Top donors, up to Config.boardSize (100), in a scrolling list.
+local heading = make(&quot;Frame&quot;, {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 28),
+	LayoutOrder = 6,
+	Parent = card,
+})
+text({ Text = &quot;Top donors&quot;, TextSize = 22, FontFace = BOLD, Size = UDim2.fromScale(1, 1), Parent = heading })
+local count = text({
+	Text = &quot;&quot;,
+	TextSize = 15,
+	TextColor3 = DIM,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	Size = UDim2.fromScale(1, 1),
+	Parent = heading,
+})
+
+local list = make(&quot;ScrollingFrame&quot;, {
+	BackgroundColor3 = BLACK,
+	BackgroundTransparency = 0.4,
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 0, 280),
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 4,
+	ScrollBarImageColor3 = WHITE,
+	ScrollBarImageTransparency = 0.6,
+	LayoutOrder = 7,
+	Parent = card,
+}, {
+	corner(10),
+	make(&quot;UIListLayout&quot;, { SortOrder = Enum.SortOrder.LayoutOrder }),
+	make(&quot;UIPadding&quot;, {
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 6),
+		PaddingLeft = UDim.new(0, 14),
+		PaddingRight = UDim.new(0, 14),
+	}),
+})
+
+local function row(rank: number, name: string, robux: number)
+	local medal = if rank == 1 then INDIGO_UP elseif rank &lt;= 3 then WHITE else DIM
+	local line = make(&quot;Frame&quot;, {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 32),
+		LayoutOrder = rank,
+		Parent = list,
+	})
+	text({
+		Text = tostring(rank),
+		TextSize = 16,
+		FontFace = BOLD,
+		TextColor3 = medal,
+		AutomaticSize = Enum.AutomaticSize.None,
+		Size = UDim2.new(0, 40, 1, 0),
+		Parent = line,
+	})
+	text({
+		Text = name,
+		TextSize = 17,
+		TextColor3 = if rank &lt;= 3 then WHITE else Color3.fromRGB(210, 210, 216),
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextWrapped = false,
+		AutomaticSize = Enum.AutomaticSize.None,
+		Position = UDim2.fromOffset(40, 0),
+		Size = UDim2.new(1, -150, 1, 0),
+		Parent = line,
+	})
+	text({
+		Text = &quot;R$ &quot; .. tostring(robux),
+		TextSize = 17,
+		FontFace = BOLD,
+		TextColor3 = medal,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		AutomaticSize = Enum.AutomaticSize.None,
+		Size = UDim2.fromScale(1, 1),
+		Parent = line,
+	})
+end
+
+local function showBoard()
+	for _, child in list:GetChildren() do
+		if child:IsA(&quot;Frame&quot;) or child:IsA(&quot;TextLabel&quot;) then
+			child:Destroy()
+		end
+	end
+	local ok, rows = pcall(HttpService.JSONDecode, HttpService, board.Value)
+	if not ok or type(rows) ~= &quot;table&quot; or #rows == 0 then
+		count.Text = &quot;&quot;
+		text({ Text = &quot;Be the first.&quot;, TextSize = 16, TextColor3 = DIM, Size = UDim2.new(1, 0, 0, 32), Parent = list })
+		return
+	end
+	local shown = math.min(#rows, Config.boardSize)
+	count.Text = if shown == 1 then &quot;1 donor&quot; else string.format(&quot;top %d&quot;, shown)
+	for rank = 1, shown do
+		local entry = rows[rank]
+		row(rank, tostring(entry.name), tonumber(entry.robux) or 0)
+	end
+end
+board.Changed:Connect(showBoard)
+showBoard()
+
+-- Music, looping quietly the whole time.
+local music = make(&quot;Sound&quot;, {
+	Name = &quot;Music&quot;,
+	SoundId = Config.music,
+	Volume = Config.musicVolume,
+	Looped = true,
+	Parent = SoundService,
+})
+music:Play()
+
+local toast = make(&quot;TextLabel&quot;, {
+	BackgroundColor3 = INDIGO,
+	TextColor3 = WHITE,
+	FontFace = BOLD,
+	TextSize = 18,
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -24),
+	Size = UDim2.fromOffset(0, 46),
+	AutomaticSize = Enum.AutomaticSize.X,
+	Visible = false,
+	Parent = screen,
+}, { corner(8), make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 20), PaddingRight = UDim.new(0, 20) }) })
+
+thanked.OnClientEvent:Connect(function(robux: number)
+	toast.Text = string.format(&quot;Thank you for the R$ %d!&quot;, robux)
+	toast.Visible = true
+	task.delay(5, function()
+		toast.Visible = false
+	end)
+end)
+
+screen.Parent = player:WaitForChild(&quot;PlayerGui&quot;)
+</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>
