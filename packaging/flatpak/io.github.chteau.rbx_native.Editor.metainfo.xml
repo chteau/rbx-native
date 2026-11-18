@@ -92,6 +92,11 @@
   </screenshots>
 
   <releases>
+    <release version="0.2.0" date="2026-11-18">
+      <description>
+        <p>Windows and macOS builds, Team Presence with Roblox Studio, plugin widgets as their own windows, and fixes from the Windows and Mac test runs.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-11-02">
       <description>
         <p>First release.</p>
