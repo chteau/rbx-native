@@ -31,7 +31,11 @@ fn leave_all_has_a_live_host_say_goodbye_before_it_returns() {
         Some(url.clone())
     );
 
-    leave_all(Duration::from_secs(10));
+    // The editor's own cap: quitting waits no longer than this.
+    assert!(
+        leave_all(Duration::from_millis(300)),
+        "the goodbye took too long"
+    );
     assert_eq!(announce::find(&ntfy, &key, &room), Ok(None), "no goodbye");
     let addr = url.trim_start_matches("http://");
     assert!(

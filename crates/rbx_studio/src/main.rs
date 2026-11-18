@@ -210,8 +210,9 @@ const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
 /// How long quitting waits for team presence to leave its room: a couple of
-/// small ntfy posts and the tunnel closing.
-const PRESENCE_LEAVE_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
+/// small ntfy posts and the tunnel closing. With ntfy out of reach the posts
+/// are left behind rather than holding the quit up.
+const PRESENCE_LEAVE_LIMIT: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// Run from a terminal, a GUI-subsystem program gets no stdout or stderr, so
 /// `--help`, `loren` and errors would print nowhere. Attach to the parent's

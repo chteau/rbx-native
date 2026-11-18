@@ -75,6 +75,8 @@ pub(super) struct TeamPresence {
     pub(super) connection: Connection,
     /// In a hosted room: whether this editor hosts it or joined another's.
     pub(super) route: Option<rbx_presence::client::Route>,
+    /// Hosting, but the tunnel is off until its next try.
+    pub(super) remote_paused: Option<rbx_presence::client::Paused>,
     /// Collaborators' round Roblox headshots, fetched once per user.
     pub(super) avatars: std::collections::HashMap<u64, std::sync::Arc<gpui_kit::RenderImage>>,
     /// Users whose headshot was asked for (fetched, in flight or failed).
@@ -170,6 +172,7 @@ impl TeamPresence {
             settings,
             connection: Connection::Off,
             route: None,
+            remote_paused: None,
             avatars: std::collections::HashMap::new(),
             avatar_asked: std::collections::HashSet::new(),
             relay_input,
@@ -273,15 +276,28 @@ fn quick_tunnel() -> rbx_presence::client::Hosting {
         }
     }
 
+    use crate::shell::play::cloudflared;
+    use rbx_play::tunnel::TunnelError;
+    use rbx_presence::client::TunnelRefused;
+
     rbx_presence::client::Hosting(std::sync::Arc::new(|port: u16| {
-        // Hosting is what lets Studio in at all, so say so when it fails.
         let failed = |e: &dyn std::fmt::Display| {
-            format!("couldn't open the tunnel Studio reaches this editor through ({e})")
+            TunnelRefused::from(format!("couldn't open the tunnel ({e})"))
         };
-        let binary = crate::shell::play::cloudflared::program().map_err(|e| failed(&e))?;
+        let binary = cloudflared::program().map_err(|e| failed(&e))?;
         let tunnel = rbx_play::tunnel::TunnelProvider::Cloudflared { binary }
-            .start(port, std::time::Duration::from_secs(30))
-            .map_err(|e| failed(&e))?;
+            .start_gated(
+                port,
+                std::time::Duration::from_secs(30),
+                &cloudflared::cooldown(),
+            )
+            .map_err(|e| match e {
+                TunnelError::RateLimited { retry_in } => TunnelRefused {
+                    why: "Cloudflare is rate limiting this network".into(),
+                    retry_in: Some(retry_in),
+                },
+                e => failed(&e),
+            })?;
         let url = tunnel.public_url.clone();
         Ok((
             url,
@@ -454,6 +470,7 @@ impl Shell {
         presence.coedit = None;
         presence.client = None;
         presence.route = None;
+        presence.remote_paused = None;
         presence.key_conflict = None;
         presence.watch = None;
         presence.snapshot = None;
@@ -737,11 +754,13 @@ impl Shell {
                 }
                 Event::Disconnected(why) => presence.connection = Connection::Retrying(why),
                 Event::Route(route) => {
+                    presence.remote_paused = None;
                     presence.route = Some(route.clone());
                     self.coedit_route(&route);
                 }
                 Event::Rejected(why) => presence.connection = Connection::Rejected(why),
                 Event::KeyConflict(found) => presence.key_conflict = found,
+                Event::RemotePaused(paused) => presence.remote_paused = Some(paused),
             }
             changed = true;
         }

@@ -223,3 +223,72 @@ mod unix_start {
         );
     }
 }
+
+mod cooldown {
+    use std::time::Duration;
+
+    use rbx_play::tunnel::{Cooldown, TunnelError, TunnelProvider, COOLDOWN_MAX, COOLDOWN_START};
+
+    fn script(body: &str) -> TunnelProvider {
+        TunnelProvider::Custom {
+            program: "sh".into(),
+            args: vec!["-c".to_owned(), body.to_owned()],
+            url_pattern: r"https://[a-z0-9]+\.example\.test".to_owned(),
+        }
+    }
+
+    const REFUSED: &str = "echo 'ERR failed to request quick Tunnel: quick tunnel provisioning failed with status 429' >&2; exit 1";
+
+    #[test]
+    fn a_429_turns_tunnels_off_for_a_while_and_doubles() {
+        let dir = tempfile::tempdir().unwrap();
+        let cooldown = Cooldown::new(dir.path().join("state/tunnel_cooldown"));
+        let refused = script(REFUSED)
+            .start_gated(1, Duration::from_secs(10), &cooldown)
+            .err()
+            .expect("refused");
+        assert!(
+            matches!(refused, TunnelError::RateLimited { retry_in } if retry_in == COOLDOWN_START)
+        );
+        assert!(refused.to_string().contains("rate limiting"), "{refused}");
+        assert!(refused.to_string().contains("5 min"), "{refused}");
+
+        // Another start (or a relaunch, reading the same file) runs nothing.
+        let marker = dir.path().join("ran");
+        let again = script(&format!("touch {}", marker.display()))
+            .start_gated(1, Duration::from_secs(10), &Cooldown::new(cooldown.path()))
+            .err()
+            .expect("refused");
+        assert!(
+            matches!(again, TunnelError::RateLimited { retry_in } if retry_in <= COOLDOWN_START)
+        );
+        assert!(!marker.exists(), "a tunnel was started during the cooldown");
+
+        // The next refusal in a row waits twice as long, up to the cap.
+        assert_eq!(cooldown.refused(), COOLDOWN_START * 2);
+        for _ in 0..10 {
+            cooldown.refused();
+        }
+        assert_eq!(cooldown.refused(), COOLDOWN_MAX);
+    }
+
+    #[test]
+    fn other_failures_and_successes_leave_no_cooldown() {
+        let dir = tempfile::tempdir().unwrap();
+        let cooldown = Cooldown::new(dir.path().join("tunnel_cooldown"));
+        let failed = script("echo 'some other error' >&2; exit 1")
+            .start_gated(1, Duration::from_secs(10), &cooldown)
+            .err()
+            .expect("refused");
+        assert!(matches!(failed, TunnelError::Exited(_)));
+        assert_eq!(cooldown.remaining(), None);
+
+        cooldown.refused();
+        std::fs::write(cooldown.path(), "0 600\n").unwrap();
+        let tunnel = script("echo https://abc.example.test; sleep 30")
+            .start_gated(1, Duration::from_secs(10), &cooldown)
+            .unwrap();
+        assert_eq!(tunnel.public_url, "https://abc.example.test");
+        assert!(!cooldown.path().exists(), "a started tunnel clears it");
+    }
+}

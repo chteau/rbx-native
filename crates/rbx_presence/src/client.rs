@@ -53,6 +53,11 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// How often the ntfy transport publishes-then-polls; presence is best-effort
 /// on a shared public server, so a second's latency is fine.
 const NTFY_POLL: Duration = Duration::from_secs(1);
+/// The first wait before trying a tunnel again after it failed (for any
+/// reason but a rate limit, which says how long), doubling up to
+/// [`TUNNEL_RETRY_MAX`].
+const TUNNEL_RETRY_START: Duration = Duration::from_secs(15);
+const TUNNEL_RETRY_MAX: Duration = Duration::from_secs(10 * 60);
 
 /// Unix milliseconds now, or 0 if the clock is before the epoch.
 fn unix_ms() -> u64 {
@@ -69,7 +74,41 @@ pub trait Tunnel: Send {
 
 /// Opens a [`Tunnel`] to `127.0.0.1:<port>` and returns its public
 /// `https://` URL. Supplied by the editor, which ships `cloudflared`.
-pub type OpenTunnel = dyn Fn(u16) -> Result<(String, Box<dyn Tunnel>), String> + Send + Sync;
+pub type OpenTunnel = dyn Fn(u16) -> Result<(String, Box<dyn Tunnel>), TunnelRefused> + Send + Sync;
+
+/// Why a host's tunnel didn't open (or going public through it failed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TunnelRefused {
+    pub why: String,
+    /// Set when the tunnel service rate limits this network: no new tunnel
+    /// before this much time has passed.
+    pub retry_in: Option<Duration>,
+}
+
+impl From<String> for TunnelRefused {
+    fn from(why: String) -> Self {
+        TunnelRefused {
+            why,
+            retry_in: None,
+        }
+    }
+}
+
+impl From<&str> for TunnelRefused {
+    fn from(why: &str) -> Self {
+        why.to_owned().into()
+    }
+}
+
+/// See [`Event::RemotePaused`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Paused {
+    pub why: String,
+    /// The tunnel service rate limits this network.
+    pub rate_limited: bool,
+    /// When the tunnel is tried again (unix ms).
+    pub retry_at_ms: u64,
+}
 
 /// How a [`RelayKind::Hosted`] client may host the room itself; without
 /// one (or when it fails) the client only joins an announced host.
@@ -141,6 +180,11 @@ pub enum Event {
     /// editor that has the place open with a different presence key, or
     /// `None` once there is none (see [`crate::beacon`]).
     KeyConflict(Option<String>),
+    /// [`RelayKind::Hosted`], while hosting: the tunnel didn't open (or
+    /// closed), so only Studio on this computer, on the loopback port,
+    /// reaches this host until the next try. The next [`Event::Route`]
+    /// supersedes it.
+    RemotePaused(Paused),
 }
 
 /// The handle; dropping it stops the worker.
@@ -157,21 +201,23 @@ static QUITTING: AtomicBool = AtomicBool::new(false);
 /// For quitting the app: makes every worker leave its room (a host says
 /// goodbye on the announce topic and closes its tunnel) and waits up to
 /// `limit` for them. The process ending would otherwise cut them off first
-/// and leave guests on a dead address.
-pub fn leave_all(limit: Duration) {
+/// and leave guests on a dead address. Keep `limit` short: a worker stuck
+/// on an unreachable ntfy is simply left behind. True when all of them left.
+pub fn leave_all(limit: Duration) -> bool {
     QUITTING.store(true, Ordering::Relaxed);
     let end = Instant::now() + limit;
     let mut running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
     while *running > 0 {
         let left = end.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return;
+            return false;
         }
         running = STOPPED
             .wait_timeout(running, left)
             .unwrap_or_else(PoisonError::into_inner)
             .0;
     }
+    true
 }
 
 /// `relay_url` with `https` → `wss`, `http` → `ws`, plus
@@ -247,6 +293,10 @@ struct Hosted {
     going: Option<Going>,
     /// Once announced: the tunnel and its address.
     public: Option<Announced>,
+    /// After the tunnel failed: when to try again, and the wait after the
+    /// next failure.
+    retry_at: Option<Instant>,
+    retry_wait: Duration,
 }
 
 struct Announced {
@@ -405,31 +455,64 @@ impl Worker {
             host,
             going: Some(going),
             public: None,
+            retry_at: None,
+            retry_wait: TUNNEL_RETRY_START,
         });
         Ok(())
     }
 
-    /// Takes the outcome of going public once there is one: reports the
-    /// address, or ends the session when it failed.
-    fn check_going(&mut self) -> Option<Outcome> {
-        let hosted = self.hosted.as_mut()?;
-        let went = hosted.going.as_ref()?.poll()?;
+    /// Takes the outcome of going public once there is one, and goes public
+    /// again once a failed try's wait is over. A failure keeps the relay on
+    /// the loopback port, so Studio on this computer stays connected.
+    fn check_going(&mut self) {
+        let topic = self.topic();
+        let Some(hosted) = self.hosted.as_mut() else {
+            return;
+        };
+        if hosted.going.is_none() {
+            if hosted.public.is_none() && hosted.retry_at.is_some_and(|at| Instant::now() >= at) {
+                hosted.retry_at = None;
+                if let Some(hosting) = &self.config.hosting {
+                    let id = hosted.host.id().to_owned();
+                    hosted.going = Some(Going::start(hosting, hosted.host.port(), id, topic));
+                }
+            }
+            return;
+        }
+        let Some(went) = hosted.going.as_ref().and_then(Going::poll) else {
+            return;
+        };
         hosted.going = None;
         match went {
             Ok((url, tunnel)) => {
                 let _ = self.events.send(Event::Route(Route::Hosting(url.clone())));
+                hosted.retry_wait = TUNNEL_RETRY_START;
                 hosted.public = Some(Announced {
                     tunnel,
                     url,
                     at: unix_ms(),
                 });
-                None
             }
-            Err(why) => {
-                self.hosted = None;
-                Some(Outcome::Failed(why))
-            }
+            Err(refused) => self.tunnel_failed(refused),
         }
+    }
+
+    /// Schedules the next try at going public: when the tunnel service
+    /// said (a rate limit), else after a wait that doubles on every failure
+    /// in a row, so a tunnel that won't open isn't asked for in a loop.
+    fn tunnel_failed(&mut self, refused: TunnelRefused) {
+        let Some(hosted) = self.hosted.as_mut() else {
+            return;
+        };
+        hosted.public = None;
+        let wait = refused.retry_in.unwrap_or(hosted.retry_wait);
+        hosted.retry_wait = (hosted.retry_wait * 2).min(TUNNEL_RETRY_MAX);
+        hosted.retry_at = Some(Instant::now() + wait);
+        let _ = self.events.send(Event::RemotePaused(Paused {
+            why: refused.why,
+            rate_limited: refused.retry_in.is_some(),
+            retry_at_ms: unix_ms() + wait.as_millis() as u64,
+        }));
     }
 
     fn topic(&self) -> Topic {
@@ -498,14 +581,19 @@ impl Worker {
     }
 
     /// Leaves the room's hosting: says goodbye so guests look again at once,
-    /// then closes the tunnel and the relay.
+    /// then closes the tunnel and the relay. Quitting skips checking for a
+    /// newer host first, one request fewer before the app exits.
     fn stop_hosting(&mut self) {
         if let Some(Hosted {
             public: Some(public),
             ..
         }) = self.hosted.take()
         {
-            going::goodbye(&self.topic(), &public.url);
+            going::goodbye(
+                &self.topic(),
+                &public.url,
+                !QUITTING.load(Ordering::Relaxed),
+            );
         }
     }
 
@@ -519,11 +607,26 @@ impl Worker {
         let found = announce::find(&self.config.relay_url, &self.config.key, &self.config.room);
         if let Some(hosted) = &mut self.hosted {
             let Some(public) = &mut hosted.public else {
-                return None;
+                // Only on loopback, waiting to try the tunnel again: a host
+                // elsewhere that is public serves everyone, so join it.
+                let local = hosted.host.local_url();
+                return match &found {
+                    Ok(Some(newest))
+                        if hosted.going.is_none()
+                            && newest.url != local
+                            && reachable(&newest.url) =>
+                    {
+                        self.hosted = None;
+                        Some(Outcome::Failed(
+                            "another rbx-native user hosts the room".into(),
+                        ))
+                    }
+                    _ => None,
+                };
             };
             if !public.tunnel.alive() {
-                self.hosted = None;
-                return Some(Outcome::Failed("the tunnel closed".into()));
+                self.tunnel_failed("the tunnel closed".into());
+                return None;
             }
             let check = match &found {
                 Ok(newest) => host_check(&public.url, public.at, newest.as_ref(), reachable),
@@ -592,10 +695,7 @@ impl Worker {
                 let _ = socket.close(None);
                 return Outcome::Stopped;
             }
-            if let Some(outcome) = self.check_going() {
-                let _ = socket.close(None);
-                return outcome;
-            }
+            self.check_going();
             if self.config.kind == RelayKind::Hosted && last_check.elapsed() >= ROUTE_CHECK {
                 last_check = Instant::now();
                 if let Some(outcome) = self.check_route() {

@@ -50,6 +50,25 @@ fn status_text(connection: &Connection, route: Option<&rbx_presence::client::Rou
     }
 }
 
+/// Hosting on the loopback port only, while the tunnel waits for its next
+/// try: Studio on this computer works, collaborators elsewhere don't yet.
+fn paused_text(paused: &rbx_presence::client::Paused, now_ms: u64) -> String {
+    let why = if paused.rate_limited {
+        "Cloudflare is rate limiting this network"
+    } else {
+        paused.why.lines().next().unwrap_or_default()
+    };
+    let left = std::time::Duration::from_millis(paused.retry_at_ms.saturating_sub(now_ms));
+    let when = if left.is_zero() {
+        "retrying now".to_owned()
+    } else {
+        format!("retrying in {}", rbx_play::tunnel::minutes(left))
+    };
+    format!(
+        "Connected · Studio on this computer sees you. Remote collaborators paused: {why}, {when}"
+    )
+}
+
 /// The status line and whether it reads as a failure: two editors on
 /// different keys first, since each would otherwise wait for the other
 /// without a word, then the connection, with what to do about a key this
@@ -66,7 +85,10 @@ fn status_line(presence: &super::TeamPresence) -> (String, bool) {
             true,
         );
     }
-    let text = status_text(&presence.connection, presence.route.as_ref());
+    let mut text = status_text(&presence.connection, presence.route.as_ref());
+    if let (Connection::Connected, Some(paused)) = (&presence.connection, &presence.remote_paused) {
+        text = paused_text(paused, super::now_ms());
+    }
     if presence.minted
         && presence.collaborators.is_empty()
         && presence.connection != Connection::Off
@@ -546,7 +568,29 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::conflict_text;
+    use super::{conflict_text, paused_text};
+    use rbx_presence::client::Paused;
+
+    #[test]
+    fn a_paused_tunnel_names_the_cause_and_the_wait() {
+        let paused = Paused {
+            why: "Cloudflare is rate limiting this network".into(),
+            rate_limited: true,
+            retry_at_ms: 1_000 + 4 * 60_000 + 1,
+        };
+        assert_eq!(
+            paused_text(&paused, 1_000),
+            "Connected · Studio on this computer sees you. Remote collaborators paused: Cloudflare is rate limiting this network, retrying in 5 min"
+        );
+        let failed = Paused {
+            why: "couldn't open the tunnel (the tunnel exited before giving a URL:\nboom)".into(),
+            rate_limited: false,
+            retry_at_ms: 0,
+        };
+        assert!(paused_text(&failed, 1_000).ends_with(
+            "paused: couldn't open the tunnel (the tunnel exited before giving a URL:, retrying now"
+        ));
+    }
     use rbx_presence::converge::Next;
 
     #[test]

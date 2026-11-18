@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{reachable, Hosting, Tunnel};
+use super::{reachable, Hosting, Tunnel, TunnelRefused};
 use crate::announce;
 
 /// The tunnel and the address announced through it.
@@ -17,7 +17,7 @@ pub(super) type Public = (String, Box<dyn Tunnel>);
 
 /// The thread taking a host public; dropping it calls the thread off.
 pub(super) struct Going {
-    done: Receiver<Result<Public, String>>,
+    done: Receiver<Result<Public, TunnelRefused>>,
     stop: Arc<AtomicBool>,
 }
 
@@ -40,14 +40,14 @@ impl Going {
             // Dropped while announcing: take the address back so nobody goes
             // to a tunnel that closes with this thread.
             if let Err(mpsc::SendError(Ok((public, _)))) = send.send(went) {
-                goodbye(&topic, &public);
+                goodbye(&topic, &public, true);
             }
         });
         Going { done, stop }
     }
 
     /// The outcome once the thread is done.
-    pub(super) fn poll(&self) -> Option<Result<Public, String>> {
+    pub(super) fn poll(&self) -> Option<Result<Public, TunnelRefused>> {
         match self.done.try_recv() {
             Ok(went) => Some(went),
             Err(TryRecvError::Empty) => None,
@@ -63,14 +63,14 @@ impl Drop for Going {
 }
 
 fn go_public(
-    opened: Result<Public, String>,
+    opened: Result<Public, TunnelRefused>,
     id: &str,
     topic: &Topic,
     wanted: &dyn Fn() -> bool,
-) -> Result<Public, String> {
+) -> Result<Public, TunnelRefused> {
     let (public, tunnel) = opened?;
     if !announce::allowed_url(&public) {
-        return Err(format!("the tunnel gave an unusable address: {public}"));
+        return Err(format!("the tunnel gave an unusable address: {public}").into());
     }
     // Collaborators look the address up the moment it is announced; one
     // asked before the record exists caches "no such host" for many
@@ -87,13 +87,15 @@ fn go_public(
     Ok((public, tunnel))
 }
 
-/// Says the room has no host, unless a newer host announced since (this
-/// editor's own next worker, after a presence restart), which a goodbye
-/// would hide.
-pub(super) fn goodbye(topic: &Topic, public: &str) {
-    if let Ok(Some(newest)) = announce::find(&topic.ntfy, &topic.key, &topic.room) {
-        if newest.url != public {
-            return;
+/// Says the room has no host, unless (`check`) a newer host announced
+/// since (this editor's own next worker, after a presence restart), which
+/// a goodbye would hide.
+pub(super) fn goodbye(topic: &Topic, public: &str, check: bool) {
+    if check {
+        if let Ok(Some(newest)) = announce::find(&topic.ntfy, &topic.key, &topic.room) {
+            if newest.url != public {
+                return;
+            }
         }
     }
     let _ = announce::publish(&topic.ntfy, &topic.key, &topic.room, "", "");

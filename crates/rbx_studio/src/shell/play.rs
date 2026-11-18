@@ -512,7 +512,7 @@ impl Shell {
                                 format!("the bundled cloudflared could not be unpacked: {err}")
                             })?;
                             TunnelProvider::Cloudflared { binary }
-                                .start(port, TUNNEL_TIMEOUT)
+                                .start_gated(port, TUNNEL_TIMEOUT, &cloudflared::cooldown())
                                 .map_err(|err| err.to_string())
                         })
                         .await;

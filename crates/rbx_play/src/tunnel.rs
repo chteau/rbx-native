@@ -3,11 +3,11 @@
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
 
@@ -101,6 +101,22 @@ pub enum TunnelError {
     Exited(String),
     /// No URL within the timeout; the child is killed.
     Timeout,
+    /// The tunnel service refused this network for asking too often (a
+    /// trycloudflare 429), now or on a recent try, so nothing was started.
+    RateLimited { retry_in: Duration },
+}
+
+impl TunnelError {
+    /// Whether the tunnel exited because its service answered 429.
+    fn says_rate_limited(&self) -> bool {
+        let TunnelError::Exited(lines) = self else {
+            return false;
+        };
+        let lower = lines.to_ascii_lowercase();
+        lower.contains("status 429")
+            || lower.contains("429 too many requests")
+            || lower.contains("status code: 429")
+    }
 }
 
 impl std::fmt::Display for TunnelError {
@@ -111,6 +127,11 @@ impl std::fmt::Display for TunnelError {
                 write!(f, "the tunnel exited before giving a URL:\n{lines}")
             }
             TunnelError::Timeout => f.write_str("the tunnel gave no URL in time"),
+            TunnelError::RateLimited { retry_in } => write!(
+                f,
+                "Cloudflare is rate limiting quick tunnels from this network, try again in {}",
+                minutes(*retry_in)
+            ),
         }
     }
 }
@@ -224,6 +245,29 @@ impl TunnelProvider {
         }
     }
 
+    /// [`TunnelProvider::start`], unless `cooldown` says the service refused
+    /// this network recently; a refusal now is recorded there.
+    pub fn start_gated(
+        &self,
+        port: u16,
+        timeout: Duration,
+        cooldown: &Cooldown,
+    ) -> Result<Tunnel, TunnelError> {
+        if let Some(retry_in) = cooldown.remaining() {
+            return Err(TunnelError::RateLimited { retry_in });
+        }
+        match self.start(port, timeout) {
+            Ok(tunnel) => {
+                cooldown.clear();
+                Ok(tunnel)
+            }
+            Err(e) if e.says_rate_limited() => Err(TunnelError::RateLimited {
+                retry_in: cooldown.refused(),
+            }),
+            Err(e) => Err(e),
+        }
+    }
+
     /// The program and arguments `start` runs, for display and tests.
     pub fn command_line(&self, port: u16) -> (PathBuf, Vec<String>) {
         match self {
@@ -255,6 +299,74 @@ impl TunnelProvider {
             TunnelProvider::Custom { url_pattern, .. } => url_pattern.clone(),
         }
     }
+}
+
+/// "N min", rounded up, for a wait shown to the user.
+pub fn minutes(wait: Duration) -> String {
+    format!("{} min", wait.as_millis().div_ceil(60_000).max(1))
+}
+
+/// Remembers, in a file, how long quick tunnels are off after the service
+/// refused this network, so every start (presence, Play, a relaunch) waits
+/// it out instead of asking again: trycloudflare keeps refusing for over
+/// an hour when it is asked on through its limit.
+pub struct Cooldown {
+    path: PathBuf,
+}
+
+/// The first wait after a refusal, doubling on each refusal in a row up to
+/// [`COOLDOWN_MAX`]. A tunnel that starts clears it.
+pub const COOLDOWN_START: Duration = Duration::from_secs(5 * 60);
+pub const COOLDOWN_MAX: Duration = Duration::from_secs(60 * 60);
+
+impl Cooldown {
+    pub fn new(path: impl Into<PathBuf>) -> Cooldown {
+        Cooldown { path: path.into() }
+    }
+
+    /// `(until, next wait)` in unix seconds and seconds, if a refusal is on file.
+    fn read(&self) -> Option<(u64, u64)> {
+        let text = std::fs::read_to_string(&self.path).ok()?;
+        let mut parts = text.split_whitespace().map(str::parse::<u64>);
+        Some((parts.next()?.ok()?, parts.next()?.ok()?))
+    }
+
+    /// How long until tunnels may be asked for again, if they are off.
+    pub fn remaining(&self) -> Option<Duration> {
+        let (until, _) = self.read()?;
+        let left = until.checked_sub(unix_secs())?;
+        (left > 0).then(|| Duration::from_secs(left))
+    }
+
+    /// Records a refusal and returns how long tunnels are now off.
+    pub fn refused(&self) -> Duration {
+        let wait = self
+            .read()
+            .map_or(COOLDOWN_START, |(_, next)| Duration::from_secs(next))
+            .clamp(COOLDOWN_START, COOLDOWN_MAX);
+        let next = (wait * 2).min(COOLDOWN_MAX);
+        let until = unix_secs() + wait.as_secs();
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(&self.path, format!("{until} {}\n", next.as_secs()));
+        wait
+    }
+
+    /// A tunnel started: the next refusal starts from [`COOLDOWN_START`].
+    pub fn clear(&self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 const KEPT_LINES: usize = 20;

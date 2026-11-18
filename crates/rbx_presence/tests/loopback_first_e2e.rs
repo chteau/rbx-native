@@ -15,7 +15,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use common::hosted::{fake_ntfy, fake_ntfy_limited, start, start_with, state};
-use rbx_presence::client::{Client, Config, Event, Hosting, Route, Tunnel};
+use rbx_presence::client::{Client, Config, Event, Hosting, Route, Tunnel, TunnelRefused};
 use rbx_presence::host::Host;
 use rbx_presence::relay::RelayKind;
 use rbx_presence::{announce, auth, crypt, secret};
@@ -75,6 +75,65 @@ fn the_host_is_in_its_loopback_room_while_the_tunnel_starts() {
         .unwrap()
         .expect("announced");
     assert_eq!(found.url, public);
+}
+
+/// Cloudflare refusing the tunnel (its 429) keeps the host in its room on
+/// the loopback port, says why, and asks for no tunnel before the wait it
+/// named is over.
+#[test]
+fn a_refused_tunnel_keeps_the_loopback_room_and_waits() {
+    let (ntfy, _) = fake_ntfy();
+    let secret = secret::generate();
+    let key = auth::derive_key(&secret, 4567);
+    let enc = crypt::enc_key(&secret, 4567);
+    let opens = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&opens);
+    let hosting = Hosting(Arc::new(move |port: u16| {
+        if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Err(TunnelRefused {
+                why: "Cloudflare is rate limiting this network".into(),
+                retry_in: Some(Duration::from_secs(3)),
+            });
+        }
+        Ok((
+            format!("http://127.0.0.1:{port}"),
+            Box::new(Held) as Box<dyn Tunnel>,
+        ))
+    }));
+    let (ana, ana_events) = start_with(&ntfy, &key, enc, 1, Some(hosting));
+    ana.publish(state(1, "Workspace.Baseplate"));
+
+    let paused = loop {
+        match ana_events.recv_timeout(Duration::from_secs(10)) {
+            Ok(Event::RemotePaused(paused)) => break paused,
+            Ok(Event::Route(Route::Hosting(_))) => panic!("public through a refused tunnel"),
+            Ok(_) => {}
+            Err(_) => panic!("no word on the refused tunnel"),
+        }
+    };
+    assert!(paused.rate_limited);
+    thread::sleep(Duration::from_millis(1500));
+    assert_eq!(
+        opens.load(Ordering::SeqCst),
+        1,
+        "asked again during the wait"
+    );
+
+    let (_studio, studio_events) = studio_on_loopback(&key, enc);
+    assert!(
+        sees(&studio_events, 1),
+        "Studio on this computer still sees the host"
+    );
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        let left = end
+            .checked_duration_since(Instant::now())
+            .expect("public once the wait is over");
+        if let Ok(Event::Route(Route::Hosting(_))) = ana_events.recv_timeout(left) {
+            break;
+        }
+    }
+    assert_eq!(opens.load(Ordering::SeqCst), 2);
 }
 
 /// RbxNative killed: no goodbye, so its tunnel stays the newest announced.
