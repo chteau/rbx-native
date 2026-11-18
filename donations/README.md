@@ -40,10 +40,16 @@ open soon" and the server warns that donations are off. That's expected.
 - Experience: **Support RbxNative**, owned by the RbxNative group
   (universe 10777554279, place 80837532461766),
   https://www.roblox.com/games/80837532461766
-- Developer products (all "Donation N", on sale):
-  25 = 3733101617, 100 = 3733101622, 500 = 3733101623,
-  1000 = 3733101624, 5000 = 3733101628. They're in
-  `ReplicatedStorage.Config` already.
+- Developer products (all "Donation N", on sale), in `ReplicatedStorage.Config`:
+  - quick buttons: 25 = 3733101617, 100 = 3733101622, 500 = 3733101623,
+    1000 = 3733101624, 5000 = 3733101628
+  - custom amount pieces: 1 = 3733110798, 2 = 3733110804, 5 = 3733110807,
+    10 = 3733110812, 20 = 3733110816, 50 = 3733110819, 200 = 3733110823,
+    2000 = 3733110826, 10000 = 3733110832 (plus 100, 500, 1000, 5000 above)
+
+Roblox only charges a product's own price, so a custom amount is split into
+those pieces, biggest first, and bought one after another (at most 8). The
+screen says how many purchases it takes before asking for any.
 
 It was published from RbxNative (File, Publish to Roblox, New experience,
 group as the owner). The products came from Open Cloud's developer

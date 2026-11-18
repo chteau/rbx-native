@@ -40,16 +40,40 @@
       <Properties>
         <string name="Name">Config</string>
         <ProtectedString name="Source">--!strict
--- The donation place's settings. The only part to fill in after publishing:
--- the developer product ids from Creator Dashboard, Monetization, Developer
--- Products. Prices come from Roblox at run time, so they're set there only.
+-- The donation place's settings. Product ids come from the experience's
+-- developer products (donations/README.md lists them); prices come from
+-- Roblox at run time.
 return {
-	-- Developer product ids, cheapest first. One button each.
+	-- The quick buttons, cheapest first. One button each.
 	products = { 3733101617, 3733101622, 3733101623, 3733101624, 3733101628 } :: { number },
-	-- How many donors the board lists.
-	boardSize = 20,
+	-- Price -&gt; product id, for a custom amount. Roblox can only charge a
+	-- product's own price, so a custom amount is split into these (biggest
+	-- first) and bought one after another.
+	denominations = {
+		[1] = 3733110798,
+		[2] = 3733110804,
+		[5] = 3733110807,
+		[10] = 3733110812,
+		[20] = 3733110816,
+		[50] = 3733110819,
+		[100] = 3733101622,
+		[200] = 3733110823,
+		[500] = 3733101623,
+		[1000] = 3733101624,
+		[2000] = 3733110826,
+		[5000] = 3733101628,
+		[10000] = 3733110832,
+	} :: { [number]: number },
+	-- Most purchases one custom amount may take.
+	maxSplit = 8,
+	-- How many donors the board lists (Roblox reads at most 100 at once).
+	boardSize = 100,
 	-- How often the server re-reads the board, in seconds.
 	boardEvery = 60,
+	-- Background music: &quot;Calm down, everything is fine. (ambient)&quot; by
+	-- DistrokidOfficial, licensed for any experience.
+	music = &quot;rbxassetid://93955641826556&quot;,
+	musicVolume = 0.35,
 }
 </ProtectedString>
       </Properties>
@@ -63,10 +87,10 @@ return {
       <Properties>
         <string name="Name">Donations</string>
         <ProtectedString name="Source">--!strict
--- Takes the Robux. Every product in Config.products is a donation: nothing
--- unlocks, the buyer gets a thank-you and a spot on the donor board. The
--- money goes to the group that owns this place, and the group pays the
--- maintainers out by percentage (donations/README.md).
+-- Takes the Robux. Every product in Config.products and Config.denominations
+-- is a donation: nothing unlocks, the buyer gets a thank-you and a spot on
+-- the donor board. The money goes to the group that owns this place, and the
+-- group pays the maintainers out by percentage (donations/README.md).
 local DataStoreService = game:GetService(&quot;DataStoreService&quot;)
 local MarketplaceService = game:GetService(&quot;MarketplaceService&quot;)
 local Players = game:GetService(&quot;Players&quot;)
@@ -99,6 +123,9 @@ local KEEP_RECEIPTS = 50
 
 local donation: { [number]: boolean } = {}
 for _, id in Config.products do
+	donation[id] = true
+end
+for _, id in Config.denominations do
 	donation[id] = true
 end
 
@@ -199,14 +226,17 @@ end)
       <Properties>
         <string name="Name">DonateUI</string>
         <ProtectedString name="Source">--!strict
--- The whole place is this screen: what the money is for, one button per
--- developer product, the donor board, and a thank-you after a purchase.
--- Characters don't load (Players.CharacterAutoLoads is off), so there's no
--- world to wander, only this.
+-- The whole place is this screen: an animated indigo backdrop with drifting
+-- particles, what the money is for, quick buttons and a custom amount, the
+-- top donors, soft music and a thank-you after a purchase. Characters don't
+-- load (Players.CharacterAutoLoads is off), so there's no world, only this.
 local HttpService = game:GetService(&quot;HttpService&quot;)
 local MarketplaceService = game:GetService(&quot;MarketplaceService&quot;)
 local Players = game:GetService(&quot;Players&quot;)
 local ReplicatedStorage = game:GetService(&quot;ReplicatedStorage&quot;)
+local RunService = game:GetService(&quot;RunService&quot;)
+local SoundService = game:GetService(&quot;SoundService&quot;)
+local TweenService = game:GetService(&quot;TweenService&quot;)
 
 local Config = require(ReplicatedStorage:WaitForChild(&quot;Config&quot;))
 local remotes = ReplicatedStorage:WaitForChild(&quot;Donations&quot;)
@@ -215,14 +245,20 @@ local board = remotes:WaitForChild(&quot;Board&quot;) :: StringValue
 
 local player = Players.LocalPlayer
 
--- The editor's colours (assets/themes/default/theme.json).
+-- The editor's colours (assets/themes/default/theme.json), plus two deeper
+-- blues for the backdrop.
 local BLACK = Color3.fromRGB(10, 10, 11)
 local PANEL = Color3.fromRGB(18, 18, 19)
+local FIELD = Color3.fromRGB(28, 28, 31)
 local LINE = Color3.fromRGB(44, 44, 46)
 local WHITE = Color3.fromRGB(244, 244, 246)
 local DIM = Color3.fromRGB(166, 166, 174)
 local INDIGO = Color3.fromRGB(108, 127, 219)
+local INDIGO_UP = Color3.fromRGB(127, 144, 228)
+local NAVY = Color3.fromRGB(12, 16, 38)
+local DEEP = Color3.fromRGB(32, 44, 112)
 local FONT = Font.fromEnum(Enum.Font.BuilderSans)
+local BOLD = Font.fromEnum(Enum.Font.BuilderSansBold)
 
 local function make(class: string, props: { [string]: any }, children: { Instance }?): any
 	local object = Instance.new(class)
@@ -255,44 +291,164 @@ local function text(props: { [string]: any }): TextLabel
 	return label
 end
 
+local function button(props: { [string]: any }, primary: boolean): TextButton
+	local made = make(&quot;TextButton&quot;, {
+		BackgroundColor3 = if primary then WHITE else FIELD,
+		TextColor3 = if primary then BLACK else WHITE,
+		FontFace = BOLD,
+		TextSize = 18,
+		AutoButtonColor = true,
+	}, { corner(8), make(&quot;UIStroke&quot;, { Color = LINE, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }) })
+	for key, value in props do
+		(made :: any)[key] = value
+	end
+	return made
+end
+
 local screen = make(&quot;ScreenGui&quot;, {
 	Name = &quot;Donate&quot;,
 	IgnoreGuiInset = true,
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 })
-make(&quot;Frame&quot;, { BackgroundColor3 = BLACK, Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, Parent = screen })
+
+-- Backdrop: a slowly turning navy-to-indigo gradient, two big soft glows
+-- that wander, and small particles rising like dust in light.
+local backdrop = make(&quot;Frame&quot;, {
+	BackgroundColor3 = WHITE,
+	Size = UDim2.fromScale(1, 1),
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	Parent = screen,
+})
+local gradient = make(&quot;UIGradient&quot;, {
+	Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, NAVY),
+		ColorSequenceKeypoint.new(0.55, DEEP),
+		ColorSequenceKeypoint.new(1, INDIGO),
+	}),
+	Parent = backdrop,
+})
+
+-- Soft glows: stacked circles, each faint, so the middle builds up brighter
+-- than the edge (a UIGradient only fades in a straight line).
+local glows: { Frame } = {}
+for index = 1, 2 do
+	local glow = make(&quot;Frame&quot;, {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromScale(0.75, 0.75),
+		Parent = backdrop,
+	}, { make(&quot;UIAspectRatioConstraint&quot;, {}) })
+	for ring = 1, 16 do
+		make(&quot;Frame&quot;, {
+			BackgroundColor3 = if index == 1 then INDIGO_UP else INDIGO,
+			BackgroundTransparency = 0.975,
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1 - (ring - 1) * 0.055, 1 - (ring - 1) * 0.055),
+			Parent = glow,
+		}, { make(&quot;UICorner&quot;, { CornerRadius = UDim.new(1, 0) }) })
+	end
+	glows[index] = glow
+end
+
+type Particle = { frame: Frame, x: number, y: number, speed: number, sway: number, phase: number }
+local particles: { Particle } = {}
+local random = Random.new()
+for _ = 1, 48 do
+	local size = random:NextInteger(2, 6)
+	local frame = make(&quot;Frame&quot;, {
+		BackgroundColor3 = if random:NextNumber() &lt; 0.7 then WHITE else INDIGO_UP,
+		BackgroundTransparency = random:NextNumber(0.35, 0.8),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(size, size),
+		BorderSizePixel = 0,
+		Parent = backdrop,
+	}, { make(&quot;UICorner&quot;, { CornerRadius = UDim.new(1, 0) }) })
+	table.insert(particles, {
+		frame = frame,
+		x = random:NextNumber(),
+		y = random:NextNumber(),
+		-- Screen heights per second: the slowest take about a minute.
+		speed = random:NextNumber(0.015, 0.05),
+		sway = random:NextNumber(0.004, 0.02),
+		phase = random:NextNumber(0, math.pi * 2),
+	})
+end
+
+local clock = 0
+RunService.RenderStepped:Connect(function(step: number)
+	clock += step
+	gradient.Rotation = 35 + math.sin(clock * 0.08) * 25
+	gradient.Offset = Vector2.new(math.sin(clock * 0.05) * 0.15, math.cos(clock * 0.06) * 0.1)
+	glows[1].Position = UDim2.fromScale(0.25 + math.sin(clock * 0.11) * 0.12, 0.3 + math.cos(clock * 0.09) * 0.1)
+	glows[2].Position = UDim2.fromScale(0.75 + math.cos(clock * 0.07) * 0.12, 0.72 + math.sin(clock * 0.1) * 0.1)
+	for _, particle in particles do
+		particle.y -= particle.speed * step
+		if particle.y &lt; -0.02 then
+			particle.y = 1.02
+			particle.x = random:NextNumber()
+		end
+		local x = particle.x + math.sin(clock * 0.6 + particle.phase) * particle.sway
+		particle.frame.Position = UDim2.fromScale(x, particle.y)
+	end
+end)
+
+-- The card, a bit bigger than before and scrolling on short screens.
+local holder = make(&quot;ScrollingFrame&quot;, {
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	Size = UDim2.fromScale(1, 1),
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 4,
+	ScrollBarImageColor3 = WHITE,
+	ScrollBarImageTransparency = 0.6,
+	Parent = screen,
+}, {
+	make(&quot;UIListLayout&quot;, {
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+	}),
+	make(&quot;UIPadding&quot;, {
+		PaddingTop = UDim.new(0, 72),
+		PaddingBottom = UDim.new(0, 72),
+		PaddingLeft = UDim.new(0, 16),
+		PaddingRight = UDim.new(0, 16),
+	}),
+})
 
 local card = make(&quot;Frame&quot;, {
 	BackgroundColor3 = PANEL,
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.new(1, -32, 0, 0),
+	BackgroundTransparency = 0.08,
+	Size = UDim2.fromScale(1, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
-	Parent = screen,
+	Parent = holder,
 }, {
-	corner(10),
-	make(&quot;UIStroke&quot;, { Color = LINE, Thickness = 1 }),
-	make(&quot;UISizeConstraint&quot;, { MaxSize = Vector2.new(560, math.huge) }),
+	corner(14),
+	make(&quot;UIStroke&quot;, { Color = INDIGO, Transparency = 0.55, Thickness = 1 }),
+	make(&quot;UISizeConstraint&quot;, { MaxSize = Vector2.new(720, math.huge) }),
 	make(&quot;UIPadding&quot;, {
-		PaddingTop = UDim.new(0, 28),
-		PaddingBottom = UDim.new(0, 28),
-		PaddingLeft = UDim.new(0, 28),
-		PaddingRight = UDim.new(0, 28),
+		PaddingTop = UDim.new(0, 36),
+		PaddingBottom = UDim.new(0, 36),
+		PaddingLeft = UDim.new(0, 36),
+		PaddingRight = UDim.new(0, 36),
 	}),
-	make(&quot;UIListLayout&quot;, { Padding = UDim.new(0, 14), SortOrder = Enum.SortOrder.LayoutOrder }),
+	make(&quot;UIListLayout&quot;, { Padding = UDim.new(0, 16), SortOrder = Enum.SortOrder.LayoutOrder }),
 })
 
-text({ Text = &quot;Support RbxNative&quot;, TextSize = 32, FontFace = Font.fromEnum(Enum.Font.BuilderSansBold), LayoutOrder = 1, Parent = card })
+text({ Text = &quot;Support RbxNative&quot;, TextSize = 38, FontFace = BOLD, LayoutOrder = 1, Parent = card })
 text({
 	Text = &quot;RbxNative is a free, open source Roblox editor. Every Robux here goes to its maintainers. A donation doesn't unlock anything, it keeps the project going. Thank you!&quot;,
-	TextSize = 18,
+	TextSize = 19,
 	TextColor3 = DIM,
 	LayoutOrder = 2,
 	Parent = card,
 })
 
-local buttons = make(&quot;Frame&quot;, {
+local quick = make(&quot;Frame&quot;, {
 	BackgroundTransparency = 1,
 	Size = UDim2.fromScale(1, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
@@ -308,78 +464,302 @@ local buttons = make(&quot;Frame&quot;, {
 })
 
 if #Config.products == 0 then
-	text({ Text = &quot;Donations open soon.&quot;, TextSize = 18, TextColor3 = DIM, Parent = buttons })
+	text({ Text = &quot;Donations open soon.&quot;, TextSize = 18, TextColor3 = DIM, Parent = quick })
 end
 for order, id in Config.products do
-	local button = make(&quot;TextButton&quot;, {
-		BackgroundColor3 = if order == 1 then WHITE else PANEL,
-		TextColor3 = if order == 1 then BLACK else WHITE,
-		FontFace = Font.fromEnum(Enum.Font.BuilderSansBold),
-		TextSize = 18,
-		Text = &quot;…&quot;,
-		AutoButtonColor = true,
-		Size = UDim2.fromOffset(110, 44),
-		LayoutOrder = order,
-		Parent = buttons,
-	}, { corner(6), make(&quot;UIStroke&quot;, { Color = LINE, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }) })
+	local made = button({ Text = &quot;…&quot;, Size = UDim2.fromOffset(118, 48), LayoutOrder = order, Parent = quick }, order == 1)
 	task.spawn(function()
 		local ok, info = pcall(MarketplaceService.GetProductInfoAsync, MarketplaceService, id, Enum.InfoType.Product)
 		if ok and info and info.PriceInRobux then
-			button.Text = &quot;R$ &quot; .. tostring(info.PriceInRobux)
+			made.Text = &quot;R$ &quot; .. tostring(info.PriceInRobux)
 		else
-			button.Visible = false
+			made.Visible = false
 		end
 	end)
-	button.Activated:Connect(function()
+	made.Activated:Connect(function()
 		MarketplaceService:PromptProductPurchase(player, id)
 	end)
 end
 
-text({ Text = &quot;Donors&quot;, TextSize = 20, FontFace = Font.fromEnum(Enum.Font.BuilderSansBold), LayoutOrder = 4, Parent = card })
-local list = make(&quot;Frame&quot;, {
+-- Custom amount: Roblox only charges a product's own price, so the amount is
+-- split into Config.denominations, biggest first, and each part is its own
+-- purchase. The hint says how many before anything is asked.
+local prices: { number } = {}
+for price in Config.denominations do
+	table.insert(prices, price)
+end
+table.sort(prices, function(a, b)
+	return a &gt; b
+end)
+
+local function split(amount: number): { number }
+	local parts = {}
+	local left = amount
+	for _, price in prices do
+		while left &gt;= price do
+			table.insert(parts, price)
+			left -= price
+		end
+	end
+	if left &gt; 0 then
+		return {}
+	end
+	return parts
+end
+
+local custom = make(&quot;Frame&quot;, {
 	BackgroundTransparency = 1,
-	Size = UDim2.fromScale(1, 0),
-	AutomaticSize = Enum.AutomaticSize.Y,
-	LayoutOrder = 5,
+	Size = UDim2.new(1, 0, 0, 48),
+	LayoutOrder = 4,
+	Visible = #prices &gt; 0,
 	Parent = card,
-}, { make(&quot;UIListLayout&quot;, { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }) })
+}, {
+	make(&quot;UIListLayout&quot;, {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, 10),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}),
+})
+local amountBox = make(&quot;TextBox&quot;, {
+	BackgroundColor3 = FIELD,
+	TextColor3 = WHITE,
+	PlaceholderText = &quot;Custom amount (R$)&quot;,
+	PlaceholderColor3 = DIM,
+	Text = &quot;&quot;,
+	FontFace = FONT,
+	TextSize = 18,
+	ClearTextOnFocus = false,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Size = UDim2.new(1, -140, 1, 0),
+	LayoutOrder = 1,
+	Parent = custom,
+}, {
+	corner(8),
+	make(&quot;UIStroke&quot;, { Color = LINE, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
+	make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14) }),
+})
+local give = button({ Text = &quot;Donate&quot;, Size = UDim2.new(0, 130, 1, 0), LayoutOrder = 2, Parent = custom }, true)
+give.BackgroundColor3 = INDIGO
+give.TextColor3 = WHITE
+local hint = text({ Text = &quot;&quot;, TextSize = 16, TextColor3 = DIM, LayoutOrder = 5, Visible = false, Parent = card })
+
+local function plan(): { number }?
+	local amount = tonumber(amountBox.Text)
+	hint.Visible = amountBox.Text ~= &quot;&quot;
+	if not amount or amount &lt; 1 or amount ~= math.floor(amount) then
+		hint.Text = &quot;A whole number of Robux, 1 or more.&quot;
+		return nil
+	end
+	local parts = split(amount)
+	if #parts == 0 then
+		hint.Text = &quot;That amount can't be made from the products here.&quot;
+		return nil
+	end
+	if #parts &gt; Config.maxSplit then
+		hint.Text = string.format(
+			&quot;That takes %d purchases in a row. Try a rounder number, at most %d at a time.&quot;,
+			#parts,
+			Config.maxSplit
+		)
+		return nil
+	end
+	if #parts == 1 then
+		hint.Text = &quot;One purchase.&quot;
+	else
+		local words = {}
+		for _, price in parts do
+			table.insert(words, tostring(price))
+		end
+		hint.Text = string.format(&quot;%d purchases in a row: %s.&quot;, #parts, table.concat(words, &quot; + &quot;))
+	end
+	return parts
+end
+amountBox:GetPropertyChangedSignal(&quot;Text&quot;):Connect(function()
+	local digits = string.gsub(amountBox.Text, &quot;%D&quot;, &quot;&quot;)
+	if digits ~= amountBox.Text then
+		amountBox.Text = digits
+		return
+	end
+	plan()
+end)
+
+local buying = false
+give.Activated:Connect(function()
+	local parts = plan()
+	if not parts or buying then
+		return
+	end
+	buying = true
+	give.Text = &quot;…&quot;
+	for index, price in parts do
+		hint.Text = string.format(&quot;Purchase %d of %d: R$ %d&quot;, index, #parts, price)
+		local id = Config.denominations[price]
+		MarketplaceService:PromptProductPurchase(player, id)
+		local done = false
+		local bought = false
+		local connection = MarketplaceService.PromptProductPurchaseFinished:Connect(
+			function(userId: number, productId: number, isPurchased: boolean)
+				if userId == player.UserId and productId == id then
+					done, bought = true, isPurchased
+				end
+			end
+		)
+		while not done do
+			task.wait()
+		end
+		connection:Disconnect()
+		if not bought then
+			hint.Text = if index == 1 then &quot;Cancelled.&quot; else string.format(&quot;Stopped after %d of %d.&quot;, index - 1, #parts)
+			break
+		end
+		if index == #parts then
+			hint.Text = &quot;All done, thank you!&quot;
+		end
+	end
+	give.Text = &quot;Donate&quot;
+	buying = false
+end)
+
+-- Top donors, up to Config.boardSize (100), in a scrolling list.
+local heading = make(&quot;Frame&quot;, {
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 28),
+	LayoutOrder = 6,
+	Parent = card,
+})
+text({ Text = &quot;Top donors&quot;, TextSize = 22, FontFace = BOLD, Size = UDim2.fromScale(1, 1), Parent = heading })
+local count = text({
+	Text = &quot;&quot;,
+	TextSize = 15,
+	TextColor3 = DIM,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	Size = UDim2.fromScale(1, 1),
+	Parent = heading,
+})
+
+local list = make(&quot;ScrollingFrame&quot;, {
+	BackgroundColor3 = BLACK,
+	BackgroundTransparency = 0.4,
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 0, 280),
+	CanvasSize = UDim2.new(),
+	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	ScrollBarThickness = 4,
+	ScrollBarImageColor3 = WHITE,
+	ScrollBarImageTransparency = 0.6,
+	LayoutOrder = 7,
+	Parent = card,
+}, {
+	corner(10),
+	make(&quot;UIListLayout&quot;, { SortOrder = Enum.SortOrder.LayoutOrder }),
+	make(&quot;UIPadding&quot;, {
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 6),
+		PaddingLeft = UDim.new(0, 14),
+		PaddingRight = UDim.new(0, 14),
+	}),
+})
+
+local function row(rank: number, name: string, robux: number)
+	local medal = if rank == 1 then INDIGO_UP elseif rank &lt;= 3 then WHITE else DIM
+	local line = make(&quot;Frame&quot;, {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 32),
+		LayoutOrder = rank,
+		Parent = list,
+	})
+	text({
+		Text = tostring(rank),
+		TextSize = 16,
+		FontFace = BOLD,
+		TextColor3 = medal,
+		AutomaticSize = Enum.AutomaticSize.None,
+		Size = UDim2.new(0, 40, 1, 0),
+		Parent = line,
+	})
+	text({
+		Text = name,
+		TextSize = 17,
+		TextColor3 = if rank &lt;= 3 then WHITE else Color3.fromRGB(210, 210, 216),
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextWrapped = false,
+		AutomaticSize = Enum.AutomaticSize.None,
+		Position = UDim2.fromOffset(40, 0),
+		Size = UDim2.new(1, -150, 1, 0),
+		Parent = line,
+	})
+	text({
+		Text = &quot;R$ &quot; .. tostring(robux),
+		TextSize = 17,
+		FontFace = BOLD,
+		TextColor3 = medal,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		AutomaticSize = Enum.AutomaticSize.None,
+		Size = UDim2.fromScale(1, 1),
+		Parent = line,
+	})
+end
 
 local function showBoard()
 	for _, child in list:GetChildren() do
-		if child:IsA(&quot;TextLabel&quot;) then
+		if child:IsA(&quot;Frame&quot;) or child:IsA(&quot;TextLabel&quot;) then
 			child:Destroy()
 		end
 	end
 	local ok, rows = pcall(HttpService.JSONDecode, HttpService, board.Value)
 	if not ok or type(rows) ~= &quot;table&quot; or #rows == 0 then
-		text({ Text = &quot;Be the first.&quot;, TextSize = 16, TextColor3 = DIM, Parent = list })
+		count.Text = &quot;&quot;
+		text({ Text = &quot;Be the first.&quot;, TextSize = 16, TextColor3 = DIM, Size = UDim2.new(1, 0, 0, 32), Parent = list })
 		return
 	end
-	for rank, row in rows do
-		text({
-			Text = string.format(&quot;%d.  %s  ·  R$ %d&quot;, rank, tostring(row.name), tonumber(row.robux) or 0),
-			TextSize = 16,
-			TextColor3 = if rank == 1 then INDIGO else WHITE,
-			LayoutOrder = rank,
-			Parent = list,
-		})
+	local shown = math.min(#rows, Config.boardSize)
+	count.Text = if shown == 1 then &quot;1 donor&quot; else string.format(&quot;top %d&quot;, shown)
+	for rank = 1, shown do
+		local entry = rows[rank]
+		row(rank, tostring(entry.name), tonumber(entry.robux) or 0)
 	end
 end
 board.Changed:Connect(showBoard)
 showBoard()
 
+-- Music, looping quietly, with a switch in the bottom corner (Roblox's own
+-- buttons own the top ones).
+local music = make(&quot;Sound&quot;, {
+	Name = &quot;Music&quot;,
+	SoundId = Config.music,
+	Volume = Config.musicVolume,
+	Looped = true,
+	Parent = SoundService,
+})
+music:Play()
+local mute = button({
+	Text = &quot;Music: on&quot;,
+	TextSize = 15,
+	AnchorPoint = Vector2.new(1, 1),
+	Position = UDim2.new(1, -16, 1, -16),
+	Size = UDim2.fromOffset(120, 36),
+	Parent = screen,
+}, false)
+mute.BackgroundTransparency = 0.2
+local muted = false
+mute.Activated:Connect(function()
+	muted = not muted
+	TweenService:Create(music, TweenInfo.new(0.4), { Volume = if muted then 0 else Config.musicVolume }):Play()
+	mute.Text = if muted then &quot;Music: off&quot; else &quot;Music: on&quot;
+end)
+
 local toast = make(&quot;TextLabel&quot;, {
 	BackgroundColor3 = INDIGO,
-	TextColor3 = BLACK,
-	FontFace = Font.fromEnum(Enum.Font.BuilderSansBold),
+	TextColor3 = WHITE,
+	FontFace = BOLD,
 	TextSize = 18,
 	AnchorPoint = Vector2.new(0.5, 1),
 	Position = UDim2.new(0.5, 0, 1, -24),
-	Size = UDim2.fromOffset(0, 44),
+	Size = UDim2.fromOffset(0, 46),
 	AutomaticSize = Enum.AutomaticSize.X,
 	Visible = false,
 	Parent = screen,
-}, { corner(6), make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 18), PaddingRight = UDim.new(0, 18) }) })
+}, { corner(8), make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 20), PaddingRight = UDim.new(0, 20) }) })
 
 thanked.OnClientEvent:Connect(function(robux: number)
 	toast.Text = string.format(&quot;Thank you for the R$ %d!&quot;, robux)
