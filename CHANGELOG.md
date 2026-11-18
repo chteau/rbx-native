@@ -4,6 +4,11 @@
 
 - **Cloudflare rate limits and a dead ntfy.sh don't wreck Team Presence, Play or quitting anymore.** After a lot of relaunches trycloudflare started answering "quick tunnel provisioning failed with status 429" and every launch asked again, so it kept refusing for over an hour, and Play just failed with the raw cloudflared output. Now a 429 turns quick tunnels off for 5 min (doubling up to an hour if it keeps happening), remembered across launches and shared by Team Presence and Play, so nothing asks Cloudflare again before then. While the tunnel is off you keep hosting on 127.0.0.1, so Studio on the same computer still sees you, and the Collaborators panel says "Remote collaborators paused: Cloudflare is rate limiting this network, retrying in N min". Any other tunnel failure retries after 15 s, doubling up to 10 min, instead of tearing the room down every few seconds. Play says Cloudflare is rate limiting this network and when to try again. Quitting with ntfy.sh unreachable took over 3 s because it waited on the goodbye post, now it waits 300 ms at most and skips an extra lookup on the way out. (@chteau)
 - **Studio on the same computer stays on 127.0.0.1, even after RbxNative crashes, and goes easy on ntfy.sh.** Kill RbxNative (no goodbye) and relaunch it, and Studio went for the dead host's trycloudflare.com address, so a store install asked for permission to reach it and sat on "Can't reach the rbx-native host yet" while the new RbxNative was already up on 127.0.0.1. The loopback port now answers with an id of the RbxNative install and its announcements carry the same id, so Studio knows a leftover address from its own computer and keeps waiting on 127.0.0.1. A request still queued for a host Studio already left is dropped and asked again, which was the one 26 s rejoin in six. Studio also drained ntfy.sh's per-address budget (429s right after a few relaunches), and once that happened RbxNative couldn't even start hosting. Now the plugin doesn't touch ntfy at all while 127.0.0.1 answers, reads it every 5 to 30 s while it waits (was every 3 s), and holds off for the Retry-After or 30 s doubling to 5 min after a 429. RbxNative hosts on the loopback port even when ntfy refuses, and keeps retrying its announcement with backoff instead of tearing the tunnel down after three tries. The Team Presence plugin needs a new store release for this. (@chteau)
+- **A viewer on a GPU it was handed skips the out-of-memory walk.** The
+  hidden editor behind Settings from Home builds on wgpu's no-op device,
+  which never runs out of memory, so it now builds once at the starting
+  quality rung instead of going through the step-down ladder meant for
+  a real GPU. (@chteau)
 
 ## 2026-11-17
 
@@ -37,6 +42,35 @@
   which sandbox it publishes to, F8 pressed with the Roblox menu open opens
   the panel once the menu closes on the Mac too, and the network popover's
   name row goes away once a preset is saved or applied. (@chteau)
+- **Windows: menus show over the running game, Save As opens centred.**
+  Menus, context menus and popovers over the 3D view used to draw under
+  the embedded Roblox window; they're now cut out of it while open. File
+  dialogs open in the middle of the editor instead of the screen's corner,
+  and killing the editor no longer leaves the embedded game running
+  without a window. (@chteau)
+- **Low-memory GPUs step down until the place draws.** Running out of GPU
+  memory now walks down smaller materials, lower quality levels and no
+  shadows until the scene fits, instead of trying twice and leaving the
+  3D view empty. Running out later (a quality change, a bigger window)
+  rebuilds one step lower too, and picking a quality level by hand after
+  that rebuilds for real. (@chteau)
+- **A saved low quality is where the place starts.** Opening a place with
+  Manual 1 saved used to build it at the top level first and walk down
+  from there; now the first build is already at your level, and you can
+  still pick a higher one later. Integrated GPUs also start with a 4096
+  px shadow map instead of 8192, so a small card opens without GPU
+  errors in the log. (@chteau)
+- **Windows opens places faster.** The DirectX 12 path now compiles its
+  shaders with DXC built into the editor instead of the old FXC compiler,
+  which spent most of the 20+ seconds a place took to open on a low-end
+  laptop. The log now says how long building the scene took. (@chteau)
+- **Network simulation lets go of the WinDivert driver at Stop.** The
+  driver used to keep running until the editor quit; now it's unloaded
+  when Play stops and loaded again on the next shaped Play, still with
+  no second admin prompt. (@chteau)
+- **File menu rows without the blank gaps.** Save to File, Save to Roblox,
+  Publish to Roblox and Delete keep their bigger click target but now say
+  what they do on a second line instead of sitting in empty space. (@chteau)
 
 ## 2026-11-14
 

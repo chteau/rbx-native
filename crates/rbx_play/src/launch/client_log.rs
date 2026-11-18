@@ -7,6 +7,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::process::Child;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
+use super::handoff::HandOff;
 use super::Launcher;
 
 const TREATMENT_KEY: &str = "\"startup_message_treatment\":";
@@ -28,6 +29,8 @@ pub struct ClientWatch {
     launcher: Launcher,
     child: Arc<Mutex<Child>>,
     unavailable: Arc<OnceLock<String>>,
+    /// Windows' shell hand-off, which the child says nothing about.
+    handoff: Arc<HandOff>,
 }
 
 impl ClientWatch {
@@ -45,12 +48,17 @@ impl ClientWatch {
             launcher,
             child: Arc::new(Mutex::new(child)),
             unavailable,
+            handoff: Arc::new(HandOff::new()),
         }
     }
 
-    /// The client process exited, and the launcher tracks the client.
+    /// The client process exited, where the launcher tracks the client, or
+    /// on Windows no Roblox process is left (see [`HandOff`]).
     pub fn exited(&self) -> bool {
-        self.launcher.tracks_client() && matches!(self.child().try_wait(), Ok(Some(_)))
+        match self.launcher {
+            Launcher::WindowsShell => self.handoff.gone(),
+            _ => self.launcher.tracks_client() && matches!(self.child().try_wait(), Ok(Some(_))),
+        }
     }
 
     /// The fatal startup treatment the client logged: it cannot join games.

@@ -56,15 +56,67 @@ impl Offscreen {
     /// the place has to be said out loud wherever a renderer is built or
     /// rebuilt (see [`Offscreen::reload`]), which is what stops one from
     /// silently starting blank, see [`View`].
+    ///
+    /// Running out of GPU memory building it is not the end: it is built
+    /// again one [`gpu::Rung`] cheaper until it fits, starting at level
+    /// `cap` (or the level last asked for, see [`gpu::prefer_level`]), then
+    /// on the next backend (see [`gpu::backend_order`]). The rung it ended up
+    /// at comes back with it, and the highest level it may be drawn at (see
+    /// [`gpu::Rung::ceiling`]).
     pub(crate) fn new(
         world: World<'_>,
-        quality: &QualityProfile,
+        cap: u8,
         view: &View,
-    ) -> Result<Self, String> {
-        let instance = gpu::instance();
-        let adapter = gpu::adapter(&instance, None)?;
-        let (device, queue) = gpu::device(&adapter)?;
-        Ok(Self::on_device(device, queue, world, quality, view))
+    ) -> Result<(Self, gpu::Rung, u8), String> {
+        let mut failure = String::from("no GPU backend to try");
+        for backends in gpu::backend_order() {
+            let instance = gpu::instance_for(backends);
+            let opened = gpu::adapter(&instance, None).and_then(|adapter| gpu::device(&adapter));
+            let (device, queue) = match opened {
+                Ok(opened) => opened,
+                Err(err) => {
+                    eprintln!("rbxview: {backends:?}: {err}");
+                    failure = err;
+                    continue;
+                }
+            };
+            let first = gpu::Rung::start(cap);
+            let mut rung = Some(first);
+            while let Some(trying) = rung {
+                trying.apply();
+                let ooms = gpu::ooms();
+                let scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+                let started = std::time::Instant::now();
+                let offscreen = Self::on_device(
+                    device.clone(),
+                    queue.clone(),
+                    world,
+                    &trying.profile(),
+                    view,
+                );
+                let caught = pollster::block_on(scope.pop());
+                // An error that slipped past the scope invalidated something
+                // just the same.
+                let simulated = trying.over_budget(world.scene.materials().layers());
+                if caught.is_none() && gpu::ooms() == ooms && !simulated {
+                    // The time is mostly compiling pipelines: what a slow
+                    // shader compiler shows up in (see the static-dxc note
+                    // in Cargo.toml).
+                    eprintln!(
+                        "rbxview: built the scene at {trying} in {} ms",
+                        started.elapsed().as_millis()
+                    );
+                    return Ok((offscreen, trying, trying.ceiling(first, cap)));
+                }
+                let err = caught.map_or_else(|| "Out of Memory".to_owned(), |err| err.to_string());
+                eprintln!("rbxview: building the scene at {trying} ran out of GPU memory: {err}");
+                failure = format!("the GPU ran out of memory: {err}");
+                drop(offscreen);
+                gpu::release(&device, &queue);
+                rung = trying.step_down();
+            }
+        }
+        Err(failure)
     }
 
     /// Same as [`Offscreen::new`], but on a device/queue the caller already
@@ -151,6 +203,20 @@ impl Offscreen {
     /// [`Renderer::set_isolated`].
     pub(crate) fn set_isolated(&mut self, isolated: bool) {
         self.renderer.set_isolated(isolated);
+    }
+
+    /// Lets go of every frame target, so the next frame makes them anew:
+    /// one the GPU ran out of memory making is invalid for good.
+    pub(crate) fn drop_targets(&mut self) {
+        self.discard();
+        self.target = None;
+        self.canvas = None;
+        self.frame = None;
+    }
+
+    /// See [`gpu::release`].
+    pub(crate) fn release(&self) {
+        gpu::release(&self.device, &self.queue);
     }
 
     /// Moves the renderer to another graphics quality level, in place: see

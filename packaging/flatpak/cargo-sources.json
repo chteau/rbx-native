@@ -5241,6 +5241,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/lhash/lhash-1.1.0.crate",
+        "sha256": "744a4c881f502e98c2241d2e5f50040ac73b30194d64452bb6260393b53f0dc9",
+        "dest": "cargo/vendor/lhash-1.1.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"744a4c881f502e98c2241d2e5f50040ac73b30194d64452bb6260393b53f0dc9\", \"files\": {}}",
+        "dest": "cargo/vendor/lhash-1.1.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/libbz2-rs-sys/libbz2-rs-sys-0.2.5.crate",
         "sha256": "34b357333733e8260735ba5894eb928c02ecc69c78715f01a8019e7fa7f2db4c",
         "dest": "cargo/vendor/libbz2-rs-sys-0.2.5"
@@ -5613,6 +5626,19 @@
         "type": "inline",
         "contents": "{\"package\": \"fd604973958ddcc11b561193c0fb96ba146506ef2f231ef2e7c35fd2cbc9beca\", \"files\": {}}",
         "dest": "cargo/vendor/mac-notification-sys-0.6.15",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/mach-dxcompiler-rs/mach-dxcompiler-rs-0.1.7+2026.10.26-141dd7f.1.crate",
+        "sha256": "ae7b01febf4806c6a95a217784adcd0f0d19413eef5afb1fbea60656ea28c081",
+        "dest": "cargo/vendor/mach-dxcompiler-rs-0.1.7+2026.10.26-141dd7f.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"ae7b01febf4806c6a95a217784adcd0f0d19413eef5afb1fbea60656ea28c081\", \"files\": {}}",
+        "dest": "cargo/vendor/mach-dxcompiler-rs-0.1.7+2026.10.26-141dd7f.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {

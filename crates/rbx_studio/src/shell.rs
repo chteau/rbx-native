@@ -1292,6 +1292,11 @@ impl Shell {
         // a screenshot aid proving a just-applied mutation was reverted.
         shell.apply_debug_undo(cx);
 
+        // `RBX_PLAY_EMBED_TEST` (see `shell::play`): embeds another program
+        // over the 3D view, to check embedding without Roblox.
+        #[cfg(windows)]
+        shell.play_embed_test(window, cx);
+
         // `RBX_STUDIO_SETTINGS` (see `shell::settings_window`): opens Studio
         // Settings with the editor, for a capture.
         if std::env::var_os(settings_window::OPEN_VARIABLE).is_some() {
@@ -1523,6 +1528,9 @@ impl Shell {
         if mode == self.quality_choice {
             return;
         }
+        // A place built from here on (a reopen, a plugin widget) starts
+        // there too, not only the viewport already open.
+        rbx_viewer::prefer_level(mode);
         self.viewport
             .update(cx, |viewport, cx| viewport.set_quality(mode, cx));
         self.quality_choice = mode;
@@ -2160,7 +2168,7 @@ impl Render for Shell {
         // areas out of the embedded game window once the frame is drawn.
         gpui_base::occlusion::begin_frame(window.window_handle().window_id());
         #[cfg(any(target_os = "linux", windows))]
-        if self.play.phase == play::Phase::Running {
+        if self.play_embedding() {
             let shell = cx.entity().downgrade();
             window.on_next_frame(move |_, cx| {
                 let _ = shell.update(cx, |shell, _| shell.play_update_holes());

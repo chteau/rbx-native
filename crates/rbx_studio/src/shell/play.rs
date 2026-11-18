@@ -69,10 +69,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use gpui_kit::*;
 use rbx_cloud::{ApiKey, Client, PlaceUpdate, PublishMode};
 use rbx_play::channel::{ChannelServer, DEFAULT_HOLD};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use rbx_play::embed::EmbedError;
 use rbx_play::inject::ProbeConfig;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use rbx_play::launch::ClientWatch;
 use rbx_play::launch::{join_server_uri, join_uri, ClientProcess, Launcher};
 use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
@@ -204,6 +204,18 @@ pub(super) struct Play {
     /// Sober said it can't join games during this run of the editor and
     /// Roséline took over; later Plays go straight to Roséline.
     sober_down: bool,
+    /// The window `RBX_PLAY_EMBED_TEST` embedded, once attached.
+    #[cfg(windows)]
+    embed_test: Option<EmbedTest>,
+}
+
+/// `Shell::play_embed_test`'s window, kept where `play_update_holes` finds
+/// it like a running session's.
+#[cfg(windows)]
+struct EmbedTest {
+    embedded: rbx_play::embed::Embedded,
+    rect: session::rbx_play_rect::Rect,
+    corner: u32,
 }
 
 impl Play {
@@ -237,6 +249,8 @@ impl Play {
             attempt: 0,
             pending_launcher: None,
             sober_down: false,
+            #[cfg(windows)]
+            embed_test: None,
         }
     }
 }
@@ -306,8 +320,9 @@ fn stop_starting(this: &WeakEntity<Shell>, cx: &mut AsyncApp, attempt: u64, reas
 }
 
 /// Why waiting for the client's window is pointless: it said it can't join
-/// games, or it is already gone. Linux only: Sober is the client that says so.
-#[cfg(target_os = "linux")]
+/// games (Sober), or it is already gone (on Windows: no Roblox process left,
+/// e.g. its launcher failed with its own error dialog).
+#[cfg(any(target_os = "linux", windows))]
 fn embed_give_up(watch: &ClientWatch) -> Option<EmbedError> {
     if let Some(why) = watch.unavailable() {
         return Some(EmbedError::Unavailable(why));
@@ -714,7 +729,7 @@ impl Shell {
                         );
                     }
                 };
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", windows))]
                 let watch = client.watch();
                 let target = this.update(cx, |shell, cx| {
                     if shell.play.attempt != attempt {
@@ -753,7 +768,6 @@ impl Shell {
                     if !step(&this, cx, attempt, "Embedding the Roblox window\u{2026}") {
                         return;
                     }
-                    #[cfg(target_os = "linux")]
                     let attached = cx
                         .background_spawn(async move {
                             rbx_play::embed::Embedded::attach(
@@ -765,18 +779,6 @@ impl Shell {
                             )
                         })
                         .await;
-                    #[cfg(windows)]
-                    let attached = cx
-                        .background_spawn(async move {
-                            rbx_play::embed::Embedded::attach(
-                                target.window,
-                                target.rect,
-                                &ignore,
-                                EMBED_TIMEOUT,
-                            )
-                        })
-                        .await;
-                    #[cfg(target_os = "linux")]
                     let reason = match &attached {
                         Err(EmbedError::Unavailable(why)) => Some(StopReason::Unavailable(why.clone())),
                         Err(EmbedError::ClientExited) => Some(StopReason::ClosedEarly),
@@ -802,6 +804,10 @@ impl Shell {
                                 continue;
                             }
                         }
+                        return stop_starting(&this, cx, attempt, reason);
+                    }
+                    #[cfg(windows)]
+                    if let Some(reason) = reason {
                         return stop_starting(&this, cx, attempt, reason);
                     }
                     let _ = this.update(cx, |shell, cx| {
@@ -853,6 +859,74 @@ impl Shell {
                 shell.play.poll = Some(shell.play_poll(cx));
                 cx.notify();
             });
+        })
+        .detach();
+    }
+
+    /// `RBX_PLAY_EMBED_TEST=<exe>` (see `rbx_play::embed::win32`): embeds
+    /// that program's window over the 3D view the way Play embeds Roblox,
+    /// and keeps it on the view as it moves, so the z-order against the
+    /// editor's own swap chain can be checked where Roblox can't run.
+    #[cfg(windows)]
+    pub(in crate::shell) fn play_embed_test(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if std::env::var_os(rbx_play::embed::EMBED_TEST_VARIABLE).is_none() {
+            return;
+        }
+        self.play.main_window = crate::pointer_lock::window_id(window);
+        self.play.gpui_window = Some(window.window_handle().window_id());
+        self.play.scale = window.scale_factor();
+        cx.spawn(async move |this, cx| {
+            let target = loop {
+                cx.background_executor().timer(POLL).await;
+                match this.update(cx, |shell, cx| shell.play_embed_target(cx)) {
+                    Ok(Some(target)) => break target,
+                    Ok(None) => continue,
+                    Err(_) => return,
+                }
+            };
+            let attached = cx
+                .background_spawn(async move {
+                    rbx_play::embed::Embedded::attach(
+                        target.window,
+                        target.rect,
+                        &[],
+                        EMBED_TIMEOUT,
+                        &|| None,
+                    )
+                })
+                .await;
+            let embedded = match attached {
+                Ok(embedded) => embedded,
+                Err(err) => return eprintln!("rbxstudio: embed test: {err}"),
+            };
+            eprintln!("rbxstudio: embed test: attached at {:?}", target.rect);
+            let _ = this.update(cx, |shell, cx| {
+                shell.play.embed_test = Some(EmbedTest {
+                    embedded,
+                    rect: target.rect,
+                    corner: target.corner,
+                });
+                cx.notify();
+            });
+            loop {
+                cx.background_executor().timer(POLL).await;
+                let alive = this.update(cx, |shell, cx| {
+                    let target = shell.play_embed_target(cx);
+                    let test = shell.play.embed_test.as_mut()?;
+                    let target = target.filter(|_| test.embedded.alive())?;
+                    if target.rect != test.rect {
+                        let _ = test.embedded.set_rect(target.rect);
+                        test.rect = target.rect;
+                    }
+                    test.corner = target.corner;
+                    shell.play_update_holes();
+                    Some(())
+                });
+                if !matches!(alive, Ok(Some(()))) {
+                    let _ = this.update(cx, |shell, _| shell.play.embed_test = None);
+                    return;
+                }
+            }
         })
         .detach();
     }
@@ -1024,7 +1098,15 @@ impl Shell {
             if let Some(why) = running.client.unavailable() {
                 stop = Some(StopReason::Unavailable(why));
             } else if running.client.exited() {
-                stop = Some(StopReason::ClientExited);
+                // Gone without ever showing the game: it never started.
+                #[cfg(any(target_os = "linux", windows))]
+                let never_started = running.embedded.is_none() && self.play.job_id.is_none();
+                #[cfg(not(any(target_os = "linux", windows)))]
+                let never_started = false;
+                stop = Some(match never_started {
+                    true => StopReason::ClosedEarly,
+                    false => StopReason::ClientExited,
+                });
             }
         }
         #[cfg(any(target_os = "linux", windows))]
@@ -1141,21 +1223,35 @@ impl Shell {
         })
     }
 
+    /// A window is embedded over the 3D view (a running Play, or
+    /// `RBX_PLAY_EMBED_TEST`), so popups need cutting out of it each frame.
+    #[cfg(any(target_os = "linux", windows))]
+    pub(in crate::shell) fn play_embedding(&self) -> bool {
+        #[cfg(windows)]
+        if self.play.embed_test.is_some() {
+            return true;
+        }
+        self.play.phase == Phase::Running
+    }
+
     /// Cuts the editor's popups out of the embedded game window, so they
     /// show above it (`gpui_base::occlusion` records where they were
     /// painted). Called after every frame while embedded and on each poll.
     #[cfg(any(target_os = "linux", windows))]
     pub(in crate::shell) fn play_update_holes(&mut self) {
-        let (Some(window), Some(running)) = (self.play.gpui_window, self.play.session.as_ref())
+        let embedded = self.play.session.as_ref().and_then(|running| {
+            let embedded = running.embedded.as_ref().filter(|_| !running.hidden)?;
+            Some((embedded, running.last_rect?, running.corner))
+        });
+        #[cfg(windows)]
+        let embedded = embedded.or_else(|| {
+            let test = self.play.embed_test.as_ref()?;
+            Some((&test.embedded, test.rect, test.corner))
+        });
+        let (Some(window), Some((embedded, rect, corner))) = (self.play.gpui_window, embedded)
         else {
             return;
         };
-        let (Some(embedded), Some(rect)) = (&running.embedded, running.last_rect) else {
-            return;
-        };
-        if running.hidden {
-            return;
-        }
         let scale = self.play.scale;
         let mut holes: Vec<rbx_play::embed::Rect> = gpui_base::occlusion::rects(window)
             .into_iter()
@@ -1176,7 +1272,7 @@ impl Shell {
             })
             .collect();
         holes.extend(
-            crate::device_sim::corner_holes(rect.width, rect.height, running.corner)
+            crate::device_sim::corner_holes(rect.width, rect.height, corner)
                 .into_iter()
                 .map(|hole| rbx_play::embed::Rect {
                     x: hole.x,
@@ -1226,10 +1322,24 @@ impl Shell {
         }
         // macOS: one helper connection per Play, closed here so its rules go
         // with the test. The installed helper means reconnecting costs no
-        // prompt (Linux keeps its namespace, Windows its elevated helper).
+        // prompt (Linux keeps its namespace). Windows keeps its elevated
+        // helper for the same reason, a second UAC prompt per Play, but has
+        // it let go of the WinDivert driver until the next shaped Play.
         #[cfg(target_os = "macos")]
         {
             self.play.network.shaper = None;
+        }
+        #[cfg(windows)]
+        {
+            let idled = self
+                .play
+                .network
+                .shaper
+                .as_mut()
+                .map(|shaper| shaper.idle());
+            if matches!(idled, Some(Err(_))) {
+                self.play.network.shaper = None;
+            }
         }
         self.play.job_id = None;
         self.play.stats = PlayStats::default();

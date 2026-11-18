@@ -133,8 +133,9 @@ pub(in crate::shell) struct NetworkSim {
     /// it; otherwise an applied preset waits for the next Play.
     shaped_client: bool,
     /// Started by the first shaped Play. Linux and Windows keep it for later
-    /// ones, like the tunnel, until the editor quits; macOS drops it at Stop
-    /// (`play_stop`), its helper being installed for good.
+    /// ones, like the tunnel, until the editor quits (Windows idles its
+    /// driver at Stop); macOS drops it at Stop (`play_stop`), its helper
+    /// being installed for good.
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     pub(in crate::shell::play) shaper: Option<rbx_play::netsim::Shaper>,
     pub(in crate::shell) popover: Option<Popover>,

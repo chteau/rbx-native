@@ -231,7 +231,7 @@ fn the_primary_menu_rows_lay_out_at_least_44_tall(cx: &mut gpui_kit::TestAppCont
     use gpui_kit::ParentElement as _;
     let selectors: Vec<&'static str> = super::popup::PRIMARY_ROWS
         .iter()
-        .map(|name| &*Box::leak(format!("menu-row-{name}").into_boxed_str()))
+        .map(|(name, _)| &*Box::leak(format!("menu-row-{name}").into_boxed_str()))
         .collect();
     let mut found = 0;
     for menu in menus(&[]) {
