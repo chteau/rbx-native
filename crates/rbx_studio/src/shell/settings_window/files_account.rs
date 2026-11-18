@@ -516,9 +516,13 @@ impl SettingsWindow {
                 check
             });
             let check = check.read(cx);
-            let summary = launcher::key_summary(check, "stored in your system keychain");
+            const TAIL: &str = "stored in your system keychain";
+            let summary = launcher::key_summary(check, TAIL);
             // The last check's card stands in while this one runs, which
-            // only replaces it if Roblox now says something else.
+            // only replaces it if Roblox now says something else. Names are
+            // only stored once a check found the key ready, so an account
+            // with them was ready last time, also one saved before its line
+            // was kept (that one says what it can until the check is back).
             let index = key_store::accounts();
             let cached = index
                 .active
@@ -527,9 +531,9 @@ impl SettingsWindow {
             match cached {
                 Some(account) if launcher::key_checking(check) => launcher::KeySummary {
                     name: account.key_name.clone().into(),
-                    tag: (!account.ready_meta.is_empty()).then_some(KeyTag::Ready),
+                    tag: Some(KeyTag::Ready),
                     meta: if account.ready_meta.is_empty() {
-                        format!("{} \u{b7} checking with Roblox\u{2026}", account.owner).into()
+                        format!("{} \u{b7} {TAIL}", account.owner).into()
                     } else {
                         account.ready_meta.clone().into()
                     },

@@ -33,7 +33,7 @@ use crate::settings::SavedNetworkPreset;
 use crate::shell::Shell;
 
 pub(in crate::shell) use popover::Popover;
-use shaper::{prerequisite, unsupported};
+use shaper::{elevation, prerequisite, unsupported};
 
 /// What the Preset menu shows as chosen.
 #[derive(Debug, Clone, PartialEq)]
@@ -145,6 +145,14 @@ pub(in crate::shell) struct NetworkSim {
 }
 
 impl NetworkSim {
+    /// Whether this window's shaper (and so its elevated helper) is up.
+    fn helper_running(&self) -> bool {
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+        return self.shaper.is_some();
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+        false
+    }
+
     pub(in crate::shell) fn new(saved: Vec<SavedNetworkPreset>) -> Self {
         NetworkSim {
             saved,

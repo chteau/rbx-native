@@ -421,16 +421,15 @@ fn main() {
     });
 }
 
-/// A light theme draws the kit's light icons, as switching to one does (see
-/// `Shell::reload_theme`), whatever an earlier session left behind.
+/// [`Settings::themed`], saving a settled old file so it is settled once.
 fn themed(settings: Settings, mode: ThemeMode) -> Settings {
-    match mode {
-        ThemeMode::Light => Settings {
-            icon_pack: IconPack::Light,
-            ..settings
-        },
-        ThemeMode::Dark => settings,
+    let (settings, migrated) = settings.themed(mode);
+    if migrated {
+        if let Err(err) = settings.save() {
+            eprintln!("rbxstudio: could not save settings: {err}");
+        }
     }
+    settings
 }
 
 /// File › Close Place's way back: Home again, with a boot read from disk as
