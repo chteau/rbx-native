@@ -248,7 +248,7 @@ fn a_host_on_its_loopback_port_answers_for_its_room_only() {
     let key = auth::derive_key("loopback-secret", 7);
     let room = auth::room_id(&key);
     let port = rbx_presence::announce::loopback_port(&room);
-    let _host = rbx_presence::host::Host::start_on(&key, port).expect("port free");
+    let _host = rbx_presence::host::Host::start_on(&key, port, "h").expect("port free");
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .build()
@@ -263,5 +263,5 @@ fn a_host_on_its_loopback_port_answers_for_its_room_only() {
     };
     assert_eq!(status(&room), 200);
     assert_eq!(status("0123456789abcdef0123456789abcdef"), 404);
-    assert!(rbx_presence::host::Host::start_on(&key, port).is_err());
+    assert!(rbx_presence::host::Host::start_on(&key, port, "h").is_err());
 }

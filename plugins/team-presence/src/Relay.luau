@@ -30,11 +30,17 @@ export type Config = {
 	-- Kept by the caller across sessions; a fresh one when absent.
 	beaconFrom: string?,
 	-- hosted: a host on this computer has answered on its loopback port
-	-- before (kept by the caller), so look there first; `onLoopback` is told
-	-- the first time one does.
+	-- before (kept by the caller), so look there first, and the id the last
+	-- one gave; `onLoopback` is told the first time one answers and the id
+	-- of each new one.
 	loopbackOk: boolean?,
-	onLoopback: (() -> ())?,
+	localHost: string?,
+	onLoopback: ((host: string?) -> ())?,
 }
+
+-- A request given up before it went out: the room moved to another host
+-- (or lost this one) while it waited its turn. Callers ask again.
+local MOVED = "The room's host changed; asking again"
 
 local VERSION_MISMATCH =
 	"The relay runs a different Team Presence version; update the plugin, rbx-native and the relay together."
@@ -53,12 +59,16 @@ local LONG_WAITS_FOR = 30
 
 -- `long`: a relay long-poll, which can take 20 s to answer. It never goes
 -- first to a host: holding the line that long would hold up everything
--- else (joining a new host would show nothing for as long).
-local function request(options: { [string]: any }, long: boolean?): any
+-- else (joining a new host would show nothing for as long). `wanted` is
+-- asked while it waits its turn; nil (no request made) once it says no.
+local function request(options: { [string]: any }, long: boolean?, wanted: (() -> boolean)?): any?
 	local host = string.match(options.Url, "^%a+://([^/]+)") or options.Url
 	local giveUp = os.clock() + LONG_WAITS_FOR
 	while asking[host] or (long and not answered[host] and os.clock() < giveUp) do
 		task.wait()
+		if wanted and not wanted() then
+			return nil
+		end
 	end
 	asking[host] = not answered[host]
 	local ok, res = pcall(HttpService.RequestAsync, HttpService, options)
@@ -81,13 +91,28 @@ local function nonceFor(): string
 end
 
 local EXPIRY_MS = 15000
--- How often a hosted room looks for its host while it has none.
-local RESOLVE_EVERY = 10
--- How often it looks in the first RESOLVE_SOON_FOR seconds after its host
--- went away: that is when an RbxNative coming back (a restart) announces
--- itself. Thirty looks stay inside ntfy.sh's burst allowance.
-local RESOLVE_SOON_EVERY = 3
-local RESOLVE_SOON_FOR = 90
+-- How often a hosted room with no host reads the announce topic on ntfy.
+-- ntfy.sh gives an address a burst of 60 requests, then one per 5 s, and
+-- RbxNative on the same address spends from the same budget.
+local RESOLVE_EVERY = 20
+-- How often it reads it in the first RESOLVE_SOON_FOR seconds after its
+-- host went away: that is when an RbxNative coming back (a restart)
+-- announces itself. Twelve reads, about what the budget refills meanwhile.
+local RESOLVE_SOON_EVERY = 5
+local RESOLVE_SOON_FOR = 60
+-- How often it reads it once an RbxNative on this computer has served the
+-- room: one restarting here comes back on the loopback port, looked at
+-- every LOOPBACK_EVERY, so ntfy only has to turn up hosts elsewhere.
+local RESOLVE_LOCAL_EVERY = 30
+-- After a 429 from ntfy, ntfy requests hold off for the Retry-After it
+-- asked for, or this long doubling up to NTFY_BACKOFF_MAX when it gave
+-- none: polling on through the refusals keeps the budget empty, RbxNative's
+-- announcement included. A refused post only holds posts back: ntfy.sh
+-- also caps messages at 250 a day, and once those run out it asks for
+-- hours while reads still go through.
+local NTFY_BACKOFF_MIN = 30
+local NTFY_BACKOFF_MAX = 300
+local RATE_LIMITED = "ntfy is rate limiting this address; trying again later"
 -- How often a hosted room with no host looks on this computer's loopback
 -- port: a refused connection costs nothing.
 local LOOPBACK_EVERY = 1
@@ -95,7 +120,7 @@ local LOOPBACK_EVERY = 1
 -- goes back to waiting for someone in RbxNative.
 local HOST_GRACE = 10
 -- How often a hosted room reads the place's beacons while it waits.
-local BEACON_READ_EVERY = 60
+local BEACON_READ_EVERY = 120
 
 local Relay = {}
 Relay.__index = Relay
@@ -119,8 +144,13 @@ function Relay.new(config: Config)
 		-- hosted: where a host on this computer would answer (see _loopback).
 		loopback = if hosted then `http://127.0.0.1:{Announce.loopbackPort(config.room)}` else nil,
 		loopbackOk = config.loopbackOk == true,
+		localHost = config.localHost,
 		onLoopback = config.onLoopback,
 		lastLoopback = -math.huge,
+		-- No ntfy request of each method before this (os.clock), and the
+		-- last hold.
+		ntfyUntil = { GET = -math.huge, POST = -math.huge },
+		ntfyBackoff = 0,
 		-- hosted: when a host last stopped answering (os.clock), nil if none has.
 		lostAt = nil :: number?,
 		-- hosted: when the host stopped answering (os.clock), nil while it answers.
@@ -166,6 +196,9 @@ function Relay:lookingForHost(): boolean
 end
 
 function Relay:_resolveEvery(): number
+	if self.loopbackOk then
+		return RESOLVE_LOCAL_EVERY
+	end
 	if self.lostAt ~= nil and os.clock() - self.lostAt < RESOLVE_SOON_FOR then
 		return RESOLVE_SOON_EVERY
 	end
@@ -183,6 +216,35 @@ end
 -- What a hosted room with no host to talk to says.
 function Relay:_noHost(): string
 	return if self:waiting() then WAITING else Relay.HOST_GONE
+end
+
+-- An ntfy request (pcall-style: ok and the response, or not and why),
+-- holding off after a 429 (see NTFY_BACKOFF_MIN).
+function Relay:_ntfy(options: { [string]: any }): (boolean, any)
+	if os.clock() < self.ntfyUntil[options.Method] then
+		return false, RATE_LIMITED
+	end
+	local ok, res = pcall(request, options)
+	if not ok or res.StatusCode ~= 429 then
+		if ok then
+			self.ntfyBackoff = 0
+		end
+		return ok, res
+	end
+	local asked = 0
+	for name, value in res.Headers or {} do
+		if string.lower(name) == "retry-after" then
+			asked = tonumber(value) or 0
+		end
+	end
+	self.ntfyBackoff = math.clamp(self.ntfyBackoff * 2, NTFY_BACKOFF_MIN, NTFY_BACKOFF_MAX)
+	local hold = os.clock() + math.max(asked, self.ntfyBackoff)
+	for method, held in self.ntfyUntil do
+		if method == options.Method or options.Method == "GET" then
+			self.ntfyUntil[method] = math.max(held, hold)
+		end
+	end
+	return false, RATE_LIMITED
 end
 
 -- hosted: whether an rbx-native host on this computer serves the room on
@@ -203,10 +265,16 @@ function Relay:_loopback(): boolean
 	end
 	self.base = self.loopback
 	self.sendKey = true
-	if not self.loopbackOk then
+	-- Older hosts answer a bare "ok".
+	local decoded, parsed = pcall(function()
+		return HttpService:JSONDecode(res.Body)
+	end)
+	local id = if decoded and type(parsed) == "table" and type(parsed.host) == "string" then parsed.host else nil
+	if not self.loopbackOk or (id ~= nil and id ~= self.localHost) then
 		self.loopbackOk = true
+		self.localHost = id or self.localHost
 		if self.onLoopback then
-			self.onLoopback()
+			self.onLoopback(id)
 		end
 	end
 	return true
@@ -227,11 +295,9 @@ function Relay:_resolve(): (boolean, string?)
 	end
 	self.lastResolve = os.clock()
 	local url = string.format("%s/%s/json?poll=1&since=12h", self.announceBase, Announce.topic(self.room))
-	local ok, res = pcall(function()
-		return request({ Url = url, Method = "GET" })
-	end)
+	local ok, res = self:_ntfy({ Url = url, Method = "GET" })
 	if not ok then
-		return false, tostring(res)
+		return false, if res == RATE_LIMITED then self:_noHost() else tostring(res)
 	end
 	if not res.Success then
 		return false, string.format("announce HTTP %d", res.StatusCode)
@@ -251,30 +317,41 @@ function Relay:_resolve(): (boolean, string?)
 			table.insert(texts, { text = parsed.message, time = parsed.time * 1000 })
 		end
 	end
-	local host = Announce.newest(self.key, self.room, nowMs(), texts)
+	local host, hostId = Announce.newest(self.key, self.room, nowMs(), texts)
 	if not host then
 		-- The host said goodbye: nobody to wait out.
 		self.goneSince = nil
 		return false, WAITING
 	end
+	local ours = hostId ~= nil and hostId == self.localHost
 	-- Someone hosts: maybe on this computer. Asking costs a one-time
 	-- 127.0.0.1 prompt even when they're elsewhere.
-	if not self.loopbackOk then
+	if not self.loopbackOk or ours then
 		self.lastLoopback = -math.huge
 		if self:_loopback() then
 			return true, nil
 		end
+	end
+	if ours then
+		-- Announced by an RbxNative on this computer that is gone from the
+		-- loopback port without a goodbye (killed). Its tunnel is dead too,
+		-- and asking for it costs a prompt; a new RbxNative here comes back
+		-- on the loopback port before it announces anything.
+		self.goneSince = nil
+		return false, WAITING
 	end
 	self.base = string.gsub(host, "/+$", "")
 	self.sendKey = true
 	return true, nil
 end
 
--- hosted: the host stopped answering (left, crashed, or handed over). The
--- first time, look for a new host at once; after that every RESOLVE_EVERY,
--- since a host that quit without a goodbye is still the newest announced.
-function Relay:_lost()
-	if self.kind == "hosted" then
+-- hosted: the host at `base` stopped answering (left, crashed, or handed
+-- over). The first time, look for a new host at once; after that every
+-- RESOLVE_EVERY, since a host that quit without a goodbye is still the
+-- newest announced. A late failure from a host the room already left says
+-- nothing about the one it talks to now.
+function Relay:_lost(base: string?)
+	if self.kind == "hosted" and self.base == base then
 		self.base = nil
 		self.lostAt = os.clock()
 		if self.goneSince == nil then
@@ -295,22 +372,18 @@ function Relay:keyConflict(leaving: boolean?): string?
 	local base = self.announceBase .. "/" .. self.beaconTopic
 	if leaving or os.clock() - self.lastBeaconPost >= Beacon.EVERY then
 		self.lastBeaconPost = os.clock()
-		pcall(function()
-			request({
-				Url = base,
-				Method = "POST",
-				Headers = { ["Content-Type"] = "text/plain" },
-				Body = Beacon.encode(if leaving then "" else self.beaconFp, self.beaconFrom, "studio", nowMs()),
-			})
-		end)
+		self:_ntfy({
+			Url = base,
+			Method = "POST",
+			Headers = { ["Content-Type"] = "text/plain" },
+			Body = Beacon.encode(if leaving then "" else self.beaconFp, self.beaconFrom, "studio", nowMs()),
+		})
 	end
 	if leaving or os.clock() - self.lastBeaconRead < BEACON_READ_EVERY then
 		return self.conflict
 	end
 	self.lastBeaconRead = os.clock()
-	local ok, res = pcall(function()
-		return request({ Url = base .. "/json?poll=1&since=15m", Method = "GET" })
-	end)
+	local ok, res = self:_ntfy({ Url = base .. "/json?poll=1&since=15m", Method = "GET" })
 	if ok and res.Success then
 		local texts = {}
 		for line in string.gmatch(res.Body or "", "[^\n]+") do
@@ -334,15 +407,21 @@ function Relay:_request(method: string, suffix: string, body: string, long: bool
 	if body ~= "" then
 		headers["Content-Type"] = "application/json"
 	end
-	local options: { [string]: any } = { Url = self.base .. path, Method = method, Headers = headers }
+	local base = self.base
+	local options: { [string]: any } = { Url = base .. path, Method = method, Headers = headers }
 	if body ~= "" then
 		options.Body = body
 	end
 	local ok, res = pcall(function()
-		return request(options, long)
+		return request(options, long, function()
+			return self.base == base
+		end)
 	end)
 	if not ok then
 		return nil, tostring(res)
+	end
+	if res == nil then
+		return nil, MOVED
 	end
 	if not res.Success then
 		if res.StatusCode == 400 and string.find(res.Body or "", "version", 1, true) then
@@ -371,16 +450,20 @@ function Relay:_send(method: string, suffix: string, body: string, long: boolean
 			return nil, why
 		end
 	end
+	local base = self.base
 	local res, err, raw = self:_request(method, suffix, body, long)
+	if err == MOVED then
+		return nil, err
+	end
 	if res == nil and raw == nil and self.kind == "hosted" then
 		-- No HTTP answer at all: the host may be gone, or its address not
 		-- reachable yet; look again shortly.
-		self:_lost()
+		self:_lost(base)
 		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} ({err})`
 	elseif res == nil and raw and self.kind == "hosted" and (raw.StatusCode == 404 or raw.StatusCode >= 500) then
 		-- A closed tunnel answers 404/502/530 from Cloudflare's edge (an
 		-- HTML page: keep it out of the status line).
-		self:_lost()
+		self:_lost(base)
 		err = if self:waiting() then WAITING else `{Relay.HOST_GONE} (HTTP {raw.StatusCode})`
 	end
 	if res == nil and needsKey(raw) and not self.sendKey then
@@ -397,14 +480,12 @@ end
 
 function Relay:_ntfyPublish(state: any): (boolean, string?)
 	local body = Ntfy.fitEncode(self.key, self.encKey, self.room, self.topic, self.userId, nowMs(), state, nonceFor)
-	local ok, res = pcall(function()
-		return request({
-			Url = self.base .. "/" .. self.topic,
-			Method = "POST",
-			Headers = { ["Content-Type"] = "text/plain" },
-			Body = body,
-		})
-	end)
+	local ok, res = self:_ntfy({
+		Url = self.base .. "/" .. self.topic,
+		Method = "POST",
+		Headers = { ["Content-Type"] = "text/plain" },
+		Body = body,
+	})
 	if not ok then
 		return false, tostring(res)
 	end
@@ -417,9 +498,7 @@ end
 function Relay:_ntfyPoll(): (any?, string?)
 	local since = self.lastId or "10s"
 	local url = string.format("%s/%s/json?poll=1&since=%s", self.base, self.topic, HttpService:UrlEncode(since))
-	local ok, res = pcall(function()
-		return request({ Url = url, Method = "GET" })
-	end)
+	local ok, res = self:_ntfy({ Url = url, Method = "GET" })
 	if not ok then
 		return nil, tostring(res)
 	end
@@ -472,6 +551,9 @@ function Relay:publish(state: any): (boolean, string?)
 		return self:_ntfyPublish(state)
 	end
 	local res, err = self:_send("POST", "/state", Schema.sealState(self.encKey, self.room, state, nonceFor))
+	if err == MOVED then
+		return self:publish(state)
+	end
 	if res == nil then
 		return false, err
 	end
@@ -486,6 +568,10 @@ function Relay:poll(cursor: number): (any?, string?)
 	-- counts from far lower, and would sit on the poll until it timed out.
 	local since = if self.base ~= nil and self.base == self.cursorBase then cursor else 0
 	local res, err = self:_send("GET", string.format("/poll?since=%.0f", since), "", true)
+	if err == MOVED then
+		-- Again from the top: the cursor belongs to the host it left.
+		return self:poll(cursor)
+	end
 	if res == nil then
 		return nil, err
 	end
@@ -506,9 +592,7 @@ end
 function Relay:journal(sinceMs: number): (any?, string?)
 	if self.kind == "ntfy" then
 		local url = string.format("%s/%s/json?poll=1&since=12h", self.base, self.topic)
-		local ok, res = pcall(function()
-			return request({ Url = url, Method = "GET" })
-		end)
+		local ok, res = self:_ntfy({ Url = url, Method = "GET" })
 		if not ok then
 			return nil, tostring(res)
 		end
@@ -596,6 +680,9 @@ function Relay:pollOps(since: number): (any?, string?)
 		return nil, NEEDS_HOSTED
 	end
 	local res, err = self:_send("GET", string.format("/ops?since=%.0f", since), "", true)
+	if err == MOVED then
+		return self:pollOps(since)
+	end
 	if res == nil then
 		return nil, err
 	end

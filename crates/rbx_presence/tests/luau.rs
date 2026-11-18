@@ -744,10 +744,16 @@ fn announce_cross_checks_with_rust() {
     let key = "k".repeat(64);
     let room = "0123456789abcdef0123456789abcdef";
     let now = 1_800_000_000_000u64;
-    let old = announce::encode(&key, room, "https://old.trycloudflare.com", now - 60_000);
-    let new = announce::encode(&key, room, "https://new.trycloudflare.com", now - 1_000);
-    let bye = announce::encode(&key, room, "", now - 500);
-    let forged = announce::encode("other", room, "https://evil.example", now);
+    let old = announce::encode(
+        &key,
+        room,
+        "https://old.trycloudflare.com",
+        "",
+        now - 60_000,
+    );
+    let new = announce::encode(&key, room, "https://new.trycloudflare.com", "", now - 1_000);
+    let bye = announce::encode(&key, room, "", "", now - 500);
+    let forged = announce::encode("other", room, "https://evil.example", "", now);
 
     let newest = func(&lua, "Announce", "newest");
     let received = |items: &[(&str, u64)]| {
@@ -779,7 +785,7 @@ fn announce_cross_checks_with_rust() {
         .unwrap();
     assert_eq!(only_forged, None);
     // Stamped just now by a clock nine hours fast, nine hours ago.
-    let skewed = announce::encode(&key, room, "https://gone.trycloudflare.com", now);
+    let skewed = announce::encode(&key, room, "https://gone.trycloudflare.com", "", now);
     let got: Option<String> = newest
         .call((
             key.as_str(),

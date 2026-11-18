@@ -43,6 +43,9 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct Shared {
     key: String,
+    /// What its loopback health check answers and its announcements carry
+    /// ([`crate::announce::host_id`]).
+    id: String,
     room_id: String,
     room: Mutex<Room>,
     changed: Condvar,
@@ -97,20 +100,22 @@ impl Host {
     /// [`Host::start`] whose empty op log waits `grace` ms for a peer to
     /// hand it the room's log before taking new posts.
     pub fn with_claim_grace(key: &str, grace: u64) -> std::io::Result<Host> {
-        Host::bind(key, grace, 0)
+        Host::bind(key, grace, 0, new_id())
     }
 
     /// [`Host::start`] on loopback `port` only (see
-    /// [`crate::announce::loopback_port`]), failing when it is taken.
-    pub fn start_on(key: &str, port: u16) -> std::io::Result<Host> {
-        Host::bind(key, CLAIM_GRACE_MS, port)
+    /// [`crate::announce::loopback_port`]), failing when it is taken, with
+    /// the id `id` (see [`crate::announce::host_id`]).
+    pub fn start_on(key: &str, port: u16, id: &str) -> std::io::Result<Host> {
+        Host::bind(key, CLAIM_GRACE_MS, port, id.to_owned())
     }
 
-    fn bind(key: &str, grace: u64, port: u16) -> std::io::Result<Host> {
+    fn bind(key: &str, grace: u64, port: u16, id: String) -> std::io::Result<Host> {
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         let addr = listener.local_addr()?;
         let shared = Arc::new(Shared {
             key: key.to_owned(),
+            id,
             room_id: auth::room_id(key),
             room: Mutex::new(Room::default()),
             changed: Condvar::new(),
@@ -151,6 +156,11 @@ impl Host {
                 }
             })?;
         Ok(Host { shared, addr })
+    }
+
+    /// See [`crate::announce::Announcement::host`].
+    pub fn id(&self) -> &str {
+        &self.shared.id
     }
 
     pub fn port(&self) -> u16 {
@@ -214,7 +224,8 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
     // Unsigned, so Studio can tell this room's host on this computer from
     // anything else listening on its loopback port.
     if method == "GET" && route == "health" {
-        return respond(&mut stream, 200, "\"ok\"");
+        let body = serde_json::json!({ "host": shared.id }).to_string();
+        return respond(&mut stream, 200, &body);
     }
     let allowed = matches!(
         (route.as_str(), method),
@@ -424,6 +435,12 @@ fn socket(shared: &Arc<Shared>, mut stream: TcpStream, request: &Request, user_i
         }
     }
     let _ = ws.get_mut().shutdown(Shutdown::Both);
+}
+
+fn new_id() -> String {
+    let mut bytes = [0u8; 8];
+    getrandom::fill(&mut bytes).expect("the OS random source is available");
+    hex::encode(bytes)
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

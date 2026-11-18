@@ -201,8 +201,14 @@ local function start()
 		placeId = game.PlaceId,
 		beaconFrom = beaconId(),
 		loopbackOk = plugin:GetSetting("LoopbackOk") == true,
-		onLoopback = function()
+		-- Kept too, so a Studio opened after RbxNative was killed still
+		-- knows its leftover announcement for one from this computer.
+		localHost = plugin:GetSetting("LoopbackHost"),
+		onLoopback = function(host: string?)
 			plugin:SetSetting("LoopbackOk", true)
+			if host then
+				plugin:SetSetting("LoopbackHost", host)
+			end
 		end,
 	})
 	local myCapture = Capture.new()

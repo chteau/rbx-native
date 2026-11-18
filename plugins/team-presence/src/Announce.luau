@@ -4,6 +4,8 @@
 --! Cloudflare quick tunnel and posts its address, signed with the place key,
 --! to the room's announce topic on ntfy; the plugin reads the newest genuine
 --! one and talks to that relay. An empty url is the host saying goodbye.
+--! `host` is the id the host answers its loopback health check with, outside
+--! the signature (see announce.rs).
 --! Pure (no HttpService): the Luau tests check it against the Rust encoder.
 
 local Auth = require(script.Parent.Auth)
@@ -61,13 +63,18 @@ function Announce.verify(key: string, room: string, now: number, received: numbe
 	if Auth.sign(key, canonical(room, url, at)) ~= sig then
 		return nil
 	end
-	return { url = url, at = at }
+	return { url = url, at = at, host = if type(message.host) == "string" then message.host else nil }
 end
 
--- The host's URL from a run of announcements ({ text, time }: the message
--- and when the server received it, unix ms): the newest genuine one, nil
--- when there is none or the newest says the host left.
-function Announce.newest(key: string, room: string, now: number, messages: { { text: string, time: number } }): string?
+-- The host's URL and id from a run of announcements ({ text, time }: the
+-- message and when the server received it, unix ms): the newest genuine
+-- one, nil when there is none or the newest says the host left.
+function Announce.newest(
+	key: string,
+	room: string,
+	now: number,
+	messages: { { text: string, time: number } }
+): (string?, string?)
 	local best: any = nil
 	for _, item in messages do
 		local message = Announce.verify(key, room, now, item.time, item.text)
@@ -76,9 +83,9 @@ function Announce.newest(key: string, room: string, now: number, messages: { { t
 		end
 	end
 	if best == nil or best.url == "" then
-		return nil
+		return nil, nil
 	end
-	return best.url
+	return best.url, best.host
 end
 
 return Announce

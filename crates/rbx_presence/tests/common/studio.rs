@@ -17,9 +17,10 @@ pub fn stubs(lua: &mlua::Lua) {
                 let (name, value) = pair?;
                 extra.push_str(&format!("{name}: {value}\r\n"));
             }
-            let (status, text) = http(&url, &method, &extra, body.as_deref().unwrap_or(""))
+            let (status, text, head) = http(&url, &method, &extra, body.as_deref().unwrap_or(""))
                 .map_err(mlua::Error::runtime)?;
             let response = lua.create_table()?;
+            response.set("Headers", lua.create_table_from(head)?)?;
             response.set("Success", (200..300).contains(&status))?;
             response.set("StatusCode", status)?;
             response.set("Body", text)?;
@@ -49,8 +50,16 @@ pub fn stubs(lua: &mlua::Lua) {
     setup.call::<()>((request, now_ms)).unwrap();
 }
 
-/// One request; answers the status and the (de-chunked) body.
-pub fn http(url: &str, method: &str, headers: &str, body: &str) -> Result<(u16, String), String> {
+/// Response header names (lowercased) and values.
+pub type Headers = Vec<(String, String)>;
+
+/// One request; answers the status, the (de-chunked) body and the headers.
+pub fn http(
+    url: &str,
+    method: &str,
+    headers: &str,
+    body: &str,
+) -> Result<(u16, String, Headers), String> {
     use std::io::{Read, Write};
     let rest = url.strip_prefix("http://").ok_or("http:// only")?;
     let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
@@ -70,6 +79,12 @@ pub fn http(url: &str, method: &str, headers: &str, body: &str) -> Result<(u16, 
         .nth(1)
         .and_then(|code| code.parse().ok())
         .ok_or("no status")?;
+    let fields = head
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
     let mut body = String::new();
     if head
         .to_ascii_lowercase()
@@ -86,5 +101,5 @@ pub fn http(url: &str, method: &str, headers: &str, body: &str) -> Result<(u16, 
     } else {
         body.push_str(payload);
     }
-    Ok((status, body))
+    Ok((status, body, fields))
 }

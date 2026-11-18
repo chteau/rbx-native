@@ -20,6 +20,12 @@ pub type Topics = Arc<Mutex<HashMap<String, Vec<(String, u64)>>>>;
 /// `POST /<topic>` stores the body; `GET /<topic>/json` answers every stored
 /// message as ntfy's JSON lines.
 pub fn fake_ntfy() -> (String, Topics) {
+    fake_ntfy_limited(Arc::default(), Arc::default())
+}
+
+/// [`fake_ntfy`] counting every request in `seen`, and answering ntfy.sh's
+/// rate-limit 429 (with `Retry-After: 1`) while `refuse` counts down.
+pub fn fake_ntfy_limited(refuse: Arc<AtomicUsize>, seen: Arc<AtomicUsize>) -> (String, Topics) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let topics: Topics = Arc::default();
@@ -28,6 +34,10 @@ pub fn fake_ntfy() -> (String, Topics) {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
             let store = Arc::clone(&store);
+            seen.fetch_add(1, Ordering::SeqCst);
+            let refused = refuse
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .is_ok();
             thread::spawn(move || {
                 let mut reader = BufReader::new(stream.try_clone().unwrap());
                 let mut line = String::new();
@@ -49,6 +59,13 @@ pub fn fake_ntfy() -> (String, Topics) {
                 let mut body = vec![0; len];
                 reader.read_exact(&mut body).unwrap();
                 let path = target.split('?').next().unwrap().trim_start_matches('/');
+                if refused {
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 429 Too Many Requests\r\nretry-after: 1\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                    );
+                    return;
+                }
                 let reply = if method == "POST" {
                     let mut topics = store.lock().unwrap();
                     topics.entry(path.to_owned()).or_default().push((

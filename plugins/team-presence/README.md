@@ -156,7 +156,14 @@ A Creator Store install asks for HTTP permission per address: ntfy.sh first
 An rbx-native host also serves the room on a loopback port derived from the
 room id, so Studio on the same computer talks to it there, asks about it
 once, and rejoins by itself within a couple of seconds of RbxNative
-starting again, before the tunnel is even up. A host on another computer is
+starting again, before the tunnel is even up. That holds after RbxNative
+was killed too: the loopback port answers with an id of that RbxNative
+install, which its announcements also carry, so Studio knows a leftover
+tunnel address from its own computer and keeps waiting on the loopback port
+instead of asking about it. While the loopback port answers the plugin
+doesn't touch ntfy.sh at all; while it waits it reads the announce topic
+every 5 to 30 s, and backs off for the Retry-After (or 30 s doubling to
+5 min) when ntfy.sh says 429. A host on another computer is
 only reachable through its `*.trycloudflare.com` address, which is new
 every time that person opens RbxNative, so Studio asks about that one each
 session; a stable address there would need a named tunnel or a Worker on

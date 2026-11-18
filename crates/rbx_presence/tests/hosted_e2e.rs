@@ -214,7 +214,7 @@ fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
             );
         }
     });
-    announce::publish(&ntfy, &key, &room, &dead).unwrap();
+    announce::publish(&ntfy, &key, &room, &dead, "").unwrap();
 
     let lua = common::new_lua();
     common::studio_stubs(&lua);
@@ -242,7 +242,7 @@ fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
     );
 
     // Right after losing its host the room looks again every few seconds
-    // (a restarting RbxNative announces itself then), later every ten.
+    // (a restarting RbxNative announces itself then), later every twenty.
     let (soon, later, looking): (u32, u32, bool) = lua
         .load(
             r#"
@@ -255,7 +255,7 @@ fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
         )
         .eval()
         .unwrap();
-    assert_eq!((soon, later, looking), (3, 10, true));
+    assert_eq!((soon, later, looking), (5, 20, true));
 
     // Past the grace, the next look finds the same dead address: waiting.
     let (ok, err, waiting): (bool, String, bool) = lua
@@ -522,7 +522,7 @@ fn a_leaving_host_never_buries_a_newer_host() {
         }
     }
     thread::sleep(Duration::from_millis(5));
-    announce::publish(&ntfy, &key, &room, "http://127.0.0.1:9").unwrap();
+    announce::publish(&ntfy, &key, &room, "http://127.0.0.1:9", "").unwrap();
     drop(ana);
     // Ana's worker is gone once its events channel closes.
     while ana_events.recv_timeout(Duration::from_secs(10)).is_ok() {}

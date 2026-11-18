@@ -29,13 +29,14 @@ pub(super) struct Topic {
 }
 
 impl Going {
-    pub(super) fn start(hosting: &Hosting, port: u16, topic: Topic) -> Going {
+    /// `id`: the host's, announced with its address (see [`announce`]).
+    pub(super) fn start(hosting: &Hosting, port: u16, id: String, topic: Topic) -> Going {
         let (send, done) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let (open, called_off) = (hosting.0.clone(), stop.clone());
         thread::spawn(move || {
             let wanted = || !called_off.load(Ordering::Relaxed);
-            let went = go_public(open(port), &topic, &wanted);
+            let went = go_public(open(port), &id, &topic, &wanted);
             // Dropped while announcing: take the address back so nobody goes
             // to a tunnel that closes with this thread.
             if let Err(mpsc::SendError(Ok((public, _)))) = send.send(went) {
@@ -63,6 +64,7 @@ impl Drop for Going {
 
 fn go_public(
     opened: Result<Public, String>,
+    id: &str,
     topic: &Topic,
     wanted: &dyn Fn() -> bool,
 ) -> Result<Public, String> {
@@ -81,7 +83,7 @@ fn go_public(
     if !ready || !wanted() {
         return Err("presence stopped".into());
     }
-    announce_now(topic, &public)?;
+    announce_now(topic, &public, id, wanted)?;
     Ok((public, tunnel))
 }
 
@@ -94,21 +96,36 @@ pub(super) fn goodbye(topic: &Topic, public: &str) {
             return;
         }
     }
-    let _ = announce::publish(&topic.ntfy, &topic.key, &topic.room, "");
+    let _ = announce::publish(&topic.ntfy, &topic.key, &topic.room, "", "");
 }
 
-/// Announces `public` as the room's host, trying again a couple of times
-/// over a few seconds: a dropped post would otherwise cost a new tunnel
-/// and its start-up before collaborators hear of this host.
-fn announce_now(topic: &Topic, public: &str) -> Result<(), String> {
-    let mut tries = 0;
+/// Announces `public` as the room's host, trying again until it goes out
+/// or `wanted` says to stop: a dropped post would otherwise cost a new
+/// tunnel and its start-up before collaborators hear of this host, while
+/// Studio on this computer is served from the loopback port all along.
+/// Retries back off, and wait out a 429 for at least as long as ntfy asked:
+/// posting on through its rate limit only keeps the budget empty.
+fn announce_now(
+    topic: &Topic,
+    public: &str,
+    id: &str,
+    wanted: &dyn Fn() -> bool,
+) -> Result<(), String> {
+    let mut backoff = ANNOUNCE_RETRY_START;
     loop {
-        let posted = announce::publish(&topic.ntfy, &topic.key, &topic.room, public);
-        tries += 1;
-        if posted.is_ok() || tries == ANNOUNCE_TRIES {
-            return posted;
+        let posted = announce::publish(&topic.ntfy, &topic.key, &topic.room, public, id);
+        let Err(refused) = posted else {
+            return Ok(());
+        };
+        let pause = refused.retry_after.unwrap_or_default().max(backoff);
+        let until = Instant::now() + pause;
+        while Instant::now() < until {
+            if !wanted() {
+                return Err(refused.why);
+            }
+            thread::sleep(Duration::from_millis(200));
         }
-        thread::sleep(Duration::from_secs(1));
+        backoff = (backoff * 2).min(ANNOUNCE_RETRY_MAX);
     }
 }
 
@@ -151,8 +168,10 @@ fn wait_until_resolvable(url: &str, limit: Duration, wanted: &dyn Fn() -> bool) 
 /// How long [`wait_until_resolvable`] waits when no name server answers.
 const UNASKED_WAIT: Duration = Duration::from_secs(5);
 
-/// How many times a new host posts its announcement before giving up.
-const ANNOUNCE_TRIES: u32 = 3;
+/// The first wait before posting an announcement again, doubling up to
+/// [`ANNOUNCE_RETRY_MAX`].
+const ANNOUNCE_RETRY_START: Duration = Duration::from_secs(1);
+const ANNOUNCE_RETRY_MAX: Duration = Duration::from_secs(120);
 
 /// Waits (at most `limit`) until this host's relay answers its health check
 /// through `url`, its public address. False when `wanted` says to stop.

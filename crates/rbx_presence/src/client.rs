@@ -358,7 +358,12 @@ impl Worker {
         if self.hosted.is_none() {
             let ntfy = self.config.relay_url.clone();
             match announce::find(&ntfy, &self.config.key, &self.config.room) {
-                Err(why) => return Outcome::Failed(why),
+                // ntfy refusing (its rate limit) or out of reach says nothing
+                // about a host, and one that can host still serves Studio on
+                // this computer from the loopback port meanwhile. Should a
+                // host elsewhere turn out to be up, the newer one wins
+                // (see host_check) once this one gets its announcement out.
+                Err(why) if self.config.hosting.is_none() => return Outcome::Failed(why),
                 Ok(Some(found)) if reachable(&found.url) => {
                     self.joined = Some(found.url.clone());
                     if self
@@ -370,7 +375,7 @@ impl Worker {
                     }
                     return self.worker_session(&found.url, delay);
                 }
-                Ok(_) => {
+                _ => {
                     self.joined = None;
                     let Some(hosting) = self.config.hosting.clone() else {
                         if self.events.send(Event::Route(Route::Waiting)).is_err() {
@@ -395,7 +400,7 @@ impl Worker {
     /// sees this editor at once, not after the tunnel and its announcement.
     fn start_hosting(&mut self, hosting: &Hosting) -> Result<(), String> {
         let host = self.start_host().map_err(|e| e.to_string())?;
-        let going = Going::start(hosting, host.port(), self.topic());
+        let going = Going::start(hosting, host.port(), host.id().to_owned(), self.topic());
         self.hosted = Some(Hosted {
             host,
             going: Some(going),
@@ -442,7 +447,8 @@ impl Worker {
     fn start_host(&mut self) -> std::io::Result<host::Host> {
         let port = announce::loopback_port(&self.config.room);
         for _ in 0..LOOPBACK_TRIES {
-            if let Ok(host) = host::Host::start_on(&self.config.key, port) {
+            let id = announce::host_id(&self.config.beacon_from);
+            if let Ok(host) = host::Host::start_on(&self.config.key, port, &id) {
                 return Ok(host);
             }
             if !self.wait(Duration::from_millis(500)) {
@@ -537,6 +543,7 @@ impl Worker {
                     &self.config.key,
                     &self.config.room,
                     &public.url,
+                    hosted.host.id(),
                 )
                 .is_ok()
             {
@@ -908,6 +915,7 @@ mod tests {
             url: url.into(),
             at,
             sig: String::new(),
+            host: String::new(),
         };
         let never = |_: &str| -> bool { panic!("asked about our own address") };
         assert_eq!(

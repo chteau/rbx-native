@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-18
+
+- **Studio on the same computer stays on 127.0.0.1, even after RbxNative crashes, and goes easy on ntfy.sh.** Kill RbxNative (no goodbye) and relaunch it, and Studio went for the dead host's trycloudflare.com address, so a store install asked for permission to reach it and sat on "Can't reach the rbx-native host yet" while the new RbxNative was already up on 127.0.0.1. The loopback port now answers with an id of the RbxNative install and its announcements carry the same id, so Studio knows a leftover address from its own computer and keeps waiting on 127.0.0.1. A request still queued for a host Studio already left is dropped and asked again, which was the one 26 s rejoin in six. Studio also drained ntfy.sh's per-address budget (429s right after a few relaunches), and once that happened RbxNative couldn't even start hosting. Now the plugin doesn't touch ntfy at all while 127.0.0.1 answers, reads it every 5 to 30 s while it waits (was every 3 s), and holds off for the Retry-After or 30 s doubling to 5 min after a 429. RbxNative hosts on the loopback port even when ntfy refuses, and keeps retrying its announcement with backoff instead of tearing the tunnel down after three tries. The Team Presence plugin needs a new store release for this. (@chteau)
+
 ## 2026-11-17
 
 - **Studio sees you right away when you open the place in RbxNative.** On the same computer Studio said "Connected · 0 rbx-native" about 4 s after RbxNative opened, but you only showed up 10 to 30 s in. RbxNative joined its own room only after its tunnel was up and announced, and Studio doesn't need either of those. Now it joins on the loopback port as soon as the room is up, and the tunnel comes up in the background for collaborators on other computers. (@chteau)
