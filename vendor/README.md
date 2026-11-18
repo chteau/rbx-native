@@ -165,3 +165,18 @@ place, then All files) instead of only "All files", and a dialog with no
 active window of ours to hang off uses our first window, so it opens over
 the editor rather than in the screen's corner.
 
+And one more in `src/window.rs`, marked the same way: `WindowBorderOffset`
+measures how far the client area sits in from the window's left and top
+edge (`ClientToScreen`) and `calculate_window_rect`/`calculate_client_rect`
+use that instead of half of each offset. A window with a hidden title bar
+has no frame at the top, so upstream opened it half the bottom frame
+(about 4 px at 125%) above the bounds it was given, and a window reopened
+at its saved bounds crept up every time.
+
+And, in the same file, a `WindowKind::Floating` window is created owned by
+the root owner of the window active when it opens (`GetActiveWindow`,
+`GetAncestor(GA_ROOTOWNER)`) and without `WS_EX_APPWINDOW`. Upstream made it
+a plain top-level window, so a torn-out plugin dock went behind the editor
+the moment the editor was clicked. Owned, it stays above the editor, hides
+with it when minimized and has no taskbar button of its own.
+

@@ -56,12 +56,16 @@ impl Shell {
     /// gesture every editor with floating panels uses and the only one
     /// GPUI cannot report as a drop, since there is nothing of ours under
     /// the cursor to report it to.
+    ///
+    /// The torn-out window opens where it was let go, so the screen point
+    /// is kept for it (`shell::panel_window`).
     pub(super) fn end_panel_drag(
         &mut self,
         position: Point<Pixels>,
-        bounds: Size<Pixels>,
+        window: &Window,
         cx: &mut Context<Self>,
     ) {
+        let bounds = window.viewport_size();
         let Some(panel) = self.dragging_panel.take() else {
             return;
         };
@@ -71,6 +75,7 @@ impl Shell {
             || position.x > bounds.width
             || position.y > bounds.height;
         if outside {
+            self.torn_at = Some((panel, window.bounds().origin + position));
             self.float_panel(panel, cx);
         }
         cx.notify();

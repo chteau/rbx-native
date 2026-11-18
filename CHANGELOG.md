@@ -15,6 +15,7 @@
 - **Studio sees you right away when you open the place in RbxNative.** On the same computer Studio said "Connected · 0 rbx-native" about 4 s after RbxNative opened, but you only showed up 10 to 30 s in. RbxNative joined its own room only after its tunnel was up and announced, and Studio doesn't need either of those. Now it joins on the loopback port as soon as the room is up, and the tunnel comes up in the background for collaborators on other computers. (@chteau)
 - **Team Presence starts when the key shows up late.** If the Keychain answered after launch, or you saved a key from Home with a place already open, Home got the key but Team Presence stayed on "sign in" until you restarted. Open editors now retry presence as soon as the key is there. (@chteau)
 - **Studio gets back to RbxNative in seconds, and stops asking.** Quit and reopen RbxNative and Studio's Team Presence plugin used to sit on "Waiting..." for up to a minute, then ask again whether it could reach a brand new trycloudflare.com address, so nobody at Studio meant no rejoin at all. RbxNative's own check that the new address existed made Cloudflare's DNS remember it as missing for a minute; it now asks Cloudflare's name servers directly, so the address goes out about 8 s after the tunnel starts. And with Studio on the same computer, the plugin now talks to RbxNative on 127.0.0.1, which Studio asks about once, so it reconnects by itself about 5 s after RbxNative opens, before the tunnel is even up. Someone in RbxNative on another computer is still reached through the tunnel, so Studio asks about that address each time they open RbxNative. Needs the updated plugin. (@chteau)
+
 ## 2026-11-16
 
 - **Polish from the Mac and Windows test runs.** The graph view follows the
@@ -71,6 +72,53 @@
 - **File menu rows without the blank gaps.** Save to File, Save to Roblox,
   Publish to Roblox and Delete keep their bigger click target but now say
   what they do on a second line instead of sitting in empty space. (@chteau)
+
+## 2026-11-15
+
+- **Plugin widgets tear out into their own windows.** Drag a plugin's tab
+  out of the editor, or pick Float in its menu, and it gets a real window
+  with our own title bar, same as Explorer or Output. Push the window
+  against the editor's left or right edge, or its top down onto the
+  bottom edge, to dock it again. A widget that asks to float
+  (`InitialDockState.Float`) opens in its own window too. The window
+  remembers where you left it per widget, across restarts, and closing it
+  closes the widget (`BindToClose` fires) until its toolbar button opens
+  it again right where it was. Torn-out windows step aside while the
+  editor asks you something (Save changes? and friends) so they never
+  cover the prompt. On Windows our own title bars can be dragged now
+  (editor, Settings, every window with our top bar), snap included (a
+  snapped plugin window stays a window, it doesn't dock), a plugin window
+  stays above the editor when you click the editor, and it reopens
+  exactly where it was instead of creeping up a few pixels each time.
+  (@chteau)
+- **Plugin windows: right edge, restart and tear-out spot.** Pushing a
+  plugin window onto the editor's right edge by its title docks it now,
+  same as the left edge (it used to need the window's middle over the
+  editor). A plugin window left open when you quit comes back on the next
+  launch, at the spot you left it, and a tab you tear out opens right
+  under the pointer instead of in the middle of the screen. (@chteau)
+- **Torn-out windows stay on screen.** A tab torn out near a screen edge
+  opens fully inside that screen's work area, its title bar still under
+  the pointer where there's room, and a window that was snapped or
+  maximized no longer hands that size to the next tear-out. (@chteau)
+- **Plugin windows close with the editor.** Closing the editor used to
+  leave a floating plugin window on screen, and RbxNative plus the presence
+  tunnel kept running until you closed that too. Now the editor's plugin
+  windows go with it (once its save prompt is answered, Cancel keeps
+  everything), the app quits, and each widget comes back open next launch
+  at exactly the spot you left it. A saved spot that's on screen isn't
+  nudged anymore either, it was landing 5 px up on a Mac with the Dock at
+  the bottom. If a plugin's window doesn't come back, check the
+  plugin itself: Lemonade, for one, shuts its widget on every launch until
+  you click "I'm ready" on its welcome card (its × only hides the card).
+  (@chteau)
+- **Snapped plugin windows tear out at their normal size, for real.**
+  Maximize or snap a plugin window (Aero snap on Windows, Zoom or tiling on
+  a Mac, your window manager's maximize on Linux), dock it, tear it out
+  again and it could still come back that big, Linux and Mac hand over the
+  big rect as if it was the normal one. Now a window that fills the screen's
+  height or a quarter of it isn't remembered at all, so the next tear-out
+  opens at the last normal size. (@chteau)
 
 ## 2026-11-14
 
@@ -681,6 +729,7 @@
   got refused before this; it publishes fine. Heads up, Studio's own save
   limit is 100 MB, so a place between the two plays here but won't save
   from Studio. (@chteau)
+
 ## 2026-10-29
 
 - **Animation Graph state machines play when the place opens in Studio.**

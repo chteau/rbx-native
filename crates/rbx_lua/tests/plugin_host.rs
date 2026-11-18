@@ -97,6 +97,12 @@ impl Fixture {
         self.host.dispatch(&mut self.dom, ctx, input)
     }
 
+    /// `input` to another host over this fixture's DOM: a later session.
+    fn send_with(&mut self, host: &mut PluginHost, input: Input) -> Outcome {
+        let ctx = self.context();
+        host.dispatch(&mut self.dom, ctx, input)
+    }
+
     fn send_ctx(&mut self, ctx: Context, input: Input) -> Outcome {
         self.host.dispatch(&mut self.dom, ctx, input)
     }
@@ -652,6 +658,49 @@ fn dock_widgets_restore_and_bind_to_close() {
             .extend(next.dispatch(&mut f.dom, ctx, Input::Tick).output);
     }
     assert!(texts(&out, OutputKind::Print).contains(&"start true false false".to_string()));
+}
+
+/// The Windows retest: a widget left open at quit has to come back open.
+/// The saved `Enabled` is restored before the plugin's own code sees the
+/// widget, starting up never writes it back as the info's default, and
+/// only a write by the plugin itself (Lemonade shuts its widget until its
+/// onboarding is done) closes it again, as in Studio.
+#[test]
+fn a_widget_left_open_is_restored_before_the_plugin_reads_it() {
+    let src = r#"
+        local w = plugin:CreateDockWidgetPluginGui("w", DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, false, 200, 100, 100, 50))
+        print("restored", w.Enabled)
+        if plugin:GetSetting("gate") then w.Enabled = false end
+    "#;
+    let (mut f, _) = started("restore_order", src);
+    let id = f.host.ui().widgets[0].id;
+    f.send(Input::WidgetOpened(id));
+    let file = f._dir.0.join("TestPlugin.json");
+    let saved = |file: &std::path::Path| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
+    };
+    let rerun = |f: &mut Fixture| {
+        let mut next = PluginHost::new(ReflectionDatabase::embedded(), Some(f._dir.0.clone()));
+        next.add(roblox(src));
+        let mut out = f.send_with(&mut next, Input::Start);
+        for _ in 0..4 {
+            out.output
+                .extend(f.send_with(&mut next, Input::Tick).output);
+        }
+        (next, out)
+    };
+
+    let (next, out) = rerun(&mut f);
+    assert!(texts(&out, OutputKind::Print).contains(&"restored true".to_string()));
+    assert!(next.ui().widgets[0].enabled);
+    assert_eq!(saved(&file)["__rbxnative_widgets"]["w"], true);
+
+    let mut map = saved(&file);
+    map["gate"] = serde_json::Value::Bool(true);
+    std::fs::write(&file, map.to_string()).unwrap();
+    let (next, _) = rerun(&mut f);
+    assert!(!next.ui().widgets[0].enabled);
+    assert_eq!(saved(&file)["__rbxnative_widgets"]["w"], false);
 }
 
 /// Selection To Camera plays a click sound from its widget; that must not
