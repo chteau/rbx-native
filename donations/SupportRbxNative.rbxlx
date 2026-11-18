@@ -1,0 +1,397 @@
+<roblox version="4">
+  <Meta name="ExplicitAutoJoints">true</Meta>
+  <Item class="Workspace" referent="RBX1">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <Ref name="CurrentCamera">RBX9</Ref>
+    </Properties>
+    <Item class="Camera" referent="RBX9">
+      <Properties>
+        <string name="Name">Camera</string>
+        <CoordinateFrame name="CFrame">
+          <X>75.04819</X>
+          <Y>46.847763</Y>
+          <Z>66.79113</Z>
+          <R00>0.66481763</R00>
+          <R01>-0.31569827</R01>
+          <R02>0.67701703</R02>
+          <R10>0</R10>
+          <R11>0.9063077</R11>
+          <R12>0.42261827</R12>
+          <R20>-0.7470057</R20>
+          <R21>-0.28096408</R21>
+          <R22>0.60252935</R22>
+        </CoordinateFrame>
+        <float name="FieldOfView">70</float>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="Players" referent="RBX2">
+    <Properties>
+      <string name="Name">Players</string>
+      <bool name="CharacterAutoLoads">false</bool>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="RBX4">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="ModuleScript" referent="RBX3">
+      <Properties>
+        <string name="Name">Config</string>
+        <ProtectedString name="Source">--!strict
+-- The donation place's settings. The only part to fill in after publishing:
+-- the developer product ids from Creator Dashboard, Monetization, Developer
+-- Products. Prices come from Roblox at run time, so they're set there only.
+return {
+	-- Developer product ids, cheapest first. One button each.
+	products = {} :: { number },
+	-- How many donors the board lists.
+	boardSize = 20,
+	-- How often the server re-reads the board, in seconds.
+	boardEvery = 60,
+}
+</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="RBX6">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Script" referent="RBX5">
+      <Properties>
+        <string name="Name">Donations</string>
+        <ProtectedString name="Source">--!strict
+-- Takes the Robux. Every product in Config.products is a donation: nothing
+-- unlocks, the buyer gets a thank-you and a spot on the donor board. The
+-- money goes to the group that owns this place, and the group pays the
+-- maintainers out by percentage (donations/README.md).
+local DataStoreService = game:GetService(&quot;DataStoreService&quot;)
+local MarketplaceService = game:GetService(&quot;MarketplaceService&quot;)
+local Players = game:GetService(&quot;Players&quot;)
+local ReplicatedStorage = game:GetService(&quot;ReplicatedStorage&quot;)
+
+local Config = require(ReplicatedStorage:WaitForChild(&quot;Config&quot;))
+
+local remotes = Instance.new(&quot;Folder&quot;)
+remotes.Name = &quot;Donations&quot;
+local thanked = Instance.new(&quot;RemoteEvent&quot;)
+thanked.Name = &quot;Thanked&quot;
+thanked.Parent = remotes
+local board = Instance.new(&quot;StringValue&quot;)
+board.Name = &quot;Board&quot;
+board.Value = &quot;[]&quot;
+board.Parent = remotes
+remotes.Parent = ReplicatedStorage
+
+-- Per donor: their total and the last receipts counted in it, and the same
+-- totals sorted for the board. Unpublished (a Studio playtest) Roblox has no
+-- DataStores and throws here, so the screen still comes up, just without
+-- taking donations.
+local storesOk, donors, totals = pcall(function()
+	return DataStoreService:GetDataStore(&quot;Donors&quot;), DataStoreService:GetOrderedDataStore(&quot;DonorTotals&quot;)
+end)
+if not storesOk then
+	warn(&quot;donations off, no DataStores here:&quot;, donors)
+end
+local KEEP_RECEIPTS = 50
+
+local donation: { [number]: boolean } = {}
+for _, id in Config.products do
+	donation[id] = true
+end
+
+type Donor = { total: number, receipts: { string } }
+
+-- Roblox can hand the same receipt over more than once (a server closing
+-- mid-purchase, a retry), so the donor's record keeps the receipts it has
+-- counted and skips one it has seen. The purchase is only granted once that
+-- record is saved; the board copy is a plain overwrite, safe to repeat.
+MarketplaceService.ProcessReceipt = function(receipt)
+	if not storesOk or not donation[receipt.ProductId] then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	local key = tostring(receipt.PlayerId)
+	local total = 0
+	local ok, err = pcall(function()
+		donors:UpdateAsync(key, function(saved: Donor?): Donor?
+			local donor: Donor = saved or { total = 0, receipts = {} }
+			if table.find(donor.receipts, receipt.PurchaseId) then
+				total = donor.total
+				return nil
+			end
+			donor.total += receipt.CurrencySpent
+			table.insert(donor.receipts, receipt.PurchaseId)
+			if #donor.receipts &gt; KEEP_RECEIPTS then
+				table.remove(donor.receipts, 1)
+			end
+			total = donor.total
+			return donor
+		end)
+	end)
+	if not ok then
+		warn(&quot;donation not saved yet, Roblox will retry:&quot;, err)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	pcall(function()
+		totals:SetAsync(key, total)
+	end)
+	local player = Players:GetPlayerByUserId(receipt.PlayerId)
+	if player then
+		thanked:FireClient(player, receipt.CurrencySpent)
+	end
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+
+local names: { [number]: string } = {}
+local function nameOf(userId: number): string
+	local known = names[userId]
+	if known then
+		return known
+	end
+	local ok, name = pcall(Players.GetNameFromUserIdAsync, Players, userId)
+	local found = if ok and type(name) == &quot;string&quot; then name else &quot;Someone&quot;
+	names[userId] = found
+	return found
+end
+
+local function refreshBoard()
+	if not storesOk then
+		return
+	end
+	local ok, pages = pcall(function()
+		return totals:GetSortedAsync(false, Config.boardSize)
+	end)
+	if not ok then
+		return
+	end
+	local rows = {}
+	for _, entry in pages:GetCurrentPage() do
+		local userId = tonumber(entry.key)
+		if userId then
+			table.insert(rows, { name = nameOf(userId), robux = entry.value })
+		end
+	end
+	board.Value = game:GetService(&quot;HttpService&quot;):JSONEncode(rows)
+end
+
+task.spawn(function()
+	while true do
+		refreshBoard()
+		task.wait(Config.boardEvery)
+	end
+end)
+</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="RBX8">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedFirst" referent="RBX11">
+    <Properties>
+      <string name="Name">ReplicatedFirst</string>
+    </Properties>
+    <Item class="LocalScript" referent="RBX10">
+      <Properties>
+        <string name="Name">DonateUI</string>
+        <ProtectedString name="Source">--!strict
+-- The whole place is this screen: what the money is for, one button per
+-- developer product, the donor board, and a thank-you after a purchase.
+-- Characters don't load (Players.CharacterAutoLoads is off), so there's no
+-- world to wander, only this.
+local HttpService = game:GetService(&quot;HttpService&quot;)
+local MarketplaceService = game:GetService(&quot;MarketplaceService&quot;)
+local Players = game:GetService(&quot;Players&quot;)
+local ReplicatedStorage = game:GetService(&quot;ReplicatedStorage&quot;)
+
+local Config = require(ReplicatedStorage:WaitForChild(&quot;Config&quot;))
+local remotes = ReplicatedStorage:WaitForChild(&quot;Donations&quot;)
+local thanked = remotes:WaitForChild(&quot;Thanked&quot;) :: RemoteEvent
+local board = remotes:WaitForChild(&quot;Board&quot;) :: StringValue
+
+local player = Players.LocalPlayer
+
+-- The editor's colours (assets/themes/default/theme.json).
+local BLACK = Color3.fromRGB(10, 10, 11)
+local PANEL = Color3.fromRGB(18, 18, 19)
+local LINE = Color3.fromRGB(44, 44, 46)
+local WHITE = Color3.fromRGB(244, 244, 246)
+local DIM = Color3.fromRGB(166, 166, 174)
+local INDIGO = Color3.fromRGB(108, 127, 219)
+local FONT = Font.fromEnum(Enum.Font.BuilderSans)
+
+local function make(class: string, props: { [string]: any }, children: { Instance }?): any
+	local object = Instance.new(class)
+	for key, value in props do
+		(object :: any)[key] = value
+	end
+	for _, child in (children or {}) :: { Instance } do
+		child.Parent = object
+	end
+	return object
+end
+
+local function corner(radius: number)
+	return make(&quot;UICorner&quot;, { CornerRadius = UDim.new(0, radius) })
+end
+
+local function text(props: { [string]: any }): TextLabel
+	local label = make(&quot;TextLabel&quot;, {
+		BackgroundTransparency = 1,
+		FontFace = FONT,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.fromScale(1, 0),
+	})
+	for key, value in props do
+		(label :: any)[key] = value
+	end
+	return label
+end
+
+local screen = make(&quot;ScreenGui&quot;, {
+	Name = &quot;Donate&quot;,
+	IgnoreGuiInset = true,
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+})
+make(&quot;Frame&quot;, { BackgroundColor3 = BLACK, Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, Parent = screen })
+
+local card = make(&quot;Frame&quot;, {
+	BackgroundColor3 = PANEL,
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(1, -32, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	Parent = screen,
+}, {
+	corner(10),
+	make(&quot;UIStroke&quot;, { Color = LINE, Thickness = 1 }),
+	make(&quot;UISizeConstraint&quot;, { MaxSize = Vector2.new(560, math.huge) }),
+	make(&quot;UIPadding&quot;, {
+		PaddingTop = UDim.new(0, 28),
+		PaddingBottom = UDim.new(0, 28),
+		PaddingLeft = UDim.new(0, 28),
+		PaddingRight = UDim.new(0, 28),
+	}),
+	make(&quot;UIListLayout&quot;, { Padding = UDim.new(0, 14), SortOrder = Enum.SortOrder.LayoutOrder }),
+})
+
+text({ Text = &quot;Support RbxNative&quot;, TextSize = 32, FontFace = Font.fromEnum(Enum.Font.BuilderSansBold), LayoutOrder = 1, Parent = card })
+text({
+	Text = &quot;RbxNative is a free, open source Roblox editor. Every Robux here goes to its maintainers. A donation doesn't unlock anything, it keeps the project going. Thank you!&quot;,
+	TextSize = 18,
+	TextColor3 = DIM,
+	LayoutOrder = 2,
+	Parent = card,
+})
+
+local buttons = make(&quot;Frame&quot;, {
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	LayoutOrder = 3,
+	Parent = card,
+}, {
+	make(&quot;UIListLayout&quot;, {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Wraps = true,
+		Padding = UDim.new(0, 10),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}),
+})
+
+if #Config.products == 0 then
+	text({ Text = &quot;Donations open soon.&quot;, TextSize = 18, TextColor3 = DIM, Parent = buttons })
+end
+for order, id in Config.products do
+	local button = make(&quot;TextButton&quot;, {
+		BackgroundColor3 = if order == 1 then WHITE else PANEL,
+		TextColor3 = if order == 1 then BLACK else WHITE,
+		FontFace = Font.fromEnum(Enum.Font.BuilderSansBold),
+		TextSize = 18,
+		Text = &quot;…&quot;,
+		AutoButtonColor = true,
+		Size = UDim2.fromOffset(110, 44),
+		LayoutOrder = order,
+		Parent = buttons,
+	}, { corner(6), make(&quot;UIStroke&quot;, { Color = LINE, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }) })
+	task.spawn(function()
+		local ok, info = pcall(MarketplaceService.GetProductInfoAsync, MarketplaceService, id, Enum.InfoType.Product)
+		if ok and info and info.PriceInRobux then
+			button.Text = &quot;R$ &quot; .. tostring(info.PriceInRobux)
+		else
+			button.Visible = false
+		end
+	end)
+	button.Activated:Connect(function()
+		MarketplaceService:PromptProductPurchase(player, id)
+	end)
+end
+
+text({ Text = &quot;Donors&quot;, TextSize = 20, FontFace = Font.fromEnum(Enum.Font.BuilderSansBold), LayoutOrder = 4, Parent = card })
+local list = make(&quot;Frame&quot;, {
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	LayoutOrder = 5,
+	Parent = card,
+}, { make(&quot;UIListLayout&quot;, { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }) })
+
+local function showBoard()
+	for _, child in list:GetChildren() do
+		if child:IsA(&quot;TextLabel&quot;) then
+			child:Destroy()
+		end
+	end
+	local ok, rows = pcall(HttpService.JSONDecode, HttpService, board.Value)
+	if not ok or type(rows) ~= &quot;table&quot; or #rows == 0 then
+		text({ Text = &quot;Be the first.&quot;, TextSize = 16, TextColor3 = DIM, Parent = list })
+		return
+	end
+	for rank, row in rows do
+		text({
+			Text = string.format(&quot;%d.  %s  ·  R$ %d&quot;, rank, tostring(row.name), tonumber(row.robux) or 0),
+			TextSize = 16,
+			TextColor3 = if rank == 1 then INDIGO else WHITE,
+			LayoutOrder = rank,
+			Parent = list,
+		})
+	end
+end
+board.Changed:Connect(showBoard)
+showBoard()
+
+local toast = make(&quot;TextLabel&quot;, {
+	BackgroundColor3 = INDIGO,
+	TextColor3 = BLACK,
+	FontFace = Font.fromEnum(Enum.Font.BuilderSansBold),
+	TextSize = 18,
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -24),
+	Size = UDim2.fromOffset(0, 44),
+	AutomaticSize = Enum.AutomaticSize.X,
+	Visible = false,
+	Parent = screen,
+}, { corner(6), make(&quot;UIPadding&quot;, { PaddingLeft = UDim.new(0, 18), PaddingRight = UDim.new(0, 18) }) })
+
+thanked.OnClientEvent:Connect(function(robux: number)
+	toast.Text = string.format(&quot;Thank you for the R$ %d!&quot;, robux)
+	toast.Visible = true
+	task.delay(5, function()
+		toast.Visible = false
+	end)
+end)
+
+screen.Parent = player:WaitForChild(&quot;PlayerGui&quot;)
+</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>

@@ -16,35 +16,37 @@ donation that bought something would be a sale.
 
 ## The place
 
-`src/` is the whole place, packed into a file with:
+[`SupportRbxNative.rbxlx`](SupportRbxNative.rbxlx) is the whole place,
+made and playtested in RbxNative. Open it there to change it.
 
-    python3 donations/build.py            # writes donations/SupportRbxNative.rbxlx
+- `ReplicatedStorage.Config`: the developer product ids, cheapest first.
+  The only thing to fill in. Prices are set on Roblox, the buttons read
+  them from there.
+- `ServerScriptService.Donations`: takes the purchases. Each donor's record
+  keeps the receipts it counted, so a receipt Roblox hands over twice counts
+  once, and a purchase is only granted after that record is saved. Totals go
+  to an OrderedDataStore for the donor board.
+- `ReplicatedFirst.DonateUI`: the screen. What the money is for, one button
+  per product, the top 20 donors, a thank-you after paying. Characters don't
+  load (`Players.CharacterAutoLoads` is off), so there's nothing else to the
+  place, and the script lives in ReplicatedFirst because nothing would copy
+  it out of StarterGui without a character.
 
-- `Config.luau`: the developer product ids, cheapest first. The only thing
-  to fill in. Prices are set on Roblox, the buttons read them from there.
-- `Donations.server.luau`: takes the purchases. Each donor's record keeps
-  the receipts it counted, so a receipt Roblox hands over twice counts once,
-  and a purchase is only granted after that record is saved. Totals go to an
-  OrderedDataStore for the donor board.
-- `DonateUI.client.luau`: the screen. What the money is for, one button per
-  product, the top 20 donors, a thank-you after paying. Characters don't
-  load, there's nothing else to the place.
-
-Unpublished, a Studio playtest shows the screen with "Donations open soon"
-and warns that DataStores are off. That's expected.
+Before it's published, DataStores don't exist: the screen shows "Donations
+open soon" and the server warns that donations are off. That's expected.
 
 ## Setting it up (once)
 
 1. **Create the group** on Roblox (it costs 100 Robux), e.g. "RbxNative".
    Every maintainer in `maintainers.json` joins it.
-2. **Publish the place under the group**: open `SupportRbxNative.rbxlx` in
-   Studio, File, Publish to Roblox, pick the group as the owner, name it
-   "Support RbxNative". Make it public in Game Settings.
+2. **Publish it under the group from RbxNative**: open
+   `SupportRbxNative.rbxlx`, File, Publish to Roblox As, new experience,
+   pick the group as the owner, name it "Support RbxNative". Make it public.
 3. **Make the developer products** in Creator Dashboard, the experience,
    Monetization, Developer Products. Suggested: 25, 100, 500, 1000, 5000
-   Robux, named "Donation".
-4. **Put their ids in `src/Config.luau`**, rebuild, open, publish again (or
-   paste the ids into Config in Studio and publish).
+   Robux, named "Donation". (RbxNative can't make them yet.)
+4. **Put their ids in `ReplicatedStorage.Config`** in RbxNative and publish
+   again.
 5. **Set the payouts**: group, Configure Group, Revenue, Payouts, Recurring
    Payouts. Add each maintainer with their share from `maintainers.json`.
    Roblox has its own rules here (for example how long someone has to be
