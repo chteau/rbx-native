@@ -35,9 +35,20 @@ pub fn fake_ntfy_limited(refuse: Arc<AtomicUsize>, seen: Arc<AtomicUsize>) -> (S
             let Ok(mut stream) = stream else { continue };
             let store = Arc::clone(&store);
             seen.fetch_add(1, Ordering::SeqCst);
-            let refused = refuse
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                .is_ok();
+            // Take one refusal if any are left. A plain CAS loop: fetch_update
+            // is deprecated on newer stable and try_update isn't on older ones.
+            let refused = {
+                let mut n = refuse.load(Ordering::SeqCst);
+                loop {
+                    if n == 0 {
+                        break false;
+                    }
+                    match refuse.compare_exchange(n, n - 1, Ordering::SeqCst, Ordering::SeqCst) {
+                        Ok(_) => break true,
+                        Err(now) => n = now,
+                    }
+                }
+            };
             thread::spawn(move || {
                 let mut reader = BufReader::new(stream.try_clone().unwrap());
                 let mut line = String::new();
