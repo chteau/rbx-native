@@ -58,7 +58,7 @@ code { font-size: .87em; }
 .brand svg { fill: currentColor; }
 .nav-links { display: flex; gap: clamp(14px, 2.4vw, 32px); font-size: 14px; }
 .nav-links a { text-decoration: none; color: var(--body); transition: color .15s; }
-.nav-links a:hover { color: var(--white); }
+.nav-links a:hover, .nav-links a[aria-current] { color: var(--white); }
 .nav-dc { display: inline-flex; align-items: center; gap: 7px; }
 .dc { fill: currentColor; flex: none; }
 
@@ -168,11 +168,11 @@ footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gutter) 36px; }
   .toy { order: 0; justify-self: center; max-width: 300px; }
   h1 { font-size: 38px; }
   .split > div:first-child { margin-bottom: 8px; }
-  .nav-links a:nth-child(2) { display: none; }
+  .nav-links .nav-wide { display: none; }
 }
 
 @media (max-width: 520px) {
-  .home .nav-links a:nth-child(1), .home .nav-links a:nth-child(3) { display: none; }
+  .nav-links .nav-mid { display: none; }
   .nav-links a { white-space: nowrap; }
   .nav-dc span { display: none; }
   .foot-links span { margin-left: 0; }
