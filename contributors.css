@@ -17,14 +17,10 @@
 .motion .wall .person { animation: rise .5s var(--out) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 @media (max-width: 480px) { .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); } .people h1 { font-size: 32px; } }
-/* The official maintainers, the original team: a soft indigo glow that
-   breathes, and a ring on the avatar. Nobody else gets an effect. */
-.person.maintainer { box-shadow: inset 0 0 0 1px #6c7fdb73, 0 0 22px -6px #6c7fdb8c; background: linear-gradient(180deg, #6c7fdb14, transparent 60%), var(--panel); }
-.person.maintainer:hover { box-shadow: inset 0 0 0 1px #7f90e4b3, 0 0 30px -4px #6c7fdbb3; }
-.person.maintainer img, .person.maintainer .initial { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px #7f90e4cc, 0 0 18px #6c7fdb99; }
-.person.maintainer .roles li:first-child { background: var(--indigo); color: var(--black); font-weight: 600; }
-.motion .person.maintainer { animation: rise .5s var(--out) both, glow 4s ease-in-out .5s infinite alternate; }
-@keyframes glow { to { box-shadow: inset 0 0 0 1px #7f90e4a6, 0 0 30px -4px #6c7fdbb3; } }
+/* The official maintainers, the original team: an indigo border and their
+   own pill. Nobody else gets a mark. */
+.person.maintainer { box-shadow: inset 0 0 0 1px #6c7fdb8c; }
+.person.maintainer:hover { box-shadow: inset 0 0 0 1px var(--indigo); }
 /* The home page's four. */
 .front .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .front .more { margin-top: 20px; }
