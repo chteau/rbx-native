@@ -147,10 +147,14 @@ fn hidden_and_deprecated_properties_stay_out_even_when_stored() {
 
 #[test]
 fn security_and_not_scriptable_keep_nothing_out() {
-    // `NotScriptable`, and set in Studio's panel per creator-docs.
-    let rows = rows("Lighting", &[("Technology", Variant::Enum(3))]);
+    // `NotScriptable` and `RobloxSecurity`; scripts go through
+    // `SetBaseMaterialOverride`, the panel sets it directly.
+    let rows = rows(
+        "MaterialService",
+        &[("GrassName", Variant::String("Moss".to_owned()))],
+    );
 
-    row(&rows, "Technology");
+    row(&rows, "GrassName");
 }
 
 #[test]
