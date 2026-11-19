@@ -24,7 +24,14 @@ fn rgb(number: u32) -> [u8; 3] {
 }
 
 /// A noob joint: name, Part0, Part1, C0 and C1 positions, the rotation.
-type Joint = (&'static str, &'static str, &'static str, [f32; 3], [f32; 3], [f32; 9]);
+type Joint = (
+    &'static str,
+    &'static str,
+    &'static str,
+    [f32; 3],
+    [f32; 3],
+    [f32; 9],
+);
 
 const ROOT_ROT: [f32; 9] = [-1., 0., 0., 0., 0., 1., 0., 1., 0.];
 const RIGHT_ROT: [f32; 9] = [0., 0., 1., 0., 1., 0., -1., 0., 0.];
