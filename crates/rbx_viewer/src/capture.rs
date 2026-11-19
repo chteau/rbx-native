@@ -67,16 +67,19 @@ impl Offscreen {
         world: World<'_>,
         cap: u8,
         view: &View,
-    ) -> Result<(Self, gpu::Rung, u8), String> {
-        let mut failure = String::from("no GPU backend to try");
+    ) -> Result<(Self, gpu::Rung, u8), gpu::Unavailable> {
+        let mut unavailable = gpu::Unavailable::default();
         for backends in gpu::backend_order() {
             let instance = gpu::instance_for(backends);
-            let opened = gpu::adapter(&instance, None).and_then(|adapter| gpu::device(&adapter));
+            let opened = gpu::adapter(&instance, None).and_then(|adapter| {
+                unavailable.found(&adapter);
+                gpu::device(&adapter)
+            });
             let (device, queue) = match opened {
                 Ok(opened) => opened,
                 Err(err) => {
                     eprintln!("rbxview: {backends:?}: {err}");
-                    failure = err;
+                    unavailable.reason = err;
                     continue;
                 }
             };
@@ -85,6 +88,7 @@ impl Offscreen {
             while let Some(trying) = rung {
                 trying.apply();
                 let ooms = gpu::ooms();
+                let invalid = gpu::invalid();
                 let scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
                 let started = std::time::Instant::now();
                 let offscreen = Self::on_device(
@@ -95,6 +99,14 @@ impl Offscreen {
                     view,
                 );
                 let caught = pollster::block_on(scope.pop());
+                // A shader or pipeline this backend cannot build (the GL
+                // backend has no depth `textureLoad`, say) leaves every frame
+                // invalid: the next backend is tried instead.
+                if gpu::invalid() != invalid {
+                    eprintln!("rbxview: {backends:?} cannot build the renderer");
+                    unavailable.reason = "its shaders do not build there".to_owned();
+                    break;
+                }
                 // An error that slipped past the scope invalidated something
                 // just the same.
                 let simulated = trying.over_budget(world.scene.materials().layers());
@@ -110,13 +122,13 @@ impl Offscreen {
                 }
                 let err = caught.map_or_else(|| "Out of Memory".to_owned(), |err| err.to_string());
                 eprintln!("rbxview: building the scene at {trying} ran out of GPU memory: {err}");
-                failure = format!("the GPU ran out of memory: {err}");
+                unavailable.reason = format!("the GPU ran out of memory: {err}");
                 drop(offscreen);
                 gpu::release(&device, &queue);
                 rung = trying.step_down();
             }
         }
-        Err(failure)
+        Err(unavailable)
     }
 
     /// Same as [`Offscreen::new`], but on a device/queue the caller already

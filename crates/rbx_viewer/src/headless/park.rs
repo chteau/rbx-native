@@ -53,10 +53,18 @@ impl Headless {
 impl Parked {
     /// Rebuilds the scene from `dom` on a new device, with the camera, view,
     /// quality and calibration it was parked with. Assets are asked for
-    /// again, as on a first load.
+    /// again, as on a first load. With no GPU able to draw, it comes back
+    /// undrawn, as [`Headless::load_or_undrawn`] opens.
     pub fn resume(self, dom: &WeakDom) -> Result<Headless, String> {
-        let mut headless =
-            Headless::build(dom, self.toggles, self.database, self.view, self.cap, None)?;
+        let mut headless = Headless::build(
+            dom,
+            self.toggles,
+            self.database,
+            self.view,
+            self.cap,
+            None,
+            true,
+        )?;
         headless.set_calibration(self.calibration);
         headless.set_quality(self.quality);
         headless.feel = self.feel;
