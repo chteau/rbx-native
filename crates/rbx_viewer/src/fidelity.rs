@@ -22,7 +22,7 @@ mod scenes;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rbx_dom::{CFrameData, Color3Data, Content, Ref, Variant, Vector3Data, WeakDom};
+use rbx_dom::{CFrameData, Color3Data, Content, Ref, UDim, UDim2, Variant, Vector3Data, WeakDom};
 
 pub use scenes::scenes;
 
@@ -91,10 +91,12 @@ impl Scene {
             dom.set_property(lighting, key, value.clone())
                 .expect("Lighting exists");
         }
+        let gui = dom.new_instance("StarterGui", "StarterGui", None);
         let mut builder = Builder {
             dom,
             world: workspace,
             lighting,
+            gui,
         };
         (self.build)(&mut builder);
         let mut dom = builder.dom;
@@ -102,13 +104,15 @@ impl Scene {
         dom
     }
 
-    /// Builds the scene's world under `world` and its `Lighting` children
-    /// under `lighting`, in a DOM of the caller's.
-    pub fn build_into(&self, dom: WeakDom, world: Ref, lighting: Ref) -> WeakDom {
+    /// Builds the scene's world under `world`, its `Lighting` children
+    /// under `lighting` and its screens under `gui`, in a DOM of the
+    /// caller's.
+    pub fn build_into(&self, dom: WeakDom, world: Ref, lighting: Ref, gui: Ref) -> WeakDom {
         let mut builder = Builder {
             dom,
             world,
             lighting,
+            gui,
         };
         (self.build)(&mut builder);
         builder.dom
@@ -120,6 +124,7 @@ pub struct Builder {
     dom: WeakDom,
     world: Ref,
     lighting: Ref,
+    gui: Ref,
 }
 
 impl Builder {
@@ -161,6 +166,12 @@ impl Builder {
     pub fn lighting_child(&mut self, class: &str) -> Ref {
         let lighting = self.lighting;
         self.child(lighting, class)
+    }
+
+    /// A `ScreenGui` the player sees over the scene.
+    pub fn screen(&mut self) -> Ref {
+        let gui = self.gui;
+        self.child(gui, "ScreenGui")
     }
 
     pub fn set(&mut self, instance: Ref, key: &str, value: Variant) {
@@ -207,6 +218,20 @@ pub fn rgb(r: u8, g: u8, b: u8) -> Variant {
         r: f32::from(r) / 255.0,
         g: f32::from(g) / 255.0,
         b: f32::from(b) / 255.0,
+    })
+}
+
+/// `UDim2.fromOffset(x, y)` shifted by `UDim2.fromScale(sx, sy)`.
+pub fn udim2([sx, x]: [f32; 2], [sy, y]: [f32; 2]) -> Variant {
+    Variant::UDim2(UDim2 {
+        x: UDim {
+            scale: sx,
+            offset: x as i32,
+        },
+        y: UDim {
+            scale: sy,
+            offset: y as i32,
+        },
     })
 }
 

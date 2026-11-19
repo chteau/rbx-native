@@ -109,7 +109,8 @@ pub fn place(scenes: &[Scene], database: &ReflectionDatabase) -> WeakDom {
         let folder = dom.new_instance("Folder", scene.name, Some(root));
         let world = dom.new_instance("Model", "World", Some(folder));
         let lighting = dom.new_instance("Folder", "Lighting", Some(folder));
-        dom = scene.build_into(dom, world, lighting);
+        let gui = dom.new_instance("Folder", "Gui", Some(folder));
+        dom = scene.build_into(dom, world, lighting, gui);
     }
     let first = service(&mut dom, "ReplicatedFirst");
     let script = dom.new_instance("LocalScript", "Fidelity", Some(first));
@@ -208,11 +209,16 @@ end
 game:GetService("ContentProvider"):PreloadAsync({{ root }})
 local quality = UserSettings():GetService("UserGameSettings").SavedQualityLevel
 print("{QUALITY}" .. tostring(quality))
-local shown
+local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+local shown, screens = nil, {{}}
 for _, scene in SCENES do
 	if shown then
 		shown:Destroy()
 	end
+	for _, screen in screens do
+		screen:Destroy()
+	end
+	screens = {{}}
 	Lighting:ClearAllChildren()
 	for _, pair in DEFAULTS do
 		Lighting[pair[1]] = pair[2]
@@ -226,6 +232,11 @@ for _, scene in SCENES do
 	end
 	shown = folder.World:Clone()
 	shown.Parent = workspace
+	for _, child in folder.Gui:GetChildren() do
+		local screen = child:Clone()
+		screen.Parent = playerGui
+		table.insert(screens, screen)
+	end
 	view.eye, view.at, view.fov = scene.eye, scene.at, scene.fov
 	task.wait({SETTLE})
 	local sun, moon = Lighting:GetSunDirection(), Lighting:GetMoonDirection()

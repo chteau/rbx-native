@@ -186,6 +186,12 @@ mod linux {
                     }
                     if let Some(quality) = message.strip_prefix(roblox::QUALITY) {
                         say(&format!("saved quality level {quality}"));
+                        // A client sized before its renderer was up keeps drawing
+                        // at its first size inside the bigger window; a resize
+                        // now, with the first scene seconds away, makes it follow.
+                        if let Err(why) = nudge_window() {
+                            say(&format!("could not resize the client: {why}"));
+                        }
                     } else if let Some(ready) = message.strip_prefix(roblox::READY) {
                         let mut words = ready.split_whitespace();
                         let name = words.next().unwrap_or_default().to_owned();
@@ -261,6 +267,23 @@ mod linux {
         )
         .map_err(|e| e.to_string())?;
         conn.flush().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Resizes the client's window a pixel short of [`CAPTURE`] and back.
+    fn nudge_window() -> Result<(), String> {
+        let window = gestures::client_window()?;
+        let (conn, _) = x11rb::connect(None).map_err(|e| e.to_string())?;
+        let (width, height) = CAPTURE;
+        for (w, h) in [(width - 1, height - 1), (width, height)] {
+            conn.configure_window(
+                window,
+                &ConfigureWindowAux::new().x(0).y(0).width(w).height(h),
+            )
+            .map_err(|e| e.to_string())?;
+            conn.flush().map_err(|e| e.to_string())?;
+            std::thread::sleep(Duration::from_millis(300));
+        }
         Ok(())
     }
 

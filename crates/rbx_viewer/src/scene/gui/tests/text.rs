@@ -249,7 +249,7 @@ fn a_text_box_shows_its_placeholder_only_while_empty() {
 }
 
 #[test]
-fn a_text_box_cuts_its_text_at_its_box_and_a_label_only_when_it_clips() {
+fn a_resting_text_box_spills_like_a_label_and_only_clipping_text_is_cut() {
     let (mut dom, gui) = screen_gui();
     let field = label(&mut dom, gui, "TextBox", "");
     dom.set_property(
@@ -267,7 +267,7 @@ fn a_text_box_cuts_its_text_at_its_box_and_a_label_only_when_it_clips() {
         .iter()
         .map(|e| e.text.as_ref().unwrap().text.clipped)
         .collect();
-    assert_eq!(clipped, [true, false, true]);
+    assert_eq!(clipped, [false, false, true]);
 }
 
 #[test]

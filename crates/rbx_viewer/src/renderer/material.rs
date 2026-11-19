@@ -4,6 +4,7 @@
 //! Bind group 1 of every surface pipeline (see `renderer::pipeline`), so a part
 //! and a file mesh sample their material exactly the same way.
 
+use rbx_assets::AssetRef;
 use rbx_materials::MapKind;
 
 use super::texture;
@@ -266,7 +267,18 @@ fn array(
             continue;
         }
         let chain = match catalog.image(layer as usize, kind) {
-            Some(image) => texture::mip_chain(&fit(image, resolution)),
+            Some(image) => {
+                let mut fitted = fit(image, resolution);
+                let map = maps
+                    .get(layer as usize)
+                    .and_then(|maps| maps[kind.index()].as_ref());
+                if let (MapKind::Color, Some(AssetRef::Id(id))) = (kind, map) {
+                    if let Some(grade) = rbx_materials::grade_for(*id) {
+                        regrade(&mut fitted, grade);
+                    }
+                }
+                texture::mip_chain(&fitted)
+            }
             None => blank
                 .get_or_insert_with(|| texture::mip_chain(&solid(neutral(kind), resolution)))
                 .clone(),
@@ -331,6 +343,36 @@ fn solid(color: [u8; CHANNELS], resolution: u32) -> Image {
             .cycle()
             .take((resolution * resolution) as usize * CHANNELS)
             .collect(),
+    }
+}
+
+/// Applies a pack's [`rbx_materials::Grade`] to its colour map, in linear
+/// light, against the map's own mean colour.
+fn regrade(image: &mut Image, grade: rbx_materials::Grade) {
+    let decode: Vec<f32> = (0..=255u8)
+        .map(|v| crate::scene::srgb_to_linear(f32::from(v) / 255.0))
+        .collect();
+    let texels = (image.pixels.len() / CHANNELS).max(1) as f32;
+    let mut mean = [0.0f32; 3];
+    for texel in image.pixels.chunks_exact(CHANNELS) {
+        for (channel, sum) in mean.iter_mut().enumerate() {
+            *sum += decode[usize::from(texel[channel])];
+        }
+    }
+    let mean = mean.map(|sum| sum / texels);
+    for texel in image.pixels.chunks_exact_mut(CHANNELS) {
+        for (channel, &mean) in mean.iter().enumerate() {
+            let linear = grade.apply(channel, decode[usize::from(texel[channel])], mean);
+            texel[channel] = (linear_to_srgb(linear) * 255.0).round() as u8;
+        }
+    }
+}
+
+fn linear_to_srgb(linear: f32) -> f32 {
+    if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
     }
 }
 

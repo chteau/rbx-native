@@ -224,9 +224,15 @@ fn build_once(
         // object outlines the glyphs like `TextStrokeColor3` does, at its
         // own `Thickness`.
         if let Some(typeset) = &element.text {
-            // A `TextBox`'s text, or any `ClipsDescendants` text, stops at
-            // the object's own box.
-            let scissor = match typeset.text.clipped {
+            // `ClipsDescendants` text, or the `TextBox` being typed in,
+            // stops at the object's own box. Any other text spills past
+            // it, a resting `TextBox`'s text and placeholder included, as
+            // the real client draws them (the `text_boxes` fidelity scene).
+            let editing = fonts
+                .edit
+                .as_ref()
+                .is_some_and(|edit| edit.referent == element.referent);
+            let scissor = match typeset.text.clipped || editing {
                 true => {
                     let own = element
                         .clip

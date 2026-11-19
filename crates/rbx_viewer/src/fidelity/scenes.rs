@@ -4,7 +4,7 @@
 use rbx_dom::Variant;
 
 use super::{
-    at, content, float, rgb, tilted_x, Builder, Scene, BALL, BLOCK, CYLINDER, PLASTIC, WEDGE,
+    at, content, float, rgb, tilted_x, udim2, Builder, Scene, BALL, BLOCK, CYLINDER, PLASTIC, WEDGE,
 };
 
 const SMOOTH_PLASTIC: u32 = 272;
@@ -319,6 +319,117 @@ fn effect(b: &mut Builder, class: &str, props: &[(&str, Variant)]) {
     let effect = b.lighting_child(class);
     for (key, value) in props {
         b.set(effect, key, value.clone());
+    }
+}
+
+/// `Enum.SurfaceType`s a part's faces can show, but the hinge and motor
+/// ones, which are drawn as fittings rather than as a pattern.
+const SURFACES: [(&str, u32); 6] = [
+    ("Smooth", 0),
+    ("Studs", 3),
+    ("Inlet", 4),
+    ("Universal", 5),
+    ("Weld", 2),
+    ("Glue", 1),
+];
+
+fn surface_x(i: usize) -> f32 {
+    (i as f32 - 2.5) * 5.0
+}
+
+/// A row of grey blocks, each with one surface type on its top and front,
+/// and a green studded plate in front of them.
+fn studs(b: &mut Builder) {
+    b.floor();
+    for (i, &(_, surface)) in SURFACES.iter().enumerate() {
+        let block = b.block([4.0, 2.0, 4.0], [surface_x(i), 1.0, 0.0], [163, 162, 165]);
+        b.set(block, "TopSurface", Variant::Enum(surface));
+        b.set(block, "FrontSurface", Variant::Enum(surface));
+    }
+    let plate = b.block([12.0, 1.0, 4.0], [0.0, 0.5, 7.0], [75, 151, 75]);
+    b.set(plate, "TopSurface", Variant::Enum(3));
+}
+
+/// A long line, so every box below overflows.
+const OVERFLOWING: &str = "Type a message here to see where it goes";
+
+/// Text boxes and labels too narrow for their text, one alignment or
+/// clipping rule each, down the left of the screen.
+fn text_boxes(b: &mut Builder) {
+    stage(b);
+    let screen = b.screen();
+    let rows: [(&str, &str, u32, bool); 8] = [
+        ("TextBox", "", 0, false),
+        ("TextBox", "", 2, false),
+        ("TextBox", "", 1, false),
+        ("TextBox", OVERFLOWING, 0, false),
+        ("TextBox", OVERFLOWING, 2, false),
+        ("TextBox", OVERFLOWING, 1, false),
+        ("TextLabel", OVERFLOWING, 2, true),
+        ("TextLabel", OVERFLOWING, 2, false),
+    ];
+    for (i, &(class, text, x_alignment, clips)) in rows.iter().enumerate() {
+        let column = (i / 4) as f32;
+        let row = (i % 4) as f32;
+        let object = b.child(screen, class);
+        b.set(
+            object,
+            "Position",
+            udim2([0.0, 40.0 + 300.0 * column], [0.0, 120.0 + 70.0 * row]),
+        );
+        b.set(object, "Size", udim2([0.0, 200.0], [0.0, 40.0]));
+        b.set(object, "BackgroundColor3", rgb(40, 40, 40));
+        b.set(object, "TextColor3", rgb(255, 255, 255));
+        b.set(object, "TextSize", float(20.0));
+        b.set(object, "Text", Variant::String(text.to_owned()));
+        b.set(object, "TextXAlignment", Variant::Enum(x_alignment));
+        b.set(object, "ClipsDescendants", Variant::Bool(clips));
+        if class == "TextBox" {
+            b.set(
+                object,
+                "PlaceholderText",
+                Variant::String(OVERFLOWING.to_owned()),
+            );
+        }
+    }
+    let truncated = b.child(screen, "TextLabel");
+    b.set(truncated, "Position", udim2([0.0, 640.0], [0.0, 120.0]));
+    b.set(truncated, "Size", udim2([0.0, 200.0], [0.0, 40.0]));
+    b.set(truncated, "BackgroundColor3", rgb(40, 40, 40));
+    b.set(truncated, "TextColor3", rgb(255, 255, 255));
+    b.set(truncated, "TextSize", float(20.0));
+    b.set(truncated, "Text", Variant::String(OVERFLOWING.to_owned()));
+    b.set(truncated, "TextTruncate", Variant::Enum(1));
+}
+
+/// `TextSize`s between and on `Enum.FontSize`'s steps, for how `Legacy`
+/// text (what a label with no font set is drawn in) sizes itself.
+const TEXT_SIZES: [f32; 8] = [9.0, 11.0, 13.0, 16.0, 20.0, 22.0, 26.0, 30.0];
+
+/// One short line per [`TEXT_SIZES`] in `Legacy` down the left, and in
+/// `SourceSans` down the right.
+fn text_sizes(b: &mut Builder) {
+    b.floor();
+    let screen = b.screen();
+    for (column, font) in [None, Some(3)].into_iter().enumerate() {
+        for (row, &size) in TEXT_SIZES.iter().enumerate() {
+            let label = b.child(screen, "TextLabel");
+            let (x, y) = (40.0 + 620.0 * column as f32, 20.0 + 70.0 * row as f32);
+            b.set(label, "Position", udim2([0.0, x], [0.0, y]));
+            b.set(label, "Size", udim2([0.0, 580.0], [0.0, 60.0]));
+            b.set(label, "BackgroundColor3", rgb(40, 40, 40));
+            b.set(label, "TextColor3", rgb(255, 255, 255));
+            b.set(label, "TextSize", float(size));
+            b.set(label, "TextXAlignment", Variant::Enum(0));
+            b.set(
+                label,
+                "Text",
+                Variant::String("Type a message here".to_owned()),
+            );
+            if let Some(font) = font {
+                b.set(label, "Font", Variant::Enum(font));
+            }
+        }
     }
 }
 
@@ -645,12 +756,83 @@ pub fn scenes() -> Vec<Scene> {
                 );
             },
         ),
+        Scene {
+            name: "studs",
+            about: "Smooth, Studs, Inlet, Universal, Weld and Glue tops and fronts, and a studded plate",
+            eye: [0.0, 8.0, 15.0],
+            look_at: [0.0, 1.0, 1.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: SURFACES
+                .iter()
+                .enumerate()
+                .flat_map(|(i, &(name, _))| {
+                    [(name, [surface_x(i), 2.0, 0.0]), (name, [surface_x(i), 1.5, 2.0])]
+                })
+                .chain([("plate", [0.0, 1.0, 7.0])])
+                .collect(),
+            build: studs,
+        },
+        stage_scene(
+            "text_boxes",
+            "TextBoxes and TextLabels whose text overflows: placeholder, alignment, ClipsDescendants, TextTruncate",
+            studio(),
+            text_boxes,
+        ),
+        Scene {
+            name: "text_sizes",
+            about: "Labels in Legacy and SourceSans at TextSizes on and between Enum.FontSize's steps",
+            eye: [0.0, 30.0, 0.1],
+            look_at: [0.0, 0.0, 0.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: Vec::new(),
+            build: text_sizes,
+        },
+        Scene {
+            name: "shadows_half",
+            about: "ShadowSoftness 0.5: poles and a floating slab",
+            eye: [0.0, 14.0, 22.0],
+            look_at: [0.0, 0.0, -2.0],
+            fov: 70.0,
+            lighting: with(studio(), &[("ShadowSoftness", float(0.5))]),
+            probes: SHADOW_PROBES.to_vec(),
+            build: shadows,
+        },
+        Scene {
+            name: "local_lights_future",
+            about: "local_lights under Technology Future",
+            eye: [0.0, 10.0, 20.0],
+            look_at: [0.0, 1.0, 0.0],
+            fov: 70.0,
+            lighting: with(
+                studio(),
+                &[
+                    ("ClockTime", float(0.0)),
+                    ("Ambient", rgb(0, 0, 0)),
+                    ("OutdoorAmbient", rgb(20, 20, 30)),
+                    ("Technology", Variant::Enum(FUTURE)),
+                ],
+            ),
+            probes: vec![
+                ("point floor", [-8.0, 0.0, 5.0]),
+                ("lit block", [-6.0, 2.5, 2.0]),
+                ("spot floor", [4.0, 0.0, 2.0]),
+                ("surface floor", [9.0, 0.0, 0.0]),
+                ("dark floor", [-14.0, 0.0, 12.0]),
+            ],
+            build: local_lights,
+        },
     ]
     .into_iter()
     .chain(tone_scenes())
-    .chain(falloff_scenes())
+    .chain(falloff_scenes(false))
+    .chain(falloff_scenes(true))
     .collect()
 }
+
+/// `Enum.Technology.Future`.
+const FUTURE: u32 = 4;
 
 /// The grey levels of [`ramp`], 0 to 255 in steps of 17.
 const RAMP: usize = 16;
@@ -867,9 +1049,9 @@ fn dark_floor(b: &mut Builder) {
 }
 
 /// One local light over [`dark_floor`], its floor sampled every two studs
-/// along +X from below it (x = -10).
-fn falloff_scenes() -> Vec<Scene> {
-    let lighting = || {
+/// along +X from below it (x = -10), under ShadowMap or `future`.
+fn falloff_scenes(future: bool) -> Vec<Scene> {
+    let lighting = || -> Vec<(&'static str, Variant)> {
         tone(
             0.0,
             &[
@@ -881,12 +1063,17 @@ fn falloff_scenes() -> Vec<Scene> {
         .chain(
             studio()
                 .into_iter()
-                .filter(|(k, _)| super::roblox::PLACE_LEVEL.contains(k)),
+                .filter(|(k, _)| super::roblox::PLACE_LEVEL.contains(k))
+                .map(|(k, v)| match k {
+                    "Technology" if future => (k, Variant::Enum(FUTURE)),
+                    _ => (k, v),
+                }),
         )
         .collect()
     };
-    let scene = |name, about, build| Scene {
-        name,
+    // The same scene under Future goes by the second name.
+    let scene = |[name, future_name]: [&'static str; 2], about, build| Scene {
+        name: if future { future_name } else { name },
         about,
         eye: [0.0, 30.0, 25.0],
         look_at: [0.0, 0.0, 0.0],
@@ -901,17 +1088,17 @@ fn falloff_scenes() -> Vec<Scene> {
     };
     vec![
         scene(
-            "light_point_1",
+            ["light_point_1", "light_point_1_future"],
             "PointLight Range 16 Brightness 1 two studs over a white floor",
             |b| point_over_floor(b, 1.0),
         ),
         scene(
-            "light_point_4",
+            ["light_point_4", "light_point_4_future"],
             "PointLight Range 16 Brightness 4 two studs over a white floor",
             |b| point_over_floor(b, 4.0),
         ),
         scene(
-            "light_spot",
+            ["light_spot", "light_spot_future"],
             "SpotLight Range 16 Brightness 2 Angle 90 six studs up, facing down",
             |b| {
                 dark_floor(b);
@@ -929,7 +1116,7 @@ fn falloff_scenes() -> Vec<Scene> {
             },
         ),
         scene(
-            "light_surface",
+            ["light_surface", "light_surface_future"],
             "SurfaceLight Range 16 Brightness 2 Angle 90 on a wall's Right face",
             |b| {
                 dark_floor(b);
