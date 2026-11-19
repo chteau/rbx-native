@@ -2,7 +2,7 @@
 
 Local Run is our own Roblox runtime. You hit Run and the place's scripts and physics go, on your machine, with no Roblox client, no Sober, no network. It's clean room: we write every line ourselves, from the docs and from watching the real client.
 
-This file is the plan, the rules, the sources, and where we're at. Milestone 1 (phase 0 plus the core of phase 1) and Milestone 2 (the rest of phase 1 and the start of phase 2) are done; what's left and the proposal for Milestone 3 are at the end.
+This file is the plan, the rules, the sources, and where we're at. Milestones 1 to 3 are done: phase 0 and phase 1, Run in Studio, then humanoids, a local player, avatars, animation and Play (local). What's left and the proposal for Milestone 4 are at the end.
 
 ## The rules
 
@@ -30,6 +30,9 @@ These aren't negotiable. Everyone working on Local Run, human or agent, follows 
 | [rbx-dom](https://github.com/rojo-rbx/rbx-dom) (our `rbx_dom`, `rbx_binary`, `rbx_xml`, `rbx_reflection`) | MIT | Loading .rbxl/.rbxlx, the instance tree, reflection |
 | [Lune](https://github.com/lune-org/lune) | MPL-2.0 | Prior art only. We looked at how it shapes a Roblox-like runtime; no code taken, not a dependency |
 | Real Roblox server, observed via `rbx_play` | Observation | The conformance goldens (`crates/rbx_sim/conformance/goldens/`) |
+| `avatar.roblox.com/v1/users/{id}/avatar`, `users.roblox.com` (names) | Public web API responses | The signed-in player's avatar for Play (local), `GetHumanoidDescriptionFromUserId`; cached under `cache_root()/avatars/` |
+| Roblox asset delivery (anonymous, the Open Cloud key as fallback) | Public web API responses, fetched at runtime | Worn assets and the default animation ids, loaded at runtime into the local caches. No animation or avatar file is in the tree |
+| Our own rig, avatar import and auto-rig code (`rbx_studio::shell::rig`, `rbx_autorig`) | ours | The R15 body an avatar is dressed on; the noob is our own R6 blocks (`rbx_sim::character`) |
 | [Recast](https://github.com/recastnavigation/recastnavigation) | Zlib | Later, for PathfindingService (phase 3). Not used yet |
 
 ## How it fits together
@@ -53,7 +56,7 @@ place.rbxl ──> rbx_sim::load ──> WeakDom (shared, Rc<RefCell>)
 
 ### Which scripts run
 
-`Script` only (not LocalScript), not disabled. `RunContext.Legacy` runs under Workspace and ServerScriptService. `RunContext.Server` also runs under ReplicatedStorage. ModuleScripts run when required. That's straight from the RunContext docs.
+`Script`, not disabled, and (since Milestone 3) `LocalScript`s that run on a client: under the local player (`PlayerScripts`, `PlayerGui`, `Backpack`) and its character. Local Run is one VM for both sides, so `Players.LocalPlayer` answers server scripts too. `RunContext.Legacy` runs under Workspace and ServerScriptService. `RunContext.Server` also runs under ReplicatedStorage. ModuleScripts run when required. That's straight from the RunContext docs.
 
 ### The frame
 
@@ -155,9 +158,29 @@ Known gaps (the details are in each golden's `known_gap` and in CONFORMANCE.md):
 - **VectorForce** gets one extra frame of push on Roblox (vx 10.167 where 30 frames of 20 stud/s² give 10.0).
 - **Sideways adaptive switch.** A 2 stud cube thrown sideways at 60 stud/s switches to 120 Hz earlier than the speed rule says (FreeFallRates `side60`, inside tolerance today).
 
+What Milestone 3 added: 18 tests (17 humanoid ones, PlayersCharacter, AnimationTrack), recorded with five passes on place version 540. Every field that matches is in CONFORMANCE.md; what doesn't is below, all written into the goldens' `known_gap`:
+
+| Test | Field | Roblox | ours | delta |
+|---|---|---|---|---|
+| HumanoidTurn | back_1 / back_3 / back_5 (degrees) | 72.43 / 31.31 / -0.46 | 64.65 / 25.62 / -3.55 | -7.8 / -5.7 / -3.1 |
+| HumanoidJump | high_apex (JumpHeight 15) | 15.479 | 15.278 | -0.20 |
+| HumanoidJump | high_vy1 | 75.09 | 74.27 | -0.82 |
+| HumanoidSlope | s30_v45 | 0,7.84,13.86 | 0.02,7.67,13.86 | y -0.17 |
+| HumanoidSlope | s60_rise / s60_dz | 12.78 / 16.08 | 7.98 / 16.93 | -4.8 / +0.85 |
+| HumanoidSlope | s60m_v45 (MaxSlopeAngle 45) | 0,-1.72,-3.55 | 0.56,0.38,1.09 | slides back vs creeps up |
+| HumanoidWalkScale | heavy_vx1 | 15.68 | 12.17 | -3.5 |
+| HumanoidWalkScale | heavy_yaw1 / ws50_yaw1 | 8.28 | 12.18 | +3.9 |
+| HumanoidClimb | r15_states | Climbing@15 | Climbing@16 | +1 frame |
+| HumanoidClimb | r6_states | Climbing@18 | Climbing@19, then a Freefall frame every few frames | flicker |
+| HumanoidSeat | states (landing after the jump off) | Landed@48 | Landed@49 | +1 frame |
+
+No regressions in the Milestone 2 tests: the same five carry their known gaps (TouchedOrder, HingeFree, BallSocket, VectorForce, BoxStack).
+
+How the humanoid works (`crates/rbx_sim/src/humanoid.rs`, `physics/character.rs`): the root is a dynamic Rapier body stepped at 240 Hz whatever the adaptive rate. A thin box cast down from the root (60% of its footprint, `FOOTPRINT`) finds the floor; a spring (`HIP_SPRING` 3500, damping 110, fitted to HumanoidStand and HumanoidDrop) holds the root at HipHeight plus half its height, with gravity off once it has settled, so it rests instead of chattering. Walking steps the velocity towards `WalkSpeed` along the floor by 0.625 of the gap per substep, capped by friction (fitted from HumanoidWalk, HumanoidWalkScale); turning is 3.57% of the angle per substep. The state machine (17 states, the enable flags, `StateChanged` and the per-state signals) runs before physics: Freefall 7 frames after the floor goes, Landed for 2, the floor sensor reaches 1.1 studs past standing height. `MoveTo` arrives within 1.04 studs, checked before physics, and gives up after 480 frames. Health, `TakeDamage` (a ForceField blocks it), `Died`, `BreakJointsOnDeath`, `RequiresNeck` and our own Health regen script are there; respawn waits `Players.RespawnTime`. Seats weld on `Sit` or touch, a jump gets off, and a seat doesn't take back someone who just left it for a second.
+
 ## Coverage
 
-`docs/research/local-run/COVERAGE.md` is generated (`cargo run -p rbx_sim --example coverage -- docs/research/local-run/COVERAGE.md`): a server script in a fresh Local Run makes an instance of every class and indexes every member a game script may touch. Today: 96 of 1385 functions (87 after Milestone 1; the new ones are the WorldRoot queries and AssetService's EditableMesh pair), 31 of 355 events, 1926 of 2510 properties. The property number flatters us: any property the reflection database knows reads back as data, whether or not we act on it. The physics table above is what's really simulated.
+`docs/research/local-run/COVERAGE.md` is generated (`cargo run -p rbx_sim --example coverage -- docs/research/local-run/COVERAGE.md`): a server script in a fresh Local Run makes an instance of every class and indexes every member a game script may touch. Today: 112 of 1385 functions (87 after Milestone 1, 96 after Milestone 2; the new ones are Humanoid, Players, Animator and AnimationTrack), 53 of 355 events (31 after Milestone 2), 1926 of 2510 properties. The property number flatters us: any property the reflection database knows reads back as data, whether or not we act on it. The physics table above is what's really simulated.
 
 ## Roblox updates every week
 
@@ -172,7 +195,8 @@ Known gaps (the details are in each golden's `known_gap` and in CONFORMANCE.md):
 - `rbx_reflection`, `rbx_dom`, `rbx_binary`, `rbx_xml`: loading and the instance tree.
 - `rbx_viewer` (phase 2): the renderer for a live Local Run viewport.
 - `rbx_terrain` (phase 3): smooth terrain voxels into a Rapier collider.
-- `rbx_animation` (phase 3): Animator and AnimationTracks driving Motor6D transforms.
+- `rbx_animation`: Animator and AnimationTracks driving Motor6D transforms (Milestone 3).
+- `rbx_studio::shell::rig`: the avatar import (Insert › Rig) builds the signed-in player's character for Play (local).
 - `rbx_play`: the probe and the tunnel that record goldens.
 
 ## Phases
@@ -242,17 +266,24 @@ Acceptance:
 8. Physics in f64 (`rapier3d-f64`): at the test origins, thousands of studs out, f32 positions lost about 6% of a moving part's travel.
 9. Server signals default to Deferred, as the real server now does.
 
-## Milestone 3 (proposed): Humanoid, character, avatar
+## Milestone 3 (done)
 
-The big one is a character you can watch walk in the viewport. In order:
+1. Humanoid physics with goldens from a real server: standing (HipHeight, the floor sensor, step-up), walking (WalkSpeed, acceleration, `Move`, `MoveTo`, `MoveToFinished` and its 8 s timeout), AutoRotate turning, jumping (JumpPower, JumpHeight, UseJumpPower), freefall and landing, climbing TrussParts, Seat and VehicleSeat, the state machine with `StateChanged` and the enable flags, Health, MaxHealth, `TakeDamage`, `Died`, BreakJointsOnDeath, RequiresNeck, R6 and R15, PlatformStand, Sit. Swimming waits for terrain water in the sim (Milestone 4).
+2. The Players service with a local player: CharacterAutoLoads, `LoadCharacter`, RespawnTime, SpawnLocation choice (enabled, neutral or the team's), the CharacterRemoving / CharacterAdded / CharacterAppearanceLoaded order, StarterCharacter, StarterCharacterScripts and StarterPlayerScripts copied (PlayersCharacter golden).
+3. Avatars. Signed in (the editor's Open Cloud key names the user): the user's avatar from the public avatar endpoint, dressed on our own R15 rig by the same code as Insert › Rig. Not signed in: the noob, our own R6 blocks in bright yellow, bright blue and yellowish green. Offline: the avatar last cached under `cache_root()/avatars/` (`<user>/avatar.json`, `<user>/user.json`, `assets/<id>.rbxm`, `last_user`), else the noob. `Players:GetHumanoidDescriptionFromUserId`, `Humanoid:ApplyDescription` (accessories, clothing and body colours are swapped in place) and `GetAppliedDescription` work through the same avatars.
+4. Animation at runtime: Animator and AnimationTrack (`Play`, `Stop`, `AdjustSpeed`, `AdjustWeight`, linear fades, priorities, `Looped`, `GetMarkerReachedSignal`, `KeyframeReached`, `DidLoop`, `Stopped`, `Ended` and their order, `GetPlayingAnimationTracks`, `GetTimeOfKeyframe`) driving `Motor6D.Transform` (AnimationTrack golden). Our own Animate script (moved to `rbx_sim::character`, shared with Studio's rigs) loads the default ids at runtime from the asset delivery or the asset cache.
+5. Play (local) next to Run, behind the `local-run` beta: WASD (ZQSD on AZERTY) and the arrows walk relative to the camera, Space jumps, right-drag orbits the classic third-person camera and the wheel zooms (0.5 to 400 studs). Stop puts the place and the edit camera back. The Output's Local Run rows are game rows now: the "Local Run" tag on the left, the message beside it, like real Play's Server and Client rows.
+6. Checked live on Xephyr with the built binary (`rbx-native-targets/local-run-m3-shots/`): signed in, noob (`RBX_STUDIO_LOCAL_PLAYER=noob`) and offline from the cache (every request sent to a dead proxy), each standing, walking, mid-jump, orbited and zoomed, and after Stop.
 
-1. Humanoid physics from the docs and goldens: `HumanoidRootPart` assembly, hip height, the floor sensor, walking (`WalkSpeed`, `MoveTo`, `Move`), jumping (`JumpPower`/`JumpHeight`, `UseJumpPower`), falling, states and `StateChanged`, `Died` when `Health` hits 0, `BreakJointsOnDeath`, respawn on a `SpawnLocation` after `Players.RespawnTime`. Goldens: jump apex and air time, walk speed on flat ground and on a slope, `MoveTo` arrival and its 8 s timeout, time to land from a height, the state sequence of a jump.
-2. A character without a client: `Players:CreateHumanoidModelFromDescription` / `HumanoidDescription` building an R15 rig from our own rig data (`rbx_autorig` already builds R15), `LoadCharacter` for a stand-in player, `Players.CharacterAdded`.
-3. Avatar look: `HumanoidDescription` body parts, scales, accessories and clothing applied through `rbx_assets` (cache only, nothing fetched during a run), rendered by the viewer.
-4. Animation: `Animator` and `AnimationTrack` driving Motor6D `Transform` from `rbx_animation`, with our own clean-room idle/walk/jump state machine (written from the Animator docs, not Roblox's Animate script). Golden: a track's joint transforms at fixed times.
-5. Leftovers from Milestone 2: soft contacts (load-dependent penetration, a bounce's contact frame), soft joints (BallSocket stretch), the VectorForce extra frame, the sideways adaptive switch, union collision (pull union geometry decoding out of `rbx_viewer` into a shared crate, or decode `PhysicsData`), and step one frame while paused.
+What's rough: the avatar is our approximation of Roblox's (layered clothing fitted cage to cage, accessories welded where the import puts them), so it doesn't look exactly like the user's in Roblox; the noob and the walk, jump and idle animations look right.
 
-Phase 4 (clients, PlayerModule-equivalent controls) comes after: a character needs to stand, walk and animate on the server first.
+## Milestone 4 (proposed): input, clients, offline
+
+1. Input and camera polish: shift lock, first person at minimum zoom, the camera pulled in by walls (popper), touch and gamepad through the device simulators, `UserInputService` and `ContextActionService` for game scripts, the mouse lock behaviour of real Play.
+2. Client/server split and replication: a client VM per player running LocalScripts against a replicated copy, RemoteEvent and RemoteFunction with a golden for the round trip order, network ownership of the character, several local players.
+3. Offline mode for the whole app: Home, the editor, the asset and avatar caches and Local Run usable with no network, with what needs Roblox clearly greyed out.
+4. Leftovers from Milestone 3: the turn rate for reversals, JumpHeight's launch speed, steep slopes (the top edge and sliding back down a slope past MaxSlopeAngle), acceleration and turning for heavy and fast characters, climbing starting a frame late and the R6 truss flicker, the seat-jump landing frame, swimming (needs terrain water), body-part meshes and scales in `ApplyDescription`, `Players:CreateHumanoidModelFromDescription`.
+5. Leftovers from Milestone 2: soft contacts, soft joints, the VectorForce extra frame, the sideways adaptive switch, union collision, and step one frame while paused.
 
 ## Where things are
 
@@ -260,4 +291,5 @@ Phase 4 (clients, PlayerModule-equivalent controls) comes after: a character nee
 - `crates/rbx_lua/src/server/query.rs`: spatial queries (Luau side). `server/meshes.rs`: `EditableMesh` and `CreateMeshPartAsync`.
 - `crates/rbx_sim/src/sim.rs`: the frame loop. `physics.rs`, `physics/part.rs`: Rapier world, shapes, joints, adaptive stepping. `physics/constraints.rs`: constraints and movers. `physics/mesh.rs`: MeshPart collision. `spatial.rs`: the query index. `scripts.rs`: which scripts run. `load.rs`: place files. `conformance.rs`: the suite.
 - `crates/rbx_sim/examples/`: `run` (CLI), `conformance` (table), `record_goldens` (real server), `coverage` (COVERAGE.md).
-- `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta: Run, Pause, Stop live in the editor.
+- `crates/rbx_sim/src/humanoid.rs`, `physics/character.rs`: humanoids. `players.rs`: the Players service and the local player. `character.rs`, `character/`: the noob, our Animate and Health scripts. `animation.rs`: Animator and AnimationTrack. `engine.rs`: the engine methods, signals and properties the VM asks for.
+- `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta: Run, Play (local), Pause, Stop live in the editor. `local_run/avatars.rs`: who plays and what they look like. `workspace_view/play_input.rs`: the keys and the character camera.
