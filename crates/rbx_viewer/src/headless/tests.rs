@@ -25,6 +25,7 @@ fn a_handed_in_device_builds_once_at_the_starting_rung() {
         View::default(),
         3,
         Some(wgpu::Device::noop(&wgpu::DeviceDescriptor::default())),
+        false,
     )
     .expect("the no-op device builds anything");
 

@@ -1,7 +1,8 @@
 //! Adapter and device acquisition, shared by the windowed and the offscreen path.
 
+use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::quality::QualityLevel;
 
@@ -81,6 +82,15 @@ static OOMS: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) fn ooms() -> u32 {
     OOMS.load(Ordering::Relaxed)
+}
+
+/// Every other error no scope caught, see [`log_error`]: pipelines are
+/// compiled on worker threads, out of reach of an error scope pushed on the
+/// thread building the renderer, so a build counts these instead.
+static INVALID: AtomicU32 = AtomicU32::new(0);
+
+pub(crate) fn invalid() -> u32 {
+    INVALID.load(Ordering::Relaxed)
 }
 
 /// How far the sun's shadow map has been cut down, in halvings of its side,
@@ -320,13 +330,56 @@ pub(crate) fn release(device: &wgpu::Device, queue: &wgpu::Queue) {
 /// renderer samples behind per-fragment branches throughout. Turning the
 /// check off is what the native build already had: the GPU computes the
 /// derivative per 2x2 quad either way.
+///
+/// On a device that cannot take the full surface shader (see
+/// [`overflows_on_surface_shader`]) local lights are left unshadowed.
 pub(crate) fn shader(device: &wgpu::Device, label: &str, source: &str) -> wgpu::ShaderModule {
+    let source = if overflows_on_surface_shader(&device.adapter_info()) {
+        source.replace(LOCAL_SHADOW_LOOKUP, "1.0")
+    } else {
+        source.to_owned()
+    };
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
         source: wgpu::ShaderSource::Wgsl(
             format!("diagnostic(off, derivative_uniformity);\n{source}").into(),
         ),
     })
+}
+
+/// Where `lights.wgsl` asks how much of a local light reaches a fragment.
+const LOCAL_SHADOW_LOOKUP: &str = "local_light_visibility(receiver.position, facing, index)";
+
+/// WARP (Microsoft Basic Render Driver) on Windows on ARM: what a Windows VM
+/// with no DirectX 12 driver gets, VMware Fusion on an Apple Silicon Mac
+/// for one, whether the build is ARM64 or x64 under emulation. Its shader
+/// compiler overflows its own thread's stack on the surface shader, and the
+/// process dies at the first frame that draws a part (0xC0000409, no panic).
+/// The local lights' shadow lookup is what tips it over: without it the
+/// shader builds and draws. x64 WARP takes the full shader.
+fn overflows_on_surface_shader(info: &wgpu::AdapterInfo) -> bool {
+    info.backend == wgpu::Backend::Dx12
+        && info.device_type == wgpu::DeviceType::Cpu
+        && on_arm64_windows()
+}
+
+/// Whether the machine is ARM64 Windows, the process native or emulated.
+fn on_arm64_windows() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{
+            IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_ARM64,
+        };
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, IsWow64Process2};
+        let mut process: IMAGE_FILE_MACHINE = 0;
+        let mut native: IMAGE_FILE_MACHINE = 0;
+        // SAFETY: the pseudo-handle needs no closing and both out-pointers
+        // are valid for the call.
+        let answered = unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) };
+        answered != 0 && native == IMAGE_FILE_MACHINE_ARM64
+    }
+    #[cfg(not(windows))]
+    false
 }
 
 /// Picks an adapter, optionally one able to present to `surface`.
@@ -350,7 +403,95 @@ pub(crate) fn adapter(
         "rbxview: {} on {:?} ({:?})",
         info.name, info.backend, info.device_type
     );
+    *CHOSEN.lock().unwrap_or_else(|e| e.into_inner()) = Some(describe(&info));
     Ok(adapter)
+}
+
+/// The adapter [`adapter`] last picked, for a crash report.
+static CHOSEN: Mutex<Option<String>> = Mutex::new(None);
+
+/// The adapter the renderer last opened, described as in [`describe_adapter`],
+/// or `None` before any was.
+pub fn chosen_adapter() -> Option<String> {
+    CHOSEN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn describe(info: &wgpu::AdapterInfo) -> String {
+    format!(
+        "{} ({:?}, {:?}, driver {} {})",
+        info.name, info.backend, info.device_type, info.driver, info.driver_info
+    )
+}
+
+/// Why no GPU could draw a place, for the viewport to say instead of a
+/// picture: every adapter that was tried and what the last one failed on.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Unavailable {
+    /// Each adapter tried, as [`describe_adapter`] names it.
+    pub found: Vec<String>,
+    pub reason: String,
+}
+
+impl Unavailable {
+    pub(crate) fn found(&mut self, adapter: &wgpu::Adapter) {
+        let info = adapter.get_info();
+        self.found.push(format!(
+            "{} ({:?}, {:?})",
+            info.name, info.backend, info.device_type
+        ));
+    }
+}
+
+impl std::fmt::Display for Unavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let found = if self.found.is_empty() {
+            "no GPU adapter".to_owned()
+        } else {
+            self.found.join(", ")
+        };
+        write!(
+            f,
+            "Your graphics driver doesn't support what the 3D view needs \
+             (DirectX 12, Vulkan or Metal). Found: {found}."
+        )?;
+        if !self.reason.is_empty() {
+            write!(f, " ({})", self.reason)?;
+        }
+        Ok(())
+    }
+}
+
+/// Every adapter each backend offers, one line each with what the renderer
+/// cares about: what `--gpu-probe` prints first.
+pub fn adapters_report() -> String {
+    let mut report = String::new();
+    for backends in [
+        wgpu::Backends::DX12,
+        wgpu::Backends::VULKAN,
+        wgpu::Backends::METAL,
+        wgpu::Backends::GL,
+    ] {
+        let instance = instance_for(backends);
+        for adapter in pollster::block_on(instance.enumerate_adapters(backends)) {
+            let limits = adapter.limits();
+            let downlevel = adapter.get_downlevel_capabilities();
+            let _ = writeln!(
+                report,
+                "{}: max texture {}, {} storage buffers/stage, {} sampled textures/stage, \
+                 WebGPU compliant {}, shader model {:?}",
+                describe(&adapter.get_info()),
+                limits.max_texture_dimension_2d,
+                limits.max_storage_buffers_per_shader_stage,
+                limits.max_sampled_textures_per_shader_stage,
+                downlevel.is_webgpu_compliant(),
+                downlevel.shader_model,
+            );
+        }
+    }
+    if report.is_empty() {
+        report.push_str("no GPU adapter on any backend\n");
+    }
+    report
 }
 
 /// Names the adapter [`adapter`] would pick, for a report that has to say which
@@ -362,11 +503,7 @@ pub(crate) fn adapter(
 /// renders on rather than a second, independently-chosen guess.
 pub fn describe_adapter() -> Result<String, String> {
     let instance = instance();
-    let info = adapter(&instance, None)?.get_info();
-    Ok(format!(
-        "{} ({:?}, {:?}, driver {} {})",
-        info.name, info.backend, info.device_type, info.driver, info.driver_info
-    ))
+    Ok(describe(&adapter(&instance, None)?.get_info()))
 }
 
 /// Opens a device and command queue on the adapter, with errors logged
@@ -416,9 +553,11 @@ pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Que
 /// is counted for the renderer to step down (see [`ooms`]).
 fn log_error(error: wgpu::Error) {
     static SEEN: AtomicU32 = AtomicU32::new(0);
-    if matches!(error, wgpu::Error::OutOfMemory { .. }) {
-        OOMS.fetch_add(1, Ordering::Relaxed);
-    }
+    let counter = match error {
+        wgpu::Error::OutOfMemory { .. } => &OOMS,
+        _ => &INVALID,
+    };
+    counter.fetch_add(1, Ordering::Relaxed);
     let seen = SEEN.fetch_add(1, Ordering::Relaxed);
     if seen < 16 || seen.is_multiple_of(1000) {
         eprintln!("rbxview: GPU error #{}: {error}", seen + 1);
@@ -454,6 +593,12 @@ mod tests {
             lean,
             shadow,
         }
+    }
+
+    #[test]
+    fn the_warp_arm64_workaround_still_finds_the_local_shadow_lookup() {
+        let lights = include_str!("renderer/lights.wgsl");
+        assert_eq!(lights.matches(super::LOCAL_SHADOW_LOOKUP).count(), 1);
     }
 
     #[test]

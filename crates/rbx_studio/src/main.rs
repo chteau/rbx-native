@@ -830,7 +830,7 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
     // An Argon/Rojo project opens as the place it builds.
     let imported = shell::project::place_for(path)?;
     let path = imported.as_deref().unwrap_or(path);
-    let viewer = Headless::load(path, true)?;
+    let viewer = Headless::load_or_undrawn(path)?;
     load_viewed(path, viewer, launch, icon_pack)
 }
 

@@ -1,0 +1,67 @@
+name: GPU probe
+
+# Hand-dispatched check that the 3D view opens and draws on machines with no
+# real GPU: GitHub's runners only have WARP (Microsoft Basic Render Driver),
+# the adapter a Windows VM without a DirectX 12 driver falls back to, and
+# windows-11-arm runs the x64 build under emulation the way a VMware Fusion
+# VM on an Apple Silicon Mac does. `rbxview --gpu-probe` lists every adapter,
+# opens the place the way the editor does and draws a few frames; a crash
+# fails the job. The logs are uploaded either way.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build rbxview (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p rbx_viewer --bin rbxview
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rbxview-x64
+          path: target/release/rbxview.exe
+
+  probe:
+    name: Probe on ${{ matrix.runner }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, windows-11-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rbxview-x64
+          path: bin
+      - name: Probe each place
+        shell: pwsh
+        env:
+          RUST_BACKTRACE: "1"
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          $failed = $false
+          foreach ($place in "TestPlace", "DEMO_LIGHTING_MATERIALS") {
+            $log = "out/$place.txt"
+            $p = Start-Process -FilePath bin/rbxview.exe -ArgumentList "--gpu-probe","assets/tests/$place.rbxl" -NoNewWindow -PassThru -RedirectStandardError $log -RedirectStandardOutput "$log.out"
+            if (-not $p.WaitForExit(900000)) { $p.Kill(); "timed out" | Add-Content $log }
+            $code = '0x{0:x8}' -f $p.ExitCode
+            "exit code $code" | Add-Content $log
+            Write-Output "::group::$place (exit $code)"
+            Get-Content $log | Where-Object { $_ -notmatch '^(  |Caused by|$)' }
+            Write-Output "::endgroup::"
+            if ($p.ExitCode -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-${{ matrix.runner }}
+          path: out/
