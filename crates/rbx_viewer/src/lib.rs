@@ -33,6 +33,8 @@ mod changes;
 mod cli;
 mod controller;
 pub mod export;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod fidelity;
 mod fonts;
 mod fps;
 pub mod gizmo;
