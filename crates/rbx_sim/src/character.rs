@@ -18,6 +18,14 @@ const YELLOW: u32 = 24;
 const BLUE: u32 = 23;
 const GREEN: u32 = 37;
 
+/// What a part's `Color` holds for a `BrickColor` number.
+fn rgb(number: u32) -> [u8; 3] {
+    rbx_dom::BrickColor::from_number(number).map_or([163, 162, 165], |c| c.rgb)
+}
+
+/// A noob joint: name, Part0, Part1, C0 and C1 positions, the rotation.
+type Joint = (&'static str, &'static str, &'static str, [f32; 3], [f32; 3], [f32; 9]);
+
 const ROOT_ROT: [f32; 9] = [-1., 0., 0., 0., 0., 1., 0., 1., 0.];
 const RIGHT_ROT: [f32; 9] = [0., 0., 1., 0., 1., 0., -1., 0., 0.];
 const LEFT_ROT: [f32; 9] = [0., 0., -1., 0., 1., 0., 1., 0., 0.];
@@ -58,10 +66,12 @@ pub fn noob(dom: &mut WeakDom, name: &str, parent: Option<Ref>) -> Ref {
     let mut refs = std::collections::HashMap::new();
     for (part_name, size, at, color) in parts {
         let part = dom.new_instance("Part", part_name, Some(model));
+        let [r, g, b] = rgb(color);
         let props = [
             ("size", v3(size)),
             ("CFrame", cf(at, IDENTITY)),
             ("BrickColor", Variant::BrickColor(color)),
+            ("Color3uint8", Variant::Color3uint8 { r, g, b }),
             ("Anchored", Variant::Bool(false)),
             ("CanCollide", Variant::Bool(true)),
         ];
@@ -73,7 +83,7 @@ pub fn noob(dom: &mut WeakDom, name: &str, parent: Option<Ref>) -> Ref {
         }
         refs.insert(part_name, part);
     }
-    let joints: [(&str, &str, &str, [f32; 3], [f32; 3], [f32; 9]); 6] = [
+    let joints: [Joint; 6] = [
         (
             "RootJoint",
             "HumanoidRootPart",
@@ -149,6 +159,12 @@ pub fn noob(dom: &mut WeakDom, name: &str, parent: Option<Ref>) -> Ref {
         ("RightLegColor", GREEN),
     ] {
         let _ = dom.set_property(colors, key, Variant::BrickColor(color));
+        let [r, g, b] = rgb(color).map(|c| f32::from(c) / 255.0);
+        let _ = dom.set_property(
+            colors,
+            &format!("{key}3"),
+            Variant::Color3(rbx_dom::Color3Data { r, g, b }),
+        );
     }
     finish(dom, model, false);
     model
