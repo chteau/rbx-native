@@ -146,6 +146,7 @@ impl HomeWindow {
             .children(menu)
             .children(dialog)
             .children(crate::updater::toast(cx))
+            .children(crate::crash_log::notice(cx))
     }
 }
 

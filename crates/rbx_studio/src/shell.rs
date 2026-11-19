@@ -2380,6 +2380,7 @@ impl Render for Shell {
             .children(self.floating_widget_overlays(window, cx))
             .children(plugin_dialogs)
             .children(crate::updater::toast(cx))
+            .children(crate::crash_log::notice(cx))
             .children(self.theme_background(true))
     }
 }
