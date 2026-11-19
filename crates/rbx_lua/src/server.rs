@@ -7,6 +7,7 @@
 //! made back to the simulation, and asks a [`Physics`] for what only the
 //! simulation knows (masses) or can do (impulses).
 
+mod chat;
 mod hooks;
 mod input;
 mod meshes;
@@ -39,6 +40,7 @@ pub use crate::plugin::api::Arg;
 use crate::runtime::{install_globals, install_require, install_shared};
 use crate::LuaError;
 
+pub use chat::ChatLine;
 pub use hooks::CollisionGroups;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
@@ -302,6 +304,7 @@ pub struct ServerVm {
     fired: Rc<Cell<usize>>,
     client: Rc<Cell<bool>>,
     remotes: remote::Shared,
+    chat: chat::Chat,
     loaded: Rc<Cell<bool>>,
     budget: Duration,
 }
@@ -327,6 +330,11 @@ impl ServerVm {
         let fired = Rc::new(Cell::new(0));
         let client = Rc::new(Cell::new(false));
         let remotes = remote::Shared::default();
+        let chat = chat::Chat {
+            remotes: remotes.clone(),
+            client: client.clone(),
+            log: Rc::default(),
+        };
         let loaded = Rc::new(Cell::new(true));
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
@@ -335,6 +343,7 @@ impl ServerVm {
             mark: Cell::new(usize::MAX),
             client: client.clone(),
             remotes: remotes.clone(),
+            chat: chat.clone(),
             loaded: loaded.clone(),
         })));
         install_globals(&lua, &ctx)?;
@@ -365,6 +374,7 @@ impl ServerVm {
             fired,
             client,
             remotes,
+            chat,
             loaded,
             budget: Duration::from_secs(10),
         })
@@ -413,6 +423,10 @@ impl ServerVm {
     /// sent it (`None` from the server). Listeners and callbacks run now;
     /// events for a remote nobody listens to yet wait for a listener.
     pub fn receive(&mut self, from: Option<Ref>, packet: Packet) -> Vec<Change> {
+        if matches!(packet, Packet::Chat { .. }) {
+            let chat = self.chat.clone();
+            return self.guarded(move |lua| chat::receive(lua, &chat, from, packet));
+        }
         let remotes = self.remotes.clone();
         let client = self.client.get();
         self.guarded(move |lua| remote::receive(lua, &remotes, client, from, packet))
@@ -458,6 +472,19 @@ impl ServerVm {
             }
             Ok(())
         })
+    }
+
+    /// The editor's chat bar: this client's player says `text` in the
+    /// general channel, as `TextChannel:SendAsync` would.
+    pub fn chat_say(&mut self, text: &str) -> Vec<Change> {
+        let chat = self.chat.clone();
+        let text = text.to_owned();
+        self.guarded(move |lua| chat::say(lua, &chat, &text))
+    }
+
+    /// The chat messages this client showed since the last call.
+    pub fn take_chat(&self) -> Vec<ChatLine> {
+        std::mem::take(&mut self.chat.log.borrow_mut())
     }
 
     /// Steps every playing tween `dt` seconds (their writes and

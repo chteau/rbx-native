@@ -842,6 +842,13 @@ pub fn run_some_in_sim(
         session.step();
         for (peer, output) in session.take_output() {
             if peer != Peer::Server {
+                // `CONFORMANCE_CLIENT_OUTPUT=1`: what the clients print, for
+                // working out a client half.
+                if std::env::var_os("CONFORMANCE_CLIENT_OUTPUT").is_some() {
+                    for line in output.lines() {
+                        eprintln!("client: {line}");
+                    }
+                }
                 continue;
             }
             for line in output.lines() {
@@ -903,7 +910,7 @@ fn show(value: Option<&Value>) -> String {
 fn numbers_match(g: Option<&Value>, o: Option<&Value>, tolerance: f64) -> bool {
     let list = |v: Option<&Value>| -> Option<Vec<f64>> {
         v?.as_str()?
-            .split_whitespace()
+            .split(|c: char| c.is_whitespace() || c == ',')
             .map(|w| w.parse().ok())
             .collect()
     };

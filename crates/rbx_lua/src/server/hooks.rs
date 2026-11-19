@@ -138,6 +138,7 @@ pub(super) struct ServerHooks {
     /// server.
     pub(super) client: Rc<Cell<bool>>,
     pub(super) remotes: super::remote::Shared,
+    pub(super) chat: super::chat::Chat,
     /// `game:IsLoaded()`: a client's is false until the place arrived.
     pub(super) loaded: Rc<Cell<bool>>,
 }
@@ -540,6 +541,9 @@ impl Hooks for ServerHooks {
             "AssetService" => super::meshes::member(lua, ctx, &self.physics, key),
             "CollectionService" => collection::member(lua, key),
             "TweenService" | "Tween" => super::tween::member(lua, referent, class, key),
+            "TextChatService" | "TextChannel" => {
+                super::chat::member(lua, &self.chat, referent, class, key)
+            }
             "UserInputService" | "ContextActionService" if self.client.get() => {
                 let signals = (class == "UserInputService").then_some(referent);
                 super::input::member(lua, signals, class, key)
@@ -558,6 +562,9 @@ impl Hooks for ServerHooks {
         key: &str,
         value: &Value,
     ) -> Result<bool> {
+        if super::chat::set(lua, &self.chat, referent, class, key, value)? {
+            return Ok(true);
+        }
         not_scriptable(ctx, referent, class, key)?;
         self.mark.set(ctx.dom().changes().len());
         let mut written = false;

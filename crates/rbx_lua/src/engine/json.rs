@@ -32,7 +32,7 @@ pub(crate) fn member(lua: &Lua, key: &str) -> Result<Option<Value>> {
 
 /// A random GUID in upper case, braced unless `braced` is false, as
 /// `HttpService:GenerateGUID(wrapInCurlyBraces)` gives it.
-fn guid(braced: bool) -> String {
+pub(crate) fn guid(braced: bool) -> String {
     let guid = uuid::Uuid::new_v4().hyphenated().to_string().to_uppercase();
     if braced {
         format!("{{{guid}}}")

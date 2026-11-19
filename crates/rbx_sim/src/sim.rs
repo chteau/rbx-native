@@ -306,6 +306,14 @@ impl Simulation {
         if let Some(character) = character {
             self.destroy(character);
         }
+        let user_id = match self.dom.borrow().get(player).and_then(|i| i.properties().get("UserId")) {
+            Some(Variant::Int64(id)) => Some(*id),
+            _ => None,
+        };
+        let sources = user_id.map_or_else(Vec::new, |id| crate::chat::sources(&self.dom.borrow(), id));
+        for source in sources {
+            self.destroy(source);
+        }
         if self.dom.borrow().get(player).is_some() {
             self.destroy(player);
         }
@@ -505,6 +513,7 @@ impl Simulation {
                 .borrow_mut()
                 .teams
                 .assign(&mut dom, self.db, player);
+            crate::chat::add_source(&mut dom, name, user_id);
         }
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
@@ -542,6 +551,9 @@ impl Simulation {
     /// Starts every script the server would run, in tree order, and runs
     /// their bodies up to their first yield, at time zero.
     pub fn start(&mut self) {
+        if self.role != Role::Client {
+            crate::chat::setup(&mut self.dom.borrow_mut(), self.db);
+        }
         let roots = self.dom.borrow().root_refs().to_vec();
         for root in roots {
             self.watch_sounds_under(root);
@@ -1074,6 +1086,19 @@ impl Simulation {
         self.apply(edits);
     }
 
+    /// The chat messages this client showed since the last call.
+    pub fn take_chat(&mut self) -> Vec<rbx_lua::server::ChatLine> {
+        self.vm.take_chat()
+    }
+
+    /// The local player says `text` in the general channel (the editor's
+    /// chat bar).
+    pub fn chat_say(&mut self, text: &str) {
+        let changes = self.vm.chat_say(text);
+        self.apply(changes);
+        self.collect_output();
+    }
+
     /// Moves every playing sound's clock `dt` and fires what that did; a
     /// sound that ended stops once its `Ended` handlers have run.
     fn sound_step(&mut self, dt: f64) {
@@ -1273,6 +1298,17 @@ impl Simulation {
 
         for change in changes {
             match change {
+                // A character can arrive before the player's `Character`
+                // names it (a respawn): its LocalScripts start then.
+                Change::Property { referent, name } if name == "Character" => {
+                    let character = match self.dom.borrow().get(referent).map(|i| i.properties().get("Character").cloned()) {
+                        Some(Some(Variant::Ref(r))) => Some(r),
+                        _ => None,
+                    };
+                    if let Some(character) = character {
+                        self.start_scripts_under(character);
+                    }
+                }
                 Change::Property { referent, name } => self.property_changed(referent, &name),
                 Change::Added(referent) | Change::Parent { referent, .. } => {
                     if self.touches_physics(referent) {

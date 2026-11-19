@@ -8,6 +8,7 @@
 pub mod animation;
 pub mod audio;
 pub mod character;
+mod chat;
 pub mod conformance;
 mod engine;
 pub mod gui;

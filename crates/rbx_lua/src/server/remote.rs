@@ -89,6 +89,15 @@ pub enum Packet {
         id: u32,
         result: std::result::Result<Vec<Wire>, String>,
     },
+    /// A chat message (`TextChannel:SendAsync`): to the server from a
+    /// client, and from the server to each client it delivers to, with the
+    /// sender's `TextSource`.
+    Chat {
+        channel: Ref,
+        text: String,
+        id: String,
+        source: Option<Ref>,
+    },
 }
 
 /// A packet a VM sent, with the sending DOM's mutation count at the time:
@@ -467,6 +476,8 @@ pub(super) fn receive(
             };
             scheduler::resolve(lua, id, result)?;
         }
+        // The chat module takes these (`ServerVm::receive`).
+        Packet::Chat { .. } => {}
     }
     flush(lua, remotes, client)
 }
