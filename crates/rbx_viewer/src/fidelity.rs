@@ -81,9 +81,10 @@ impl Scene {
         Some([x - dx, y - dy, x + dx, y + dy])
     }
 
-    /// The place this renderer draws: `Workspace` with the scene's world
-    /// and `Lighting` with only what the scene sets.
-    pub fn place(&self) -> WeakDom {
+    /// The place this renderer draws: `Workspace` with the scene's world,
+    /// `Lighting` with only what the scene sets and the player's
+    /// `PlayerGui` with its screens, and that `PlayerGui`.
+    pub fn place(&self) -> (WeakDom, Ref) {
         let mut dom = WeakDom::new();
         let workspace = dom.new_instance("Workspace", "Workspace", None);
         let lighting = dom.new_instance("Lighting", "Lighting", None);
@@ -91,7 +92,9 @@ impl Scene {
             dom.set_property(lighting, key, value.clone())
                 .expect("Lighting exists");
         }
-        let gui = dom.new_instance("StarterGui", "StarterGui", None);
+        let players = dom.new_instance("Players", "Players", None);
+        let player = dom.new_instance("Player", "Player", Some(players));
+        let gui = dom.new_instance("PlayerGui", "PlayerGui", Some(player));
         let mut builder = Builder {
             dom,
             world: workspace,
@@ -101,7 +104,7 @@ impl Scene {
         (self.build)(&mut builder);
         let mut dom = builder.dom;
         dom.take_changes();
-        dom
+        (dom, gui)
     }
 
     /// Builds the scene's world under `world`, its `Lighting` children
@@ -245,11 +248,20 @@ pub fn content(uri: &str) -> Variant {
 
 /// Draws `scene` as this renderer does at [`CAPTURE`], once every asset it
 /// asked for has landed: RGBA8, row by row, and the warnings loading it
-/// raised (an asset that could not be fetched, say).
+/// raised (an asset that could not be fetched, say). Its screens are drawn
+/// as the player sees them, under the top bar.
 pub fn render(scene: &Scene) -> Result<(Vec<u8>, Vec<String>), String> {
+    let (place, player_gui) = scene.place();
+    crate::scene::set_player_gui(Some(player_gui));
+    let drawn = draw(scene, &place);
+    crate::scene::set_player_gui(None);
+    drawn
+}
+
+fn draw(scene: &Scene, place: &WeakDom) -> Result<(Vec<u8>, Vec<String>), String> {
     const DRAIN: usize = 24;
     const LIMIT: Duration = Duration::from_secs(90);
-    let mut headless = crate::Headless::from_dom(&scene.place(), true)?;
+    let mut headless = crate::Headless::from_dom(place, true)?;
     headless.open_at(scene.eye, scene.look_at, scene.fov);
     let started = Instant::now();
     loop {
