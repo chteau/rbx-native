@@ -63,15 +63,48 @@ const MATERIALS: [(&str, u32); 39] = [
 const STAGE_EYE: [f32; 3] = [0.0, 7.0, 24.0];
 const STAGE_AT: [f32; 3] = [0.0, 3.0, 0.0];
 
-/// Where [`stage`]'s pieces land in the frame from [`STAGE_EYE`].
-const STAGE_REGIONS: &[(&str, [f32; 4])] = &[
-    ("sky", [0.05, 0.12, 0.95, 0.26]),
-    ("floor", [0.05, 0.9, 0.95, 0.98]),
-    ("white top", [0.17, 0.43, 0.24, 0.46]),
-    ("white front", [0.17, 0.5, 0.24, 0.6]),
-    ("grey front", [0.37, 0.5, 0.44, 0.6]),
-    ("red front", [0.56, 0.5, 0.63, 0.6]),
-    ("green front", [0.76, 0.5, 0.83, 0.6]),
+/// [`stage`]'s faces as [`STAGE_EYE`] sees them, a lit and a shadowed patch
+/// of floor and two points of sky.
+const STAGE_PROBES: [(&str, [f32; 3]); 16] = [
+    ("sky", [-600.0, 300.0, -2000.0]),
+    ("high sky", [0.0, 700.0, -2000.0]),
+    ("floor", [-12.0, 0.0, 14.0]),
+    ("floor shadow", [11.5, 0.0, 3.0]),
+    ("white top", [-9.0, 4.0, 0.0]),
+    ("white front", [-10.3, 2.5, 2.0]),
+    ("grey top", [-3.0, 4.0, 0.0]),
+    ("grey front", [-3.0, 2.0, 2.0]),
+    ("red top", [3.0, 4.0, 0.0]),
+    ("red front", [3.5, 2.5, 2.0]),
+    ("green top", [9.0, 4.0, 0.0]),
+    ("green front", [9.0, 2.8, 2.0]),
+    ("blue ball", [-5.36, 2.52, 8.82]),
+    ("yellow cylinder", [0.0, 2.5, 8.94]),
+    ("black wedge", [6.0, 2.0, 7.0]),
+    ("pole", [0.0, 8.0, -7.5]),
+];
+
+/// The shadow scenes: lit floor, the shadows of a pole and of the slab, the
+/// tilted board and the ball.
+const SHADOW_PROBES: [(&str, [f32; 3]); 5] = [
+    ("lit floor", [-12.0, 0.0, 12.0]),
+    ("pole shadow", [-6.2, 0.0, -3.25]),
+    ("slab shadow", [11.0, 0.0, -0.4]),
+    ("red board", [-4.0, 3.0, 6.0]),
+    ("white ball", [4.0, 2.2, 7.3]),
+];
+
+/// [`special`]'s pieces from [`STAGE_EYE`].
+const SPECIAL_PROBES: [(&str, [f32; 3]); 9] = [
+    ("red wall", [0.0, 7.0, -5.5]),
+    ("glass", [-8.0, 2.0, 2.0]),
+    ("neon block", [-3.0, 2.0, 2.0]),
+    ("neon cylinder", [-3.0, 2.5, 6.94]),
+    ("force field", [2.0, 2.0, 2.0]),
+    ("reflective ball", [6.5, 2.4, 1.9]),
+    ("see-through pair", [3.0, 2.0, 8.0]),
+    ("metal ball", [9.32, 1.87, 6.3]),
+    ("foil", [-9.0, 1.5, 7.5]),
 ];
 
 /// What Studio's Baseplate template writes into `Lighting` (without its
@@ -151,12 +184,17 @@ fn template_effects(b: &mut Builder) {
     b.set(bloom, "Threshold", float(2.0));
 }
 
+/// The top centre of the `i`th slab of a [`materials`] grid.
+fn slab(i: usize) -> [f32; 3] {
+    let (column, row) = ((i % 5) as f32, (i / 5) as f32);
+    [(column - 2.0) * 6.0, 1.0, (row - 1.5) * 6.0]
+}
+
 fn materials(b: &mut Builder, from: usize) {
     b.floor();
     for (i, &(_, material)) in MATERIALS.iter().skip(from).take(20).enumerate() {
-        let (column, row) = ((i % 5) as f32, (i / 5) as f32);
-        let position = [(column - 2.0) * 6.0, 0.5, (row - 1.5) * 6.0];
-        b.part(BLOCK, [5.0, 1.0, 5.0], at(position), [163, 162, 165], material);
+        let [x, _, z] = slab(i);
+        b.part(BLOCK, [5.0, 1.0, 5.0], at([x, 0.5, z]), [163, 162, 165], material);
     }
 }
 
@@ -256,7 +294,7 @@ pub fn scenes() -> Vec<Scene> {
         look_at: STAGE_AT,
         fov: 70.0,
         lighting,
-        regions: STAGE_REGIONS,
+        probes: STAGE_PROBES.to_vec(),
         build,
     };
     let sunset = |name, about, lighting, build| Scene {
@@ -266,17 +304,30 @@ pub fn scenes() -> Vec<Scene> {
         look_at: SUNSET_AT,
         fov: 70.0,
         lighting,
-        regions: &[("sky", [0.05, 0.12, 0.95, 0.3])],
+        probes: vec![
+            ("sun", [-2648.0, 717.0, -1187.0]),
+            ("sky", [-2400.0, 1400.0, 600.0]),
+            ("horizon", [-2900.0, 100.0, 300.0]),
+            ("floor", [-20.0, 0.0, -5.0]),
+            ("white pillar", [-8.5, 8.0, 0.0]),
+            ("far pillar", [-8.5, 8.0, -120.0]),
+        ],
         build,
     };
-    let material_scene = |name, about, build| Scene {
+    let material_scene = |name, about, from: usize, build| Scene {
         name,
         about,
         eye: [0.0, 26.0, 22.0],
         look_at: [0.0, 0.0, 1.0],
         fov: 70.0,
         lighting: studio(),
-        regions: &[],
+        probes: MATERIALS
+            .iter()
+            .skip(from)
+            .take(20)
+            .enumerate()
+            .map(|(i, &(name, _))| (name, slab(i)))
+            .collect(),
         build,
     };
     vec![
@@ -366,10 +417,13 @@ pub fn scenes() -> Vec<Scene> {
                     ("FogColor", rgb(190, 140, 90)),
                 ],
             ),
-            regions: &[
-                ("sky", [0.05, 0.12, 0.95, 0.3]),
-                ("far", [0.45, 0.4, 0.55, 0.5]),
-                ("floor", [0.05, 0.9, 0.95, 0.98]),
+            probes: vec![
+                ("sky", [0.0, 300.0, -3000.0]),
+                ("floor", [0.0, 0.0, 0.0]),
+                ("near white", [-8.5, 8.0, 0.0]),
+                ("mid white", [-8.5, 8.0, -40.0]),
+                ("far white", [-8.5, 8.0, -100.0]),
+                ("far red", [8.5, 8.0, -100.0]),
             ],
             build: avenue,
         },
@@ -411,9 +465,11 @@ pub fn scenes() -> Vec<Scene> {
             look_at: [0.0, 25.0, -40.0],
             fov: 70.0,
             lighting: studio(),
-            regions: &[
-                ("upper sky", [0.1, 0.15, 0.9, 0.35]),
-                ("lower sky", [0.1, 0.6, 0.9, 0.8]),
+            probes: vec![
+                ("up", [0.0, 860.0, -600.0]),
+                ("horizon", [0.0, 155.0, -1000.0]),
+                ("left", [-700.0, 400.0, -700.0]),
+                ("right", [700.0, 400.0, -700.0]),
             ],
             build: |b| {
                 b.floor();
@@ -427,7 +483,7 @@ pub fn scenes() -> Vec<Scene> {
             look_at: [0.0, 0.0, -2.0],
             fov: 70.0,
             lighting: with(studio(), &[("ShadowSoftness", float(0.0))]),
-            regions: &[],
+            probes: SHADOW_PROBES.to_vec(),
             build: shadows,
         },
         Scene {
@@ -437,7 +493,7 @@ pub fn scenes() -> Vec<Scene> {
             look_at: [0.0, 0.0, -2.0],
             fov: 70.0,
             lighting: with(studio(), &[("ShadowSoftness", float(1.0))]),
-            regions: &[],
+            probes: SHADOW_PROBES.to_vec(),
             build: shadows,
         },
         Scene {
@@ -454,48 +510,60 @@ pub fn scenes() -> Vec<Scene> {
                     ("OutdoorAmbient", rgb(20, 20, 30)),
                 ],
             ),
-            regions: &[],
+            probes: vec![
+                ("point floor", [-8.0, 0.0, 5.0]),
+                ("lit block", [-6.0, 2.5, 2.0]),
+                ("spot floor", [4.0, 0.0, 2.0]),
+                ("surface floor", [9.0, 0.0, 0.0]),
+                ("dark floor", [-14.0, 0.0, 12.0]),
+            ],
             build: local_lights,
         },
-        material_scene("materials_a", "The first 20 materials on grey slabs", |b| {
+        material_scene("materials_a", "The first 20 materials on grey slabs", 0, |b| {
             materials(b, 0)
         }),
-        material_scene("materials_b", "The other 19 materials on grey slabs", |b| {
+        material_scene("materials_b", "The other 19 materials on grey slabs", 20, |b| {
             materials(b, 20)
         }),
-        stage_scene(
-            "special_materials",
-            "Glass, Neon, ForceField, Reflectance, Metal, Foil and overlapping transparency",
-            studio(),
-            special,
-        ),
-        stage_scene(
-            "bloom_colour_correction",
-            "Bloom (threshold 0.8) on neon, ColorCorrection tint, contrast and saturation",
-            studio(),
-            |b| {
-                special(b);
-                effect(
-                    b,
-                    "BloomEffect",
-                    &[
-                        ("Intensity", float(1.0)),
-                        ("Size", float(24.0)),
-                        ("Threshold", float(0.8)),
-                    ],
-                );
-                effect(
-                    b,
-                    "ColorCorrectionEffect",
-                    &[
-                        ("Brightness", float(0.05)),
-                        ("Contrast", float(0.2)),
-                        ("Saturation", float(-0.3)),
-                        ("TintColor", rgb(255, 235, 210)),
-                    ],
-                );
-            },
-        ),
+        Scene {
+            probes: SPECIAL_PROBES.to_vec(),
+            ..stage_scene(
+                "special_materials",
+                "Glass, Neon, ForceField, Reflectance, Metal, Foil and overlapping transparency",
+                studio(),
+                special,
+            )
+        },
+        Scene {
+            probes: SPECIAL_PROBES.to_vec(),
+            ..stage_scene(
+                "bloom_colour_correction",
+                "Bloom (threshold 0.8) on neon, ColorCorrection tint, contrast and saturation",
+                studio(),
+                |b| {
+                    special(b);
+                    effect(
+                        b,
+                        "BloomEffect",
+                        &[
+                            ("Intensity", float(1.0)),
+                            ("Size", float(24.0)),
+                            ("Threshold", float(0.8)),
+                        ],
+                    );
+                    effect(
+                        b,
+                        "ColorCorrectionEffect",
+                        &[
+                            ("Brightness", float(0.05)),
+                            ("Contrast", float(0.2)),
+                            ("Saturation", float(-0.3)),
+                            ("TintColor", rgb(255, 235, 210)),
+                        ],
+                    );
+                },
+            )
+        },
         stage_scene("blur", "BlurEffect Size 10", studio(), |b| {
             stage(b);
             effect(b, "BlurEffect", &[("Size", float(10.0))]);
@@ -518,6 +586,151 @@ pub fn scenes() -> Vec<Scene> {
                     ],
                 );
             },
+        ),
+    ]
+    .into_iter()
+    .chain(tone_scenes())
+    .collect()
+}
+
+/// The grey levels of [`ramp`], 0 to 255 in steps of 17.
+const RAMP: usize = 16;
+const RAMP_TOPS: [&str; RAMP] = [
+    "0 top", "17 top", "34 top", "51 top", "68 top", "85 top", "102 top", "119 top", "136 top",
+    "153 top", "170 top", "187 top", "204 top", "221 top", "238 top", "255 top",
+];
+const RAMP_FRONTS: [&str; RAMP] = [
+    "0 front", "17 front", "34 front", "51 front", "68 front", "85 front", "102 front",
+    "119 front", "136 front", "153 front", "170 front", "187 front", "204 front", "221 front",
+    "238 front", "255 front",
+];
+
+fn ramp_x(i: usize) -> f32 {
+    (i as f32 - 7.5) * 2.5
+}
+
+/// Sixteen grey cubes from black to white, floating, no floor.
+fn ramp(b: &mut Builder) {
+    for i in 0..RAMP {
+        let grey = (i * 17) as u8;
+        b.block([2.0; 3], [ramp_x(i), 0.0, 0.0], [grey; 3]);
+    }
+}
+
+/// The sun straight overhead (noon at latitude 23.5), nothing else lighting
+/// the ramp unless a scene adds it: what turns a top face's colour into the
+/// renderer's response to `grey × light`.
+fn tone(brightness: f32, changes: &[(&'static str, Variant)]) -> Vec<(&'static str, Variant)> {
+    let base = vec![
+        ("Ambient", rgb(0, 0, 0)),
+        ("OutdoorAmbient", rgb(0, 0, 0)),
+        ("Brightness", float(brightness)),
+        ("ClockTime", float(12.0)),
+        ("GeographicLatitude", float(23.5)),
+        ("EnvironmentDiffuseScale", float(0.0)),
+        ("EnvironmentSpecularScale", float(0.0)),
+        ("GlobalShadows", Variant::Bool(false)),
+    ];
+    with(base, changes)
+}
+
+/// The tone-response scenes: the grey ramp under a known light, from the
+/// front and above, so each top face is one sample of the response.
+fn tone_scenes() -> Vec<Scene> {
+    let place_level = |mut lighting: Vec<(&'static str, Variant)>, studio_place: bool| {
+        if studio_place {
+            lighting.extend(
+                studio()
+                    .into_iter()
+                    .filter(|(k, _)| super::roblox::PLACE_LEVEL.contains(k)),
+            );
+        }
+        lighting
+    };
+    let scene = |name, about, lighting, studio_place| Scene {
+        name,
+        about,
+        eye: [0.0, 9.0, 16.0],
+        look_at: [0.0, 0.0, 0.0],
+        fov: 70.0,
+        lighting: place_level(lighting, studio_place),
+        probes: (0..RAMP)
+            .flat_map(|i| {
+                [
+                    (RAMP_TOPS[i], [ramp_x(i), 1.0, 0.0]),
+                    (RAMP_FRONTS[i], [ramp_x(i), 0.0, 1.0]),
+                ]
+            })
+            .collect(),
+        build: ramp,
+    };
+    vec![
+        scene("tone_sun_1", "The ramp under an overhead sun, Brightness 1", tone(1.0, &[]), true),
+        scene("tone_sun_2", "The ramp under an overhead sun, Brightness 2", tone(2.0, &[]), true),
+        scene("tone_sun_4", "The ramp under an overhead sun, Brightness 4", tone(4.0, &[]), true),
+        scene("tone_sun_8", "The ramp under an overhead sun, Brightness 8", tone(8.0, &[]), true),
+        scene(
+            "tone_ambient",
+            "The ramp under white OutdoorAmbient alone",
+            tone(0.0, &[("OutdoorAmbient", rgb(255, 255, 255))]),
+            true,
+        ),
+        scene(
+            "tone_ambient_half",
+            "The ramp under 128 grey Ambient alone",
+            tone(0.0, &[("Ambient", rgb(128, 128, 128))]),
+            true,
+        ),
+        scene(
+            "tone_sky",
+            "The ramp under the default sky's light alone (EnvironmentDiffuseScale 1)",
+            tone(0.0, &[("EnvironmentDiffuseScale", float(1.0))]),
+            true,
+        ),
+        scene(
+            "tone_exposure",
+            "The ramp under an overhead sun, Brightness 1, ExposureCompensation 2",
+            tone(1.0, &[("ExposureCompensation", float(2.0))]),
+            true,
+        ),
+        // The sun lower in the sky, Brightness 2: at latitude 23.5 the sun is
+        // `15 × (ClockTime − 6)` degrees up, so a top face's colour against
+        // tone_sun_2's says what the sun loses on the way down.
+        scene(
+            "tone_sun_60",
+            "tone_sun_2 with the sun 60 degrees up",
+            tone(2.0, &[("ClockTime", float(10.0))]),
+            true,
+        ),
+        scene(
+            "tone_sun_30",
+            "tone_sun_2 with the sun 30 degrees up",
+            tone(2.0, &[("ClockTime", float(8.0))]),
+            true,
+        ),
+        scene(
+            "tone_sun_15",
+            "tone_sun_2 with the sun 15 degrees up",
+            tone(2.0, &[("ClockTime", float(7.0))]),
+            true,
+        ),
+        scene(
+            "tone_sun_5",
+            "tone_sun_2 with the sun 5 degrees up",
+            tone(2.0, &[("ClockTime", float(6.0 + 1.0 / 3.0))]),
+            true,
+        ),
+        scene(
+            "tone_sun_2_voxel",
+            "tone_sun_2 in a place that leaves Technology and LightingStyle at their defaults",
+            tone(2.0, &[]),
+            false,
+        ),
+        scene(
+            "tone_ambient_voxel",
+            "tone_ambient in a place that leaves Technology and LightingStyle at their defaults",
+            tone(0.0, &[("OutdoorAmbient", rgb(255, 255, 255))]),
+            false,
         ),
     ]
 }

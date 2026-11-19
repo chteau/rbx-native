@@ -265,6 +265,19 @@ fn lamp_visibility(world_position: vec3<f32>, normal: vec3<f32>, facing: f32) ->
     return lit / (taps * taps);
 }
 
+/// How much of the sky a dielectric face mirrors at this angle (Schlick's
+/// curve): a tenth of `spec_strength` looking straight at it, all of it at
+/// grazing. Without it every face facing the camera picked up a sheet of sky,
+/// greying a red part's front to (152, 142, 162) where the real client keeps
+/// it at (112, 29, 31) under the Baseplate template's lighting.
+fn env_fresnel(normal: vec3<f32>, to_eye: vec3<f32>) -> f32 {
+    let grazing = 1.0 - saturate(dot(normal, to_eye));
+    return ENV_F0 + (ENV_F90 - ENV_F0) * pow(grazing, 5.0);
+}
+
+const ENV_F0: f32 = 0.1;
+const ENV_F90: f32 = 0.4;
+
 /// The whole model, per fragment: two lamps, ambient, specular, environment,
 /// exposure and fog. Returns linear colour clamped to the displayable range,
 /// Roblox squares it down into a gamma-2 target here, which an `*Srgb` render
@@ -328,7 +341,7 @@ fn shade(surface: Surface) -> vec3<f32> {
     var color = surface.albedo * (direct + ambient + locals.diffuse)
         + (specular * lighting.sun_color.rgb * lighting.tuning.y
             + locals.specular
-            + environment * lighting.tuning.y * surface.spec_strength)
+            + environment * lighting.tuning.y * surface.spec_strength * env_fresnel(normal, to_eye))
             * surface.spec_tint;
     // Reflectance is a straight crossfade to the reflection, with no Fresnel:
     // that is literally what Roblox does. Gated by EnvironmentSpecularScale

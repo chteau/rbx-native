@@ -132,6 +132,10 @@ pub(crate) enum Tonemap {
     #[default]
     Default,
     Retro,
+    /// What `Default` resolves to under `Technology` `ShadowMap` or `Future`
+    /// (see `crate::lighting`'s `FILMIC_SUN`): the real client's own curve,
+    /// fitted to its frames.
+    Filmic,
 }
 
 /// `DepthOfFieldEffect`: where the sharp zone is, and how blurred each side of

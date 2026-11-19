@@ -20,8 +20,9 @@ struct PostUniform {
     correction: vec4<f32>,
     // TintColor, as the raw components Studio shows: a gain, not a radiance.
     tint: vec4<f32>,
-    // x: 1 where a ColorGradingEffect resolved to TonemapperPreset.Retro, 0 for
-    // Default (or no effect at all). y: 1 where a BlurEffect is enabled, 0
+    // x: the tone curve: 0 a clamp (Default under Voxel or Compatibility), 1
+    // Reinhard (a ColorGradingEffect's TonemapperPreset.Retro), 2 `filmic`
+    // (Default under ShadowMap or Future). y: 1 where a BlurEffect is enabled, 0
     // otherwise. z: the camera's near plane in studs, which is the whole of what
     // view_distance needs. w: 1 where a DepthOfFieldEffect is enabled.
     misc: vec4<f32>,
@@ -69,6 +70,21 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
 }
+
+/// The real client's tone curve under ShadowMap and Future, a rational
+/// function fitted to its frames of a grey ramp lit at six known strengths
+/// (see `crate::lighting`'s `FILMIC_SUN`). It lifts nothing below about 0.1,
+/// rolls the highlights off and only reaches white near 2.
+fn filmic(x: vec3<f32>) -> vec3<f32> {
+    let curve = x * (FILMIC_A * x + FILMIC_B) / (x * (FILMIC_C * x + FILMIC_D) + FILMIC_E);
+    return min(curve, vec3<f32>(1.0));
+}
+
+const FILMIC_A: f32 = 2.4536;
+const FILMIC_B: f32 = 0.0353;
+const FILMIC_C: f32 = 2.1029;
+const FILMIC_D: f32 = 0.7171;
+const FILMIC_E: f32 = 0.1414;
 
 /// One oversized triangle rather than two: no vertex buffer, and no seam down
 /// the diagonal where two triangles would meet.
@@ -275,6 +291,9 @@ fn fs_resolve(in: VertexOutput) -> @location(0) vec4<f32> {
         hdr / (vec3<f32>(1.0) + hdr),
         post.misc.x > 0.5,
     );
+    if post.misc.x > 1.5 {
+        mapped = filmic(hdr);
+    }
 
     if post.correction.w > 0.5 {
         // Graded after the tone map, on gamma-encoded values: Roblox's grade

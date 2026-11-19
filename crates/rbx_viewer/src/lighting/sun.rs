@@ -22,6 +22,26 @@ const HOURS_PER_DAY: f32 = 24.0;
 /// outside it might not.
 const MAX_LATITUDE_DEGREES: f32 = 90.0;
 
+/// What is left of the sunlight after the air between it and the ground,
+/// for a sun `height` (the y of [`sun_direction`]) above the horizon: white
+/// at the zenith, a little dimmer as it sinks (0.033 per extra air mass, the
+/// Kasten-Young approximation of how much air the light crosses), and
+/// yellow in the last ten degrees, blue lost first.
+///
+/// Measured on the real client with the `tone_sun_*` fidelity scenes, a
+/// grey ramp lit from 90, 60, 30, 15 and 5 degrees up: 0.91 of the zenith's
+/// light at 15 degrees, still neutral, and (0.77, 0.77, 0.28) of it at 5.
+pub(crate) fn transmittance(height: f32) -> Vec3 {
+    const PER_AIR_MASS: f32 = 0.033;
+    const HORIZON_BLUE: f32 = 0.25;
+    let elevation = height.clamp(0.0, 1.0).asin().to_degrees();
+    let air_mass = 1.0 / (height.max(0.0) + 0.50572 * (elevation + 6.07995).powf(-1.6364));
+    let gray = (-PER_AIR_MASS * (air_mass - 1.0)).exp();
+    let t = ((height - 0.05) / 0.15).clamp(0.0, 1.0);
+    let blue = HORIZON_BLUE + (1.0 - HORIZON_BLUE) * t * t * (3.0 - 2.0 * t);
+    Vec3::new(gray, gray, gray * blue)
+}
+
 /// Direction of the sun in Roblox's own axes, as the only known-good community
 /// reproduction of `Lighting:GetSunDirection()` computes it, Roblox publishes
 /// no formula, so this is reverse-engineered rather than authoritative.

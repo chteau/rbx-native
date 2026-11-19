@@ -2,7 +2,7 @@
 //! client's reference and writes, per scene, our frame, a ΔE heatmap and a
 //! side-by-side (real | ours, or real | before | after when `--before`
 //! holds an earlier run's frames), then a table of the metrics and the
-//! regions' mean colours.
+//! probes' colours.
 //!
 //! ```text
 //! cargo run -p rbx_viewer --release --example fidelity -- --out DIR \
@@ -53,7 +53,7 @@ fn main() {
     let mut report = serde_json::Map::new();
 
     println!(
-        "{:<26} {:>7} {:>7} {:>7}  regions (real → ours)",
+        "{:<26} {:>7} {:>7} {:>7}  probes (real → ours)",
         "scene", "ΔE", "ΔE p90", "SSIM"
     );
     for scene in fidelity::scenes() {
@@ -73,15 +73,16 @@ fn main() {
         };
         let ours = ours_full.downsample(cw, ch);
         let got = metrics::compare(&reference, &ours);
-        let regions: Vec<String> = scene
-            .regions
+        let probes: Vec<(&str, [u8; 3], [u8; 3])> = scene
+            .probes
             .iter()
-            .map(|(name, rect)| {
-                let (a, b) = (
-                    metrics::mean_color(&reference, *rect),
-                    metrics::mean_color(&ours, *rect),
-                );
-                format!("{name} {a:?} → {b:?}")
+            .filter_map(|(name, point)| {
+                let rect = scene.probe_rect(*point)?;
+                Some((
+                    *name,
+                    metrics::mean_color(&reference, rect),
+                    metrics::mean_color(&ours, rect),
+                ))
             })
             .collect();
         println!(
@@ -90,7 +91,11 @@ fn main() {
             got.delta_e,
             got.delta_e_p90,
             got.ssim,
-            regions.join("; ")
+            probes
+                .iter()
+                .map(|(name, a, b)| format!("{name} {a:?} → {b:?}"))
+                .collect::<Vec<_>>()
+                .join("; ")
         );
         let heat = metrics::heatmap(&reference, &ours);
         let mut row = vec![reference.clone()];
@@ -117,7 +122,11 @@ fn main() {
         )
         .expect("write");
         let mut entry = got.to_json();
-        entry["regions"] = json!(regions);
+        entry["probes"] = probes
+            .iter()
+            .map(|(name, real, ours)| (name.to_string(), json!({ "real": real, "ours": ours })))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
         report.insert(scene.name.to_owned(), entry);
         if write_goldens {
             let mut golden = got.to_json();

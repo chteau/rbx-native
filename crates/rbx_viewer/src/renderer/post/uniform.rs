@@ -73,7 +73,11 @@ impl Post {
                 [grade.tint.x, grade.tint.y, grade.tint.z, 0.0]
             }),
             misc: [
-                f32::from(u8::from(self.effects.tonemap == Tonemap::Retro)),
+                match self.effects.tonemap {
+                    Tonemap::Default => 0.0,
+                    Tonemap::Retro => 1.0,
+                    Tonemap::Filmic => 2.0,
+                },
                 f32::from(u8::from(self.effects.blur.is_some())),
                 // The one number the depth reconstruction needs: reversed-Z with
                 // an infinite far plane puts a pixel `d` studs out at depth

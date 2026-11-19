@@ -39,13 +39,27 @@ const DEFAULT_ENVIRONMENT_SCALE: f32 = 1.0;
 // shadows under `Technology = ShadowMap`.
 const DEFAULT_SHADOW_SOFTNESS: f32 = 0.2;
 
-/// Radiance of the sun lamp at `Brightness = 1`, before `ColorShift_Top`.
-///
-/// Calibrated against a real Studio render with Brightness 3, OutdoorAmbient
-/// 70/255, sun 46 degrees up at 14:30, EnvironmentDiffuseScale 1. The value
-/// 0.45 matches measured grey face outputs to Studio when tone mapping
-/// differences are accounted for.
+/// The reference a [`Calibration::sun_base`] is a ratio of: at this value
+/// the lamps are exactly the measured ones below.
 const SUN_BASE: f32 = 0.45;
+
+/// Radiance of the sun lamp at `Brightness = 1`, before `ColorShift_Top`, and
+/// what the ambient terms are scaled by, for each of Roblox's two looks.
+///
+/// Both are fitted to the real client (the `tone_*` fidelity scenes: a grey
+/// ramp from 0 to 255 under an overhead sun at Brightness 1, 2, 4 and 8,
+/// under white and half-grey ambient alone, and the same in a place that
+/// leaves `Technology` at its default). `ShadowMap` and `Future` run the
+/// light through a filmic curve (`renderer/post.wgsl`'s `filmic`, fitted in
+/// the same pass to within 3 sRGB steps over all six ramps), with the sun at
+/// 0.387 a unit of Brightness and ambient at three quarters. `Voxel` and
+/// `Compatibility` show no curve at all, a plain clamp, with the sun at
+/// 0.528 and ambient at face value.
+const FILMIC_SUN: f32 = 0.387;
+const FILMIC_AMBIENT: f32 = 0.757;
+const VOXEL_SUN: f32 = 0.528;
+/// `Enum.Technology.ShadowMap`, the first value lit the filmic way.
+const TECHNOLOGY_SHADOW_MAP: i32 = 3;
 
 /// The renderer's three empirically tuned constants, as values a user can
 /// nudge for a place lit unlike the captures they were tuned against.
@@ -186,6 +200,8 @@ struct Defaults {
     fog_color: Vec3,
     fog_start: f32,
     fog_end: f32,
+    /// `Technology` is `ShadowMap` or `Future` (see [`FILMIC_SUN`]).
+    filmic: bool,
 }
 
 impl Default for Defaults {
@@ -205,14 +221,50 @@ impl Default for Defaults {
             fog_color: Vec3::splat(srgb_to_linear(DEFAULT_FOG_GREY)),
             fog_start: 0.0,
             fog_end: DEFAULT_FOG_END,
+            filmic: true,
+        }
+    }
+}
+
+impl Defaults {
+    /// What a `Lighting` that leaves a property out has, as Roblox loads it:
+    /// the class default (Ambient and OutdoorAmbient 127 grey, Brightness
+    /// about 2, no shadows, no environment light, latitude 41.7, 14:00),
+    /// measured against the real client in the `default_lighting` fidelity
+    /// scene. Studio's template values stand in for any the database lacks.
+    fn class(database: &ReflectionDatabase) -> Self {
+        let studio = Defaults::default();
+        let get = |key| database.stored_default(LIGHTING_CLASS, key);
+        Defaults {
+            ambient: color(get("OutdoorAmbient")).unwrap_or(studio.ambient),
+            brightness: number(get("Brightness")).unwrap_or(studio.brightness),
+            shift_top: color(get("ColorShift_Top")).unwrap_or(studio.shift_top),
+            shift_bottom: color(get("ColorShift_Bottom")).unwrap_or(studio.shift_bottom),
+            clock: get("TimeOfDay")
+                .and_then(text)
+                .and_then(parse_clock)
+                .unwrap_or(studio.clock),
+            latitude: number(get("GeographicLatitude")).unwrap_or(studio.latitude),
+            exposure: number(get("ExposureCompensation")).unwrap_or(studio.exposure),
+            environment_diffuse: number(get("EnvironmentDiffuseScale"))
+                .unwrap_or(studio.environment_diffuse),
+            environment_specular: number(get("EnvironmentSpecularScale"))
+                .unwrap_or(studio.environment_specular),
+            global_shadows: boolean(get("GlobalShadows")).unwrap_or(studio.global_shadows),
+            shadow_softness: number(get("ShadowSoftness")).unwrap_or(studio.shadow_softness),
+            fog_color: color(get("FogColor")).unwrap_or(studio.fog_color),
+            fog_start: number(get("FogStart")).unwrap_or(studio.fog_start),
+            fog_end: number(get("FogEnd")).unwrap_or(studio.fog_end),
+            filmic: technology(get("Technology")).unwrap_or(studio.filmic),
         }
     }
 }
 
 impl Lighting {
-    /// Reads the `Lighting` service, falling back to Studio's own defaults for
-    /// anything the file leaves out, including the service itself, which a bare
-    /// `.rbxm` model never has.
+    /// Reads the `Lighting` service, falling back to the class defaults for
+    /// anything the file leaves out (see [`Defaults::class`]). With no
+    /// `Lighting` at all, which a bare `.rbxm` model never has, it lights the
+    /// way Studio's Baseplate template does.
     ///
     /// `clock_override` is `--clock-time`, which beats both `ClockTime` and
     /// `TimeOfDay` so a screenshot can pick its own hour.
@@ -236,24 +288,28 @@ impl Lighting {
         };
 
         let properties = instance.properties();
-        let fallback = Defaults::default();
+        let fallback = Defaults::class(database);
         let read = Defaults {
             // "The effective OutdoorAmbient value is clamped to be greater
             // than or equal to Ambient in all channels", Lighting.OutdoorAmbient
             // docs. A place that lifts Ambient above it lifts the outdoors too.
-            ambient: match (
-                color(properties.get("OutdoorAmbient")),
-                color(properties.get("Ambient")),
-            ) {
-                (Some(outdoor), Some(indoor)) => outdoor.max(indoor),
-                (outdoor, indoor) => outdoor.or(indoor).unwrap_or(fallback.ambient),
-            },
+            ambient: ["OutdoorAmbient", "Ambient"]
+                .map(|key| {
+                    color(properties.get(key))
+                        .or_else(|| color(database.stored_default(LIGHTING_CLASS, key)))
+                        .unwrap_or(fallback.ambient)
+                })
+                .into_iter()
+                .fold(Vec3::ZERO, Vec3::max),
             brightness: number(properties.get("Brightness")).unwrap_or(fallback.brightness),
-            shift_top: color(properties.get("ColorShift_Top")).unwrap_or(Vec3::ZERO),
-            shift_bottom: color(properties.get("ColorShift_Bottom")).unwrap_or(Vec3::ZERO),
-            clock: clock_override.unwrap_or_else(|| clock_of(properties)),
-            latitude: number(properties.get("GeographicLatitude")).unwrap_or(0.0),
-            exposure: number(properties.get("ExposureCompensation")).unwrap_or(0.0),
+            shift_top: color(properties.get("ColorShift_Top")).unwrap_or(fallback.shift_top),
+            shift_bottom: color(properties.get("ColorShift_Bottom"))
+                .unwrap_or(fallback.shift_bottom),
+            clock: clock_override
+                .or_else(|| clock_of(properties))
+                .unwrap_or(fallback.clock),
+            latitude: number(properties.get("GeographicLatitude")).unwrap_or(fallback.latitude),
+            exposure: number(properties.get("ExposureCompensation")).unwrap_or(fallback.exposure),
             environment_diffuse: number(properties.get("EnvironmentDiffuseScale"))
                 .unwrap_or(fallback.environment_diffuse),
             environment_specular: number(properties.get("EnvironmentSpecularScale"))
@@ -265,6 +321,7 @@ impl Lighting {
             fog_color: color(properties.get("FogColor")).unwrap_or(fallback.fog_color),
             fog_start: number(properties.get("FogStart")).unwrap_or(fallback.fog_start),
             fog_end: number(properties.get("FogEnd")).unwrap_or(fallback.fog_end),
+            filmic: technology(properties.get("Technology")).unwrap_or(fallback.filmic),
         };
 
         Lighting::assemble(
@@ -290,6 +347,7 @@ impl Lighting {
     pub(crate) fn neutral() -> Self {
         let defaults = Defaults {
             global_shadows: true,
+            filmic: false,
             ..Defaults::default()
         };
         let mut lighting = Lighting::assemble(&defaults, None, Effects::default(), None);
@@ -347,24 +405,34 @@ impl Lighting {
     fn assemble(
         read: &Defaults,
         atmosphere: Option<Fog>,
-        effects: Effects,
+        mut effects: Effects,
         clouds: Option<Clouds>,
     ) -> Self {
+        let (sun_base, ambient_scale) = if read.filmic {
+            if effects.tonemap == Tonemap::Default {
+                effects.tonemap = Tonemap::Filmic;
+            }
+            (FILMIC_SUN, FILMIC_AMBIENT)
+        } else {
+            (VOXEL_SUN, 1.0)
+        };
         let sun_direction = sun_direction(read.clock, read.latitude);
         // 1 in full daylight, 0 once the sun is a hair below the horizon.
         let day = ((sun_direction.y + TWILIGHT_BAND) / (2.0 * TWILIGHT_BAND)).clamp(0.0, 1.0);
-        let lamp = SUN_BASE * read.brightness.max(0.0);
+        let lamp = sun_base * read.brightness.max(0.0);
 
         Lighting {
             sun_direction,
-            sun_color: Vec3::splat(lamp * day) * (Vec3::ONE + read.shift_top),
+            sun_color: Vec3::splat(lamp * day)
+                * sun::transmittance(sun_direction.y)
+                * (Vec3::ONE + read.shift_top),
             // The fill lamp sits at -L, which is exactly where the moon is once
             // the sun has set: one lamp does both jobs, and nothing has to swap
             // direction mid-twilight.
             fill_color: Vec3::splat(lamp)
                 * (FILL_FRACTION * FILL_TINT * day + MOON_FRACTION * MOON_TINT * (1.0 - day))
                 * (Vec3::ONE + read.shift_bottom),
-            ambient: read.ambient,
+            ambient: read.ambient * ambient_scale,
             exposure: read.exposure.exp2(),
             environment_diffuse: read.environment_diffuse.max(0.0),
             environment_specular: read.environment_specular.max(0.0),
@@ -375,7 +443,9 @@ impl Lighting {
                 start: read.fog_start,
                 end: read.fog_end.max(read.fog_start + 1.0),
             }),
-            sky_tint: sky::tint(sun_direction.y),
+            // The sky itself, its bounce and its reflection are ambient light
+            // too: scaled with it, they land where the real sky does.
+            sky_tint: sky::tint(sun_direction.y) * ambient_scale,
             star_fade: sky::star_fade(sun_direction.y),
             effects,
             clouds,
@@ -385,15 +455,9 @@ impl Lighting {
 
 /// `ClockTime` when the file carries it, otherwise the `TimeOfDay` string
 /// Studio actually serializes ("14:30:00").
-fn clock_of(properties: &std::collections::BTreeMap<String, Variant>) -> f32 {
-    if let Some(hours) = number(properties.get("ClockTime")) {
-        return hours;
-    }
-    properties
-        .get("TimeOfDay")
-        .and_then(text)
-        .and_then(parse_clock)
-        .unwrap_or(DEFAULT_CLOCK_HOURS)
+fn clock_of(properties: &std::collections::BTreeMap<String, Variant>) -> Option<f32> {
+    number(properties.get("ClockTime"))
+        .or_else(|| properties.get("TimeOfDay").and_then(text).and_then(parse_clock))
 }
 
 /// "HH", "HH:MM" or "HH:MM:SS" as fractional hours. Anything else is refused
@@ -467,6 +531,14 @@ pub(super) fn number(value: Option<&Variant>) -> Option<f32> {
         _ => return None,
     };
     value.is_finite().then_some(value)
+}
+
+/// Whether a `Technology` value is lit the filmic way (see [`FILMIC_SUN`]).
+fn technology(value: Option<&Variant>) -> Option<bool> {
+    match value? {
+        &Variant::Enum(value) => Some(value as i32 >= TECHNOLOGY_SHADOW_MAP),
+        _ => None,
+    }
 }
 
 fn text(value: &Variant) -> Option<&str> {

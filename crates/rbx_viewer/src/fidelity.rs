@@ -45,13 +45,42 @@ pub struct Scene {
     /// `Lighting` properties the scene sets. Every other scriptable one is
     /// left at its class default (the real client resets them per scene).
     pub lighting: Vec<(&'static str, Variant)>,
-    /// Named rectangles (`x0, y0, x1, y1`, as fractions of the frame) whose
-    /// mean colours the report lists side by side.
-    pub regions: &'static [(&'static str, [f32; 4])],
+    /// Named points of the world (a face's centre, a patch of floor, a far
+    /// point for the sky) whose colours the report lists side by side.
+    pub probes: Vec<(&'static str, [f32; 3])>,
     build: fn(&mut Builder),
 }
 
 impl Scene {
+    /// Where `point` lands in a [`CAPTURE`]-shaped frame, as fractions of
+    /// its width and height from the top left; `None` behind the eye.
+    pub fn project(&self, point: [f32; 3]) -> Option<[f32; 2]> {
+        let eye = glam::Vec3::from(self.eye);
+        let forward = (glam::Vec3::from(self.look_at) - eye).normalize();
+        let right = forward.cross(glam::Vec3::Y).normalize();
+        let up = right.cross(forward);
+        let d = glam::Vec3::from(point) - eye;
+        let depth = d.dot(forward);
+        if depth <= 0.0 {
+            return None;
+        }
+        let half = (self.fov.to_radians() / 2.0).tan();
+        let aspect = CAPTURE.0 as f32 / CAPTURE.1 as f32;
+        let x = d.dot(right) / (depth * half * aspect);
+        let y = d.dot(up) / (depth * half);
+        Some([0.5 + x / 2.0, 0.5 - y / 2.0])
+    }
+
+    /// A rectangle three [`COMPARE`] pixels wide around where `point` lands.
+    pub fn probe_rect(&self, point: [f32; 3]) -> Option<[f32; 4]> {
+        let [x, y] = self.project(point)?;
+        if !(0.0..1.0).contains(&x) || !(TOP_BAR..1.0).contains(&y) {
+            return None;
+        }
+        let (dx, dy) = (1.5 / COMPARE.0 as f32, 1.5 / COMPARE.1 as f32);
+        Some([x - dx, y - dy, x + dx, y + dy])
+    }
+
     /// The place this renderer draws: `Workspace` with the scene's world
     /// and `Lighting` with only what the scene sets.
     pub fn place(&self) -> WeakDom {
