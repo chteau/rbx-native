@@ -20,6 +20,7 @@ const systems = {
     ],
     shell: "Terminal",
     line: "curl -fsSL https://rbxnative.chteau.bzh/install.sh | sh",
+    experimental: true,
   },
   windows: {
     name: "Windows",
@@ -29,6 +30,7 @@ const systems = {
     ],
     shell: "PowerShell",
     line: "irm https://rbxnative.chteau.bzh/install.ps1 | iex",
+    experimental: true,
   },
 };
 const found = {};
@@ -96,6 +98,9 @@ function open(os) {
   const release = found[os];
   picker.querySelector("h2").textContent = "RbxNative for " + system.name;
   picker.querySelector(".get-tag").textContent = release ? release.tag : "";
+  // Linux is the main target, the other two builds get a warning up top.
+  picker.querySelector(".get-warn").hidden = !system.experimental;
+  picker.querySelector(".get-warn-os").textContent = system.name;
   picker.querySelector(".get-files").innerHTML = release
     ? release.files.map(([asset, label, hint]) =>
         `<a class="get-file" href="${escape(asset.browser_download_url)}"><span><strong>${label}</strong><small>${escape(hint)}</small></span><span class="get-size">${sizeOf(asset.size)}</span></a>`).join("")

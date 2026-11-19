@@ -68,6 +68,7 @@ irm https://rbxnative.chteau.bzh/install.ps1 | iex</code></pre>
 <h2 id="systems">What's different on each system</h2>
 <p>Same editor everywhere, but each system has a few things to know.</p>
 <h3 id="windows">Windows</h3>
+<p class="experimental"><strong>Experimental.</strong> Linux is the main target. The Windows build is still experimental, so expect crashes and missing bits, and please <a href="https://github.com/chteau/rbx-native/issues">report what breaks</a>.</p>
 <ul>
 <li>Windows 10 or 11, x64. No ARM build yet.</li>
 <li>SmartScreen warns on the first launch of the setup, the installer isn't signed with a paid certificate. More info, then Run anyway.</li>
@@ -75,6 +76,7 @@ irm https://rbxnative.chteau.bzh/install.ps1 | iex</code></pre>
 <li>The network simulator uses the WinDivert driver, so Windows asks for admin the first time you shape a Play. It lets go of the driver when Play stops.</li>
 </ul>
 <h3 id="macos">macOS</h3>
+<p class="experimental"><strong>Experimental.</strong> Linux is the main target. The macOS build is still experimental, so expect crashes and missing bits, and please <a href="https://github.com/chteau/rbx-native/issues">report what breaks</a>.</p>
 <ul>
 <li>Apple Silicon only (M1 and newer).</li>
 <li>The app is signed but not notarized, so the first open from the disk image gets "can't check the app". Right-click RbxNative in Applications, Open, then Open again. The terminal install skips this.</li>

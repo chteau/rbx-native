@@ -49,3 +49,6 @@ article table { display: block; overflow-x: auto; }
 .shots { margin: 14px 0 18px; }
 .shots summary { cursor: pointer; color: var(--white); font-weight: 600; }
 .shots summary::marker { color: var(--dim); }
+
+.experimental { padding: 12px 14px; border-radius: 8px; background: #f5c5181a; box-shadow: inset 0 0 0 1px #f5c51866; color: #f6dc84; }
+.experimental strong, .experimental a { color: #ffd84d; }

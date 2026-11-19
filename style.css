@@ -203,6 +203,9 @@ footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gutter) 36px; }
 .get-close { margin-left: auto; background: none; border: 0; color: var(--dim); font-size: 26px; line-height: 1; cursor: pointer; padding: 0 4px; }
 .get-close:hover { color: var(--white); }
 .get-close:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; border-radius: 6px; }
+.get-warn { margin: 12px 0 0; padding: 12px 14px; border-radius: 8px; background: #f5c5181a; box-shadow: inset 0 0 0 1px #f5c51866; color: #f6dc84; font-size: 14px; line-height: 21px; }
+.get-warn strong { color: #ffd84d; }
+.get-warn a { color: #ffd84d; }
 .get-box h3 { margin: 20px 0 10px; color: var(--white); font-size: 15px; font-weight: 600; }
 .get-files { display: grid; gap: 8px; }
 .get-file { display: flex; align-items: center; gap: 16px; padding: 12px 14px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line); color: inherit; text-decoration: none; transition: box-shadow .15s, background .15s; }
