@@ -198,15 +198,18 @@ impl Shell {
         let title = self.title.clone();
         // Collaborators' faces sit just left of the window buttons, outside
         // the block the title is centred against, so the title stays put.
-        let strip = self.presence_strip(cx).map(|strip| {
-            div()
+        let presence = self.presence_strip(cx);
+        let offline = offline_indicator(cx);
+        let strip = (presence.is_some() || offline.is_some()).then(|| {
+            h_flex()
                 .absolute()
                 .top_0()
                 .bottom_0()
                 .right(WINDOW_ACTIONS_WIDTH + px(8.))
-                .flex()
+                .gap(px(8.))
                 .items_center()
-                .child(strip)
+                .children(offline)
+                .children(presence)
         });
 
         topbar_frame(title).child(
@@ -247,7 +250,40 @@ impl Shell {
                 )),
         )
     }
+}
 
+/// The "Offline" pill in the title bar while nothing reaches Roblox: why, on
+/// hover, and the switch, on click.
+fn offline_indicator(cx: &mut Context<Shell>) -> Option<AnyElement> {
+    let status = rbx_net::status();
+    if !status.offline() {
+        return None;
+    }
+    let reason = SharedString::from(status.reason());
+    Some(
+        h_flex()
+            .id("offline-indicator")
+            .flex_none()
+            .h(px(22.))
+            .px(px(8.))
+            .gap(px(5.))
+            .items_center()
+            .rounded_full()
+            .border_1()
+            .border_color(tokens::border2())
+            .text_size(tokens::text_xs())
+            .text_color(tokens::text2())
+            .cursor_pointer()
+            .hover(|this| this.bg(tokens::hover()))
+            .tooltip(move |window, cx| crate::shell::tooltip::text(reason.clone(), window, cx))
+            .on_click(cx.listener(|shell, _, _, cx| shell.open_settings_on("account", cx)))
+            .child(crate::launcher::ui::icon("wifi-off", 12.))
+            .child("Offline")
+            .into_any_element(),
+    )
+}
+
+impl Shell {
     /// **Row A**: which document the centre column shows.
     ///
     /// One Tab stop for the whole strip, arrows within it, Enter/Space to

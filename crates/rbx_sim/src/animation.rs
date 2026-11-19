@@ -454,12 +454,25 @@ fn model_of(dom: &WeakDom, animator: Ref) -> Option<Ref> {
 }
 
 fn motors(dom: &WeakDom, model: Ref) -> Vec<Ref> {
+    of_classes(dom, model, &["Motor6D"])
+}
+
+/// The Motor6Ds and the C0/C1 welds under `model`.
+fn joints(dom: &WeakDom, model: Ref) -> Vec<Ref> {
+    of_classes(
+        dom,
+        model,
+        &["Motor6D", "Weld", "ManualWeld", "Snap", "Glue", "Motor"],
+    )
+}
+
+fn of_classes(dom: &WeakDom, model: Ref, classes: &[&str]) -> Vec<Ref> {
     let mut out = Vec::new();
     let mut stack = vec![model];
     while let Some(at) = stack.pop() {
         let Some(i) = dom.get(at) else { continue };
         stack.extend(i.children().iter().copied());
-        if i.class() == "Motor6D" {
+        if classes.contains(&i.class()) {
             out.push(at);
         }
     }
@@ -502,54 +515,70 @@ fn pose_rig(dom: &mut WeakDom, animator: Ref, rig: &Animator) {
     }
 }
 
-/// Lays the parts of every animated model out through their Motor6Ds,
-/// `Part1 = Part0 * C0 * Transform * C1⁻¹`, from the part no motor moves
-/// down: where the renderer and scripts see the limbs. Not logged.
+/// Lays the parts of every animated model out through their joints, from
+/// the parts no Motor6D moves down: a Motor6D puts
+/// `Part1 = Part0 * C0 * Transform * C1⁻¹`, and a weld (an accessory's
+/// `AccessoryWeld`, its handle as `Part0`) holds its two parts the same way
+/// with no `Transform`, whichever side is reached first. Where the renderer
+/// and scripts see the limbs and what they wear. Not logged.
 pub fn lay_out(dom: &mut WeakDom, animations: &Animations) {
     for animator in animations.rigs.keys() {
         let Some(model) = model_of(dom, *animator) else {
             continue;
         };
-        let joints: Vec<(Ref, Ref, CFrameData)> = motors(dom, model)
+        let joints: Vec<(Ref, Ref, CFrameData, bool)> = joints(dom, model)
             .into_iter()
-            .filter_map(|m| {
-                let p0 = reference(dom, m, "Part0")?;
-                let p1 = reference(dom, m, "Part1")?;
-                let get = |key: &str| match dom.get(m)?.properties().get(key) {
+            .filter_map(|j| {
+                let p0 = reference(dom, j, "Part0")?;
+                let p1 = reference(dom, j, "Part1")?;
+                let instance = dom.get(j)?;
+                let get = |key: &str| match instance.properties().get(key) {
                     Some(Variant::CFrame(c)) => Some(*c),
                     _ => None,
                 };
+                let motor = instance.class() == "Motor6D";
                 let c0 = get("C0").unwrap_or(IDENTITY);
                 let c1 = get("C1").unwrap_or(IDENTITY);
-                let t = get("Transform").unwrap_or(IDENTITY);
-                Some((p0, p1, mul(&mul(&c0, &t), &inverse(&c1))))
+                let t = if motor {
+                    get("Transform").unwrap_or(IDENTITY)
+                } else {
+                    IDENTITY
+                };
+                Some((p0, p1, mul(&mul(&c0, &t), &inverse(&c1)), motor))
             })
             .collect();
-        let moved: HashSet<Ref> = joints.iter().map(|j| j.1).collect();
+        let moved: HashSet<Ref> = joints.iter().filter(|j| j.3).map(|j| j.1).collect();
         let mut frontier: Vec<Ref> = joints
             .iter()
+            .filter(|j| j.3 && !moved.contains(&j.0))
             .map(|j| j.0)
-            .filter(|p| !moved.contains(p))
             .collect();
         frontier.dedup();
         let mut done: HashSet<Ref> = frontier.iter().copied().collect();
-        while let Some(part0) = frontier.pop() {
+        while let Some(at) = frontier.pop() {
             let Some(Variant::CFrame(base)) = dom
-                .get(part0)
+                .get(at)
                 .and_then(|i| i.properties().get("CFrame"))
                 .cloned()
             else {
                 continue;
             };
-            for (p0, p1, offset) in &joints {
-                if *p0 != part0 || !done.insert(*p1) {
+            for (p0, p1, offset, _) in &joints {
+                let (next, frame) = if *p0 == at {
+                    (*p1, mul(&base, offset))
+                } else if *p1 == at {
+                    (*p0, mul(&base, &inverse(offset)))
+                } else {
+                    continue;
+                };
+                if !done.insert(next) {
                     continue;
                 }
-                if let Some(i) = dom.get_mut(*p1) {
+                if let Some(i) = dom.get_mut(next) {
                     i.properties_mut()
-                        .insert("CFrame".into(), Variant::CFrame(mul(&base, offset)));
+                        .insert("CFrame".into(), Variant::CFrame(frame));
                 }
-                frontier.push(*p1);
+                frontier.push(next);
             }
         }
     }

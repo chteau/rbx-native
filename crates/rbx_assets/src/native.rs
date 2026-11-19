@@ -229,7 +229,8 @@ fn fetch_studio_version() -> Result<String, AssetError> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn http_get_text(url: &str) -> Result<String, AssetError> {
-    let mut response = ureq::get(url)
+    let mut response = rbx_net::agent()
+        .get(url)
         .call()
         .map_err(|e| AssetError::Network(e.to_string()))?;
     response
@@ -240,7 +241,8 @@ fn http_get_text(url: &str) -> Result<String, AssetError> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn http_get_bytes(url: &str) -> Result<Vec<u8>, AssetError> {
-    let mut response = ureq::get(url)
+    let mut response = rbx_net::agent()
+        .get(url)
         .call()
         .map_err(|e| AssetError::Network(e.to_string()))?;
     check_content_length(url, response.headers())?;

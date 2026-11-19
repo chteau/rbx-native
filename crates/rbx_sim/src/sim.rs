@@ -8,6 +8,7 @@ use rbx_lua::server::{Event, ServerVm};
 use rbx_lua::Output;
 use rbx_reflection::ReflectionDatabase;
 
+use crate::input::{Input, Inputs, MouseBehavior};
 use crate::physics::{Bridge, Drive, Shared, Touch, World, PHYSICS_HZ};
 use crate::players::{Avatars, Due};
 use crate::scripts;
@@ -51,6 +52,8 @@ pub struct Simulation {
     output: Output,
     /// Changes kept for [`Simulation::take_view_changes`], once watched.
     view_changes: Option<Vec<Change>>,
+    /// Play (local): the local client's input, `None` for a server-only run.
+    inputs: Option<Inputs>,
 }
 
 impl Simulation {
@@ -74,7 +77,89 @@ impl Simulation {
             dirty: true,
             output: Output::default(),
             view_changes: None,
+            inputs: None,
         })
+    }
+
+    /// Play (local): the run is the local client as well. It gets its own
+    /// camera, render steps run each frame, and [`Simulation::input`]
+    /// reaches `UserInputService` and `ContextActionService`. Call before
+    /// [`Simulation::start`].
+    pub fn set_client(&mut self) {
+        self.vm.set_client(true);
+        self.shared.borrow_mut().players.client = true;
+        {
+            let mut dom = self.dom.borrow_mut();
+            crate::input::client_camera(&mut dom, self.db);
+            let uis = crate::input::service(&mut dom, "UserInputService");
+            // The docs' defaults, which the reflection database lacks.
+            for (key, value) in [
+                ("MouseDeltaSensitivity", Variant::Float32(1.0)),
+                ("MouseIconEnabled", Variant::Bool(true)),
+            ] {
+                if dom
+                    .get(uis)
+                    .is_some_and(|i| !i.properties().contains_key(key))
+                {
+                    let _ = dom.set_property(uis, key, value);
+                }
+            }
+            crate::input::service(&mut dom, "ContextActionService");
+        }
+        self.inputs = Some(Inputs::default());
+        let edits = self.dom.borrow_mut().take_changes();
+        self.apply(edits);
+    }
+
+    /// Queues what the player did, for the next frame.
+    pub fn input(&mut self, input: Input) {
+        if let Some(inputs) = &mut self.inputs {
+            inputs.pending.push(input);
+        }
+    }
+
+    /// What `UserInputService.MouseBehavior` asks of the mouse.
+    pub fn mouse_behavior(&self) -> MouseBehavior {
+        crate::input::mouse_behavior(&self.dom.borrow())
+    }
+
+    /// Where the client's camera is (`Workspace.CurrentCamera`'s `CFrame`)
+    /// and its field of view in degrees.
+    pub fn camera(&self) -> Option<(rbx_dom::CFrameData, f32)> {
+        crate::input::camera(&self.dom.borrow())
+    }
+
+    /// The client's part of a frame, after the server's: the frame's input
+    /// to the game, then the render step (where the camera scripts move
+    /// the camera). Roblox runs it ahead of the next frame's simulation;
+    /// the order is the same.
+    fn client_frame(&mut self, dt: f64) {
+        let Some(mut inputs) = self.inputs.take() else {
+            return;
+        };
+        let changes = self.vm.input_frame();
+        self.apply(changes);
+        let uis = crate::input::service(&mut self.dom.borrow_mut(), "UserInputService");
+        for input in std::mem::take(&mut inputs.pending) {
+            let written = inputs.write(&mut self.dom.borrow_mut(), self.db, &input);
+            let Some((object, signal)) = written else {
+                continue;
+            };
+            let changes = self.vm.input(object, uis, signal);
+            self.apply(changes);
+            if matches!(&input, Input::Key { code, down: true } if code == "Space") {
+                let changes = self.vm.fire(Event::Signal {
+                    owner: uis,
+                    name: "JumpRequest".into(),
+                    args: Vec::new(),
+                });
+                self.apply(changes);
+            }
+        }
+        self.inputs = Some(inputs);
+        let changes = self.vm.render_step(dt);
+        self.apply(changes);
+        self.collect_output();
     }
 
     /// Puts the local player in the game as `name`: `PlayerAdded` and
@@ -113,45 +198,6 @@ impl Simulation {
             local.player,
             crate::humanoid::reference(&dom, local.player, "Character"),
         ))
-    }
-
-    /// Steers the local character: `Humanoid:Move` with a world direction
-    /// (the controls), and `Jump`.
-    pub fn control(&mut self, direction: [f64; 3], jump: bool) {
-        let Some((_, Some(character))) = self.local_player() else {
-            return;
-        };
-        let humanoid = {
-            let dom = self.dom.borrow();
-            dom.get(character).and_then(|m| {
-                m.children()
-                    .iter()
-                    .copied()
-                    .find(|c| dom.get(*c).is_some_and(|i| i.class() == "Humanoid"))
-            })
-        };
-        let Some(humanoid) = humanoid else { return };
-        let v = [direction[0] as f32, 0.0, direction[2] as f32];
-        let reply = {
-            let mut dom = self.dom.borrow_mut();
-            let mut shared = self.shared.borrow_mut();
-            let reply = shared.humanoids.call(
-                &mut dom,
-                self.db,
-                humanoid,
-                "Move",
-                &[rbx_lua::server::Arg::Vector3(v)],
-            );
-            if jump {
-                crate::humanoid::set(&mut dom, self.db, humanoid, "Jump", Variant::Bool(true));
-            }
-            reply
-        };
-        if let Ok(reply) = reply {
-            for (owner, name, args) in reply.fire {
-                self.fire(Event::Signal { owner, name, args });
-            }
-        }
     }
 
     /// Starts every script the server would run, in tree order, and runs
@@ -248,6 +294,7 @@ impl Simulation {
         self.fire_touches(touches);
         self.resume();
         self.collect_output();
+        self.client_frame(dt);
     }
 
     fn resume(&mut self) {

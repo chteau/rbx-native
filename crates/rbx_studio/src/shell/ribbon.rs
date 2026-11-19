@@ -984,6 +984,17 @@ impl Shell {
                 "Play",
                 "Local Run is running",
             )
+        } else if idle && rbx_net::is_offline() {
+            unavailable_tile(
+                "ribbon-play",
+                IconName::Play,
+                "Play",
+                if local_beta {
+                    "offline: the real client needs Roblox; use Play (local)"
+                } else {
+                    "offline: the real client needs Roblox"
+                },
+            )
         } else if idle {
             tile(nav, "ribbon-play", IconName::Play, "Play", cx)
                 .on_click(cx.listener(|shell, _, window, cx| shell.play_start(window, cx)))

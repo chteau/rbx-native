@@ -57,12 +57,12 @@ pub(super) fn run(
     // Argon's server puts its actual error ("Already subscribed", a
     // version mismatch, ...) in that body, so status-as-error is switched
     // off and `call_body` below reads it back out itself.
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .http_status_as_error(false)
         .timeout_global(Some(CALL_TIMEOUT))
         .build()
         .into();
-    let read_agent: ureq::Agent = ureq::Agent::config_builder()
+    let read_agent: ureq::Agent = rbx_net::config()
         .http_status_as_error(false)
         .timeout_global(Some(READ_TIMEOUT))
         .build()

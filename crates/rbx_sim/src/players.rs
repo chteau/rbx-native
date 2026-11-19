@@ -50,6 +50,9 @@ pub struct Players {
     respawn_at: Option<u64>,
     joined: bool,
     pub frame: u64,
+    /// Play (local): the player plays here, with our default controls and
+    /// camera in its `PlayerScripts`.
+    pub client: bool,
 }
 
 const PLAYERS_METHODS: &[&str] = &[
@@ -57,6 +60,7 @@ const PLAYERS_METHODS: &[&str] = &[
     "GetPlayerFromCharacter",
     "GetPlayerByUserId",
     "GetHumanoidDescriptionFromUserId",
+    "CreateHumanoidModelFromDescription",
 ];
 const HUMANOID_METHODS: &[&str] = &["ApplyDescription", "GetAppliedDescription"];
 /// What `ApplyDescription` swaps on a character: what it wears and its
@@ -184,9 +188,9 @@ fn graft_with(
 /// `Humanoid:ApplyDescription`: the app's avatars dress a fresh character
 /// as `description` says, and its accessories, clothing and body colours
 /// replace the character's own, each accessory put where it sat on the
-/// fresh one relative to the same part. A copy of the description goes
-/// under the humanoid for `GetAppliedDescription`. Body-part meshes and
-/// scales are left as they are.
+/// fresh one relative to the same part. The body takes the fresh one's
+/// shape too (see [`reshape`]). A copy of the description goes under the
+/// humanoid for `GetAppliedDescription`.
 fn apply_description(
     players: &Players,
     dom: &mut WeakDom,
@@ -215,6 +219,7 @@ fn apply_description(
             .filter(|c| dom.get(*c).is_some_and(|i| WORN.contains(&i.class())))
             .collect()
     };
+    reshape(dom, &fresh, fresh_model, model);
     for old in worn(dom, model) {
         dom.remove(old);
     }
@@ -244,6 +249,90 @@ fn apply_description(
     Ok(())
 }
 
+/// What of the humanoid a description decides: its scales and the hip
+/// height they come to. Health, speeds and the rest stay the game's.
+const HUMANOID_SHAPE: &[&str] = &["HipHeight", "InternalBodyScale", "InternalHeadScale"];
+
+/// The body of `fresh_model` (a character built from the description)
+/// given to `model`: each body part takes its namesake's mesh, size and
+/// attachments, each joint its offsets, and the humanoid its scales, so
+/// the body-part packages and BodyScale / BodyType / proportions /
+/// HeadScale all land. Parts stay where they are; the joints lay the body
+/// out again on the next frame. A part of another class (an R6 limb asked
+/// to become an R15 one) is left alone: that needs a new character.
+fn reshape(dom: &mut WeakDom, fresh: &WeakDom, fresh_model: Ref, model: Ref) {
+    let children = |dom: &WeakDom, of: Ref| {
+        dom.get(of)
+            .map(|i| i.children().to_vec())
+            .unwrap_or_default()
+    };
+    for from in children(fresh, fresh_model) {
+        let Some(source) = fresh.get(from) else {
+            continue;
+        };
+        let class = source.class();
+        let Some(to) = children(dom, model).into_iter().find(|c| {
+            dom.get(*c)
+                .is_some_and(|i| i.name() == source.name() && i.class() == class)
+        }) else {
+            continue;
+        };
+        if class == "Humanoid" {
+            for key in HUMANOID_SHAPE {
+                if let Some(value) = source.properties().get(*key) {
+                    let _ = dom.set_property(to, key, value.clone());
+                }
+            }
+            match_children(dom, fresh, from, to, &|i| i.class() == "NumberValue");
+        } else if is_part_class(class) {
+            copy_values(dom, source, to, &["CFrame"]);
+            match_children(dom, fresh, from, to, &|_| true);
+        }
+    }
+}
+
+fn is_part_class(class: &str) -> bool {
+    matches!(class, "Part" | "MeshPart")
+}
+
+/// `from`'s values (no references, nothing in `skip`) written onto `to`.
+fn copy_values(dom: &mut WeakDom, from: &rbx_dom::Instance, to: Ref, skip: &[&str]) {
+    for (key, value) in from.properties() {
+        if !matches!(value, Variant::Ref(_)) && !skip.contains(&key.as_str()) {
+            let _ = dom.set_property(to, key, value.clone());
+        }
+    }
+}
+
+/// Each child of `from` that `pick` accepts copied onto `to`'s child of the
+/// same name and class, all the way down.
+fn match_children(
+    dom: &mut WeakDom,
+    fresh: &WeakDom,
+    from: Ref,
+    to: Ref,
+    pick: &dyn Fn(&rbx_dom::Instance) -> bool,
+) {
+    let Some(source) = fresh.get(from) else {
+        return;
+    };
+    for child in source.children() {
+        let Some(c) = fresh.get(*child).filter(|c| pick(c)) else {
+            continue;
+        };
+        let target = dom.get(to).and_then(|t| {
+            t.children().iter().copied().find(|r| {
+                dom.get(*r)
+                    .is_some_and(|i| i.name() == c.name() && i.class() == c.class())
+            })
+        });
+        if let Some(target) = target {
+            copy_values(dom, c, target, &[]);
+            match_children(dom, fresh, *child, target, pick);
+        }
+    }
+}
+
 /// Moves `copy`'s parts so they sit on `target` as they sat on `on`, its
 /// counterpart on the fresh character.
 fn reseat(dom: &mut WeakDom, fresh: &WeakDom, copy: Ref, on: Ref, target: Ref) {
@@ -264,6 +353,60 @@ fn reseat(dom: &mut WeakDom, fresh: &WeakDom, copy: Ref, on: Ref, target: Ref) {
         if let Some(c) = frame(Some(instance)) {
             let _ = dom.set_property(at, "CFrame", Variant::CFrame(mul(&shift, &c)));
         }
+    }
+}
+
+/// What a joining player takes from `StarterPlayer` (the docs of each
+/// `Player` property: "set from StarterPlayer"), `DevEnableMouseLock` from
+/// `EnableMouseLockOption`. A place that never set one has StarterPlayer's
+/// default, which the reflection database lacks for these: they're the
+/// creator docs' defaults.
+fn copy_player_settings(dom: &mut WeakDom, db: &ReflectionDatabase, from: Ref, player: Ref) {
+    let settings: [(&str, &str, Variant); 9] = [
+        (
+            "CameraMaxZoomDistance",
+            "CameraMaxZoomDistance",
+            Variant::Float32(400.0),
+        ),
+        (
+            "CameraMinZoomDistance",
+            "CameraMinZoomDistance",
+            Variant::Float32(0.5),
+        ),
+        ("CameraMode", "CameraMode", Variant::Enum(0)),
+        ("AutoJumpEnabled", "AutoJumpEnabled", Variant::Bool(true)),
+        (
+            "HealthDisplayDistance",
+            "HealthDisplayDistance",
+            Variant::Float32(100.0),
+        ),
+        (
+            "NameDisplayDistance",
+            "NameDisplayDistance",
+            Variant::Float32(100.0),
+        ),
+        (
+            "DevCameraOcclusionMode",
+            "DevCameraOcclusionMode",
+            Variant::Enum(0),
+        ),
+        (
+            "DevComputerMovementMode",
+            "DevComputerMovementMode",
+            Variant::Enum(0),
+        ),
+        (
+            "EnableMouseLockOption",
+            "DevEnableMouseLock",
+            Variant::Bool(true),
+        ),
+    ];
+    for (source, target, default) in settings {
+        let value = dom
+            .get(from)
+            .and_then(|i| db.stored_or_default(i, source))
+            .map_or(default, |(_, v)| v.clone());
+        let _ = dom.set_property(player, target, value);
     }
 }
 
@@ -300,8 +443,11 @@ impl Players {
         dom.new_instance("Backpack", "Backpack", Some(player));
         dom.new_instance("PlayerGui", "PlayerGui", Some(player));
         let scripts = dom.new_instance("PlayerScripts", "PlayerScripts", Some(player));
-        let starter = service(dom, "StarterPlayer")
-            .and_then(|s| child_of_class(dom, s, "StarterPlayerScripts"));
+        let starter_player = service(dom, "StarterPlayer");
+        if let Some(starter_player) = starter_player {
+            copy_player_settings(dom, db, starter_player, player);
+        }
+        let starter = starter_player.and_then(|s| child_of_class(dom, s, "StarterPlayerScripts"));
         if let Some(starter) = starter {
             for child in dom
                 .get(starter)
@@ -310,6 +456,26 @@ impl Players {
             {
                 copy(dom, child, Some(scripts));
             }
+        }
+        // A client's default controls and camera, unless the place brings
+        // its own PlayerModule.
+        if self.client && child_named(dom, scripts, "PlayerModule").is_none() {
+            let module = dom.new_instance("ModuleScript", "PlayerModule", Some(scripts));
+            set(
+                dom,
+                db,
+                module,
+                "Source",
+                Variant::String(crate::character::PLAYER_MODULE_SOURCE.into()),
+            );
+            let loader = dom.new_instance("LocalScript", "PlayerScriptsLoader", Some(scripts));
+            set(
+                dom,
+                db,
+                loader,
+                "Source",
+                Variant::String(crate::character::PLAYER_LOADER_SOURCE.into()),
+            );
         }
         self.local = Some(Local {
             player,
@@ -693,6 +859,32 @@ pub(crate) fn call(
                 .ok_or("no description")?;
             let copy = graft(dom, &description, root, None);
             Ok(CallReply::value(Arg::Instance(copy)))
+        }
+        // The rig type argument isn't honoured yet: the avatar builder makes
+        // the rig the description's packages imply.
+        ("Players", "CreateHumanoidModelFromDescription") => {
+            let Some(Arg::Instance(description)) = args.first() else {
+                return Err("Argument 1 missing or nil".into());
+            };
+            if dom.get(*description).map(|i| i.class()) != Some("HumanoidDescription") {
+                return Err("Argument 1 must be a HumanoidDescription".into());
+            }
+            let avatars = players
+                .avatars
+                .as_ref()
+                .ok_or("Avatars are not available offline")?;
+            let mut alone = WeakDom::new();
+            graft(&mut alone, dom, *description, None);
+            let built = avatars.character(&alone)?;
+            let root = *built.root_refs().first().ok_or("no character was built")?;
+            let model = graft(dom, &built, root, None);
+            if let Some(humanoid) = child_of_class(dom, model, "Humanoid") {
+                if let Some(old) = child_of_class(dom, humanoid, "HumanoidDescription") {
+                    dom.remove(old);
+                }
+                copy(dom, *description, Some(humanoid));
+            }
+            Ok(CallReply::value(Arg::Instance(model)))
         }
         ("Player", "LoadCharacter") => {
             if players.local.as_ref().is_none_or(|l| l.player != referent) {

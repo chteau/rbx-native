@@ -6993,6 +6993,7 @@ name = "rbx_assets"
 version = "0.1.0"
 dependencies = [
  "image",
+ "rbx_net",
  "thiserror 2.0.20",
  "ureq",
  "zip",
@@ -7050,6 +7051,7 @@ dependencies = [
  "futures-lite",
  "getrandom 0.3.4",
  "oo7",
+ "rbx_net",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -7085,6 +7087,7 @@ dependencies = [
  "base64 0.22.1",
  "getrandom 0.3.4",
  "rbx_dom",
+ "rbx_net",
  "rbx_reflection",
  "serde",
  "serde_json",
@@ -7112,6 +7115,7 @@ version = "0.1.0"
 dependencies = [
  "rbx_dom",
  "rbx_lua",
+ "rbx_net",
  "rbx_reflection",
  "regex",
  "tempfile",
@@ -7126,6 +7130,7 @@ dependencies = [
  "mlua",
  "rbx_binary",
  "rbx_dom",
+ "rbx_net",
  "rbx_reflection",
  "rbx_xml",
  "serde_json",
@@ -7148,6 +7153,13 @@ version = "0.1.0"
 dependencies = [
  "draco-core",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "rbx_net"
+version = "0.1.0"
+dependencies = [
+ "ureq",
 ]
 
 [[package]]
@@ -7205,6 +7217,7 @@ dependencies = [
  "hmac",
  "mlua",
  "rbx_dom",
+ "rbx_net",
  "rbx_reflection",
  "rbx_xml",
  "serde",
@@ -7284,6 +7297,7 @@ dependencies = [
  "rbx_lua",
  "rbx_materials",
  "rbx_mesh",
+ "rbx_net",
  "rbx_play",
  "rbx_presence",
  "rbx_reflection",

@@ -12,6 +12,12 @@ pub mod animate;
 /// default regeneration.
 pub const HEALTH_SOURCE: &str = include_str!("character/Health.luau");
 
+/// Our own `PlayerModule`: the default controls and camera of Play (local).
+pub const PLAYER_MODULE_SOURCE: &str = include_str!("character/PlayerModule.luau");
+
+/// The `LocalScript` that starts it.
+pub const PLAYER_LOADER_SOURCE: &str = "require(script.Parent:WaitForChild(\"PlayerModule\"))\n";
+
 /// `BrickColor`s of the noob: Bright yellow, Bright blue, Br. yellowish
 /// green.
 const YELLOW: u32 = 24;

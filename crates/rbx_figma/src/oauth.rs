@@ -245,7 +245,7 @@ pub fn parse_tokens(body: &[u8], now: u64, previous: Option<&str>) -> Result<Tok
 }
 
 fn send(form: &Form) -> Result<Vec<u8>, String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(30)))
         .build()

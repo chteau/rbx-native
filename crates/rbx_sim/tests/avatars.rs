@@ -1,5 +1,5 @@
-//! `Players:GetHumanoidDescriptionFromUserId` and `Humanoid:ApplyDescription`
-//! through an app's avatars.
+//! `Players:GetHumanoidDescriptionFromUserId`, `Humanoid:ApplyDescription`
+//! and `Players:CreateHumanoidModelFromDescription` through an app's avatars.
 
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_sim::{conformance, Avatars, Simulation};
@@ -28,6 +28,18 @@ impl Avatars for OneUser {
         let mut dom = WeakDom::new();
         let model = dom.new_instance("Model", "Fresh", None);
         let head = part(&mut dom, "Head", model, 10.0);
+        // A bigger head than the noob's: the body takes the description's
+        // shape as well as its clothes.
+        let _ = dom.set_property(
+            head,
+            "size",
+            Variant::Vector3(Vector3Data {
+                x: 4.0,
+                y: 2.0,
+                z: 2.0,
+            }),
+        );
+        dom.new_instance("Humanoid", "Humanoid", Some(model));
         if hat {
             let accessory = dom.new_instance("Accessory", "Hat", Some(model));
             let handle = part(&mut dom, "Handle", accessory, 11.0);
@@ -85,6 +97,9 @@ print("worn", hat ~= nil, character:FindFirstChildOfClass("Shirt") ~= nil)
 print("welded", weld and weld.Part1 == character.Head)
 print("above", hat and math.floor(hat.Handle.Position.Y - character.Head.Position.Y + 0.5))
 print("applied", humanoid:GetAppliedDescription().HatAccessory)
+print("head", character.Head.Size.X)
+local built = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
+print("built", built.Parent == nil, built:FindFirstChild("Hat") ~= nil, built.Humanoid:GetAppliedDescription().HatAccessory)
 print("done")
 "#
             .into(),
@@ -110,4 +125,6 @@ print("done")
     assert!(has("welded true"), "{lines:#?}");
     assert!(has("above 1"), "{lines:#?}");
     assert!(has("applied 123"), "{lines:#?}");
+    assert!(has("head 4"), "{lines:#?}");
+    assert!(has("built true true 123"), "{lines:#?}");
 }

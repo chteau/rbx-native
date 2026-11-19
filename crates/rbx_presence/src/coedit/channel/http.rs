@@ -9,7 +9,7 @@ use crate::schema::{LoggedOp, OpsFill, OpsReply, SealedOps, SCHEMA_VERSION};
 use crate::{auth, now_ms};
 
 pub(super) fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
+    rbx_net::config()
         .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(30)))

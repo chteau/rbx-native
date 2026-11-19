@@ -60,7 +60,7 @@ use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, wheel_notches, Layout};
 pub(crate) use joints::JointPhase;
 pub(crate) use notes::NoteMark;
-pub(crate) use play_input::{PlayInput, FOCUS_ABOVE_ROOT};
+pub(crate) use play_input::PlayInput;
 pub(crate) use pump::canvas::{FrameRequest, Request as CanvasRequest};
 use pump::Pump;
 pub(crate) use pump::TerrainChunks;
@@ -392,11 +392,14 @@ pub(crate) struct WorkspaceView {
     drag: Option<Drag>,
     /// Whether `B` is held, the Terrain Editor's brush dial key.
     terrain_b: bool,
-    /// Play (local) is on: the movement keys, right-drag and wheel drive
-    /// the character and its camera (see `play_input`).
+    /// Play (local) is on: the keyboard and mouse go to the game (see
+    /// `play_input`).
     pub(crate) play: Option<PlayInput>,
     /// The free camera from before Play (local), put back on Stop.
     play_return: Option<Pose>,
+    /// The window's scale factor at the last mouse move, for the mouse
+    /// location a game reads.
+    play_scale: f32,
     /// Where the cursor last stood across the view, for `B`-drag's dial.
     terrain_dial_x: Option<f32>,
     /// The modifiers of the last terrain input, which a release reports again.
@@ -547,6 +550,7 @@ impl WorkspaceView {
             debug_wheel: scroll::debug_wheel(),
             play: None,
             play_return: None,
+            play_scale: 1.0,
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
             screen: None,
@@ -830,10 +834,7 @@ impl WorkspaceView {
         window.focus(&self.focus, cx);
         self.cursor = None;
         self.looking = true;
-        // Play (local) turns its own camera; the free one stays put.
-        if self.play.is_none() {
-            self.pump.input(CameraInput::LookButton(true));
-        }
+        self.pump.input(CameraInput::LookButton(true));
         // Orbiting the camera would otherwise leave whatever was last
         // hovered stuck on screen for the whole gesture: `mouse_moved` feeds
         // this same motion to the camera instead of resolving a new hover
@@ -914,9 +915,13 @@ impl WorkspaceView {
     /// held, and drains everything else so a move that preceded the press can
     /// never make it jump.
     fn mouse_moved(&mut self, position: Point<Pixels>) {
+        if self.play.is_some() {
+            self.play_moved(position);
+            return;
+        }
         if self.lock.holds() {
             if let Some((dx, dy)) = self.lock.moved() {
-                self.look_motion(dx, dy);
+                self.pump.input(CameraInput::MouseLook { dx, dy });
             }
             return;
         }
@@ -925,21 +930,73 @@ impl WorkspaceView {
             return;
         };
 
-        self.look_motion(
-            f32::from(position.x - previous.x),
-            f32::from(position.y - previous.y),
-        );
+        self.pump.input(CameraInput::MouseLook {
+            dx: f32::from(position.x - previous.x),
+            dy: f32::from(position.y - previous.y),
+        });
     }
 
-    /// Mouse motion: the free camera's, or with Play (local) on, the
-    /// character camera's while the look button is held.
-    fn look_motion(&mut self, dx: f32, dy: f32) {
-        let looking = self.looking;
-        match self.play.as_mut() {
-            Some(play) if looking => play.look(dx, dy),
-            Some(_) => {}
-            None => self.pump.input(CameraInput::MouseLook { dx, dy }),
+    /// Play (local): the motion goes to the game, measured against the held
+    /// pointer while the game locks it.
+    fn play_moved(&mut self, position: Point<Pixels>) {
+        let delta = if self.lock.holds() {
+            self.lock.moved()
+        } else {
+            let previous = self.cursor.replace(position);
+            previous.map(|p| (f32::from(position.x - p.x), f32::from(position.y - p.y)))
+        };
+        let at = self.play_position(position);
+        if let (Some(play), Some((dx, dy))) = (self.play.as_mut(), delta) {
+            play.moved(at, [dx, dy]);
         }
+    }
+
+    /// Where `position` (window, logical pixels) sits in the view: what a
+    /// game reads as the mouse location.
+    fn play_position(&self, position: Point<Pixels>) -> [f32; 2] {
+        let origin = self.viewport.get().origin;
+        let scale = self.play_scale.max(0.01);
+        [
+            f32::from(position.x) - origin.0 as f32 / scale,
+            f32::from(position.y) - origin.1 as f32 / scale,
+        ]
+    }
+
+    /// Play (local): holds or frees the pointer as the game's
+    /// `MouseBehavior` asks (shift lock, first person, a right-drag).
+    fn sync_play_lock(&mut self, window: &Window) {
+        let Some(wants) = self.play.as_ref().map(PlayInput::wants_lock) else {
+            return;
+        };
+        if wants && !self.lock.holds() {
+            if let (Some(id), Some(centre)) = (
+                pointer_lock::look_window(window),
+                self.viewport.get().centre(),
+            ) {
+                self.lock.hold(id, centre);
+            }
+        } else if !wants && self.lock.holds() {
+            self.lock.release();
+            self.cursor = None;
+        }
+    }
+
+    /// A mouse button over the view in Play (local): the game's, not a tool's.
+    fn play_button(
+        &mut self,
+        button: u8,
+        down: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(play) = self.play.as_mut() else {
+            return false;
+        };
+        play.button(button, down);
+        if down {
+            window.focus(&self.focus, cx);
+        }
+        true
     }
 
     fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
@@ -1079,8 +1136,8 @@ impl WorkspaceView {
         Some(self.pump.capture(at))
     }
 
-    /// Hands the keys, right-drag and wheel to Play (local)'s character
-    /// and camera, or (`false`) back to the free camera where it was.
+    /// Hands the keyboard and mouse to Play (local)'s game, or (`false`)
+    /// back to the free camera where it was.
     pub(crate) fn set_play_local(&mut self, playing: bool) {
         if playing {
             self.play = Some(PlayInput::default());
@@ -1088,6 +1145,8 @@ impl WorkspaceView {
             return;
         }
         self.play = None;
+        self.lock.release();
+        self.cursor = None;
         if let Some(pose) = self.play_return.take() {
             let eye = pose.position.to_array();
             let ahead = crate::camera::free_flight_direction(pose.yaw, pose.pitch);
@@ -1319,6 +1378,9 @@ impl Render for WorkspaceView {
                 MouseButton::Left,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
                     view.note_input();
+                    if view.play_button(1, true, window, cx) {
+                        return;
+                    }
                     window.focus(&view.focus, cx);
                     let scale = window.scale_factor();
                     // A plugin's handle takes the press before any tool.
@@ -1335,6 +1397,9 @@ impl Render for WorkspaceView {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    if view.play_button(1, false, window, cx) {
+                        return;
+                    }
                     let scale = window.scale_factor();
                     if !view.plugin_release(cx)
                         && !view.plugin_mouse_release(1, event.position, scale, cx)
@@ -1348,6 +1413,9 @@ impl Render for WorkspaceView {
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                    if view.play_button(1, false, window, cx) {
+                        return;
+                    }
                     if !view.plugin_release(cx) {
                         view.end_drag(window, cx);
                     }
@@ -1357,21 +1425,35 @@ impl Render for WorkspaceView {
                 MouseButton::Middle,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
                     view.note_input();
+                    if view.play_button(3, true, window, cx) {
+                        return;
+                    }
                     view.begin_pan(event.position, window.scale_factor(), window, cx);
                 }),
             )
             .on_mouse_up(
                 MouseButton::Middle,
-                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_look()),
+                cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                    if !view.play_button(3, false, window, cx) {
+                        view.end_look();
+                    }
+                }),
             )
             .on_mouse_up_out(
                 MouseButton::Middle,
-                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_look()),
+                cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                    if !view.play_button(3, false, window, cx) {
+                        view.end_look();
+                    }
+                }),
             )
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
                     view.note_input();
+                    if view.play_button(2, true, window, cx) {
+                        return;
+                    }
                     view.plugin_mouse_press(2, event.position, window.scale_factor(), cx);
                     view.begin_look(window, cx);
                 }),
@@ -1379,6 +1461,9 @@ impl Render for WorkspaceView {
             .on_mouse_up(
                 MouseButton::Right,
                 cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    if view.play_button(2, false, window, cx) {
+                        return;
+                    }
                     view.plugin_mouse_release(2, event.position, window.scale_factor(), cx);
                     view.end_look();
                 }),
@@ -1387,12 +1472,20 @@ impl Render for WorkspaceView {
             // button would stay logically held with nothing to release it.
             .on_mouse_up_out(
                 MouseButton::Right,
-                cx.listener(|view, _: &MouseUpEvent, _, _| {
-                    view.end_look();
+                cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                    if !view.play_button(2, false, window, cx) {
+                        view.end_look();
+                    }
                 }),
             )
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                 view.note_input();
+                if view.play.is_some() {
+                    view.play_scale = window.scale_factor();
+                    view.sync_play_lock(window);
+                    view.mouse_moved(event.position);
+                    return;
+                }
                 if !view.looking && view.plugin_move(event.position, window.scale_factor(), cx) {
                     return;
                 }
@@ -1479,6 +1572,10 @@ impl Render for WorkspaceView {
             // on their own, and Shift is Studio's precision modifier.
             .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, _| {
                 view.note_input();
+                if let Some(play) = view.play.as_mut() {
+                    play.shift(event.modifiers.shift);
+                    return;
+                }
                 view.pump.input(CameraInput::Key {
                     key: rbx_viewer::CameraKey::Slow,
                     pressed: event.modifiers.shift,

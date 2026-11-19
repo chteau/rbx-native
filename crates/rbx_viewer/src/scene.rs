@@ -969,12 +969,14 @@ pub(super) fn assemble_part(
     }
 }
 
-/// `1 - Transparency`, except on a ForceField: Roblox draws one as a shell
-/// however solid the part claims to be, so it is capped at half-opaque, which
-/// also routes it through the renderer's blended pass, a file mesh's as
-/// much as a box's.
+/// `1 - Transparency`, faded further by `LocalTransparencyModifier` (the
+/// client's own see-through, a character up close to the camera), except on
+/// a ForceField: Roblox draws one as a shell however solid the part claims
+/// to be, so it is capped at half-opaque, which also routes it through the
+/// renderer's blended pass, a file mesh's as much as a box's.
 pub(super) fn alpha(properties: &std::collections::BTreeMap<String, Variant>, kind: Kind) -> f32 {
-    let alpha = 1.0 - number(properties.get("Transparency")).clamp(0.0, 1.0);
+    let local = 1.0 - number(properties.get("LocalTransparencyModifier")).clamp(0.0, 1.0);
+    let alpha = (1.0 - number(properties.get("Transparency")).clamp(0.0, 1.0)) * local;
     match kind {
         Kind::ForceField => alpha.min(FORCE_FIELD_ALPHA),
         _ => alpha,

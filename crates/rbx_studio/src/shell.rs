@@ -685,6 +685,7 @@ impl Shell {
             output_rich_text,
             output_display,
             optimize_graph_on_open,
+            offline,
             increment_names,
             expand_on_select,
             insert_anchored,
@@ -715,6 +716,8 @@ impl Shell {
         tokens::set_font_scale(font_scale);
         tokens::set_viewport_font_size(viewport_font_size);
         tokens::set_large_targets(large_targets);
+        rbx_net::set_forced(offline);
+        rbx_net::watch();
         if let Some(reduced) = reduce_motion {
             tokens::set_reduced_motion(reduced);
         }
@@ -861,8 +864,19 @@ impl Shell {
             },
         );
         let asset_warnings = cx.subscribe(&viewport, |shell, _, event: &AssetWarnings, cx| {
-            for warning in &event.0 {
+            // Offline, every uncached asset fails the same way: one line
+            // says so instead of one per asset.
+            let (offline, other): (Vec<_>, Vec<_>) =
+                event.0.iter().partition(|w| rbx_net::is_offline_message(w));
+            for warning in other {
                 shell.output.push_warning(warning);
+            }
+            if !offline.is_empty() {
+                shell.output.push_warning(&format!(
+                    "{} asset(s) aren\u{2019}t cached and can\u{2019}t be fetched offline. {}.",
+                    offline.len(),
+                    rbx_net::status().reason()
+                ));
             }
             cx.notify();
         });
@@ -2110,6 +2124,7 @@ impl Shell {
             output_rich_text: self.output_rich_text,
             output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
+            offline: rbx_net::forced(),
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
             expand_on_select: self.expand_on_select,

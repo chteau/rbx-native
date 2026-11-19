@@ -754,7 +754,7 @@ impl Worker {
             return Outcome::Failed("ntfy relay url must be http(s)".into());
         }
         let topic = relay::ntfy_topic(&self.config.room);
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        let agent: ureq::Agent = rbx_net::config()
             .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(20)))
@@ -908,6 +908,12 @@ impl Worker {
         let url = ws_url(relay_url, &self.config.room)
             .ok_or_else(|| WsError::Url(tungstenite::error::UrlError::UnsupportedUrlScheme))?;
         let mut request = url.into_client_request()?;
+        if request.uri().host().is_some_and(rbx_net::blocks) {
+            return Err(WsError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                format!("{}: {}", rbx_net::OFFLINE, rbx_net::status().reason()),
+            )));
+        }
         let path = format!("/v1/rooms/{}/ws", self.config.room);
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -976,7 +982,7 @@ const LOOPBACK_TRIES: u32 = 6;
 /// Whether a relay answers its health check (a host that crashed leaves its
 /// last announcement behind).
 fn reachable(url: &str) -> bool {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(8)))
         .build()

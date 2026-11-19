@@ -8,6 +8,7 @@
 //! simulation knows (masses) or can do (impulses).
 
 mod hooks;
+mod input;
 mod meshes;
 mod query;
 #[cfg(test)]
@@ -238,6 +239,7 @@ pub struct ServerVm {
     started: RefCell<BTreeSet<Ref>>,
     /// How much of the DOM's change log has had its events fired.
     fired: Rc<Cell<usize>>,
+    client: Rc<Cell<bool>>,
     budget: Duration,
 }
 
@@ -259,10 +261,12 @@ impl ServerVm {
         // See `Runtime::build`: DOM-backed globals must not be import-cached.
         lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
         let fired = Rc::new(Cell::new(0));
+        let client = Rc::new(Cell::new(false));
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
             groups: groups.clone(),
             fired: fired.clone(),
+            client: client.clone(),
         })));
         install_globals(&lua, &ctx)?;
         lua.globals().set(
@@ -290,7 +294,51 @@ impl ServerVm {
             groups,
             started: RefCell::default(),
             fired,
+            client,
             budget: Duration::from_secs(10),
+        })
+    }
+
+    /// Play (local): the VM is the local client as well, so
+    /// `RunService:BindToRenderStep`, `UserInputService` and
+    /// `ContextActionService` work and `RunService:IsClient()` is true.
+    pub fn set_client(&self, on: bool) {
+        self.client.set(on);
+    }
+
+    /// The start of a frame's input: `GetMouseDelta` counts from zero.
+    pub fn input_frame(&mut self) -> Vec<Change> {
+        self.guarded(input::frame)
+    }
+
+    /// Hands one input the engine wrote into `input` (an `InputObject`) to
+    /// the game as a client does: the bound actions first, then `uis`'s
+    /// `signal` (`InputBegan`, `InputChanged` or `InputEnded`) with whether
+    /// an action sank it.
+    pub fn input(&mut self, input: Ref, uis: Ref, signal_name: &str) -> Vec<Change> {
+        self.guarded(|lua| {
+            let processed = input::dispatch(lua, input)?;
+            signal::fire(
+                lua,
+                &instance_key(uis, signal_name),
+                &[Arg::Instance(input), Arg::Bool(processed)],
+            )
+        })
+    }
+
+    /// A client's render step: the `BindToRenderStep` callbacks in priority
+    /// order, then `PreRender` and `RenderStepped`.
+    pub fn render_step(&mut self, dt: f64) -> Vec<Change> {
+        self.guarded(|lua| {
+            input::render(lua, dt)?;
+            for name in ["PreRender", "RenderStepped"] {
+                signal::fire(
+                    lua,
+                    &SignalKey::new(Owner::Service("RunService"), name),
+                    &[Arg::Number(dt)],
+                )?;
+            }
+            Ok(())
         })
     }
 

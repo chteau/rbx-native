@@ -12,3 +12,4 @@ thiserror = "2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = { version = "3", features = ["gzip"] }
+rbx_net = { path = "../rbx_net" }

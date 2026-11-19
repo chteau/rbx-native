@@ -35,6 +35,7 @@ tungstenite = { version = "0.28", default-features = false, features = ["handsha
 # The ntfy transport: a blocking HTTP client (publish + poll), the same
 # version rbx_cloud uses, so nothing new in Cargo.lock.
 ureq = { version = "3", features = ["gzip"] }
+rbx_net = { path = "../rbx_net" }
 
 # Three-way text merge for a script edited against stale text.
 diffy = "0.4"

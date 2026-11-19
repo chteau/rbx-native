@@ -248,6 +248,30 @@ pub(crate) fn cframe(dom: &WeakDom, db: &ReflectionDatabase, r: Ref) -> Option<C
     }
 }
 
+/// `Humanoid:Move(v, true)`: `v` in the current camera's frame, its -Z the
+/// camera's look direction laid flat (its up direction when it looks
+/// straight down).
+fn relative_to_camera(dom: &WeakDom, v: [f64; 3]) -> [f64; 3] {
+    let Some((camera, _)) = crate::input::camera(dom) else {
+        return v;
+    };
+    let r = camera.rotation.map(f64::from);
+    let flat = |x: f64, z: f64| {
+        let length = (x * x + z * z).sqrt();
+        (length > 1e-4).then(|| [x / length, z / length])
+    };
+    let Some(ahead) = flat(-r[2], -r[8]).or_else(|| flat(r[1], r[7])) else {
+        return v;
+    };
+    // Right of "ahead", on the ground.
+    let right = [-ahead[1], ahead[0]];
+    [
+        right[0] * v[0] - ahead[0] * v[2],
+        0.0,
+        right[1] * v[0] - ahead[1] * v[2],
+    ]
+}
+
 /// Writes `name` under the name the DOM stores it as (logged, so scripts
 /// see `Changed` and the simulation routes it).
 pub(crate) fn set(dom: &mut WeakDom, db: &ReflectionDatabase, r: Ref, name: &str, value: Variant) {
@@ -1000,6 +1024,10 @@ impl Humanoids {
                 let v = match args.first() {
                     Some(Arg::Vector3(v)) => [f64::from(v[0]), 0.0, f64::from(v[2])],
                     _ => return Err("Argument 1 missing or nil".into()),
+                };
+                let v = match args.get(1) {
+                    Some(Arg::Bool(true)) => relative_to_camera(dom, v),
+                    _ => v,
                 };
                 let length = (v[0] * v[0] + v[2] * v[2]).sqrt();
                 let dir = if length > 1.0 {

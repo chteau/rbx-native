@@ -145,6 +145,9 @@ fn probe(classes: &[Class]) -> BTreeSet<(String, String)> {
     let _ = dom.set_property(script, "Source", Variant::String(probe_source(classes)));
     dom.take_changes();
     let mut sim = Simulation::new(dom).expect("the sim starts");
+    // As Play (local) runs it: server and client in one, so the client-only
+    // services (UserInputService, ContextActionService) count too.
+    sim.set_client();
     sim.start();
     let output = sim.take_output();
     output

@@ -58,7 +58,7 @@ fn base() -> String {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
+    rbx_net::config()
         .timeout_global(Some(Duration::from_secs(20)))
         .build()
         .into()

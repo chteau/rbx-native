@@ -130,6 +130,9 @@ pub(super) struct ServerHooks {
     pub(super) physics: Rc<dyn Physics>,
     pub(super) groups: Rc<RefCell<CollisionGroups>>,
     pub(super) fired: Rc<Cell<usize>>,
+    /// Play (local): a client runs here too, so render steps and input
+    /// work.
+    pub(super) client: Rc<Cell<bool>>,
 }
 
 fn method<A, R>(lua: &Lua, f: impl Fn(&Lua, A) -> Result<R> + 'static) -> Result<Option<Value>>
@@ -221,10 +224,16 @@ impl ServerHooks {
                 .create_userdata(signal)
                 .map(|u| Some(Value::UserData(u)));
         }
+        let client = self.client.get();
         match key {
-            // Studio's Run: a server that is running, in Studio.
+            // Studio's Run: a server that is running, in Studio. Play
+            // (local) is a client as well, as Studio's Play Solo was.
             "IsServer" | "IsStudio" | "IsRunning" | "IsRunMode" => flag(lua, true),
-            "IsClient" | "IsEdit" => flag(lua, false),
+            "IsClient" => flag(lua, client),
+            "IsEdit" => flag(lua, false),
+            "BindToRenderStep" | "UnbindFromRenderStep" if client => {
+                super::input::member(lua, None, "RunService", key)
+            }
             "BindToRenderStep" | "UnbindFromRenderStep" => method(lua, |_, _: MultiValue| {
                 Err::<(), _>(mlua::Error::runtime(
                     "BindToRenderStep can only be called from a client",
@@ -439,6 +448,10 @@ impl Hooks for ServerHooks {
             "HttpService" => http_member(lua, key),
             "AssetService" => super::meshes::member(lua, ctx, &self.physics, key),
             "CollectionService" => collection::member(lua, key),
+            "UserInputService" | "ContextActionService" if self.client.get() => {
+                let signals = (class == "UserInputService").then_some(referent);
+                super::input::member(lua, signals, class, key)
+            }
             _ if db.is_subclass_of(class, "BasePart") => self.base_part(lua, referent, key),
             _ => Ok(None),
         }

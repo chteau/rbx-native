@@ -353,6 +353,7 @@ impl Shell {
         let playing = player.is_some();
         let mut note = None;
         if let Some((player, avatars)) = player {
+            sim.set_client();
             sim.set_avatars(Box::new(avatars));
             if let Some(character) = player.character {
                 sim.set_character(character);
@@ -477,12 +478,16 @@ impl Shell {
             return;
         }
         let steps = due.min(MAX_FRAMES_PER_TICK);
-        let input = self.viewport.read(cx).play.filter(|_| run.playing);
+        if run.playing {
+            let inputs = self
+                .viewport
+                .update(cx, |viewport, _| viewport.play.as_mut().map(|p| p.take()));
+            for input in inputs.unwrap_or_default() {
+                run.sim.input(input);
+            }
+        }
         let mut changes = Vec::new();
         for _ in 0..steps {
-            if let Some(input) = &input {
-                run.sim.control(input.direction(), input.jump);
-            }
             run.sim.step();
             changes.extend(run.sim.take_view_changes());
         }
@@ -492,13 +497,20 @@ impl Shell {
         let changes = dedupe(changes);
         mirror(&run.sim.dom(), &mut self.dom, &changes);
         let output = run.sim.take_output();
-        let focus = input.and_then(|input| Some((input, character_focus(&run.sim)?)));
         self.dom.take_changes();
         push_rows(&mut self.output, &output);
-        if let Some((input, focus)) = focus {
-            let eye = input.eye(focus);
-            self.viewport
-                .update(cx, |viewport, _| viewport.look_at(eye, focus));
+        if run.playing {
+            let mouse = run.sim.mouse_behavior();
+            let camera = run.sim.camera();
+            self.viewport.update(cx, |viewport, _| {
+                if let Some(play) = viewport.play.as_mut() {
+                    play.mouse = mouse;
+                }
+                if let Some((cframe, fov)) = camera {
+                    let (eye, target) = eye_and_target(&cframe);
+                    viewport.look_at_with(eye, target, fov);
+                }
+            });
         }
         if !changes.is_empty() {
             let snapshots = self.dom.snapshot(&changes);
@@ -529,25 +541,12 @@ impl Shell {
     }
 }
 
-/// What the character camera looks at: a little above the local
-/// character's root.
-fn character_focus(sim: &rbx_sim::Simulation) -> Option<[f32; 3]> {
-    let (_, character) = sim.local_player()?;
-    let dom = sim.dom();
-    let model = dom.get(character?)?;
-    let root = model
-        .children()
-        .iter()
-        .copied()
-        .find(|c| dom.get(*c).is_some_and(|i| i.name() == "HumanoidRootPart"))?;
-    match dom.get(root)?.properties().get("CFrame") {
-        Some(rbx_dom::Variant::CFrame(c)) => Some([
-            c.position.x,
-            c.position.y + crate::workspace_view::FOCUS_ABOVE_ROOT,
-            c.position.z,
-        ]),
-        _ => None,
-    }
+/// The game camera's eye and a point straight ahead of it (its -Z).
+fn eye_and_target(camera: &rbx_dom::CFrameData) -> ([f32; 3], [f32; 3]) {
+    let p = camera.position;
+    let r = camera.rotation;
+    let eye = [p.x, p.y, p.z];
+    (eye, [p.x - r[2], p.y - r[5], p.z - r[8]])
 }
 
 #[cfg(test)]

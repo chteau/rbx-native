@@ -118,6 +118,8 @@ pub(crate) struct Settings {
     /// Whether opening a script's Graph side tidies it, rather than
     /// restoring the layout saved for it.
     pub(crate) optimize_graph_on_open: bool,
+    /// Offline mode, turned on by hand (`rbx_net::set_forced`).
+    pub(crate) offline: bool,
     /// Real Studio's two insertion preferences, off the `⋯` beside the
     /// Explorer's insert search field (`studio/explorer.md`). Both default
     /// on, as they do there: a second `Part` called `Part` is not something
@@ -262,6 +264,7 @@ impl Default for Settings {
             output_rich_text: false,
             output_display: OutputDisplay::default(),
             optimize_graph_on_open: false,
+            offline: false,
             increment_names: true,
             expand_on_select: true,
             insert_anchored: false,
@@ -493,6 +496,10 @@ fn load_from(path: &Path) -> Settings {
         output_display: OutputDisplay::read(&value),
         optimize_graph_on_open: value
             .get("optimize_graph_on_open")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        offline: value
+            .get("offline")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         increment_names: value
@@ -838,6 +845,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     value["device_scaling"] = settings.device_scaling.key().into();
     value["device_keyboard_layout"] = settings.device_keyboard_layout.key().into();
     value["strip_on_publish"] = settings.strip_on_publish.into();
+    value["offline"] = settings.offline.into();
     value["closed_documents"] = settings.closed_documents.clone().into();
     value["recent_icons"] = settings.recent_icons.into();
     // A fixed-shape object always serializes; nothing here can fail.
