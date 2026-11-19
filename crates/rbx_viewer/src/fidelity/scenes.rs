@@ -4,8 +4,7 @@
 use rbx_dom::Variant;
 
 use super::{
-    at, content, float, rgb, tilted_x, Builder, Scene, BALL, BLOCK, CYLINDER, PLASTIC,
-    WEDGE,
+    at, content, float, rgb, tilted_x, Builder, Scene, BALL, BLOCK, CYLINDER, PLASTIC, WEDGE,
 };
 
 const SMOOTH_PLASTIC: u32 = 272;
@@ -145,8 +144,20 @@ fn stage(b: &mut Builder) {
     b.block([4.0; 3], [-3.0, 2.0, 0.0], [163, 162, 165]);
     b.block([4.0; 3], [3.0, 2.0, 0.0], [196, 40, 28]);
     b.block([4.0; 3], [9.0, 2.0, 0.0], [75, 151, 75]);
-    b.part(BALL, [4.0; 3], at([-6.0, 2.0, 7.0]), [13, 105, 172], PLASTIC);
-    b.part(CYLINDER, [4.0; 3], at([0.0, 2.0, 7.0]), [245, 205, 48], PLASTIC);
+    b.part(
+        BALL,
+        [4.0; 3],
+        at([-6.0, 2.0, 7.0]),
+        [13, 105, 172],
+        PLASTIC,
+    );
+    b.part(
+        CYLINDER,
+        [4.0; 3],
+        at([0.0, 2.0, 7.0]),
+        [245, 205, 48],
+        PLASTIC,
+    );
     b.part(WEDGE, [4.0; 3], at([6.0, 2.0, 7.0]), [27, 42, 53], PLASTIC);
     b.block([1.0, 12.0, 1.0], [0.0, 6.0, -8.0], [248, 248, 248]);
 }
@@ -194,7 +205,13 @@ fn materials(b: &mut Builder, from: usize) {
     b.floor();
     for (i, &(_, material)) in MATERIALS.iter().skip(from).take(20).enumerate() {
         let [x, _, z] = slab(i);
-        b.part(BLOCK, [5.0, 1.0, 5.0], at([x, 0.5, z]), [163, 162, 165], material);
+        b.part(
+            BLOCK,
+            [5.0, 1.0, 5.0],
+            at([x, 0.5, z]),
+            [163, 162, 165],
+            material,
+        );
     }
 }
 
@@ -203,11 +220,35 @@ fn materials(b: &mut Builder, from: usize) {
 fn special(b: &mut Builder) {
     b.floor();
     b.block([20.0, 8.0, 1.0], [0.0, 4.0, -6.0], [196, 40, 28]);
-    b.part(BLOCK, [4.0; 3], at([-8.0, 2.0, 0.0]), [163, 162, 165], GLASS);
+    b.part(
+        BLOCK,
+        [4.0; 3],
+        at([-8.0, 2.0, 0.0]),
+        [163, 162, 165],
+        GLASS,
+    );
     b.part(BLOCK, [4.0; 3], at([-3.0, 2.0, 0.0]), [255, 0, 191], NEON);
-    b.part(CYLINDER, [2.0, 4.0, 4.0], at([-3.0, 2.0, 5.0]), [4, 175, 236], NEON);
-    b.part(BLOCK, [4.0; 3], at([2.0, 2.0, 0.0]), [4, 175, 236], FORCE_FIELD);
-    let mirror = b.part(BALL, [4.0; 3], at([7.0, 2.0, 0.0]), [163, 162, 165], SMOOTH_PLASTIC);
+    b.part(
+        CYLINDER,
+        [2.0, 4.0, 4.0],
+        at([-3.0, 2.0, 5.0]),
+        [4, 175, 236],
+        NEON,
+    );
+    b.part(
+        BLOCK,
+        [4.0; 3],
+        at([2.0, 2.0, 0.0]),
+        [4, 175, 236],
+        FORCE_FIELD,
+    );
+    let mirror = b.part(
+        BALL,
+        [4.0; 3],
+        at([7.0, 2.0, 0.0]),
+        [163, 162, 165],
+        SMOOTH_PLASTIC,
+    );
     b.set(mirror, "Reflectance", float(0.6));
     let front = b.block([4.0; 3], [3.0, 2.0, 6.0], [248, 248, 248]);
     b.set(front, "Transparency", float(0.5));
@@ -346,7 +387,12 @@ pub fn scenes() -> Vec<Scene> {
                 template_effects(b);
             },
         ),
-        stage_scene("studio_lighting", "The template's Lighting values alone, default sky", studio(), stage),
+        stage_scene(
+            "studio_lighting",
+            "The template's Lighting values alone, default sky",
+            studio(),
+            stage,
+        ),
         stage_scene(
             "morning",
             "ClockTime 7 on the equator: a low sun in the east",
@@ -370,7 +416,10 @@ pub fn scenes() -> Vec<Scene> {
             "GeographicLatitude 60 at noon",
             with(
                 studio(),
-                &[("ClockTime", float(12.0)), ("GeographicLatitude", float(60.0))],
+                &[
+                    ("ClockTime", float(12.0)),
+                    ("GeographicLatitude", float(60.0)),
+                ],
             ),
             stage,
         ),
@@ -432,7 +481,10 @@ pub fn scenes() -> Vec<Scene> {
             "Atmosphere Density 0.45, Offset 0.3, Glare 0.6, Haze 1.5 toward a 17:00 sun",
             with(
                 studio(),
-                &[("ClockTime", float(17.0)), ("GeographicLatitude", float(0.0))],
+                &[
+                    ("ClockTime", float(17.0)),
+                    ("GeographicLatitude", float(0.0)),
+                ],
             ),
             |b| {
                 avenue(b);
@@ -519,12 +571,18 @@ pub fn scenes() -> Vec<Scene> {
             ],
             build: local_lights,
         },
-        material_scene("materials_a", "The first 20 materials on grey slabs", 0, |b| {
-            materials(b, 0)
-        }),
-        material_scene("materials_b", "The other 19 materials on grey slabs", 20, |b| {
-            materials(b, 20)
-        }),
+        material_scene(
+            "materials_a",
+            "The first 20 materials on grey slabs",
+            0,
+            |b| materials(b, 0),
+        ),
+        material_scene(
+            "materials_b",
+            "The other 19 materials on grey slabs",
+            20,
+            |b| materials(b, 20),
+        ),
         Scene {
             probes: SPECIAL_PROBES.to_vec(),
             ..stage_scene(
@@ -601,9 +659,22 @@ const RAMP_TOPS: [&str; RAMP] = [
     "153 top", "170 top", "187 top", "204 top", "221 top", "238 top", "255 top",
 ];
 const RAMP_FRONTS: [&str; RAMP] = [
-    "0 front", "17 front", "34 front", "51 front", "68 front", "85 front", "102 front",
-    "119 front", "136 front", "153 front", "170 front", "187 front", "204 front", "221 front",
-    "238 front", "255 front",
+    "0 front",
+    "17 front",
+    "34 front",
+    "51 front",
+    "68 front",
+    "85 front",
+    "102 front",
+    "119 front",
+    "136 front",
+    "153 front",
+    "170 front",
+    "187 front",
+    "204 front",
+    "221 front",
+    "238 front",
+    "255 front",
 ];
 
 fn ramp_x(i: usize) -> f32 {
@@ -667,10 +738,30 @@ fn tone_scenes() -> Vec<Scene> {
         build: ramp,
     };
     vec![
-        scene("tone_sun_1", "The ramp under an overhead sun, Brightness 1", tone(1.0, &[]), true),
-        scene("tone_sun_2", "The ramp under an overhead sun, Brightness 2", tone(2.0, &[]), true),
-        scene("tone_sun_4", "The ramp under an overhead sun, Brightness 4", tone(4.0, &[]), true),
-        scene("tone_sun_8", "The ramp under an overhead sun, Brightness 8", tone(8.0, &[]), true),
+        scene(
+            "tone_sun_1",
+            "The ramp under an overhead sun, Brightness 1",
+            tone(1.0, &[]),
+            true,
+        ),
+        scene(
+            "tone_sun_2",
+            "The ramp under an overhead sun, Brightness 2",
+            tone(2.0, &[]),
+            true,
+        ),
+        scene(
+            "tone_sun_4",
+            "The ramp under an overhead sun, Brightness 4",
+            tone(4.0, &[]),
+            true,
+        ),
+        scene(
+            "tone_sun_8",
+            "The ramp under an overhead sun, Brightness 8",
+            tone(8.0, &[]),
+            true,
+        ),
         scene(
             "tone_ambient",
             "The ramp under white OutdoorAmbient alone",
@@ -741,12 +832,28 @@ fn tone_scenes() -> Vec<Scene> {
 fn shadows(b: &mut Builder) {
     b.floor();
     for i in 0..5 {
-        b.block([0.5, 10.0, 0.5], [-10.0 + 3.0 * i as f32, 5.0, -6.0], [248, 248, 248]);
+        b.block(
+            [0.5, 10.0, 0.5],
+            [-10.0 + 3.0 * i as f32, 5.0, -6.0],
+            [248, 248, 248],
+        );
     }
     b.block([1.0, 6.0, 1.0], [6.0, 3.0, -4.0], [163, 162, 165]);
     b.block([8.0, 0.5, 8.0], [6.0, 6.25, -4.0], [163, 162, 165]);
-    b.part(BLOCK, [6.0, 0.5, 6.0], tilted_x([-4.0, 3.0, 6.0], 30.0), [196, 40, 28], PLASTIC);
-    b.part(BALL, [3.0; 3], at([4.0, 1.5, 6.0]), [248, 248, 248], PLASTIC);
+    b.part(
+        BLOCK,
+        [6.0, 0.5, 6.0],
+        tilted_x([-4.0, 3.0, 6.0], 30.0),
+        [196, 40, 28],
+        PLASTIC,
+    );
+    b.part(
+        BALL,
+        [3.0; 3],
+        at([4.0, 1.5, 6.0]),
+        [248, 248, 248],
+        PLASTIC,
+    );
 }
 
 /// Floor points every two studs out from below a local light, for

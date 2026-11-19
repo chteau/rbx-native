@@ -247,7 +247,10 @@ fn a_clock_time_override_beats_both_serialized_forms() {
     assert!(close(place.sun_direction, sun_direction(9.0, latitude)));
 
     let overridden = Lighting::from_dom(&dom, &database, Some(3.0));
-    assert!(close(overridden.sun_direction, sun_direction(3.0, latitude)));
+    assert!(close(
+        overridden.sun_direction,
+        sun_direction(3.0, latitude)
+    ));
 }
 
 #[test]

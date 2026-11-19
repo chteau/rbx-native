@@ -109,10 +109,7 @@ pub fn delta_map(real: &Image, ours: &Image) -> Vec<f32> {
     let mut out = Vec::new();
     for y in real.first_row()..real.height {
         for x in 0..real.width {
-            out.push(ciede2000(
-                lab(real.pixel(x, y)),
-                lab(ours.pixel(x, y)),
-            ));
+            out.push(ciede2000(lab(real.pixel(x, y)), lab(ours.pixel(x, y))));
         }
     }
     out
@@ -326,7 +323,9 @@ mod tests {
         let image = Image::new(
             32,
             32,
-            (0..32 * 32).flat_map(|i| [(i % 251) as u8, 40, 200, 255]).collect(),
+            (0..32 * 32)
+                .flat_map(|i| [(i % 251) as u8, 40, 200, 255])
+                .collect(),
         );
         let metrics = compare(&image, &image);
         assert_eq!(metrics.delta_e, 0.0);
@@ -335,7 +334,13 @@ mod tests {
 
     #[test]
     fn a_box_average_keeps_the_mean() {
-        let image = Image::new(2, 2, vec![0, 0, 0, 255, 100, 100, 100, 255, 200, 0, 0, 255, 100, 0, 0, 255]);
+        let image = Image::new(
+            2,
+            2,
+            vec![
+                0, 0, 0, 255, 100, 100, 100, 255, 200, 0, 0, 255, 100, 0, 0, 255,
+            ],
+        );
         assert_eq!(image.downsample(1, 1).rgba, vec![100, 25, 25, 255]);
     }
 }

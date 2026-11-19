@@ -65,8 +65,12 @@ fn main() {
             eprintln!("{}: {warning}", scene.name);
         }
         let ours_full = Image::new(w, h, pixels);
-        fidelity::write_png(&out.join(format!("{}-ours.png", scene.name)), (w, h), &ours_full.rgba)
-            .expect("write");
+        fidelity::write_png(
+            &out.join(format!("{}-ours.png", scene.name)),
+            (w, h),
+            &ours_full.rgba,
+        )
+        .expect("write");
         let Some(reference) = reference(scene.name, real.as_deref()) else {
             println!("{:<26} no reference", scene.name);
             continue;

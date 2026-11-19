@@ -132,7 +132,10 @@ mod linux {
                 .publish_place(universe, place, &bytes, rbx_cloud::PublishMode::Published)
                 .expect("publish");
             let names: Vec<&str> = group.iter().map(|s| s.name).collect();
-            say(&format!("published version {version}: {}", names.join(", ")));
+            say(&format!(
+                "published version {version}: {}",
+                names.join(", ")
+            ));
             // A server still running the previous version would show the
             // previous scenes.
             if let Err(err) = client.restart_servers(universe, true) {
@@ -218,7 +221,6 @@ mod linux {
         }
     }
 
-
     /// The person's own `fflags` with the quality override added.
     fn fflags() -> serde_json::Value {
         let mut flags = rbx_play::sober_config::default_path()
@@ -289,8 +291,10 @@ mod linux {
         }
         let rgba = reply
             .data
-            .chunks_exact(4)
-            .flat_map(|p| [p[2], p[1], p[0], 255])
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|[b, g, r, _]| [*r, *g, *b, 255])
             .collect();
         Ok(Image::new(width, height, rgba))
     }
@@ -300,6 +304,7 @@ mod linux {
         fidelity::write_png(&full, (image.width, image.height), &image.rgba).expect("capture");
         let (w, h) = COMPARE;
         let small = image.downsample(w, h);
-        fidelity::write_png(&fidelity::reference_path(name), (w, h), &small.rgba).expect("reference");
+        fidelity::write_png(&fidelity::reference_path(name), (w, h), &small.rgba)
+            .expect("reference");
     }
 }

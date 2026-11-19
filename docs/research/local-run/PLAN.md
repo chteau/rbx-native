@@ -362,16 +362,74 @@ Gaps from M7 (also in CONFORMANCE.md where a golden measures them):
 
 Still open from earlier milestones: BillboardGui/SurfaceGui input, `ScrollingFrame` dragging, gamepad selection, peers on a simulated network, the humanoid and contact leftovers.
 
-## Milestone 8 (proposed): rendering fidelity
+## Milestone 8 (done): rendering fidelity
 
-Side-by-side pixel comparison against the real client: the same place, camera and time of day rendered by Sober on Xephyr and by Local Run, diffed per region, with the diff images kept as goldens.
+Measured against the real client, not eyeballed. Every number below came from Sober on Xephyr at 1280x720, on the sandbox place only; nothing of Roblox's (shaders, binaries, textures) went in, only what its pictures show.
 
-1. A capture harness: one place per topic built from the Baseplate template, a fixed camera from a script, Sober and our viewer shot at the same resolution, a per-pixel and per-region (sky, floor, lit faces, shadowed faces) delta report beside CONFORMANCE.md.
-2. Lighting: `Technology` (Future, ShadowMap, Voxel), `Ambient`/`OutdoorAmbient`, `Brightness`, `ExposureCompensation`, `EnvironmentDiffuseScale`/`SpecularScale`, `ClockTime` and `GeographicLatitude` sun path.
-3. Sky and atmosphere: the default sky, `Sky` skyboxes, sun and moon, `Atmosphere` (density, offset, haze, glare, colour, decay).
-4. Shadows: sun shadow softness and bias, point/spot/surface light shadows, `CastShadow`, transparency in shadows.
-5. Materials: every `Enum.Material` and `MaterialVariant` at the default and 2022 materials, `Reflectance`, `Transparency` sorting, glass, neon bloom.
-6. Post effects: `Bloom`, `ColorCorrection`, `DepthOfField`, `SunRays`, `Blur`, in their measured order.
+1. The harness (`crates/rbx_viewer/src/fidelity.rs`, `fidelity/scenes.rs`, `examples/fidelity.rs`, `crates/rbx_sim/examples/record_render_goldens.rs`). 41 scenes, each a place with a fixed camera. The recorder publishes one place per place-level Lighting group (`Technology`, `LightingStyle`, `PrioritizeLightingQuality` can't be set from a script) and shoots each scene in Sober; the reference PNGs live in `crates/rbx_viewer/fidelity/refs/` (1.5 MB, 320x180), the raw captures stay out of git. `fidelity` draws ours offscreen, compares at 320x180 (mean and p90 CIEDE2000, SSIM), writes the side-by-sides (real | before | after | heatmap) and a `report.json` with every probe: named 3D points (a lit top, a shaded side, the sky, a floor at 4 studs from a lamp...) whose real and drawn colours are what the fits below were made from. `goldens.json` holds each scene's numbers with a tolerance (0.6 ΔE, 0.02 SSIM); `tests/fidelity.rs` fails a scene that drifts past it (skips without a GPU).
+2. Lighting, per `Technology`:
+   - ShadowMap and Future draw through a filmic curve, fitted to a 16-step grey ramp under 13 lamp setups: `x(2.4536x + 0.0353) / (x(2.1029x + 0.7171) + 0.1414)`. The sun is 0.387 per unit of `Brightness`, ambient, sky light and reflections 0.757 of their value.
+   - Voxel and Compatibility clamp: sun 0.528 per unit, ambient as is.
+   - What a place leaves out is the `Lighting` class default (Voxel, 127 grey, 14:00 at 41.7°, no shadows), not Studio's template; a place with no `Lighting` at all still gets the template.
+   - The sun crosses air: grey `exp(-0.033 (m - 1))` with the Kasten-Young air mass `m`, and blue and green lost below 15° (5° measured at (0.77, 0.77, 0.28) of full light).
+   - The sky darkens past dusk to 0.029 of its day value with a warm tint; the moon is white, 0.155 of the sun.
+   - Environment reflection goes through Fresnel (0.1 facing, 0.4 grazing).
+3. Sky: with no `Sky` the default sun, moon and stars are drawn (they weren't). Fog and Atmosphere were measured but not refitted (see gaps).
+4. Shadows: the shadowed/lit ratio matches within 3 ΔE on the stage scenes; softness and bias were not refitted. Local lights outside Future are the voxel grid's, measured per class: no Lambert term (`saturate(2 N·L + 1)`), 1.3x the range, `min(1, 1.1 (1 - u²)²)` falloff, point 1.13, spot 0.043, surface 0.86 of the radiance scale, the spot cone from its centre with a 0.1 soft edge, no shadows.
+5. Materials: every `Enum.Material` in two scenes plus glass, neon, force field, reflectance and transparency. Only the shared lighting moved them (8.0 → 6.0 ΔE); per-material texture brightness is the largest gap left.
+6. Post effects: `SunRays` is an additive glow `(2.6, 0.97, 0) exp(-d / (0.81 Spread))` times the open sky along a 24-tap march of the depth buffer toward the sun (21.7 → 8.8 ΔE). Bloom, ColorCorrection, Blur and DepthOfField moved with the lighting only (9.3 → 4.8, 7.0 → 3.4, 7.4 → 3.4).
+7. The M7 respawn camera: with the Escape menu up, mouse moves, right drags and the wheel turned the camera (into the ground, and the popper into the head), and a reset from the menu left it there. `GuiService.MenuIsOpen` now follows our menu (`Sim::set_menu_open`); our PlayerModule frees the mouse and turns nothing while it's up, and a new humanoid takes `CameraSubject` from the dead one. Test: `the_menu_holds_the_camera_still_and_a_reset_from_it_lands_behind_the_new_character` (fails before the fix). Checked live in the built editor.
+
+| scene | ΔE before | ΔE after | SSIM after |
+|---|---|---|---|
+| default_lighting | 16.45 | 1.62 | 0.952 |
+| studio_baseplate | 7.62 | 2.86 | 0.973 |
+| studio_lighting | 7.05 | 3.39 | 0.932 |
+| morning | 10.08 | 4.72 | 0.912 |
+| evening | 26.90 | 8.06 | 0.943 |
+| night | 10.93 | 3.32 | 0.898 |
+| latitude | 6.33 | 3.32 | 0.941 |
+| ambient_colour | 8.49 | 5.89 | 0.935 |
+| exposure | 10.99 | 2.97 | 0.959 |
+| realistic_style | 7.05 | 3.39 | 0.932 |
+| fog | 8.01 | 3.16 | 0.921 |
+| atmosphere | 8.96 | 6.56 | 0.840 |
+| sun_rays | 21.66 | 8.83 | 0.909 |
+| custom_sky | 5.17 | 0.90 | 0.995 |
+| shadows_hard | 7.38 | 4.70 | 0.966 |
+| shadows_soft | 6.39 | 6.07 | 0.945 |
+| local_lights | 15.59 | 6.28 | 0.873 |
+| materials_a | 8.06 | 6.03 | 0.932 |
+| materials_b | 7.90 | 5.81 | 0.934 |
+| special_materials | 7.25 | 3.90 | 0.911 |
+| bloom_colour_correction | 9.25 | 4.76 | 0.895 |
+| blur | 7.01 | 3.37 | 0.946 |
+| depth_of_field | 7.43 | 3.40 | 0.934 |
+
+The 14 `tone_*` scenes (2.7 to 4.1) and 4 `light_*` falloff scenes (1.0 to 2.5) were added while fitting and have no before. Frame time didn't move (`bench`, median ms at quality 1/11/21: TestPlace 0.23/0.29/0.77 → 0.21/0.29/0.75, marked.rbxl 0.78/0.30/0.45 → 0.33/0.30/0.43, DEMO_LIGHTING_MATERIALS 0.23/0.30/0.75 → 0.24/0.30/0.76); the software adapter (llvmpipe on Vulkan, lean textures) draws the four scenes tried within 0.1 ΔE of the GPU. Pictures in `rbx-native-targets/local-run-m8-shots/`.
+
+Gaps from M8:
+
+| Area | real client | ours |
+|---|---|---|
+| Material textures | each material's own albedo | Rock, Sandstone too bright, Marble, Basalt too dark (up to 15 ΔE on a slab) |
+| Lit floor in Studio's template | 143 grey | 166 |
+| Evening | warm sky near the sun | too blue, sky and faces |
+| Night | moonlight from higher up | front faces too bright |
+| Sun highlight | a small one at `EnvironmentSpecularScale` 0 | none |
+| SurfaceLight | lights its own face, near-wall floor | off near the wall |
+| SunRays | smooth shafts | 24-tap banding |
+| Studs | surface studs | not drawn |
+| Future local lights, `ShadowSoftness`, Atmosphere haze and glare | | not measured or refitted |
+
+## Milestone 9 (proposed): materials and the last lighting gaps
+
+1. Per-material albedo and roughness fitted from the material scenes' probes (our own textures, rescaled), then `MaterialVariant` and the 2022 materials.
+2. Future's local lights (falloff, shadows, specular) and `ShadowSoftness` measured on the ramp, like the voxel ones.
+3. Atmosphere (haze, glare, colour, decay) and the warm sky around a low sun, so evening and atmosphere fall under 4 ΔE.
+4. Night: where the moonlight comes from; the sun's highlight with environment specular off.
+5. Surface studs, SunRays without banding.
+6. Lower each golden's tolerance as its scene closes, so the test holds the gains.
 
 ## Where things are
 

@@ -294,7 +294,10 @@ fn the_menu_holds_the_camera_still_and_a_reset_from_it_lands_behind_the_new_char
     assert_eq!(sim.mouse_behavior(), MouseBehavior::Default);
     let (held, _) = sim.camera().unwrap();
     assert_eq!(held.rotation, before.rotation, "turned under the menu");
-    assert!((distance(&held, root(&sim)) - start).abs() < 0.5, "zoomed under the menu");
+    assert!(
+        (distance(&held, root(&sim)) - start).abs() < 0.5,
+        "zoomed under the menu"
+    );
 
     // Reset from the menu, which closes it; the button is still down.
     sim.reset_character();
@@ -311,7 +314,10 @@ fn the_menu_holds_the_camera_still_and_a_reset_from_it_lands_behind_the_new_char
         (distance(&after, respawned) - start).abs() < 1.0,
         "{after:?} {respawned:?}"
     );
-    assert!(after.position.y > respawned[1] + 1.0, "{after:?} {respawned:?}");
+    assert!(
+        after.position.y > respawned[1] + 1.0,
+        "{after:?} {respawned:?}"
+    );
 }
 
 fn distance(camera: &rbx_dom::CFrameData, at: [f32; 3]) -> f32 {
@@ -330,7 +336,10 @@ fn after_a_respawn_the_camera_follows_the_new_character_upright() {
         .root_refs()
         .iter()
         .copied()
-        .find(|r| dom.get(*r).is_some_and(|i| i.class() == "ServerScriptService"))
+        .find(|r| {
+            dom.get(*r)
+                .is_some_and(|i| i.class() == "ServerScriptService")
+        })
         .expect("ServerScriptService");
     let reset = dom.new_instance("Script", "Reset", Some(sss));
     let _ = dom.set_property(
@@ -364,7 +373,9 @@ fn after_a_respawn_the_camera_follows_the_new_character_upright() {
     // Looking at the new character.
     let look = [-after.rotation[2], -after.rotation[5], -after.rotation[8]];
     let along: f32 = (0..3)
-        .map(|i| look[i] * (respawned[i] - [after.position.x, after.position.y, after.position.z][i]))
+        .map(|i| {
+            look[i] * (respawned[i] - [after.position.x, after.position.y, after.position.z][i])
+        })
         .sum();
     assert!(along > 0.9 * now, "{after:?} {respawned:?}");
     let output = lines(&mut sim);

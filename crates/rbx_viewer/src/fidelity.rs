@@ -233,7 +233,10 @@ pub fn render(scene: &Scene) -> Result<(Vec<u8>, Vec<String>), String> {
             break;
         }
         if started.elapsed() > LIMIT {
-            return Err(format!("{}: assets still loading after {LIMIT:?}", scene.name));
+            return Err(format!(
+                "{}: assets still loading after {LIMIT:?}",
+                scene.name
+            ));
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -241,10 +244,7 @@ pub fn render(scene: &Scene) -> Result<(Vec<u8>, Vec<String>), String> {
     for _ in 0..DRAIN {
         headless.render_frame(width, height)?;
     }
-    let pixels = headless
-        .take_frame()?
-        .ok_or("no frame was queued")?
-        .pixels;
+    let pixels = headless.take_frame()?.ok_or("no frame was queued")?.pixels;
     Ok((pixels, headless.drain_warnings()))
 }
 
@@ -273,8 +273,10 @@ pub fn read_png(path: &Path) -> Result<(u32, u32, Vec<u8>), String> {
     let pixels = match info.color_type {
         png::ColorType::Rgba => buffer,
         png::ColorType::Rgb => buffer
-            .chunks_exact(3)
-            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|[r, g, b]| [*r, *g, *b, 255])
             .collect(),
         other => return Err(format!("{}: unsupported {other:?}", path.display())),
     };

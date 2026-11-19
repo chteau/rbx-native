@@ -779,7 +779,10 @@ impl Shell {
         }
         let (actions, menu_open) = self.viewport.update(cx, |viewport, _| {
             viewport.core_gui.push_chat(chat);
-            (viewport.core_gui.take_actions(), viewport.core_gui.menu_open())
+            (
+                viewport.core_gui.take_actions(),
+                viewport.core_gui.menu_open(),
+            )
         });
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;

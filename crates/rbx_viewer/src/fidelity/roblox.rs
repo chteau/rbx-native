@@ -59,7 +59,8 @@ fn place_level(scene: &Scene) -> Vec<(&'static str, Variant)> {
 /// `scenes` split into the runs one place can show: alike in their
 /// [`PLACE_LEVEL`] properties, in the order first seen.
 pub fn groups(scenes: Vec<Scene>) -> Vec<Vec<Scene>> {
-    let mut groups: Vec<(Vec<(&str, Variant)>, Vec<Scene>)> = Vec::new();
+    type Key = Vec<(&'static str, Variant)>;
+    let mut groups: Vec<(Key, Vec<Scene>)> = Vec::new();
     for scene in scenes {
         let key = place_level(&scene);
         match groups.iter_mut().find(|(k, _)| *k == key) {
@@ -81,7 +82,12 @@ pub fn place(scenes: &[Scene], database: &ReflectionDatabase) -> WeakDom {
     set(&mut dom, workspace, "CurrentCamera", Variant::Ref(camera));
     dom.new_instance("Terrain", "Terrain", Some(workspace));
     let players = service(&mut dom, "Players");
-    set(&mut dom, players, "CharacterAutoLoads", Variant::Bool(false));
+    set(
+        &mut dom,
+        players,
+        "CharacterAutoLoads",
+        Variant::Bool(false),
+    );
     let lighting = service(&mut dom, "Lighting");
     for (key, value) in scenes.first().map(place_level).unwrap_or_default() {
         set(&mut dom, lighting, key, value);
@@ -253,7 +259,11 @@ mod tests {
         for scene in &scenes {
             assert!(source.contains(&format!("name = {:?}", scene.name)));
             for (key, value) in &scene.lighting {
-                assert!(literal(value).is_some(), "{}: {key} has no literal", scene.name);
+                assert!(
+                    literal(value).is_some(),
+                    "{}: {key} has no literal",
+                    scene.name
+                );
             }
         }
         assert!(source.contains("{\"Ambient\", Color3.new(0.5, 0.5, 0.5)}"));

@@ -329,8 +329,7 @@ impl Lighting {
             fog_color: color(properties.get("FogColor")).unwrap_or(fallback.fog_color),
             fog_start: number(properties.get("FogStart")).unwrap_or(fallback.fog_start),
             fog_end: number(properties.get("FogEnd")).unwrap_or(fallback.fog_end),
-            technology: technology(properties.get("Technology"))
-                .unwrap_or(fallback.technology),
+            technology: technology(properties.get("Technology")).unwrap_or(fallback.technology),
         };
 
         Lighting::assemble(
@@ -466,8 +465,12 @@ impl Lighting {
 /// `ClockTime` when the file carries it, otherwise the `TimeOfDay` string
 /// Studio actually serializes ("14:30:00").
 fn clock_of(properties: &std::collections::BTreeMap<String, Variant>) -> Option<f32> {
-    number(properties.get("ClockTime"))
-        .or_else(|| properties.get("TimeOfDay").and_then(text).and_then(parse_clock))
+    number(properties.get("ClockTime")).or_else(|| {
+        properties
+            .get("TimeOfDay")
+            .and_then(text)
+            .and_then(parse_clock)
+    })
 }
 
 /// "HH", "HH:MM" or "HH:MM:SS" as fractional hours. Anything else is refused

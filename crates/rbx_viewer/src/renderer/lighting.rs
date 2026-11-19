@@ -133,7 +133,12 @@ impl LightingRaw {
                 DEPTH_BIAS_STUDS / fit.depth_studs.max(1.0),
             ],
             shadow_lamp: [lamp.marker(), 0.0, 0.0, 0.0],
-            locals: [lights as f32, f32::from(u8::from(lighting.voxel_locals)), 0.0, 0.0],
+            locals: [
+                lights as f32,
+                f32::from(u8::from(lighting.voxel_locals)),
+                0.0,
+                0.0,
+            ],
             quality: [
                 if quality.render_distance.is_finite() {
                     quality.render_distance
