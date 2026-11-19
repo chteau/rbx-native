@@ -975,7 +975,16 @@ impl Shell {
     fn test_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let nav = &self.ribbon_nav;
         let idle = self.play.phase == Phase::Idle;
-        let play = if idle {
+        let local_beta = crate::beta::enabled(super::local_run::BETA_ID);
+        let local_active = self.local_run_active();
+        let play = if local_active {
+            unavailable_tile(
+                "ribbon-play",
+                IconName::Play,
+                "Play",
+                "Local Run is running",
+            )
+        } else if idle {
             tile(nav, "ribbon-play", IconName::Play, "Play", cx)
                 .on_click(cx.listener(|shell, _, window, cx| shell.play_start(window, cx)))
         } else {
@@ -986,7 +995,44 @@ impl Shell {
                 "a test is already running",
             )
         };
-        let stop = if idle {
+        let run = if local_beta && local_active {
+            unavailable_row(
+                "ribbon-run",
+                IconName::SquarePlay,
+                "Run",
+                "Local Run is already running",
+            )
+        } else if local_beta && idle {
+            live_stack_row(nav, "ribbon-run", IconName::SquarePlay, "Run", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.run_local(cx)))
+        } else {
+            unavailable_row(
+                "ribbon-run",
+                IconName::SquarePlay,
+                "Run",
+                "a server-only run needs Roblox's engine; Play runs the place on Roblox",
+            )
+        };
+        let pause = if local_active {
+            let paused = self.local_run_paused();
+            live_stack_row(nav, "ribbon-pause", IconName::Pause, "Pause", cx)
+                .when(paused, |this| {
+                    this.bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_pause(cx)))
+        } else {
+            unavailable_row(
+                "ribbon-pause",
+                IconName::Pause,
+                "Pause",
+                "there is no local run to pause",
+            )
+        };
+        let stop = if local_active {
+            tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
+        } else if idle {
             unavailable_tile(
                 "ribbon-stop",
                 IconName::Square,
@@ -1013,21 +1059,7 @@ impl Shell {
             // Stop is a tile of its own rather than a third stack row: three
             // rows in an 80px ribbon are ~25px each, and Stop is the control a
             // person reaches for in a hurry.
-            stack(vec![
-                unavailable_row(
-                    "ribbon-run",
-                    IconName::SquarePlay,
-                    "Run",
-                    "a server-only run needs Roblox's engine; Play runs the place on Roblox",
-                ),
-                unavailable_row(
-                    "ribbon-pause",
-                    IconName::Pause,
-                    "Pause",
-                    "there is no local run to pause",
-                ),
-            ])
-            .into_any_element(),
+            stack(vec![run, pause]).into_any_element(),
             primary("ribbon-stop", stop).into_any_element(),
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),

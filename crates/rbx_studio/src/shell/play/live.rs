@@ -85,12 +85,17 @@ pub(crate) struct Live {
     client_attributes: HashMap<u64, AttributeJson>,
     /// The "script edits apply when the test stops" note was shown.
     pub(in crate::shell) script_note: bool,
+    /// The Run (local) simulation, which keeps the edited place in its stash.
+    pub(in crate::shell) local: super::super::local_run::LocalRun,
 }
 
 /// The edited place given `Shell::dom` and its live state: `dom`, or the
-/// stashed place while a live tree is shown. A free function so a caller
-/// can borrow it beside another `Shell` field.
+/// stashed place while a live tree or a local run is shown. A free function
+/// so a caller can borrow it beside another `Shell` field.
 pub(in crate::shell) fn edit_dom_of<'a>(dom: &'a WeakDom, live: &'a Live) -> &'a WeakDom {
+    if let Some(edited) = live.local.edited() {
+        return edited;
+    }
     match &live.stash {
         Some(stash) => &live.tree(stash.view).dom,
         None => dom,
@@ -186,6 +191,7 @@ impl Live {
             server_attributes: HashMap::new(),
             client_attributes: HashMap::new(),
             script_note: false,
+            local: Default::default(),
         }
     }
 
