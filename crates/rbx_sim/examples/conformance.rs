@@ -22,7 +22,8 @@ fn main() {
         eprintln!("{err}");
         std::process::exit(1);
     });
-    let mut table = String::from("| Test | Field | Roblox | rbx_sim | Delta | |\n|---|---|---|---|---|---|\n");
+    let mut table =
+        String::from("| Test | Field | Roblox | rbx_sim | Delta | |\n|---|---|---|---|---|---|\n");
     let mut unrecorded = Vec::new();
     let mut gaps = Vec::new();
     for test in TESTS {
@@ -37,7 +38,14 @@ fn main() {
             gaps.push(format!("- **{}**: {gap}", test.name));
         }
         for row in conformance::compare(test, &golden["result"], &golden["spread"], &mine) {
-            println!("{:<16} {:<20} roblox {:<14} ours {:<14} {}", row.test, row.field, row.golden, row.ours, mark(&row));
+            println!(
+                "{:<16} {:<20} roblox {:<14} ours {:<14} {}",
+                row.test,
+                row.field,
+                row.golden,
+                row.ours,
+                mark(&row)
+            );
             table.push_str(&format!(
                 "| {} | {} | {} | {} | {} | {} |\n",
                 row.test,
@@ -61,7 +69,10 @@ fn main() {
             text.push_str(&format!("\nKnown gaps:\n\n{}\n", gaps.join("\n")));
         }
         if !unrecorded.is_empty() {
-            text.push_str(&format!("\nNo golden recorded yet: {}.\n", unrecorded.join(", ")));
+            text.push_str(&format!(
+                "\nNo golden recorded yet: {}.\n",
+                unrecorded.join(", ")
+            ));
         }
         std::fs::write(&path, text).unwrap_or_else(|err| {
             eprintln!("{path}: {err}");

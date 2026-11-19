@@ -35,7 +35,11 @@ impl Shell {
 fn simulate(dom: rbx_dom::WeakDom) -> Vec<Feedback> {
     let mut sim = match rbx_sim::Simulation::new(dom) {
         Ok(sim) => sim,
-        Err(why) => return vec![Feedback::Error(format!("Local Run couldn\u{2019}t start: {why}"))],
+        Err(why) => {
+            return vec![Feedback::Error(format!(
+                "Local Run couldn\u{2019}t start: {why}"
+            ))]
+        }
     };
     sim.start();
     sim.run_for(SECONDS);

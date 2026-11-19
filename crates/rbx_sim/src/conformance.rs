@@ -75,7 +75,13 @@ pub const TESTS: &[Test] = &[
     Test {
         name: "TaskTiming",
         source: include_str!("../conformance/tests/TaskTiming.luau"),
-        tolerance: &[("*", 1.0), ("wait0", 0.01), ("wait01", 0.02), ("wait05", 0.02), ("legacy_wait", 0.02)],
+        tolerance: &[
+            ("*", 1.0),
+            ("wait0", 0.01),
+            ("wait01", 0.02),
+            ("wait05", 0.02),
+            ("legacy_wait", 0.02),
+        ],
     },
     Test {
         name: "RunServiceOrder",
@@ -131,7 +137,8 @@ fn service(dom: &mut WeakDom, class: &str) -> Ref {
 pub fn add_to(dom: &mut WeakDom, runs: u32) {
     let sss = service(dom, "ServerScriptService");
     let folder = child(dom, "Folder", FOLDER, sss);
-    let modules = std::iter::once(("Harness", HARNESS)).chain(TESTS.iter().map(|t| (t.name, t.source)));
+    let modules =
+        std::iter::once(("Harness", HARNESS)).chain(TESTS.iter().map(|t| (t.name, t.source)));
     for (name, source) in modules {
         let module = child(dom, "ModuleScript", name, folder);
         let _ = dom.set_property(module, "Source", Variant::String(source.into()));
@@ -228,7 +235,6 @@ pub fn aggregate(passes: &[Value]) -> (Value, Value) {
     (Value::Object(result), Value::Object(spread))
 }
 
-
 /// Runs the suite in [`Simulation`], [`PASSES`] times like the goldens,
 /// and folds the passes the same way ([`aggregate`]); `Err` with what it
 /// printed when the runner never finished within `limit` s of game time.
@@ -247,7 +253,10 @@ pub fn run_in_sim(limit: f64) -> Result<BTreeMap<String, Value>, String> {
                 .collect());
         }
     }
-    Err(format!("the runner never finished; it printed:\n{}", lines.join("\n")))
+    Err(format!(
+        "the runner never finished; it printed:\n{}",
+        lines.join("\n")
+    ))
 }
 
 pub fn goldens_dir() -> PathBuf {

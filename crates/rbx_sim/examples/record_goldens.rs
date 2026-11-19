@@ -23,7 +23,6 @@ use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
 use rbx_play::tunnel::TunnelProvider;
 use rbx_sim::conformance::{self, DONE, PASSES, PREFIX};
 
-
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (universe, place, base, cloudflared, passes) = match args.as_slice() {
@@ -122,9 +121,8 @@ fn main() {
     drop(tunnel);
 
     let results: BTreeMap<String, Vec<serde_json::Value>> = conformance::parse(&lines);
-    let recorded = format!(
-        "real Roblox server, place {place} version {version}, joined with {launcher:?}"
-    );
+    let recorded =
+        format!("real Roblox server, place {place} version {version}, joined with {launcher:?}");
     for test in conformance::TESTS {
         let Some(passes) = results.get(test.name) else {
             continue;
@@ -138,7 +136,8 @@ fn main() {
             "spread": spread,
         });
         // Why a test is expected to differ is ours to keep across recordings.
-        if let Some(gap) = conformance::golden(test.name).and_then(|g| g.get("known_gap").cloned()) {
+        if let Some(gap) = conformance::golden(test.name).and_then(|g| g.get("known_gap").cloned())
+        {
             golden["known_gap"] = gap;
         }
         let path = conformance::goldens_dir().join(format!("{}.json", test.name));

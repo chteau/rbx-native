@@ -29,7 +29,11 @@ struct Class {
 fn tags(value: &Value) -> Vec<String> {
     value["Tags"]
         .as_array()
-        .map(|t| t.iter().filter_map(|t| t.as_str().map(str::to_owned)).collect())
+        .map(|t| {
+            t.iter()
+                .filter_map(|t| t.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -71,7 +75,11 @@ fn load_dump() -> Vec<Class> {
                 })
                 .collect(),
         })
-        .filter(|c| !c.tags.iter().any(|t| t == "Deprecated" || t == "NotScriptable"))
+        .filter(|c| {
+            !c.tags
+                .iter()
+                .any(|t| t == "Deprecated" || t == "NotScriptable")
+        })
         .collect()
 }
 
@@ -180,7 +188,11 @@ fn main() {
             untouched.push(class.name.as_str());
             continue;
         }
-        let cell = |kind: &str| counts.get(kind).map_or("-".to_owned(), |(a, b)| format!("{a}/{b}"));
+        let cell = |kind: &str| {
+            counts
+                .get(kind)
+                .map_or("-".to_owned(), |(a, b)| format!("{a}/{b}"))
+        };
         rows.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} |\n",
             class.name,
@@ -196,7 +208,10 @@ fn main() {
         .iter()
         .map(|kind| {
             let (a, b) = totals.get(kind).copied().unwrap_or_default();
-            format!("| {kind} | {a} | {b} | {:.0}% |", 100.0 * a as f64 / b.max(1) as f64)
+            format!(
+                "| {kind} | {a} | {b} | {:.0}% |",
+                100.0 * a as f64 / b.max(1) as f64
+            )
         })
         .collect();
     let text = format!(

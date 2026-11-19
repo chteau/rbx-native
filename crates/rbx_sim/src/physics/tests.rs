@@ -17,6 +17,11 @@ fn cframe_round_trips_through_a_pose() {
     let back = cframe_of(&pose_of(&cframe));
     assert_eq!(back.position, cframe.position);
     for (a, b) in back.rotation.iter().zip(cframe.rotation) {
-        assert!((a - b).abs() < 1e-6, "{:?} vs {:?}", back.rotation, cframe.rotation);
+        assert!(
+            (a - b).abs() < 1e-6,
+            "{:?} vs {:?}",
+            back.rotation,
+            cframe.rotation
+        );
     }
 }

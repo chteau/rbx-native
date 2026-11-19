@@ -73,7 +73,9 @@ fn dump(dom: &WeakDom) {
     };
     let mut stack: Vec<(Ref, String)> = vec![(workspace, "Workspace".into())];
     while let Some((at, path)) = stack.pop() {
-        let Some(instance) = dom.get(at) else { continue };
+        let Some(instance) = dom.get(at) else {
+            continue;
+        };
         for child in instance.children().iter().rev() {
             if let Some(c) = dom.get(*child) {
                 stack.push((*child, format!("{path}.{}", c.name())));
@@ -86,13 +88,18 @@ fn dump(dom: &WeakDom) {
         if matches!(read("Anchored"), Some(Variant::Bool(true))) {
             continue;
         }
-        let (Some(Variant::CFrame(cf)), velocity) = (read("CFrame"), read("AssemblyLinearVelocity"))
+        let (Some(Variant::CFrame(cf)), velocity) =
+            (read("CFrame"), read("AssemblyLinearVelocity"))
         else {
             continue;
         };
         let v = match velocity {
             Some(Variant::Vector3(v)) => v,
-            _ => rbx_dom::Vector3Data { x: 0.0, y: 0.0, z: 0.0 },
+            _ => rbx_dom::Vector3Data {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let p = cf.position;
         println!(

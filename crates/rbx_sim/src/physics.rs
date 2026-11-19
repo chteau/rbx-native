@@ -235,7 +235,9 @@ impl World {
         let mut joints = Vec::new();
         let mut stack = vec![workspace];
         while let Some(at) = stack.pop() {
-            let Some(instance) = dom.get(at) else { continue };
+            let Some(instance) = dom.get(at) else {
+                continue;
+            };
             stack.extend(instance.children().iter().rev());
             if let Some(part) = PartData::read(db, instance) {
                 parts.push(part);
@@ -433,7 +435,8 @@ impl World {
                 continue;
             };
             if let Some(body) = self.bodies.get_mut(self.assemblies[placed.assembly].body) {
-                let impulse = Vector::new(impulse[0] as Real, impulse[1] as Real, impulse[2] as Real);
+                let impulse =
+                    Vector::new(impulse[0] as Real, impulse[1] as Real, impulse[2] as Real);
                 if angular {
                     body.apply_torque_impulse(impulse, true);
                 } else {
@@ -503,7 +506,10 @@ impl World {
                 };
                 let class = instance.class().to_owned();
                 let props = instance.properties_mut();
-                props.insert("CFrame".into(), Variant::CFrame(cframe_of(&(pose * placed.offset))));
+                props.insert(
+                    "CFrame".into(),
+                    Variant::CFrame(cframe_of(&(pose * placed.offset))),
+                );
                 for (name, value) in [
                     ("AssemblyLinearVelocity", linear),
                     ("AssemblyAngularVelocity", angular),
@@ -607,7 +613,10 @@ pub(crate) fn pose_of(cframe: &CFrameData) -> Pose {
         Vector::new(r[1], r[4], r[7]),
         Vector::new(r[2], r[5], r[8]),
     );
-    Pose::from_parts(vec3(cframe.position), Rotation::from_mat3(&matrix).normalize())
+    Pose::from_parts(
+        vec3(cframe.position),
+        Rotation::from_mat3(&matrix).normalize(),
+    )
 }
 
 pub(crate) fn cframe_of(pose: &Pose) -> CFrameData {

@@ -158,7 +158,9 @@ impl ServerHooks {
     fn run_service(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
         if RUN_SERVICE_SIGNALS.contains(&key) {
             let signal = LuaSignal(SignalKey::new(Owner::Service("RunService"), key));
-            return lua.create_userdata(signal).map(|u| Some(Value::UserData(u)));
+            return lua
+                .create_userdata(signal)
+                .map(|u| Some(Value::UserData(u)));
         }
         match key {
             // Studio's Run: a server that is running, in Studio.
@@ -177,12 +179,11 @@ impl ServerHooks {
         match key {
             "Touched" | "TouchEnded" => {
                 let signal = LuaSignal(instance_key(referent, key));
-                lua.create_userdata(signal).map(|u| Some(Value::UserData(u)))
+                lua.create_userdata(signal)
+                    .map(|u| Some(Value::UserData(u)))
             }
             // One machine: the server owns everything, nothing to hand over.
-            "SetNetworkOwner" | "SetNetworkOwnershipAuto" => {
-                method(lua, |_, _: MultiValue| Ok(()))
-            }
+            "SetNetworkOwner" | "SetNetworkOwnershipAuto" => method(lua, |_, _: MultiValue| Ok(())),
             "GetNetworkOwner" => method(lua, |_, _: MultiValue| Ok(Value::Nil)),
             "GetNetworkOwnershipAuto" => flag(lua, true),
             "CanSetNetworkOwnership" => method(lua, |_, _: MultiValue| Ok((true, Value::Nil))),
@@ -242,11 +243,9 @@ impl ServerHooks {
                     Ok(groups.collides(&a, &b))
                 })
             }
-            "IsCollisionGroupRegistered" => {
-                method(lua, move |_, (_s, name): (Value, String)| {
-                    Ok(groups.borrow().is_registered(&name))
-                })
-            }
+            "IsCollisionGroupRegistered" => method(lua, move |_, (_s, name): (Value, String)| {
+                Ok(groups.borrow().is_registered(&name))
+            }),
             "GetMaxCollisionGroups" => method(lua, |_, _: MultiValue| Ok(MAX_GROUPS)),
             "GetRegisteredCollisionGroups" => method(lua, move |lua, _: MultiValue| {
                 let groups = groups.borrow();

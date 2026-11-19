@@ -153,10 +153,11 @@ impl ServerVm {
         // The legacy `wait` never takes less than two 60 Hz frames on a
         // real server (the TaskTiming golden: `wait()` = 2 heartbeats,
         // 0.033 s); `task.wait` has no such floor.
-        let legacy: mlua::Function = lua
-            .load(LEGACY_WAIT)
-            .set_name("=wait")
-            .call(lua.globals().get::<Table>("task")?.get::<mlua::Function>("wait")?)?;
+        let legacy: mlua::Function = lua.load(LEGACY_WAIT).set_name("=wait").call(
+            lua.globals()
+                .get::<Table>("task")?
+                .get::<mlua::Function>("wait")?,
+        )?;
         lua.globals().set("wait", legacy)?;
         lua.sandbox(true)?;
         install_shared(&lua)?;
@@ -209,7 +210,10 @@ impl ServerVm {
         let this = LuaInstance::new(script, ctx).into_lua(&self.lua)?;
         let scope: Table = self.lua.create_table()?;
         scope.set("script", this.clone())?;
-        scope.set("require", crate::engine::require::require_for(&self.lua, this)?)?;
+        scope.set(
+            "require",
+            crate::engine::require::require_for(&self.lua, this)?,
+        )?;
         let meta = self.lua.create_table()?;
         meta.set("__index", self.lua.globals())?;
         scope.set_metatable(Some(meta))?;
@@ -248,11 +252,17 @@ impl ServerVm {
         self.guarded(|lua| match &event {
             Event::RunService(name, args) => {
                 let args: Vec<Arg> = args.iter().copied().map(Arg::Number).collect();
-                signal::fire(lua, &SignalKey::new(Owner::Service("RunService"), *name), &args)
+                signal::fire(
+                    lua,
+                    &SignalKey::new(Owner::Service("RunService"), *name),
+                    &args,
+                )
             }
-            Event::Touched { part, other } => {
-                signal::fire(lua, &instance_key(*part, "Touched"), &[Arg::Instance(*other)])
-            }
+            Event::Touched { part, other } => signal::fire(
+                lua,
+                &instance_key(*part, "Touched"),
+                &[Arg::Instance(*other)],
+            ),
             Event::TouchEnded { part, other } => signal::fire(
                 lua,
                 &instance_key(*part, "TouchEnded"),
@@ -265,12 +275,16 @@ impl ServerVm {
     pub fn listens_to_touch(&self, part: Ref) -> bool {
         let engine = engine(&self.lua);
         let signals = engine.signals.borrow();
-        signals.has(&instance_key(part, "Touched")) || signals.has(&instance_key(part, "TouchEnded"))
+        signals.has(&instance_key(part, "Touched"))
+            || signals.has(&instance_key(part, "TouchEnded"))
     }
 
     /// When the next timer is due, `None` when nothing waits on time.
     pub fn next_due(&self) -> Option<f64> {
-        engine(&self.lua).scheduler.borrow().next_due(self.host.now.get())
+        engine(&self.lua)
+            .scheduler
+            .borrow()
+            .next_due(self.host.now.get())
     }
 
     /// What scripts printed since the last call.

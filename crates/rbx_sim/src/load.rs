@@ -24,7 +24,9 @@ pub fn parse_place(bytes: &[u8]) -> Result<WeakDom, String> {
             rbx_binary::deserialize_with_names(bytes).map_err(|err| err.to_string())?;
         database.normalize_spellings(
             &mut dom,
-            names.iter().map(|(class, property)| (class.as_str(), property.as_str())),
+            names
+                .iter()
+                .map(|(class, property)| (class.as_str(), property.as_str())),
         );
         dom
     };

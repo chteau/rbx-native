@@ -230,7 +230,8 @@ impl Simulation {
         };
         for script in found {
             if let Err(err) = self.vm.start_script(script) {
-                self.output.push_text(rbx_lua::LineKind::Error, err.to_string());
+                self.output
+                    .push_text(rbx_lua::LineKind::Error, err.to_string());
             }
         }
     }
@@ -280,7 +281,11 @@ impl Simulation {
         if !is_part {
             return;
         }
-        let read = |n: &str| self.db.stored_or_default(instance, n).map(|(_, v)| v.clone());
+        let read = |n: &str| {
+            self.db
+                .stored_or_default(instance, n)
+                .map(|(_, v)| v.clone())
+        };
         match name {
             "CFrame" => {
                 if let Some(Variant::CFrame(cf)) = read("CFrame") {

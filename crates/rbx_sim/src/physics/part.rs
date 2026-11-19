@@ -37,7 +37,11 @@ pub(super) struct PartData {
     pub(super) angular_velocity: Vector3Data,
 }
 
-fn read<'a>(db: &'a ReflectionDatabase, instance: &'a Instance, name: &'a str) -> Option<&'a Variant> {
+fn read<'a>(
+    db: &'a ReflectionDatabase,
+    instance: &'a Instance,
+    name: &'a str,
+) -> Option<&'a Variant> {
     db.stored_or_default(instance, name).map(|(_, v)| v)
 }
 
@@ -168,7 +172,10 @@ impl PartData {
 }
 
 fn hull(points: &[[f32; 3]]) -> Option<ColliderBuilder> {
-    let points: Vec<Vector> = points.iter().map(|p| Vector::new(p[0], p[1], p[2])).collect();
+    let points: Vec<Vector> = points
+        .iter()
+        .map(|p| Vector::new(p[0], p[1], p[2]))
+        .collect();
     ColliderBuilder::convex_hull(&points)
 }
 
@@ -183,7 +190,13 @@ fn physics(db: &ReflectionDatabase, instance: &Instance) -> [f32; 5] {
         elasticity_weight,
     })) = read(db, instance, "CustomPhysicalProperties")
     {
-        return [*density, *friction, *elasticity, *friction_weight, *elasticity_weight];
+        return [
+            *density,
+            *friction,
+            *elasticity,
+            *friction_weight,
+            *elasticity_weight,
+        ];
     }
     let material = match read(db, instance, "Material") {
         Some(Variant::Enum(raw)) => db.enum_name("Material", *raw),
@@ -216,10 +229,12 @@ impl Joint {
             return None;
         }
         let part = |names: &[&str]| {
-            names.iter().find_map(|name| match instance.properties().get(*name) {
-                Some(Variant::Ref(r)) => Some(*r),
-                _ => None,
-            })
+            names
+                .iter()
+                .find_map(|name| match instance.properties().get(*name) {
+                    Some(Variant::Ref(r)) => Some(*r),
+                    _ => None,
+                })
         };
         Some(Joint {
             referent: instance.referent(),
