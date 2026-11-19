@@ -66,6 +66,9 @@ pub(crate) struct Scheduler {
     pub(crate) delay_threads: Vec<(Thread, AwaitId)>,
     /// Ids resolved before their thread got as far as yielding on them.
     pub(crate) early: HashMap<AwaitId, std::result::Result<MultiValue, String>>,
+    /// Each script's main thread: once the script is destroyed the thread
+    /// never resumes, as a destroyed script stops in Roblox.
+    pub(crate) owners: Vec<(Thread, rbx_dom::Ref)>,
 }
 
 impl Scheduler {
@@ -249,7 +252,30 @@ fn report(lua: &Lua, text: String) {
 
 /// Resumes `thread` with `args` and files it by what it yields. Never
 /// holds a borrow of `Env::scheduler` while Luau runs.
+/// Whether `thread` is the main thread of a script that was destroyed.
+fn orphaned(lua: &Lua, thread: &Thread) -> bool {
+    let engine = engine(lua);
+    let mut scheduler = engine.scheduler.borrow_mut();
+    scheduler
+        .owners
+        .retain(|(t, _)| t.status() == ThreadStatus::Resumable);
+    let Some(script) = scheduler
+        .owners
+        .iter()
+        .find(|(t, _)| t == thread)
+        .map(|o| o.1)
+    else {
+        return false;
+    };
+    drop(scheduler);
+    let gone = engine.ctx.dom().get(script).is_none();
+    gone
+}
+
 pub(crate) fn resume(lua: &Lua, thread: Thread, args: MultiValue) -> Result<()> {
+    if orphaned(lua, &thread) {
+        return Ok(());
+    }
     let mut args = args;
     loop {
         if thread.status() != ThreadStatus::Resumable {

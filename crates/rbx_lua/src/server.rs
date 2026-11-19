@@ -32,7 +32,7 @@ use crate::hooks::HookSlot;
 use crate::instance::tree::full_name;
 use crate::instance::LuaInstance;
 use crate::output::{LineKind, Output};
-use crate::plugin::api::Arg;
+pub use crate::plugin::api::Arg;
 use crate::runtime::{install_globals, install_require, install_shared};
 use crate::LuaError;
 
@@ -100,6 +100,72 @@ pub trait Physics {
     ) -> Vec<Ref> {
         Vec::new()
     }
+
+    /// Whether the simulation answers `class:key(...)` (a Humanoid's
+    /// `MoveTo`, a player's `LoadCharacter`, ...) through [`Physics::call`].
+    fn engine_method(&self, _class: &str, _key: &str) -> bool {
+        false
+    }
+
+    /// Whether `class.key` is a signal the simulation fires
+    /// ([`Event::Signal`] or [`CallReply::fire`]).
+    fn engine_signal(&self, _class: &str, _key: &str) -> bool {
+        false
+    }
+
+    /// `referent:method(args)` for a method [`Physics::engine_method`]
+    /// claimed (`args` without the instance itself).
+    fn call(
+        &self,
+        _referent: Ref,
+        _class: &str,
+        method: &str,
+        _args: Vec<Arg>,
+    ) -> Result<CallReply, String> {
+        Err(format!("{method} is not a valid member"))
+    }
+
+    /// An engine property read the simulation answers live (a player's
+    /// `Character`, `Players.LocalPlayer`), `None` for the DOM's value.
+    /// A method whose first argument names a signal it returns, as
+    /// `<method>:<argument>` (`AnimationTrack:GetMarkerReachedSignal`).
+    fn signal_method(&self, _class: &str, _key: &str) -> bool {
+        false
+    }
+
+    fn engine_property(&self, _referent: Ref, _class: &str, _key: &str) -> Option<Arg> {
+        None
+    }
+
+    /// A script's write of `class.key` the simulation changes on the way in
+    /// (a Humanoid's `Health` above `MaxHealth`): the value to store
+    /// instead, `None` to store it as given.
+    fn engine_write(&self, _referent: Ref, _class: &str, _key: &str, _value: &Arg) -> Option<Arg> {
+        None
+    }
+}
+
+/// What a [`Physics::call`] returns, and the signals it fires before it
+/// returns, in order (`LoadCharacter`'s `CharacterRemoving`,
+/// `CharacterAdded`, ... run before the call's next line).
+#[derive(Debug, Default)]
+pub struct CallReply {
+    pub values: Vec<Arg>,
+    pub fire: Vec<(Ref, String, Vec<Arg>)>,
+    /// A method to call next, once `fire`'s handlers have run, with the
+    /// same arguments: a call that must let scripts see a state between two
+    /// steps (`LoadCharacter`'s `CharacterRemoving` before the old
+    /// character goes).
+    pub and_then: Option<String>,
+}
+
+impl CallReply {
+    pub fn value(value: Arg) -> Self {
+        CallReply {
+            values: vec![value],
+            ..CallReply::default()
+        }
+    }
 }
 
 /// Something the simulation tells the scripts happened.
@@ -111,6 +177,12 @@ pub enum Event {
     Touched { part: Ref, other: Ref },
     /// `part.TouchEnded(other)`.
     TouchEnded { part: Ref, other: Ref },
+    /// `owner[name]` fired with `args` (a Humanoid's `StateChanged`, ...).
+    Signal {
+        owner: Ref,
+        name: String,
+        args: Vec<Arg>,
+    },
 }
 
 struct ServerHost {
@@ -275,11 +347,10 @@ impl ServerVm {
         match chunk {
             Ok(chunk) => {
                 let main = self.lua.create_thread(chunk)?;
-                engine(&self.lua)
-                    .scheduler
-                    .borrow_mut()
-                    .deferred
-                    .push_back((main, MultiValue::new()));
+                let engine = engine(&self.lua);
+                let mut scheduler = engine.scheduler.borrow_mut();
+                scheduler.owners.push((main.clone(), script));
+                scheduler.deferred.push_back((main, MultiValue::new()));
             }
             // Roblox reports a script that does not compile and moves on.
             Err(error) => self.host.output(LineKind::Error, error.to_string()),
@@ -317,6 +388,9 @@ impl ServerVm {
                 &instance_key(*part, "TouchEnded"),
                 &[Arg::Instance(*other)],
             ),
+            Event::Signal { owner, name, args } => {
+                signal::fire(lua, &instance_key(*owner, name.as_str()), args)
+            }
         })
     }
 

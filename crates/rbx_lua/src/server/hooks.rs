@@ -13,9 +13,12 @@ use super::{fire_fresh, Physics};
 use crate::ctx::Ctx;
 use crate::datatypes::vector3::LuaVector3;
 use crate::engine::events::{self, instance_key};
+use crate::engine::signal;
 use crate::engine::signal::{deferred_signals, LuaSignal, Owner, SignalKey};
 use crate::engine::{collection, json};
 use crate::hooks::Hooks;
+use crate::plugin::api::Arg;
+use crate::plugin::arg;
 
 /// The frame signals a server has. `PreRender`/`RenderStepped` exist on
 /// the server too but never fire there (Roblox fires them on clients only).
@@ -155,6 +158,62 @@ fn vector(value: &Value) -> Result<[f64; 3]> {
 }
 
 impl ServerHooks {
+    /// What the simulation itself answers: its signals, its methods (whose
+    /// reply's signals fire before the method returns) and its live
+    /// properties.
+    fn engine_member(
+        &self,
+        lua: &Lua,
+        ctx: &Ctx,
+        referent: Ref,
+        class: &str,
+        key: &str,
+    ) -> Result<Option<Value>> {
+        if self.physics.engine_signal(class, key) {
+            let signal = LuaSignal(instance_key(referent, key));
+            return lua
+                .create_userdata(signal)
+                .map(|u| Some(Value::UserData(u)));
+        }
+        if self.physics.signal_method(class, key) {
+            let key = key.to_owned();
+            return method(lua, move |lua, args: MultiValue| {
+                let name = match args.get(1) {
+                    Some(Value::String(s)) => s.to_str()?.to_string(),
+                    _ => return Err(mlua::Error::runtime("Argument 1 missing or nil")),
+                };
+                let signal = LuaSignal(instance_key(referent, &format!("{key}:{name}")));
+                lua.create_userdata(signal)
+            });
+        }
+        if self.physics.engine_method(class, key) {
+            let physics = self.physics.clone();
+            let ctx = ctx.clone();
+            let class = class.to_owned();
+            let key = key.to_owned();
+            return method(lua, move |lua, args: MultiValue| {
+                let args: Vec<Arg> = args.iter().skip(1).map(arg::from_lua).collect();
+                let mut method = key.clone();
+                loop {
+                    let reply = physics
+                        .call(referent, &class, &method, args.clone())
+                        .map_err(mlua::Error::runtime)?;
+                    for (owner, name, args) in &reply.fire {
+                        signal::fire(lua, &instance_key(*owner, name.as_str()), args)?;
+                    }
+                    match reply.and_then {
+                        Some(next) => method = next,
+                        None => return arg::to_lua_multi(lua, &ctx, &reply.values),
+                    }
+                }
+            });
+        }
+        match self.physics.engine_property(referent, class, key) {
+            Some(value) => arg::to_lua(lua, ctx, &value).map(Some),
+            None => Ok(None),
+        }
+    }
+
     fn run_service(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
         if RUN_SERVICE_SIGNALS.contains(&key) {
             let signal = LuaSignal(SignalKey::new(Owner::Service("RunService"), key));
@@ -365,6 +424,9 @@ impl Hooks for ServerHooks {
             return wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }
         not_scriptable(ctx, referent, class, key)?;
+        if let Some(value) = self.engine_member(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
         if class == "Workspace" {
             if let Some(value) = super::query::member(lua, ctx, &self.physics, key)? {
                 return Ok(Some(value));
@@ -392,6 +454,16 @@ impl Hooks for ServerHooks {
         value: &Value,
     ) -> Result<bool> {
         not_scriptable(ctx, referent, class, key)?;
+        if let Some(stored) = self
+            .physics
+            .engine_write(referent, class, key, &arg::from_lua(value))
+        {
+            let stored = arg::to_lua(lua, ctx, &stored)?;
+            if crate::property::set(ctx, referent, key, &stored)? {
+                crate::hooks::wrote(lua)?;
+                return Ok(true);
+            }
+        }
         events::new_index(lua, ctx, referent, class, key, value)
     }
 
