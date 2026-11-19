@@ -131,6 +131,24 @@ pub struct Headless {
     /// thread) polls this instead of scraping stderr to surface them in its
     /// own UI.
     warnings: Vec<String>,
+    /// See [`Headless::unavailable`].
+    unavailable: Option<gpu::Unavailable>,
+}
+
+/// What a viewer that draws nothing loads: no texture or material pack.
+fn undrawn_toggles() -> Toggles {
+    Toggles {
+        textures: false,
+        materials: false,
+        lights: true,
+        clock_time: None,
+        show_development_gui: false,
+    }
+}
+
+/// wgpu's no-op device: no adapter, no driver, nothing drawn.
+fn noop_device() -> (wgpu::Device, wgpu::Queue) {
+    wgpu::Device::noop(&wgpu::DeviceDescriptor::default())
 }
 
 impl Headless {
@@ -152,26 +170,29 @@ impl Headless {
         Headless::from_dom(&dom, textures).map_err(|err| format!("{err} in {path:?}"))
     }
 
+    /// [`Headless::load`] for an editor, which has more to show than the
+    /// picture: when no GPU can build the renderer (or building it panics),
+    /// the place still opens, on wgpu's no-op device, and
+    /// [`Headless::unavailable`] says why nothing is drawn.
+    pub fn load_or_undrawn(path: &Path) -> Result<Self, String> {
+        let dom = crate::load::read_place(path)?;
+        Headless::from_dom_in(&dom, true, true).map_err(|err| format!("{err} in {path:?}"))
+    }
+
     /// [`Headless::load`] on wgpu's no-op device: no adapter, no driver and
     /// no shader compiled, so it returns at once and draws nothing. For a
     /// host that never shows its place, where a real renderer only cost
     /// seconds (tens on a laptop GPU compiling every pipeline).
     pub fn load_undrawn(path: &Path) -> Result<Self, String> {
         let dom = crate::load::read_place(path)?;
-        let device = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
         Headless::build(
             &dom,
-            Toggles {
-                textures: false,
-                materials: false,
-                lights: true,
-                clock_time: None,
-                show_development_gui: false,
-            },
+            undrawn_toggles(),
             ReflectionDatabase::embedded(),
             View::default(),
             QualityLevel::MAX,
-            Some(device),
+            Some(noop_device()),
+            false,
         )
         .map_err(|err| format!("{err} in {path:?}"))
     }
@@ -179,31 +200,58 @@ impl Headless {
     /// [`Headless::load`] for a tree already in memory, e.g. one plugin
     /// widget's GUI, drawn on its own with [`Headless::render_gui`].
     pub fn from_dom(dom: &WeakDom, textures: bool) -> Result<Self, String> {
+        Headless::from_dom_in(dom, textures, false)
+    }
+
+    /// [`Headless::from_dom`], opening undrawn when no GPU can draw if
+    /// `or_undrawn` (see [`Headless::load_or_undrawn`]).
+    fn from_dom_in(dom: &WeakDom, textures: bool, or_undrawn: bool) -> Result<Self, String> {
         let toggles = Toggles {
             textures,
             materials: textures,
-            lights: true,
-            clock_time: None,
-            show_development_gui: false,
+            ..undrawn_toggles()
         };
-        // An embedder builds this from a UI callback, where a panic aborts
-        // the whole process instead of unwinding (any Win32 window message).
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let build = |device| {
             Headless::build(
                 dom,
                 toggles,
                 ReflectionDatabase::embedded(),
                 View::default(),
                 QualityLevel::MAX,
-                None,
+                device,
+                or_undrawn,
             )
-        }))
-        .unwrap_or_else(|_| Err("the 3D renderer crashed building this place".to_owned()))
+        };
+        // An embedder builds this from a UI callback, where a panic aborts
+        // the whole process instead of unwinding (any Win32 window message).
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build(None))).unwrap_or_else(
+            |_| {
+                let reason = "the 3D renderer crashed building this place".to_owned();
+                if !or_undrawn {
+                    return Err(reason);
+                }
+                let mut headless = build(Some(noop_device()))?;
+                headless.unavailable = Some(gpu::Unavailable {
+                    found: gpu::chosen_adapter().into_iter().collect(),
+                    reason,
+                });
+                Ok(headless)
+            },
+        )
+    }
+
+    /// Why this place is not drawn, when no GPU could build its renderer:
+    /// it was built on wgpu's no-op device instead, so everything but the
+    /// picture still works. A host shows this where the picture would be.
+    pub fn unavailable(&self) -> Option<&gpu::Unavailable> {
+        self.unavailable.as_ref()
     }
 
     /// [`Headless::from_dom`] with the toggles, database and view given,
     /// at the default quality and calibration, no higher than level `cap`,
-    /// on `device` or, without one, a GPU of its own.
+    /// on `device` or, without one, a GPU of its own: when none can draw,
+    /// an error, or the no-op device if `or_undrawn` (see
+    /// [`Headless::unavailable`]).
     fn build(
         dom: &WeakDom,
         toggles: Toggles,
@@ -211,6 +259,7 @@ impl Headless {
         view: View,
         cap: u8,
         device: Option<(wgpu::Device, wgpu::Queue)>,
+        or_undrawn: bool,
     ) -> Result<Self, String> {
         let mut resident = Resident::streaming();
         let mut loaded = Loaded::from_dom(dom, &database, toggles, &mut resident)
@@ -232,15 +281,24 @@ impl Headless {
         // A device handed in is shared or never drawn on (wgpu's no-op one
         // for a host that is never shown), so it doesn't walk down the
         // out-of-memory rungs: only a GPU of our own does.
-        let (offscreen, built, ceiling) = match device {
-            Some((device, queue)) => {
-                let rung = gpu::Rung::start(cap);
-                let offscreen =
-                    Offscreen::on_device(device, queue, loaded.world(), &rung.profile(), &view);
-                (offscreen, rung, cap)
-            }
-            None => Offscreen::new(loaded.world(), cap, &view)?,
+        let mut unavailable = None;
+        let built = match device {
+            Some(device) => Err(device),
+            None => match Offscreen::new(loaded.world(), cap, &view) {
+                Err(why) if !or_undrawn => return Err(why.to_string()),
+                built => built.map_err(|why| {
+                    eprintln!("rbxview: drawing nothing: {why}");
+                    unavailable = Some(why);
+                    noop_device()
+                }),
+            },
         };
+        let (offscreen, built, ceiling) = built.unwrap_or_else(|(device, queue)| {
+            let rung = gpu::Rung::start(cap);
+            let offscreen =
+                Offscreen::on_device(device, queue, loaded.world(), &rung.profile(), &view);
+            (offscreen, rung, cap)
+        });
         let mut headless = Headless {
             offscreen,
             quality: QualityLevel::Level(built.level),
@@ -268,6 +326,7 @@ impl Headless {
             uploaded_material_layers,
             warnings,
             skinning_wanted: true,
+            unavailable,
         };
         headless.sync_skinning();
         Ok(headless)
@@ -845,8 +904,9 @@ impl Headless {
         self.from = from;
         // Not `||`: the assets have to be collected whether the camera moved
         // or not, and short-circuiting would leave them waiting for a tick
-        // that happens to be still.
-        moved | self.take_landed_assets()
+        // that happens to be still. Nothing is drawn without a GPU, so
+        // nothing ever differs then: a host waits instead of spinning.
+        (moved | self.take_landed_assets()) && self.unavailable.is_none()
     }
 
     /// The surface straight ahead of the eye while a wheel notch waits to
@@ -865,7 +925,7 @@ impl Headless {
     /// still being uploaded a few per frame. A host that draws only when
     /// [`Headless::tick`] reports a change keeps drawing while this holds.
     pub fn animating(&self) -> bool {
-        self.offscreen.animating()
+        self.unavailable.is_none() && self.offscreen.animating()
     }
 
     /// How the free camera responds to the mouse and the keys, from now on.
@@ -955,6 +1015,9 @@ impl Headless {
     /// still in flight with [`Headless::take_frame`], or it never reaches the
     /// screen.
     pub fn render_frame(&mut self, width: u32, height: u32) -> Result<Option<Rendered>, String> {
+        if self.unavailable.is_some() {
+            return Ok(None);
+        }
         if self.ooms != gpu::ooms() {
             self.recover();
         }
@@ -965,6 +1028,9 @@ impl Headless {
     /// The frame already drawn but not yet handed back, without drawing another:
     /// what a host calls once the view comes to rest.
     pub fn take_frame(&mut self) -> Result<Option<Rendered>, String> {
+        if self.unavailable.is_some() {
+            return Ok(None);
+        }
         self.offscreen.take_frame()
     }
 
@@ -978,6 +1044,9 @@ impl Headless {
         height: u32,
         at: Option<([f32; 3], [f32; 3])>,
     ) -> Result<Rendered, String> {
+        if let Some(why) = &self.unavailable {
+            return Err(why.to_string());
+        }
         self.offscreen.take_frame()?;
         let from = match at {
             Some((eye, look_at)) => {

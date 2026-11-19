@@ -244,6 +244,9 @@ pub(crate) struct Opened {
 }
 
 pub(crate) struct WorkspaceView {
+    /// Why no GPU draws this place (see `Headless::unavailable`), said where
+    /// the picture would be.
+    unavailable: Option<SharedString>,
     /// The render thread. It owns the viewer, which is why no camera state is
     /// readable from here, only what it reports back with each frame.
     pump: Pump,
@@ -494,6 +497,9 @@ impl WorkspaceView {
         // something blurs or deactivates it.
         let interval = pacing.interval(full_interval);
         let speed = viewer.speed();
+        let unavailable = viewer
+            .unavailable()
+            .map(|why| SharedString::from(why.to_string()));
         cx.spawn_in(window, async move |view, cx| {
             let mut delay = interval;
             loop {
@@ -538,6 +544,7 @@ impl WorkspaceView {
 
         WorkspaceView {
             outlined,
+            unavailable,
             pump: Pump::spawn(viewer, dom, interval, quality),
             plugin_handles: Default::default(),
             focus,
@@ -1697,6 +1704,9 @@ impl Render for WorkspaceView {
                 .left_0()
                 .size_full(),
             )
+            .when_some(self.unavailable.clone(), |this, why| {
+                this.child(unavailable_notice(why))
+            })
             .children(self.device_overlay(scale, cx))
             .children(self.note_elements(window, cx))
             // Only for the moment after the wheel changes the speed: anything
@@ -2008,4 +2018,30 @@ fn axis_label(label: orientation::AxisLabel, k: f32) -> impl IntoElement {
         .text_color(label.color)
         .opacity(opacity)
         .child(label.text)
+}
+
+/// What the viewport shows instead of a picture when no GPU could build the
+/// renderer: why, and how to pick another backend.
+fn unavailable_notice(why: SharedString) -> impl IntoElement {
+    div()
+        .absolute()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .p_6()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .max_w(px(520.))
+                .text_size(px(13.))
+                .text_color(tokens::text())
+                .child(why)
+                .child(div().text_color(tokens::text2()).child(
+                    "Explorer, Properties, scripts and saving still work. To try another \
+                     backend, start RbxNative with WGPU_BACKEND set to dx12 or vulkan.",
+                )),
+        )
 }

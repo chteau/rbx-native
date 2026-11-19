@@ -118,6 +118,7 @@ mod change_class;
 mod class_icons;
 mod cli;
 mod command_bar;
+mod crash_log;
 mod debugger;
 mod device_sim;
 mod discord_presence;
@@ -269,6 +270,8 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some(update_planning::helper::TICK_FLAG) {
         std::process::exit(update_planning::tick_main());
     }
+    // Before any other thread, so every panic and stderr line is caught.
+    crash_log::init();
     // Before anything can ask whether a beta feature is on.
     beta::init();
     // Clears the last update's leftovers and starts the launch check, on its
@@ -367,6 +370,7 @@ fn main() {
         // moment to leave its room first, so a host's goodbye reaches the
         // others instead of leaving them on a dead address.
         cx.on_app_quit(|_| {
+            crash_log::quit_cleanly();
             rbx_presence::client::leave_all(PRESENCE_LEAVE_LIMIT);
             async {}
         })
@@ -830,7 +834,7 @@ fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, Stri
     // An Argon/Rojo project opens as the place it builds.
     let imported = shell::project::place_for(path)?;
     let path = imported.as_deref().unwrap_or(path);
-    let viewer = Headless::load(path, true)?;
+    let viewer = Headless::load_or_undrawn(path)?;
     load_viewed(path, viewer, launch, icon_pack)
 }
 
