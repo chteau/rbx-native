@@ -11,7 +11,7 @@
 //! - friction and elasticity of a contact are the pairwise weighted average
 //!   the `PhysicalProperties` docs give, done in a contact hook.
 
-mod part;
+pub(crate) mod part;
 #[cfg(test)]
 mod tests;
 
@@ -22,11 +22,13 @@ use std::sync::Mutex;
 
 use rapier3d::prelude::*;
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
-use rbx_lua::server::{CollisionGroups, Physics};
+use rbx_lua::server::{CollisionGroups, Physics, QueryFilter, QueryHit, QueryShape};
 use rbx_reflection::ReflectionDatabase;
 
 pub use part::Shape;
 use part::{Joint, PartData};
+
+use crate::spatial::Spatial;
 
 /// Roblox's physics rate: four solver steps per 60 Hz frame.
 pub const PHYSICS_HZ: f64 = 240.0;
@@ -60,12 +62,91 @@ struct Assembly {
 pub struct Shared {
     masses: HashMap<Ref, (f64, f64)>,
     impulses: Vec<(Ref, [f64; 3], bool)>,
+    /// Bumped whenever the world steps or is rebuilt.
+    generation: u64,
+    queries: Option<Queries>,
+}
+
+/// What spatial queries read: the live DOM, the groups, the index.
+struct Queries {
+    dom: Rc<RefCell<WeakDom>>,
+    db: &'static ReflectionDatabase,
+    groups: Rc<RefCell<CollisionGroups>>,
+    spatial: Rc<RefCell<Spatial>>,
+}
+
+impl Shared {
+    /// Wires the spatial queries to the DOM and the VM's collision groups.
+    pub fn connect(
+        &mut self,
+        dom: Rc<RefCell<WeakDom>>,
+        db: &'static ReflectionDatabase,
+        groups: Rc<RefCell<CollisionGroups>>,
+    ) {
+        self.queries = Some(Queries {
+            dom,
+            db,
+            groups,
+            spatial: Rc::new(RefCell::new(Spatial::default())),
+        });
+    }
 }
 
 /// The VM's view of [`Shared`].
 pub struct Bridge(pub Rc<RefCell<Shared>>);
 
+impl Bridge {
+    fn query<R>(&self, f: impl FnOnce(&Spatial, &CollisionGroups) -> R) -> Option<R> {
+        let (dom, db, groups, spatial, generation) = {
+            let shared = self.0.borrow();
+            let q = shared.queries.as_ref()?;
+            (
+                q.dom.clone(),
+                q.db,
+                q.groups.clone(),
+                q.spatial.clone(),
+                shared.generation,
+            )
+        };
+        let dom = dom.borrow();
+        let mut spatial = spatial.borrow_mut();
+        spatial.refresh(&dom, db, generation);
+        let groups = groups.borrow();
+        Some(f(&spatial, &groups))
+    }
+}
+
 impl Physics for Bridge {
+    fn raycast(
+        &self,
+        origin: [f64; 3],
+        direction: [f64; 3],
+        filter: &QueryFilter,
+    ) -> Option<QueryHit> {
+        self.query(|s, g| s.raycast(origin, direction, filter, g))?
+    }
+
+    fn shapecast(
+        &self,
+        shape: &QueryShape,
+        from: &CFrameData,
+        direction: [f64; 3],
+        filter: &QueryFilter,
+    ) -> Option<QueryHit> {
+        self.query(|s, g| s.shapecast(shape, from, direction, filter, g))?
+    }
+
+    fn overlap(
+        &self,
+        shape: &QueryShape,
+        at: &CFrameData,
+        exact: bool,
+        filter: &QueryFilter,
+    ) -> Vec<Ref> {
+        self.query(|s, g| s.overlap(shape, at, exact, filter, g))
+            .unwrap_or_default()
+    }
+
     fn mass(&self, part: Ref) -> Option<f64> {
         self.0.borrow().masses.get(&part).map(|m| m.0)
     }
@@ -223,6 +304,7 @@ impl World {
     /// `dom`: parts, assemblies, velocities as the DOM holds them.
     pub fn rebuild(&mut self, dom: &WeakDom, db: &ReflectionDatabase, groups: &CollisionGroups) {
         *self = World::new(self.shared.clone());
+        self.shared.borrow_mut().generation += 1;
         let Some(workspace) = dom
             .root_refs()
             .iter()
@@ -412,6 +494,7 @@ impl World {
     /// front, then the four substeps coast), anything in contact at 240 Hz.
     /// The `FreeFall` golden is what this matches.
     pub fn step(&mut self, gravity: f64, steps: u32, adaptive: bool) -> Vec<Touch> {
+        self.shared.borrow_mut().generation += 1;
         // A world just built has no contacts yet: everything takes 240 Hz once.
         let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
         let frame = Vector::new(0.0, -gravity as Real, 0.0) * (steps as Real * self.params.dt);
@@ -524,6 +607,15 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Every part physics moves (the unanchored assemblies' parts, awake or
+    /// not): what [`World::write_back`] writes `CFrame` for.
+    pub fn moving_parts(&self) -> impl Iterator<Item = Ref> + '_ {
+        self.assemblies
+            .iter()
+            .filter(|a| !a.anchored)
+            .flat_map(|a| a.parts.iter().copied())
     }
 
     /// The parts of every unanchored assembly whose position is below

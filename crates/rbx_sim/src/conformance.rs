@@ -278,8 +278,8 @@ fn service(dom: &mut WeakDom, class: &str) -> Ref {
 pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
     let sss = service(dom, "ServerScriptService");
     let folder = child(dom, "Folder", FOLDER, sss);
-    let modules =
-        std::iter::once(("Harness", HARNESS)).chain(selected(only).map(|(_, t)| (t.name, t.source)));
+    let modules = std::iter::once(("Harness", HARNESS))
+        .chain(selected(only).map(|(_, t)| (t.name, t.source)));
     for (name, source) in modules {
         let module = child(dom, "ModuleScript", name, folder);
         let _ = dom.set_property(module, "Source", Variant::String(source.into()));

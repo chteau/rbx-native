@@ -8,6 +8,7 @@
 //! simulation knows (masses) or can do (impulses).
 
 mod hooks;
+mod query;
 #[cfg(test)]
 mod tests;
 
@@ -18,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use mlua::chunk::Compiler;
 use mlua::{IntoLua, Lua, MultiValue, Table, VmState};
-use rbx_dom::{Change, Ref, Variant, WeakDom};
+use rbx_dom::{CFrameData, Change, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::ctx::Ctx;
@@ -35,6 +36,7 @@ use crate::runtime::{install_globals, install_require, install_shared};
 use crate::LuaError;
 
 pub use hooks::CollisionGroups;
+pub use query::{QueryFilter, QueryHit, QueryShape};
 
 /// Roblox's message for a script that ran too long without yielding.
 const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
@@ -58,6 +60,41 @@ pub trait Physics {
     /// `ApplyImpulse` (`angular: false`) / `ApplyAngularImpulse`, applied
     /// at the next physics step.
     fn apply_impulse(&self, part: Ref, impulse: [f64; 3], angular: bool);
+
+    /// `WorldRoot:Raycast`: the nearest hit along `direction` (its whole
+    /// length) from `origin`.
+    fn raycast(
+        &self,
+        _origin: [f64; 3],
+        _direction: [f64; 3],
+        _filter: &QueryFilter,
+    ) -> Option<QueryHit> {
+        None
+    }
+
+    /// `Blockcast`, `Spherecast`, `Shapecast`: `shape` moved from `from`
+    /// along `direction`.
+    fn shapecast(
+        &self,
+        _shape: &QueryShape,
+        _from: &CFrameData,
+        _direction: [f64; 3],
+        _filter: &QueryFilter,
+    ) -> Option<QueryHit> {
+        None
+    }
+
+    /// `GetPartBoundsIn*` (`exact: false`) and `GetPartsInPart`
+    /// (`exact: true`).
+    fn overlap(
+        &self,
+        _shape: &QueryShape,
+        _at: &CFrameData,
+        _exact: bool,
+        _filter: &QueryFilter,
+    ) -> Vec<Ref> {
+        Vec::new()
+    }
 }
 
 /// Something the simulation tells the scripts happened.

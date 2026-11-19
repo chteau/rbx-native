@@ -57,6 +57,9 @@ impl Simulation {
         let shared = Rc::new(RefCell::new(Shared::default()));
         let vm = ServerVm::new(dom.clone(), db.clone(), Rc::new(Bridge(shared.clone())))
             .map_err(|err| err.to_string())?;
+        shared
+            .borrow_mut()
+            .connect(dom.clone(), db, vm.collision_groups());
         Ok(Simulation {
             dom,
             db,

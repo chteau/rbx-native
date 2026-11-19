@@ -21,16 +21,17 @@ pub enum Shape {
     Capsule,
 }
 
-pub(super) struct PartData {
-    pub(super) referent: Ref,
+pub(crate) struct PartData {
+    pub(crate) referent: Ref,
     pub(super) shape: Shape,
-    pub(super) size: Vector3Data,
-    pub(super) cframe: CFrameData,
+    pub(crate) size: Vector3Data,
+    pub(crate) cframe: CFrameData,
     pub(super) anchored: bool,
-    pub(super) can_collide: bool,
+    pub(crate) can_query: bool,
+    pub(crate) can_collide: bool,
     pub(super) can_touch: bool,
     pub(super) massless: bool,
-    pub(super) collision_group: String,
+    pub(crate) collision_group: String,
     /// Density, friction, elasticity, friction weight, elasticity weight.
     pub(super) physics: [f32; 5],
     pub(super) linear_velocity: Vector3Data,
@@ -67,7 +68,7 @@ fn vector(db: &ReflectionDatabase, instance: &Instance, names: &[&str]) -> Vecto
 }
 
 impl PartData {
-    pub(super) fn read(db: &ReflectionDatabase, instance: &Instance) -> Option<PartData> {
+    pub(crate) fn read(db: &ReflectionDatabase, instance: &Instance) -> Option<PartData> {
         let class = instance.class();
         // Terrain is a BasePart with voxels, not a shape: not simulated yet.
         if !db.is_subclass_of(class, "BasePart") || class == "Terrain" {
@@ -100,6 +101,7 @@ impl PartData {
             size: vector(db, instance, &["Size"]),
             cframe,
             anchored: flag(db, instance, "Anchored", false),
+            can_query: flag(db, instance, "CanQuery", true),
             can_collide: flag(db, instance, "CanCollide", true),
             can_touch: flag(db, instance, "CanTouch", true),
             massless: flag(db, instance, "Massless", false),
@@ -134,7 +136,7 @@ impl PartData {
         }
     }
 
-    pub(super) fn shape_collider(&self) -> ColliderBuilder {
+    pub(crate) fn shape_collider(&self) -> ColliderBuilder {
         let (hx, hy, hz) = (self.size.x / 2.0, self.size.y / 2.0, self.size.z / 2.0);
         let along_x = Pose::from_rotation(Rotation::from_rotation_z(std::f32::consts::FRAC_PI_2));
         match self.shape {

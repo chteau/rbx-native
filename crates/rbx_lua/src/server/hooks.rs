@@ -365,6 +365,11 @@ impl Hooks for ServerHooks {
             return wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }
         not_scriptable(ctx, referent, class, key)?;
+        if class == "Workspace" {
+            if let Some(value) = super::query::member(lua, ctx, &self.physics, key)? {
+                return Ok(Some(value));
+            }
+        }
         let db = ctx.database();
         match class {
             "RunService" => self.run_service(lua, key),
