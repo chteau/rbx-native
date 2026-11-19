@@ -24,6 +24,7 @@ mod notes;
 mod orientation;
 pub(crate) use orientation::snapped_forward;
 mod pivot;
+mod play_input;
 mod plugin_handles;
 mod plugin_mouse;
 mod presence;
@@ -56,9 +57,10 @@ use crate::{display, pacing, tokens};
 pub(crate) use canvas::{Canvas, CanvasUpdated};
 use frame::{blurred, device_pixels, render_image, Viewport};
 use gizmo::Drag;
-use input::{camera_key, chorded, tool_key, Layout};
+use input::{camera_key, chorded, tool_key, wheel_notches, Layout};
 pub(crate) use joints::JointPhase;
 pub(crate) use notes::NoteMark;
+pub(crate) use play_input::{PlayInput, FOCUS_ABOVE_ROOT};
 pub(crate) use pump::canvas::{FrameRequest, Request as CanvasRequest};
 use pump::Pump;
 pub(crate) use pump::TerrainChunks;
@@ -390,6 +392,11 @@ pub(crate) struct WorkspaceView {
     drag: Option<Drag>,
     /// Whether `B` is held, the Terrain Editor's brush dial key.
     terrain_b: bool,
+    /// Play (local) is on: the movement keys, right-drag and wheel drive
+    /// the character and its camera (see `play_input`).
+    pub(crate) play: Option<PlayInput>,
+    /// The free camera from before Play (local), put back on Stop.
+    play_return: Option<Pose>,
     /// Where the cursor last stood across the view, for `B`-drag's dial.
     terrain_dial_x: Option<f32>,
     /// The modifiers of the last terrain input, which a release reports again.
@@ -504,6 +511,9 @@ impl WorkspaceView {
         let blur = cx.on_blur(&focus, window, |view, _, _| {
             view.end_look();
             view.release_summon();
+            if let Some(play) = view.play.as_mut() {
+                play.release();
+            }
         });
         // Alt-tabbing away never blurs the focus handle, so the window's own
         // activation is watched too, and, since it's the authoritative OS
@@ -535,6 +545,8 @@ impl WorkspaceView {
             drag_stepped_at: None,
             hover_resolved_at: None,
             debug_wheel: scroll::debug_wheel(),
+            play: None,
+            play_return: None,
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
             screen: None,
@@ -818,7 +830,10 @@ impl WorkspaceView {
         window.focus(&self.focus, cx);
         self.cursor = None;
         self.looking = true;
-        self.pump.input(CameraInput::LookButton(true));
+        // Play (local) turns its own camera; the free one stays put.
+        if self.play.is_none() {
+            self.pump.input(CameraInput::LookButton(true));
+        }
         // Orbiting the camera would otherwise leave whatever was last
         // hovered stuck on screen for the whole gesture: `mouse_moved` feeds
         // this same motion to the camera instead of resolving a new hover
@@ -901,7 +916,7 @@ impl WorkspaceView {
     fn mouse_moved(&mut self, position: Point<Pixels>) {
         if self.lock.holds() {
             if let Some((dx, dy)) = self.lock.moved() {
-                self.pump.input(CameraInput::MouseLook { dx, dy });
+                self.look_motion(dx, dy);
             }
             return;
         }
@@ -910,10 +925,21 @@ impl WorkspaceView {
             return;
         };
 
-        self.pump.input(CameraInput::MouseLook {
-            dx: f32::from(position.x - previous.x),
-            dy: f32::from(position.y - previous.y),
-        });
+        self.look_motion(
+            f32::from(position.x - previous.x),
+            f32::from(position.y - previous.y),
+        );
+    }
+
+    /// Mouse motion: the free camera's, or with Play (local) on, the
+    /// character camera's while the look button is held.
+    fn look_motion(&mut self, dx: f32, dy: f32) {
+        let looking = self.looking;
+        match self.play.as_mut() {
+            Some(play) if looking => play.look(dx, dy),
+            Some(_) => {}
+            None => self.pump.input(CameraInput::MouseLook { dx, dy }),
+        }
     }
 
     fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
@@ -921,6 +947,11 @@ impl WorkspaceView {
             return;
         }
         let layout = Layout::of(cx.keyboard_layout().name());
+        if let Some(play) = self.play.as_mut() {
+            if play.key(&keystroke.key, pressed, layout == Layout::Azerty) {
+                return;
+            }
+        }
         // Only on the press: a tool switch is an edge, not a state the way the
         // camera's own movement keys are.
         if pressed {
@@ -1046,6 +1077,23 @@ impl WorkspaceView {
         at: Option<([f32; 3], [f32; 3])>,
     ) -> Option<std::sync::mpsc::Receiver<pump::Captured>> {
         Some(self.pump.capture(at))
+    }
+
+    /// Hands the keys, right-drag and wheel to Play (local)'s character
+    /// and camera, or (`false`) back to the free camera where it was.
+    pub(crate) fn set_play_local(&mut self, playing: bool) {
+        if playing {
+            self.play = Some(PlayInput::default());
+            self.play_return = self.view;
+            return;
+        }
+        self.play = None;
+        if let Some(pose) = self.play_return.take() {
+            let eye = pose.position.to_array();
+            let ahead = crate::camera::free_flight_direction(pose.yaw, pose.pitch);
+            let target = [0, 1, 2].map(|i| eye[i] + ahead[i]);
+            self.pump.look_at(eye, target, pose.fov_degrees);
+        }
     }
 
     /// Moves the free camera to `eye`, looking at `target`, keeping its
@@ -1402,6 +1450,10 @@ impl Render for WorkspaceView {
                 let scale = window.scale_factor();
                 let notch = f32::from(event.delta.pixel_delta(px(1.)).y);
                 view.plugin_mouse_wheel(notch, event.position, scale, cx);
+                if let Some(play) = view.play.as_mut() {
+                    play.wheel(wheel_notches(event.delta));
+                    return;
+                }
                 view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {

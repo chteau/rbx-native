@@ -1013,6 +1013,30 @@ impl Shell {
                 "a server-only run needs Roblox's engine; Play runs the place on Roblox",
             )
         };
+        let play_local = if local_beta && (local_active || self.play.live.local.starting) {
+            unavailable_row(
+                "ribbon-play-local",
+                IconName::PersonStanding,
+                "Play (local)",
+                "Local Run is already running",
+            )
+        } else if local_beta && idle {
+            live_stack_row(
+                nav,
+                "ribbon-play-local",
+                IconName::PersonStanding,
+                "Play (local)",
+                cx,
+            )
+            .on_click(cx.listener(|shell, _, _, cx| shell.play_local(cx)))
+        } else {
+            unavailable_row(
+                "ribbon-play-local",
+                IconName::PersonStanding,
+                "Play (local)",
+                "turn on the Local Run beta in Settings",
+            )
+        };
         let pause = if local_active {
             let paused = self.local_run_paused();
             live_stack_row(nav, "ribbon-pause", IconName::Pause, "Pause", cx)
@@ -1059,7 +1083,8 @@ impl Shell {
             // Stop is a tile of its own rather than a third stack row: three
             // rows in an 80px ribbon are ~25px each, and Stop is the control a
             // person reaches for in a hurry.
-            stack(vec![run, pause]).into_any_element(),
+            stack(vec![play_local, run]).into_any_element(),
+            stack(vec![pause]).into_any_element(),
             primary("ribbon-stop", stop).into_any_element(),
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),

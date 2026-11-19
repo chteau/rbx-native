@@ -391,7 +391,7 @@ fn ready(
     Ok(gather(avatar, download))
 }
 
-fn gather(avatar: Avatar, download: impl Fn(u64) -> Result<Vec<u8>, String>) -> Fetched {
+pub(crate) fn gather(avatar: Avatar, download: impl Fn(u64) -> Result<Vec<u8>, String>) -> Fetched {
     let worn = avatar
         .assets
         .iter()

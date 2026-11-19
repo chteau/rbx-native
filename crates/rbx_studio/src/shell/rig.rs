@@ -34,7 +34,10 @@ use rbx_dom::{Variant, WeakDom};
 
 pub(crate) use animate::r15_animation;
 pub(crate) use autorig::{has_local_meshes, AutoRig};
-pub(crate) use avatar::{apply_packages, dress, fetch as fetch_avatar, options_for, Fetched, Worn};
+pub(crate) use avatar::{
+    apply_packages, describe_avatar, dress, fetch as fetch_avatar, gather, options_for, Fetched,
+    Worn,
+};
 pub(crate) use build::build_rig;
 pub(crate) use cage_templates::mannequin as mannequin_cages;
 pub(crate) use cframe::Cf;

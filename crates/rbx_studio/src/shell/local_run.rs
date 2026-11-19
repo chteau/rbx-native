@@ -3,6 +3,10 @@
 //! Output streams what scripts print, Pause holds it and Stop puts the
 //! edited place back exactly as it was. Behind its beta switch.
 //!
+//! Play (local) is the same run with a local player: their character (see
+//! `avatars`) walks on WASD, jumps on Space, and the camera follows it,
+//! turned by right-drag and zoomed by the wheel.
+//!
 //! While it runs `Shell::dom` holds a mirror of the simulation's DOM and the
 //! edited place sits in the run's stash (see `play::live` for the same swap
 //! during Play). Each frame's changes are copied from the simulation's DOM
@@ -10,19 +14,22 @@
 //! the simulation, logged, so it routes them on its next step.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::*;
 use rbx_dom::{Change, Ref, WeakDom};
 
+use super::output::game::Context as OutputContext;
 use super::play::Phase;
 use super::Shell;
+
+mod avatars;
 use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 
 pub(crate) const BETA_ID: &str = "local-run";
-const SOURCE: &str = "Local Run";
 const FRAME_HZ: f64 = 60.0;
 /// Frames one tick may step, so a slow frame never spirals.
 const MAX_FRAMES_PER_TICK: u64 = 4;
@@ -44,11 +51,31 @@ struct Running {
     last: Instant,
     /// Dropping it stops the frame loop.
     task: Option<Task<()>>,
+    /// Play (local): a local player whose character the keys drive.
+    playing: bool,
 }
 
 #[derive(Default)]
 pub(crate) struct LocalRun {
     running: Option<Running>,
+    /// Play (local) is fetching the avatar.
+    pub(in crate::shell) starting: bool,
+}
+
+/// Animations (the default ones, the catalog's) from Roblox's asset
+/// delivery; they land in the asset cache for the next run.
+struct Fetcher(rbx_cloud::Client);
+
+impl rbx_assets::AssetFetcher for Fetcher {
+    fn fetch_id(&self, id: u64) -> Result<Vec<u8>, rbx_assets::FetchError> {
+        self.0
+            .asset(id)
+            .map(|content| content.bytes)
+            .map_err(|err| rbx_assets::FetchError::Other {
+                id,
+                message: err.to_string(),
+            })
+    }
 }
 
 impl LocalRun {
@@ -96,7 +123,14 @@ fn mirror(from: &WeakDom, into: &mut WeakDom, changes: &[Change]) {
                     let _ = into.remove_property(*referent, name);
                 }
             }
+            // A parentless instance (an AnimationTrack, a script's
+            // `Instance.new` not parented yet, an old character) isn't in
+            // the game's tree, so it stays out of the shown one.
+            Change::Added(referent) if from.parent(*referent).is_none() => {}
             Change::Added(referent) => copy_subtree(from, into, *referent),
+            Change::Parent { referent, .. } if from.parent(*referent).is_none() => {
+                into.remove(*referent);
+            }
             Change::Parent { referent, .. } => {
                 if from.get(*referent).is_none() {
                     continue;
@@ -231,6 +265,18 @@ fn structural(changes: &[Change]) -> bool {
     })
 }
 
+/// What the run's scripts printed, as game rows like real Play's.
+fn push_rows(log: &mut super::output::OutputLog, output: &rbx_lua::Output) {
+    for row in rows_of(output) {
+        push_row(log, row);
+    }
+}
+
+/// One row of the run's own, tagged "Local Run" like a game row.
+fn push_row(log: &mut super::output::OutputLog, row: Feedback) {
+    log.push_game(OutputContext::LocalRun, row, Vec::new(), None);
+}
+
 fn rows_of(output: &rbx_lua::Output) -> Vec<Feedback> {
     output
         .lines()
@@ -245,18 +291,55 @@ fn rows_of(output: &rbx_lua::Output) -> Vec<Feedback> {
 }
 
 impl Shell {
+    fn local_run_can_start(&self) -> bool {
+        crate::beta::enabled(BETA_ID)
+            && !self.local_run_active()
+            && !self.play.live.local.starting
+            && self.play.phase == Phase::Idle
+    }
+
     pub(crate) fn run_local(&mut self, cx: &mut Context<Self>) {
-        if !crate::beta::enabled(BETA_ID)
-            || self.local_run_active()
-            || self.play.phase != Phase::Idle
-        {
+        if self.local_run_can_start() {
+            self.start_local(None, cx);
+        }
+    }
+
+    /// Play (local): works out the player off the UI thread, then starts.
+    pub(crate) fn play_local(&mut self, cx: &mut Context<Self>) {
+        if !self.local_run_can_start() {
             return;
         }
+        self.play.live.local.starting = true;
+        push_row(
+            &mut self.output,
+            Feedback::Info("Play (local): getting your avatar\u{2026}".to_owned()),
+        );
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let player = cx
+                .background_executor()
+                .spawn(async { avatars::resolve() })
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                shell.play.live.local.starting = false;
+                if shell.local_run_can_start() {
+                    shell.start_local(Some(player), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn start_local(
+        &mut self,
+        player: Option<(avatars::Player, avatars::StudioAvatars)>,
+        cx: &mut Context<Self>,
+    ) {
         let mut sim = match rbx_sim::Simulation::new(self.dom.clone()) {
             Ok(sim) => sim,
             Err(why) => {
-                self.output.push(
-                    SOURCE,
+                push_row(
+                    &mut self.output,
                     Feedback::Error(format!("Local Run couldn\u{2019}t start: {why}")),
                 );
                 cx.notify();
@@ -264,6 +347,19 @@ impl Shell {
             }
         };
         sim.watch_view_changes();
+        sim.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
+            rbx_cloud::ApiKey::from_env_or_config(),
+        ))));
+        let playing = player.is_some();
+        let mut note = None;
+        if let Some((player, avatars)) = player {
+            sim.set_avatars(Box::new(avatars));
+            if let Some(character) = player.character {
+                sim.set_character(character);
+            }
+            sim.join(&player.name, player.user_id);
+            note = Some(player.note);
+        }
         sim.start();
         let mut shown = sim.dom().clone();
         shown.take_changes();
@@ -292,14 +388,24 @@ impl Shell {
             clock: 0.0,
             last: Instant::now(),
             task: Some(task),
+            playing,
         });
+        if playing {
+            self.viewport
+                .update(cx, |viewport, _| viewport.set_play_local(true));
+        }
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);
-        self.output
-            .push(SOURCE, Feedback::Info("Local Run started".to_owned()));
-        for row in rows_of(&output) {
-            self.output.push(SOURCE, row);
+        let started = if playing {
+            "Play (local) started"
+        } else {
+            "Local Run started"
+        };
+        push_row(&mut self.output, Feedback::Info(started.to_owned()));
+        if let Some(note) = note {
+            push_row(&mut self.output, Feedback::Info(note));
         }
+        push_rows(&mut self.output, &output);
         cx.notify();
     }
 
@@ -329,7 +435,9 @@ impl Shell {
             ..
         } = run;
         drop(task);
-        let rows = rows_of(&sim.take_output());
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_play_local(false));
+        let output = sim.take_output();
         let seconds = sim.time();
         drop(sim);
         self.deselect(cx);
@@ -342,11 +450,9 @@ impl Shell {
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);
         self.reselect(stash.selection, cx);
-        for row in rows {
-            self.output.push(SOURCE, row);
-        }
-        self.output.push(
-            SOURCE,
+        push_rows(&mut self.output, &output);
+        push_row(
+            &mut self.output,
             Feedback::Info(format!(
                 "Local Run stopped after {seconds:.1} s of game time"
             )),
@@ -371,8 +477,12 @@ impl Shell {
             return;
         }
         let steps = due.min(MAX_FRAMES_PER_TICK);
+        let input = self.viewport.read(cx).play.filter(|_| run.playing);
         let mut changes = Vec::new();
         for _ in 0..steps {
+            if let Some(input) = &input {
+                run.sim.control(input.direction(), input.jump);
+            }
             run.sim.step();
             changes.extend(run.sim.take_view_changes());
         }
@@ -381,10 +491,14 @@ impl Shell {
         }
         let changes = dedupe(changes);
         mirror(&run.sim.dom(), &mut self.dom, &changes);
-        let rows = rows_of(&run.sim.take_output());
+        let output = run.sim.take_output();
+        let focus = input.and_then(|input| Some((input, character_focus(&run.sim)?)));
         self.dom.take_changes();
-        for row in rows {
-            self.output.push(SOURCE, row);
+        push_rows(&mut self.output, &output);
+        if let Some((input, focus)) = focus {
+            let eye = input.eye(focus);
+            self.viewport
+                .update(cx, |viewport, _| viewport.look_at(eye, focus));
         }
         if !changes.is_empty() {
             let snapshots = self.dom.snapshot(&changes);
@@ -412,6 +526,27 @@ impl Shell {
             .update(cx, |viewport, _| viewport.apply_changes(snapshots, sent));
         self.properties.dom_changed(changes);
         cx.notify();
+    }
+}
+
+/// What the character camera looks at: a little above the local
+/// character's root.
+fn character_focus(sim: &rbx_sim::Simulation) -> Option<[f32; 3]> {
+    let (_, character) = sim.local_player()?;
+    let dom = sim.dom();
+    let model = dom.get(character?)?;
+    let root = model
+        .children()
+        .iter()
+        .copied()
+        .find(|c| dom.get(*c).is_some_and(|i| i.name() == "HumanoidRootPart"))?;
+    match dom.get(root)?.properties().get("CFrame") {
+        Some(rbx_dom::Variant::CFrame(c)) => Some([
+            c.position.x,
+            c.position.y + crate::workspace_view::FOCUS_ABOVE_ROOT,
+            c.position.z,
+        ]),
+        _ => None,
     }
 }
 
