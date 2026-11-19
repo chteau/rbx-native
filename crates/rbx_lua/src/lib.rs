@@ -25,6 +25,7 @@ mod printed;
 mod property;
 pub use property::clock;
 mod runtime;
+pub mod server;
 pub mod test_runner;
 
 pub use debugger::{Breakpoint, Frame, Paused, Resume, Variable, STOPPED};

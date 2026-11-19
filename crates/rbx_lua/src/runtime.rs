@@ -29,8 +29,8 @@ use crate::hooks::HookSlot;
 use crate::output::{LineKind, Output};
 use crate::LuaError;
 
-pub(crate) use globals::{install_globals, install_shared};
-pub(crate) use host::compile_in;
+pub(crate) use globals::{install_globals, install_shared, printidentity};
+pub(crate) use host::{compile_in, install_require};
 use host::{CommandBar, CommandBarHooks};
 pub use report::Reported;
 

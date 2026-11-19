@@ -146,7 +146,7 @@ fn http_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
 /// path resolves against the requiring module (`require::by_string`). The
 /// global one is the command bar's; code run over MCP gets its own (see
 /// `report`).
-pub(super) fn install_require(lua: &Lua) -> Result<()> {
+pub(crate) fn install_require(lua: &Lua) -> Result<()> {
     let resolve = lua.create_function(|lua, (script, target): (Value, Value)| {
         let module = match &target {
             Value::String(path) => {
