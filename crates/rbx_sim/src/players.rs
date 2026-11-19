@@ -58,6 +58,10 @@ const PLAYERS_METHODS: &[&str] = &[
     "GetPlayerByUserId",
     "GetHumanoidDescriptionFromUserId",
 ];
+const HUMANOID_METHODS: &[&str] = &["ApplyDescription", "GetAppliedDescription"];
+/// What `ApplyDescription` swaps on a character: what it wears and its
+/// colours.
+const WORN: &[&str] = &["Accessory", "Shirt", "Pants", "ShirtGraphic", "BodyColors"];
 const PLAYER_METHODS: &[&str] = &[
     "LoadCharacter",
     "LoadCharacter#parent",
@@ -67,6 +71,7 @@ const PLAYER_METHODS: &[&str] = &[
 pub(crate) fn is_method(class: &str, key: &str) -> bool {
     (class == "Players" && PLAYERS_METHODS.contains(&key))
         || (class == "Player" && PLAYER_METHODS.contains(&key))
+        || (class == "Humanoid" && HUMANOID_METHODS.contains(&key))
 }
 
 pub(crate) fn is_signal(class: &str, key: &str) -> bool {
@@ -126,6 +131,18 @@ fn child_named(dom: &WeakDom, parent: Ref, name: &str) -> Option<Ref> {
 /// Copies `root` of `from` (and everything under it) under `parent` in
 /// `to`; references inside the copy point into the copy.
 pub fn graft(to: &mut WeakDom, from: &WeakDom, root: Ref, parent: Option<Ref>) -> Ref {
+    graft_with(to, from, root, parent, &mut |r| Some(r))
+}
+
+/// [`graft`], a reference to outside the copy going through `outside`
+/// (`None` drops the property).
+fn graft_with(
+    to: &mut WeakDom,
+    from: &WeakDom,
+    root: Ref,
+    parent: Option<Ref>,
+    outside: &mut dyn FnMut(Ref) -> Option<Ref>,
+) -> Ref {
     let mut order = Vec::new();
     let mut stack = vec![root];
     while let Some(at) = stack.pop() {
@@ -152,13 +169,102 @@ pub fn graft(to: &mut WeakDom, from: &WeakDom, root: Ref, parent: Option<Ref>) -
         let new = map[&old];
         for (key, value) in props {
             let value = match value {
-                Variant::Ref(r) => Variant::Ref(map.get(&r).copied().unwrap_or(r)),
+                Variant::Ref(r) => match map.get(&r).copied().or_else(|| outside(r)) {
+                    Some(r) => Variant::Ref(r),
+                    None => continue,
+                },
                 other => other,
             };
             let _ = to.set_property(new, &key, value);
         }
     }
     map[&root]
+}
+
+/// `Humanoid:ApplyDescription`: the app's avatars dress a fresh character
+/// as `description` says, and its accessories, clothing and body colours
+/// replace the character's own, each accessory put where it sat on the
+/// fresh one relative to the same part. A copy of the description goes
+/// under the humanoid for `GetAppliedDescription`. Body-part meshes and
+/// scales are left as they are.
+fn apply_description(
+    players: &Players,
+    dom: &mut WeakDom,
+    humanoid: Ref,
+    description: Ref,
+) -> Result<(), String> {
+    if dom.get(description).map(|i| i.class()) != Some("HumanoidDescription") {
+        return Err("Argument 1 must be a HumanoidDescription".into());
+    }
+    let model = dom
+        .parent(humanoid)
+        .ok_or("the Humanoid has no character")?;
+    let avatars = players
+        .avatars
+        .as_ref()
+        .ok_or("Avatars are not available offline")?;
+    let mut alone = WeakDom::new();
+    graft(&mut alone, dom, description, None);
+    let fresh = avatars.character(&alone)?;
+    let fresh_model = *fresh.root_refs().first().ok_or("no character was built")?;
+    let worn = |dom: &WeakDom, model: Ref| -> Vec<Ref> {
+        dom.get(model)
+            .map(|m| m.children().to_vec())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|c| dom.get(*c).is_some_and(|i| WORN.contains(&i.class())))
+            .collect()
+    };
+    for old in worn(dom, model) {
+        dom.remove(old);
+    }
+    let parts: Vec<(String, Ref)> = dom
+        .get(model)
+        .map(|m| m.children().to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|c| dom.get(c).map(|i| (i.name().to_owned(), c)))
+        .collect();
+    for item in worn(&fresh, fresh_model) {
+        let mut seated = None;
+        let copy = graft_with(dom, &fresh, item, Some(model), &mut |r| {
+            let name = fresh.get(r)?.name();
+            let target = parts.iter().find(|(n, _)| n == name)?.1;
+            seated.get_or_insert((r, target));
+            Some(target)
+        });
+        if let Some((on, target)) = seated {
+            reseat(dom, &fresh, copy, on, target);
+        }
+    }
+    if let Some(old) = child_of_class(dom, humanoid, "HumanoidDescription") {
+        dom.remove(old);
+    }
+    copy(dom, description, Some(humanoid));
+    Ok(())
+}
+
+/// Moves `copy`'s parts so they sit on `target` as they sat on `on`, its
+/// counterpart on the fresh character.
+fn reseat(dom: &mut WeakDom, fresh: &WeakDom, copy: Ref, on: Ref, target: Ref) {
+    let frame = |i: Option<&rbx_dom::Instance>| match i?.properties().get("CFrame") {
+        Some(Variant::CFrame(c)) => Some(*c),
+        _ => None,
+    };
+    let (Some(from), Some(to)) = (frame(fresh.get(on)), frame(dom.get(target))) else {
+        return;
+    };
+    let shift = mul(&to, &inverse(&from));
+    let mut stack = vec![copy];
+    while let Some(at) = stack.pop() {
+        let Some(instance) = dom.get(at) else {
+            continue;
+        };
+        stack.extend(instance.children().iter().copied());
+        if let Some(c) = frame(Some(instance)) {
+            let _ = dom.set_property(at, "CFrame", Variant::CFrame(mul(&shift, &c)));
+        }
+    }
 }
 
 /// Copies within one DOM.
@@ -600,6 +706,21 @@ pub(crate) fn call(
         ("Player", "LoadCharacter#parent") => {
             players.place(dom, db);
             Ok(CallReply::default())
+        }
+        ("Humanoid", "ApplyDescription") => {
+            let Some(Arg::Instance(description)) = args.first() else {
+                return Err("Argument 1 missing or nil".into());
+            };
+            apply_description(players, dom, referent, *description)?;
+            Ok(CallReply::default())
+        }
+        ("Humanoid", "GetAppliedDescription") => {
+            let applied = child_of_class(dom, referent, "HumanoidDescription");
+            let copy = match applied {
+                Some(applied) => copy(dom, applied, None),
+                None => dom.new_instance("HumanoidDescription", "HumanoidDescription", None),
+            };
+            Ok(CallReply::value(Arg::Instance(copy)))
         }
         _ => Err(format!("{method} is not a valid member of {class}")),
     }

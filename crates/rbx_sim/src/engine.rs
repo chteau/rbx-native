@@ -70,7 +70,7 @@ pub(crate) fn call(
             .animations
             .call(&mut dom, db, referent, class, method, &args);
     }
-    if class == "Humanoid" {
+    if class == "Humanoid" && !crate::players::is_method(class, method) {
         return shared.humanoids.call(&mut dom, db, referent, method, &args);
     }
     if is_seat(class) && method == "Sit" {
@@ -92,9 +92,6 @@ pub(crate) fn call(
     crate::players::call(&mut shared, &mut dom, db, referent, class, method, args)
 }
 
-/// `Health` above `MaxHealth` is stored as `MaxHealth` (HumanoidHealth
-/// `over_max`); lowering `MaxHealth` leaves `Health` alone (`max_lowered`).
-/// Either write queues its `HealthChanged`.
 pub(crate) fn property(shared: &Shared, referent: Ref, class: &str, key: &str) -> Option<Arg> {
     match class {
         "AnimationTrack" => shared.animations.property(referent, key),
@@ -102,6 +99,9 @@ pub(crate) fn property(shared: &Shared, referent: Ref, class: &str, key: &str) -
     }
 }
 
+/// `Health` above `MaxHealth` is stored as `MaxHealth` (HumanoidHealth
+/// `over_max`); lowering `MaxHealth` leaves `Health` alone (`max_lowered`).
+/// Either write queues its `HealthChanged`.
 pub(crate) fn write(
     shared: &Rc<RefCell<Shared>>,
     referent: Ref,
