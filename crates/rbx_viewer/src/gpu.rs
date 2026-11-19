@@ -115,11 +115,13 @@ static SHADOW_SIDE_CAP: AtomicU32 = AtomicU32::new(u32::MAX);
 const SMALL_GPU_SHADOW_SIDE: u32 = 4096;
 
 /// Whether the adapter has little memory of its own: integrated, except
-/// Apple's, which share all of memory. `RBX_GPU_LEAN` (see [`pinned_lean`])
+/// Apple's, which share all of memory, and software adapters (WARP,
+/// llvmpipe), which draw on the CPU. `RBX_GPU_LEAN` (see [`pinned_lean`])
 /// pins the answer either way.
 fn small_memory(device_type: wgpu::DeviceType, backend: wgpu::Backend) -> bool {
     pinned_lean().map_or(
-        device_type == wgpu::DeviceType::IntegratedGpu && backend != wgpu::Backend::Metal,
+        (device_type == wgpu::DeviceType::IntegratedGpu && backend != wgpu::Backend::Metal)
+            || device_type == wgpu::DeviceType::Cpu,
         |lean| lean > 0,
     )
 }
@@ -514,7 +516,14 @@ pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Que
     // laptop that crashed).
     let small = small_memory(info.device_type, info.backend);
     if small && pinned_lean().is_none() {
-        lean_at_least(1);
+        // A software adapter (WARP, llvmpipe) draws on the CPU out of system
+        // memory: full-size materials and an 8192 px sun map made a
+        // Windows-on-ARM VM take seconds per frame, so it starts at 256 px.
+        lean_at_least(if info.device_type == wgpu::DeviceType::Cpu {
+            2
+        } else {
+            1
+        });
     }
     SHADOW_SIDE_CAP.store(
         shadow_side_cap(small, adapter.limits().max_texture_dimension_2d),
@@ -716,6 +725,8 @@ mod tests {
             assert!(small_memory(DeviceType::IntegratedGpu, Backend::Vulkan));
             assert!(!small_memory(DeviceType::IntegratedGpu, Backend::Metal));
             assert!(!small_memory(DeviceType::DiscreteGpu, Backend::Dx12));
+            assert!(small_memory(DeviceType::Cpu, Backend::Dx12));
+            assert!(small_memory(DeviceType::Cpu, Backend::Vulkan));
         }
         let small = shadow_side_cap(true, 16384);
         assert_eq!(small, 4096);
