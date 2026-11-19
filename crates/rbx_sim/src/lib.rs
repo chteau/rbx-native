@@ -12,13 +12,16 @@ mod engine;
 pub mod humanoid;
 pub mod input;
 pub mod load;
+pub mod ownership;
 pub mod physics;
 pub mod players;
 mod scripts;
+pub mod session;
 mod sim;
 mod spatial;
 
 pub use input::{Input, MouseBehavior};
 pub use players::Avatars;
 pub use rbx_lua::{LineKind, Output};
-pub use sim::{Simulation, FRAME_HZ};
+pub use session::{Peer, Session};
+pub use sim::{Role, Simulation, FRAME_HZ};

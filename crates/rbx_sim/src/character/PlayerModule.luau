@@ -15,23 +15,26 @@ local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
 
--- Measured on the real client (see PLAN.md): the follow distance a
--- character starts at, the turn a pixel of mouse motion gives, the height
--- of the focus over the root, shift lock's sideways offset.
+-- Measured on the real client (the CameraInput golden): the follow
+-- distance and pitch a character starts at, the turn a pixel of right-drag
+-- gives, the height of the focus over the root, shift lock's sideways
+-- offset, and a wheel notch out taking the distance d to 1.5 d + 1 (in, the
+-- reverse).
 local START_ZOOM = 12.5
-local START_PITCH = math.rad(-20)
-local TURN_PER_PIXEL = math.rad(0.5)
+local START_PITCH = math.rad(-15)
+local TURN_PER_PIXEL = math.rad(0.5562)
 local PITCH_LIMIT = math.rad(80)
 local FOCUS_ABOVE_ROOT = 1.5
 local SHIFT_LOCK_OFFSET = Vector3.new(1.75, 0, 0)
-local ZOOM_PER_NOTCH = 0.15
+local ZOOM_SCALE, ZOOM_ADD = 1.5, 1
 -- Closer than this the camera is in first person, at the minimum zoom.
 local FIRST_PERSON = 1
 -- The character fades out between these distances (fully gone in first
 -- person).
 local FADE_FROM, FADE_TO = 2, 0.5
--- How far in front of a wall the camera stops.
-local WALL_MARGIN = 0.25
+-- How far in front of a wall the camera stops: it goes a tenth of a stud
+-- past the face, where its near plane is (CameraInput `wall_margin`).
+local WALL_MARGIN = -0.1
 
 local PlayerModule = {}
 
@@ -130,7 +133,22 @@ local function zoomLimits()
 	return low, high
 end
 
+-- The distance after `notches` of the wheel, positive in.
+-- A fraction of a notch (a touchpad) goes that part of the way.
+local function notched(distance, notches)
+	local left = math.abs(notches)
+	while left > 0 do
+		local step = if notches > 0
+			then (distance - ZOOM_ADD) / ZOOM_SCALE
+			else distance * ZOOM_SCALE + ZOOM_ADD
+		distance += (step - distance) * math.min(left, 1)
+		left -= 1
+	end
+	return distance
+end
+
 local function setZoom(distance)
+
 	local low, high = zoomLimits()
 	if player.CameraMode == Enum.CameraMode.LockFirstPerson then
 		zoom = low
@@ -314,9 +332,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 				shiftLock = not shiftLock
 			end
 		elseif key == Enum.KeyCode.I then
-			setZoom(zoom * (1 - ZOOM_PER_NOTCH))
+			setZoom(notched(zoom, 1))
 		elseif key == Enum.KeyCode.O then
-			setZoom(zoom / (1 - ZOOM_PER_NOTCH))
+			setZoom(notched(zoom, -1))
 		end
 	end
 end)
@@ -329,7 +347,7 @@ end)
 
 UserInputService.InputChanged:Connect(function(input, processed)
 	if input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
-		setZoom(zoom * (1 - ZOOM_PER_NOTCH) ^ input.Position.Z)
+		setZoom(notched(zoom, input.Position.Z))
 	end
 end)
 

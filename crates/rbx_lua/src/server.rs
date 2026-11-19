@@ -11,6 +11,7 @@ mod hooks;
 mod input;
 mod meshes;
 mod query;
+mod remote;
 #[cfg(test)]
 mod tests;
 
@@ -39,6 +40,7 @@ use crate::LuaError;
 
 pub use hooks::CollisionGroups;
 pub use query::{QueryFilter, QueryHit, QueryShape};
+pub use remote::{Outgoing, Packet, To, Wire};
 
 /// Roblox's message for a script that ran too long without yielding.
 const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
@@ -144,6 +146,28 @@ pub trait Physics {
     fn engine_write(&self, _referent: Ref, _class: &str, _key: &str, _value: &Arg) -> Option<Arg> {
         None
     }
+
+    /// `BasePart:GetNetworkOwner()`: the owning player, `None` for the
+    /// server; `Err` with Roblox's message for an anchored assembly.
+    fn network_owner(&self, _part: Ref) -> Result<Option<Ref>, String> {
+        Ok(None)
+    }
+
+    /// `SetNetworkOwner(player)` (`None`: the server) and
+    /// `SetNetworkOwnershipAuto()` (`auto`).
+    fn set_network_owner(
+        &self,
+        _part: Ref,
+        _owner: Option<Ref>,
+        _auto: bool,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// `GetNetworkOwnershipAuto()`.
+    fn network_ownership_auto(&self, _part: Ref) -> Result<bool, String> {
+        Ok(true)
+    }
 }
 
 /// What a [`Physics::call`] returns, and the signals it fires before it
@@ -240,6 +264,8 @@ pub struct ServerVm {
     /// How much of the DOM's change log has had its events fired.
     fired: Rc<Cell<usize>>,
     client: Rc<Cell<bool>>,
+    remotes: remote::Shared,
+    loaded: Rc<Cell<bool>>,
     budget: Duration,
 }
 
@@ -262,11 +288,15 @@ impl ServerVm {
         lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
         let fired = Rc::new(Cell::new(0));
         let client = Rc::new(Cell::new(false));
+        let remotes = remote::Shared::default();
+        let loaded = Rc::new(Cell::new(true));
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
             groups: groups.clone(),
             fired: fired.clone(),
             client: client.clone(),
+            remotes: remotes.clone(),
+            loaded: loaded.clone(),
         })));
         install_globals(&lua, &ctx)?;
         lua.globals().set(
@@ -295,15 +325,58 @@ impl ServerVm {
             started: RefCell::default(),
             fired,
             client,
+            remotes,
+            loaded,
             budget: Duration::from_secs(10),
         })
     }
 
-    /// Play (local): the VM is the local client as well, so
-    /// `RunService:BindToRenderStep`, `UserInputService` and
-    /// `ContextActionService` work and `RunService:IsClient()` is true.
+    /// Makes this VM a client's: `RunService:IsClient()` is true and
+    /// `IsServer()` false, `RunService:BindToRenderStep`,
+    /// `UserInputService` and `ContextActionService` work, and remotes go
+    /// to the server.
     pub fn set_client(&self, on: bool) {
         self.client.set(on);
+    }
+
+    /// `game:IsLoaded()`. Turning it on fires `game.Loaded`.
+    pub fn set_loaded(&mut self, on: bool) -> Vec<Change> {
+        let was = self.loaded.replace(on);
+        if !on || was {
+            return Vec::new();
+        }
+        self.guarded(|lua| {
+            signal::fire(
+                lua,
+                &SignalKey::new(Owner::Service("DataModel"), "Loaded"),
+                &[],
+            )
+        })
+    }
+
+    /// Fires the instance events for DOM changes made from outside (a
+    /// replicated change) and returns what their handlers changed.
+    pub fn flush_changes(&mut self) -> Vec<Change> {
+        self.guarded_from(0, |_| Ok(()))
+    }
+
+    /// The class and name a destroyed instance had.
+    pub fn tombstone(&self, referent: Ref) -> Option<(String, String)> {
+        engine(&self.lua).ctx.tombstone(referent)
+    }
+
+    /// The remote packets scripts sent since the last call, in order.
+    pub fn take_outgoing(&self) -> Vec<Outgoing> {
+        std::mem::take(&mut self.remotes.borrow_mut().outbox)
+    }
+
+    /// A packet from the other side: `from` is the player whose client
+    /// sent it (`None` from the server). Listeners and callbacks run now;
+    /// events for a remote nobody listens to yet wait for a listener.
+    pub fn receive(&mut self, from: Option<Ref>, packet: Packet) -> Vec<Change> {
+        let remotes = self.remotes.clone();
+        let client = self.client.get();
+        self.guarded(move |lua| remote::receive(lua, &remotes, client, from, packet))
     }
 
     /// The start of a frame's input: `GetMouseDelta` counts from zero.
@@ -411,7 +484,12 @@ impl ServerVm {
     /// Returns every DOM change scripts made, drained from the log.
     pub fn resume(&mut self) -> Vec<Change> {
         let now = self.host.now.get();
-        self.guarded(|lua| scheduler::tick(lua, now))
+        let remotes = self.remotes.clone();
+        let client = self.client.get();
+        self.guarded(move |lua| {
+            remote::flush(lua, &remotes, client)?;
+            scheduler::tick(lua, now)
+        })
     }
 
     /// Fires `event` to the scripts (handlers run now), then the instance
@@ -483,6 +561,17 @@ impl ServerVm {
     /// Runs `f` under the script timeout, then fires the changes made,
     /// round after round, and drains them from the log.
     fn guarded(&mut self, f: impl FnOnce(&Lua) -> mlua::Result<()>) -> Vec<Change> {
+        let from = self.dom.borrow().changes().len();
+        self.guarded_from(from, f)
+    }
+
+    /// [`ServerVm::guarded`], firing the instance events of the logged
+    /// changes past `from` too.
+    fn guarded_from(
+        &mut self,
+        from: usize,
+        f: impl FnOnce(&Lua) -> mlua::Result<()>,
+    ) -> Vec<Change> {
         let deadline = Instant::now() + self.budget;
         self.lua.set_interrupt(move |_| {
             if Instant::now() >= deadline {
@@ -491,7 +580,7 @@ impl ServerVm {
                 Ok(VmState::Continue)
             }
         });
-        self.fired.set(self.dom.borrow().changes().len());
+        self.fired.set(from);
         let mut ran = f(&self.lua);
         for _ in 0..ROUNDS {
             match ran {

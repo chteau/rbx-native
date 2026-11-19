@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use mlua::{Function, Lua, MultiValue, Result, Value};
+use mlua::{Function, IntoLua, Lua, MultiValue, Result, Value};
 use rbx_dom::Ref;
 
 use super::{fire_fresh, Physics};
@@ -17,6 +17,7 @@ use crate::engine::signal;
 use crate::engine::signal::{deferred_signals, LuaSignal, Owner, SignalKey};
 use crate::engine::{collection, json};
 use crate::hooks::Hooks;
+use crate::instance::LuaInstance;
 use crate::plugin::api::Arg;
 use crate::plugin::arg;
 
@@ -130,9 +131,12 @@ pub(super) struct ServerHooks {
     pub(super) physics: Rc<dyn Physics>,
     pub(super) groups: Rc<RefCell<CollisionGroups>>,
     pub(super) fired: Rc<Cell<usize>>,
-    /// Play (local): a client runs here too, so render steps and input
-    /// work.
+    /// A client's VM: render steps and input work, remotes go to the
+    /// server.
     pub(super) client: Rc<Cell<bool>>,
+    pub(super) remotes: super::remote::Shared,
+    /// `game:IsLoaded()`: a client's is false until the place arrived.
+    pub(super) loaded: Rc<Cell<bool>>,
 }
 
 fn method<A, R>(lua: &Lua, f: impl Fn(&Lua, A) -> Result<R> + 'static) -> Result<Option<Value>>
@@ -226,9 +230,10 @@ impl ServerHooks {
         }
         let client = self.client.get();
         match key {
-            // Studio's Run: a server that is running, in Studio. Play
-            // (local) is a client as well, as Studio's Play Solo was.
-            "IsServer" | "IsStudio" | "IsRunning" | "IsRunMode" => flag(lua, true),
+            // Studio's Run and Play: running, in Studio, a server's VM or
+            // a client's.
+            "IsStudio" | "IsRunning" | "IsRunMode" => flag(lua, true),
+            "IsServer" => flag(lua, !client),
             "IsClient" => flag(lua, client),
             "IsEdit" => flag(lua, false),
             "BindToRenderStep" | "UnbindFromRenderStep" if client => {
@@ -250,11 +255,60 @@ impl ServerHooks {
                 lua.create_userdata(signal)
                     .map(|u| Some(Value::UserData(u)))
             }
-            // One machine: the server owns everything, nothing to hand over.
-            "SetNetworkOwner" | "SetNetworkOwnershipAuto" => method(lua, |_, _: MultiValue| Ok(())),
-            "GetNetworkOwner" => method(lua, |_, _: MultiValue| Ok(Value::Nil)),
-            "GetNetworkOwnershipAuto" => flag(lua, true),
-            "CanSetNetworkOwnership" => method(lua, |_, _: MultiValue| Ok((true, Value::Nil))),
+            "SetNetworkOwner" | "SetNetworkOwnershipAuto" => {
+                let physics = self.physics.clone();
+                let auto = key == "SetNetworkOwnershipAuto";
+                let client = self.client.get();
+                method(lua, move |_, args: MultiValue| {
+                    if client {
+                        return Err(mlua::Error::runtime(
+                            "Network Ownership API can only be called from the server",
+                        ));
+                    }
+                    let owner = match args.get(1) {
+                        Some(Value::UserData(data)) => match data.borrow::<LuaInstance>() {
+                            Ok(player) => Some(player.referent()),
+                            Err(_) => {
+                                return Err(mlua::Error::runtime("Unable to cast value to Object"))
+                            }
+                        },
+                        _ => None,
+                    };
+                    physics
+                        .set_network_owner(referent, owner, auto)
+                        .map_err(mlua::Error::runtime)
+                })
+            }
+            "GetNetworkOwner" => {
+                let physics = self.physics.clone();
+                method(lua, move |lua, _: MultiValue| {
+                    let owner = physics
+                        .network_owner(referent)
+                        .map_err(mlua::Error::runtime)?;
+                    let ctx = crate::engine::engine(lua).ctx.clone();
+                    match owner {
+                        Some(player) => LuaInstance::new(player, ctx).into_lua(lua),
+                        None => Ok(Value::Nil),
+                    }
+                })
+            }
+            "GetNetworkOwnershipAuto" => {
+                let physics = self.physics.clone();
+                method(lua, move |_, _: MultiValue| {
+                    physics
+                        .network_ownership_auto(referent)
+                        .map_err(mlua::Error::runtime)
+                })
+            }
+            "CanSetNetworkOwnership" => {
+                let physics = self.physics.clone();
+                method(lua, move |lua, _: MultiValue| {
+                    Ok(match physics.network_ownership_auto(referent) {
+                        Ok(_) => (true, Value::Nil),
+                        Err(why) => (false, Value::String(lua.create_string(why)?)),
+                    })
+                })
+            }
             "GetMass" | "Mass" | "AssemblyMass" => {
                 let physics = self.physics.clone();
                 let assembly = key == "AssemblyMass";
@@ -426,6 +480,17 @@ impl Hooks for ServerHooks {
         class: &str,
         key: &str,
     ) -> Result<Option<Value>> {
+        if let Some(value) = super::remote::member(
+            lua,
+            ctx,
+            &self.remotes,
+            self.client.get(),
+            referent,
+            class,
+            key,
+        )? {
+            return Ok(Some(value));
+        }
         if let Some(value) = events::index(lua, ctx, referent, class, key)? {
             return Ok(Some(value));
         }
@@ -485,7 +550,13 @@ impl Hooks for ServerHooks {
     }
 
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
-        events::game_member(lua, key)
+        match key {
+            "IsLoaded" => flag(lua, self.loaded.get()),
+            "Loaded" => lua
+                .create_userdata(events::game_signal("Loaded"))
+                .map(|u| Some(Value::UserData(u))),
+            _ => events::game_member(lua, key),
+        }
     }
 
     /// Outside `Deferred` signal behaviour, a write's events run before the

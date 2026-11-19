@@ -108,7 +108,7 @@ print("done")
     dom.take_changes();
     let mut sim = Simulation::new(dom).expect("the place runs");
     sim.set_avatars(Box::new(OneUser));
-    sim.join("Player1", 1);
+    sim.join("Player1", 1, None);
     sim.start();
     let mut lines = Vec::new();
     while sim.time() < 5.0 && !lines.iter().any(|l: &String| l == "done") {

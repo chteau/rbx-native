@@ -2,9 +2,9 @@
 //! reflected properties, validated against the reflection database.
 
 pub mod clock;
-mod from_lua;
+pub(crate) mod from_lua;
 mod pseudo;
-mod to_lua;
+pub(crate) mod to_lua;
 
 use mlua::{Lua, Result, Value};
 use rbx_dom::{Ref, Variant};

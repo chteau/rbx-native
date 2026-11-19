@@ -8,10 +8,24 @@ use rbx_lua::server::{Event, ServerVm};
 use rbx_lua::Output;
 use rbx_reflection::ReflectionDatabase;
 
+use crate::animation::TrackOp;
+use crate::humanoid::State;
 use crate::input::{Input, Inputs, MouseBehavior};
 use crate::physics::{Bridge, Drive, Shared, Touch, World, PHYSICS_HZ};
 use crate::players::{Avatars, Due};
 use crate::scripts;
+
+/// Which side of the game a simulation plays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    /// The server: server scripts, every player's character.
+    Server,
+    /// Server and client in one VM (both kinds of script run), with no
+    /// replication: what the coverage probe uses.
+    Solo,
+    /// One player's client, fed by a [`crate::Session`]'s server.
+    Client,
+}
 
 /// Frames a second, Roblox's server rate.
 pub const FRAME_HZ: f64 = 60.0;
@@ -54,6 +68,10 @@ pub struct Simulation {
     view_changes: Option<Vec<Change>>,
     /// Play (local): the local client's input, `None` for a server-only run.
     inputs: Option<Inputs>,
+    role: Role,
+    /// Logged changes with their DOM mutation number, for a session to
+    /// replicate; `None` outside one.
+    stream: Option<Vec<(u64, Change)>>,
 }
 
 impl Simulation {
@@ -78,16 +96,52 @@ impl Simulation {
             output: Output::default(),
             view_changes: None,
             inputs: None,
+            role: Role::Server,
+            stream: None,
         })
     }
 
-    /// Play (local): the run is the local client as well. It gets its own
-    /// camera, render steps run each frame, and [`Simulation::input`]
-    /// reaches `UserInputService` and `ContextActionService`. Call before
+    pub fn role(&self) -> Role {
+        self.role
+    }
+
+    /// Server and client in one VM, with no replication: both kinds of
+    /// script run and the client services exist. Call before
     /// [`Simulation::start`].
     pub fn set_client(&mut self) {
+        self.role = Role::Solo;
+        self.client_services();
+    }
+
+    /// Makes this the client of local player number `index`: client
+    /// scripts only, its own camera and input, `game:IsLoaded()` false
+    /// until [`Simulation::set_loaded`], and instances it makes numbered
+    /// apart from the server's.
+    pub(crate) fn make_client(&mut self, index: usize, player: Ref) {
+        self.role = Role::Client;
+        {
+            let mut shared = self.shared.borrow_mut();
+            shared.players.client = true;
+            shared.players.local = Some(player);
+            shared.ownership.client = true;
+            shared.animations.record = true;
+        }
+        self.dom
+            .borrow_mut()
+            .raise_next_ref(crate::ownership::client_refs(index));
+        self.vm.set_loaded(false);
+        self.client_services();
+    }
+
+    /// The server of a session: changes and track operations are kept
+    /// for replication.
+    pub(crate) fn make_server(&mut self) {
+        self.stream = Some(Vec::new());
+        self.shared.borrow_mut().animations.record = true;
+    }
+
+    fn client_services(&mut self) {
         self.vm.set_client(true);
-        self.shared.borrow_mut().players.client = true;
         {
             let mut dom = self.dom.borrow_mut();
             crate::input::client_camera(&mut dom, self.db);
@@ -162,23 +216,25 @@ impl Simulation {
         self.collect_output();
     }
 
-    /// Puts the local player in the game as `name`: `PlayerAdded` and
-    /// (with `CharacterAutoLoads`) its first character on the next frame.
-    pub fn join(&mut self, name: &str, user_id: i64) -> Option<Ref> {
+    /// Puts a player in the game as `name`, wearing `template` (a DOM
+    /// whose one root is the model) or the default character:
+    /// `PlayerAdded` and (with `CharacterAutoLoads`) its first character
+    /// on the next frame.
+    pub fn join(&mut self, name: &str, user_id: i64, template: Option<WeakDom>) -> Option<Ref> {
         let player = {
             let mut dom = self.dom.borrow_mut();
             self.shared
                 .borrow_mut()
                 .players
-                .join(&mut dom, self.db, name, user_id)
+                .join(&mut dom, self.db, name, user_id, template)
         };
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
         player
     }
 
-    /// The local player's character, a DOM whose one root is the model
-    /// (feet at the origin, facing -Z); the noob when never set.
+    /// The character for players who bring none, a DOM whose one root is
+    /// the model (feet at the origin, facing -Z); the noob when never set.
     pub fn set_character(&mut self, template: WeakDom) {
         self.shared.borrow_mut().players.template = Some(template);
     }
@@ -189,14 +245,19 @@ impl Simulation {
         self.shared.borrow_mut().players.avatars = Some(avatars);
     }
 
-    /// The local player and its character, once joined.
+    /// A client's player and its character; on a server or solo run, the
+    /// first player to join.
     pub fn local_player(&self) -> Option<(Ref, Option<Ref>)> {
         let shared = self.shared.borrow();
-        let local = shared.players.local.as_ref()?;
+        let player = shared
+            .players
+            .local
+            .or_else(|| shared.players.members.first().map(|m| m.player))?;
         let dom = self.dom.borrow();
+        dom.get(player)?;
         Some((
-            local.player,
-            crate::humanoid::reference(&dom, local.player, "Character"),
+            player,
+            crate::humanoid::reference(&dom, player, "Character"),
         ))
     }
 
@@ -297,6 +358,231 @@ impl Simulation {
         self.client_frame(dt);
     }
 
+    /// `game:IsLoaded()`; turning it on fires `game.Loaded`.
+    pub(crate) fn set_loaded(&mut self) {
+        let changes = self.vm.set_loaded(true);
+        self.apply(changes);
+        self.collect_output();
+    }
+
+    /// Fires the instance events of DOM changes made from outside (by
+    /// replication) and feeds them to physics.
+    pub(crate) fn flush(&mut self) {
+        let changes = self.vm.flush_changes();
+        self.apply(changes);
+    }
+
+    pub(crate) fn fire_signal(&mut self, owner: Ref, name: &str, args: Vec<rbx_lua::server::Arg>) {
+        self.fire(Event::Signal {
+            owner,
+            name: name.into(),
+            args,
+        });
+    }
+
+    pub(crate) fn destroy(&mut self, referent: Ref) {
+        let changes = self.vm.destroy(referent);
+        self.apply(changes);
+    }
+
+    pub(crate) fn dom_mut(&self) -> std::cell::RefMut<'_, WeakDom> {
+        self.dom.borrow_mut()
+    }
+
+    pub(crate) fn db(&self) -> &'static ReflectionDatabase {
+        self.db
+    }
+
+    /// The changes kept for replication since the last call.
+    pub(crate) fn take_stream(&mut self) -> Vec<(u64, Change)> {
+        self.stream.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    pub(crate) fn tombstone(&self, referent: Ref) -> Option<(String, String)> {
+        self.vm.tombstone(referent)
+    }
+
+    pub(crate) fn take_outgoing(&mut self) -> Vec<rbx_lua::server::Outgoing> {
+        self.vm.take_outgoing()
+    }
+
+    /// A remote packet from `from` (`None`: the server).
+    pub(crate) fn receive(&mut self, from: Option<Ref>, packet: rbx_lua::server::Packet) {
+        let changes = self.vm.receive(from, packet);
+        self.apply(changes);
+        self.collect_output();
+    }
+
+    pub(crate) fn ownership_mut(&self) -> std::cell::RefMut<'_, crate::ownership::Ownership> {
+        std::cell::RefMut::map(self.shared.borrow_mut(), |s| &mut s.ownership)
+    }
+
+    /// Whether this peer moves `part` itself (the others are moved by
+    /// replication).
+    pub(crate) fn simulates(&self, part: Ref) -> bool {
+        self.world.is_part(part) && !self.world.is_remote(part)
+    }
+
+    /// Where the unanchored parts this peer simulates are.
+    pub(crate) fn moved_parts(&self) -> Vec<(Ref, rbx_dom::CFrameData)> {
+        let dom = self.dom.borrow();
+        self.world
+            .moving_parts()
+            .filter_map(|part| match dom.get(part)?.properties().get("CFrame") {
+                Some(Variant::CFrame(cf)) => Some((part, *cf)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Moves parts another peer simulates to where it put them, unlogged
+    /// as physics moves are.
+    pub(crate) fn place_parts(&mut self, parts: &[(Ref, rbx_dom::CFrameData)]) {
+        for (part, cf) in parts {
+            if self.simulates(*part) {
+                continue;
+            }
+            {
+                let mut dom = self.dom.borrow_mut();
+                let Some(instance) = dom.get_mut(*part) else {
+                    continue;
+                };
+                instance
+                    .properties_mut()
+                    .insert("CFrame".into(), Variant::CFrame(*cf));
+            }
+            self.world.teleport(*part, cf);
+            if let Some(seen) = &mut self.view_changes {
+                seen.push(Change::Property {
+                    referent: *part,
+                    name: "CFrame".into(),
+                });
+            }
+        }
+    }
+
+    /// Every humanoid's state, and whether this peer decides it.
+    pub(crate) fn humanoid_states(&self) -> Vec<(Ref, State, bool)> {
+        let shared = self.shared.borrow();
+        shared
+            .humanoids
+            .characters
+            .values()
+            .map(|c| (c.humanoid, c.state, !self.world.is_remote(c.root)))
+            .collect()
+    }
+
+    /// A state another peer's humanoid went into.
+    pub(crate) fn set_humanoid_state(&mut self, humanoid: Ref, state: State) {
+        {
+            let mut shared = self.shared.borrow_mut();
+            let Some(c) = shared.humanoids.characters.get(&humanoid) else {
+                return;
+            };
+            if c.state == state || !self.world.is_remote(c.root) {
+                return;
+            }
+            shared.humanoids.replicate_state(humanoid, state);
+        }
+        self.humanoid_events();
+    }
+
+    pub(crate) fn take_track_ops(&mut self) -> Vec<(Option<Ref>, TrackOp)> {
+        std::mem::take(&mut self.shared.borrow_mut().animations.ops)
+    }
+
+    /// Plays here what another peer did to one of its tracks.
+    pub(crate) fn mirror_track(&mut self, from: Option<Ref>, op: TrackOp) {
+        let events = {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            shared.animations.mirror(&mut dom, self.db, from, op);
+            std::mem::take(&mut shared.animations.events)
+        };
+        for event in events {
+            self.fire(event);
+        }
+    }
+
+    pub(crate) fn humanoid_root(&self, humanoid: Ref) -> Option<Ref> {
+        self.shared
+            .borrow()
+            .humanoids
+            .characters
+            .get(&humanoid)
+            .map(|c| c.root)
+    }
+
+    pub(crate) fn take_forwarded(&mut self) -> Vec<(Ref, String, Vec<rbx_lua::server::Arg>)> {
+        std::mem::take(&mut self.shared.borrow_mut().forwarded)
+    }
+
+    /// A humanoid call the server handed to this peer, its owner.
+    pub(crate) fn humanoid_call(
+        &mut self,
+        humanoid: Ref,
+        method: &str,
+        args: &[rbx_lua::server::Arg],
+    ) {
+        let mut dom = self.dom.borrow_mut();
+        let _ = self
+            .shared
+            .borrow_mut()
+            .humanoids
+            .call(&mut dom, self.db, humanoid, method, args);
+    }
+
+    /// The server's auto ownership for the frame, then each assembly's
+    /// body made dynamic or kinematic as its owner says.
+    fn sync_ownership(&mut self) {
+        if self.role == Role::Server {
+            let characters: Vec<(Ref, std::collections::HashSet<Ref>, [f64; 3])> = {
+                let dom = self.dom.borrow();
+                let shared = self.shared.borrow();
+                shared
+                    .players
+                    .members
+                    .iter()
+                    .filter_map(|m| {
+                        let model = crate::humanoid::reference(&dom, m.player, "Character")?;
+                        let root = shared
+                            .humanoids
+                            .characters
+                            .values()
+                            .find(|c| c.model == model)
+                            .map(|c| c.root)?;
+                        let at = match dom.get(root)?.properties().get("CFrame") {
+                            Some(Variant::CFrame(cf)) => {
+                                [cf.position.x, cf.position.y, cf.position.z].map(f64::from)
+                            }
+                            _ => return None,
+                        };
+                        Some((
+                            m.player,
+                            scripts::subtree(&dom, model).into_iter().collect(),
+                            at,
+                        ))
+                    })
+                    .collect()
+            };
+            let assemblies = self.world.unanchored();
+            let dom = self.dom.borrow();
+            let mut shared = self.shared.borrow_mut();
+            shared.ownership.retain(&dom);
+            shared
+                .ownership
+                .assign(self.frame, &assemblies, &characters, |part| {
+                    match dom.get(part)?.properties().get("CFrame") {
+                        Some(Variant::CFrame(cf)) => {
+                            Some([cf.position.x, cf.position.y, cf.position.z].map(f64::from))
+                        }
+                        _ => None,
+                    }
+                });
+        }
+        self.world.sync_ownership();
+    }
+
     fn resume(&mut self) {
         let changes = self.vm.resume();
         self.apply(changes);
@@ -330,6 +616,7 @@ impl Simulation {
         if self.dirty {
             self.rebuild();
         }
+        self.sync_ownership();
         let steps = (PHYSICS_HZ / FRAME_HZ).round() as u32;
         self.world.refresh_constraints(&self.dom.borrow(), self.db);
         let touches = self
@@ -355,7 +642,12 @@ impl Simulation {
                     }),
             );
         }
-        for part in self.world.fallen(fallen_height) {
+        let fallen = self.world.fallen(fallen_height, self.role != Role::Client);
+        for part in fallen {
+            // A client destroys only what it made; the server the rest.
+            if self.role == Role::Client && !crate::ownership::client_made(part) {
+                continue;
+            }
             let changes = self.vm.destroy(part);
             self.apply(changes);
         }
@@ -377,7 +669,7 @@ impl Simulation {
         for due in due {
             match due {
                 Due::Fire(event) => self.fire(event),
-                Due::Load => self.load_character(),
+                Due::Load(player) => self.load_character(player),
             }
         }
         let old = std::mem::take(&mut self.shared.borrow_mut().players.old);
@@ -389,21 +681,31 @@ impl Simulation {
 
     /// `LoadCharacter` from the engine (auto-load, respawn): the same three
     /// steps a script's call takes, scripts running between them.
-    fn load_character(&mut self) {
-        let removing = self.shared.borrow().players.removing(&self.dom.borrow());
+    fn load_character(&mut self, player: Ref) {
+        let removing = self
+            .shared
+            .borrow()
+            .players
+            .removing(&self.dom.borrow(), player);
         if let Some((owner, name, args)) = removing {
             self.fire(Event::Signal { owner, name, args });
         }
         let added = {
             let mut dom = self.dom.borrow_mut();
-            self.shared.borrow_mut().players.build(&mut dom, self.db)
+            self.shared
+                .borrow_mut()
+                .players
+                .build(&mut dom, self.db, player)
         };
         if let Some((owner, name, args)) = added {
             self.fire(Event::Signal { owner, name, args });
         }
         {
             let mut dom = self.dom.borrow_mut();
-            self.shared.borrow_mut().players.place(&mut dom, self.db);
+            self.shared
+                .borrow_mut()
+                .players
+                .place(&mut dom, self.db, player);
         }
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
@@ -522,9 +824,13 @@ impl Simulation {
         let found: Vec<Ref> = {
             let dom = self.dom.borrow();
             let client = self.shared.borrow().players.client_roots(&dom);
+            let role = self.role;
             scripts::subtree(&dom, root)
                 .into_iter()
-                .filter(|r| scripts::runs(&dom, *r) || scripts::runs_on_client(&dom, *r, &client))
+                .filter(|r| {
+                    (role != Role::Client && scripts::runs(&dom, *r))
+                        || (role != Role::Server && scripts::runs_on_client(&dom, *r, &client))
+                })
                 .collect()
         };
         for script in found {
@@ -542,6 +848,17 @@ impl Simulation {
         if let Some(seen) = &mut self.view_changes {
             seen.extend(changes.iter().cloned());
         }
+        if let Some(stream) = &mut self.stream {
+            let first = self.dom.borrow().mutations() + 1 - changes.len() as u64;
+            stream.extend(
+                changes
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(i, c)| (first + i as u64, c)),
+            );
+        }
+
         for change in changes {
             match change {
                 Change::Property { referent, name } => self.property_changed(referent, &name),

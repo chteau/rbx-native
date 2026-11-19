@@ -47,7 +47,14 @@ pub(super) struct Entry {
     texture: Option<AssetRef>,
     appearance: Option<Appearance>,
     fit: Fit,
+    /// The part's colour, what an untextured mesh is drawn in.
     color: [f32; 3],
+    /// What a textured mesh's image is multiplied by: white for a MeshPart,
+    /// a SpecialMesh's `VertexColor`. Neither takes the part's colour: an
+    /// accessory handle left at the default grey draws its texture as is
+    /// (next to the real client, a white floatie at 210 drew at 133 when
+    /// this was the part's colour).
+    tint: [f32; 3],
     alpha: f32,
     reflectance: f32,
     casts_shadow: bool,
@@ -352,7 +359,7 @@ pub(crate) fn resolve(
             .texture
             .clone()
             .filter(|reference| images.contains_key(reference));
-        let (mut mesh_key, mut color) = (entry.mesh.clone(), entry.color);
+        let (mut mesh_key, mut color) = (entry.mesh.clone(), entry.color_for(texture.is_some()));
         if let Some(dressed) = dressed.get(&entry.referent) {
             let (key, derived) = &dressed.mesh;
             let (image_key, image) = &dressed.image;
@@ -488,6 +495,7 @@ fn from_mesh_part(
         appearance,
         fit,
         color: color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0)),
+        tint: [1.0; 3],
         alpha: super::alpha(properties, material.kind),
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(properties),
@@ -519,15 +527,9 @@ fn from_special_mesh_child(
     let texture = properties.get("TextureId").and_then(parsed_asset_ref);
     // "Changes the hue of a mesh's texture" (creator-docs `VertexColor`), and
     // only that: Studio leaves an untextured mesh the part's own colour.
-    let tint = match texture {
-        Some(_) => vector3(properties.get("VertexColor"), Vec3::ONE),
-        None => Vec3::ONE,
-    };
-
-    let color = std::array::from_fn(|axis| {
-        let part_channel = super::srgb_to_linear(f32::from(part_color[axis]) / 255.0);
-        part_channel * super::srgb_to_linear(tint.to_array()[axis])
-    });
+    let vertex_color = vector3(properties.get("VertexColor"), Vec3::ONE).to_array();
+    let color = part_color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0));
+    let tint = vertex_color.map(super::srgb_to_linear);
 
     // The part's material, not the mesh's: a SpecialMesh has none.
     let material = materials.slot_for(part.properties(), database);
@@ -541,6 +543,7 @@ fn from_special_mesh_child(
         appearance: None,
         fit,
         color,
+        tint,
         // A SpecialMesh has no Transparency of its own: the part it hangs under
         // owns both properties.
         alpha: super::alpha(part.properties(), material.kind),

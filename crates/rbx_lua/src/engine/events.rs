@@ -17,7 +17,7 @@ use crate::plugin::arg;
 pub(super) const ATTRIBUTES: &str = "AttributesSerialize";
 /// The binary format's string type id, which the attribute blob travels as.
 const STRING_TYPE_ID: u8 = 0x01;
-const ON_INVOKE_KEY: &str = "__rbxn_on_invoke";
+pub(crate) const ON_INVOKE_KEY: &str = "__rbxn_on_invoke";
 
 const INSTANCE_SIGNALS: &[&str] = &[
     "Changed",
@@ -39,7 +39,7 @@ pub(crate) fn is_signal(db: &ReflectionDatabase, class: &str, key: &str) -> bool
     let has = |list: &[&str], base: &str| list.contains(&key) && db.is_subclass_of(class, base);
     INSTANCE_SIGNALS.contains(&key)
         || has(&["Event"], "BindableEvent")
-        || has(&["OnServerEvent", "OnClientEvent"], "RemoteEvent")
+        || has(&["OnServerEvent", "OnClientEvent"], "BaseRemoteEvent")
 }
 
 /// `instance[key]` for the members above: `None` lets the property and
@@ -126,7 +126,7 @@ pub(crate) fn game_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
     }))
 }
 
-pub(super) fn game_signal(event: impl Into<String>) -> LuaSignal {
+pub(crate) fn game_signal(event: impl Into<String>) -> LuaSignal {
     LuaSignal(SignalKey::new(Owner::Service("DataModel"), event))
 }
 

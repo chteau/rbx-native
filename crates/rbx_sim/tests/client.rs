@@ -2,7 +2,7 @@
 //! `UserInputService`, our default controls and camera.
 
 use rbx_dom::{Variant, WeakDom};
-use rbx_sim::{conformance, Input, MouseBehavior, Simulation};
+use rbx_sim::{conformance, Input, MouseBehavior, Session, Simulation};
 
 fn key(code: &str, down: bool) -> Input {
     Input::Key {
@@ -29,17 +29,48 @@ fn place(source: &str) -> WeakDom {
     dom
 }
 
-fn playing(source: &str) -> Simulation {
-    let mut sim = Simulation::new(place(source)).expect("the place runs");
-    sim.set_client();
-    sim.join("Player1", 1);
-    sim.start();
+/// A session with one local player, seen from their client: steps run
+/// the whole session, everything else is the client's.
+struct Play(Session);
+
+impl Play {
+    fn new(dom: WeakDom) -> Play {
+        let mut session = Session::new(dom).expect("the place runs");
+        session.start();
+        session.join("Player1", 1, None).expect("joins");
+        Play(session)
+    }
+
+    fn step(&mut self) {
+        self.0.step();
+    }
+
+    fn run_for(&mut self, seconds: f64) {
+        self.0.run_for(seconds);
+    }
+}
+
+impl std::ops::Deref for Play {
+    type Target = Simulation;
+    fn deref(&self) -> &Simulation {
+        &self.0.clients[0].sim
+    }
+}
+
+impl std::ops::DerefMut for Play {
+    fn deref_mut(&mut self) -> &mut Simulation {
+        &mut self.0.clients[0].sim
+    }
+}
+
+fn playing(source: &str) -> Play {
+    let mut sim = Play::new(place(source));
     // The character spawns and settles.
     sim.run_for(1.0);
     sim
 }
 
-fn root(sim: &Simulation) -> [f32; 3] {
+fn root(sim: &Play) -> [f32; 3] {
     let (_, character) = sim.local_player().expect("joined");
     let dom = sim.dom();
     let model = dom.get(character.expect("a character")).unwrap();
@@ -55,7 +86,7 @@ fn root(sim: &Simulation) -> [f32; 3] {
     }
 }
 
-fn lines(sim: &mut Simulation) -> Vec<String> {
+fn lines(sim: &mut Play) -> Vec<String> {
     sim.take_output().lines().to_vec()
 }
 
@@ -229,11 +260,9 @@ fn a_wall_behind_pulls_the_camera_in() {
         }),
     );
     dom.take_changes();
-    let mut sim = Simulation::new(dom).expect("runs");
-    sim.set_client();
-    sim.join("Player1", 1);
-    sim.start();
+    let mut sim = Play::new(dom);
     sim.run_for(1.0);
+
     let (camera, _) = sim.camera().unwrap();
     assert!(camera.position.z < 4.6, "{camera:?}");
 }

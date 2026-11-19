@@ -27,3 +27,5 @@ serde_json = "1"
 rbx_play = { path = "../rbx_play" }
 rbx_cloud = { path = "../rbx_cloud" }
 ureq = "3"
+# examples/record_goldens.rs: finds the client window for its gestures.
+x11rb = "0.13"

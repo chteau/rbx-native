@@ -898,6 +898,27 @@ impl Shell {
     /// Explorer and Properties show while a test runs.
     fn view_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         use super::play::live::View;
+        // Play (local): the server, then each local player's client.
+        if let Some((peer, label)) = self.local_run_view() {
+            let icon = match peer {
+                rbx_sim::Peer::Server => IconName::Server,
+                rbx_sim::Peer::Client(_) => IconName::Globe,
+            };
+            let tile = base_tile("ribbon-view", icon, SharedString::from(label.clone()), true);
+            return self
+                .ribbon_nav
+                .claim(tile, cx)
+                .tooltip(move |window, cx| {
+                    super::tooltip::text(
+                        format!(
+                            "Showing {label}. Click for the next of the server and each player."
+                        ),
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_next_view(cx)));
+        }
         let view = self.play.live.view;
         let (icon, label) = match view {
             View::Client => (IconName::Globe, "Client"),
@@ -985,16 +1006,13 @@ impl Shell {
                 "Local Run is running",
             )
         } else if idle && rbx_net::is_offline() {
-            unavailable_tile(
-                "ribbon-play",
-                IconName::Play,
-                "Play",
-                if local_beta {
-                    "offline: the real client needs Roblox; use Play (local)"
-                } else {
-                    "offline: the real client needs Roblox"
-                },
-            )
+            let why = if local_beta {
+                "You\u{2019}re offline, and Play needs Roblox\u{2019}s servers. Play (local) works offline."
+            } else {
+                "You\u{2019}re offline, and Play needs Roblox\u{2019}s servers."
+            };
+            base_tile("ribbon-play", IconName::Play, "Play", false)
+                .tooltip(move |window, cx| super::tooltip::text(why, window, cx))
         } else if idle {
             tile(nav, "ribbon-play", IconName::Play, "Play", cx)
                 .on_click(cx.listener(|shell, _, window, cx| shell.play_start(window, cx)))
@@ -1099,6 +1117,7 @@ impl Shell {
             primary("ribbon-stop", stop).into_any_element(),
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),
+            self.players_tile(cx).into_any_element(),
             self.network_tile(cx),
             self.device_tile(cx),
             self.controller_tile(cx).into_any_element(),
@@ -1109,6 +1128,49 @@ impl Shell {
 }
 
 impl Shell {
+    /// Test › Players: how many local players the next Play (local)
+    /// starts, 1 to 4; a click counts up and wraps.
+    fn players_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let count = self.play.live.local.players;
+        let label = match count {
+            1 => "1 Player",
+            2 => "2 Players",
+            3 => "3 Players",
+            _ => "4 Players",
+        };
+        if !crate::beta::enabled(super::local_run::BETA_ID) {
+            return unavailable_tile(
+                "ribbon-players",
+                IconName::Users,
+                "Players",
+                "turn on the Local Run beta in Settings",
+            );
+        }
+        if self.local_run_active() {
+            return unavailable_tile(
+                "ribbon-players",
+                IconName::Users,
+                label,
+                "takes effect on the next Play (local)",
+            );
+        }
+        tile(
+            &self.ribbon_nav,
+            "ribbon-players",
+            IconName::Users,
+            label,
+            cx,
+        )
+        .tooltip(|window, cx| {
+            super::tooltip::text(
+                "Local players for Play (local), each with a client of their own. Click to change.",
+                window,
+                cx,
+            )
+        })
+        .on_click(cx.listener(|shell, _, _, cx| shell.local_run_next_players(cx)))
+    }
+
     /// Test › Controller: the Controller Emulator window.
     fn controller_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         tile(
@@ -1346,7 +1408,7 @@ pub(super) fn unavailable_tile(
 fn base_tile(
     id: impl Into<ElementId>,
     icon: IconName,
-    label: &'static str,
+    label: impl Into<SharedString>,
     enabled: bool,
 ) -> Stateful<Div> {
     tile_frame(id, icon_zone(icon, px(20.)), label, enabled)
@@ -1380,7 +1442,7 @@ pub(super) fn tile_with_badge(
 fn tile_frame(
     id: impl Into<ElementId>,
     top: impl IntoElement,
-    label: &'static str,
+    label: impl Into<SharedString>,
     enabled: bool,
 ) -> Stateful<Div> {
     v_flex()
@@ -1422,7 +1484,7 @@ fn tile_frame(
         })
         .group("ribbon-tile")
         .child(top)
-        .child(div().w_full().text_center().truncate().child(label))
+        .child(div().w_full().text_center().truncate().child(label.into()))
 }
 
 /// A ribbon button's icon, and its hover lift.

@@ -293,4 +293,29 @@ function Harness.yaw(cframe)
 	return Harness.round(math.deg(math.atan2(look.X, -look.Z)), 2)
 end
 
+-- The one player in the game.
+function Harness.player()
+	local Players = game:GetService("Players")
+	return Players:GetPlayers()[1] or Players.PlayerAdded:Wait()
+end
+
+-- The client half of a test: the module `name` in
+-- ReplicatedStorage.ConformanceClient, called on the player's client with
+-- `...`; returns what it returns.
+local clientReady = false
+local clientFolder = game:GetService("ReplicatedStorage"):FindFirstChild("ConformanceClient")
+if clientFolder then
+	clientFolder:WaitForChild("Ready").OnServerEvent:Connect(function()
+		clientReady = true
+	end)
+end
+
+function Harness.client(name, ...)
+	local player = Harness.player()
+	while not clientReady do
+		RunService.Heartbeat:Wait()
+	end
+	return clientFolder.Call:InvokeClient(player, name, ...)
+end
+
 return Harness

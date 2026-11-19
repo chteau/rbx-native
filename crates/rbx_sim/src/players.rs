@@ -1,4 +1,4 @@
-//! The Players service with one local player: joining, characters
+//! The Players service and its players: joining, characters
 //! (`LoadCharacter`, `CharacterAutoLoads`, respawning after `RespawnTime`),
 //! where they spawn, `StarterCharacter`, `StarterCharacterScripts` and
 //! `StarterPlayerScripts`. Written from the Players, Player and
@@ -28,30 +28,34 @@ pub trait Avatars {
     fn character(&self, description: &WeakDom) -> Result<WeakDom, String>;
 }
 
-/// The player playing.
-#[derive(Clone, Debug)]
-pub struct Local {
+/// A player in the game, as the server keeps them.
+pub struct Member {
     pub player: Ref,
     pub user_id: i64,
     pub name: String,
+    /// Their character as a DOM whose one root is the model, copied for
+    /// every spawn; [`Players::template`], else the noob, when unset.
+    pub template: Option<WeakDom>,
+    /// `CharacterAppearanceLoaded` waiting for a frame: (frame, character).
+    appearance: Vec<(u64, Ref)>,
+    respawn_at: Option<u64>,
+    joined: bool,
 }
 
 #[derive(Default)]
 pub struct Players {
-    pub local: Option<Local>,
-    /// The local player's character as a DOM whose one root is the model,
-    /// copied for every spawn; the noob when unset.
+    /// The server's players, in the order they joined.
+    pub members: Vec<Member>,
+    /// A client's own player, `Players.LocalPlayer` (nil on a server).
+    pub local: Option<Ref>,
+    /// The character for players who bring none.
     pub template: Option<WeakDom>,
     pub avatars: Option<Box<dyn Avatars>>,
-    /// `CharacterAppearanceLoaded` waiting for a frame: (frame, character).
-    appearance: Vec<(u64, Ref)>,
     /// Old characters to destroy, once their removal has been seen.
     pub old: Vec<Ref>,
-    respawn_at: Option<u64>,
-    joined: bool,
     pub frame: u64,
-    /// Play (local): the player plays here, with our default controls and
-    /// camera in its `PlayerScripts`.
+    /// A client: characters come from the server, `LoadCharacter` and
+    /// `ApplyDescription` refuse.
     pub client: bool,
 }
 
@@ -89,8 +93,7 @@ pub(crate) fn is_signal(class: &str, key: &str) -> bool {
     )
 }
 
-/// `Players.LocalPlayer`: the one player. Local Run is server and client
-/// in one, so server scripts see it too.
+/// `Players.LocalPlayer`: the client's own player, nil on the server.
 pub(crate) fn property(
     shared: &crate::physics::Shared,
     _referent: Ref,
@@ -98,13 +101,7 @@ pub(crate) fn property(
     key: &str,
 ) -> Option<Arg> {
     if class == "Players" && key == "LocalPlayer" {
-        return Some(
-            shared
-                .players
-                .local
-                .as_ref()
-                .map_or(Arg::Nil, |l| Arg::Instance(l.player)),
-        );
+        return Some(shared.players.local.map_or(Arg::Nil, Arg::Instance));
     }
     None
 }
@@ -416,25 +413,65 @@ fn copy(dom: &mut WeakDom, root: Ref, parent: Option<Ref>) -> Ref {
     graft(dom, &source, root, parent)
 }
 
-fn players_of(shared: &Players, dom: &WeakDom) -> Vec<Ref> {
-    shared
-        .local
-        .iter()
-        .map(|l| l.player)
-        .filter(|p| dom.get(*p).is_some())
+/// The `Player`s under `Players`, in child order.
+pub(crate) fn players_of(dom: &WeakDom) -> Vec<Ref> {
+    service(dom, "Players")
+        .and_then(|p| dom.get(p))
+        .map(|p| p.children().to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| dom.get(*c).is_some_and(|i| i.class() == "Player"))
         .collect()
 }
 
+/// A client's `PlayerScripts`: a copy of `StarterPlayerScripts`, and our
+/// default controls and camera unless the place brings its own
+/// `PlayerModule`. Made on the client, so the server never has it.
+pub(crate) fn player_scripts(dom: &mut WeakDom, db: &ReflectionDatabase, player: Ref) -> Ref {
+    let scripts = dom.new_instance("PlayerScripts", "PlayerScripts", Some(player));
+    let starter =
+        service(dom, "StarterPlayer").and_then(|s| child_of_class(dom, s, "StarterPlayerScripts"));
+    if let Some(starter) = starter {
+        for child in dom
+            .get(starter)
+            .map(|i| i.children().to_vec())
+            .unwrap_or_default()
+        {
+            copy(dom, child, Some(scripts));
+        }
+    }
+    if child_named(dom, scripts, "PlayerModule").is_none() {
+        let module = dom.new_instance("ModuleScript", "PlayerModule", Some(scripts));
+        set(
+            dom,
+            db,
+            module,
+            "Source",
+            Variant::String(crate::character::PLAYER_MODULE_SOURCE.into()),
+        );
+        let loader = dom.new_instance("LocalScript", "PlayerScriptsLoader", Some(scripts));
+        set(
+            dom,
+            db,
+            loader,
+            "Source",
+            Variant::String(crate::character::PLAYER_LOADER_SOURCE.into()),
+        );
+    }
+    scripts
+}
+
 impl Players {
-    /// Adds the local player under `Players`, with `Backpack`, `PlayerGui`
-    /// and `PlayerScripts` (a copy of `StarterPlayerScripts`). `PlayerAdded`
-    /// and the first character come on the next frame.
+    /// Adds a player under `Players`, with `Backpack` and `PlayerGui`
+    /// (their client makes its own `PlayerScripts`). `PlayerAdded` and the
+    /// first character come on the next frame.
     pub fn join(
         &mut self,
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
         name: &str,
         user_id: i64,
+        template: Option<WeakDom>,
     ) -> Option<Ref> {
         let players = service(dom, "Players")?;
         let player = dom.new_instance("Player", name, Some(players));
@@ -442,63 +479,33 @@ impl Players {
         set(dom, db, player, "DisplayName", Variant::String(name.into()));
         dom.new_instance("Backpack", "Backpack", Some(player));
         dom.new_instance("PlayerGui", "PlayerGui", Some(player));
-        let scripts = dom.new_instance("PlayerScripts", "PlayerScripts", Some(player));
-        let starter_player = service(dom, "StarterPlayer");
-        if let Some(starter_player) = starter_player {
+        if let Some(starter_player) = service(dom, "StarterPlayer") {
             copy_player_settings(dom, db, starter_player, player);
         }
-        let starter = starter_player.and_then(|s| child_of_class(dom, s, "StarterPlayerScripts"));
-        if let Some(starter) = starter {
-            for child in dom
-                .get(starter)
-                .map(|i| i.children().to_vec())
-                .unwrap_or_default()
-            {
-                copy(dom, child, Some(scripts));
-            }
-        }
-        // A client's default controls and camera, unless the place brings
-        // its own PlayerModule.
-        if self.client && child_named(dom, scripts, "PlayerModule").is_none() {
-            let module = dom.new_instance("ModuleScript", "PlayerModule", Some(scripts));
-            set(
-                dom,
-                db,
-                module,
-                "Source",
-                Variant::String(crate::character::PLAYER_MODULE_SOURCE.into()),
-            );
-            let loader = dom.new_instance("LocalScript", "PlayerScriptsLoader", Some(scripts));
-            set(
-                dom,
-                db,
-                loader,
-                "Source",
-                Variant::String(crate::character::PLAYER_LOADER_SOURCE.into()),
-            );
-        }
-        self.local = Some(Local {
+        self.members.push(Member {
             player,
             user_id,
             name: name.into(),
+            template,
+            appearance: Vec::new(),
+            respawn_at: None,
+            joined: false,
         });
-        self.joined = false;
         Some(player)
     }
 
-    /// Instances whose LocalScripts the local client runs: the player
-    /// (`Backpack`, `PlayerGui`, `PlayerScripts`) and its character.
+    /// Instances whose LocalScripts a client runs: its player (`Backpack`,
+    /// `PlayerGui`, `PlayerScripts`) and its character.
     pub fn client_roots(&self, dom: &WeakDom) -> Vec<Ref> {
-        let Some(local) = &self.local else {
+        let Some(local) = self.local else {
             return Vec::new();
         };
-        let mut roots = vec![local.player];
-        if let Some(character) = reference(dom, local.player, "Character") {
+        let mut roots = vec![local];
+        if let Some(character) = reference(dom, local, "Character") {
             roots.push(character);
         }
         roots
     }
-
     /// The frame's players work, before physics, as steps for the
     /// simulation to run with the scripts in between.
     pub fn due(
@@ -508,72 +515,65 @@ impl Players {
         humanoids: &crate::humanoid::Humanoids,
     ) -> Vec<Due> {
         let mut out = Vec::new();
-        let Some(local) = self.local.clone() else {
-            return out;
-        };
-        if dom.get(local.player).is_none() {
-            return out;
-        }
         let players = service(dom, "Players");
-        if !self.joined {
-            self.joined = true;
-            if let Some(players) = players {
+        let auto = players.is_some_and(|p| flag(dom, db, p, "CharacterAutoLoads"));
+        let frame = self.frame;
+        for member in &mut self.members {
+            let player = member.player;
+            if dom.get(player).is_none() {
+                continue;
+            }
+            if !member.joined {
+                member.joined = true;
+                if let Some(players) = players {
+                    out.push(Due::Fire(Event::Signal {
+                        owner: players,
+                        name: "PlayerAdded".into(),
+                        args: vec![Arg::Instance(player)],
+                    }));
+                }
+                if auto {
+                    out.push(Due::Load(player));
+                }
+            }
+            for (_, character) in member.appearance.iter().filter(|(at, _)| *at <= frame) {
                 out.push(Due::Fire(Event::Signal {
-                    owner: players,
-                    name: "PlayerAdded".into(),
-                    args: vec![Arg::Instance(local.player)],
+                    owner: player,
+                    name: "CharacterAppearanceLoaded".into(),
+                    args: vec![Arg::Instance(*character)],
                 }));
             }
-            if players.is_some_and(|p| flag(dom, db, p, "CharacterAutoLoads")) {
-                out.push(Due::Load);
+            member.appearance.retain(|(at, _)| *at > frame);
+            // A dead character respawns RespawnTime later (PlayersCharacter
+            // `respawn`: 60 frames for 1 s).
+            let character = reference(dom, player, "Character");
+            let died = character.and_then(|c| {
+                humanoids
+                    .characters
+                    .values()
+                    .find(|h| h.model == c && h.state == crate::humanoid::State::Dead)
+                    .and_then(|h| h.died_at)
+            });
+            match (died, member.respawn_at) {
+                (Some(died), None) if auto => {
+                    let seconds = players.map_or(5.0, |p| number(dom, db, p, "RespawnTime"));
+                    member.respawn_at = Some(died + (seconds * 60.0).round().max(0.0) as u64);
+                }
+                (Some(_), Some(at)) if frame >= at => {
+                    member.respawn_at = None;
+                    out.push(Due::Load(player));
+                }
+                (None, Some(_)) => member.respawn_at = None,
+                _ => {}
             }
-        }
-        let frame = self.frame;
-        for (_, character) in self.appearance.iter().filter(|(at, _)| *at <= frame) {
-            out.push(Due::Fire(Event::Signal {
-                owner: local.player,
-                name: "CharacterAppearanceLoaded".into(),
-                args: vec![Arg::Instance(*character)],
-            }));
-        }
-        self.appearance.retain(|(at, _)| *at > frame);
-        // A dead character respawns RespawnTime later (PlayersCharacter
-        // `respawn`: 60 frames for 1 s).
-        let character = reference(dom, local.player, "Character");
-        let died = character.and_then(|c| {
-            humanoids
-                .characters
-                .values()
-                .find(|h| h.model == c && h.state == crate::humanoid::State::Dead)
-                .and_then(|h| h.died_at)
-        });
-        match (died, self.respawn_at) {
-            (Some(died), None)
-                if players.is_some_and(|p| flag(dom, db, p, "CharacterAutoLoads")) =>
-            {
-                let seconds = players.map_or(5.0, |p| number(dom, db, p, "RespawnTime"));
-                self.respawn_at = Some(died + (seconds * 60.0).round().max(0.0) as u64);
-            }
-            (Some(_), Some(at)) if frame >= at => {
-                self.respawn_at = None;
-                out.push(Due::Load);
-            }
-            (None, Some(_)) => self.respawn_at = None,
-            _ => {}
         }
         out
     }
-
     /// `LoadCharacter`'s first step: `CharacterRemoving` for the old
     /// character while it's still where it was.
-    pub fn removing(&self, dom: &WeakDom) -> Option<(Ref, String, Vec<Arg>)> {
-        let local = self.local.as_ref()?;
-        let old = reference(dom, local.player, "Character")?;
-        Some((
-            local.player,
-            "CharacterRemoving".into(),
-            vec![Arg::Instance(old)],
-        ))
+    pub fn removing(&self, dom: &WeakDom, player: Ref) -> Option<(Ref, String, Vec<Arg>)> {
+        let old = reference(dom, player, "Character")?;
+        Some((player, "CharacterRemoving".into(), vec![Arg::Instance(old)]))
     }
 
     /// The second: the old character leaves (destroyed on the next frame),
@@ -583,16 +583,17 @@ impl Players {
         &mut self,
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
+        player: Ref,
     ) -> Option<(Ref, String, Vec<Arg>)> {
-        let local = self.local.clone()?;
-        if let Some(old) = reference(dom, local.player, "Character") {
+        let index = self.members.iter().position(|m| m.player == player)?;
+        if let Some(old) = reference(dom, player, "Character") {
             dom.unparent(old);
             self.old.push(old);
         }
-        let character = self.new_character(dom, db, &local);
-        set(dom, db, local.player, "Character", Variant::Ref(character));
+        let character = self.new_character(dom, db, &self.members[index]);
+        set(dom, db, player, "Character", Variant::Ref(character));
         Some((
-            local.player,
+            player,
             "CharacterAdded".into(),
             vec![Arg::Instance(character)],
         ))
@@ -600,11 +601,8 @@ impl Players {
 
     /// The third: the new character goes on a spawn in Workspace, and its
     /// appearance counts as loaded on the next frame.
-    pub fn place(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase) {
-        let Some(local) = self.local.clone() else {
-            return;
-        };
-        let Some(character) = reference(dom, local.player, "Character") else {
+    pub fn place(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase, player: Ref) {
+        let Some(character) = reference(dom, player, "Character") else {
             return;
         };
         if dom.parent(character).is_some() {
@@ -613,16 +611,36 @@ impl Players {
         let Some(workspace) = service(dom, "Workspace") else {
             return;
         };
-        let spawn = self.pick_spawn(dom, db, local.player);
+        let mut spawn = self.pick_spawn(dom, db, player);
+        // Like `Model:MoveTo`, a spawn someone is standing on puts the new
+        // character on top of them.
+        if let Some(top) = spawn.as_mut() {
+            let others: Vec<Ref> = self
+                .members
+                .iter()
+                .filter(|m| m.player != player)
+                .filter_map(|m| reference(dom, m.player, "Character"))
+                .filter(|c| dom.parent(*c).is_some())
+                .collect();
+            for other in others {
+                if let Some(height) = standing_on(dom, db, other, top.position) {
+                    top.position.y = top.position.y.max(height);
+                }
+            }
+        }
         put_on(dom, db, character, spawn);
         dom.set_parent(character, Some(workspace));
-        self.appearance.push((self.frame + 1, character));
+        let frame = self.frame;
+        if let Some(member) = self.members.iter_mut().find(|m| m.player == player) {
+            member.appearance.push((frame + 1, character));
+        }
     }
 
-    fn new_character(&self, dom: &mut WeakDom, db: &ReflectionDatabase, local: &Local) -> Ref {
+    fn new_character(&self, dom: &mut WeakDom, db: &ReflectionDatabase, local: &Member) -> Ref {
         let starter =
             service(dom, "StarterPlayer").and_then(|s| child_named(dom, s, "StarterCharacter"));
-        let model = match (starter, &self.template) {
+        let template = local.template.as_ref().or(self.template.as_ref());
+        let model = match (starter, template) {
             (Some(starter), _) => copy(dom, starter, None),
             (None, Some(template)) => match template.root_refs().first() {
                 Some(root) => graft(dom, template, *root, None),
@@ -712,6 +730,38 @@ impl Players {
 /// Stands `character` with its lowest point on `spawn`'s top centre, facing
 /// the way the spawn faces (turned about Y only), or at the no-spawn height
 /// over the origin.
+/// The top of `character` when it stands within reach of `at` (2 studs
+/// either way), the height a character placed there would be put at.
+fn standing_on(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    character: Ref,
+    at: rbx_dom::Vector3Data,
+) -> Option<f32> {
+    let root = cframe(dom, db, child_named(dom, character, "HumanoidRootPart")?)?;
+    let (dx, dz) = (root.position.x - at.x, root.position.z - at.z);
+    if dx.abs() > 2.0 || dz.abs() > 2.0 || root.position.y < at.y {
+        return None;
+    }
+    descendants(dom, character)
+        .into_iter()
+        .filter(|r| {
+            dom.get(*r)
+                .is_some_and(|i| db.is_subclass_of(i.class(), "BasePart"))
+        })
+        .filter_map(|p| {
+            let c = cframe(dom, db, p)?;
+            let s = vector(dom, db, p, "Size");
+            let r = c.rotation;
+            let reach = (f64::from(r[3]).abs() * s[0]
+                + f64::from(r[4]).abs() * s[1]
+                + f64::from(r[5]).abs() * s[2])
+                / 2.0;
+            Some((f64::from(c.position.y) + reach) as f32)
+        })
+        .reduce(f32::max)
+}
+
 fn put_on(dom: &mut WeakDom, db: &ReflectionDatabase, character: Ref, spawn: Option<CFrameData>) {
     let parts: Vec<Ref> = descendants(dom, character)
         .into_iter()
@@ -799,7 +849,8 @@ fn descendants(dom: &WeakDom, root: Ref) -> Vec<Ref> {
 /// What the simulation runs for the players this frame.
 pub enum Due {
     Fire(Event),
-    Load,
+    /// `LoadCharacter` for this player.
+    Load(Ref),
 }
 
 /// A Players or Player method a script called.
@@ -819,13 +870,13 @@ pub(crate) fn call(
         ..CallReply::default()
     };
     match (class, method) {
-        ("Players", "GetPlayers") => Ok(CallReply::value(Arg::Instances(players_of(players, dom)))),
+        ("Players", "GetPlayers") => Ok(CallReply::value(Arg::Instances(players_of(dom)))),
         ("Players", "GetPlayerFromCharacter") => {
             let character = match args.first() {
                 Some(Arg::Instance(r)) => Some(*r),
                 _ => None,
             };
-            let found = players_of(players, dom)
+            let found = players_of(dom)
                 .into_iter()
                 .find(|p| character.is_some() && reference(dom, *p, "Character") == character);
             Ok(CallReply::value(found.map_or(Arg::Nil, Arg::Instance)))
@@ -835,11 +886,10 @@ pub(crate) fn call(
                 Some(Arg::Number(n)) => *n as i64,
                 _ => return Err("Argument 1 missing or nil".into()),
             };
-            let found = players
-                .local
-                .as_ref()
-                .filter(|l| l.user_id == id && dom.get(l.player).is_some())
-                .map(|l| l.player);
+            let found = players_of(dom).into_iter().find(|p| {
+                let user = dom.get(*p).and_then(|i| i.properties().get("UserId"));
+                matches!(user, Some(Variant::Int64(u)) if *u == id)
+            });
             Ok(CallReply::value(found.map_or(Arg::Nil, Arg::Instance)))
         }
         ("Players", "GetHumanoidDescriptionFromUserId") => {
@@ -887,17 +937,27 @@ pub(crate) fn call(
             Ok(CallReply::value(Arg::Instance(model)))
         }
         ("Player", "LoadCharacter") => {
-            if players.local.as_ref().is_none_or(|l| l.player != referent) {
+            if players.client {
+                return Err("LoadCharacter can only be called by the backend server".into());
+            }
+            if !players.members.iter().any(|m| m.player == referent) {
                 return Err("LoadCharacter can only be called on a player in the game".into());
             }
-            Ok(single(players.removing(dom), Some("LoadCharacter#build")))
+            Ok(single(
+                players.removing(dom, referent),
+                Some("LoadCharacter#build"),
+            ))
         }
-        ("Player", "LoadCharacter#build") => {
-            Ok(single(players.build(dom, db), Some("LoadCharacter#parent")))
-        }
+        ("Player", "LoadCharacter#build") => Ok(single(
+            players.build(dom, db, referent),
+            Some("LoadCharacter#parent"),
+        )),
         ("Player", "LoadCharacter#parent") => {
-            players.place(dom, db);
+            players.place(dom, db, referent);
             Ok(CallReply::default())
+        }
+        ("Humanoid", "ApplyDescription") if players.client => {
+            Err("Humanoid::ApplyDescription() can only be called by the backend server".into())
         }
         ("Humanoid", "ApplyDescription") => {
             let Some(Arg::Instance(description)) = args.first() else {

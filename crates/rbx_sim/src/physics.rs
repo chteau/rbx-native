@@ -68,6 +68,8 @@ struct Assembly {
     body: RigidBodyHandle,
     parts: Vec<Ref>,
     anchored: bool,
+    /// Another peer simulates it: this one moves it where it is told.
+    remote: bool,
     /// Largest `Size` component of its parts: the adaptive thresholds scale
     /// with it.
     size: Real,
@@ -90,6 +92,11 @@ pub struct Shared {
     pub(crate) players: crate::players::Players,
     /// Animators and their tracks.
     pub(crate) animations: crate::animation::Animations,
+    /// Who simulates what.
+    pub(crate) ownership: crate::ownership::Ownership,
+    /// Engine calls on a humanoid another peer simulates, for the session
+    /// to hand to its owner: (humanoid, method, arguments).
+    pub(crate) forwarded: Vec<(Ref, String, Vec<rbx_lua::server::Arg>)>,
 }
 
 /// What spatial queries read: the live DOM, the groups, the index.
@@ -252,6 +259,54 @@ impl Physics for Bridge {
     ) -> Option<rbx_lua::server::Arg> {
         crate::engine::write(&self.0, referent, class, key, value)
     }
+
+    fn network_owner(&self, part: Ref) -> Result<Option<Ref>, String> {
+        let (_, anchored) = self.assembly(part)?;
+        if anchored {
+            return Err(crate::ownership::ANCHORED.into());
+        }
+        Ok(self.0.borrow().ownership.owner(part))
+    }
+
+    fn set_network_owner(&self, part: Ref, owner: Option<Ref>, auto: bool) -> Result<(), String> {
+        let (parts, anchored) = self.assembly(part)?;
+        if anchored {
+            return Err(crate::ownership::ANCHORED.into());
+        }
+        self.0.borrow_mut().ownership.pin(&parts, owner, auto);
+        Ok(())
+    }
+
+    fn network_ownership_auto(&self, part: Ref) -> Result<bool, String> {
+        let (_, anchored) = self.assembly(part)?;
+        if anchored {
+            return Err(crate::ownership::ANCHORED.into());
+        }
+        Ok(self.0.borrow().ownership.is_auto(part))
+    }
+}
+
+impl Bridge {
+    /// `part`'s assembly as the DOM has it now; the ownership API is
+    /// server-only.
+    fn assembly(&self, part: Ref) -> Result<(Vec<Ref>, bool), String> {
+        let shared = self.0.borrow();
+        if shared.ownership.client {
+            return Err("Network Ownership API can only be called from the server".into());
+        }
+        let (dom, db) = shared.dom_and_db().ok_or("not running")?;
+        drop(shared);
+        let dom = dom.borrow();
+        Ok(crate::ownership::assembly_in_dom(&dom, db, part))
+    }
+}
+
+/// The two parts a rigid joint holds together.
+pub(crate) fn joint_parts(
+    db: &ReflectionDatabase,
+    instance: &rbx_dom::Instance,
+) -> Option<(Ref, Ref)> {
+    Joint::read(db, instance).map(|j| (j.part0, j.part1))
 }
 
 /// A touch that began or ended during a step, between two parts.
@@ -494,10 +549,14 @@ impl World {
 
     fn add_assembly(&mut self, parts: &[PartData], member: &[usize], groups: &CollisionGroups) {
         let anchored = member.iter().any(|&i| parts[i].anchored);
+        let referents: Vec<Ref> = member.iter().map(|&i| parts[i].referent).collect();
+        let remote = !anchored && self.shared.borrow().ownership.remote(&referents);
         let root = root_part(parts, member);
         let root_pose = pose_of(&parts[root].cframe);
         let builder = if anchored {
             RigidBodyBuilder::fixed()
+        } else if remote {
+            RigidBodyBuilder::kinematic_position_based()
         } else {
             RigidBodyBuilder::dynamic()
                 .angular_damping(ANGULAR_DAMPING)
@@ -546,6 +605,7 @@ impl World {
                     Group::from_bits_truncate(filter),
                     InteractionTestMode::And,
                 ))
+                .active_collision_types(collision_types(remote))
                 .build();
             let handle = self
                 .colliders
@@ -562,8 +622,9 @@ impl World {
         }
         self.assemblies.push(Assembly {
             body,
-            parts: member.iter().map(|&i| parts[i].referent).collect(),
+            parts: referents,
             anchored,
+            remote,
             size: member
                 .iter()
                 .map(|&i| {
@@ -619,6 +680,52 @@ impl World {
         }
     }
 
+    /// Hands assemblies to and from other peers as ownership changed:
+    /// a remote one is kinematic, moved where replication puts it.
+    pub fn sync_ownership(&mut self) {
+        let shared = self.shared.clone();
+        let shared = shared.borrow();
+        for assembly in self.assemblies.iter_mut().filter(|a| !a.anchored) {
+            let remote = shared.ownership.remote(&assembly.parts);
+            if remote == assembly.remote {
+                continue;
+            }
+            assembly.remote = remote;
+            let Some(body) = self.bodies.get_mut(assembly.body) else {
+                continue;
+            };
+            body.set_body_type(
+                if remote {
+                    RigidBodyType::KinematicPositionBased
+                } else {
+                    RigidBodyType::Dynamic
+                },
+                true,
+            );
+            for collider in body.colliders().to_vec() {
+                if let Some(c) = self.colliders.get_mut(collider) {
+                    c.set_active_collision_types(collision_types(remote));
+                }
+            }
+        }
+    }
+
+    /// Whether another peer simulates `part`.
+    pub fn is_remote(&self, part: Ref) -> bool {
+        self.parts
+            .get(&part)
+            .is_some_and(|p| self.assemblies[p.assembly].remote)
+    }
+
+    /// The parts of every unanchored assembly.
+    pub fn unanchored(&self) -> Vec<Vec<Ref>> {
+        self.assemblies
+            .iter()
+            .filter(|a| !a.anchored)
+            .map(|a| a.parts.clone())
+            .collect()
+    }
+
     /// Whether any of `assembly`'s parts is in contact with something.
     fn in_contact(&self, assembly: &Assembly) -> bool {
         let Some(body) = self.bodies.get(assembly.body) else {
@@ -663,7 +770,7 @@ impl World {
             .filter_map(|d| self.parts.get(&d.root))
             .map(|p| self.assemblies[p.assembly].body)
             .collect();
-        for assembly in self.assemblies.iter().filter(|a| !a.anchored) {
+        for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
             let free = adaptive
                 && !driven.contains(&assembly.body)
                 && !self.constrained.contains(&assembly.body)
@@ -764,7 +871,7 @@ impl World {
     /// moves.
     pub fn write_back(&self, dom: &mut WeakDom, db: &ReflectionDatabase) {
         for assembly in &self.assemblies {
-            if assembly.anchored {
+            if assembly.anchored || assembly.remote {
                 continue;
             }
             let Some(body) = self.bodies.get(assembly.body) else {
@@ -807,15 +914,20 @@ impl World {
     pub fn moving_parts(&self) -> impl Iterator<Item = Ref> + '_ {
         self.assemblies
             .iter()
-            .filter(|a| !a.anchored)
+            .filter(|a| !a.anchored && !a.remote)
             .flat_map(|a| a.parts.iter().copied())
     }
 
     /// The parts of every unanchored assembly whose position is below
-    /// `height` (`Workspace.FallenPartsDestroyHeight`).
-    pub fn fallen(&self, height: f64) -> Vec<Ref> {
+    /// `height` (`Workspace.FallenPartsDestroyHeight`), the remote ones
+    /// too when `remote` (the server destroys what clients drop).
+    pub fn fallen(&self, height: f64, remote: bool) -> Vec<Ref> {
         let mut out = Vec::new();
-        for assembly in self.assemblies.iter().filter(|a| !a.anchored) {
+        for assembly in self
+            .assemblies
+            .iter()
+            .filter(|a| !a.anchored && (remote || !a.remote))
+        {
             let Some(body) = self.bodies.get(assembly.body) else {
                 continue;
             };
@@ -830,6 +942,16 @@ impl World {
             }
         }
         out
+    }
+}
+
+/// What a collider reports contacts with: a remote (kinematic) assembly
+/// still touches anchored parts, so `Touched` fires where it lands.
+fn collision_types(remote: bool) -> ActiveCollisionTypes {
+    if remote {
+        ActiveCollisionTypes::all()
+    } else {
+        ActiveCollisionTypes::default()
     }
 }
 

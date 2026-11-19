@@ -494,6 +494,20 @@ impl Humanoids {
         true
     }
 
+    /// A state another peer's humanoid went into (state replication):
+    /// `StateChanged` and the state's own signals fire here too.
+    /// It arrives at the start of the next frame, which is when it counts
+    /// here (a respawn waits from then: PlayersCharacter `respawn`).
+    pub fn replicate_state(&mut self, humanoid: Ref, to: State) {
+        let frame = self.frame + 1;
+        if to == State::Dead {
+            if let Some(c) = self.characters.get_mut(&humanoid) {
+                c.died_at.get_or_insert(frame);
+            }
+        }
+        self.change(humanoid, to);
+    }
+
     fn change(&mut self, humanoid: Ref, to: State) {
         let Some(c) = self.characters.get_mut(&humanoid) else {
             return;
@@ -564,6 +578,14 @@ impl Humanoids {
         let mut drives = Vec::new();
         for id in ids {
             self.health(dom, db, id);
+            // Another peer simulates it: its state comes from there.
+            if self
+                .characters
+                .get(&id)
+                .is_some_and(|c| world.is_remote(c.root))
+            {
+                continue;
+            }
             self.arrive(dom, db, world, id);
             self.steer(dom, db, id);
             self.properties(dom, db, id);

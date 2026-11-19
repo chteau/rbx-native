@@ -43,7 +43,10 @@ struct Stash {
 }
 
 struct Running {
-    sim: rbx_sim::Simulation,
+    session: rbx_sim::Session,
+    /// Which peer's DataModel the Explorer, Properties and viewport show;
+    /// a client view gets the keys and moves the camera.
+    view: rbx_sim::Peer,
     stash: Stash,
     paused: bool,
     /// Wall seconds the run has been unpaused for.
@@ -55,12 +58,26 @@ struct Running {
     playing: bool,
 }
 
-#[derive(Default)]
 pub(crate) struct LocalRun {
     running: Option<Running>,
     /// Play (local) is fetching the avatar.
     pub(in crate::shell) starting: bool,
+    /// Test › Players: how many local players Play (local) starts with.
+    pub(in crate::shell) players: usize,
 }
+
+impl Default for LocalRun {
+    fn default() -> Self {
+        LocalRun {
+            running: None,
+            starting: false,
+            players: 1,
+        }
+    }
+}
+
+/// The most local players Play (local) runs.
+pub(crate) const MAX_PLAYERS: usize = 4;
 
 /// Animations (the default ones, the catalog's) from Roblox's asset
 /// delivery; they land in the asset cache for the next run.
@@ -265,10 +282,33 @@ fn structural(changes: &[Change]) -> bool {
     })
 }
 
-/// What the run's scripts printed, as game rows like real Play's.
-fn push_rows(log: &mut super::output::OutputLog, output: &rbx_lua::Output) {
-    for row in rows_of(output) {
-        push_row(log, row);
+/// What each side of the run printed, as game rows like real Play's:
+/// tagged Server or Client, or Local Run for a run with no players.
+fn push_rows(
+    log: &mut super::output::OutputLog,
+    outputs: Vec<(rbx_sim::Peer, rbx_lua::Output)>,
+    playing: bool,
+) {
+    for (peer, output) in outputs {
+        let context = match peer {
+            _ if !playing => OutputContext::LocalRun,
+            rbx_sim::Peer::Server => OutputContext::Server,
+            rbx_sim::Peer::Client(_) => OutputContext::Client,
+        };
+        for row in rows_of(&output) {
+            log.push_game(context, row, Vec::new(), None);
+        }
+    }
+}
+
+/// The name a view goes by: Server, or the player's.
+pub(crate) fn view_label(session: &rbx_sim::Session, view: rbx_sim::Peer) -> String {
+    match view {
+        rbx_sim::Peer::Server => "Server".to_owned(),
+        rbx_sim::Peer::Client(i) => session
+            .clients
+            .get(i)
+            .map_or_else(|| format!("Player{}", i + 1), |c| c.name.clone()),
     }
 }
 
@@ -335,8 +375,8 @@ impl Shell {
         player: Option<(avatars::Player, avatars::StudioAvatars)>,
         cx: &mut Context<Self>,
     ) {
-        let mut sim = match rbx_sim::Simulation::new(self.dom.clone()) {
-            Ok(sim) => sim,
+        let mut session = match rbx_sim::Session::new(self.dom.clone()) {
+            Ok(session) => session,
             Err(why) => {
                 push_row(
                     &mut self.output,
@@ -346,25 +386,51 @@ impl Shell {
                 return;
             }
         };
-        sim.watch_view_changes();
-        sim.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
+        session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
             rbx_cloud::ApiKey::from_env_or_config(),
         ))));
+        session.start();
         let playing = player.is_some();
         let mut note = None;
         if let Some((player, avatars)) = player {
-            sim.set_client();
-            sim.set_avatars(Box::new(avatars));
-            if let Some(character) = player.character {
-                sim.set_character(character);
+            session.server.set_avatars(Box::new(avatars));
+            // You, then the extra test players: noobs, numbered as Studio
+            // numbers its test players.
+            let mut joined = session
+                .join(&player.name, player.user_id, player.character)
+                .map(|_| ());
+            for n in 2..=self.play.live.local.players {
+                if joined.is_ok() {
+                    joined = session
+                        .join(&format!("Player{n}"), -(n as i64), None)
+                        .map(|_| ());
+                }
             }
-            sim.join(&player.name, player.user_id);
+            if let Err(why) = joined {
+                push_row(
+                    &mut self.output,
+                    Feedback::Error(format!("Play (local) couldn\u{2019}t start: {why}")),
+                );
+                cx.notify();
+                return;
+            }
             note = Some(player.note);
         }
-        sim.start();
-        let mut shown = sim.dom().clone();
+        let view = if playing {
+            rbx_sim::Peer::Client(0)
+        } else {
+            rbx_sim::Peer::Server
+        };
+        for client in &mut session.clients {
+            client.sim.watch_view_changes();
+        }
+        session.server.watch_view_changes();
+        let mut shown = session
+            .sim(view)
+            .map(|s| s.dom().clone())
+            .unwrap_or_default();
         shown.take_changes();
-        let output = sim.take_output();
+        let output = session.take_output();
         let history = std::mem::replace(&mut self.history, History::new(DEFAULT_CAP));
         let selection = self.selected_all().to_vec();
         self.deselect(cx);
@@ -379,7 +445,8 @@ impl Shell {
             }
         });
         self.play.live.local.running = Some(Running {
-            sim,
+            session,
+            view,
             stash: Stash {
                 dom,
                 history,
@@ -406,7 +473,53 @@ impl Shell {
         if let Some(note) = note {
             push_row(&mut self.output, Feedback::Info(note));
         }
-        push_rows(&mut self.output, &output);
+        push_rows(&mut self.output, output, playing);
+        cx.notify();
+    }
+
+    /// The view the run shows, while one runs.
+    pub(crate) fn local_run_view(&self) -> Option<(rbx_sim::Peer, String)> {
+        let run = self.play.live.local.running.as_ref()?;
+        run.playing
+            .then(|| (run.view, view_label(&run.session, run.view)))
+    }
+
+    /// Test › View during Play (local): the next of the server and each
+    /// player's client. The shown tree becomes that peer's.
+    pub(crate) fn local_run_next_view(&mut self, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        let count = run.session.clients.len();
+        run.view = match run.view {
+            rbx_sim::Peer::Server if count > 0 => rbx_sim::Peer::Client(0),
+            rbx_sim::Peer::Client(i) if i + 1 < count => rbx_sim::Peer::Client(i + 1),
+            _ => rbx_sim::Peer::Server,
+        };
+        let client = matches!(run.view, rbx_sim::Peer::Client(_));
+        let Some(sim) = run.session.sim_mut(run.view) else {
+            return;
+        };
+        sim.take_view_changes();
+        let shown = sim.dom().clone();
+        self.deselect(cx);
+        let changes = changes_between(&self.dom, &shown);
+        self.dom = shown;
+        self.dom.take_changes();
+        let snapshots = self.dom.snapshot(&changes);
+        self.viewport.update(cx, |viewport, _| {
+            viewport.apply_changes(snapshots, changes);
+            viewport.set_play_local(client);
+        });
+        self.properties = Properties::new(self.database.clone());
+        self.rebuild_explorer(cx);
+        cx.notify();
+    }
+
+    /// Test › Players: 1 to [`MAX_PLAYERS`], for the next Play (local).
+    pub(crate) fn local_run_next_players(&mut self, cx: &mut Context<Self>) {
+        let local = &mut self.play.live.local;
+        local.players = local.players % MAX_PLAYERS + 1;
         cx.notify();
     }
 
@@ -430,17 +543,18 @@ impl Shell {
             return;
         };
         let Running {
-            mut sim,
+            mut session,
             stash,
             task,
+            playing,
             ..
         } = run;
         drop(task);
         self.viewport
             .update(cx, |viewport, _| viewport.set_play_local(false));
-        let output = sim.take_output();
-        let seconds = sim.time();
-        drop(sim);
+        let output = session.take_output();
+        let seconds = session.time();
+        drop(session);
         self.deselect(cx);
         let back = changes_between(&self.dom, &stash.dom);
         restore_edited(&mut self.dom, stash.dom);
@@ -451,7 +565,7 @@ impl Shell {
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);
         self.reselect(stash.selection, cx);
-        push_rows(&mut self.output, &output);
+        push_rows(&mut self.output, output, playing);
         push_row(
             &mut self.output,
             Feedback::Info(format!(
@@ -473,35 +587,55 @@ impl Shell {
             return;
         }
         run.clock += elapsed;
-        let due = ((run.clock * FRAME_HZ).floor() as u64).saturating_sub(run.sim.frame());
+        let due =
+            ((run.clock * FRAME_HZ).floor() as u64).saturating_sub(run.session.server.frame());
         if due == 0 {
             return;
         }
         let steps = due.min(MAX_FRAMES_PER_TICK);
-        if run.playing {
+        let viewing_client = matches!(run.view, rbx_sim::Peer::Client(_));
+        if run.playing && viewing_client {
             let inputs = self
                 .viewport
                 .update(cx, |viewport, _| viewport.play.as_mut().map(|p| p.take()));
-            for input in inputs.unwrap_or_default() {
-                run.sim.input(input);
+            if let rbx_sim::Peer::Client(i) = run.view {
+                for input in inputs.unwrap_or_default() {
+                    run.session.input(i, input);
+                }
             }
         }
         let mut changes = Vec::new();
         for _ in 0..steps {
-            run.sim.step();
-            changes.extend(run.sim.take_view_changes());
+            run.session.step();
+            for peer in std::iter::once(rbx_sim::Peer::Server)
+                .chain((0..run.session.clients.len()).map(rbx_sim::Peer::Client))
+            {
+                let Some(sim) = run.session.sim_mut(peer) else {
+                    continue;
+                };
+                let seen = sim.take_view_changes();
+                if peer == run.view {
+                    changes.extend(seen);
+                }
+            }
         }
         if due > steps {
-            run.clock = run.sim.time();
+            run.clock = run.session.time();
         }
         let changes = dedupe(changes);
-        mirror(&run.sim.dom(), &mut self.dom, &changes);
-        let output = run.sim.take_output();
+        let Some(viewed) = run.session.sim(run.view) else {
+            return;
+        };
+        mirror(&viewed.dom(), &mut self.dom, &changes);
+        let output = run.session.take_output();
         self.dom.take_changes();
-        push_rows(&mut self.output, &output);
-        if run.playing {
-            let mouse = run.sim.mouse_behavior();
-            let camera = run.sim.camera();
+        push_rows(&mut self.output, output, run.playing);
+        if run.playing && viewing_client {
+            let Some(viewed) = run.session.sim(run.view) else {
+                return;
+            };
+            let mouse = viewed.mouse_behavior();
+            let camera = viewed.camera();
             self.viewport.update(cx, |viewport, _| {
                 if let Some(play) = viewport.play.as_mut() {
                     play.mouse = mouse;
@@ -529,9 +663,12 @@ impl Shell {
     /// simulation's DOM (logged, so it routes them) and shown right away.
     pub(super) fn local_run_reflect(&mut self, changes: &[Change], cx: &mut Context<Self>) {
         if let Some(run) = self.play.live.local.running.as_ref() {
-            let sim_dom = run.sim.dom_rc();
-            mirror(&self.dom, &mut sim_dom.borrow_mut(), changes);
+            if let Some(sim) = run.session.sim(run.view) {
+                let sim_dom = sim.dom_rc();
+                mirror(&self.dom, &mut sim_dom.borrow_mut(), changes);
+            }
         }
+
         let snapshots = self.dom.snapshot(changes);
         let sent = changes.to_vec();
         self.viewport

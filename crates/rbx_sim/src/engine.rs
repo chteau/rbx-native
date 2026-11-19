@@ -70,6 +70,14 @@ pub(crate) fn call(
             .animations
             .call(&mut dom, db, referent, class, method, &args);
     }
+    // Walking a humanoid another peer simulates: its owner does it.
+    if class == "Humanoid" && matches!(method, "Move" | "MoveTo") {
+        let root = shared.humanoids.characters.get(&referent).map(|c| c.root);
+        if root.is_some_and(|r| shared.ownership.remote(&[r])) {
+            shared.forwarded.push((referent, method.to_owned(), args));
+            return Ok(CallReply::default());
+        }
+    }
     if class == "Humanoid" && !crate::players::is_method(class, method) {
         return shared.humanoids.call(&mut dom, db, referent, method, &args);
     }

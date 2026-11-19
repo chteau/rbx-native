@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use serde_json::Value;
 
-use crate::Simulation;
+use crate::{Peer, Session};
 
 /// What a test's printed line starts with, and the runner's last line.
 pub const PREFIX: &str = "CONFORMANCE ";
@@ -339,7 +339,64 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/HumanoidWalkScale.luau"),
         tolerance: &[("*", 0.3), ("*yaw*", 3.0)],
     },
+    Test {
+        name: "RemoteArgs",
+        source: include_str!("../conformance/tests/RemoteArgs.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "RemoteOrder",
+        source: include_str!("../conformance/tests/RemoteOrder.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "ReplicationOrder",
+        source: include_str!("../conformance/tests/ReplicationOrder.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Ownership",
+        source: include_str!("../conformance/tests/Ownership.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "CameraInput",
+        source: include_str!("../conformance/tests/CameraInput.luau"),
+        tolerance: &[("*", 0.15), ("start_pitch", 0.5), ("turn_per_100px", 1.0)],
+    },
 ];
+
+/// The folder in `ReplicatedStorage` holding the client halves of the
+/// client/server tests, `Shared`, and the `Call`/`Ready` remotes the
+/// harness reaches the client through.
+pub const CLIENT_FOLDER: &str = "ConformanceClient";
+
+/// Client modules, by name: `Shared` and each test's client half.
+const CLIENT_MODULES: &[(&str, &str)] = &[
+    ("Shared", include_str!("../conformance/client/Shared.luau")),
+    (
+        "CameraInput",
+        include_str!("../conformance/client/CameraInput.luau"),
+    ),
+    (
+        "RemoteArgs",
+        include_str!("../conformance/client/RemoteArgs.luau"),
+    ),
+    (
+        "RemoteOrder",
+        include_str!("../conformance/client/RemoteOrder.luau"),
+    ),
+    (
+        "ReplicationOrder",
+        include_str!("../conformance/client/ReplicationOrder.luau"),
+    ),
+    (
+        "Ownership",
+        include_str!("../conformance/client/Ownership.luau"),
+    ),
+];
+const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
+const FIRST_PROBE: &str = include_str!("../conformance/client/FirstProbe.luau");
 
 /// The tests named in `only` (all of them when it's empty).
 pub fn selected(only: &[String]) -> impl Iterator<Item = (usize, &'static Test)> + '_ {
@@ -407,6 +464,60 @@ pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
     }
     let runner = child(dom, "Script", RUNNER, sss);
     let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs, only)));
+    add_client_half(dom);
+}
+
+/// What the client/server tests need on the client: the modules and
+/// remotes in `ReplicatedStorage`, the runner in `StarterPlayerScripts`, a
+/// probe in `ReplicatedFirst`, and one script per run context in
+/// `Workspace` and `ReplicatedStorage` that marks `_G` where it runs.
+fn add_client_half(dom: &mut WeakDom) {
+    let source = |dom: &mut WeakDom, script: Ref, text: &str| {
+        let _ = dom.set_property(script, "Source", Variant::String(text.into()));
+    };
+    let storage = service(dom, "ReplicatedStorage");
+    let folder = child(dom, "Folder", CLIENT_FOLDER, storage);
+    for (name, text) in CLIENT_MODULES {
+        let module = child(dom, "ModuleScript", name, folder);
+        source(dom, module, text);
+    }
+    child(dom, "RemoteFunction", "Call", folder);
+    child(dom, "RemoteEvent", "Ready", folder);
+    let starter_player = service(dom, "StarterPlayer");
+    let existing = dom.get(starter_player).and_then(|i| {
+        i.children().iter().copied().find(|c| {
+            dom.get(*c)
+                .is_some_and(|c| c.class() == "StarterPlayerScripts")
+        })
+    });
+    let starter = existing.unwrap_or_else(|| {
+        child(
+            dom,
+            "StarterPlayerScripts",
+            "StarterPlayerScripts",
+            starter_player,
+        )
+    });
+    let runner = child(dom, "LocalScript", CLIENT_FOLDER, starter);
+    source(dom, runner, CLIENT_RUNNER);
+    let first = service(dom, "ReplicatedFirst");
+    let probe = child(dom, "LocalScript", "FirstProbe", first);
+    source(dom, probe, FIRST_PROBE);
+    let workspace = service(dom, "Workspace");
+    // (where, class, name, RunContext: 0 legacy, 1 server, 2 client)
+    for (parent, class, name, context) in [
+        (workspace, "Script", "rc_client_ws", 2),
+        (workspace, "LocalScript", "local_ws", 0),
+        (storage, "Script", "legacy_rs", 0),
+        (storage, "Script", "rc_server_rs", 1),
+        (storage, "Script", "rc_client_rs", 2),
+    ] {
+        let script = child(dom, class, name, parent);
+        if context != 0 {
+            let _ = dom.set_property(script, "RunContext", Variant::Enum(context));
+        }
+        source(dom, script, &format!("_G.{name} = true"));
+    }
 }
 
 /// A bare place: the services a fresh place has, a baseplate and a spawn.
@@ -531,6 +642,60 @@ pub fn run_in_sim(limit: f64) -> Result<BTreeMap<String, Value>, String> {
     run_some_in_sim(limit, &[], None)
 }
 
+/// What a test prints to have input done on the player's client: the
+/// recorder makes it XTest input on the real client's window, rbx_sim
+/// Session input (`wheel in|out N`, `drag DX DY` with the right button,
+/// `key NAME` pressed and released).
+pub const GESTURE: &str = "CONFORMANCE_GESTURE ";
+
+/// A gesture as rbx_sim input, one batch per frame (a drag's button is
+/// down for the frame its motion comes in, as with a real mouse).
+pub fn gesture_inputs(gesture: &str) -> Vec<Vec<crate::Input>> {
+    use crate::Input;
+    let words: Vec<&str> = gesture.split_whitespace().collect();
+    let number = |i: usize| {
+        words
+            .get(i)
+            .and_then(|w| w.parse::<f32>().ok())
+            .unwrap_or(0.0)
+    };
+    match words.first().copied() {
+        Some("wheel") => {
+            let step = if words.get(1) == Some(&"in") {
+                1.0
+            } else {
+                -1.0
+            };
+            (0..number(2) as usize)
+                .map(|_| vec![Input::Wheel { notches: step }])
+                .collect()
+        }
+        Some("drag") => {
+            let center = [400.0, 300.0];
+            let delta = [number(1), number(2)];
+            let button = |down| vec![Input::Button { button: 2, down }];
+            vec![
+                button(true),
+                vec![Input::Move {
+                    position: [center[0] + delta[0], center[1] + delta[1]],
+                    delta,
+                }],
+                button(false),
+            ]
+        }
+        Some("key") => {
+            let code = words.get(1).copied().unwrap_or_default().to_owned();
+            let key = |down| {
+                vec![Input::Key {
+                    code: code.clone(),
+                    down,
+                }]
+            };
+            vec![key(true), key(false)]
+        }
+        _ => Vec::new(),
+    }
+}
 /// [`run_in_sim`] for the tests in `only` (all when empty). A local player
 /// joins first, as one did on the recording server (`Player1`, user id -1,
 /// the way Studio names its test players): the noob, no avatar. Animations
@@ -543,17 +708,31 @@ pub fn run_some_in_sim(
     let mut dom = bare_place();
     add_to(&mut dom, PASSES, only);
     dom.take_changes();
-    let mut sim = Simulation::new(dom)?;
+    let mut session = Session::new(dom)?;
     if let Some(fetcher) = fetcher {
-        sim.set_fetcher(fetcher);
+        session.set_fetcher(fetcher);
     }
-    sim.join("Player1", -1);
-    sim.start();
+    session.start();
+    session.join("Player1", -1, None)?;
     let mut lines = Vec::new();
-    while sim.time() < limit {
-        sim.step();
-        let output = sim.take_output();
-        lines.extend(output.lines().iter().cloned());
+    let mut gestures = std::collections::VecDeque::new();
+    while session.time() < limit {
+        for input in gestures.pop_front().unwrap_or_default() {
+            session.input(0, input);
+        }
+        session.step();
+        for (peer, output) in session.take_output() {
+            if peer != Peer::Server {
+                continue;
+            }
+            for line in output.lines() {
+                if let Some(gesture) = line.strip_prefix(GESTURE) {
+                    gestures.extend(gesture_inputs(gesture));
+                }
+
+                lines.push(line.clone());
+            }
+        }
         if lines.iter().any(|l| l == DONE) {
             return Ok(parse(&lines)
                 .into_iter()

@@ -23,6 +23,10 @@ use rbx_play::protocol::{Side, Token, Uplink, TOKEN_HEADER};
 use rbx_play::tunnel::TunnelProvider;
 use rbx_sim::conformance::{self, DONE, PASSES, PREFIX};
 
+#[cfg(target_os = "linux")]
+#[path = "support/gestures.rs"]
+mod gestures;
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (Some([universe, place, base, cloudflared]), rest) = (
@@ -99,6 +103,7 @@ fn main() {
     let game = ClientProcess::spawn(launcher, &join_uri(place, &session)).expect("launch");
 
     let mut lines = Vec::new();
+    let verbose = std::env::var_os("RECORD_VERBOSE").is_some();
     let deadline = Instant::now() + Duration::from_secs(1800);
     let finished = loop {
         match channel.events().recv_timeout(Duration::from_millis(500)) {
@@ -107,8 +112,14 @@ fn main() {
                 message,
                 ..
             }) => {
-                if message.starts_with(PREFIX) || message == DONE {
+                if message.starts_with(PREFIX) || message == DONE || verbose {
                     say(&message);
+                }
+                #[cfg(target_os = "linux")]
+                if let Some(gesture) = message.strip_prefix(conformance::GESTURE) {
+                    if let Err(why) = gestures::perform(gesture) {
+                        say(&format!("gesture {gesture:?} failed: {why}"));
+                    }
                 }
                 let done = message == DONE;
                 lines.push(message);

@@ -226,8 +226,8 @@ fn main() {
          as there when that gives a value, not an error or nil.\n\n\
          Read the property numbers with care: any property the reflection database knows reads back as data \
          (its saved value or default), whether or not the runtime acts on it. What the sim actually simulates is \
-         listed in `PLAN.md`. Functions and events count when they exist, some of them as documented no-ops on a \
-         lone server (`SetNetworkOwner`).\n\n\
+         listed in `PLAN.md`. Functions and events count when they exist, whether or not the runtime acts on \
+         them.\n\n\
          | Member type | There | Total | |\n|---|---|---|---|\n{}\n\n\
          ## By class\n\n\
          Classes with at least one member there. Properties, functions and events as there/total, then the \

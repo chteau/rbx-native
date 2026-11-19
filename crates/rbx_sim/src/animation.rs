@@ -36,8 +36,42 @@ struct TrackRef {
     stopping: bool,
 }
 
+/// What a script did to a track, kept for replication: the owner's tracks
+/// replicate to the server and from there to every other client (the
+/// PlayersCharacter golden: the server sees the client's Animate tracks).
+#[derive(Clone, Debug)]
+pub enum TrackOp {
+    Load {
+        track: Ref,
+        animator: Ref,
+        animation: Ref,
+        id: String,
+    },
+    Call {
+        track: Ref,
+        method: String,
+        args: Vec<Arg>,
+    },
+    Write {
+        track: Ref,
+        key: String,
+        value: Arg,
+    },
+}
+
 #[derive(Default)]
 pub struct Animations {
+    /// Track operations since the session last took them, with the peer
+    /// they came from (`None`: made here).
+    pub(crate) ops: Vec<(Option<Ref>, TrackOp)>,
+    /// Whether to keep `ops` (a session's peers do).
+    pub(crate) record: bool,
+    /// The peer the operation being mirrored came from.
+    origin: Option<Ref>,
+    /// Tracks made here for another peer's: (that peer, its track) → ours.
+    mirrors: HashMap<(Option<Ref>, Ref), Ref>,
+    /// Inside a recorded call, so it is recorded once.
+    recording_call: bool,
     rigs: HashMap<Ref, Rig>,
     tracks: HashMap<Ref, TrackRef>,
     clips: HashMap<u64, Result<Clip, String>>,
@@ -219,6 +253,19 @@ impl Animations {
                     return Err("Unable to cast value to Object".into());
                 }
                 let track = self.load(dom, db, referent, *animation)?;
+                if self.record {
+                    let animator = self.track_of(track)?.animator;
+                    let id = animation_id(dom, *animation);
+                    self.ops.push((
+                        self.origin,
+                        TrackOp::Load {
+                            track,
+                            animator,
+                            animation: *animation,
+                            id,
+                        },
+                    ));
+                }
                 Ok(CallReply::value(Arg::Instance(track)))
             }
             (_, "GetPlayingAnimationTracks") => {
@@ -239,6 +286,24 @@ impl Animations {
             ("KeyframeSequenceProvider", "RegisterKeyframeSequence") => {
                 // A running server refuses it (AnimationTrack `register`).
                 Err("RegisterKeyframeSequence can only be called from Studio".into())
+            }
+            ("AnimationTrack", "Play" | "Stop" | "AdjustSpeed" | "AdjustWeight")
+                if self.record && !self.recording_call =>
+            {
+                self.recording_call = true;
+                let reply = self.call(dom, db, referent, class, method, args);
+                self.recording_call = false;
+                if reply.is_ok() {
+                    self.ops.push((
+                        self.origin,
+                        TrackOp::Call {
+                            track: referent,
+                            method: method.to_owned(),
+                            args: args.to_vec(),
+                        },
+                    ));
+                }
+                reply
             }
             ("AnimationTrack", "Play") => {
                 let fade = number(args, 0).unwrap_or(DEFAULT_FADE) as f32;
@@ -342,6 +407,16 @@ impl Animations {
     }
 
     pub(crate) fn write(&mut self, track: Ref, key: &str, value: &Arg) -> Option<Arg> {
+        if self.record && matches!(key, "TimePosition" | "Looped" | "Priority") {
+            self.ops.push((
+                self.origin,
+                TrackOp::Write {
+                    track,
+                    key: key.to_owned(),
+                    value: value.clone(),
+                },
+            ));
+        }
         let t = self.inner_mut(track)?;
         match (key, value) {
             ("TimePosition", Arg::Number(n)) => t.time = (*n as f32).clamp(0.0, t.length()),
@@ -352,6 +427,76 @@ impl Animations {
             _ => return None,
         }
         Some(value.clone())
+    }
+
+    /// Does here what `op` did on peer `from` (`None`: the server): a
+    /// track of our own for theirs, played, stopped and adjusted the same.
+    /// Signals it fires go to `events`.
+    pub(crate) fn mirror(
+        &mut self,
+        dom: &mut WeakDom,
+        db: &ReflectionDatabase,
+        from: Option<Ref>,
+        op: TrackOp,
+    ) {
+        self.origin = from;
+        match op {
+            TrackOp::Load {
+                track,
+                animator,
+                animation,
+                id,
+            } => {
+                if dom.get(animator).map(|i| i.class()) != Some("Animator") {
+                    self.origin = None;
+                    return;
+                }
+                let animation = if dom.get(animation).map(|i| i.class()) == Some("Animation") {
+                    animation
+                } else {
+                    let made = dom.new_instance("Animation", "Animation", None);
+                    dom.unparent(made);
+                    set(dom, db, made, "AnimationId", Variant::String(id));
+                    made
+                };
+                let reply = self.call(
+                    dom,
+                    db,
+                    animator,
+                    "Animator",
+                    "LoadAnimation",
+                    &[Arg::Instance(animation)],
+                );
+                if let Ok(CallReply { values, .. }) = reply {
+                    if let Some(Arg::Instance(ours)) = values.first() {
+                        dom.unparent(*ours);
+                        self.mirrors.insert((from, track), *ours);
+                    }
+                }
+            }
+            TrackOp::Call {
+                track,
+                method,
+                args,
+            } => {
+                if let Some(&ours) = self.mirrors.get(&(from, track)) {
+                    if let Ok(reply) = self.call(dom, db, ours, "AnimationTrack", &method, &args) {
+                        self.events.extend(
+                            reply
+                                .fire
+                                .into_iter()
+                                .map(|(owner, name, args)| Event::Signal { owner, name, args }),
+                        );
+                    }
+                }
+            }
+            TrackOp::Write { track, key, value } => {
+                if let Some(&ours) = self.mirrors.get(&(from, track)) {
+                    self.write(ours, &key, &value);
+                }
+            }
+        }
+        self.origin = None;
     }
 
     /// One frame: finished loads join their tracks, every rig steps by
@@ -436,6 +581,17 @@ impl Animations {
             }
             pose_rig(dom, *animator, &rig.animator);
         }
+    }
+}
+
+fn animation_id(dom: &WeakDom, animation: Ref) -> String {
+    match dom
+        .get(animation)
+        .and_then(|i| i.properties().get("AnimationId"))
+    {
+        Some(Variant::Content(Content::Uri(uri))) => uri.clone(),
+        Some(Variant::String(s)) => s.clone(),
+        _ => String::new(),
     }
 }
 
