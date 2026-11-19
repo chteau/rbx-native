@@ -12,6 +12,7 @@ mod input;
 mod meshes;
 mod query;
 mod remote;
+mod tween;
 #[cfg(test)]
 mod tests;
 
@@ -457,6 +458,12 @@ impl ServerVm {
             }
             Ok(())
         })
+    }
+
+    /// Steps every playing tween `dt` seconds (their writes and
+    /// `Completed`).
+    pub fn tween_step(&mut self, dt: f64) -> Vec<Change> {
+        self.guarded(|lua| tween::step(lua, dt))
     }
 
     /// The collision groups `PhysicsService` registered.

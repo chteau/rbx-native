@@ -367,7 +367,11 @@ impl Simulation {
                             && crate::sound::replicates(&dom, self.db)
                     };
                     if replicates {
-                        crate::sound::set(&mut self.dom.borrow_mut(), sound, playing, playing);
+                        self.shared.borrow_mut().sounds.from_client(
+                            &mut self.dom.borrow_mut(),
+                            sound,
+                            playing,
+                        );
                         self.flush();
                     }
                 }
@@ -540,6 +544,7 @@ impl Simulation {
     pub fn start(&mut self) {
         let roots = self.dom.borrow().root_refs().to_vec();
         for root in roots {
+            self.watch_sounds_under(root);
             self.start_scripts_under(root);
         }
         self.rebuild();
@@ -621,6 +626,12 @@ impl Simulation {
         let now = self.time();
         self.vm.set_time(now);
 
+        // Tweens step first (TweenRuntime `phase`: a tween played after
+        // Heartbeat has moved by PreAnimation, on a client by
+        // PreSimulation after its render step).
+        let changes = self.vm.tween_step(dt);
+        self.apply(changes);
+        self.sound_step(dt);
         self.fire(Event::RunService("PreAnimation", vec![dt]));
         self.animate(dt);
         self.fire(Event::RunService("Stepped", vec![started, dt]));
@@ -1063,6 +1074,40 @@ impl Simulation {
         self.apply(edits);
     }
 
+    /// Moves every playing sound's clock `dt` and fires what that did; a
+    /// sound that ended stops once its `Ended` handlers have run.
+    fn sound_step(&mut self, dt: f64) {
+        let (events, ended) = {
+            let dom = self.dom.borrow();
+            self.shared.borrow_mut().sounds.step(&dom, self.db, dt)
+        };
+        for event in events {
+            self.fire(event);
+        }
+        if ended.is_empty() {
+            return;
+        }
+        {
+            let mut dom = self.dom.borrow_mut();
+            for sound in ended {
+                crate::sound::set(&mut dom, sound, false, false);
+            }
+        }
+        let edits = self.dom.borrow_mut().take_changes();
+        self.apply(edits);
+    }
+
+    /// The sounds playing now as the camera hears them, for the editor's
+    /// audio output.
+    pub fn voices(&self) -> Vec<crate::audio::Voice> {
+        let listener = self.camera().map(|(cf, _)| cf);
+        let dom = self.dom.borrow();
+        self.shared
+            .borrow_mut()
+            .sounds
+            .voices(&dom, self.db, listener.as_ref())
+    }
+
     /// Steps every Animator `dt` and fires what its tracks did.
     fn animate(&mut self, dt: f64) {
         let events = {
@@ -1078,7 +1123,9 @@ impl Simulation {
 
     /// Where animations not in the asset cache are downloaded from.
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
-        self.shared.borrow_mut().animations.fetcher = Some(fetcher);
+        let mut shared = self.shared.borrow_mut();
+        shared.animations.fetcher = Some(fetcher.clone());
+        shared.sounds.fetcher = Some(fetcher);
     }
 
     /// Fires what the humanoids queued and destroys the joints they broke.
@@ -1231,6 +1278,7 @@ impl Simulation {
                     if self.touches_physics(referent) {
                         self.dirty = true;
                     }
+                    self.watch_sounds_under(referent);
                     self.start_scripts_under(referent);
                 }
                 Change::Removed(referent) => {
@@ -1303,6 +1351,16 @@ impl Simulation {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn watch_sounds_under(&mut self, root: Ref) {
+        let dom = self.dom.borrow();
+        let mut shared = self.shared.borrow_mut();
+        for r in scripts::subtree(&dom, root) {
+            if dom.get(r).is_some_and(|i| i.class() == "Sound") {
+                shared.sounds.watch(r);
+            }
         }
     }
 

@@ -1,0 +1,56 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    }
+  ],
+  "result": {
+    "after_tracks": "180435571",
+    "held_shoulder": "0,0,89",
+    "held_tracks": "180435571,182393478",
+    "idle_shoulder": "0,1,0",
+    "idle_tracks": "180435571",
+    "rig": "R6"
+  },
+  "source": "real Roblox server, place 3086963177 version 555, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}

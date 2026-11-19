@@ -394,6 +394,44 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/ReparentOrder.luau"),
         tolerance: &[],
     },
+    Test {
+        name: "TweenCurves",
+        source: include_str!("../conformance/tests/TweenCurves.luau"),
+        tolerance: &[("*_*", 0.00015)],
+    },
+    Test {
+        name: "TweenRuntime",
+        source: include_str!("../conformance/tests/TweenRuntime.luau"),
+        tolerance: &[
+            ("*type_*", 0.02),
+            ("*_frames*", 2.0),
+            ("*_at*", 0.03),
+            ("halfway", 0.03),
+            ("after_3", 0.5),
+            ("replay_after_cancel", 0.03),
+            ("newer_progress", 0.03),
+        ],
+    },
+    Test {
+        name: "SoundPlayback",
+        source: include_str!("../conformance/tests/SoundPlayback.luau"),
+        tolerance: &[
+            ("*_frames*", 3.0),
+            ("*position*", 0.05),
+            ("*speed2*", 0.05),
+            ("client_ended_position", 0.02),
+        ],
+    },
+    Test {
+        name: "TextChat",
+        source: include_str!("../conformance/tests/TextChat.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "ToolPose",
+        source: include_str!("../conformance/tests/ToolPose.luau"),
+        tolerance: &[("*shoulder*", 3.0)],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
@@ -440,6 +478,16 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
         "ClientReplication",
         include_str!("../conformance/client/ClientReplication.luau"),
     ),
+    (
+        "TweenRuntime",
+        include_str!("../conformance/client/TweenRuntime.luau"),
+    ),
+    (
+        "SoundPlayback",
+        include_str!("../conformance/client/SoundPlayback.luau"),
+    ),
+    ("TextChat", include_str!("../conformance/client/TextChat.luau")),
+    ("ToolPose", include_str!("../conformance/client/ToolPose.luau")),
 ];
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
 const FIRST_PROBE: &str = include_str!("../conformance/client/FirstProbe.luau");
@@ -594,6 +642,9 @@ pub fn bare_place() -> WeakDom {
     ] {
         service(&mut dom, class);
     }
+    // A new place's chat: TextChatService with its default channels.
+    let chat = service(&mut dom, "TextChatService");
+    let _ = dom.set_property(chat, "ChatVersion", Variant::Enum(1));
     let player = service(&mut dom, "StarterPlayer");
     child(
         &mut dom,
@@ -846,6 +897,26 @@ fn show(value: Option<&Value>) -> String {
     }
 }
 
+/// Two texts of whitespace-separated numbers (TweenCurves' samples), the
+/// same count, each pair within `tolerance`: Roblox computes in single
+/// precision, so a sample can round the other way at the fourth decimal.
+fn numbers_match(g: Option<&Value>, o: Option<&Value>, tolerance: f64) -> bool {
+    let list = |v: Option<&Value>| -> Option<Vec<f64>> {
+        v?.as_str()?
+            .split_whitespace()
+            .map(|w| w.parse().ok())
+            .collect()
+    };
+    match (list(g), list(o)) {
+        (Some(g), Some(o)) => {
+            g.len() == o.len()
+                && !g.is_empty()
+                && g.iter().zip(&o).all(|(a, b)| (a - b).abs() <= tolerance + 1e-9)
+        }
+        _ => false,
+    }
+}
+
 /// Field by field, every field either side has. A number passes inside the
 /// test's tolerance or Roblox's own spread across passes, whichever is
 /// wider; text must match.
@@ -897,14 +968,16 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
                         matched_pass.is_some()
                     }
                 }
-                // Text matches the common value or any a pass printed.
+                // Text matches the common value or any a pass printed; a
+                // list of numbers with a tolerance matches number by number.
                 None => {
                     g.is_some()
                         && (g == o
                             || spread
                                 .get(field)
                                 .and_then(Value::as_array)
-                                .is_some_and(|seen| o.is_some_and(|o| seen.contains(o))))
+                                .is_some_and(|seen| o.is_some_and(|o| seen.contains(o)))
+                            || (tolerance > 0.0 && numbers_match(g, o, tolerance)))
                 }
             };
             Row {

@@ -7254,6 +7254,7 @@ dependencies = [
  "rbx_reflection",
  "rbx_xml",
  "serde_json",
+ "symphonia",
  "ureq",
  "x11rb",
 ]

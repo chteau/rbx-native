@@ -20,6 +20,10 @@ rbx_mesh = { path = "../rbx_mesh" }
 rapier3d = { package = "rapier3d-f64", version = "0.36" }
 rbx_materials = { path = "../rbx_materials" }
 serde_json = "1"
+# Sounds at run time (`audio`): decoding what Roblox accepts, pure Rust
+# (MPL-2.0, used unmodified as a crate). Already in the tree for Studio's
+# sound preview.
+symphonia = { version = "0.5", default-features = false, features = ["ogg", "vorbis", "mp3", "wav", "pcm", "flac"] }
 
 [dev-dependencies]
 # examples/record_goldens.rs: publish the suite over the sandbox place,

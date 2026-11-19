@@ -539,6 +539,7 @@ impl Hooks for ServerHooks {
             "HttpService" => http_member(lua, key),
             "AssetService" => super::meshes::member(lua, ctx, &self.physics, key),
             "CollectionService" => collection::member(lua, key),
+            "TweenService" | "Tween" => super::tween::member(lua, referent, class, key),
             "UserInputService" | "ContextActionService" if self.client.get() => {
                 let signals = (class == "UserInputService").then_some(referent);
                 super::input::member(lua, signals, class, key)

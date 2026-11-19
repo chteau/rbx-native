@@ -90,7 +90,7 @@ pub(crate) fn call(
         return shared.tools.call(&mut dom, client, referent, method, &args);
     }
     if crate::sound::is_method(class, method) {
-        let (playing, reply) = crate::sound::call(&mut dom, referent, method);
+        let (playing, reply) = shared.sounds.call(&mut dom, referent, method);
         if shared.players.client && crate::sound::replicates(&dom, db) {
             shared
                 .tools
@@ -137,15 +137,25 @@ pub(crate) fn call(
     crate::players::call(&mut shared, &mut dom, db, referent, class, method, args)
 }
 
-pub(crate) fn property(shared: &Shared, referent: Ref, class: &str, key: &str) -> Option<Arg> {
+pub(crate) fn property(
+    shared: &Rc<RefCell<Shared>>,
+    referent: Ref,
+    class: &str,
+    key: &str,
+) -> Option<Arg> {
     if class == "Sound" {
-        let (dom, db) = shared.dom_and_db()?;
+        let (dom, db) = shared.borrow().dom_and_db()?;
         let dom = dom.try_borrow().ok()?;
-        return crate::sound::property(&dom, db, referent, class, key);
+        return shared
+            .try_borrow_mut()
+            .ok()?
+            .sounds
+            .property(&dom, db, referent, key);
     }
+    let shared = shared.borrow();
     match class {
         "AnimationTrack" => shared.animations.property(referent, key),
-        _ => crate::players::property(shared, referent, class, key),
+        _ => crate::players::property(&shared, referent, class, key),
     }
 }
 
@@ -161,6 +171,9 @@ pub(crate) fn write(
 ) -> Option<Arg> {
     if class == "AnimationTrack" {
         return shared.borrow_mut().animations.write(referent, key, value);
+    }
+    if class == "Sound" {
+        return shared.borrow_mut().sounds.write(referent, key, value);
     }
     if class != "Humanoid" || !matches!(key, "Health" | "MaxHealth") {
         return None;

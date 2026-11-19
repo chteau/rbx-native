@@ -6,6 +6,7 @@
 //! The plan, the sources and what's left: `docs/research/local-run/`.
 
 pub mod animation;
+pub mod audio;
 pub mod character;
 pub mod conformance;
 mod engine;

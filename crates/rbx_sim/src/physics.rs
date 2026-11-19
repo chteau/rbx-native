@@ -101,6 +101,7 @@ pub struct Shared {
     pub(crate) gui: crate::gui::Gui,
     pub(crate) tools: crate::tools::Tools,
     pub(crate) teams: crate::teams::Teams,
+    pub(crate) sounds: crate::sound::Sounds,
 }
 
 /// What spatial queries read: the live DOM, the groups, the index.
@@ -247,7 +248,7 @@ impl Physics for Bridge {
         class: &str,
         key: &str,
     ) -> Option<rbx_lua::server::Arg> {
-        crate::engine::property(&self.0.borrow(), referent, class, key)
+        crate::engine::property(&self.0, referent, class, key)
     }
 
     fn signal_method(&self, class: &str, key: &str) -> bool {
