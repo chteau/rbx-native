@@ -2,7 +2,7 @@
 
 Local Run is our own Roblox runtime. You hit Run and the place's scripts and physics go, on your machine, with no Roblox client, no Sober, no network. It's clean room: we write every line ourselves, from the docs and from watching the real client.
 
-This file is the plan, the rules, the sources, and where we're at. Milestone 1 (phase 0 plus the core of phase 1) is done; what it didn't finish is listed at the end as Milestone 2.
+This file is the plan, the rules, the sources, and where we're at. Milestone 1 (phase 0 plus the core of phase 1) and Milestone 2 (the rest of phase 1 and the start of phase 2) are done; what's left and the proposal for Milestone 3 are at the end.
 
 ## The rules
 
@@ -23,8 +23,9 @@ These aren't negotiable. Everyone working on Local Run, human or agent, follows 
 | `assets/API-Dump.json` (Roblox's API dump, synced nightly to dev) | Roblox's published API description, used as data | Classes, members, tags (`NotScriptable`, `Service`), defaults through `rbx_reflection`, `COVERAGE.md` |
 | [Luau](https://github.com/luau-lang/luau) | MIT | The VM (through `luau0-src`) |
 | [mlua](https://github.com/mlua-rs/mlua) 0.12 | MIT | Rust bindings to Luau |
-| [Rapier](https://rapier.rs) `rapier3d` 0.36 | Apache-2.0 | Rigid bodies, contacts, joints |
-| [parry3d](https://parry.rs) 0.31 | Apache-2.0 | Collision shapes (through Rapier) |
+| [Rapier](https://rapier.rs) `rapier3d-f64` 0.36 | Apache-2.0 | Rigid bodies, contacts, joints (the f64 build: test places sit thousands of studs out, where f32 positions lost whole substeps of motion) |
+| [parry3d](https://parry.rs) `parry3d-f64` 0.31 | Apache-2.0 | Collision shapes, ray and shape casts, and its V-HACD port for `CollisionFidelity` decompositions (through Rapier) |
+| Our `rbx_mesh`, `rbx_assets` | ours | `MeshPart.MeshId` geometry from the local asset cache |
 | glam / glamx | MIT OR Apache-2.0 | Math (through Rapier) |
 | [rbx-dom](https://github.com/rojo-rbx/rbx-dom) (our `rbx_dom`, `rbx_binary`, `rbx_xml`, `rbx_reflection`) | MIT | Loading .rbxl/.rbxlx, the instance tree, reflection |
 | [Lune](https://github.com/lune-org/lune) | MPL-2.0 | Prior art only. We looked at how it shapes a Roblox-like runtime; no code taken, not a dependency |
@@ -46,7 +47,7 @@ place.rbxl ──> rbx_sim::load ──> WeakDom (shared, Rc<RefCell>)
                        the 60 Hz frame loop, change routing
 ```
 
-- `crates/rbx_lua` already had the engine the Command Bar and the plugin host run on (instances, signals, the task scheduler, require, services). Local Run adds `rbx_lua::server`: a VM with a server host (sim clock, frame-based waits, newest-first signals), server hooks (RunService, Touched/TouchEnded, PhysicsService, BasePart mass and impulses, HttpService JSON, CollectionService, WaitForChild) and a tiny `Physics` trait the sim implements. The changes to the shared engine are opt-in host flags (`frame_clock`, `newest_first`) and one hook (`after_write`), so the Command Bar and plugin host behave as before, and their tests pass.
+- `crates/rbx_lua` already had the engine the Command Bar and the plugin host run on (instances, signals, the task scheduler, require, services). Local Run adds `rbx_lua::server`: a VM with a server host (sim clock, frame-based waits, newest-first signals), server hooks (RunService, Touched/TouchEnded, PhysicsService, BasePart mass and impulses, HttpService JSON, CollectionService, WaitForChild) and a tiny `Physics` trait the sim implements. The changes to the shared engine are opt-in host flags (`frame_clock`, `newest_first`, `default_deferred`) and one hook (`after_write`), so the Command Bar and plugin host behave as before, and their tests pass.
 - `crates/rbx_sim` owns the loop. It reads the DOM change log after every bit of Lua and routes it: a structural change (size, anchored, a new weld) rebuilds the physics world before the next step, a CFrame write teleports a body, a velocity write sets it, a new Script in a server container starts.
 - Physics writes go back to the DOM without logging changes, so moving parts don't fire `Changed` for every frame. That matches Roblox: physics doesn't fire `Changed` for CFrame either.
 
@@ -74,14 +75,21 @@ The docs list the events but not where waits resume, and they say `Stepped` and 
 
 - 60 frames a second, fixed. Server `dt` is 1/60. Source: the task library and RunService docs, and every frame delta in our goldens.
 - Physics at 240 Hz, four substeps a frame. Source: the adaptive timestepping docs ("By default, Roblox simulates physics at 240 Hz").
-- Adaptive stepping: the same docs say easy assemblies go on a 60 Hz island. Our FreeFall golden matches 60 Hz semi-implicit Euler, not 240 Hz. So in rbx_sim an assembly touching nothing gets a whole frame of gravity up front and coasts the substeps; anything in contact stays at 240 Hz. `PhysicsSteppingMethod = Fixed` turns that off.
-- `task.wait(0)` resumes on the next frame, never the same one. `task.wait(t)` resumes on the first frame at or after `t`. Legacy `wait()` never takes less than 0.03 s, which is two frames (golden: 2 heartbeats).
+- Adaptive stepping: the same docs say easy assemblies go on a 60 Hz island but not how one is picked. The FreeFallTrace and FreeFallRates goldens (cubes of 1, 2, 4 and 8 studs, dropped, thrown down, sideways and up, position and velocity every frame) pin it down for a free body:
+  - the frame after it's built it steps at 240 Hz;
+  - then 60 Hz semi-implicit (one gravity kick a frame, the substeps coast);
+  - while gravity speeds it up it moves to 120 Hz past T120 and to 240 Hz past T240, speeds that grow with its size s (largest side): T120 ≈ 29.86 s + 15.14, T240 ≈ 91 s + 49 stud/s (fitted brackets: s1 T120 in (42.5, 45.8], s2 (73.7, 75.2], s4 (134.1, 137.3], s8 (251.8, 255.1]; T240 s1 (139.0, 142.3], s2 (230.5, 231.3]);
+  - a body slowing down keeps its rate (thrown up at 80 it stayed at 60 Hz past 75);
+  - each switch up adds one kick of the new rate (60 to 120 adds g/120, 120 to 240 adds g/240). That kick is the "half frame" Milestone 1 couldn't explain: FreeFall's vy at 30 frames is -99.735, not -98.1.
+  - Anything in contact or held by a joint constraint steps at 240 Hz. `PhysicsSteppingMethod = Fixed` turns all of it off.
+  - Not explained yet: thrown sideways at 60 stud/s, a 2 stud cube switched to 120 Hz at 65.5, earlier than straight down.
+- Waits resume on the first frame strictly past their time: `task.wait(t)` takes floor(60 t) + 1 frames (WaitRounding golden: 0.05 → 4, 0.1 → 7, 0.5 → 31, 1 → 61, 2 → 121), `task.wait(0)` 1, legacy `wait()` 2 (its 0.03 s minimum). `task.delay` follows the same rule; at exact frame boundaries Roblox is a coin flip between two frames. The real server's frames are a hair under 1/60 s (121 beats sum to 2.01658 s), so elapsed times differ in the fourth decimal.
 
 ### Signals
 
-- Immediate mode (the place default as far as a game script can tell): `Fire` runs handlers before it returns, and a property write runs `Changed` / `GetPropertyChangedSignal` before the next line. Golden: `handler after_fire changed after_set`.
+- Deferred is now what a live server does with `SignalBehavior` left at `Default`: `Fire` and a property write queue their handlers, which run at the end of the resumption point, Fire's before the write's. Golden (recorded 2026-11, place version 537): `after_fire after_set handler changed`. In Milestone 1 (version 535, a few weeks earlier) the same test printed the immediate order, so Roblox flipped the default for live servers in between. rbx_sim follows: `Default` means Deferred on the server host; Studio's edit runtime keeps Immediate. Our deferred queue runs a resumption point's queued handlers before the instance events of its writes, which is right for this golden but not for a write followed by a `Fire`.
 - Handlers run newest connection first, and a `:Wait()` counts as a connection. Golden: connect A, B, then Wait W, then C, fire: `C W B A`.
-- `Workspace.SignalBehavior` is `NotScriptable`: reading it errors on a real server, so it does in ours. A place file can still say Deferred, and then we defer.
+- `Workspace.SignalBehavior` is `NotScriptable`: reading it errors on a real server, so it does in ours. A place file that stores Immediate or Deferred gets that.
 
 ### Physics
 
@@ -93,8 +101,21 @@ The docs list the events but not where waits resume, and they say `Stepped` and 
 | Wedge | convex hull, vertical face at +Z | exact |
 | CornerWedge | convex hull, apex above +X -Z | vertex layout read off the docs, not yet checked against Studio |
 | Capsule (Shape) | capsule along X | the docs don't give the axis, X like the cylinder is a guess |
-| MeshPart, Union, Terrain | not simulated | next milestone (hull from mesh data, terrain voxels from `rbx_terrain`) |
+| MeshPart | per `CollisionFidelity`: Box = the mesh's bounding box, Hull = convex hull, Default = V-HACD (resolution 32, up to 16 hulls), PreciseConvexDecomposition = V-HACD (resolution 64, concavity 0.0025, up to 64 hulls) | geometry from an `EditableMesh` (`AssetService:CreateEditableMesh` / `CreateMeshPartAsync`) or `MeshId` from the local asset cache, never the network; without geometry it's its `Size` box. Roblox's own decomposition parameters aren't documented, so ours are picked to keep the MeshCollision golden's gap (Default and Precise leave the gap between two cubes open, Box and Hull fill it) |
+| UnionOperation, Terrain | `Size` box / not simulated | union geometry decoding lives inside `rbx_viewer` (Milestone 3); terrain from `rbx_terrain` (phase 3) |
+| HingeConstraint (free, Motor, Servo, limits) | Rapier revolute joint on the attachments' X axes, velocity motor | a servo turns at `AngularSpeed` straight to its target (HingeServo golden) |
+| PrismaticConstraint | Rapier prismatic joint, velocity motor | |
+| BallSocketConstraint | Rapier spherical joint | rigid; Roblox's stretches about 0.03 stud |
+| RopeConstraint | Rapier rope joint | the body falls on adaptive steps while the rope is slack |
+| SpringConstraint | Hooke's law plus damping between the attachments, every substep | |
+| AlignPosition, AlignOrientation | critically damped pull, natural frequency `Responsiveness`/2, holds against gravity | fitted to the goldens (both follow the same curve); `RigidityEnabled` stands in as Responsiveness 200 |
+| LinearVelocity, AngularVelocity | reach the target within a substep as far as `MaxForce`/`MaxTorque` allow | LinearVelocity holds against gravity |
+| VectorForce, Torque | a force every substep | |
+| Attachment | `WorldPosition`, `WorldCFrame`, `Axis`, `SecondaryAxis` and the rest read and write | |
+| Restitution | Rapier's, but an impact (approach above 1.5 stud/s on several contact points) is solved at one point, so a flat box bounces straight | BoxBounce golden: e ≈ 0.5 |
+| Angular damping | 0.052 /s, exponential | Damping golden: 10 rad/s → 9.019 after 2 s; no linear damping |
 | Anchored | fixed body | |
+| Spatial queries | `Raycast` (RaycastParams: filter Include/Exclude, `RespectCanCollide`, `CollisionGroup`), `Blockcast`, `Spherecast`, `Shapecast`, `GetPartBoundsInBox`, `GetPartBoundsInRadius`, `GetPartsInPart` (OverlapParams), legacy `FindPartOnRay*` | against the same shapes physics collides with. Measured: a ray ignores the part it starts in, `CanQuery` false is never hit, casts ignore parts they start inside, the bounds queries test a part's box (a ball counts as its cube), `GetPartsInPart` is exact |
 | CanCollide false | sensor collider | still fires Touched when CanTouch |
 | CanTouch | collision events on or off | both parts need it, as documented |
 | CollisionGroups | 32 groups as Rapier interaction bitmasks | `PhysicsService` API, Default always there |
@@ -109,35 +130,34 @@ The docs list the events but not where waits resume, and they say `Stepped` and 
 
 ## Conformance
 
-The suite is eight Luau tests in `crates/rbx_sim/conformance/tests/`. The same modules run in a real Roblox server and in rbx_sim and print one JSON line each.
+The suite is 33 Luau tests in `crates/rbx_sim/conformance/tests/` (shared helpers in `Harness.luau`). The same modules run in a real Roblox server and in rbx_sim and print one JSON line each. Each test starts right after a Heartbeat, at its own origin (`2000 + 300 i, 300, 2000`) so tests never touch each other.
 
-Recording goldens (`cargo run -p rbx_sim --example record_goldens -- <universe> <place> <base.rbxl> <cloudflared>`) adds the suite to a base place, publishes it to the sandbox place, restarts its servers, joins with Sober on Xephyr, collects the server's prints through the `rbx_play` probe, and writes `goldens/*.json`. It runs the suite five times in one server. The goldens keep the median and the spread across passes, and rbx_sim also runs five passes and takes the median, so we compare like with like. Pass 1 is always a bit off on a fresh server (it starts at a different point in the frame); passes 2 to 5 were identical.
+Recording goldens (`cargo run -p rbx_sim --example record_goldens -- <universe> <place> <base.rbxl> <cloudflared> [--passes N] [--only A,B]`) adds the suite to a base place, publishes it to the sandbox place, restarts its servers, joins with Sober on Xephyr, collects the server's prints through the `rbx_play` probe, and writes `goldens/*.json`: the median, the spread across passes and every raw pass. rbx_sim runs the same passes and takes the median.
 
-`cargo test -p rbx_sim` checks every recorded golden. A golden can carry a `known_gap` explaining why it's off; that's reported, not failed. `cargo run -p rbx_sim --example conformance -- --write docs/research/local-run/CONFORMANCE.md` writes the table.
+The real server isn't deterministic. On the Milestone 2 recording (place version 537, five passes) passes 1 to 3 usually agree with each other and passes 4 and 5 with each other, and the difference is the first frames of a test: the early passes take extra substeps there (six or seven instead of four), the later ones don't. rbx_sim models the clean behaviour. So a row passes when it's within the test's tolerance or Roblox's own spread of the median, or, marked `ok (pass N)` in the table, within tolerance of one recorded pass. Fields starting with `_` are traces kept for working things out (per-frame positions, frame times) and aren't compared.
 
-Current state, recorded on version 535 of the sandbox place:
+`cargo test -p rbx_sim` checks every recorded golden. A golden can carry a `known_gap` explaining why it's off; that's reported, not failed. `cargo run -p rbx_sim --example conformance -- --write docs/research/local-run/CONFORMANCE.md` writes the full table (`CONFORMANCE.md`).
 
-| Test | Roblox | rbx_sim | Result |
-|---|---|---|---|
-| FreeFall | y after 15/30/60 frames -6.52 / -25.417 / -100.219 | -6.514 / -25.317 / -99.709 | ok, within 0.51 studs |
-| FreeFall | vy at 30/60 frames -99.735 / -197.835 | -98.1 / -196.2 | ok on spread; passes 2 to 5 are a steady 1.6 stud/s (half a frame of g) ahead of ours |
-| RestingContact | sink -0.0062 (placed) / -0.0101 (dropped), speed 0 | -0.001 / -0.001, speed 0 | ok |
-| FrictionSlide | distance 3.234, speed after 15 frames 5.286, stops at frame 21 | 3.387, 5.285, 21 | ok |
-| ElasticBounce | first bounce frame 27, peaks 4.867 / 1.317 | 27, 5.051 / 0.984 | ok |
-| TouchedOrder | sensor in @14, out @18, floor in @21, out @22, then floor @42, @53, @59... | identical through @22, then the bounce differs | known gap, see below |
-| TaskTiming | task.wait(0) 1 frame, (0.1) 6 frames, (0.5) 31 frames, wait() 2 frames, delay(0.25) 15 frames | 1, 6, 30, 2, 15 | ok (the 0.5 wait is one frame short, inside tolerance) |
-| RunServiceOrder | see "The frame" | identical | ok |
-| SignalBehavior | immediate Fire and Changed, newest first, property unreadable | identical | ok |
+What changed in Milestone 2, besides the 25 new tests:
 
-Known gaps:
+| Test | Milestone 1 | Milestone 2 |
+|---|---|---|
+| FreeFall vy | ok on spread only, a steady 1.6 stud/s (half a frame of g) behind | matches the clean passes: the half frame is the 60 → 120 Hz switch kick |
+| TaskTiming / WaitRounding | task.wait(0.5) one frame short | strict "first frame past the time" rule, every wait from 0.05 to 2 s exact in frames |
+| TouchedOrder | matches to the first bounce, then the block spins | bounces straight; still a frame early per bounce (soft contacts, see known gaps) |
+| SignalBehavior | immediate | the server now defers by default, and so do we |
+| RestingContact, FrictionSlide, ElasticBounce, RunServiceOrder | ok | ok |
 
-- **Bounce spin.** Rapier does restitution once per contact at the end of the step. A box landing flat on four corners gets about 6 rad/s of spin from that, so its first bounce goes sideways and back through the sensor. Roblox's box bounces straight. Fixing it needs our own restitution pass. Solver iteration counts, warmstarting and friction don't change it, we tried.
-- **The half frame in FreeFall velocity.** Roblox's vy runs half a frame of gravity ahead of position from frame 30 on. We match the position, not the velocity. We need a dedicated probe (sample on Stepped vs Heartbeat) before guessing.
-- **task.wait(0.5)** takes 31 frames on Roblox and 30 for us. Probably the server rounds its resume time up a frame for longer waits. Needs more samples (1.0, 2.0) before we change the rule.
+Known gaps (the details are in each golden's `known_gap` and in CONFORMANCE.md):
+
+- **Soft contacts.** Roblox's contacts give: a stack of five sinks 0.16 to 0.25 stud at the top, a bouncing block stays in contact a frame longer. Rapier holds every contact at the same tiny penetration and resolves an impact within the frame. That's BoxStack and the one-frame-per-bounce drift in TouchedOrder.
+- **Soft joints.** Roblox's BallSocket stretches about 0.03 stud on a 4 stud arm and its swing drifts from ours after 40 frames; HingeFree is 0.14 stud off in Y at 30 frames. Ours are rigid.
+- **VectorForce** gets one extra frame of push on Roblox (vx 10.167 where 30 frames of 20 stud/s² give 10.0).
+- **Sideways adaptive switch.** A 2 stud cube thrown sideways at 60 stud/s switches to 120 Hz earlier than the speed rule says (FreeFallRates `side60`, inside tolerance today).
 
 ## Coverage
 
-`docs/research/local-run/COVERAGE.md` is generated (`cargo run -p rbx_sim --example coverage -- docs/research/local-run/COVERAGE.md`): a server script in a fresh Local Run makes an instance of every class and indexes every member a game script may touch. Today: 87 of 1385 functions, 31 of 355 events, 1926 of 2510 properties. The property number flatters us: any property the reflection database knows reads back as data, whether or not we act on it. The physics table above is what's really simulated.
+`docs/research/local-run/COVERAGE.md` is generated (`cargo run -p rbx_sim --example coverage -- docs/research/local-run/COVERAGE.md`): a server script in a fresh Local Run makes an instance of every class and indexes every member a game script may touch. Today: 96 of 1385 functions (87 after Milestone 1; the new ones are the WorldRoot queries and AssetService's EditableMesh pair), 31 of 355 events, 1926 of 2510 properties. The property number flatters us: any property the reflection database knows reads back as data, whether or not we act on it. The physics table above is what's really simulated.
 
 ## Roblox updates every week
 
@@ -168,23 +188,25 @@ Acceptance:
 - `cargo test -p rbx_lua` and `-p rbx_sim` pass, Command Bar and plugin host tests included. Done.
 - Goldens recorded from a real server for all eight tests. Done.
 
-### Phase 1: server scripts and rigid physics (core done)
+### Phase 1: server scripts and rigid physics (done, with known gaps)
 
 Acceptance:
 - RunService frame order matches the golden. Done.
 - task.wait / wait / delay / defer / spawn timings match the golden within one frame. Done.
 - Free fall, resting contact, friction slide and bounce within tolerance. Done.
-- Touched/TouchEnded order matches the golden all the way through. Open (bounce spin).
-- Raycast, Blockcast, Spherecast, Shapecast, GetPartBoundsInBox/Radius, GetPartsInPart, OverlapParams: results match a golden scene. Open.
-- Constraints (HingeConstraint, BallSocket, Rope, Spring, Prismatic, AlignPosition, AlignOrientation, LinearVelocity, VectorForce): a golden per constraint. Open.
-- MeshPart and Union collision (hull from mesh data, CollisionFidelity). Open.
+- Touched/TouchEnded order matches the golden all the way through. The bounce spin is fixed; a bounce still ends a frame early (soft contacts), Milestone 3.
+- Raycast, Blockcast, Spherecast, Shapecast, GetPartBoundsInBox/Radius, GetPartsInPart, OverlapParams: results match a golden scene. Done (Raycast, Shapecast, Overlap goldens).
+- Constraints (HingeConstraint free/motor/servo, BallSocket, Rope, Spring, Prismatic, AlignPosition, AlignOrientation, LinearVelocity, AngularVelocity, VectorForce): a golden per constraint. Done; BallSocket at 40 frames, HingeFree's Y and VectorForce are known gaps.
+- MeshPart collision per CollisionFidelity. Done (MeshCollision golden). Unions are still their Size box, Milestone 3.
 
-### Phase 2: in Studio
+### Phase 2: in Studio (started)
 
 Acceptance:
-- Run (local) in the ribbon runs the open place live in the viewport through `rbx_viewer`, with Stop restoring the edit DOM untouched (golden: a place saved before and after Run is byte-identical).
-- Output, Explorer and Properties show the running DOM while it runs, like Studio's Run.
-- Pause, step one frame, resume.
+- Run (local) in the ribbon runs the open place live in the viewport through `rbx_viewer`, with Stop restoring the edit DOM untouched (golden: a place saved before and after Run is byte-identical). Done behind the `local-run` beta: Test › Run, Pause, Stop (and Model › Run (local)). The unit test compares the whole tree, properties included, before the run and after Stop; checked live on Xephyr (screenshots in `rbx-native-targets/local-run-m2-shots/`).
+- Output, Explorer and Properties show the running DOM while it runs, like Studio's Run. Done: the Output streams script prints, the Explorer shows parts scripts add.
+- Pause, step one frame, resume. Pause and resume done; step one frame is Milestone 3.
+
+How it works (`crates/rbx_studio/src/shell/local_run.rs`): Run clones the edited DOM, starts `rbx_sim::Simulation` on the clone and swaps a second clone into `Shell::dom`, stashing the edited place, its undo history and selection (the pattern Play's live views use). A foreground timer steps the sim on wall time at 60 Hz (at most 4 frames a tick). Each frame's changes (`Simulation::take_view_changes`: what scripts logged plus a CFrame write for every moving part) are mirrored into the shown DOM by referent and handed to the viewport, Properties and Explorer. Edits made during the run go into the sim's DOM as logged changes. Saving during a run saves the stashed place. Stop drops the sim, sends the viewport the changes back to the edited place and restores DOM, history and selection.
 
 ### Phase 3: characters and the world
 
@@ -208,21 +230,34 @@ Acceptance:
 - Sound, particles and GUI in the viewport.
 - Coverage: 50% of functions and events, tracked weekly in COVERAGE.md.
 
-## Milestone 2 (next)
+## Milestone 2 (done)
 
-What Milestone 1 didn't get to, in the order we'd do it:
+1. Restitution: impacts are solved at one point, so a flat box bounces straight (BoxBounce golden); TouchedOrder matches the bounces' flights but each bounce ends a frame early.
+2. The FreeFall velocity half frame is the adaptive rate switch kick; adaptive stepping is now 60/120/240 Hz with size-dependent speed thresholds (FreeFallTrace, FreeFallRates). The long `task.wait` rounding is "first frame strictly past the time" (WaitRounding).
+3. Spatial queries: Raycast, Blockcast, Spherecast, Shapecast, GetPartBoundsInBox/Radius, GetPartsInPart with RaycastParams/OverlapParams (Raycast, Shapecast, Overlap goldens).
+4. Constraints and movers with a golden each, attachments and their world frames (Attachments golden).
+5. MeshPart collision per CollisionFidelity (MeshCollision golden, meshes from `AssetService:CreateEditableMesh` or the asset cache).
+6. More goldens: SleepWake, BoxStack, Damping, RampSlide.
+7. Run (local) live in the editor viewport, behind the `local-run` beta.
+8. Physics in f64 (`rapier3d-f64`): at the test origins, thousands of studs out, f32 positions lost about 6% of a moving part's travel.
+9. Server signals default to Deferred, as the real server now does.
 
-1. Our own restitution pass (or a contact solver closer to Roblox's) so TouchedOrder matches past the first bounce.
-2. The FreeFall velocity half frame and the long `task.wait` rounding: add probes, record, then fix.
-3. Spatial queries: Raycast and the rest of WorldRoot, with goldens.
-4. The common constraints, one golden each.
-5. MeshPart/Union hulls and CollisionFidelity.
-6. Phase 2 start: Run (local) live in the viewport with Stop restoring the edit DOM, replacing today's 5-second headless run that only prints to the Output.
-7. More goldens: sleep and wake, stacked boxes settling, a spinning part's angular damping, `task.wait` of 1 s and 2 s.
+## Milestone 3 (proposed): Humanoid, character, avatar
+
+The big one is a character you can watch walk in the viewport. In order:
+
+1. Humanoid physics from the docs and goldens: `HumanoidRootPart` assembly, hip height, the floor sensor, walking (`WalkSpeed`, `MoveTo`, `Move`), jumping (`JumpPower`/`JumpHeight`, `UseJumpPower`), falling, states and `StateChanged`, `Died` when `Health` hits 0, `BreakJointsOnDeath`, respawn on a `SpawnLocation` after `Players.RespawnTime`. Goldens: jump apex and air time, walk speed on flat ground and on a slope, `MoveTo` arrival and its 8 s timeout, time to land from a height, the state sequence of a jump.
+2. A character without a client: `Players:CreateHumanoidModelFromDescription` / `HumanoidDescription` building an R15 rig from our own rig data (`rbx_autorig` already builds R15), `LoadCharacter` for a stand-in player, `Players.CharacterAdded`.
+3. Avatar look: `HumanoidDescription` body parts, scales, accessories and clothing applied through `rbx_assets` (cache only, nothing fetched during a run), rendered by the viewer.
+4. Animation: `Animator` and `AnimationTrack` driving Motor6D `Transform` from `rbx_animation`, with our own clean-room idle/walk/jump state machine (written from the Animator docs, not Roblox's Animate script). Golden: a track's joint transforms at fixed times.
+5. Leftovers from Milestone 2: soft contacts (load-dependent penetration, a bounce's contact frame), soft joints (BallSocket stretch), the VectorForce extra frame, the sideways adaptive switch, union collision (pull union geometry decoding out of `rbx_viewer` into a shared crate, or decode `PhysicsData`), and step one frame while paused.
+
+Phase 4 (clients, PlayerModule-equivalent controls) comes after: a character needs to stand, walk and animate on the server first.
 
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.
-- `crates/rbx_sim/src/sim.rs`: the frame loop. `physics.rs`, `physics/part.rs`: Rapier world, shapes, joints. `scripts.rs`: which scripts run. `load.rs`: place files. `conformance.rs`: the suite.
+- `crates/rbx_lua/src/server/query.rs`: spatial queries (Luau side). `server/meshes.rs`: `EditableMesh` and `CreateMeshPartAsync`.
+- `crates/rbx_sim/src/sim.rs`: the frame loop. `physics.rs`, `physics/part.rs`: Rapier world, shapes, joints, adaptive stepping. `physics/constraints.rs`: constraints and movers. `physics/mesh.rs`: MeshPart collision. `spatial.rs`: the query index. `scripts.rs`: which scripts run. `load.rs`: place files. `conformance.rs`: the suite.
 - `crates/rbx_sim/examples/`: `run` (CLI), `conformance` (table), `record_goldens` (real server), `coverage` (COVERAGE.md).
-- `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta, Model › Run (local).
+- `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta: Run, Pause, Stop live in the editor.
