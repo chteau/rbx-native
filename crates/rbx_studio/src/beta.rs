@@ -73,6 +73,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         name: "Module require graph",
         description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
     },
+    Feature {
+        id: crate::shell::LOCAL_RUN_BETA_ID,
+        name: "Local Run",
+        description: "Model › Run (local) runs the place's server scripts and physics for 5 s of game time on our own clean-room runtime, no Roblox client, and prints what they printed to the Output. Server side only, headless, and nothing is written back to the place yet.",
+    },
 ];
 
 /// `RBX_STUDIO_BETA_SAMPLE=1` lists this one too, so the page can be

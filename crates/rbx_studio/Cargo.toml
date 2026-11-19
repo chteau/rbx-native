@@ -37,6 +37,7 @@ rbx_binary = { path = "../rbx_binary" }
 rbx_cloud = { path = "../rbx_cloud" }
 # Each material's default physical properties (Mass, CurrentPhysicalProperties).
 rbx_materials = { path = "../rbx_materials" }
+rbx_sim = { path = "../rbx_sim" }
 # Play/Test without Studio: probe, channel, tunnel, launcher, embedding.
 rbx_play = { path = "../rbx_play" }
 # The Security Audit dock runs the whole-place remote/script audit.

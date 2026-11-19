@@ -7286,6 +7286,7 @@ dependencies = [
  "rbx_play",
  "rbx_presence",
  "rbx_reflection",
+ "rbx_sim",
  "rbx_terrain",
  "rbx_ugc",
  "rbx_viewer",

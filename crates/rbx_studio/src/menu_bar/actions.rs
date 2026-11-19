@@ -259,6 +259,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuRunLocal, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.run_local(cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuScriptTemplates, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_script_templates(cx));
         }

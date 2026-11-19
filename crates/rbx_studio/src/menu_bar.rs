@@ -127,6 +127,7 @@ actions!(
         MenuToggleToolbox,
         MenuToggleSecurityAudit,
         MenuRequireGraph,
+        MenuRunLocal,
         MenuTogglePlaytests,
         MenuToggleLayers,
         MenuToggleLoren,
@@ -218,6 +219,10 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::action("Group", MenuGroup),
         MenuItem::action("Ungroup", MenuUngroup),
     ];
+    if crate::beta::enabled(crate::shell::LOCAL_RUN_BETA_ID) {
+        model.push(MenuItem::separator());
+        model.push(MenuItem::action("Run (local)", MenuRunLocal));
+    }
     if !templates.is_empty() {
         model.push(MenuItem::separator());
     }
