@@ -150,18 +150,15 @@ pub(crate) fn plan(
         })
         .collect();
 
-    // The sun and moon hang off the same `Sky` the panels come from, so a place
-    // with no `Sky` gets neither; its panels, though, fall back to Roblox's own
-    // default skybox, which is what Studio shows for such a place.
+    // A place with no `Sky` gets Roblox's own default skybox, sun, moon and
+    // stars, which is what the real client shows for it.
     let sky = scene::descendants(dom).find(|&referent| is_sky(dom, database, referent));
 
     Plan {
         faces,
         sky: Some(sky::default::panels_or_default(dom, sky)),
-        bodies: sky
-            .map(|referent| sky::celestial_bodies(dom, referent))
-            .unwrap_or_default(),
-        stars: sky.map_or(0, |referent| sky::star_count(dom, referent)),
+        bodies: sky::celestial_bodies(dom, sky),
+        stars: sky::star_count(dom, sky),
     }
 }
 

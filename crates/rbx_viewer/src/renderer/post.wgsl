@@ -152,30 +152,35 @@ fn fs_upsample(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(sum / total, 1.0);
 }
 
-const SUN_RAY_TAPS: i32 = 12;
-/// Per-tap falloff: the last of 12 taps carries about a sixth of the first
-/// one's weight, which is soft enough that the march does not read as a row of
-/// discrete dots even at the boosted `Intensity` a proof screenshot uses.
-const SUN_RAY_DECAY: f32 = 0.85;
+const SUN_RAY_TAPS: i32 = 24;
+/// The glow's colour at Intensity 1 and how fast it fades, as a fraction of
+/// the frame's height per unit of Spread. Measured on the real client (the
+/// `sun_rays` fidelity scene against the same view without the effect): at
+/// Intensity 0.3 and Spread 0.8 it adds (0.46, 0.17, 0) in linear light a
+/// third of the frame from the sun and still (0.19, 0.06, 0) at the far
+/// edge, washing the sky and the floor alike, darker only where something
+/// stands between the pixel and the sun.
+const SUN_RAY_TINT: vec3<f32> = vec3<f32>(2.6, 0.97, 0.0);
+const SUN_RAY_REACH: f32 = 0.81;
 
-/// Standard god-rays: march toward sun with decreasing-weight average of HDR
-/// color. Self-occlusion is free: dark pixels (occluded) contribute less than
-/// bright sky. Spread is a fraction of pixel-to-sun distance, keeping mapping
-/// in normalized units rather than inventing a pixel-radius conversion.
+/// A glow from the sun over the whole frame, fading with the distance to it,
+/// times how much of the straight line from the pixel to the sun is open sky
+/// in the depth buffer, which is what leaves the shafts behind whatever
+/// stands in the way.
 fn sun_rays(uv: vec2<f32>) -> vec3<f32> {
-    let step = (post.sun_rays.xy - uv) * (post.sun_rays.w / f32(SUN_RAY_TAPS));
+    let size = vec2<f32>(textureDimensions(scene_depth));
+    let to_sun = post.sun_rays.xy - uv;
+    let distance = length(to_sun * vec2<f32>(size.x / size.y, 1.0));
+    let last = vec2<i32>(size) - vec2<i32>(1);
 
-    var sample_uv = uv;
-    var sum = vec3<f32>(0.0);
-    var weight = 1.0;
-    var total = 0.0;
-    for (var tap = 0; tap < SUN_RAY_TAPS; tap++) {
-        sample_uv += step;
-        sum += textureSample(source, source_sampler, sample_uv).rgb * weight;
-        total += weight;
-        weight *= SUN_RAY_DECAY;
+    var open = 0.0;
+    for (var tap = 1; tap <= SUN_RAY_TAPS; tap++) {
+        let at = uv + to_sun * (f32(tap) / f32(SUN_RAY_TAPS));
+        let texel = clamp(vec2<i32>(at * size), vec2<i32>(0), last);
+        open += select(0.0, 1.0, textureLoad(scene_depth, texel, 0) == 0.0);
     }
-    return sum / total;
+    let reach = SUN_RAY_REACH * max(post.sun_rays.w, 0.05);
+    return SUN_RAY_TINT * exp(-distance / reach) * (open / f32(SUN_RAY_TAPS));
 }
 
 /// Studs the depth-of-field blur ramps in over past the sharp zone's own edge, as

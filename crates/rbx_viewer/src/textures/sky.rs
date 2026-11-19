@@ -7,6 +7,8 @@ mod seams;
 pub(super) mod stars;
 
 use glam::Vec3;
+use std::collections::BTreeMap;
+
 use rbx_assets::AssetRef;
 use rbx_dom::{Ref, Variant, WeakDom};
 
@@ -77,14 +79,24 @@ impl SkyFace {
     }
 }
 
+/// The properties of the place's `Sky`, or none at all for a place without
+/// one, which the real client draws exactly like a `Sky` left at its
+/// defaults: the default panels, sun, moon and stars.
+fn sky_properties(dom: &WeakDom, referent: Option<Ref>) -> Option<&BTreeMap<String, Variant>> {
+    static NONE: BTreeMap<String, Variant> = BTreeMap::new();
+    match referent {
+        Some(referent) => dom.get(referent).map(|instance| instance.properties()),
+        None => Some(&NONE),
+    }
+}
+
 /// The sun and the moon a `Sky` asks for, unless `CelestialBodiesShown` is off.
 ///
 /// Both textures have a Studio default, so a `Sky` that never set them still
 /// gets a sun, which is why these are read as "missing means the default"
-/// rather than "missing means nothing".
-///
-pub(super) fn celestial_bodies(dom: &WeakDom, referent: Ref) -> Vec<(AssetRef, Body)> {
-    let Some(properties) = dom.get(referent).map(|instance| instance.properties()) else {
+/// rather than "missing means nothing". `None`, no `Sky`, is all defaults.
+pub(super) fn celestial_bodies(dom: &WeakDom, referent: Option<Ref>) -> Vec<(AssetRef, Body)> {
+    let Some(properties) = sky_properties(dom, referent) else {
         return Vec::new();
     };
     if properties.get("CelestialBodiesShown") == Some(&Variant::Bool(false)) {
@@ -131,8 +143,8 @@ pub(super) fn celestial_bodies(dom: &WeakDom, referent: Ref) -> Vec<(AssetRef, B
 ///
 /// Tied to `CelestialBodiesShown` like the sun and the moon are: Roblox hides
 /// the whole field with them, not just the two discs.
-pub(super) fn star_count(dom: &WeakDom, referent: Ref) -> u32 {
-    let Some(properties) = dom.get(referent).map(|instance| instance.properties()) else {
+pub(super) fn star_count(dom: &WeakDom, referent: Option<Ref>) -> u32 {
+    let Some(properties) = sky_properties(dom, referent) else {
         return 0;
     };
     if properties.get("CelestialBodiesShown") == Some(&Variant::Bool(false)) {
@@ -207,7 +219,7 @@ mod tests {
     fn a_bare_sky_still_asks_for_studios_own_sun_and_moon() {
         let (dom, referent) = sky_with(&[]);
 
-        let bodies = celestial_bodies(&dom, referent);
+        let bodies = celestial_bodies(&dom, Some(referent));
 
         assert_eq!(
             bodies
@@ -229,7 +241,7 @@ mod tests {
     fn celestial_bodies_shown_off_draws_neither() {
         let (dom, referent) = sky_with(&[("CelestialBodiesShown", Variant::Bool(false))]);
 
-        assert!(celestial_bodies(&dom, referent).is_empty());
+        assert!(celestial_bodies(&dom, Some(referent)).is_empty());
     }
 
     #[test]
@@ -239,7 +251,7 @@ mod tests {
             ("MoonAngularSize", Variant::Float32(0.0)),
         ]);
 
-        let bodies = celestial_bodies(&dom, referent);
+        let bodies = celestial_bodies(&dom, Some(referent));
 
         assert_eq!(bodies[0].1.angular_size, 1.0);
         // A zero-degree disc would be a quad with no area at all.
@@ -250,7 +262,7 @@ mod tests {
     fn an_emptied_texture_drops_only_its_own_body() {
         let (dom, referent) = sky_with(&[("SunTextureId", Variant::String(String::new()))]);
 
-        let bodies = celestial_bodies(&dom, referent);
+        let bodies = celestial_bodies(&dom, Some(referent));
 
         assert_eq!(bodies.len(), 1);
         assert!(!bodies[0].1.toward_sun);
@@ -260,19 +272,19 @@ mod tests {
     fn a_bare_sky_asks_for_studios_own_three_thousand_stars() {
         let (dom, referent) = sky_with(&[]);
 
-        assert_eq!(star_count(&dom, referent), stars::DEFAULT_COUNT);
+        assert_eq!(star_count(&dom, Some(referent)), stars::DEFAULT_COUNT);
     }
 
     #[test]
     fn a_star_count_is_read_from_the_sky_and_never_runs_away_with_itself() {
         let (dom, referent) = sky_with(&[("StarCount", Variant::Int32(500))]);
-        assert_eq!(star_count(&dom, referent), 500);
+        assert_eq!(star_count(&dom, Some(referent)), 500);
 
         let (dom, referent) = sky_with(&[("StarCount", Variant::Int32(-5))]);
-        assert_eq!(star_count(&dom, referent), 0);
+        assert_eq!(star_count(&dom, Some(referent)), 0);
 
         let (dom, referent) = sky_with(&[("StarCount", Variant::Int32(i32::MAX))]);
-        assert_eq!(star_count(&dom, referent), stars::MAX_COUNT);
+        assert_eq!(star_count(&dom, Some(referent)), stars::MAX_COUNT);
     }
 
     // The whole sky goes with `CelestialBodiesShown`, stars included.
@@ -280,7 +292,7 @@ mod tests {
     fn celestial_bodies_shown_off_hides_the_star_field_too() {
         let (dom, referent) = sky_with(&[("CelestialBodiesShown", Variant::Bool(false))]);
 
-        assert_eq!(star_count(&dom, referent), 0);
+        assert_eq!(star_count(&dom, Some(referent)), 0);
     }
 
     #[test]
