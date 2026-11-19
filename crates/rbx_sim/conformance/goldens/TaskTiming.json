@@ -1,0 +1,27 @@
+{
+  "passes": 5,
+  "result": {
+    "delay025_beats": 15.0,
+    "legacy_wait": 0.033,
+    "legacy_wait_beats": 2.0,
+    "wait0": 0.017,
+    "wait01": 0.1,
+    "wait01_beats": 6.0,
+    "wait05": 0.517,
+    "wait05_beats": 31.0,
+    "wait0_beats": 1.0
+  },
+  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
+  "spread": {
+    "delay025_beats": 0.0,
+    "legacy_wait": 0.0,
+    "legacy_wait_beats": 0.0,
+    "wait0": 0.0010000000000000009,
+    "wait01": 0.017999999999999988,
+    "wait01_beats": 1.0,
+    "wait05": 0.0010000000000000009,
+    "wait05_beats": 0.0,
+    "wait0_beats": 0.0
+  },
+  "status": "recorded"
+}

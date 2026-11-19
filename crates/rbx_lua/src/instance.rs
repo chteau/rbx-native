@@ -500,7 +500,7 @@ impl UserData for LuaInstance {
                             .dom_mut()
                             .set_name(this.referent, &text)
                             .map_err(|error| mlua::Error::runtime(error.to_string()))?;
-                        return Ok(());
+                        return crate::hooks::wrote(lua);
                     }
                     "ClassName" => {
                         return Err(mlua::Error::runtime(
@@ -533,12 +533,14 @@ impl UserData for LuaInstance {
                                 ));
                             }
                         }
-                        let mut dom = this.ctx.dom_mut();
-                        match target {
-                            Some(_) => dom.set_parent(this.referent, target),
-                            None => dom.unparent(this.referent),
+                        {
+                            let mut dom = this.ctx.dom_mut();
+                            match target {
+                                Some(_) => dom.set_parent(this.referent, target),
+                                None => dom.unparent(this.referent),
+                            }
                         }
-                        return Ok(());
+                        return crate::hooks::wrote(lua);
                     }
                     _ => {}
                 }
@@ -550,7 +552,7 @@ impl UserData for LuaInstance {
                     }
                 }
                 if property::set(&this.ctx, this.referent, &key, &value)? {
-                    return Ok(());
+                    return crate::hooks::wrote(lua);
                 }
                 Err(this.not_a_member(&key))
             },

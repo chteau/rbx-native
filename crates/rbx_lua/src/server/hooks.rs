@@ -2,18 +2,18 @@
 //! run-mode flags, `BasePart`'s touch signals, network ownership and
 //! impulses, `PhysicsService`'s collision groups.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
 use mlua::{Function, Lua, MultiValue, Result, Value};
 use rbx_dom::Ref;
 
-use super::Physics;
+use super::{fire_fresh, Physics};
 use crate::ctx::Ctx;
 use crate::datatypes::vector3::LuaVector3;
 use crate::engine::events::{self, instance_key};
-use crate::engine::signal::{LuaSignal, Owner, SignalKey};
+use crate::engine::signal::{deferred_signals, LuaSignal, Owner, SignalKey};
 use crate::engine::{collection, json};
 use crate::hooks::Hooks;
 
@@ -126,6 +126,7 @@ impl CollisionGroups {
 pub(super) struct ServerHooks {
     pub(super) physics: Rc<dyn Physics>,
     pub(super) groups: Rc<RefCell<CollisionGroups>>,
+    pub(super) fired: Rc<Cell<usize>>,
 }
 
 fn method<A, R>(lua: &Lua, f: impl Fn(&Lua, A) -> Result<R> + 'static) -> Result<Option<Value>>
@@ -263,6 +264,26 @@ impl ServerHooks {
     }
 }
 
+/// Game scripts can neither read nor write a property the API dump tags
+/// `NotScriptable` (`Workspace.SignalBehavior`): Roblox answers as if the
+/// member did not exist, which the SignalBehavior golden shows.
+fn not_scriptable(ctx: &Ctx, referent: Ref, class: &str, key: &str) -> Result<()> {
+    let hidden = ctx
+        .database()
+        .resolve_property(class, key)
+        .is_some_and(|p| p.tags.iter().any(|t| t == "NotScriptable"));
+    if !hidden {
+        return Ok(());
+    }
+    let name = ctx
+        .dom()
+        .get(referent)
+        .map_or_else(String::new, |i| i.name().to_owned());
+    Err(mlua::Error::runtime(format!(
+        "{key} is not a valid member of {class} \"{name}\""
+    )))
+}
+
 /// `WaitForChild(name, timeout?)`: the child when it is there, else the
 /// thread waits for a `ChildAdded` of that name, or `timeout` seconds and
 /// then `nil`. With no timeout, Roblox's "Infinite yield possible" warning
@@ -344,6 +365,7 @@ impl Hooks for ServerHooks {
         if key == "WaitForChild" {
             return wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }
+        not_scriptable(ctx, referent, class, key)?;
         let db = ctx.database();
         match class {
             "RunService" => self.run_service(lua, key),
@@ -364,6 +386,7 @@ impl Hooks for ServerHooks {
         key: &str,
         value: &Value,
     ) -> Result<bool> {
+        not_scriptable(ctx, referent, class, key)?;
         events::new_index(lua, ctx, referent, class, key, value)
     }
 
@@ -373,5 +396,15 @@ impl Hooks for ServerHooks {
 
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
         events::game_member(lua, key)
+    }
+
+    /// Outside `Deferred` signal behaviour, a write's events run before the
+    /// write returns, as on a real server (the SignalBehavior golden:
+    /// `Changed` runs ahead of the line after `value.Value = 1`).
+    fn after_write(&self, lua: &Lua) -> Result<()> {
+        if !deferred_signals(lua) {
+            fire_fresh(lua, &self.fired)?;
+        }
+        Ok(())
     }
 }

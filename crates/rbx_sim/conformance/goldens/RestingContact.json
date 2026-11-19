@@ -1,0 +1,17 @@
+{
+  "passes": 5,
+  "result": {
+    "dropped_dy": -0.0101,
+    "dropped_speed": 0.0,
+    "placed_dy": -0.0062,
+    "placed_speed": 0.0
+  },
+  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
+  "spread": {
+    "dropped_dy": 0.0,
+    "dropped_speed": 0.0,
+    "placed_dy": 0.0,
+    "placed_speed": 0.0
+  },
+  "status": "recorded"
+}

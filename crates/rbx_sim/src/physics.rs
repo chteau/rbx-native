@@ -169,6 +169,8 @@ pub struct World {
     /// it touches physics.
     joints: HashSet<Ref>,
     shared: Rc<RefCell<Shared>>,
+    /// Built since the last step, so no contact is known yet.
+    fresh: bool,
     events: Events,
 }
 
@@ -196,6 +198,7 @@ impl World {
             assemblies: Vec::new(),
             joints: HashSet::new(),
             shared,
+            fresh: true,
             events: Events::default(),
         }
     }
@@ -384,10 +387,46 @@ impl World {
         }
     }
 
+    /// Whether any of `assembly`'s parts is in contact with something.
+    fn in_contact(&self, assembly: &Assembly) -> bool {
+        let Some(body) = self.bodies.get(assembly.body) else {
+            return false;
+        };
+        body.colliders().iter().any(|&collider| {
+            self.narrow
+                .contact_pairs_with(collider)
+                .any(|pair| pair.has_any_active_contact())
+        })
+    }
+
     /// One frame of physics: `steps` solver steps of 1/240 s under
     /// `gravity` (studs/s², down), with the impulses scripts queued applied
     /// first. Returns the touches that began or ended.
-    pub fn step(&mut self, gravity: f64, steps: u32) -> Vec<Touch> {
+    ///
+    /// `adaptive` is Roblox's adaptive timestepping, which puts "easy"
+    /// assemblies on a 60 Hz island and hard ones on 240 Hz (its docs keep
+    /// the criteria to themselves). Ours: an assembly touching nothing
+    /// moves in one 60 Hz step a frame (gravity for the whole frame up
+    /// front, then the four substeps coast), anything in contact at 240 Hz.
+    /// The `FreeFall` golden is what this matches.
+    pub fn step(&mut self, gravity: f64, steps: u32, adaptive: bool) -> Vec<Touch> {
+        // A world just built has no contacts yet: everything takes 240 Hz once.
+        let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
+        let frame = Vector::new(0.0, -gravity as Real, 0.0) * (steps as Real * self.params.dt);
+        let free: Vec<(RigidBodyHandle, bool)> = self
+            .assemblies
+            .iter()
+            .filter(|a| !a.anchored)
+            .map(|a| (a.body, adaptive && !self.in_contact(a)))
+            .collect();
+        for (handle, free) in free {
+            if let Some(body) = self.bodies.get_mut(handle) {
+                body.set_gravity_scale(if free { 0.0 } else { 1.0 }, false);
+                if free && !body.is_sleeping() {
+                    body.set_linvel(body.linvel() + frame, false);
+                }
+            }
+        }
         let impulses = std::mem::take(&mut self.shared.borrow_mut().impulses);
         for (part, impulse, angular) in impulses {
             let Some(placed) = self.parts.get(&part) else {

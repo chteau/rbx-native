@@ -1,0 +1,11 @@
+{
+  "passes": 5,
+  "result": {
+    "behavior": "unreadable",
+    "connection_order": "C W B A after",
+    "order": "handler after_fire changed after_set beat"
+  },
+  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}

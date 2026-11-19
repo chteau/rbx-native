@@ -1,0 +1,17 @@
+{
+  "passes": 5,
+  "result": {
+    "distance": 3.234,
+    "drift_z": 0.0,
+    "speed_15": 5.286,
+    "stopped_beat": 21.0
+  },
+  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
+  "spread": {
+    "distance": 0.0,
+    "drift_z": 0.0,
+    "speed_15": 0.0,
+    "stopped_beat": 0.0
+  },
+  "status": "recorded"
+}

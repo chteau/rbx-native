@@ -8,7 +8,7 @@ use rbx_lua::server::{Event, ServerVm};
 use rbx_lua::Output;
 use rbx_reflection::ReflectionDatabase;
 
-use crate::physics::{Bridge, Shared, World, PHYSICS_HZ};
+use crate::physics::{Bridge, Shared, Touch, World, PHYSICS_HZ};
 use crate::scripts;
 
 /// Frames a second, Roblox's server rate.
@@ -111,10 +111,11 @@ impl Simulation {
         }
     }
 
-    /// One frame, in the order Roblox's server runs it (see `PLAN.md`):
-    /// `PreAnimation`, `PreSimulation`/`Stepped`, physics, touch events,
-    /// `PostSimulation`, `Heartbeat`, then the threads whose wait is over
-    /// and the deferred queue.
+    /// One frame, in the order a real server runs it (the RunServiceOrder
+    /// golden): `PreAnimation`, `Stepped`, `PreSimulation`, physics,
+    /// `PostSimulation`, the threads whose wait is over (`task.wait`,
+    /// `task.delay`), `Heartbeat`, the step's `Touched`/`TouchEnded`
+    /// (after `Heartbeat`: the TouchedOrder golden), the deferred queue.
     pub fn step(&mut self) {
         let dt = 1.0 / FRAME_HZ;
         let started = self.time();
@@ -123,44 +124,49 @@ impl Simulation {
         self.vm.set_time(now);
 
         self.fire(Event::RunService("PreAnimation", vec![dt]));
-        self.fire(Event::RunService("PreSimulation", vec![dt]));
         self.fire(Event::RunService("Stepped", vec![started, dt]));
+        self.fire(Event::RunService("PreSimulation", vec![dt]));
 
-        self.physics_step();
+        let touches = self.physics_step();
 
         self.fire(Event::RunService("PostSimulation", vec![dt]));
+        self.resume();
         self.fire(Event::RunService("Heartbeat", vec![dt]));
-        let changes = self.vm.resume();
-        self.apply(changes);
+        self.fire_touches(touches);
+        self.resume();
         self.collect_output();
     }
 
-    fn physics_step(&mut self) {
+    fn resume(&mut self) {
+        let changes = self.vm.resume();
+        self.apply(changes);
+    }
+
+    fn physics_step(&mut self) -> Vec<Touch> {
         if self.dirty {
             self.rebuild();
         }
         let (gravity, fallen_height) = self.workspace_numbers();
         let steps = (PHYSICS_HZ / FRAME_HZ).round() as u32;
-        let touches = self.world.step(gravity, steps);
+        let touches = self.world.step(gravity, steps, self.adaptive_stepping());
         self.world.write_back(&mut self.dom.borrow_mut(), self.db);
-        for touch in touches {
-            let (event_ab, event_ba) = if touch.began {
-                (
-                    Event::Touched { part: touch.a, other: touch.b },
-                    Event::Touched { part: touch.b, other: touch.a },
-                )
-            } else {
-                (
-                    Event::TouchEnded { part: touch.a, other: touch.b },
-                    Event::TouchEnded { part: touch.b, other: touch.a },
-                )
-            };
-            self.fire(event_ab);
-            self.fire(event_ba);
-        }
         for part in self.world.fallen(fallen_height) {
             let changes = self.vm.destroy(part);
             self.apply(changes);
+        }
+        touches
+    }
+
+    /// `Touched`/`TouchEnded` for both parts of each touch.
+    fn fire_touches(&mut self, touches: Vec<Touch>) {
+        for touch in touches {
+            for (part, other) in [(touch.a, touch.b), (touch.b, touch.a)] {
+                self.fire(if touch.began {
+                    Event::Touched { part, other }
+                } else {
+                    Event::TouchEnded { part, other }
+                });
+            }
         }
     }
 
@@ -174,6 +180,21 @@ impl Simulation {
         self.world
             .rebuild(&self.dom.borrow(), self.db, &groups.borrow());
         self.dirty = false;
+    }
+
+    /// `Workspace.PhysicsSteppingMethod`: only `Fixed` keeps everything
+    /// at 240 Hz; `Default` stepped adaptively on the server we recorded.
+    fn adaptive_stepping(&self) -> bool {
+        const FIXED: u32 = 1;
+        let dom = self.dom.borrow();
+        let method = dom
+            .root_refs()
+            .iter()
+            .filter_map(|r| dom.get(*r))
+            .find(|i| i.class() == "Workspace")
+            .and_then(|w| self.db.stored_or_default(w, "PhysicsSteppingMethod"))
+            .map(|(_, v)| v.clone());
+        !matches!(method, Some(Variant::Enum(FIXED)))
     }
 
     fn workspace_numbers(&self) -> (f64, f64) {

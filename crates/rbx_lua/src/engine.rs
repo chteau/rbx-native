@@ -41,6 +41,12 @@ pub(crate) trait Host {
         false
     }
 
+    /// Whether a signal calls its newest connection first, as a real
+    /// server does with immediate signals (`Wait`s count as connections).
+    fn newest_first(&self) -> bool {
+        false
+    }
+
     /// A fresh id, for an await and for anything else the host numbers.
     fn next_id(&self) -> u32;
 

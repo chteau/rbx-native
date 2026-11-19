@@ -1,0 +1,9 @@
+{
+  "passes": 5,
+  "result": {
+    "order": "| Heartbeat defer PreAnimation Stepped PreSimulation PostSimulation task.wait delay0 beat1 Heartbeat PreAnimation Stepped PreSimulation PostSimulation beat2"
+  },
+  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}

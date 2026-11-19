@@ -16,3 +16,10 @@ rbx_lua = { path = "../rbx_lua" }
 rapier3d = "0.36"
 rbx_materials = { path = "../rbx_materials" }
 serde_json = "1"
+
+[dev-dependencies]
+# examples/record_goldens.rs: publish the suite over the sandbox place,
+# join it with the real client and read results back through the Play probe.
+rbx_play = { path = "../rbx_play" }
+rbx_cloud = { path = "../rbx_cloud" }
+ureq = "3"

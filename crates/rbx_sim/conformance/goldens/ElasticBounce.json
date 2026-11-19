@@ -1,0 +1,15 @@
+{
+  "passes": 5,
+  "result": {
+    "first_bounce_beat": 27.0,
+    "peak_1": 4.867,
+    "peak_2": 1.317
+  },
+  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
+  "spread": {
+    "first_bounce_beat": 0.0,
+    "peak_1": 0.0,
+    "peak_2": 0.0
+  },
+  "status": "recorded"
+}

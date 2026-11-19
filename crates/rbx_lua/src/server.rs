@@ -39,6 +39,13 @@ pub use hooks::CollisionGroups;
 /// Roblox's message for a script that ran too long without yielding.
 const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
 
+const LEGACY_WAIT: &str = r#"
+local wait = ...
+return function(seconds)
+    return wait(math.max(tonumber(seconds) or 0, 0.03))
+end
+"#;
+
 /// How many times one call fires the changes event handlers made in turn.
 const ROUNDS: usize = 8;
 
@@ -83,6 +90,12 @@ impl Host for ServerHost {
         true
     }
 
+    /// The SignalBehavior golden: A, B connected, then a `Wait` W, then C,
+    /// fire as `C W B A`.
+    fn newest_first(&self) -> bool {
+        true
+    }
+
     fn next_id(&self) -> u32 {
         self.next_id.set(self.next_id.get() + 1);
         self.next_id.get()
@@ -102,6 +115,8 @@ pub struct ServerVm {
     groups: Rc<RefCell<CollisionGroups>>,
     /// Scripts already started, so a script is never run twice.
     started: RefCell<BTreeSet<Ref>>,
+    /// How much of the DOM's change log has had its events fired.
+    fired: Rc<Cell<usize>>,
     budget: Duration,
 }
 
@@ -122,9 +137,11 @@ impl ServerVm {
         let lua = Lua::new();
         // See `Runtime::build`: DOM-backed globals must not be import-cached.
         lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
+        let fired = Rc::new(Cell::new(0));
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
             groups: groups.clone(),
+            fired: fired.clone(),
         })));
         install_globals(&lua, &ctx)?;
         lua.globals().set(
@@ -133,6 +150,14 @@ impl ServerVm {
         )?;
         engine::install(&lua, Engine::new(ctx, host.clone()))?;
         install_require(&lua)?;
+        // The legacy `wait` never takes less than two 60 Hz frames on a
+        // real server (the TaskTiming golden: `wait()` = 2 heartbeats,
+        // 0.033 s); `task.wait` has no such floor.
+        let legacy: mlua::Function = lua
+            .load(LEGACY_WAIT)
+            .set_name("=wait")
+            .call(lua.globals().get::<Table>("task")?.get::<mlua::Function>("wait")?)?;
+        lua.globals().set("wait", legacy)?;
         lua.sandbox(true)?;
         install_shared(&lua)?;
         Ok(ServerVm {
@@ -142,6 +167,7 @@ impl ServerVm {
             host,
             groups,
             started: RefCell::default(),
+            fired,
             budget: Duration::from_secs(10),
         })
     }
@@ -280,29 +306,45 @@ impl ServerVm {
                 Ok(VmState::Continue)
             }
         });
-        let mut seen = self.dom.borrow().changes().len();
+        self.fired.set(self.dom.borrow().changes().len());
         let mut ran = f(&self.lua);
         for _ in 0..ROUNDS {
-            if ran.is_err() {
-                break;
+            match ran {
+                Ok(()) => {}
+                Err(_) => break,
             }
-            let (fresh, first) = {
-                let dom = self.dom.borrow();
-                let fresh = dom.changes()[seen..].to_vec();
-                seen += fresh.len();
-                let first = first_number(&dom, fresh.len());
-                (fresh, first)
-            };
-            if fresh.is_empty() {
-                break;
+            match fire_fresh(&self.lua, &self.fired) {
+                Ok(true) => {}
+                Ok(false) => break,
+                Err(error) => ran = Err(error),
             }
-            ran = fire_changes(&self.lua, &fresh, Some(first));
         }
         engine(&self.lua).signals.borrow_mut().settle();
         self.lua.remove_interrupt();
         if let Err(error) = ran {
             self.host.output(LineKind::Error, error.to_string());
         }
+        self.fired.set(0);
         self.dom.borrow_mut().take_changes()
     }
+}
+
+/// Fires the instance events for the changes logged past `fired`, and
+/// moves `fired` past them first, so a handler's own writes fire after.
+/// `false` when there was nothing new.
+fn fire_fresh(lua: &Lua, fired: &Cell<usize>) -> mlua::Result<bool> {
+    let ctx = engine(lua).ctx.clone();
+    let (fresh, first) = {
+        let dom = ctx.dom();
+        let all = dom.changes();
+        let fresh = all[fired.get().min(all.len())..].to_vec();
+        fired.set(all.len());
+        let first = first_number(&dom, fresh.len());
+        (fresh, first)
+    };
+    if fresh.is_empty() {
+        return Ok(false);
+    }
+    fire_changes(lua, &fresh, Some(first))?;
+    Ok(true)
 }

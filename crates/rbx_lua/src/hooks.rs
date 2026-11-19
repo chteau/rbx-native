@@ -47,6 +47,20 @@ pub(crate) trait Hooks {
     fn game_member(&self, _lua: &Lua, _key: &str) -> Result<Option<Value>> {
         Ok(None)
     }
+
+    /// Told after a script's `Name`, `Parent` or property write went
+    /// through (a running server fires that write's events right away).
+    fn after_write(&self, _lua: &Lua) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// [`Hooks::after_write`] of the VM's hooks, if it has any.
+pub(crate) fn wrote(lua: &Lua) -> Result<()> {
+    match hooks(lua) {
+        Some(hooks) => hooks.after_write(lua),
+        None => Ok(()),
+    }
 }
 
 /// The app-data slot a VM's hooks live in.

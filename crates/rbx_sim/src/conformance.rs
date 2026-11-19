@@ -24,6 +24,12 @@ pub const RUNNER: &str = "ConformanceRunner";
 /// past its start-up hitches.
 const SETTLE: f64 = 3.0;
 
+/// Passes over the suite in one run. Roblox isn't deterministic (the
+/// first pass on a fresh server also starts from a different point in the
+/// frame), so goldens keep the median and the spread, and rbx_sim runs the
+/// same passes to compare like for like.
+pub const PASSES: u32 = 5;
+
 pub struct Test {
     pub name: &'static str,
     pub source: &'static str,
@@ -83,20 +89,23 @@ pub const TESTS: &[Test] = &[
     },
 ];
 
-/// The runner `Script`: each test in turn, in a corner of its own.
-pub fn runner_source() -> String {
+/// The runner `Script`: each test in turn, in a corner of its own, the
+/// whole suite `runs` times over.
+pub fn runner_source(runs: u32) -> String {
     let names: Vec<String> = TESTS.iter().map(|t| format!("\"{}\"", t.name)).collect();
     format!(
         r#"local HttpService = game:GetService("HttpService")
 local tests = script.Parent:WaitForChild("{FOLDER}")
 local h = require(tests:WaitForChild("Harness"))
 task.wait({SETTLE})
-for i, name in {{ {names} }} do
-	local ok, result = pcall(require(tests:WaitForChild(name)), h, Vector3.new(2000 + i * 300, 300, 2000))
-	if not ok then
-		result = {{ error = tostring(result) }}
+for _ = 1, {runs} do
+	for i, name in {{ {names} }} do
+		local ok, result = pcall(require(tests:WaitForChild(name)), h, Vector3.new(2000 + i * 300, 300, 2000))
+		if not ok then
+			result = {{ error = tostring(result) }}
+		end
+		print("{PREFIX}" .. name .. " " .. HttpService:JSONEncode(result))
 	end
-	print("{PREFIX}" .. name .. " " .. HttpService:JSONEncode(result))
 end
 print("{DONE}")
 "#,
@@ -117,8 +126,9 @@ fn service(dom: &mut WeakDom, class: &str) -> Ref {
     found.unwrap_or_else(|| dom.new_instance(class, class, None))
 }
 
-/// Adds the tests and the runner to `ServerScriptService` in `dom`.
-pub fn add_to(dom: &mut WeakDom) {
+/// Adds the tests and a runner doing `runs` passes to
+/// `ServerScriptService` in `dom`.
+pub fn add_to(dom: &mut WeakDom, runs: u32) {
     let sss = service(dom, "ServerScriptService");
     let folder = child(dom, "Folder", FOLDER, sss);
     let modules = std::iter::once(("Harness", HARNESS)).chain(TESTS.iter().map(|t| (t.name, t.source)));
@@ -127,7 +137,7 @@ pub fn add_to(dom: &mut WeakDom) {
         let _ = dom.set_property(module, "Source", Variant::String(source.into()));
     }
     let runner = child(dom, "Script", RUNNER, sss);
-    let _ = dom.set_property(runner, "Source", Variant::String(runner_source()));
+    let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs)));
 }
 
 /// A bare place with the suite: a baseplate, a spawn, the tests.
@@ -157,25 +167,71 @@ pub fn place() -> WeakDom {
             rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         }),
     );
-    add_to(&mut dom);
+    add_to(&mut dom, PASSES);
     dom.take_changes();
     dom
 }
 
-/// The results in `lines` (a runner's output), by test name.
-pub fn parse(lines: &[String]) -> BTreeMap<String, Value> {
-    lines
-        .iter()
-        .filter_map(|line| {
-            let rest = line.strip_prefix(PREFIX)?;
-            let (name, json) = rest.split_once(' ')?;
-            Some((name.to_owned(), serde_json::from_str(json).ok()?))
-        })
-        .collect()
+/// The results in `lines` (a runner's output), by test name, one per pass.
+pub fn parse(lines: &[String]) -> BTreeMap<String, Vec<Value>> {
+    let mut out: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for line in lines {
+        let Some((name, json)) = line.strip_prefix(PREFIX).and_then(|r| r.split_once(' ')) else {
+            continue;
+        };
+        if let Ok(value) = serde_json::from_str(json) {
+            out.entry(name.to_owned()).or_default().push(value);
+        }
+    }
+    out
 }
 
-/// Runs the suite in [`Simulation`]; `Err` with what it printed when the
-/// runner never finished within `limit` seconds of game time.
+/// Several passes of one test folded into one result and its spread: a
+/// number field is the median, its spread `max - min`; a text field is the
+/// most common value, its spread every distinct value when they differ.
+pub fn aggregate(passes: &[Value]) -> (Value, Value) {
+    let mut fields: Vec<&String> = passes
+        .iter()
+        .filter_map(Value::as_object)
+        .flat_map(|o| o.keys())
+        .collect();
+    fields.sort();
+    fields.dedup();
+    let (mut result, mut spread) = (serde_json::Map::new(), serde_json::Map::new());
+    for field in fields {
+        let values: Vec<&Value> = passes.iter().filter_map(|p| p.get(field)).collect();
+        let mut numbers: Vec<f64> = values.iter().filter_map(|v| v.as_f64()).collect();
+        if numbers.len() == values.len() && !numbers.is_empty() {
+            numbers.sort_by(f64::total_cmp);
+            let median = numbers[numbers.len() / 2];
+            let range = numbers[numbers.len() - 1] - numbers[0];
+            result.insert(field.clone(), serde_json::json!(median));
+            spread.insert(field.clone(), serde_json::json!(range));
+            continue;
+        }
+        let mut counts: Vec<(&Value, usize)> = Vec::new();
+        for value in &values {
+            match counts.iter_mut().find(|(v, _)| v == value) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((value, 1)),
+            }
+        }
+        counts.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        if let Some((common, _)) = counts.first() {
+            result.insert(field.clone(), (*common).clone());
+        }
+        if counts.len() > 1 {
+            let seen = counts.iter().map(|(v, _)| (*v).clone()).collect();
+            spread.insert(field.clone(), Value::Array(seen));
+        }
+    }
+    (Value::Object(result), Value::Object(spread))
+}
+
+
+/// Runs the suite in [`Simulation`], [`PASSES`] times like the goldens,
+/// and folds the passes the same way ([`aggregate`]); `Err` with what it
+/// printed when the runner never finished within `limit` s of game time.
 pub fn run_in_sim(limit: f64) -> Result<BTreeMap<String, Value>, String> {
     let mut sim = Simulation::new(place())?;
     sim.start();
@@ -185,7 +241,10 @@ pub fn run_in_sim(limit: f64) -> Result<BTreeMap<String, Value>, String> {
         let output = sim.take_output();
         lines.extend(output.lines().iter().cloned());
         if lines.iter().any(|l| l == DONE) {
-            return Ok(parse(&lines));
+            return Ok(parse(&lines)
+                .into_iter()
+                .map(|(name, passes)| (name, aggregate(&passes).0))
+                .collect());
         }
     }
     Err(format!("the runner never finished; it printed:\n{}", lines.join("\n")))
@@ -221,8 +280,10 @@ fn show(value: Option<&Value>) -> String {
     }
 }
 
-/// Field by field, every field either side has.
-pub fn compare(test: &Test, golden: &Value, ours: &Value) -> Vec<Row> {
+/// Field by field, every field either side has. A number passes inside the
+/// test's tolerance or Roblox's own spread across passes, whichever is
+/// wider; text must match.
+pub fn compare(test: &Test, golden: &Value, spread: &Value, ours: &Value) -> Vec<Row> {
     let empty = serde_json::Map::new();
     let golden = golden.as_object().unwrap_or(&empty);
     let ours = ours.as_object().unwrap_or(&empty);
@@ -238,7 +299,10 @@ pub fn compare(test: &Test, golden: &Value, ours: &Value) -> Vec<Row> {
                 _ => None,
             };
             let pass = match delta {
-                Some(d) => d.abs() <= test.tolerance_of(field) + 1e-9,
+                Some(d) => {
+                    let noise = spread.get(field).and_then(Value::as_f64).unwrap_or(0.0);
+                    d.abs() <= test.tolerance_of(field).max(noise) + 1e-9
+                }
                 None => g.is_some() && g == o,
             };
             Row {

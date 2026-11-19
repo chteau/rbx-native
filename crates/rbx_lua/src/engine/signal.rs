@@ -273,7 +273,7 @@ pub(crate) fn fire_from_script(lua: &Lua, key: &SignalKey, args: MultiValue) -> 
     Ok(())
 }
 
-fn deferred_signals(lua: &Lua) -> bool {
+pub(crate) fn deferred_signals(lua: &Lua) -> bool {
     const DEFERRED: u32 = 2;
     let ctx = engine(lua).ctx.clone();
     let dom = ctx.dom();
@@ -320,11 +320,14 @@ fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<Functi
     let Some(list) = signals.connections.get_mut(key) else {
         return Vec::new();
     };
-    let funcs = list
+    let mut funcs: Vec<Function> = list
         .iter()
         .filter(|c| hears(c))
         .map(|c| c.func.clone())
         .collect();
+    if engine.host.newest_first() {
+        funcs.reverse();
+    }
     list.retain(|c| !(c.once && hears(c)));
     if list.is_empty() {
         signals.connections.remove(key);
