@@ -15,13 +15,13 @@ use crate::physics::part::PartData;
 use crate::physics::pose_of;
 
 /// A hit at time of impact zero is a start inside, not a hit.
-const EPSILON: f32 = 1e-6;
+const EPSILON: Real = 1e-6;
 
 pub(crate) struct Entry {
     pub(crate) referent: Ref,
     pub(crate) shape: SharedShape,
     pub(crate) pose: Pose,
-    pub(crate) size: [f32; 3],
+    pub(crate) size: [Real; 3],
     pub(crate) can_query: bool,
     pub(crate) can_collide: bool,
     pub(crate) group: String,
@@ -39,11 +39,11 @@ pub struct Spatial {
 }
 
 fn to_vec(v: [f64; 3]) -> Vector {
-    Vector::new(v[0] as f32, v[1] as f32, v[2] as f32)
+    Vector::new(v[0], v[1], v[2])
 }
 
 fn to_array(v: Vector) -> [f64; 3] {
-    [f64::from(v.x), f64::from(v.y), f64::from(v.z)]
+    v.to_array()
 }
 
 fn allowed(
@@ -98,7 +98,7 @@ impl Spatial {
                         referent: part.referent,
                         shape: part.shape_collider().build().shared_shape().clone(),
                         pose: pose_of(&part.cframe),
-                        size: [part.size.x, part.size.y, part.size.z],
+                        size: [part.size.x, part.size.y, part.size.z].map(Real::from),
                         can_query: part.can_query,
                         can_collide: part.can_collide,
                         group: part.collision_group,
@@ -123,7 +123,7 @@ impl Spatial {
                 let half = to_vec(*size) / 2.0;
                 Some((SharedShape::cuboid(half.x, half.y, half.z), None))
             }
-            QueryShape::Ball(radius) => Some((SharedShape::ball(*radius as f32), None)),
+            QueryShape::Ball(radius) => Some((SharedShape::ball(*radius), None)),
             QueryShape::Part(part) => self.entry(*part).map(|e| (e.shape.clone(), Some(*part))),
         }
     }
@@ -141,7 +141,7 @@ impl Spatial {
             return None;
         }
         let ray = Ray::new(origin, dir);
-        let mut best: Option<(f32, Vector, Ref)> = None;
+        let mut best: Option<(Real, Vector, Ref)> = None;
         for entry in self
             .entries
             .iter()
@@ -161,7 +161,7 @@ impl Spatial {
             part,
             position: to_array(origin + dir * toi),
             normal: to_array(normal),
-            distance: f64::from(toi) * f64::from(length),
+            distance: toi * length,
         })
     }
 
@@ -187,7 +187,7 @@ impl Spatial {
             stop_at_penetration: false,
             compute_impact_geometry_on_penetration: true,
         };
-        let mut best: Option<(f32, Vector, Vector, Ref)> = None;
+        let mut best: Option<(Real, Vector, Vector, Ref)> = None;
         for entry in self
             .entries
             .iter()
@@ -225,7 +225,7 @@ impl Spatial {
             part,
             position: to_array(position),
             normal: to_array(normal),
-            distance: f64::from(toi) * f64::from(length),
+            distance: toi * length,
         })
     }
 
@@ -276,7 +276,7 @@ mod tests {
 
     static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
-    fn block(at: [f32; 3], size: [f32; 3]) -> Entry {
+    fn block(at: [Real; 3], size: [Real; 3]) -> Entry {
         Entry {
             referent: Ref::new(NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)),
             shape: SharedShape::cuboid(size[0] / 2.0, size[1] / 2.0, size[2] / 2.0),

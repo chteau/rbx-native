@@ -14,7 +14,7 @@ fn matches_the_recorded_goldens() {
             continue;
         };
         let mine = ours.get(test.name).cloned().unwrap_or_default();
-        let rows = conformance::compare(test, &golden["result"], &golden["spread"], &mine);
+        let rows = conformance::compare(test, &golden, &mine);
         let off: Vec<String> = rows
             .iter()
             .filter(|r| !r.pass)

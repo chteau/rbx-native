@@ -375,6 +375,7 @@ impl Hooks for ServerHooks {
             "RunService" => self.run_service(lua, key),
             "PhysicsService" => self.physics_service(lua, key),
             "HttpService" => http_member(lua, key),
+            "AssetService" => super::meshes::member(lua, ctx, &self.physics, key),
             "CollectionService" => collection::member(lua, key),
             _ if db.is_subclass_of(class, "BasePart") => self.base_part(lua, referent, key),
             _ => Ok(None),

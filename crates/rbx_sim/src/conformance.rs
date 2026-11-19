@@ -101,7 +101,10 @@ pub const TESTS: &[Test] = &[
     Test {
         name: "WaitRounding",
         source: include_str!("../conformance/tests/WaitRounding.luau"),
-        tolerance: &[("*", 0.0)],
+        // Beat counts are integers, so exact; the elapsed times differ in
+        // the 4th decimal: the server's frames sum to 2.01658 s over 121
+        // beats (`_dt_task2`), a hair under 1/60 s each.
+        tolerance: &[("*", 0.0002)],
     },
     Test {
         name: "Raycast",
@@ -420,6 +423,8 @@ pub struct Row {
     /// `ours - golden` for numbers.
     pub delta: Option<f64>,
     pub pass: bool,
+    /// Passed only against this one recorded pass (1-based), not the median.
+    pub matched_pass: Option<usize>,
 }
 
 fn show(value: Option<&Value>) -> String {
@@ -433,9 +438,15 @@ fn show(value: Option<&Value>) -> String {
 /// Field by field, every field either side has. A number passes inside the
 /// test's tolerance or Roblox's own spread across passes, whichever is
 /// wider; text must match.
-pub fn compare(test: &Test, golden: &Value, spread: &Value, ours: &Value) -> Vec<Row> {
+/// Compares `ours` with a golden file (`result`, `spread`, `raw` passes).
+pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
     let empty = serde_json::Map::new();
-    let golden = golden.as_object().unwrap_or(&empty);
+    let golden = file["result"].as_object().unwrap_or(&empty);
+    let spread = &file["spread"];
+    let raw = file["raw"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     let ours = ours.as_object().unwrap_or(&empty);
     // `_` fields are traces for working things out, not results.
     let mut fields: Vec<&String> = golden
@@ -453,12 +464,37 @@ pub fn compare(test: &Test, golden: &Value, spread: &Value, ours: &Value) -> Vec
                 (Some(g), Some(o)) => Some(o - g),
                 _ => None,
             };
+            let tolerance = test.tolerance_of(field);
+            // The pass (1-based) ours is within tolerance of, when the
+            // median check fails.
+            let near_pass = || {
+                let o = o.and_then(Value::as_f64)?;
+                raw.iter()
+                    .position(|pass| {
+                        pass[field]
+                            .as_f64()
+                            .is_some_and(|p| (o - p).abs() <= tolerance + 1e-9)
+                    })
+                    .map(|i| i + 1)
+            };
+            let mut matched_pass = None;
             let pass = match delta {
                 Some(d) => {
                     let noise = spread.get(field).and_then(Value::as_f64).unwrap_or(0.0);
-                    d.abs() <= test.tolerance_of(field).max(noise) + 1e-9
+                    d.abs() <= tolerance.max(noise) + 1e-9 || {
+                        matched_pass = near_pass();
+                        matched_pass.is_some()
+                    }
                 }
-                None => g.is_some() && g == o,
+                // Text matches the common value or any a pass printed.
+                None => {
+                    g.is_some()
+                        && (g == o
+                            || spread
+                                .get(field)
+                                .and_then(Value::as_array)
+                                .is_some_and(|seen| o.is_some_and(|o| seen.contains(o))))
+                }
             };
             Row {
                 test: test.name.to_owned(),
@@ -467,6 +503,7 @@ pub fn compare(test: &Test, golden: &Value, spread: &Value, ours: &Value) -> Vec
                 ours: show(o),
                 delta,
                 pass,
+                matched_pass,
             }
         })
         .collect()

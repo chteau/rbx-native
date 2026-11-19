@@ -52,5 +52,6 @@
     "y_15": 0.07000000000000028,
     "y_30": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "The pendulum's swing matches at 15 frames and its angle and X at 30, but Y at 30 frames is 0.14 stud short: Roblox's hinge is slightly soft (its BallSocket bob drifts to 4.03 studs from a 4 stud arm), Rapier's joint is rigid."
 }

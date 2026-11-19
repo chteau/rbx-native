@@ -376,7 +376,7 @@ pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
     let engine = engine(lua);
     engine.host.set_now(now);
     let frame_clock = engine.host.frame_clock();
-    let (mut due, deferred) = {
+    let mut due = {
         let mut scheduler = engine.scheduler.borrow_mut();
         let (due, rest): (Vec<_>, Vec<_>) = scheduler
             .timers
@@ -392,8 +392,7 @@ pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
                 }
             });
         scheduler.timers = rest;
-        let deferred: Vec<_> = scheduler.deferred.drain(..).collect();
-        (due, deferred)
+        due
     };
     due.sort_by(|a, b| a.0.total_cmp(&b.0));
     for (_, id, started) in due {
@@ -427,7 +426,14 @@ pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
             )?,
         }
     }
-    let mut deferred = deferred;
+    run_deferred(lua)
+}
+
+/// Runs the deferred queue (`task.defer`, deferred signal handlers),
+/// including what those calls defer, up to `DEFER_ROUNDS` rounds.
+pub(crate) fn run_deferred(lua: &Lua) -> Result<()> {
+    let engine = engine(lua);
+    let mut deferred: Vec<_> = engine.scheduler.borrow_mut().deferred.drain(..).collect();
     for _ in 0..DEFER_ROUNDS {
         if deferred.is_empty() {
             break;

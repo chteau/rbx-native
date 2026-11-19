@@ -38,5 +38,6 @@
     "vx_30": 0.08300000000000018,
     "x_30": 0.08400000000000007
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "Roblox's block gets one more frame of push than 30 frames give (vx 10.167 on the clean passes, 10.25 on the others, where 20 stud/s squared for 0.5 s is 10.0). Ours applies the force for exactly the 30 frames. Where the extra frame comes from (the frame the mover is created in) isn't pinned down yet."
 }

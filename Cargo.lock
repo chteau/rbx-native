@@ -6097,10 +6097,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "parry3d"
+name = "parry3d-f64"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b626edc0b497dba4bdf6e1e0797895294ed9f61dac2bd28cb5d34d37ad2ca7e"
+checksum = "ffb9e04261f1783d8f66f36767b2b73132a63c9b30b12a5ed47e1faa240f7591"
 dependencies = [
  "approx",
  "arrayvec",
@@ -6120,7 +6120,6 @@ dependencies = [
  "slab",
  "smallvec",
  "spade",
- "static_assertions",
  "thiserror 2.0.20",
 ]
 
@@ -6850,10 +6849,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a611d15b50743feb4c76b7d03edcb0e64f399c26961e4efe6975bc398be6aa3d"
 
 [[package]]
-name = "rapier3d"
+name = "rapier3d-f64"
 version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "033e2edc815d61ab97bd74ed5d1cbea5ebe575218774a7cfedbd3551f0033317"
+checksum = "f4588855e9c5451702147b5c6ddff4d93887f1e59c9504b6ac3571818f6ec3d2"
 dependencies = [
  "approx",
  "arrayvec",
@@ -6862,13 +6861,12 @@ dependencies = [
  "log",
  "nalgebra",
  "num-traits",
- "parry3d",
+ "parry3d-f64",
  "profiling",
  "serde",
  "simba",
  "static_assertions",
  "thiserror 2.0.20",
- "wide",
 ]
 
 [[package]]
@@ -7230,12 +7228,14 @@ dependencies = [
 name = "rbx_sim"
 version = "0.1.0"
 dependencies = [
- "rapier3d",
+ "rapier3d-f64",
+ "rbx_assets",
  "rbx_binary",
  "rbx_cloud",
  "rbx_dom",
  "rbx_lua",
  "rbx_materials",
+ "rbx_mesh",
  "rbx_play",
  "rbx_reflection",
  "rbx_xml",

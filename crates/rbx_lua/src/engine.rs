@@ -47,6 +47,12 @@ pub(crate) trait Host {
         false
     }
 
+    /// Whether `SignalBehavior` `Default` means `Deferred` here (live
+    /// servers since late 2026; Studio's edit runtime keeps `Immediate`).
+    fn default_deferred(&self) -> bool {
+        false
+    }
+
     /// A fresh id, for an await and for anything else the host numbers.
     fn next_id(&self) -> u32;
 

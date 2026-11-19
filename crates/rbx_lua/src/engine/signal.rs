@@ -274,8 +274,11 @@ pub(crate) fn fire_from_script(lua: &Lua, key: &SignalKey, args: MultiValue) -> 
 }
 
 pub(crate) fn deferred_signals(lua: &Lua) -> bool {
+    const DEFAULT: u32 = 0;
     const DEFERRED: u32 = 2;
-    let ctx = engine(lua).ctx.clone();
+    let engine = engine(lua);
+    let default_deferred = engine.host.default_deferred();
+    let ctx = engine.ctx.clone();
     let dom = ctx.dom();
     let workspace = dom
         .root_refs()
@@ -284,10 +287,11 @@ pub(crate) fn deferred_signals(lua: &Lua) -> bool {
         .find(|i| i.class() == "Workspace");
     workspace.is_some_and(|w| {
         let props = w.properties();
-        matches!(
-            props.get("SignalBehavior2").or(props.get("SignalBehavior")),
-            Some(Variant::Enum(DEFERRED))
-        )
+        match props.get("SignalBehavior2").or(props.get("SignalBehavior")) {
+            Some(Variant::Enum(DEFERRED)) => true,
+            Some(Variant::Enum(DEFAULT)) | None => default_deferred,
+            _ => false,
+        }
     })
 }
 

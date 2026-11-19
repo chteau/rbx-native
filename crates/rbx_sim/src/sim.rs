@@ -47,6 +47,8 @@ pub struct Simulation {
     frame: u64,
     dirty: bool,
     output: Output,
+    /// Changes kept for [`Simulation::take_view_changes`], once watched.
+    view_changes: Option<Vec<Change>>,
 }
 
 impl Simulation {
@@ -68,6 +70,7 @@ impl Simulation {
             frame: 0,
             dirty: true,
             output: Output::default(),
+            view_changes: None,
         })
     }
 
@@ -101,6 +104,30 @@ impl Simulation {
         &self.world
     }
 
+    /// The simulation's DOM, shared: an editor writes edits made during the
+    /// run into it as logged changes, which the next [`Simulation::step`]
+    /// routes.
+    pub fn dom_rc(&self) -> Rc<RefCell<WeakDom>> {
+        self.dom.clone()
+    }
+
+    /// Every change the simulation made to its DOM since the last call, in
+    /// order: what scripts and edits logged, plus a `CFrame` write for each
+    /// part physics moved (physics writes it unlogged). Empty until
+    /// [`Simulation::watch_view_changes`].
+    pub fn take_view_changes(&mut self) -> Vec<Change> {
+        self.view_changes
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    /// Starts keeping changes for [`Simulation::take_view_changes`]
+    /// (headless runs don't, so nothing piles up).
+    pub fn watch_view_changes(&mut self) {
+        self.view_changes.get_or_insert_with(Vec::new);
+    }
+
     /// What scripts printed since the last call.
     pub fn take_output(&mut self) -> Output {
         std::mem::take(&mut self.output)
@@ -120,6 +147,8 @@ impl Simulation {
     /// `task.delay`), `Heartbeat`, the step's `Touched`/`TouchEnded`
     /// (after `Heartbeat`: the TouchedOrder golden), the deferred queue.
     pub fn step(&mut self) {
+        let edits = self.dom.borrow_mut().take_changes();
+        self.apply(edits);
         let dt = 1.0 / FRAME_HZ;
         let started = self.time();
         self.frame += 1;
@@ -151,8 +180,22 @@ impl Simulation {
         }
         let (gravity, fallen_height) = self.workspace_numbers();
         let steps = (PHYSICS_HZ / FRAME_HZ).round() as u32;
+        self.world.refresh_constraints(&self.dom.borrow(), self.db);
         let touches = self.world.step(gravity, steps, self.adaptive_stepping());
         self.world.write_back(&mut self.dom.borrow_mut(), self.db);
+        self.world.write_constraints(&mut self.dom.borrow_mut());
+        if let Some(seen) = &mut self.view_changes {
+            let dom = self.dom.borrow();
+            seen.extend(
+                self.world
+                    .moving_parts()
+                    .filter(|part| dom.get(*part).is_some())
+                    .map(|referent| Change::Property {
+                        referent,
+                        name: "CFrame".to_string(),
+                    }),
+            );
+        }
         for part in self.world.fallen(fallen_height) {
             let changes = self.vm.destroy(part);
             self.apply(changes);
@@ -243,6 +286,9 @@ impl Simulation {
     /// a velocity write sets it, anything structural rebuilds the world
     /// before the next step. Scripts newly placed where they run start.
     fn apply(&mut self, changes: Vec<Change>) {
+        if let Some(seen) = &mut self.view_changes {
+            seen.extend(changes.iter().cloned());
+        }
         for change in changes {
             match change {
                 Change::Property { referent, name } => self.property_changed(referent, &name),
@@ -270,6 +316,24 @@ impl Simulation {
         let class = instance.class();
         let is_part = self.db.is_subclass_of(class, "BasePart");
         let is_joint = self.db.is_subclass_of(class, "JointInstance") || class == "WeldConstraint";
+        // Constraint parameters are re-read every frame; what a constraint
+        // joins (and where its attachments sit) needs a rebuild.
+        if crate::physics::is_constraint(class) {
+            if matches!(
+                name,
+                "Attachment0" | "Attachment1" | "Enabled" | "LimitsEnabled" | "Mode"
+            ) || name.ends_with("AlignmentMode")
+            {
+                self.dirty = true;
+            }
+            return;
+        }
+        if self.db.is_subclass_of(class, "Attachment") {
+            if self.world.is_joint(referent) && name != "Name" {
+                self.dirty = true;
+            }
+            return;
+        }
         if !(is_part || is_joint) {
             if class == "Script" && name != "Source" {
                 drop(dom);
@@ -315,6 +379,7 @@ impl Simulation {
                 self.db.is_subclass_of(class, "BasePart")
                     || self.db.is_subclass_of(class, "JointInstance")
                     || class == "WeldConstraint"
+                    || crate::physics::is_constraint(class)
             })
         })
     }

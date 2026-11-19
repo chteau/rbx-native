@@ -6,6 +6,7 @@
 
 pub(crate) mod cframe;
 pub(crate) mod color3;
+pub(crate) mod content;
 pub(crate) mod extra;
 pub(crate) mod font;
 pub(crate) mod int16;
@@ -57,6 +58,7 @@ pub(crate) fn register(lua: &Lua) -> Result<()> {
         physical_properties::constructors(lua)?,
     )?;
     globals.set("Font", font::constructors(lua)?)?;
+    globals.set("Content", content::constructors(lua)?)?;
     globals.set("NumberSequence", sequence::number_sequence(lua)?)?;
     globals.set(
         "NumberSequenceKeypoint",

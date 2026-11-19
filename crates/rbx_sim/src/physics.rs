@@ -6,11 +6,14 @@
 //!   any other `JointInstance`) is one rigid body; a joint holds its parts
 //!   where they stood when the world was built, `C0`/`C1` aren't re-solved;
 //! - each part is one collider on that body: a box, a ball, a cylinder or
-//!   a convex hull for the wedges; `MeshPart`, `TrussPart` and the CSG
-//!   classes collide as their `Size` box;
+//!   a convex hull for the wedges; a `MeshPart` per its `CollisionFidelity`
+//!   (`mesh.rs`); `TrussPart` and the CSG classes collide as their `Size` box;
 //! - friction and elasticity of a contact are the pairwise weighted average
-//!   the `PhysicalProperties` docs give, done in a contact hook.
+//!   the `PhysicalProperties` docs give, done in a contact hook;
+//! - constraints and movers are in `constraints.rs`.
 
+mod constraints;
+pub(crate) mod mesh;
 pub(crate) mod part;
 #[cfg(test)]
 mod tests;
@@ -25,6 +28,7 @@ use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::server::{CollisionGroups, Physics, QueryFilter, QueryHit, QueryShape};
 use rbx_reflection::ReflectionDatabase;
 
+pub(crate) use constraints::is_constraint;
 pub use part::Shape;
 use part::{Joint, PartData};
 
@@ -32,6 +36,14 @@ use crate::spatial::Spatial;
 
 /// Roblox's physics rate: four solver steps per 60 Hz frame.
 pub const PHYSICS_HZ: f64 = 240.0;
+
+/// Spin lost per second, exponentially (the Damping golden: 10 rad/s
+/// falls to 9.019 in 2 s). Roblox applies no linear damping.
+const ANGULAR_DAMPING: Real = 0.052;
+
+/// Approach speed (studs/s) above which a contact counts as an impact,
+/// solved at one point so the bounce adds no spin (the BoxBounce golden).
+const IMPACT_SPEED: Real = 1.5;
 
 /// Friction and elasticity of one part with their weights, for the
 /// contact hook (indexed by collider user data).
@@ -54,6 +66,11 @@ struct Assembly {
     body: RigidBodyHandle,
     parts: Vec<Ref>,
     anchored: bool,
+    /// Largest `Size` component of its parts: the adaptive thresholds scale
+    /// with it.
+    size: Real,
+    /// Substeps per gravity kick while free: 4 (60 Hz), 2 (120), 1 (240).
+    rate: std::cell::Cell<u32>,
 }
 
 /// What scripts can ask of physics between steps (`Physics` for the VM):
@@ -89,6 +106,15 @@ impl Shared {
             groups,
             spatial: Rc::new(RefCell::new(Spatial::default())),
         });
+    }
+
+    /// The mass of a part the world hasn't built yet (made this frame):
+    /// its volume times its density, read from the DOM.
+    fn unbuilt_mass(&self, part: Ref) -> Option<f64> {
+        let queries = self.queries.as_ref()?;
+        let dom = queries.dom.try_borrow().ok()?;
+        let data = PartData::read(queries.db, dom.get(part)?)?;
+        Some(data.volume() * f64::from(data.physics[0]))
     }
 }
 
@@ -147,12 +173,26 @@ impl Physics for Bridge {
             .unwrap_or_default()
     }
 
+    fn register_mesh(&self, part: Ref, vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) {
+        mesh::register(part, vertices, triangles);
+    }
+
     fn mass(&self, part: Ref) -> Option<f64> {
-        self.0.borrow().masses.get(&part).map(|m| m.0)
+        let shared = self.0.borrow();
+        shared
+            .masses
+            .get(&part)
+            .map(|m| m.0)
+            .or_else(|| shared.unbuilt_mass(part))
     }
 
     fn assembly_mass(&self, part: Ref) -> Option<f64> {
-        self.0.borrow().masses.get(&part).map(|m| m.1)
+        let shared = self.0.borrow();
+        shared
+            .masses
+            .get(&part)
+            .map(|m| m.1)
+            .or_else(|| shared.unbuilt_mass(part))
     }
 
     fn apply_impulse(&self, part: Ref, impulse: [f64; 3], angular: bool) {
@@ -218,14 +258,41 @@ impl PhysicsHooks for Mixer<'_> {
                 (x + y) / 2.0
             }
         };
-        if let Some(rigid) = context.rigid_mut() {
-            *rigid.friction = mix(a.friction, a.friction_weight, b.friction, b.friction_weight);
-            *rigid.restitution = mix(
-                a.elasticity,
-                a.elasticity_weight,
-                b.elasticity,
-                b.elasticity_weight,
-            );
+        let velocity = |handle: Option<RigidBodyHandle>, at: Vector| {
+            handle
+                .and_then(|h| context.bodies.get(h))
+                .map_or(Vector::ZERO, |b| b.velocity_at_point(at))
+        };
+        let (body1, body2) = (context.rigid_body1, context.rigid_body2);
+        let Some(rigid) = context.rigid_mut() else {
+            return;
+        };
+        *rigid.friction = mix(a.friction, a.friction_weight, b.friction, b.friction_weight).into();
+        *rigid.restitution = Real::from(mix(
+            a.elasticity,
+            a.elasticity_weight,
+            b.elasticity,
+            b.elasticity_weight,
+        ));
+        let count = rigid.solver_contacts.len();
+        if *rigid.restitution <= 0.0 || count < 2 {
+            return;
+        }
+        let n = count as Real;
+        let (mut at1, mut at2) = (Vector::ZERO, Vector::ZERO);
+        let mut dist = Real::MAX;
+        for contact in rigid.solver_contacts.iter() {
+            at1 += contact.anchor1 / n;
+            at2 += contact.anchor2 / n;
+            dist = dist.min(contact.dist);
+        }
+        let approach = (velocity(body1, at1) - velocity(body2, at2)).dot(*rigid.normal);
+        if approach > IMPACT_SPEED {
+            rigid.solver_contacts.truncate(1);
+            let contact = &mut rigid.solver_contacts[0];
+            contact.anchor1 = at1;
+            contact.anchor2 = at2;
+            contact.dist = dist;
         }
     }
 }
@@ -253,12 +320,15 @@ pub struct World {
     /// Built since the last step, so no contact is known yet.
     fresh: bool,
     events: Events,
+    constraints: Vec<constraints::Constraint>,
+    /// Bodies a constraint acts on: always at 240 Hz.
+    constrained: HashSet<RigidBodyHandle>,
 }
 
 impl World {
     pub fn new(shared: Rc<RefCell<Shared>>) -> Self {
         let params = IntegrationParameters {
-            dt: (1.0 / PHYSICS_HZ) as Real,
+            dt: 1.0 / PHYSICS_HZ,
             ..Default::default()
         };
         World {
@@ -281,6 +351,8 @@ impl World {
             shared,
             fresh: true,
             events: Events::default(),
+            constraints: Vec::new(),
+            constrained: HashSet::new(),
         }
     }
 
@@ -315,6 +387,7 @@ impl World {
         };
         let mut parts = Vec::new();
         let mut joints = Vec::new();
+        let mut rigging = Vec::new();
         let mut stack = vec![workspace];
         while let Some(at) = stack.pop() {
             let Some(instance) = dom.get(at) else {
@@ -325,6 +398,8 @@ impl World {
                 parts.push(part);
             } else if let Some(joint) = Joint::read(db, instance) {
                 joints.push(joint);
+            } else if is_constraint(instance.class()) {
+                rigging.push(at);
             }
         }
         let index: HashMap<Ref, usize> = parts
@@ -349,6 +424,18 @@ impl World {
             self.add_assembly(&parts, &member, groups);
         }
         self.publish_masses(&parts);
+        self.add_constraints(dom, db, &rigging);
+        // A change to a constraint or its attachments rebuilds the world.
+        for &referent in &rigging {
+            self.joints.insert(referent);
+            if let Some(instance) = dom.get(referent) {
+                for name in ["Attachment0", "Attachment1"] {
+                    if let Some(Variant::Ref(a)) = instance.properties().get(name) {
+                        self.joints.insert(*a);
+                    }
+                }
+            }
+        }
     }
 
     fn add_assembly(&mut self, parts: &[PartData], member: &[usize], groups: &CollisionGroups) {
@@ -359,6 +446,7 @@ impl World {
             RigidBodyBuilder::fixed()
         } else {
             RigidBodyBuilder::dynamic()
+                .angular_damping(ANGULAR_DAMPING)
                 .linvel(vec3(parts[root].linear_velocity))
                 .angvel(vec3(parts[root].angular_velocity))
         };
@@ -390,7 +478,7 @@ impl World {
             let collider = part
                 .shape_collider()
                 .position(offset)
-                .density(density)
+                .density(density.into())
                 .sensor(!part.can_collide)
                 .user_data(surface as u128)
                 .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
@@ -422,6 +510,14 @@ impl World {
             body,
             parts: member.iter().map(|&i| parts[i].referent).collect(),
             anchored,
+            size: member
+                .iter()
+                .map(|&i| {
+                    let s = parts[i].size;
+                    Real::from(s.x.max(s.y).max(s.z))
+                })
+                .fold(0.0, Real::max),
+            rate: std::cell::Cell::new(4),
         });
     }
 
@@ -437,9 +533,7 @@ impl World {
             let total = if assembly.anchored {
                 f64::INFINITY
             } else {
-                self.bodies
-                    .get(assembly.body)
-                    .map_or(own, |b| f64::from(b.mass()))
+                self.bodies.get(assembly.body).map_or(own, |b| b.mass())
             };
             shared.masses.insert(part.referent, (own, total));
         }
@@ -487,30 +581,53 @@ impl World {
     /// `gravity` (studs/s², down), with the impulses scripts queued applied
     /// first. Returns the touches that began or ended.
     ///
-    /// `adaptive` is Roblox's adaptive timestepping, which puts "easy"
-    /// assemblies on a 60 Hz island and hard ones on 240 Hz (its docs keep
-    /// the criteria to themselves). Ours: an assembly touching nothing
-    /// moves in one 60 Hz step a frame (gravity for the whole frame up
-    /// front, then the four substeps coast), anything in contact at 240 Hz.
-    /// The `FreeFall` golden is what this matches.
+    /// `adaptive` is Roblox's adaptive timestepping (its docs keep the
+    /// criteria to themselves); ours is fitted to the FreeFall,
+    /// FreeFallTrace and FreeFallRates goldens. Anything in contact or
+    /// held by a constraint, and every assembly on the frame after a build,
+    /// steps at 240 Hz. A free assembly starts at 60 Hz (one gravity kick a
+    /// frame, then the substeps coast) and, while gravity speeds it up,
+    /// moves to 120 Hz past `T120` and to 240 Hz past `T240` (speeds that
+    /// grow with its size). Each switch up adds one kick of the new rate.
     pub fn step(&mut self, gravity: f64, steps: u32, adaptive: bool) -> Vec<Touch> {
         self.shared.borrow_mut().generation += 1;
         // A world just built has no contacts yet: everything takes 240 Hz once.
         let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
-        let frame = Vector::new(0.0, -gravity as Real, 0.0) * (steps as Real * self.params.dt);
-        let free: Vec<(RigidBodyHandle, bool)> = self
-            .assemblies
-            .iter()
-            .filter(|a| !a.anchored)
-            .map(|a| (a.body, adaptive && !self.in_contact(a)))
-            .collect();
-        for (handle, free) in free {
-            if let Some(body) = self.bodies.get_mut(handle) {
-                body.set_gravity_scale(if free { 0.0 } else { 1.0 }, false);
-                if free && !body.is_sleeping() {
-                    body.set_linvel(body.linvel() + frame, false);
+        let g = Vector::new(0.0, -gravity, 0.0);
+        let h = self.params.dt;
+        let mut kicked: Vec<(RigidBodyHandle, u32)> = Vec::new();
+        for assembly in self.assemblies.iter().filter(|a| !a.anchored) {
+            let free = adaptive
+                && !self.constrained.contains(&assembly.body)
+                && !self.in_contact(assembly);
+            let Some(body) = self.bodies.get_mut(assembly.body) else {
+                continue;
+            };
+            if !free {
+                assembly.rate.set(4);
+                body.set_gravity_scale(1.0, false);
+                continue;
+            }
+            body.set_gravity_scale(0.0, false);
+            if body.is_sleeping() {
+                continue;
+            }
+            let v = body.linvel();
+            let speed = v.length();
+            let mut rate = assembly.rate.get();
+            if v.dot(g) > 0.0 {
+                let next = match rate {
+                    4 if speed > 29.86 * assembly.size + 15.14 => 2,
+                    2 if speed > 91.0 * assembly.size + 49.0 => 1,
+                    _ => rate,
+                };
+                if next != rate {
+                    body.set_linvel(v + g * (h * next as Real), false);
+                    rate = next;
                 }
             }
+            assembly.rate.set(rate);
+            kicked.push((assembly.body, rate));
         }
         let impulses = std::mem::take(&mut self.shared.borrow_mut().impulses);
         for (part, impulse, angular) in impulses {
@@ -518,8 +635,7 @@ impl World {
                 continue;
             };
             if let Some(body) = self.bodies.get_mut(self.assemblies[placed.assembly].body) {
-                let impulse =
-                    Vector::new(impulse[0] as Real, impulse[1] as Real, impulse[2] as Real);
+                let impulse = Vector::from_array(impulse);
                 if angular {
                     body.apply_torque_impulse(impulse, true);
                 } else {
@@ -527,11 +643,19 @@ impl World {
                 }
             }
         }
-        let gravity = Vector::new(0.0, -gravity as Real, 0.0);
-        let mixer = Mixer(&self.surfaces);
-        for _ in 0..steps {
+
+        for substep in 0..steps {
+            for &(handle, rate) in &kicked {
+                if substep % rate == 0 {
+                    if let Some(body) = self.bodies.get_mut(handle) {
+                        body.set_linvel(body.linvel() + g * (h * rate as Real), false);
+                    }
+                }
+            }
+            self.drive_constraints(h, g);
+            let mixer = Mixer(&self.surfaces);
             self.pipeline.step(
-                gravity,
+                g,
                 &self.params,
                 &mut self.islands,
                 &mut self.broad,
@@ -631,7 +755,7 @@ impl World {
                     continue;
                 };
                 let y = (*body.position() * placed.offset).translation.y;
-                if f64::from(y) < height {
+                if y < height {
                     out.push(*part);
                 }
             }
@@ -686,20 +810,20 @@ impl UnionFind {
 }
 
 fn vec3(v: Vector3Data) -> Vector {
-    Vector::new(v.x, v.y, v.z)
+    Vector::new(v.x.into(), v.y.into(), v.z.into())
 }
 
 fn vector_data(v: Vector) -> Vector3Data {
     Vector3Data {
-        x: v.x,
-        y: v.y,
-        z: v.z,
+        x: v.x as f32,
+        y: v.y as f32,
+        z: v.z as f32,
     }
 }
 
 /// `CFrameData`'s rotation is row-major.
 pub(crate) fn pose_of(cframe: &CFrameData) -> Pose {
-    let r = cframe.rotation;
+    let r = cframe.rotation.map(Real::from);
     let matrix = Mat3::from_cols(
         Vector::new(r[0], r[3], r[6]),
         Vector::new(r[1], r[4], r[7]),
@@ -716,6 +840,6 @@ pub(crate) fn cframe_of(pose: &Pose) -> CFrameData {
     let (x, y, z) = (m.x_axis, m.y_axis, m.z_axis);
     CFrameData {
         position: vector_data(pose.translation),
-        rotation: [x.x, y.x, z.x, x.y, y.y, z.y, x.z, y.z, z.z],
+        rotation: [x.x, y.x, z.x, x.y, y.y, z.y, x.z, y.z, z.z].map(|v| v as f32),
     }
 }

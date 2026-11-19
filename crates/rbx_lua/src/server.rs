@@ -8,6 +8,7 @@
 //! simulation knows (masses) or can do (impulses).
 
 mod hooks;
+mod meshes;
 mod query;
 #[cfg(test)]
 mod tests;
@@ -25,7 +26,7 @@ use rbx_reflection::ReflectionDatabase;
 use crate::ctx::Ctx;
 use crate::engine::changes::{fire_changes, first_number};
 use crate::engine::events::instance_key;
-use crate::engine::signal::{self, Owner, SignalKey};
+use crate::engine::signal::{self, deferred_signals, Owner, SignalKey};
 use crate::engine::{self, engine, scheduler, Engine, Host};
 use crate::hooks::HookSlot;
 use crate::instance::tree::full_name;
@@ -60,6 +61,10 @@ pub trait Physics {
     /// `ApplyImpulse` (`angular: false`) / `ApplyAngularImpulse`, applied
     /// at the next physics step.
     fn apply_impulse(&self, part: Ref, impulse: [f64; 3], angular: bool);
+
+    /// A `MeshPart` made at runtime: its geometry, `vertices` centred on
+    /// the part's origin, for collision.
+    fn register_mesh(&self, _part: Ref, _vertices: Vec<[f32; 3]>, _triangles: Vec<[u32; 3]>) {}
 
     /// `WorldRoot:Raycast`: the nearest hit along `direction` (its whole
     /// length) from `origin`.
@@ -130,6 +135,13 @@ impl Host for ServerHost {
     /// The SignalBehavior golden: A, B connected, then a `Wait` W, then C,
     /// fire as `C W B A`.
     fn newest_first(&self) -> bool {
+        true
+    }
+
+    /// The SignalBehavior golden recorded 2026-11 (place version 537):
+    /// handlers run after `Fire` and after a property write returns, on a
+    /// place that leaves `SignalBehavior` at `Default`.
+    fn default_deferred(&self) -> bool {
         true
     }
 
@@ -363,6 +375,14 @@ impl ServerVm {
             match ran {
                 Ok(()) => {}
                 Err(_) => break,
+            }
+            // Deferred signals: what was queued runs at the end of this
+            // resumption point, ahead of the instance events of its writes.
+            if deferred_signals(&self.lua) {
+                if let Err(error) = scheduler::run_deferred(&self.lua) {
+                    ran = Err(error);
+                    break;
+                }
             }
             match fire_fresh(&self.lua, &self.fired) {
                 Ok(true) => {}

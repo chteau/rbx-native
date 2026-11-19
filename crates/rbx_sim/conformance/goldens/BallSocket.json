@@ -73,5 +73,6 @@
     "z_20": 0.1,
     "z_40": 0.06999999999999984
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "Matches at 20 frames; by 40 frames the 3D swing has drifted apart (about 1.3 studs in X and Y). Roblox's socket stretches (distance 4.022 to 4.03 on a 4 stud arm), ours is rigid at 4.0, and the small period difference grows with time. Needs soft joints (Milestone 3)."
 }

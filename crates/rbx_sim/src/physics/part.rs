@@ -19,6 +19,8 @@ pub enum Shape {
     CornerWedge,
     /// Along X like the cylinder (an assumption: the docs don't say).
     Capsule,
+    /// A `MeshPart`: collides per its `CollisionFidelity`, see `mesh.rs`.
+    Mesh,
 }
 
 pub(crate) struct PartData {
@@ -34,6 +36,9 @@ pub(crate) struct PartData {
     pub(crate) collision_group: String,
     /// Density, friction, elasticity, friction weight, elasticity weight.
     pub(super) physics: [f32; 5],
+    /// `MeshPart.MeshId` and the name of its `CollisionFidelity`.
+    pub(super) mesh_id: String,
+    pub(super) fidelity: String,
     pub(super) linear_velocity: Vector3Data,
     pub(super) angular_velocity: Vector3Data,
 }
@@ -77,6 +82,7 @@ impl PartData {
         let shape = match class {
             "WedgePart" => Shape::Wedge,
             "CornerWedgePart" => Shape::CornerWedge,
+            "MeshPart" => Shape::Mesh,
             _ if db.is_subclass_of(class, "Part") => match read(db, instance, "Shape") {
                 Some(Variant::Enum(0)) => Shape::Ball,
                 Some(Variant::Enum(2)) => Shape::Cylinder,
@@ -107,6 +113,14 @@ impl PartData {
             massless: flag(db, instance, "Massless", false),
             collision_group,
             physics: physics(db, instance),
+            mesh_id: mesh_id(db, instance),
+            fidelity: match read(db, instance, "CollisionFidelity") {
+                Some(Variant::Enum(raw)) => db
+                    .enum_name("CollisionFidelity", *raw)
+                    .map(|name| name.to_string()),
+                _ => None,
+            }
+            .unwrap_or_else(|| "Default".to_owned()),
             linear_velocity: vector(db, instance, &["AssemblyLinearVelocity", "Velocity"]),
             angular_velocity: vector(db, instance, &["AssemblyAngularVelocity", "RotVelocity"]),
         })
@@ -114,10 +128,12 @@ impl PartData {
 
     /// The part's volume as Roblox counts it for `Mass`: exact for blocks,
     /// wedges, balls; the cylinder and capsule as their solid of revolution.
+    /// A `MeshPart` counts as its `Size` box whatever its fidelity: the
+    /// mesh's own volume is not computed.
     pub(super) fn volume(&self) -> f64 {
         let [x, y, z] = [self.size.x, self.size.y, self.size.z].map(f64::from);
         match self.shape {
-            Shape::Block => x * y * z,
+            Shape::Block | Shape::Mesh => x * y * z,
             Shape::Wedge => x * y * z / 2.0,
             Shape::CornerWedge => x * y * z / 3.0,
             Shape::Ball => {
@@ -137,10 +153,12 @@ impl PartData {
     }
 
     pub(crate) fn shape_collider(&self) -> ColliderBuilder {
-        let (hx, hy, hz) = (self.size.x / 2.0, self.size.y / 2.0, self.size.z / 2.0);
-        let along_x = Pose::from_rotation(Rotation::from_rotation_z(std::f32::consts::FRAC_PI_2));
+        let half = |v: f32| Real::from(v) / 2.0;
+        let (hx, hy, hz) = (half(self.size.x), half(self.size.y), half(self.size.z));
+        let along_x = Pose::from_rotation(Rotation::from_rotation_z(std::f64::consts::FRAC_PI_2));
         match self.shape {
             Shape::Block => ColliderBuilder::cuboid(hx, hy, hz),
+            Shape::Mesh => super::mesh::collider(self),
             Shape::Ball => ColliderBuilder::ball(hx.min(hy).min(hz)),
             Shape::Cylinder => {
                 ColliderBuilder::compound(vec![(along_x, SharedShape::cylinder(hx, hy.min(hz)))])
@@ -173,7 +191,20 @@ impl PartData {
     }
 }
 
-fn hull(points: &[[f32; 3]]) -> Option<ColliderBuilder> {
+/// `MeshPart.MeshId`: a string, or a `Content` whose URI is the first
+/// quoted text of its debug form.
+fn mesh_id(db: &ReflectionDatabase, instance: &Instance) -> String {
+    match read(db, instance, "MeshId").or_else(|| read(db, instance, "MeshID")) {
+        Some(Variant::String(uri)) => uri.clone(),
+        Some(Variant::Content(content)) => {
+            let text = format!("{content:?}");
+            text.split('"').nth(1).unwrap_or_default().to_owned()
+        }
+        _ => String::new(),
+    }
+}
+
+fn hull(points: &[[Real; 3]]) -> Option<ColliderBuilder> {
     let points: Vec<Vector> = points
         .iter()
         .map(|p| Vector::new(p[0], p[1], p[2]))

@@ -73,7 +73,8 @@ fn task_wait_follows_the_frame_clock() {
         vm.fire(Event::RunService("Heartbeat", vec![1.0 / 60.0]));
         vm.resume();
     }
-    assert_eq!(vm.take_output().lines(), ["3 0.0500"]);
+    // The first frame strictly past 0.05 s: the fourth (WaitRounding golden).
+    assert_eq!(vm.take_output().lines(), ["4 0.0667"]);
 }
 
 #[test]

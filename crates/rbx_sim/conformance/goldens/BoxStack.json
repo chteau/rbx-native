@@ -45,5 +45,6 @@
     "top_drift": 0.538,
     "top_dy": 0.09
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "A stack of five sinks with its load on Roblox (top 0.157 to 0.247 stud, bottom 0.018 to 0.049), a sign of spring-like contacts; Rapier holds each contact at the same small penetration whatever the load (top 0.116, bottom 0.007). A single block (RestingContact) matches. Needs a load-dependent contact model (Milestone 3)."
 }
