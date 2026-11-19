@@ -111,6 +111,10 @@ impl Builder {
         let [r, g, b] = rgb;
         self.set(part, "Color3uint8", Variant::Color3uint8 { r, g, b });
         self.set(part, "Material", Variant::Enum(material));
+        // Smooth, as Studio has made parts since 2018: `Part`'s class
+        // defaults are studs on top and inlets below.
+        self.set(part, "TopSurface", Variant::Enum(0));
+        self.set(part, "BottomSurface", Variant::Enum(0));
         part
     }
 

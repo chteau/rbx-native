@@ -266,3 +266,60 @@ fn a_wall_behind_pulls_the_camera_in() {
     let (camera, _) = sim.camera().unwrap();
     assert!(camera.position.z < 4.6, "{camera:?}");
 }
+
+fn distance(camera: &rbx_dom::CFrameData, at: [f32; 3]) -> f32 {
+    let d = [
+        camera.position.x - at[0],
+        camera.position.y - at[1],
+        camera.position.z - at[2],
+    ];
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+}
+
+#[test]
+fn after_a_respawn_the_camera_follows_the_new_character_upright() {
+    let mut dom = place("");
+    let sss = dom
+        .root_refs()
+        .iter()
+        .copied()
+        .find(|r| dom.get(*r).is_some_and(|i| i.class() == "ServerScriptService"))
+        .expect("ServerScriptService");
+    let reset = dom.new_instance("Script", "Reset", Some(sss));
+    let _ = dom.set_property(
+        reset,
+        "Source",
+        Variant::String(
+            "local player = game:GetService('Players').PlayerAdded:Wait()\n\
+             local character = player.Character or player.CharacterAdded:Wait()\n\
+             task.wait(0.5)\n\
+             character:PivotTo(CFrame.new(40, 5, 0))\n\
+             task.wait(0.5)\n\
+             character:FindFirstChildOfClass('Humanoid').Health = 0\n"
+                .into(),
+        ),
+    );
+    dom.take_changes();
+    let mut sim = Play::new(dom);
+    sim.run_for(1.0);
+    let (before, _) = sim.camera().unwrap();
+    let start = distance(&before, root(&sim));
+    // Dead at 1 s, a new character RespawnTime (5 s) later, settled after.
+    sim.run_for(8.0);
+    let respawned = root(&sim);
+    let (after, _) = sim.camera().unwrap();
+    assert!(after.rotation[3].abs() < 1e-3, "rolled: {after:?}");
+    let now = distance(&after, respawned);
+    assert!(
+        (now - start).abs() < 1.0,
+        "{now} studs from the new character, {start} before: {after:?} {respawned:?}"
+    );
+    // Looking at the new character.
+    let look = [-after.rotation[2], -after.rotation[5], -after.rotation[8]];
+    let along: f32 = (0..3)
+        .map(|i| look[i] * (respawned[i] - [after.position.x, after.position.y, after.position.z][i]))
+        .sum();
+    assert!(along > 0.9 * now, "{after:?} {respawned:?}");
+    let output = lines(&mut sim);
+    assert!(!output.iter().any(|l| l.contains("rror")), "{output:#?}");
+}

@@ -7252,6 +7252,7 @@ dependencies = [
  "rbx_mesh",
  "rbx_play",
  "rbx_reflection",
+ "rbx_viewer",
  "rbx_xml",
  "serde_json",
  "symphonia",

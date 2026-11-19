@@ -33,3 +33,5 @@ rbx_cloud = { path = "../rbx_cloud" }
 ureq = "3"
 # examples/record_goldens.rs: finds the client window for its gestures.
 x11rb = "0.13"
+# examples/record_render_goldens.rs: the render fidelity scenes it captures.
+rbx_viewer = { path = "../rbx_viewer" }

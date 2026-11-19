@@ -24,7 +24,7 @@ const HOLD: f32 = 2.5;
 
 /// The `Lighting` properties a script may set, reset to their class
 /// defaults before every scene.
-const SCRIPTABLE: [&str; 17] = [
+const SCRIPTABLE: [&str; 15] = [
     "Ambient",
     "Brightness",
     "ColorShift_Bottom",
@@ -37,15 +37,42 @@ const SCRIPTABLE: [&str; 17] = [
     "FogStart",
     "GeographicLatitude",
     "GlobalShadows",
-    "LightingStyle",
     "OutdoorAmbient",
-    "PrioritizeLightingQuality",
     "ShadowSoftness",
     "TimeOfDay",
 ];
 
-/// The place to publish: `scenes` under `ReplicatedStorage.Fidelity`, no
-/// characters, and the client script in `ReplicatedFirst`.
+/// The `Lighting` properties no game script may write (`Technology` is
+/// Roblox-only, the other two want the plugin capability): they come from
+/// the place file, so scenes that differ in them are published apart.
+pub const PLACE_LEVEL: [&str; 3] = ["Technology", "LightingStyle", "PrioritizeLightingQuality"];
+
+fn place_level(scene: &Scene) -> Vec<(&'static str, Variant)> {
+    scene
+        .lighting
+        .iter()
+        .filter(|(key, _)| PLACE_LEVEL.contains(key))
+        .cloned()
+        .collect()
+}
+
+/// `scenes` split into the runs one place can show: alike in their
+/// [`PLACE_LEVEL`] properties, in the order first seen.
+pub fn groups(scenes: Vec<Scene>) -> Vec<Vec<Scene>> {
+    let mut groups: Vec<(Vec<(&str, Variant)>, Vec<Scene>)> = Vec::new();
+    for scene in scenes {
+        let key = place_level(&scene);
+        match groups.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, group)) => group.push(scene),
+            None => groups.push((key, vec![scene])),
+        }
+    }
+    groups.into_iter().map(|(_, group)| group).collect()
+}
+
+/// The place to publish: `scenes` (one of [`groups`]) under
+/// `ReplicatedStorage.Fidelity`, `Lighting` holding their [`PLACE_LEVEL`]
+/// values, no characters, and the client script in `ReplicatedFirst`.
 pub fn place(scenes: &[Scene], database: &ReflectionDatabase) -> WeakDom {
     let mut dom = WeakDom::new();
     let service = |dom: &mut WeakDom, class: &str| dom.new_instance(class, class, None);
@@ -55,8 +82,11 @@ pub fn place(scenes: &[Scene], database: &ReflectionDatabase) -> WeakDom {
     dom.new_instance("Terrain", "Terrain", Some(workspace));
     let players = service(&mut dom, "Players");
     set(&mut dom, players, "CharacterAutoLoads", Variant::Bool(false));
+    let lighting = service(&mut dom, "Lighting");
+    for (key, value) in scenes.first().map(place_level).unwrap_or_default() {
+        set(&mut dom, lighting, key, value);
+    }
     for class in [
-        "Lighting",
         "ServerScriptService",
         "ServerStorage",
         "StarterGui",
@@ -131,7 +161,13 @@ fn source(scenes: &[Scene], database: &ReflectionDatabase) -> String {
                 v(scene.eye),
                 v(scene.look_at),
                 scene.fov,
-                pairs(scene.lighting.iter().map(|(k, v)| (*k, v)))
+                pairs(
+                    scene
+                        .lighting
+                        .iter()
+                        .filter(|(k, _)| !PLACE_LEVEL.contains(k))
+                        .map(|(k, v)| (*k, v))
+                )
             )
         })
         .collect::<Vec<_>>()

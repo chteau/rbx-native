@@ -87,6 +87,7 @@ fn studio() -> Vec<(&'static str, Variant)> {
         ("EnvironmentSpecularScale", float(1.0)),
         ("GlobalShadows", Variant::Bool(true)),
         ("ShadowSoftness", float(0.2)),
+        ("Technology", Variant::Enum(3)),
         ("LightingStyle", Variant::Enum(1)),
         ("PrioritizeLightingQuality", Variant::Bool(true)),
     ]

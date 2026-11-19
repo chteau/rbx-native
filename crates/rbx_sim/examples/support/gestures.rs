@@ -66,7 +66,7 @@ pub fn perform(gesture: &str) -> Result<(), String> {
 }
 
 /// The biggest mapped window whose `WM_CLASS` is the client's.
-fn client_window() -> Result<u32, String> {
+pub fn client_window() -> Result<u32, String> {
     let (conn, screen) = x11rb::connect(None).map_err(|e| e.to_string())?;
     let root = conn.setup().roots[screen].root;
     let mut best: Option<(u32, u32)> = None;
