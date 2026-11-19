@@ -284,13 +284,14 @@ mod tests {
 
         let references = planned(&dom).references();
 
-        // The default sky's six native panels follow the face images.
+        // The default sky's six native panels, sun and moon follow the face
+        // images.
         let ids: Vec<&AssetRef> = references
             .iter()
             .filter(|reference| matches!(reference, AssetRef::Id(_)))
             .collect();
         assert_eq!(ids, vec![&AssetRef::Id(7), &AssetRef::Id(9)]);
-        assert_eq!(references.len(), 2 + 6);
+        assert_eq!(references.len(), 2 + 6 + 2);
     }
 
     #[test]

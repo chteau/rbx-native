@@ -328,7 +328,9 @@ fn the_local_light_count_reaches_the_shader_as_a_float() {
         &Calibration::default(),
     );
 
-    assert_eq!(raw.locals, [7.0, 0.0, 0.0, 0.0]);
+    // Studio's template is ShadowMap, whose local lights live in the voxel
+    // grid: the flag rides in the second slot.
+    assert_eq!(raw.locals, [7.0, 1.0, 0.0, 0.0]);
     assert_eq!(unshadowed(&Lighting::default(), Vec3::ZERO).locals[0], 0.0);
 }
 
