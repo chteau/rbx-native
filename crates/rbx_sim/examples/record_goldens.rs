@@ -62,7 +62,7 @@ fn main() {
     let mut dom = if base == "bare" {
         conformance::bare_place()
     } else {
-        rbx_binary::deserialize(&*std::fs::read(base).expect("base place"))
+        rbx_binary::deserialize(&std::fs::read(base).expect("base place"))
             .expect("parse base place")
     };
     conformance::add_to(&mut dom, passes, &only);

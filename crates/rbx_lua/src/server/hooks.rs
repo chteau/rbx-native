@@ -182,7 +182,7 @@ impl ServerHooks {
                     Some(Value::String(s)) => s.to_str()?.to_string(),
                     _ => return Err(mlua::Error::runtime("Argument 1 missing or nil")),
                 };
-                let signal = LuaSignal(instance_key(referent, &format!("{key}:{name}")));
+                let signal = LuaSignal(instance_key(referent, format!("{key}:{name}")));
                 lua.create_userdata(signal)
             });
         }
