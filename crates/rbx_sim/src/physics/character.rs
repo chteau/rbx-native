@@ -25,9 +25,9 @@ const WALK_GAIN: Real = 0.625;
 /// `1 - (1 - 0.1353)^(1/4)`.
 const TURN_PER_SUBSTEP: Real = 0.035_699;
 /// The floor sensor's footprint against the root's own half size: a root
-/// walking off a ledge loses the floor when its centre is 0.40 to 0.46
-/// studs past the edge (HumanoidSensor `_ledge`).
-const FOOTPRINT: Real = 0.86;
+/// walking off a ledge loses the floor a frame before it starts to drop
+/// (HumanoidSensor `ledge_states`, `_ledge`).
+const FOOTPRINT: Real = 0.6;
 /// A root this close to its standing height and this slow is settled: the
 /// spring alone holds it, gravity off, so it comes to rest instead of
 /// chattering between spring and gravity (HumanoidStand `_vy`: 0.001).

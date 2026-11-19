@@ -13,9 +13,9 @@ use rbx_reflection::ReflectionDatabase;
 use crate::physics::{Drive, DriveMode, World};
 
 /// Floor sensor reach past the standing height: the frames Landed comes on
-/// after 3, 5 and 8 stud drops (HumanoidSensor `d3`, `d5`, `d8`) bound it to
-/// 0.79 to 1.02 studs.
-const SENSOR_REACH: f64 = 0.95;
+/// after 3, 5 and 8 stud drops (HumanoidSensor `d3`, `d5`, `d8`, five
+/// passes) bound it to 0.99 to 1.2 studs.
+const SENSOR_REACH: f64 = 1.1;
 /// Frames without a floor before Running turns to Freefall (HumanoidDrop and
 /// HumanoidSensor: `Running>Freefall@7`, the ledge 7 frames after the floor
 /// went).
@@ -23,7 +23,7 @@ const FREEFALL_FRAMES: u32 = 7;
 /// Frames a character stays Landed (HumanoidDrop `Landed>Running` 2 after).
 const LANDED_FRAMES: u32 = 2;
 /// `MoveTo` gives up after 8 s (HumanoidMoveTo `timeout`: 480 beats).
-const MOVE_TO_TIMEOUT: u64 = 481;
+const MOVE_TO_TIMEOUT: u64 = 480;
 /// A `MoveTo` counts as there once the root, where the last frame left it,
 /// is this close (HumanoidMoveTo `near_5`, `near_12`, `near_20` and the
 /// 0.87 stud short `arrive_dx` bound it to 1.01 to 1.07).
