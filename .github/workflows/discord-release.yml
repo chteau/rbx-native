@@ -1,8 +1,13 @@
-# Posts every published release to the Discord #releases channel. release.yml
-# starts it with workflow_dispatch once it publishes (its own release doesn't
-# fire `release: published`); a release made by hand fires that event.
-# Needs the DISCORD_RELEASES_WEBHOOK repo secret (a webhook made by the server's bot,
-# so the link buttons render).
+# Posts every published release to the Discord #releases channel, with no
+# ping. A minor or major release (v0.3.0, v1.0.0, not v0.2.1 or a pre-release)
+# also gets an #announcements post that pings Release ping and links back to
+# it; see .github/release/announce/README.md for its text and screenshots.
+#
+# release.yml starts this with workflow_dispatch once it publishes (its own
+# release doesn't fire `release: published`); a release made by hand fires
+# that event.
+# Needs the DISCORD_RELEASES_WEBHOOK repo secret (a webhook made by the
+# server's bot, so the link buttons render) and DISCORD_ANNOUNCE_WEBHOOK.
 name: Discord release post
 
 on:
@@ -13,6 +18,11 @@ on:
       tag:
         description: Release tag to post again (e.g. v0.1.0)
         required: true
+      announce:
+        description: "#announcements post with a ping (auto: only for x.y.0)"
+        type: choice
+        options: [auto, "yes", "no"]
+        default: auto
 
 permissions:
   contents: read
@@ -23,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: .github/release/discord-payload.jq
+          sparse-checkout: .github/release/
           sparse-checkout-cone-mode: false
 
       - name: Fetch the release
@@ -34,14 +44,43 @@ jobs:
 
       # The embed (changelog, per-OS download links, the install one-liners)
       # is built by discord-payload.jq, which also checks Discord's limits.
-      - name: Post to Discord
+      - name: Post to #releases
+        id: releases
         env:
           WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
-          ROLE: "1569674071556366366" # Release ping
           # The Flathub page, once the app is listed there.
           FLATHUB: ""
         run: |
-          jq --arg role "$ROLE" --arg repo "https://github.com/$GITHUB_REPOSITORY" --arg flathub "$FLATHUB" \
+          jq --arg repo "https://github.com/$GITHUB_REPOSITORY" --arg flathub "$FLATHUB" \
             -f .github/release/discord-payload.jq release.json > payload.json
           jq '.embeds[0] | {description: (.description | length), fields: [.fields[] | .value | length]}' payload.json
-          curl -fsS -H "Content-Type: application/json" -d @payload.json "$WEBHOOK?wait=true&with_components=true" -o /dev/null
+          curl -fsS -H "Content-Type: application/json" -d @payload.json "$WEBHOOK?wait=true&with_components=true" -o posted.json
+          # The webhook's own record has the server id the message link needs.
+          guild=$(curl -fsS "$WEBHOOK" | jq -r .guild_id)
+          echo "link=https://discord.com/channels/$guild/$(jq -r '.channel_id + "/" + .id' posted.json)" >> "$GITHUB_OUTPUT"
+
+      # x.y.0 is a minor or major release; x.y.z with z > 0 is a patch and a
+      # pre-release (x.y.0-beta.1) has a suffix, neither pings anyone.
+      - name: Is it worth a ping
+        id: size
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          CHOICE: ${{ inputs.announce || 'auto' }}
+        run: |
+          case "$CHOICE" in
+            yes) big=true ;;
+            no) big=false ;;
+            *) if [[ $TAG =~ ^v?[0-9]+\.[0-9]+\.0$ ]]; then big=true; else big=false; fi ;;
+          esac
+          echo "Announce $TAG: $big"
+          echo "big=$big" >> "$GITHUB_OUTPUT"
+
+      - name: Announce it
+        if: steps.size.outputs.big == 'true'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_ANNOUNCE_WEBHOOK }}
+          ROLE: "1569674071556366366" # Release ping
+          LINK: ${{ steps.releases.outputs.link }}
+        run: |
+          .github/release/announce.sh --dry-run release.json "$LINK"
+          .github/release/announce.sh release.json "$LINK"

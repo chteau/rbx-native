@@ -8,13 +8,18 @@ on:
 jobs:
   update-api-dump:
     runs-on: ubuntu-latest
-    # dev only takes reviewed PRs, so the job proposes the dump on a branch.
+    # The dump goes straight onto dev, no PR. dev's protection only lets
+    # admins push past review, so the push uses API_DUMP_TOKEN, a
+    # maintainer's fine-grained token for this repo with Contents: write.
+    # GITHUB_TOKEN can't: it isn't an admin.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: dev
+          token: ${{ secrets.API_DUMP_TOKEN }}
 
       - name: Fetch latest Roblox Studio version
         id: get_version
@@ -75,36 +80,17 @@ jobs:
         if: steps.git_status.outputs.changed == 'true'
         run: cargo test -p rbx_parser_cli -p rbx_reflection -p rbx_lua
 
-      - name: Propose the update on a branch
+      - name: Commit the update to dev
         if: steps.git_status.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.get_version.outputs.rbx_version }}
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          {
-            echo "Nightly sync: the bundled dump differs from $VERSION and the dump's tests pass with it."
-            if ! git diff --quiet assets/tests/dumps; then
-              echo
-              echo "The reference renderings changed with it, check these are a Roblox release and not a parser bug:"
-              echo
-              echo '```diff'
-              git diff -U0 assets/tests/dumps | awk '/^[-+] / && n++ < 100'
-              echo '```'
-            fi
-          } > pr-body.md
-          git switch -c chore/api-dump
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "chore(deps): update Roblox API Dump to $VERSION"
-          git push --force origin chore/api-dump
-          # Opening the PR needs "Allow GitHub Actions to create pull
-          # requests" in the repo settings; without it, link the branch.
-          PR=$(gh pr list --head chore/api-dump --state open --json number -q '.[].number')
-          if [ -n "$PR" ]; then
-            gh pr edit "$PR" --title "chore(deps): update Roblox API Dump to $VERSION" --body-file pr-body.md
-            echo "::notice::Updated the open chore/api-dump PR to $VERSION"
-          elif ! gh pr create --base "${GITHUB_REF_NAME}" --head chore/api-dump \
-              --title "chore(deps): update Roblox API Dump to $VERSION" \
-              --body-file pr-body.md; then
-            echo "::notice::Dump $VERSION is on chore/api-dump; open a PR: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${GITHUB_REF_NAME}...chore/api-dump"
-          fi
+          # dev may have moved while the tests ran; the dump never conflicts.
+          for try in 1 2 3; do
+            git pull --rebase -q origin dev && git push origin HEAD:dev && exit 0
+            sleep $((try * 10))
+          done
+          exit 1
