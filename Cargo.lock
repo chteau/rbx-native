@@ -7232,12 +7232,15 @@ version = "0.1.0"
 dependencies = [
  "rapier3d",
  "rbx_binary",
+ "rbx_cloud",
  "rbx_dom",
  "rbx_lua",
  "rbx_materials",
+ "rbx_play",
  "rbx_reflection",
  "rbx_xml",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]
