@@ -33,14 +33,25 @@ pub const PASSES: u32 = 5;
 pub struct Test {
     pub name: &'static str,
     pub source: &'static str,
-    /// Absolute tolerance per result field; `"*"` for the rest.
+    /// Absolute tolerance per result field, `"*name*"` for every field
+    /// containing `name`, `"*"` for the rest.
     pub tolerance: &'static [(&'static str, f64)],
 }
 
 impl Test {
     pub fn tolerance_of(&self, field: &str) -> f64 {
         let find = |key: &str| self.tolerance.iter().find(|(k, _)| *k == key).map(|t| t.1);
-        find(field).or_else(|| find("*")).unwrap_or(0.0)
+        // `"*part*"`: every field with `part` in its name.
+        let containing = || {
+            self.tolerance.iter().find_map(|(k, t)| {
+                let part = k.strip_prefix('*')?.strip_suffix('*')?;
+                (!part.is_empty() && field.contains(part)).then_some(*t)
+            })
+        };
+        find(field)
+            .or_else(containing)
+            .or_else(|| find("*"))
+            .unwrap_or(0.0)
     }
 }
 
@@ -221,6 +232,113 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/FreeFallRates.luau"),
         tolerance: &[("*", 1.0)],
     },
+    Test {
+        name: "HumanoidDefaults",
+        source: include_str!("../conformance/tests/HumanoidDefaults.luau"),
+        tolerance: &[("*", 0.01)],
+    },
+    Test {
+        name: "HumanoidStand",
+        source: include_str!("../conformance/tests/HumanoidStand.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "HumanoidDrop",
+        source: include_str!("../conformance/tests/HumanoidDrop.luau"),
+        tolerance: &[("*", 0.2), ("r15_land_beat", 1.0), ("r6_land_beat", 1.0)],
+    },
+    Test {
+        name: "HumanoidWalk",
+        source: include_str!("../conformance/tests/HumanoidWalk.luau"),
+        tolerance: &[("*", 0.3)],
+    },
+    Test {
+        name: "HumanoidTurn",
+        source: include_str!("../conformance/tests/HumanoidTurn.luau"),
+        tolerance: &[("*", 3.0), ("turned_beat", 1.0), ("back_beat", 1.0)],
+    },
+    Test {
+        name: "HumanoidMoveTo",
+        source: include_str!("../conformance/tests/HumanoidMoveTo.luau"),
+        tolerance: &[("*", 0.3), ("arrive", 2.0), ("timeout", 2.0)],
+    },
+    Test {
+        name: "HumanoidJump",
+        source: include_str!("../conformance/tests/HumanoidJump.luau"),
+        tolerance: &[
+            ("*", 0.2),
+            ("power_apex_beat", 1.0),
+            ("height_apex_beat", 1.0),
+            ("high_apex_beat", 1.0),
+            ("r6_apex_beat", 1.0),
+            ("walk_apex_beat", 1.0),
+            ("power_land", 1.0),
+            ("height_land", 1.0),
+            ("high_land", 1.0),
+            ("r6_land", 1.0),
+            ("walk_land", 1.0),
+        ],
+    },
+    Test {
+        name: "HumanoidStep",
+        source: include_str!("../conformance/tests/HumanoidStep.luau"),
+        tolerance: &[("*", 0.3)],
+    },
+    Test {
+        name: "HumanoidSlope",
+        source: include_str!("../conformance/tests/HumanoidSlope.luau"),
+        tolerance: &[("*", 0.5)],
+    },
+    Test {
+        name: "HumanoidClimb",
+        source: include_str!("../conformance/tests/HumanoidClimb.luau"),
+        tolerance: &[("*", 0.3)],
+    },
+    Test {
+        name: "HumanoidSeat",
+        source: include_str!("../conformance/tests/HumanoidSeat.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "HumanoidHealth",
+        source: include_str!("../conformance/tests/HumanoidHealth.luau"),
+        tolerance: &[("*", 0.01)],
+    },
+    Test {
+        name: "HumanoidStates",
+        source: include_str!("../conformance/tests/HumanoidStates.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "PlayersCharacter",
+        source: include_str!("../conformance/tests/PlayersCharacter.luau"),
+        tolerance: &[("*", 0.2)],
+    },
+    Test {
+        name: "AnimationTrack",
+        source: include_str!("../conformance/tests/AnimationTrack.luau"),
+        tolerance: &[
+            ("*", 0.02),
+            ("*hip*", 0.3),
+            ("*knee*", 0.3),
+            ("*waist*", 0.3),
+        ],
+    },
+    Test {
+        name: "HumanoidSensor",
+        source: include_str!("../conformance/tests/HumanoidSensor.luau"),
+        tolerance: &[("*", 0.2)],
+    },
+    Test {
+        name: "HumanoidJumpScale",
+        source: include_str!("../conformance/tests/HumanoidJumpScale.luau"),
+        tolerance: &[("*", 0.2)],
+    },
+    Test {
+        name: "HumanoidWalkScale",
+        source: include_str!("../conformance/tests/HumanoidWalkScale.luau"),
+        tolerance: &[("*", 0.3), ("*yaw*", 3.0)],
+    },
 ];
 
 /// The tests named in `only` (all of them when it's empty).
@@ -291,33 +409,60 @@ pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
     let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs, only)));
 }
 
-/// A bare place with the suite: a baseplate, a spawn, the tests.
-pub fn place() -> WeakDom {
+/// A bare place: the services a fresh place has, a baseplate and a spawn.
+/// `record_goldens` publishes it (with the suite) when given `bare`.
+pub fn bare_place() -> WeakDom {
     let mut dom = WeakDom::new();
     let workspace = service(&mut dom, "Workspace");
+    for class in [
+        "Players",
+        "Lighting",
+        "ReplicatedFirst",
+        "ReplicatedStorage",
+        "ServerScriptService",
+        "ServerStorage",
+        "StarterGui",
+        "StarterPack",
+        "Teams",
+        "SoundService",
+    ] {
+        service(&mut dom, class);
+    }
+    let player = service(&mut dom, "StarterPlayer");
+    child(
+        &mut dom,
+        "StarterPlayerScripts",
+        "StarterPlayerScripts",
+        player,
+    );
+    child(
+        &mut dom,
+        "StarterCharacterScripts",
+        "StarterCharacterScripts",
+        player,
+    );
+    let at = |y: f32| {
+        Variant::CFrame(CFrameData {
+            position: Vector3Data { x: 0.0, y, z: 0.0 },
+            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        })
+    };
+    let size = |x: f32, y: f32, z: f32| Variant::Vector3(Vector3Data { x, y, z });
     let base = child(&mut dom, "Part", "Baseplate", workspace);
     let _ = dom.set_property(base, "Anchored", Variant::Bool(true));
-    let _ = dom.set_property(
-        base,
-        "Size",
-        Variant::Vector3(Vector3Data {
-            x: 512.0,
-            y: 20.0,
-            z: 512.0,
-        }),
-    );
-    let _ = dom.set_property(
-        base,
-        "CFrame",
-        Variant::CFrame(CFrameData {
-            position: Vector3Data {
-                x: 0.0,
-                y: -10.0,
-                z: 0.0,
-            },
-            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
-        }),
-    );
+    let _ = dom.set_property(base, "Size", size(512.0, 20.0, 512.0));
+    let _ = dom.set_property(base, "CFrame", at(-10.0));
+    let spawn = child(&mut dom, "SpawnLocation", "SpawnLocation", workspace);
+    let _ = dom.set_property(spawn, "Anchored", Variant::Bool(true));
+    let _ = dom.set_property(spawn, "Size", size(12.0, 1.0, 12.0));
+    let _ = dom.set_property(spawn, "CFrame", at(0.5));
+    dom.take_changes();
+    dom
+}
+
+/// [`bare_place`] with the suite.
+pub fn place() -> WeakDom {
+    let mut dom = bare_place();
     add_to(&mut dom, PASSES, &[]);
     dom.take_changes();
     dom
@@ -383,7 +528,26 @@ pub fn aggregate(passes: &[Value]) -> (Value, Value) {
 /// and folds the passes the same way ([`aggregate`]); `Err` with what it
 /// printed when the runner never finished within `limit` s of game time.
 pub fn run_in_sim(limit: f64) -> Result<BTreeMap<String, Value>, String> {
-    let mut sim = Simulation::new(place())?;
+    run_some_in_sim(limit, &[], None)
+}
+
+/// [`run_in_sim`] for the tests in `only` (all when empty). A local player
+/// joins first, as one did on the recording server (`Player1`, user id -1,
+/// the way Studio names its test players): the noob, no avatar. Animations
+/// come from the asset cache, or through `fetcher` when given.
+pub fn run_some_in_sim(
+    limit: f64,
+    only: &[String],
+    fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
+) -> Result<BTreeMap<String, Value>, String> {
+    let mut dom = bare_place();
+    add_to(&mut dom, PASSES, only);
+    dom.take_changes();
+    let mut sim = Simulation::new(dom)?;
+    if let Some(fetcher) = fetcher {
+        sim.set_fetcher(fetcher);
+    }
+    sim.join("Player1", -1);
     sim.start();
     let mut lines = Vec::new();
     while sim.time() < limit {

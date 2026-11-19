@@ -5,12 +5,18 @@
 //!
 //! The plan, the sources and what's left: `docs/research/local-run/`.
 
+pub mod animation;
+pub mod character;
 pub mod conformance;
+mod engine;
+pub mod humanoid;
 pub mod load;
 pub mod physics;
+pub mod players;
 mod scripts;
 mod sim;
 mod spatial;
 
+pub use players::Avatars;
 pub use rbx_lua::{LineKind, Output};
 pub use sim::{Simulation, FRAME_HZ};

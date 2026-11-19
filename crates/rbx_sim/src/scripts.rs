@@ -64,3 +64,38 @@ pub(crate) fn subtree(dom: &WeakDom, root: Ref) -> Vec<Ref> {
     }
     out
 }
+
+const CLIENT: u32 = 2;
+
+/// Whether the local player's client would run `script`: a `LocalScript`
+/// under one of `roots` (the player, whose `Backpack`, `PlayerGui` and
+/// `PlayerScripts` hold them, and its character) or in `ReplicatedFirst`,
+/// or a `Script` with `RunContext.Client` there or in `Workspace` and
+/// `ReplicatedStorage` (creator-docs `scripting/locations`). Local Run plays
+/// server and client in one VM.
+pub(crate) fn runs_on_client(dom: &WeakDom, script: Ref, roots: &[Ref]) -> bool {
+    let Some(instance) = dom.get(script) else {
+        return false;
+    };
+    let context = match instance.properties().get("RunContext") {
+        Some(Variant::Enum(value)) => *value,
+        _ => LEGACY,
+    };
+    let local = instance.class() == "LocalScript";
+    if !(local || (instance.class() == "Script" && context == CLIENT)) || !enabled(dom, script) {
+        return false;
+    }
+    let mut at = dom.parent(script);
+    while let Some(r) = at {
+        if roots.contains(&r) {
+            return true;
+        }
+        if dom.parent(r).is_none() {
+            let class = dom.get(r).map(|i| i.class()).unwrap_or_default();
+            return class == "ReplicatedFirst"
+                || (!local && matches!(class, "Workspace" | "ReplicatedStorage"));
+        }
+        at = dom.parent(r);
+    }
+    false
+}

@@ -1,0 +1,556 @@
+//! `Animator` and `AnimationTrack` at runtime: loading animations by id
+//! (the asset cache, else the app's fetcher, on a thread of their own),
+//! playing them through `rbx_animation`'s blend, and writing the blended
+//! pose to each `Motor6D.Transform`. Lifecycle and event order follow the
+//! AnimationTrack golden: `Stopped` at once on `Stop` and `Ended` a frame
+//! after the fade, a one-shot that ends fires `KeyframeReached`, `Stopped`
+//! and `DidLoop` together and keeps posing its last frame.
+
+use std::collections::{HashMap, HashSet};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
+
+use rbx_animation::animator::{Animator, Event as TrackEvent, TrackId};
+use rbx_animation::clip::{Clip, Priority};
+use rbx_animation::import::asset::{clip_from_model, content_id};
+use rbx_assets::{AssetCache, AssetFetcher};
+use rbx_dom::{CFrameData, Content, Ref, Variant, WeakDom};
+use rbx_lua::server::{Arg, CallReply, Event};
+use rbx_reflection::ReflectionDatabase;
+
+use crate::humanoid::{inverse, mul, reference, set};
+
+/// `Play`, `Stop` and `AdjustWeight` fade over 0.1 s unless told otherwise
+/// (AnimationTrack `weight_1`, `fade_3`, `adjust_3`).
+const DEFAULT_FADE: f64 = 0.1;
+
+struct Rig {
+    animator: Animator,
+}
+
+struct TrackRef {
+    animator: Ref,
+    id: TrackId,
+    asset: Option<u64>,
+    /// `Stop` was called: the fade's end is `Ended`, not `Stopped`.
+    stopping: bool,
+}
+
+#[derive(Default)]
+pub struct Animations {
+    rigs: HashMap<Ref, Rig>,
+    tracks: HashMap<Ref, TrackRef>,
+    clips: HashMap<u64, Result<Clip, String>>,
+    loading: HashMap<u64, Receiver<Result<Clip, String>>>,
+    pub fetcher: Option<Arc<dyn AssetFetcher>>,
+    /// Tracks whose `Ended` is coming, and in how many frames.
+    ended: Vec<(Ref, u32)>,
+    pub events: Vec<Event>,
+}
+
+const ANIMATOR_METHODS: &[&str] = &["LoadAnimation", "GetPlayingAnimationTracks"];
+const TRACK_METHODS: &[&str] = &[
+    "Play",
+    "Stop",
+    "AdjustSpeed",
+    "AdjustWeight",
+    "GetTimeOfKeyframe",
+];
+const TRACK_SIGNALS: &[&str] = &["Stopped", "Ended", "DidLoop", "KeyframeReached"];
+const TRACK_PROPERTIES: &[&str] = &[
+    "Length",
+    "IsPlaying",
+    "Speed",
+    "TimePosition",
+    "WeightCurrent",
+    "WeightTarget",
+    "Looped",
+    "Priority",
+];
+
+pub(crate) fn is_method(class: &str, key: &str) -> bool {
+    match class {
+        "Animator" => ANIMATOR_METHODS.contains(&key),
+        "AnimationTrack" => TRACK_METHODS.contains(&key),
+        "Humanoid" | "AnimationController" => ANIMATOR_METHODS.contains(&key),
+        "KeyframeSequenceProvider" => key == "RegisterKeyframeSequence",
+        _ => false,
+    }
+}
+
+pub(crate) fn is_signal(class: &str, key: &str) -> bool {
+    (class == "AnimationTrack" && TRACK_SIGNALS.contains(&key))
+        || (class == "Animator" && key == "AnimationPlayed")
+}
+
+/// `GetMarkerReachedSignal(name)`: the signal `<method>:<name>`.
+pub(crate) fn is_signal_method(class: &str, key: &str) -> bool {
+    class == "AnimationTrack" && key == "GetMarkerReachedSignal"
+}
+
+fn priority_arg(p: Priority) -> Arg {
+    Arg::Enum {
+        enum_name: "AnimationPriority".into(),
+        item: p.label().into(),
+    }
+}
+
+fn signal(owner: Ref, name: &str, args: Vec<Arg>) -> (Ref, String, Vec<Arg>) {
+    (owner, name.into(), args)
+}
+
+fn number(args: &[Arg], i: usize) -> Option<f64> {
+    match args.get(i) {
+        Some(Arg::Number(n)) => Some(*n),
+        _ => None,
+    }
+}
+
+fn load_clip(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Clip, String> {
+    let cache = AssetCache::new(None).ok();
+    let bytes = match cache.as_ref().and_then(|c| c.get_id(id)) {
+        Some(bytes) => bytes,
+        None => {
+            let fetcher = fetcher
+                .ok_or_else(|| format!("animation {id} is not cached and we are offline"))?;
+            let bytes = fetcher.fetch_id(id).map_err(|e| e.to_string())?;
+            if let Some(cache) = &cache {
+                let _ = cache.put_id(id, &bytes);
+            }
+            bytes
+        }
+    };
+    clip_from_model(&bytes, &id.to_string()).map_err(|e| e.to_string())
+}
+
+impl Animations {
+    fn track_of(&self, track: Ref) -> Result<&TrackRef, String> {
+        self.tracks
+            .get(&track)
+            .ok_or_else(|| "AnimationTrack is not loaded".into())
+    }
+
+    fn inner(&self, track: Ref) -> Option<&rbx_animation::animator::Track> {
+        let t = self.tracks.get(&track)?;
+        self.rigs.get(&t.animator)?.animator.track(t.id)
+    }
+
+    fn inner_mut(&mut self, track: Ref) -> Option<&mut rbx_animation::animator::Track> {
+        let t = self.tracks.get(&track)?;
+        self.rigs.get_mut(&t.animator)?.animator.track_mut(t.id)
+    }
+
+    /// `LoadAnimation` on an Animator, or on a Humanoid or
+    /// AnimationController (through its Animator, made when missing).
+    fn load(
+        &mut self,
+        dom: &mut WeakDom,
+        db: &ReflectionDatabase,
+        owner: Ref,
+        animation: Ref,
+    ) -> Result<Ref, String> {
+        let animator = match dom.get(owner).map(|i| i.class()) {
+            Some("Animator") => owner,
+            _ => animator_under(dom, owner)
+                .unwrap_or_else(|| dom.new_instance("Animator", "Animator", Some(owner))),
+        };
+        let text = match dom
+            .get(animation)
+            .and_then(|i| i.properties().get("AnimationId"))
+        {
+            Some(Variant::Content(Content::Uri(uri))) => uri.clone(),
+            Some(Variant::String(s)) => s.clone(),
+            _ => String::new(),
+        };
+        let asset = content_id(&text);
+        if let Some(id) = asset {
+            if !self.clips.contains_key(&id) && !self.loading.contains_key(&id) {
+                let (send, receive) = mpsc::channel();
+                let fetcher = self.fetcher.clone();
+                std::thread::spawn(move || {
+                    let _ = send.send(load_clip(id, fetcher));
+                });
+                self.loading.insert(id, receive);
+            }
+        }
+        // Even a cached animation has no length until the next frame
+        // (AnimationTrack `length_now`).
+        let clip = Clip::default();
+        let rig = self.rigs.entry(animator).or_insert_with(|| Rig {
+            animator: Animator::new(),
+        });
+        let id = rig.animator.load(clip);
+        if let Some(track) = rig.animator.track_mut(id) {
+            track.hold_at_end = true;
+        }
+        let name = dom
+            .get(animation)
+            .map(|i| i.name().to_owned())
+            .unwrap_or_default();
+        let track = dom.new_instance("AnimationTrack", &name, None);
+        set(dom, db, track, "Animation", Variant::Ref(animation));
+        self.tracks.insert(
+            track,
+            TrackRef {
+                animator,
+                id,
+                asset,
+                stopping: false,
+            },
+        );
+        Ok(track)
+    }
+
+    pub(crate) fn call(
+        &mut self,
+        dom: &mut WeakDom,
+        db: &ReflectionDatabase,
+        referent: Ref,
+        class: &str,
+        method: &str,
+        args: &[Arg],
+    ) -> Result<CallReply, String> {
+        match (class, method) {
+            (_, "LoadAnimation") => {
+                let Some(Arg::Instance(animation)) = args.first() else {
+                    return Err("Argument 1 missing or nil".into());
+                };
+                if dom.get(*animation).map(|i| i.class()) != Some("Animation") {
+                    return Err("Unable to cast value to Object".into());
+                }
+                let track = self.load(dom, db, referent, *animation)?;
+                Ok(CallReply::value(Arg::Instance(track)))
+            }
+            (_, "GetPlayingAnimationTracks") => {
+                let animator = match class {
+                    "Animator" => Some(referent),
+                    _ => animator_under(dom, referent),
+                };
+                let mut playing: Vec<Ref> = self
+                    .tracks
+                    .iter()
+                    .filter(|(_, t)| Some(t.animator) == animator)
+                    .filter(|(r, _)| self.inner(**r).is_some_and(|t| t.playing))
+                    .map(|(r, _)| *r)
+                    .collect();
+                playing.sort();
+                Ok(CallReply::value(Arg::Instances(playing)))
+            }
+            ("KeyframeSequenceProvider", "RegisterKeyframeSequence") => {
+                // A running server refuses it (AnimationTrack `register`).
+                Err("RegisterKeyframeSequence can only be called from Studio".into())
+            }
+            ("AnimationTrack", "Play") => {
+                let fade = number(args, 0).unwrap_or(DEFAULT_FADE) as f32;
+                let weight = number(args, 1).unwrap_or(1.0) as f32;
+                let speed = number(args, 2).unwrap_or(1.0) as f32;
+                let animator = self.track_of(referent)?.animator;
+                let id = self.track_of(referent)?.id;
+                if let Some(t) = self.tracks.get_mut(&referent) {
+                    t.stopping = false;
+                }
+                if let Some(rig) = self.rigs.get_mut(&animator) {
+                    rig.animator.play(id, fade, weight, speed);
+                }
+                Ok(CallReply {
+                    fire: vec![signal(
+                        animator,
+                        "AnimationPlayed",
+                        vec![Arg::Instance(referent)],
+                    )],
+                    ..CallReply::default()
+                })
+            }
+            ("AnimationTrack", "Stop") => {
+                let fade = number(args, 0).unwrap_or(DEFAULT_FADE) as f32;
+                let (animator, id) = {
+                    let t = self.track_of(referent)?;
+                    (t.animator, t.id)
+                };
+                let playing = self.inner(referent).is_some_and(|t| t.playing);
+                let mut reply = CallReply::default();
+                if playing {
+                    let finished = self.inner(referent).is_some_and(|t| t.finished);
+                    if let Some(t) = self.tracks.get_mut(&referent) {
+                        t.stopping = true;
+                    }
+                    if let Some(rig) = self.rigs.get_mut(&animator) {
+                        rig.animator.stop(id, fade);
+                    }
+                    if !finished {
+                        reply.fire.push(signal(referent, "Stopped", Vec::new()));
+                    }
+                }
+                Ok(reply)
+            }
+            ("AnimationTrack", "AdjustSpeed") => {
+                let speed = number(args, 0).unwrap_or(1.0) as f32;
+                let t = self.track_of(referent)?;
+                let (animator, id) = (t.animator, t.id);
+                if let Some(rig) = self.rigs.get_mut(&animator) {
+                    rig.animator.adjust_speed(id, speed);
+                }
+                Ok(CallReply::default())
+            }
+            ("AnimationTrack", "AdjustWeight") => {
+                let weight = number(args, 0).unwrap_or(1.0) as f32;
+                let fade = number(args, 1).unwrap_or(DEFAULT_FADE) as f32;
+                let t = self.track_of(referent)?;
+                let (animator, id) = (t.animator, t.id);
+                if let Some(rig) = self.rigs.get_mut(&animator) {
+                    rig.animator.adjust_weight(id, weight, fade);
+                }
+                Ok(CallReply::default())
+            }
+            ("AnimationTrack", "GetTimeOfKeyframe") => {
+                let Some(Arg::String(name)) = args.first() else {
+                    return Err("Argument 1 missing or nil".into());
+                };
+                let time = self
+                    .inner(referent)
+                    .and_then(|t| {
+                        t.clip
+                            .keyframes
+                            .iter()
+                            .find(|k| &k.name == name)
+                            .map(|k| k.time)
+                    })
+                    .ok_or_else(|| format!("Could not find a keyframe by that name: {name}"))?;
+                Ok(CallReply::value(Arg::Number(f64::from(time))))
+            }
+            _ => Err(format!("{method} is not a valid member of {class}")),
+        }
+    }
+
+    pub(crate) fn property(&self, track: Ref, key: &str) -> Option<Arg> {
+        if !TRACK_PROPERTIES.contains(&key) {
+            return None;
+        }
+        let stopping = self.tracks.get(&track)?.stopping;
+        let t = self.inner(track)?;
+        Some(match key {
+            "Length" => Arg::Number(f64::from(t.length())),
+            "IsPlaying" => Arg::Bool(t.playing && !t.finished && !stopping),
+            "Speed" => Arg::Number(f64::from(t.speed)),
+            "TimePosition" => Arg::Number(f64::from(t.time)),
+            "WeightCurrent" => Arg::Number(f64::from(t.weight())),
+            "WeightTarget" => Arg::Number(f64::from(t.weight_target())),
+            "Looped" => Arg::Bool(t.looped),
+            "Priority" => priority_arg(t.priority),
+            _ => return None,
+        })
+    }
+
+    pub(crate) fn write(&mut self, track: Ref, key: &str, value: &Arg) -> Option<Arg> {
+        let t = self.inner_mut(track)?;
+        match (key, value) {
+            ("TimePosition", Arg::Number(n)) => t.time = (*n as f32).clamp(0.0, t.length()),
+            ("Looped", Arg::Bool(b)) => t.looped = *b,
+            ("Priority", Arg::Enum { item, .. }) => {
+                t.priority = Priority::ALL.into_iter().find(|p| p.label() == item)?;
+            }
+            _ => return None,
+        }
+        Some(value.clone())
+    }
+
+    /// One frame: finished loads join their tracks, every rig steps by
+    /// `dt` and its pose goes to its joints' `Transform`s.
+    pub fn step(&mut self, dom: &mut WeakDom, dt: f64) {
+        let done: Vec<(u64, Result<Clip, String>)> = self
+            .loading
+            .iter()
+            .filter_map(|(id, r)| r.try_recv().ok().map(|clip| (*id, clip)))
+            .collect();
+        for (id, clip) in done {
+            self.loading.remove(&id);
+            self.clips.insert(id, clip);
+        }
+        let waiting: Vec<(Ref, Clip)> = self
+            .tracks
+            .iter()
+            .filter_map(|(r, t)| Some((*r, self.clips.get(&t.asset?)?.as_ref().ok()?.clone())))
+            .collect();
+        for (track, clip) in waiting {
+            if let Some(t) = self.inner_mut(track) {
+                if t.clip.keyframes.is_empty() && !clip.keyframes.is_empty() {
+                    t.looped = clip.looped;
+                    t.priority = clip.priority;
+                    t.clip = clip;
+                }
+            }
+        }
+        // `Ended` comes the frame after the fade-out's last (AnimationTrack
+        // `stop_events`: weight 0 on the 6th frame, `ended@7`).
+        let mut due = Vec::new();
+        self.ended.retain_mut(|(track, frames)| {
+            *frames -= 1;
+            if *frames == 0 {
+                due.push(*track);
+            }
+            *frames > 0
+        });
+        for track in due {
+            self.events.push(Event::Signal {
+                owner: track,
+                name: "Ended".into(),
+                args: Vec::new(),
+            });
+        }
+        // Tracks whose animator left the place stop with it.
+        self.rigs.retain(|animator, _| dom.get(*animator).is_some());
+        self.tracks
+            .retain(|r, t| self.rigs.contains_key(&t.animator) && dom.get(*r).is_some());
+        let by_id: HashMap<(Ref, TrackId), Ref> = self
+            .tracks
+            .iter()
+            .map(|(r, t)| ((t.animator, t.id), *r))
+            .collect();
+        for (animator, rig) in &mut self.rigs {
+            for event in rig.animator.step(dt as f32) {
+                let (id, name, args) = match event {
+                    TrackEvent::KeyframeReached { track, name } => {
+                        (track, "KeyframeReached".to_owned(), vec![Arg::String(name)])
+                    }
+                    TrackEvent::MarkerReached { track, name, value } => (
+                        track,
+                        format!("GetMarkerReachedSignal:{name}"),
+                        vec![Arg::String(value)],
+                    ),
+                    TrackEvent::DidLoop(track) => (track, "DidLoop".to_owned(), Vec::new()),
+                    TrackEvent::Ended(track) => (track, "Ended".to_owned(), Vec::new()),
+                    TrackEvent::Stopped(track) => (track, "Stopped".to_owned(), Vec::new()),
+                };
+                let Some(&owner) = by_id.get(&(*animator, id)) else {
+                    continue;
+                };
+                let stopping = self.tracks.get(&owner).is_some_and(|t| t.stopping);
+                if name == "Stopped" && stopping {
+                    if let Some(t) = self.tracks.get_mut(&owner) {
+                        t.stopping = false;
+                    }
+                    self.ended.push((owner, 2));
+                    continue;
+                }
+                self.events.push(Event::Signal { owner, name, args });
+            }
+            pose_rig(dom, *animator, &rig.animator);
+        }
+    }
+}
+
+fn animator_under(dom: &WeakDom, owner: Ref) -> Option<Ref> {
+    dom.get(owner)?
+        .children()
+        .iter()
+        .copied()
+        .find(|c| dom.get(*c).is_some_and(|i| i.class() == "Animator"))
+}
+
+/// The model an Animator animates: its Humanoid's or
+/// AnimationController's parent.
+fn model_of(dom: &WeakDom, animator: Ref) -> Option<Ref> {
+    dom.parent(dom.parent(animator)?)
+}
+
+fn motors(dom: &WeakDom, model: Ref) -> Vec<Ref> {
+    let mut out = Vec::new();
+    let mut stack = vec![model];
+    while let Some(at) = stack.pop() {
+        let Some(i) = dom.get(at) else { continue };
+        stack.extend(i.children().iter().copied());
+        if i.class() == "Motor6D" {
+            out.push(at);
+        }
+    }
+    out
+}
+
+const IDENTITY: CFrameData = CFrameData {
+    position: rbx_dom::Vector3Data {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    },
+    rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+};
+
+/// Writes the blended pose to the `Transform` of each Motor6D whose `Part1`
+/// a track poses. A joint no track poses keeps the last one (AnimationTrack
+/// `rest_hip`: a sliver of the walk's last faded frame, not the rest pose).
+/// Not logged: `Transform` changes every frame and fires no `Changed`.
+fn pose_rig(dom: &mut WeakDom, animator: Ref, rig: &Animator) {
+    let Some(model) = model_of(dom, animator) else {
+        return;
+    };
+    let pose = rig.pose();
+    if pose.is_empty() {
+        return;
+    }
+    for motor in motors(dom, model) {
+        let Some(part1) = reference(dom, motor, "Part1") else {
+            continue;
+        };
+        let Some(frame) = dom.get(part1).and_then(|i| pose.get(i.name())) else {
+            continue;
+        };
+        let transform = frame.to_data();
+        if let Some(i) = dom.get_mut(motor) {
+            i.properties_mut()
+                .insert("Transform".into(), Variant::CFrame(transform));
+        }
+    }
+}
+
+/// Lays the parts of every animated model out through their Motor6Ds,
+/// `Part1 = Part0 * C0 * Transform * C1⁻¹`, from the part no motor moves
+/// down: where the renderer and scripts see the limbs. Not logged.
+pub fn lay_out(dom: &mut WeakDom, animations: &Animations) {
+    for animator in animations.rigs.keys() {
+        let Some(model) = model_of(dom, *animator) else {
+            continue;
+        };
+        let joints: Vec<(Ref, Ref, CFrameData)> = motors(dom, model)
+            .into_iter()
+            .filter_map(|m| {
+                let p0 = reference(dom, m, "Part0")?;
+                let p1 = reference(dom, m, "Part1")?;
+                let get = |key: &str| match dom.get(m)?.properties().get(key) {
+                    Some(Variant::CFrame(c)) => Some(*c),
+                    _ => None,
+                };
+                let c0 = get("C0").unwrap_or(IDENTITY);
+                let c1 = get("C1").unwrap_or(IDENTITY);
+                let t = get("Transform").unwrap_or(IDENTITY);
+                Some((p0, p1, mul(&mul(&c0, &t), &inverse(&c1))))
+            })
+            .collect();
+        let moved: HashSet<Ref> = joints.iter().map(|j| j.1).collect();
+        let mut frontier: Vec<Ref> = joints
+            .iter()
+            .map(|j| j.0)
+            .filter(|p| !moved.contains(p))
+            .collect();
+        frontier.dedup();
+        let mut done: HashSet<Ref> = frontier.iter().copied().collect();
+        while let Some(part0) = frontier.pop() {
+            let Some(Variant::CFrame(base)) = dom
+                .get(part0)
+                .and_then(|i| i.properties().get("CFrame"))
+                .cloned()
+            else {
+                continue;
+            };
+            for (p0, p1, offset) in &joints {
+                if *p0 != part0 || !done.insert(*p1) {
+                    continue;
+                }
+                if let Some(i) = dom.get_mut(*p1) {
+                    i.properties_mut()
+                        .insert("CFrame".into(), Variant::CFrame(mul(&base, offset)));
+                }
+                frontier.push(*p1);
+            }
+        }
+    }
+}

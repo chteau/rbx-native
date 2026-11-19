@@ -7229,6 +7229,7 @@ name = "rbx_sim"
 version = "0.1.0"
 dependencies = [
  "rapier3d-f64",
+ "rbx_animation",
  "rbx_assets",
  "rbx_binary",
  "rbx_cloud",

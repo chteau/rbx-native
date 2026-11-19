@@ -12,6 +12,7 @@
 //!   the `PhysicalProperties` docs give, done in a contact hook;
 //! - constraints and movers are in `constraints.rs`.
 
+mod character;
 mod constraints;
 pub(crate) mod mesh;
 pub(crate) mod part;
@@ -28,6 +29,7 @@ use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::server::{CollisionGroups, Physics, QueryFilter, QueryHit, QueryShape};
 use rbx_reflection::ReflectionDatabase;
 
+pub use character::{Drive, DriveMode, Floor};
 pub(crate) use constraints::is_constraint;
 pub use part::Shape;
 use part::{Joint, PartData};
@@ -82,6 +84,12 @@ pub struct Shared {
     /// Bumped whenever the world steps or is rebuilt.
     generation: u64,
     queries: Option<Queries>,
+    /// The humanoids the simulation runs (scripts call into them).
+    pub(crate) humanoids: crate::humanoid::Humanoids,
+    /// The Players service's local player and characters.
+    pub(crate) players: crate::players::Players,
+    /// Animators and their tracks.
+    pub(crate) animations: crate::animation::Animations,
 }
 
 /// What spatial queries read: the live DOM, the groups, the index.
@@ -106,6 +114,11 @@ impl Shared {
             groups,
             spatial: Rc::new(RefCell::new(Spatial::default())),
         });
+    }
+
+    /// The DOM and the reflection database, once connected.
+    pub(crate) fn dom_and_db(&self) -> Option<(Rc<RefCell<WeakDom>>, &'static ReflectionDatabase)> {
+        self.queries.as_ref().map(|q| (q.dom.clone(), q.db))
     }
 
     /// The mass of a part the world hasn't built yet (made this frame):
@@ -197,6 +210,47 @@ impl Physics for Bridge {
 
     fn apply_impulse(&self, part: Ref, impulse: [f64; 3], angular: bool) {
         self.0.borrow_mut().impulses.push((part, impulse, angular));
+    }
+
+    fn engine_method(&self, class: &str, key: &str) -> bool {
+        crate::engine::is_method(class, key)
+    }
+
+    fn engine_signal(&self, class: &str, key: &str) -> bool {
+        crate::engine::is_signal(class, key)
+    }
+
+    fn call(
+        &self,
+        referent: Ref,
+        class: &str,
+        method: &str,
+        args: Vec<rbx_lua::server::Arg>,
+    ) -> Result<rbx_lua::server::CallReply, String> {
+        crate::engine::call(&self.0, referent, class, method, args)
+    }
+
+    fn engine_property(
+        &self,
+        referent: Ref,
+        class: &str,
+        key: &str,
+    ) -> Option<rbx_lua::server::Arg> {
+        crate::engine::property(&self.0.borrow(), referent, class, key)
+    }
+
+    fn signal_method(&self, class: &str, key: &str) -> bool {
+        crate::animation::is_signal_method(class, key)
+    }
+
+    fn engine_write(
+        &self,
+        referent: Ref,
+        class: &str,
+        key: &str,
+        value: &rbx_lua::server::Arg,
+    ) -> Option<rbx_lua::server::Arg> {
+        crate::engine::write(&self.0, referent, class, key, value)
     }
 }
 
@@ -589,15 +643,29 @@ impl World {
     /// frame, then the substeps coast) and, while gravity speeds it up,
     /// moves to 120 Hz past `T120` and to 240 Hz past `T240` (speeds that
     /// grow with its size). Each switch up adds one kick of the new rate.
-    pub fn step(&mut self, gravity: f64, steps: u32, adaptive: bool) -> Vec<Touch> {
+    pub fn step(
+        &mut self,
+        gravity: f64,
+        steps: u32,
+        adaptive: bool,
+        drives: &mut [Drive],
+    ) -> Vec<Touch> {
         self.shared.borrow_mut().generation += 1;
         // A world just built has no contacts yet: everything takes 240 Hz once.
         let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
         let g = Vector::new(0.0, -gravity, 0.0);
         let h = self.params.dt;
         let mut kicked: Vec<(RigidBodyHandle, u32)> = Vec::new();
+        // Characters always step at 240 Hz (HumanoidDrop: a falling
+        // character's first frames are 240 Hz free fall).
+        let driven: HashSet<RigidBodyHandle> = drives
+            .iter()
+            .filter_map(|d| self.parts.get(&d.root))
+            .map(|p| self.assemblies[p.assembly].body)
+            .collect();
         for assembly in self.assemblies.iter().filter(|a| !a.anchored) {
             let free = adaptive
+                && !driven.contains(&assembly.body)
                 && !self.constrained.contains(&assembly.body)
                 && !self.in_contact(assembly);
             let Some(body) = self.bodies.get_mut(assembly.body) else {
@@ -653,6 +721,7 @@ impl World {
                 }
             }
             self.drive_constraints(h, g);
+            self.drive_characters(drives, h, gravity, substep);
             let mixer = Mixer(&self.surfaces);
             self.pipeline.step(
                 g,

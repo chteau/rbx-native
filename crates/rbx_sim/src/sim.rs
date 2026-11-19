@@ -8,7 +8,8 @@ use rbx_lua::server::{Event, ServerVm};
 use rbx_lua::Output;
 use rbx_reflection::ReflectionDatabase;
 
-use crate::physics::{Bridge, Shared, Touch, World, PHYSICS_HZ};
+use crate::physics::{Bridge, Drive, Shared, Touch, World, PHYSICS_HZ};
+use crate::players::{Avatars, Due};
 use crate::scripts;
 
 /// Frames a second, Roblox's server rate.
@@ -44,6 +45,7 @@ pub struct Simulation {
     db: &'static ReflectionDatabase,
     vm: ServerVm,
     world: World,
+    shared: Rc<RefCell<Shared>>,
     frame: u64,
     dirty: bool,
     output: Output,
@@ -66,12 +68,90 @@ impl Simulation {
             dom,
             db,
             vm,
-            world: World::new(shared),
+            world: World::new(shared.clone()),
+            shared,
             frame: 0,
             dirty: true,
             output: Output::default(),
             view_changes: None,
         })
+    }
+
+    /// Puts the local player in the game as `name`: `PlayerAdded` and
+    /// (with `CharacterAutoLoads`) its first character on the next frame.
+    pub fn join(&mut self, name: &str, user_id: i64) -> Option<Ref> {
+        let player = {
+            let mut dom = self.dom.borrow_mut();
+            self.shared
+                .borrow_mut()
+                .players
+                .join(&mut dom, self.db, name, user_id)
+        };
+        let edits = self.dom.borrow_mut().take_changes();
+        self.apply(edits);
+        player
+    }
+
+    /// The local player's character, a DOM whose one root is the model
+    /// (feet at the origin, facing -Z); the noob when never set.
+    pub fn set_character(&mut self, template: WeakDom) {
+        self.shared.borrow_mut().players.template = Some(template);
+    }
+
+    /// Where avatars come from (`GetHumanoidDescriptionFromUserId`,
+    /// `ApplyDescription`).
+    pub fn set_avatars(&mut self, avatars: Box<dyn Avatars>) {
+        self.shared.borrow_mut().players.avatars = Some(avatars);
+    }
+
+    /// The local player and its character, once joined.
+    pub fn local_player(&self) -> Option<(Ref, Option<Ref>)> {
+        let shared = self.shared.borrow();
+        let local = shared.players.local.as_ref()?;
+        let dom = self.dom.borrow();
+        Some((
+            local.player,
+            crate::humanoid::reference(&dom, local.player, "Character"),
+        ))
+    }
+
+    /// Steers the local character: `Humanoid:Move` with a world direction
+    /// (the controls), and `Jump`.
+    pub fn control(&mut self, direction: [f64; 3], jump: bool) {
+        let Some((_, Some(character))) = self.local_player() else {
+            return;
+        };
+        let humanoid = {
+            let dom = self.dom.borrow();
+            dom.get(character).and_then(|m| {
+                m.children()
+                    .iter()
+                    .copied()
+                    .find(|c| dom.get(*c).is_some_and(|i| i.class() == "Humanoid"))
+            })
+        };
+        let Some(humanoid) = humanoid else { return };
+        let v = [direction[0] as f32, 0.0, direction[2] as f32];
+        let reply = {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            let reply = shared.humanoids.call(
+                &mut dom,
+                self.db,
+                humanoid,
+                "Move",
+                &[rbx_lua::server::Arg::Vector3(v)],
+            );
+            if jump {
+                crate::humanoid::set(&mut dom, self.db, humanoid, "Jump", Variant::Bool(true));
+            }
+            reply
+        };
+        if let Ok(reply) = reply {
+            for (owner, name, args) in reply.fire {
+                self.fire(Event::Signal { owner, name, args });
+            }
+        }
     }
 
     /// Starts every script the server would run, in tree order, and runs
@@ -156,6 +236,7 @@ impl Simulation {
         self.vm.set_time(now);
 
         self.fire(Event::RunService("PreAnimation", vec![dt]));
+        self.animate(dt);
         self.fire(Event::RunService("Stepped", vec![started, dt]));
         self.fire(Event::RunService("PreSimulation", vec![dt]));
 
@@ -175,15 +256,46 @@ impl Simulation {
     }
 
     fn physics_step(&mut self) -> Vec<Touch> {
+        let (gravity, fallen_height) = self.workspace_numbers();
+        self.players_step();
+        {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            shared.humanoids.frame = self.frame;
+            shared.humanoids.sync(&mut dom, self.db);
+        }
+        let edits = self.dom.borrow_mut().take_changes();
+        self.apply(edits);
         if self.dirty {
             self.rebuild();
         }
-        let (gravity, fallen_height) = self.workspace_numbers();
+        let mut drives: Vec<Drive> = {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            shared
+                .humanoids
+                .before_physics(&mut dom, self.db, &self.world, gravity)
+        };
+        self.humanoid_events();
+        // Deaths and seats can break or make joints: rebuild now.
+        let edits = self.dom.borrow_mut().take_changes();
+        self.apply(edits);
+        if self.dirty {
+            self.rebuild();
+        }
         let steps = (PHYSICS_HZ / FRAME_HZ).round() as u32;
         self.world.refresh_constraints(&self.dom.borrow(), self.db);
-        let touches = self.world.step(gravity, steps, self.adaptive_stepping());
+        let touches = self
+            .world
+            .step(gravity, steps, self.adaptive_stepping(), &mut drives);
         self.world.write_back(&mut self.dom.borrow_mut(), self.db);
         self.world.write_constraints(&mut self.dom.borrow_mut());
+        crate::animation::lay_out(&mut self.dom.borrow_mut(), &self.shared.borrow().animations);
+        self.shared
+            .borrow_mut()
+            .humanoids
+            .after_physics(&self.world, &drives);
+        self.humanoid_events();
         if let Some(seen) = &mut self.view_changes {
             let dom = self.dom.borrow();
             seen.extend(
@@ -203,8 +315,101 @@ impl Simulation {
         touches
     }
 
+    /// Joining, characters loading and respawning, appearance events, old
+    /// characters destroyed.
+    fn players_step(&mut self) {
+        let due = {
+            let dom = self.dom.borrow();
+            let mut shared = self.shared.borrow_mut();
+            shared.players.frame = self.frame;
+            let Shared {
+                players, humanoids, ..
+            } = &mut *shared;
+            players.due(&dom, self.db, humanoids)
+        };
+        for due in due {
+            match due {
+                Due::Fire(event) => self.fire(event),
+                Due::Load => self.load_character(),
+            }
+        }
+        let old = std::mem::take(&mut self.shared.borrow_mut().players.old);
+        for character in old {
+            let changes = self.vm.destroy(character);
+            self.apply(changes);
+        }
+    }
+
+    /// `LoadCharacter` from the engine (auto-load, respawn): the same three
+    /// steps a script's call takes, scripts running between them.
+    fn load_character(&mut self) {
+        let removing = self.shared.borrow().players.removing(&self.dom.borrow());
+        if let Some((owner, name, args)) = removing {
+            self.fire(Event::Signal { owner, name, args });
+        }
+        let added = {
+            let mut dom = self.dom.borrow_mut();
+            self.shared.borrow_mut().players.build(&mut dom, self.db)
+        };
+        if let Some((owner, name, args)) = added {
+            self.fire(Event::Signal { owner, name, args });
+        }
+        {
+            let mut dom = self.dom.borrow_mut();
+            self.shared.borrow_mut().players.place(&mut dom, self.db);
+        }
+        let edits = self.dom.borrow_mut().take_changes();
+        self.apply(edits);
+    }
+
+    /// Steps every Animator `dt` and fires what its tracks did.
+    fn animate(&mut self, dt: f64) {
+        let events = {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            shared.animations.step(&mut dom, dt);
+            std::mem::take(&mut shared.animations.events)
+        };
+        for event in events {
+            self.fire(event);
+        }
+    }
+
+    /// Where animations not in the asset cache are downloaded from.
+    pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
+        self.shared.borrow_mut().animations.fetcher = Some(fetcher);
+    }
+
+    /// Fires what the humanoids queued and destroys the joints they broke.
+    fn humanoid_events(&mut self) {
+        let (events, destroy) = {
+            let mut shared = self.shared.borrow_mut();
+            (
+                std::mem::take(&mut shared.humanoids.events),
+                std::mem::take(&mut shared.humanoids.destroy),
+            )
+        };
+        for event in events {
+            self.fire(event);
+        }
+        for joint in destroy {
+            let changes = self.vm.destroy(joint);
+            self.apply(changes);
+        }
+    }
+
     /// `Touched`/`TouchEnded` for both parts of each touch.
     fn fire_touches(&mut self, touches: Vec<Touch>) {
+        for touch in &touches {
+            if touch.began {
+                let mut dom = self.dom.borrow_mut();
+                self.shared
+                    .borrow_mut()
+                    .humanoids
+                    .touched(&mut dom, self.db, touch.a, touch.b);
+            }
+        }
+        self.humanoid_events();
         for touch in touches {
             for (part, other) in [(touch.a, touch.b), (touch.b, touch.a)] {
                 self.fire(if touch.began {
@@ -269,9 +474,10 @@ impl Simulation {
     fn start_scripts_under(&mut self, root: Ref) {
         let found: Vec<Ref> = {
             let dom = self.dom.borrow();
+            let client = self.shared.borrow().players.client_roots(&dom);
             scripts::subtree(&dom, root)
                 .into_iter()
-                .filter(|r| scripts::runs(&dom, *r))
+                .filter(|r| scripts::runs(&dom, *r) || scripts::runs_on_client(&dom, *r, &client))
                 .collect()
         };
         for script in found {
@@ -335,7 +541,7 @@ impl Simulation {
             return;
         }
         if !(is_part || is_joint) {
-            if class == "Script" && name != "Source" {
+            if matches!(class, "Script" | "LocalScript") && name != "Source" {
                 drop(dom);
                 self.start_scripts_under(referent);
             }

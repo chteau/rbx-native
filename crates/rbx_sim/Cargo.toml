@@ -12,6 +12,7 @@ rbx_binary = { path = "../rbx_binary" }
 rbx_xml = { path = "../rbx_xml" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_lua = { path = "../rbx_lua" }
+rbx_animation = { path = "../rbx_animation" }
 rbx_assets = { path = "../rbx_assets" }
 rbx_mesh = { path = "../rbx_mesh" }
 # Rigid-body physics (Apache-2.0), the stand-in for Roblox's own solver,
