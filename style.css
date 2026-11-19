@@ -172,6 +172,11 @@ footer { max-width: 1240px; margin: 0 auto; padding: 28px var(--gutter) 36px; }
   .nav-links .nav-wide { display: none; }
 }
 
+/* With Changelog in, the full nav needs about 1000px. */
+@media (max-width: 1000px) {
+  .nav-links .nav-wide { display: none; }
+}
+
 @media (max-width: 520px) {
   .nav-links .nav-mid { display: none; }
   .nav-links a { white-space: nowrap; }
