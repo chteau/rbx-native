@@ -6,27 +6,57 @@
 //! cargo run -p rbx_sim --example conformance -- --write docs/research/local-run/CONFORMANCE.md
 //! ```
 
+use std::sync::Arc;
+
+use rbx_assets::{AssetFetcher, FetchError};
+use rbx_cloud::Client;
 use rbx_sim::conformance::{self, Row, TESTS};
+
+/// Public animations (the default ones, the catalog's) over the anonymous
+/// asset delivery route; they land in the asset cache for the next run.
+struct Anonymous(Client);
+
+impl AssetFetcher for Anonymous {
+    fn fetch_id(&self, id: u64) -> Result<Vec<u8>, FetchError> {
+        self.0
+            .asset(id)
+            .map(|c| c.bytes)
+            .map_err(|err| FetchError::Other {
+                id,
+                message: err.to_string(),
+            })
+    }
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let write = match args.as_slice() {
-        [] => None,
-        [flag, path] if flag == "--write" => Some(path.clone()),
-        _ => {
-            eprintln!("usage: conformance [--write <file.md>]");
-            std::process::exit(2);
+    let mut write = None;
+    let mut only: Vec<String> = Vec::new();
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match (arg.as_str(), rest.next()) {
+            ("--write", Some(path)) => write = Some(path.clone()),
+            ("--only", Some(names)) => only.extend(names.split(',').map(str::to_owned)),
+            _ => {
+                eprintln!("usage: conformance [--write <file.md>] [--only Test,Test]");
+                std::process::exit(2);
+            }
         }
-    };
-    let ours = conformance::run_in_sim(1200.0).unwrap_or_else(|err| {
-        eprintln!("{err}");
-        std::process::exit(1);
-    });
+    }
+    let ours =
+        conformance::run_some_in_sim(1200.0, &only, Some(Arc::new(Anonymous(Client::new(None)))))
+            .unwrap_or_else(|err| {
+                eprintln!("{err}");
+                std::process::exit(1);
+            });
     let mut table =
         String::from("| Test | Field | Roblox | rbx_sim | Delta | |\n|---|---|---|---|---|---|\n");
     let mut unrecorded = Vec::new();
     let mut gaps = Vec::new();
-    for test in TESTS {
+    for test in TESTS
+        .iter()
+        .filter(|t| only.is_empty() || only.iter().any(|n| n == t.name))
+    {
         let mine = ours.get(test.name).cloned().unwrap_or_default();
         let Some(golden) = conformance::golden(test.name).filter(|g| g["status"] == "recorded")
         else {

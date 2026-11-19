@@ -139,4 +139,158 @@ function Harness.names(parts)
 	return table.concat(names, ",")
 end
 
+-- An anchored floor whose top is at `origin`.
+function Harness.floor(origin, size)
+	local s = size or Vector3.new(120, 2, 120)
+	return Harness.part({
+		Name = "Floor",
+		Anchored = true,
+		Size = s,
+		Position = origin - Vector3.new(0, s.Y / 2, 0),
+	})
+end
+
+-- R15 parts (name, size, centre) and joints (name, part0, part1, pivot),
+-- relative to the root's centre, which sits 3 studs above the feet. Our
+-- own proportions: 2 stud legs under a 2x2x1 root, so HipHeight is 2.
+local R15 = {
+	parts = {
+		{ "LowerTorso", Vector3.new(2, 0.4, 1), Vector3.new(0, -0.8, 0) },
+		{ "UpperTorso", Vector3.new(2, 1.6, 1), Vector3.new(0, 0.2, 0) },
+		{ "Head", Vector3.new(1.2, 1.2, 1.2), Vector3.new(0, 1.6, 0) },
+		{ "LeftUpperArm", Vector3.new(1, 1, 1), Vector3.new(-1.5, 0.5, 0) },
+		{ "LeftLowerArm", Vector3.new(1, 0.8, 1), Vector3.new(-1.5, -0.4, 0) },
+		{ "LeftHand", Vector3.new(1, 0.2, 1), Vector3.new(-1.5, -0.9, 0) },
+		{ "RightUpperArm", Vector3.new(1, 1, 1), Vector3.new(1.5, 0.5, 0) },
+		{ "RightLowerArm", Vector3.new(1, 0.8, 1), Vector3.new(1.5, -0.4, 0) },
+		{ "RightHand", Vector3.new(1, 0.2, 1), Vector3.new(1.5, -0.9, 0) },
+		{ "LeftUpperLeg", Vector3.new(1, 0.9, 1), Vector3.new(-0.5, -1.45, 0) },
+		{ "LeftLowerLeg", Vector3.new(1, 0.9, 1), Vector3.new(-0.5, -2.35, 0) },
+		{ "LeftFoot", Vector3.new(1, 0.2, 1), Vector3.new(-0.5, -2.9, 0) },
+		{ "RightUpperLeg", Vector3.new(1, 0.9, 1), Vector3.new(0.5, -1.45, 0) },
+		{ "RightLowerLeg", Vector3.new(1, 0.9, 1), Vector3.new(0.5, -2.35, 0) },
+		{ "RightFoot", Vector3.new(1, 0.2, 1), Vector3.new(0.5, -2.9, 0) },
+	},
+	joints = {
+		{ "Root", "HumanoidRootPart", "LowerTorso", Vector3.new(0, -0.6, 0) },
+		{ "Waist", "LowerTorso", "UpperTorso", Vector3.new(0, -0.6, 0) },
+		{ "Neck", "UpperTorso", "Head", Vector3.new(0, 1, 0) },
+		{ "LeftShoulder", "UpperTorso", "LeftUpperArm", Vector3.new(-1.5, 1, 0) },
+		{ "LeftElbow", "LeftUpperArm", "LeftLowerArm", Vector3.new(-1.5, 0, 0) },
+		{ "LeftWrist", "LeftLowerArm", "LeftHand", Vector3.new(-1.5, -0.8, 0) },
+		{ "RightShoulder", "UpperTorso", "RightUpperArm", Vector3.new(1.5, 1, 0) },
+		{ "RightElbow", "RightUpperArm", "RightLowerArm", Vector3.new(1.5, 0, 0) },
+		{ "RightWrist", "RightLowerArm", "RightHand", Vector3.new(1.5, -0.8, 0) },
+		{ "LeftHip", "LowerTorso", "LeftUpperLeg", Vector3.new(-0.5, -1, 0) },
+		{ "LeftKnee", "LeftUpperLeg", "LeftLowerLeg", Vector3.new(-0.5, -1.9, 0) },
+		{ "LeftAnkle", "LeftLowerLeg", "LeftFoot", Vector3.new(-0.5, -2.8, 0) },
+		{ "RightHip", "LowerTorso", "RightUpperLeg", Vector3.new(0.5, -1, 0) },
+		{ "RightKnee", "RightUpperLeg", "RightLowerLeg", Vector3.new(0.5, -1.9, 0) },
+		{ "RightAnkle", "RightLowerLeg", "RightFoot", Vector3.new(0.5, -2.8, 0) },
+	},
+}
+
+-- R6: joints in the torso (RootJoint in the root), 2 stud legs.
+local R6 = {
+	parts = {
+		{ "Torso", Vector3.new(2, 2, 1), Vector3.new(0, 0, 0) },
+		{ "Head", Vector3.new(2, 1, 1), Vector3.new(0, 1.5, 0) },
+		{ "Left Arm", Vector3.new(1, 2, 1), Vector3.new(-1.5, 0, 0) },
+		{ "Right Arm", Vector3.new(1, 2, 1), Vector3.new(1.5, 0, 0) },
+		{ "Left Leg", Vector3.new(1, 2, 1), Vector3.new(-0.5, -2, 0) },
+		{ "Right Leg", Vector3.new(1, 2, 1), Vector3.new(0.5, -2, 0) },
+	},
+	joints = {
+		{ "RootJoint", "HumanoidRootPart", "Torso", Vector3.new(0, 0, 0), "HumanoidRootPart" },
+		{ "Neck", "Torso", "Head", Vector3.new(0, 1, 0), "Torso" },
+		{ "Left Shoulder", "Torso", "Left Arm", Vector3.new(-1.5, 0.5, 0), "Torso" },
+		{ "Right Shoulder", "Torso", "Right Arm", Vector3.new(1.5, 0.5, 0), "Torso" },
+		{ "Left Hip", "Torso", "Left Leg", Vector3.new(-0.5, -1, 0), "Torso" },
+		{ "Right Hip", "Torso", "Right Leg", Vector3.new(0.5, -1, 0), "Torso" },
+	},
+}
+
+-- A character made of plain Parts (no assets), so real Roblox and rbx_sim
+-- start from the same model: a Humanoid (`props` set on it), a
+-- HumanoidRootPart and Motor6Ds, the bottoms of its feet at `feet`. In
+-- workspace with the server owning it, unless `keep` (then unparented).
+function Harness.character(feet, rigType, props, keep)
+	local layout = if rigType == "R6" then R6 else R15
+	local model = Instance.new("Model")
+	model.Name = "Rig"
+	local centre = CFrame.new(feet + Vector3.new(0, 3, 0))
+	local parts = {}
+	local function add(name, size, offset)
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Size = size
+		part.CFrame = centre + offset
+		part.TopSurface = Enum.SurfaceType.Smooth
+		part.BottomSurface = Enum.SurfaceType.Smooth
+		part.Parent = model
+		parts[name] = part
+		return part
+	end
+	local root = add("HumanoidRootPart", Vector3.new(2, 2, 1), Vector3.zero)
+	root.Transparency = 1
+	for _, p in layout.parts do
+		add(p[1], p[2], p[3])
+	end
+	for _, j in layout.joints do
+		local motor = Instance.new("Motor6D")
+		motor.Name = j[1]
+		motor.Part0 = parts[j[2]]
+		motor.Part1 = parts[j[3]]
+		local pivot = centre + j[4]
+		motor.C0 = motor.Part0.CFrame:ToObjectSpace(pivot)
+		motor.C1 = motor.Part1.CFrame:ToObjectSpace(pivot)
+		motor.Parent = parts[j[5] or j[3]]
+	end
+	local humanoid = Instance.new("Humanoid")
+	humanoid.RigType = if rigType == "R6" then Enum.HumanoidRigType.R6 else Enum.HumanoidRigType.R15
+	humanoid.HipHeight = if rigType == "R6" then 0 else 2
+	for key, value in props or {} do
+		humanoid[key] = value
+	end
+	humanoid.Parent = model
+	model.PrimaryPart = root
+	if not keep then
+		model.Parent = workspace
+		root:SetNetworkOwner(nil)
+	end
+	return model, humanoid, root
+end
+
+-- Logs `humanoid`'s state changes as "Old>New@beat", the beat read from
+-- `clock`.
+function Harness.states(humanoid, clock)
+	local log = {}
+	humanoid.StateChanged:Connect(function(old, new)
+		table.insert(log, string.format("%s>%s@%d", old.Name, new.Name, clock.now()))
+	end)
+	return log
+end
+
+-- A heartbeat counter: `tick()` waits a beat and counts it, `now()` reads
+-- the count.
+function Harness.clock()
+	local beat = 0
+	return {
+		tick = function()
+			RunService.Heartbeat:Wait()
+			beat += 1
+			return beat
+		end,
+		now = function()
+			return beat
+		end,
+	}
+end
+
+-- Facing in degrees: 0 along -Z (a fresh part's LookVector), 90 along +X.
+function Harness.yaw(cframe)
+	local look = cframe.LookVector
+	return Harness.round(math.deg(math.atan2(look.X, -look.Z)), 2)
+end
+
 return Harness

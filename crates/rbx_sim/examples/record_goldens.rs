@@ -10,7 +10,7 @@
 //!
 //! ```text
 //! cargo run -p rbx_sim --example record_goldens -- \
-//!     <universe_id> <place_id> <base.rbxl> <cloudflared>
+//!     <universe_id> <place_id> <base.rbxl | bare> <cloudflared>
 //! ```
 
 use std::collections::BTreeMap;
@@ -59,8 +59,12 @@ fn main() {
     say(&format!("tunnel {}", tunnel.public_url));
     wait_for_tunnel(&tunnel.public_url, &token, &say);
 
-    let bytes = std::fs::read(base).expect("base place");
-    let mut dom = rbx_binary::deserialize(&bytes).expect("parse base place");
+    let mut dom = if base == "bare" {
+        conformance::bare_place()
+    } else {
+        rbx_binary::deserialize(&*std::fs::read(base).expect("base place"))
+            .expect("parse base place")
+    };
     conformance::add_to(&mut dom, passes, &only);
     inject::inject(
         &mut dom,
