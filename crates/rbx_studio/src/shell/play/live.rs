@@ -360,6 +360,7 @@ impl Shell {
         let tree = match context {
             Side::Server => &self.play.live.server,
             Side::Client => &self.play.live.client,
+            Side::LocalRun => return None,
         };
         let mut players: Vec<String> = find_path(&tree.dom, &["Players".to_string()])
             .and_then(|p| tree.dom.get(p))

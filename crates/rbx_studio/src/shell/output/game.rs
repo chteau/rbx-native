@@ -22,6 +22,9 @@
 pub(crate) enum Context {
     Server,
     Client,
+    /// Model › Run (local) and Play (local): server and client scripts in
+    /// one simulation.
+    LocalRun,
 }
 
 impl Context {
@@ -29,6 +32,7 @@ impl Context {
         match self {
             Context::Server => "Server",
             Context::Client => "Client",
+            Context::LocalRun => "Local Run",
         }
     }
 }
