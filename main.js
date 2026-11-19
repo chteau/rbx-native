@@ -52,12 +52,41 @@ fetch("https://api.github.com/repos/chteau/rbx-native/releases?per_page=10")
         break;
       }
     }
+    const latest = releases.find((release) => !release.draft);
+    if (latest) showChanges(latest);
     if (tag) {
       document.getElementById("download-note").innerHTML =
         tag + ". Each system has its own quirks, they're in the <a href=\"docs/install.html#systems\">install guide</a>.";
     }
   })
   .catch(() => {});
+
+// "Latest changes": the latest release's headlines, the bold first sentence
+// of each changelog entry. The list in the page is only what shows when
+// GitHub doesn't answer.
+function showChanges(release) {
+  const headlines = (release.body || "")
+    .split("\n")
+    .map((line) => /^[-*] \*\*(.+?)\*\*/.exec(line))
+    .filter(Boolean)
+    .slice(0, 6)
+    .map(([, text]) => escape(text.replace(/\.$/, "")).replace(/`([^`]+)`/g, "<code>$1</code>"));
+  if (!headlines.length) return;
+  const list = document.getElementById("changes-list");
+  const items = [...list.children];
+  // Reuse the page's own items so the reveal animation still finds them.
+  headlines.forEach((html, i) => {
+    let item = items[i];
+    if (!item) {
+      item = items[items.length - 1].cloneNode();
+      list.append(item);
+    }
+    item.innerHTML = html;
+  });
+  items.slice(headlines.length).forEach((item) => item.remove());
+  const date = new Date(release.published_at).toLocaleDateString("en", { year: "numeric", month: "long", day: "numeric" });
+  document.getElementById("changes-note").textContent = `${release.name || release.tag_name} · ${date}`;
+}
 
 const picker = document.getElementById("get");
 const escape = (text) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
