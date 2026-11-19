@@ -64,6 +64,18 @@ pub(crate) trait Host {
         self.output(LineKind::Error, error.to_string());
     }
 
+    /// The signals the host adds to a reparenting (see
+    /// `server::Physics::reparented`).
+    fn reparented(
+        &self,
+        _child: Ref,
+        _old: Option<Ref>,
+        _new: Option<Ref>,
+        _after: bool,
+    ) -> Vec<(Ref, String, Vec<crate::plugin::api::Arg>)> {
+        Vec::new()
+    }
+
     /// Whether a root of the DOM belongs to the host rather than to the
     /// place (a plugin's parked instances): `DescendantAdded` on `game` and
     /// `CollectionService:GetTagged` leave those out.

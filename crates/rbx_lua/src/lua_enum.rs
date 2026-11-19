@@ -105,18 +105,15 @@ impl UserData for LuaEnum {
             Ok(table)
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, item: String| {
-            let value = this
-                .ctx
-                .database()
-                .enum_items(&this.name)
-                .and_then(|items| items.iter().find(|(name, _)| *name == item))
-                .map(|(_, value)| *value)
-                .ok_or_else(|| {
-                    mlua::Error::runtime(format!(
-                        "{item} is not a valid member of Enum.{}",
-                        this.name
-                    ))
-                })?;
+            let db = this.ctx.database();
+            let value = db.enum_value(&this.name, &item).ok_or_else(|| {
+                mlua::Error::runtime(format!(
+                    "{item} is not a valid member of Enum.{}",
+                    this.name
+                ))
+            })?;
+            // A legacy name is the same item as the current one.
+            let item = db.enum_name(&this.name, value).map_or(item, str::to_owned);
             LuaEnumItem::new(this.name.clone(), item, value, this.ctx.clone()).interned(lua)
         });
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {

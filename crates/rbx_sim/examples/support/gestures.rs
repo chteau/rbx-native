@@ -46,6 +46,13 @@ pub fn perform(gesture: &str) -> Result<(), String> {
             sleep(STEP * 2);
             input.button(Button::Right, false).map_err(fail)?;
         }
+        Some("click") => {
+            input.move_to(number(1), number(2)).map_err(fail)?;
+            sleep(STEP * 4);
+            input.button(Button::Left, true).map_err(fail)?;
+            sleep(STEP * 4);
+            input.button(Button::Left, false).map_err(fail)?;
+        }
         Some("key") => {
             let key = rbx_play::keycode::find(words.get(1).copied().unwrap_or_default())
                 .ok_or("no such key")?;

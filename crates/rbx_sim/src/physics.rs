@@ -97,6 +97,10 @@ pub struct Shared {
     /// Engine calls on a humanoid another peer simulates, for the session
     /// to hand to its owner: (humanoid, method, arguments).
     pub(crate) forwarded: Vec<(Ref, String, Vec<rbx_lua::server::Arg>)>,
+    /// A client's GUI: layout, focus, the core GUI switches.
+    pub(crate) gui: crate::gui::Gui,
+    pub(crate) tools: crate::tools::Tools,
+    pub(crate) teams: crate::teams::Teams,
 }
 
 /// What spatial queries read: the live DOM, the groups, the index.
@@ -283,6 +287,50 @@ impl Physics for Bridge {
             return Err(crate::ownership::ANCHORED.into());
         }
         Ok(self.0.borrow().ownership.is_auto(part))
+    }
+
+    fn reparented(
+        &self,
+        child: Ref,
+        old: Option<Ref>,
+        new: Option<Ref>,
+        after: bool,
+    ) -> Vec<(Ref, String, Vec<rbx_lua::server::Arg>)> {
+        let Some((dom, db)) = self.0.borrow().dom_and_db() else {
+            return Vec::new();
+        };
+        let Ok(mut dom) = dom.try_borrow_mut() else {
+            return Vec::new();
+        };
+        let mut shared = self.0.borrow_mut();
+        let server = !shared.players.client;
+        let local = shared.players.local;
+        let mut fire = shared
+            .tools
+            .reparented(&mut dom, db, server, local, child, old, new, after);
+        if after && server && dom.get(child).is_some_and(|i| i.class() == "Team") {
+            fire.extend(shared.teams.sync(&mut dom, db));
+        }
+        fire
+    }
+
+    fn property_written(
+        &self,
+        referent: Ref,
+        class: &str,
+        key: &str,
+    ) -> Vec<(Ref, String, Vec<rbx_lua::server::Arg>)> {
+        let Some((dom, db)) = self.0.borrow().dom_and_db() else {
+            return Vec::new();
+        };
+        let Ok(mut dom) = dom.try_borrow_mut() else {
+            return Vec::new();
+        };
+        let mut shared = self.0.borrow_mut();
+        if shared.players.client {
+            return Vec::new();
+        }
+        shared.teams.written(&mut dom, db, referent, class, key)
     }
 }
 

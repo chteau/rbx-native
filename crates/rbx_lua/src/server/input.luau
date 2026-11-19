@@ -18,6 +18,8 @@ local location = Vector2.zero
 local lastType = Enum.UserInputType.None
 
 local DEFAULT_PRIORITY = Enum.ContextActionPriority.Medium.Value
+-- GuiService:GetGuiInset()'s top (rbx_sim's GuiRuntime golden).
+local TOPBAR_INSET = 58
 
 local function matches(binding, input)
 	for _, wanted in binding.inputs do
@@ -68,8 +70,9 @@ function M.frame()
 end
 
 -- One input, after the engine wrote its InputObject: true when a bound
--- action sank it.
-function M.dispatch(input)
+-- action sank it, or the GUI already had (`sunk`: a button or a focused
+-- TextBox took it, and no action hears it).
+function M.dispatch(input, sunk)
 	local kind = input.UserInputType
 	local began = input.UserInputState == Enum.UserInputState.Begin
 	if kind == Enum.UserInputType.Keyboard then
@@ -80,9 +83,14 @@ function M.dispatch(input)
 		delta += Vector2.new(input.Delta.X, input.Delta.Y)
 	end
 	if kind == Enum.UserInputType.MouseMovement or string.sub(kind.Name, 1, 5) == "Mouse" then
-		location = Vector2.new(input.Position.X, input.Position.Y)
+		-- A mouse InputObject counts from below the top bar; the location
+		-- doesn't.
+		location = Vector2.new(input.Position.X, input.Position.Y + TOPBAR_INSET)
 	end
 	lastType = kind
+	if sunk then
+		return true
+	end
 	for _, binding in ordered() do
 		if matches(binding, input) and handle(binding, input) ~= Enum.ContextActionResult.Pass then
 			return true
@@ -195,9 +203,6 @@ local UIS = {
 	end,
 	GetLastInputType = function()
 		return lastType
-	end,
-	GetFocusedTextBox = function()
-		return nil
 	end,
 	GetConnectedGamepads = function()
 		return {}

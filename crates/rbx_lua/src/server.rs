@@ -168,6 +168,31 @@ pub trait Physics {
     fn network_ownership_auto(&self, _part: Ref) -> Result<bool, String> {
         Ok(true)
     }
+
+    /// `child` moved from `old` to `new`, as its events fire: the signals
+    /// the engine adds, fired just before its `AncestryChanged`
+    /// (`after: false`; a tool's `Unequipped`) or after its
+    /// `Changed:Parent` (`after: true`; a tool's `Equipped`).
+    fn reparented(
+        &self,
+        _child: Ref,
+        _old: Option<Ref>,
+        _new: Option<Ref>,
+        _after: bool,
+    ) -> Vec<(Ref, String, Vec<Arg>)> {
+        Vec::new()
+    }
+
+    /// A script wrote `class.key`: the signals that fire for it before the
+    /// next line (a team's `PlayerAdded` for a player's `TeamColor`).
+    fn property_written(
+        &self,
+        _referent: Ref,
+        _class: &str,
+        _key: &str,
+    ) -> Vec<(Ref, String, Vec<Arg>)> {
+        Vec::new()
+    }
 }
 
 /// What a [`Physics::call`] returns, and the signals it fires before it
@@ -214,6 +239,7 @@ struct ServerHost {
     output: Rc<RefCell<Output>>,
     now: Cell<f64>,
     next_id: Cell<u32>,
+    physics: Rc<dyn Physics>,
 }
 
 impl Host for ServerHost {
@@ -250,6 +276,16 @@ impl Host for ServerHost {
     fn output(&self, kind: LineKind, text: String) {
         self.output.borrow_mut().push_text(kind, text);
     }
+
+    fn reparented(
+        &self,
+        child: Ref,
+        old: Option<Ref>,
+        new: Option<Ref>,
+        after: bool,
+    ) -> Vec<(Ref, String, Vec<Arg>)> {
+        self.physics.reparented(child, old, new, after)
+    }
 }
 
 /// The server's Luau VM over a DOM shared with the simulation.
@@ -281,6 +317,7 @@ impl ServerVm {
             output: output.clone(),
             now: Cell::new(0.0),
             next_id: Cell::new(0),
+            physics: physics.clone(),
         });
         let groups = Rc::new(RefCell::new(CollisionGroups::default()));
         let lua = Lua::new();
@@ -294,6 +331,7 @@ impl ServerVm {
             physics,
             groups: groups.clone(),
             fired: fired.clone(),
+            mark: Cell::new(usize::MAX),
             client: client.clone(),
             remotes: remotes.clone(),
             loaded: loaded.clone(),
@@ -385,12 +423,18 @@ impl ServerVm {
     }
 
     /// Hands one input the engine wrote into `input` (an `InputObject`) to
-    /// the game as a client does: the bound actions first, then `uis`'s
-    /// `signal` (`InputBegan`, `InputChanged` or `InputEnded`) with whether
-    /// an action sank it.
-    pub fn input(&mut self, input: Ref, uis: Ref, signal_name: &str) -> Vec<Change> {
+    /// the game as a client does: the bound actions first (none when the
+    /// GUI already `processed` it), then `uis`'s `signal` (`InputBegan`,
+    /// `InputChanged` or `InputEnded`) with whether either took it.
+    pub fn input(
+        &mut self,
+        input: Ref,
+        uis: Ref,
+        signal_name: &str,
+        processed: bool,
+    ) -> Vec<Change> {
         self.guarded(|lua| {
-            let processed = input::dispatch(lua, input)?;
+            let processed = input::dispatch(lua, input, processed)?;
             signal::fire(
                 lua,
                 &instance_key(uis, signal_name),
@@ -547,14 +591,7 @@ impl ServerVm {
     pub fn destroy(&mut self, root: Ref) -> Vec<Change> {
         self.guarded(|lua| {
             let ctx = engine(lua).ctx.clone();
-            if ctx.dom().get(root).is_none() {
-                return Ok(());
-            }
-            crate::engine::changes::destroying(lua, root)?;
-            let mut dom = ctx.dom_mut();
-            ctx.bury(&dom, root);
-            dom.remove(root);
-            Ok(())
+            crate::engine::changes::destroy(lua, &ctx, root)
         })
     }
 

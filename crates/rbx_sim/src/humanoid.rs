@@ -1058,6 +1058,17 @@ impl Humanoids {
                     v
                 };
                 self.register(dom, db, humanoid);
+                // A zero move leaves a `MoveTo` walking: the default
+                // controls send one every frame (ClientReplication's
+                // `client_speed` walks 16 with them running).
+                if length < 1e-6
+                    && self
+                        .characters
+                        .get(&humanoid)
+                        .is_some_and(|c| c.walk_to.is_some())
+                {
+                    return Ok(self.take_reply());
+                }
                 if let Some(c) = self.characters.get_mut(&humanoid) {
                     c.walk_to = None;
                 }

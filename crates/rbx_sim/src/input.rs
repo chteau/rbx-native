@@ -40,10 +40,7 @@ pub(crate) struct Inputs {
 }
 
 fn item(db: &ReflectionDatabase, enum_name: &str, name: &str) -> Option<Variant> {
-    db.enum_items(enum_name)?
-        .iter()
-        .find(|(n, _)| n == name)
-        .map(|(_, v)| Variant::Enum(*v))
+    db.enum_value(enum_name, name).map(Variant::Enum)
 }
 
 fn v3(x: f32, y: f32, z: f32) -> Variant {
@@ -108,7 +105,10 @@ impl Inputs {
                 r
             }
         };
+        // Like `AbsolutePosition`, an input's position counts from below
+        // the top bar.
         let [x, y] = self.position;
+        let y = y - crate::gui::TOPBAR_INSET;
         let values = [
             ("KeyCode", item(db, "KeyCode", code)),
             ("UserInputType", item(db, "UserInputType", kind)),
@@ -156,6 +156,32 @@ pub(crate) fn mouse_behavior(dom: &WeakDom) -> MouseBehavior {
         Some(1) => MouseBehavior::LockCenter,
         Some(2) => MouseBehavior::LockCurrentPosition,
         _ => MouseBehavior::Default,
+    }
+}
+
+/// Writes `Workspace.CurrentCamera.ViewportSize`, when it changed.
+pub(crate) fn set_viewport(dom: &mut WeakDom, size: [f32; 2]) {
+    let camera = dom
+        .root_refs()
+        .iter()
+        .filter_map(|r| dom.get(*r))
+        .find(|i| i.class() == "Workspace")
+        .and_then(|w| match w.properties().get("CurrentCamera") {
+            Some(Variant::Ref(r)) if dom.get(*r).is_some() => Some(*r),
+            _ => None,
+        });
+    let value = Variant::Vector2(rbx_dom::Vector2Data {
+        x: size[0],
+        y: size[1],
+    });
+    if let Some(camera) = camera {
+        if dom
+            .get(camera)
+            .and_then(|c| c.properties().get("ViewportSize"))
+            != Some(&value)
+        {
+            let _ = dom.set_property(camera, "ViewportSize", value);
+        }
     }
 }
 

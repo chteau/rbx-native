@@ -83,6 +83,8 @@ struct RawEnumItem {
     name: String,
     #[serde(rename = "Value")]
     value: u32,
+    #[serde(rename = "LegacyNames", default)]
+    legacy_names: Vec<String>,
 }
 
 /// Parses a Roblox API dump JSON into class and enum descriptors.
@@ -128,6 +130,11 @@ fn convert_class(raw: RawClass) -> ClassDescriptor {
 }
 
 fn convert_enum(raw: RawEnum) -> EnumDescriptor {
+    let legacy = raw
+        .items
+        .iter()
+        .flat_map(|item| item.legacy_names.iter().map(|n| (n.clone(), item.value)))
+        .collect();
     EnumDescriptor {
         name: raw.name,
         items: raw
@@ -135,5 +142,6 @@ fn convert_enum(raw: RawEnum) -> EnumDescriptor {
             .into_iter()
             .map(|item| (item.name, item.value))
             .collect(),
+        legacy,
     }
 }

@@ -364,16 +364,7 @@ impl UserData for LuaInstance {
         });
         methods.add_method("Destroy", |lua, this, ()| {
             this.ctx.check_write(this.referent)?;
-            if this.ctx.dom().get(this.referent).is_some() {
-                crate::engine::changes::destroying(lua, this.referent)?;
-            }
-            let mut dom = this.ctx.dom_mut();
-            // A model losing its `PrimaryPart` keeps the pivot it had.
-            crate::pivot::keep_pivots(&mut dom, this.ctx.database(), &[this.referent])
-                .map_err(mlua::Error::runtime)?;
-            this.ctx.bury(&dom, this.referent);
-            dom.remove(this.referent);
-            Ok(())
+            crate::engine::changes::destroy(lua, &this.ctx, this.referent)
         });
         methods.add_method("AddTag", |lua, this, args: MultiValue| {
             if let Some(answer) =

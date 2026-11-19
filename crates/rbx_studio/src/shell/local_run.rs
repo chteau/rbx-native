@@ -49,6 +49,8 @@ struct Running {
     view: rbx_sim::Peer,
     stash: Stash,
     paused: bool,
+    /// Step while paused: the next tick runs exactly one frame.
+    step_once: bool,
     /// Wall seconds the run has been unpaused for.
     clock: f64,
     last: Instant,
@@ -453,6 +455,7 @@ impl Shell {
                 selection,
             },
             paused: false,
+            step_once: false,
             clock: 0.0,
             last: Instant::now(),
             task: Some(task),
@@ -501,6 +504,9 @@ impl Shell {
             return;
         };
         sim.take_view_changes();
+        if !client {
+            rbx_viewer::set_player_gui(None);
+        }
         let shown = sim.dom().clone();
         self.deselect(cx);
         let changes = changes_between(&self.dom, &shown);
@@ -514,6 +520,60 @@ impl Shell {
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);
         cx.notify();
+    }
+
+    /// Draws `player_gui`'s screens (a `PlayerGui` in the shown tree)
+    /// instead of `StarterGui`'s, or (`None`) the edit view's again; the
+    /// viewport re-plans its GUI when that changes.
+    fn show_player_gui(&mut self, player_gui: Option<rbx_dom::Ref>, cx: &mut Context<Self>) {
+        if rbx_viewer::player_gui() == player_gui {
+            return;
+        }
+        rbx_viewer::set_player_gui(player_gui);
+        // A reparenting nobody can place re-plans every screen.
+        let Some(any) = player_gui.or_else(|| self.dom.root_refs().first().copied()) else {
+            return;
+        };
+        let parent = self.dom.parent(any);
+        let changes = vec![Change::Parent {
+            referent: any,
+            old: parent,
+            new: parent,
+        }];
+        let snapshots = self.dom.snapshot(&changes);
+        self.viewport
+            .update(cx, |viewport, _| viewport.apply_changes(snapshots, changes));
+    }
+
+    /// Test › Players during Play (local): the last player leaves (their
+    /// `PlayerRemoving` runs), as a player closing the game does.
+    pub(crate) fn local_run_remove_player(&mut self, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        let count = run.session.clients.len();
+        if count < 2 {
+            return;
+        }
+        let name = run.session.clients[count - 1].name.clone();
+        if run.view == rbx_sim::Peer::Client(count - 1) {
+            self.local_run_next_view(cx);
+        }
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        run.session.leave(count - 1);
+        push_row(
+            &mut self.output,
+            Feedback::Info(format!("{name} left the game")),
+        );
+        cx.notify();
+    }
+
+    /// How many local players the running game has.
+    pub(crate) fn local_run_player_count(&self) -> Option<usize> {
+        let run = self.play.live.local.running.as_ref()?;
+        run.playing.then_some(run.session.clients.len())
     }
 
     /// Test › Players: 1 to [`MAX_PLAYERS`], for the next Play (local).
@@ -538,6 +598,24 @@ impl Shell {
         }
     }
 
+    /// Step while paused: one frame of the game, shown as a tick shows it.
+    pub(crate) fn local_run_step_frame(&mut self, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        if !run.paused {
+            return;
+        }
+        run.step_once = true;
+        run.paused = false;
+        self.local_run_tick(cx);
+        if let Some(run) = self.play.live.local.running.as_mut() {
+            run.paused = true;
+            run.step_once = false;
+        }
+        cx.notify();
+    }
+
     pub(crate) fn local_run_stop(&mut self, cx: &mut Context<Self>) {
         let Some(run) = self.play.live.local.running.take() else {
             return;
@@ -552,6 +630,7 @@ impl Shell {
         drop(task);
         self.viewport
             .update(cx, |viewport, _| viewport.set_play_local(false));
+        rbx_viewer::set_player_gui(None);
         let output = session.take_output();
         let seconds = session.time();
         drop(session);
@@ -587,6 +666,9 @@ impl Shell {
             return;
         }
         run.clock += elapsed;
+        if run.step_once {
+            run.clock = run.session.time() + 1.0 / FRAME_HZ;
+        }
         let due =
             ((run.clock * FRAME_HZ).floor() as u64).saturating_sub(run.session.server.frame());
         if due == 0 {
@@ -595,15 +677,26 @@ impl Shell {
         let steps = due.min(MAX_FRAMES_PER_TICK);
         let viewing_client = matches!(run.view, rbx_sim::Peer::Client(_));
         if run.playing && viewing_client {
-            let inputs = self
-                .viewport
-                .update(cx, |viewport, _| viewport.play.as_mut().map(|p| p.take()));
+            let (inputs, size) = self.viewport.update(cx, |viewport, _| {
+                (
+                    viewport.play.as_mut().map(|p| p.take()),
+                    viewport.play_viewport_size(),
+                )
+            });
             if let rbx_sim::Peer::Client(i) = run.view {
+                if let Some(client) = run.session.clients.get_mut(i) {
+                    client.sim.set_viewport(size);
+                }
                 for input in inputs.unwrap_or_default() {
                     run.session.input(i, input);
                 }
             }
         }
+        let viewed_player = match run.view {
+            rbx_sim::Peer::Client(i) => run.session.clients.get(i).map(|c| c.player),
+            rbx_sim::Peer::Server => None,
+        };
+        let kicked_before = run.session.kicked.len();
         let mut changes = Vec::new();
         for _ in 0..steps {
             run.session.step();
@@ -622,6 +715,31 @@ impl Shell {
         if due > steps {
             run.clock = run.session.time();
         }
+        // Someone kicked: the Output says so; the viewed player's own view
+        // keeps their last frame under the message, the run goes on.
+        let kicked: Vec<(String, String)> = run.session.kicked[kicked_before..].to_vec();
+        for (name, message) in &kicked {
+            push_row(
+                &mut self.output,
+                Feedback::Info(format!("{name} was kicked: {message}")),
+            );
+        }
+        if let Some(player) = viewed_player {
+            match run.session.clients.iter().position(|c| c.player == player) {
+                Some(i) => run.view = rbx_sim::Peer::Client(i),
+                None => {
+                    let message = kicked.last().map(|(_, m)| m.clone()).unwrap_or_default();
+                    run.view = rbx_sim::Peer::Server;
+                    self.viewport.update(cx, |viewport, _| {
+                        viewport.play = None;
+                        viewport.core_gui.state = None;
+                        viewport.core_gui.kicked = Some(message);
+                    });
+                    cx.notify();
+                    return;
+                }
+            }
+        }
         let changes = dedupe(changes);
         let Some(viewed) = run.session.sim(run.view) else {
             return;
@@ -636,7 +754,23 @@ impl Shell {
             };
             let mouse = viewed.mouse_behavior();
             let camera = viewed.camera();
+            let player_gui = viewed.local_player().and_then(|(player, _)| {
+                let dom = viewed.dom();
+                dom.get(player)?
+                    .children()
+                    .iter()
+                    .copied()
+                    .find(|c| dom.get(*c).is_some_and(|i| i.class() == "PlayerGui"))
+            });
+            let core = run
+                .session
+                .sim_mut(run.view)
+                .map(rbx_sim::Simulation::core_gui);
+            self.show_player_gui(player_gui, cx);
             self.viewport.update(cx, |viewport, _| {
+                if let Some(core) = core {
+                    viewport.core_gui.update(core);
+                }
                 if let Some(play) = viewport.play.as_mut() {
                     play.mouse = mouse;
                 }

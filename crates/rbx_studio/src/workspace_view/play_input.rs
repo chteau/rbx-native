@@ -59,7 +59,8 @@ pub(crate) fn key_code(key: &str, azerty: bool) -> Option<String> {
     let (Some(c), None) = (chars.next(), chars.next()) else {
         return None;
     };
-    let c = match (azerty, c) {
+    // A letter let go with Shift held can come back as its capital.
+    let c = match (azerty, c.to_ascii_lowercase()) {
         (true, 'z') => 'w',
         (true, 'w') => 'z',
         (true, 'q') => 'a',
@@ -113,6 +114,16 @@ impl PlayInput {
         };
         if changed {
             self.queued.push(Input::Button { button, down });
+        }
+    }
+
+    /// A key pressed and let go at once (a hotbar slot clicked).
+    pub(crate) fn tap(&mut self, code: &str) {
+        for down in [true, false] {
+            self.queued.push(Input::Key {
+                code: code.to_owned(),
+                down,
+            });
         }
     }
 

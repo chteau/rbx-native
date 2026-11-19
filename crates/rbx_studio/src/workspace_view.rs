@@ -11,6 +11,7 @@
 
 mod canvas;
 mod changes;
+mod core_gui;
 pub(crate) mod device;
 mod frame;
 mod gizmo;
@@ -395,6 +396,8 @@ pub(crate) struct WorkspaceView {
     /// Play (local) is on: the keyboard and mouse go to the game (see
     /// `play_input`).
     pub(crate) play: Option<PlayInput>,
+    /// Play (local)'s default core GUI over the view (see `core_gui`).
+    pub(crate) core_gui: core_gui::CoreGuiView,
     /// The free camera from before Play (local), put back on Stop.
     play_return: Option<Pose>,
     /// The window's scale factor at the last mouse move, for the mouse
@@ -549,6 +552,7 @@ impl WorkspaceView {
             hover_resolved_at: None,
             debug_wheel: scroll::debug_wheel(),
             play: None,
+            core_gui: core_gui::CoreGuiView::default(),
             play_return: None,
             play_scale: 1.0,
             viewport: Rc::new(Cell::new(Viewport::default())),
@@ -942,13 +946,26 @@ impl WorkspaceView {
         let delta = if self.lock.holds() {
             self.lock.moved()
         } else {
-            let previous = self.cursor.replace(position);
-            previous.map(|p| (f32::from(position.x - p.x), f32::from(position.y - p.y)))
+            // The first motion over the view still says where the pointer
+            // is (a GUI button under it), with no delta.
+            let previous = self.cursor.replace(position).unwrap_or(position);
+            Some((
+                f32::from(position.x - previous.x),
+                f32::from(position.y - previous.y),
+            ))
         };
         let at = self.play_position(position);
         if let (Some(play), Some((dx, dy))) = (self.play.as_mut(), delta) {
             play.moved(at, [dx, dy]);
         }
+    }
+
+    /// The view's size in the pixels a game's mouse is measured in, what
+    /// its `ScreenGui`s lay out in.
+    pub(crate) fn play_viewport_size(&self) -> [f32; 2] {
+        let scale = self.play_scale.max(0.01);
+        let (w, h) = self.viewport.get().size;
+        [w as f32 / scale, h as f32 / scale]
     }
 
     /// Where `position` (window, logical pixels) sits in the view: what a
@@ -1005,6 +1022,11 @@ impl WorkspaceView {
         }
         let layout = Layout::of(cx.keyboard_layout().name());
         if let Some(play) = self.play.as_mut() {
+            // X reports the Shift a key was typed with on the key itself,
+            // and may report the modifier change after it.
+            if pressed {
+                play.shift(keystroke.modifiers.shift);
+            }
             if play.key(&keystroke.key, pressed, layout == Layout::Azerty) {
                 return;
             }
@@ -1139,6 +1161,7 @@ impl WorkspaceView {
     /// Hands the keyboard and mouse to Play (local)'s game, or (`false`)
     /// back to the free camera where it was.
     pub(crate) fn set_play_local(&mut self, playing: bool) {
+        self.core_gui.clear();
         if playing {
             self.play = Some(PlayInput::default());
             self.play_return = self.view;
@@ -1559,6 +1582,12 @@ impl Render for WorkspaceView {
                     }
                     return;
                 }
+                // A fresh press of a key the game still holds: its release
+                // went missing (X reports a letter let go after Shift as
+                // another key), so it is let go first.
+                if !event.is_held {
+                    view.key(&event.keystroke, false, cx);
+                }
                 view.key(&event.keystroke, true, cx);
             }))
             // Always, the measurement box's focus or not: a camera key held
@@ -1732,20 +1761,26 @@ impl Render for WorkspaceView {
             .when_some(self.measure_element(window, cx), |this, measure| {
                 this.child(measure)
             })
+            .children(self.core_gui_element(cx))
             // No pose yet (the very first frame or two, before the render
             // thread's first `Ready` lands, see `self.view`'s own doc) draws
             // nothing rather than a widget with no orientation to show.
-            .when_some(self.view.filter(|_| self.axis_indicator), |this, pose| {
-                this.child(
-                    orientation_indicator(pose, self.indicator.clone()).on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|view, event: &MouseDownEvent, _, cx| {
-                            cx.stop_propagation();
-                            view.snap_to_face(event.position, cx);
-                        }),
-                    ),
-                )
-            })
+            // A player's view is the game's: no editor widget over its GUI.
+            .when_some(
+                self.view
+                    .filter(|_| self.axis_indicator && self.play.is_none()),
+                |this, pose| {
+                    this.child(
+                        orientation_indicator(pose, self.indicator.clone()).on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|view, event: &MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                view.snap_to_face(event.position, cx);
+                            }),
+                        ),
+                    )
+                },
+            )
     }
 }
 

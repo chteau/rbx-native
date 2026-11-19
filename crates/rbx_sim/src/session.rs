@@ -20,28 +20,16 @@
 
 use std::collections::HashSet;
 
-use rbx_dom::{CFrameData, Change, Ref, Variant, WeakDom};
+use rbx_dom::{Change, Ref, Variant, WeakDom};
 use rbx_lua::server::{Arg, Outgoing, Packet, To};
 
 use crate::animation::TrackOp;
 use crate::humanoid::State;
-use crate::sim::Simulation;
+use crate::sim::{Placed, Simulation};
 use crate::{Input, Output};
 
 /// Services whose contents a client never gets.
 const SERVER_ONLY: &[&str] = &["ServerStorage", "ServerScriptService"];
-
-/// Properties physics owns: a client that simulates a part keeps its own.
-const PHYSICS: &[&str] = &[
-    "CFrame",
-    "Position",
-    "Orientation",
-    "Rotation",
-    "AssemblyLinearVelocity",
-    "AssemblyAngularVelocity",
-    "Velocity",
-    "RotVelocity",
-];
 
 /// The origin a client gives the server's own track operations.
 const SERVER: Ref = Ref::new(u32::MAX);
@@ -64,14 +52,17 @@ pub struct Client {
     characters: Vec<(Ref, Ref)>,
     /// What the client sends the server at the start of the next frame.
     outbox: Upstream,
+    /// Parts it moved last frame, to say when they stop.
+    moving: HashSet<Ref>,
 }
 
 #[derive(Default)]
 struct Upstream {
     packets: Vec<Outgoing>,
-    parts: Vec<(Ref, CFrameData)>,
+    parts: Vec<Placed>,
     states: Vec<(Ref, State)>,
     tracks: Vec<TrackOp>,
+    tools: Vec<crate::tools::ClientOp>,
 }
 
 /// What the server sends its clients after a frame.
@@ -86,8 +77,13 @@ enum Op {
 pub struct Session {
     pub server: Simulation,
     pub clients: Vec<Client>,
+    /// Players kicked, with the message their client shows: (name,
+    /// message), oldest first.
+    pub kicked: Vec<(String, String)>,
     /// Server parts moved this frame on a client's behalf, for the others.
-    relayed: Vec<(Ref, CFrameData)>,
+    relayed: Vec<Placed>,
+    /// Parts the server moved last frame, to say when they stop.
+    moving: HashSet<Ref>,
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
 }
 
@@ -99,7 +95,9 @@ impl Session {
         Ok(Session {
             server,
             clients: Vec::new(),
+            kicked: Vec::new(),
             relayed: Vec::new(),
+            moving: HashSet::new(),
             fetcher: None,
         })
     }
@@ -137,6 +135,7 @@ impl Session {
             loaded: false,
             characters: Vec::new(),
             outbox: Upstream::default(),
+            moving: HashSet::new(),
         });
         Ok(index)
     }
@@ -168,7 +167,7 @@ impl Session {
             let parts: Vec<_> = up
                 .parts
                 .into_iter()
-                .filter(|(p, _)| owned.contains(p))
+                .filter(|placed| owned.contains(&placed.part))
                 .collect();
             self.server.place_parts(&parts);
             self.relayed.extend(parts);
@@ -178,6 +177,7 @@ impl Session {
             for op in up.tracks {
                 self.server.mirror_track(Some(player), op);
             }
+            self.server.apply_tool_ops(player, up.tools);
         }
 
         self.server.step();
@@ -185,7 +185,7 @@ impl Session {
         let stream = self.server.take_stream();
         let packets = self.server.take_outgoing();
         let ops = frame_ops(stream, packets);
-        let mut moved = self.server.moved_parts();
+        let mut moved = self.server.moved_parts_since(&mut self.moving);
         moved.extend(self.relayed.iter().copied());
         let states: Vec<(Ref, State)> = self
             .server
@@ -225,6 +225,29 @@ impl Session {
             client.sim.step();
             client.collect();
         }
+
+        let mut kicked = self.server.take_kicked();
+        for client in &mut self.clients {
+            kicked.extend(client.sim.take_kicked());
+        }
+        for (player, message) in kicked {
+            if let Some(index) = self.clients.iter().position(|c| c.player == player) {
+                let name = self.clients[index].name.clone();
+                self.leave(index);
+                self.kicked.push((name, message));
+            }
+        }
+    }
+
+    /// Local player `index` leaves: the server's `PlayerRemoving`, their
+    /// character and player go (the other clients see the same next
+    /// frame), and their client stops.
+    pub fn leave(&mut self, index: usize) {
+        if index >= self.clients.len() {
+            return;
+        }
+        let client = self.clients.remove(index);
+        self.server.remove_player(client.player);
     }
 
     /// Runs frames until `seconds` of game time have passed.
@@ -283,6 +306,12 @@ impl Client {
     /// The place reaches a new client: every replicated service's
     /// contents, then `game.Loaded`, then its `PlayerScripts`.
     fn arrive(&mut self, server: &Simulation) {
+        self.sim.set_remote(true);
+        self.arrive_all(server);
+        self.sim.set_remote(false);
+    }
+
+    fn arrive_all(&mut self, server: &Simulation) {
         let roots: Vec<Ref> = {
             let dom = server.dom();
             dom.root_refs()
@@ -314,11 +343,30 @@ impl Client {
 
     /// One replicated change or packet.
     fn deliver(&mut self, server: &Simulation, op: &Op) {
+        // What the server's frame moves is the server's doing; a remote's
+        // handler moving a tool is the player's.
+        self.sim.set_remote(!matches!(op, Op::Packet(_)));
+        self.deliver_op(server, op);
+        self.sim.set_remote(false);
+    }
+
+    fn deliver_op(&mut self, server: &Simulation, op: &Op) {
         match op {
             Op::Property(r, name) => self.property(server, *r, name),
             Op::Tree(r, parent) => self.tree(server, *r, *parent),
             // Destroyed: it leaves its parent (`ChildRemoved`), then goes.
+            // A player leaving is `PlayerRemoving` first.
             Op::Removed(r) => {
+                let players = {
+                    let dom = self.sim.dom();
+                    dom.get(*r)
+                        .filter(|i| i.class() == "Player")
+                        .and_then(|_| dom.parent(*r))
+                };
+                if let Some(players) = players {
+                    self.sim
+                        .fire_signal(players, "PlayerRemoving", vec![Arg::Instance(*r)]);
+                }
                 if self.sim.dom().in_tree(*r) {
                     self.sim.dom_mut().unparent(*r);
                     self.sim.flush();
@@ -349,9 +397,10 @@ impl Client {
         let Some(source) = sdom.get(r) else {
             return;
         };
-        if PHYSICS.contains(&name) && self.sim.simulates(r) {
-            return;
-        }
+        // What physics moves arrives unlogged (`place_parts`); a logged
+        // move of a part this client simulates is the server's script
+        // teleporting it (`PivotTo` on the player's character), which the
+        // owner takes.
         let character = (source.class() == "Player" && name == "Character").then(|| {
             let old = match self
                 .sim
@@ -538,9 +587,9 @@ impl Client {
         let parts: Vec<_> = {
             let owned = self.sim.ownership_mut().owned.clone();
             self.sim
-                .moved_parts()
+                .moved_parts_since(&mut self.moving)
                 .into_iter()
-                .filter(|(p, _)| owned.contains(p))
+                .filter(|placed| owned.contains(&placed.part))
                 .collect()
         };
         let states = self
@@ -557,11 +606,13 @@ impl Client {
             .filter(|(origin, _)| origin.is_none())
             .map(|(_, op)| op)
             .collect();
+        let tools = self.sim.take_tool_ops();
         self.outbox = Upstream {
             packets,
             parts,
             states,
             tracks,
+            tools,
         };
     }
 }

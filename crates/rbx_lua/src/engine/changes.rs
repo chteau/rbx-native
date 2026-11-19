@@ -65,14 +65,41 @@ impl Firing<'_> {
         signal::fire_at(self.lua, &instance_key(referent, event), args, self.change)
     }
 
+    /// One reparenting, in a live server's order (rbx_sim's ReparentOrder
+    /// golden): the old ancestors' `DescendantRemoving` for the instance
+    /// and each of its descendants, the old parent's `ChildRemoved`; the
+    /// new ancestors' `DescendantAdded` the same way, the new parent's
+    /// `ChildAdded`; then `AncestryChanged`, deepest first, and last the
+    /// instance's `Changed("Parent")` and `Changed:Parent`.
     fn parent(&self, referent: Ref, old: Option<Ref>, new: Option<Ref>) -> Result<()> {
         let (moved, old_chain, new_chain) = {
             let ctx = engine(self.lua).ctx.clone();
             let dom = ctx.dom();
             (subtree(&dom, referent), chain(&dom, old), chain(&dom, new))
         };
+        let child = [Arg::Instance(referent)];
+        let up = |chain: &[Ref], name: &str, parent: Option<Ref>, last: &str| -> Result<()> {
+            let in_place = self.in_place(chain);
+            for &r in &moved {
+                let it = [Arg::Instance(r)];
+                if in_place {
+                    let key = game_signal(name).0;
+                    signal::fire_at(self.lua, &key, &it, self.change)?;
+                }
+                for &a in chain {
+                    self.emit(a, name, &it)?;
+                }
+            }
+            if let Some(parent) = parent {
+                self.emit(parent, last, &child)?;
+            }
+            Ok(())
+        };
+        up(&old_chain, "DescendantRemoving", old, "ChildRemoved")?;
+        up(&new_chain, "DescendantAdded", new, "ChildAdded")?;
+        self.host_signals(referent, old, new, false)?;
         let parent = new.map_or(Arg::Nil, Arg::Instance);
-        for r in moved {
+        for &r in moved.iter().rev() {
             self.emit(
                 r,
                 "AncestryChanged",
@@ -90,26 +117,19 @@ impl Firing<'_> {
             self.emit(referent, "Changed", &[Arg::String("Parent".into())])?;
         }
         self.emit(referent, "Changed:Parent", &[])?;
-        let child = [Arg::Instance(referent)];
-        if let Some(old) = old {
-            self.emit(old, "ChildRemoved", &child)?;
-        }
-        if self.in_place(&old_chain) {
-            let key = game_signal("DescendantRemoving").0;
-            signal::fire_at(self.lua, &key, &child, self.change)?;
-        }
-        for r in old_chain {
-            self.emit(r, "DescendantRemoving", &child)?;
-        }
-        if let Some(new) = new {
-            self.emit(new, "ChildAdded", &child)?;
-        }
-        if self.in_place(&new_chain) {
-            let key = game_signal("DescendantAdded").0;
-            signal::fire_at(self.lua, &key, &child, self.change)?;
-        }
-        for r in new_chain {
-            self.emit(r, "DescendantAdded", &child)?;
+        self.host_signals(referent, old, new, true)
+    }
+
+    fn host_signals(
+        &self,
+        child: Ref,
+        old: Option<Ref>,
+        new: Option<Ref>,
+        after: bool,
+    ) -> Result<()> {
+        let fire = engine(self.lua).host.reparented(child, old, new, after);
+        for (owner, name, args) in fire {
+            signal::fire(self.lua, &instance_key(owner, name.as_str()), &args)?;
         }
         Ok(())
     }
@@ -183,11 +203,8 @@ impl Firing<'_> {
 ///
 /// `Property` → `Changed(name)` and `Changed:<name>` (and
 /// `AttributeChanged`/`AttributeChanged:<n>` for `Attributes`, comparing
-/// nothing, every attribute name present fires); `Parent` → the child's
-/// `AncestryChanged(child, parent)` (and its descendants'), the old
-/// parent's `ChildRemoved`, the new one's `ChildAdded`, and
-/// `DescendantRemoving`/`DescendantAdded` up both ancestor chains, and
-/// `Changed("Parent")`/`Changed:Parent` on the child;
+/// nothing, every attribute name present fires); `Parent` → see
+/// `Firing::parent`;
 /// `Added` with a parent and no later `Parent` change → as a `Parent`
 /// change from nil; `Removed` →
 /// `Destroying` on the instance. Only connected signals cost anything.
@@ -228,23 +245,49 @@ pub(crate) fn fire_changes(lua: &Lua, changes: &[Change], first: Option<u64>) ->
     Ok(())
 }
 
-/// `Destroying` on `root` and every descendant, fired by `Destroy` before
-/// anything is removed, as Studio does: a handler still finds the tree
-/// whole. Fusion's cleanup (Lemonade's widget) unparents each child from
-/// its `Destroying`, which fails on a child already gone. The `Removed`
-/// these leave in the change log then fires nothing more in this VM.
-/// A VM with no engine (the command bar's) has no listeners to tell.
-pub(crate) fn destroying(lua: &Lua, root: Ref) -> Result<()> {
-    let Some(engine) = lua
-        .app_data_ref::<std::rc::Rc<super::Engine>>()
-        .map(|e| e.clone())
-    else {
+/// `Instance:Destroy`, in a live server's order (the ReparentOrder golden):
+/// `root`'s `Destroying`, then its unparenting with that reparenting's
+/// events (fired there and then), then each child destroyed the same way,
+/// so a child's `Destroying` still finds the child under `root`. Fusion's
+/// cleanup (Lemonade's widget) unparents each child from its `Destroying`;
+/// a child that left `root` that way is spared. The `Removed` these leave
+/// in the change log fire nothing more in this VM. A VM with no engine
+/// (the command bar's) has no listeners to tell.
+pub(crate) fn destroy(lua: &Lua, ctx: &Ctx, root: Ref) -> Result<()> {
+    if ctx.dom().get(root).is_none() {
         return Ok(());
-    };
-    let refs = subtree(&engine.ctx.dom(), root);
-    engine.destroyed.borrow_mut().extend(refs.iter().copied());
-    for referent in refs {
-        signal::fire(lua, &instance_key(referent, "Destroying"), &[])?;
     }
+    {
+        let mut dom = ctx.dom_mut();
+        // A model losing its `PrimaryPart` keeps the pivot it had.
+        crate::pivot::keep_pivots(&mut dom, ctx.database(), &[root])
+            .map_err(mlua::Error::runtime)?;
+        ctx.bury(&dom, root);
+    }
+    let engine = lua
+        .app_data_ref::<std::rc::Rc<super::Engine>>()
+        .map(|e| e.clone());
+    if let Some(engine) = engine {
+        engine.destroyed.borrow_mut().insert(root);
+        signal::fire(lua, &instance_key(root, "Destroying"), &[])?;
+        if ctx.dom().get(root).is_none() {
+            return Ok(());
+        }
+        if ctx.dom().parent(root).is_some() {
+            ctx.dom_mut().set_parent(root, None);
+            crate::hooks::wrote(lua)?;
+        }
+        let children = ctx
+            .dom()
+            .get(root)
+            .map(|i| i.children().to_vec())
+            .unwrap_or_default();
+        for child in children {
+            if ctx.dom().parent(child) == Some(root) {
+                destroy(lua, ctx, child)?;
+            }
+        }
+    }
+    ctx.dom_mut().remove(root);
     Ok(())
 }

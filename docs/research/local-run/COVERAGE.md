@@ -6,8 +6,8 @@ Read the property numbers with care: any property the reflection database knows 
 
 | Member type | There | Total | |
 |---|---|---|---|
-| Function | 146 | 1385 | 11% |
-| Event | 69 | 355 | 19% |
+| Function | 165 | 1385 | 12% |
+| Event | 100 | 355 | 28% |
 | Property | 1927 | 2510 | 77% |
 
 ## By class
@@ -66,7 +66,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | AvatarCollisionRules | 4/5 | - | - |  |  |
 | AvatarEffectDescription | 1/2 | - | - |  |  |
 | CoreGui | 1/1 | - | - |  |  |
-| StarterGui | 2/2 | 0/4 | - |  | GetCoreGuiEnabled, SetCore, SetCoreGuiEnabled, GetCore |
+| StarterGui | 2/2 | 4/4 | - | GetCoreGuiEnabled, SetCore, SetCoreGuiEnabled, GetCore |  |
 | RemoteEvent | - | 3/3 | 1/2 | FireAllClients, FireClient, FireServer, OnClientEvent | OnServerEvent |
 | UnreliableRemoteEvent | - | 3/3 | 1/2 | FireAllClients, FireClient, FireServer, OnClientEvent | OnServerEvent |
 | BaseWrap | 6/6 | - | - |  |  |
@@ -142,17 +142,17 @@ Classes with at least one member there. Properties, functions and events as ther
 | GamepadService | 1/1 | 0/2 | - |  | DisableGamepadCursor, EnableGamepadCursor |
 | GetTextBoundsParams | 4/5 | - | - |  |  |
 | GuiBase2d | 9/10 | - | 0/1 |  | SelectionChanged |
-| GuiObject | 19/26 | - | 0/16 |  | InputBegan, InputChanged, InputEnded, MouseEnter, MouseLeave, MouseMoved, MouseWheelBackward, MouseWheelForward, SelectionGained, SelectionLost, TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe, TouchTap |
+| GuiObject | 19/26 | - | 11/16 | InputBegan, InputChanged, InputEnded, MouseEnter, MouseLeave, MouseMoved, MouseWheelBackward, MouseWheelForward, SelectionGained, SelectionLost, TouchTap | TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe |
 | CanvasGroup | 2/2 | - | - |  |  |
 | Frame | 1/1 | - | - |  |  |
-| GuiButton | 4/6 | - | 0/8 |  | Activated, MouseButton1Click, MouseButton1Down, MouseButton1Up, MouseButton2Click, MouseButton2Down, MouseButton2Up, SecondaryActivated |
+| GuiButton | 4/6 | - | 7/8 | Activated, MouseButton1Click, MouseButton1Down, MouseButton1Up, MouseButton2Click, MouseButton2Down, MouseButton2Up | SecondaryActivated |
 | ImageButton | 16/16 | - | - |  |  |
 | TextButton | 21/21 | - | - |  |  |
 | ImageLabel | 12/12 | - | - |  |  |
 | TextLabel | 21/21 | - | - |  |  |
 | InputActionLabel | 10/12 | - | - |  |  |
 | ScrollingFrame | 20/20 | 0/2 | - |  | GetScrollVelocity, ResetScrollVelocity |
-| TextBox | 29/29 | 0/3 | 0/3 |  | CaptureFocus, IsFocused, ReleaseFocus, FocusLost, Focused, ReturnPressedFromOnScreenKeyboard |
+| TextBox | 29/29 | 3/3 | 2/3 | CaptureFocus, IsFocused, ReleaseFocus, FocusLost, Focused | ReturnPressedFromOnScreenKeyboard |
 | TextChannelWindow | 2/3 | - | - |  |  |
 | VideoDisplay | 7/7 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
 | VideoFrame | 12/12 | 0/2 | 0/6 |  | Pause, Play, DidLoop, Ended, Loaded, Paused, Played, SubtitlesChanged |
@@ -178,11 +178,11 @@ Classes with at least one member there. Properties, functions and events as ther
 | Handles | 1/2 | - | 0/5 |  | MouseButton1Down, MouseButton1Up, MouseDrag, MouseEnter, MouseLeave |
 | SurfaceSelection | 1/1 | - | - |  |  |
 | Path2D | 5/5 | 0/13 | 0/1 |  | GetBoundingRect, GetControlPoint, GetControlPoints, GetLength, GetMaxControlPoints, GetPositionOnCurve, GetPositionOnCurveArcLength, GetTangentOnCurve, GetTangentOnCurveArcLength, InsertControlPoint, RemoveControlPoint, SetControlPoints, UpdateControlPoint, ControlPointChanged |
-| GuiService | 4/8 | 0/15 | 0/2 |  | CloseInspectMenu, DismissNotification, GetEmotesMenuOpen, GetGameplayPausedNotificationEnabled, GetGuiInset, GetInsetArea, GetInspectMenuEnabled, InspectPlayerFromHumanoidDescription, InspectPlayerFromUserId, IsTenFootInterface, Select, SendNotification, SetEmotesMenuOpen, SetGameplayPausedNotificationEnabled, SetInspectMenuEnabled, MenuClosed, MenuOpened |
+| GuiService | 4/8 | 2/15 | 0/2 | GetGuiInset, IsTenFootInterface | CloseInspectMenu, DismissNotification, GetEmotesMenuOpen, GetGameplayPausedNotificationEnabled, GetInsetArea, GetInspectMenuEnabled, InspectPlayerFromHumanoidDescription, InspectPlayerFromUserId, Select, SendNotification, SetEmotesMenuOpen, SetGameplayPausedNotificationEnabled, SetInspectMenuEnabled, MenuClosed, MenuOpened |
 | HapticEffect | 4/4 | 0/4 | 0/1 |  | GetWaveformKeys, Play, SetWaveformKeys, Stop, Ended |
 | Highlight | 6/7 | - | - |  |  |
 | HttpService | 1/1 | 7/9 | - | GenerateGUID, JSONDecode, JSONEncode, UrlEncode, GetAsync, PostAsync, RequestAsync | CreateWebStreamClient, GetSecret |
-| Humanoid | 28/32 | 8/24 | 15/18 | ChangeState, GetAppliedDescription, GetState, GetStateEnabled, Move, MoveTo, SetStateEnabled, TakeDamage, Climbing, Died, FallingDown, FreeFalling, GettingUp, HealthChanged, Jumping, MoveToFinished, PlatformStanding, Ragdoll, Running, Seated, StateChanged, StateEnabledChanged, Swimming | AddAccessory, BuildRigFromAttachments, EquipTool, GetAccessories, GetBodyPartR15, GetCanCollideOnDeath, GetLimb, GetMoveVelocity, GetRelativeVelocityAtFloor, RemoveAccessories, ReplaceBodyPartR15, UnequipTools, ApplyAvatarRulesAsync, ApplyDescriptionAsync, ApplyDescriptionResetAsync, PlayEmoteAsync, ApplyDescriptionFinished, Strafing, Touched |
+| Humanoid | 28/32 | 10/24 | 15/18 | ChangeState, EquipTool, GetAppliedDescription, GetState, GetStateEnabled, Move, MoveTo, SetStateEnabled, TakeDamage, UnequipTools, Climbing, Died, FallingDown, FreeFalling, GettingUp, HealthChanged, Jumping, MoveToFinished, PlatformStanding, Ragdoll, Running, Seated, StateChanged, StateEnabledChanged, Swimming | AddAccessory, BuildRigFromAttachments, GetAccessories, GetBodyPartR15, GetCanCollideOnDeath, GetLimb, GetMoveVelocity, GetRelativeVelocityAtFloor, RemoveAccessories, ReplaceBodyPartR15, ApplyAvatarRulesAsync, ApplyDescriptionAsync, ApplyDescriptionResetAsync, PlayEmoteAsync, ApplyDescriptionFinished, Strafing, Touched |
 | HumanoidDescription | 34/40 | 0/8 | 0/2 |  | AddEmote, GetAccessories, GetEmotes, GetEquippedEmotes, RemoveEmote, SetAccessories, SetEmotes, SetEquippedEmotes, EmotesChanged, EquippedEmotesChanged |
 | HumanoidRigDescription | 89/111 | 0/8 | - |  | GetJoint, GetJointFromName, GetJointNames, GetR15JointLabels, GetR15JointNames, GetR6JointNames, SetJoint, SetTposeAdjustment |
 | IKControl | 7/11 | 0/6 | - |  | GetChainCount, GetChainLength, GetNodeLocalCFrame, GetNodeWorldCFrame, GetRawFinalTarget, GetSmoothedFinalTarget |
@@ -224,7 +224,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | Camera | 14/17 | 0/9 | 0/1 |  | GetPartsObscuringTarget, GetRenderCFrame, GetRoll, ScreenPointToRay, SetRoll, ViewportPointToRay, WorldToScreenPoint, WorldToViewportPoint, ZoomToExtents, InterpolationFinished |
 | Model | 3/5 | 2/9 | - | GetBoundingBox, GetExtentsSize | AddPersistentPlayer, GetPersistentPlayers, GetScale, MoveTo, RemovePersistentPlayer, ScaleTo, TranslateBy |
 | BackpackItem | 2/2 | - | - |  |  |
-| Tool | 6/6 | 0/2 | 0/4 |  | Activate, Deactivate, Activated, Deactivated, Equipped, Unequipped |
+| Tool | 6/6 | 2/2 | 4/4 | Activate, Deactivate, Activated, Deactivated, Equipped, Unequipped |  |
 | ProceduralModel | 2/3 | 0/2 | - |  | ForceGeneration, WaitForGenerationAsync |
 | WorldRoot | - | 7/17 | - | Blockcast, GetPartBoundsInBox, GetPartBoundsInRadius, GetPartsInPart, Raycast, Shapecast, Spherecast | ArePartsTouchingOthers, BulkMoveTo, CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, RenameCollisionGroup, UnregisterCollisionGroup |
 | Workspace | 21/25 | 0/7 | 0/1 |  | GetNumAwakeParts, GetPhysicsThrottling, GetRealPhysicsFPS, GetServerTimeNow, JoinToOutsiders, PGSIsEnabled, UnjoinFromOutsiders, PersistentLoaded |
@@ -234,7 +234,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | PathfindingLink | 2/4 | - | - |  |  |
 | PathfindingModifier | 2/2 | - | - |  |  |
 | PhysicsService | - | 7/8 | - | CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, UnregisterCollisionGroup | RenameCollisionGroup |
-| Player | 15/31 | 0/24 | 4/7 | CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | AddReplicationFocus, ClearCachedAvatarAppearance, ClearCharacterAppearance, DistanceFromCharacter, GetCameraState, GetJoinData, GetMouse, GetNetworkPing, HasAppearanceLoaded, IsVerified, Kick, Move, PromptAgeCheck, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsInUniverseAsync, GetFriendsOnlineAsync, GetFriendsWhoPlayedAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, RequestStreamAroundAsync, EmotesLoaded, Idled, OnTeleport |
+| Player | 15/31 | 1/24 | 4/7 | Kick, CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | AddReplicationFocus, ClearCachedAvatarAppearance, ClearCharacterAppearance, DistanceFromCharacter, GetCameraState, GetJoinData, GetMouse, GetNetworkPing, HasAppearanceLoaded, IsVerified, Move, PromptAgeCheck, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsInUniverseAsync, GetFriendsOnlineAsync, GetFriendsWhoPlayedAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, RequestStreamAroundAsync, EmotesLoaded, Idled, OnTeleport |
 | Players | 8/9 | 3/16 | 2/4 | GetPlayerByUserId, GetPlayerFromCharacter, GetPlayers, PlayerAdded, PlayerRemoving | BanAsync, CreateHumanoidModelFromDescriptionAsync, CreateHumanoidModelFromUserIdAsync, GetBanHistoryAsync, GetCharacterAppearanceInfoAsync, GetFriendsAsync, GetHumanoidDescriptionFromOutfitIdAsync, GetHumanoidDescriptionFromUserIdAsync, GetNameFromUserIdAsync, GetProfileConfigurationFromUserIdAsync, GetUserIdFromNameAsync, GetUserThumbnailAsync, UnbanAsync, PlayerMembershipChanged, UserSubscriptionStatusChanged |
 | PluginAction | 4/4 | - | - |  |  |
 | PoseBase | 3/3 | - | - |  |  |
@@ -265,7 +265,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | PhysicsActivitySensor | 3/3 | - | - |  |  |
 | Sky | 21/21 | - | - |  |  |
 | Smoke | 6/6 | - | - |  |  |
-| Sound | 18/19 | 0/4 | 0/7 |  | Pause, Play, Resume, Stop, DidLoop, Ended, Loaded, Paused, Played, Resumed, Stopped |
+| Sound | 18/19 | 4/4 | 5/7 | Pause, Play, Resume, Stop, Ended, Paused, Played, Resumed, Stopped | DidLoop, Loaded |
 | SoundEffect | 2/2 | - | - |  |  |
 | ChorusSoundEffect | 3/3 | - | - |  |  |
 | CompressorSoundEffect | 5/6 | - | - |  |  |
@@ -290,7 +290,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | StyleQuery | 1/1 | 0/4 | - |  | GetCondition, GetConditions, SetCondition, SetConditions |
 | SurfaceAppearance | 11/11 | - | - |  |  |
 | TaskScheduler | 3/4 | - | - |  |  |
-| Team | 2/2 | 0/1 | 0/2 |  | GetPlayers, PlayerAdded, PlayerRemoved |
+| Team | 2/2 | 1/1 | 2/2 | GetPlayers, PlayerAdded, PlayerRemoved |  |
 | TeleportOptions | 4/4 | 0/2 | - |  | GetTeleportData, SetTeleportData |
 | TerrainDetail | 5/5 | - | - |  |  |
 | TerrainRegion | 1/1 | - | - |  |  |

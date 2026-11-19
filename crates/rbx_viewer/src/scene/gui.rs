@@ -47,7 +47,7 @@ pub(crate) use plan::TextSpan;
 pub(crate) use plan::{
     plan, plan_root, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
 };
-pub use plan::{rich_runs, shows_screen, RichRun};
+pub use plan::{player_gui, rich_runs, set_player_gui, shows_screen, RichRun};
 pub use pseudo::{pseudo_localize, PseudoLocale};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 pub(crate) use wheel::{scroll_target, ScrollWindow};

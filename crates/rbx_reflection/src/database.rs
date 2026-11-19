@@ -192,6 +192,17 @@ impl ReflectionDatabase {
         self.enums.get(enum_name).map(|e| e.items.as_slice())
     }
 
+    /// The value an item name stands for, its current name or a legacy
+    /// one (`Enum.KeyCode.Unknown`).
+    pub fn enum_value(&self, enum_name: &str, item: &str) -> Option<u32> {
+        let e = self.enums.get(enum_name)?;
+        e.items
+            .iter()
+            .chain(&e.legacy)
+            .find(|(name, _)| name == item)
+            .map(|(_, value)| *value)
+    }
+
     /// Converts an enum value to its symbolic name.
     pub fn enum_name(&self, enum_name: &str, value: u32) -> Option<&str> {
         self.enums

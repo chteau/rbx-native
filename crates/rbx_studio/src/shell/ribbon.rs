@@ -1024,7 +1024,14 @@ impl Shell {
                 "a test is already running",
             )
         };
-        let run = if local_beta && local_active {
+        // Paused, the Run row steps the game one frame at a time.
+        let run = if local_beta && local_active && self.local_run_paused() {
+            live_stack_row(nav, "ribbon-run", IconName::SkipForward, "Step", cx)
+                .tooltip(|window, cx| {
+                    super::tooltip::text("Run one frame (1/60 s) of the paused game.", window, cx)
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_step_frame(cx)))
+        } else if local_beta && local_active {
             unavailable_row(
                 "ribbon-run",
                 IconName::SquarePlay,
@@ -1145,6 +1152,24 @@ impl Shell {
                 "Players",
                 "turn on the Local Run beta in Settings",
             );
+        }
+        if let Some(count) = self.local_run_player_count().filter(|n| *n > 1) {
+            let label = match count {
+                2 => "Players: 2",
+                3 => "Players: 3",
+                _ => "Players: 4",
+            };
+            return tile(
+                &self.ribbon_nav,
+                "ribbon-players",
+                IconName::Users,
+                label,
+                cx,
+            )
+            .tooltip(|window, cx| {
+                super::tooltip::text("Click to have the last player leave the game.", window, cx)
+            })
+            .on_click(cx.listener(|shell, _, _, cx| shell.local_run_remove_player(cx)));
         }
         if self.local_run_active() {
             return unavailable_tile(

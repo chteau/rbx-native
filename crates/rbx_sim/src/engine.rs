@@ -47,12 +47,20 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         || (class == "Humanoid" && HUMANOID_METHODS.contains(&key))
         || (is_seat(class) && key == "Sit")
         || crate::players::is_method(class, key)
+        || crate::gui::is_method(class, key)
+        || crate::tools::is_method(class, key)
+        || crate::sound::is_method(class, key)
+        || crate::teams::is_method(class, key)
 }
 
 pub(crate) fn is_signal(class: &str, key: &str) -> bool {
     (class == "Humanoid" && HUMANOID_SIGNALS.contains(&key))
         || crate::players::is_signal(class, key)
         || crate::animation::is_signal(class, key)
+        || crate::gui::is_signal(class, key)
+        || crate::tools::is_signal(class, key)
+        || crate::sound::is_signal(class, key)
+        || crate::teams::is_signal(class, key)
 }
 
 pub(crate) fn call(
@@ -65,6 +73,35 @@ pub(crate) fn call(
     let (dom, db) = shared.borrow().dom_and_db().ok_or("not running")?;
     let mut dom = dom.borrow_mut();
     let mut shared = shared.borrow_mut();
+    if crate::gui::is_method(class, method) {
+        let client = shared.players.client;
+        return crate::gui::call(
+            &mut shared.gui,
+            client,
+            &mut dom,
+            referent,
+            class,
+            method,
+            &args,
+        );
+    }
+    if crate::tools::is_method(class, method) {
+        let client = shared.players.client;
+        return shared.tools.call(&mut dom, client, referent, method, &args);
+    }
+    if crate::sound::is_method(class, method) {
+        let (playing, reply) = crate::sound::call(&mut dom, referent, method);
+        if shared.players.client && crate::sound::replicates(&dom, db) {
+            shared
+                .tools
+                .ops
+                .push(crate::tools::ClientOp::Sound(referent, playing));
+        }
+        return Ok(reply);
+    }
+    if crate::teams::is_method(class, method) {
+        return Ok(crate::teams::call(&dom, db, referent));
+    }
     if crate::animation::is_method(class, method) {
         return shared
             .animations
@@ -101,6 +138,11 @@ pub(crate) fn call(
 }
 
 pub(crate) fn property(shared: &Shared, referent: Ref, class: &str, key: &str) -> Option<Arg> {
+    if class == "Sound" {
+        let (dom, db) = shared.dom_and_db()?;
+        let dom = dom.try_borrow().ok()?;
+        return crate::sound::property(&dom, db, referent, class, key);
+    }
     match class {
         "AnimationTrack" => shared.animations.property(referent, key),
         _ => crate::players::property(shared, referent, class, key),

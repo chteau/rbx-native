@@ -184,6 +184,9 @@ pub(crate) struct Screen {
     /// Whether the device's safe-area insets (a phone's notch and home
     /// indicator) apply: every `ScreenInsets` mode but `None` adds them.
     pub(in crate::scene::gui) device_safe: bool,
+    /// A running game's screen kept clear of its top bar (see
+    /// [`super::constraints::under_topbar`]).
+    pub(in crate::scene::gui) under_topbar: bool,
     /// `ZIndexBehavior.Global`, where `ZIndex` orders every descendant of the
     /// screen against every other rather than only its own siblings.
     pub(in crate::scene::gui) global_z_index: bool,

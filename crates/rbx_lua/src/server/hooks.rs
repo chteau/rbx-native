@@ -131,6 +131,9 @@ pub(super) struct ServerHooks {
     pub(super) physics: Rc<dyn Physics>,
     pub(super) groups: Rc<RefCell<CollisionGroups>>,
     pub(super) fired: Rc<Cell<usize>>,
+    /// The change log's length when the write or engine call in progress
+    /// started, so a reparenting it made fires at once.
+    pub(super) mark: Cell<usize>,
     /// A client's VM: render steps and input work, remotes go to the
     /// server.
     pub(super) client: Rc<Cell<bool>>,
@@ -198,13 +201,27 @@ impl ServerHooks {
             let ctx = ctx.clone();
             let class = class.to_owned();
             let key = key.to_owned();
+            let fired = self.fired.clone();
             return method(lua, move |lua, args: MultiValue| {
                 let args: Vec<Arg> = args.iter().skip(1).map(arg::from_lua).collect();
                 let mut method = key.clone();
                 loop {
+                    let before = ctx.dom().changes().len();
                     let reply = physics
                         .call(referent, &class, &method, args.clone())
                         .map_err(mlua::Error::runtime)?;
+                    // What the call reparented fires first, deferred or
+                    // not (a tool's `ChildAdded` before its `Equipped`).
+                    let reparented = ctx.dom().changes().get(before..).is_some_and(|fresh| {
+                        fresh
+                            .iter()
+                            .any(|c| matches!(c, rbx_dom::Change::Parent { .. }))
+                    });
+                    if reparented {
+                        super::fire_fresh(lua, &fired)?;
+                    } else {
+                        crate::hooks::wrote(lua)?;
+                    }
                     for (owner, name, args) in &reply.fire {
                         signal::fire(lua, &instance_key(*owner, name.as_str()), args)?;
                     }
@@ -498,6 +515,15 @@ impl Hooks for ServerHooks {
             return wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }
         not_scriptable(ctx, referent, class, key)?;
+        // Nothing registers `GetCore`'s values on a server, and the call
+        // waits forever there (rbx_sim's CoreGuiApi `server_get_core`).
+        if class == "StarterGui" && key == "GetCore" && !self.client.get() {
+            let start = lua.create_function(|lua, _: MultiValue| {
+                Ok(crate::engine::scheduler::new_await(lua))
+            })?;
+            return crate::engine::scheduler::yielding(lua, start)
+                .map(|f| Some(Value::Function(f)));
+        }
         if let Some(value) = self.engine_member(lua, ctx, referent, class, key)? {
             return Ok(Some(value));
         }
@@ -532,6 +558,8 @@ impl Hooks for ServerHooks {
         value: &Value,
     ) -> Result<bool> {
         not_scriptable(ctx, referent, class, key)?;
+        self.mark.set(ctx.dom().changes().len());
+        let mut written = false;
         if let Some(stored) = self
             .physics
             .engine_write(referent, class, key, &arg::from_lua(value))
@@ -539,10 +567,25 @@ impl Hooks for ServerHooks {
             let stored = arg::to_lua(lua, ctx, &stored)?;
             if crate::property::set(ctx, referent, key, &stored)? {
                 crate::hooks::wrote(lua)?;
-                return Ok(true);
+                written = true;
             }
         }
-        events::new_index(lua, ctx, referent, class, key, value)
+        if !written {
+            written = events::new_index(lua, ctx, referent, class, key, value)?;
+        }
+        // The plain write, here rather than the caller's, so what it sets
+        // off below runs after it.
+        if !written && crate::property::set(ctx, referent, key, value)? {
+            crate::hooks::wrote(lua)?;
+            written = true;
+        }
+        if written {
+            for (owner, name, args) in self.physics.property_written(referent, class, key) {
+                signal::fire(lua, &instance_key(owner, name.as_str()), &args)?;
+            }
+        }
+        self.mark.set(usize::MAX);
+        Ok(written)
     }
 
     fn service(&self, _lua: &Lua, _ctx: &Ctx, _name: &str) -> Result<Option<Value>> {
@@ -561,11 +604,29 @@ impl Hooks for ServerHooks {
 
     /// Outside `Deferred` signal behaviour, a write's events run before the
     /// write returns, as on a real server (the SignalBehavior golden:
-    /// `Changed` runs ahead of the line after `value.Value = 1`).
+    /// `Changed` runs ahead of the line after `value.Value = 1`). A
+    /// reparenting's always do, deferred or not (the ReparentOrder golden:
+    /// `ChildAdded` and the rest run ahead of the line after `x.Parent = b`).
     fn after_write(&self, lua: &Lua) -> Result<()> {
-        if !deferred_signals(lua) {
+        let reparented = || {
+            let ctx = engine_ctx(lua);
+            let dom = ctx.dom();
+            let all = dom.changes();
+            let parent = |c: &rbx_dom::Change| matches!(c, rbx_dom::Change::Parent { .. });
+            // `x.Parent = y` itself (written outside these hooks), or a
+            // write here that reparented something.
+            (all.len() > self.fired.get() && all.last().is_some_and(parent))
+                || all
+                    .get(self.mark.get()..)
+                    .is_some_and(|fresh| fresh.iter().any(parent))
+        };
+        if !deferred_signals(lua) || reparented() {
             fire_fresh(lua, &self.fired)?;
         }
         Ok(())
     }
+}
+
+fn engine_ctx(lua: &Lua) -> Ctx {
+    crate::engine::engine(lua).ctx.clone()
 }

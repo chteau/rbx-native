@@ -364,6 +364,36 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/CameraInput.luau"),
         tolerance: &[("*", 0.15), ("start_pitch", 0.5), ("turn_per_100px", 1.0)],
     },
+    Test {
+        name: "GuiRuntime",
+        source: include_str!("../conformance/tests/GuiRuntime.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "CoreGuiApi",
+        source: include_str!("../conformance/tests/CoreGuiApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "ToolEquip",
+        source: include_str!("../conformance/tests/ToolEquip.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Teams",
+        source: include_str!("../conformance/tests/Teams.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "ClientReplication",
+        source: include_str!("../conformance/tests/ClientReplication.luau"),
+        tolerance: &[("*speed*", 1.0)],
+    },
+    Test {
+        name: "ReparentOrder",
+        source: include_str!("../conformance/tests/ReparentOrder.luau"),
+        tolerance: &[],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
@@ -393,6 +423,22 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
     (
         "Ownership",
         include_str!("../conformance/client/Ownership.luau"),
+    ),
+    (
+        "GuiRuntime",
+        include_str!("../conformance/client/GuiRuntime.luau"),
+    ),
+    (
+        "CoreGuiApi",
+        include_str!("../conformance/client/CoreGuiApi.luau"),
+    ),
+    (
+        "ToolEquip",
+        include_str!("../conformance/client/ToolEquip.luau"),
+    ),
+    (
+        "ClientReplication",
+        include_str!("../conformance/client/ClientReplication.luau"),
     ),
 ];
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
@@ -481,6 +527,10 @@ fn add_client_half(dom: &mut WeakDom) {
         let module = child(dom, "ModuleScript", name, folder);
         source(dom, module, text);
     }
+    // A LocalScript the GuiRuntime test clones into a ScreenGui (a game
+    // script can't write `Source`): counts the times it ran.
+    let probe = child(dom, "LocalScript", "GuiProbe", folder);
+    source(dom, probe, "_G.confGuiRuns = (_G.confGuiRuns or 0) + 1");
     child(dom, "RemoteFunction", "Call", folder);
     child(dom, "RemoteEvent", "Ready", folder);
     let starter_player = service(dom, "StarterPlayer");
@@ -500,6 +550,11 @@ fn add_client_half(dom: &mut WeakDom) {
     });
     let runner = child(dom, "LocalScript", CLIENT_FOLDER, starter);
     source(dom, runner, CLIENT_RUNNER);
+    // GuiRuntime: a ScreenGui that isn't reset on spawn, there from the
+    // first spawn on.
+    let starter_gui = service(dom, "StarterGui");
+    let keep = child(dom, "ScreenGui", "ConfKeep", starter_gui);
+    let _ = dom.set_property(keep, "ResetOnSpawn", Variant::Bool(false));
     let first = service(dom, "ReplicatedFirst");
     let probe = child(dom, "LocalScript", "FirstProbe", first);
     source(dom, probe, FIRST_PROBE);
@@ -645,7 +700,8 @@ pub fn run_in_sim(limit: f64) -> Result<BTreeMap<String, Value>, String> {
 /// What a test prints to have input done on the player's client: the
 /// recorder makes it XTest input on the real client's window, rbx_sim
 /// Session input (`wheel in|out N`, `drag DX DY` with the right button,
-/// `key NAME` pressed and released).
+/// `key NAME` pressed and released, `click X Y` with the left button at
+/// window pixel X, Y).
 pub const GESTURE: &str = "CONFORMANCE_GESTURE ";
 
 /// A gesture as rbx_sim input, one batch per frame (a drag's button is
@@ -680,6 +736,18 @@ pub fn gesture_inputs(gesture: &str) -> Vec<Vec<crate::Input>> {
                     position: [center[0] + delta[0], center[1] + delta[1]],
                     delta,
                 }],
+                button(false),
+            ]
+        }
+        Some("click") => {
+            let position = [number(1), number(2)];
+            let button = |down| vec![Input::Button { button: 1, down }];
+            vec![
+                vec![Input::Move {
+                    position,
+                    delta: [0.0, 0.0],
+                }],
+                button(true),
                 button(false),
             ]
         }

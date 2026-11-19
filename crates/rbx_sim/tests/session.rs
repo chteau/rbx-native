@@ -198,3 +198,167 @@ fn a_second_player_spawns_on_top_of_the_first() {
     }
     assert!(has(&lines, Peer::Server, "apart true"), "{lines:#?}");
 }
+
+#[test]
+fn the_server_sees_the_owner_s_walking_velocity() {
+    let mut s = session(
+        place(
+            "local player = game:GetService('Players'):GetPlayers()[1] \
+             or game:GetService('Players').PlayerAdded:Wait() \
+             local character = player.Character or player.CharacterAdded:Wait() \
+             task.wait(2) \
+             character.Humanoid:MoveTo(character.HumanoidRootPart.Position + Vector3.new(0, 0, -60)) \
+             task.wait(0.75) \
+             print('server speed', math.floor(character.HumanoidRootPart.AssemblyLinearVelocity.Magnitude + 0.5))",
+            "local player = game:GetService('Players').LocalPlayer \
+             local character = player.Character or player.CharacterAdded:Wait() \
+             task.wait(2.75) \
+             print('client speed', math.floor(character.HumanoidRootPart.AssemblyLinearVelocity.Magnitude + 0.5))",
+        ),
+        1,
+    );
+    let mut lines = Vec::new();
+    for _ in 0..300 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(
+        has(&lines, Peer::Client(0), "client speed 16"),
+        "{lines:#?}"
+    );
+    assert!(has(&lines, Peer::Server, "server speed 16"), "{lines:#?}");
+}
+
+#[test]
+fn a_kick_removes_the_player_with_its_message() {
+    let mut s = session(
+        place(
+            "game:GetService('Players').PlayerRemoving:Connect(function(p) print('removing', p.Name) end) \
+             task.wait(1) game:GetService('Players').Player2:Kick('bye now')",
+            "",
+        ),
+        2,
+    );
+    let mut lines = Vec::new();
+    for _ in 0..120 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert_eq!(s.kicked, vec![("Player2".to_owned(), "bye now".to_owned())]);
+    assert!(has(&lines, Peer::Server, "removing Player2"), "{lines:#?}");
+    let dom = s.server.dom();
+    let players = service(&dom, "Players");
+    let left: Vec<&str> = dom
+        .get(players)
+        .unwrap()
+        .children()
+        .iter()
+        .map(|r| dom.get(*r).unwrap().name())
+        .collect();
+    assert_eq!(left, vec!["Player1"]);
+}
+
+#[test]
+fn a_backpack_tool_equips_and_welds_to_the_right_hand() {
+    let mut dom = place(
+        "task.wait(1) local player = game:GetService('Players').Player1 \
+         local character = player.Character \
+         local tool = player.Backpack:FindFirstChild('Sword') \
+         tool.Equipped:Connect(function() print('equipped') end) \
+         task.wait(0.5) character.Humanoid:EquipTool(tool) task.wait(0.2) \
+         print('parent', tool.Parent == character, 'grip', character:FindFirstChild('RightGrip', true) ~= nil) \
+         character.Humanoid:UnequipTools() task.wait(0.2) print('back', tool.Parent.Name)",
+        "",
+    );
+    let pack = service(&dom, "StarterPack");
+    let tool = dom.new_instance("Tool", "Sword", Some(pack));
+    let handle = dom.new_instance("Part", "Handle", Some(tool));
+    let _ = dom.set_property(handle, "Anchored", Variant::Bool(false));
+    dom.take_changes();
+    let mut s = session(dom, 1);
+    let mut lines = Vec::new();
+    for _ in 0..180 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "equipped"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Server, "parent true grip true"),
+        "{lines:#?}"
+    );
+    assert!(has(&lines, Peer::Server, "back Backpack"), "{lines:#?}");
+}
+
+#[test]
+fn auto_assignable_teams_fill_evenly() {
+    let mut dom = place(
+        "task.wait(1) for _, p in game:GetService('Players'):GetPlayers() do \
+         print('team', p.Team and p.Team.Name) end",
+        "",
+    );
+    let teams = service(&dom, "Teams");
+    for (name, color) in [("Red", 21u32), ("Blue", 23)] {
+        let team = dom.new_instance("Team", name, Some(teams));
+        let _ = dom.set_property(team, "TeamColor", Variant::BrickColor(color));
+    }
+    dom.take_changes();
+    let mut s = session(dom, 2);
+    let mut lines = Vec::new();
+    for _ in 0..90 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "team Red"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "team Blue"), "{lines:#?}");
+}
+
+#[test]
+fn number_keys_switch_between_tools() {
+    let mut dom = place(
+        "",
+        "local player = game:GetService('Players').LocalPlayer \
+         while true do task.wait(0.25) local c = player.Character \
+         local t = c and c:FindFirstChildOfClass('Tool') print('holding', t and t.Name) end",
+    );
+    let pack = service(&dom, "StarterPack");
+    for name in ["Sword", "Torch"] {
+        let tool = dom.new_instance("Tool", name, Some(pack));
+        let handle = dom.new_instance("Part", "Handle", Some(tool));
+        let _ = dom.set_property(handle, "Anchored", Variant::Bool(false));
+    }
+    dom.take_changes();
+    let mut s = session(dom, 1);
+    let mut lines = Vec::new();
+    let tap = |s: &mut Session, code: &str| {
+        for down in [true, false] {
+            s.input(
+                0,
+                Input::Key {
+                    code: code.into(),
+                    down,
+                },
+            );
+        }
+    };
+    for frame in 0..240 {
+        match frame {
+            60 => tap(&mut s, "One"),
+            120 => tap(&mut s, "Two"),
+            180 => tap(&mut s, "Two"),
+            _ => {}
+        }
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    let held: Vec<&str> = lines
+        .iter()
+        .filter(|(p, _)| *p == Peer::Client(0))
+        .map(|(_, l)| l.as_str())
+        .collect();
+    let at = |i: usize| held.get(i).copied().unwrap_or("");
+    // Printed every 15 frames: before 60 nothing, 60..120 the sword,
+    // 120..180 the torch, after 180 nothing again.
+    assert_eq!(at(5), "holding Sword", "{held:#?}");
+    assert_eq!(at(9), "holding Torch", "{held:#?}");
+    assert_eq!(at(14), "holding nil", "{held:#?}");
+}

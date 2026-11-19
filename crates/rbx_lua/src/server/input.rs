@@ -13,8 +13,9 @@ use crate::instance::LuaInstance;
 const SOURCE: &str = include_str!("input.luau");
 const KEY: &str = "rbxn.server.input";
 
-/// The `UserInputService` signals a script can connect to. Only the input
-/// ones and `JumpRequest` ever fire (no touch, gamepad or text boxes yet).
+/// The `UserInputService` signals a script can connect to. The input
+/// ones, `JumpRequest` and the TextBox focus ones fire (no touch or
+/// gamepad yet).
 const SIGNALS: &[&str] = &[
     "InputBegan",
     "InputChanged",
@@ -68,11 +69,14 @@ pub(super) fn frame(lua: &Lua) -> Result<()> {
     module(lua)?.get::<Function>("frame")?.call(())
 }
 
-/// Hands `input` to the bound actions; whether one sank it.
-pub(super) fn dispatch(lua: &Lua, input: Ref) -> Result<bool> {
+/// Hands `input` to the bound actions, unless the GUI `sunk` it; whether
+/// it was taken.
+pub(super) fn dispatch(lua: &Lua, input: Ref, sunk: bool) -> Result<bool> {
     let ctx = engine(lua).ctx.clone();
     let input = LuaInstance::new(input, ctx).into_lua(lua)?;
-    module(lua)?.get::<Function>("dispatch")?.call(input)
+    module(lua)?
+        .get::<Function>("dispatch")?
+        .call((input, sunk))
 }
 
 /// Runs the render-step bindings in priority order.

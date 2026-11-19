@@ -16,8 +16,10 @@ pub(crate) const ANCHORED: &str =
     "Network Ownership API cannot be called on Anchored parts or parts welded to Anchored parts.";
 
 /// Studs from a character's root within which its player takes unowned
-/// parts (`Player.MaximumSimulationRadius`'s default).
-const REACH: f64 = 1000.0;
+/// parts when the place doesn't say (`Player.MaximumSimulationRadius`'s
+/// default). A player's `SimulationRadius`, capped by its
+/// `MaximumSimulationRadius`, is its reach.
+pub(crate) const REACH: f64 = 1000.0;
 
 /// Frames a new assembly stays with the server before auto ownership looks
 /// at it (Ownership `near_trace`: the server's after 1 frame, the player's
@@ -96,6 +98,7 @@ impl Ownership {
         assemblies: &[Vec<Ref>],
         characters: &[(Ref, HashSet<Ref>, [f64; 3])],
         position: impl Fn(Ref) -> Option<[f64; 3]>,
+        reach: impl Fn(Ref) -> f64,
     ) {
         let live: HashSet<Ref> = assemblies.iter().flatten().copied().collect();
         self.seen.retain(|p, _| live.contains(p));
@@ -124,7 +127,7 @@ impl Ownership {
                             let d: f64 = (0..3).map(|i| (root[i] - at[i]).powi(2)).sum();
                             (*player, d.sqrt())
                         })
-                        .filter(|(_, d)| *d <= REACH)
+                        .filter(|(player, d)| *d <= reach(*player))
                         .min_by(|a, b| a.1.total_cmp(&b.1))
                         .map(|(player, _)| player)
                 });

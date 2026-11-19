@@ -9,6 +9,7 @@ pub mod animation;
 pub mod character;
 pub mod conformance;
 mod engine;
+pub mod gui;
 pub mod humanoid;
 pub mod input;
 pub mod load;
@@ -18,7 +19,10 @@ pub mod players;
 mod scripts;
 pub mod session;
 mod sim;
+mod sound;
 mod spatial;
+mod teams;
+mod tools;
 
 pub use input::{Input, MouseBehavior};
 pub use players::Avatars;

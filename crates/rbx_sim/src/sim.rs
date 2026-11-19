@@ -12,6 +12,15 @@ use crate::animation::TrackOp;
 use crate::humanoid::State;
 use crate::input::{Input, Inputs, MouseBehavior};
 use crate::physics::{Bridge, Drive, Shared, Touch, World, PHYSICS_HZ};
+
+/// A part as the peer simulating it left it this frame.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Placed {
+    pub part: Ref,
+    pub cframe: rbx_dom::CFrameData,
+    pub linear: rbx_dom::Vector3Data,
+    pub angular: rbx_dom::Vector3Data,
+}
 use crate::players::{Avatars, Due};
 use crate::scripts;
 
@@ -199,8 +208,21 @@ impl Simulation {
             let Some((object, signal)) = written else {
                 continue;
             };
-            let changes = self.vm.input(object, uis, signal);
+            let handled = {
+                let dom = self.dom.borrow();
+                self.shared
+                    .borrow_mut()
+                    .gui
+                    .input(&dom, self.db, &input, object, uis)
+            };
+            self.gui_steps(handled.before);
+            let changes = self.vm.input(object, uis, signal, handled.processed);
             self.apply(changes);
+            self.gui_steps(handled.after);
+            if handled.processed {
+                continue;
+            }
+            self.tool_input(&input);
             if matches!(&input, Input::Key { code, down: true } if code == "Space") {
                 let changes = self.vm.fire(Event::Signal {
                     owner: uis,
@@ -211,9 +233,254 @@ impl Simulation {
             }
         }
         self.inputs = Some(inputs);
+        // The hotbar keeps each tool's slot from when it first came.
+        let player = self.shared.borrow().players.local;
+        if let Some(player) = player {
+            let dom = self.dom.borrow();
+            self.shared.borrow_mut().tools.hotbar(&dom, player);
+        }
         let changes = self.vm.render_step(dt);
         self.apply(changes);
         self.collect_output();
+    }
+
+    /// Lays out the local player's `PlayerGui` (its objects'
+    /// `AbsolutePosition` and `AbsoluteSize`, the camera's `ViewportSize`)
+    /// and fires what changed.
+    fn gui_layout(&mut self) {
+        let player = self.shared.borrow().players.local;
+        {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            let viewport = shared.gui.viewport;
+            crate::input::set_viewport(&mut dom, viewport);
+            let root = player.and_then(|p| {
+                dom.get(p)?
+                    .children()
+                    .iter()
+                    .copied()
+                    .find(|c| dom.get(*c).is_some_and(|i| i.class() == "PlayerGui"))
+            });
+            if let Some(root) = root {
+                shared.gui.relayout(&mut dom, self.db, root);
+            }
+        }
+        self.flush();
+    }
+
+    /// A key or click the game left: the hotbar's number keys, Backspace,
+    /// a tool's activation.
+    fn tool_input(&mut self, input: &Input) {
+        let Some(player) = self.shared.borrow().players.local else {
+            return;
+        };
+        let fire = {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            let shown = shared.gui.core_enabled("Backpack");
+            shared.tools.input(&mut dom, self.db, player, input, shown)
+        };
+        self.flush();
+        for (owner, name, args) in fire {
+            self.fire_signal(owner, &name, args);
+        }
+    }
+
+    /// Players a script kicked since the last call, with the message.
+    pub(crate) fn take_kicked(&mut self) -> Vec<(Ref, String)> {
+        std::mem::take(&mut self.shared.borrow_mut().players.kicked)
+    }
+
+    /// A player leaves the server: `PlayerRemoving`, then their character
+    /// and the player go.
+    pub(crate) fn remove_player(&mut self, player: Ref) {
+        let players = self.dom.borrow().parent(player);
+        if let Some(players) = players {
+            self.fire_signal(
+                players,
+                "PlayerRemoving",
+                vec![rbx_lua::server::Arg::Instance(player)],
+            );
+        }
+        let character = crate::humanoid::reference(&self.dom.borrow(), player, "Character");
+        if let Some(character) = character {
+            self.destroy(character);
+        }
+        if self.dom.borrow().get(player).is_some() {
+            self.destroy(player);
+        }
+        self.shared
+            .borrow_mut()
+            .players
+            .members
+            .retain(|m| m.player != player);
+    }
+
+    /// A client's tool moves and activations since the last call, for the
+    /// server.
+    pub(crate) fn take_tool_ops(&mut self) -> Vec<crate::tools::ClientOp> {
+        std::mem::take(&mut self.shared.borrow_mut().tools.ops)
+    }
+
+    /// Marks a client applying the server's frame (its tool moves are the
+    /// server's, not the player's).
+    pub(crate) fn set_remote(&mut self, remote: bool) {
+        self.shared.borrow_mut().tools.remote = remote;
+    }
+
+    /// What `player`'s client did with its tools, on the server.
+    pub(crate) fn apply_tool_ops(&mut self, player: Ref, ops: Vec<crate::tools::ClientOp>) {
+        for op in ops {
+            match op {
+                crate::tools::ClientOp::Move(tool, parent) => {
+                    let allowed = {
+                        let dom = self.dom.borrow();
+                        crate::tools::allowed(&dom, self.db, player, tool, parent)
+                    };
+                    if allowed {
+                        self.dom.borrow_mut().set_parent(tool, parent);
+                        self.flush();
+                    }
+                }
+                crate::tools::ClientOp::Activate(tool, on) => {
+                    let name = if on { "Activated" } else { "Deactivated" };
+                    self.fire_signal(tool, name, Vec::new());
+                }
+                crate::tools::ClientOp::MoveToFinished(humanoid, reached) => {
+                    let owned = self
+                        .dom
+                        .borrow()
+                        .get(humanoid)
+                        .is_some_and(|i| i.class() == "Humanoid");
+                    if owned {
+                        self.fire_signal(
+                            humanoid,
+                            "MoveToFinished",
+                            vec![rbx_lua::server::Arg::Bool(reached)],
+                        );
+                    }
+                }
+                crate::tools::ClientOp::Sound(sound, playing) => {
+                    let replicates = {
+                        let dom = self.dom.borrow();
+                        dom.get(sound).is_some_and(|i| i.class() == "Sound")
+                            && crate::sound::replicates(&dom, self.db)
+                    };
+                    if replicates {
+                        crate::sound::set(&mut self.dom.borrow_mut(), sound, playing, playing);
+                        self.flush();
+                    }
+                }
+            }
+        }
+    }
+
+    /// What the default core GUI shows now (see [`crate::gui::CoreGui`]);
+    /// the notifications are handed over once.
+    pub fn core_gui(&mut self) -> crate::gui::CoreGui {
+        let local = self.shared.borrow().players.local;
+        let mut core = crate::gui::CoreGui {
+            notifications: std::mem::take(&mut self.shared.borrow_mut().gui.notifications),
+            ..Default::default()
+        };
+        let Some(player) = local else {
+            return core;
+        };
+        let (health, backpack, list) = {
+            let shared = self.shared.borrow();
+            (
+                shared.gui.core_enabled("Health"),
+                shared.gui.core_enabled("Backpack"),
+                shared.gui.core_enabled("PlayerList"),
+            )
+        };
+        if backpack {
+            core.hotbar = Some(self.hotbar());
+        }
+        let dom = self.dom.borrow();
+        if health {
+            let humanoid = crate::humanoid::reference(&dom, player, "Character").and_then(|c| {
+                dom.get(c)?
+                    .children()
+                    .iter()
+                    .copied()
+                    .find(|h| dom.get(*h).is_some_and(|i| i.class() == "Humanoid"))
+            });
+            core.health = humanoid.map(|h| {
+                (
+                    crate::humanoid::number(&dom, self.db, h, "Health"),
+                    crate::humanoid::number(&dom, self.db, h, "MaxHealth"),
+                )
+            });
+        }
+        if list {
+            let players = crate::players::players_of(&dom)
+                .into_iter()
+                .filter_map(|p| {
+                    let i = dom.get(p)?;
+                    let team =
+                        crate::humanoid::reference(&dom, p, "Team").and_then(|t| {
+                            match dom.get(t)?.properties().get("TeamColor") {
+                                Some(Variant::BrickColor(c)) => {
+                                    rbx_dom::BrickColor::from_number(*c).map(|b| b.rgb)
+                                }
+                                _ => None,
+                            }
+                        });
+                    Some((i.name().to_owned(), team))
+                })
+                .collect();
+            core.players = Some(players);
+        }
+        core
+    }
+
+    /// The local player's hotbar: each tool's name and whether it's held.
+    pub fn hotbar(&self) -> Vec<(String, bool)> {
+        let Some(player) = self.shared.borrow().players.local else {
+            return Vec::new();
+        };
+        let dom = self.dom.borrow();
+        let tools = self.shared.borrow_mut().tools.hotbar(&dom, player);
+        let character = crate::humanoid::reference(&dom, player, "Character");
+        tools
+            .into_iter()
+            .filter_map(|t| {
+                let i = dom.get(t)?;
+                Some((
+                    i.name().to_owned(),
+                    character.is_some() && dom.parent(t) == character,
+                ))
+            })
+            .collect()
+    }
+
+    /// Runs what the GUI does for an input: its signals, and its text
+    /// edits with their change events.
+    fn gui_steps(&mut self, steps: Vec<crate::gui::Step>) {
+        for step in steps {
+            match step {
+                crate::gui::Step::Fire(event) => self.fire(event),
+                crate::gui::Step::Text(r, text) => {
+                    let _ = self
+                        .dom
+                        .borrow_mut()
+                        .set_property(r, "Text", Variant::String(text));
+                    self.flush();
+                }
+            }
+        }
+    }
+
+    /// The window the client draws in, pixels (`Camera.ViewportSize`, what
+    /// `ScreenGui`s lay out in).
+    pub fn set_viewport(&mut self, size: [f32; 2]) {
+        self.shared.borrow_mut().gui.viewport = size;
+    }
+
+    /// The client's GUI state: focus, the core GUI switches, notifications.
+    pub fn gui(&self) -> std::cell::Ref<'_, crate::gui::Gui> {
+        std::cell::Ref::map(self.shared.borrow(), |s| &s.gui)
     }
 
     /// Puts a player in the game as `name`, wearing `template` (a DOM
@@ -228,6 +495,13 @@ impl Simulation {
                 .players
                 .join(&mut dom, self.db, name, user_id, template)
         };
+        if let Some(player) = player {
+            let mut dom = self.dom.borrow_mut();
+            self.shared
+                .borrow_mut()
+                .teams
+                .assign(&mut dom, self.db, player);
+        }
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
         player
@@ -336,6 +610,11 @@ impl Simulation {
     pub fn step(&mut self) {
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
+        // A client lays its GUI out once what replication brought is in,
+        // before any script of the frame reads it.
+        if self.inputs.is_some() {
+            self.gui_layout();
+        }
         let dt = 1.0 / FRAME_HZ;
         let started = self.time();
         self.frame += 1;
@@ -424,21 +703,65 @@ impl Simulation {
     }
 
     /// Where the unanchored parts this peer simulates are.
-    pub(crate) fn moved_parts(&self) -> Vec<(Ref, rbx_dom::CFrameData)> {
+    /// [`Self::moved_parts`], plus the parts that moved last time and came
+    /// to rest since (`last`), at rest: the others' copies stop too.
+    pub(crate) fn moved_parts_since(
+        &self,
+        last: &mut std::collections::HashSet<Ref>,
+    ) -> Vec<Placed> {
+        let mut moved = self.moved_parts();
+        let now: std::collections::HashSet<Ref> = moved.iter().map(|p| p.part).collect();
+        let dom = self.dom.borrow();
+        let zero = rbx_dom::Vector3Data {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        for part in last.difference(&now) {
+            if let Some(Variant::CFrame(cframe)) =
+                dom.get(*part).and_then(|i| i.properties().get("CFrame"))
+            {
+                moved.push(Placed {
+                    part: *part,
+                    cframe: *cframe,
+                    linear: zero,
+                    angular: zero,
+                });
+            }
+        }
+        *last = now;
+        moved
+    }
+
+    pub(crate) fn moved_parts(&self) -> Vec<Placed> {
         let dom = self.dom.borrow();
         self.world
             .moving_parts()
-            .filter_map(|part| match dom.get(part)?.properties().get("CFrame") {
-                Some(Variant::CFrame(cf)) => Some((part, *cf)),
-                _ => None,
+            .filter_map(|part| {
+                let cframe = match dom.get(part)?.properties().get("CFrame") {
+                    Some(Variant::CFrame(cf)) => *cf,
+                    _ => return None,
+                };
+                let v = |name| {
+                    let [x, y, z] =
+                        crate::humanoid::vector(&dom, self.db, part, name).map(|c| c as f32);
+                    rbx_dom::Vector3Data { x, y, z }
+                };
+                Some(Placed {
+                    part,
+                    cframe,
+                    linear: v("AssemblyLinearVelocity"),
+                    angular: v("AssemblyAngularVelocity"),
+                })
             })
             .collect()
     }
 
     /// Moves parts another peer simulates to where it put them, unlogged
     /// as physics moves are.
-    pub(crate) fn place_parts(&mut self, parts: &[(Ref, rbx_dom::CFrameData)]) {
-        for (part, cf) in parts {
+    pub(crate) fn place_parts(&mut self, parts: &[Placed]) {
+        for placed in parts {
+            let (part, cf) = (&placed.part, &placed.cframe);
             if self.simulates(*part) {
                 continue;
             }
@@ -447,9 +770,23 @@ impl Simulation {
                 let Some(instance) = dom.get_mut(*part) else {
                     continue;
                 };
-                instance
-                    .properties_mut()
-                    .insert("CFrame".into(), Variant::CFrame(*cf));
+                let class = instance.class().to_owned();
+                let props = instance.properties_mut();
+                props.insert("CFrame".into(), Variant::CFrame(*cf));
+                // The owner's velocity comes along: the part reads it, and
+                // it carries the part on between two updates.
+                for (name, value) in [
+                    ("AssemblyLinearVelocity", placed.linear),
+                    ("AssemblyAngularVelocity", placed.angular),
+                ] {
+                    let key = self
+                        .db
+                        .stored_names(&class, name)
+                        .first()
+                        .copied()
+                        .unwrap_or(name);
+                    props.insert(key.into(), Variant::Vector3(value));
+                }
             }
             self.world.teleport(*part, cf);
             if let Some(seen) = &mut self.view_changes {
@@ -569,16 +906,31 @@ impl Simulation {
             let dom = self.dom.borrow();
             let mut shared = self.shared.borrow_mut();
             shared.ownership.retain(&dom);
-            shared
-                .ownership
-                .assign(self.frame, &assemblies, &characters, |part| {
-                    match dom.get(part)?.properties().get("CFrame") {
-                        Some(Variant::CFrame(cf)) => {
-                            Some([cf.position.x, cf.position.y, cf.position.z].map(f64::from))
-                        }
-                        _ => None,
+            let number = |player: Ref, name: &str| match dom
+                .get(player)
+                .and_then(|i| i.properties().get(name))
+            {
+                Some(Variant::Float32(v)) => Some(f64::from(*v)),
+                Some(Variant::Float64(v)) => Some(*v),
+                _ => None,
+            };
+            let reach = |player: Ref| {
+                let max =
+                    number(player, "MaximumSimulationRadius").unwrap_or(crate::ownership::REACH);
+                number(player, "SimulationRadius").unwrap_or(max).min(max)
+            };
+            shared.ownership.assign(
+                self.frame,
+                &assemblies,
+                &characters,
+                |part| match dom.get(part)?.properties().get("CFrame") {
+                    Some(Variant::CFrame(cf)) => {
+                        Some([cf.position.x, cf.position.y, cf.position.z].map(f64::from))
                     }
-                });
+                    _ => None,
+                },
+                reach,
+            );
         }
         self.world.sync_ownership();
     }
@@ -739,6 +1091,19 @@ impl Simulation {
             )
         };
         for event in events {
+            if self.role == Role::Client {
+                if let rbx_lua::server::Event::Signal { owner, name, args } = &event {
+                    if name == "MoveToFinished" {
+                        let reached =
+                            matches!(args.first(), Some(rbx_lua::server::Arg::Bool(true)));
+                        self.shared
+                            .borrow_mut()
+                            .tools
+                            .ops
+                            .push(crate::tools::ClientOp::MoveToFinished(*owner, reached));
+                    }
+                }
+            }
             self.fire(event);
         }
         for joint in destroy {

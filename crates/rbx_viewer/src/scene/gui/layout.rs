@@ -127,6 +127,9 @@ pub(crate) struct Grouped {
     pub(crate) texture: Option<usize>,
 }
 
+/// A running game's top bar, in GUI pixels.
+pub(crate) const TOPBAR_INSET: f32 = 58.0;
+
 /// The edges of a device's screen its cutouts and home indicator cover, in
 /// the same pixels as the viewport: what `ScreenInsets.DeviceSafeInsets`
 /// keeps a `ScreenGui` clear of. All zero for a desktop window.
@@ -220,15 +223,18 @@ pub(crate) fn resolve_inset<'a>(
 /// keeps it clear of the device's cutouts, shrinking it by as much, so a
 /// `{1, 0}` child still ends at the safe area's far edges.
 ///
-/// No top bar is kept clear of: that is the running game's, and Studio's edit
-/// view has none, `GuiService:GetGuiInset()` reads zero there and a
-/// `ScreenGui` with `IgnoreGuiInset` off sits at (0, 0).
+/// Studio's edit view has no top bar: `GuiService:GetGuiInset()` reads zero
+/// there and a `ScreenGui` with `IgnoreGuiInset` off sits at (0, 0). A
+/// running game's (`set_player_gui`) keeps such a screen 58 px down.
 pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2], insets: SafeInsets) -> Rect {
     let device = match screen.device_safe {
         true => insets,
         false => SafeInsets::default(),
     };
-    let top = device.top;
+    let top = match screen.under_topbar {
+        true => device.top.max(TOPBAR_INSET),
+        false => device.top,
+    };
     Rect {
         x: device.left,
         y: top,

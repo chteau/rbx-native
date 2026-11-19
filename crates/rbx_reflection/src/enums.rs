@@ -5,4 +5,7 @@
 pub struct EnumDescriptor {
     pub name: String,
     pub items: Vec<(String, u32)>,
+    /// Old names scripts still use for an item (`KeyCode.Unknown` for
+    /// `KeyCode.None`), with the value they stand for.
+    pub legacy: Vec<(String, u32)>,
 }

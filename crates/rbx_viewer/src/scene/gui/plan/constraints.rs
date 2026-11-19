@@ -248,6 +248,21 @@ pub(in crate::scene::gui) fn device_safe(properties: &BTreeMap<String, Variant>)
         || enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS) != NO_INSETS
 }
 
+/// Whether a running game's top bar (58 px) pushes the screen down: unless
+/// `IgnoreGuiInset` is on or `ScreenInsets` is `None` or `DeviceSafeInsets`
+/// (`GuiService:GetGuiInset()` and the GuiRuntime golden: a frame at
+/// (0, 0) has `AbsolutePosition` 0 with the inset, the mouse 58 lower).
+pub(in crate::scene::gui) fn under_topbar(properties: &BTreeMap<String, Variant>) -> bool {
+    !super::props::flag(properties, "IgnoreGuiInset", false)
+        && !matches!(
+            enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS),
+            NO_INSETS | DEVICE_SAFE_INSETS
+        )
+}
+
+/// `Enum.ScreenInsets.DeviceSafeInsets`.
+const DEVICE_SAFE_INSETS: u32 = 1;
+
 /// `Enum.ScreenInsets.CoreUISafeInsets`, the property's own default.
 const CORE_UI_SAFE_INSETS: u32 = 2;
 /// `Enum.ScreenInsets.None`.

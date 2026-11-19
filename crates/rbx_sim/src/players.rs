@@ -40,6 +40,9 @@ pub struct Member {
     appearance: Vec<(u64, Ref)>,
     respawn_at: Option<u64>,
     joined: bool,
+    /// Whether a character has spawned yet: a `ScreenGui` that isn't reset
+    /// on spawn is copied on the first spawn only.
+    spawned: bool,
 }
 
 #[derive(Default)]
@@ -57,6 +60,9 @@ pub struct Players {
     /// A client: characters come from the server, `LoadCharacter` and
     /// `ApplyDescription` refuse.
     pub client: bool,
+    /// Players a script kicked, with its message, for the session to
+    /// take out.
+    pub kicked: Vec<(Ref, String)>,
 }
 
 const PLAYERS_METHODS: &[&str] = &[
@@ -74,6 +80,7 @@ const PLAYER_METHODS: &[&str] = &[
     "LoadCharacter",
     "LoadCharacter#parent",
     "LoadCharacter#build",
+    "Kick",
 ];
 
 pub(crate) fn is_method(class: &str, key: &str) -> bool {
@@ -477,7 +484,11 @@ impl Players {
         let player = dom.new_instance("Player", name, Some(players));
         set(dom, db, player, "UserId", Variant::Int64(user_id));
         set(dom, db, player, "DisplayName", Variant::String(name.into()));
+        // Neutral and white until a team takes them (Teams `defaults`).
+        let _ = dom.set_property(player, "TeamColor", Variant::BrickColor(1));
+        let _ = dom.set_property(player, "Neutral", Variant::Bool(true));
         dom.new_instance("Backpack", "Backpack", Some(player));
+        dom.new_instance("StarterGear", "StarterGear", Some(player));
         dom.new_instance("PlayerGui", "PlayerGui", Some(player));
         if let Some(starter_player) = service(dom, "StarterPlayer") {
             copy_player_settings(dom, db, starter_player, player);
@@ -490,6 +501,7 @@ impl Players {
             appearance: Vec::new(),
             respawn_at: None,
             joined: false,
+            spawned: false,
         });
         Some(player)
     }
@@ -631,8 +643,73 @@ impl Players {
         put_on(dom, db, character, spawn);
         dom.set_parent(character, Some(workspace));
         let frame = self.frame;
+        let mut first = false;
         if let Some(member) = self.members.iter_mut().find(|m| m.player == player) {
             member.appearance.push((frame + 1, character));
+            first = !std::mem::replace(&mut member.spawned, true);
+        }
+        self.refill_backpack(dom, player);
+        self.refill_gui(dom, db, player, first);
+    }
+
+    /// A spawn's new `Backpack` (ToolEquip `backpack_new`): the old one goes
+    /// with its tools, the new one gets `StarterPack`'s, then the player's
+    /// `StarterGear`'s.
+    fn refill_backpack(&mut self, dom: &mut WeakDom, player: Ref) {
+        if let Some(old) = child_of_class(dom, player, "Backpack") {
+            dom.unparent(old);
+            self.old.push(old);
+        }
+        let backpack = dom.new_instance("Backpack", "Backpack", Some(player));
+        let sources = [
+            service(dom, "StarterPack"),
+            child_of_class(dom, player, "StarterGear"),
+        ];
+        for source in sources.into_iter().flatten() {
+            for child in dom
+                .get(source)
+                .map(|i| i.children().to_vec())
+                .unwrap_or_default()
+            {
+                copy(dom, child, Some(backpack));
+            }
+        }
+    }
+
+    /// `StarterGui` into `PlayerGui` on a spawn (GuiRuntime): what's there
+    /// goes, but for the `ScreenGui`s (any `LayerCollector`) with
+    /// `ResetOnSpawn` off; then `StarterGui`'s contents are copied, those
+    /// with `ResetOnSpawn` off on the player's first spawn only.
+    fn refill_gui(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase, player: Ref, first: bool) {
+        let Some(gui) = child_of_class(dom, player, "PlayerGui") else {
+            return;
+        };
+        let kept = |dom: &WeakDom, r: Ref| {
+            dom.get(r)
+                .is_some_and(|i| db.is_subclass_of(i.class(), "LayerCollector"))
+                && !flag(dom, db, r, "ResetOnSpawn")
+        };
+        for child in dom
+            .get(gui)
+            .map(|i| i.children().to_vec())
+            .unwrap_or_default()
+        {
+            if !kept(dom, child) {
+                dom.unparent(child);
+                self.old.push(child);
+            }
+        }
+        let Some(starter) = service(dom, "StarterGui") else {
+            return;
+        };
+        for child in dom
+            .get(starter)
+            .map(|i| i.children().to_vec())
+            .unwrap_or_default()
+        {
+            if first || !kept(dom, child) {
+                copy(dom, child, Some(gui));
+            }
         }
     }
 
@@ -935,6 +1012,20 @@ pub(crate) fn call(
                 copy(dom, *description, Some(humanoid));
             }
             Ok(CallReply::value(Arg::Instance(model)))
+        }
+        // A LocalScript can only kick its own player.
+        ("Player", "Kick") => {
+            if players.client && players.local != Some(referent) {
+                return Err("Cannot kick a non-local Player from a LocalScript".into());
+            }
+            let message = match args.first() {
+                Some(Arg::String(s)) => s.clone(),
+                _ => String::new(),
+            };
+            if !players.kicked.iter().any(|(p, _)| *p == referent) {
+                players.kicked.push((referent, message));
+            }
+            Ok(CallReply::default())
         }
         ("Player", "LoadCharacter") => {
             if players.client {
