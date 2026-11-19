@@ -1,11 +1,38 @@
 {
   "passes": 5,
+  "raw": [
+    {
+      "behavior": "unreadable",
+      "connection_order": "after C W B A",
+      "order": "after_fire after_set handler changed beat"
+    },
+    {
+      "behavior": "unreadable",
+      "connection_order": "after C W B A",
+      "order": "after_fire after_set handler changed beat"
+    },
+    {
+      "behavior": "unreadable",
+      "connection_order": "after C W B A",
+      "order": "after_fire after_set handler changed beat"
+    },
+    {
+      "behavior": "unreadable",
+      "connection_order": "after C W B A",
+      "order": "after_fire after_set handler changed beat"
+    },
+    {
+      "behavior": "unreadable",
+      "connection_order": "after C W B A",
+      "order": "after_fire after_set handler changed beat"
+    }
+  ],
   "result": {
     "behavior": "unreadable",
-    "connection_order": "C W B A after",
-    "order": "handler after_fire changed after_set beat"
+    "connection_order": "after C W B A",
+    "order": "after_fire after_set handler changed beat"
   },
-  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
+  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
   "spread": {},
   "status": "recorded"
 }

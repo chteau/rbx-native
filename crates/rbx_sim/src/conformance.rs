@@ -93,19 +93,158 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/SignalBehavior.luau"),
         tolerance: &[],
     },
+    Test {
+        name: "FreeFallTrace",
+        source: include_str!("../conformance/tests/FreeFallTrace.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "WaitRounding",
+        source: include_str!("../conformance/tests/WaitRounding.luau"),
+        tolerance: &[("*", 0.0)],
+    },
+    Test {
+        name: "Raycast",
+        source: include_str!("../conformance/tests/Raycast.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Shapecast",
+        source: include_str!("../conformance/tests/Shapecast.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Overlap",
+        source: include_str!("../conformance/tests/Overlap.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "HingeFree",
+        source: include_str!("../conformance/tests/HingeFree.luau"),
+        tolerance: &[("*", 0.1), ("angle_30", 2.0)],
+    },
+    Test {
+        name: "HingeMotor",
+        source: include_str!("../conformance/tests/HingeMotor.luau"),
+        tolerance: &[("*", 0.05), ("angle_10", 2.0), ("angle_30", 2.0)],
+    },
+    Test {
+        name: "HingeServo",
+        source: include_str!("../conformance/tests/HingeServo.luau"),
+        tolerance: &[("*", 2.0)],
+    },
+    Test {
+        name: "BallSocket",
+        source: include_str!("../conformance/tests/BallSocket.luau"),
+        tolerance: &[("*", 0.1)],
+    },
+    Test {
+        name: "Rope",
+        source: include_str!("../conformance/tests/Rope.luau"),
+        tolerance: &[("*", 0.1)],
+    },
+    Test {
+        name: "Spring",
+        source: include_str!("../conformance/tests/Spring.luau"),
+        tolerance: &[("*", 0.1)],
+    },
+    Test {
+        name: "Prismatic",
+        source: include_str!("../conformance/tests/Prismatic.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "AlignPosition",
+        source: include_str!("../conformance/tests/AlignPosition.luau"),
+        tolerance: &[("*", 0.1)],
+    },
+    Test {
+        name: "AlignOrientation",
+        source: include_str!("../conformance/tests/AlignOrientation.luau"),
+        tolerance: &[("*", 2.0)],
+    },
+    Test {
+        name: "LinearVelocity",
+        source: include_str!("../conformance/tests/LinearVelocity.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "AngularVelocity",
+        source: include_str!("../conformance/tests/AngularVelocity.luau"),
+        tolerance: &[("*", 0.05), ("dy_30", 0.5)],
+    },
+    Test {
+        name: "VectorForce",
+        source: include_str!("../conformance/tests/VectorForce.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "Attachments",
+        source: include_str!("../conformance/tests/Attachments.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "BoxBounce",
+        source: include_str!("../conformance/tests/BoxBounce.luau"),
+        tolerance: &[("*", 0.3), ("first_bounce_beat", 1.0), ("bounces", 1.0)],
+    },
+    Test {
+        name: "SleepWake",
+        source: include_str!("../conformance/tests/SleepWake.luau"),
+        tolerance: &[("*", 0.1), ("still_from", 10.0)],
+    },
+    Test {
+        name: "BoxStack",
+        source: include_str!("../conformance/tests/BoxStack.luau"),
+        tolerance: &[("*", 0.02)],
+    },
+    Test {
+        name: "Damping",
+        source: include_str!("../conformance/tests/Damping.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "RampSlide",
+        source: include_str!("../conformance/tests/RampSlide.luau"),
+        tolerance: &[("*", 0.2)],
+    },
+    Test {
+        name: "MeshCollision",
+        source: include_str!("../conformance/tests/MeshCollision.luau"),
+        tolerance: &[("*", 0.05)],
+    },
+    Test {
+        name: "FreeFallRates",
+        source: include_str!("../conformance/tests/FreeFallRates.luau"),
+        tolerance: &[("*", 1.0)],
+    },
 ];
 
-/// The runner `Script`: each test in turn, in a corner of its own, the
-/// whole suite `runs` times over.
-pub fn runner_source(runs: u32) -> String {
-    let names: Vec<String> = TESTS.iter().map(|t| format!("\"{}\"", t.name)).collect();
+/// The tests named in `only` (all of them when it's empty).
+pub fn selected(only: &[String]) -> impl Iterator<Item = (usize, &'static Test)> + '_ {
+    TESTS
+        .iter()
+        .enumerate()
+        .filter(move |(_, t)| only.is_empty() || only.iter().any(|n| n == t.name))
+}
+
+/// The runner `Script`: each test in `only` (every test when empty) in
+/// turn, in a corner of its own that depends only on its place in
+/// [`TESTS`], the whole lot `runs` times over.
+pub fn runner_source(runs: u32, only: &[String]) -> String {
+    let names: Vec<String> = selected(only)
+        .map(|(i, t)| format!("{{ {}, \"{}\" }}", i + 1, t.name))
+        .collect();
     format!(
         r#"local HttpService = game:GetService("HttpService")
 local tests = script.Parent:WaitForChild("{FOLDER}")
 local h = require(tests:WaitForChild("Harness"))
 task.wait({SETTLE})
 for _ = 1, {runs} do
-	for i, name in {{ {names} }} do
+	for _, entry in {{ {names} }} do
+		local i, name = entry[1], entry[2]
+		-- Every test starts just after a Heartbeat, whatever ran before it.
+		h.beat()
 		local ok, result = pcall(require(tests:WaitForChild(name)), h, Vector3.new(2000 + i * 300, 300, 2000))
 		if not ok then
 			result = {{ error = tostring(result) }}
@@ -134,17 +273,19 @@ fn service(dom: &mut WeakDom, class: &str) -> Ref {
 
 /// Adds the tests and a runner doing `runs` passes to
 /// `ServerScriptService` in `dom`.
-pub fn add_to(dom: &mut WeakDom, runs: u32) {
+/// `ServerScriptService` in `dom`, only the tests in `only` when it isn't
+/// empty.
+pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
     let sss = service(dom, "ServerScriptService");
     let folder = child(dom, "Folder", FOLDER, sss);
     let modules =
-        std::iter::once(("Harness", HARNESS)).chain(TESTS.iter().map(|t| (t.name, t.source)));
+        std::iter::once(("Harness", HARNESS)).chain(selected(only).map(|(_, t)| (t.name, t.source)));
     for (name, source) in modules {
         let module = child(dom, "ModuleScript", name, folder);
         let _ = dom.set_property(module, "Source", Variant::String(source.into()));
     }
     let runner = child(dom, "Script", RUNNER, sss);
-    let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs)));
+    let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs, only)));
 }
 
 /// A bare place with the suite: a baseplate, a spawn, the tests.
@@ -174,7 +315,7 @@ pub fn place() -> WeakDom {
             rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         }),
     );
-    add_to(&mut dom, PASSES);
+    add_to(&mut dom, PASSES, &[]);
     dom.take_changes();
     dom
 }
@@ -296,7 +437,12 @@ pub fn compare(test: &Test, golden: &Value, spread: &Value, ours: &Value) -> Vec
     let empty = serde_json::Map::new();
     let golden = golden.as_object().unwrap_or(&empty);
     let ours = ours.as_object().unwrap_or(&empty);
-    let mut fields: Vec<&String> = golden.keys().chain(ours.keys()).collect();
+    // `_` fields are traces for working things out, not results.
+    let mut fields: Vec<&String> = golden
+        .keys()
+        .chain(ours.keys())
+        .filter(|f| !f.starts_with('_'))
+        .collect();
     fields.sort();
     fields.dedup();
     fields

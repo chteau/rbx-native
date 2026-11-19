@@ -381,7 +381,16 @@ pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
         let (due, rest): (Vec<_>, Vec<_>) = scheduler
             .timers
             .drain(..)
-            .partition(|&(at, _, started)| at <= now && (!frame_clock || started < now));
+            // On a frame clock a wait is over on the first frame strictly
+            // past its time (the WaitRounding golden: task.wait(0.5) takes
+            // 31 frames, wait() 2, task.wait(0) 1).
+            .partition(|&(at, _, _)| {
+                if frame_clock {
+                    now > at + 1e-9
+                } else {
+                    at <= now
+                }
+            });
         scheduler.timers = rest;
         let deferred: Vec<_> = scheduler.deferred.drain(..).collect();
         (due, deferred)

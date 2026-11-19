@@ -25,14 +25,24 @@ use rbx_sim::conformance::{self, DONE, PASSES, PREFIX};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (universe, place, base, cloudflared, passes) = match args.as_slice() {
-        [u, p, b, c] => (u, p, b, c, PASSES),
-        [u, p, b, c, flag, n] if flag == "--passes" => (u, p, b, c, n.parse().expect("passes")),
-        _ => {
-            eprintln!("usage: record_goldens <universe_id> <place_id> <base.rbxl> <cloudflared> [--passes N]");
-            std::process::exit(2);
-        }
+    let (Some([universe, place, base, cloudflared]), rest) = (
+        args.get(..4).and_then(|a| <&[String; 4]>::try_from(a).ok()),
+        args.get(4..).unwrap_or_default(),
+    ) else {
+        eprintln!(
+            "usage: record_goldens <universe_id> <place_id> <base.rbxl> <cloudflared> [--passes N] [--only A,B]"
+        );
+        std::process::exit(2);
     };
+    let flag = |name: &str| {
+        rest.iter()
+            .position(|a| a == name)
+            .and_then(|i| rest.get(i + 1))
+    };
+    let passes: u32 = flag("--passes").map_or(PASSES, |n| n.parse().expect("passes"));
+    let only: Vec<String> = flag("--only")
+        .map(|list| list.split(',').map(str::to_owned).collect())
+        .unwrap_or_default();
     let universe: u64 = universe.parse().expect("universe id");
     let place: u64 = place.parse().expect("place id");
     let started = Instant::now();
@@ -51,7 +61,7 @@ fn main() {
 
     let bytes = std::fs::read(base).expect("base place");
     let mut dom = rbx_binary::deserialize(&bytes).expect("parse base place");
-    conformance::add_to(&mut dom, passes);
+    conformance::add_to(&mut dom, passes, &only);
     inject::inject(
         &mut dom,
         &ProbeConfig {
@@ -85,7 +95,7 @@ fn main() {
     let game = ClientProcess::spawn(launcher, &join_uri(place, &session)).expect("launch");
 
     let mut lines = Vec::new();
-    let deadline = Instant::now() + Duration::from_secs(600);
+    let deadline = Instant::now() + Duration::from_secs(1800);
     let finished = loop {
         match channel.events().recv_timeout(Duration::from_millis(500)) {
             Ok(Uplink::Log {
@@ -113,7 +123,7 @@ fn main() {
             break false;
         }
         if Instant::now() > deadline {
-            say("10 minutes without the suite finishing");
+            say("30 minutes without the suite finishing");
             break false;
         }
     };
@@ -123,7 +133,7 @@ fn main() {
     let results: BTreeMap<String, Vec<serde_json::Value>> = conformance::parse(&lines);
     let recorded =
         format!("real Roblox server, place {place} version {version}, joined with {launcher:?}");
-    for test in conformance::TESTS {
+    for (_, test) in conformance::selected(&only) {
         let Some(passes) = results.get(test.name) else {
             continue;
         };
@@ -134,6 +144,7 @@ fn main() {
             "passes": passes.len(),
             "result": result,
             "spread": spread,
+            "raw": passes,
         });
         // Why a test is expected to differ is ours to keep across recordings.
         if let Some(gap) = conformance::golden(test.name).and_then(|g| g.get("known_gap").cloned())

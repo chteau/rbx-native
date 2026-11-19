@@ -1,0 +1,49 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "angle_15": 30.03,
+      "angle_30": 58.68,
+      "angle_60": 90,
+      "angle_90": 90
+    },
+    {
+      "angle_15": 30.03,
+      "angle_30": 58.68,
+      "angle_60": 90,
+      "angle_90": 90
+    },
+    {
+      "angle_15": 30.03,
+      "angle_30": 58.68,
+      "angle_60": 90,
+      "angle_90": 90
+    },
+    {
+      "angle_15": 28.6,
+      "angle_30": 57.24,
+      "angle_60": 89.99,
+      "angle_90": 90
+    },
+    {
+      "angle_15": 28.6,
+      "angle_30": 57.24,
+      "angle_60": 89.99,
+      "angle_90": 90
+    }
+  ],
+  "result": {
+    "angle_15": 30.03,
+    "angle_30": 58.68,
+    "angle_60": 90.0,
+    "angle_90": 90.0
+  },
+  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
+  "spread": {
+    "angle_15": 1.4299999999999997,
+    "angle_30": 1.4399999999999977,
+    "angle_60": 0.010000000000005116,
+    "angle_90": 0.0
+  },
+  "status": "recorded"
+}

@@ -1,10 +1,34 @@
 {
   "known_gap": "The first eight events (sensor pass, first floor hit) match beat for beat. After that the block's first bounce differs: Rapier applies restitution once per contact at the end of a step (box2d style), so a box landing flat on its four corners picks up about 6 rad/s of spin and climbs back into the sensor at beat 28; Roblox's block bounces straight. Fix needs our own restitution pass or Roblox-like contact solving (next milestone).",
   "passes": 5,
+  "raw": [
+    {
+      "events": "Sensor<Faller@13 Faller<Sensor@13 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@20 Faller<Floor@20 Floor/Faller@21 Faller/Floor@21 Floor<Faller@41 Faller<Floor@41 Floor/Faller@42 Faller/Floor@42 Floor<Faller@51 Faller<Floor@51 Floor/Faller@52 Faller/Floor@52 Floor<Faller@56 Faller<Floor@56 Floor/Faller@57 Faller/Floor@57 Floor<Faller@58 Faller<Floor@58"
+    },
+    {
+      "events": "Sensor<Faller@13 Faller<Sensor@13 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@20 Faller<Floor@20 Floor/Faller@21 Faller/Floor@21 Floor<Faller@41 Faller<Floor@41 Floor/Faller@42 Faller/Floor@42 Floor<Faller@52 Faller<Floor@52 Floor/Faller@53 Faller/Floor@53 Floor<Faller@58 Faller<Floor@58 Floor/Faller@59 Faller/Floor@59 Floor<Faller@62 Faller<Floor@62"
+    },
+    {
+      "events": "Sensor<Faller@13 Faller<Sensor@13 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@20 Faller<Floor@20 Floor/Faller@21 Faller/Floor@21 Floor<Faller@41 Faller<Floor@41 Floor/Faller@42 Faller/Floor@42 Floor<Faller@52 Faller<Floor@52 Floor/Faller@53 Faller/Floor@53 Floor<Faller@58 Faller<Floor@58 Floor/Faller@59 Faller/Floor@59 Floor<Faller@62 Faller<Floor@62"
+    },
+    {
+      "events": "Sensor<Faller@14 Faller<Sensor@14 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@21 Faller<Floor@21 Floor/Faller@22 Faller/Floor@22 Floor<Faller@42 Faller<Floor@42 Floor/Faller@43 Faller/Floor@43 Floor<Faller@53 Faller<Floor@53 Floor/Faller@54 Faller/Floor@54 Floor<Faller@59 Faller<Floor@59 Floor/Faller@60 Faller/Floor@60 Floor<Faller@62 Faller<Floor@62"
+    },
+    {
+      "events": "Sensor<Faller@14 Faller<Sensor@14 Sensor/Faller@18 Faller/Sensor@18 Floor<Faller@21 Faller<Floor@21 Floor/Faller@22 Faller/Floor@22 Floor<Faller@42 Faller<Floor@42 Floor/Faller@43 Faller/Floor@43 Floor<Faller@53 Faller<Floor@53 Floor/Faller@54 Faller/Floor@54 Floor<Faller@59 Faller<Floor@59 Floor/Faller@60 Faller/Floor@60 Floor<Faller@62 Faller<Floor@62"
+    }
+  ],
   "result": {
-    "events": "Sensor<Faller@14 Faller<Sensor@14 Sensor/Faller@18 Faller/Sensor@18 Floor<Faller@21 Faller<Floor@21 Floor/Faller@22 Faller/Floor@22 Floor<Faller@42 Faller<Floor@42 Floor/Faller@43 Faller/Floor@43 Floor<Faller@53 Faller<Floor@53 Floor/Faller@54 Faller/Floor@54 Floor<Faller@59 Faller<Floor@59 Floor/Faller@60 Faller/Floor@60 Floor<Faller@62 Faller<Floor@62"
+    "events": "Sensor<Faller@13 Faller<Sensor@13 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@20 Faller<Floor@20 Floor/Faller@21 Faller/Floor@21 Floor<Faller@41 Faller<Floor@41 Floor/Faller@42 Faller/Floor@42 Floor<Faller@52 Faller<Floor@52 Floor/Faller@53 Faller/Floor@53 Floor<Faller@58 Faller<Floor@58 Floor/Faller@59 Faller/Floor@59 Floor<Faller@62 Faller<Floor@62"
   },
-  "source": "real Roblox server, place 3086963177 version 535, joined with Sober",
-  "spread": {},
+  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
+  "spread": {
+    "events": [
+      "Sensor<Faller@13 Faller<Sensor@13 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@20 Faller<Floor@20 Floor/Faller@21 Faller/Floor@21 Floor<Faller@41 Faller<Floor@41 Floor/Faller@42 Faller/Floor@42 Floor<Faller@52 Faller<Floor@52 Floor/Faller@53 Faller/Floor@53 Floor<Faller@58 Faller<Floor@58 Floor/Faller@59 Faller/Floor@59 Floor<Faller@62 Faller<Floor@62",
+      "Sensor<Faller@13 Faller<Sensor@13 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@20 Faller<Floor@20 Floor/Faller@21 Faller/Floor@21 Floor<Faller@41 Faller<Floor@41 Floor/Faller@42 Faller/Floor@42 Floor<Faller@51 Faller<Floor@51 Floor/Faller@52 Faller/Floor@52 Floor<Faller@56 Faller<Floor@56 Floor/Faller@57 Faller/Floor@57 Floor<Faller@58 Faller<Floor@58",
+      "Sensor<Faller@14 Faller<Sensor@14 Sensor/Faller@17 Faller/Sensor@17 Floor<Faller@21 Faller<Floor@21 Floor/Faller@22 Faller/Floor@22 Floor<Faller@42 Faller<Floor@42 Floor/Faller@43 Faller/Floor@43 Floor<Faller@53 Faller<Floor@53 Floor/Faller@54 Faller/Floor@54 Floor<Faller@59 Faller<Floor@59 Floor/Faller@60 Faller/Floor@60 Floor<Faller@62 Faller<Floor@62",
+      "Sensor<Faller@14 Faller<Sensor@14 Sensor/Faller@18 Faller/Sensor@18 Floor<Faller@21 Faller<Floor@21 Floor/Faller@22 Faller/Floor@22 Floor<Faller@42 Faller<Floor@42 Floor/Faller@43 Faller/Floor@43 Floor<Faller@53 Faller<Floor@53 Floor/Faller@54 Faller/Floor@54 Floor<Faller@59 Faller<Floor@59 Floor/Faller@60 Faller/Floor@60 Floor<Faller@62 Faller<Floor@62"
+    ]
+  },
   "status": "recorded"
 }

@@ -6,7 +6,7 @@ use rbx_sim::conformance::{self, TESTS};
 
 #[test]
 fn matches_the_recorded_goldens() {
-    let ours = conformance::run_in_sim(300.0).expect("the suite runs in rbx_sim");
+    let ours = conformance::run_in_sim(1200.0).expect("the suite runs in rbx_sim");
     let mut failures = Vec::new();
     for test in TESTS {
         let Some(golden) = conformance::golden(test.name).filter(|g| g["status"] == "recorded")

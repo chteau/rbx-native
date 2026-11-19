@@ -18,7 +18,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let ours = conformance::run_in_sim(300.0).unwrap_or_else(|err| {
+    let ours = conformance::run_in_sim(1200.0).unwrap_or_else(|err| {
         eprintln!("{err}");
         std::process::exit(1);
     });
