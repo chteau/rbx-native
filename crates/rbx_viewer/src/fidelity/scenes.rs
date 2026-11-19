@@ -661,6 +661,7 @@ fn tone_scenes() -> Vec<Scene> {
                     (RAMP_FRONTS[i], [ramp_x(i), 0.0, 1.0]),
                 ]
             })
+            .chain([("sky", [-500.0, -150.0, -1000.0])])
             .collect(),
         build: ramp,
     };

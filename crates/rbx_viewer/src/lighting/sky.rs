@@ -3,27 +3,23 @@
 //!
 //! Roblox keeps one set of skybox images for the whole day and darkens them as
 //! the sun sets, a place with a noon panorama still reads as night at
-//! `ClockTime = 0`. These two curves are that darkening, fitted by eye against
-//! Studio rather than to any published formula.
+//! `ClockTime = 0`. The darkening is measured on the real client (the sky
+//! behind the `tone_sun_*` fidelity scenes and the `evening` and `night` ones):
+//! untouched down to 15 degrees, half as bright at 5, a third at 3 and a
+//! thirtieth at midnight, and not blue, a shade warm if anything.
 
 use glam::Vec3;
 
 /// Sun elevation, as `sun_direction.y`, above which the sky keeps its full
-/// daylight brightness: about ten degrees up, where Studio's own sky has
-/// finished brightening.
-const DAY_ELEVATION: f32 = 0.17;
-/// And below which it is fully night. Well under the horizon rather than at it:
-/// Roblox keeps a lit sky for a good while after sunset, and `ClockTime 18.4`,
-/// six degrees past it, is still plainly dusk in Studio rather than midnight.
-const NIGHT_ELEVATION: f32 = -0.25;
+/// daylight brightness: 15 degrees up.
+const DAY_ELEVATION: f32 = 0.26;
+/// And below which it is fully night, about six degrees under the horizon.
+const NIGHT_ELEVATION: f32 = -0.1;
 
-/// What is left of the sky at midnight. Not zero: a Roblox night sky is dim but
-/// plainly visible, and its clouds still read against the stars.
-const NIGHT_BRIGHTNESS: f32 = 0.08;
-/// And the cast it takes on the way there. Moonlight is the same blue the fill
-/// lamp turns at night (see the parent module), which is what keeps a night sky
-/// from reading as a grey daytime one behind a neutral-density filter.
-const NIGHT_TINT: Vec3 = Vec3::new(0.55, 0.7, 1.0);
+/// What is left of the sky at midnight: (0.029, 0.02, 0.02) of its noon
+/// light on the real client.
+const NIGHT_BRIGHTNESS: f32 = 0.029;
+const NIGHT_TINT: Vec3 = Vec3::new(1.0, 0.72, 0.7);
 
 /// Stars are out entirely below this elevation and gone by the time the sun is
 /// back on the horizon, which is what "they come out as the sun sets" means in
@@ -32,7 +28,7 @@ const STARS_FULL_ELEVATION: f32 = -0.25;
 const STARS_GONE_ELEVATION: f32 = 0.0;
 
 /// What the skybox, the sky's irradiance and the haze are all multiplied by at
-/// this sun elevation: white in daylight, a dim blue at night.
+/// this sun elevation: white in daylight, nearly black at night.
 pub(super) fn tint(sun_elevation: f32) -> Vec3 {
     let day = smoothstep(NIGHT_ELEVATION, DAY_ELEVATION, sun_elevation);
 
@@ -57,20 +53,18 @@ mod tests {
     use super::*;
 
     // The two ends of the curve are the whole contract: full daylight leaves the
-    // sky exactly as its panels were painted, and midnight lands on the dim blue
-    // this module is for.
+    // sky exactly as its panels were painted, and midnight lands on the dim,
+    // faintly warm sky the real client shows.
     #[test]
-    fn the_sky_is_untouched_by_day_and_dim_blue_at_night() {
+    fn the_sky_is_untouched_by_day_and_nearly_black_at_night() {
         assert_eq!(tint(1.0), Vec3::ONE);
         assert_eq!(tint(DAY_ELEVATION), Vec3::ONE);
 
         let night = tint(-1.0);
         assert_eq!(night, NIGHT_TINT * NIGHT_BRIGHTNESS);
         assert_eq!(night, tint(NIGHT_ELEVATION));
-        // Blue survives the dimming better than red, or a night sky would just
-        // be a grey one turned down.
-        assert!(night.z > night.x);
-        assert!(night.z <= NIGHT_BRIGHTNESS);
+        assert!(night.x >= night.z);
+        assert!(night.max_element() <= NIGHT_BRIGHTNESS);
     }
 
     #[test]
