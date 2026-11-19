@@ -538,6 +538,21 @@ impl Simulation {
         core
     }
 
+    /// Whether the Escape menu is up: `GuiService.MenuIsOpen`, which our
+    /// camera reads to let the mouse go and stop turning while the player
+    /// is busy with the menu, as Roblox's does.
+    pub fn set_menu_open(&mut self, open: bool) {
+        let mut dom = self.dom.borrow_mut();
+        let gui = crate::input::service(&mut dom, "GuiService");
+        let Some(instance) = dom.get(gui) else {
+            return;
+        };
+        if instance.properties().get("MenuIsOpen") == Some(&rbx_dom::Variant::Bool(open)) {
+            return;
+        }
+        let _ = dom.set_property(gui, "MenuIsOpen", rbx_dom::Variant::Bool(open));
+    }
+
     /// The menu's Reset button: what `ResetButtonCallback` asks for, a
     /// `BindableEvent` fired, nothing when it's `false`, or by default the
     /// character's death (on the server, where health is kept).

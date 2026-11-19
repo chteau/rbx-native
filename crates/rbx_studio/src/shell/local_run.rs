@@ -777,13 +777,16 @@ impl Shell {
                 }
             }
         }
-        let actions = self.viewport.update(cx, |viewport, _| {
+        let (actions, menu_open) = self.viewport.update(cx, |viewport, _| {
             viewport.core_gui.push_chat(chat);
-            viewport.core_gui.take_actions()
+            (viewport.core_gui.take_actions(), viewport.core_gui.menu_open())
         });
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
+        if let Some(sim) = run.session.sim_mut(run.view) {
+            sim.set_menu_open(menu_open);
+        }
         for action in actions {
             match action {
                 CoreAction::Say(text) => {

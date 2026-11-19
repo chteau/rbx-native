@@ -11,6 +11,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
@@ -122,6 +123,8 @@ end
 local Cameras = {}
 local yaw, pitch, zoom = 0, START_PITCH, START_ZOOM
 local looking = false
+-- The local character's humanoid the camera last followed.
+local followed = nil
 local shiftLock = false
 local subject = nil
 local faded = {}
@@ -266,9 +269,16 @@ local function update()
 		return
 	end
 	local target = camera.CameraSubject
-	if target == nil and h then
-		camera.CameraSubject = h
-		target = h
+	-- A new character takes the camera from the one it replaced, as the
+	-- engine's own CharacterAdded does, but not from a subject a game script
+	-- picked: a dead body left as the subject is what kept the camera
+	-- stuck on the old spot after a reset.
+	if h and h ~= followed then
+		if target == nil or target == followed then
+			camera.CameraSubject = h
+			target = h
+		end
+		followed = h
 	end
 	local root = rootOf(target)
 	if not root then
@@ -283,9 +293,17 @@ local function update()
 		setZoom(0)
 	end
 
+	-- With the Escape menu up the mouse is the menu's: free, and turning
+	-- nothing, or reaching for a button would swing the camera (into the
+	-- ground, and the popper into the head).
+	if GuiService.MenuIsOpen then
+		looking = false
+	end
 	local first = firstPerson()
-	local locked = first or shiftLock
-	if locked then
+	local locked = (first or shiftLock) and not GuiService.MenuIsOpen
+	if GuiService.MenuIsOpen then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	elseif locked then
 		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 	elseif looking then
 		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
@@ -323,7 +341,7 @@ local function update()
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 and not processed then
+	if input.UserInputType == Enum.UserInputType.MouseButton2 and not processed and not GuiService.MenuIsOpen then
 		looking = true
 	elseif input.UserInputType == Enum.UserInputType.Keyboard and not processed then
 		local key = input.KeyCode
@@ -346,7 +364,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input, processed)
-	if input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
+	if input.UserInputType == Enum.UserInputType.MouseWheel and not processed and not GuiService.MenuIsOpen then
 		setZoom(notched(zoom, input.Position.Z))
 	end
 end)

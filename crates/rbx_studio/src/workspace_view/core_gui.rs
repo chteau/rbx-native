@@ -196,6 +196,11 @@ impl CoreGuiView {
         }
     }
 
+    /// Whether the Escape menu is up (the game's `GuiService.MenuIsOpen`).
+    pub(crate) fn menu_open(&self) -> bool {
+        self.menu
+    }
+
     /// Whether the menu or the chat bar holds the keyboard (the game's
     /// held keys are let go).
     pub(crate) fn has_keys(&self) -> bool {

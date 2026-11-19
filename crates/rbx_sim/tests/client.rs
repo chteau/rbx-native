@@ -267,6 +267,53 @@ fn a_wall_behind_pulls_the_camera_in() {
     assert!(camera.position.z < 4.6, "{camera:?}");
 }
 
+// The M7 bug: Escape, reach for "Reset character" with the mouse (in first
+// person, or holding the right button), and the camera swung with the
+// pointer, into the ground and the popper into the head, then stayed there.
+// With the menu up the mouse is the menu's; after the reset the camera is
+// back behind the new character, upright, at the distance it was.
+#[test]
+fn the_menu_holds_the_camera_still_and_a_reset_from_it_lands_behind_the_new_character() {
+    let mut sim = playing("");
+    let (before, _) = sim.camera().unwrap();
+    let start = distance(&before, root(&sim));
+
+    sim.set_menu_open(true);
+    sim.input(Input::Button {
+        button: 2,
+        down: true,
+    });
+    for _ in 0..10 {
+        sim.input(Input::Move {
+            position: [400.0, 300.0],
+            delta: [30.0, 40.0],
+        });
+        sim.input(Input::Wheel { notches: 1.0 });
+        sim.step();
+    }
+    assert_eq!(sim.mouse_behavior(), MouseBehavior::Default);
+    let (held, _) = sim.camera().unwrap();
+    assert_eq!(held.rotation, before.rotation, "turned under the menu");
+    assert!((distance(&held, root(&sim)) - start).abs() < 0.5, "zoomed under the menu");
+
+    // Reset from the menu, which closes it; the button is still down.
+    sim.reset_character();
+    sim.set_menu_open(false);
+    sim.input(Input::Button {
+        button: 2,
+        down: false,
+    });
+    sim.run_for(8.0);
+    let respawned = root(&sim);
+    let (after, _) = sim.camera().unwrap();
+    assert!(after.rotation[3].abs() < 1e-3, "rolled: {after:?}");
+    assert!(
+        (distance(&after, respawned) - start).abs() < 1.0,
+        "{after:?} {respawned:?}"
+    );
+    assert!(after.position.y > respawned[1] + 1.0, "{after:?} {respawned:?}");
+}
+
 fn distance(camera: &rbx_dom::CFrameData, at: [f32; 3]) -> f32 {
     let d = [
         camera.position.x - at[0],
