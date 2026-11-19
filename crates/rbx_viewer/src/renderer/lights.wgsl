@@ -150,6 +150,25 @@ struct Receiver {
     spec_strength: f32,
 }
 
+/// How far past `Range` a voxel-lit light still reaches, as a multiple of it.
+const VOXEL_REACH: f32 = 1.3;
+const VOXEL_CONE_SOFTENING: f32 = 0.1;
+/// Each class's strength under voxel lighting, relative to the radiance
+/// `crate::lighting::local` packs (`RADIANCE_SCALE` a unit of Brightness):
+/// measured 0.79, 0.03 and 0.6 a unit of Brightness for a point, a spot and
+/// a surface light on the real client.
+const VOXEL_POINT: f32 = 1.13;
+const VOXEL_SPOT: f32 = 0.043;
+const VOXEL_SURFACE: f32 = 0.86;
+
+/// The voxel falloff at `u`, the distance over the stretched range: flat
+/// for the first quarter, then down to nothing, fitted to the real client's
+/// floor under a point light to within 0.05 of its plateau.
+fn voxel_falloff(u: f32) -> f32 {
+    let open = 1.0 - u * u;
+    return min(1.0, 1.1 * open * open);
+}
+
 /// What the place's own lights add to a surface, split the way `shade` uses it.
 struct LocalTerms {
     diffuse: vec3<f32>,
@@ -160,13 +179,23 @@ struct LocalTerms {
 /// test: a place is expected to have tens of these, not thousands, and the
 /// count is capped on the CPU (see `crate::lighting::local`).
 ///
-/// The falloff is linear to zero at `Range`, which is how Roblox's voxel grid
-/// reads from the outside. A `SurfaceLight` "emits from the entire surface":
-/// every point of its face shines the cone, which comes to measuring the
-/// distance and the angle from the face's nearest point rather than from its
-/// centre, the frustum its guide draws. A point source has no face, so that
-/// nearest point is the light's own position and this is the plain cone.
+/// Under `Future` (`lighting.locals.y` 0) the falloff is linear to zero at
+/// `Range` and every light is Lambertian. A `SurfaceLight` "emits from the
+/// entire surface": every point of its face shines the cone, which comes to
+/// measuring the distance and the angle from the face's nearest point rather
+/// than from its centre, the frustum its guide draws. A point source has no
+/// face, so that nearest point is the light's own position and this is the
+/// plain cone.
+///
+/// Under every other `Technology` (`locals.y` 1) Roblox keeps local light in
+/// its voxel grid, and the real client shows what that means (the `light_*`
+/// fidelity scenes, a white floor at night under one light): no Lambert term
+/// (a floor eight studs out from under a point light two studs up is as lit
+/// as the floor right below it), a falloff that holds flat near the light and
+/// reaches past `Range` ([`voxel_falloff`]), a spot's cone taken from the
+/// face's centre, and very different strengths per class ([`VOXEL_POINT`]).
 fn local_terms(receiver: Receiver, count: u32) -> LocalTerms {
+    let voxel = lighting.locals.y > 0.5;
     var terms: LocalTerms;
     terms.diffuse = vec3<f32>(0.0);
     terms.specular = vec3<f32>(0.0);
@@ -182,31 +211,54 @@ fn local_terms(receiver: Receiver, count: u32) -> LocalTerms {
             + across_v * clamp(dot(from_centre, across_v), -light.color_face.w, light.color_face.w);
         let offset = source - receiver.position;
         let distance = length(offset);
-        let range = light.position_range.w;
+        let range = light.position_range.w * select(1.0, VOXEL_REACH, voxel);
         if distance >= range {
             continue;
         }
         let to_light = offset / max(distance, 1e-4);
         let facing = dot(receiver.normal, to_light);
-        if facing <= 0.0 {
+        if facing <= select(0.0, -0.5, voxel) {
             continue;
         }
 
-        let falloff = saturate((range - distance) / max(range, 1e-3));
+        // A voxel-lit spot takes its cone from its own position, with a softer
+        // edge (the real client still shows a third of the light 45 degrees
+        // out on an Angle 90 spot); a surface light keeps the nearest point.
+        let centred = voxel && extent_u <= 0.0;
+        let cone_from = select(to_light, normalize(light.position_range.xyz - receiver.position), centred);
         let cone = smoothstep(
-            light.direction_cone.w,
+            light.direction_cone.w - select(0.0, VOXEL_CONE_SOFTENING, centred),
             light.cone_face.x,
-            dot(-to_light, light.direction_cone.xyz)
+            dot(-cone_from, light.direction_cone.xyz)
         );
-        let shadow = local_light_visibility(receiver.position, facing, index);
-        let radiance = light.color_face.rgb * (falloff * cone * shadow);
+        // The voxel grid's occlusion is four studs coarse: the real client
+        // shows no crisp shadow from a block standing next to a voxel-lit
+        // light, so none is drawn.
+        var shadow = 1.0;
+        if !voxel {
+            shadow = local_light_visibility(receiver.position, facing, index);
+        }
+        var radiance = light.color_face.rgb * (cone * shadow);
+        var diffuse = facing;
+        if voxel {
+            diffuse = saturate(2.0 * facing + 1.0);
+            let pointed = dot(light.direction_cone.xyz, light.direction_cone.xyz) > 0.5;
+            let class_scale = select(
+                VOXEL_POINT,
+                select(VOXEL_SPOT, VOXEL_SURFACE, extent_u > 0.0),
+                pointed
+            );
+            radiance *= class_scale * voxel_falloff(distance / range);
+        } else {
+            radiance *= saturate((range - distance) / max(range, 1e-3));
+        }
 
-        terms.diffuse += radiance * facing;
+        terms.diffuse += radiance * diffuse;
         let half_vector = normalize(to_light + receiver.to_eye);
         terms.specular += radiance
             * (receiver.spec_strength
                 * exp2(receiver.shininess * (dot(receiver.normal, half_vector) - 1.0))
-                * facing);
+                * max(facing, 0.0));
     }
     return terms;
 }

@@ -51,6 +51,8 @@ struct LightingUniform {
     shadow_lamp: vec4<f32>,
     // x: how many entries of `local_lights` are real. The buffer always holds at
     // least one, so this count is the only thing that says a scene has none.
+    // y: 1 where local lights live in the voxel grid (every Technology but
+    // Future, see `lights.wgsl`).
     locals: vec4<f32>,
     // x: how far geometry is drawn at full strength, in studs, 0 being no limit.
     // y: 1 where the environment terms sample the probe, 0 where they fall back

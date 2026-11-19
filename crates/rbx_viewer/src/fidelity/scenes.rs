@@ -590,6 +590,7 @@ pub fn scenes() -> Vec<Scene> {
     ]
     .into_iter()
     .chain(tone_scenes())
+    .chain(falloff_scenes())
     .collect()
 }
 
@@ -746,4 +747,102 @@ fn shadows(b: &mut Builder) {
     b.block([8.0, 0.5, 8.0], [6.0, 6.25, -4.0], [163, 162, 165]);
     b.part(BLOCK, [6.0, 0.5, 6.0], tilted_x([-4.0, 3.0, 6.0], 30.0), [196, 40, 28], PLASTIC);
     b.part(BALL, [3.0; 3], at([4.0, 1.5, 6.0]), [248, 248, 248], PLASTIC);
+}
+
+/// Floor points every two studs out from below a local light, for
+/// [`falloff_scenes`].
+const FALLOFF: [&str; 11] = ["0", "2", "4", "6", "8", "10", "12", "14", "16", "18", "20"];
+
+/// A white floor at night with nothing else lit, so the floor's colour at
+/// each distance is the light's falloff alone.
+fn dark_floor(b: &mut Builder) {
+    b.block([80.0, 1.0, 80.0], [0.0, -0.5, 0.0], [248, 248, 248]);
+}
+
+/// One local light over [`dark_floor`], its floor sampled every two studs
+/// along +X from below it (x = -10).
+fn falloff_scenes() -> Vec<Scene> {
+    let lighting = || {
+        tone(
+            0.0,
+            &[
+                ("ClockTime", float(0.0)),
+                ("EnvironmentDiffuseScale", float(0.0)),
+            ],
+        )
+        .into_iter()
+        .chain(
+            studio()
+                .into_iter()
+                .filter(|(k, _)| super::roblox::PLACE_LEVEL.contains(k)),
+        )
+        .collect()
+    };
+    let scene = |name, about, build| Scene {
+        name,
+        about,
+        eye: [0.0, 30.0, 25.0],
+        look_at: [0.0, 0.0, 0.0],
+        fov: 70.0,
+        lighting: lighting(),
+        probes: FALLOFF
+            .iter()
+            .enumerate()
+            .map(|(i, &name)| (name, [-10.0 + 2.0 * i as f32, 0.0, 0.0]))
+            .collect(),
+        build,
+    };
+    vec![
+        scene(
+            "light_point_1",
+            "PointLight Range 16 Brightness 1 two studs over a white floor",
+            |b| point_over_floor(b, 1.0),
+        ),
+        scene(
+            "light_point_4",
+            "PointLight Range 16 Brightness 4 two studs over a white floor",
+            |b| point_over_floor(b, 4.0),
+        ),
+        scene(
+            "light_spot",
+            "SpotLight Range 16 Brightness 2 Angle 90 six studs up, facing down",
+            |b| {
+                dark_floor(b);
+                lamp(
+                    b,
+                    "SpotLight",
+                    [-10.0, 6.0, 0.0],
+                    &[
+                        ("Range", float(16.0)),
+                        ("Brightness", float(2.0)),
+                        ("Angle", float(90.0)),
+                        ("Face", Variant::Enum(4)),
+                    ],
+                );
+            },
+        ),
+        scene(
+            "light_surface",
+            "SurfaceLight Range 16 Brightness 2 Angle 90 on a wall's Right face",
+            |b| {
+                dark_floor(b);
+                let wall = b.block([1.0, 6.0, 6.0], [-10.5, 3.0, 0.0], [163, 162, 165]);
+                let light = b.child(wall, "SurfaceLight");
+                b.set(light, "Face", Variant::Enum(0));
+                b.set(light, "Range", float(16.0));
+                b.set(light, "Brightness", float(2.0));
+                b.set(light, "Angle", float(90.0));
+            },
+        ),
+    ]
+}
+
+fn point_over_floor(b: &mut Builder, brightness: f32) {
+    dark_floor(b);
+    lamp(
+        b,
+        "PointLight",
+        [-10.0, 2.0, 0.0],
+        &[("Range", float(16.0)), ("Brightness", float(brightness))],
+    );
 }

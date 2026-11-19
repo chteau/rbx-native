@@ -58,8 +58,13 @@ const SUN_BASE: f32 = 0.45;
 const FILMIC_SUN: f32 = 0.387;
 const FILMIC_AMBIENT: f32 = 0.757;
 const VOXEL_SUN: f32 = 0.528;
-/// `Enum.Technology.ShadowMap`, the first value lit the filmic way.
+/// `Enum.Technology.ShadowMap`, the first value lit the filmic way, and
+/// `Future`, the only one whose local lights are drawn per pixel rather than
+/// kept in the voxel grid (`renderer/lights.wgsl`).
 const TECHNOLOGY_SHADOW_MAP: i32 = 3;
+const TECHNOLOGY_FUTURE: i32 = 4;
+/// `Enum.Technology.Voxel`, `Lighting`'s class default.
+const TECHNOLOGY_VOXEL: i32 = 1;
 
 /// The renderer's three empirically tuned constants, as values a user can
 /// nudge for a place lit unlike the captures they were tuned against.
@@ -163,6 +168,9 @@ pub(crate) struct Lighting {
     /// `Lighting.GlobalShadows`. False skips the shadow map entirely, which is
     /// how a place asks for the flat, everything-lit look.
     pub(crate) global_shadows: bool,
+    /// Local lights are kept in Roblox's voxel grid, which is every
+    /// `Technology` but `Future` (see `renderer/lights.wgsl`).
+    pub(crate) voxel_locals: bool,
     /// `Lighting.ShadowSoftness`, 0 (hard edge) to 1 (very soft). Drives the
     /// PCF kernel radius, nothing else.
     pub(crate) shadow_softness: f32,
@@ -200,8 +208,8 @@ struct Defaults {
     fog_color: Vec3,
     fog_start: f32,
     fog_end: f32,
-    /// `Technology` is `ShadowMap` or `Future` (see [`FILMIC_SUN`]).
-    filmic: bool,
+    /// `Enum.Technology`'s value.
+    technology: i32,
 }
 
 impl Default for Defaults {
@@ -221,7 +229,7 @@ impl Default for Defaults {
             fog_color: Vec3::splat(srgb_to_linear(DEFAULT_FOG_GREY)),
             fog_start: 0.0,
             fog_end: DEFAULT_FOG_END,
-            filmic: true,
+            technology: TECHNOLOGY_SHADOW_MAP,
         }
     }
 }
@@ -255,7 +263,7 @@ impl Defaults {
             fog_color: color(get("FogColor")).unwrap_or(studio.fog_color),
             fog_start: number(get("FogStart")).unwrap_or(studio.fog_start),
             fog_end: number(get("FogEnd")).unwrap_or(studio.fog_end),
-            filmic: technology(get("Technology")).unwrap_or(studio.filmic),
+            technology: technology(get("Technology")).unwrap_or(studio.technology),
         }
     }
 }
@@ -321,7 +329,8 @@ impl Lighting {
             fog_color: color(properties.get("FogColor")).unwrap_or(fallback.fog_color),
             fog_start: number(properties.get("FogStart")).unwrap_or(fallback.fog_start),
             fog_end: number(properties.get("FogEnd")).unwrap_or(fallback.fog_end),
-            filmic: technology(properties.get("Technology")).unwrap_or(fallback.filmic),
+            technology: technology(properties.get("Technology"))
+                .unwrap_or(fallback.technology),
         };
 
         Lighting::assemble(
@@ -347,7 +356,7 @@ impl Lighting {
     pub(crate) fn neutral() -> Self {
         let defaults = Defaults {
             global_shadows: true,
-            filmic: false,
+            technology: TECHNOLOGY_VOXEL,
             ..Defaults::default()
         };
         let mut lighting = Lighting::assemble(&defaults, None, Effects::default(), None);
@@ -408,7 +417,7 @@ impl Lighting {
         mut effects: Effects,
         clouds: Option<Clouds>,
     ) -> Self {
-        let (sun_base, ambient_scale) = if read.filmic {
+        let (sun_base, ambient_scale) = if read.technology >= TECHNOLOGY_SHADOW_MAP {
             if effects.tonemap == Tonemap::Default {
                 effects.tonemap = Tonemap::Filmic;
             }
@@ -437,6 +446,7 @@ impl Lighting {
             environment_diffuse: read.environment_diffuse.max(0.0),
             environment_specular: read.environment_specular.max(0.0),
             global_shadows: read.global_shadows,
+            voxel_locals: read.technology < TECHNOLOGY_FUTURE,
             shadow_softness: read.shadow_softness.clamp(0.0, 1.0),
             fog: atmosphere.unwrap_or(Fog::Linear {
                 color: read.fog_color,
@@ -533,10 +543,9 @@ pub(super) fn number(value: Option<&Variant>) -> Option<f32> {
     value.is_finite().then_some(value)
 }
 
-/// Whether a `Technology` value is lit the filmic way (see [`FILMIC_SUN`]).
-fn technology(value: Option<&Variant>) -> Option<bool> {
+fn technology(value: Option<&Variant>) -> Option<i32> {
     match value? {
-        &Variant::Enum(value) => Some(value as i32 >= TECHNOLOGY_SHADOW_MAP),
+        &Variant::Enum(value) => Some(value as i32),
         _ => None,
     }
 }
