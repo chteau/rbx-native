@@ -249,6 +249,28 @@ fn a_text_box_shows_its_placeholder_only_while_empty() {
 }
 
 #[test]
+fn a_text_box_cuts_its_text_at_its_box_and_a_label_only_when_it_clips() {
+    let (mut dom, gui) = screen_gui();
+    let field = label(&mut dom, gui, "TextBox", "");
+    dom.set_property(
+        field,
+        "PlaceholderText",
+        Variant::String("a placeholder far wider than its field".to_string()),
+    )
+    .unwrap();
+    label(&mut dom, gui, "TextLabel", "spills");
+    let clipping = label(&mut dom, gui, "TextLabel", "cut");
+    dom.set_property(clipping, "ClipsDescendants", Variant::Bool(true))
+        .unwrap();
+    let elements = resolve(&screens(&dom), VIEWPORT);
+    let clipped: Vec<bool> = elements
+        .iter()
+        .map(|e| e.text.as_ref().unwrap().text.clipped)
+        .collect();
+    assert_eq!(clipped, [true, false, true]);
+}
+
+#[test]
 fn markup_is_parsed_only_with_rich_text_on() {
     let (mut dom, gui) = screen_gui();
     let referent = label(&mut dom, gui, "TextLabel", "a <b>b</b>");

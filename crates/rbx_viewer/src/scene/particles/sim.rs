@@ -100,6 +100,20 @@ impl Simulation {
         }
     }
 
+    /// `ParticleEmitter:Emit(count)`: that many at once, up to the
+    /// per-emitter ceiling.
+    pub(crate) fn burst(&mut self, emitter: &Emitter, count: u32) {
+        let room = super::emitter::PER_EMITTER_CAP.saturating_sub(self.particles.len() as u32);
+        for _ in 0..count.min(room) {
+            self.spawn(emitter);
+        }
+    }
+
+    /// `ParticleEmitter:Clear()`.
+    pub(crate) fn clear(&mut self) {
+        self.particles.clear();
+    }
+
     fn spawn(&mut self, emitter: &Emitter) {
         let local = Vec3::new(
             self.rng.range(-0.5, 0.5),

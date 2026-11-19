@@ -104,10 +104,27 @@ pub struct CoreGui {
     pub health: Option<(f64, f64)>,
     /// The hotbar's tools (name, held), `Backpack` on.
     pub hotbar: Option<Vec<(String, bool)>>,
-    /// Everyone in the game (name, team colour), `PlayerList` on.
-    pub players: Option<Vec<(String, Option<[u8; 3]>)>>,
+    /// Everyone in the game, `PlayerList` on.
+    pub players: Option<Vec<PlayerRow>>,
+    /// The `leaderstats` columns, in the order the first player who has
+    /// them holds them.
+    pub stats: Vec<String>,
     /// `SendNotification`s not yet shown: (title, text).
     pub notifications: Vec<(String, String)>,
+    /// Whether the menu's Reset button works (`ResetButtonCallback` not
+    /// `false`).
+    pub can_reset: bool,
+    /// Each player's head, for chat bubbles: (user id, world position).
+    pub heads: Vec<(i64, [f32; 3])>,
+}
+
+/// One player in the list: name, team colour, and a value per `stats`
+/// column (empty where they have none).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PlayerRow {
+    pub name: String,
+    pub team: Option<[u8; 3]>,
+    pub stats: Vec<String>,
 }
 
 /// One client's GUI state.
@@ -225,6 +242,11 @@ fn typed(code: &str, shift: bool) -> Option<char> {
 
 impl Gui {
     /// Whether the core GUI of `kind` (a `CoreGuiType` name) is on.
+    /// What `SetCore("ResetButtonCallback", …)` was given, if anything.
+    pub(crate) fn reset_callback(&self) -> Option<&Arg> {
+        self.core.get("ResetButtonCallback")
+    }
+
     pub fn core_enabled(&self, kind: &str) -> bool {
         match kind {
             "All" => CORE_TYPES.iter().all(|k| !self.disabled.contains(k)),

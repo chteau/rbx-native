@@ -282,8 +282,21 @@ impl UserData for LuaInstance {
         // A wireframe's lines are not instance data and the viewport draws no
         // wireframe adornments, so drawing calls are accepted and dropped.
         for name in ["AddLine", "AddLines", "AddPath", "AddText", "Clear"] {
-            methods.add_method(name, move |_, this, _: mlua::MultiValue| {
-                this.require_class("WireframeHandleAdornment", name)
+            methods.add_method(name, move |lua, this, mut args: MultiValue| {
+                // `ParticleEmitter:Clear`, the run's, goes on to the hooks
+                // (methods answer before `__index`, as for `Remove`).
+                if name == "Clear" && matches!(this.class().as_deref(), Ok("ParticleEmitter")) {
+                    if let Some(hooks) = crate::hooks::hooks(lua) {
+                        let member =
+                            hooks.index(lua, &this.ctx, this.referent, "ParticleEmitter", name)?;
+                        if let Some(Value::Function(clear)) = member {
+                            args.push_front(Value::Nil);
+                            return clear.call::<MultiValue>(args);
+                        }
+                    }
+                }
+                this.require_class("WireframeHandleAdornment", name)?;
+                Ok(MultiValue::new())
             });
         }
         methods.add_method("GetTouchingParts", |lua, this, ()| {

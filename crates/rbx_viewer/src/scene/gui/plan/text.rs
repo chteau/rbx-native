@@ -110,6 +110,11 @@ pub(crate) struct Text {
     /// `UITextSizeConstraint`'s (`MinTextSize`, `MaxTextSize`), which bounds
     /// the size `TextScaled` searches and clamps a plain `TextSize` too.
     pub(crate) size_bounds: Option<(f32, f32)>,
+    /// Glyphs past the object's own box are cut off: always for a
+    /// `TextBox` (its text, or its placeholder, never spills out of the
+    /// field), and for any text object with `ClipsDescendants` (set in
+    /// layout, where rotation turns clipping off).
+    pub(crate) clipped: bool,
 }
 
 impl Text {
@@ -233,6 +238,7 @@ pub(super) fn text(
         max_graphemes: usize::try_from(integer(properties, "MaxVisibleGraphemes", -1)).ok(),
         automatic: [automatic & AUTOMATIC_X != 0, automatic & AUTOMATIC_Y != 0],
         size_bounds,
+        clipped: text_box,
     }
 }
 

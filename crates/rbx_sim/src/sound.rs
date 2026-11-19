@@ -161,7 +161,9 @@ impl Sounds {
                 self.tracks.entry(sound).or_default().position = n.max(0.0);
                 None
             }
-            "Volume" => (*n > MAX_VOLUME || *n < 0.0).then(|| Arg::Number(n.clamp(0.0, MAX_VOLUME))),
+            "Volume" => {
+                (*n > MAX_VOLUME || *n < 0.0).then(|| Arg::Number(n.clamp(0.0, MAX_VOLUME)))
+            }
             "PlaybackSpeed" => (*n < 0.0).then_some(Arg::Number(0.0)),
             _ => None,
         }
@@ -169,7 +171,12 @@ impl Sounds {
 
     /// `Sound:Play()` and the rest: the new `Playing`, and the reply firing
     /// the signal before the call returns.
-    pub(crate) fn call(&mut self, dom: &mut WeakDom, sound: Ref, method: &str) -> (bool, CallReply) {
+    pub(crate) fn call(
+        &mut self,
+        dom: &mut WeakDom,
+        sound: Ref,
+        method: &str,
+    ) -> (bool, CallReply) {
         let (playing, rewind, signal) = match method {
             "Play" => (true, true, "Played"),
             "Stop" => (false, true, "Stopped"),
@@ -196,7 +203,7 @@ impl Sounds {
     /// client that plays a sound is the one that hears it end and fires
     /// `Ended` (SoundPlayback `client_ended_frames`) rather than being told
     /// it stopped.
-    pub(crate) fn from_client(&mut self, dom: &mut WeakDom, sound: Ref, playing: bool) {
+    pub(crate) fn client_played(&mut self, dom: &mut WeakDom, sound: Ref, playing: bool) {
         self.watch(sound);
         set(dom, sound, playing, playing);
         if playing {
@@ -333,7 +340,10 @@ fn enum_of(dom: &WeakDom, db: &ReflectionDatabase, r: Ref, name: &str) -> u32 {
 /// The product of the volumes of the sound's `SoundGroup` and the groups
 /// it sits in.
 fn group_volume(dom: &WeakDom, db: &ReflectionDatabase, sound: Ref) -> f64 {
-    let mut group = match dom.get(sound).and_then(|i| i.properties().get("SoundGroup")) {
+    let mut group = match dom
+        .get(sound)
+        .and_then(|i| i.properties().get("SoundGroup"))
+    {
         Some(Variant::Ref(r)) if dom.get(*r).is_some() => Some(*r),
         _ => None,
     };

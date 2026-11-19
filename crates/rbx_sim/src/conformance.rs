@@ -486,8 +486,14 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
         "SoundPlayback",
         include_str!("../conformance/client/SoundPlayback.luau"),
     ),
-    ("TextChat", include_str!("../conformance/client/TextChat.luau")),
-    ("ToolPose", include_str!("../conformance/client/ToolPose.luau")),
+    (
+        "TextChat",
+        include_str!("../conformance/client/TextChat.luau"),
+    ),
+    (
+        "ToolPose",
+        include_str!("../conformance/client/ToolPose.luau"),
+    ),
 ];
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
 const FIRST_PROBE: &str = include_str!("../conformance/client/FirstProbe.luau");
@@ -918,7 +924,9 @@ fn numbers_match(g: Option<&Value>, o: Option<&Value>, tolerance: f64) -> bool {
         (Some(g), Some(o)) => {
             g.len() == o.len()
                 && !g.is_empty()
-                && g.iter().zip(&o).all(|(a, b)| (a - b).abs() <= tolerance + 1e-9)
+                && g.iter()
+                    .zip(&o)
+                    .all(|(a, b)| (a - b).abs() <= tolerance + 1e-9)
         }
         _ => false,
     }

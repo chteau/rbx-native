@@ -7,6 +7,15 @@
 
 pub mod animation;
 pub mod audio;
+
+/// What a script asked of a `ParticleEmitter` beyond its properties.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Burst {
+    /// `Emit(count)`: that many particles at once, enabled or not.
+    Emit(u32),
+    /// `Clear()`: every particle in the air goes.
+    Clear,
+}
 pub mod character;
 mod chat;
 pub mod conformance;

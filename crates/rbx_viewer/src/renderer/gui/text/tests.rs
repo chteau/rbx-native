@@ -24,6 +24,7 @@ fn plain(face: Face, size: f32) -> GuiText {
         max_graphemes: None,
         automatic: [false, false],
         size_bounds: None,
+        clipped: false,
     }
 }
 

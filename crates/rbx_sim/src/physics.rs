@@ -101,6 +101,8 @@ pub struct Shared {
     pub(crate) gui: crate::gui::Gui,
     pub(crate) tools: crate::tools::Tools,
     pub(crate) teams: crate::teams::Teams,
+    /// `ParticleEmitter:Emit`/`Clear` calls not yet handed to a renderer.
+    pub(crate) bursts: Vec<(Ref, crate::Burst)>,
     pub(crate) sounds: crate::sound::Sounds,
 }
 

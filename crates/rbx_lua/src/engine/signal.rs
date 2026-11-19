@@ -267,7 +267,7 @@ pub(crate) fn fire_from_script(lua: &Lua, key: &SignalKey, args: MultiValue) -> 
     if !deferred_signals(lua) {
         return deliver(lua, key, args, None);
     }
-    for func in take_listeners(lua, key, None) {
+    for (_, func) in take_listeners(lua, key, None) {
         scheduler::defer(lua, func, args.clone())?;
     }
     Ok(())
@@ -305,16 +305,30 @@ pub(crate) fn fire_values_at(
     deliver(lua, key, args, change)
 }
 
+/// Runs each handler in turn; one an earlier handler disconnected (a
+/// script woken by `Wait` dropping its other connections) no longer runs
+/// (TweenRuntime `client_phase`).
 fn deliver(lua: &Lua, key: &SignalKey, args: MultiValue, change: Option<u64>) -> Result<()> {
-    for func in take_listeners(lua, key, change) {
-        scheduler::spawn(lua, func, args.clone())?;
+    for (id, func) in take_listeners(lua, key, change) {
+        let connected = id.is_none_or(|id| {
+            engine(lua)
+                .signals
+                .borrow()
+                .connections
+                .get(key)
+                .is_some_and(|list| list.iter().any(|c| c.id == id))
+        });
+        if connected {
+            scheduler::spawn(lua, func, args.clone())?;
+        }
     }
     Ok(())
 }
 
 /// The handlers that hear a firing of `key` (see [`fire_at`] for
-/// `change`), with the `Once` ones among them disconnected.
-fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<Function> {
+/// `change`), with the `Once` ones among them disconnected: each with its
+/// connection's id, `None` for a `Once`, which runs whatever happens.
+fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<(Option<u32>, Function)> {
     let hears = |c: &Connection| match (change, c.since) {
         (Some(change), Some(since)) => since < change,
         _ => true,
@@ -324,10 +338,10 @@ fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<Functi
     let Some(list) = signals.connections.get_mut(key) else {
         return Vec::new();
     };
-    let mut funcs: Vec<Function> = list
+    let mut funcs: Vec<(Option<u32>, Function)> = list
         .iter()
         .filter(|c| hears(c))
-        .map(|c| c.func.clone())
+        .map(|c| ((!c.once).then_some(c.id), c.func.clone()))
         .collect();
     if engine.host.newest_first() {
         funcs.reverse();

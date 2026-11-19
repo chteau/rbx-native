@@ -25,9 +25,11 @@ use super::play::Phase;
 use super::Shell;
 
 mod avatars;
+mod sound;
 use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
+use crate::workspace_view::core_gui::CoreAction;
 
 pub(crate) const BETA_ID: &str = "local-run";
 const FRAME_HZ: f64 = 60.0;
@@ -58,6 +60,8 @@ struct Running {
     task: Option<Task<()>>,
     /// Play (local): a local player whose character the keys drive.
     playing: bool,
+    /// What the viewed peer hears.
+    sound: sound::Mixer,
 }
 
 pub(crate) struct LocalRun {
@@ -460,6 +464,7 @@ impl Shell {
             last: Instant::now(),
             task: Some(task),
             playing,
+            sound: sound::Mixer::new(self.viewport.read(cx).core_gui.volume),
         });
         if playing {
             self.viewport
@@ -663,6 +668,7 @@ impl Shell {
         let elapsed = now.duration_since(run.last).as_secs_f64();
         run.last = now;
         if run.paused {
+            run.sound.update(Vec::new(), false);
             return;
         }
         run.clock += elapsed;
@@ -740,10 +746,74 @@ impl Shell {
                 }
             }
         }
+        // Chat each client showed (only the viewed one's is drawn), and
+        // what the player asked of the core GUI.
+        let mut chat = Vec::new();
+        for i in 0..run.session.clients.len() {
+            if let Some(sim) = run.session.sim_mut(rbx_sim::Peer::Client(i)) {
+                let lines = sim.take_chat();
+                if run.view == rbx_sim::Peer::Client(i) {
+                    chat = lines;
+                }
+            }
+        }
+        // `Emit`/`Clear` the viewed peer made, and the server's, which
+        // every client sees.
+        for peer in std::iter::once(rbx_sim::Peer::Server)
+            .chain((0..run.session.clients.len()).map(rbx_sim::Peer::Client))
+        {
+            let shown = peer == run.view || peer == rbx_sim::Peer::Server;
+            if let Some(sim) = run.session.sim_mut(peer) {
+                for (emitter, burst) in sim.take_bursts() {
+                    if shown {
+                        rbx_viewer::particle_burst(
+                            emitter,
+                            match burst {
+                                rbx_sim::Burst::Emit(n) => Some(n),
+                                rbx_sim::Burst::Clear => None,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        let actions = self.viewport.update(cx, |viewport, _| {
+            viewport.core_gui.push_chat(chat);
+            viewport.core_gui.take_actions()
+        });
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        for action in actions {
+            match action {
+                CoreAction::Say(text) => {
+                    if let Some(sim) = run.session.sim_mut(run.view) {
+                        sim.chat_say(&text);
+                    }
+                }
+                CoreAction::Reset => {
+                    if let Some(sim) = run.session.sim_mut(run.view) {
+                        sim.reset_character();
+                    }
+                }
+                CoreAction::Volume(volume) => run.sound.set_volume(volume),
+                CoreAction::Leave => {
+                    self.local_run_stop(cx);
+                    return;
+                }
+            }
+        }
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
         let changes = dedupe(changes);
         let Some(viewed) = run.session.sim(run.view) else {
             return;
         };
+        run.sound.update(
+            viewed.voices(),
+            run.playing && !run.paused && viewing_client,
+        );
         mirror(&viewed.dom(), &mut self.dom, &changes);
         let output = run.session.take_output();
         self.dom.take_changes();

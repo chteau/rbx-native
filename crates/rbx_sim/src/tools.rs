@@ -37,6 +37,8 @@ pub(crate) enum ClientOp {
     Move(Ref, Option<Ref>),
     /// Activated (`true`) or deactivated.
     Activate(Ref, bool),
+    /// The menu's Reset: the character's humanoid dies.
+    Reset(Ref),
 }
 
 #[derive(Default)]

@@ -357,6 +357,7 @@ mod tests {
             max_graphemes: None,
             automatic: [false, false],
             size_bounds: None,
+            clipped: false,
         };
         let buffer = fonts.shape(&text, 24.0, None, None);
         let keys: Vec<_> = buffer

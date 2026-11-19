@@ -263,9 +263,7 @@ mod tests {
         assert!((rolloff(RollOff::Linear, 60.0, min, max) - 0.5).abs() < 1e-9);
         assert!((rolloff(RollOff::LinearSquare, 60.0, min, max) - 0.25).abs() < 1e-9);
         // Near min the inverse curve is the lower, near max the square.
-        assert!(
-            (rolloff(RollOff::InverseTapered, 12.0, min, max) - 10.0 / 12.0).abs() < 1e-9
-        );
+        assert!((rolloff(RollOff::InverseTapered, 12.0, min, max) - 10.0 / 12.0).abs() < 1e-9);
         let near_max = rolloff(RollOff::InverseTapered, 100.0, min, max);
         assert!((near_max - 0.01).abs() < 1e-9);
     }

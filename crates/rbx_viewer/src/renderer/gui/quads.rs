@@ -224,6 +224,20 @@ fn build_once(
         // object outlines the glyphs like `TextStrokeColor3` does, at its
         // own `Thickness`.
         if let Some(typeset) = &element.text {
+            // A `TextBox`'s text, or any `ClipsDescendants` text, stops at
+            // the object's own box.
+            let scissor = match typeset.text.clipped {
+                true => {
+                    let own = element
+                        .clip
+                        .map_or(element.rect, |c| c.intersect(&element.rect));
+                    match self::scissor(&own, target) {
+                        Some(s) => Some(s),
+                        None => continue,
+                    }
+                }
+                false => scissor,
+            };
             let mut strokes = text::strokes(&typeset.text);
             for stroke in &element.strokes {
                 if stroke.on_text && stroke.alpha > 0.0 {

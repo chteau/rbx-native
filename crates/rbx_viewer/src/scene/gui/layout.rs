@@ -298,6 +298,7 @@ pub(in crate::scene::gui) fn emit(
     // Settled before the children are placed: an `AutomaticSize` text box
     // grows here, and its children resolve against the grown box.
     let mut rect = rect;
+    let rotated = context.rotated || node.rotation != 0.0;
     let text = node.text.as_ref().map(|text| {
         let inset = node
             .constraints
@@ -308,7 +309,9 @@ pub(in crate::scene::gui) fn emit(
         let typeset = text::typeset(text, &mut area, measure);
         rect.width = rect.width.max(area.width + inset[0] + inset[1]);
         rect.height = rect.height.max(area.height + inset[2] + inset[3]);
-        Typeset { inset, ..typeset }
+        let mut typeset = Typeset { inset, ..typeset };
+        typeset.text.clipped = (typeset.text.clipped || node.clips) && !rotated;
+        typeset
     });
     let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
@@ -360,7 +363,6 @@ pub(in crate::scene::gui) fn emit(
     // all, a non-zero `Rotation` on this element or any ancestor makes
     // `ClipsDescendants` a no-op rather than clipping to a box that no longer
     // matches what is actually drawn on screen.
-    let rotated = context.rotated || node.rotation != 0.0;
     let angle = context.angle + node.rotation;
     let inner = Context {
         clip: match node.clips && !rotated {

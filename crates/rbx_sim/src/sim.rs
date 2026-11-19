@@ -306,11 +306,17 @@ impl Simulation {
         if let Some(character) = character {
             self.destroy(character);
         }
-        let user_id = match self.dom.borrow().get(player).and_then(|i| i.properties().get("UserId")) {
+        let user_id = match self
+            .dom
+            .borrow()
+            .get(player)
+            .and_then(|i| i.properties().get("UserId"))
+        {
             Some(Variant::Int64(id)) => Some(*id),
             _ => None,
         };
-        let sources = user_id.map_or_else(Vec::new, |id| crate::chat::sources(&self.dom.borrow(), id));
+        let sources =
+            user_id.map_or_else(Vec::new, |id| crate::chat::sources(&self.dom.borrow(), id));
         for source in sources {
             self.destroy(source);
         }
@@ -354,6 +360,23 @@ impl Simulation {
                     let name = if on { "Activated" } else { "Deactivated" };
                     self.fire_signal(tool, name, Vec::new());
                 }
+                crate::tools::ClientOp::Reset(humanoid) => {
+                    let mine = {
+                        let dom = self.dom.borrow();
+                        let character = crate::humanoid::reference(&dom, player, "Character");
+                        character.is_some() && dom.parent(humanoid) == character
+                    };
+                    if mine {
+                        crate::humanoid::set(
+                            &mut self.dom.borrow_mut(),
+                            self.db,
+                            humanoid,
+                            "Health",
+                            Variant::Float32(0.0),
+                        );
+                        self.flush();
+                    }
+                }
                 crate::tools::ClientOp::MoveToFinished(humanoid, reached) => {
                     let owned = self
                         .dom
@@ -375,7 +398,7 @@ impl Simulation {
                             && crate::sound::replicates(&dom, self.db)
                     };
                     if replicates {
-                        self.shared.borrow_mut().sounds.from_client(
+                        self.shared.borrow_mut().sounds.client_played(
                             &mut self.dom.borrow_mut(),
                             sound,
                             playing,
@@ -425,13 +448,77 @@ impl Simulation {
                 )
             });
         }
+        core.can_reset = !matches!(
+            self.shared.borrow().gui.reset_callback(),
+            Some(rbx_lua::server::Arg::Bool(false))
+        );
+        for p in crate::players::players_of(&dom) {
+            let head = crate::humanoid::reference(&dom, p, "Character").and_then(|c| {
+                let head = dom
+                    .get(c)?
+                    .children()
+                    .iter()
+                    .copied()
+                    .find(|h| dom.get(*h).is_some_and(|i| i.name() == "Head"))?;
+                match dom.get(head)?.properties().get("CFrame") {
+                    Some(Variant::CFrame(cf)) => {
+                        Some([cf.position.x, cf.position.y, cf.position.z])
+                    }
+                    _ => None,
+                }
+            });
+            let user_id = match dom.get(p).and_then(|i| i.properties().get("UserId")) {
+                Some(Variant::Int64(id)) => *id,
+                _ => 0,
+            };
+            if let Some(head) = head {
+                core.heads.push((user_id, head));
+            }
+        }
         if list {
-            let players = crate::players::players_of(&dom)
-                .into_iter()
-                .filter_map(|p| {
-                    let i = dom.get(p)?;
-                    let team =
-                        crate::humanoid::reference(&dom, p, "Team").and_then(|t| {
+            let stats = |p: Ref| -> Vec<(String, String)> {
+                let Some(folder) = dom.get(p).and_then(|i| {
+                    i.children()
+                        .iter()
+                        .copied()
+                        .find(|c| dom.get(*c).is_some_and(|f| f.name() == "leaderstats"))
+                }) else {
+                    return Vec::new();
+                };
+                dom.get(folder)
+                    .map(|f| f.children().to_vec())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|c| {
+                        let i = dom.get(c)?;
+                        Some((i.name().to_owned(), stat_text(i.properties().get("Value"))?))
+                    })
+                    .collect()
+            };
+            let all = crate::players::players_of(&dom);
+            for p in &all {
+                for (name, _) in stats(*p) {
+                    if !core.stats.contains(&name) {
+                        core.stats.push(name);
+                    }
+                }
+            }
+            let players =
+                all.into_iter()
+                    .filter_map(|p| {
+                        let i = dom.get(p)?;
+                        let mine = stats(p);
+                        let values = core
+                            .stats
+                            .iter()
+                            .map(|column| {
+                                mine.iter()
+                                    .find(|(n, _)| n == column)
+                                    .map(|(_, v)| v.clone())
+                                    .unwrap_or_default()
+                            })
+                            .collect();
+                        let team = crate::humanoid::reference(&dom, p, "Team").and_then(|t| {
                             match dom.get(t)?.properties().get("TeamColor") {
                                 Some(Variant::BrickColor(c)) => {
                                     rbx_dom::BrickColor::from_number(*c).map(|b| b.rgb)
@@ -439,12 +526,50 @@ impl Simulation {
                                 _ => None,
                             }
                         });
-                    Some((i.name().to_owned(), team))
-                })
-                .collect();
+                        Some(crate::gui::PlayerRow {
+                            name: i.name().to_owned(),
+                            team,
+                            stats: values,
+                        })
+                    })
+                    .collect();
             core.players = Some(players);
         }
         core
+    }
+
+    /// The menu's Reset button: what `ResetButtonCallback` asks for, a
+    /// `BindableEvent` fired, nothing when it's `false`, or by default the
+    /// character's death (on the server, where health is kept).
+    pub fn reset_character(&mut self) {
+        let callback = self.shared.borrow().gui.reset_callback().cloned();
+        match callback {
+            Some(rbx_lua::server::Arg::Bool(false)) => {}
+            Some(rbx_lua::server::Arg::Instance(event)) => {
+                self.fire_signal(event, "Event", Vec::new());
+            }
+            _ => {
+                let Some((_, Some(character))) = self.local_player() else {
+                    return;
+                };
+                let humanoid = {
+                    let dom = self.dom.borrow();
+                    dom.get(character).and_then(|c| {
+                        c.children()
+                            .iter()
+                            .copied()
+                            .find(|h| dom.get(*h).is_some_and(|i| i.class() == "Humanoid"))
+                    })
+                };
+                if let Some(humanoid) = humanoid {
+                    self.shared
+                        .borrow_mut()
+                        .tools
+                        .ops
+                        .push(crate::tools::ClientOp::Reset(humanoid));
+                }
+            }
+        }
     }
 
     /// The local player's hotbar: each tool's name and whether it's held.
@@ -1086,6 +1211,11 @@ impl Simulation {
         self.apply(edits);
     }
 
+    /// `ParticleEmitter:Emit`/`Clear` calls since the last call.
+    pub fn take_bursts(&mut self) -> Vec<(Ref, crate::Burst)> {
+        std::mem::take(&mut self.shared.borrow_mut().bursts)
+    }
+
     /// The chat messages this client showed since the last call.
     pub fn take_chat(&mut self) -> Vec<rbx_lua::server::ChatLine> {
         self.vm.take_chat()
@@ -1301,7 +1431,12 @@ impl Simulation {
                 // A character can arrive before the player's `Character`
                 // names it (a respawn): its LocalScripts start then.
                 Change::Property { referent, name } if name == "Character" => {
-                    let character = match self.dom.borrow().get(referent).map(|i| i.properties().get("Character").cloned()) {
+                    let character = match self
+                        .dom
+                        .borrow()
+                        .get(referent)
+                        .map(|i| i.properties().get("Character").cloned())
+                    {
                         Some(Some(Variant::Ref(r))) => Some(r),
                         _ => None,
                     };
@@ -1416,4 +1551,25 @@ impl Simulation {
     fn collect_output(&mut self) {
         self.output.extend(self.vm.take_output());
     }
+}
+
+/// A `leaderstats` value as the player list shows it: whole numbers
+/// without a fraction.
+fn stat_text(value: Option<&Variant>) -> Option<String> {
+    let number = |v: f64| {
+        if v.fract() == 0.0 && v.abs() < 1e15 {
+            format!("{}", v as i64)
+        } else {
+            format!("{v}")
+        }
+    };
+    Some(match value? {
+        Variant::Int64(v) => v.to_string(),
+        Variant::Int32(v) => v.to_string(),
+        Variant::Float64(v) => number(*v),
+        Variant::Float32(v) => number(f64::from(*v)),
+        Variant::String(v) => v.clone(),
+        Variant::Bool(v) => v.to_string(),
+        _ => return None,
+    })
 }

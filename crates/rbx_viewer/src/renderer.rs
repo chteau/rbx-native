@@ -22,6 +22,7 @@ mod material;
 mod mesh;
 mod outline;
 mod particles;
+pub use particles::particle_burst;
 mod pass;
 mod patch;
 mod pipeline;

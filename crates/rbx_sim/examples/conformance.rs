@@ -49,6 +49,16 @@ fn main() {
                 eprintln!("{err}");
                 std::process::exit(1);
             });
+    // `CONFORMANCE_DUMP=<dir>` keeps what we measured, one JSON per test
+    // (the easing plots are drawn from it).
+    if let Some(dir) = std::env::var_os("CONFORMANCE_DUMP") {
+        for (name, value) in &ours {
+            let path = std::path::Path::new(&dir).join(format!("{name}.json"));
+            if let Err(err) = std::fs::write(&path, value.to_string()) {
+                eprintln!("{}: {err}", path.display());
+            }
+        }
+    }
     let mut table =
         String::from("| Test | Field | Roblox | rbx_sim | Delta | |\n|---|---|---|---|---|---|\n");
     let mut unrecorded = Vec::new();

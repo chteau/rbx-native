@@ -332,13 +332,46 @@ Gaps from M6 (also in CONFORMANCE.md where a golden measures them):
 
 Still open from earlier milestones: the humanoid leftovers (slope 60°, the 180° turn, heavy WalkScale, the Climb/Seat one-frame offsets, swimming), soft contacts (BoxStack, HingeFree, BallSocket), the VectorForce extra frame, union collision, a MeshPart's transparent texels; the camera's pitch and shift lock measured on a desktop X server.
 
-## Milestone 7 (proposed)
+## Milestone 7 (done): tweens, sound, effects, chat, the menu
 
-1. The default Animate's tool pose and the rest of the character's emotes; leaderstats in the player list; the Escape menu (Reset, Leave) and `ResetButtonCallback`.
-2. Chat: TextChatService with its default channels, `TextChannel:SendAsync`, the chat window and bubbles, clean-room.
-3. BillboardGui/SurfaceGui input, `ScrollingFrame` scrolling and dragging, `UIDragDetector`, gamepad GUI selection.
-4. Peers as on a network: a simulated latency between server and clients (the netsim presets), interpolation and extrapolation of others' assemblies, ownership handover delay, the server's position checks.
-5. The humanoid and contact leftovers, measured again against new goldens.
+Five new goldens, recorded on the sandbox place with Sober (5 passes): TweenCurves, TweenRuntime, SoundPlayback, TextChat, ToolPose.
+
+1. TweenService at run time (`crates/rbx_lua/src/server/tween.luau`, `tween.rs`). Every `EasingStyle` and direction as `GetValue` measures them (TweenCurves: 33 curves of 101 samples each, all within 1e-6 of Roblox, plotted in `easing-ours-vs-roblox.png`). Elastic's period is 4/13 with `s = p/4`; `InOut` is built from `In`; `GetValue` clamps alpha outside 0..1 and refuses `Spring`/`Bezier` with Roblox's message. Tweens step at the start of the frame (before `PreAnimation`; on a client after the render step), `Completed` fires on the step that arrives, `Cancel` fires `Completed(Cancelled)` at once, `Delay` comes before every repeat and its last frame doesn't move, `Reverses` turns round without a jump, `Play` after `Pause` resumes and after `Cancel` starts again from where things are. A newer tween takes the properties it shares with an older one at the next step and an older one left with none is cancelled; every tweenable type lerps linearly (bools flip on the first step), `NumberRange`/`NumberSequence`/strings are refused with Roblox's errors. GUI and parts alike; a server tween replicates as property changes.
+2. Sound (`crates/rbx_sim/src/sound.rs`, `audio.rs`; the editor's mix in `crates/rbx_studio/src/shell/local_run/sound.rs`). `SoundId` goes through the asset fetcher (offline: the cache), decoded with symphonia (an unmodified MPL dependency); `TimeLength` is the Ogg's last granule. `Play`/`Stop`/`Pause`/`Resume`, `Played`/`Paused`/`Resumed`/`Stopped` at once with the id, `Ended` on the server with `IsPlaying` still true in the handler, `TimePosition` back to 0 after the end and on `Stop`, `DidLoop`, `Loaded` only for a sound that wasn't cached at first sight, the clamps on `Volume` (0..10) and `PlaybackSpeed` (≥ 0). A client's `Ended` lags its server by the frame the play took to arrive, as measured. The editor mixes what the viewed peer hears into one stereo stream: volume through the `SoundGroup` chain, `RollOffMode` distance from the camera with `SoundService.RolloffScale`, equal-power pan, resampled by `PlaybackSpeed`, following the sim's clock and jumping only when it drifts; silent while paused or watching the server; the menu's volume bar; no device means silence, not an error. `PULSE_SINK` picks the sink (`local-run-audio-null-sink.wav` was recorded from a null sink).
+3. Effects from scripts. `ParticleEmitter:Emit(n)` (16 by default) and `Clear()` go to the renderer through `rbx_viewer::particle_burst` (a queue the particle pass drains, the only renderer addition). A disabled emitter now stays planned at rate 0, so what it spawned lives out its life and `Emit` works while it's off, as in Roblox. `Enabled`, `Rate`, Trail and Beam properties (`CurveSize0/1` too) and Fire/Smoke/Sparkles `Enabled` were already re-planned from the run's property changes; nothing in the shaders or `gpu.rs` changed.
+4. M6 follow-ups.
+   - The tool pose: our Animate plays `toolnone` while a tool is held, the Right Shoulder at 89° as Roblox has it (ToolPose). The fix was the respawned character's LocalScripts not starting when `Player.Character` named a model that was already there.
+   - leaderstats as columns in the player list (any `ValueBase`, whole numbers without a fraction).
+   - The Escape menu: Resume, Reset character (R), Leave game (L, ends the run), volume. Reset follows `ResetButtonCallback`: `false` turns it off, a `BindableEvent` is fired instead, otherwise the server sets the character's health to 0.
+   - TextChatService, clean-room (`crates/rbx_lua/src/server/chat.luau`, `chat.rs`, `crates/rbx_sim/src/chat.rs`): `TextChannels` with `RBXGeneral`/`RBXSystem`, the four configurations, a `TextSource` per player, `SendAsync` (client only, the server's error otherwise), `OnIncomingMessage` on the service and the channel, `SendingMessage`, `ShouldDeliverCallback` once per source on the server, `MessageReceived` on the service then the channel, `DisplaySystemMessage` wrapped the way Roblox wraps it, `AddUserAsync`. Our own chat window (top left, `/` to type) and bubbles over heads. Offline there is no filtering service, so nothing is filtered, ever: what a player types is what everyone sees.
+   - A `TextBox` cuts its text (and placeholder) at its box; a text object with `ClipsDescendants` cuts its own text too (unless rotated, like its children).
+   - Signals: a handler disconnected by an earlier handler of the same firing no longer runs (the TweenRuntime `client_phase` order, where a script woken by `Heartbeat:Wait()` disconnects its other `Heartbeat` handlers).
+5. Test places are built from the Baseplate template (Home › New templates, the stud texture); the live check used one with a tween, a fountain that `Emit`s, a toggling Fire, a looped Sound, leaderstats, a tool and two long-placeholder TextBoxes.
+6. Checked live on Xephyr with the built binary (`rbx-native-targets/local-run-m7-shots/`): `tween-part-and-gui-mid-flight.png`, `easing-ours-vs-roblox.png`, `particles-emit-from-script.png`, `particles-fire-toggle-and-emit.png`, `tool-held-arm-raised.png`, `leaderstats-player-list.png`, `escape-menu.png`, `reset-health-zero.png`, `chat-window-and-bubble.png`, `textbox-placeholder-clipped.png`, `local-run-audio-null-sink.wav`.
+
+Gaps from M7 (also in CONFORMANCE.md where a golden measures them):
+
+| Area | Roblox | ours |
+|---|---|---|
+| `TextBounds`, `TextFits` | measured from the font | not computed in the sim (the renderer measures, scripts can't read it) |
+| TextBox overflow | where the visible part of an overflowing centred placeholder sits was not measured (no pixel goldens) | centred, cut at both edges |
+| Chat | filtering, whispers, `TextChatCommands` (`/e`, `/whisper`), bubble settings from `BubbleChatConfiguration`, channel tabs | none of these; `/e` emotes go through `Player.Chatted` only |
+| Sound | `AudioPlayer`/`AudioEmitter` (the new audio API), `SoundEffect`s, `PlaybackRegion`, `RollOffMinDistance` curves from a real listener | `Sound` only, listener at the camera, no effects |
+| Particles | `Emit` on a client replicates nowhere; a server `Emit` reaches every client | both shown on the viewed client, not replicated as such |
+| Escape menu | Roblox's settings, report, record tabs | ours: Resume, Reset, Leave, volume |
+
+Still open from earlier milestones: BillboardGui/SurfaceGui input, `ScrollingFrame` dragging, gamepad selection, peers on a simulated network, the humanoid and contact leftovers.
+
+## Milestone 8 (proposed): rendering fidelity
+
+Side-by-side pixel comparison against the real client: the same place, camera and time of day rendered by Sober on Xephyr and by Local Run, diffed per region, with the diff images kept as goldens.
+
+1. A capture harness: one place per topic built from the Baseplate template, a fixed camera from a script, Sober and our viewer shot at the same resolution, a per-pixel and per-region (sky, floor, lit faces, shadowed faces) delta report beside CONFORMANCE.md.
+2. Lighting: `Technology` (Future, ShadowMap, Voxel), `Ambient`/`OutdoorAmbient`, `Brightness`, `ExposureCompensation`, `EnvironmentDiffuseScale`/`SpecularScale`, `ClockTime` and `GeographicLatitude` sun path.
+3. Sky and atmosphere: the default sky, `Sky` skyboxes, sun and moon, `Atmosphere` (density, offset, haze, glare, colour, decay).
+4. Shadows: sun shadow softness and bias, point/spot/surface light shadows, `CastShadow`, transparency in shadows.
+5. Materials: every `Enum.Material` and `MaterialVariant` at the default and 2022 materials, `Reflectance`, `Transparency` sorting, glass, neon bloom.
+6. Post effects: `Bloom`, `ColorCorrection`, `DepthOfField`, `SunRays`, `Blur`, in their measured order.
 
 ## Where things are
 
@@ -352,4 +385,5 @@ Still open from earlier milestones: the humanoid leftovers (slope 60°, the 180�
 - `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta: Run, Play (local), Pause, Stop live in the editor. `local_run/avatars.rs`: who plays and what they look like. `workspace_view/play_input.rs`: the keyboard and mouse handed to the game.
 - `crates/rbx_sim/src/input.rs`, `crates/rbx_lua/src/server/input.rs`, `server/input.luau`: UserInputService, ContextActionService, BindToRenderStep. `crates/rbx_sim/src/character/PlayerModule.luau`: our default controls and camera.
 - `crates/rbx_net`: offline mode, the reachability probe and the HTTP gate.
-- `crates/rbx_sim/src/gui.rs`, `gui/layout.rs`: PlayerGui at run time, GUI input, TextBox, StarterGui/GuiService core calls. `tools.rs`: Backpack and tools. `teams.rs`: teams. `sound.rs`: Sound playback state. `crates/rbx_studio/src/workspace_view/core_gui.rs`: our default health, hotbar, player list and kick card.
+- `crates/rbx_sim/src/gui.rs`, `gui/layout.rs`: PlayerGui at run time, GUI input, TextBox, StarterGui/GuiService core calls. `tools.rs`: Backpack and tools. `teams.rs`: teams. `sound.rs`, `audio.rs`: Sound playback, decoding and roll-off. `chat.rs`: TextChatService's default instances. `crates/rbx_studio/src/workspace_view/core_gui.rs`: our default health, hotbar, player list with leaderstats, chat window and bubbles, Escape menu and kick card. `crates/rbx_studio/src/shell/local_run/sound.rs`: the run's audio mix.
+- `crates/rbx_lua/src/server/tween.luau`, `tween.rs`: TweenService. `server/chat.luau`, `chat.rs`: TextChatService messages.

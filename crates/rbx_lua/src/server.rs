@@ -13,9 +13,9 @@ mod input;
 mod meshes;
 mod query;
 mod remote;
-mod tween;
 #[cfg(test)]
 mod tests;
+mod tween;
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;

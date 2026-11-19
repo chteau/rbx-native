@@ -51,6 +51,7 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         || crate::tools::is_method(class, key)
         || crate::sound::is_method(class, key)
         || crate::teams::is_method(class, key)
+        || (class == "ParticleEmitter" && matches!(key, "Emit" | "Clear"))
 }
 
 pub(crate) fn is_signal(class: &str, key: &str) -> bool {
@@ -101,6 +102,16 @@ pub(crate) fn call(
     }
     if crate::teams::is_method(class, method) {
         return Ok(crate::teams::call(&dom, db, referent));
+    }
+    // `Emit(count)` (16 when not given) and `Clear()`, for the renderer.
+    if class == "ParticleEmitter" {
+        let burst = match (method, args.first()) {
+            ("Emit", Some(Arg::Number(n))) => crate::Burst::Emit(n.max(0.0) as u32),
+            ("Emit", _) => crate::Burst::Emit(16),
+            _ => crate::Burst::Clear,
+        };
+        shared.bursts.push((referent, burst));
+        return Ok(CallReply::default());
     }
     if crate::animation::is_method(class, method) {
         return shared

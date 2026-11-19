@@ -51,7 +51,10 @@ fn instance(lua: &Lua, r: Option<Ref>) -> Result<Value> {
 fn host(lua: &Lua, chat: &Chat) -> Result<Table> {
     let host = lua.create_table()?;
     let client = chat.client.clone();
-    host.set("client", lua.create_function(move |_, ()| Ok(client.get()))?)?;
+    host.set(
+        "client",
+        lua.create_function(move |_, ()| Ok(client.get()))?,
+    )?;
     host.set(
         "id",
         lua.create_function(|_, target: AnyUserData| Ok(referent(&target)?.value()))?,
@@ -94,17 +97,29 @@ fn host(lua: &Lua, chat: &Chat) -> Result<Table> {
     )?;
     host.set(
         "fire",
-        lua.create_function(|lua, (owner, name, args): (AnyUserData, String, MultiValue)| {
-            signal::fire_values(lua, &instance_key(referent(&owner)?, name), args)
-        })?,
+        lua.create_function(
+            |lua, (owner, name, args): (AnyUserData, String, MultiValue)| {
+                signal::fire_values(lua, &instance_key(referent(&owner)?, name), args)
+            },
+        )?,
     )?;
     let outbox = chat.remotes.clone();
     host.set(
         "send",
-        lua.create_function(move |lua, (channel, text, id): (AnyUserData, String, String)| {
-            push(lua, &outbox, To::Server, referent(&channel)?, text, id, None);
-            Ok(())
-        })?,
+        lua.create_function(
+            move |lua, (channel, text, id): (AnyUserData, String, String)| {
+                push(
+                    lua,
+                    &outbox,
+                    To::Server,
+                    referent(&channel)?,
+                    text,
+                    id,
+                    None,
+                );
+                Ok(())
+            },
+        )?,
     )?;
     let outbox = chat.remotes.clone();
     host.set(
@@ -199,9 +214,11 @@ pub(super) fn member(
             .create_userdata(signal)
             .map(|u| Some(Value::UserData(u)));
     }
-    let (value, found): (Value, bool) = module(lua, chat)?
-        .get::<Function>("member")?
-        .call((class, instance(lua, Some(owner))?, key))?;
+    let (value, found): (Value, bool) = module(lua, chat)?.get::<Function>("member")?.call((
+        class,
+        instance(lua, Some(owner))?,
+        key,
+    ))?;
     Ok(found.then_some(value))
 }
 
@@ -218,9 +235,12 @@ pub(super) fn set(
     if !matches!(class, "TextChatService" | "TextChannel") {
         return Ok(false);
     }
-    module(lua, chat)?
-        .get::<Function>("set")?
-        .call((class, instance(lua, Some(owner))?, key, value.clone()))
+    module(lua, chat)?.get::<Function>("set")?.call((
+        class,
+        instance(lua, Some(owner))?,
+        key,
+        value.clone(),
+    ))
 }
 
 /// A chat packet arriving: on the server from `from`'s client, on a client
@@ -253,7 +273,5 @@ pub(super) fn receive(lua: &Lua, chat: &Chat, from: Option<Ref>, packet: Packet)
 /// The editor's chat bar: the local player says `text` in the general
 /// channel.
 pub(super) fn say(lua: &Lua, chat: &Chat, text: &str) -> Result<()> {
-    module(lua, chat)?
-        .get::<Function>("say")?
-        .call(text)
+    module(lua, chat)?.get::<Function>("say")?.call(text)
 }

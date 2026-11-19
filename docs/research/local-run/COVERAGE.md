@@ -6,8 +6,8 @@ Read the property numbers with care: any property the reflection database knows 
 
 | Member type | There | Total | |
 |---|---|---|---|
-| Function | 165 | 1385 | 12% |
-| Event | 100 | 355 | 28% |
+| Function | 174 | 1385 | 13% |
+| Event | 107 | 355 | 30% |
 | Property | 1927 | 2510 | 77% |
 
 ## By class
@@ -229,7 +229,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | WorldRoot | - | 7/17 | - | Blockcast, GetPartBoundsInBox, GetPartBoundsInRadius, GetPartsInPart, Raycast, Shapecast, Spherecast | ArePartsTouchingOthers, BulkMoveTo, CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, RenameCollisionGroup, UnregisterCollisionGroup |
 | Workspace | 21/25 | 0/7 | 0/1 |  | GetNumAwakeParts, GetPhysicsThrottling, GetRealPhysicsFPS, GetServerTimeNow, JoinToOutsiders, PGSIsEnabled, UnjoinFromOutsiders, PersistentLoaded |
 | WorldModel | 1/1 | - | - |  |  |
-| ParticleEmitter | 37/37 | 1/2 | - | Clear | Emit |
+| ParticleEmitter | 37/37 | 2/2 | - | Clear, Emit |  |
 | ParticleEmitter2D | 18/31 | 1/2 | - | Clear | Emit |
 | PathfindingLink | 2/4 | - | - |  |  |
 | PathfindingModifier | 2/2 | - | - |  |  |
@@ -265,7 +265,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | PhysicsActivitySensor | 3/3 | - | - |  |  |
 | Sky | 21/21 | - | - |  |  |
 | Smoke | 6/6 | - | - |  |  |
-| Sound | 18/19 | 4/4 | 5/7 | Pause, Play, Resume, Stop, Ended, Paused, Played, Resumed, Stopped | DidLoop, Loaded |
+| Sound | 18/19 | 4/4 | 7/7 | Pause, Play, Resume, Stop, DidLoop, Ended, Loaded, Paused, Played, Resumed, Stopped |  |
 | SoundEffect | 2/2 | - | - |  |  |
 | ChorusSoundEffect | 3/3 | - | - |  |  |
 | CompressorSoundEffect | 5/6 | - | - |  |  |
@@ -295,14 +295,16 @@ Classes with at least one member there. Properties, functions and events as ther
 | TerrainDetail | 5/5 | - | - |  |  |
 | TerrainRegion | 1/1 | - | - |  |  |
 | TestService | 13/13 | 2/33 | 0/3 | getTestSessionProviderStats, isFeatureEnabled | Check, Checkpoint, Done, Error, Fail, GetTestControlSchema, GetTestControls, ListTests, Message, RegisterSuite, RegisterTest, Require, ResetTestControl, ResetTestRegistry, ScopeTime, SetTestControl, SignalProfilingCapture, SignalProfilingStart, SignalProfilingStop, StartTestSession, StopTestSession, TakeSnapshot, Warn, CaptureScreenshotAsync, FetchTestControlsAsync, RequestValidationAsync, RunTestsAsync, StartAudioCaptureAsync, StartVideoCaptureAsync, StopAudioCaptureAsync, StopVideoCaptureAsync, ServerCollectConditionalResult, ServerCollectResult, TestRegistryChanged |
-| TextChannel | 1/2 | 0/4 | 0/1 |  | DisplaySystemMessage, SetDirectChatRequester, AddUserAsync, SendAsync, MessageReceived |
+| TextChannel | 1/2 | 3/4 | 1/1 | DisplaySystemMessage, AddUserAsync, SendAsync, MessageReceived | SetDirectChatRequester |
 | TextChatCommand | 4/4 | - | 0/1 |  | Triggered |
 | TextChatMessageProperties | 3/3 | - | - |  |  |
 | BubbleChatMessageProperties | 3/6 | - | - |  |  |
-| TextChatService | 4/4 | 0/5 | 0/3 |  | DisplayBubble, CanUserChatAsync, CanUsersChatAsync, CanUsersDirectChatAsync, GetChatGroupsAsync, BubbleDisplayed, MessageReceived, SendingMessage |
+| TextChatService | 4/4 | 3/5 | 3/3 | CanUserChatAsync, CanUsersChatAsync, CanUsersDirectChatAsync, BubbleDisplayed, MessageReceived, SendingMessage | DisplayBubble, GetChatGroupsAsync |
 | TextDocument | 1/1 | 0/1 | - |  | ReadAsync |
 | TextGenerator | 4/4 | 0/1 | - |  | GenerateTextAsync |
 | Trail | 15/17 | 1/1 | - | Clear |  |
+| TweenBase | 0/1 | 0/3 | 1/1 | Completed | Cancel, Pause, Play |
+| TweenService | - | 2/3 | - | Create, GetValue | SmoothDamp |
 | UIBlur | 2/4 | - | - |  |  |
 | UIAspectRatioConstraint | 3/3 | - | - |  |  |
 | UISizeConstraint | 2/2 | - | - |  |  |
@@ -344,4 +346,4 @@ Classes with at least one member there. Properties, functions and events as ther
 
 ## Nothing there yet
 
-186 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AudioDeviceOutput, AvatarCreationService, AvatarEditorService, BadgeService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DataStoreIncrementOptions, DataStoreInfo, DataStoreKey, DataStoreKeyInfo, DataStoreObjectVersionInfo, DataStoreService, DataStoreSetOptions, Debris, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, GlobalDataStore, DataStore, OrderedDataStore, GroupService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MarketplaceService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MemoryStoreHashMap, MemoryStoreQueue, MemoryStoreService, MemoryStoreSortedMap, MessagingService, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, Terrain, TrussPart, Actor, PackageLink, Pages, DataStoreKeyPages, DataStoreListingPages, PatchMapping, Path, PathfindingService, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, PolicyService, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, SocialService, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleBase, StyleSheet, StyleLink, Teams, TeleportAsyncResult, TeleportService, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextService, TextSource, TrackerLodController, Translator, TweenBase, Tween, TweenService, UniqueIdLookupService, UserService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.
+184 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AudioDeviceOutput, AvatarCreationService, AvatarEditorService, BadgeService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DataStoreIncrementOptions, DataStoreInfo, DataStoreKey, DataStoreKeyInfo, DataStoreObjectVersionInfo, DataStoreService, DataStoreSetOptions, Debris, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, GlobalDataStore, DataStore, OrderedDataStore, GroupService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MarketplaceService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MemoryStoreHashMap, MemoryStoreQueue, MemoryStoreService, MemoryStoreSortedMap, MessagingService, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, Terrain, TrussPart, Actor, PackageLink, Pages, DataStoreKeyPages, DataStoreListingPages, PatchMapping, Path, PathfindingService, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, PolicyService, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, SocialService, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleBase, StyleSheet, StyleLink, Teams, TeleportAsyncResult, TeleportService, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextService, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, UserService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.

@@ -48,12 +48,15 @@ fn general(dom: &WeakDom) -> Option<Ref> {
 /// Makes what a server's TextChatService starts with, when the place's
 /// chat is TextChatService.
 pub(crate) fn setup(dom: &mut WeakDom, db: &ReflectionDatabase) {
-    let Some(chat) = service(dom) else { return };
+    let chat = service(dom)
+        .unwrap_or_else(|| dom.new_instance("TextChatService", "TextChatService", None));
+    // A place that doesn't say is a new place, which Roblox gives
+    // TextChatService (the reflection default is the legacy chat).
     let version = match dom
         .get(chat)
-        .and_then(|i| db.stored_or_default(i, "ChatVersion"))
+        .and_then(|i| i.properties().get("ChatVersion"))
     {
-        Some((_, Variant::Enum(v))) => *v,
+        Some(Variant::Enum(v)) => *v,
         _ => TEXT_CHAT_SERVICE,
     };
     if version != TEXT_CHAT_SERVICE {

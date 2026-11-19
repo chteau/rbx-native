@@ -11,7 +11,7 @@
 
 mod canvas;
 mod changes;
-mod core_gui;
+pub(crate) mod core_gui;
 pub(crate) mod device;
 mod frame;
 mod gizmo;
@@ -1021,6 +1021,15 @@ impl WorkspaceView {
             return;
         }
         let layout = Layout::of(cx.keyboard_layout().name());
+        if self.play.is_some() && self.core_gui.key(keystroke, pressed) {
+            if self.core_gui.has_keys() {
+                if let Some(play) = self.play.as_mut() {
+                    play.release();
+                }
+            }
+            cx.notify();
+            return;
+        }
         if let Some(play) = self.play.as_mut() {
             // X reports the Shift a key was typed with on the key itself,
             // and may report the modifier change after it.
@@ -1761,7 +1770,7 @@ impl Render for WorkspaceView {
             .when_some(self.measure_element(window, cx), |this, measure| {
                 this.child(measure)
             })
-            .children(self.core_gui_element(cx))
+            .children(self.core_gui_element(window, cx))
             // No pose yet (the very first frame or two, before the render
             // thread's first `Ready` lands, see `self.view`'s own doc) draws
             // nothing rather than a widget with no orientation to show.
