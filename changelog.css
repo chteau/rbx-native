@@ -1,0 +1,31 @@
+/* The changelog page, on top of style.css. Release notes come from GitHub as
+   HTML (already sanitized there), so this styles plain markdown output. */
+.log { max-width: 820px; margin: 0 auto; padding: 120px var(--gutter) 72px; }
+.log h1 { font-size: 40px; line-height: 1.1; letter-spacing: -.03em; color: var(--white); margin: 0 0 10px; }
+.log .sub { color: var(--dim); max-width: 38rem; margin: 0 0 40px; }
+.log .sub a, .notes a { color: var(--indigo-up); }
+.log .state { color: var(--dim); }
+.release { border-top: 1px solid var(--line); }
+.release:last-child { border-bottom: 1px solid var(--line); }
+.release summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 20px 0; }
+.release summary::-webkit-details-marker { display: none; }
+.release summary::before { content: ""; width: 8px; height: 8px; border-right: 1.5px solid var(--dim); border-bottom: 1.5px solid var(--dim); transform: translateY(-3px) rotate(-45deg); transition: transform .2s var(--out); flex: none; }
+.release[open] summary::before { transform: translateY(-5px) rotate(45deg); }
+.release summary:focus-visible { outline: 2px solid var(--indigo); outline-offset: 4px; border-radius: 4px; }
+.release h2 { margin: 0; font-size: 22px; color: var(--white); letter-spacing: -.01em; }
+.release summary:hover h2 { color: var(--indigo-up); }
+.release time { color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+.kind { font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 10px; background: #ffffff12; color: var(--body); }
+.kind.big { background: #6c7fdb33; color: var(--white); }
+.notes { padding: 0 0 28px 20px; color: var(--body); font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
+.notes > :first-child { margin-top: 0; }
+.notes h2, .notes h3 { color: var(--white); font-size: 16px; margin: 24px 0 8px; }
+.notes ul { padding-left: 20px; margin: 0; }
+.notes li { margin: 0 0 12px; }
+.notes strong { color: var(--white); }
+.notes code { font: 13px var(--mono); background: #ffffff10; padding: 1px 5px; border-radius: 4px; }
+.notes img { max-width: 100%; height: auto; border-radius: 6px; }
+.notes .on-gh { display: inline-block; margin-top: 8px; font-size: 14px; }
+.motion .release { animation: rise .5s var(--out) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@media (max-width: 480px) { .log h1 { font-size: 32px; } .notes { padding-left: 0; } }
