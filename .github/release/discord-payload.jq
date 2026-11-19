@@ -6,7 +6,11 @@
 # embed 6000 characters. The changelog gets whatever the rest leaves and is
 # cut at a line, with a link to the full notes.
 #
-# Arguments: --arg role <role id> --arg repo <https://github.com/owner/repo>
+# Nobody gets pinged here: the ping for a minor or major release is the
+# #announcements post discord-release.yml makes next, which links back to
+# this one.
+#
+# Arguments: --arg repo <https://github.com/owner/repo>
 #            --arg flathub <Flathub page, or "" while it isn't there>
 
 def link($label; $asset): if $asset then "[\($label)](\($asset.url))" else empty end;
@@ -78,8 +82,7 @@ def asset($pattern): [.assets[]? | select(.name | test($pattern))] | first;
 | (if $body == "" then "New release." else fit($body; $room; "\n\n[Full changelog](\(.url))") end) as $notes
 | {
     username: "RbxNative",
-    content: (if .isPrerelease then null else "<@&\($role)>" end),
-    allowed_mentions: {roles: (if .isPrerelease then [] else [$role] end)},
+    allowed_mentions: {parse: []},
     embeds: [{
       color: 7110619,
       title: $title,
