@@ -18,7 +18,12 @@ fn matches_the_recorded_goldens() {
         let off: Vec<String> = rows
             .iter()
             .filter(|r| !r.pass)
-            .map(|r| format!("{}.{}: roblox {} ours {}", r.test, r.field, r.golden, r.ours))
+            .map(|r| {
+                format!(
+                    "{}.{}: roblox {} ours {}",
+                    r.test, r.field, r.golden, r.ours
+                )
+            })
             .collect();
         if off.is_empty() {
             continue;
