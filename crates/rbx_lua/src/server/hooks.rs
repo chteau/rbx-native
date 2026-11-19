@@ -263,6 +263,55 @@ impl ServerHooks {
     }
 }
 
+/// `WaitForChild(name, timeout?)`: the child when it is there, else the
+/// thread waits for a `ChildAdded` of that name, or `timeout` seconds and
+/// then `nil`. With no timeout, Roblox's "Infinite yield possible" warning
+/// after 5 seconds, and the wait goes on.
+const WAIT_FOR_CHILD: &str = r#"
+return function(self, name, timeout)
+	local found = self:FindFirstChild(name)
+	if found then
+		return found
+	end
+	local thread = coroutine.running()
+	local done = false
+	local conn
+	conn = self.ChildAdded:Connect(function(child)
+		if not done and child.Name == name then
+			done = true
+			conn:Disconnect()
+			task.spawn(thread, child)
+		end
+	end)
+	if timeout then
+		task.delay(timeout, function()
+			if not done then
+				done = true
+				conn:Disconnect()
+				task.spawn(thread, nil)
+			end
+		end)
+	else
+		task.delay(5, function()
+			if not done then
+				warn(string.format("Infinite yield possible on '%s:WaitForChild(\"%s\")'", self:GetFullName(), name))
+			end
+		end)
+	end
+	return coroutine.yield()
+end
+"#;
+
+fn wait_for_child(lua: &Lua) -> Result<Function> {
+    const KEY: &str = "rbxn.server.wait_for_child";
+    if let Some(f) = lua.named_registry_value::<Option<Function>>(KEY)? {
+        return Ok(f);
+    }
+    let f: Function = lua.load(WAIT_FOR_CHILD).set_name("=WaitForChild").eval()?;
+    lua.set_named_registry_value(KEY, f.clone())?;
+    Ok(f)
+}
+
 /// Roblox's error for an HTTP request while `HttpEnabled` is off; a local
 /// Run has no network to reach either way.
 fn http_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
@@ -291,6 +340,9 @@ impl Hooks for ServerHooks {
     ) -> Result<Option<Value>> {
         if let Some(value) = events::index(lua, ctx, referent, class, key)? {
             return Ok(Some(value));
+        }
+        if key == "WaitForChild" {
+            return wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }
         let db = ctx.database();
         match class {

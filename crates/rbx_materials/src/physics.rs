@@ -4,7 +4,7 @@
 //! friction weight, elasticity weight. `Air` and `Water` are terrain-only and
 //! absent from that table, so a part made of either has no default here.
 
-pub(super) const MATERIALS: &[(&str, [f32; 5])] = &[
+pub const PHYSICS: &[(&str, [f32; 5])] = &[
     ("Asphalt", [2.36, 0.8, 0.2, 0.3, 1.0]),
     ("Basalt", [2.691, 0.7, 0.15, 0.3, 1.0]),
     ("Brick", [1.922, 0.8, 0.15, 0.3, 1.0]),

@@ -8,6 +8,7 @@
 //! Terrain has its own per-face packs which are deliberately left out: the
 //! viewer draws no terrain.
 
+pub mod physics;
 mod table;
 
 /// Which generation of texture packs a place asks for, through

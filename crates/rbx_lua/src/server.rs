@@ -79,6 +79,10 @@ impl Host for ServerHost {
         self.now.set(now);
     }
 
+    fn frame_clock(&self) -> bool {
+        true
+    }
+
     fn next_id(&self) -> u32 {
         self.next_id.set(self.next_id.get() + 1);
         self.next_id.get()

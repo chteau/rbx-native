@@ -34,6 +34,13 @@ pub(crate) trait Host {
     /// Told the time `scheduler::tick` runs at.
     fn set_now(&self, _now: f64) {}
 
+    /// Whether the clock only moves from frame to frame (a local Run). A
+    /// timer is then never over in the frame it was set in, so
+    /// `task.wait(0)` waits for the next frame, as in Roblox.
+    fn frame_clock(&self) -> bool {
+        false
+    }
+
     /// A fresh id, for an await and for anything else the host numbers.
     fn next_id(&self) -> u32;
 

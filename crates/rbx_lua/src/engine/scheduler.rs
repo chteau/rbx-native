@@ -375,12 +375,13 @@ const DEFER_ROUNDS: usize = 10;
 pub(crate) fn tick(lua: &Lua, now: f64) -> Result<()> {
     let engine = engine(lua);
     engine.host.set_now(now);
+    let frame_clock = engine.host.frame_clock();
     let (mut due, deferred) = {
         let mut scheduler = engine.scheduler.borrow_mut();
         let (due, rest): (Vec<_>, Vec<_>) = scheduler
             .timers
             .drain(..)
-            .partition(|(at, _, _)| *at <= now);
+            .partition(|&(at, _, started)| at <= now && (!frame_clock || started < now));
         scheduler.timers = rest;
         let deferred: Vec<_> = scheduler.deferred.drain(..).collect();
         (due, deferred)
