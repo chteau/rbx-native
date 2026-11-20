@@ -2,6 +2,7 @@
 
 ## 2026-11-20
 
+- **`DoubleSided` on handle adornments.** Box, sphere, cylinder, cone and image `HandleAdornment`s are single-sided by default now, like in Studio: a transparent box doesn't show its far side, standing inside one you don't see it at all, and a single-sided image only shows from the side its `LookVector` points to. Set `DoubleSided` and you get both sides back. Before, every adornment drew both sides no matter what. Selection boxes and `Handles` don't have the property and stay two-sided. (@chteau)
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)
 
 ## 2026-11-19
