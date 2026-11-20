@@ -534,8 +534,11 @@ pub struct World {
 
 impl World {
     pub fn new(shared: Rc<RefCell<Shared>>) -> Self {
+        // Contacts between two moving bodies softer than Rapier's 30 Hz: a
+        // stack of five sinks 0.16 to 0.25 stud at the top (BoxStack).
         let params = IntegrationParameters {
             dt: 1.0 / PHYSICS_HZ,
+            contact_softness: SpringCoefficients::new(25.0, 10.0),
             ..Default::default()
         };
         World {
