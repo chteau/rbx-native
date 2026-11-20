@@ -4,6 +4,38 @@
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_sim::{conformance, Input, Peer, Session};
 
+#[test]
+fn tags_replicate_and_debris_and_player_helpers_work() {
+    let mut s = session(
+        place(
+            "local p = Instance.new('Part') p.Name = 'Tagged' p.Anchored = true p:AddTag('Loot') p.Parent = workspace \
+             task.wait(1) local q = Instance.new('Part') q.Name = 'Late' q.Anchored = true q.Parent = workspace \
+             task.wait(0.5) q:AddTag('Loot') task.wait(0.5) p:RemoveTag('Loot') \
+             local d = Instance.new('Folder') d.Name = 'Brief' d.Parent = workspace \
+             game:GetService('Debris'):AddItem(d, 0.5) task.wait(1) print('debris gone', d.Parent == nil) \
+             local player = game:GetService('Players'):GetPlayers()[1] \
+             print('name', game:GetService('Players'):GetNameFromUserIdAsync(player.UserId)) \
+             print('ping', player:GetNetworkPing(), player:IsFriendsWithAsync(1))",
+            "local cs = game:GetService('CollectionService') \
+             cs:GetInstanceAddedSignal('Loot'):Connect(function(i) print('client added', i.Name) end) \
+             cs:GetInstanceRemovedSignal('Loot'):Connect(function(i) print('client removed', i.Name) end) \
+             local t = workspace:WaitForChild('Tagged') print('client has', t:HasTag('Loot'), #cs:GetTagged('Loot'))",
+        ),
+        1,
+    );
+    let mut lines = Vec::new();
+    for _ in 0..240 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Client(0), "client has true 1"), "{lines:#?}");
+    assert!(has(&lines, Peer::Client(0), "client added Late"), "{lines:#?}");
+    assert!(has(&lines, Peer::Client(0), "client removed Tagged"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "debris gone true"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "name Player1"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "ping 0 false"), "{lines:#?}");
+}
+
 fn service(dom: &WeakDom, class: &str) -> Ref {
     dom.root_refs()
         .iter()

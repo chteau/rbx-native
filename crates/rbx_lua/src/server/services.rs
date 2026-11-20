@@ -186,6 +186,7 @@ const MODULES: &[(&str, &str)] = &[
         "PathfindingService",
         include_str!("services/pathfinding.luau"),
     ),
+    ("Helpers", include_str!("services/helpers.luau")),
 ];
 
 /// The module that answers `class`.
@@ -215,6 +216,7 @@ fn module_of(class: &str) -> Option<&'static str> {
         "MarketplaceService" => "MarketplaceService",
         "HttpService" => "HttpService",
         "PathfindingService" | "Path" => "PathfindingService",
+        "Debris" | "Players" | "Player" | "RunService" | "FriendPages" => "Helpers",
         _ => return None,
     })
 }
@@ -721,6 +723,18 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         }))
     })?;
     let info = scheduler::yielding(lua, info)?;
+    for (name, by_name) in [("user_name", false), ("user_id", true)] {
+        let r = runtime.clone();
+        let call = lua.create_function(move |lua, who: Value| {
+            let cache = r.config.borrow().cache_dir.clone();
+            let who = match who {
+                Value::String(s) => s.to_str()?.to_owned(),
+                other => format!("{}", other.as_i64().unwrap_or_default()),
+            };
+            Ok(in_background(lua, &r, move || user_lookup(&who, by_name, cache)))
+        })?;
+        host.set(name, checked(lua, scheduler::yielding(lua, call)?)?)?;
+    }
     host.set("product_info", checked(lua, info)?)?;
     Ok(host)
 }
@@ -762,9 +776,6 @@ fn product_info(
     cache: Option<PathBuf>,
 ) -> std::result::Result<serde_json::Value, String> {
     let key = format!("{kind}-{id}");
-    if let Some(found) = PRODUCT_INFO.lock().ok().and_then(|m| m.get(&key).cloned()) {
-        return Ok(found);
-    }
     let file = cache.map(|dir| dir.join("product-info").join(format!("{key}.json")));
     let url = match kind {
         "GamePass" => {
@@ -776,12 +787,78 @@ fn product_info(
         "Bundle" => format!("https://catalog.roblox.com/v1/bundles/{id}/details"),
         _ => format!("https://economy.roblox.com/v2/assets/{id}/details"),
     };
-    let fetched = http::send(&HttpRequest {
-        url,
-        method: "GET".into(),
-        headers: Vec::new(),
-        body: None,
-    });
+    fetch_cached(
+        key,
+        HttpRequest {
+            url,
+            method: "GET".into(),
+            headers: Vec::new(),
+            body: None,
+        },
+        "MarketplaceService:GetProductInfo()",
+        file,
+    )
+}
+
+/// `Players:GetNameFromUserIdAsync` (`by_name: false`, `who` is the id) or
+/// `GetUserIdFromNameAsync`, from Roblox's users API, kept like product
+/// info.
+fn user_lookup(
+    who: &str,
+    by_name: bool,
+    cache: Option<PathBuf>,
+) -> std::result::Result<serde_json::Value, String> {
+    let kind = if by_name { "name" } else { "id" };
+    let key = format!("user-{kind}-{}", who.to_lowercase());
+    let file = cache.map(|dir| dir.join("users").join(format!("{key}.json")));
+    let (request, what) = if by_name {
+        let body = serde_json::json!({ "usernames": [who], "excludeBannedUsers": false });
+        (
+            HttpRequest {
+                url: "https://users.roblox.com/v1/usernames/users".into(),
+                method: "POST".into(),
+                headers: vec![("Content-Type".into(), "application/json".into())],
+                body: Some(body.to_string()),
+            },
+            "Players:GetUserIdFromNameAsync()",
+        )
+    } else {
+        (
+            HttpRequest {
+                url: format!("https://users.roblox.com/v1/users/{who}"),
+                method: "GET".into(),
+                headers: Vec::new(),
+                body: None,
+            },
+            "Players:GetNameFromUserIdAsync()",
+        )
+    };
+    let found = fetch_cached(key, request, what, file)?;
+    let answer = if by_name {
+        found["data"][0]["id"].clone()
+    } else {
+        found["name"].clone()
+    };
+    if answer.is_null() {
+        return Err(format!("{what} failed: Unknown user"));
+    }
+    Ok(answer)
+}
+
+/// A JSON answer from Roblox's web APIs, kept in memory and in `file`; the
+/// kept copy answers when the request fails. `what` names the call in the
+/// errors.
+fn fetch_cached(
+    key: String,
+    request: HttpRequest,
+    what: &str,
+    file: Option<PathBuf>,
+) -> std::result::Result<serde_json::Value, String> {
+    if let Some(found) = PRODUCT_INFO.lock().ok().and_then(|m| m.get(&key).cloned()) {
+        return Ok(found);
+    }
+    let fetched = http::send(&request);
+
     let from_disk = || {
         file.as_ref()
             .and_then(|f| std::fs::read(f).ok())
@@ -789,11 +866,11 @@ fn product_info(
     };
     let value = match fetched {
         Ok(response) if response.success => serde_json::from_str::<serde_json::Value>(&response.body)
-            .map_err(|_| "MarketplaceService:GetProductInfo() failed: the answer wasn't JSON".to_owned())?,
+            .map_err(|_| format!("{what} failed: the answer wasn't JSON"))?,
         Ok(response) => {
             return from_disk().ok_or_else(|| {
                 format!(
-                    "MarketplaceService:GetProductInfo() failed because HTTP {} ({})",
+                    "{what} failed because HTTP {} ({})",
                     response.status_code, response.status_message
                 )
             })
@@ -801,9 +878,9 @@ fn product_info(
         Err(error) => {
             return from_disk().ok_or_else(|| {
                 if rbx_net::is_offline_message(&error) {
-                    "MarketplaceService:GetProductInfo() failed because the app is offline and it isn't cached".to_owned()
+                    format!("{what} failed because the app is offline and it isn't cached")
                 } else {
-                    format!("MarketplaceService:GetProductInfo() failed because {}", failure(&error))
+                    format!("{what} failed because {}", failure(&error))
                 }
             })
         }
