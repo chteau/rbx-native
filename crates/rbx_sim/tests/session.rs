@@ -579,3 +579,169 @@ fn terrain_a_server_script_builds_holds_the_client_character_up() {
     }
     assert!(has(&lines, Peer::Server, "crate 2.6"), "{lines:#?}");
 }
+
+#[test]
+fn a_teleport_into_the_same_place_carries_its_data_and_gui() {
+    let mut s = session(
+        place(
+            "",
+            "local ts = game:GetService('TeleportService') \
+             local gui = Instance.new('ScreenGui') gui.Name = 'Loading' \
+             Instance.new('Frame', gui).Name = 'Bar' \
+             task.wait(0.5) ts:Teleport(game.PlaceId, nil, { level = 7 }, gui) \
+             ts:Teleport(424242, nil, {}) \
+             ts.TeleportInitFailed:Connect(function(_, result) print('failed', result.Name) end)",
+        ),
+        1,
+    );
+    let mut lines = Vec::new();
+    let mut teleports = Vec::new();
+    for _ in 0..90 {
+        s.step();
+        teleports.extend(s.take_teleports());
+        printed(&mut s, &mut lines);
+    }
+    assert!(
+        has(&lines, Peer::Client(0), "failed Failure"),
+        "{lines:#?}"
+    );
+    assert_eq!(teleports.len(), 1);
+    let teleport = teleports.remove(0);
+    assert_eq!(teleport.request.data.as_deref(), Some(r#"{"level":7}"#));
+    assert_eq!(teleport.request.players, vec![s.clients[0].player]);
+    let gui = teleport.gui.expect("the teleport GUI comes along");
+
+    let mut arrived = Session::new(place(
+        "game:GetService('Players').PlayerAdded:Connect(function(p) \
+           print('join', p:GetJoinData().TeleportData.level, p:GetJoinData().SourcePlaceId) end)",
+        "local ts = game:GetService('TeleportService') \
+         ts.LocalPlayerArrivedFromTeleport:Connect(function(g, data) print('arrived', g.Name, data.level) end) \
+         print('data', ts:GetLocalPlayerTeleportData().level, ts:GetArrivingTeleportGui().Bar.ClassName)",
+    ))
+    .unwrap();
+    let mut services = rbx_lua::server::Services::default();
+    services.arrivals.insert(
+        -1,
+        rbx_lua::server::Arrival {
+            data: teleport.request.data.clone(),
+            source_place: 5,
+            gui: None,
+        },
+    );
+    arrived.set_services(services);
+    arrived.set_arriving_gui(-1, gui);
+    arrived.start();
+    arrived.join("Player1", -1, None).unwrap();
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        arrived.step();
+        printed(&mut arrived, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "join 7 5"), "{lines:#?}");
+    assert!(has(&lines, Peer::Client(0), "data 7 Frame"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "arrived Loading 7"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn a_badge_award_lands_in_the_ledger_with_a_toast() {
+    let mut s = session(
+        place(
+            "local bs = game:GetService('BadgeService') local p = game:GetService('Players'):GetPlayers()[1] \
+             while not p do task.wait() p = game:GetService('Players'):GetPlayers()[1] end \
+             print('award', bs:AwardBadgeAsync(p.UserId, 1)) print('again', bs:AwardBadgeAsync(p.UserId, 1)) \
+             print('has', bs:UserHasBadgeAsync(p.UserId, 1), #bs:CheckUserBadgesAsync(p.UserId, { 1, 2 }))",
+            "print('client', pcall(function() return game:GetService('BadgeService'):UserHasBadgeAsync(1, 1) end))",
+        ),
+        1,
+    );
+    let mut lines = Vec::new();
+    let mut notices = Vec::new();
+    for _ in 0..600 {
+        s.step();
+        notices.extend(s.take_notices());
+        printed(&mut s, &mut lines);
+        if has(&lines, Peer::Server, "has true 1") {
+            break;
+        }
+    }
+    assert!(has(&lines, Peer::Server, "award true"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "again false"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "has true 1"), "{lines:#?}");
+    assert!(
+        has(
+            &lines,
+            Peer::Client(0),
+            "client true false"
+        ),
+        "{lines:#?}"
+    );
+    assert_eq!(notices.len(), 1, "{notices:#?}");
+    assert_eq!(notices[0].title, "Badge Awarded");
+    assert_eq!(notices[0].player, Some(s.clients[0].player));
+}
+
+#[test]
+fn a_touch_device_gets_context_action_buttons() {
+    let mut s = Session::new(place(
+        "",
+        "local cas = game:GetService('ContextActionService') \
+         cas:BindAction('Boost', function(_, state) print('boost', state.Name) end, true, Enum.KeyCode.B) \
+         cas:SetTitle('Boost', 'Go') \
+         local button = cas:GetButton('Boost') \
+         print('button', button.Parent.Parent.Name, button.ActionTitle.Text, \
+           game:GetService('UserInputService').TouchEnabled) \
+         task.wait(0.2) print('at', button.AbsolutePosition.X + 35, button.AbsolutePosition.Y + 35)",
+    ))
+    .unwrap();
+    s.set_services(rbx_lua::server::Services {
+        device: rbx_lua::server::Device {
+            touch: true,
+            keyboard: false,
+            mouse: false,
+            gamepad: false,
+        },
+        ..Default::default()
+    });
+    s.start();
+    s.join("Player1", -1, None).unwrap();
+    let mut lines = Vec::new();
+    let mut at = None;
+    for _ in 0..90 {
+        s.step();
+        printed(&mut s, &mut lines);
+        if at.is_none() {
+            at = lines.iter().find_map(|(_, l)| {
+                let mut words = l.strip_prefix("at ")?.split(' ');
+                Some([
+                    words.next()?.parse::<f32>().ok()?,
+                    words.next()?.parse::<f32>().ok()?,
+                ])
+            });
+            if let Some([x, y]) = at {
+                let position = [x, y + 58.0];
+                s.input(
+                    0,
+                    Input::Move {
+                        position,
+                        delta: [0.0, 0.0],
+                    },
+                );
+                s.input(
+                    0,
+                    Input::Button {
+                        button: 1,
+                        down: true,
+                    },
+                );
+            }
+        }
+    }
+    assert!(
+        has(&lines, Peer::Client(0), "button ContextActionGui Go true"),
+        "{lines:#?}"
+    );
+    assert!(has(&lines, Peer::Client(0), "boost Begin"), "{lines:#?}");
+}

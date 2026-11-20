@@ -43,6 +43,9 @@ function SERVICE.GetBadgeInfoAsync(_, badgeId)
 end
 
 function SERVICE.AwardBadgeAsync(_, userId, badgeId)
+	if not host.server() then
+		fail("BadgeService:AwardBadgeAsync() can only be called from the server")
+	end
 	userId = int64(userId)
 	badgeId = int64(badgeId)
 	local player = game:GetService("Players"):GetPlayerByUserId(userId)
