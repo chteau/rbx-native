@@ -121,6 +121,22 @@ fn a_part_reads_its_transparency_and_reflectance_off_the_dom() {
 }
 
 #[test]
+fn a_block_packs_the_surface_patterns_it_shows_three_bits_a_face() {
+    let properties: std::collections::BTreeMap<String, Variant> = [
+        ("TopSurface", Variant::Enum(3)),
+        ("BottomSurface", Variant::Enum(4)),
+        ("FrontSurface", Variant::Enum(2)),
+        // A hinge is a fitting, not a pattern: left flat.
+        ("RightSurface", Variant::Enum(6)),
+    ]
+    .into_iter()
+    .map(|(name, value)| (name.to_owned(), value))
+    .collect();
+    assert_eq!(surfaces(&properties), 3 << 3 | 4 << 12 | 2 << 15);
+    assert_eq!(surfaces(&Default::default()), 0);
+}
+
+#[test]
 fn a_transparency_between_zero_and_one_only_marks_a_part_translucent() {
     let mut scene = Scene::from_dom(&test_place(), &ReflectionDatabase::embedded()).unwrap();
 
@@ -154,6 +170,7 @@ fn bounds_wrap_the_corners_of_a_rotated_box() {
         color: [0.0; 3],
         alpha: 1.0,
         reflectance: 0.0,
+        surfaces: 0,
         size: Vec3::splat(2.0),
         casts_shadow: true,
         id: PartId::whole(Ref::new(0)),
@@ -198,6 +215,7 @@ fn only_the_invisible_and_the_opted_out_stop_casting() {
         color: [0.0; 3],
         alpha,
         reflectance: 0.0,
+        surfaces: 0,
         size: Vec3::ONE,
         casts_shadow: flag,
         id: PartId::whole(Ref::new(0)),

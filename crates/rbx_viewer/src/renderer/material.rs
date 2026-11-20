@@ -354,13 +354,13 @@ fn regrade(image: &mut Image, grade: rbx_materials::Grade) {
         .collect();
     let texels = (image.pixels.len() / CHANNELS).max(1) as f32;
     let mut mean = [0.0f32; 3];
-    for texel in image.pixels.chunks_exact(CHANNELS) {
+    for texel in image.pixels.as_chunks::<CHANNELS>().0 {
         for (channel, sum) in mean.iter_mut().enumerate() {
             *sum += decode[usize::from(texel[channel])];
         }
     }
     let mean = mean.map(|sum| sum / texels);
-    for texel in image.pixels.chunks_exact_mut(CHANNELS) {
+    for texel in image.pixels.as_chunks_mut::<CHANNELS>().0 {
         for (channel, &mean) in mean.iter().enumerate() {
             let linear = grade.apply(channel, decode[usize::from(texel[channel])], mean);
             texel[channel] = (linear_to_srgb(linear) * 255.0).round() as u8;

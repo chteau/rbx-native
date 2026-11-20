@@ -422,14 +422,67 @@ Gaps from M8:
 | Studs | surface studs | not drawn |
 | Future local lights, `ShadowSoftness`, Atmosphere haze and glare | | not measured or refitted |
 
-## Milestone 9 (proposed): materials and the last lighting gaps
+## Milestone 9 (done): materials and the last lighting gaps
 
-1. Per-material albedo and roughness fitted from the material scenes' probes (our own textures, rescaled), then `MaterialVariant` and the 2022 materials.
-2. Future's local lights (falloff, shadows, specular) and `ShadowSoftness` measured on the ramp, like the voxel ones.
-3. Atmosphere (haze, glare, colour, decay) and the warm sky around a low sun, so evening and atmosphere fall under 4 ΔE.
-4. Night: where the moonlight comes from; the sun's highlight with environment specular off.
-5. Surface studs, SunRays without banding.
-6. Lower each golden's tolerance as its scene closes, so the test holds the gains.
+Same harness and rules as M8 (Sober on Xephyr at 1280x720, sandbox place only, nothing of Roblox's in the tree but what its pictures show). Nine scenes were added: `studs`, `text_boxes`, `text_sizes`, `shadows_half`, and each `light_*` falloff scene and `local_lights` again under `Future`. The fidelity scenes can now carry screens (`Builder::screen`), drawn under the top bar the way the player sees them.
+
+1. Materials: each 2022 pack's colour map is regraded once, on upload, by a per-material gain and contrast fitted from the material scenes (`crates/rbx_materials/src/grade.rs`, two numbers a material, no texture data; Rock and Sandstone down to 0.46 and 0.45, Marble and Basalt up to 1.3 and 1.4). With the sun highlight below, the two material scenes went 6.0 → 3.4 and 5.8 → 3.2. `MaterialVariant` and per-material roughness were not done.
+2. Sun highlight: the real client's is broad and about half the reflection's strength (shininess 15, 0.5 of `spec_strength`), goes through the same Fresnel curve as the reflection (the streak a low sun leaves on a floor), and keeps 0.15 of it at `EnvironmentSpecularScale` 0. This is what fixed the template floor (lit floor 160 → 150 against 142) and moved nearly every stage scene by 0.5 to 1.7 ΔE.
+3. Dusk: the sky, its bounce and its haze are tinted (1.12, 0.8, 0.6) with the sun under 2 degrees up, fading out by 5 (`lighting/sky.rs`); evening 8.1 → 2.8.
+4. Night: the moon is where the real client's `GetMoonDirection` puts it (the sun's direction with X and Y turned round, not opposite the sun), so front faces are no longer moonlit, and it is 0.21 of the sun, not 0.155; night 3.3 → 1.6.
+5. Surface studs: Studs, Inlet, Universal, Weld and Glue drawn on a block's faces by `material.wgsl`'s `surface_relief` (a rounded square per stud raised or sunk, the checker, the diagonal grooves), packed three bits a face into the instance's material word. SunRays march from a per-pixel offset (no banding), and anything past 30 studs lets the rays through as the sky does (8.8 → 6.5).
+6. Future local lights: Lambert from the light's own position, flat to 0.7 of `Range` then gone at `Range` (`future_falloff`), a spot's cone full to 0.3 of its half-angle and a squared smoothstep to its edge, per-class strengths; every `light_*_future` scene is now 0.9 to 1.2 ΔE. `ShadowSoftness`: the kernel at 1 is 2 texels, not 8 (the wide one ghosted the shadow and striped the floor); shadows_soft 6.1 → 3.0. Atmosphere: the haze is a third `Color` and two thirds the sky it scatters (6.6 → 5.6).
+7. SurfaceLight under voxel lighting: the grid keeps it as a glow the shape of its face, half its `Range` out in front, reaching 0.8 of it, with no cone (the floor in front of the wall peaks eight studs out); 2.5 → 1.9.
+8. TextBox: a resting `TextBox`'s text and placeholder spill past the box like a label's, as the real client draws them (the "ge to see whe" slice was our clip); only the box being typed in is cut to its field. `text_boxes` has a golden now.
+9. Goldens: every scene is recorded, each with a tolerance of 0.15 of its own ΔE, between 0.25 and 0.6, so a closed scene is held tighter than one still far off.
+
+| scene | ΔE M8 | ΔE M9 | SSIM M9 |
+|---|---|---|---|
+| default_lighting | 1.62 | 1.43 | 0.953 |
+| studio_baseplate | 2.86 | 2.15 | 0.974 |
+| studio_lighting | 3.39 | 2.80 | 0.935 |
+| morning | 4.72 | 4.53 | 0.910 |
+| evening | 8.06 | 2.83 | 0.953 |
+| night | 3.32 | 1.58 | 0.973 |
+| latitude | 3.32 | 3.00 | 0.940 |
+| ambient_colour | 5.89 | 5.82 | 0.928 |
+| exposure | 2.97 | 2.73 | 0.959 |
+| realistic_style | 3.39 | 2.80 | 0.935 |
+| fog | 3.16 | 3.02 | 0.917 |
+| atmosphere | 6.56 | 5.62 | 0.842 |
+| sun_rays | 8.83 | 6.45 | 0.929 |
+| custom_sky | 0.90 | 0.76 | 0.995 |
+| shadows_hard | 4.70 | 2.95 | 0.978 |
+| shadows_soft | 6.07 | 2.98 | 0.970 |
+| local_lights | 6.28 | 4.65 | 0.916 |
+| light_surface | 2.46 | 1.89 | 0.722 |
+| materials_a | 6.03 | 3.38 | 0.941 |
+| materials_b | 5.81 | 3.21 | 0.953 |
+| special_materials | 3.90 | 3.37 | 0.911 |
+| bloom_colour_correction | 4.76 | 4.20 | 0.897 |
+| blur | 3.37 | 2.77 | 0.949 |
+| depth_of_field | 3.40 | 2.91 | 0.937 |
+
+New scenes, no before: studs 3.15, text_boxes 3.58, text_sizes 2.40, shadows_half 3.02, local_lights_future 4.29, light_point_1/4, light_spot, light_surface under Future 0.99, 1.10, 0.95, 1.24. The tone scenes and the voxel point and spot falloffs didn't move (within 0.05). Over the 41 scenes with an M8 number the mean went 3.72 → 3.03. Pictures (real | M8 | M9 | heatmap) in `rbx-native-targets/local-run-m9-shots/after/`.
+
+Gaps from M9:
+
+| Area | real client | ours |
+|---|---|---|
+| GUI text in Sober | about 1.15x the size Studio's `GetTextSize` gives (both `Legacy` and Source Sans, `text_sizes`) | Studio's size; Sober runs the Android client, so this needs a desktop reference before anything changes |
+| Atmosphere, SunRays | a white veil round a low sun over sky and floor, a narrow sun streak on the floor | dimmer, broader |
+| Morning | lit shadows under a low sun | shadows too dark (floor shadow 55 against 72) |
+| Coloured ambient | | 5.8, untouched |
+| Local lights near walls | the voxel grid darkens light next to solid cells | no occlusion at all under voxel lighting |
+| Materials | `MaterialVariant`, per-material roughness | colour regrade only |
+
+## Milestone 10 (proposed): the rest of the picture
+
+1. A desktop reference for GUI text (Studio on Vinegar, Play solo, the same `text_sizes`/`text_boxes` places) to settle the Sober text scale, then match whichever is the real desktop client.
+2. Atmosphere glare and haze over geometry, and the sun's streak, so `atmosphere` and `sun_rays` fall under 4 ΔE.
+3. Low-sun shadows (`morning`) and coloured ambient (`ambient_colour`).
+4. Voxel occlusion for local lights (a coarse solid grid from the parts, sampled like the real 4-stud one).
+5. `MaterialVariant` and roughness per material from the same scenes.
 
 ## Where things are
 
