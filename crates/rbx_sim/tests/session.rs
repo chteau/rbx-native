@@ -111,6 +111,13 @@ fn datastores_persist_between_runs_of_a_place() {
             s.step();
             printed(&mut s, &mut lines);
         }
+        // The store object a script holds isn't a root of the place.
+        let dom = s.server.dom();
+        assert!(dom
+            .root_refs()
+            .iter()
+            .all(|r| dom.get(*r).is_some_and(|i| i.name() != "Saves")));
+        drop(dom);
         lines
     };
     run("game:GetService('DataStoreService'):GetDataStore('Saves'):SetAsync('k', { coins = 12 })");

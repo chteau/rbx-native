@@ -24,6 +24,8 @@ fn host(lua: &Lua) -> Result<Table> {
             let tween = {
                 let mut dom = ctx.dom_mut();
                 let tween = dom.new_instance("Tween", "Tween", None);
+                // Parented to nothing, as Instance.new's: not a root of the place.
+                dom.unparent(tween);
                 let _ = dom.set_property(tween, "Instance", Variant::Ref(target));
                 let _ = dom.set_property(tween, "PlaybackState", Variant::Enum(0));
                 tween

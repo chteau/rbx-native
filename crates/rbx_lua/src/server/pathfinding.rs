@@ -186,15 +186,14 @@ fn material_name(ctx: &Ctx, instance: &rbx_dom::Instance) -> String {
         .to_owned()
 }
 
-/// Rays down a column: the floors an agent of `height` fits on, top first.
+/// Rays down the column at `(x, z)` from `top` to `bottom`: the floors an
+/// agent of `height` fits on, top first.
 fn column(
     physics: &dyn Physics,
     ctx: &Ctx,
     filter: &QueryFilter,
-    x: f64,
-    z: f64,
-    top: f64,
-    bottom: f64,
+    (x, z): (f64, f64),
+    (top, bottom): (f64, f64),
     height: f64,
 ) -> Vec<Floor> {
     let mut floors = Vec::new();
@@ -292,10 +291,8 @@ fn build(physics: &dyn Physics, ctx: &Ctx, request: &PathRequest) -> Grid {
                 physics,
                 ctx,
                 &filter,
-                x as f64 * CELL,
-                z as f64 * CELL,
-                top,
-                bottom,
+                (x as f64 * CELL, z as f64 * CELL),
+                (top, bottom),
                 request.height,
             ));
         }

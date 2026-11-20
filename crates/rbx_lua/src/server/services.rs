@@ -447,6 +447,8 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         lua.create_function(|lua, (class, name): (String, String)| {
             let ctx = engine(lua).ctx.clone();
             let referent = ctx.dom_mut().new_instance(&class, &name, None);
+            // Parented to nothing, as Instance.new's: not a root of the place.
+            ctx.dom_mut().unparent(referent);
             let object = LuaInstance::new(referent, ctx).into_lua(lua)?;
             Ok((object, referent.value()))
         })?,
@@ -702,7 +704,7 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "occlusion",
         lua.create_function(move |lua, (flat, from, height): (Vec<f64>, f64, f64)| {
-            let points: Vec<[f64; 3]> = flat.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+            let points: Vec<[f64; 3]> = flat.as_chunks::<3>().0.to_vec();
             let ctx = engine(lua).ctx.clone();
             Ok(super::pathfinding::occlusion(
                 r.physics.as_ref(),

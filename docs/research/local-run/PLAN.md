@@ -182,7 +182,7 @@ How the humanoid works (`crates/rbx_sim/src/humanoid.rs`, `physics/character.rs`
 
 ## Coverage
 
-`docs/research/local-run/COVERAGE.md` is generated (`cargo run -p rbx_sim --example coverage -- docs/research/local-run/COVERAGE.md`): a server script in a fresh Local Run makes an instance of every class and indexes every member a game script may touch. Today: 112 of 1385 functions (87 after Milestone 1, 96 after Milestone 2; the new ones are Humanoid, Players, Animator and AnimationTrack), 53 of 355 events (31 after Milestone 2), 1926 of 2510 properties. The property number flatters us: any property the reflection database knows reads back as data, whether or not we act on it. The physics table above is what's really simulated.
+`docs/research/local-run/COVERAGE.md` is generated (`cargo run -p rbx_sim --example coverage -- docs/research/local-run/COVERAGE.md`): a server script in a fresh Local Run makes an instance of every class and indexes every member a game script may touch. Today: 281 of 1385 functions (87 after Milestone 1, 190 before Milestone 12), 118 of 355 events, 1949 of 2510 properties. The property number flatters us: any property the reflection database knows reads back as data, whether or not we act on it. The physics table above is what's really simulated.
 
 ## Roblox updates every week
 
@@ -561,15 +561,58 @@ Gaps from M11:
 | Swim pose | the body lies along the swim direction | upright (the Swim animation plays, the root doesn't tilt) |
 | A ball falling into terrain | goes in (−15.8) | rests on it (2.999) |
 
-## Milestone 12 (proposed): API breadth, part 1
+## Milestone 12 (done): API breadth, part 1
 
-1. DataStoreService and MemoryStoreService offline: GetAsync/SetAsync/UpdateAsync/IncrementAsync/RemoveAsync, ordered stores and their pages, versions and keys listing, sorted maps and queues, against a per-place local store (with an option to start from a snapshot fetched with the owner's Open Cloud key), the request budgets and their throttling errors.
-2. HttpService: GenerateGUID, JSONEncode/JSONDecode (Roblox's exact number and escape rules), UrlEncode, and RequestAsync/GetAsync/PostAsync through `rbx_net`'s gate when HttpEnabled is on (refused offline), with Roblox's errors and header rules.
-3. MessagingService: PublishAsync/SubscribeAsync between the servers of a local session (one process, several places later), with its size and rate limits.
-4. MarketplaceService stand-ins: PromptPurchase/PromptProductPurchase/PromptGamePassPurchase with a local confirm dialog, ProcessReceipt, UserOwnsGamePassAsync and PlayerOwnsAsset from a local ledger, GetProductInfo from the cache or Open Cloud.
-5. CollectionService: AddTag/RemoveTag/HasTag/GetTagged/GetTags, the Instance tag methods and `Tags` property, GetInstanceAddedSignal/RemovedSignal, tags replicating to clients.
-6. PathfindingService: CreatePath with agent parameters (radius, height, CanJump, CanClimb, WaypointSpacing, Costs), ComputeAsync over parts and terrain (a navmesh from the collision world), waypoints with Jump actions, Blocked and the `PathfindingModifier`/`PathfindingLink` instances; goldens comparing waypoints on a few courses.
-7. Goldens for each from the sandbox place where Roblox's behaviour is observable from a server script (JSON round trips, tag signals, path waypoints, DataStore error codes and budgets).
+The services a game's server leans on now run in Local Run, offline: DataStores, MemoryStores, messaging, HTTP and JSON, test purchases, tags and pathfinding. Each is a Luau module (`rbx_lua/src/server/services/*.luau`) over a small Rust host (`server/services.rs`), loaded the first time a script touches the service. Eight tests were added (DataStoreLimits, DataStoreValues, MemoryStore, HttpJson, Messaging, CollectionTags, Marketplace, Pathfinding) and recorded on the sandbox place, with real DataStore writes only under `localrun_m12_` keys, which the tests delete.
+
+1. DataStoreService (`services/datastore.luau`, `services/store.rs`): Get/Set/Update/Increment/RemoveAsync, `GetVersionAsync`/`GetVersionAtTimeAsync`/`ListVersionsAsync`/`RemoveVersionAsync`, `ListKeysAsync` (prefix, AllScopes, deleted keys), `ListDataStoresAsync`, `DataStoreSetOptions`/`IncrementOptions` metadata and user ids, `DataStoreKeyInfo`, OrderedDataStore `GetSortedAsync` pages, the request budgets (`GetRequestBudgetForRequestType`) and their throttling, and the error codes and messages a live server gives (key 50 and name 50 characters, value 4 MB, JSON-only values; codes 101–107, 502 and 511–513 as recorded). The data is one JSON file per place, `<config>/local-run/<place>/datastores.json` (the place id once linked, else a hash of its path), written after every change. Test › Data cycles Kept (kept between runs), Fresh (empty each run, never written) and Off (Studio's "Enable Studio Access to API Services" off: every call fails with Studio's message). DataStoreLimits: 58 of 58. DataStoreValues: 61 of 67, the 6 off are a live server's eventual consistency (a key just written isn't listed yet, a version just made isn't readable), which we don't imitate.
+2. MemoryStoreService (`services/memorystore.luau`): HashMap (Get/Set/Update/Remove, `ListItemsAsync` pages), SortedMap (Get/Set/Update/Remove, `GetRangeAsync` with bounds, `GetSizeAsync`) and Queue (Add with priority, Read with count, all-or-nothing and wait, Remove by id, `GetSizeAsync`, invisibility timeouts), with expirations, the size, key and expiration limits and their messages. MemoryStore: 50 of 51 (a queue read's wait: the live server timed it with `os.clock`, which runs ahead of game time in a busy frame).
+3. HttpService: `JSONEncode`/`JSONDecode` rewritten to write exactly what a live server writes (JS number layout, `\u00XX` escapes, NaN and inf as tagged objects, how mixed and sparse tables, cycles and depth fail), `GenerateGUID` (lowercase), `UrlEncode` (only alphanumerics kept). `RequestAsync`/`GetAsync`/`PostAsync` through `rbx_net` on a worker thread: HttpEnabled off gives "Http requests are not enabled. Enable via game settings", offline or unreachable gives `HttpError: ConnectFail`, a timeout `HttpError: Timedout`. HttpJson: 100 of 101 (`1e10/3`'s last digit: Roblox's formatter rounds the 17th digit differently). A session test talks to a local test server and checks the offline error.
+4. MessagingService (`services/messaging.luau`): `PublishAsync`/`SubscribeAsync` between every server of the same universe in the process, deferred as a live server delivers them, with the topic and message size limits and the `Data`/`Sent` message table. Messaging: 18 of 18.
+5. MarketplaceService (`services/marketplace.luau`): the four `Prompt*Purchase` calls and `PromptSubscriptionPurchase` open our own test purchase dialog over the Play (local) view (Buy (test) or Cancel, nothing charged); the answer fires the `Prompt*PurchaseFinished` events on the server and the buyer's client, records passes, assets, bundles and subscriptions in the place's ownership table (`UserOwnsGamePassAsync`, `PlayerOwnsAsset(Async)`, `PlayerOwnsBundle(Async)`, `GetUserSubscriptionStatusAsync` read it), and hands a developer product to `BindReceiptHandler`'s handler (filtered by product) or `ProcessReceipt`, retried until it answers PurchaseGranted (every 10 s, when the callback is set again, when the buyer comes back). `GetProductInfo(Async)` asks Roblox's public catalog APIs and keeps the answer under the asset cache, so an offline run still has it; with nothing kept it fails with "…failed because the app is offline and it isn't cached". Marketplace: 16 of 16 (the argument errors).
+6. CollectionService: every tag call (`tag_arg`'s coercions and messages), `GetAllTags`, `TagAdded`/`TagRemoved`, `GetTagged` limited to what's under a service, and the signals' order measured on a live server (InstanceAdded/Removed immediately, TagAdded/Removed deferred on a tag's first and last use, parenting in and out, `Destroy`, clones). Tags replicate as the `Tags` property, and a client's CollectionService fires for them (a session test). Also: `Debris:AddItem`, and the Players, Player and RunService helpers that were missing (`GetNameFromUserIdAsync`/`GetUserIdFromNameAsync` from the players in the game or Roblox's users API, kept like product info; `GetFriendsAsync` as an empty page; the `*Async` HumanoidDescription calls; `DistanceFromCharacter`, `GetJoinData`, `GetNetworkPing` 0, `Move`, `LoadCharacterAsync`, the friend and group checks false; `IsResimulating`, `GetPredictionStatus`, `BindToSimulation`). CollectionTags: 19 of 19.
+7. PathfindingService (`server/pathfinding.rs`, `services/pathfinding.luau`): `CreatePath` with its agent parameters (radius, height, CanJump, CanClimb, WaypointSpacing, Costs) and their cast errors, `ComputeAsync`/`FindPathAsync`, `GetWaypoints`, `Status`, `CheckOcclusionAsync`, `Blocked`/`Unblocked`, `PathWaypoint`. The path is A* over a one-stud grid built per request from the physics world's rays (parts and terrain): floors an agent of its height fits under, walls and drops kept a stud away (so a 3 stud door passes as Roblox's does), steps up to 1.6 studs walked, gaps and ledges up to 6.5 studs jumped from the last open floor before the edge, `PathfindingLink`s as `Custom` waypoints, costs by material or `PathfindingModifier` label (`math.huge` forbids), characters and non-colliding parts ignored. The path is pulled tight, then cut every `WaypointSpacing` studs; each waypoint is labelled with the floor's material, and a jump or link waypoint (the landing, as Roblox puts it) with `Jump` or the link's label. Pathfinding: 219 of 229, the 10 off are the PassThrough door: the live server gave NoPath for a modifier added just before `ComputeAsync` (its navmesh lags behind), ours passes at once.
+
+| Test | Fields | ok |
+|---|---|---|
+| DataStoreLimits | 58 | 58 |
+| DataStoreValues | 67 | 61 (eventual consistency) |
+| MemoryStore | 51 | 50 (`os.clock` against game time) |
+| HttpJson | 101 | 100 (one digit of `1e10/3`) |
+| Messaging | 18 | 18 |
+| CollectionTags | 19 | 19 |
+| Marketplace | 16 | 16 |
+| Pathfinding | 229 | 219 (the PassThrough door) |
+
+Every off row is listed as a `known_gap` in its golden. Over the whole table 69 rows are off out of 1926: the 51 left from M11 and the 18 above.
+
+COVERAGE.md now reaches the classes only a service hands out (stores, pages, key infos, memory store structures, `Path`) through a server, which it couldn't before. Functions went from 190 to 281 of 1385 (14% to 20%), events from 107 to 118 of 355 (30% to 33%), properties from 1935 to 1949 of 2510 (77% to 78%).
+
+Checked live in the built editor with Play (local) on `M12Services.rbxlx` (in `rbx-native-targets/local-run-m12-shots/` with the screenshots): a server script counts the place's runs with `UpdateAsync` and writes the count on a sign, a LocalScript prompts a game pass, and an R15 NPC walks to a goal around a wall and back on `ComputeAsync`'s waypoints (marked with neon balls). Four runs in a row read Run number 1, 2, 3, 4 (the DataStore kept between runs, editor restarts included); Buy (test) printed bought true and owns true on the server and the client, Cancel bought false (and owns stayed true from the earlier run); every path came back Success and the NPC reached the goal each time; Test › Data set to Off made the sign read `StudioAccessToApisNotAllowed: Studio access to APIs is not allowed.`; Stop left the edited place untouched. A store object a script held showed as a root in the Explorer during the run; that's fixed (host-made objects are parented to nothing, as `Instance.new`'s are) and covered by a session test, after the live check.
+
+Gaps from M12:
+
+| Area | Roblox | ours |
+|---|---|---|
+| DataStore consistency | a write shows in `ListKeysAsync` and versions after a delay | at once |
+| `GlobalDataStore:BatchGetAsync` | new | not there |
+| Navmesh | Roblox's own, rebuilt behind changes (a fresh modifier isn't seen yet) | a grid per request: exact at once, slower on big maps (the search region is capped at 384 studs a side) |
+| `AgentCanClimb` | climbs `TrussPart`s | ignored |
+| `Path.Blocked` | fires when something lands on the path (never in 300 frames in the golden) | never fires |
+| MessagingService | between servers of a universe across machines | between servers in one process |
+| Purchases | Roblox's prompt, real ownership | our dialog, a local ledger per place |
+| `GetProductInfo` offline | — | only what an earlier online run kept |
+
+## Milestone 13 (proposed): API breadth, part 2
+
+1. TeleportService stand-in: `TeleportAsync`/`Teleport`/`ReserveServer`/`TeleportPartyAsync` and their options and data, moving a local player to another place of the same universe opened as a second Local Run server (the place file from the linked universe, or a pick), `GetLocalPlayerTeleportData`, `TeleportInitFailed` with the live messages.
+2. BadgeService: `AwardBadge`/`UserHasBadgeAsync`/`CheckUserBadgesAsync`/`GetBadgeInfoAsync` against the per-place ledger (badge info from the public API, kept like product info), with the award notification in the core GUI.
+3. Chat and TextService filtering offline: `FilterStringAsync` and `TextFilterResult` (`GetNonChatStringForBroadcastAsync` and friends) passing text through with Roblox's argument rules, `TextChatService` message filtering hooks, `GetTextSize`/`GetTextBoundsAsync` from our text shaper.
+4. SocialService, PolicyService (`GetPolicyInfoForPlayerAsync` with a configurable local policy), LocalizationService (`GetTranslatorForPlayerAsync`, `Translator:Translate`/`FormatByKey` from the place's LocalizationTables), GroupService (`GetGroupInfoAsync`, `GetGroupsAsync` from the public API, kept), UserService (`GetUserInfosByUserIdsAsync`), AvatarEditorService (the prompts as test dialogs, the catalog search through the public API).
+5. The ContextActionService and GuiService gaps COVERAGE.md lists (`SetTitle`/`SetImage`/`SetPosition` on touch buttons, `GetButton`, GuiService's selection and `InspectPlayerFromUserId`, `GetGuiInset` variants).
+6. Goldens for each where a server or client script can observe it.
+
+Then M14: the newer systems (Input Action System, the new audio API end to end, `EditableImage`, `WrapDeformer`, `Actor` parallel Luau).
 
 ## Where things are
 
