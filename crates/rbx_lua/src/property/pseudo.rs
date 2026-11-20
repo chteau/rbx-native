@@ -3,7 +3,8 @@
 //!
 //! `Position`, `Orientation` and `Rotation` are all views onto `CFrame`
 //! (Studio computes them, it never serializes them separately); `BrickColor`
-//! is a view onto `Color`, which is all Studio saves.
+//! is a view onto `Color`, which is all Studio saves. A script's `Enabled`
+//! is `Disabled` turned round (only `Disabled` is saved).
 
 use std::f32::consts::PI;
 
@@ -286,6 +287,14 @@ fn attachment_set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
     Ok(true)
 }
 
+fn is_script(ctx: &Ctx, referent: Ref) -> Result<bool> {
+    let dom = ctx.dom();
+    let instance = dom.get(referent).ok_or_else(missing_instance)?;
+    Ok(ctx
+        .database()
+        .is_subclass_of(instance.class(), "BaseScript"))
+}
+
 /// Reads a pseudo-property, returning `Ok(None)` for anything that isn't one so
 /// the caller falls back to the generic reflected-property path.
 pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Option<Value>> {
@@ -293,6 +302,13 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         "Axis" | "SecondaryAxis" | "WorldAxis" | "WorldSecondaryAxis" | "WorldPosition"
         | "WorldOrientation" | "WorldCFrame" => attachment_get(lua, ctx, referent, name),
         "ClockTime" => super::clock::get(ctx, referent),
+        "Enabled" if is_script(ctx, referent)? => {
+            let disabled = super::get(lua, ctx, referent, "Disabled")?;
+            Ok(Some(Value::Boolean(!matches!(
+                disabled,
+                Some(Value::Boolean(true))
+            ))))
+        }
         "Position" => {
             let Some(frame) = cframe(ctx, referent)? else {
                 return Ok(None);
@@ -382,6 +398,15 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
         "Axis" | "SecondaryAxis" | "WorldAxis" | "WorldSecondaryAxis" | "WorldPosition"
         | "WorldOrientation" | "WorldCFrame" => attachment_set(ctx, referent, name, value),
         "ClockTime" | "TimeOfDay" => super::clock::set(ctx, referent, name, value),
+        "Enabled" if is_script(ctx, referent)? => {
+            let Value::Boolean(enabled) = value else {
+                return Err(mlua::Error::runtime(format!(
+                    "Unable to assign property Enabled. bool expected, got {}",
+                    value.type_name()
+                )));
+            };
+            super::set(ctx, referent, "Disabled", &Value::Boolean(!enabled))
+        }
         // Unassigning a model's `PrimaryPart` resets its pivot.
         "PrimaryPart" if value.is_nil() => {
             let mut dom = ctx.dom_mut();

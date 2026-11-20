@@ -50,7 +50,8 @@ local a = h:WaitForChild("Animator")
 "#;
 
 /// The character that spawned before the client arrived still animates:
-/// its `Animate` starts with the player and idles.
+/// its `Animate` starts with the player and idles. The two idles take
+/// turns at random with a crossfade, so for a moment both can be playing.
 #[test]
 fn the_first_character_idles() {
     let output = client_output(
@@ -58,9 +59,12 @@ fn the_first_character_idles() {
         2.0,
     );
     assert!(
-        output
-            .iter()
-            .any(|l| l == "playing idle/Animation1" || l == "playing idle/Animation2"),
+        output.iter().any(|l| matches!(
+            l.as_str(),
+            "playing idle/Animation1"
+                | "playing idle/Animation2"
+                | "playing idle/Animation1 idle/Animation2"
+        )),
         "{output:#?}"
     );
 }

@@ -199,3 +199,77 @@ emitter:Clear()
         .collect();
     assert_eq!(bursts, [Burst::Emit(30), Burst::Emit(16), Burst::Clear]);
 }
+
+const IDLE: &str = r#"
+local t = Instance.new("Tool")
+t.Name = "late"
+t.RequiresHandle = false
+t.Parent = game:GetService("StarterPack")
+"#;
+
+const ICONS_AND_LABELS: &str = r#"
+local idle = script.Parent.Idle
+idle.Enabled = true
+local t = Instance.new("Tool")
+t.Name = if script.Enabled and not idle.Disabled then "enabled" else "disabled"
+t.TextureId = "rbxassetid://123"
+t.RequiresHandle = false
+t.Parent = game:GetService("StarterPack")
+local rig = Instance.new("Model")
+rig.Name = "Rig"
+local head = Instance.new("Part")
+head.Name = "Head"
+head.Anchored = true
+head.Size = Vector3.new(1, 1, 1)
+head.Position = Vector3.new(0, 10, 0)
+head.Parent = rig
+local humanoid = Instance.new("Humanoid")
+humanoid.Parent = rig
+rig.Parent = workspace
+"#;
+
+#[test]
+fn tool_icons_rig_labels_and_script_enabled() {
+    let mut dom = place(ICONS_AND_LABELS, "");
+    let sss = dom
+        .root_refs()
+        .iter()
+        .copied()
+        .find(|r| {
+            dom.get(*r)
+                .is_some_and(|i| i.class() == "ServerScriptService")
+        })
+        .unwrap();
+    let idle = dom.new_instance("Script", "Idle", Some(sss));
+    let _ = dom.set_property(idle, "Source", Variant::String(IDLE.into()));
+    let _ = dom.set_property(idle, "Disabled", Variant::Bool(true));
+    dom.take_changes();
+    let mut session = Session::new(dom).expect("the place runs");
+    session.start();
+    session.join("Player1", 1, None).expect("joins");
+    session.run_for(1.0);
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    let hotbar = core.hotbar.expect("the backpack is on");
+    let names: Vec<&str> = hotbar.iter().map(|s| s.name.as_str()).collect();
+    let out: Vec<String> = session
+        .take_output()
+        .into_iter()
+        .flat_map(|(_, o)| o.lines().to_vec())
+        .collect();
+    assert!(
+        names.contains(&"enabled") && names.contains(&"late"),
+        "{names:?} {out:?}"
+    );
+    let icon = hotbar.iter().find(|s| s.name == "enabled").unwrap();
+    assert_eq!(icon.icon, "rbxassetid://123");
+    let rig = core
+        .labels
+        .iter()
+        .find(|l| l.text == "Rig")
+        .expect("the rig's label");
+    assert_eq!(rig.at, [0.0, 11.5, 0.0]);
+    assert!(
+        !core.labels.iter().any(|l| l.text == "Player1"),
+        "no label over yourself"
+    );
+}

@@ -12,14 +12,14 @@ mod icons;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use glam::Vec2;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_lua::server::ChatLine;
-use rbx_sim::gui::{CoreGui, PlayerRow};
+use rbx_sim::gui::{CoreGui, HotbarSlot, PlayerRow};
 
 use self::icons::{icon, Glyph};
 use super::WorkspaceView;
@@ -133,6 +133,11 @@ pub(crate) struct CoreGuiView {
     /// The run's volume, 0 to 1.
     pub(crate) volume: f32,
     actions: Vec<CoreAction>,
+    /// Tool icons by `TextureId`, `None` while loading or when the image
+    /// can't be had.
+    icons: HashMap<String, Option<Arc<RenderImage>>>,
+    /// Icons the loading threads finished, not yet in `icons`.
+    arrived: Arc<Mutex<Vec<(String, Option<Arc<RenderImage>>)>>>,
 }
 
 impl Default for CoreGuiView {
@@ -153,6 +158,8 @@ impl Default for CoreGuiView {
             bubbles: HashMap::new(),
             volume: 0.8,
             actions: Vec::new(),
+            icons: HashMap::new(),
+            arrived: Arc::default(),
         }
     }
 }
@@ -368,13 +375,43 @@ impl CoreGuiView {
         if !state.chat_bar {
             self.draft = None;
         }
+        self.load_icons(state.hotbar.as_deref().unwrap_or_default());
         self.state = Some(state);
     }
 
+    /// Starts loading the hotbar's icons not asked for yet, and takes in the
+    /// ones that came.
+    fn load_icons(&mut self, slots: &[HotbarSlot]) {
+        if let Ok(mut arrived) = self.arrived.lock() {
+            self.icons.extend(arrived.drain(..));
+        }
+        for slot in slots {
+            if slot.icon.is_empty() || self.icons.contains_key(&slot.icon) {
+                continue;
+            }
+            self.icons.insert(slot.icon.clone(), None);
+            let (uri, arrived) = (slot.icon.clone(), self.arrived.clone());
+            std::thread::spawn(move || {
+                let image = rbx_viewer::asset_bytes(&uri)
+                    .ok()
+                    .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                    .and_then(|image| {
+                        let image = image.to_rgba8();
+                        let (w, h) = image.dimensions();
+                        crate::render_image::to_render_image(image.into_raw(), w, h)
+                    });
+                if let Ok(mut arrived) = arrived.lock() {
+                    arrived.push((uri, image));
+                }
+            });
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
-        let volume = self.volume;
         *self = CoreGuiView {
-            volume,
+            volume: self.volume,
+            icons: std::mem::take(&mut self.icons),
+            arrived: self.arrived.clone(),
             ..CoreGuiView::default()
         };
     }
@@ -412,7 +449,7 @@ fn bar_button(id: &'static str) -> Stateful<Div> {
 /// The health bar, top right, once the character is hurt (as the client
 /// shows it): a dark-rimmed grey pill, its fill going green to red (the
 /// client's yellow-green at 60% is measured; the ends are by eye).
-fn health(share: f32) -> Div {
+fn health_colour(share: f32) -> Rgba {
     const STOPS: [(f32, [f32; 3]); 4] = [
         (0.0, [232., 48., 48.]),
         (0.3, [250., 170., 20.]),
@@ -427,6 +464,10 @@ fn health(share: f32) -> Div {
     let ((a, from), (b, to)) = (STOPS[i], STOPS[i + 1]);
     let t = ((share - a) / (b - a)).clamp(0., 1.);
     let [r, g, bl] = std::array::from_fn(|k| (from[k] + (to[k] - from[k]) * t) as u32);
+    rgb(r << 16 | g << 8 | bl)
+}
+
+fn health(share: f32) -> Div {
     div()
         .absolute()
         .top(px(24.))
@@ -438,12 +479,7 @@ fn health(share: f32) -> Div {
         .border_color(rgba(0x000000b3))
         .bg(rgba(0x646464cc))
         .overflow_hidden()
-        .child(
-            div()
-                .h_full()
-                .w(relative(share))
-                .bg(rgb(r << 16 | g << 8 | bl)),
-        )
+        .child(div().h_full().w(relative(share)).bg(health_colour(share)))
 }
 
 /// The red at the screen's edges while the character is dead.
@@ -622,6 +658,56 @@ fn menu_button(id: &'static str, primary: bool) -> Stateful<Div> {
             this.bg(rgba(0x2a2c33e6))
                 .hover(|this| this.bg(rgba(0x3a3d46e6)))
         })
+}
+
+/// A Humanoid's name over its head, its baseline on `at`, the health bar
+/// under it: white text with a one-pixel dark edge, as the real client
+/// draws it (16 px, edge (51, 58, 64)).
+fn name_label(text: &str, health: Option<f32>, at: Point<Pixels>) -> Div {
+    const ASCENT: f32 = 14.;
+    let line = |colour: u32, dx: f32, dy: f32| {
+        div()
+            .absolute()
+            .left(px(dx))
+            .top(px(dy))
+            .w_full()
+            .text_center()
+            .text_color(rgb(colour))
+            .child(text.to_owned())
+    };
+    let mut label = div()
+        .absolute()
+        .left(at.x - px(150.))
+        .top(at.y - px(ASCENT))
+        .w(px(300.))
+        .h(px(18.))
+        .text_size(px(16.))
+        .line_height(px(18.));
+    if !text.is_empty() {
+        for (dx, dy) in [(-1., 0.), (1., 0.), (0., -1.), (0., 1.)] {
+            label = label.child(line(0x333a40, dx, dy));
+        }
+        label = label.child(line(0xffffff, 0., 0.));
+    }
+    label.when_some(health, |this, share| {
+        this.child(
+            div()
+                .absolute()
+                .top(px(ASCENT + 5.))
+                .left(px(150. - 30.))
+                .w(px(60.))
+                .h(px(6.))
+                .rounded(px(3.))
+                .bg(rgba(0x000000a0))
+                .child(
+                    div()
+                        .h_full()
+                        .w(px(60. * share))
+                        .rounded(px(3.))
+                        .bg(health_colour(share)),
+                ),
+        )
+    })
 }
 
 /// A speech bubble, its tail under it, centred on `at`'s x and standing
@@ -1351,10 +1437,13 @@ impl WorkspaceView {
             )
     }
 
-    /// The backpack hotbar, bottom centre.
-    fn core_hotbar(&self, hotbar: &[(String, bool)], cx: &mut Context<Self>) -> Div {
-        let slots = hotbar.iter().take(10).enumerate().map(|(i, (name, held))| {
+    /// The backpack hotbar, bottom centre. A tool with a `TextureId` shows
+    /// its image, the others their name; the held one's outline lies over
+    /// the slot (and its number) without moving what is inside.
+    fn core_hotbar(&self, hotbar: &[HotbarSlot], cx: &mut Context<Self>) -> Div {
+        let slots = hotbar.iter().take(10).enumerate().map(|(i, slot)| {
             let key = NUMBER_KEYS[i];
+            let icon = self.core_gui.icons.get(&slot.icon).cloned().flatten();
             div()
                 .id(("core-hotbar", i))
                 .size(px(60.))
@@ -1362,14 +1451,21 @@ impl WorkspaceView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .px(px(3.))
+                .px(px(1.))
                 .rounded(px(2.))
                 .bg(rgba(0x191b1f80))
-                .when(*held, |this| this.border(px(4.)).border_color(rgb(HELD)))
                 .text_color(rgb(0xffffff))
                 .text_size(px(15.))
                 .line_height(px(17.))
                 .cursor_pointer()
+                .child(match icon {
+                    Some(image) => div().size_full().p(px(4.)).child(img(image).size_full()),
+                    None => div()
+                        .w_full()
+                        .text_center()
+                        .overflow_hidden()
+                        .child(slot.name.clone()),
+                })
                 .child(
                     div()
                         .absolute()
@@ -1378,13 +1474,16 @@ impl WorkspaceView {
                         .text_size(px(15.))
                         .child(format!("{}", (i + 1) % 10)),
                 )
-                .child(
-                    div()
-                        .w_full()
-                        .text_center()
-                        .overflow_hidden()
-                        .child(name.clone()),
-                )
+                .when(slot.held, |this| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .rounded(px(2.))
+                            .border(px(4.))
+                            .border_color(rgb(HELD)),
+                    )
+                })
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |view, _: &MouseDownEvent, _, cx| {
@@ -1426,6 +1525,11 @@ impl WorkspaceView {
                 root = root.child(vignette());
             }
             let scale = window.scale_factor();
+            for label in &state.labels {
+                if let Some(at) = self.project_world(glam::Vec3::from(label.at), scale) {
+                    root = root.child(name_label(&label.text, label.health, at));
+                }
+            }
             let now = Instant::now();
             for (user_id, head) in &state.heads {
                 let Some((text, _)) = core

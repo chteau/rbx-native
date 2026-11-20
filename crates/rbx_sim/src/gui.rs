@@ -16,6 +16,7 @@
 //! (`FocusLost(true, input)`, `TextBoxFocusReleased`) before its own
 //! `InputBegan`, so its `InputEnded` isn't processed.
 
+mod labels;
 mod layout;
 
 use std::collections::{HashMap, HashSet};
@@ -24,6 +25,8 @@ use rbx_dom::{Ref, Variant, Vector2Data, WeakDom};
 use rbx_lua::server::{Arg, CallReply, Event};
 use rbx_reflection::ReflectionDatabase;
 
+pub(crate) use labels::name_labels;
+pub use labels::NameLabel;
 pub(crate) use layout::{Laid, TOPBAR_INSET};
 
 use crate::input::Input;
@@ -116,8 +119,8 @@ const GUI_BUTTON_SIGNALS: &[&str] = &[
 pub struct CoreGui {
     /// The character's health and maximum, `Health` on.
     pub health: Option<(f64, f64)>,
-    /// The hotbar's tools (name, held), `Backpack` on.
-    pub hotbar: Option<Vec<(String, bool)>>,
+    /// The hotbar's tools, `Backpack` on.
+    pub hotbar: Option<Vec<HotbarSlot>>,
     /// Everyone in the game, `PlayerList` on.
     pub players: Option<Vec<PlayerRow>>,
     /// The `leaderstats` columns, in the order the first player who has
@@ -130,6 +133,8 @@ pub struct CoreGui {
     pub can_reset: bool,
     /// Each player's head, for chat bubbles: (user id, world position).
     pub heads: Vec<(i64, [f32; 3])>,
+    /// The name and health labels over Humanoid models.
+    pub labels: Vec<NameLabel>,
     /// The chat window and its top bar toggle: `Chat` on and
     /// `SetCore("ChatActive", false)` not set.
     pub chat: bool,
@@ -138,6 +143,16 @@ pub struct CoreGui {
     /// The top bar's buttons (`SetCore("TopbarEnabled", false)` hides them,
     /// and every core GUI with them).
     pub topbar: bool,
+}
+
+/// One tool in the hotbar.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HotbarSlot {
+    pub name: String,
+    /// `Tool.TextureId`: when set, the slot shows the image instead of the
+    /// name.
+    pub icon: String,
+    pub held: bool,
 }
 
 /// One player in the list: name, team colour, and a value per `stats`

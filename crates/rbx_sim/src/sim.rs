@@ -453,6 +453,26 @@ impl Simulation {
                 )
             });
         }
+        if let Some((camera, _)) = crate::input::camera(&dom) {
+            use rbx_lua::server::Physics as _;
+            let bridge = Bridge(self.shared.clone());
+            let eye = [camera.position.x, camera.position.y, camera.position.z];
+            core.labels =
+                crate::gui::name_labels(&dom, self.db, player, eye, &|from, to, parts| {
+                    let filter = rbx_lua::server::QueryFilter {
+                        parts,
+                        include: false,
+                        respect_can_collide: false,
+                        collision_group: "Default".into(),
+                        max_parts: 0,
+                        ignore_water: true,
+                    };
+                    let direction = [0, 1, 2].map(|i| f64::from(to[i] - from[i]));
+                    bridge
+                        .raycast(from.map(f64::from), direction, &filter)
+                        .is_some()
+                });
+        }
         core.can_reset = !matches!(
             self.shared.borrow().gui.reset_callback(),
             Some(rbx_lua::server::Arg::Bool(false))
@@ -603,8 +623,9 @@ impl Simulation {
         }
     }
 
-    /// The local player's hotbar: each tool's name and whether it's held.
-    pub fn hotbar(&self) -> Vec<(String, bool)> {
+    /// The local player's hotbar: each tool's name, icon and whether it's
+    /// held.
+    pub fn hotbar(&self) -> Vec<crate::gui::HotbarSlot> {
         let Some(player) = self.shared.borrow().players.local else {
             return Vec::new();
         };
@@ -615,10 +636,17 @@ impl Simulation {
             .into_iter()
             .filter_map(|t| {
                 let i = dom.get(t)?;
-                Some((
-                    i.name().to_owned(),
-                    character.is_some() && dom.parent(t) == character,
-                ))
+                let icon = match i.properties().get("TextureId") {
+                    Some(Variant::Content(rbx_dom::Content::Uri(id)) | Variant::String(id)) => {
+                        id.clone()
+                    }
+                    _ => String::new(),
+                };
+                Some(crate::gui::HotbarSlot {
+                    name: i.name().to_owned(),
+                    icon,
+                    held: character.is_some() && dom.parent(t) == character,
+                })
             })
             .collect()
     }
