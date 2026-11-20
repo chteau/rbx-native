@@ -141,6 +141,7 @@ pub(super) struct ServerHooks {
     pub(super) chat: super::chat::Chat,
     /// `game:IsLoaded()`: a client's is false until the place arrived.
     pub(super) loaded: Rc<Cell<bool>>,
+    pub(super) services: Rc<super::services::Runtime>,
 }
 
 fn method<A, R>(lua: &Lua, f: impl Fn(&Lua, A) -> Result<R> + 'static) -> Result<Option<Value>>
@@ -472,23 +473,6 @@ fn wait_for_child(lua: &Lua) -> Result<Function> {
     Ok(f)
 }
 
-/// Roblox's error for an HTTP request while `HttpEnabled` is off; a local
-/// Run has no network to reach either way.
-fn http_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
-    if let Some(member) = json::member(lua, key)? {
-        return Ok(Some(member));
-    }
-    if !matches!(key, "GetAsync" | "PostAsync" | "RequestAsync") {
-        return Ok(None);
-    }
-    let f: Function = lua.create_function(|_, _: MultiValue| -> Result<()> {
-        Err(mlua::Error::runtime(
-            "Http requests are not enabled. Enable via game settings",
-        ))
-    })?;
-    Ok(Some(Value::Function(f)))
-}
-
 impl Hooks for ServerHooks {
     fn index(
         &self,
@@ -533,11 +517,14 @@ impl Hooks for ServerHooks {
                 return Ok(Some(value));
             }
         }
+        if let Some(value) = super::services::member(lua, &self.services, referent, class, key)? {
+            return Ok(Some(value));
+        }
         let db = ctx.database();
         match class {
             "RunService" => self.run_service(lua, key),
             "PhysicsService" => self.physics_service(lua, key),
-            "HttpService" => http_member(lua, key),
+            "HttpService" => json::member(lua, key),
             "AssetService" => super::meshes::member(lua, ctx, &self.physics, key),
             "Terrain" => match super::terrain::member(lua, ctx, &self.physics, key)? {
                 Some(value) => Ok(Some(value)),
@@ -566,7 +553,9 @@ impl Hooks for ServerHooks {
         key: &str,
         value: &Value,
     ) -> Result<bool> {
-        if super::chat::set(lua, &self.chat, referent, class, key, value)? {
+        if super::chat::set(lua, &self.chat, referent, class, key, value)?
+            || super::services::set(lua, &self.services, referent, class, key, value)?
+        {
             return Ok(true);
         }
         not_scriptable(ctx, referent, class, key)?;

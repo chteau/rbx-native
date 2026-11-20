@@ -76,7 +76,7 @@ return function(h)
 		table.insert(names, instance.Name)
 	end
 	result.tagged_order = table.concat(names, " ")
-	result.get_tags = table.concat(CollectionService:GetTags(a), ",")
+	result.get_tags = (table.concat(CollectionService:GetTags(a), ","):gsub(tag, "TAG"))
 	result.tags_property = err(function()
 		return a.Tags
 	end)

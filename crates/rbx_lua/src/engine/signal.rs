@@ -162,6 +162,9 @@ impl UserData for LuaSignal {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::Eq, |_, this, other: AnyUserData| {
+            Ok(other.borrow::<LuaSignal>().is_ok_and(|o| o.0 == this.0))
+        });
         methods.add_method("Connect", |lua, this, func: Function| {
             Ok(connect(lua, &this.0, func, false))
         });
@@ -269,6 +272,20 @@ pub(crate) fn fire_from_script(lua: &Lua, key: &SignalKey, args: MultiValue) -> 
     }
     for (_, func) in take_listeners(lua, key, None) {
         scheduler::defer(lua, func, args.clone())?;
+    }
+    Ok(())
+}
+
+/// Runs the handlers at the next resumption point whatever
+/// `SignalBehavior` says (`CollectionService.TagAdded`).
+pub(crate) fn fire_deferred(lua: &Lua, key: &SignalKey, args: &[Arg]) -> Result<()> {
+    let engine = engine(lua);
+    if !engine.signals.borrow().has(key) {
+        return Ok(());
+    }
+    let values = arg::to_lua_multi(lua, &engine.ctx, args)?;
+    for (_, func) in take_listeners(lua, key, None) {
+        scheduler::defer(lua, func, values.clone())?;
     }
     Ok(())
 }

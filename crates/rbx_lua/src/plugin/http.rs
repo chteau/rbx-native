@@ -86,7 +86,7 @@ pub(crate) fn host_of(url: &str) -> Option<String> {
     (!host.is_empty()).then_some(host)
 }
 
-fn send(request: &HttpRequest) -> Result<HttpResponse, String> {
+pub(crate) fn send(request: &HttpRequest) -> Result<HttpResponse, String> {
     let agent: ureq::Agent = rbx_net::config()
         .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
         .http_status_as_error(false)

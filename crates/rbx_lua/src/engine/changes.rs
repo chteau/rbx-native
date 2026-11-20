@@ -97,6 +97,7 @@ impl Firing<'_> {
         };
         up(&old_chain, "DescendantRemoving", old, "ChildRemoved")?;
         up(&new_chain, "DescendantAdded", new, "ChildAdded")?;
+        super::collection::changed(self.lua, &[referent])?;
         self.host_signals(referent, old, new, false)?;
         let parent = new.map_or(Arg::Nil, Arg::Instance);
         for &r in moved.iter().rev() {
@@ -150,6 +151,9 @@ impl Firing<'_> {
     }
 
     fn property(&self, ctx: &Ctx, referent: Ref, raw: &str) -> Result<()> {
+        if raw == "Tags" {
+            super::collection::changed(self.lua, &[referent])?;
+        }
         // The log holds the spelling a file stores (`size`,
         // `Color3uint8`); a script hears `Size`, `Color`.
         let (name, value_object) = {

@@ -387,7 +387,14 @@ impl UserData for LuaInstance {
                 return Ok(answer);
             }
             let tag = String::from_lua_multi(args, lua)?;
-            tags::set(&this.ctx, this.referent, &tag, true).map(|_| MultiValue::new())
+            if tags::set(&this.ctx, this.referent, &tag, true)?
+                && lua
+                    .app_data_ref::<std::rc::Rc<crate::engine::Engine>>()
+                    .is_some()
+            {
+                crate::engine::collection::changed(lua, &[this.referent])?;
+            }
+            Ok(MultiValue::new())
         });
         methods.add_method("RemoveTag", |lua, this, args: MultiValue| {
             if let Some(answer) =
@@ -396,7 +403,14 @@ impl UserData for LuaInstance {
                 return Ok(answer);
             }
             let tag = String::from_lua_multi(args, lua)?;
-            tags::set(&this.ctx, this.referent, &tag, false).map(|_| MultiValue::new())
+            if tags::set(&this.ctx, this.referent, &tag, false)?
+                && lua
+                    .app_data_ref::<std::rc::Rc<crate::engine::Engine>>()
+                    .is_some()
+            {
+                crate::engine::collection::changed(lua, &[this.referent])?;
+            }
+            Ok(MultiValue::new())
         });
         methods.add_method("HasTag", |lua, this, args: MultiValue| {
             if let Some(answer) =
@@ -582,7 +596,7 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
                 }
                 if not_creatable::is_blocked(&class) {
                     return Err(mlua::Error::runtime(format!(
-                        "Unable to create an Instance of type {class}: it is not creatable"
+                        "Unable to create an Instance of type \"{class}\""
                     )));
                 }
                 let target = match &parent {

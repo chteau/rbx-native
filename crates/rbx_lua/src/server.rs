@@ -13,6 +13,7 @@ mod input;
 mod meshes;
 mod query;
 mod remote;
+mod services;
 mod terrain;
 #[cfg(test)]
 mod tests;
@@ -45,6 +46,7 @@ pub use chat::ChatLine;
 pub use hooks::CollisionGroups;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
+pub use services::{PurchasePrompt, Services};
 pub use terrain::{TerrainOp, TerrainReply};
 
 /// Roblox's message for a script that ran too long without yielding.
@@ -313,6 +315,7 @@ pub struct ServerVm {
     remotes: remote::Shared,
     chat: chat::Chat,
     loaded: Rc<Cell<bool>>,
+    services: Rc<services::Runtime>,
     budget: Duration,
 }
 
@@ -343,6 +346,7 @@ impl ServerVm {
             log: Rc::default(),
         };
         let loaded = Rc::new(Cell::new(true));
+        let services = services::Runtime::new(client.clone());
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
             groups: groups.clone(),
@@ -352,6 +356,7 @@ impl ServerVm {
             remotes: remotes.clone(),
             chat: chat.clone(),
             loaded: loaded.clone(),
+            services: services.clone(),
         })));
         install_globals(&lua, &ctx)?;
         lua.globals().set(
@@ -383,6 +388,7 @@ impl ServerVm {
             remotes,
             chat,
             loaded,
+            services,
             budget: Duration::from_secs(10),
         })
     }
@@ -500,6 +506,26 @@ impl ServerVm {
         self.guarded(|lua| tween::step(lua, dt))
     }
 
+    /// Where this server's DataStores live, whether Studio's API access is
+    /// on, which servers it shares them and messages with.
+    pub fn set_services(&self, config: Services) {
+        self.services.configure(config);
+    }
+
+    /// The purchase prompts scripts asked for since the last call.
+    pub fn take_prompts(&self) -> Vec<PurchasePrompt> {
+        self.services.take_prompts()
+    }
+
+    /// The test purchase dialog for `prompt` closed (`bought` when the
+    /// player confirmed): the Prompt*Finished events, ownership, and on a
+    /// server ProcessReceipt for a developer product.
+    pub fn purchase_finished(&mut self, prompt: &PurchasePrompt, bought: bool) -> Vec<Change> {
+        let runtime = self.services.clone();
+        let prompt = prompt.clone();
+        self.guarded(move |lua| services::finished(lua, &runtime, &prompt, bought))
+    }
+
     /// The collision groups `PhysicsService` registered.
     pub fn collision_groups(&self) -> Rc<RefCell<CollisionGroups>> {
         self.groups.clone()
@@ -571,8 +597,10 @@ impl ServerVm {
         let now = self.host.now.get();
         let remotes = self.remotes.clone();
         let client = self.client.get();
+        let runtime = self.services.clone();
         self.guarded(move |lua| {
             remote::flush(lua, &remotes, client)?;
+            services::poll(lua, &runtime)?;
             scheduler::tick(lua, now)
         })
     }

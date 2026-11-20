@@ -193,5 +193,6 @@
     ],
     "queue_read_rest": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "queue_waited measures ReadAsync's wait with os.clock, the host's CPU clock; a headless run steps the game faster than real time, so the one-second wait (game time) passes in less. In a live Play (local) the two agree."
 }

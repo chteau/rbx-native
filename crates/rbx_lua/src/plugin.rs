@@ -25,7 +25,7 @@ pub(crate) mod env;
 mod events;
 mod guard;
 mod host;
-mod http;
+pub(crate) mod http;
 mod input;
 mod loader;
 mod lot;

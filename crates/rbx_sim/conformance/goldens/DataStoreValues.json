@@ -45,7 +45,7 @@
       "roundtrip_sparse": "{n1=1,n3=3}",
       "roundtrip_third": "0.33333333333333331",
       "roundtrip_tiny": "9.9999999999999995e-08",
-      "roundtrip_unicode": "string:héllo ✓ 😀",
+      "roundtrip_unicode": "string:h\u00e9llo \u2713 \ud83d\ude00",
       "set_returns": "string",
       "sorted_advance_past": "No pages to advance to",
       "sorted_asc_range": "b=1 a=5 d=5",
@@ -114,7 +114,7 @@
       "roundtrip_sparse": "{n1=1,n3=3}",
       "roundtrip_third": "0.33333333333333331",
       "roundtrip_tiny": "9.9999999999999995e-08",
-      "roundtrip_unicode": "string:héllo ✓ 😀",
+      "roundtrip_unicode": "string:h\u00e9llo \u2713 \ud83d\ude00",
       "set_returns": "string",
       "sorted_advance_past": "No pages to advance to",
       "sorted_asc_range": "b=1 a=5 d=5",
@@ -184,7 +184,7 @@
     "roundtrip_sparse": "{n1=1,n3=3}",
     "roundtrip_third": "0.33333333333333331",
     "roundtrip_tiny": "9.9999999999999995e-08",
-    "roundtrip_unicode": "string:héllo ✓ 😀",
+    "roundtrip_unicode": "string:h\u00e9llo \u2713 \ud83d\ude00",
     "set_returns": "string",
     "sorted_advance_past": "No pages to advance to",
     "sorted_asc_range": "b=1 a=5 d=5",
@@ -216,5 +216,6 @@
       "ok"
     ]
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "A live DataStore is eventually consistent: right after the writes, ListKeysAsync (list_keys, all_scopes_keys) still lists nothing, ListVersionsAsync shows only the newest version and says more pages follow, and GetVersionAsync can't find the version SetAsync just returned (get_version). Ours is consistent at once, as the docs describe it once the writes have propagated."
 }
