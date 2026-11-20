@@ -1,5 +1,5 @@
 {
-  "known_gap": "30 degree slopes match. On 60 degrees ours walks up and off the top at the slope's speed, where Roblox stutters at the top edge and launches higher (12.8 against 8.0 rise at 90 frames); with MaxSlopeAngle 45 Roblox slides back down a too-steep slope (v -3.55) and ours creeps up it. The wall-and-edge behaviour of the floor sensor on steep wedges isn't modelled.",
+  "known_gap": "30 degree slopes match. On 60 degrees ours walks up and off the top at the slope's speed, where Roblox stutters at the top edge and launches higher (12.8 against 8.6 rise at 90 frames); with MaxSlopeAngle 45 Roblox slides back down a too-steep slope (v -3.55) and ours creeps up it. Simply refusing to walk up a too-steep floor sends ours sliding off the wedge's far side (tried in M10); the wall-and-edge behaviour of the floor sensor on steep wedges isn't modelled.",
   "passes": 5,
   "raw": [
     {

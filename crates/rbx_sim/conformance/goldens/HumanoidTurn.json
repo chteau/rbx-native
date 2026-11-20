@@ -1,5 +1,4 @@
 {
-  "known_gap": "Turning towards a new direction matches within 1.4 degrees, but a reversal (turning 180 degrees to walk back) is 6 to 8 degrees behind over the first 5 frames and catches up by frame 10. Roblox turns faster the further it has to go; ours turns a fixed fraction per substep.",
   "passes": 5,
   "raw": [
     {

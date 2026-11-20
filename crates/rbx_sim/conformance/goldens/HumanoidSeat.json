@@ -1,5 +1,4 @@
 {
-  "known_gap": "Sitting (Seat:Sit and by touch), the weld, the offset, a VehicleSeat's Throttle and Steer, and jumping off match; the landing after the jump off the seat comes one frame later than Roblox's (frame 49 against 48).",
   "passes": 5,
   "raw": [
     {

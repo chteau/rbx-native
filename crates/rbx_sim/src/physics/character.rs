@@ -179,9 +179,7 @@ impl World {
         let friction = surface.map_or(0.3, |s| Real::from(s.friction));
         let below = at.translation - Vector::new(0.0, distance, 0.0);
         let velocity = match collider.parent().and_then(|b| self.bodies.get(b)) {
-            Some(body) if body.is_dynamic() || body.is_kinematic() => {
-                body.velocity_at_point(below)
-            }
+            Some(body) if body.is_dynamic() || body.is_kinematic() => body.velocity_at_point(below),
             _ => surface.map_or(Vector::ZERO, |s| s.conveyor),
         };
         Some(Floor {
@@ -266,7 +264,11 @@ impl World {
             let Some(body) = self.bodies.get_mut(handle) else {
                 continue;
             };
-            let density = if volume > 0.0 { body.mass() / volume } else { 0.7 };
+            let density = if volume > 0.0 {
+                body.mass() / volume
+            } else {
+                0.7
+            };
             let root_now = *body.position() * offset;
             let upright =
                 Pose::from_parts(root_now.translation, Rotation::from_rotation_y(drive.yaw));

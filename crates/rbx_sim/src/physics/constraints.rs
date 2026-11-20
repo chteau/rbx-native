@@ -679,7 +679,7 @@ impl World {
                 } => {
                     let end = constraint.ends[0];
                     let kicks = match kicked.iter().find(|k| k.0 == end.body) {
-                        Some(&(_, rate, switched)) if substep % rate == 0 => {
+                        Some(&(_, rate, switched)) if substep.is_multiple_of(rate) => {
                             rate * if switched && substep == 0 { 2 } else { 1 }
                         }
                         Some(_) => continue,

@@ -106,16 +106,16 @@ The docs list the events but not where waits resume, and they say `Stepped` and 
 | Capsule (Shape) | capsule along X | the docs don't give the axis, X like the cylinder is a guess |
 | MeshPart | per `CollisionFidelity`: Box = the mesh's bounding box, Hull = convex hull, Default = V-HACD (resolution 32, up to 16 hulls), PreciseConvexDecomposition = V-HACD (resolution 64, concavity 0.0025, up to 64 hulls) | geometry from an `EditableMesh` (`AssetService:CreateEditableMesh` / `CreateMeshPartAsync`) or `MeshId` from the local asset cache, never the network; without geometry it's its `Size` box. Roblox's own decomposition parameters aren't documented, so ours are picked to keep the MeshCollision golden's gap (Default and Precise leave the gap between two cubes open, Box and Hull fill it) |
 | UnionOperation, Terrain | `Size` box / not simulated | union geometry decoding lives inside `rbx_viewer` (Milestone 3); terrain from `rbx_terrain` (phase 3) |
-| HingeConstraint (free, Motor, Servo, limits) | Rapier revolute joint on the attachments' X axes, velocity motor | a servo turns at `AngularSpeed` straight to its target (HingeServo golden) |
+| HingeConstraint (free, Motor, Servo, limits) | Rapier revolute joint on the attachments' X axes, velocity motor, 60 Hz softness | a servo turns at `AngularSpeed` straight to its target (HingeServo golden) |
 | PrismaticConstraint | Rapier prismatic joint, velocity motor | |
-| BallSocketConstraint | Rapier spherical joint | rigid; Roblox's stretches about 0.03 stud |
+| BallSocketConstraint | Rapier spherical joint, 60 Hz softness | stretches 0.01 stud at the bottom of a swing where Roblox's stretches 0.046 |
 | RopeConstraint | Rapier rope joint | the body falls on adaptive steps while the rope is slack |
 | SpringConstraint | Hooke's law plus damping between the attachments, every substep | |
 | AlignPosition, AlignOrientation | critically damped pull, natural frequency `Responsiveness`/2, holds against gravity | fitted to the goldens (both follow the same curve); `RigidityEnabled` stands in as Responsiveness 200 |
 | LinearVelocity, AngularVelocity | reach the target within a substep as far as `MaxForce`/`MaxTorque` allow | LinearVelocity holds against gravity |
-| VectorForce, Torque | a force every substep | |
+| VectorForce, Torque | a force every substep; on a free body on adaptive steps, VectorForce pushes with the gravity kicks (same rate, same switch kick) | VectorForce golden: 10.167 after 30 frames, as the clean passes |
 | Attachment | `WorldPosition`, `WorldCFrame`, `Axis`, `SecondaryAxis` and the rest read and write | |
-| Restitution | Rapier's, but an impact (approach above 1.5 stud/s on several contact points) is solved at one point, so a flat box bounces straight | BoxBounce golden: e ≈ 0.5 |
+| Restitution | Rapier's, but an impact (approach above 1.5 stud/s on several contact points) is solved at one point, so a flat box bounces straight. A free body (on adaptive steps) goes through what it meets for that frame (inert contacts, Touched still fires), then is pushed back out along its way in and, above 6 stud/s, takes 0.75 of its free frame's kick before it bounces | BoxBounce golden: e ≈ 0.5; TouchedOrder bounce for bounce |
 | Angular damping | 0.052 /s, exponential | Damping golden: 10 rad/s → 9.019 after 2 s; no linear damping |
 | Anchored | fixed body | |
 | Spatial queries | `Raycast` (RaycastParams: filter Include/Exclude, `RespectCanCollide`, `CollisionGroup`), `Blockcast`, `Spherecast`, `Shapecast`, `GetPartBoundsInBox`, `GetPartBoundsInRadius`, `GetPartsInPart` (OverlapParams), legacy `FindPartOnRay*` | against the same shapes physics collides with. Measured: a ray ignores the part it starts in, `CanQuery` false is never hit, casts ignore parts they start inside, the bounds queries test a part's box (a ball counts as its cube), `GetPartsInPart` is exact |
@@ -123,8 +123,10 @@ The docs list the events but not where waits resume, and they say `Stepped` and 
 | CanTouch | collision events on or off | both parts need it, as documented |
 | CollisionGroups | 32 groups as Rapier interaction bitmasks | `PhysicsService` API, Default always there |
 | Welds, WeldConstraint, Motor6D, other JointInstances | one rigid body per assembly | union-find over joints, root part = biggest volume. Motor6D is rigid (no animation yet) |
-| Material, CustomPhysicalProperties | density, friction, elasticity and their weights | weighted mix in a contact hook, Roblox's documented formula |
-| Mass, AssemblyMass, GetMass | from density × volume | |
+| Material, CustomPhysicalProperties | density, friction, elasticity and their weights | weighted mix in a contact hook, Roblox's documented formula; two weights of 0 give 0 (SurfaceMix) |
+| Contacts | Rapier's springs, 25 Hz between two moving bodies | a stack of five sinks like Roblox's (BoxStack) |
+| Anchored part's AssemblyLinearVelocity | a conveyor: contacts on it get that tangent velocity | Conveyor golden |
+| Mass, AssemblyMass, GetMass | from density × volume, read fresh from the DOM | DensityMass golden |
 | AssemblyLinearVelocity, AssemblyAngularVelocity (and Velocity, RotVelocity) | read and write | |
 | ApplyImpulse, ApplyAngularImpulse | applied before the next step | |
 | Workspace.Gravity | yes | default 196.2 |
@@ -133,7 +135,7 @@ The docs list the events but not where waits resume, and they say `Stepped` and 
 
 ## Conformance
 
-The suite is 56 Luau tests in `crates/rbx_sim/conformance/tests/` (shared helpers in `Harness.luau`). The same modules run in a real Roblox server and in rbx_sim and print one JSON line each. Each test starts right after a Heartbeat, at its own origin (`2000 + 300 i, 300, 2000`) so tests never touch each other. Tests with a client half (Milestone 5) call `Harness.client(name, ...)`, which runs the module `name` from `conformance/client/` on the player's client (a LocalScript in StarterPlayerScripts answers a RemoteFunction) and returns what it returns; a test that needs real input prints `CONFORMANCE_GESTURE wheel in 1` / `drag 100 0` / `key LeftShift`, which the recorder turns into XTest input on the Sober window and rbx_sim into Session input.
+The suite is 74 Luau tests in `crates/rbx_sim/conformance/tests/` (shared helpers in `Harness.luau`). The same modules run in a real Roblox server and in rbx_sim and print one JSON line each. Each test starts right after a Heartbeat, at its own origin (`2000 + 300 i, 300, 2000`) so tests never touch each other. Tests with a client half (Milestone 5) call `Harness.client(name, ...)`, which runs the module `name` from `conformance/client/` on the player's client (a LocalScript in StarterPlayerScripts answers a RemoteFunction) and returns what it returns; a test that needs real input prints `CONFORMANCE_GESTURE wheel in 1` / `drag 100 0` / `key LeftShift`, which the recorder turns into XTest input on the Sober window and rbx_sim into Session input.
 
 Recording goldens (`cargo run -p rbx_sim --example record_goldens -- <universe> <place> <base.rbxl> <cloudflared> [--passes N] [--only A,B]`) adds the suite to a base place, publishes it to the sandbox place, restarts its servers, joins with Sober on Xephyr, collects the server's prints through the `rbx_play` probe, and writes `goldens/*.json`: the median, the spread across passes and every raw pass. rbx_sim runs the same passes and takes the median.
 
@@ -476,13 +478,60 @@ Gaps from M9:
 | Local lights near walls | the voxel grid darkens light next to solid cells | no occlusion at all under voxel lighting |
 | Materials | `MaterialVariant`, per-material roughness | colour regrade only |
 
-## Milestone 10 (proposed): the rest of the picture
+## Milestone 10 (done): physics and humanoid conformance
 
-1. A desktop reference for GUI text (Studio on Vinegar, Play solo, the same `text_sizes`/`text_boxes` places) to settle the Sober text scale, then match whichever is the real desktop client.
-2. Atmosphere glare and haze over geometry, and the sun's streak, so `atmosphere` and `sun_rays` fall under 4 ΔE.
-3. Low-sun shadows (`morning`) and coloured ambient (`ambient_colour`).
-4. Voxel occlusion for local lights (a coarse solid grid from the parts, sampled like the real 4-stud one).
-5. `MaterialVariant` and roughness per material from the same scenes.
+Every row that was off at the start of M10 was worked on, and seven cheap tests were added (SurfaceMix, DensityMass, Conveyor, HumanoidPlatform, HumanoidPosture, ContactSink, HumanoidTurnRates), recorded with 5 passes (humanoid set) and 12 (physics set) on the sandbox place. Several old tests gained per-frame traces (TouchedOrder, BallSocket, HingeFree, BoxStack, HumanoidClimb, HumanoidSeat). The table went from 25 rows off out of 1044 to 12 out of 1128.
+
+1. VectorForce: on a free body (adaptive steps) the force is applied with the gravity kicks, at the same rate and with the same extra kick when the rate switches up. That extra kick is Roblox's "extra frame" (10.167, exact on the clean passes).
+2. Impacts: a free body goes through what it meets for its frame (the contacts are inert, so Touched still fires on time), and the next frame it's pushed back out along its way in and, if it hit faster than 6 stud/s, takes 0.75 of its free frame's gravity kick before it bounces. Roblox's block ends the falling frame 0.9 stud deep in the floor; TouchedOrder now matches the clean pass bounce for bounce (21, 42, 53, 59, 62). In contact the mix rules: two weights of 0 give 0, not the plain mean.
+3. Contacts between two moving bodies are softer (25 Hz instead of 30), so a stack of five sinks 0.16 at the top, inside Roblox's 0.16 to 0.25 (BoxStack).
+4. Joints: hinges and ball sockets are 60 Hz springs, not rigid. HingeFree is within 0.05 stud at 30 frames; BallSocket's swing still drifts apart by 40 frames (see the gaps).
+5. Conveyors: an anchored part's `AssemblyLinearVelocity` moves what's on it (contact tangent velocity) and a character standing on it, and a character on a moving body (a raft on a LinearVelocity) is carried by the floor's velocity at its feet.
+6. AutoRotate is a lagged spin (gain 8.4, lag 0.45) instead of a fixed fraction per substep: reversals, heavy characters and fast WalkSpeeds turn at Roblox's rate within 2 degrees (HumanoidTurn, HumanoidWalkScale, HumanoidTurnRates). A target straight behind turns left, as Roblox's does.
+7. Walk grip scales with the root's density (`walk_cap`), so a density 10 character accelerates like Roblox's (heavy_vx1 12.17 to 15.68).
+8. HipHeight changes move the stand height every frame (HumanoidPosture); PlatformStand and Ragdoll states match.
+9. Climbing starts when the truss is within 0.25 stud of an R15's front (0.1 for an R6) and walks the last bit in, so both rigs start on Roblox's frame and an R6 no longer flickers to Freefall between rungs. A jump off a seat lifts 0.945 stud and loses three substeps of gravity, so the landing is on Roblox's frame.
+10. Side note: the rbx_viewer lib tests now open their wgpu adapters and devices one at a time (a test-only lock); the NVIDIA 580 segfault in parallel runs has not been seen since.
+
+| Test | Field | before M10 | after M10 | Roblox |
+|---|---|---|---|---|
+| TouchedOrder | events | a frame early from the 3rd bounce | matches the clean pass | |
+| VectorForce | vx_30 / x_30 | 10.0 / 2.505 | ok (10.167 / 2.588) | 10.25 / 2.688 (median) |
+| BoxStack | top_dy | -0.116 | ok (-0.162) | -0.217 |
+| HingeFree | y_30 | -0.904 | ok (-1.091) | -1.045 |
+| BallSocket | x_40 / y_40 / z_40 | -3.13 / -1.8 / -1.71 | -3.04 / -2.04 / -1.62 | -1.97 / -3.33 / -1.11 |
+| HumanoidTurn | back_1 / back_3 / back_5 | 64.65 / 25.62 / -3.55 | ok | 72.43 / 31.31 / -0.46 |
+| HumanoidWalkScale | heavy_vx1 | 12.17 | ok | 15.68 |
+| HumanoidWalkScale | heavy_yaw1/2, ws50_yaw1/2 | 12.18 / 22.71 | ok | 8.28 / 19.09 |
+| HumanoidClimb | r15_states / r6_states | a frame late; R6 flickers | ok | |
+| HumanoidSeat | states | landing a frame late | ok | |
+| HumanoidJump | high_apex / high_vy1 | 15.278 / 74.27 | unchanged | 15.479 / 75.09 |
+| HumanoidSlope | s60_rise / s60m_v45 | 8.58 / creeps up | unchanged | 12.78 / slides back |
+
+New rows still off: HumanoidPlatform passenger_dy (-3.17 against -2.27, a character on an anchored lift moved by CFrame every frame) and ContactSink heavytop_1/2 (a dense block on a light one: the light one sinks 0.015 then 0.098 against 0.031 and 0.082).
+
+Already covered and not added again: MoveTo's 8 second give-up (HumanoidMoveTo), AutoRotate off (HumanoidTurn `fixed_yaw`), and network ownership (Ownership). What ownership does to server readings of a client-owned part was not recorded.
+
+Gaps from M10:
+
+| Area | Roblox | ours |
+|---|---|---|
+| Ball socket swing | a 4 stud arm stretches to 4.046 | 4.01; the period drifts and by 40 frames the bob is 1.3 studs away. A softer spring helps BallSocket and breaks HingeFree |
+| 60 degree slopes | stutters at the top edge and launches; with MaxSlopeAngle 45 slides back | walks up and off; refusing to walk up sends ours off the far side |
+| JumpHeight | 75.09 for 15 studs | 74.27 |
+| CFrame-moved floors | keeps the character on the lift | ours drops 0.9 stud behind |
+| Mass-ratio contacts | a light block under a dense one sinks twice as far at first | one spring for every pair |
+| Unions | collide as their geometry | still their `Size` box (decoding lives in rbx_viewer) |
+| Bounce spin | | a flat impact is still solved at one point, so no spin from an off-centre bounce |
+
+## Milestone 11 (proposed): terrain physics, water and swimming
+
+1. Terrain collision: the smooth grid (`rbx_terrain`'s voxels) as Rapier heightfield or trimesh chunks, built and rebuilt per region as `Terrain:Fill*`/`WriteVoxels` change it; raycasts and the character's floor sensor against it; per-material friction and elasticity.
+2. Water: buoyancy on parts in water cells (by submerged volume and density), drag, and the current (`WaterWaveSize`/`Speed` have no physics effect, which a test should confirm).
+3. Swimming: the Swimming state, its enter and leave rules, speed and the float at the surface, `Humanoid.Swimming`, and the camera/controls the default scripts give.
+4. Goldens for each (TerrainFloor, TerrainSlope, Buoyancy, Swim) on the sandbox place, plus the cheap gaps above where a new trace settles them (CFrame-moved floors, JumpHeight).
+
+Rendering items left from M9 (desktop GUI text reference, atmosphere glare, low-sun shadows, coloured ambient, voxel occlusion for local lights, `MaterialVariant`) move to a later milestone.
 
 ## Where things are
 

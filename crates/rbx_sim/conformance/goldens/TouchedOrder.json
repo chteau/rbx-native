@@ -1,5 +1,4 @@
 {
-  "known_gap": "Our bounces now come straight up (impacts are solved at one point) and the flights match Roblox's frame for frame, but each Roblox bounce stays in contact one frame longer: TouchEnded comes the frame after Touched (21/22, 42/43) where ours ends in the same frame (21/21), so every later bounce drifts a frame earlier. Roblox's contacts are soft (a resting block sinks about 0.006 stud, a stack sinks with its load, see BoxStack); Rapier resolves an impact within the frame. Needs a softer contact model (Milestone 3).",
   "passes": 12,
   "raw": [
     {

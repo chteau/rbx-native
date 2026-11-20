@@ -1,5 +1,5 @@
 {
-  "known_gap": "Matches at 20 frames; by 40 frames the 3D swing has drifted apart (about 1.3 studs in X and Y). Roblox's socket stretches (distance 4.022 to 4.03 on a 4 stud arm), ours is rigid at 4.0, and the small period difference grows with time. Needs soft joints (Milestone 3).",
+  "known_gap": "Matches at 20 frames; by 40 frames the 3D swing has drifted apart (up to 1.3 studs in X and Y). Joints are now soft (a 60 Hz spring: the arm stretches like Roblox's, 4.01 against 4.046 at the bottom), but the period still differs a little and the difference grows with time; no single spring stiffness fits both this swing and HingeFree.",
   "passes": 12,
   "raw": [
     {

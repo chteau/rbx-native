@@ -1,5 +1,4 @@
 {
-  "known_gap": "Walk speed scaling, friction and R6 match. A heavy character (CustomPhysicalProperties density 10) and WalkSpeed 50 accelerate faster in Roblox's first frame (15.68 against 12.17) and turn slower (8.28 against 12.18 degrees after one frame): the acceleration and turn rates depend on mass and speed in a way the fit doesn't cover.",
   "passes": 5,
   "raw": [
     {

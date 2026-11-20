@@ -858,7 +858,11 @@ impl World {
                 continue;
             };
             for pair in self.narrow.contact_pairs_with(handle) {
-                let other = if pair.collider1 == handle { pair.collider2 } else { pair.collider1 };
+                let other = if pair.collider1 == handle {
+                    pair.collider2
+                } else {
+                    pair.collider1
+                };
                 let Some(other) = self.colliders.get(other) else {
                     continue;
                 };

@@ -1,4 +1,5 @@
 {
+  "known_gap": "A rider on an unanchored raft carried by LinearVelocity matches, and so does the horizontal carry on an anchored lift moved by CFrame every beat; but on that lift ours ends 0.9 stud lower than Roblox's passenger (-3.17 against -2.27): how Roblox's floor sensor keeps a character on a part teleported by CFrame isn't pinned down.",
   "passes": 5,
   "raw": [
     {

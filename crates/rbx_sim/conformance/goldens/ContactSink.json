@@ -1,4 +1,5 @@
 {
+  "known_gap": "Single blocks of any density and stacks of equal blocks sink like Roblox's within 0.01 stud; a dense block on a light one sinks the light one 0.015 stud in its first second where Roblox's sinks 0.031 (and 0.098 against 0.082 after two). Roblox's contact stiffness depends on the mass ratio in a way one spring doesn't cover.",
   "passes": 12,
   "raw": [
     {
@@ -2127,10 +2128,10 @@
         -0.0052
       ]
     ],
-    "big_1": 0.0000999999999999994,
-    "d07_1": 0.0000999999999999994,
-    "d70_1": 0.0000999999999999994,
-    "d7_1": 0.0000999999999999994,
+    "big_1": 9.99999999999994e-05,
+    "d07_1": 9.99999999999994e-05,
+    "d70_1": 9.99999999999994e-05,
+    "d7_1": 9.99999999999994e-05,
     "heavytop_1": 0.007899999999999997,
     "heavytop_2": 0.014200000000000004,
     "three_1": 0.0364,

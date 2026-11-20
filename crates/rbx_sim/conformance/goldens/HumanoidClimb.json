@@ -1,5 +1,4 @@
 {
-  "known_gap": "Climb speed, the hang and the gap to the truss match, and the rise is within 0.4 stud. Climbing starts one frame later than Roblox's, and an R6 drops back to Freefall for a frame every few frames on the way up: the truss check in front of an R6's torso loses the truss between rungs.",
   "passes": 5,
   "raw": [
     {
