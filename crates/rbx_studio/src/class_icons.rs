@@ -59,7 +59,7 @@ pub(crate) enum IconPack {
 /// Every icon in the kit is authored on a 16x16 `viewBox` (see
 /// `assets/icons/README.md`'s "Canvas" section); rasterized at 2x for a
 /// sharp downscale to the Explorer's `CLASS_ICON_SIZE`.
-const RENDER_SIZE: u32 = 32;
+pub(crate) const RENDER_SIZE: u32 = 32;
 
 /// The rasterized icon for `class` from the requested `pack`, or `None` for
 /// a class the icon kit doesn't cover (falls back to a Lucide glyph, see
