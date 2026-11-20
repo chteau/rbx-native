@@ -23,6 +23,7 @@ return function(h, origin)
 	for _, rig in rigs do
 		logs[rig[1]] = h.states(rig[3], clock)
 		traces[rig[1]] = {}
+		traces[rig[1] .. "_x"] = {}
 		y0[rig[1]] = rig[4].Position.Y
 		rig[3]:Move(Vector3.new(1, 0, 0))
 	end
@@ -32,6 +33,9 @@ return function(h, origin)
 		for _, rig in rigs do
 			local name, root = rig[1], rig[4]
 			table.insert(traces[name], h.round(root.Position.Y - y0[name], 2))
+			if i <= 30 then
+				table.insert(traces[name .. "_x"], h.round(rig[5].Position.X - root.Position.X, 3))
+			end
 			if i == 60 or i == 90 then
 				result[name .. "_vy" .. i] = h.round(root.AssemblyLinearVelocity.Y, 2)
 			end
@@ -63,6 +67,7 @@ return function(h, origin)
 		end
 		result[name .. "_states"] = table.concat(entries, " ")
 		result["_" .. name .. "_y"] = traces[name]
+		result["_" .. name .. "_x"] = traces[name .. "_x"]
 		rig[2]:Destroy()
 		rig[5]:Destroy()
 	end

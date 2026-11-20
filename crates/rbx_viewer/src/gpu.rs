@@ -384,6 +384,11 @@ fn on_arm64_windows() -> bool {
     false
 }
 
+/// Lib tests open adapters and devices from many threads at once, and the
+/// NVIDIA driver has segfaulted doing that: under test it's one at a time.
+#[cfg(test)]
+static OPENING: Mutex<()> = Mutex::new(());
+
 /// Picks an adapter, optionally one able to present to `surface`.
 ///
 /// The chosen adapter and backend are printed: which of Vulkan, GL or a software
@@ -392,6 +397,8 @@ pub(crate) fn adapter(
     instance: &wgpu::Instance,
     surface: Option<&wgpu::Surface<'_>>,
 ) -> Result<wgpu::Adapter, String> {
+    #[cfg(test)]
+    let _one = OPENING.lock().unwrap_or_else(|e| e.into_inner());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         force_fallback_adapter: false,
@@ -511,6 +518,8 @@ pub fn describe_adapter() -> Result<String, String> {
 /// Opens a device and command queue on the adapter, with errors logged
 /// rather than panicking (see [`log_error`]).
 pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue), String> {
+    #[cfg(test)]
+    let _one = OPENING.lock().unwrap_or_else(|e| e.into_inner());
     let info = adapter.get_info();
     // Everything integrated but Apple's has a small carve-out (512 MB on the
     // laptop that crashed).

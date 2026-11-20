@@ -29,12 +29,14 @@ return function(h, origin)
 			table.insert(events, string.format("%s/%s@%d", part.Name, other.Name, beat))
 		end)
 	end
+	local trace = {}
 	for i = 1, 90 do
 		beat = i
 		h.beat()
+		table.insert(trace, h.round(faller.Position.Y - origin.Y - 1.5, 3))
 	end
 	floor:Destroy()
 	sensor:Destroy()
 	faller:Destroy()
-	return { events = table.concat(events, " ") }
+	return { events = table.concat(events, " "), _y = trace }
 end

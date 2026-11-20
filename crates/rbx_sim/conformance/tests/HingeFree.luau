@@ -7,9 +7,10 @@ return function(h, origin)
 		Attachment0 = h.attach(pivot, axis),
 		Attachment1 = h.attach(bob, CFrame.new(-5, 0, 0) * axis),
 	}, pivot)
-	local r = {}
+	local r = { _p = {} }
 	for i = 1, 30 do
 		h.beat()
+		table.insert(r._p, h.vec(bob.Position - origin, 3))
 		if i == 15 or i == 30 then
 			local at = bob.Position - origin
 			r["x_" .. i], r["y_" .. i] = h.round(at.X, 3), h.round(at.Y, 3)

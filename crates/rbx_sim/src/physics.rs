@@ -813,7 +813,7 @@ impl World {
         let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
         let g = Vector::new(0.0, -gravity, 0.0);
         let h = self.params.dt;
-        let mut kicked: Vec<(RigidBodyHandle, u32)> = Vec::new();
+        let mut kicked: Vec<(RigidBodyHandle, u32, bool)> = Vec::new();
         // Characters always step at 240 Hz (HumanoidDrop: a falling
         // character's first frames are 240 Hz free fall).
         let driven: HashSet<RigidBodyHandle> = drives
@@ -841,6 +841,7 @@ impl World {
             let v = body.linvel();
             let speed = v.length();
             let mut rate = assembly.rate.get();
+            let mut switched = false;
             if v.dot(g) > 0.0 {
                 let next = match rate {
                     4 if speed > 29.86 * assembly.size + 15.14 => 2,
@@ -850,10 +851,11 @@ impl World {
                 if next != rate {
                     body.set_linvel(v + g * (h * next as Real), false);
                     rate = next;
+                    switched = true;
                 }
             }
             assembly.rate.set(rate);
-            kicked.push((assembly.body, rate));
+            kicked.push((assembly.body, rate, switched));
         }
         let impulses = std::mem::take(&mut self.shared.borrow_mut().impulses);
         for (part, impulse, angular) in impulses {
@@ -871,14 +873,14 @@ impl World {
         }
 
         for substep in 0..steps {
-            for &(handle, rate) in &kicked {
+            for &(handle, rate, _) in &kicked {
                 if substep % rate == 0 {
                     if let Some(body) = self.bodies.get_mut(handle) {
                         body.set_linvel(body.linvel() + g * (h * rate as Real), false);
                     }
                 }
             }
-            self.drive_constraints(h, g);
+            self.drive_constraints(h, g, substep, &kicked);
             self.drive_characters(drives, h, gravity, substep);
             let mixer = Mixer(&self.surfaces);
             self.pipeline.step(

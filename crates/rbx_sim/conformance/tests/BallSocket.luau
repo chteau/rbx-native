@@ -7,9 +7,11 @@ return function(h, origin)
 		Attachment1 = h.attach(bob, CFrame.new(-4, 0, 0)),
 	}, pivot)
 	bob.AssemblyLinearVelocity = Vector3.new(0, 0, 5)
-	local r = {}
+	local r = { _p = {}, _d = {} }
 	for i = 1, 40 do
 		h.beat()
+		table.insert(r._p, h.vec(bob.Position - origin, 3))
+		table.insert(r._d, h.round((bob.Position - origin).Magnitude, 4))
 		if i == 20 or i == 40 then
 			local at = bob.Position - origin
 			r["x_" .. i], r["y_" .. i], r["z_" .. i] = h.round(at.X, 2), h.round(at.Y, 2), h.round(at.Z, 2)

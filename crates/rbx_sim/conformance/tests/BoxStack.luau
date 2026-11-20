@@ -12,7 +12,11 @@ return function(h, origin)
 	end
 	local top = blocks[5]
 	local start = top.Position
-	h.beats(120)
+	local trace = {}
+	for _ = 1, 120 do
+		h.beat()
+		table.insert(trace, h.round(top.Position.Y - start.Y, 3))
+	end
 	local fastest = 0
 	for _, block in blocks do
 		fastest = math.max(fastest, block.AssemblyLinearVelocity.Magnitude)
@@ -22,6 +26,7 @@ return function(h, origin)
 		top_drift = h.round(Vector3.new(top.Position.X - start.X, 0, top.Position.Z - start.Z).Magnitude, 3),
 		fastest = h.round(fastest, 3),
 		bottom_dy = h.round(blocks[1].Position.Y - origin.Y - 1.5, 3),
+		_top = trace,
 	}
 	h.clear(blocks)
 	floor:Destroy()

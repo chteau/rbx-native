@@ -71,8 +71,10 @@ return function(h, origin)
 	result.throttle_right = car.Throttle
 	result.steer_right = car.Steer
 	humanoid.Jump = true
+	local jumpY, y0 = {}, root.Position.Y
 	for _ = 1, 10 do
 		clock.tick()
+		table.insert(jumpY, h.round(root.Position.Y - y0, 3))
 	end
 	result.jump_sit = humanoid.Sit
 	result.jump_seat_part = humanoid.SeatPart and humanoid.SeatPart.Name or "nil"
@@ -80,7 +82,9 @@ return function(h, origin)
 	result.jump_weld = chair:FindFirstChild("SeatWeld") and "kept" or "gone"
 	for _ = 1, 60 do
 		clock.tick()
+		table.insert(jumpY, h.round(root.Position.Y - y0, 3))
 	end
+	result._jump_y = jumpY
 	result.touch_sit = droppedHumanoid.Sit
 	result.touch_seat = touchSeat.Occupant == droppedHumanoid
 	result.disabled_sit = refusedHumanoid.Sit

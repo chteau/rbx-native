@@ -432,6 +432,41 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/ToolPose.luau"),
         tolerance: &[("*shoulder*", 3.0)],
     },
+    Test {
+        name: "SurfaceMix",
+        source: include_str!("../conformance/tests/SurfaceMix.luau"),
+        tolerance: &[("*", 0.3), ("*_apex", 0.2)],
+    },
+    Test {
+        name: "DensityMass",
+        source: include_str!("../conformance/tests/DensityMass.luau"),
+        tolerance: &[("*", 0.3), ("*mass*", 0.001)],
+    },
+    Test {
+        name: "Conveyor",
+        source: include_str!("../conformance/tests/Conveyor.luau"),
+        tolerance: &[("*", 0.3)],
+    },
+    Test {
+        name: "HumanoidPlatform",
+        source: include_str!("../conformance/tests/HumanoidPlatform.luau"),
+        tolerance: &[("*", 0.3)],
+    },
+    Test {
+        name: "HumanoidPosture",
+        source: include_str!("../conformance/tests/HumanoidPosture.luau"),
+        tolerance: &[("*", 0.05), ("*_up", 0.15)],
+    },
+    Test {
+        name: "ContactSink",
+        source: include_str!("../conformance/tests/ContactSink.luau"),
+        tolerance: &[("*", 0.01)],
+    },
+    Test {
+        name: "HumanoidTurnRates",
+        source: include_str!("../conformance/tests/HumanoidTurnRates.luau"),
+        tolerance: &[("*", 2.0)],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the

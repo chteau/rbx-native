@@ -443,6 +443,11 @@ impl World {
                 .into(),
             _ => return None,
         };
+        let mut joint = joint;
+        if matches!(drive, Drive::Hinge(_) | Drive::BallSocket) {
+            let env = |k: &str, d: f64| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+            let _ = joint.set_softness(SpringCoefficients::new(env("M10_JOINT_HZ", 1.0e6), env("M10_JOINT_Z", 1.0)));
+        }
         Some(
             self.impulse_joints
                 .insert(ends[0].body, ends[1].body, joint, true),
@@ -493,7 +498,16 @@ impl World {
 
     /// One substep of `h` seconds of every constraint's drive, before the
     /// solver step adds `g` (gravity) to the bodies it acts on.
-    pub(super) fn drive_constraints(&mut self, h: Real, g: Vector) {
+    /// `kicked` are the bodies on adaptive stepping this frame (rate, and
+    /// whether it switched up): a VectorForce on one pushes with the
+    /// gravity kicks, switch kick included (VectorForce golden).
+    pub(super) fn drive_constraints(
+        &mut self,
+        h: Real,
+        g: Vector,
+        substep: u32,
+        kicked: &[(RigidBodyHandle, u32, bool)],
+    ) {
         for constraint in &self.constraints {
             for end in constraint.ends {
                 if let Some(body) = self.bodies.get_mut(end.body) {
@@ -659,9 +673,16 @@ impl World {
                     at_center,
                 } => {
                     let end = constraint.ends[0];
+                    let kicks = match kicked.iter().find(|k| k.0 == end.body) {
+                        Some(&(_, rate, switched)) if substep % rate == 0 => {
+                            rate * if switched && substep == 0 { 2 } else { 1 }
+                        }
+                        Some(_) => continue,
+                        None => 1,
+                    };
                     let force = self.oriented(constraint, force, relative);
                     let at = (!at_center).then(|| self.frame_of(&end).translation);
-                    self.push(end.body, force * h, at, h);
+                    self.push(end.body, force * (h * kicks as Real), at, h);
                 }
                 Drive::Torque { torque, relative } => {
                     let end = constraint.ends[0];
