@@ -1475,7 +1475,16 @@ impl Simulation {
             let dom = self.dom.borrow();
             let client = self.shared.borrow().players.client_roots(&dom);
             let role = self.role;
-            scripts::subtree(&dom, root)
+            let mut under = scripts::subtree(&dom, root);
+            // The local player can arrive after its character (a client
+            // joining a place whose character already spawned): the
+            // character's LocalScripts (Animate) start with the player.
+            if let [player, character] = client[..] {
+                if under.contains(&player) {
+                    under.extend(scripts::subtree(&dom, character));
+                }
+            }
+            under
                 .into_iter()
                 .filter(|r| {
                     (role != Role::Client && scripts::runs(&dom, *r))
