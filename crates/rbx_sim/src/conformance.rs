@@ -493,6 +493,11 @@ pub const TESTS: &[Test] = &[
         tolerance: &[("*", 0.3), ("*_settled", 20.0)],
     },
     Test {
+        name: "TerrainProfile",
+        source: include_str!("../conformance/tests/TerrainProfile.luau"),
+        tolerance: &[],
+    },
+    Test {
         name: "Swim",
         source: include_str!("../conformance/tests/Swim.luau"),
         tolerance: &[("*", 0.5)],

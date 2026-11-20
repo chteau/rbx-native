@@ -133,6 +133,10 @@ fn the_server_replicates_and_the_client_does_not() {
 }
 
 fn root_z(session: &Session, peer: Peer) -> f32 {
+    root_position(session, peer)[2]
+}
+
+fn root_position(session: &Session, peer: Peer) -> [f32; 3] {
     let sim = session.sim(peer).unwrap();
     let (player, _) = session.clients[0].sim.local_player().unwrap();
     let dom = sim.dom();
@@ -149,7 +153,7 @@ fn root_z(session: &Session, peer: Peer) -> f32 {
         .find(|c| dom.get(*c).is_some_and(|i| i.name() == "HumanoidRootPart"))
         .unwrap();
     match dom.get(root).unwrap().properties().get("CFrame") {
-        Some(Variant::CFrame(cf)) => cf.position.z,
+        Some(Variant::CFrame(cf)) => [cf.position.x, cf.position.y, cf.position.z],
         _ => panic!("no CFrame"),
     }
 }
@@ -361,4 +365,36 @@ fn number_keys_switch_between_tools() {
     assert_eq!(at(5), "holding Sword", "{held:#?}");
     assert_eq!(at(9), "holding Torch", "{held:#?}");
     assert_eq!(at(14), "holding nil", "{held:#?}");
+}
+
+#[test]
+fn terrain_a_server_script_builds_holds_the_client_character_up() {
+    // The client meets Terrain with the place, voxels already in it; the
+    // character (and a crate near it) is simulated there.
+    let mut s = session(
+        place(
+            "local terrain = workspace.Terrain \
+             terrain:FillBlock(CFrame.new(0, -12, 0), Vector3.new(256, 24, 256), Enum.Material.Grass) \
+             workspace.Baseplate:Destroy() \
+             task.wait(0.5) \
+             workspace.SpawnLocation:Destroy() \
+             local crate = Instance.new('Part') \
+             crate.Position = Vector3.new(6, 10, 0) \
+             crate.Parent = workspace \
+             task.wait(2) \
+             print('crate', math.floor(crate.Position.Y * 10 + 0.5) / 10)",
+            "",
+        ),
+        1,
+    );
+    let mut lines = Vec::new();
+    for _ in 0..240 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    for peer in [Peer::Server, Peer::Client(0)] {
+        let y = root_position(&s, peer)[1];
+        assert!(y > 3.0 && y < 6.0, "{peer:?}: the root fell to {y}");
+    }
+    assert!(has(&lines, Peer::Server, "crate 2.6"), "{lines:#?}");
 }

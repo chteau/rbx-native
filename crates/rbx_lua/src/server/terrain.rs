@@ -121,7 +121,9 @@ fn vector(lua: &Lua, v: [f64; 3]) -> Result<Value> {
 fn occupied(physics: &dyn Physics, c: [i32; 3]) -> Result<bool> {
     let max = c.map(|v| v + 1);
     match physics.terrain(TerrainOp::Read { min: c, max }) {
-        Ok(TerrainReply::Voxels { materials, .. }) => Ok(materials.first().is_some_and(|m| m != "Air")),
+        Ok(TerrainReply::Voxels { materials, .. }) => {
+            Ok(materials.first().is_some_and(|m| m != "Air"))
+        }
         Ok(_) => Ok(false),
         Err(err) => Err(mlua::Error::runtime(err)),
     }
@@ -187,7 +189,11 @@ fn flatten(materials: &Table, occupancies: &Table) -> Result<([usize; 3], Vec<St
     let nx = materials.raw_len();
     let first: Option<Table> = materials.raw_get(1)?;
     let ny = first.as_ref().map_or(0, |t| t.raw_len());
-    let nz = match first.as_ref().map(|t| t.raw_get::<Option<Table>>(1)).transpose()? {
+    let nz = match first
+        .as_ref()
+        .map(|t| t.raw_get::<Option<Table>>(1))
+        .transpose()?
+    {
         Some(Some(t)) => t.raw_len(),
         _ => 0,
     };
@@ -331,24 +337,30 @@ pub(super) fn member(
             },
         )?,
         "Clear" => lua.create_function(move |_, _: Value| run(TerrainOp::Clear).map(drop))?,
-        "GetMaterialColor" => lua.create_function(move |_, (_, m): (Value, AnyUserData)| {
-            match run(TerrainOp::GetColor(material(&m)?))? {
-                TerrainReply::Color([r, g, b]) => Ok(LuaColor3::new(r, g, b)),
-                _ => Err(mlua::Error::runtime("GetMaterialColor failed")),
-            }
-        })?,
-        "SetMaterialColor" => lua.create_function(
-            move |_, (_, m, color): (Value, AnyUserData, LuaColor3)| {
+        "GetMaterialColor" => {
+            lua.create_function(move |_, (_, m): (Value, AnyUserData)| {
+                match run(TerrainOp::GetColor(material(&m)?))? {
+                    TerrainReply::Color([r, g, b]) => Ok(LuaColor3::new(r, g, b)),
+                    _ => Err(mlua::Error::runtime("GetMaterialColor failed")),
+                }
+            })?
+        }
+        "SetMaterialColor" => {
+            lua.create_function(move |_, (_, m, color): (Value, AnyUserData, LuaColor3)| {
                 let c = color.0;
                 run(TerrainOp::SetColor(material(&m)?, [c.r, c.g, c.b])).map(drop)
-            },
-        )?,
-        "CellCenterToWorld" => lua.create_function(|lua, (_, x, y, z): (Value, f64, f64, f64)| {
-            vector(lua, [x, y, z].map(|c| c * CELL + CELL / 2.0))
-        })?,
-        "CellCornerToWorld" => lua.create_function(|lua, (_, x, y, z): (Value, f64, f64, f64)| {
-            vector(lua, [x, y, z].map(|c| c * CELL))
-        })?,
+            })?
+        }
+        "CellCenterToWorld" => {
+            lua.create_function(|lua, (_, x, y, z): (Value, f64, f64, f64)| {
+                vector(lua, [x, y, z].map(|c| c * CELL + CELL / 2.0))
+            })?
+        }
+        "CellCornerToWorld" => {
+            lua.create_function(|lua, (_, x, y, z): (Value, f64, f64, f64)| {
+                vector(lua, [x, y, z].map(|c| c * CELL))
+            })?
+        }
         "WorldToCell" | "WorldToCellPreferSolid" | "WorldToCellPreferEmpty" => {
             let prefer = match key {
                 "WorldToCellPreferSolid" => Some(true),

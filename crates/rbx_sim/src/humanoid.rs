@@ -41,6 +41,12 @@ const CLIMB_GAP_R15: f64 = 0.46;
 /// R15 starts 0.15 stud past it, not 0.42; an R6 only once it touches).
 const CLIMB_REACH_R15: f64 = 0.25;
 const CLIMB_REACH_R6: f64 = 0.1;
+/// Swim speed per WalkSpeed (Swim `vx*`: 11.8 and 13.5 stud/s at 16).
+const SWIM_PER_WALKSPEED_R15: f64 = 0.74;
+const SWIM_PER_WALKSPEED_R6: f64 = 0.875;
+/// How fast an R15 swimmer's bob dies out, per second (Swim `_r15_sink`
+/// settles in a second where an R6 one, left to the water, bobs for two).
+const SWIM_DAMPING_R15: f64 = 4.0;
 
 /// `Enum.HumanoidStateType`, by name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -535,6 +541,10 @@ impl Humanoids {
         let from = std::mem::replace(&mut c.state, to);
         c.age = 0;
         c.no_floor = 0;
+        if to == State::Swimming {
+            // `Swimming` fires on the way in, at rest too (Swim `idle_speed`).
+            c.running = -1.0;
+        }
         self.events
             .push(signal(humanoid, "StateChanged", vec![from.arg(), to.arg()]));
         let state_event = |name: &str, on: bool| signal(humanoid, name, vec![Arg::Bool(on)]);
@@ -584,11 +594,12 @@ impl Humanoids {
     /// `MoveTo` steering, property-driven states, the state machine's
     /// floor checks (on where the last frame left the root), jumps,
     /// climbing; then each character's drive.
-    pub fn before_physics(
+    pub(crate) fn before_physics(
         &mut self,
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
         world: &World,
+        terrain: &crate::terrain::Terrain,
         gravity: f64,
     ) -> Vec<Drive> {
         let ids: Vec<Ref> = self.characters.keys().copied().collect();
@@ -606,7 +617,7 @@ impl Humanoids {
             self.arrive(dom, db, world, id);
             self.steer(dom, db, id);
             self.properties(dom, db, id);
-            self.machine(dom, db, world, id, gravity);
+            self.machine(dom, db, world, terrain, id, gravity);
             let Some(c) = self.characters.get_mut(&id) else {
                 continue;
             };
@@ -711,6 +722,7 @@ impl Humanoids {
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
         world: &World,
+        terrain: &crate::terrain::Terrain,
         id: Ref,
         gravity: f64,
     ) {
@@ -728,7 +740,24 @@ impl Humanoids {
                 .unwrap_or_else(|| enum_value(dom, db, f.part, "Material"))
         });
         set(dom, db, id, "FloorMaterial", Variant::Enum(material));
+        // In water once the root is under the surface (Swim: in at beat 13
+        // of a drop from 2 above it).
+        let water = if terrain.has_water() {
+            world
+                .part_pose(root)
+                .map_or(0.0, |p| terrain.water_at(p.translation))
+        } else {
+            0.0
+        };
+        // Bobbing up out of it is still swimming (Swim `_r6_sink`).
+        let (wet, in_water) = (water >= 0.5, water > 0.0);
         match state {
+            State::Freefall if wet && vy <= 0.0 && self.enabled(id, State::Swimming) => {
+                self.change(id, State::Swimming)
+            }
+            // Feet found the bottom: up and running (Swim `shelf_state`).
+            State::Swimming if floor.is_some() => self.change(id, State::GettingUp),
+            State::Swimming if !in_water => self.change(id, State::Freefall),
             State::Jumping if age >= 1 => self.change(id, State::Freefall),
             State::Freefall if age >= 1 && floor.is_some() && vy <= 0.0 => {
                 self.change(id, State::Landed)
@@ -808,6 +837,7 @@ impl Humanoids {
                 | State::Landed
                 | State::Climbing
                 | State::Seated
+                | State::Swimming
         );
         if !can || !self.enabled(id, State::Jumping) {
             return;
@@ -844,19 +874,28 @@ impl Humanoids {
             s if s.grounded() => DriveMode::Ground,
             State::Jumping | State::Freefall => DriveMode::Air,
             State::Climbing => DriveMode::Climb,
+            State::Swimming => DriveMode::Swim,
             State::Seated if reference(dom, id, "SeatPart").is_none() => DriveMode::Ground,
             _ => DriveMode::Off,
         };
         let speed = number(dom, db, id, "WalkSpeed");
         let walks = c.state.walks();
-        let walk = if walks {
+        let walk = if c.state == State::Swimming {
+            let pace = speed
+                * match c.rig {
+                    Rig::R15 => SWIM_PER_WALKSPEED_R15,
+                    Rig::R6 => SWIM_PER_WALKSPEED_R6,
+                };
+            [c.move_dir[0] * pace, 0.0, c.move_dir[2] * pace]
+        } else if walks {
             [c.move_dir[0] * speed, 0.0, c.move_dir[2] * speed]
         } else {
             [0.0; 3]
         };
         let moving = c.move_dir[0].abs() + c.move_dir[2].abs() > 1e-6;
-        let turn = (walks && moving && flag(dom, db, id, "AutoRotate"))
-            .then(|| (-c.move_dir[0]).atan2(-c.move_dir[2]));
+        let turn =
+            ((walks || c.state == State::Swimming) && moving && flag(dom, db, id, "AutoRotate"))
+                .then(|| (-c.move_dir[0]).atan2(-c.move_dir[2]));
         let look = [-c.yaw.sin(), -c.yaw.cos()];
         let up = c.move_dir[0] * look[0] + c.move_dir[2] * look[1];
         Drive {
@@ -872,6 +911,10 @@ impl Humanoids {
             launch: c.launch.take(),
             approach: c.approach,
             climb: CLIMB_PER_WALKSPEED * speed * up.max(0.0),
+            swim_damping: match c.rig {
+                Rig::R15 => SWIM_DAMPING_R15,
+                Rig::R6 => 0.0,
+            },
         }
     }
 
@@ -901,10 +944,15 @@ impl Humanoids {
             let Some(c) = self.characters.get_mut(&id) else {
                 continue;
             };
-            if c.state.walks() && (speed - c.running).abs() > 0.01 {
+            let event = match c.state {
+                State::Swimming => "Swimming",
+                s if s.walks() => "Running",
+                _ => continue,
+            };
+            if (speed - c.running).abs() > 0.01 {
                 c.running = speed;
                 self.events
-                    .push(signal(id, "Running", vec![Arg::Number(speed)]));
+                    .push(signal(id, event, vec![Arg::Number(speed)]));
             }
         }
     }

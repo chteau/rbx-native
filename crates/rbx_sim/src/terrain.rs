@@ -5,10 +5,10 @@
 
 use std::collections::BTreeMap;
 
+use rapier3d::parry::query::{Ray, RayCullingMode};
 use rapier3d::prelude::*;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_lua::server::{QueryHit, TerrainOp, TerrainReply};
-use rapier3d::parry::query::{Ray, RayCullingMode};
 use rbx_terrain::{mesh, smooth_grid, Cell, ChunkKey, Material, MaterialColors, VoxelGrid};
 
 /// Studs along a voxel edge.
@@ -69,6 +69,42 @@ fn material(name: &str) -> Result<Material, String> {
     Material::from_name(name).ok_or_else(|| format!("{name} is not a terrain material"))
 }
 
+/// The colours a server gives terrain whose `MaterialColors` was never
+/// set, which are not what Studio writes into a new place
+/// (TerrainProfile `_colors`).
+fn engine_colors() -> MaterialColors {
+    const COLORS: [(&str, [u8; 3]); 21] = [
+        ("WoodPlanks", [139, 109, 79]),
+        ("Basalt", [30, 30, 37]),
+        ("Slate", [63, 127, 107]),
+        ("CrackedLava", [232, 156, 74]),
+        ("Concrete", [127, 102, 63]),
+        ("Limestone", [206, 173, 148]),
+        ("Pavement", [148, 148, 140]),
+        ("Brick", [138, 86, 62]),
+        ("Cobblestone", [132, 123, 90]),
+        ("Rock", [102, 108, 111]),
+        ("Sandstone", [137, 90, 71]),
+        ("Grass", [106, 127, 63]),
+        ("LeafyGrass", [115, 132, 74]),
+        ("Sand", [143, 126, 95]),
+        ("Snow", [195, 199, 218]),
+        ("Mud", [58, 46, 36]),
+        ("Ground", [102, 92, 59]),
+        ("Asphalt", [115, 123, 107]),
+        ("Salt", [198, 189, 181]),
+        ("Ice", [129, 194, 224]),
+        ("Glacier", [101, 176, 234]),
+    ];
+    let mut colors = MaterialColors::default();
+    for (name, rgb) in COLORS {
+        if let Some(material) = Material::from_name(name) {
+            colors.set(material, rgb);
+        }
+    }
+    colors
+}
+
 /// How full a cell is of a shape whose signed distance (studs, negative
 /// inside, the largest of the per-axis distances for a box) is `d` at its
 /// centre: a cell half covered along an axis is half full, as Studio's
@@ -103,7 +139,12 @@ impl Shape {
             } => {
                 let half = Vector::from_array(*size) / 2.0;
                 let fill = move |p| coverage(box_distance(p, half));
-                (pose(cframe), half, Box::new(fill) as Box<dyn Fn(Vector) -> Real>, material)
+                (
+                    pose(cframe),
+                    half,
+                    Box::new(fill) as Box<dyn Fn(Vector) -> Real>,
+                    material,
+                )
             }
             TerrainOp::FillBall {
                 center,
@@ -132,12 +173,18 @@ impl Shape {
                     }
                     ((r - Vector::new(p.x, 0.0, p.z).length()) / CELL).clamp(0.0, 1.0)
                 };
-                (pose(cframe), Vector::new(r, h, r), Box::new(fill) as _, material)
+                (
+                    pose(cframe),
+                    Vector::new(r, h, r),
+                    Box::new(fill) as _,
+                    material,
+                )
             }
-            // A WedgePart's shape: full height at +Z, nothing at -Z. Below
-            // the slope a cell is half full per stud its centre is under it,
-            // straight down (TerrainFill `wedge*`); the box clips as a
-            // block's.
+            // A WedgePart's shape: full height at +Z, nothing at -Z. A cell
+            // is filled as a block would be up to the slope's height at its
+            // low edge (half a cell toward -Z), and not at all once that
+            // edge is past the wedge's high end (TerrainFill `wedge*`,
+            // TerrainProfile `voxels*`).
             TerrainOp::FillWedge {
                 cframe,
                 size,
@@ -145,9 +192,17 @@ impl Shape {
             } => {
                 let half = Vector::from_array(*size) / 2.0;
                 let fill = move |p: Vector| {
-                    let top = if half.z > 0.0 { half.y * p.z / half.z } else { half.y };
-                    let slope = ((top - p.y) / 2.0).clamp(0.0, 1.0);
-                    coverage(box_distance(p, half)).min(slope)
+                    let low = p.z - CELL / 2.0;
+                    if low >= half.z {
+                        return 0.0;
+                    }
+                    let top = if half.z > 0.0 {
+                        half.y * low / half.z
+                    } else {
+                        half.y
+                    };
+                    let sides = (p.x.abs() - half.x).max(p.y.abs() - half.y);
+                    coverage(sides).min(coverage(p.y - top))
                 };
                 (pose(cframe), half, Box::new(fill) as _, material)
             }
@@ -218,7 +273,12 @@ fn merged(cell: Cell, material: Material, fill: f32) -> Option<Cell> {
         }
         return Some(filled(cell.material, 1.0 - fill));
     }
-    if fill > cell.fraction() || cell.material == material {
+    // A full cell of solid takes a full cell of water over; less leaves it
+    // water (Swim's shelf, rock filled into the lake: its top cell, a
+    // quarter rock, stays water).
+    let over = fill > cell.fraction()
+        || (fill >= 1.0 && cell.material == Material::Water && material != Material::Water);
+    if over || cell.material == material {
         Some(filled(material, fill.max(cell.fraction())))
     } else {
         None
@@ -234,15 +294,8 @@ impl Terrain {
         };
         self.referent = Some(referent);
         let properties = dom.get(referent).map(|i| i.properties());
-        // Absent, the reflection default (Grass 106, 127, 63), not what
-        // Studio writes into a new place (TerrainFill `grass_color`).
-        let stored = rbx_reflection::ReflectionDatabase::shared()
-            .stored_default("Terrain", "MaterialColors")
-            .cloned();
-        let colors = properties
-            .and_then(|p| p.get("MaterialColors").cloned())
-            .or(stored);
-        self.colors = MaterialColors::decode(blob(colors.as_ref())).unwrap_or_default();
+        let colors = properties.and_then(|p| p.get("MaterialColors").cloned());
+        self.colors = MaterialColors::decode(blob(colors.as_ref())).unwrap_or_else(engine_colors);
         self.reload(properties.map_or(&[][..], |p| blob(p.get("SmoothGrid"))));
     }
 
@@ -269,7 +322,9 @@ impl Terrain {
             let bytes = bytes.to_vec();
             self.reload(&bytes);
         }
-        if let Some(colors) = MaterialColors::decode(blob(instance.properties().get("MaterialColors"))) {
+        if let Some(colors) =
+            MaterialColors::decode(blob(instance.properties().get("MaterialColors")))
+        {
             self.colors = colors;
         }
     }
@@ -309,10 +364,16 @@ impl Terrain {
                 let shape = SharedShape::trimesh_with_flags(
                     points.clone(),
                     indices.clone(),
-                    TriMeshFlags::ORIENTED | TriMeshFlags::MERGE_DUPLICATE_VERTICES,
+                    TriMeshFlags::ORIENTED
+                        | TriMeshFlags::MERGE_DUPLICATE_VERTICES
+                        | TriMeshFlags::FIX_INTERNAL_EDGES,
                 )
                 .or_else(|_| {
-                    SharedShape::trimesh_with_flags(points, indices, TriMeshFlags::MERGE_DUPLICATE_VERTICES)
+                    SharedShape::trimesh_with_flags(
+                        points,
+                        indices,
+                        TriMeshFlags::MERGE_DUPLICATE_VERTICES,
+                    )
                 })
                 .ok()?;
                 Some((material, shape))
@@ -331,12 +392,19 @@ impl Terrain {
     /// or east of it belong to the voxel's chunk.
     fn collision_triangles(&self, key: ChunkKey) -> Vec<[Vector; 3]> {
         let fill = |v: [i32; 3]| self.grid.get(v).solid_fraction();
-        let centre = |v: [i32; 3]| (Vector::new(v[0] as Real, v[1] as Real, v[2] as Real) + 0.5) * CELL;
+        let centre =
+            |v: [i32; 3]| (Vector::new(v[0] as Real, v[1] as Real, v[2] as Real) + 0.5) * CELL;
         let mut vertices: std::collections::HashMap<[i32; 3], Option<Vector>> = Default::default();
         // The vertex of the dual cell whose least corner is voxel `v`.
         let mut vertex = |v: [i32; 3]| -> Option<Vector> {
             *vertices.entry(v).or_insert_with(|| {
-                let corner = |i: usize| [v[0] + (i & 1) as i32, v[1] + ((i >> 1) & 1) as i32, v[2] + ((i >> 2) & 1) as i32];
+                let corner = |i: usize| {
+                    [
+                        v[0] + (i & 1) as i32,
+                        v[1] + ((i >> 1) & 1) as i32,
+                        v[2] + ((i >> 2) & 1) as i32,
+                    ]
+                };
                 let (mut sum, mut n) = (Vector::ZERO, 0.0);
                 for i in 0..8 {
                     for bit in [1, 2, 4] {
@@ -377,7 +445,8 @@ impl Terrain {
                             m[c] -= dc;
                             m
                         };
-                        let quad = [cell(0, 0), cell(1, 0), cell(1, 1), cell(0, 1)].map(&mut vertex);
+                        let quad =
+                            [cell(0, 0), cell(1, 0), cell(1, 1), cell(0, 1)].map(&mut vertex);
                         // Wound to face the empty side.
                         if let [Some(p0), Some(p1), Some(p2), Some(p3)] = quad {
                             if here {
@@ -402,10 +471,15 @@ impl Terrain {
         let mut best = (0.0, Real::MAX, Material::Air);
         for i in 0..27 {
             let v = [i % 3, (i / 3) % 3, i / 9].map(|d| d - 1);
-            let v = [base.x as i32 + v[0], base.y as i32 + v[1], base.z as i32 + v[2]];
+            let v = [
+                base.x as i32 + v[0],
+                base.y as i32 + v[1],
+                base.z as i32 + v[2],
+            ];
             let cell = self.grid.get(v);
             let fill = cell.solid_fraction();
-            let far = ((Vector::new(v[0] as Real, v[1] as Real, v[2] as Real) + 0.5) * CELL).distance(p);
+            let far =
+                ((Vector::new(v[0] as Real, v[1] as Real, v[2] as Real) + 0.5) * CELL).distance(p);
             if fill > best.0 || (fill == best.0 && fill > 0.0 && far < best.1) {
                 best = (fill, far, cell.material);
             }
@@ -469,6 +543,12 @@ impl Terrain {
                     false,
                 ));
             }
+            TerrainOp::GetColor(name) | TerrainOp::SetColor(name, _)
+                if matches!(name.as_str(), "Air" | "Water") =>
+            {
+                // Neither has a colour (TerrainProfile `_colors`).
+                return Err(format!("{name} is not a valid terrain material"));
+            }
             TerrainOp::GetColor(name) => {
                 let [r, g, b] = self.colors.get(material(name)?);
                 return Ok((
@@ -483,7 +563,11 @@ impl Terrain {
                 return Ok((TerrainReply::Done, true));
             }
             TerrainOp::Clear => self.grid.clear(),
-            TerrainOp::FillRegion { min, max, material: m } => {
+            TerrainOp::FillRegion {
+                min,
+                max,
+                material: m,
+            } => {
                 let m = material(m)?;
                 self.each(*min, *max, |_, _| Some(Cell::full(m)));
             }
@@ -526,7 +610,12 @@ impl Terrain {
         Ok((TerrainReply::Done, true))
     }
 
-    fn each(&mut self, min: [i32; 3], max: [i32; 3], mut f: impl FnMut([i32; 3], Cell) -> Option<Cell>) {
+    fn each(
+        &mut self,
+        min: [i32; 3],
+        max: [i32; 3],
+        mut f: impl FnMut([i32; 3], Cell) -> Option<Cell>,
+    ) {
         for y in min[1]..max[1] {
             for z in min[2]..max[2] {
                 for x in min[0]..max[0] {
@@ -545,16 +634,8 @@ impl Terrain {
             return;
         };
         self.bytes = self.encoder.encode(&self.grid);
-        let _ = dom.set_property(
-            referent,
-            "SmoothGrid",
-            binary(self.bytes.clone()),
-        );
-        let _ = dom.set_property(
-            referent,
-            "MaterialColors",
-            binary(self.colors.encode()),
-        );
+        let _ = dom.set_property(referent, "SmoothGrid", binary(self.bytes.clone()));
+        let _ = dom.set_property(referent, "MaterialColors", binary(self.colors.encode()));
     }
 
     /// The nearest terrain hit along `direction` (its whole length), against
@@ -610,7 +691,12 @@ impl Terrain {
         for (_, shapes) in self.shapes.values() {
             for (_, shape) in shapes {
                 let aabb = shape.compute_local_aabb();
-                if p.x < aabb.mins.x || p.x > aabb.maxs.x || p.z < aabb.mins.z || p.z > aabb.maxs.z || p.y > aabb.maxs.y {
+                if p.x < aabb.mins.x
+                    || p.x > aabb.maxs.x
+                    || p.z < aabb.mins.z
+                    || p.z > aabb.maxs.z
+                    || p.y > aabb.maxs.y
+                {
                     continue;
                 }
                 if let Some(hit) = cull(shape, &ray, 1.0e4, RayCullingMode::IgnoreFrontfaces) {
@@ -635,7 +721,9 @@ impl Terrain {
         use rbx_lua::server::QueryShape;
         let referent = self.referent?;
         let moving = match shape {
-            QueryShape::Box(size) => SharedShape::cuboid(size[0] / 2.0, size[1] / 2.0, size[2] / 2.0),
+            QueryShape::Box(size) => {
+                SharedShape::cuboid(size[0] / 2.0, size[1] / 2.0, size[2] / 2.0)
+            }
             QueryShape::Ball(radius) => SharedShape::ball(*radius),
             QueryShape::Part(_) => return None,
         };
@@ -711,5 +799,82 @@ impl Terrain {
             self.water_at(p - Vector::Z * e) - self.water_at(p + Vector::Z * e),
         );
         g.try_normalize().unwrap_or(Vector::Y)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block(terrain: &mut Terrain, y: f32, height: f64, material: &str) {
+        let cframe = crate::humanoid::translated(crate::humanoid::identity(), [0.0, y, 0.0]);
+        terrain
+            .apply(TerrainOp::FillBlock {
+                cframe,
+                size: [32.0, height, 32.0],
+                material: material.into(),
+            })
+            .unwrap();
+    }
+
+    fn lake() -> Terrain {
+        let mut terrain = Terrain {
+            referent: Some(Ref::new(1)),
+            colors: engine_colors(),
+            ..Terrain::default()
+        };
+        // Water down to -16, rock below it, surfaces at 0 and -16.
+        block(&mut terrain, -8.0, 16.0, "Water");
+        block(&mut terrain, -24.0, 16.0, "Rock");
+        terrain.flush();
+        terrain
+    }
+
+    #[test]
+    fn fill_coverage_is_measured_per_cell() {
+        assert_eq!(coverage(-2.0), 1.0);
+        assert_eq!(coverage(2.0), 0.0);
+        assert_eq!(coverage(0.0), 0.5);
+        // A quarter of solid leaves a full water cell water; a full cell
+        // takes it over.
+        let water = Cell::full(Material::Water);
+        assert!(merged(water, Material::Rock, 0.25).is_none());
+        assert_eq!(
+            merged(water, Material::Rock, 1.0).map(|c| c.material),
+            Some(Material::Rock)
+        );
+    }
+
+    #[test]
+    fn water_surface_and_rays() {
+        let terrain = lake();
+        assert!(terrain.has_water());
+        assert!((terrain.water_at(Vector::new(0.0, 0.0, 0.0)) - 0.5).abs() < 0.05);
+        assert!(terrain.water_at(Vector::new(0.0, -8.0, 0.0)) > 0.9);
+        assert_eq!(terrain.water_at(Vector::new(0.0, 8.0, 0.0)), 0.0);
+        let down = [0.0, -40.0, 0.0];
+        let wet = terrain.raycast([0.5, 20.0, 0.5], down, false).unwrap();
+        assert_eq!(wet.material, Some("Water"));
+        assert!(wet.position[1].abs() < 0.1, "{wet:?}");
+        // The rock under the water sits 2 above its fill, like in air.
+        let dry = terrain.raycast([0.5, 20.0, 0.5], down, true).unwrap();
+        assert_eq!(dry.material, Some("Rock"));
+        assert!((dry.position[1] + 14.0).abs() < 0.1, "{dry:?}");
+        // Nothing from inside the rock.
+        assert!(terrain
+            .raycast([0.5, -24.0, 0.5], [0.0, 40.0, 0.0], true)
+            .is_none());
+        assert!(terrain.depth(Vector::new(0.5, -20.0, 0.5)).is_some());
+    }
+
+    #[test]
+    fn air_and_water_have_no_colour() {
+        let mut terrain = lake();
+        assert!(terrain.apply(TerrainOp::GetColor("Water".into())).is_err());
+        let (reply, _) = terrain.apply(TerrainOp::GetColor("Grass".into())).unwrap();
+        let TerrainReply::Color(c) = reply else {
+            panic!("{reply:?}")
+        };
+        assert_eq!(c.map(|v| (v * 255.0).round() as u8), [106, 127, 63]);
     }
 }

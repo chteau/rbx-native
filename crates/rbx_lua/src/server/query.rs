@@ -132,7 +132,10 @@ fn hit_value(lua: &Lua, ctx: &Ctx, hit: Option<QueryHit>) -> Result<Value> {
     let Some(hit) = hit else {
         return Ok(Value::Nil);
     };
-    let material = match (hit.material, crate::property::get(lua, ctx, hit.part, "Material")?) {
+    let material = match (
+        hit.material,
+        crate::property::get(lua, ctx, hit.part, "Material")?,
+    ) {
         (Some(material), _) => material.to_owned(),
         (None, Some(Value::UserData(item))) => mlua::ObjectLike::get::<String>(&item, "Name")?,
         _ => "Plastic".to_owned(),

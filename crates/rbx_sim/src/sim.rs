@@ -1120,9 +1120,14 @@ impl Simulation {
         let mut drives: Vec<Drive> = {
             let mut dom = self.dom.borrow_mut();
             let mut shared = self.shared.borrow_mut();
-            shared
-                .humanoids
-                .before_physics(&mut dom, self.db, &self.world, gravity)
+            let shared = &mut *shared;
+            shared.humanoids.before_physics(
+                &mut dom,
+                self.db,
+                &self.world,
+                &shared.terrain,
+                gravity,
+            )
         };
         self.humanoid_events();
         // Deaths and seats can break or make joints: rebuild now.
@@ -1463,6 +1468,13 @@ impl Simulation {
                 Change::Added(referent) | Change::Parent { referent, .. } => {
                     if self.touches_physics(referent) {
                         self.dirty = true;
+                    }
+                    // A client's Terrain arrives with the place, voxels and
+                    // all.
+                    let terrain = crate::terrain::find(&self.dom.borrow());
+                    if terrain.is_some() && self.shared.borrow().terrain.referent != terrain {
+                        let dom = self.dom.borrow();
+                        self.shared.borrow_mut().terrain.load(&dom);
                     }
                     self.watch_sounds_under(referent);
                     self.start_scripts_under(referent);

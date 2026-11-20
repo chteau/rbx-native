@@ -53,6 +53,8 @@ pub enum DriveMode {
     Air,
     /// On a truss: no gravity, up or down at `climb`.
     Climb,
+    /// In terrain water: the water holds it up, `walk` steers it.
+    Swim,
 }
 
 /// One character's drive, rebuilt every frame by the humanoid code.
@@ -81,6 +83,8 @@ pub struct Drive {
     pub approach: Real,
     /// Vertical speed on a truss.
     pub climb: Real,
+    /// In water: how fast vertical motion dies out, per second.
+    pub swim_damping: Real,
 }
 
 /// What the sensor found under a root.
@@ -328,6 +332,7 @@ impl World {
                     );
                     target = Vector::new(0.0, v.y, 0.0);
                 }
+                DriveMode::Swim => v.y *= (-drive.swim_damping * h).exp(),
                 DriveMode::Air | DriveMode::Off => {}
             }
             if substep == 0 {

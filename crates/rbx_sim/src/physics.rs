@@ -55,6 +55,10 @@ const IMPACT_SPEED: Real = 1.5;
 const KICKED_IMPACT: Real = 6.0;
 const IMPACT_KICK: Real = 0.75;
 const FRAME: Real = 1.0 / 60.0;
+/// Drag of terrain water per stud³ submerged, per stud/s (Buoyancy).
+const WATER_DRAG: Real = 5.7;
+/// Studs between the points a part is sampled at for water.
+const WATER_SAMPLE: Real = 0.5;
 
 /// Friction and elasticity of one part with their weights, for the
 /// contact hook (indexed by collider user data).
@@ -216,7 +220,9 @@ impl Physics for Bridge {
             .then(|| {
                 let mut shared = self.0.borrow_mut();
                 shared.terrain.flush();
-                shared.terrain.raycast(origin, direction, filter.ignore_water)
+                shared
+                    .terrain
+                    .raycast(origin, direction, filter.ignore_water)
             })
             .flatten();
         nearest(part, terrain)
@@ -657,15 +663,20 @@ impl World {
             .map(|(key, _)| *key)
             .collect();
         for key in stale {
-            for handle in self.terrain.chunks.remove(&key).map(|c| c.1).unwrap_or_default() {
-                self.colliders
-                    .remove(
-                        handle,
-                        &mut self.islands,
-                        &mut self.bodies,
-                        &mut self.soft,
-                        true,
-                    );
+            for handle in self
+                .terrain
+                .chunks
+                .remove(&key)
+                .map(|c| c.1)
+                .unwrap_or_default()
+            {
+                self.colliders.remove(
+                    handle,
+                    &mut self.islands,
+                    &mut self.bodies,
+                    &mut self.soft,
+                    true,
+                );
                 self.by_collider.remove(&handle);
                 self.terrain.materials.remove(&handle);
             }
@@ -739,8 +750,90 @@ impl World {
         }
     }
 
+    /// Terrain water's push on every free body: the weight of the water
+    /// each part displaces, up, where it displaces it, and a drag against
+    /// the motion of every submerged bit, `WATER_DRAG` per stud³ (Buoyancy:
+    /// blocks float as deep as their density, 1 being water's, a 1.5 one
+    /// sinks at 18 stud/s and a 0.95 one rises at 1.7). Force and torque
+    /// for this frame, by body.
+    fn water_forces(&self, gravity: Real) -> Vec<(RigidBodyHandle, Vector, Vector)> {
+        let shared = self.shared.borrow();
+        let terrain = &shared.terrain;
+        if !terrain.has_water() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
+            let Some(body) = self.bodies.get(assembly.body) else {
+                continue;
+            };
+            let centre = body.center_of_mass();
+            let (mut force, mut torque) = (Vector::ZERO, Vector::ZERO);
+            for collider in body
+                .colliders()
+                .iter()
+                .filter_map(|&c| self.colliders.get(c))
+            {
+                let shape = collider.shape();
+                let local = shape.compute_local_aabb();
+                let extent = local.maxs - local.mins;
+                let n = (extent / WATER_SAMPLE)
+                    .ceil()
+                    .clamp(Vector::splat(2.0), Vector::splat(6.0));
+                let step = extent / n;
+                let mut points = Vec::new();
+                for i in 0..(n.x * n.y * n.z) as usize {
+                    let (nx, ny) = (n.x as usize, n.y as usize);
+                    let at = Vector::new(
+                        (i % nx) as Real,
+                        ((i / nx) % ny) as Real,
+                        (i / (nx * ny)) as Real,
+                    );
+                    let p = local.mins + (at + 0.5) * step;
+                    if shape.contains_local_point(p) {
+                        points.push(collider.position() * p);
+                    }
+                }
+                if points.is_empty() {
+                    continue;
+                }
+                let dv = collider.volume() / points.len() as Real;
+                let edge = dv.cbrt();
+                for p in points {
+                    // Studs above the surface, from the water fraction
+                    // there (it falls by a quarter a stud across it).
+                    let above = (0.5 - terrain.water_at(p)) * 4.0;
+                    let wet = (0.5 - above / edge).clamp(0.0, 1.0);
+                    if wet == 0.0 {
+                        continue;
+                    }
+                    let push = Vector::new(0.0, gravity * dv * wet, 0.0)
+                        - body.velocity_at_point(p) * (WATER_DRAG * dv * wet);
+                    force += push;
+                    torque += (p - centre).cross(push);
+                }
+            }
+            if force != Vector::ZERO {
+                out.push((assembly.body, force, torque));
+            }
+        }
+        out
+    }
+
+    fn push_water(&mut self, wet: &[(RigidBodyHandle, Vector, Vector)], sign: Real) {
+        for &(handle, force, torque) in wet {
+            if let Some(body) = self.bodies.get_mut(handle) {
+                body.add_force(force * sign, true);
+                body.add_torque(torque * sign, true);
+            }
+        }
+    }
+
     /// The terrain material a collider is, if it is terrain.
-    pub(crate) fn terrain_material(&self, collider: ColliderHandle) -> Option<rbx_terrain::Material> {
+    pub(crate) fn terrain_material(
+        &self,
+        collider: ColliderHandle,
+    ) -> Option<rbx_terrain::Material> {
         self.terrain.materials.get(&collider).copied()
     }
 
@@ -1139,6 +1232,7 @@ impl World {
         self.shared.borrow_mut().generation += 1;
         self.sync_terrain();
         self.out_of_terrain();
+        let wet = self.water_forces(gravity);
         // A world just built has no contacts yet: everything takes 240 Hz once.
         let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
         let g = Vector::new(0.0, -gravity, 0.0);
@@ -1154,6 +1248,7 @@ impl World {
         for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
             let free = adaptive
                 && !driven.contains(&assembly.body)
+                && !wet.iter().any(|w| w.0 == assembly.body)
                 && !self.constrained.contains(&assembly.body)
                 && !self.in_contact(assembly);
             let was_free = assembly.was_free.replace(free);
@@ -1231,6 +1326,10 @@ impl World {
             }
             self.drive_constraints(h, g, substep, &kicked);
             self.drive_characters(drives, h, gravity, substep);
+            // Water pushes as a force, integrated with gravity (an impulse
+            // ahead of the step reads back a frame's gravity short).
+            let wet = self.water_forces(gravity);
+            self.push_water(&wet, 1.0);
             let mixer = Mixer(&self.surfaces, &free_bodies);
             self.pipeline.step(
                 g,
@@ -1247,6 +1346,7 @@ impl World {
                 &mixer,
                 &self.events,
             );
+            self.push_water(&wet, -1.0);
         }
         let events = self
             .events
