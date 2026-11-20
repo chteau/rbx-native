@@ -18,8 +18,12 @@ use std::path::{Path, PathBuf};
 use rbx_viewer::fidelity::{self, metrics, metrics::Image};
 use serde_json::json;
 
-/// How far a scene may slip before `tests/fidelity.rs` fails it.
-const TOLERANCE_DELTA_E: f32 = 0.6;
+/// How far a scene may slip before `tests/fidelity.rs` fails it: a share of
+/// its own ΔE, so a scene that has closed is held tighter than one still far
+/// off, between the two bounds (the floor stays above the software adapter's
+/// own 0.1 drift).
+const TOLERANCE_SHARE: f32 = 0.15;
+const TOLERANCE_DELTA_E: (f32, f32) = (0.25, 0.6);
 const TOLERANCE_SSIM: f32 = 0.02;
 
 fn main() {
@@ -134,7 +138,9 @@ fn main() {
         report.insert(scene.name.to_owned(), entry);
         if write_goldens {
             let mut golden = got.to_json();
-            golden["tolerance_delta_e"] = json!(TOLERANCE_DELTA_E);
+            let (tightest, loosest) = TOLERANCE_DELTA_E;
+            golden["tolerance_delta_e"] =
+                json!((TOLERANCE_SHARE * got.delta_e).clamp(tightest, loosest));
             golden["tolerance_ssim"] = json!(TOLERANCE_SSIM);
             golden["about"] = json!(scene.about);
             goldens.insert(scene.name.to_owned(), golden);
