@@ -1,6 +1,6 @@
 //! Whether one parsed selector picks out one instance.
 
-use rbx_dom::{Ref, WeakDom};
+use crate::{Ref, WeakDom};
 
 use super::selector::{Combinator, Compound, Selector};
 
@@ -10,7 +10,7 @@ use super::selector::{Combinator, Compound, Selector};
 /// that tree (`StyleLink`, creator-docs), so an ancestor step never escapes
 /// it. The docs do not say what an ancestor selector above the root should do;
 /// not matching keeps a sheet's reach the tree it was linked to.
-pub(super) fn matches(dom: &WeakDom, root: Ref, referent: Ref, selector: &Selector) -> bool {
+pub fn matches(dom: &WeakDom, root: Ref, referent: Ref, selector: &Selector) -> bool {
     if selector.inactive || !compound_matches(dom, referent, &selector.subject) {
         return false;
     }

@@ -19,9 +19,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-mod cascade;
-mod matcher;
-mod selector;
+use rbx_dom::style::{cascade, matcher};
 
 const LINK_CLASS: &str = "StyleLink";
 

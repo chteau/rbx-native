@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use rbx_dom::{Instance, Ref, Variant, WeakDom};
+use crate::{Instance, Ref, Variant, WeakDom};
 
 use super::selector::{self, Selector};
 
@@ -16,9 +16,9 @@ const DERIVE_CLASS: &str = "StyleDerive";
 const TOKEN_DEPTH: usize = 8;
 
 /// One `StyleRule`, its `$Token` references already resolved.
-pub(super) struct Rule {
-    pub(super) selectors: Vec<Selector>,
-    pub(super) properties: BTreeMap<String, Variant>,
+pub struct Rule {
+    pub selectors: Vec<Selector>,
+    pub properties: BTreeMap<String, Variant>,
     priority: i32,
     /// Position in the flattened sheet, which is what breaks a priority tie.
     order: usize,
@@ -33,7 +33,7 @@ pub(super) struct Rule {
 /// and say nothing about ties, so "later wins" is borrowed from CSS. Derived
 /// sheets are flattened first because `StyleSheet:SetDerives` calls the base
 /// sheet "the spot of least priority".
-pub(super) fn flatten(dom: &WeakDom, sheet: Ref) -> Vec<Rule> {
+pub fn flatten(dom: &WeakDom, sheet: Ref) -> Vec<Rule> {
     let mut rules = Vec::new();
     collect(
         dom,
@@ -114,7 +114,7 @@ fn read_rule(
     let mut tokens = outer_tokens.clone();
     tokens.extend(instance.attributes());
 
-    let properties = rbx_dom::attributes::decode(instance.properties().get("PropertiesSerialize"))
+    let properties = crate::attributes::decode(instance.properties().get("PropertiesSerialize"))
         .into_iter()
         .filter_map(|(name, value)| Some((name, resolve(&tokens, &value, 0)?)))
         .collect();
@@ -183,7 +183,7 @@ fn text<'a>(instance: &'a Instance, name: &str) -> &'a str {
 
 /// The `StyleSheet` reference a `StyleLink` or `StyleDerive` carries. Whether
 /// it still points at anything is [`WeakDom::get`]'s answer, not this one's.
-pub(super) fn reference(instance: &Instance) -> Option<Ref> {
+pub fn reference(instance: &Instance) -> Option<Ref> {
     match instance.properties().get("StyleSheet") {
         Some(&Variant::Ref(referent)) => Some(referent),
         _ => None,

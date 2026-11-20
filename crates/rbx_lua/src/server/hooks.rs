@@ -142,6 +142,7 @@ pub(super) struct ServerHooks {
     /// `game:IsLoaded()`: a client's is false until the place arrived.
     pub(super) loaded: Rc<Cell<bool>>,
     pub(super) services: Rc<super::services::Runtime>,
+    pub(super) styles: super::styles::Shared,
 }
 
 fn method<A, R>(lua: &Lua, f: impl Fn(&Lua, A) -> Result<R> + 'static) -> Result<Option<Value>>
@@ -517,6 +518,9 @@ impl Hooks for ServerHooks {
                 return Ok(Some(value));
             }
         }
+        if let Some(value) = super::styles::member(lua, ctx, &self.styles, referent, class, key)? {
+            return Ok(Some(value));
+        }
         if let Some(value) = super::services::member(lua, &self.services, referent, class, key)? {
             return Ok(Some(value));
         }
@@ -588,6 +592,7 @@ impl Hooks for ServerHooks {
             written = true;
         }
         if written {
+            super::styles::wrote(&self.styles, ctx, referent, class, key);
             for (owner, name, args) in self.physics.property_written(referent, class, key) {
                 signal::fire(lua, &instance_key(owner, name.as_str()), &args)?;
             }

@@ -14,6 +14,7 @@ mod instance;
 pub mod merge;
 mod reference;
 pub mod rotation;
+pub mod style;
 mod variant;
 
 pub use brick_color::{BrickColor, DEFAULT_NUMBER as DEFAULT_BRICK_COLOR};

@@ -10,7 +10,7 @@
 
 /// What joins one compound selector to the one before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Combinator {
+pub enum Combinator {
     /// `>`: the previous match is the direct parent.
     Child,
     /// `>>`: the previous match is any ancestor.
@@ -19,37 +19,37 @@ pub(super) enum Combinator {
 
 /// The conditions one instance has to meet, all of them at once.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(super) struct Compound {
+pub struct Compound {
     /// A bare class name. The docs do not say whether a class selector also
     /// matches subclasses, so this matches the class exactly, as CSS element
     /// selectors do, a `Frame` rule then cannot leak onto a `ScrollingFrame`.
-    pub(super) class: Option<String>,
+    pub class: Option<String>,
     /// `#Name`. Roblox does not require these to be unique (css-comparisons).
-    pub(super) name: Option<String>,
+    pub name: Option<String>,
     /// `.Tag`, every one of which has to be present.
-    pub(super) tags: Vec<String>,
+    pub tags: Vec<String>,
 }
 
 /// One selector out of a rule's comma-separated list, rightmost compound
 /// first: matching starts at the instance and walks up its ancestors.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Selector {
-    pub(super) subject: Compound,
+pub struct Selector {
+    pub subject: Compound,
     /// Each ancestor step, nearest first, with the combinator that reached it.
-    pub(super) ancestors: Vec<(Combinator, Compound)>,
+    pub ancestors: Vec<(Combinator, Compound)>,
     /// Set by anything this viewer can never satisfy: a `:State` selector (it
     /// draws one static frame, so no instance is ever hovered, pressed or
     /// selected), an `@Query` (no `StyleQuery` instances, and the built-in
     /// queries describe an input device and a viewport this renderer has no
     /// notion of), or a `::UIComponent` modifier (a phantom instance the plan
     /// has nowhere to put). The selector parses, and then never matches.
-    pub(super) inactive: bool,
+    pub inactive: bool,
 }
 
 /// A rule's whole `Selector` string: any of these matching styles the
 /// instance. An unparseable selector yields no entries at all, which is
 /// Roblox reporting it through `StyleRule.SelectorError` and styling nothing.
-pub(super) fn parse(selector: &str) -> Vec<Selector> {
+pub fn parse(selector: &str) -> Vec<Selector> {
     selector
         .split(',')
         .map(parse_one)

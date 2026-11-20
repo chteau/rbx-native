@@ -16,6 +16,7 @@ mod pathfinding;
 mod query;
 mod remote;
 mod services;
+mod styles;
 mod terrain;
 #[cfg(test)]
 mod tests;
@@ -321,6 +322,7 @@ pub struct ServerVm {
     chat: chat::Chat,
     loaded: Rc<Cell<bool>>,
     services: Rc<services::Runtime>,
+    styles: styles::Shared,
     budget: Duration,
 }
 
@@ -352,6 +354,7 @@ impl ServerVm {
         };
         let loaded = Rc::new(Cell::new(true));
         let services = services::Runtime::new(client.clone(), physics.clone(), remotes.clone());
+        let styles = styles::Shared::default();
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
             groups: groups.clone(),
@@ -362,6 +365,7 @@ impl ServerVm {
             chat: chat.clone(),
             loaded: loaded.clone(),
             services: services.clone(),
+            styles: styles.clone(),
         })));
         install_globals(&lua, &ctx)?;
         lua.globals().set(
@@ -394,6 +398,7 @@ impl ServerVm {
             chat,
             loaded,
             services,
+            styles,
             budget: Duration::from_secs(10),
         })
     }
@@ -621,9 +626,11 @@ impl ServerVm {
         let remotes = self.remotes.clone();
         let client = self.client.get();
         let runtime = self.services.clone();
+        let styles = self.styles.clone();
         self.guarded(move |lua| {
             remote::flush(lua, &remotes, client)?;
             services::poll(lua, &runtime)?;
+            styles::poll(lua, &styles)?;
             scheduler::tick(lua, now)
         })
     }
