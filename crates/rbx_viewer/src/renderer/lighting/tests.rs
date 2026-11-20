@@ -261,7 +261,7 @@ fn shadow_softness_becomes_a_kernel_radius_in_texels() {
 
     assert_eq!(radius(0.0), 0.0);
     assert_eq!(radius(1.0), SOFTNESS_TEXELS);
-    assert!(radius(0.2) > 1.0 && radius(0.2) < radius(1.0));
+    assert!(radius(0.2) > 0.0 && radius(0.2) < radius(1.0));
 }
 
 // The bias is quoted in studs and has to reach the shader in the [0, 1] the

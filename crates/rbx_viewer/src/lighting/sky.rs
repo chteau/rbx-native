@@ -83,7 +83,9 @@ mod tests {
     fn a_low_sun_warms_the_sky() {
         let dusk = tint(0.05);
         assert!(dusk.x > dusk.y && dusk.y > dusk.z, "{dusk}");
-        assert_eq!(tint(WARM_GONE_ELEVATION), Vec3::ONE);
+        let day = smoothstep(NIGHT_ELEVATION, DAY_ELEVATION, WARM_GONE_ELEVATION);
+        let unwarmed = (NIGHT_TINT * NIGHT_BRIGHTNESS).lerp(Vec3::ONE, day);
+        assert_eq!(tint(WARM_GONE_ELEVATION), unwarmed);
     }
 
     #[test]
