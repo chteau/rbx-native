@@ -331,8 +331,13 @@ fn shade(surface: Surface) -> vec3<f32> {
     let ambient = lighting.ambient.rgb + sky_ambient(normal);
 
     let half_vector = normalize(light + to_eye);
+    // Through the same Fresnel curve as the reflection, relative to its
+    // face-on value: what draws the bright streak a low sun leaves across a
+    // plain floor (the `atmosphere` and `sun_rays` scenes).
+    let grazing = pow(1.0 - saturate(dot(half_vector, to_eye)), 5.0);
     let specular = surface.spec_strength
         * exp2(surface.shininess * (dot(normal, half_vector) - 1.0))
+        * (1.0 + (ENV_F90 / ENV_F0 - 1.0) * grazing)
         * saturate(facing)
         * sun_lit;
 

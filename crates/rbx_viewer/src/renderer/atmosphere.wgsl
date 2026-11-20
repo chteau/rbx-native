@@ -21,6 +21,11 @@ const ATMOSPHERE_OFFSET_STUDS: f32 = 400.0;
 // enough that most of the view is unaffected, long enough not to read as a wall.
 const RENDER_DISTANCE_FADE: f32 = 0.2;
 
+// How much of the haze is `Color` (tinted by `Decay`), the rest being the sky
+// it scatters: the real client's horizon under a yellow `Color` stays a pale
+// sky blue (the `atmosphere` fidelity scene).
+const HAZE_COLOR_WEIGHT: f32 = 0.35;
+
 /// Colour the haze scatters toward, for a ray travelling `direction`.
 ///
 /// `Decay` is a hue rather than a radiance, Studio's haze away from the sun is
@@ -33,9 +38,9 @@ fn haze_color(direction: vec3<f32>) -> vec3<f32> {
     let toward_sun = dot(direction, normalize(lighting.sun_direction.xyz));
     // Dimmed with the sky itself: the haze is lit by it, so a night horizon
     // fades to dark blue rather than to the daytime white.
-    return lighting.atmosphere_color.rgb
-        * mix(tint, vec3<f32>(1.0), sqrt(saturate(toward_sun * 0.5 + 0.5)))
-        * lighting.sky_tint.rgb;
+    let lit = lighting.atmosphere_color.rgb
+        * mix(tint, vec3<f32>(1.0), sqrt(saturate(toward_sun * 0.5 + 0.5)));
+    return mix(sky_flat(), lit, HAZE_COLOR_WEIGHT) * lighting.sky_tint.rgb;
 }
 
 /// What fraction of a ray survives `studs` of atmosphere, per channel.
