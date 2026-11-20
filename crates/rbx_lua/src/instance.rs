@@ -283,12 +283,13 @@ impl UserData for LuaInstance {
         // wireframe adornments, so drawing calls are accepted and dropped.
         for name in ["AddLine", "AddLines", "AddPath", "AddText", "Clear"] {
             methods.add_method(name, move |lua, this, mut args: MultiValue| {
-                // `ParticleEmitter:Clear`, the run's, goes on to the hooks
-                // (methods answer before `__index`, as for `Remove`).
-                if name == "Clear" && matches!(this.class().as_deref(), Ok("ParticleEmitter")) {
+                // `ParticleEmitter:Clear` and `Terrain:Clear`, the run's, go
+                // on to the hooks (methods answer before `__index`, as for
+                // `Remove`).
+                let class = this.class()?;
+                if name == "Clear" && matches!(class.as_str(), "ParticleEmitter" | "Terrain") {
                     if let Some(hooks) = crate::hooks::hooks(lua) {
-                        let member =
-                            hooks.index(lua, &this.ctx, this.referent, "ParticleEmitter", name)?;
+                        let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
                         if let Some(Value::Function(clear)) = member {
                             args.push_front(Value::Nil);
                             return clear.call::<MultiValue>(args);

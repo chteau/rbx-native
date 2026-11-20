@@ -33,6 +33,7 @@ mod sim;
 mod sound;
 mod spatial;
 mod teams;
+mod terrain;
 mod tools;
 
 pub use input::{Input, MouseBehavior};

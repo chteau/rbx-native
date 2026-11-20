@@ -1483,6 +1483,13 @@ impl Simulation {
             return;
         };
         let class = instance.class();
+        // Terrain's voxels come back from an edit or the server, not a shape.
+        if class == "Terrain" {
+            if matches!(name, "SmoothGrid" | "MaterialColors") {
+                self.shared.borrow_mut().terrain.changed(&dom, referent);
+            }
+            return;
+        }
         let is_part = self.db.is_subclass_of(class, "BasePart");
         let is_joint = self.db.is_subclass_of(class, "JointInstance") || class == "WeldConstraint";
         // Constraint parameters are re-read every frame; what a constraint

@@ -13,6 +13,7 @@ mod input;
 mod meshes;
 mod query;
 mod remote;
+mod terrain;
 #[cfg(test)]
 mod tests;
 mod tween;
@@ -44,6 +45,7 @@ pub use chat::ChatLine;
 pub use hooks::CollisionGroups;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
+pub use terrain::{TerrainOp, TerrainReply};
 
 /// Roblox's message for a script that ran too long without yielding.
 const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
@@ -71,6 +73,11 @@ pub trait Physics {
     /// A `MeshPart` made at runtime: its geometry, `vertices` centred on
     /// the part's origin, for collision.
     fn register_mesh(&self, _part: Ref, _vertices: Vec<[f32; 3]>, _triangles: Vec<[u32; 3]>) {}
+
+    /// A `Terrain` voxel edit or read.
+    fn terrain(&self, _op: TerrainOp) -> Result<TerrainReply, String> {
+        Err("Terrain is not simulated here".to_owned())
+    }
 
     /// `WorldRoot:Raycast`: the nearest hit along `direction` (its whole
     /// length) from `origin`.

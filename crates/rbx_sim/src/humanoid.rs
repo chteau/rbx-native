@@ -723,7 +723,10 @@ impl Humanoids {
         let vy = world.part_velocity(root).map_or(0.0, |v| v[1]);
         // `FloorMaterial`: the floor's material, Air with none.
         const AIR: u32 = 1792;
-        let material = floor.map_or(AIR, |f| enum_value(dom, db, f.part, "Material"));
+        let material = floor.map_or(AIR, |f| {
+            f.terrain_material
+                .unwrap_or_else(|| enum_value(dom, db, f.part, "Material"))
+        });
         set(dom, db, id, "FloorMaterial", Variant::Enum(material));
         match state {
             State::Jumping if age >= 1 => self.change(id, State::Freefall),

@@ -7,7 +7,7 @@ use rbx_dom::{CFrameData, Instance, PhysicalProperties, Ref, Variant, Vector3Dat
 use rbx_reflection::ReflectionDatabase;
 
 /// `Enum.Material.Plastic`, what a part with no material reads as.
-const PLASTIC: [f32; 5] = [0.7, 0.3, 0.5, 1.0, 1.0];
+pub(crate) const PLASTIC: [f32; 5] = [0.7, 0.3, 0.5, 1.0, 1.0];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shape {

@@ -15,6 +15,7 @@ rbx_lua = { path = "../rbx_lua" }
 rbx_animation = { path = "../rbx_animation" }
 rbx_assets = { path = "../rbx_assets" }
 rbx_mesh = { path = "../rbx_mesh" }
+rbx_terrain = { path = "../rbx_terrain" }
 # Rigid-body physics (Apache-2.0), the stand-in for Roblox's own solver,
 # in f64: places sit thousands of studs out and f32 loses whole substeps.
 rapier3d = { package = "rapier3d-f64", version = "0.36" }

@@ -162,6 +162,7 @@ impl Spatial {
             position: to_array(origin + dir * toi),
             normal: to_array(normal),
             distance: toi * length,
+            material: None,
         })
     }
 
@@ -226,6 +227,7 @@ impl Spatial {
             position: to_array(position),
             normal: to_array(normal),
             distance: toi * length,
+            material: None,
         })
     }
 
@@ -295,6 +297,7 @@ mod tests {
             respect_can_collide: false,
             collision_group: "Default".to_owned(),
             max_parts: 0,
+            ignore_water: false,
         }
     }
 

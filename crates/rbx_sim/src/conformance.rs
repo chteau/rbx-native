@@ -467,6 +467,36 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/HumanoidTurnRates.luau"),
         tolerance: &[("*", 2.0)],
     },
+    Test {
+        name: "TerrainFill",
+        source: include_str!("../conformance/tests/TerrainFill.luau"),
+        tolerance: &[("*", 0.02)],
+    },
+    Test {
+        name: "TerrainRaycast",
+        source: include_str!("../conformance/tests/TerrainRaycast.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "TerrainPhysics",
+        source: include_str!("../conformance/tests/TerrainPhysics.luau"),
+        tolerance: &[("*", 0.3), ("*_stopped", 3.0), ("*bounce", 0.5)],
+    },
+    Test {
+        name: "TerrainHumanoid",
+        source: include_str!("../conformance/tests/TerrainHumanoid.luau"),
+        tolerance: &[("*", 0.5)],
+    },
+    Test {
+        name: "Buoyancy",
+        source: include_str!("../conformance/tests/Buoyancy.luau"),
+        tolerance: &[("*", 0.3), ("*_settled", 20.0)],
+    },
+    Test {
+        name: "Swim",
+        source: include_str!("../conformance/tests/Swim.luau"),
+        tolerance: &[("*", 0.5)],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
@@ -706,6 +736,7 @@ pub fn bare_place() -> WeakDom {
         })
     };
     let size = |x: f32, y: f32, z: f32| Variant::Vector3(Vector3Data { x, y, z });
+    child(&mut dom, "Terrain", "Terrain", workspace);
     let base = child(&mut dom, "Part", "Baseplate", workspace);
     let _ = dom.set_property(base, "Anchored", Variant::Bool(true));
     let _ = dom.set_property(base, "Size", size(512.0, 20.0, 512.0));

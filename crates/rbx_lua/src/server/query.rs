@@ -27,6 +27,8 @@ pub struct QueryFilter {
     pub collision_group: String,
     /// 0 is unlimited.
     pub max_parts: usize,
+    /// `RaycastParams.IgnoreWater`: rays go through terrain water.
+    pub ignore_water: bool,
 }
 
 /// The shape a query sweeps or tests.
@@ -46,6 +48,8 @@ pub struct QueryHit {
     pub position: [f64; 3],
     pub normal: [f64; 3],
     pub distance: f64,
+    /// What was hit is terrain of this material (`Enum.Material` name).
+    pub material: Option<&'static str>,
 }
 
 fn array(v: Vector3Data) -> [f64; 3] {
@@ -83,6 +87,7 @@ fn make_filter(
         respect_can_collide,
         collision_group,
         max_parts,
+        ignore_water: false,
     }
 }
 
@@ -90,14 +95,17 @@ fn raycast_filter(ctx: &Ctx, params: &Option<AnyUserData>) -> Result<QueryFilter
     match params {
         Some(data) => {
             let p = data.borrow::<LuaRaycastParams>()?;
-            Ok(make_filter(
-                ctx,
-                &p.filter,
-                p.include,
-                p.collision_group.clone(),
-                p.respect_can_collide,
-                0,
-            ))
+            Ok(QueryFilter {
+                ignore_water: p.ignore_water,
+                ..make_filter(
+                    ctx,
+                    &p.filter,
+                    p.include,
+                    p.collision_group.clone(),
+                    p.respect_can_collide,
+                    0,
+                )
+            })
         }
         None => Ok(make_filter(ctx, &[], false, "Default".to_owned(), false, 0)),
     }
@@ -124,8 +132,9 @@ fn hit_value(lua: &Lua, ctx: &Ctx, hit: Option<QueryHit>) -> Result<Value> {
     let Some(hit) = hit else {
         return Ok(Value::Nil);
     };
-    let material = match crate::property::get(lua, ctx, hit.part, "Material")? {
-        Some(Value::UserData(item)) => mlua::ObjectLike::get::<String>(&item, "Name")?,
+    let material = match (hit.material, crate::property::get(lua, ctx, hit.part, "Material")?) {
+        (Some(material), _) => material.to_owned(),
+        (None, Some(Value::UserData(item))) => mlua::ObjectLike::get::<String>(&item, "Name")?,
         _ => "Plastic".to_owned(),
     };
     let vector = |v: [f64; 3]| Vector3Data {

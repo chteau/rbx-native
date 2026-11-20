@@ -94,6 +94,8 @@ pub struct Floor {
     /// How fast the floor under the root moves (a platform, or a conveyor's
     /// belt): walking is relative to it (HumanoidPlatform, Conveyor).
     pub velocity: [Real; 3],
+    /// The `Enum.Material` value of the terrain under it, when it is terrain.
+    pub terrain_material: Option<u32>,
 }
 
 /// Velocity gained per substep at most, from the floor's friction and the
@@ -170,6 +172,7 @@ impl World {
         // From the root's centre, not the thin box's bottom.
         let distance = hit.time_of_impact + SENSOR_THICKNESS;
         let part = *self.by_collider.get(&collider)?;
+        let terrain_material = self.terrain_material(collider).map(|m| m.enum_value());
         let mut normal = hit.normal2;
         if normal.y < 0.0 {
             normal = -normal;
@@ -188,6 +191,7 @@ impl World {
             part,
             friction,
             velocity: velocity.to_array(),
+            terrain_material,
         })
     }
 

@@ -8,6 +8,7 @@ mod region;
 
 #[allow(unused_imports)]
 pub(crate) use filter::{LuaOverlapParams, LuaRaycastParams, LuaRaycastResult};
+pub(crate) use region::LuaRegion3;
 
 pub(crate) fn register(lua: &Lua) -> Result<()> {
     filter::register(lua)?;

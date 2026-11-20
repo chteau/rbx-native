@@ -26,7 +26,9 @@ use std::sync::Mutex;
 
 use rapier3d::prelude::*;
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
-use rbx_lua::server::{CollisionGroups, Physics, QueryFilter, QueryHit, QueryShape};
+use rbx_lua::server::{
+    CollisionGroups, Physics, QueryFilter, QueryHit, QueryShape, TerrainOp, TerrainReply,
+};
 use rbx_reflection::ReflectionDatabase;
 
 pub use character::{Drive, DriveMode, Floor};
@@ -116,6 +118,7 @@ pub struct Shared {
     /// `ParticleEmitter:Emit`/`Clear` calls not yet handed to a renderer.
     pub(crate) bursts: Vec<(Ref, crate::Burst)>,
     pub(crate) sounds: crate::sound::Sounds,
+    pub(crate) terrain: crate::terrain::Terrain,
 }
 
 /// What spatial queries read: the live DOM, the groups, the index.
@@ -134,6 +137,7 @@ impl Shared {
         db: &'static ReflectionDatabase,
         groups: Rc<RefCell<CollisionGroups>>,
     ) {
+        self.terrain.load(&dom.borrow());
         self.queries = Some(Queries {
             dom,
             db,
@@ -181,6 +185,24 @@ impl Bridge {
     }
 }
 
+impl Bridge {
+    /// Whether a query's filter lets it hit terrain.
+    fn terrain_allowed(&self, filter: &QueryFilter) -> bool {
+        let shared = self.0.borrow();
+        shared
+            .terrain
+            .referent
+            .is_some_and(|t| filter.parts.contains(&t) == filter.include)
+    }
+}
+
+fn nearest(a: Option<QueryHit>, b: Option<QueryHit>) -> Option<QueryHit> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(if b.distance < a.distance { b } else { a }),
+        (a, b) => a.or(b),
+    }
+}
+
 impl Physics for Bridge {
     fn raycast(
         &self,
@@ -188,7 +210,16 @@ impl Physics for Bridge {
         direction: [f64; 3],
         filter: &QueryFilter,
     ) -> Option<QueryHit> {
-        self.query(|s, g| s.raycast(origin, direction, filter, g))?
+        let part = self.query(|s, g| s.raycast(origin, direction, filter, g))?;
+        let terrain = self
+            .terrain_allowed(filter)
+            .then(|| {
+                let mut shared = self.0.borrow_mut();
+                shared.terrain.flush();
+                shared.terrain.raycast(origin, direction, filter.ignore_water)
+            })
+            .flatten();
+        nearest(part, terrain)
     }
 
     fn shapecast(
@@ -198,7 +229,16 @@ impl Physics for Bridge {
         direction: [f64; 3],
         filter: &QueryFilter,
     ) -> Option<QueryHit> {
-        self.query(|s, g| s.shapecast(shape, from, direction, filter, g))?
+        let part = self.query(|s, g| s.shapecast(shape, from, direction, filter, g))?;
+        let terrain = self
+            .terrain_allowed(filter)
+            .then(|| {
+                let mut shared = self.0.borrow_mut();
+                shared.terrain.flush();
+                shared.terrain.shapecast(shape, &pose_of(from), direction)
+            })
+            .flatten();
+        nearest(part, terrain)
     }
 
     fn overlap(
@@ -210,6 +250,16 @@ impl Physics for Bridge {
     ) -> Vec<Ref> {
         self.query(|s, g| s.overlap(shape, at, exact, filter, g))
             .unwrap_or_default()
+    }
+
+    fn terrain(&self, op: TerrainOp) -> Result<TerrainReply, String> {
+        let mut shared = self.0.borrow_mut();
+        let (reply, changed) = shared.terrain.apply(op)?;
+        let dom = shared.queries.as_ref().map(|q| q.dom.clone());
+        if let (true, Some(dom)) = (changed, dom) {
+            shared.terrain.write_back(&mut dom.borrow_mut());
+        }
+        Ok(reply)
     }
 
     fn register_mesh(&self, part: Ref, vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) {
@@ -530,6 +580,21 @@ pub struct World {
     constraints: Vec<constraints::Constraint>,
     /// Bodies a constraint acts on: always at 240 Hz.
     constrained: HashSet<RigidBodyHandle>,
+    terrain: TerrainColliders,
+}
+
+/// Terrain's collision meshes in the world, one fixed body for them all.
+#[derive(Default)]
+struct TerrainColliders {
+    body: Option<RigidBodyHandle>,
+    /// The terrain's shape version they were built from.
+    version: Option<u64>,
+    chunks: HashMap<rbx_terrain::ChunkKey, (u64, Vec<ColliderHandle>)>,
+    materials: HashMap<ColliderHandle, rbx_terrain::Material>,
+    /// The surface index of each material's friction and elasticity.
+    surfaces: HashMap<rbx_terrain::Material, usize>,
+    /// The `Default` collision group, which terrain is in.
+    groups: Option<InteractionGroups>,
 }
 
 impl World {
@@ -563,7 +628,120 @@ impl World {
             events: Events::default(),
             constraints: Vec::new(),
             constrained: HashSet::new(),
+            terrain: TerrainColliders::default(),
         }
+    }
+
+    /// Brings terrain's colliders in line with its collision meshes.
+    fn sync_terrain(&mut self) {
+        let shared = self.shared.clone();
+        let mut shared = shared.borrow_mut();
+        shared.terrain.flush();
+        let terrain = &shared.terrain;
+        let Some(referent) = terrain.referent else {
+            return;
+        };
+        if self.terrain.version == Some(terrain.version) {
+            return;
+        }
+        self.terrain.version = Some(terrain.version);
+        let body = *self
+            .terrain
+            .body
+            .get_or_insert_with(|| self.bodies.insert(RigidBodyBuilder::fixed().build()));
+        let stale: Vec<_> = self
+            .terrain
+            .chunks
+            .iter()
+            .filter(|(key, (stamp, _))| terrain.shapes.get(key).is_none_or(|s| s.0 != *stamp))
+            .map(|(key, _)| *key)
+            .collect();
+        for key in stale {
+            for handle in self.terrain.chunks.remove(&key).map(|c| c.1).unwrap_or_default() {
+                self.colliders
+                    .remove(
+                        handle,
+                        &mut self.islands,
+                        &mut self.bodies,
+                        &mut self.soft,
+                        true,
+                    );
+                self.by_collider.remove(&handle);
+                self.terrain.materials.remove(&handle);
+            }
+        }
+        let groups = self.terrain.groups.unwrap_or_default();
+        for (key, (stamp, shapes)) in &terrain.shapes {
+            if self.terrain.chunks.contains_key(key) {
+                continue;
+            }
+            let mut handles = Vec::with_capacity(shapes.len());
+            for (material, shape) in shapes {
+                let surfaces = &mut self.surfaces;
+                let surface = *self.terrain.surfaces.entry(*material).or_insert_with(|| {
+                    let p = rbx_materials::physics::PHYSICS
+                        .iter()
+                        .find(|(n, _)| *n == material.name())
+                        .map_or(part::PLASTIC, |(_, p)| *p);
+                    surfaces.push(Surface {
+                        friction: p[1],
+                        elasticity: p[2],
+                        friction_weight: p[3],
+                        elasticity_weight: p[4],
+                        conveyor: Vector::ZERO,
+                    });
+                    surfaces.len() - 1
+                });
+                let collider = ColliderBuilder::new(shape.clone())
+                    .user_data(surface as u128)
+                    .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
+                    .active_events(ActiveEvents::COLLISION_EVENTS)
+                    .collision_groups(groups)
+                    .build();
+                let handle = self
+                    .colliders
+                    .insert_with_parent(collider, body, &mut self.bodies);
+                self.by_collider.insert(handle, referent);
+                self.terrain.materials.insert(handle, *material);
+                handles.push(handle);
+            }
+            self.terrain.chunks.insert(*key, (*stamp, handles));
+        }
+    }
+
+    /// Lifts every free body with a part's centre inside terrain onto its
+    /// surface: a block made under the collision surface comes up to rest
+    /// on it (TerrainPhysics `placed_y`).
+    fn out_of_terrain(&mut self) {
+        let shared = self.shared.clone();
+        let shared = shared.borrow();
+        if shared.terrain.shapes.is_empty() {
+            return;
+        }
+        for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
+            let Some(body) = self.bodies.get(assembly.body) else {
+                continue;
+            };
+            let lift = body
+                .colliders()
+                .iter()
+                .filter_map(|&c| self.colliders.get(c))
+                .filter(|c| !c.is_sensor())
+                .filter_map(|c| {
+                    let depth = shared.terrain.depth(c.position().translation)?;
+                    Some(depth + c.compute_aabb().half_extents().y)
+                })
+                .fold(0.0, Real::max);
+            if lift > 0.0 {
+                let body = &mut self.bodies[assembly.body];
+                body.set_translation(body.translation() + Vector::new(0.0, lift, 0.0), true);
+            }
+        }
+    }
+
+    /// The terrain material a collider is, if it is terrain.
+    pub(crate) fn terrain_material(&self, collider: ColliderHandle) -> Option<rbx_terrain::Material> {
+        self.terrain.materials.get(&collider).copied()
     }
 
     pub fn is_part(&self, part: Ref) -> bool {
@@ -628,6 +806,19 @@ impl World {
         for i in 0..parts.len() {
             groups_of.entry(sets.find(i)).or_default().push(i);
         }
+        let default = "Default".to_owned();
+        let filter = groups
+            .names()
+            .iter()
+            .enumerate()
+            .filter(|(_, other)| groups.collides(&default, other))
+            .fold(0u32, |bits, (j, _)| bits | (1 << j));
+        self.terrain.groups = Some(InteractionGroups::new(
+            Group::from_bits_truncate(1 << groups.index(&default)),
+            Group::from_bits_truncate(filter),
+            InteractionTestMode::And,
+        ));
+        self.sync_terrain();
         let mut members: Vec<Vec<usize>> = groups_of.into_values().collect();
         members.sort_by_key(|m| m[0]);
         for member in members {
@@ -946,6 +1137,8 @@ impl World {
         drives: &mut [Drive],
     ) -> Vec<Touch> {
         self.shared.borrow_mut().generation += 1;
+        self.sync_terrain();
+        self.out_of_terrain();
         // A world just built has no contacts yet: everything takes 240 Hz once.
         let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
         let g = Vector::new(0.0, -gravity, 0.0);
@@ -1069,7 +1262,9 @@ impl World {
                     CollisionEvent::Stopped(a, b, _) => (a, b, false),
                 };
                 let (a, b) = (*self.by_collider.get(&c1)?, *self.by_collider.get(&c2)?);
-                let touchable = |r: Ref| self.parts.get(&r).is_some_and(|p| p.can_touch);
+                let terrain = self.shared.borrow().terrain.referent;
+                let touchable =
+                    |r: Ref| Some(r) == terrain || self.parts.get(&r).is_some_and(|p| p.can_touch);
                 (touchable(a) && touchable(b)).then_some(Touch { a, b, began })
             })
             .collect()
