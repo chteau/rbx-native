@@ -1082,7 +1082,7 @@ impl Renderer {
         let (light, lamp) = if lighting.sun_direction.y >= 0.0 {
             (lighting.sun_direction, Lamp::Sun)
         } else {
-            (-lighting.sun_direction, Lamp::Fill)
+            (lighting.fill_direction(), Lamp::Fill)
         };
         let frustum = self
             .camera

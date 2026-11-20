@@ -14,8 +14,8 @@ struct Uniforms {
 }
 
 struct LightingUniform {
-    // xyz: unit vector pointing at the sun. The second lamp sits at -xyz, which
-    // is where the moon is once the sun has set.
+    // xyz: unit vector pointing at the sun. The second lamp is opposite it by
+    // day and the moon by night (`fill_direction`).
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     fill_color: vec4<f32>,
@@ -280,6 +280,18 @@ fn env_fresnel(normal: vec3<f32>, to_eye: vec3<f32>) -> f32 {
 const ENV_F0: f32 = 0.1;
 const ENV_F90: f32 = 0.4;
 
+/// The fill lamp's direction: opposite the sun by day, the moon by night,
+/// which the real client puts at the sun's direction with X and Y turned round
+/// and Z kept. `crate::lighting::Lighting::fill_direction` is the same.
+fn fill_direction() -> vec3<f32> {
+    let sun = normalize(lighting.sun_direction.xyz);
+    let day = saturate((sun.y + TWILIGHT_BAND) / (2.0 * TWILIGHT_BAND));
+    let moon = vec3<f32>(-sun.x, -sun.y, sun.z);
+    return normalize(mix(moon, -sun, day));
+}
+
+const TWILIGHT_BAND: f32 = 0.1;
+
 /// The whole model, per fragment: two lamps, ambient, specular, environment,
 /// exposure and fog. Returns linear colour clamped to the displayable range,
 /// Roblox squares it down into a gamma-2 target here, which an `*Srgb` render
@@ -291,19 +303,20 @@ fn shade(surface: Surface) -> vec3<f32> {
     let distance = length(offset);
     let to_eye = offset / max(distance, 1e-4);
 
-    // Two lamps, one at L and a dim one at -L: what stops a face turned away
-    // from the sun reading as a flat silhouette.
+    // Two lamps, the sun and a dim fill: what stops a face turned away from
+    // the sun reading as a flat silhouette, and the moon at night.
     let facing = dot(normal, light);
+    let fill_facing = dot(normal, fill_direction());
     // Only the lamp above the horizon is occluded, and only its own term.
     // Ambient and sky irradiance stay whole, which is what makes a Studio
     // shadow on a grey baseplate read as pure blue sky rather than as black.
     let lamp = lighting.shadow_lamp.x;
-    let toward_lamp = select(-facing, facing, lamp > 0.0);
+    let toward_lamp = select(fill_facing, facing, lamp > 0.0);
     let visibility = lamp_visibility(surface.world_position, normal, toward_lamp);
     let sun_lit = select(1.0, visibility, lamp > 0.5);
     let fill_lit = select(1.0, visibility, lamp < -0.5);
     let direct = lighting.sun_color.rgb * saturate(facing) * sun_lit
-        + lighting.fill_color.rgb * saturate(-facing) * fill_lit;
+        + lighting.fill_color.rgb * saturate(fill_facing) * fill_lit;
 
     // Roblox mixes indoor Ambient with OutdoorAmbient by a per-voxel skylight
     // factor. We have no voxel grid, so every surface is treated as open to the

@@ -220,7 +220,7 @@ fn a_time_of_day_is_spelled_the_way_a_place_file_spells_it() {
 fn the_readout_names_the_body_and_owns_up_to_a_clamp() {
     let noon = place(Body::Sun, Vec3::Y);
     assert_eq!(readout(Body::Sun, &noon), "Sun 12:00 · lat 23.5°");
-    let held = place(Body::Moon, -Vec3::Z);
+    let held = place(Body::Moon, Vec3::Z);
     assert!(held.clamped);
     assert!(readout(Body::Moon, &held).ends_with("lat 90.0° (limit)"));
 }

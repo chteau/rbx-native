@@ -95,17 +95,15 @@ pub struct Placement {
 /// about +Z the sun never reaches, and a direction inside it is held at 90°,
 /// the same hour, so the nearest point on the cone's rim.
 ///
-/// The moon is placed by putting the sun directly opposite it, which is the
-/// renderer's own model (`Lighting::assemble` lights the night from `-L`).
-/// creator-docs' `GetMoonDirection` does not say whether Roblox's moon is
-/// exactly opposite the sun, so this follows what is drawn here rather than a
-/// guess about what Roblox does.
+/// The moon is placed through the sun it goes with: the real client's
+/// `GetMoonDirection` is the sun's direction with X and Y turned round
+/// (`crate::lighting::moon_direction`), which is its own inverse.
 pub fn place(body: Body, toward: Vec3) -> Placement {
-    let facing = match body {
-        Body::Sun => 1.0,
-        Body::Moon => -1.0,
+    let body_of = |sun: Vec3| match body {
+        Body::Sun => sun,
+        Body::Moon => crate::lighting::moon_direction(sun),
     };
-    let sun = (toward * facing).normalize_or(Vec3::Y);
+    let sun = body_of(toward).normalize_or(Vec3::Y);
     let latitude = sun.z.clamp(-1.0, 1.0).asin().to_degrees() + AXIAL_TILT_DEGREES;
     let longitude = sun.y.atan2(sun.x).to_degrees();
     let clock_time = (longitude / DEGREES_PER_HOUR + SUNRISE_HOUR).rem_euclid(HOURS_PER_DAY);
@@ -114,7 +112,7 @@ pub fn place(body: Body, toward: Vec3) -> Placement {
     Placement {
         clock_time,
         geographic_latitude,
-        direction: sun_direction(clock_time, geographic_latitude) * facing,
+        direction: body_of(sun_direction(clock_time, geographic_latitude)),
         clamped: latitude > MAX_LATITUDE_DEGREES,
     }
 }
@@ -166,10 +164,11 @@ mod tests {
     }
 
     #[test]
-    fn the_moon_is_placed_with_the_sun_opposite_it() {
+    fn the_moon_is_placed_through_the_sun_it_goes_with() {
         for toward in reachable() {
-            let placed = place(Body::Moon, -toward);
-            assert!(close(placed.direction, -toward));
+            let moon = crate::lighting::moon_direction(toward);
+            let placed = place(Body::Moon, moon);
+            assert!(close(placed.direction, moon));
             assert!(close(
                 sun_direction(placed.clock_time, placed.geographic_latitude),
                 toward

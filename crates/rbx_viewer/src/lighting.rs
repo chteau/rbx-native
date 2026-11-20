@@ -157,7 +157,8 @@ pub(crate) enum Fog {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Lighting {
     /// Unit vector pointing *at* the sun, i.e. `L` in `dot(N, L)`. Stays the
-    /// sun's own direction at night, where the fill lamp at `-L` is the moon.
+    /// sun's own direction at night, where the fill lamp is the moon (see
+    /// [`Lighting::fill_direction`]).
     pub(crate) sun_direction: Vec3,
     pub(crate) sun_color: Vec3,
     pub(crate) fill_color: Vec3,
@@ -183,6 +184,27 @@ pub(crate) struct Lighting {
     pub(crate) effects: Effects,
     /// The place's `Clouds` layer, if `Terrain` carries an enabled one.
     pub(crate) clouds: Option<Clouds>,
+}
+
+impl Lighting {
+    /// Unit vector pointing at the fill lamp: opposite the sun by day, the
+    /// moon by night, swung across as the sun crosses the horizon. The moon
+    /// is not opposite the sun: the real client's `GetMoonDirection` is the
+    /// sun's direction with X and Y turned round and Z kept (at midnight on
+    /// the equator (0, 0.917, -0.399) where the sun is (0, -0.917, -0.399)),
+    /// so its light falls on what faces -Z, not on what faces the sun's
+    /// opposite. `renderer/lighting.wgsl`'s `fill_direction` is the same.
+    pub(crate) fn fill_direction(&self) -> Vec3 {
+        let sun = self.sun_direction;
+        let day = ((sun.y + TWILIGHT_BAND) / (2.0 * TWILIGHT_BAND)).clamp(0.0, 1.0);
+        moon_direction(sun).lerp(-sun, day).normalize_or(-sun)
+    }
+}
+
+/// Where the moon stands for a sun at `sun`, as the real client places it
+/// (see [`Lighting::fill_direction`]).
+pub(crate) fn moon_direction(sun: Vec3) -> Vec3 {
+    Vec3::new(-sun.x, -sun.y, sun.z)
 }
 
 impl Default for Lighting {
@@ -434,9 +456,8 @@ impl Lighting {
             sun_color: Vec3::splat(lamp * day)
                 * sun::transmittance(sun_direction.y)
                 * (Vec3::ONE + read.shift_top),
-            // The fill lamp sits at -L, which is exactly where the moon is once
-            // the sun has set: one lamp does both jobs, and nothing has to swap
-            // direction mid-twilight.
+            // One lamp does both jobs: a bounce opposite the sun by day, the
+            // moon by night (see `Lighting::fill_direction`).
             fill_color: Vec3::splat(lamp)
                 * (FILL_FRACTION * FILL_TINT * day + MOON_FRACTION * MOON_TINT * (1.0 - day))
                 * (Vec3::ONE + read.shift_bottom),

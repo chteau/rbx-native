@@ -22,7 +22,9 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(vertex: VertexInput) -> VertexOutput {
-    let direction = normalize(lighting.sun_direction.xyz) * vertex.extent.y;
+    // The moon is the sun with X and Y turned round (see `fill_direction`).
+    let sun = normalize(lighting.sun_direction.xyz);
+    let direction = select(vec3<f32>(-sun.x, -sun.y, sun.z), sun, vertex.extent.y > 0.0);
     // Any axis that is not the direction itself does: the quad is round-ish and
     // the image has no up. Y unless the body is overhead, where Y is useless.
     let aside = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(direction.y) > 0.99);
