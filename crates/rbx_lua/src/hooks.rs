@@ -14,6 +14,11 @@ use rbx_dom::Ref;
 use crate::ctx::Ctx;
 
 pub(crate) trait Hooks {
+    /// `require(assetId)`: the asset's `MainModule`, loaded into the game.
+    fn require_asset(&self, _id: f64) -> std::result::Result<Ref, String> {
+        Err("Unable to require an asset id here".into())
+    }
+
     /// Asked first by an instance's `__index` (after `Name`, `ClassName`
     /// and `Parent`): `Some` answers the read, `None` falls through to
     /// properties and children.

@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use mlua::{Function, IntoLua, Lua, Result, Table, Thread, Value};
+use mlua::{FromLua, Function, IntoLua, Lua, Result, Table, Thread, Value};
 use rbx_dom::{Ref, Variant};
 
 use crate::ctx::Ctx;
@@ -152,6 +152,13 @@ pub(crate) fn install_require(lua: &Lua) -> Result<()> {
             Value::String(path) => {
                 let path = path.to_str()?.to_string();
                 require::by_string(&engine(lua).ctx.dom(), Requirer::of(&script), &path)?
+            }
+            Value::Integer(_) | Value::Number(_) => {
+                let id = f64::from_lua(target.clone(), lua)?;
+                crate::hooks::hooks(lua)
+                    .ok_or_else(|| mlua::Error::runtime("Unable to require an asset id here"))?
+                    .require_asset(id)
+                    .map_err(mlua::Error::runtime)?
             }
             other => require::module_ref(lua, other)?,
         };

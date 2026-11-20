@@ -226,7 +226,134 @@ local UI_METHODS = {
 	AddConstraintFunction = addConstraint,
 }
 
+-- Player:GetMouse() ----------------------------------------------------------
+-- The local player's PlayerMouse: one per client, read live from the
+-- cursor (X/Y below the top bar, Hit/Target from the camera ray, skipping
+-- TargetFilter), its signals fired from the client's input.
+
+local MOUSE_SIGNALS = {
+	Button1Down = true,
+	Button1Up = true,
+	Button2Down = true,
+	Button2Up = true,
+	Move = true,
+	WheelForward = true,
+	WheelBackward = true,
+	Idle = true,
+	KeyDown = true,
+	KeyUp = true,
+}
+local mouse, mouseId
+
+local function mouseHit()
+	local camera = workspace.CurrentCamera
+	local location = UserInputService:GetMouseLocation()
+	local ray = viewportRay(camera, location.X, location.Y, 0)
+	local params = RaycastParams.new()
+	if mouse.TargetFilter then
+		params.FilterDescendantsInstances = { mouse.TargetFilter }
+	end
+	local result = workspace:Raycast(ray.Origin, ray.Direction * REACH, params)
+	local at = if result then result.Position else ray.Origin + ray.Direction * REACH
+	return ray, at, result
+end
+
+local function surfaceOf(part, normal)
+	local n = part.CFrame:VectorToObjectSpace(normal)
+	local x, y, z = math.abs(n.X), math.abs(n.Y), math.abs(n.Z)
+	if x >= y and x >= z then
+		return if n.X > 0 then Enum.NormalId.Right else Enum.NormalId.Left
+	elseif y >= z then
+		return if n.Y > 0 then Enum.NormalId.Top else Enum.NormalId.Bottom
+	end
+	return if n.Z > 0 then Enum.NormalId.Back else Enum.NormalId.Front
+end
+
+local MOUSE = {
+	Hit = function()
+		local ray, at = mouseHit()
+		return CFrame.lookAt(at, at + ray.Direction)
+	end,
+	Target = function()
+		local _, _, result = mouseHit()
+		return result and result.Instance
+	end,
+	TargetSurface = function()
+		local _, _, result = mouseHit()
+		return if result and result.Instance:IsA("BasePart")
+			then surfaceOf(result.Instance, result.Normal)
+			else Enum.NormalId.Right
+	end,
+	UnitRay = function()
+		local ray = mouseHit()
+		return ray
+	end,
+	Origin = function()
+		local ray = mouseHit()
+		return CFrame.lookAt(ray.Origin, ray.Origin + ray.Direction)
+	end,
+	X = function()
+		return UserInputService:GetMouseLocation().X
+	end,
+	Y = function()
+		return UserInputService:GetMouseLocation().Y - TOPBAR_INSET
+	end,
+	ViewSizeX = function()
+		return workspace.CurrentCamera.ViewportSize.X
+	end,
+	ViewSizeY = function()
+		return workspace.CurrentCamera.ViewportSize.Y - TOPBAR_INSET
+	end,
+}
+
+local function getMouse(player)
+	if host.server() or player ~= Players.LocalPlayer then
+		return nil
+	end
+	if not mouse then
+		mouse, mouseId = host.new("PlayerMouse", "Instance")
+	end
+	return mouse
+end
+
+local function mouseInput(input, processed)
+	if not mouse then
+		return
+	end
+	local kind = input.UserInputType
+	local state = input.UserInputState
+	local began = state == Enum.UserInputState.Begin
+	if kind == Enum.UserInputType.MouseMovement then
+		host.fire(mouseId, "Move")
+	elseif kind == Enum.UserInputType.MouseWheel and not processed then
+		host.fire(mouseId, if input.Position.Z > 0 then "WheelForward" else "WheelBackward")
+	elseif kind == Enum.UserInputType.MouseButton1 and not (processed and began) then
+		host.fire(mouseId, if began then "Button1Down" else "Button1Up")
+	elseif kind == Enum.UserInputType.MouseButton2 and not (processed and began) then
+		host.fire(mouseId, if began then "Button2Down" else "Button2Up")
+	elseif kind == Enum.UserInputType.Keyboard and not processed then
+		local key = UserInputService:GetStringForKeyCode(input.KeyCode):lower()
+		host.fire(mouseId, if began then "KeyDown" else "KeyUp", key)
+	end
+end
+
 function M.member(class, id, key)
+	if class == "Player" then
+		if key == "GetMouse" then
+			return getMouse, true
+		end
+		return nil, false
+	end
+	if class == "PlayerMouse" then
+		if MOUSE_SIGNALS[key] then
+			return host.signal(id, key), true
+		end
+		local f = MOUSE[key]
+		if f then
+			return f(), true
+		end
+		return nil, false
+	end
 	if class == "Camera" then
 		if key == "InterpolationFinished" then
 			return host.signal(id, key), true
@@ -864,6 +991,7 @@ function M.input(input, processed)
 	if host.server() then
 		return
 	end
+	mouseInput(input, processed)
 	local kind = input.UserInputType
 	local state = input.UserInputState
 	local point = Vector2.new(input.Position.X, input.Position.Y)

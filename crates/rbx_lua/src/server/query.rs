@@ -181,7 +181,9 @@ fn cframe_of_part(lua: &Lua, ctx: &Ctx, part: Ref) -> Result<CFrameData> {
 }
 
 /// The deprecated `FindPartOnRay*` family, on top of `Raycast`: the part,
-/// the hit point, its normal and material, or nil and the ray's end.
+/// the hit point, its normal and material, or nil and the ray's end. And
+/// the `FindPartsInRegion3*` family on top of `GetPartBoundsInBox`: at most
+/// `maxParts` (20 by default) parts whose bounds touch the region.
 fn legacy_find(lua: &Lua, key: &str) -> Result<Option<Value>> {
     const KEY: &str = "rbxn.find_part_on_ray";
     let all: mlua::Table = match lua.named_registry_value::<Option<mlua::Table>>(KEY)? {
@@ -201,7 +203,24 @@ fn legacy_find(lua: &Lua, key: &str) -> Result<Option<Value>> {
                         end
                         return nil, ray.Origin + ray.Direction, Vector3.zero, Enum.Material.Air
                     end
+                    local function region(self, box, list, include, max)
+                        local params = OverlapParams.new()
+                        params.FilterDescendantsInstances = list or {}
+                        params.FilterType = include and Enum.RaycastFilterType.Include
+                            or Enum.RaycastFilterType.Exclude
+                        params.MaxParts = max or 20
+                        return self:GetPartBoundsInBox(box.CFrame, box.Size, params)
+                    end
                     return {
+                        FindPartsInRegion3 = function(self, box, ignore, max)
+                            return region(self, box, ignore and { ignore } or {}, false, max)
+                        end,
+                        FindPartsInRegion3WithIgnoreList = function(self, box, list, max)
+                            return region(self, box, list, false, max)
+                        end,
+                        FindPartsInRegion3WithWhiteList = function(self, box, list, max)
+                            return region(self, box, list, true, max)
+                        end,
                         FindPartOnRay = function(self, ray, ignore)
                             return find(self, ray, ignore and { ignore } or {}, false)
                         end,
@@ -230,7 +249,7 @@ pub(super) fn member(
     physics: &Rc<dyn Physics>,
     key: &str,
 ) -> Result<Option<Value>> {
-    if key.starts_with("FindPartOnRay") {
+    if key.starts_with("FindPartOnRay") || key.starts_with("FindPartsInRegion3") {
         return legacy_find(lua, key);
     }
     let ctx = ctx.clone();

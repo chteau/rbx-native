@@ -14,6 +14,7 @@
 //! (models with a Humanoid) are no obstacle, nor are parts that don't
 //! collide.
 
+use std::cell::OnceCell;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -87,21 +88,68 @@ enum Move {
     Link(String, [f64; 3], [f64; 3]),
 }
 
-struct Grid {
+/// What a column's rays are cast with.
+struct Source<'a> {
+    physics: &'a dyn Physics,
+    ctx: &'a Ctx,
+    filter: QueryFilter,
+    top: f64,
+    bottom: f64,
+    height: f64,
+}
+
+/// The grid over the request's area, each column cast the first time the
+/// search asks for it: a search toward a reachable goal reads a small part
+/// of an area that can be hundreds of studs on a side.
+struct Grid<'a> {
     x0: i64,
     z0: i64,
     nx: i64,
     nz: i64,
-    columns: Vec<Vec<Floor>>,
+    source: Source<'a>,
+    /// The floors as cast.
+    raw: Vec<OnceCell<Vec<Floor>>>,
+    /// The floors with the ones by a wall or a drop closed.
+    columns: Vec<OnceCell<Vec<Floor>>>,
 }
 
-impl Grid {
-    fn column(&self, x: i64, z: i64) -> Option<&Vec<Floor>> {
+impl Grid<'_> {
+    fn index(&self, x: i64, z: i64) -> Option<usize> {
         if x < self.x0 || z < self.z0 || x >= self.x0 + self.nx || z >= self.z0 + self.nz {
             return None;
         }
-        self.columns
-            .get(((x - self.x0) * self.nz + (z - self.z0)) as usize)
+        Some(((x - self.x0) * self.nz + (z - self.z0)) as usize)
+    }
+
+    fn raw(&self, x: i64, z: i64) -> Option<&Vec<Floor>> {
+        let index = self.index(x, z)?;
+        Some(self.raw[index].get_or_init(|| {
+            let source = &self.source;
+            column(
+                source.physics,
+                source.ctx,
+                &source.filter,
+                (x as f64 * CELL, z as f64 * CELL),
+                (source.top, source.bottom),
+                source.height,
+            )
+        }))
+    }
+
+    /// A floor next to a wall or a drop (a neighbour with no floor within
+    /// a step) is closed: agents keep a stud away.
+    fn column(&self, x: i64, z: i64) -> Option<&Vec<Floor>> {
+        let index = self.index(x, z)?;
+        Some(self.columns[index].get_or_init(|| {
+            let mut floors = self.raw(x, z).cloned().unwrap_or_default();
+            for floor in &mut floors {
+                floor.open = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().all(|(dx, dz)| {
+                    self.raw(x + dx, z + dz)
+                        .is_none_or(|column| column.iter().any(|f| (f.y - floor.y).abs() <= STEP))
+                });
+            }
+            floors
+        }))
     }
 
     fn floor(&self, node: Node) -> Option<&Floor> {
@@ -258,7 +306,7 @@ fn bottom_of(
         .map(|hit| hit.position[1])
 }
 
-fn build(physics: &dyn Physics, ctx: &Ctx, request: &PathRequest) -> Grid {
+fn build<'a>(physics: &'a dyn Physics, ctx: &'a Ctx, request: &PathRequest) -> Grid<'a> {
     let (s, g) = (request.start, request.goal);
     let span = ((s[0] - g[0]).powi(2) + (s[2] - g[2]).powi(2)).sqrt();
     let margin = MARGIN + span * 0.25;
@@ -284,53 +332,22 @@ fn build(physics: &dyn Physics, ctx: &Ctx, request: &PathRequest) -> Grid {
         ignore_water: false,
     };
     let (nx, nz) = (x1 - x0 + 1, z1 - z0 + 1);
-    let mut columns = Vec::with_capacity((nx * nz) as usize);
-    for x in x0..=x1 {
-        for z in z0..=z1 {
-            columns.push(column(
-                physics,
-                ctx,
-                &filter,
-                (x as f64 * CELL, z as f64 * CELL),
-                (top, bottom),
-                request.height,
-            ));
-        }
-    }
-    let mut grid = Grid {
+    let cells = (nx * nz) as usize;
+    Grid {
         x0,
         z0,
         nx,
         nz,
-        columns,
-    };
-    erode(&mut grid);
-    grid
-}
-
-/// A floor next to a wall or a drop (a neighbour with no floor within a
-/// step) is closed: agents keep a stud away.
-fn erode(grid: &mut Grid) {
-    let mut closed = Vec::new();
-    for x in grid.x0..grid.x0 + grid.nx {
-        for z in grid.z0..grid.z0 + grid.nz {
-            let Some(floors) = grid.column(x, z) else {
-                continue;
-            };
-            for (layer, floor) in floors.iter().enumerate() {
-                let edge = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(dx, dz)| {
-                    grid.column(x + dx, z + dz).is_some()
-                        && grid.level(x + dx, z + dz, floor.y).is_none()
-                });
-                if edge {
-                    closed.push(Node { x, z, layer });
-                }
-            }
-        }
-    }
-    for node in closed {
-        let index = ((node.x - grid.x0) * grid.nz + (node.z - grid.z0)) as usize;
-        grid.columns[index][node.layer].open = false;
+        source: Source {
+            physics,
+            ctx,
+            filter,
+            top,
+            bottom,
+            height: request.height,
+        },
+        raw: (0..cells).map(|_| OnceCell::new()).collect(),
+        columns: (0..cells).map(|_| OnceCell::new()).collect(),
     }
 }
 

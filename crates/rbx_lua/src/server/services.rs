@@ -57,6 +57,11 @@ pub struct Services {
     pub arrivals: HashMap<i64, Arrival>,
     /// What the clients report themselves as.
     pub device: Device,
+    /// `game.PlaceId` and `game.GameId`: the published place the run plays
+    /// (0 for a file that isn't one, as in Studio), which scripts check to
+    /// tell their own game from a copy.
+    pub place_id: i64,
+    pub game_id: i64,
 }
 
 /// A player's arrival from a teleport.
@@ -147,6 +152,8 @@ impl Default for Services {
             teleport_places: Vec::new(),
             arrivals: HashMap::new(),
             device: Device::default(),
+            place_id: 0,
+            game_id: 0,
         }
     }
 }
@@ -274,6 +281,11 @@ impl Runtime {
         std::mem::take(&mut self.notices.borrow_mut())
     }
 
+    pub(crate) fn place(&self) -> (i64, i64) {
+        let config = self.config.borrow();
+        (config.place_id, config.game_id)
+    }
+
     pub(crate) fn device(&self) -> Device {
         self.config.borrow().device
     }
@@ -314,6 +326,7 @@ const MODULES: &[(&str, &str)] = &[
     ("Audio", include_str!("services/audio.luau")),
     ("Drag", include_str!("services/drag.luau")),
     ("InputActions", include_str!("services/input_actions.luau")),
+    ("Prompts", include_str!("services/prompts.luau")),
 ];
 
 /// The module that answers `class`.
@@ -343,7 +356,8 @@ fn module_of(class: &str) -> Option<&'static str> {
         "MarketplaceService" => "MarketplaceService",
         "HttpService" => "HttpService",
         "PathfindingService" | "Path" => "PathfindingService",
-        "Debris" | "Players" | "Player" | "RunService" | "FriendPages" => "Helpers",
+        "Debris" | "Players" | "Player" | "RunService" | "FriendPages" | "ContentProvider"
+        | "UserSettings" | "UserGameSettings" | "PlayerScripts" | "ScriptContext" => "Helpers",
         "TeleportService" | "TeleportOptions" | "TeleportAsyncResult" => "TeleportService",
         "BadgeService" => "BadgeService",
         "GroupService"
@@ -357,8 +371,9 @@ fn module_of(class: &str) -> Option<&'static str> {
         "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
         "GuiService" => "GuiService",
         "AudioEmitter" | "AudioListener" | "AudioDeviceInput" => "Audio",
-        "DragDetector" | "UIDragDetector" | "ClickDetector" | "Camera" => "Drag",
+        "DragDetector" | "UIDragDetector" | "ClickDetector" | "Camera" | "PlayerMouse" => "Drag",
         "InputAction" | "InputBinding" | "InputContext" => "InputActions",
+        "ProximityPromptService" | "ProximityPrompt" => "Prompts",
         _ => return None,
     })
 }
@@ -411,7 +426,13 @@ pub(crate) fn member(
     class: &str,
     key: &str,
 ) -> Result<Option<Value>> {
-    let Some(name) = module_of(class) else {
+    // `Player:GetMouse()` belongs with the cursor's other readers.
+    let name = if class == "Player" && key == "GetMouse" {
+        Some("Drag")
+    } else {
+        module_of(class)
+    };
+    let Some(name) = name else {
         return Ok(None);
     };
     if client_only(name) && !runtime.client.get() {
@@ -485,12 +506,19 @@ pub(crate) fn client_input(
     input: Value,
     processed: bool,
 ) -> Result<()> {
-    for name in ["InputActions", "Drag"] {
+    for name in ["InputActions", "Drag", "Prompts"] {
         module(lua, runtime, name)?
             .get::<Function>("input")?
             .call::<()>((input.clone(), processed))?;
     }
     Ok(())
+}
+
+/// The `UserSettings()` global.
+pub(crate) fn user_settings(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Value> {
+    module(lua, runtime, "Helpers")?
+        .get::<Function>("UserSettings")?
+        .call(())
 }
 
 /// A client's drag arriving at the server.
@@ -516,11 +544,15 @@ pub(crate) fn receive_drag(
             None => Ok(Value::Nil),
         }
     };
+    let prompt = ctx
+        .dom()
+        .get(detector)
+        .is_some_and(|i| i.class() == "ProximityPrompt");
     let (player, detector, part) = (instance(from)?, instance(Some(detector))?, instance(part)?);
     if player.is_nil() || detector.is_nil() {
         return Ok(());
     }
-    module(lua, runtime, "Drag")?
+    module(lua, runtime, if prompt { "Prompts" } else { "Drag" })?
         .get::<Function>("remote")?
         .call((player, phase, detector, part, numbers))
 }
@@ -528,6 +560,11 @@ pub(crate) fn receive_drag(
 /// Once a frame: requests that finished resume their scripts, messages
 /// any server published reach this one's subscribers.
 pub(crate) fn poll(lua: &Lua, runtime: &Rc<Runtime>) -> Result<()> {
+    if runtime.client.get() {
+        module(lua, runtime, "Prompts")?
+            .get::<Function>("step")?
+            .call::<()>(())?;
+    }
     let done = std::mem::take(&mut *runtime.finished.lock().unwrap_or_else(|e| e.into_inner()));
     for (id, result) in done {
         let values = match result {

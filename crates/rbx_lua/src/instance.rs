@@ -300,17 +300,22 @@ impl UserData for LuaInstance {
                 Ok(MultiValue::new())
             });
         }
-        methods.add_method("GetTouchingParts", |lua, this, ()| {
-            this.require_part("GetTouchingParts")?;
-            lua.create_table()
-        });
-        methods.add_method(
-            "GetConnectedParts",
-            |lua, this, _recursive: Option<bool>| {
-                this.require_part("GetConnectedParts")?;
-                lua.create_table()
-            },
-        );
+        // A run's physics answers these (the hooks); the editor has no
+        // contacts or assemblies to report.
+        for name in ["GetTouchingParts", "GetConnectedParts"] {
+            methods.add_method(name, move |lua, this, mut args: MultiValue| {
+                this.require_part(name)?;
+                if let Some(hooks) = crate::hooks::hooks(lua) {
+                    let class = this.class()?;
+                    let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
+                    if let Some(Value::Function(f)) = member {
+                        args.push_front(Value::Nil);
+                        return f.call::<MultiValue>(args);
+                    }
+                }
+                lua.create_table()?.into_lua_multi(lua)
+            });
+        }
         methods.add_method("ResetPropertyToDefault", |_, this, name: String| {
             if crate::property::reset(&this.ctx, this.referent, &name)? {
                 Ok(())
@@ -507,13 +512,18 @@ impl UserData for LuaInstance {
             |lua, this, (key, value): (String, Value)| {
                 match key.as_str() {
                     "Name" => {
-                        let Value::String(text) = &value else {
-                            return Err(mlua::Error::runtime(format!(
-                                "Unable to assign property Name. string expected, got {}",
-                                value.type_name()
-                            )));
+                        // A number is written as its text, as for any
+                        // string property.
+                        let text = match &value {
+                            Value::String(text) => text.to_str()?.to_string(),
+                            Value::Integer(_) | Value::Number(_) => value.to_string()?,
+                            _ => {
+                                return Err(mlua::Error::runtime(format!(
+                                    "Unable to assign property Name. string expected, got {}",
+                                    value.type_name()
+                                )))
+                            }
                         };
-                        let text = text.to_str()?.to_string();
                         this.ctx.check_write(this.referent)?;
                         this.ctx
                             .dom_mut()

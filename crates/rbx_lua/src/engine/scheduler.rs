@@ -6,8 +6,10 @@
 //! that id until [`resolve`] resumes it with `(true, values…)` (the wrapper
 //! returns the values) or `(false, message)` (the wrapper raises it).
 
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::rc::Rc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mlua::thread::ThreadStatus;
 use mlua::{Function, Lua, MultiValue, Result, Thread, Value};
@@ -246,8 +248,82 @@ pub(crate) fn defer(lua: &Lua, func: Function, args: MultiValue) -> Result<()> {
     Ok(())
 }
 
+/// The script timeout's deadline, which the VM's interrupt reads: as in
+/// Roblox, each resumption of a script thread gets the whole budget, and a
+/// thread that runs past it dies alone, the threads after it still run.
+pub(crate) struct Deadline {
+    at: Rc<Cell<Instant>>,
+    budget: Duration,
+}
+
+impl Deadline {
+    /// Arms `budget` from now; the interrupt reads the returned cell.
+    pub(crate) fn arm(lua: &Lua, budget: Duration) -> Rc<Cell<Instant>> {
+        let at = Rc::new(Cell::new(Instant::now() + budget));
+        lua.set_app_data(Deadline {
+            at: at.clone(),
+            budget,
+        });
+        at
+    }
+
+    /// Runs `f`, a thread's resumption, with the whole budget, and gives
+    /// what runs after it (the thread that resumed it, the scheduler) a
+    /// fresh one: a thread the timeout killed doesn't take its resumer down
+    /// with it.
+    fn fresh<T>(lua: &Lua, f: impl FnOnce() -> T) -> T {
+        let Some((at, budget)) = lua
+            .app_data_ref::<Deadline>()
+            .map(|d| (d.at.clone(), d.budget))
+        else {
+            return f();
+        };
+        at.set(Instant::now() + budget);
+        let out = f();
+        at.set(Instant::now() + budget);
+        out
+    }
+}
+
 fn report(lua: &Lua, text: String) {
-    engine(lua).host.output(LineKind::Error, text);
+    engine(lua).host.output(LineKind::Error, text.clone());
+    script_error(lua, &text);
+}
+
+/// `ScriptContext.Error` for an error a thread died of: the message, then
+/// the traceback, and the script (which we don't track per thread: nil).
+fn script_error(lua: &Lua, text: &str) {
+    thread_local! {
+        /// An `Error` handler's own error isn't fired again.
+        static FIRING: Cell<bool> = const { Cell::new(false) };
+    }
+    if FIRING.with(Cell::get) {
+        return;
+    }
+    let context = {
+        let ctx = engine(lua).ctx.clone();
+        let dom = ctx.dom();
+        dom.root_refs()
+            .iter()
+            .copied()
+            .find(|r| dom.get(*r).is_some_and(|i| i.class() == "ScriptContext"))
+    };
+    let Some(context) = context else {
+        return;
+    };
+    let (message, trace) = text.split_once('\n').unwrap_or((text, ""));
+    let args = [
+        crate::plugin::api::Arg::String(message.to_owned()),
+        crate::plugin::api::Arg::String(trace.to_owned()),
+        crate::plugin::api::Arg::Nil,
+    ];
+    let key = super::events::instance_key(context, "Error");
+    FIRING.with(|f| f.set(true));
+    let fired = super::signal::fire(lua, &key, &args);
+    FIRING.with(|f| f.set(false));
+    if let Err(error) = fired {
+        engine(lua).host.output(LineKind::Error, error.to_string());
+    }
 }
 
 /// Resumes `thread` with `args` and files it by what it yields. Never
@@ -281,7 +357,7 @@ pub(crate) fn resume(lua: &Lua, thread: Thread, args: MultiValue) -> Result<()> 
         if thread.status() != ThreadStatus::Resumable {
             return Ok(());
         }
-        let values = match thread.resume::<MultiValue>(args) {
+        let values = match Deadline::fresh(lua, || thread.resume::<MultiValue>(args)) {
             Ok(values) => values,
             Err(error) => {
                 engine(lua).host.thread_failed(&thread, error);

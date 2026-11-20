@@ -123,7 +123,15 @@ impl UserData for LuaGame {
                 "Name" => return "game".into_lua(lua),
                 "ClassName" => return "DataModel".into_lua(lua),
                 "Parent" => return Ok(Value::Nil),
-                "PlaceId" | "GameId" | "CreatorId" | "PlaceVersion" => return 0.into_lua(lua),
+                "PlaceId" | "GameId" => {
+                    if let Some(hooks) = crate::hooks::hooks(lua) {
+                        if let Some(id) = hooks.game_member(lua, &key)? {
+                            return Ok(id);
+                        }
+                    }
+                    return 0.into_lua(lua);
+                }
+                "CreatorId" | "PlaceVersion" => return 0.into_lua(lua),
                 "JobId" => return "".into_lua(lua),
                 // A live server names the region it runs in; ours runs here.
                 "ServerRegion" => return "Local".into_lua(lua),

@@ -16,6 +16,10 @@ local function fail(message)
 end
 
 local function int64(value)
+	-- Like any number argument, a numeric string converts ("123").
+	if type(value) == "string" and tonumber(value) then
+		value = tonumber(value)
+	end
 	if type(value) ~= "number" then
 		fail("Unable to cast " .. (value == nil and "nil" or typeof(value)) .. " to int64")
 	end

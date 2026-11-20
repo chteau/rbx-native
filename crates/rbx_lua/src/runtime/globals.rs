@@ -67,17 +67,18 @@ pub(crate) fn install_shared(lua: &Lua) -> Result<(), LuaError> {
 }
 
 /// `debug.profilebegin(label)` / `debug.profileend()`: Roblox's MicroProfiler
-/// scopes, which have nothing to time here.
+/// scopes, and `debug.setmemorycategory` / `resetmemorycategory`: its
+/// memory tags. Nothing here times or tags anything.
 fn install_profiler_labels(lua: &Lua) -> Result<(), LuaError> {
     let debug: mlua::Table = lua.globals().get("debug")?;
-    debug.set(
+    for name in [
         "profilebegin",
-        lua.create_function(|_, _: Variadic<Value>| Ok(()))?,
-    )?;
-    debug.set(
         "profileend",
-        lua.create_function(|_, _: Variadic<Value>| Ok(()))?,
-    )?;
+        "setmemorycategory",
+        "resetmemorycategory",
+    ] {
+        debug.set(name, lua.create_function(|_, _: Variadic<Value>| Ok(()))?)?;
+    }
     Ok(())
 }
 

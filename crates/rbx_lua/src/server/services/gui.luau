@@ -121,9 +121,27 @@ function SERVICE.GetInsetArea(_, insets)
 	return Rect.new(0, top, size.X, size.Y)
 end
 
+-- TopbarInset: the free strip of the top bar, right of the Roblox logo and
+-- the menu and chat buttons our core GUI draws there (12 px margins and
+-- gaps, 44 px buttons), 58 px tall like GetGuiInset's top; empty on a
+-- server, which has no top bar.
+local TOPBAR_LEFT = 12 + 44 + 12 + 44 + 44 + 12
+local TOPBAR_RIGHT = 12
+
+local function topbarInset()
+	if host.server() then
+		return Rect.new(0, 0, 0, 0)
+	end
+	local size = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+	return Rect.new(TOPBAR_LEFT, 0, math.max(size.X - TOPBAR_RIGHT, TOPBAR_LEFT), TOPBAR_INSET)
+end
+
 function M.member(_, id, key)
 	if key == "MenuOpened" or key == "MenuClosed" then
 		return host.signal(id, key), true
+	end
+	if key == "TopbarInset" then
+		return topbarInset(), true
 	end
 	return SERVICE[key], SERVICE[key] ~= nil
 end

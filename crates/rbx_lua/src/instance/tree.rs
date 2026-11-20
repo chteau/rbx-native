@@ -23,8 +23,17 @@ pub(crate) fn full_name(dom: &WeakDom, target: Ref) -> Option<String> {
     Some(names.join("."))
 }
 
+/// Up `target`'s parents, not down `ancestor`'s subtree: `IsDescendantOf`
+/// against a big Workspace stays cheap.
 pub(crate) fn is_ancestor_of(dom: &WeakDom, ancestor: Ref, target: Ref) -> bool {
-    ancestor == target || descendants(dom, ancestor).contains(&target)
+    let mut at = Some(target);
+    while let Some(current) = at {
+        if current == ancestor {
+            return true;
+        }
+        at = parent_of(dom, current);
+    }
+    false
 }
 
 /// Depth-first pre-order descendants, the order Roblox's `GetDescendants` uses.

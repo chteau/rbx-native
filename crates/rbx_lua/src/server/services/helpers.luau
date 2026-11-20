@@ -12,6 +12,10 @@ local function fail(message)
 end
 
 local function userId(value)
+	-- Like any number argument, a numeric string converts ("123").
+	if type(value) == "string" and tonumber(value) then
+		value = tonumber(value)
+	end
 	if type(value) ~= "number" then
 		fail("Unable to cast " .. (value == nil and "nil" or typeof(value)) .. " to int64")
 	end
@@ -177,6 +181,20 @@ function PLAYER.IsInGroupAsync(_, id)
 	userId(id)
 	return false
 end
+PLAYER.IsInGroup = PLAYER.IsInGroupAsync
+
+-- No groups here: everyone is a guest, rank 0.
+function PLAYER.GetRankInGroupAsync(_, id)
+	userId(id)
+	return 0
+end
+PLAYER.GetRankInGroup = PLAYER.GetRankInGroupAsync
+
+function PLAYER.GetRoleInGroupAsync(_, id)
+	userId(id)
+	return "Guest"
+end
+PLAYER.GetRoleInGroup = PLAYER.GetRoleInGroupAsync
 
 function PLAYER.GetFriendsOnlineAsync(_)
 	return {}
@@ -205,11 +223,152 @@ function RUN.BindToSimulation(self, callback)
 	return self.PreSimulation:Connect(callback)
 end
 
-local TABLES = { Debris = DEBRIS, Players = PLAYERS, Player = PLAYER, RunService = RUN, FriendPages = FRIEND_PAGES }
+-- Assets load on demand here, so a preload has nothing to wait for: each
+-- entry reports Success at once.
+local CONTENT = {}
 
-function M.member(class, _, key)
+function CONTENT.PreloadAsync(_, list, callback)
+	if type(list) ~= "table" then
+		fail("Unable to cast to Array")
+	end
+	if callback ~= nil then
+		for _, entry in list do
+			callback(if typeof(entry) == "Instance" then "" else tostring(entry), Enum.AssetFetchStatus.Success)
+		end
+	end
+end
+
+function CONTENT.Preload(_, _content) end
+
+function CONTENT.GetAssetFetchStatus(_)
+	return Enum.AssetFetchStatus.Success
+end
+
+function CONTENT.GetAssetFetchStatusChangedSignal(self)
+	return self.Changed
+end
+
+function CONTENT.UnregisterDefaultEncryptionKey(_) end
+function CONTENT.UnregisterEncryptionKey(_) end
+
+-- UserSettings(): the player's own settings, which a game's scripts read
+-- (the PlayerModule's ControlModule and camera read UserGameSettings) and
+-- may watch. One object per VM, with the defaults a fresh install has.
+local USER = {}
+local userSettings
+
+function M.UserSettings()
+	if not userSettings then
+		userSettings = host.new("UserSettings", "UserSettings")
+		local gameSettings = host.new("UserGameSettings", "UserGameSettings")
+		gameSettings.Parent = userSettings
+	end
+	return userSettings
+end
+
+function USER.GetService(self, name)
+	local found = self:FindFirstChildOfClass(name)
+	if not found then
+		error("'" .. tostring(name) .. "' is not a valid Service name", 2)
+	end
+	return found
+end
+USER.FindService = function(self, name)
+	return self:FindFirstChildOfClass(name)
+end
+function USER.IsUserFeatureEnabled(_, _name)
+	return false
+end
+
+-- UserGameSettings' methods: what the menu would show and the player's own
+-- choices, none of which Local Run has a menu for.
+local GAME_SETTINGS = {
+	GetCameraYInvertValue = function()
+		return 1
+	end,
+	GetOnboardingCompleted = function()
+		return false
+	end,
+	GetTutorialState = function()
+		return false
+	end,
+	InFullScreen = function()
+		return false
+	end,
+	InStudioMode = function()
+		return false
+	end,
+	SetCameraYInvertVisible = function() end,
+	SetGamepadCameraSensitivityVisible = function() end,
+	SetOnboardingCompleted = function() end,
+	SetTutorialState = function() end,
+}
+local GAME_SETTINGS_SIGNALS = { FullscreenChanged = true, PerformanceStatsVisibleChanged = true, StudioModeChanged = true }
+
+-- PlayerScripts' movement and camera mode registry, which the default
+-- PlayerModule and forks of it fill on start: per kind, the modes in order,
+-- and a signal each registration fires.
+local PLAYER_SCRIPTS = {}
+local MODE_KINDS = { "ComputerCameraMovementMode", "ComputerMovementMode", "TouchCameraMovementMode", "TouchMovementMode" }
+local registered = {} -- player scripts id -> kind -> modes
+
+local function modes(self, kind)
+	local id = host.id(self)
+	registered[id] = registered[id] or {}
+	registered[id][kind] = registered[id][kind] or {}
+	return registered[id][kind]
+end
+
+for _, kind in MODE_KINDS do
+	PLAYER_SCRIPTS["GetRegistered" .. kind .. "s"] = function(self)
+		return table.clone(modes(self, kind))
+	end
+	PLAYER_SCRIPTS["Register" .. kind] = function(self, mode)
+		local list = modes(self, kind)
+		if not table.find(list, mode) then
+			table.insert(list, mode)
+		end
+		host.fire(host.id(self), kind .. "Registered", mode)
+	end
+	PLAYER_SCRIPTS["Clear" .. kind .. "s"] = function(self)
+		table.clear(modes(self, kind))
+	end
+end
+
+local TABLES = {
+	Debris = DEBRIS,
+	ScriptContext = {},
+	UserGameSettings = GAME_SETTINGS,
+	PlayerScripts = PLAYER_SCRIPTS,
+	UserSettings = USER,
+	Players = PLAYERS,
+	Player = PLAYER,
+	RunService = RUN,
+	FriendPages = FRIEND_PAGES,
+	ContentProvider = CONTENT,
+}
+
+function M.member(class, id, key)
 	if class == "FriendPages" and key == "IsFinished" then
 		return true, true
+	end
+	if class == "PlayerScripts" and type(key) == "string" and key:match("Registered$") then
+		for _, kind in MODE_KINDS do
+			if key == kind .. "Registered" then
+				return host.signal(id, key), true
+			end
+		end
+	end
+	-- ScriptContext.Error(message, stackTrace, script): fired by the
+	-- scheduler for each error a script thread dies of.
+	if class == "ScriptContext" and key == "Error" then
+		return host.signal(id, key), true
+	end
+	if class == "UserGameSettings" and GAME_SETTINGS_SIGNALS[key] then
+		return host.signal(id, key), true
+	end
+	if class == "UserSettings" and key == "GameSettings" then
+		return M.UserSettings():FindFirstChildOfClass("UserGameSettings"), true
 	end
 	local found = TABLES[class][key]
 	return found, found ~= nil

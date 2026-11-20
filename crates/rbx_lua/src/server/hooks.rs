@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use mlua::{Function, IntoLua, Lua, MultiValue, Result, Value};
+use mlua::{Function, IntoLua, Lua, MultiValue, ObjectLike, Result, Value};
 use rbx_dom::Ref;
 
 use super::{fire_fresh, Physics};
@@ -64,7 +64,7 @@ const DEFAULT_GROUP: &str = "Default";
 
 /// `PhysicsService`'s registered groups and the pairs that don't collide.
 /// `Default` is always there and can't be removed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CollisionGroups {
     names: Vec<String>,
     apart: HashSet<(String, String)>,
@@ -176,6 +176,33 @@ where
     R: mlua::IntoLuaMulti,
 {
     Ok(Some(Value::Function(lua.create_function(f)?)))
+}
+
+/// Destroys the welds and other joints holding `parts` (`BreakJoints`).
+fn break_joints(lua: &Lua, physics: &dyn Physics, parts: &[Ref]) -> Result<()> {
+    let ctx = crate::engine::engine(lua).ctx.clone();
+    for part in parts {
+        let joints = match physics.call(*part, "Part", "GetJoints", Vec::new()) {
+            Ok(reply) => match reply.values.into_iter().next() {
+                Some(Arg::Instances(list)) => list,
+                _ => continue,
+            },
+            Err(_) => continue,
+        };
+        for joint in joints {
+            let rigid = ctx.dom().get(joint).is_some_and(|i| {
+                ctx.database().is_subclass_of(i.class(), "JointInstance")
+                    || i.class() == "WeldConstraint"
+            });
+            if rigid {
+                let instance = LuaInstance::new(joint, ctx.clone()).into_lua(lua)?;
+                if let Value::UserData(data) = instance {
+                    data.call_method::<()>("Destroy", ())?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn flag(lua: &Lua, on: bool) -> Result<Option<Value>> {
@@ -390,8 +417,54 @@ impl ServerHooks {
                     Ok(())
                 })
             }
+            "BreakJoints" => {
+                let physics = self.physics.clone();
+                method(lua, move |lua, _: MultiValue| {
+                    break_joints(lua, &*physics, &[referent])
+                })
+            }
+            // Surface joints are gone from Roblox: nothing to make.
+            "MakeJoints" => method(lua, |_, _: MultiValue| Ok(())),
+            "CanCollideWith" => {
+                let groups = self.groups.clone();
+                method(
+                    lua,
+                    move |_, (this, other): (mlua::AnyUserData, mlua::AnyUserData)| {
+                        let group = |p: &mlua::AnyUserData| p.get::<String>("CollisionGroup");
+                        Ok(this.get::<bool>("CanCollide")?
+                            && other.get::<bool>("CanCollide")?
+                            && groups.borrow().collides(&group(&this)?, &group(&other)?))
+                    },
+                )
+            }
             _ => Ok(None),
         }
+    }
+
+    /// `Model:BreakJoints()` (deprecated): every part in it lets go.
+    fn model(&self, lua: &Lua, ctx: &Ctx, referent: Ref, key: &str) -> Result<Option<Value>> {
+        if key != "BreakJoints" {
+            return Ok(None);
+        }
+        let physics = self.physics.clone();
+        let ctx = ctx.clone();
+        method(lua, move |lua, _: MultiValue| {
+            let parts: Vec<Ref> = {
+                let dom = ctx.dom();
+                let db = ctx.database();
+                let mut parts = Vec::new();
+                let mut stack = vec![referent];
+                while let Some(at) = stack.pop() {
+                    let Some(i) = dom.get(at) else { continue };
+                    stack.extend(i.children().iter().copied());
+                    if db.is_subclass_of(i.class(), "BasePart") {
+                        parts.push(at);
+                    }
+                }
+                parts
+            };
+            break_joints(lua, &*physics, &parts)
+        })
     }
 
     fn physics_service(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
@@ -436,6 +509,55 @@ impl ServerHooks {
                 }
                 Ok(list)
             }),
+            // The deprecated id-based calls: a group's id is its place in
+            // the registered list, Default being 0.
+            "CreateCollisionGroup" => method(lua, move |_, (_s, name): (Value, String)| {
+                let mut groups = groups.borrow_mut();
+                groups.register(&name).map_err(fail)?;
+                Ok(groups.names().iter().position(|n| *n == name).unwrap_or(0))
+            }),
+            "RemoveCollisionGroup" => method(lua, move |_, (_s, name): (Value, String)| {
+                groups.borrow_mut().unregister(&name).map_err(fail)
+            }),
+            "GetCollisionGroupId" => method(lua, move |_, (_s, name): (Value, String)| {
+                groups
+                    .borrow()
+                    .names()
+                    .iter()
+                    .position(|n| *n == name)
+                    .ok_or_else(|| fail(format!("Collision group does not exist: {name}")))
+            }),
+            "GetCollisionGroupName" => method(lua, move |_, (_s, id): (Value, usize)| {
+                groups
+                    .borrow()
+                    .names()
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| fail(format!("Collision group {id} does not exist")))
+            }),
+            "GetCollisionGroups" => method(lua, move |lua, _: MultiValue| {
+                let list = lua.create_table()?;
+                for (id, name) in groups.borrow().names().iter().enumerate() {
+                    let entry = lua.create_table()?;
+                    entry.set("name", name.as_str())?;
+                    entry.set("id", id)?;
+                    entry.set("mask", 0)?;
+                    list.push(entry)?;
+                }
+                Ok(list)
+            }),
+            "SetPartCollisionGroup" => method(
+                lua,
+                |_, (_s, part, name): (Value, mlua::AnyUserData, String)| {
+                    part.set("CollisionGroup", name)
+                },
+            ),
+            "CollisionGroupContainsPart" => method(
+                lua,
+                |_, (_s, name, part): (Value, String, mlua::AnyUserData)| {
+                    Ok(part.get::<String>("CollisionGroup")? == name)
+                },
+            ),
             _ => Ok(None),
         }
     }
@@ -462,8 +584,10 @@ fn not_scriptable(ctx: &Ctx, referent: Ref, class: &str, key: &str) -> Result<()
 }
 
 /// `WaitForChild(name, timeout?)`: the child when it is there, else the
-/// thread waits for a `ChildAdded` of that name, or `timeout` seconds and
-/// then `nil`. With no timeout, Roblox's "Infinite yield possible" warning
+/// thread waits for a `ChildAdded` of that name and resumes at the next
+/// resumption point, after the rest of the replicated batch has landed
+/// (a folder's children with it); or after `timeout` seconds with
+/// `nil`. With no timeout, Roblox's "Infinite yield possible" warning
 /// after 5 seconds, and the wait goes on.
 const WAIT_FOR_CHILD: &str = r#"
 return function(self, name, timeout)
@@ -478,7 +602,7 @@ return function(self, name, timeout)
 		if not done and child.Name == name then
 			done = true
 			conn:Disconnect()
-			task.spawn(thread, child)
+			task.defer(thread, child)
 		end
 	end)
 	if timeout then
@@ -511,6 +635,16 @@ fn wait_for_child(lua: &Lua) -> Result<Function> {
 }
 
 impl Hooks for ServerHooks {
+    fn require_asset(&self, id: f64) -> std::result::Result<Ref, String> {
+        let reply =
+            self.physics
+                .call(Ref::new(0), "require", "LoadModule", vec![Arg::Number(id)])?;
+        match reply.values.first() {
+            Some(Arg::Instance(module)) => Ok(*module),
+            _ => Err(format!("Unable to load module asset {id}")),
+        }
+    }
+
     fn index(
         &self,
         lua: &Lua,
@@ -583,6 +717,7 @@ impl Hooks for ServerHooks {
                 super::input::member(lua, signals, class, key, self.services.device())
             }
             _ if db.is_subclass_of(class, "BasePart") => self.base_part(lua, referent, key),
+            "Model" => self.model(lua, ctx, referent, key),
             _ => Ok(None),
         }
     }
@@ -647,6 +782,23 @@ impl Hooks for ServerHooks {
             "Loaded" => lua
                 .create_userdata(events::game_signal("Loaded"))
                 .map(|u| Some(Value::UserData(u))),
+            // Run when the server shuts down (`ServerVm::close`); a client
+            // has no shutdown to wait on.
+            "BindToClose" => {
+                let client = self.client.get();
+                method(lua, move |lua, (_this, f): (Value, Function)| {
+                    if client {
+                        return Err(mlua::Error::runtime(
+                            "BindToClose can only be called on the server.",
+                        ));
+                    }
+                    events::registry_table(lua, super::BIND_TO_CLOSE)?.push(f)
+                })
+            }
+            "PlaceId" => Ok(Some(Value::Integer(self.services.place().0))),
+            "GameId" => Ok(Some(Value::Integer(self.services.place().1))),
+            "PrivateServerId" | "VIPServerId" => Ok(Some(Value::String(lua.create_string("")?))),
+            "PrivateServerOwnerId" | "VIPServerOwnerId" => Ok(Some(Value::Integer(0))),
             _ => events::game_member(lua, key),
         }
     }

@@ -24,6 +24,10 @@ local function fail(message)
 end
 
 local function int64(value)
+	-- Like any number argument, a numeric string converts ("123").
+	if type(value) == "string" and tonumber(value) then
+		value = tonumber(value)
+	end
 	if type(value) == "string" then
 		fail("Unable to cast string to int64")
 	end

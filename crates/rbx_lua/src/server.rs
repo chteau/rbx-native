@@ -28,13 +28,13 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use mlua::chunk::Compiler;
-use mlua::{IntoLua, Lua, MultiValue, Table, VmState};
+use mlua::{Function, IntoLua, Lua, MultiValue, Table, VmState};
 use rbx_dom::{CFrameData, Change, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::ctx::Ctx;
 use crate::engine::changes::{fire_changes, first_number};
-use crate::engine::events::instance_key;
+use crate::engine::events::{self, instance_key};
 use crate::engine::signal::{self, deferred_signals, Owner, SignalKey};
 use crate::engine::{self, engine, scheduler, Engine, Host};
 use crate::hooks::HookSlot;
@@ -67,6 +67,27 @@ end
 
 /// How many times one call fires the changes event handlers made in turn.
 const ROUNDS: usize = 8;
+
+/// The registry list of `game:BindToClose` functions (and, once closing,
+/// its `pending` count).
+pub(crate) const BIND_TO_CLOSE: &str = "rbxn.bind_to_close";
+
+/// Starts each BindToClose function on its own thread; an error is
+/// reported once it has counted as returned.
+const CLOSE: &str = r#"
+return function(functions)
+	functions.pending = #functions
+	for _, f in ipairs(functions) do
+		task.spawn(function()
+			local ok, message = pcall(f)
+			functions.pending -= 1
+			if not ok then
+				error(message, 0)
+			end
+		end)
+	end
+end
+"#;
 
 /// What the VM asks the physics simulation.
 pub trait Physics {
@@ -383,6 +404,11 @@ impl ServerVm {
                 .get::<mlua::Function>("wait")?,
         )?;
         lua.globals().set("wait", legacy)?;
+        let runtime = services.clone();
+        lua.globals().set(
+            "UserSettings",
+            lua.create_function(move |lua, ()| services::user_settings(lua, &runtime))?,
+        )?;
         lua.sandbox(true)?;
         install_shared(&lua)?;
         Ok(ServerVm {
@@ -687,6 +713,24 @@ impl ServerVm {
     /// Destroys `root` the way `Instance:Destroy` does (`Destroying`
     /// fires, scripts holding it still read its last name and class),
     /// for the engine's own removals such as `FallenPartsDestroyHeight`.
+    /// The server shuts down: each `game:BindToClose` function starts on a
+    /// thread of its own. [`ServerVm::closed`] says when all have returned.
+    pub fn close(&mut self) -> Vec<Change> {
+        self.guarded(|lua| {
+            let functions = events::registry_table(lua, BIND_TO_CLOSE)?;
+            let run: Function = lua.load(CLOSE).set_name("=BindToClose").eval()?;
+            run.call::<()>(functions)
+        })
+    }
+
+    /// Whether every `BindToClose` function started by
+    /// [`ServerVm::close`] has returned.
+    pub fn closed(&self) -> bool {
+        events::registry_table(&self.lua, BIND_TO_CLOSE)
+            .and_then(|t| t.get::<i64>("pending"))
+            .map_or(true, |n| n <= 0)
+    }
+
     pub fn destroy(&mut self, root: Ref) -> Vec<Change> {
         self.guarded(|lua| {
             let ctx = engine(lua).ctx.clone();
@@ -708,9 +752,9 @@ impl ServerVm {
         from: usize,
         f: impl FnOnce(&Lua) -> mlua::Result<()>,
     ) -> Vec<Change> {
-        let deadline = Instant::now() + self.budget;
+        let deadline = crate::engine::scheduler::Deadline::arm(&self.lua, self.budget);
         self.lua.set_interrupt(move |_| {
-            if Instant::now() >= deadline {
+            if Instant::now() >= deadline.get() {
                 Err(mlua::Error::runtime(TIMEOUT))
             } else {
                 Ok(VmState::Continue)
