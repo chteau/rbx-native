@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::shell::rig::{
     apply_packages, build_rig, describe_avatar, dress, gather, options_for, BodyColors, Fetched,
-    JointStyle,
+    JointStyle, RigOptions,
 };
 
 /// The player a run is played as.
@@ -32,7 +32,7 @@ use crate::shell::rig::{
 pub(super) struct Player {
     pub(super) user_id: i64,
     pub(super) name: String,
-    /// Their character; `None` for the noob.
+    /// Their character; `None` for the blocky last-resort noob.
     pub(super) character: Option<WeakDom>,
     /// Where the look came from, for the Output.
     pub(super) note: String,
@@ -52,9 +52,28 @@ fn noob(note: String) -> Player {
     Player {
         user_id: -1,
         name: "Player1".to_owned(),
-        character: None,
+        character: rig_builder_noob(),
         note,
     }
+}
+
+/// The noob: the rig Studio's Rig Builder makes (R15, Block), when its
+/// meshes can be had, online or all in the asset cache. `None` otherwise,
+/// and the simulation's own blocky noob plays.
+fn rig_builder_noob() -> Option<WeakDom> {
+    let options = RigOptions::rig_builder_block();
+    if rbx_net::is_offline() {
+        let cache = rbx_assets::AssetCache::new(None).ok()?;
+        if !options.asset_ids().into_iter().all(|id| cache.get_id(id).is_some()) {
+            return None;
+        }
+    }
+    let mut scratch = WeakDom::new();
+    let folder = scratch.new_instance("Folder", "Folder", None);
+    let rig = build_rig(&mut scratch, &options, folder);
+    let mut model = WeakDom::new();
+    rbx_sim::players::graft(&mut model, &scratch, rig, None);
+    Some(model)
 }
 
 /// Works out the player; blocking (network), so off the UI thread.

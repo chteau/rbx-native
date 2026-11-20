@@ -79,6 +79,9 @@ impl JointStyle {
     }
 }
 
+/// The colour of every part of a rig the Rig Builder makes (`Color` 0.5).
+pub(crate) const RIG_BUILDER_GREY: [u8; 3] = [127, 127, 127];
+
 /// An 8-bit sRGB colour per limb group, as in `BodyColors`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct BodyColors {
@@ -141,6 +144,37 @@ impl RigOptions {
             pieces: bundle::stock(family, shape),
             feet: [0.; 3],
         }
+    }
+
+    /// What Studio's Rig Builder makes with R15, Masculine and Block: the
+    /// block body in its grey, with `Motor6D` joints so the Animator drives
+    /// it (the Rig Builder's own rig uses `AnimationConstraint`s).
+    pub(crate) fn rig_builder_block() -> RigOptions {
+        let mut options = RigOptions::new(
+            RigType::R15,
+            BodyShape::Masculine,
+            BodyScale::Classic,
+            JointStyle::Motor6D,
+        );
+        options.pieces = bundle::stock(bundle::Family::Block, BodyShape::Masculine);
+        options.colors = BodyColors {
+            head: RIG_BUILDER_GREY,
+            torso: RIG_BUILDER_GREY,
+            left_arm: RIG_BUILDER_GREY,
+            right_arm: RIG_BUILDER_GREY,
+            left_leg: RIG_BUILDER_GREY,
+            right_leg: RIG_BUILDER_GREY,
+        };
+        options
+    }
+
+    /// The asset ids of the body's meshes and textures.
+    pub(crate) fn asset_ids(&self) -> Vec<u64> {
+        self.pieces
+            .values()
+            .flat_map(|piece| [piece.mesh].into_iter().chain(piece.texture))
+            .filter(|id| *id != 0)
+            .collect()
     }
 
     /// The scales the rig is built at: its own, or the preset of its shape.
