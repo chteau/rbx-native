@@ -106,6 +106,9 @@ enum Confirm {
     Leave,
 }
 
+/// A tool icon, `None` once it failed to load.
+type Icon = Option<Arc<RenderImage>>;
+
 /// What the overlay holds between frames.
 pub(crate) struct CoreGuiView {
     pub(crate) state: Option<CoreGui>,
@@ -135,9 +138,9 @@ pub(crate) struct CoreGuiView {
     actions: Vec<CoreAction>,
     /// Tool icons by `TextureId`, `None` while loading or when the image
     /// can't be had.
-    icons: HashMap<String, Option<Arc<RenderImage>>>,
+    icons: HashMap<String, Icon>,
     /// Icons the loading threads finished, not yet in `icons`.
-    arrived: Arc<Mutex<Vec<(String, Option<Arc<RenderImage>>)>>>,
+    arrived: Arc<Mutex<Vec<(String, Icon)>>>,
 }
 
 impl Default for CoreGuiView {

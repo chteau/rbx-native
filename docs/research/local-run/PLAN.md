@@ -725,7 +725,69 @@ Gaps from M15:
 
 Not verified: the offline cached avatar was not re-captured this milestone; the real client was compared on Linux (Sober) only.
 
-## Milestone 16 (proposed): animation and avatar fidelity
+## Milestone 16 (done): the M15 differences, gameplay goldens, newer APIs
+
+The M15 side-by-side gaps were closed first, then gameplay that M10–M11 hadn't recorded was checked against a live server, then the newest script APIs. New captures are in `rbx-native-targets/local-run-m16-shots/` (`sbs-*`: real client left, ours right, the real side from M15).
+
+1. Hotbar (`gui.rs` `HotbarSlot`, `core_gui.rs`):
+   - A tool's `TextureId` is fetched on a thread (`rbx_viewer::asset_bytes`) and drawn in its slot instead of the name.
+   - Slots 3 and 4 in the M15 real capture were the player's own gear, which the experience allows. They aren't in the place.
+2. Humanoid name labels (`gui/labels.rs`): a Humanoid model other than your own character shows its name, or `DisplayName`, 1 stud over the head. It's 16 px white with a (51,58,64) edge, as measured. A health bar shows under it.
+   - It follows `DisplayDistanceType` (Viewer, Subject, None), `NameDisplayDistance`/`HealthDisplayDistance`, `HealthDisplayType` and `NameOcclusion`.
+   - Occlusion is a raycast from the camera.
+3. Shadows: a soft edge never narrows below 2 shadow texels (`lighting.rs` `kernel_radius`). At low softness the penumbra used to step.
+4. Plastic: the grain normal map is mixed at 40% (`material.wgsl` `PLASTIC_GRAIN`). Studs keep their relief.
+5. `script.Enabled` reads and writes `not Disabled` on any `BaseScript`.
+6. Flaky `the_first_character_idles`: the idle crossfade could catch both idle animations playing at once (2 runs in 30). That state is accepted now.
+7. The escape menu hides the hotbar. Re-captured (`sbs-7`).
+8. Gameplay goldens, 3 passes each on a live server:
+
+   | Test | Measures | Result |
+   |---|---|---|
+   | `VehicleSeat` | sit, throttle, steer, jump off (`Seated>Jumping@25`, `Landed@53`) | all match |
+   | `SwordTouch` | `Touched` from a walking character into a blade | `touch_beats` 34 vs 35, touched by Head, walked 9 |
+   | `CameraLimits` | wheel zoom against `CameraMin/MaxZoomDistance`, changing the limits mid-zoom | all match |
+   | `HumanoidDeath` | `Died` timing, Motor6Ds left, `CanCollide` after death, head and hand 15/60 beats later, with and without `BreakJointsOnDeath` | match, except the broken body's collapse (known gap) |
+   | `NewApis` | the newest API surface below | all match |
+
+   - Camera: the wheel goal is kept unclamped and clamped where it's used. Roblox does the same: after twelve notches in at minimum 6, widening the limits shows 3.33.
+   - Death: limbs collide again after `Died` when `AvatarCollisionRules.BodyPartsCollidableOnDeath` is true (the default). So an unbroken body stays where it fell, as in Roblox.
+   - Death: an undriven root (dead, `PlatformStand`) falls under gravity again. A settled root used to stay weightless.
+9. Newer APIs, each checked live before it was built (`NewApis`):
+   - `RunService:BindToSimulationParallel`/`BindToAnimationParallel` error with Roblox's message outside an `Actor`. Inside one they run on `PreSimulation`/`PreAnimation` at the given `StepFrequency`, serially.
+   - `AvatarCollisionRules` defaults: `HitboxSize` 2,5.5,1, `BodyPartsCollidableOnDeath` true, `TouchAndQueryDetectionMode` UseParts.
+   - Scripts get Roblox's capability error for `RobloxScriptSecurity` reads (`HitAndTouchDetectionMode`, `LegacyCollisionMode`) and for `Workspace.NextGenerationPhysicsSolver` (PluginOrOpenCloud).
+   - `AudioStreamReader`/`Writer`:
+     - Defaults: Mono, Float32, 48000, Medium.
+     - Pins: Reader `Input`, Writer `Output`.
+     - `Read`/`Peek`/`Write`/`Space` fail with "… is not enabled", as live servers do today.
+   - `Humanoid:GetCanCollideOnDeath` fails with "is not yet enabled", as on live servers.
+   - `game.ServerRegion` reads `"Local"`.
+   - `Humanoid.UsesAvatarCollider` is false.
+
+Tests:
+- `rbx_sim/tests/core.rs` `tool_icons_rig_labels_and_script_enabled`.
+- Label rules (`gui/labels.rs`).
+- Shadow kernel radius.
+- The five conformance tests above.
+
+Gaps from M16:
+
+| Area | Roblox | ours |
+|---|---|---|
+| Broken body on death | the R15 stack topples: head on the floor by 60 beats, a hand 0.8 stud away at 15 | the torsos drop out and the rest stays balanced (head −0.17, hand 2.04) |
+| Shadow colour | core (19,37,74), lit floor (121,129,147) | core (9,24,64), floor (132,137,152). Exposure left alone: the Studio-fitted fidelity goldens would regress |
+| Spawn point | a random point on the SpawnLocation | its centre |
+| Player gear | gear the experience allows fills hotbar slots | not loaded |
+| Parallel Luau | runs in parallel inside Actors | serial |
+| AudioStream read/write | disabled live too | disabled; nothing to compare yet |
+| Hotbar icons | drawn | drawn, but not seen live: the look place's tools have no `TextureId` |
+
+Not verified: hotbar icons on a live capture; the camera's shift lock and the truss/stairs/slope rows beyond M10/M11's goldens; the real client on Windows or macOS.
+
+## Milestone 17 (proposed): animation and avatar fidelity
+
+The old M16 proposal, moved here unchanged. The broken-body collapse and the shadow colour from M16's gaps come first.
 
 1. Layered clothing at run time: `WrapLayer`/`WrapTarget` deformation on the avatar, layered in `Order`, with the auto-rig cages the editor already fits (`rbx_animation`), and `AutoSkin`.
 2. FACS face animation: `FaceControls` properties driven by animation tracks and scripts, dynamic heads deforming in the viewport, `Animator` playing face curves.
@@ -747,7 +809,7 @@ Not verified: the offline cached avatar was not re-captured this milestone; the 
 - `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta: Run, Play (local), Pause, Stop live in the editor. `local_run/avatars.rs`: who plays and what they look like. `workspace_view/play_input.rs`: the keyboard and mouse handed to the game.
 - `crates/rbx_sim/src/input.rs`, `crates/rbx_lua/src/server/input.rs`, `server/input.luau`: UserInputService, ContextActionService, BindToRenderStep. `crates/rbx_sim/src/character/PlayerModule.luau`: our default controls and camera.
 - `crates/rbx_net`: offline mode, the reachability probe and the HTTP gate.
-- `crates/rbx_sim/src/gui.rs`, `gui/layout.rs`: PlayerGui at run time, GUI input, TextBox, StarterGui/GuiService core calls. `tools.rs`: Backpack and tools. `teams.rs`: teams. `sound.rs`, `audio.rs`: Sound playback, decoding and roll-off. `chat.rs`: TextChatService's default instances. `crates/rbx_studio/src/workspace_view/core_gui.rs` (icons in `core_gui/icons.rs`): our default top bar, health, hotbar, People list with leaderstats, chat window and bubbles, Escape menu with its confirmations, death edge and kick card. `crates/rbx_studio/src/shell/local_run/sound.rs`: the run's audio mix.
+- `crates/rbx_sim/src/gui.rs`, `gui/layout.rs`: PlayerGui at run time, GUI input, `gui/labels.rs` Humanoid name labels, TextBox, StarterGui/GuiService core calls. `tools.rs`: Backpack and tools. `teams.rs`: teams. `sound.rs`, `audio.rs`: Sound playback, decoding and roll-off. `chat.rs`: TextChatService's default instances. `crates/rbx_studio/src/workspace_view/core_gui.rs` (icons in `core_gui/icons.rs`): our default top bar, health, hotbar, People list with leaderstats, chat window and bubbles, Escape menu with its confirmations, death edge and kick card. `crates/rbx_studio/src/shell/local_run/sound.rs`: the run's audio mix.
 - `crates/rbx_lua/src/server/tween.luau`, `tween.rs`: TweenService. `server/chat.luau`, `chat.rs`: TextChatService messages.
 - `crates/rbx_lua/src/server/services.rs`, `server/services/*.luau`: the web-backed and social services, a Luau module each (HttpService, DataStore, MemoryStore, Messaging, Marketplace, Pathfinding, Teleport, Badges, Group/User/Social/Policy/AvatarEditor/Voice, Text and Chat, Localization, GuiService), with the editor's half (teleport restarts, toasts, prompt dialogs) in `crates/rbx_studio/src/shell/local_run.rs`.
 - `crates/rbx_sim/src/audio_api.rs`, `audio_graph.rs`, `rbx_lua/src/server/services/audio.luau`: the Audio API and its mixer. `rbx_lua/src/server/editable_image.rs`, `meshes.rs`: EditableImage and EditableMesh. `services/drag.luau`: DragDetector, UIDragDetector, ClickDetector clicks and the Camera's screen math. `services/input_actions.luau`: the Input Action System. `rbx_lua/src/server/styles.rs` with `rbx_dom/src/style.rs`: StyleSheets at run time.

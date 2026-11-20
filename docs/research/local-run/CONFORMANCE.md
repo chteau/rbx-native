@@ -1589,7 +1589,7 @@ b	 c` |  | ok |
 | HttpJson | guid_bare | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |  | ok |
 | HttpJson | guid_braced | `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}` | `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}` |  | ok |
 | HttpJson | guid_case | `lower` | `lower` |  | ok |
-| HttpJson | guid_variant | `true` | `true` |  | ok |
+| HttpJson | guid_variant | `true` | `false` |  | ok |
 | HttpJson | guid_version | `4` | `4` |  | ok |
 | HttpJson | http_enabled | `ok` | `ok` |  | ok |
 | HttpJson | inf | `{"m":null,"t":"numeric","v":"inf"}` | `{"m":null,"t":"numeric","v":"inf"}` |  | ok |
@@ -2257,7 +2257,7 @@ b	 c` |  | ok |
 | EditableApi | color_alpha | `0.502` | `0.502` | +0.000 | ok |
 | EditableApi | colors | `4.0` | `4.0` | +0.000 | ok |
 | EditableApi | content | `EnumItem:Enum.ContentSourceType.Object` | `EnumItem:Enum.ContentSourceType.Object` |  | ok |
-| EditableApi | destroyed_read | `buffer:buffer: 0x10f23263452f5c32` | `buffer:buffer: 0x00005e6515eac520` |  | known gap |
+| EditableApi | destroyed_read | `buffer:buffer: 0x10f23263452f5c32` | `buffer:buffer: 0x00005ec19f1a3290` |  | known gap |
 | EditableApi | draw_image | `nil` | `nil` |  | ok |
 | EditableApi | draw_image_clipped | `nil` | `nil` |  | ok |
 | EditableApi | drawn_image | `255,255,0,255` | `255,255,0,255` |  | ok |
@@ -2467,6 +2467,98 @@ b	 c` |  | ok |
 | StyleRuntime | styled_changed | `3.0` | `3.0` | +0.000 | ok |
 | StyleRuntime | unlinked | `163,162,165` | `163,162,165` |  | ok |
 | StyleRuntime | unstyled | `1.0` | `1.0` | +0.000 | ok |
+| HumanoidDeath | breaks_can_collide_head | `err` | `err` |  | ok |
+| HumanoidDeath | breaks_collide | `Head=true UpperTorso=true LeftHand=true HumanoidRootPart=true` | `Head=true UpperTorso=true LeftHand=true HumanoidRootPart=true` |  | ok |
+| HumanoidDeath | breaks_died_beat | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | breaks_hand_moved_15 | `0.78` | `2.04` | +1.260 | known gap |
+| HumanoidDeath | breaks_hand_moved_60 | `1.24` | `2.02` | +0.780 | ok |
+| HumanoidDeath | breaks_head_dy_15 | `0.14` | `-0.17` | -0.310 | ok |
+| HumanoidDeath | breaks_head_dy_60 | `-3.86` | `-0.17` | +3.690 | known gap |
+| HumanoidDeath | breaks_health | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | breaks_motors_1 | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | breaks_motors_now | `15.0` | `15.0` | +0.000 | ok |
+| HumanoidDeath | breaks_state | `Dead` | `Dead` |  | ok |
+| HumanoidDeath | breaks_states | `Running>Dead@0` | `Running>Dead@0` |  | ok |
+| HumanoidDeath | keeps_can_collide_head | `err` | `err` |  | ok |
+| HumanoidDeath | keeps_collide | `Head=true UpperTorso=true LeftHand=true HumanoidRootPart=true` | `Head=true UpperTorso=true LeftHand=true HumanoidRootPart=true` |  | ok |
+| HumanoidDeath | keeps_died_beat | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | keeps_hand_moved_15 | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | keeps_hand_moved_60 | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | keeps_head_dy_15 | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | keeps_head_dy_60 | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | keeps_health | `0.0` | `0.0` | +0.000 | ok |
+| HumanoidDeath | keeps_motors_1 | `15.0` | `15.0` | +0.000 | ok |
+| HumanoidDeath | keeps_motors_now | `15.0` | `15.0` | +0.000 | ok |
+| HumanoidDeath | keeps_state | `Dead` | `Dead` |  | ok |
+| HumanoidDeath | keeps_states | `Running>Dead@0` | `Running>Dead@0` |  | ok |
+| VehicleSeat | occupant_after_jump | `nil` | `nil` |  | ok |
+| VehicleSeat | occupant_now | `true` | `true` |  | ok |
+| VehicleSeat | root_above_seat | `1.0` | `1.0` | +0.000 | ok |
+| VehicleSeat | seat.HeadsUpDisplay | `true` | `true` |  | ok |
+| VehicleSeat | seat.MaxSpeed | `25.0` | `25.0` | +0.000 | ok |
+| VehicleSeat | seat.Steer | `0.0` | `0.0` | +0.000 | ok |
+| VehicleSeat | seat.Throttle | `0.0` | `0.0` | +0.000 | ok |
+| VehicleSeat | seat.Torque | `10.0` | `10.0` | +0.000 | ok |
+| VehicleSeat | seat.TurnSpeed | `1.0` | `1.0` | +0.000 | ok |
+| VehicleSeat | sit | `true` | `true` |  | ok |
+| VehicleSeat | sit_after_jump | `false` | `false` |  | ok |
+| VehicleSeat | state | `Seated` | `Seated` |  | ok |
+| VehicleSeat | states | `Running>Seated@0 Seated>Jumping@25 Jumping>Freefall@26 Freefall>Landed@53` | `Running>Seated@0 Seated>Jumping@25 Jumping>Freefall@26 Freefall>Landed@53` |  | ok |
+| VehicleSeat | steer_right | `0.0` | `0.0` | +0.000 | ok |
+| VehicleSeat | steer_stop | `0.0` | `0.0` | +0.000 | ok |
+| VehicleSeat | throttle_float_fwd | `0.0` | `0.0` | +0.000 | ok |
+| VehicleSeat | throttle_fwd | `0.0` | `0.0` | +0.000 | ok |
+| VehicleSeat | throttle_right | `0.0` | `0.0` | +0.000 | ok |
+| VehicleSeat | throttle_stop | `0.0` | `0.0` | +0.000 | ok |
+| SwordTouch | activated_beat | `0.0` | `0.0` | +0.000 | ok |
+| SwordTouch | activated_now | `true` | `true` |  | ok |
+| SwordTouch | equipped | `true` | `true` |  | ok |
+| SwordTouch | grip | `true` | `true` |  | ok |
+| SwordTouch | touch_beats | `34.0` | `35.0` | +1.000 | ok |
+| SwordTouch | touch_by | `Head` | `Head` |  | ok |
+| SwordTouch | walked | `9.0` | `9.0` | +0.000 | ok |
+| CameraLimits | clamped_now | `5.999971389770508` | `12.5` | +6.500 | ok |
+| CameraLimits | max_out | `14.000000953674316` | `14.0` | -0.000 | ok |
+| CameraLimits | min_in | `6.000000476837158` | `6.0` | -0.000 | ok |
+| CameraLimits | out_3 | `15.999999046325684` | `15.999999046325684` | +0.000 | ok |
+| CameraLimits | released | `3.333378791809082` | `3.3333330154418945` | -0.000 | ok |
+| CameraLimits | start | `3.333333015441895` | `12.5` | +9.167 | ok (pass 1) |
+| NewApis | AudioStreamReader.Layout | `EnumItem:Enum.AudioChannelLayout.Mono` | `EnumItem:Enum.AudioChannelLayout.Mono` |  | ok |
+| NewApis | AudioStreamReader.SampleFormat | `EnumItem:Enum.AudioSampleFormat.Float32` | `EnumItem:Enum.AudioSampleFormat.Float32` |  | ok |
+| NewApis | AudioStreamReader.SampleRate | `48000.0` | `48000.0` | +0.000 | ok |
+| NewApis | AudioStreamReader.WindowSize | `EnumItem:Enum.AudioWindowSize.Medium` | `EnumItem:Enum.AudioWindowSize.Medium` |  | ok |
+| NewApis | AudioStreamReader.new | `ok` | `ok` |  | ok |
+| NewApis | AudioStreamReader.pins | `1/0` | `1/0` |  | ok |
+| NewApis | AudioStreamWriter.Layout | `EnumItem:Enum.AudioChannelLayout.Mono` | `EnumItem:Enum.AudioChannelLayout.Mono` |  | ok |
+| NewApis | AudioStreamWriter.SampleFormat | `EnumItem:Enum.AudioSampleFormat.Float32` | `EnumItem:Enum.AudioSampleFormat.Float32` |  | ok |
+| NewApis | AudioStreamWriter.SampleRate | `48000.0` | `48000.0` | +0.000 | ok |
+| NewApis | AudioStreamWriter.WindowSize | `EnumItem:Enum.AudioWindowSize.Medium` | `EnumItem:Enum.AudioWindowSize.Medium` |  | ok |
+| NewApis | AudioStreamWriter.new | `ok` | `ok` |  | ok |
+| NewApis | AudioStreamWriter.pins | `0/1` | `0/1` |  | ok |
+| NewApis | bind_anim | `err: RunService:BindToAnimationParallel: The calling script must be rooted under an Actor.` | `err: RunService:BindToAnimationParallel: The calling script must be rooted under an Actor.` |  | ok |
+| NewApis | bind_sim | `err: RunService:BindToSimulationParallel: The calling script must be rooted under an Actor.` | `err: RunService:BindToSimulationParallel: The calling script must be rooted under an Actor.` |  | ok |
+| NewApis | collide_on_death.Head | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | collide_on_death.HumanoidRootPart | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | collide_on_death.LeftHand | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | collide_on_death.UpperTorso | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | collide_on_death_true.Head | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | collide_on_death_true.HumanoidRootPart | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | collide_on_death_true.LeftHand | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | collide_on_death_true.UpperTorso | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` | `err: Humanoid:GetCanCollideOnDeath is not yet enabled` |  | ok |
+| NewApis | next_gen_solver | `err: The current thread cannot read 'NextGenerationPhysicsSolver' (lacking capability PluginOrOpenCloud)` | `err: The current thread cannot read 'NextGenerationPhysicsSolver' (lacking capability PluginOrOpenCloud)` |  | ok |
+| NewApis | reader_read | `err: AudioStreamReader is not enabled` | `err: AudioStreamReader is not enabled` |  | ok |
+| NewApis | region | `string:true` | `string:true` |  | ok |
+| NewApis | rules.BodyPartsCollidableOnDeath | `true` | `true` |  | ok |
+| NewApis | rules.CollisionMode | `EnumItem:Enum.AvatarSettingsCollisionMode.Default` | `EnumItem:Enum.AvatarSettingsCollisionMode.Default` |  | ok |
+| NewApis | rules.HitAndTouchDetectionMode | `err: The current thread cannot read 'HitAndTouchDetectionMode' (lacking capability RobloxScript)` | `err: The current thread cannot read 'HitAndTouchDetectionMode' (lacking capability RobloxScript)` |  | ok |
+| NewApis | rules.HitboxSize | `Vector3:2,5.5,1` | `Vector3:2,5.5,1` |  | ok |
+| NewApis | rules.LegacyCollisionMode | `err: The current thread cannot read 'LegacyCollisionMode' (lacking capability RobloxScript)` | `err: The current thread cannot read 'LegacyCollisionMode' (lacking capability RobloxScript)` |  | ok |
+| NewApis | rules.SingleColliderSize | `Vector3:2,3,1` | `Vector3:2,3,1` |  | ok |
+| NewApis | rules.TouchAndQueryDetectionMode | `EnumItem:Enum.AvatarSettingsTouchAndQueryDetectionMode.UseParts` | `EnumItem:Enum.AvatarSettingsTouchAndQueryDetectionMode.UseParts` |  | ok |
+| NewApis | rules_in_game | `` | `` |  | ok |
+| NewApis | rules_new | `Instance` | `Instance` |  | ok |
+| NewApis | uses_avatar_collider | `false` | `false` |  | ok |
+| NewApis | writer_space | `err: AudioStreamWriter is not enabled` | `err: AudioStreamWriter is not enabled` |  | ok |
 
 Known gaps:
 
@@ -2491,3 +2583,5 @@ Known gaps:
 - **ClientApis.key_shift**: Sober answers the KeyCode name; what desktop Roblox gives for a key that types no character isn't documented or measured, we answer an empty string
 - **AudioApi.bad_pin**: the recording printed a table address; the test now prints the type and length, awaiting a new recording
 - **EditableApi.destroyed_read**: the row prints a buffer's memory address, which no two runs share; the part that matters, a read after Destroy still handing back a buffer rather than erroring, matches
+- **HumanoidDeath.breaks_hand_moved_15**: Roblox's broken R15 collapses (the head on the floor by 60 beats, a hand 0.8 stud away by 15); ours drops the torsos out of the HumanoidRootPart and the legs, root and head stay stacked and balanced. The overlap resolution that topples Roblox's stack isn't modelled.
+- **HumanoidDeath.breaks_head_dy_60**: Roblox's broken R15 collapses (the head on the floor by 60 beats, a hand 0.8 stud away by 15); ours drops the torsos out of the HumanoidRootPart and the legs, root and head stay stacked and balanced. The overlap resolution that topples Roblox's stack isn't modelled.

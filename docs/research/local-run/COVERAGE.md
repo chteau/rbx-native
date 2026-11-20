@@ -6,9 +6,9 @@ Read the property numbers with care: any property the reflection database knows 
 
 | Member type | There | Total | |
 |---|---|---|---|
-| Function | 480 | 1385 | 35% |
-| Event | 172 | 355 | 48% |
-| Property | 1950 | 2510 | 78% |
+| Function | 493 | 1385 | 36% |
+| Event | 174 | 355 | 49% |
+| Property | 1957 | 2510 | 78% |
 
 ## By class
 
@@ -55,8 +55,8 @@ Classes with at least one member there. Properties, functions and events as ther
 | AudioReverb | 13/13 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioSearchParams | 8/10 | - | - |  |  |
 | AudioSpeechToText | 3/3 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioStreamReader | 1/4 | 0/5 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, Peek, Read, WiringChanged |
-| AudioStreamWriter | 1/4 | 0/5 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, Space, Write, WiringChanged |
+| AudioStreamReader | 4/4 | 5/5 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, Peek, Read, WiringChanged |  |
+| AudioStreamWriter | 4/4 | 5/5 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, Space, Write, WiringChanged |  |
 | AudioTextToSpeech | 12/12 | 0/8 | 0/3 |  | GetConnectedWires, GetInputPins, GetOutputPins, Pause, Play, Unload, GetWaveformAsync, LoadAsync, Ended, Looped, WiringChanged |
 | AudioTremolo | 7/7 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioWindSynthesizer | 4/5 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
@@ -64,7 +64,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | AvatarAnimationRules | 11/11 | - | - |  |  |
 | AvatarBodyRules | 8/15 | - | - |  |  |
 | AvatarClothingRules | 14/14 | - | - |  |  |
-| AvatarCollisionRules | 4/5 | - | - |  |  |
+| AvatarCollisionRules | 5/5 | - | - |  |  |
 | AvatarEditorService | - | 9/22 | 7/7 | GetAccessoryType, PromptAllowInventoryReadAccess, PromptCreateOutfit, PromptDeleteOutfit, PromptRenameOutfit, PromptSaveAvatar, PromptSetFavorite, PromptUpdateOutfit, GetFavoriteAsync, PromptAllowInventoryReadAccessCompleted, PromptCreateOutfitCompleted, PromptDeleteOutfitCompleted, PromptRenameOutfitCompleted, PromptSaveAvatarCompleted, PromptSetFavoriteCompleted, PromptUpdateOutfitCompleted | CheckApplyDefaultClothingAsync, ConformToAvatarRulesAsync, GetAvatarRulesAsync, GetBatchItemDetailsAsync, GetBundlesByAssetIdAsync, GetHeadShapesAsync, GetInventoryAsync, GetItemDetailsAsync, GetOutfitDetailsAsync, GetOutfitsAsync, GetRecommendedAssetsAsync, GetRecommendedBundlesAsync, SearchCatalogAsync |
 | AvatarEffectDescription | 1/2 | - | - |  |  |
 | BadgeService | - | 5/5 | - | AwardBadgeAsync, CheckUserBadgesAsync, GetBadgeInfoAsync, GetUserBadgesAsync, UserHasBadgeAsync |  |
@@ -197,7 +197,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | HapticEffect | 4/4 | 0/4 | 0/1 |  | GetWaveformKeys, Play, SetWaveformKeys, Stop, Ended |
 | Highlight | 6/7 | - | - |  |  |
 | HttpService | 1/1 | 7/9 | - | GenerateGUID, JSONDecode, JSONEncode, UrlEncode, GetAsync, PostAsync, RequestAsync | CreateWebStreamClient, GetSecret |
-| Humanoid | 28/32 | 10/24 | 15/18 | ChangeState, EquipTool, GetAppliedDescription, GetState, GetStateEnabled, Move, MoveTo, SetStateEnabled, TakeDamage, UnequipTools, Climbing, Died, FallingDown, FreeFalling, GettingUp, HealthChanged, Jumping, MoveToFinished, PlatformStanding, Ragdoll, Running, Seated, StateChanged, StateEnabledChanged, Swimming | AddAccessory, BuildRigFromAttachments, GetAccessories, GetBodyPartR15, GetCanCollideOnDeath, GetLimb, GetMoveVelocity, GetRelativeVelocityAtFloor, RemoveAccessories, ReplaceBodyPartR15, ApplyAvatarRulesAsync, ApplyDescriptionAsync, ApplyDescriptionResetAsync, PlayEmoteAsync, ApplyDescriptionFinished, Strafing, Touched |
+| Humanoid | 28/32 | 11/24 | 15/18 | ChangeState, EquipTool, GetAppliedDescription, GetCanCollideOnDeath, GetState, GetStateEnabled, Move, MoveTo, SetStateEnabled, TakeDamage, UnequipTools, Climbing, Died, FallingDown, FreeFalling, GettingUp, HealthChanged, Jumping, MoveToFinished, PlatformStanding, Ragdoll, Running, Seated, StateChanged, StateEnabledChanged, Swimming | AddAccessory, BuildRigFromAttachments, GetAccessories, GetBodyPartR15, GetLimb, GetMoveVelocity, GetRelativeVelocityAtFloor, RemoveAccessories, ReplaceBodyPartR15, ApplyAvatarRulesAsync, ApplyDescriptionAsync, ApplyDescriptionResetAsync, PlayEmoteAsync, ApplyDescriptionFinished, Strafing, Touched |
 | HumanoidDescription | 34/40 | 0/8 | 0/2 |  | AddEmote, GetAccessories, GetEmotes, GetEquippedEmotes, RemoveEmote, SetAccessories, SetEmotes, SetEquippedEmotes, EmotesChanged, EquippedEmotesChanged |
 | HumanoidRigDescription | 89/111 | 0/8 | - |  | GetJoint, GetJointFromName, GetJointNames, GetR15JointLabels, GetR15JointNames, GetR6JointNames, SetJoint, SetTposeAdjustment |
 | IKControl | 7/11 | 0/6 | - |  | GetChainCount, GetChainLength, GetNodeLocalCFrame, GetNodeWorldCFrame, GetRawFinalTarget, GetSmoothedFinalTarget |
@@ -283,7 +283,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | RemoteFunction | - | 2/2 | - | InvokeClient, InvokeServer |  |
 | RenderingTest | 13/13 | 0/1 | 0/1 |  | RenderdocTriggerCapture, TestFramesCountdownAboutToStart |
 | RotationCurve | 1/1 | 0/7 | - |  | GetKeyAtIndex, GetKeyIndicesAtTime, GetKeys, GetValueAtTime, InsertKey, RemoveKeyAtIndex, SetKeys |
-| RunService | 1/2 | 12/15 | 7/9 | BindToRenderStep, BindToSimulation, GetPredictionStatus, IsClient, IsEdit, IsResimulating, IsRunMode, IsRunning, IsServer, IsStudio, SetPredictionMode, UnbindFromRenderStep, Heartbeat, PostSimulation, PreAnimation, PreRender, PreSimulation, RenderStepped, Stepped | BindToAnimation, BindToAnimationParallel, BindToSimulationParallel, Misprediction, Rollback |
+| RunService | 1/2 | 14/15 | 7/9 | BindToAnimationParallel, BindToRenderStep, BindToSimulation, BindToSimulationParallel, GetPredictionStatus, IsClient, IsEdit, IsResimulating, IsRunMode, IsRunning, IsServer, IsStudio, SetPredictionMode, UnbindFromRenderStep, Heartbeat, PostSimulation, PreAnimation, PreRender, PreSimulation, RenderStepped, Stepped | BindToAnimation, Misprediction, Rollback |
 | Selection | 1/1 | - | 0/1 |  | SelectionChanged |
 | SensorBase | 1/1 | - | 0/1 |  | OnSensorOutputChanged |
 | AtmosphereSensor | 2/2 | - | - |  |  |

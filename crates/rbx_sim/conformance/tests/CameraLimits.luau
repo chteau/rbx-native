@@ -34,5 +34,14 @@ return function(h, origin)
 	gesture("wheel out 3")
 	result.out_3 = distance()
 	gesture("wheel in 3")
+	-- Leave the zoom at 12.5 for whatever runs next: one notch in from a
+	-- distance pinned at 19.75 (12.5 * 1.5 + 1) lands on 12.5.
+	player.CameraMaxZoomDistance = 19.75
+	player.CameraMinZoomDistance = 19.75
+	h.beats(30)
+	gesture("wheel in 1")
+	player.CameraMaxZoomDistance = 400
+	player.CameraMinZoomDistance = 0.5
+	h.beats(30)
 	return result
 end
