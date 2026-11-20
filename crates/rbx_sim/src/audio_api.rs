@@ -44,6 +44,8 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
                 ("AudioPlayer", "Play" | "Stop" | "GetPlaybackState")
                     | ("AudioFilter", "GetGainAt")
                     | ("AudioAnalyzer", "GetSpectrum")
+                    | ("AudioStreamReader", "Read" | "Peek")
+                    | ("AudioStreamWriter", "Write" | "Space")
                     | (
                         "AudioEmitter",
                         "GetAudibilityFor" | "GetInteractingListeners" | "GetWorldCFrame"
@@ -314,6 +316,11 @@ impl Audio {
         args: &[Arg],
     ) -> Result<CallReply, String> {
         let value = match method {
+            // Live servers refuse these for now (NewApis `reader_read`,
+            // `writer_space`).
+            "Read" | "Peek" | "Write" | "Space" => {
+                return Err(format!("{class} is not enabled"));
+            }
             "GetInputPins" | "GetOutputPins" => {
                 let (inputs, outputs) = pins(class).unwrap_or_default();
                 let list = if method == "GetInputPins" {

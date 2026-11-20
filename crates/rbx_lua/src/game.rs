@@ -125,6 +125,8 @@ impl UserData for LuaGame {
                 "Parent" => return Ok(Value::Nil),
                 "PlaceId" | "GameId" | "CreatorId" | "PlaceVersion" => return 0.into_lua(lua),
                 "JobId" => return "".into_lua(lua),
+                // A live server names the region it runs in; ours runs here.
+                "ServerRegion" => return "Local".into_lua(lua),
                 "CreatorType" => {
                     let value = this
                         .ctx

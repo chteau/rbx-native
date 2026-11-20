@@ -302,6 +302,10 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         "Axis" | "SecondaryAxis" | "WorldAxis" | "WorldSecondaryAxis" | "WorldPosition"
         | "WorldOrientation" | "WorldCFrame" => attachment_get(lua, ctx, referent, name),
         "ClockTime" => super::clock::get(ctx, referent),
+        // Plugins and Open Cloud only (NewApis `next_gen_solver`).
+        "NextGenerationPhysicsSolver" => Err(mlua::Error::runtime(
+            "The current thread cannot read 'NextGenerationPhysicsSolver' (lacking capability PluginOrOpenCloud)",
+        )),
         "Enabled" if is_script(ctx, referent)? => {
             let disabled = super::get(lua, ctx, referent, "Disabled")?;
             Ok(Some(Value::Boolean(!matches!(

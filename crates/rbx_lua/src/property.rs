@@ -28,6 +28,12 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(None);
         };
+        if descriptor.roblox_read {
+            return Err(mlua::Error::runtime(format!(
+                "The current thread cannot read '{}' (lacking capability RobloxScript)",
+                descriptor.name
+            )));
+        }
         // Whichever name the file stored it under, or the class default:
         // `part.Transparency` on a part a hand-written file left it off of
         // reads `0`, as it would in Roblox.

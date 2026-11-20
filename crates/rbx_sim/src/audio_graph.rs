@@ -64,7 +64,8 @@ const SPLITTER_OUT: &[&str] = &[
 pub fn pins(class: &str) -> Option<(&'static [&'static str], &'static [&'static str])> {
     Some(match class {
         "AudioPlayer" | "AudioDeviceInput" | "AudioListener" => (&[], OUT),
-        "AudioEmitter" | "AudioDeviceOutput" | "AudioAnalyzer" => (IN, &[]),
+        "AudioEmitter" | "AudioDeviceOutput" | "AudioAnalyzer" | "AudioStreamReader" => (IN, &[]),
+        "AudioStreamWriter" => (&[], OUT),
         "AudioCompressor" => (&["Input", "Sidechain"], OUT),
         "AudioChannelMixer" => (MIXER_IN, OUT),
         "AudioChannelSplitter" => (IN, SPLITTER_OUT),

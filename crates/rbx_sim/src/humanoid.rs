@@ -373,6 +373,20 @@ fn has_neck(dom: &WeakDom, db: &ReflectionDatabase, model: Ref) -> bool {
 
 /// The parts of a rig that keep colliding (HumanoidStand `*_collide`): the
 /// rest are turned off when the humanoid takes it over.
+/// `BodyPartsCollidableOnDeath` of the first `AvatarCollisionRules` in the
+/// game, true when there is none (the class default, read live).
+fn collidable_on_death(dom: &WeakDom, db: &ReflectionDatabase) -> bool {
+    let mut stack = dom.root_refs().to_vec();
+    while let Some(r) = stack.pop() {
+        let Some(i) = dom.get(r) else { continue };
+        if i.class() == "AvatarCollisionRules" {
+            return flag(dom, db, r, "BodyPartsCollidableOnDeath");
+        }
+        stack.extend(i.children().iter().copied());
+    }
+    true
+}
+
 fn keeps_colliding(rig: Rig, name: &str) -> bool {
     match rig {
         Rig::R15 => matches!(
@@ -657,6 +671,26 @@ impl Humanoids {
         let frame = self.frame;
         if let Some(c) = self.characters.get_mut(&id) {
             c.died_at = Some(frame);
+        }
+        // The limbs collide again once dead (`AvatarCollisionRules.
+        // BodyPartsCollidableOnDeath`, true by default; HumanoidDeath: every
+        // part reads CanCollide true after Died, and an unbroken body
+        // stands on its feet).
+        if collidable_on_death(dom, db) {
+            let rig = self.characters.get(&id).map(|c| c.rig);
+            for part in dom
+                .get(model)
+                .map(|m| m.children().to_vec())
+                .unwrap_or_default()
+            {
+                let limb = dom.get(part).is_some_and(|i| {
+                    db.is_subclass_of(i.class(), "BasePart")
+                        && rig.is_some_and(|rig| !keeps_colliding(rig, i.name()))
+                });
+                if limb {
+                    set(dom, db, part, "CanCollide", Variant::Bool(true));
+                }
+            }
         }
         if flag(dom, db, id, "BreakJointsOnDeath") {
             for r in descendants(dom, model) {
@@ -1194,6 +1228,11 @@ impl Humanoids {
                     c.walk_to = Some(walk_to);
                 }
                 Ok(CallReply::default())
+            }
+            // Not switched on in live servers yet (NewApis
+            // `collide_on_death`).
+            "GetCanCollideOnDeath" => {
+                Err("Humanoid:GetCanCollideOnDeath is not yet enabled".into())
             }
             "TakeDamage" => {
                 let amount = match args.first() {

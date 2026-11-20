@@ -18,6 +18,7 @@ const HUMANOID_METHODS: &[&str] = &[
     "GetState",
     "SetStateEnabled",
     "GetStateEnabled",
+    "GetCanCollideOnDeath",
 ];
 
 const HUMANOID_SIGNALS: &[&str] = &[

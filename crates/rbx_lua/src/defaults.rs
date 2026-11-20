@@ -107,6 +107,28 @@ pub(crate) fn apply(ctx: &Ctx, class: &str, referent: Ref) {
                 .set_property(referent, "Selectable", Variant::Bool(true));
             return;
         }
+        // Newer than the dump's defaults (NewApis golden, read live).
+        "AvatarCollisionRules" => {
+            let mut dom = ctx.dom_mut();
+            let hitbox = Variant::Vector3(Vector3Data {
+                x: 2.0,
+                y: 5.5,
+                z: 1.0,
+            });
+            let _ = dom.set_property(referent, "BodyPartsCollidableOnDeath", Variant::Bool(true));
+            let _ = dom.set_property(referent, "HitboxSize", hitbox);
+            let _ = dom.set_property(referent, "TouchAndQueryDetectionMode", Variant::Enum(0));
+            return;
+        }
+        // Mono Float32 at 48 kHz, a Medium window (NewApis golden).
+        "AudioStreamReader" | "AudioStreamWriter" => {
+            let mut dom = ctx.dom_mut();
+            let _ = dom.set_property(referent, "Layout", Variant::Enum(0));
+            let _ = dom.set_property(referent, "SampleFormat", Variant::Enum(1));
+            let _ = dom.set_property(referent, "SampleRate", Variant::Int32(48000));
+            let _ = dom.set_property(referent, "WindowSize", Variant::Enum(1));
+            return;
+        }
         // Also missing from the dump's defaults (InputActions golden).
         "InputBinding" => {
             let deadzone = Variant::NumberRange(rbx_dom::NumberRange { min: 0.1, max: 1.0 });

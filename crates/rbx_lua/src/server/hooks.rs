@@ -23,6 +23,31 @@ use crate::plugin::arg;
 
 /// The frame signals a server has. `PreRender`/`RenderStepped` exist on
 /// the server too but never fire there (Roblox fires them on clients only).
+/// `RunService:BindToSimulationParallel`/`BindToAnimationParallel`: only a
+/// script under an Actor may bind (a live server's error otherwise,
+/// NewApis `bind_sim`); the function then runs every `frequency`'s worth of
+/// frames before simulation or animation. Parallel Luau runs serially here,
+/// as `ConnectParallel` does.
+const BIND_PARALLEL: &str = r#"
+local name, signal = ...
+local EVERY = { Hz60 = 1, Hz30 = 2, Hz15 = 4, Hz10 = 6, Hz5 = 12, Hz1 = 60 }
+return function(self, callback, frequency)
+	local env = getfenv(2)
+	local script = env and env.script
+	if typeof(script) ~= "Instance" or script:FindFirstAncestorWhichIsA("Actor") == nil then
+		error("RunService:" .. name .. ": The calling script must be rooted under an Actor.", 2)
+	end
+	local every = EVERY[if frequency then frequency.Name else "Hz30"] or 2
+	local frame = 0
+	return self[signal]:Connect(function(dt)
+		frame += 1
+		if frame % every == 0 then
+			callback(dt * every)
+		end
+	end)
+end
+"#;
+
 const RUN_SERVICE_SIGNALS: &[&str] = &[
     "PreRender",
     "RenderStepped",
@@ -264,6 +289,17 @@ impl ServerHooks {
                     "BindToRenderStep can only be called from a client",
                 ))
             }),
+            "BindToSimulationParallel" | "BindToAnimationParallel" => {
+                let signal = if key == "BindToSimulationParallel" {
+                    "PreSimulation"
+                } else {
+                    "PreAnimation"
+                };
+                lua.load(BIND_PARALLEL)
+                    .set_name("=RunService")
+                    .call::<Function>((key, signal))
+                    .map(|f| Some(Value::Function(f)))
+            }
             _ => Ok(None),
         }
     }

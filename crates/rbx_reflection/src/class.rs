@@ -23,6 +23,8 @@ pub struct PropertyDescriptor {
     /// True when the dump's write security is `RobloxScriptSecurity`
     /// (`Highlight.LineThickness`): game scripts may not set it.
     pub roblox_write: bool,
+    /// The same for reading (`AvatarCollisionRules.LegacyCollisionMode`).
+    pub roblox_read: bool,
 }
 
 impl PropertyDescriptor {

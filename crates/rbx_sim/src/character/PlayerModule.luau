@@ -136,6 +136,16 @@ local function zoomLimits()
 	return low, high
 end
 
+-- The zoom goal is kept as the wheel left it and clamped to the player's
+-- limits only where it is used, the way the real client does it: a wheel
+-- notch steps from the clamped distance, and limits that widen again show
+-- the goal (CameraLimits: max 14, min 6, twelve notches in, then the limits
+-- off, and the camera sits at 3.33, one notch in from 6).
+local function zoomed()
+	local low, high = zoomLimits()
+	return math.clamp(zoom, low, high)
+end
+
 -- The distance after `notches` of the wheel, positive in.
 -- A fraction of a notch (a touchpad) goes that part of the way.
 local function notched(distance, notches)
@@ -152,22 +162,23 @@ end
 
 local function setZoom(distance)
 
-	local low, high = zoomLimits()
+	local low = zoomLimits()
 	if player.CameraMode == Enum.CameraMode.LockFirstPerson then
 		zoom = low
 		return
 	end
-	if distance < FIRST_PERSON and distance < zoom then
+	local now = zoomed()
+	if distance < FIRST_PERSON and distance < now then
 		distance = low
-	elseif zoom <= low and distance > zoom then
+	elseif now <= low and distance > now then
 		distance = math.max(distance, FIRST_PERSON)
 	end
-	zoom = math.clamp(distance, low, high)
+	zoom = distance
 end
 
 local function firstPerson()
 	local low = zoomLimits()
-	return zoom <= low + 1e-3 and low < FIRST_PERSON
+	return zoomed() <= low + 1e-3 and low < FIRST_PERSON
 end
 
 local function rootOf(target)
@@ -320,7 +331,7 @@ local function update()
 	local look = lookOf()
 	local back = -look.LookVector
 	local character = target:IsA("Humanoid") and target.Parent or nil
-	local distance = if first then 0 else clearance(focus, back, zoom, character or root)
+	local distance = if first then 0 else clearance(focus, back, zoomed(), character or root)
 	local eye = focus + back * distance
 	if shiftLock and not first then
 		eye += look:VectorToWorldSpace(SHIFT_LOCK_OFFSET)
@@ -350,9 +361,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 				shiftLock = not shiftLock
 			end
 		elseif key == Enum.KeyCode.I then
-			setZoom(notched(zoom, 1))
+			setZoom(notched(zoomed(), 1))
 		elseif key == Enum.KeyCode.O then
-			setZoom(notched(zoom, -1))
+			setZoom(notched(zoomed(), -1))
 		end
 	end
 end)
@@ -365,7 +376,7 @@ end)
 
 UserInputService.InputChanged:Connect(function(input, processed)
 	if input.UserInputType == Enum.UserInputType.MouseWheel and not processed and not GuiService.MenuIsOpen then
-		setZoom(notched(zoom, input.Position.Z))
+		setZoom(notched(zoomed(), input.Position.Z))
 	end
 end)
 

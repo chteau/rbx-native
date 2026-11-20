@@ -601,6 +601,31 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/StyleRuntime.luau"),
         tolerance: &[],
     },
+    Test {
+        name: "HumanoidDeath",
+        source: include_str!("../conformance/tests/HumanoidDeath.luau"),
+        tolerance: &[("*", 0.5), ("*_beat", 1.0), ("*hand_moved*", 1.0)],
+    },
+    Test {
+        name: "VehicleSeat",
+        source: include_str!("../conformance/tests/VehicleSeat.luau"),
+        tolerance: &[("*", 0.1)],
+    },
+    Test {
+        name: "SwordTouch",
+        source: include_str!("../conformance/tests/SwordTouch.luau"),
+        tolerance: &[("*", 0.5), ("touch_beats", 1.0)],
+    },
+    Test {
+        name: "CameraLimits",
+        source: include_str!("../conformance/tests/CameraLimits.luau"),
+        tolerance: &[("*", 0.15)],
+    },
+    Test {
+        name: "NewApis",
+        source: include_str!("../conformance/tests/NewApis.luau"),
+        tolerance: &[],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the

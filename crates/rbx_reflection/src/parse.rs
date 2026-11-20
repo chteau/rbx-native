@@ -118,6 +118,7 @@ fn convert_class(raw: RawClass) -> ClassDescriptor {
                 can_save: member.serialization.can_save,
                 script_writable: member.security["Write"] != "NotAccessibleSecurity",
                 roblox_write: member.security["Write"] == "RobloxScriptSecurity",
+                roblox_read: member.security["Read"] == "RobloxScriptSecurity",
             })
         })
         .collect();

@@ -238,12 +238,18 @@ impl World {
         substep: u32,
     ) {
         for drive in drives.iter_mut() {
-            if drive.mode == DriveMode::Off {
-                continue;
-            }
             let Some((handle, offset)) = self.body_of(drive.root) else {
                 continue;
             };
+            if drive.mode == DriveMode::Off {
+                // Undriven (dead, a platform stand) the root falls like any
+                // part: a settled root left weightless held a broken body up
+                // (HumanoidDeath `breaks_head_dy_60`).
+                if let Some(body) = self.bodies.get_mut(handle) {
+                    body.set_gravity_scale(1.0, false);
+                }
+                continue;
+            }
             match drive.turn {
                 Some(target) => {
                     let mut left = wrap(target - drive.yaw);
