@@ -46,6 +46,13 @@ const ANGULAR_DAMPING: Real = 0.052;
 /// Approach speed (studs/s) above which a contact counts as an impact,
 /// solved at one point so the bounce adds no spin (the BoxBounce golden).
 const IMPACT_SPEED: Real = 1.5;
+/// A free body meeting something faster than this takes three quarters of
+/// its free frame's gravity kick before it bounces; a slower one settles
+/// (TouchedOrder's clean passes bounce for bounce, SurfaceMix, BoxBounce,
+/// RestingContact).
+const KICKED_IMPACT: Real = 6.0;
+const IMPACT_KICK: Real = 0.75;
+const FRAME: Real = 1.0 / 60.0;
 
 /// Friction and elasticity of one part with their weights, for the
 /// contact hook (indexed by collider user data).
@@ -55,6 +62,9 @@ struct Surface {
     elasticity: f32,
     friction_weight: f32,
     elasticity_weight: f32,
+    /// An anchored part's `AssemblyLinearVelocity`: it stays put, but what
+    /// touches it is carried as on a conveyor belt (Conveyor golden).
+    conveyor: Vector,
 }
 
 struct Placed {
@@ -75,6 +85,8 @@ struct Assembly {
     size: Real,
     /// Substeps per gravity kick while free: 4 (60 Hz), 2 (120), 1 (240).
     rate: std::cell::Cell<u32>,
+    /// Free (adaptive) on the last frame: it went through whatever it met.
+    was_free: std::cell::Cell<bool>,
 }
 
 /// What scripts can ask of physics between steps (`Physics` for the VM):
@@ -213,13 +225,21 @@ impl Physics for Bridge {
             .or_else(|| shared.unbuilt_mass(part))
     }
 
+    /// From the DOM's joints as they are now, so a weld made this frame
+    /// counts at once (DensityMass `weld_assembly`); a massless part
+    /// leaves it to the last build, which knows the root.
     fn assembly_mass(&self, part: Ref) -> Option<f64> {
         let shared = self.0.borrow();
-        shared
-            .masses
-            .get(&part)
-            .map(|m| m.1)
-            .or_else(|| shared.unbuilt_mass(part))
+        let built = shared.masses.get(&part).map(|m| m.1);
+        let fresh = shared.queries.as_ref().and_then(|queries| {
+            let dom = queries.dom.try_borrow().ok()?;
+            let (parts, _) = crate::ownership::assembly_in_dom(&dom, queries.db, part);
+            parts.iter().try_fold(0.0, |sum, &p| {
+                let data = PartData::read(queries.db, dom.get(p)?)?;
+                (!data.massless).then(|| sum + data.volume() * f64::from(data.physics[0]))
+            })
+        });
+        fresh.or(built).or_else(|| shared.unbuilt_mass(part))
     }
 
     fn apply_impulse(&self, part: Ref, impulse: [f64; 3], angular: bool) {
@@ -397,10 +417,28 @@ impl EventHandler for Events {
     fn handle_soft_body_tear_event(&self, _: &SoftBodySet, _: &SoftBodyTearEvent) {}
 }
 
-struct Mixer<'a>(&'a [Surface]);
+/// The contact hook: surfaces by collider, and the bodies that are free
+/// (on adaptive stepping) this frame.
+struct Mixer<'a>(&'a [Surface], &'a HashSet<RigidBodyHandle>);
 
 impl PhysicsHooks for Mixer<'_> {
     fn modify_solver_contacts(&self, context: &mut ContactModificationContext) {
+        // A free body moves its whole frame through what it meets; the
+        // contact is found after, and resolved the next frame (TouchedOrder
+        // `_y`: the block ends its last falling frame 0.9 stud into the
+        // floor, then bounces from the surface at half the speed it had).
+        // The contacts stay, inert, so the touch is still seen this frame.
+        let free = |b: Option<RigidBodyHandle>| b.is_some_and(|b| self.1.contains(&b));
+        if free(context.rigid_body1) || free(context.rigid_body2) {
+            if let Some(rigid) = context.rigid_mut() {
+                *rigid.friction = 0.0;
+                *rigid.restitution = 0.0;
+                for contact in rigid.solver_contacts.iter_mut() {
+                    contact.dist = 1.0e3;
+                }
+            }
+            return;
+        }
         let surface = |handle: ColliderHandle| {
             context
                 .colliders
@@ -411,11 +449,12 @@ impl PhysicsHooks for Mixer<'_> {
         let (Some(a), Some(b)) = (surface(context.collider1), surface(context.collider2)) else {
             return;
         };
+        // Two weights of 0 give 0 (SurfaceMix `f_both0` slides on).
         let mix = |x: f32, wx: f32, y: f32, wy: f32| {
             if wx + wy > 0.0 {
                 (x * wx + y * wy) / (wx + wy)
             } else {
-                (x + y) / 2.0
+                0.0
             }
         };
         let velocity = |handle: Option<RigidBodyHandle>, at: Vector| {
@@ -427,6 +466,14 @@ impl PhysicsHooks for Mixer<'_> {
         let Some(rigid) = context.rigid_mut() else {
             return;
         };
+        let belt = a.conveyor - b.conveyor;
+        if belt != Vector::ZERO {
+            let n = *rigid.normal;
+            let along = belt - n * n.dot(belt);
+            for contact in rigid.solver_contacts.iter_mut() {
+                contact.tangent_velocity = along;
+            }
+        }
         *rigid.friction = mix(a.friction, a.friction_weight, b.friction, b.friction_weight).into();
         *rigid.restitution = Real::from(mix(
             a.elasticity,
@@ -625,6 +672,11 @@ impl World {
                 elasticity: part.physics[2],
                 friction_weight: part.physics[3],
                 elasticity_weight: part.physics[4],
+                conveyor: if anchored {
+                    vec3(parts[root].linear_velocity)
+                } else {
+                    Vector::ZERO
+                },
             });
             // A massless part adds no mass, unless it is the root (docs).
             let density = if part.massless && i != root {
@@ -684,6 +736,7 @@ impl World {
                 })
                 .fold(0.0, Real::max),
             rate: std::cell::Cell::new(4),
+            was_free: std::cell::Cell::new(false),
         });
     }
 
@@ -722,7 +775,19 @@ impl World {
         let Some(placed) = self.parts.get(&part) else {
             return;
         };
-        if let Some(body) = self.bodies.get_mut(self.assemblies[placed.assembly].body) {
+        let assembly = &self.assemblies[placed.assembly];
+        if assembly.anchored && !angular {
+            if let Some(body) = self.bodies.get(assembly.body) {
+                for collider in body.colliders() {
+                    let surface = self.colliders.get(*collider).map(|c| c.user_data as usize);
+                    if let Some(surface) = surface.and_then(|s| self.surfaces.get_mut(s)) {
+                        surface.conveyor = vec3(velocity);
+                    }
+                }
+            }
+            return;
+        }
+        if let Some(body) = self.bodies.get_mut(assembly.body) {
             if angular {
                 body.set_angvel(vec3(velocity), true);
             } else {
@@ -777,15 +842,80 @@ impl World {
             .collect()
     }
 
+    /// How far to move `body` to take it out of everything it has gone
+    /// into: along the deepest contact's normal.
+    fn way_out(&self, body: RigidBodyHandle) -> Vector {
+        let Some(rigid) = self.bodies.get(body) else {
+            return Vector::ZERO;
+        };
+        let velocity = rigid.linvel();
+        let mut out = Vector::ZERO;
+        for &handle in rigid.colliders() {
+            let Some(collider) = self.colliders.get(handle) else {
+                continue;
+            };
+            for pair in self.narrow.contact_pairs_with(handle) {
+                let other = if pair.collider1 == handle { pair.collider2 } else { pair.collider1 };
+                let Some(other) = self.colliders.get(other) else {
+                    continue;
+                };
+                if other.parent() == Some(body) || other.is_sensor() {
+                    continue;
+                }
+                let found = rapier3d::parry::query::contact(
+                    collider.position(),
+                    collider.shape(),
+                    other.position(),
+                    other.shape(),
+                    0.0,
+                );
+                let Ok(Some(contact)) = found else {
+                    continue;
+                };
+                let mut push = contact.normal1 * contact.dist;
+                // Gone in past halfway, the shortest way out is the far
+                // side: back along the way it came instead.
+                if push.dot(velocity) > 0.0 && velocity.length() > 0.0 {
+                    let mut from = *collider.position();
+                    from.translation -= velocity * FRAME;
+                    let options = rapier3d::parry::query::ShapeCastOptions {
+                        max_time_of_impact: FRAME,
+                        ..Default::default()
+                    };
+                    let hit = rapier3d::parry::query::cast_shapes(
+                        &from,
+                        velocity,
+                        collider.shape(),
+                        other.position(),
+                        Vector::ZERO,
+                        other.shape(),
+                        options,
+                    );
+                    if let Ok(Some(hit)) = hit {
+                        push = -velocity * (FRAME - hit.time_of_impact);
+                    }
+                }
+                if push.length() > out.length() {
+                    out = push;
+                }
+            }
+        }
+        out
+    }
+
     /// Whether any of `assembly`'s parts is in contact with something.
     fn in_contact(&self, assembly: &Assembly) -> bool {
         let Some(body) = self.bodies.get(assembly.body) else {
             return false;
         };
         body.colliders().iter().any(|&collider| {
-            self.narrow
-                .contact_pairs_with(collider)
-                .any(|pair| pair.has_any_active_contact())
+            self.narrow.contact_pairs_with(collider).any(|pair| {
+                pair.has_any_active_contact()
+                    || pair
+                        .manifolds()
+                        .iter()
+                        .any(|m| m.points.iter().any(|p| p.dist < 0.0))
+            })
         })
     }
 
@@ -826,9 +956,27 @@ impl World {
                 && !driven.contains(&assembly.body)
                 && !self.constrained.contains(&assembly.body)
                 && !self.in_contact(assembly);
+            let was_free = assembly.was_free.replace(free);
+            let out = if was_free && !free {
+                self.way_out(assembly.body)
+            } else {
+                Vector::ZERO
+            };
             let Some(body) = self.bodies.get_mut(assembly.body) else {
                 continue;
             };
+            if out != Vector::ZERO {
+                // Out of what it went into, and a fast one still takes its
+                // free kick for this frame: it meets the floor at the speed
+                // a free frame gives (TouchedOrder: 0.49 stud the second
+                // frame up).
+                let impact = -body.linvel().dot(out.normalize());
+                body.set_translation(body.translation() + out, false);
+                if impact > KICKED_IMPACT {
+                    let kick = g * (h * assembly.rate.get() as Real * IMPACT_KICK);
+                    body.set_linvel(body.linvel() + kick, false);
+                }
+            }
             if !free {
                 assembly.rate.set(4);
                 body.set_gravity_scale(1.0, false);
@@ -857,6 +1005,7 @@ impl World {
             assembly.rate.set(rate);
             kicked.push((assembly.body, rate, switched));
         }
+        let free_bodies: HashSet<RigidBodyHandle> = kicked.iter().map(|k| k.0).collect();
         let impulses = std::mem::take(&mut self.shared.borrow_mut().impulses);
         for (part, impulse, angular) in impulses {
             let Some(placed) = self.parts.get(&part) else {
@@ -882,7 +1031,7 @@ impl World {
             }
             self.drive_constraints(h, g, substep, &kicked);
             self.drive_characters(drives, h, gravity, substep);
-            let mixer = Mixer(&self.surfaces);
+            let mixer = Mixer(&self.surfaces, &free_bodies);
             self.pipeline.step(
                 g,
                 &self.params,

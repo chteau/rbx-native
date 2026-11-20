@@ -20,10 +20,15 @@ const HIP_DAMPING: Real = 110.0;
 /// velocity, by at most [`walk_cap`]. HumanoidWalk: 16 → 12.174 after one
 /// frame, 15.924 after two; WalkSpeed 32: 12.174, 24.348, 31.757.
 const WALK_GAIN: Real = 0.625;
-/// Each frame the facing closes 13.53% of the angle to the move direction
-/// (HumanoidTurn `_yaw` from the second beat on); per substep that is
-/// `1 - (1 - 0.1353)^(1/4)`.
-const TURN_PER_SUBSTEP: Real = 0.035_699;
+/// AutoRotate turns at `TURN_GAIN` × the angle left (rad/s per radian),
+/// the turn rate closing `TURN_LAG` of its gap each substep, so a turn
+/// starts slow (HumanoidTurnRates `_w`: 12.2 rad/s at the end of the first
+/// frame of a 90 degree turn, then 9.3 × the angle). Roblox's rigs take
+/// one of two lags, 0.69 or 0.4 a substep, with nothing in the rig to say
+/// which (identical rigs differ, the same rig changes mid-walk); 0.45 is
+/// within two degrees of both, the 180 degree turn included.
+const TURN_GAIN: Real = 8.4;
+const TURN_LAG: Real = 0.45;
 /// The floor sensor's footprint against the root's own half size: a root
 /// walking off a ledge loses the floor a frame before it starts to drop
 /// (HumanoidSensor `ledge_states`, `_ledge`).
@@ -67,8 +72,13 @@ pub struct Drive {
     pub yaw: Real,
     /// The facing to turn toward.
     pub turn: Option<Real>,
-    /// A jump's take-off speed, used on the first substep.
-    pub launch: Option<Real>,
+    /// How fast the facing turns, rad/s.
+    pub spin: Real,
+    /// A jump's take-off speed and how far the root is lifted, used on the
+    /// first substep.
+    pub launch: Option<[Real; 2]>,
+    /// On a truss: how far to walk in to it this frame, along the facing.
+    pub approach: Real,
     /// Vertical speed on a truss.
     pub climb: Real,
 }
@@ -81,13 +91,19 @@ pub struct Floor {
     pub normal: [Real; 3],
     pub part: Ref,
     pub friction: Real,
+    /// How fast the floor under the root moves (a platform, or a conveyor's
+    /// belt): walking is relative to it (HumanoidPlatform, Conveyor).
+    pub velocity: [Real; 3],
 }
 
-/// Velocity gained per substep at most, from the floor's friction:
-/// 3.0435 stud/s on plastic (0.3), 0.9125 on ice (0.02) (HumanoidWalk,
-/// HumanoidWalkScale `ice`), a line through both.
-fn walk_cap(friction: Real) -> Real {
-    0.7603 + 7.6107 * friction
+/// Velocity gained per substep at most, from the floor's friction and the
+/// character's density: 3.0435 stud/s on plastic (0.3), 0.9125 on ice
+/// (0.02) (HumanoidWalk, HumanoidWalkScale `ice`), a line through both, for
+/// plastic's 0.7; a denser rig grips harder in proportion (HumanoidTurnRates
+/// `d2` reaches 15.61 stud/s in its first frame, 8.7 a substep, and
+/// HumanoidWalkScale `heavy` isn't held back at all).
+fn walk_cap(friction: Real, density: Real) -> Real {
+    (0.7603 + 7.6107 * friction) * density / 0.7
 }
 
 fn wrap(angle: Real) -> Real {
@@ -158,15 +174,22 @@ impl World {
         if normal.y < 0.0 {
             normal = -normal;
         }
-        let surface = self.colliders.get(collider).map(|c| c.user_data as usize);
-        let friction = surface
-            .and_then(|s| self.surfaces.get(s))
-            .map_or(0.3, |s| Real::from(s.friction));
+        let collider = self.colliders.get(collider)?;
+        let surface = self.surfaces.get(collider.user_data as usize);
+        let friction = surface.map_or(0.3, |s| Real::from(s.friction));
+        let below = at.translation - Vector::new(0.0, distance, 0.0);
+        let velocity = match collider.parent().and_then(|b| self.bodies.get(b)) {
+            Some(body) if body.is_dynamic() || body.is_kinematic() => {
+                body.velocity_at_point(below)
+            }
+            _ => surface.map_or(Vector::ZERO, |s| s.conveyor),
+        };
         Some(Floor {
             distance,
             normal: normal.to_array(),
             part,
             friction,
+            velocity: velocity.to_array(),
         })
     }
 
@@ -215,8 +238,17 @@ impl World {
             let Some((handle, offset)) = self.body_of(drive.root) else {
                 continue;
             };
-            if let Some(target) = drive.turn {
-                drive.yaw += wrap(target - drive.yaw) * TURN_PER_SUBSTEP;
+            match drive.turn {
+                Some(target) => {
+                    let mut left = wrap(target - drive.yaw);
+                    // Straight behind, it turns to its left (HumanoidTurnRates `back`).
+                    if left <= 1e-9 - std::f64::consts::PI {
+                        left = std::f64::consts::PI;
+                    }
+                    drive.spin += TURN_LAG * (TURN_GAIN * left - drive.spin);
+                    drive.yaw += drive.spin * h;
+                }
+                None => drive.spin = 0.0,
             }
             let floor = match drive.mode {
                 DriveMode::Ground => {
@@ -224,9 +256,17 @@ impl World {
                 }
                 _ => None,
             };
+            let volume: Real = self.bodies.get(handle).map_or(0.0, |b| {
+                b.colliders()
+                    .iter()
+                    .filter_map(|c| self.colliders.get(*c))
+                    .map(|c| c.volume())
+                    .sum()
+            });
             let Some(body) = self.bodies.get_mut(handle) else {
                 continue;
             };
+            let density = if volume > 0.0 { body.mass() / volume } else { 0.7 };
             let root_now = *body.position() * offset;
             let upright =
                 Pose::from_parts(root_now.translation, Rotation::from_rotation_y(drive.yaw));
@@ -241,19 +281,23 @@ impl World {
             // Gravity is off while the root is settled on its floor; on a
             // truss and a jump's first substep the drive cancels it.
             let mut weightless = false;
+            let carried = floor.map_or(Vector::ZERO, |f| {
+                let v = Vector::from_array(f.velocity);
+                Vector::new(v.x, 0.0, v.z)
+            });
             let walk = Vector::from_array(drive.walk);
-            let mut target = walk;
-            let mut cap = walk_cap(0.3);
+            let mut target = walk + carried;
+            let mut cap = walk_cap(0.3, density);
             match drive.mode {
                 DriveMode::Ground => {
                     if let Some(floor) = floor {
-                        cap = walk_cap(floor.friction);
+                        cap = walk_cap(floor.friction, density);
                         let n = Vector::from_array(floor.normal);
                         let walkable = n.y >= drive.max_slope.cos();
                         if walkable && walk.length() > 0.0 {
                             let along = walk - n * n.dot(walk);
                             if along.length() > 1e-9 {
-                                target = along * (walk.length() / along.length());
+                                target = along * (walk.length() / along.length()) + carried;
                             }
                         }
                         let below = drive.stand - floor.distance;
@@ -270,14 +314,23 @@ impl World {
                     }
                 }
                 DriveMode::Climb => {
-                    v = Vector::new(0.0, drive.climb + gravity * h, 0.0);
+                    let pace = drive.approach / (4.0 * h);
+                    v = Vector::new(
+                        -drive.yaw.sin() * pace,
+                        drive.climb + gravity * h,
+                        -drive.yaw.cos() * pace,
+                    );
                     target = Vector::new(0.0, v.y, 0.0);
                 }
                 DriveMode::Air | DriveMode::Off => {}
             }
             if substep == 0 {
-                if let Some(speed) = drive.launch.take() {
+                if let Some([speed, lift]) = drive.launch.take() {
                     v.y = speed + gravity * h;
+                    if lift != 0.0 {
+                        let up = body.translation() + Vector::new(0.0, lift, 0.0);
+                        body.set_translation(up, false);
+                    }
                 }
             }
             if drive.mode != DriveMode::Climb {

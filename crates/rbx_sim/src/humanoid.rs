@@ -36,6 +36,11 @@ const CLIMB_PER_WALKSPEED: f64 = 0.7;
 /// How far from a truss an R15 holds while climbing (HumanoidClimb
 /// `r15_gap` 1.96 = 1 + 0.5 + 0.46); an R6 holds against it.
 const CLIMB_GAP_R15: f64 = 0.46;
+/// A truss this close past the holding gap starts a climb, and the rig
+/// walks in to the gap as it climbs (HumanoidClimb `_r15_x`, `_r6_x`: an
+/// R15 starts 0.15 stud past it, not 0.42; an R6 only once it touches).
+const CLIMB_REACH_R15: f64 = 0.25;
+const CLIMB_REACH_R6: f64 = 0.1;
 
 /// `Enum.HumanoidStateType`, by name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +157,7 @@ struct WalkTo {
 
 /// Frames after leaving a seat before touching one sits again.
 const SEAT_COOLDOWN: u64 = 60;
+const SEAT_JUMP_LIFT: f64 = 0.945;
 
 /// One humanoid the simulation runs.
 #[derive(Clone, Debug)]
@@ -167,14 +173,22 @@ pub struct Character {
     no_floor: u32,
     fresh: bool,
     yaw: f64,
+    /// How fast AutoRotate is turning it, rad/s.
+    spin: f64,
     move_dir: [f64; 3],
     walk_to: Option<WalkTo>,
     running: f64,
     had_neck: bool,
     disabled: u32,
     stand: f64,
+    /// The `HipHeight` `stand` was worked out for: a change moves the
+    /// standing height with it (HumanoidPosture `_up`, `_down`).
+    hip: f64,
     half: [f64; 3],
-    launch: Option<f64>,
+    /// A jump's take-off speed and how far the root is lifted first.
+    launch: Option<[f64; 2]>,
+    /// How far to walk in to a truss this frame while climbing.
+    approach: f64,
     /// The frame it died on.
     pub died_at: Option<u64>,
     /// The frame it last left a seat: a seat it is still touching doesn't
@@ -472,14 +486,17 @@ impl Humanoids {
                 no_floor: 0,
                 fresh: true,
                 yaw: yaw_of(&root_cf),
+                spin: 0.0,
                 move_dir: [0.0; 3],
                 walk_to: None,
                 running: 0.0,
                 had_neck,
                 disabled: 0,
                 stand,
+                hip,
                 half: [size[0] / 2.0, size[1] / 2.0, size[2] / 2.0],
                 launch: None,
+                approach: 0.0,
                 died_at: None,
                 left_seat: None,
             },
@@ -748,10 +765,17 @@ impl Humanoids {
         {
             return;
         }
-        let gap = if rig == Rig::R15 { CLIMB_GAP_R15 } else { 0.0 };
+        let (gap, reach) = match rig {
+            Rig::R15 => (CLIMB_GAP_R15, CLIMB_REACH_R15),
+            Rig::R6 => (0.0, CLIMB_REACH_R6),
+        };
         let ahead = world
-            .part_ahead(root, half[2], yaw, gap + 0.05)
+            .part_ahead(root, half[2], yaw, gap + reach)
             .filter(|(part, _)| dom.get(*part).is_some_and(|i| i.class() == "TrussPart"));
+        let step = number(dom, db, id, "WalkSpeed") / 60.0;
+        if let Some(c) = self.characters.get_mut(&id) {
+            c.approach = ahead.map_or(0.0, |(_, d)| (d - gap).clamp(0.0, step));
+        }
         let look = [-yaw.sin(), -yaw.cos()];
         let pushing = move_dir[0] * look[0] + move_dir[2] * look[1] > 0.1;
         match (state, ahead) {
@@ -764,7 +788,6 @@ impl Humanoids {
             }
             _ => {}
         }
-        let _ = db;
     }
 
     fn jump_check(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase, id: Ref, gravity: f64) {
@@ -789,13 +812,21 @@ impl Humanoids {
         if state == State::Seated {
             self.unsit(dom, db, id);
         }
-        let speed = if flag(dom, db, id, "UseJumpPower") {
+        let mut speed = if flag(dom, db, id, "UseJumpPower") {
             JUMP_POWER_SCALE * number(dom, db, id, "JumpPower")
         } else {
             (2.0 * gravity * number(dom, db, id, "JumpHeight").max(0.0)).sqrt()
         };
+        // Off a seat the root is lifted first and leaves three substeps of
+        // gravity slower (HumanoidSeat `_jump_y`: 0.945 stud, 50.55 stud/s
+        // for JumpPower 50).
+        let mut lift = 0.0;
+        if state == State::Seated {
+            speed -= 3.0 * gravity / 240.0;
+            lift = SEAT_JUMP_LIFT;
+        }
         if let Some(c) = self.characters.get_mut(&id) {
-            c.launch = Some(speed);
+            c.launch = Some([speed, lift]);
         }
         set(dom, db, id, "Jump", Variant::Bool(false));
         self.change(id, State::Jumping);
@@ -803,6 +834,9 @@ impl Humanoids {
 
     fn drive(&mut self, dom: &WeakDom, db: &ReflectionDatabase, id: Ref) -> Drive {
         let c = self.characters.get_mut(&id).expect("character");
+        let hip = number(dom, db, id, "HipHeight");
+        c.stand += hip - c.hip;
+        c.hip = hip;
         let mode = match c.state {
             s if s.grounded() => DriveMode::Ground,
             State::Jumping | State::Freefall => DriveMode::Air,
@@ -831,7 +865,9 @@ impl Humanoids {
             max_slope: number(dom, db, id, "MaxSlopeAngle").to_radians(),
             yaw: c.yaw,
             turn,
+            spin: c.spin,
             launch: c.launch.take(),
+            approach: c.approach,
             climb: CLIMB_PER_WALKSPEED * speed * up.max(0.0),
         }
     }
@@ -851,6 +887,7 @@ impl Humanoids {
             if drive.mode != DriveMode::Off {
                 if let Some(c) = self.characters.get_mut(&id) {
                     c.yaw = drive.yaw;
+                    c.spin = drive.spin;
                 }
             }
             let v = world.part_velocity(drive.root).unwrap_or_default();

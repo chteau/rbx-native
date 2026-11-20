@@ -1,20 +1,20 @@
 {
-  "passes": 5,
+  "passes": 12,
   "raw": [
     {
-      "first_bounce_beat": 26,
-      "peak_1": 4.697,
-      "peak_2": 1.345
+      "first_bounce_beat": 27,
+      "peak_1": 4.867,
+      "peak_2": 1.317
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.867,
+      "peak_2": 1.317
     },
     {
       "first_bounce_beat": 26,
-      "peak_1": 4.74,
-      "peak_2": 1.329
-    },
-    {
-      "first_bounce_beat": 26,
-      "peak_1": 4.74,
-      "peak_2": 1.329
+      "peak_1": 4.699,
+      "peak_2": 1.271
     },
     {
       "first_bounce_beat": 27,
@@ -25,18 +25,53 @@
       "first_bounce_beat": 27,
       "peak_1": 4.867,
       "peak_2": 1.317
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.905,
+      "peak_2": 1.301
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.905,
+      "peak_2": 1.301
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.905,
+      "peak_2": 1.301
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.905,
+      "peak_2": 1.301
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.905,
+      "peak_2": 1.301
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.905,
+      "peak_2": 1.301
+    },
+    {
+      "first_bounce_beat": 27,
+      "peak_1": 4.905,
+      "peak_2": 1.301
     }
   ],
   "result": {
-    "first_bounce_beat": 26.0,
-    "peak_1": 4.74,
-    "peak_2": 1.329
+    "first_bounce_beat": 27.0,
+    "peak_1": 4.905,
+    "peak_2": 1.301
   },
-  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
+  "source": "real Roblox server, place 3086963177 version 577, joined with Sober",
   "spread": {
     "first_bounce_beat": 1.0,
-    "peak_1": 0.16999999999999993,
-    "peak_2": 0.028000000000000025
+    "peak_1": 0.2060000000000004,
+    "peak_2": 0.04600000000000004
   },
   "status": "recorded"
 }

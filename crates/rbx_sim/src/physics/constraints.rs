@@ -27,6 +27,9 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::{pose_of, vec3, World};
 
+/// Natural frequency of hinge and ball-socket joints, Hz.
+const JOINT_HZ: f64 = 60.0;
+
 /// Responsiveness `RigidityEnabled` stands for.
 const RIGID_RESPONSIVENESS: Real = 200.0;
 /// Velocity motor gain: high enough to hold a target within a substep.
@@ -443,10 +446,12 @@ impl World {
                 .into(),
             _ => return None,
         };
+        // Roblox's sockets and hinges give a little (a 4 stud BallSocket arm
+        // stretches to 4.046 at the bottom of its swing); a 60 Hz spring
+        // keeps the HingeFree swing within 0.08 stud over 30 frames.
         let mut joint = joint;
         if matches!(drive, Drive::Hinge(_) | Drive::BallSocket) {
-            let env = |k: &str, d: f64| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
-            let _ = joint.set_softness(SpringCoefficients::new(env("M10_JOINT_HZ", 1.0e6), env("M10_JOINT_Z", 1.0)));
+            let _ = joint.set_softness(SpringCoefficients::new(JOINT_HZ, 1.0));
         }
         Some(
             self.impulse_joints
