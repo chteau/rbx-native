@@ -106,10 +106,99 @@ fn lua_string(text: &str) -> String {
     format!("{text:?}")
 }
 
-fn probe_source(classes: &[Class]) -> String {
+/// The classes the probe's `FACTORIES` reach through a service, which a
+/// server answers (DataStores refuse a client).
+const FROM_SERVICES: &[&str] = &[
+    "GlobalDataStore",
+    "DataStore",
+    "OrderedDataStore",
+    "DataStoreKeyInfo",
+    "Pages",
+    "DataStoreKeyPages",
+    "DataStoreVersionPages",
+    "DataStoreListingPages",
+    "DataStorePages",
+    "DataStoreKey",
+    "DataStoreObjectVersionInfo",
+    "DataStoreInfo",
+    "MemoryStoreHashMap",
+    "MemoryStoreSortedMap",
+    "MemoryStoreQueue",
+    "MemoryStoreHashMapPages",
+    "Path",
+    "FriendPages",
+];
+
+fn probe_source(classes: &[Class], server: bool) -> String {
     let mut source = String::from(
-        r#"local function probe(declared, class, service, members)
+        r#"-- Classes only a service hands out.
+local DSS = game:GetService("DataStoreService")
+local MSS = game:GetService("MemoryStoreService")
+local function store()
+	local ds = DSS:GetDataStore("coverage")
+	ds:SetAsync("k", 1)
+	return ds
+end
+local FACTORIES = {
+	GlobalDataStore = store,
+	DataStore = store,
+	OrderedDataStore = function()
+		return DSS:GetOrderedDataStore("coverage")
+	end,
+	DataStoreKeyInfo = function()
+		return select(2, store():GetAsync("k"))
+	end,
+	Pages = function()
+		return store():ListKeysAsync()
+	end,
+	DataStoreKeyPages = function()
+		return store():ListKeysAsync()
+	end,
+	DataStoreVersionPages = function()
+		return store():ListVersionsAsync("k")
+	end,
+	DataStoreListingPages = function()
+		store()
+		return DSS:ListDataStoresAsync()
+	end,
+	DataStorePages = function()
+		return DSS:GetOrderedDataStore("coverage"):GetSortedAsync(true, 10)
+	end,
+	DataStoreKey = function()
+		return store():ListKeysAsync():GetCurrentPage()[1]
+	end,
+	DataStoreObjectVersionInfo = function()
+		return store():ListVersionsAsync("k"):GetCurrentPage()[1]
+	end,
+	DataStoreInfo = function()
+		store()
+		return DSS:ListDataStoresAsync():GetCurrentPage()[1]
+	end,
+	MemoryStoreHashMap = function()
+		return MSS:GetHashMap("coverage")
+	end,
+	MemoryStoreSortedMap = function()
+		return MSS:GetSortedMap("coverage")
+	end,
+	MemoryStoreQueue = function()
+		return MSS:GetQueue("coverage")
+	end,
+	MemoryStoreHashMapPages = function()
+		return MSS:GetHashMap("coverage"):ListItemsAsync(10)
+	end,
+	Path = function()
+		return game:GetService("PathfindingService"):CreatePath()
+	end,
+	FriendPages = function()
+		return game:GetService("Players"):GetFriendsAsync(1)
+	end,
+}
+local function probe(declared, class, service, members)
 	local ok, instance = pcall(function()
+		local factory = FACTORIES[declared]
+		if factory then
+			return factory()
+		end
 		if service then
 			return game:GetService(class)
 		end
@@ -131,7 +220,11 @@ fn probe_source(classes: &[Class]) -> String {
 end
 "#,
     );
-    for class in classes.iter().filter(|c| !c.members.is_empty()) {
+    let wanted = classes
+        .iter()
+        .filter(|c| !c.members.is_empty())
+        .filter(|c| FROM_SERVICES.contains(&c.name.as_str()) == server);
+    for class in wanted {
         let (made, service) = reach(classes, class).unwrap_or_default();
         let names: Vec<String> = class.members.iter().map(|(_, n)| lua_string(n)).collect();
         source.push_str(&format!(
@@ -141,25 +234,39 @@ end
             names.join(", ")
         ));
     }
+    source.push_str("print(\"COV_DONE\")\n");
     source
 }
 
-fn probe(classes: &[Class]) -> BTreeSet<(String, String)> {
+fn probe(classes: &[Class], server: bool) -> BTreeSet<(String, String)> {
     let mut dom = WeakDom::new();
     let workspace = dom.new_instance("Workspace", "Workspace", None);
     dom.new_instance("Terrain", "Terrain", Some(workspace));
     let sss = dom.new_instance("ServerScriptService", "ServerScriptService", None);
     let script = dom.new_instance("Script", "Coverage", Some(sss));
-    let _ = dom.set_property(script, "Source", Variant::String(probe_source(classes)));
+    let _ = dom.set_property(
+        script,
+        "Source",
+        Variant::String(probe_source(classes, server)),
+    );
     dom.take_changes();
     let mut sim = Simulation::new(dom).expect("the sim starts");
     // As Play (local) runs it: server and client in one, so the client-only
-    // services (UserInputService, ContextActionService) count too.
-    sim.set_client();
+    // services (UserInputService, ContextActionService) count too; the
+    // classes services hand out are asked of a server.
+    if !server {
+        sim.set_client();
+    }
     sim.start();
-    let output = sim.take_output();
-    output
-        .lines()
+    let mut lines = Vec::new();
+    for _ in 0..600 {
+        lines.extend(sim.take_output().lines().iter().cloned());
+        if lines.iter().any(|l| l == "COV_DONE") {
+            break;
+        }
+        sim.step();
+    }
+    lines
         .iter()
         .filter_map(|line| line.strip_prefix(PREFIX))
         .filter_map(|rest| {
@@ -173,7 +280,8 @@ fn probe(classes: &[Class]) -> BTreeSet<(String, String)> {
 fn main() {
     let out = std::env::args().nth(1);
     let classes = load_dump();
-    let there = probe(&classes);
+    let mut there = probe(&classes, false);
+    there.extend(probe(&classes, true));
 
     let mut totals: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
     let mut rows = String::new();

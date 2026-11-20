@@ -6,9 +6,9 @@ Read the property numbers with care: any property the reflection database knows 
 
 | Member type | There | Total | |
 |---|---|---|---|
-| Function | 190 | 1385 | 14% |
-| Event | 107 | 355 | 30% |
-| Property | 1935 | 2510 | 77% |
+| Function | 281 | 1385 | 20% |
+| Event | 118 | 355 | 33% |
+| Property | 1949 | 2510 | 78% |
 
 ## By class
 
@@ -85,7 +85,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | ClickDetector | 3/3 | - | 0/4 |  | MouseClick, MouseHoverEnter, MouseHoverLeave, RightMouseClick |
 | DragDetector | 26/27 | 0/5 | 0/3 |  | AddConstraintFunction, GetReferenceFrame, RestartDrag, SetDragStyleFunction, SetPermissionPolicyFunction, DragContinue, DragEnd, DragStart |
 | Clouds | 4/4 | - | - |  |  |
-| CollectionService | - | 7/10 | 0/2 | AddTag, GetInstanceAddedSignal, GetInstanceRemovedSignal, GetTagged, GetTags, HasTag, RemoveTag | CreateCollection, GetAllTags, GetCollections, TagAdded, TagRemoved |
+| CollectionService | - | 8/10 | 2/2 | AddTag, GetAllTags, GetInstanceAddedSignal, GetInstanceRemovedSignal, GetTagged, GetTags, HasTag, RemoveTag, TagAdded, TagRemoved | CreateCollection, GetCollections |
 | CompositeValueCurve | 1/1 | 0/2 | - |  | GetComponentCurves, GetValueAtTime |
 | Constraint | 4/6 | - | - |  |  |
 | AlignOrientation | 12/12 | - | - |  |  |
@@ -118,7 +118,15 @@ Classes with at least one member there. Properties, functions and events as ther
 | FileMesh | 4/4 | - | - |  |  |
 | SpecialMesh | 1/1 | - | - |  |  |
 | DataStoreGetOptions | 1/1 | - | - |  |  |
-| DataStoreOptions | 1/1 | 0/1 | - |  | SetExperimentalFeatures |
+| DataStoreIncrementOptions | - | 2/2 | - | GetMetadata, SetMetadata |  |
+| DataStoreInfo | 3/3 | - | - |  |  |
+| DataStoreKey | 1/1 | - | - |  |  |
+| DataStoreKeyInfo | 3/3 | 2/2 | - | GetMetadata, GetUserIds |  |
+| DataStoreObjectVersionInfo | 3/3 | - | - |  |  |
+| DataStoreOptions | 1/1 | 1/1 | - | SetExperimentalFeatures |  |
+| DataStoreService | - | 6/6 | - | GetDataStore, GetGlobalDataStore, GetOrderedDataStore, GetRequestBudgetForRequestType, SetRateLimitForRequestType, ListDataStoresAsync |  |
+| DataStoreSetOptions | - | 2/2 | - | GetMetadata, SetMetadata |  |
+| Debris | - | 1/1 | - | AddItem |  |
 | DebuggerManager | 1/1 | 0/3 | 0/2 |  | AddDebugger, GetDebuggers, Resume, DebuggerAdded, DebuggerRemoved |
 | DebuggerWatch | 1/1 | - | - |  |  |
 | Dialog | 10/10 | 0/1 | 0/1 |  | GetCurrentPlayers, DialogChoiceSelected |
@@ -141,6 +149,9 @@ Classes with at least one member there. Properties, functions and events as ther
 | ForceField | 1/1 | - | - |  |  |
 | GamepadService | 1/1 | 0/2 | - |  | DisableGamepadCursor, EnableGamepadCursor |
 | GetTextBoundsParams | 4/5 | - | - |  |  |
+| GlobalDataStore | - | 5/6 | - | GetAsync, IncrementAsync, RemoveAsync, SetAsync, UpdateAsync | BatchGetAsync |
+| DataStore | - | 4/4 | - | GetVersionAsync, GetVersionAtTimeAsync, ListKeysAsync, ListVersionsAsync |  |
+| OrderedDataStore | - | 1/1 | - | GetSortedAsync |  |
 | GuiBase2d | 9/10 | - | 0/1 |  | SelectionChanged |
 | GuiObject | 19/26 | - | 11/16 | InputBegan, InputChanged, InputEnded, MouseEnter, MouseLeave, MouseMoved, MouseWheelBackward, MouseWheelForward, SelectionGained, SelectionLost, TouchTap | TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe |
 | CanvasGroup | 2/2 | - | - |  |  |
@@ -209,7 +220,13 @@ Classes with at least one member there. Properties, functions and events as ther
 | ModuleScript | 1/1 | - | - |  |  |
 | MakeupDescription | 3/4 | 0/1 | - |  | GetAppliedInstance |
 | MarkerCurve | 1/1 | 0/4 | - |  | GetMarkerAtIndex, GetMarkers, InsertMarkerAtTime, RemoveMarkerAtIndex |
+| MarketplaceService | - | 12/27 | 7/8 | BindReceiptHandler, PromptBundlePurchase, PromptGamePassPurchase, PromptProductPurchase, PromptPurchase, PromptSubscriptionPurchase, GetPassOwnershipAsync, GetProductInfoAsync, GetUserSubscriptionStatusAsync, PlayerOwnsAssetAsync, PlayerOwnsBundleAsync, UserOwnsGamePassAsync, PromptBulkPurchaseFinished, PromptBundlePurchaseFinished, PromptGamePassPurchaseFinished, PromptPremiumPurchaseFinished, PromptProductPurchaseFinished, PromptPurchaseFinished, PromptSubscriptionPurchaseFinished | OpenShop, PromptBulkPurchase, PromptCancelSubscription, PromptRobloxSubscriptionPurchase, PromptVIPServerPurchase, CanUsersTransferRobuxAsync, GetDeveloperProductsAsync, GetRobloxSubscriptionDetailsAsync, GetSubscriptionProductInfoAsync, GetUserSubscriptionDetailsAsync, GetUserSubscriptionPaymentHistoryAsync, GetUsersPriceLevelsAsync, PromptRobuxTransferAsync, RankProductsAsync, RecommendTopProductsAsync, PromptRobloxSubscriptionPurchaseFinished |
 | MaterialVariant | 6/7 | - | - |  |  |
+| MemoryStoreHashMap | - | 5/5 | - | GetAsync, ListItemsAsync, RemoveAsync, SetAsync, UpdateAsync |  |
+| MemoryStoreQueue | - | 4/4 | - | AddAsync, GetSizeAsync, ReadAsync, RemoveAsync |  |
+| MemoryStoreService | - | 4/4 | - | GetDistributedCounter, GetHashMap, GetQueue, GetSortedMap |  |
+| MemoryStoreSortedMap | - | 6/6 | - | GetAsync, GetRangeAsync, GetSizeAsync, RemoveAsync, SetAsync, UpdateAsync |  |
+| MessagingService | - | 2/2 | - | PublishAsync, SubscribeAsync |  |
 | NetworkSettings | 9/9 | - | - |  |  |
 | NoCollisionConstraint | 1/3 | - | - |  |  |
 | PVInstance | - | 2/2 | - | GetPivot, PivotTo |  |
@@ -230,13 +247,18 @@ Classes with at least one member there. Properties, functions and events as ther
 | WorldRoot | - | 7/17 | - | Blockcast, GetPartBoundsInBox, GetPartBoundsInRadius, GetPartsInPart, Raycast, Shapecast, Spherecast | ArePartsTouchingOthers, BulkMoveTo, CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, RenameCollisionGroup, UnregisterCollisionGroup |
 | Workspace | 22/25 | 0/7 | 0/1 |  | GetNumAwakeParts, GetPhysicsThrottling, GetRealPhysicsFPS, GetServerTimeNow, JoinToOutsiders, PGSIsEnabled, UnjoinFromOutsiders, PersistentLoaded |
 | WorldModel | 1/1 | - | - |  |  |
+| Pages | 1/1 | 2/2 | - | GetCurrentPage, AdvanceToNextPageAsync |  |
+| DataStoreKeyPages | 1/1 | - | - |  |  |
+| DataStoreListingPages | 1/1 | - | - |  |  |
 | ParticleEmitter | 37/37 | 2/2 | - | Clear, Emit |  |
 | ParticleEmitter2D | 18/31 | 1/2 | - | Clear | Emit |
+| Path | 1/1 | 3/3 | 2/2 | GetWaypoints, CheckOcclusionAsync, ComputeAsync, Blocked, Unblocked |  |
 | PathfindingLink | 2/4 | - | - |  |  |
 | PathfindingModifier | 2/2 | - | - |  |  |
+| PathfindingService | - | 2/2 | - | CreatePath, FindPathAsync |  |
 | PhysicsService | - | 7/8 | - | CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, UnregisterCollisionGroup | RenameCollisionGroup |
-| Player | 15/31 | 1/24 | 4/7 | Kick, CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | AddReplicationFocus, ClearCachedAvatarAppearance, ClearCharacterAppearance, DistanceFromCharacter, GetCameraState, GetJoinData, GetMouse, GetNetworkPing, HasAppearanceLoaded, IsVerified, Move, PromptAgeCheck, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsInUniverseAsync, GetFriendsOnlineAsync, GetFriendsWhoPlayedAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, RequestStreamAroundAsync, EmotesLoaded, Idled, OnTeleport |
-| Players | 8/9 | 3/16 | 2/4 | GetPlayerByUserId, GetPlayerFromCharacter, GetPlayers, PlayerAdded, PlayerRemoving | BanAsync, CreateHumanoidModelFromDescriptionAsync, CreateHumanoidModelFromUserIdAsync, GetBanHistoryAsync, GetCharacterAppearanceInfoAsync, GetFriendsAsync, GetHumanoidDescriptionFromOutfitIdAsync, GetHumanoidDescriptionFromUserIdAsync, GetNameFromUserIdAsync, GetProfileConfigurationFromUserIdAsync, GetUserIdFromNameAsync, GetUserThumbnailAsync, UnbanAsync, PlayerMembershipChanged, UserSubscriptionStatusChanged |
+| Player | 15/31 | 15/24 | 4/7 | AddReplicationFocus, DistanceFromCharacter, GetJoinData, GetNetworkPing, HasAppearanceLoaded, IsVerified, Kick, Move, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsOnlineAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, RequestStreamAroundAsync, CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | ClearCachedAvatarAppearance, ClearCharacterAppearance, GetCameraState, GetMouse, PromptAgeCheck, GetFriendsInUniverseAsync, GetFriendsWhoPlayedAsync, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, EmotesLoaded, Idled, OnTeleport |
+| Players | 8/9 | 11/16 | 2/4 | GetPlayerByUserId, GetPlayerFromCharacter, GetPlayers, CreateHumanoidModelFromDescriptionAsync, CreateHumanoidModelFromUserIdAsync, GetCharacterAppearanceInfoAsync, GetFriendsAsync, GetHumanoidDescriptionFromUserIdAsync, GetNameFromUserIdAsync, GetUserIdFromNameAsync, GetUserThumbnailAsync, PlayerAdded, PlayerRemoving | BanAsync, GetBanHistoryAsync, GetHumanoidDescriptionFromOutfitIdAsync, GetProfileConfigurationFromUserIdAsync, UnbanAsync, PlayerMembershipChanged, UserSubscriptionStatusChanged |
 | PluginAction | 4/4 | - | - |  |  |
 | PoseBase | 3/3 | - | - |  |  |
 | NumberPose | 1/1 | - | - |  |  |
@@ -256,7 +278,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | RemoteFunction | - | 2/2 | - | InvokeClient, InvokeServer |  |
 | RenderingTest | 13/13 | 0/1 | 0/1 |  | RenderdocTriggerCapture, TestFramesCountdownAboutToStart |
 | RotationCurve | 1/1 | 0/7 | - |  | GetKeyAtIndex, GetKeyIndicesAtTime, GetKeys, GetValueAtTime, InsertKey, RemoveKeyAtIndex, SetKeys |
-| RunService | 1/2 | 8/15 | 7/9 | BindToRenderStep, IsClient, IsEdit, IsRunMode, IsRunning, IsServer, IsStudio, UnbindFromRenderStep, Heartbeat, PostSimulation, PreAnimation, PreRender, PreSimulation, RenderStepped, Stepped | BindToAnimation, BindToAnimationParallel, BindToSimulation, BindToSimulationParallel, GetPredictionStatus, IsResimulating, SetPredictionMode, Misprediction, Rollback |
+| RunService | 1/2 | 12/15 | 7/9 | BindToRenderStep, BindToSimulation, GetPredictionStatus, IsClient, IsEdit, IsResimulating, IsRunMode, IsRunning, IsServer, IsStudio, SetPredictionMode, UnbindFromRenderStep, Heartbeat, PostSimulation, PreAnimation, PreRender, PreSimulation, RenderStepped, Stepped | BindToAnimation, BindToAnimationParallel, BindToSimulationParallel, Misprediction, Rollback |
 | Selection | 1/1 | - | 0/1 |  | SelectionChanged |
 | SensorBase | 1/1 | - | 0/1 |  | OnSensorOutputChanged |
 | AtmosphereSensor | 2/2 | - | - |  |  |
@@ -347,4 +369,4 @@ Classes with at least one member there. Properties, functions and events as ther
 
 ## Nothing there yet
 
-183 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AudioDeviceOutput, AvatarCreationService, AvatarEditorService, BadgeService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DataStoreIncrementOptions, DataStoreInfo, DataStoreKey, DataStoreKeyInfo, DataStoreObjectVersionInfo, DataStoreService, DataStoreSetOptions, Debris, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, GlobalDataStore, DataStore, OrderedDataStore, GroupService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MarketplaceService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MemoryStoreHashMap, MemoryStoreQueue, MemoryStoreService, MemoryStoreSortedMap, MessagingService, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, Pages, DataStoreKeyPages, DataStoreListingPages, PatchMapping, Path, PathfindingService, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, PolicyService, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, SocialService, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleBase, StyleSheet, StyleLink, Teams, TeleportAsyncResult, TeleportService, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextService, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, UserService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.
+161 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AudioDeviceOutput, AvatarCreationService, AvatarEditorService, BadgeService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, GroupService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, PatchMapping, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, PolicyService, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, SocialService, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleBase, StyleSheet, StyleLink, Teams, TeleportAsyncResult, TeleportService, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextService, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, UserService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.

@@ -51,10 +51,13 @@ fn a_purchase_prompt_reaches_the_dialog_and_process_receipt() {
         "local mps = game:GetService('MarketplaceService') \
          mps.ProcessReceipt = function(info) print('receipt', info.ProductId) return Enum.ProductPurchaseDecision.PurchaseGranted end \
          mps.PromptGamePassPurchaseFinished:Connect(function(p, id, bought) print('pass', id, bought) \
-           print('owns', mps:UserOwnsGamePassAsync(p.UserId, id)) end)",
+           print('owns', mps:UserOwnsGamePassAsync(p.UserId, id)) end) \
+         mps:BindReceiptHandler(Enum.ReceiptType.DeveloperProduct, function(info) print('bound', info.ProductId) \
+           return Enum.ProductPurchaseDecision.PurchaseGranted end, { 99 })",
         "local mps = game:GetService('MarketplaceService') local me = game:GetService('Players').LocalPlayer \
          mps.PromptProductPurchaseFinished:Connect(function(user, id, bought) print('client product', id, bought) end) \
-         task.wait(0.5) mps:PromptProductPurchase(me, 77) task.wait(0.5) mps:PromptGamePassPurchase(me, 88)",
+         task.wait(0.5) mps:PromptProductPurchase(me, 77) task.wait(0.5) mps:PromptGamePassPurchase(me, 88) \
+         task.wait(0.5) mps:PromptProductPurchase(me, 99)",
     ))
     .unwrap();
     s.set_services(rbx_lua::server::Services {
@@ -75,9 +78,15 @@ fn a_purchase_prompt_reaches_the_dialog_and_process_receipt() {
     }
     assert_eq!(
         prompts,
-        vec![("Product".to_owned(), 77), ("GamePass".to_owned(), 88)]
+        vec![
+            ("Product".to_owned(), 77),
+            ("GamePass".to_owned(), 88),
+            ("Product".to_owned(), 99)
+        ]
     );
     assert!(has(&lines, Peer::Server, "receipt 77"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "bound 99"), "{lines:#?}");
+    assert!(!has(&lines, Peer::Server, "receipt 99"), "{lines:#?}");
     assert!(
         has(&lines, Peer::Client(0), "client product 77 true"),
         "{lines:#?}"

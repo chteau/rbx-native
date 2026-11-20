@@ -16,6 +16,7 @@ local RETRY = 10
 local serviceId = nil
 local processReceipt = nil
 local pending = {} -- receipts not granted yet
+local handlers = {} -- BindReceiptHandler's: { handler, filter }
 local retrying = false
 
 local function fail(message)
@@ -53,11 +54,24 @@ local function userId(value)
 	return int64(value)
 end
 
+-- The handler for a receipt: the newest bound one whose filter takes its
+-- product, else ProcessReceipt.
+local function handlerFor(receipt)
+	for i = #handlers, 1, -1 do
+		local entry = handlers[i]
+		if not entry.filter or entry.filter[receipt.ProductId] then
+			return entry.handler
+		end
+	end
+	return processReceipt
+end
+
 local function grant(receipt)
-	if not processReceipt then
+	local handler = handlerFor(receipt)
+	if not handler then
 		return false
 	end
-	local ok, decision = pcall(processReceipt, receipt)
+	local ok, decision = pcall(handler, receipt)
 	if not ok then
 		warn("ProcessReceipt failed: " .. tostring(decision))
 		return false
@@ -125,6 +139,55 @@ function SERVICE.PromptSubscriptionPurchase(self, player, subscription)
 	host.prompt("Subscription", player, 0, tostring(subscription))
 end
 
+function SERVICE.BindReceiptHandler(self, receiptType, handler, filter)
+	serviceId = host.id(self)
+	if typeof(receiptType) ~= "EnumItem" then
+		fail("Unable to cast " .. typeof(receiptType) .. " to ReceiptType")
+	end
+	if type(handler) ~= "function" then
+		fail("Argument 2 missing or nil")
+	end
+	local set = nil
+	if type(filter) == "table" then
+		set = {}
+		for _, productId in filter do
+			set[productId] = true
+		end
+	end
+	local entry = { handler = handler, filter = set }
+	table.insert(handlers, entry)
+	if host.server() then
+		startRetries()
+		if #pending > 0 then
+			task.spawn(retry, nil)
+		end
+	end
+	local connection = { Connected = true }
+	function connection.Disconnect(c)
+		c.Connected = false
+		local at = table.find(handlers, entry)
+		if at then
+			table.remove(handlers, at)
+		end
+	end
+	return connection
+end
+
+function SERVICE.GetUserSubscriptionStatusAsync(_, player, subscription)
+	if not isPlayer(player) then
+		fail("Argument 1 missing or nil")
+	end
+	task.wait()
+	return { IsSubscribed = host.owns(player.UserId, "subscription:" .. tostring(subscription)), IsRenewing = false }
+end
+
+function SERVICE.GetPassOwnershipAsync(_, user, pass)
+	user = userId(user)
+	pass = int64(pass)
+	task.wait()
+	return host.owns(user, "pass:" .. pass)
+end
+
 function SERVICE.UserOwnsGamePassAsync(_, user, pass)
 	user = userId(user)
 	pass = int64(pass)
@@ -154,6 +217,7 @@ function SERVICE.PlayerOwnsBundle(_, player, bundle)
 	task.wait()
 	return host.owns(player.UserId, "bundle:" .. int64(bundle))
 end
+SERVICE.PlayerOwnsBundleAsync = SERVICE.PlayerOwnsBundle
 
 function SERVICE.GetProductInfo(_, id, infoType)
 	id = int64(id)
@@ -180,6 +244,8 @@ local EVENTS = {
 	PromptPurchaseRequested = true,
 	PromptProductPurchaseRequested = true,
 	PromptGamePassPurchaseRequested = true,
+	PromptBulkPurchaseFinished = true,
+	PromptPremiumPurchaseFinished = true,
 }
 
 function M.member(_, id, key)
@@ -223,6 +289,8 @@ function M.finished(kind, player, id, bought, subscription)
 			host.grant(user, "asset:" .. id)
 		elseif kind == "Bundle" then
 			host.grant(user, "bundle:" .. id)
+		elseif kind == "Subscription" then
+			host.grant(user, "subscription:" .. subscription)
 		end
 	end
 	if kind == "Asset" then
