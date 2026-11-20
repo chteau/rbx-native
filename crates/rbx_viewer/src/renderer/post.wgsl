@@ -162,22 +162,29 @@ const SUN_RAY_TAPS: i32 = 24;
 /// stands between the pixel and the sun.
 const SUN_RAY_TINT: vec3<f32> = vec3<f32>(2.6, 0.97, 0.0);
 const SUN_RAY_REACH: f32 = 0.81;
+const SUN_RAY_OPEN_STUDS: f32 = 30.0;  // fitted on `sun_rays`
 
 /// A glow from the sun over the whole frame, fading with the distance to it,
-/// times how much of the straight line from the pixel to the sun is open sky
-/// in the depth buffer, which is what leaves the shafts behind whatever
-/// stands in the way.
+/// times how much of the straight line from the pixel to the sun is open in
+/// the depth buffer, which is what leaves the shafts behind whatever stands in
+/// the way. Open is sky or anything past [`SUN_RAY_OPEN_STUDS`]: the real
+/// client washes a far floor as it does the sky, and only what stands near
+/// casts a shaft (the `sun_rays` scene). Each pixel starts its march at its own fraction of a
+/// step (interleaved gradient noise), so the taps' fixed spacing never lines
+/// up into bands across the frame; what is left is a fine grain.
 fn sun_rays(uv: vec2<f32>) -> vec3<f32> {
     let size = vec2<f32>(textureDimensions(scene_depth));
     let to_sun = post.sun_rays.xy - uv;
     let distance = length(to_sun * vec2<f32>(size.x / size.y, 1.0));
     let last = vec2<i32>(size) - vec2<i32>(1);
 
+    let pixel = uv * size;
+    let jitter = fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715))));
     var open = 0.0;
     for (var tap = 1; tap <= SUN_RAY_TAPS; tap++) {
-        let at = uv + to_sun * (f32(tap) / f32(SUN_RAY_TAPS));
+        let at = uv + to_sun * ((f32(tap) - jitter) / f32(SUN_RAY_TAPS));
         let texel = clamp(vec2<i32>(at * size), vec2<i32>(0), last);
-        open += select(0.0, 1.0, textureLoad(scene_depth, texel, 0) == 0.0);
+        open += select(0.0, 1.0, view_distance(textureLoad(scene_depth, texel, 0)) > SUN_RAY_OPEN_STUDS);
     }
     let reach = SUN_RAY_REACH * max(post.sun_rays.w, 0.05);
     return SUN_RAY_TINT * exp(-distance / reach) * (open / f32(SUN_RAY_TAPS));
