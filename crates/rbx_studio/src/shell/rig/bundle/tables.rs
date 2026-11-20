@@ -800,7 +800,12 @@ pub(super) const BLOCK: [Raw; 16] = [
         cage: Some((76523574292282, [0.0, 0.03532, 0.01224])),
         surface: None,
         rig: &[("NeckRigAttachment", [0.0, -0.586, 0.0])],
-        extra: &[("FaceCenterAttachment", [0.0, -0.094, 0.0]), ("FaceFrontAttachment", [0.0, 0.0, -0.6]), ("HairAttachment", [0.0, 0.6, 0.0]), ("HatAttachment", [0.0, 0.6, 0.0])],
+        extra: &[
+            ("FaceCenterAttachment", [0.0, -0.094, 0.0]),
+            ("FaceFrontAttachment", [0.0, 0.0, -0.6]),
+            ("HairAttachment", [0.0, 0.6, 0.0]),
+            ("HatAttachment", [0.0, 0.6, 0.0]),
+        ],
     },
     Raw {
         name: "LowerTorso",
@@ -810,8 +815,17 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [2.0, 0.4001, 1.0],
         cage: Some((7430071134, [0.0, -0.01716, -0.0065])),
         surface: None,
-        rig: &[("LeftHipRigAttachment", [-0.5, -0.19997, 0.0]), ("RightHipRigAttachment", [0.5, -0.19997, -2e-05]), ("RootRigAttachment", [0.0, -0.19997, 0.0]), ("WaistRigAttachment", [0.0, 0.20002, 0.0])],
-        extra: &[("WaistBackAttachment", [0.0, -0.19997, 0.5]), ("WaistCenterAttachment", [0.0, -0.19997, 0.0]), ("WaistFrontAttachment", [0.0, -0.19997, -0.5])],
+        rig: &[
+            ("LeftHipRigAttachment", [-0.5, -0.19997, 0.0]),
+            ("RightHipRigAttachment", [0.5, -0.19997, -2e-05]),
+            ("RootRigAttachment", [0.0, -0.19997, 0.0]),
+            ("WaistRigAttachment", [0.0, 0.20002, 0.0]),
+        ],
+        extra: &[
+            ("WaistBackAttachment", [0.0, -0.19997, 0.5]),
+            ("WaistCenterAttachment", [0.0, -0.19997, 0.0]),
+            ("WaistFrontAttachment", [0.0, -0.19997, -0.5]),
+        ],
     },
     Raw {
         name: "UpperTorso",
@@ -821,8 +835,19 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [2.0, 1.6, 1.0],
         cage: Some((7430071117, [0.0, -0.02291, -0.00824])),
         surface: None,
-        rig: &[("LeftShoulderRigAttachment", [-1.0, 0.56302, 0.0]), ("NeckRigAttachment", [0.0, 0.80002, 0.0]), ("RightShoulderRigAttachment", [1.0, 0.56302, 0.0]), ("WaistRigAttachment", [0.0, -0.79999, 0.0])],
-        extra: &[("BodyBackAttachment", [0.0, -0.19999, 0.5]), ("BodyFrontAttachment", [0.0, -0.19999, -0.5]), ("LeftCollarAttachment", [-1.0, 0.80002, 0.0]), ("NeckAttachment", [0.0, 0.80002, 0.0]), ("RightCollarAttachment", [1.0, 0.80002, 0.0])],
+        rig: &[
+            ("LeftShoulderRigAttachment", [-1.0, 0.56302, 0.0]),
+            ("NeckRigAttachment", [0.0, 0.80002, 0.0]),
+            ("RightShoulderRigAttachment", [1.0, 0.56302, 0.0]),
+            ("WaistRigAttachment", [0.0, -0.79999, 0.0]),
+        ],
+        extra: &[
+            ("BodyBackAttachment", [0.0, -0.19999, 0.5]),
+            ("BodyFrontAttachment", [0.0, -0.19999, -0.5]),
+            ("LeftCollarAttachment", [-1.0, 0.80002, 0.0]),
+            ("NeckAttachment", [0.0, 0.80002, 0.0]),
+            ("RightCollarAttachment", [1.0, 0.80002, 0.0]),
+        ],
     },
     Raw {
         name: "LeftUpperArm",
@@ -832,7 +857,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.1687, 1.0],
         cage: Some((7430071112, [-0.0042, 0.1335, -0.006])),
         surface: None,
-        rig: &[("LeftElbowRigAttachment", [0.00048, -0.33406, 0.0]), ("LeftShoulderRigAttachment", [0.5, 0.39433, 0.0])],
+        rig: &[
+            ("LeftElbowRigAttachment", [0.00048, -0.33406, 0.0]),
+            ("LeftShoulderRigAttachment", [0.5, 0.39433, 0.0]),
+        ],
         extra: &[("LeftShoulderAttachment", [0.0, 0.58433, 0.0])],
     },
     Raw {
@@ -843,7 +871,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.0519, 1.0],
         cage: Some((7430071121, [-0.00421, -0.25885, -0.006])),
         surface: None,
-        rig: &[("LeftElbowRigAttachment", [0.00048, 0.25869, 0.0]), ("LeftWristRigAttachment", [0.00048, -0.50093, 0.0])],
+        rig: &[
+            ("LeftElbowRigAttachment", [0.00048, 0.25869, 0.0]),
+            ("LeftWristRigAttachment", [0.00048, -0.50093, 0.0]),
+        ],
         extra: &[],
     },
     Raw {
@@ -865,7 +896,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.2166, 0.9999],
         cage: Some((7430071131, [-0.00065, 0.04727, -0.00645])),
         surface: None,
-        rig: &[("LeftHipRigAttachment", [0.0, 0.42078, 0.0]), ("LeftKneeRigAttachment", [0.0, -0.4011, 0.0])],
+        rig: &[
+            ("LeftHipRigAttachment", [0.0, 0.42078, 0.0]),
+            ("LeftKneeRigAttachment", [0.0, -0.4011, 0.0]),
+        ],
         extra: &[],
     },
     Raw {
@@ -876,7 +910,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.1931, 1.0],
         cage: Some((7430071153, [-0.0013, -0.08555, -0.0065])),
         surface: None,
-        rig: &[("LeftAnkleRigAttachment", [0.0, -0.54716, 0.0]), ("LeftKneeRigAttachment", [0.0, 0.37902, 0.0])],
+        rig: &[
+            ("LeftAnkleRigAttachment", [0.0, -0.54716, 0.0]),
+            ("LeftKneeRigAttachment", [0.0, 0.37902, 0.0]),
+        ],
         extra: &[],
     },
     Raw {
@@ -898,7 +935,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.1687, 1.0],
         cage: Some((7430071148, [0.00421, 0.1335, -0.006])),
         surface: None,
-        rig: &[("RightElbowRigAttachment", [0.0, -0.33417, 0.0]), ("RightShoulderRigAttachment", [-0.5, 0.39433, 0.0])],
+        rig: &[
+            ("RightElbowRigAttachment", [0.0, -0.33417, 0.0]),
+            ("RightShoulderRigAttachment", [-0.5, 0.39433, 0.0]),
+        ],
         extra: &[("RightShoulderAttachment", [0.0, 0.58433, 0.0])],
     },
     Raw {
@@ -909,7 +949,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.0519, 1.0],
         cage: Some((7430071157, [0.00421, -0.25885, -0.006])),
         surface: None,
-        rig: &[("RightElbowRigAttachment", [0.0, 0.25858, 0.0]), ("RightWristRigAttachment", [0.0, -0.50093, 0.0])],
+        rig: &[
+            ("RightElbowRigAttachment", [0.0, 0.25858, 0.0]),
+            ("RightWristRigAttachment", [0.0, -0.50093, 0.0]),
+        ],
         extra: &[],
     },
     Raw {
@@ -931,7 +974,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.2166, 0.9999],
         cage: Some((7430071161, [0.00065, 0.04727, -0.00645])),
         surface: None,
-        rig: &[("RightHipRigAttachment", [0.0, 0.42078, -7e-05]), ("RightKneeRigAttachment", [0.0, -0.40095, -2e-05])],
+        rig: &[
+            ("RightHipRigAttachment", [0.0, 0.42078, -7e-05]),
+            ("RightKneeRigAttachment", [0.0, -0.40095, -2e-05]),
+        ],
         extra: &[],
     },
     Raw {
@@ -942,7 +988,10 @@ pub(super) const BLOCK: [Raw; 16] = [
         original: [1.0, 1.1931, 1.0],
         cage: Some((7430071172, [0.0013, -0.08555, -0.0065])),
         surface: None,
-        rig: &[("RightAnkleRigAttachment", [0.0, -0.54716, 8e-05]), ("RightKneeRigAttachment", [0.0, 0.37917, 3e-05])],
+        rig: &[
+            ("RightAnkleRigAttachment", [0.0, -0.54716, 8e-05]),
+            ("RightKneeRigAttachment", [0.0, 0.37917, 3e-05]),
+        ],
         extra: &[],
     },
     Raw {

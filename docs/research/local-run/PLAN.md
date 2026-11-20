@@ -664,7 +664,68 @@ Gaps from M14:
 | UIDragDetector `DragSpace`/`DragRelativity` other than the defaults, rotation-aware hit tests | Roblox's | parent space, absolute, axis-aligned hit boxes |
 | InputBinding `UIButton`, analog thresholds, pointer bindings | Roblox's | keys, mouse buttons and key composites only |
 
-## Milestone 15 (proposed): animation and avatar fidelity
+## Milestone 15 (done): look and feel next to the real client
+
+The aim was a side-by-side with real Roblox an ordinary player couldn't tell apart. A place made from Home → New → Baseplate, plus a Rig Builder rig, leaderstats and two tools, ran in Play (local) and in the real client (Sober, published to the sandbox place by `rbx_sim/examples/record_look.rs`), with the same scripted camera views on F8. The paired screenshots are in `rbx-native-targets/local-run-m15-shots/` (`roblox-*` and `ours-*`, 1266×844 game views).
+
+1. Baseplate template (`home/template.rs`). Studio's Baseplate has every surface Smooth and `SpawnLocation.Duration` 0, read in Studio's command bar. Ours left them out, so the real client filled in the class defaults: studs on the spawn and a ForceField bubble on the player. Both are now written. The grid `Texture`, the spawn `Decal`, plastic and the sky render alike on both sides.
+2. Studio's newer MeshParts save their mesh and texture only as `MeshContent`/`TextureContent`. The viewer and the physics read `MeshId`/`TextureID`, so a Rig Builder rig drew as boxes with a ball head. Now they fall back to the `Content` twin (`textures::content_property`, `physics/part.rs`).
+3. A MeshPart's texture now goes over its `Color` where it is see-through, so a dynamic head's face sits on grey skin. This is done by baking an opaque copy in `filemesh::over_color`, and the patch path asks for a full resolve until that copy exists. Before this, the transparent texels drew white.
+4. Default animations:
+   - Fixed: the first character's `Animate` never ran when the local player arrived after its character (`sim.rs` `start_scripts_under`).
+   - Idle, walk/run, jump, fall and climb play on the signed-in avatar, the noob and the cached avatar.
+   - `/e dance` (and wave, point, laugh, cheer, dance2/3) fires `Player.Chatted` on the client and is not sent as a message. The R6 Animate now has those states too.
+5. Noob = the Rig Builder's R15 Masculine Block rig, read from one Studio built:
+   - 2021 block meshes and cages, the dynamic head (`FaceControls`, no face decal), every part grey 127, HipHeight 2.
+   - Built with Motor6Ds so our Animator drives it. Studio's own rig uses AnimationConstraints, which the sim does not drive yet.
+   - The meshes come from Roblox or the asset cache. Offline with them missing, it falls back to the blocky R6 noob.
+   - `CharacterAutoLoads` and `StarterCharacter` keep their M4 rules: a `StarterCharacter` replaces the noob or avatar.
+6. In-game UI rewritten from captures of the current client (`workspace_view/core_gui.rs`, own SVG icons in `core_gui/icons.rs`, Builder Sans read from the Roblox content already on disk, the app's font otherwise):
+   - Top bar: round menu button and a pill with the menu and chat toggles.
+   - People list: top right, with a close X, Tab toggles it, leaderstats columns, display names.
+   - Chat:
+     - The window is hidden until toggled or `/`, with Here/Global/Friends tabs, the greeting line and the round bar with its hint.
+     - The background fades after 8 s, leaving the lines.
+     - Bubbles are grey pills with a tail.
+   - Hotbar: 60 px translucent squares with a blue outline when equipped.
+   - Health: the pill only once hurt, green through yellow to red.
+   - Death: a red edge on the screen.
+   - Escape menu:
+     - People/Settings/Gallery/Report/Help tabs; Settings holds the volume.
+     - Invite Friends and In this server rows.
+     - Leave (L), Respawn (R) and Resume (Esc) buttons, with key caps.
+     - Respawn and Leave each ask for confirmation first.
+     - Chat and the People list hide while it is open.
+   - `SetCoreGuiEnabled` toggles each part. `SetCore("TopbarEnabled", false)` hides the top bar and every core GUI, `ChatActive` false hides chat, and `ChatBarDisabled` stops typing (`CoreGui.chat/chat_bar/topbar`).
+7. The editor's "studs/s" flight-speed label no longer shows during play.
+
+Tests:
+- Rig Builder rig structure (`shell/rig/tests.rs`).
+- Template surfaces and Duration.
+- Animate: the first character idles, walking and jumping, the emote command.
+- CoreGui toggles, `TopbarEnabled` (`rbx_sim/tests/core.rs`).
+- Core GUI key flows: chat, respawn and leave confirmations, Tab.
+- The `Content` twin fallback.
+- Every icon rasterizes.
+
+Gaps from M15:
+
+| Area | Roblox | ours |
+|---|---|---|
+| Rig Builder joints | `AnimationConstraint` + `BallSocketConstraint` | Motor6D (our Animator drives Motor6D only) |
+| Dynamic head expressions | `FaceControls` animated (blinks, mood) | the face texture only, FACS not driven at run time |
+| Humanoid name labels | a model with a Humanoid shows its name over the head ("Rig") | not drawn |
+| Avatar headshots | the menu's player rows and the leaderboard show the player's thumbnail and membership/verified badges | an initial in a circle; no badges |
+| Menu tabs | Settings has the full settings list; Gallery, Report, Help are real pages | volume only; the other three are one line each |
+| Chat channels | Global/Friends tabs filter messages; emoji picker, mic | one channel shown under Here; the icons are decorative |
+| Plastic grain | Roblox's plastic is nearly flat at a distance | our plastic noise is stronger |
+| Health bar colours | measured at 60% (yellow-green) | the 100% and 0–30% ends are by eye |
+| Death vignette | Roblox's red edge | a gradient on each edge, its strength by eye |
+| `script.Enabled` | reads true for a running script | reads false (getter default) |
+
+Not verified: the offline cached avatar was not re-captured this milestone; the real client was compared on Linux (Sober) only.
+
+## Milestone 16 (proposed): animation and avatar fidelity
 
 1. Layered clothing at run time: `WrapLayer`/`WrapTarget` deformation on the avatar, layered in `Order`, with the auto-rig cages the editor already fits (`rbx_animation`), and `AutoSkin`.
 2. FACS face animation: `FaceControls` properties driven by animation tracks and scripts, dynamic heads deforming in the viewport, `Animator` playing face curves.
@@ -686,7 +747,7 @@ Gaps from M14:
 - `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta: Run, Play (local), Pause, Stop live in the editor. `local_run/avatars.rs`: who plays and what they look like. `workspace_view/play_input.rs`: the keyboard and mouse handed to the game.
 - `crates/rbx_sim/src/input.rs`, `crates/rbx_lua/src/server/input.rs`, `server/input.luau`: UserInputService, ContextActionService, BindToRenderStep. `crates/rbx_sim/src/character/PlayerModule.luau`: our default controls and camera.
 - `crates/rbx_net`: offline mode, the reachability probe and the HTTP gate.
-- `crates/rbx_sim/src/gui.rs`, `gui/layout.rs`: PlayerGui at run time, GUI input, TextBox, StarterGui/GuiService core calls. `tools.rs`: Backpack and tools. `teams.rs`: teams. `sound.rs`, `audio.rs`: Sound playback, decoding and roll-off. `chat.rs`: TextChatService's default instances. `crates/rbx_studio/src/workspace_view/core_gui.rs`: our default health, hotbar, player list with leaderstats, chat window and bubbles, Escape menu and kick card. `crates/rbx_studio/src/shell/local_run/sound.rs`: the run's audio mix.
+- `crates/rbx_sim/src/gui.rs`, `gui/layout.rs`: PlayerGui at run time, GUI input, TextBox, StarterGui/GuiService core calls. `tools.rs`: Backpack and tools. `teams.rs`: teams. `sound.rs`, `audio.rs`: Sound playback, decoding and roll-off. `chat.rs`: TextChatService's default instances. `crates/rbx_studio/src/workspace_view/core_gui.rs` (icons in `core_gui/icons.rs`): our default top bar, health, hotbar, People list with leaderstats, chat window and bubbles, Escape menu with its confirmations, death edge and kick card. `crates/rbx_studio/src/shell/local_run/sound.rs`: the run's audio mix.
 - `crates/rbx_lua/src/server/tween.luau`, `tween.rs`: TweenService. `server/chat.luau`, `chat.rs`: TextChatService messages.
 - `crates/rbx_lua/src/server/services.rs`, `server/services/*.luau`: the web-backed and social services, a Luau module each (HttpService, DataStore, MemoryStore, Messaging, Marketplace, Pathfinding, Teleport, Badges, Group/User/Social/Policy/AvatarEditor/Voice, Text and Chat, Localization, GuiService), with the editor's half (teleport restarts, toasts, prompt dialogs) in `crates/rbx_studio/src/shell/local_run.rs`.
 - `crates/rbx_sim/src/audio_api.rs`, `audio_graph.rs`, `rbx_lua/src/server/services/audio.luau`: the Audio API and its mixer. `rbx_lua/src/server/editable_image.rs`, `meshes.rs`: EditableImage and EditableMesh. `services/drag.luau`: DragDetector, UIDragDetector, ClickDetector clicks and the Camera's screen math. `services/input_actions.luau`: the Input Action System. `rbx_lua/src/server/styles.rs` with `rbx_dom/src/style.rs`: StyleSheets at run time.

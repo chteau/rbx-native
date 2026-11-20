@@ -64,7 +64,11 @@ fn rig_builder_noob() -> Option<WeakDom> {
     let options = RigOptions::rig_builder_block();
     if rbx_net::is_offline() {
         let cache = rbx_assets::AssetCache::new(None).ok()?;
-        if !options.asset_ids().into_iter().all(|id| cache.get_id(id).is_some()) {
+        if !options
+            .asset_ids()
+            .into_iter()
+            .all(|id| cache.get_id(id).is_some())
+        {
             return None;
         }
     }

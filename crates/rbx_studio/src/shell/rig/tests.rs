@@ -928,7 +928,10 @@ fn rig_builder_block_matches_studio() {
     }
     assert!(children_of_class(&dom, part("Head"), "Decal").is_empty());
     assert_eq!(
-        dom.get(part("Head")).unwrap().properties().get("CanCollide"),
+        dom.get(part("Head"))
+            .unwrap()
+            .properties()
+            .get("CanCollide"),
         Some(&Variant::Bool(true))
     );
     let motors: usize = dom

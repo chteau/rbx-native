@@ -34,7 +34,9 @@ fn main() {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [universe, place, file, width, height, seconds] = args.as_slice() else {
-        eprintln!("usage: record_look <universe_id> <place_id> <place file> <width> <height> <seconds>");
+        eprintln!(
+            "usage: record_look <universe_id> <place_id> <place file> <width> <height> <seconds>"
+        );
         std::process::exit(2);
     };
     let universe: u64 = universe.parse().expect("universe id");
