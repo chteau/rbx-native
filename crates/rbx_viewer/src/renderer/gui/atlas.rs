@@ -2,8 +2,10 @@
 //! the screen overlay and every offscreen canvas.
 
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use rbx_assets::AssetRef;
+use rbx_dom::editable::{lock, Editable, Pixels};
 
 use super::super::rebuild::untried;
 use super::super::texture;
@@ -55,6 +57,9 @@ pub(super) struct Atlas {
     /// included, `slot_of` cannot tell those from one never asked for, and
     /// a scene rebuild must not fetch a missing asset again on every edit.
     tried: HashMap<AssetRef, ()>,
+    /// A script's `EditableImage`s: the pixel version each slot shows and
+    /// the index of its upload in `uploads`.
+    editables: HashMap<AssetRef, (u64, usize)>,
 }
 
 impl Atlas {
@@ -111,6 +116,7 @@ impl Atlas {
             glyphs: None,
             slot_of: HashMap::new(),
             tried: HashMap::new(),
+            editables: HashMap::new(),
         };
         // The white texel is only ever sampled by an untextured quad
         // (`quads::WHITE`), addressed by that fixed index directly rather
@@ -213,7 +219,17 @@ impl Atlas {
         images: &Answered,
         quality: &QualityProfile,
     ) {
-        for reference in untried(&self.tried, references.iter().cloned()) {
+        let mut downloads = Vec::with_capacity(references.len());
+        for reference in references {
+            match crate::textures::editable_of(reference) {
+                Some(Editable::Image(pixels)) => {
+                    self.sync_editable(device, queue, reference, &pixels, quality)
+                }
+                Some(Editable::Mesh(_)) => {}
+                None => downloads.push(reference.clone()),
+            }
+        }
+        for reference in untried(&self.tried, downloads) {
             let Some(answer) = images.get(&reference) else {
                 continue;
             };
@@ -224,6 +240,54 @@ impl Atlas {
             let slot = self.push(device, queue, image, quality);
             self.slot_of.insert(reference, slot);
         }
+    }
+
+    /// Uploads a script's `EditableImage` again whenever its pixels moved
+    /// on, into the slot and upload it already holds, so a canvas painted
+    /// every frame never grows the atlas.
+    fn sync_editable(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        reference: &AssetRef,
+        pixels: &Mutex<Pixels>,
+        quality: &QualityProfile,
+    ) {
+        let held = self.editables.get(reference).copied();
+        let (version, image) = {
+            let pixels = lock(pixels);
+            if held.map(|(version, _)| version) == Some(pixels.version) {
+                return;
+            }
+            let image = Image {
+                width: pixels.width,
+                height: pixels.height,
+                pixels: pixels.rgba.clone(),
+            };
+            (pixels.version, image)
+        };
+        let Some((_, upload)) = held else {
+            let slot = self.push(device, queue, &image, quality);
+            self.slot_of.insert(reference.clone(), slot);
+            self.editables
+                .insert(reference.clone(), (version, self.uploads.len() - 1));
+            return;
+        };
+        let uploaded = texture::Uploaded::color(device, queue, &image);
+        let slot = self.slot_of[reference];
+        let max = quality.texture_max_size;
+        self.groups[slot.linear] = uploaded.bind(device, &self.image_layout, &self.sampler, max);
+        self.groups[slot.nearest] =
+            uploaded.bind(device, &self.image_layout, &self.nearest_sampler, max);
+        self.uploads[upload] = uploaded;
+        self.slot_of.insert(
+            reference.clone(),
+            Slot {
+                size: [image.width as f32, image.height as f32],
+                ..slot
+            },
+        );
+        self.editables.insert(reference.clone(), (version, upload));
     }
 
     /// Uploads `image` once and binds it twice, linear then nearest, the two

@@ -68,6 +68,8 @@ struct Running {
     prompts: std::collections::VecDeque<rbx_lua::server::PurchasePrompt>,
     /// Who Play (local) plays as, for a teleport's restart.
     player: Option<avatars::Player>,
+    /// `rbx_dom::editable::generation` as of the last frame shown.
+    editables: u64,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -236,6 +238,29 @@ fn all_refs(dom: &WeakDom) -> Vec<Ref> {
         if let Some(instance) = dom.get(at) {
             out.push(at);
             stack.extend(instance.children().iter().rev().copied());
+        }
+    }
+    out
+}
+
+/// Every property bound to a script's `EditableImage`/`EditableMesh`, as
+/// changes: a script painted, so the viewport has to look again, though
+/// nothing in the DOM moved.
+fn editable_bindings(dom: &WeakDom) -> Vec<Change> {
+    let mut out = Vec::new();
+    for referent in all_refs(dom) {
+        let Some(instance) = dom.get(referent) else {
+            continue;
+        };
+        for (name, value) in instance.properties() {
+            if let Variant::Content(rbx_dom::Content::Object(object)) = value {
+                if rbx_dom::editable::get(*object).is_some() {
+                    out.push(Change::Property {
+                        referent,
+                        name: name.clone(),
+                    });
+                }
+            }
         }
     }
     out
@@ -577,6 +602,7 @@ impl Shell {
             playing,
             sound: sound::Mixer::new(self.viewport.read(cx).core_gui.volume),
             prompts: std::collections::VecDeque::new(),
+            editables: rbx_dom::editable::generation(),
             player: kept,
         });
         if playing {
@@ -1011,6 +1037,11 @@ impl Shell {
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
+        let generation = rbx_dom::editable::generation();
+        if generation != run.editables {
+            run.editables = generation;
+            changes.extend(editable_bindings(&self.dom));
+        }
         let changes = dedupe(changes);
         let Some(viewed) = run.session.sim(run.view) else {
             return;

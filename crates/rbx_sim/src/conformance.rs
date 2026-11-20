@@ -1183,7 +1183,9 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
                 delta,
                 pass,
                 matched_pass,
-                gap: file["known_gaps"][field.as_str()].as_str().map(str::to_owned),
+                gap: file["known_gaps"][field.as_str()]
+                    .as_str()
+                    .map(str::to_owned),
             }
         })
         .collect()

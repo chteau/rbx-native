@@ -141,3 +141,53 @@ fn a_click_on_a_button_is_the_gui_s_and_typing_goes_into_a_box() {
         "{lines:?}"
     );
 }
+
+const PAINT: &str = r#"
+local image = game:GetService("AssetService"):CreateEditableImage({ Size = Vector2.new(4, 4) })
+local label = Instance.new("ImageLabel")
+label.Name = "Canvas"
+label.ImageContent = Content.fromObject(image)
+label.Parent = script.Parent
+image:DrawRectangle(Vector2.zero, image.Size, Color3.new(1, 0, 0), 0, Enum.ImageCombineType.Overwrite)
+task.wait(2)
+image:DrawRectangle(Vector2.zero, Vector2.new(2, 2), Color3.new(0, 0, 1), 0, Enum.ImageCombineType.Overwrite)
+"#;
+
+/// The pixels the viewer draws the `Canvas` label with: the
+/// `Content::Object` its `ImageContent` holds, looked up in
+/// `rbx_dom::editable`.
+fn canvas(session: &Session) -> rbx_dom::editable::Pixels {
+    let dom = session.clients[0].sim.dom();
+    let mut stack = dom.root_refs().to_vec();
+    while let Some(at) = stack.pop() {
+        let instance = dom.get(at).expect("listed");
+        if instance.name() == "Canvas" {
+            let Some(Variant::Content(rbx_dom::Content::Object(object))) =
+                instance.properties().get("ImageContent")
+            else {
+                panic!("ImageContent holds the image");
+            };
+            let Some(rbx_dom::editable::Editable::Image(pixels)) = rbx_dom::editable::get(*object)
+            else {
+                panic!("the image is published");
+            };
+            let pixels = rbx_dom::editable::lock(&pixels).clone();
+            return pixels;
+        }
+        stack.extend(instance.children());
+    }
+    panic!("the label is in the player's GUI");
+}
+
+#[test]
+fn an_editable_image_a_script_paints_reaches_the_label_it_is_bound_to() {
+    let mut session = playing(PAINT);
+    let red = canvas(&session);
+    assert_eq!((red.width, red.height), (4, 4));
+    assert_eq!(&red.rgba[..4], &[255, 0, 0, 255]);
+    session.run_for(2.0);
+    let painted = canvas(&session);
+    assert!(painted.version > red.version);
+    assert_eq!(&painted.rgba[..4], &[0, 0, 255, 255]);
+    assert_eq!(&painted.rgba[60..], &[255, 0, 0, 255]);
+}

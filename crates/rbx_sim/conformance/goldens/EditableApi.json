@@ -305,5 +305,8 @@
     "vertices": 0.0,
     "within": 0.0
   },
+  "known_gaps": {
+    "destroyed_read": "the row prints a buffer's memory address, which no two runs share; the part that matters, a read after Destroy still handing back a buffer rather than erroring, matches"
+  },
   "status": "recorded"
 }

@@ -8,6 +8,7 @@ mod brick_color;
 mod change;
 pub mod diff;
 mod dom;
+pub mod editable;
 mod error;
 mod instance;
 pub mod merge;

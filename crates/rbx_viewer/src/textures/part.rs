@@ -66,6 +66,30 @@ pub(crate) fn asset_uri(value: &Variant) -> Option<&str> {
     }
 }
 
+const EDITABLE: &str = "editable/";
+
+/// The key a `Content::Object` property's `EditableImage`/`EditableMesh` is
+/// drawn under: its pixels or triangles come from `rbx_dom::editable`, never
+/// from a download.
+pub(crate) fn editable_key(value: &Variant) -> Option<AssetRef> {
+    match value {
+        Variant::Content(rbx_dom::Content::Object(referent))
+            if rbx_dom::editable::get(*referent).is_some() =>
+        {
+            Some(AssetRef::Thumb(format!("{EDITABLE}{}", referent.value())))
+        }
+        _ => None,
+    }
+}
+
+/// The editable object an [`editable_key`] names.
+pub(crate) fn editable_of(reference: &AssetRef) -> Option<rbx_dom::editable::Editable> {
+    let AssetRef::Thumb(key) = reference else {
+        return None;
+    };
+    rbx_dom::editable::get(Ref::new(key.strip_prefix(EDITABLE)?.parse().ok()?))
+}
+
 /// Turns one `Decal`/`Texture` into a projection onto its part's own mesh.
 ///
 /// A `Texture` tiles every `StudsPerTile` studs while a `Decal` stretches; the

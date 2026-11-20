@@ -491,6 +491,8 @@ impl Scene {
         for gui in &self.gui_spaces {
             gui.assets(&mut references);
         }
+        // A script's `EditableImage` the renderer uploads from memory.
+        references.retain(|reference| crate::textures::editable_of(reference).is_none());
         // Wanted only once something has an image to fall back from: a place
         // with no `ImageLabel` at all never downloads it.
         if !references.is_empty() {

@@ -18,7 +18,7 @@ use rbx_dom::Variant;
 
 use super::props::{alpha, color, enum_of, float, vector2};
 use super::Span;
-use crate::textures::asset_uri;
+use crate::textures::{asset_uri, editable_key};
 
 /// An axis-aligned pixel rectangle inside a source image, e.g. `SliceCenter`.
 /// Kept distinct from `super::super::layout::Rect`'s screen-space box so the
@@ -95,11 +95,18 @@ pub(in crate::scene::gui) fn fill(properties: &BTreeMap<String, Variant>) -> Opt
     // picture under; `Image` is the `ContentId` spelling every older place
     // carries, and a file written by a recent Studio holds both with only one
     // of them filled in.
-    let uri = ["Image", "ImageContent"]
-        .iter()
-        .filter_map(|name| asset_uri(properties.get(*name)?))
-        .find(|uri| !uri.is_empty())?;
-    let asset = AssetRef::parse(uri).ok()?;
+    // A script's `EditableImage` bound with `Content.fromObject` wins: it
+    // is what the label shows while it lives.
+    let asset = match properties.get("ImageContent").and_then(editable_key) {
+        Some(editable) => editable,
+        None => {
+            let uri = ["Image", "ImageContent"]
+                .iter()
+                .filter_map(|name| asset_uri(properties.get(*name)?))
+                .find(|uri| !uri.is_empty())?;
+            AssetRef::parse(uri).ok()?
+        }
+    };
     if asset == AssetRef::Empty {
         return None;
     }

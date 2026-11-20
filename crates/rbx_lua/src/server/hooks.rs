@@ -525,7 +525,10 @@ impl Hooks for ServerHooks {
             "RunService" => self.run_service(lua, key),
             "PhysicsService" => self.physics_service(lua, key),
             "HttpService" => json::member(lua, key),
-            "AssetService" => super::meshes::member(lua, ctx, &self.physics, key),
+            "AssetService" => match super::editable_image::member(lua, key)? {
+                Some(value) => Ok(Some(value)),
+                None => super::meshes::member(lua, ctx, &self.physics, key),
+            },
             "Terrain" => match super::terrain::member(lua, ctx, &self.physics, key)? {
                 Some(value) => Ok(Some(value)),
                 None => self.base_part(lua, referent, key),
