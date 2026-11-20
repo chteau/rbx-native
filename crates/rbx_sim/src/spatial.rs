@@ -4,9 +4,13 @@
 //! The index answers for the DOM as it is now: it is rebuilt when physics
 //! stepped since it was built, or when scripts changed the DOM.
 
+use rapier3d::parry::bounding_volume::{Aabb, BoundingVolume};
+use rapier3d::parry::partitioning::{Bvh, BvhBuildStrategy, BvhNode};
 use rapier3d::parry::query::{cast_shapes, intersection_test, Ray, ShapeCastOptions};
 use rapier3d::parry::shape::Shape;
 use rapier3d::prelude::*;
+use std::collections::HashMap;
+
 use rbx_dom::{Ref, WeakDom};
 use rbx_lua::server::{CollisionGroups, QueryFilter, QueryHit, QueryShape};
 use rbx_reflection::ReflectionDatabase;
@@ -17,6 +21,7 @@ use crate::physics::pose_of;
 /// A hit at time of impact zero is a start inside, not a hit.
 const EPSILON: Real = 1e-6;
 
+#[derive(Clone)]
 pub(crate) struct Entry {
     pub(crate) referent: Ref,
     pub(crate) shape: SharedShape,
@@ -27,9 +32,39 @@ pub(crate) struct Entry {
     pub(crate) group: String,
 }
 
+/// The raw properties a part's query shape and flags come from: while they
+/// stay the same, a rebuild only moves the entry to the part's new CFrame.
+const SHAPE_KEYS: &[&str] = &[
+    "Size",
+    "size",
+    "Shape",
+    "MeshId",
+    "MeshContent",
+    "CollisionFidelity",
+    "CanQuery",
+    "CanCollide",
+    "CollisionGroup",
+    "PhysicalConfigData",
+    "InitialSize",
+];
+
+/// What a part's entry was built from, and the entry (`None` for a part
+/// with no query shape).
+struct Built {
+    class: String,
+    keys: Vec<Option<rbx_dom::Variant>>,
+    entry: Option<Entry>,
+}
+
 #[derive(Default)]
 pub struct Spatial {
     entries: Vec<Entry>,
+    /// The entries' world boxes, so a query only tests the parts near it.
+    tree: Bvh,
+    /// Per part, what its entry was last built from.
+    built_from: HashMap<Ref, Built>,
+    /// Per class, whether it's a `BasePart`.
+    part_classes: HashMap<String, bool>,
     built: bool,
     generation: u64,
     seen_changes: usize,
@@ -63,10 +98,12 @@ impl Spatial {
     /// Builds an index straight from entries.
     #[cfg(test)]
     pub(crate) fn from_entries(entries: Vec<Entry>) -> Self {
-        Spatial {
+        let mut spatial = Spatial {
             entries,
             ..Default::default()
-        }
+        };
+        spatial.index();
+        spatial
     }
 
     /// Rebuilds from `dom` unless nothing could have changed since the
@@ -80,6 +117,7 @@ impl Spatial {
         {
             return;
         }
+        let mut previous = std::mem::take(&mut self.built_from);
         self.entries.clear();
         if let Some(workspace) = dom
             .root_refs()
@@ -93,23 +131,83 @@ impl Spatial {
                     continue;
                 };
                 stack.extend(instance.children().iter().rev());
-                if let Some(part) = PartData::read(db, instance) {
-                    self.entries.push(Entry {
-                        referent: part.referent,
-                        shape: part.shape_collider().build().shared_shape().clone(),
-                        pose: pose_of(&part.cframe),
-                        size: [part.size.x, part.size.y, part.size.z].map(Real::from),
-                        can_query: part.can_query,
-                        can_collide: part.can_collide,
-                        group: part.collision_group,
-                    });
+                let class = instance.class();
+                let is_part = match self.part_classes.get(class) {
+                    Some(known) => *known,
+                    None => {
+                        let known = db.is_subclass_of(class, "BasePart");
+                        self.part_classes.insert(class.to_owned(), known);
+                        known
+                    }
+                };
+                if !is_part {
+                    continue;
                 }
+                let properties = instance.properties();
+                let keys: Vec<_> = SHAPE_KEYS
+                    .iter()
+                    .map(|k| properties.get(*k).cloned())
+                    .collect();
+                let mut built = match previous.remove(&at) {
+                    Some(old) if old.class == class && old.keys == keys => old,
+                    _ => Built {
+                        class: class.to_owned(),
+                        keys,
+                        entry: PartData::read(db, instance).map(|part| Entry {
+                            referent: part.referent,
+                            shape: part.shape_collider().build().shared_shape().clone(),
+                            pose: pose_of(&part.cframe),
+                            size: [part.size.x, part.size.y, part.size.z].map(Real::from),
+                            can_query: part.can_query,
+                            can_collide: part.can_collide,
+                            group: part.collision_group,
+                        }),
+                    },
+                };
+                if let Some(entry) = &mut built.entry {
+                    if let Some(rbx_dom::Variant::CFrame(cf)) = properties.get("CFrame") {
+                        entry.pose = pose_of(cf);
+                    }
+                    self.entries.push(entry.clone());
+                }
+                self.built_from.insert(at, built);
             }
         }
+        self.index();
         self.built = true;
         self.generation = generation;
         self.seen_changes = changes;
         self.unsettled = changes > 0;
+    }
+
+    fn index(&mut self) {
+        self.tree = Bvh::from_iter(
+            BvhBuildStrategy::Binned,
+            self.entries
+                .iter()
+                .enumerate()
+                .map(|(i, e)| (i, e.shape.compute_aabb(&e.pose))),
+        );
+    }
+
+    /// The entries whose box `hits`, in tree order.
+    fn near(&self, hits: impl Fn(&BvhNode) -> bool) -> Vec<&Entry> {
+        let mut found: Vec<u32> = self.tree.leaves(hits).collect();
+        found.sort_unstable();
+        found
+            .into_iter()
+            .map(|i| &self.entries[i as usize])
+            .collect()
+    }
+
+    /// The entries whose box meets `aabb`, in tree order.
+    fn near_box(&self, aabb: &Aabb) -> Vec<&Entry> {
+        let mut found: Vec<u32> = self.tree.intersect_aabb(aabb).collect();
+        found.sort_unstable();
+        found
+            .into_iter()
+            .map(|i| &self.entries[i as usize])
+            .collect()
     }
 
     fn entry(&self, part: Ref) -> Option<&Entry> {
@@ -143,8 +241,8 @@ impl Spatial {
         let ray = Ray::new(origin, dir);
         let mut best: Option<(Real, Vector, Ref)> = None;
         for entry in self
-            .entries
-            .iter()
+            .near(|node| node.cast_ray(&ray, 1.0) < Real::MAX)
+            .into_iter()
             .filter(|e| allowed(e, filter, groups, None))
         {
             let shape: &dyn Shape = &*entry.shape;
@@ -189,9 +287,11 @@ impl Spatial {
             compute_impact_geometry_on_penetration: true,
         };
         let mut best: Option<(Real, Vector, Vector, Ref)> = None;
+        let from_box = moving.compute_aabb(&start);
+        let swept = from_box.merged(&Aabb::new(from_box.mins + dir, from_box.maxs + dir));
         for entry in self
-            .entries
-            .iter()
+            .near_box(&swept)
+            .into_iter()
             .filter(|e| allowed(e, filter, groups, skip))
         {
             let target: &dyn Shape = &*entry.shape;
@@ -249,8 +349,11 @@ impl Spatial {
         } else {
             filter.max_parts
         };
-        self.entries
-            .iter()
+        // The inexact test reads each part's own box, which its world box
+        // holds, so the world boxes are a sound first cut for both.
+        let area = query.compute_aabb(&pose);
+        self.near_box(&area)
+            .into_iter()
             .filter(|e| allowed(e, filter, groups, skip))
             .filter(|entry| {
                 let hit = if exact {

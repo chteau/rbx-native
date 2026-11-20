@@ -366,7 +366,7 @@ fn reseat(dom: &mut WeakDom, fresh: &WeakDom, copy: Ref, on: Ref, target: Ref) {
 /// default, which the reflection database lacks for these: they're the
 /// creator docs' defaults.
 fn copy_player_settings(dom: &mut WeakDom, db: &ReflectionDatabase, from: Ref, player: Ref) {
-    let settings: [(&str, &str, Variant); 9] = [
+    let settings: [(&str, &str, Variant); 12] = [
         (
             "CameraMaxZoomDistance",
             "CameraMaxZoomDistance",
@@ -397,6 +397,21 @@ fn copy_player_settings(dom: &mut WeakDom, db: &ReflectionDatabase, from: Ref, p
         (
             "DevComputerMovementMode",
             "DevComputerMovementMode",
+            Variant::Enum(0),
+        ),
+        (
+            "DevTouchMovementMode",
+            "DevTouchMovementMode",
+            Variant::Enum(0),
+        ),
+        (
+            "DevComputerCameraMovementMode",
+            "DevComputerCameraMode",
+            Variant::Enum(0),
+        ),
+        (
+            "DevTouchCameraMovementMode",
+            "DevTouchCameraMode",
             Variant::Enum(0),
         ),
         (

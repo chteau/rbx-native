@@ -102,6 +102,7 @@ pub(crate) fn set_mode(path: &Path, data: DataMode) {
 /// What the run's scripts get for `path` in `mode`.
 pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services {
     let dir = folder(path);
+    let link = crate::home::link_of(path);
     rbx_lua::server::Services {
         universe: dir.as_ref().map(|d| d.to_string_lossy().into_owned()),
         data_file: match mode {
@@ -111,6 +112,8 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
         api_access: mode != DataMode::Off,
         cache_dir: rbx_assets::cache_root().map(|root| root.join("local-run")),
         teleport_places: settings(path).teleport_places.into_keys().collect(),
+        place_id: link.as_ref().map_or(0, |l| l.place_id as i64),
+        game_id: link.as_ref().map_or(0, |l| l.universe_id as i64),
         ..Default::default()
     }
 }

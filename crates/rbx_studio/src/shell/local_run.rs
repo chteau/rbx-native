@@ -775,8 +775,9 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.set_play_local(false));
         rbx_viewer::set_player_gui(None);
-        let output = session.take_output();
         let seconds = session.time();
+        session.shutdown();
+        let output = session.take_output();
         drop(session);
         self.deselect(cx);
         let back = changes_between(&self.dom, &stash.dom);

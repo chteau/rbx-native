@@ -54,6 +54,7 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         || crate::audio_api::is_method(class, key)
         || crate::teams::is_method(class, key)
         || (class == "ParticleEmitter" && matches!(key, "Emit" | "Clear"))
+        || crate::joints::is_method(class, key)
 }
 
 pub(crate) fn is_signal(class: &str, key: &str) -> bool {
@@ -75,6 +76,17 @@ pub(crate) fn call(
     args: Vec<Arg>,
 ) -> Result<CallReply, String> {
     let (dom, db) = shared.borrow().dom_and_db().ok_or("not running")?;
+    if class == crate::modules::CLASS && method == crate::modules::METHOD {
+        let mut shared = shared.borrow_mut();
+        return crate::modules::load(&mut shared, &mut dom.borrow_mut(), &args);
+    }
+    if crate::joints::is_method(class, method) {
+        let bridge = crate::physics::Bridge(shared.clone());
+        let dom = dom.borrow();
+        return Ok(crate::joints::call(
+            &bridge, &dom, db, referent, method, &args,
+        ));
+    }
     let mut dom = dom.borrow_mut();
     let mut shared = shared.borrow_mut();
     if crate::gui::is_method(class, method) {
@@ -173,6 +185,11 @@ pub(crate) fn property(
         return shared
             .audio
             .property(&mut shared.sounds, &dom, db, referent, key);
+    }
+    if crate::joints::is_property(class, key) {
+        let (dom, db) = shared.borrow().dom_and_db()?;
+        let dom = dom.try_borrow().ok()?;
+        return Some(Arg::Instance(crate::joints::root_part(&dom, db, referent)));
     }
     let shared = shared.borrow();
     match class {

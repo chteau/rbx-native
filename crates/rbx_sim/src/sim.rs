@@ -75,6 +75,9 @@ pub struct Simulation {
     output: Output,
     /// Changes kept for [`Simulation::take_view_changes`], once watched.
     view_changes: Option<Vec<Change>>,
+    /// While a replicated tree arrives: the roots whose scripts start once
+    /// all of it is here (see [`Simulation::hold_scripts`]).
+    held_scripts: Option<Vec<Ref>>,
     /// Play (local): the local client's input, `None` for a server-only run.
     inputs: Option<Inputs>,
     role: Role,
@@ -104,6 +107,7 @@ impl Simulation {
             dirty: true,
             output: Output::default(),
             view_changes: None,
+            held_scripts: None,
             inputs: None,
             role: Role::Server,
             stream: None,
@@ -704,7 +708,9 @@ impl Simulation {
                 .assign(&mut dom, self.db, player);
             crate::chat::add_source(&mut dom, name, user_id);
         }
-        let edits = self.dom.borrow_mut().take_changes();
+        // `Players.ChildAdded` (and `DescendantAdded` up the tree) fire for
+        // the new player, as for any child.
+        let edits = self.vm.flush_changes();
         self.apply(edits);
         player
     }
@@ -798,6 +804,18 @@ impl Simulation {
     /// What scripts printed since the last call.
     pub fn take_output(&mut self) -> Output {
         std::mem::take(&mut self.output)
+    }
+
+    /// The server shuts down as Roblox's does: its `BindToClose` functions
+    /// run, frame after frame, until they have all returned or 30 seconds
+    /// of game time have passed.
+    pub fn close(&mut self) {
+        let changes = self.vm.close();
+        self.apply(changes);
+        let deadline = self.frame + (30.0 * FRAME_HZ) as u64;
+        while !self.vm.closed() && self.frame < deadline {
+            self.step();
+        }
     }
 
     /// Runs frames until `seconds` of game time have passed.
@@ -1463,6 +1481,18 @@ impl Simulation {
         self.apply(changes);
     }
 
+    /// Takes `server`'s collision groups: the server registers them and
+    /// they replicate, so a client's `SetPartCollisionGroup`, `CollisionGroup`
+    /// writes and queries know the server's groups.
+    pub fn sync_collision_groups(&mut self, server: &Simulation) {
+        let theirs = server.vm.collision_groups();
+        let mine = self.vm.collision_groups();
+        if *mine.borrow() != *theirs.borrow() {
+            *mine.borrow_mut() = theirs.borrow().clone();
+            self.dirty = true;
+        }
+    }
+
     fn rebuild(&mut self) {
         let groups = self.vm.collision_groups();
         self.world
@@ -1508,7 +1538,29 @@ impl Simulation {
         )
     }
 
+    /// Scripts placed from now on wait for [`Simulation::release_scripts`]:
+    /// a client's LocalScript in a replicated ScreenGui starts with all its
+    /// siblings there, as in Roblox, though the instances (and their
+    /// events) arrive one at a time.
+    pub(crate) fn hold_scripts(&mut self) {
+        self.held_scripts.get_or_insert_with(Vec::new);
+    }
+
+    pub(crate) fn holding_scripts(&self) -> bool {
+        self.held_scripts.is_some()
+    }
+
+    pub(crate) fn release_scripts(&mut self) {
+        for root in self.held_scripts.take().unwrap_or_default() {
+            self.start_scripts_under(root);
+        }
+    }
+
     fn start_scripts_under(&mut self, root: Ref) {
+        if let Some(held) = &mut self.held_scripts {
+            held.push(root);
+            return;
+        }
         let found: Vec<Ref> = {
             let dom = self.dom.borrow();
             let client = self.shared.borrow().players.client_roots(&dom);
@@ -1639,7 +1691,11 @@ impl Simulation {
             }
             return;
         }
-        if STRUCTURAL.contains(&name) || (is_part && !self.world.is_part(referent)) {
+        // A part outside Workspace (a template in ReplicatedStorage being
+        // posed) has no body: moving it rebuilds nothing.
+        let placed = in_workspace(&dom, referent);
+        let unbuilt = is_part && !self.world.is_part(referent) && placed;
+        if (STRUCTURAL.contains(&name) && placed) || unbuilt {
             self.dirty = true;
             return;
         }
@@ -1681,8 +1737,15 @@ impl Simulation {
         }
     }
 
+    /// Whether `root`'s arrival or move changes the world: physical
+    /// instances that came into Workspace, or ones with bodies that left.
     fn touches_physics(&self, root: Ref) -> bool {
         let dom = self.dom.borrow();
+        if !in_workspace(&dom, root) {
+            return scripts::subtree(&dom, root)
+                .into_iter()
+                .any(|r| self.world.is_part(r) || self.world.is_joint(r));
+        }
         scripts::subtree(&dom, root).into_iter().any(|r| {
             dom.get(r).is_some_and(|i| {
                 let class = i.class();
@@ -1697,6 +1760,21 @@ impl Simulation {
     fn collect_output(&mut self) {
         self.output.extend(self.vm.take_output());
     }
+}
+
+/// Whether `r` is under Workspace, where parts have bodies.
+fn in_workspace(dom: &WeakDom, r: Ref) -> bool {
+    let mut at = Some(r);
+    while let Some(current) = at {
+        let Some(instance) = dom.get(current) else {
+            return false;
+        };
+        if instance.class() == "Workspace" {
+            return true;
+        }
+        at = dom.parent(current);
+    }
+    false
 }
 
 /// A `leaderstats` value as the player list shows it: whole numbers

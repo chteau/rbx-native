@@ -152,7 +152,7 @@ impl Session {
             .join(name, user_id, template)
             .ok_or("the place has no Players service")?;
         let index = self.clients.len();
-        let mut sim = Simulation::new(first_view(&self.server.dom()))?;
+        let mut sim = Simulation::new(first_view(&self.server.dom(), player))?;
         sim.make_client(index, player);
         if let Some(fetcher) = &self.fetcher {
             sim.set_fetcher(fetcher.clone());
@@ -247,6 +247,7 @@ impl Session {
         for client in &mut self.clients {
             let owned = server.ownership_mut().owned_by(client.player);
             client.sim.ownership_mut().owned = owned;
+            client.sim.sync_collision_groups(server);
             if !client.loaded {
                 client.arrive(server);
             } else {
@@ -295,6 +296,17 @@ impl Session {
         }
         let client = self.clients.remove(index);
         self.server.remove_player(client.player);
+    }
+
+    /// Stop: everyone leaves (`PlayerRemoving` on the server), then the
+    /// server closes (`BindToClose`), so what a game saves on the way out
+    /// is saved, as when a Studio test stops.
+    pub fn shutdown(&mut self) {
+        while !self.clients.is_empty() {
+            self.leave(self.clients.len() - 1);
+        }
+        self.server.step();
+        self.server.close();
     }
 
     /// Runs frames until `seconds` of game time have passed.
@@ -439,11 +451,15 @@ impl Client {
                 })
                 .collect()
         };
+        // The whole snapshot lands before its LocalScripts start: one in
+        // PlayerGui finds ReplicatedStorage's contents.
+        self.sim.hold_scripts();
         for root in roots {
             self.deliver(server, &Op::Tree(root, None));
         }
         self.loaded = true;
         self.sim.set_loaded();
+        self.sim.release_scripts();
         if self.sim.dom().get(self.player).is_some() {
             let db = self.sim.db();
             crate::players::player_scripts(&mut self.sim.dom_mut(), db, self.player);
@@ -596,7 +612,10 @@ impl Client {
             return;
         }
         let parent = sdom.parent(r);
-        if present {
+        // The client's own Player was there from the start (`first_view`):
+        // its contents still arrive with the place, and it still arrives.
+        let own_player = r == self.player && !self.loaded;
+        if present && !own_player {
             let here = self.sim.dom().parent(r);
             if here != parent && parent.is_some_and(|p| self.sim.dom().get(p).is_some()) {
                 self.sim.dom_mut().set_parent(r, parent);
@@ -629,8 +648,26 @@ impl Client {
             stack.extend(source.children().iter().rev().copied());
         }
         drop(sdom);
+        // The join's snapshot lands whole before any of its events run, so
+        // a ReplicatedFirst script waiting on a module finds the module's
+        // children there too. Later additions arrive one instance at a
+        // time (the ReplicationOrder golden).
+        let whole = !self.loaded;
+        let mut players = Vec::new();
+        let outer = self.sim.holding_scripts();
+        self.sim.hold_scripts();
         for (at, class, name, parent, properties) in order {
             if self.sim.dom().get(at).is_some() {
+                if at == self.player && own_player {
+                    // What the server set on it since the join (its
+                    // `Character`) comes with it.
+                    let mut dom = self.sim.dom_mut();
+                    for (key, value) in properties {
+                        let _ = dom.set_property(at, &key, value);
+                    }
+                    drop(dom);
+                    players.push(at);
+                }
                 continue;
             }
             {
@@ -642,26 +679,44 @@ impl Client {
                     dom.set_parent(at, Some(parent));
                 }
             }
-            self.sim.flush();
             if class == "Player" {
-                let players = self.sim.dom().parent(at);
-                if let Some(players) = players {
-                    self.sim
-                        .fire_signal(players, "PlayerAdded", vec![Arg::Instance(at)]);
-                }
-                let character = match self
-                    .sim
-                    .dom()
-                    .get(at)
-                    .map(|i| i.properties().get("Character"))
-                {
-                    Some(Some(Variant::Ref(c))) => Some(*c),
-                    _ => None,
-                };
-                if let Some(character) = character {
-                    self.characters.push((at, character));
+                players.push(at);
+            }
+            if !whole {
+                self.sim.flush();
+                for player in players.drain(..) {
+                    self.player_arrived(player);
                 }
             }
+        }
+        if whole {
+            self.sim.flush();
+            for player in players {
+                self.player_arrived(player);
+            }
+        }
+        if !outer {
+            self.sim.release_scripts();
+        }
+    }
+
+    fn player_arrived(&mut self, at: Ref) {
+        let players = self.sim.dom().parent(at);
+        if let Some(players) = players {
+            self.sim
+                .fire_signal(players, "PlayerAdded", vec![Arg::Instance(at)]);
+        }
+        let character = match self
+            .sim
+            .dom()
+            .get(at)
+            .map(|i| i.properties().get("Character"))
+        {
+            Some(Some(Variant::Ref(c))) => Some(*c),
+            _ => None,
+        };
+        if let Some(character) = character {
+            self.characters.push((at, character));
         }
     }
 
@@ -793,8 +848,9 @@ fn replicates_not(dom: &WeakDom, r: Ref) -> bool {
 }
 
 /// What a client has before the place arrives: the services with their
-/// properties, and `ReplicatedFirst`'s contents.
-fn first_view(server: &WeakDom) -> WeakDom {
+/// properties, `ReplicatedFirst`'s contents, and its own `Player` (bare):
+/// a ReplicatedFirst script finds `LocalPlayer` there.
+fn first_view(server: &WeakDom, player: Ref) -> WeakDom {
     let mut dom = server.clone();
     let unparented: Vec<Ref> = dom.unparented_refs().collect();
     for r in unparented {
@@ -812,8 +868,17 @@ fn first_view(server: &WeakDom) -> WeakDom {
             .map(|i| i.children().to_vec())
             .unwrap_or_default()
         {
-            dom.remove(child);
+            if child != player {
+                dom.remove(child);
+            }
         }
+    }
+    for child in dom
+        .get(player)
+        .map(|i| i.children().to_vec())
+        .unwrap_or_default()
+    {
+        dom.remove(child);
     }
     dom.take_changes();
     dom

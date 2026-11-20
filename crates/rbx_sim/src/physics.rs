@@ -18,6 +18,7 @@ pub(crate) mod mesh;
 pub(crate) mod part;
 #[cfg(test)]
 mod tests;
+mod union;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -122,6 +123,9 @@ pub struct Shared {
     /// `ParticleEmitter:Emit`/`Clear` calls not yet handed to a renderer.
     pub(crate) bursts: Vec<(Ref, crate::Burst)>,
     pub(crate) sounds: crate::sound::Sounds,
+    /// `require(assetId)`'s modules, by asset id: a second require of the
+    /// same id gets the same module (and so its cached result).
+    pub(crate) modules: HashMap<u64, Ref>,
     pub(crate) audio: crate::audio_api::Audio,
     pub(crate) terrain: crate::terrain::Terrain,
 }

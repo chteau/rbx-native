@@ -1,6 +1,7 @@
 //! A part or a joint as physics reads it from the DOM.
 
 use std::f64::consts::PI;
+use std::sync::Arc;
 
 use rapier3d::prelude::*;
 use rbx_dom::{CFrameData, Instance, PhysicalProperties, Ref, Variant, Vector3Data};
@@ -9,7 +10,7 @@ use rbx_reflection::ReflectionDatabase;
 /// `Enum.Material.Plastic`, what a part with no material reads as.
 pub(crate) const PLASTIC: [f32; 5] = [0.7, 0.3, 0.5, 1.0, 1.0];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Block,
     Ball,
@@ -21,6 +22,9 @@ pub enum Shape {
     Capsule,
     /// A `MeshPart`: collides per its `CollisionFidelity`, see `mesh.rs`.
     Mesh,
+    /// A union's convex pieces, in its space as made, and the size it was
+    /// made at (`union.rs`).
+    Union(Arc<Vec<super::union::Hull>>, Vector3Data),
 }
 
 pub(crate) struct PartData {
@@ -83,6 +87,20 @@ impl PartData {
             "WedgePart" => Shape::Wedge,
             "CornerWedgePart" => Shape::CornerWedge,
             "MeshPart" => Shape::Mesh,
+            _ if db.is_subclass_of(class, "PartOperation") => {
+                match (
+                    read(db, instance, "PhysicalConfigData"),
+                    read(db, instance, "InitialSize"),
+                ) {
+                    (Some(Variant::Unknown { raw, .. }), Some(Variant::Vector3(made))) => {
+                        match super::union::hulls(raw) {
+                            Some(hulls) => Shape::Union(hulls, *made),
+                            None => Shape::Block,
+                        }
+                    }
+                    _ => Shape::Block,
+                }
+            }
             _ if db.is_subclass_of(class, "Part") => match read(db, instance, "Shape") {
                 Some(Variant::Enum(0)) => Shape::Ball,
                 Some(Variant::Enum(2)) => Shape::Cylinder,
@@ -133,7 +151,7 @@ impl PartData {
     pub(super) fn volume(&self) -> f64 {
         let [x, y, z] = [self.size.x, self.size.y, self.size.z].map(f64::from);
         match self.shape {
-            Shape::Block | Shape::Mesh => x * y * z,
+            Shape::Block | Shape::Mesh | Shape::Union(..) => x * y * z,
             Shape::Wedge => x * y * z / 2.0,
             Shape::CornerWedge => x * y * z / 3.0,
             Shape::Ball => {
@@ -156,8 +174,43 @@ impl PartData {
         let half = |v: f32| Real::from(v) / 2.0;
         let (hx, hy, hz) = (half(self.size.x), half(self.size.y), half(self.size.z));
         let along_x = Pose::from_rotation(Rotation::from_rotation_z(std::f64::consts::FRAC_PI_2));
-        match self.shape {
+        match &self.shape {
             Shape::Block => ColliderBuilder::cuboid(hx, hy, hz),
+            Shape::Union(hulls, made) => {
+                let scale = [
+                    self.size.x / made.x,
+                    self.size.y / made.y,
+                    self.size.z / made.z,
+                ]
+                .map(|s| {
+                    if s.is_finite() && s > 0.0 {
+                        Real::from(s)
+                    } else {
+                        1.0
+                    }
+                });
+                let pieces: Vec<_> = hulls
+                    .iter()
+                    .filter_map(|piece| {
+                        let points: Vec<Vector> = piece
+                            .iter()
+                            .map(|p| {
+                                Vector::new(
+                                    Real::from(p[0]) * scale[0],
+                                    Real::from(p[1]) * scale[1],
+                                    Real::from(p[2]) * scale[2],
+                                )
+                            })
+                            .collect();
+                        SharedShape::convex_hull(&points).map(|s| (Pose::IDENTITY, s))
+                    })
+                    .collect();
+                if pieces.is_empty() {
+                    ColliderBuilder::cuboid(hx, hy, hz)
+                } else {
+                    ColliderBuilder::compound(pieces)
+                }
+            }
             Shape::Mesh => super::mesh::collider(self),
             Shape::Ball => ColliderBuilder::ball(hx.min(hy).min(hz)),
             Shape::Cylinder => {
