@@ -541,5 +541,6 @@
     "r6_vx30": 0.009999999999999787,
     "r6_vx60": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "R15 matches throughout (sink, float, speed, jump, back on its feet on the shelf). An R6 that jumps out lands back as Swimming > GettingUp > Running > Freefall > Swimming in Roblox; on the shelf it stays Swimming with FloorMaterial Air, where ours stands up; its jump rises 6.77 against 7.84."
 }

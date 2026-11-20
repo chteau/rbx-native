@@ -620,5 +620,6 @@
     "roll_z30": 0.5700000000000074,
     "roll_z60": 25.610000000000014
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "Grass sliding, drops and bounces match. On terrain Ice a Plastic block decelerates at friction 0.19 for its first quarter second and 0.06 after (stops at 73 frames); ours is the part mix, 0.09, throughout. The ball rolls down the 30 degree wedge faster (34.5 against 28.5 stud/s at 30 frames), and Roblox's dropped ball ends inside the terrain (-15.8), ours on it."
 }

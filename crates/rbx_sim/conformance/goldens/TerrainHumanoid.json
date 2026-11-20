@@ -2821,5 +2821,6 @@
     ],
     "stand_y": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "Standing, FloorMaterial and the 30 degree walk match. Roblox's 60 degree FillWedge meshes as a 68 degree face then a long fall (TerrainProfile), which stops its character at dz 11; our smoother surface net lets ours climb it."
 }

@@ -120,5 +120,6 @@
   "spread": {
     "_ready": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "Distances all match. Three rays on the Sand ball land near a mesh vertex and get the other diagonal's normal (our surface net splits its quads the other way); under the lake Roblox's rock surface tilts a little (normal 0.02,1,0.09)."
 }

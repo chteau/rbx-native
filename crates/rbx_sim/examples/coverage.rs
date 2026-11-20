@@ -86,6 +86,10 @@ fn load_dump() -> Vec<Class> {
 /// How a script reaches an instance of `class` (itself or a subclass):
 /// `(class to make, is a service)`.
 fn reach(classes: &[Class], class: &Class) -> Option<(String, bool)> {
+    // Not creatable and no service, but every place has one.
+    if class.name == "Terrain" {
+        return Some((class.name.clone(), false));
+    }
     if class.tags.iter().any(|t| t == "Service") {
         return Some((class.name.clone(), true));
     }
@@ -108,6 +112,9 @@ fn probe_source(classes: &[Class]) -> String {
 	local ok, instance = pcall(function()
 		if service then
 			return game:GetService(class)
+		end
+		if class == "Terrain" then
+			return workspace.Terrain
 		end
 		return Instance.new(class)
 	end)
@@ -139,7 +146,8 @@ end
 
 fn probe(classes: &[Class]) -> BTreeSet<(String, String)> {
     let mut dom = WeakDom::new();
-    dom.new_instance("Workspace", "Workspace", None);
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    dom.new_instance("Terrain", "Terrain", Some(workspace));
     let sss = dom.new_instance("ServerScriptService", "ServerScriptService", None);
     let script = dom.new_instance("Script", "Coverage", Some(sss));
     let _ = dom.set_property(script, "Source", Variant::String(probe_source(classes)));

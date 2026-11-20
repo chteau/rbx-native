@@ -2163,5 +2163,6 @@
     "wood_y300": 0.010000000000000009,
     "wood_y60": 0.010000000000000009
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "Equilibrium depths, terminal sink and rise speeds and the waves' lack of effect match. On entry Roblox's blocks dip 0.3 to 0.5 stud less and the plank settles by 30 frames where ours bobs on; on the lake floor Roblox's block rests 0.36 lower than the dry surface."
 }

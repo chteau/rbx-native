@@ -25,5 +25,6 @@
   },
   "source": "real Roblox server, place 3086963177 version 580, joined with Sober",
   "spread": {},
-  "status": "recorded"
+  "status": "recorded",
+  "known_gap": "The voxels match. The collision surface is Roblox's own mesher (irregular, asymmetric heights); ours is a surface net over the same voxels."
 }

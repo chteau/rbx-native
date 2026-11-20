@@ -524,14 +524,52 @@ Gaps from M10:
 | Unions | collide as their geometry | still their `Size` box (decoding lives in rbx_viewer) |
 | Bounce spin | | a flat impact is still solved at one point, so no spin from an off-centre bounce |
 
-## Milestone 11 (proposed): terrain physics, water and swimming
+## Milestone 11 (done): terrain physics, water and swimming
 
-1. Terrain collision: the smooth grid (`rbx_terrain`'s voxels) as Rapier heightfield or trimesh chunks, built and rebuilt per region as `Terrain:Fill*`/`WriteVoxels` change it; raycasts and the character's floor sensor against it; per-material friction and elasticity.
-2. Water: buoyancy on parts in water cells (by submerged volume and density), drag, and the current (`WaterWaveSize`/`Speed` have no physics effect, which a test should confirm).
-3. Swimming: the Swimming state, its enter and leave rules, speed and the float at the surface, `Humanoid.Swimming`, and the camera/controls the default scripts give.
-4. Goldens for each (TerrainFloor, TerrainSlope, Buoyancy, Swim) on the sandbox place, plus the cheap gaps above where a new trace settles them (CFrame-moved floors, JumpHeight).
+Smooth terrain is live at run time: scripts edit it, parts and characters collide with it, rays and casts hit it, parts float in its water and characters swim. Seven tests were added (TerrainFill, TerrainRaycast, TerrainPhysics, TerrainHumanoid, TerrainProfile, Buoyancy, Swim), recorded on the sandbox place with 5 passes (2 for TerrainProfile). Before M11 none of them could run: `workspace.Terrain` had no methods and terrain didn't collide.
 
-Rendering items left from M9 (desktop GUI text reference, atmosphere glare, low-sun shadows, coloured ambient, voxel occlusion for local lights, `MaterialVariant`) move to a later milestone.
+1. Terrain API (`rbx_lua/src/server/terrain.rs` → `rbx_sim/src/terrain.rs`): `FillBlock`, `FillBall`, `FillCylinder`, `FillWedge`, `FillRegion`, `ReadVoxels`, `WriteVoxels`, `ReplaceMaterial`, `Clear`, `CellCenterToWorld`, `WorldToCell` (`WorldToCellPreferSolid`/`PreferEmpty`), `GetMaterialColor`/`SetMaterialColor`. The fill rules are measured, not guessed: a cell's fill is 0.5 − d/4 for d its centre's distance outside the shape (min over the box's axes, from the ball's radius, a cylinder's radius with its height + 2), stored as round(f × 255); a wedge fills like a block up to the slope's height at the cell's low edge; a fill never empties a cell, Air carves what's past it, and a full cell of solid takes over a water cell while less leaves it water. Edits are written back into `SmoothGrid`/`MaterialColors`, so the viewer redraws them and the client gets them by replication. Terrain whose `MaterialColors` was never set uses the server's colours (Grass 106,127,63), which differ from what Studio writes into a new place. TerrainFill: 98 of 98 fields match. COVERAGE.md now probes `workspace.Terrain`: 16 of its 29 functions (not yet: `CopyRegion`/`PasteRegion`, `CountCells`, the material slots, `Read`/`WriteVoxelChannels` and the `*Async_beta` voxel calls).
+2. Collision: per 32³ chunk, a surface net over "solid > 0" (each crossing the fraction of the way from the solid voxel's centre toward the empty one, which puts a slab filled to a cell boundary 2 studs above it, as Roblox's is), one trimesh per material so each contact gets the material's friction and elasticity through the same mixing as parts. Chunks are re-meshed lazily once a frame after an edit; a part whose centre ends up inside terrain is lifted out. `FloorMaterial` reads the terrain material under the feet.
+3. Queries: `Raycast` (with `RaycastResult.Material`, `IgnoreWater`, Include/Exclude of `Terrain`), `Spherecast` and `Blockcast` hit terrain; a ray from inside terrain finds nothing (back faces are culled), as Roblox's doesn't. Water is hit at its surface by a march on the water fraction.
+4. Water: every free part takes the weight of the water it displaces where it displaces it (water density 1, sampled every half stud) plus a linear drag of 5.7 per stud³ per stud/s, as forces integrated with gravity each substep. Equilibrium depths match by density (0.3 floats at +0.4, 0.7 at −0.38, 0.95 at −0.93, a 0.5 plank at 0); a 1.5 block sinks at Roblox's 17 stud/s and a 0.95 one rises at its 1.7. `WaterWaveSize`/`WaterWaveSpeed` have no physical effect (the calm block in Buoyancy settles where the wavy one does). The viewer already drew the water properties (wave size and speed, colour, transparency, reflectance).
+5. Swimming: Freefall becomes Swimming once the root is under the surface and falling; the water holds the character up (an R6 left to the water bobs exactly as Roblox's does; an R15's bob is damped, 4/s); swim speed is 0.74 × WalkSpeed for an R15 and 0.875 × for an R6; `Humanoid.Swimming` fires with the speed (0 on the way in); a jump from Swimming goes Jumping › Freefall › Swimming; touching the bottom gets an R15 up and Running (GettingUp › Running). Our Animate already played Swim/SwimIdle on that signal.
+6. A client gets Terrain with the place, voxels and all; it now loads it then, so the character it simulates stands on terrain a server script built (a session test).
+
+| Test | Fields | before M11 | after M11 |
+|---|---|---|---|
+| TerrainFill | 98 | none ran | 98 ok |
+| TerrainRaycast | 16 | none ran | 12 ok (3 normals on the ball, `ignore_water` tilt) |
+| TerrainPhysics | 15 | none ran | 10 ok |
+| TerrainHumanoid | 18 | none ran | 12 ok (the 60 degree rows) |
+| TerrainProfile | 4 | none ran | 2 ok (the voxels; the surface heights differ) |
+| Buoyancy | 58 | none ran | 41 ok |
+| Swim | 30 | none ran | 25 ok (R6 on the shelf and after the jump) |
+
+Over the whole table 51 rows are off out of 1367: the 12 left from M10 and 39 terrain/water ones. Checked live in the built editor, Play (local), on a place whose script builds a grass field, a hill and a lake at run time and drops three crates of density 0.3, 0.6 and 0.9 in it: walking up the hill, swimming, the crates floating at three depths, a jump out of the water, Stop back to the untouched place (`rbx-native-targets/local-run-m11-shots/`, the place is `TerrainLake.rbxlx` there).
+
+Gaps from M11:
+
+| Area | Roblox | ours |
+|---|---|---|
+| Terrain surface | its mesher's own triangulation: a 60 degree wedge is a 68 degree face then a long fall (TerrainProfile) | a surface net, smoother and symmetric; a character climbs our 60 degree bump where Roblox's stops at dz 11 |
+| Mesh normals | a ray near a vertex gets Roblox's split | ours split the quad the other way (3 normals on the ball) |
+| Ice | a Plastic block decelerates at friction 0.19 first, then 0.06 (stops at 73 frames) | one mix, 0.09 (v15 15.6 against 10.7) |
+| Rolling | a ball reaches 28.5 stud/s at 30 frames down the 30 degree wedge | 34.5 |
+| Water entry | dips less (a 0.3 block to −0.15) yet bobs longer | dips 0.3 to 0.5 deeper; the plank bobs where Roblox's is still by 30 frames |
+| Lake floor | rests 0.36 lower under water (−21.36) | at the dry surface (−21.0) |
+| R6 swimming | stays Swimming on the shelf (FloorMaterial Air); jumps 7.84 | stands up on it; jumps 6.77 |
+| Swim pose | the body lies along the swim direction | upright (the Swim animation plays, the root doesn't tilt) |
+| A ball falling into terrain | goes in (−15.8) | rests on it (2.999) |
+
+## Milestone 12 (proposed): API breadth, part 1
+
+1. DataStoreService and MemoryStoreService offline: GetAsync/SetAsync/UpdateAsync/IncrementAsync/RemoveAsync, ordered stores and their pages, versions and keys listing, sorted maps and queues, against a per-place local store (with an option to start from a snapshot fetched with the owner's Open Cloud key), the request budgets and their throttling errors.
+2. HttpService: GenerateGUID, JSONEncode/JSONDecode (Roblox's exact number and escape rules), UrlEncode, and RequestAsync/GetAsync/PostAsync through `rbx_net`'s gate when HttpEnabled is on (refused offline), with Roblox's errors and header rules.
+3. MessagingService: PublishAsync/SubscribeAsync between the servers of a local session (one process, several places later), with its size and rate limits.
+4. MarketplaceService stand-ins: PromptPurchase/PromptProductPurchase/PromptGamePassPurchase with a local confirm dialog, ProcessReceipt, UserOwnsGamePassAsync and PlayerOwnsAsset from a local ledger, GetProductInfo from the cache or Open Cloud.
+5. CollectionService: AddTag/RemoveTag/HasTag/GetTagged/GetTags, the Instance tag methods and `Tags` property, GetInstanceAddedSignal/RemovedSignal, tags replicating to clients.
+6. PathfindingService: CreatePath with agent parameters (radius, height, CanJump, CanClimb, WaypointSpacing, Costs), ComputeAsync over parts and terrain (a navmesh from the collision world), waypoints with Jump actions, Blocked and the `PathfindingModifier`/`PathfindingLink` instances; goldens comparing waypoints on a few courses.
+7. Goldens for each from the sandbox place where Roblox's behaviour is observable from a server script (JSON round trips, tag signals, path waypoints, DataStore error codes and budgets).
 
 ## Where things are
 
@@ -541,6 +579,7 @@ Rendering items left from M9 (desktop GUI text reference, atmosphere glare, low-
 - `crates/rbx_sim/src/sim.rs`: the frame loop.
  `physics.rs`, `physics/part.rs`: Rapier world, shapes, joints, adaptive stepping. `physics/constraints.rs`: constraints and movers. `physics/mesh.rs`: MeshPart collision. `spatial.rs`: the query index. `scripts.rs`: which scripts run. `load.rs`: place files. `conformance.rs`: the suite.
 - `crates/rbx_sim/examples/`: `run` (CLI), `conformance` (table), `record_goldens` (real server), `coverage` (COVERAGE.md).
+- `crates/rbx_sim/src/terrain.rs`: terrain at run time (the Terrain API's edits, collision meshes, water, rays); `crates/rbx_lua/src/server/terrain.rs`: its Luau side. Water forces and terrain colliders are in `physics.rs` (`water_forces`, `sync_terrain`).
 - `crates/rbx_sim/src/humanoid.rs`, `physics/character.rs`: humanoids. `players.rs`: the Players service and the local player. `character.rs`, `character/`: the noob, our Animate and Health scripts. `animation.rs`: Animator and AnimationTrack. `engine.rs`: the engine methods, signals and properties the VM asks for.
 - `crates/rbx_studio/src/shell/local_run.rs`: the `local-run` beta: Run, Play (local), Pause, Stop live in the editor. `local_run/avatars.rs`: who plays and what they look like. `workspace_view/play_input.rs`: the keyboard and mouse handed to the game.
 - `crates/rbx_sim/src/input.rs`, `crates/rbx_lua/src/server/input.rs`, `server/input.luau`: UserInputService, ContextActionService, BindToRenderStep. `crates/rbx_sim/src/character/PlayerModule.luau`: our default controls and camera.
