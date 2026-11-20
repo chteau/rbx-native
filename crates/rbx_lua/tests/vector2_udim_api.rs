@@ -56,8 +56,12 @@ fn udim2_arithmetic_and_lerp() {
         print(tostring(UDim2.fromScale(0, 0):Lerp(a, 0.5)))
         print(tostring(UDim2.new(UDim.new(1, 2), UDim.new(3, 4))))
     "#);
-    assert_eq!(out[0], "0.5, 12, 1, 24 0.5, 8, 1, 16 -0.5, -10, -1, -20");
+    // Roblox's own spelling (DragDetectorApi golden: `{0, 300}, {0, 300}`).
+    assert_eq!(
+        out[0],
+        "{0.5, 12}, {1, 24} {0.5, 8}, {1, 16} {-0.5, -10}, {-1, -20}"
+    );
     assert_eq!(out[1], "true true 20");
-    assert_eq!(out[2], "0.25, 5, 0.5, 10");
-    assert_eq!(out[3], "1, 2, 3, 4");
+    assert_eq!(out[2], "{0.25, 5}, {0.5, 10}");
+    assert_eq!(out[3], "{1, 2}, {3, 4}");
 }

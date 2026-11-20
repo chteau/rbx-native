@@ -52,5 +52,8 @@
   },
   "source": "real Roblox server, place 3086963177 version 555, joined with Sober",
   "spread": {},
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "idle_tracks": "Animate picks the idle variant at random by weight (9 to 1), as Roblox's does; a run that rolls the second idle (180435792) differs from the recorded passes, which all rolled the first"
+  }
 }
