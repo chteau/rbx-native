@@ -121,6 +121,8 @@ pub(crate) struct Part {
     /// below one sends it to the renderer's blended pass.
     pub(crate) alpha: f32,
     pub(crate) reflectance: f32,
+    /// The `*Surface` pattern on each face of a block (see [`surfaces`]).
+    pub(crate) surfaces: u32,
     /// `BasePart.CastShadow`. A part that answers false is still drawn and
     /// still *receives* shadows; it simply never reaches the depth pass.
     casts_shadow: bool,
@@ -961,6 +963,10 @@ pub(super) fn assemble_part(
         color: color.map(|channel| srgb_to_linear(f32::from(channel) / 255.0)),
         alpha: alpha(properties, material.kind),
         reflectance: number(properties.get("Reflectance")).clamp(0.0, 1.0),
+        surfaces: match geometry.kind {
+            ShapeKind::Box => surfaces(properties),
+            _ => 0,
+        },
         casts_shadow: casts_shadow(properties),
         size: geometry.size,
         id,
@@ -985,6 +991,29 @@ pub(super) fn alpha(properties: &std::collections::BTreeMap<String, Variant>, ki
 
 /// `BasePart.CastShadow`, which Studio only serializes when a builder has turned
 /// it off: its absence means the part casts, like everything else in a place.
+/// A block's six `*Surface` properties packed three bits a face, in
+/// `Enum.NormalId` order (Right, Top, Back, Left, Bottom, Front), for
+/// `material.wgsl`'s `surface_relief`. Only the patterns the real client
+/// paints on a face are kept (Glue, Weld, Studs, Inlet, Universal); Smooth,
+/// the hinges and motors are left flat.
+fn surfaces(properties: &std::collections::BTreeMap<String, Variant>) -> u32 {
+    const FACES: [&str; 6] = [
+        "RightSurface",
+        "TopSurface",
+        "BackSurface",
+        "LeftSurface",
+        "BottomSurface",
+        "FrontSurface",
+    ];
+    FACES
+        .iter()
+        .enumerate()
+        .fold(0, |packed, (face, name)| match properties.get(*name) {
+            Some(&Variant::Enum(kind @ 1..=5)) => packed | kind << (3 * face),
+            _ => packed,
+        })
+}
+
 pub(super) fn casts_shadow(properties: &std::collections::BTreeMap<String, Variant>) -> bool {
     !matches!(properties.get("CastShadow"), Some(Variant::Bool(false)))
 }

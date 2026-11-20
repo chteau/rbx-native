@@ -516,3 +516,74 @@ fn material_mapped(input: MaterialInput) -> Mapped {
     mapped.normal = normalize(mapped.normal);
     return mapped;
 }
+
+// A block face's `*Surface` pattern (`scene::Part::surfaces`), drawn as the
+// real client does on its 2022 materials (the `studs` fidelity scene): a
+// rounded square per stud, raised for Studs, sunk and shaded for Inlet, the two
+// in a checker for Universal, and a groove along the diagonals of every
+// two-stud square for Weld and Glue. Sizes are read off that scene's pictures.
+const SURFACE_GLUE: u32 = 1u;
+const SURFACE_WELD: u32 = 2u;
+const SURFACE_STUDS: u32 = 3u;
+const SURFACE_INLET: u32 = 4u;
+// Half the stud's width and its corner radius, in studs.
+const STUD_HALF: f32 = 0.3;
+const STUD_CORNER: f32 = 0.08;
+// How wide its sloped rim is, and how far that rim turns the normal.
+const STUD_BEVEL: f32 = 0.07;
+const STUD_TILT: f32 = 0.9;
+// What is left of the colour at the bottom of an inlet or a groove.
+const RECESS_SHADE: f32 = 0.4;
+const GROOVE_HALF: f32 = 0.05;
+
+/// `Enum.NormalId` of a face from its object-space axis.
+fn normal_id(axis: vec3<f32>) -> u32 {
+    let positive = axis.x + axis.y + axis.z > 0.0;
+    let along = select(select(2u, 1u, axis.y != 0.0), 0u, axis.x != 0.0);
+    return select(along + 3u, along, positive);
+}
+
+fn surface_relief(input: ptr<function, MaterialInput>, surfaces: u32, extent: vec3<f32>) {
+    let axis = dominant_axis((*input).object_normal);
+    let pattern = (surfaces >> (3u * normal_id(axis))) & 7u;
+    if pattern == 0u {
+        return;
+    }
+    let frame = face_frame(axis);
+    let corner = 0.5 * vec2<f32>(dot(abs(frame.u), extent), dot(abs(frame.v), extent));
+    let p = vec2<f32>(dot((*input).object_studs, frame.u), dot((*input).object_studs, frame.v)) + corner;
+
+    if pattern == SURFACE_GLUE || pattern == SURFACE_WELD {
+        let square = fract(p * 0.5) - 0.5;
+        let groove = 2.0 * min(abs(square.x - square.y), abs(square.x + square.y)) / sqrt(2.0);
+        if groove < GROOVE_HALF {
+            (*input).albedo *= RECESS_SHADE;
+        }
+        return;
+    }
+
+    let cell = floor(p);
+    let checker = (i32(cell.x) + i32(cell.y)) % 2 == 0;
+    let raised = pattern == SURFACE_STUDS || (pattern != SURFACE_INLET && checker);
+    let local = fract(p) - 0.5;
+    let q = abs(local) - vec2<f32>(STUD_HALF - STUD_CORNER);
+    let outside = max(q, vec2<f32>(0.0));
+    let d = length(outside) + min(max(q.x, q.y), 0.0) - STUD_CORNER;
+    if d > 0.0 {
+        return;
+    }
+    if d < -STUD_BEVEL {
+        if !raised {
+            (*input).albedo *= RECESS_SHADE;
+        }
+        return;
+    }
+    // Outward from the stud's centre, across its rim.
+    var across = sign(local) * select(vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), q.x > q.y);
+    if outside.x > 0.0 && outside.y > 0.0 {
+        across = sign(local) * normalize(outside);
+    }
+    let slope = select(-STUD_TILT, STUD_TILT, raised);
+    let tangent = (*input).rotation * (frame.u * across.x + frame.v * across.y);
+    (*input).world_normal = normalize(normalize((*input).world_normal) + tangent * slope);
+}

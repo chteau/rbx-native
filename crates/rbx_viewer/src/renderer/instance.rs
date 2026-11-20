@@ -61,19 +61,22 @@ pub(super) struct InstanceRaw {
     /// Layer of every material texture array (see `renderer::material`).
     material_layer: u32,
     studs_per_tile: f32,
-    /// `scene::Kind` as its discriminant; `material.wgsl` names the same values.
+    /// `scene::Kind` as its discriminant in the low byte (`material.wgsl` names
+    /// the same values), and above it a block's packed `scene::Part::surfaces`.
     material_kind: u32,
 }
 
 impl InstanceRaw {
     pub(super) fn from_part(part: &Part) -> Self {
-        Self::new(
+        let mut raw = Self::new(
             part.transform.to_cols_array_2d(),
             part.color,
             part.alpha,
             part.reflectance,
             part.material,
-        )
+        );
+        raw.material_kind |= part.surfaces << 8;
+        raw
     }
 
     /// Used directly by `renderer::filemesh`, which has no `Part`: its model
