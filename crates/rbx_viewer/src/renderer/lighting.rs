@@ -22,11 +22,11 @@ const ENV_DIFFUSE_WEIGHT: f32 = 1.0;
 
 /// PCF kernel radius, in shadow-map texels, at `ShadowSoftness = 1`.
 ///
-/// Studio's default 0.2 has to land on a penumbra of a couple of texels, the
-/// reference capture's cubes have an edge roughly a stud wide, which is where
-/// a fifth of this comes out right; 0 is then a single tap, i.e. the hard edge
-/// Roblox gives it, and 1 a penumbra several studs across.
-const SOFTNESS_TEXELS: f32 = 8.0;
+/// Fitted on the `shadows_hard`, `shadows_half` and `shadows_soft` fidelity
+/// scenes: the real client's penumbra at 1 is under a stud wide on the slab's
+/// shadow, and a wider kernel showed its taps as ghost copies of the shadow
+/// and striped the floor where the taps reached past the receiver's slope.
+const SOFTNESS_TEXELS: f32 = 2.0;
 
 /// Constant slice off the receiver's own depth, in studs, on top of the
 /// caster-side slope bias. Small enough that no shadow visibly leaves the foot
