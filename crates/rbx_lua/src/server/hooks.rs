@@ -556,11 +556,15 @@ impl Hooks for ServerHooks {
         key: &str,
         value: &Value,
     ) -> Result<bool> {
-        if super::chat::set(lua, &self.chat, referent, class, key, value)?
-            || super::services::set(lua, &self.services, referent, class, key, value)?
-        {
+        if super::chat::set(lua, &self.chat, referent, class, key, value)? {
             return Ok(true);
         }
+        let replaced = match super::services::set(lua, &self.services, referent, class, key, value)?
+        {
+            super::services::Write::Taken => return Ok(true),
+            super::services::Write::Store(replaced) => replaced,
+        };
+        let value = replaced.as_ref().unwrap_or(value);
         not_scriptable(ctx, referent, class, key)?;
         self.mark.set(ctx.dom().changes().len());
         let mut written = false;

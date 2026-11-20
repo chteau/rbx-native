@@ -224,13 +224,19 @@ pub(crate) struct Runtime {
     finished: Finished,
     client: Rc<Cell<bool>>,
     physics: Rc<dyn super::Physics>,
+    /// For the drag packets a client sends its server.
+    remotes: super::remote::Shared,
 }
 
 static PRODUCT_INFO: LazyLock<Mutex<HashMap<String, serde_json::Value>>> =
     LazyLock::new(Mutex::default);
 
 impl Runtime {
-    pub(crate) fn new(client: Rc<Cell<bool>>, physics: Rc<dyn super::Physics>) -> Rc<Runtime> {
+    pub(crate) fn new(
+        client: Rc<Cell<bool>>,
+        physics: Rc<dyn super::Physics>,
+        remotes: super::remote::Shared,
+    ) -> Rc<Runtime> {
         let config = Services::default();
         let universe = universe(&config);
         let cursor = universe.bus.lock().map(|b| b.next).unwrap_or(0);
@@ -244,6 +250,7 @@ impl Runtime {
             finished: Arc::default(),
             client,
             physics,
+            remotes,
         })
     }
 
@@ -305,6 +312,8 @@ const MODULES: &[(&str, &str)] = &[
     ),
     ("GuiService", include_str!("services/gui.luau")),
     ("Audio", include_str!("services/audio.luau")),
+    ("Drag", include_str!("services/drag.luau")),
+    ("InputActions", include_str!("services/input_actions.luau")),
 ];
 
 /// The module that answers `class`.
@@ -348,6 +357,8 @@ fn module_of(class: &str) -> Option<&'static str> {
         "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
         "GuiService" => "GuiService",
         "AudioEmitter" | "AudioListener" | "AudioDeviceInput" => "Audio",
+        "DragDetector" | "UIDragDetector" | "ClickDetector" => "Drag",
+        "InputAction" | "InputBinding" | "InputContext" => "InputActions",
         _ => return None,
     })
 }
@@ -422,8 +433,17 @@ pub(crate) fn member(
     Ok(found.then_some(value))
 }
 
-/// A write the services take (`MarketplaceService.ProcessReceipt`), or
-/// watch before it's stored (`GuiService.SelectedObject`).
+/// What the services make of a write.
+pub(crate) enum Write {
+    /// Taken whole: nothing more to store.
+    Taken,
+    /// Stored as written, or as this value (a clamped `MaxDragAngle`).
+    Store(Option<Value>),
+}
+
+/// A write the services take (`MarketplaceService.ProcessReceipt`, a
+/// `DragDetector.Axis` kept as its `Orientation`), watch before it's stored
+/// (`GuiService.SelectedObject`), or clamp.
 pub(crate) fn set(
     lua: &Lua,
     runtime: &Rc<Runtime>,
@@ -431,21 +451,78 @@ pub(crate) fn set(
     class: &str,
     key: &str,
     value: &Value,
-) -> Result<bool> {
+) -> Result<Write> {
     let watched = match (class, key) {
         ("MarketplaceService", "ProcessReceipt") => true,
         ("GuiService", "SelectedObject") => runtime.client.get(),
+        ("DragDetector" | "UIDragDetector", _) => true,
+        ("InputAction", "Type") => true,
         _ => false,
     };
     let Some(name) = module_of(class).filter(|_| watched) else {
-        return Ok(false);
+        return Ok(Write::Store(None));
     };
-    module(lua, runtime, name)?.get::<Function>("set")?.call((
-        class,
-        referent.value(),
-        key,
-        value.clone(),
-    ))
+    let (taken, replacement): (bool, Value) =
+        module(lua, runtime, name)?.get::<Function>("set")?.call((
+            class,
+            referent.value(),
+            key,
+            value.clone(),
+        ))?;
+    Ok(if taken {
+        Write::Taken
+    } else {
+        Write::Store((!replacement.is_nil()).then_some(replacement))
+    })
+}
+
+/// A client's input after its own bindings had it: the Input Action
+/// System's contexts and the drag detectors hear it.
+/// `processed` when the GUI or a bound action took it.
+pub(crate) fn client_input(
+    lua: &Lua,
+    runtime: &Rc<Runtime>,
+    input: Value,
+    processed: bool,
+) -> Result<()> {
+    for name in ["InputActions", "Drag"] {
+        module(lua, runtime, name)?
+            .get::<Function>("input")?
+            .call::<()>((input.clone(), processed))?;
+    }
+    Ok(())
+}
+
+/// A client's drag arriving at the server.
+pub(crate) fn receive_drag(
+    lua: &Lua,
+    runtime: &Rc<Runtime>,
+    from: Option<Ref>,
+    packet: super::remote::Packet,
+) -> Result<()> {
+    let super::remote::Packet::Drag {
+        phase,
+        detector,
+        part,
+        numbers,
+    } = packet
+    else {
+        return Ok(());
+    };
+    let ctx = engine(lua).ctx.clone();
+    let instance = |r: Option<Ref>| -> Result<Value> {
+        match r.filter(|r| ctx.dom().get(*r).is_some()) {
+            Some(r) => LuaInstance::new(r, ctx.clone()).into_lua(lua),
+            None => Ok(Value::Nil),
+        }
+    };
+    let (player, detector, part) = (instance(from)?, instance(Some(detector))?, instance(part)?);
+    if player.is_nil() || detector.is_nil() {
+        return Ok(());
+    }
+    module(lua, runtime, "Drag")?
+        .get::<Function>("remote")?
+        .call((player, phase, detector, part, numbers))
 }
 
 /// Once a frame: requests that finished resume their scripts, messages
@@ -607,6 +684,12 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "id",
         lua.create_function(|_, value: Value| instance_id(&value))?,
+    )?;
+    host.set(
+        "instance",
+        lua.create_function(|lua, id: u32| {
+            LuaInstance::new(Ref::new(id), engine(lua).ctx.clone()).into_lua(lua)
+        })?,
     )?;
     host.set(
         "encode",
@@ -998,6 +1081,51 @@ fn host_more(lua: &Lua, runtime: &Rc<Runtime>, host: &Table) -> Result<()> {
                 .dom_mut()
                 .set_property(Ref::new(id), &name, Variant::String(text));
             Ok(())
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "send_drag",
+        lua.create_function(
+            move |lua, (phase, detector, part, numbers): (String, Value, Value, Vec<f64>)| {
+                let detector = Ref::new(instance_id(&detector)?);
+                let part = instance_id(&part).ok().map(Ref::new);
+                let at = engine(lua).ctx.dom().mutations();
+                r.remotes.borrow_mut().outbox.push(super::remote::Outgoing {
+                    to: super::remote::To::Server,
+                    packet: super::remote::Packet::Drag {
+                        phase,
+                        detector,
+                        part,
+                        numbers,
+                    },
+                    at,
+                });
+                Ok(())
+            },
+        )?,
+    )?;
+    host.set(
+        "of_class",
+        lua.create_function(|lua, class: String| {
+            let ctx = engine(lua).ctx.clone();
+            let found: Vec<Ref> = {
+                let dom = ctx.dom();
+                let mut stack: Vec<Ref> = dom.root_refs().to_vec();
+                let mut found = Vec::new();
+                while let Some(r) = stack.pop() {
+                    let Some(instance) = dom.get(r) else { continue };
+                    if instance.class() == class {
+                        found.push(r);
+                    }
+                    stack.extend_from_slice(instance.children());
+                }
+                found
+            };
+            found
+                .into_iter()
+                .map(|r| LuaInstance::new(r, ctx.clone()).into_lua(lua))
+                .collect::<Result<Vec<Value>>>()
         })?,
     )?;
     host.set(

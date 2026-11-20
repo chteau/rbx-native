@@ -351,7 +351,7 @@ impl ServerVm {
             log: Rc::default(),
         };
         let loaded = Rc::new(Cell::new(true));
-        let services = services::Runtime::new(client.clone(), physics.clone());
+        let services = services::Runtime::new(client.clone(), physics.clone(), remotes.clone());
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
             groups: groups.clone(),
@@ -445,6 +445,10 @@ impl ServerVm {
             let chat = self.chat.clone();
             return self.guarded(move |lua| chat::receive(lua, &chat, from, packet));
         }
+        if matches!(packet, Packet::Drag { .. }) {
+            let services = self.services.clone();
+            return self.guarded(move |lua| services::receive_drag(lua, &services, from, packet));
+        }
         let remotes = self.remotes.clone();
         let client = self.client.get();
         self.guarded(move |lua| remote::receive(lua, &remotes, client, from, packet))
@@ -466,8 +470,11 @@ impl ServerVm {
         signal_name: &str,
         processed: bool,
     ) -> Vec<Change> {
+        let services = self.services.clone();
         self.guarded(|lua| {
             let processed = input::dispatch(lua, input, processed)?;
+            let object = LuaInstance::new(input, engine(lua).ctx.clone()).into_lua(lua)?;
+            services::client_input(lua, &services, object, processed)?;
             signal::fire(
                 lua,
                 &instance_key(uis, signal_name),

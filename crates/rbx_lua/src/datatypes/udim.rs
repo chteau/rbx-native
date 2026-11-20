@@ -117,7 +117,7 @@ impl UserData for LuaUDim2 {
         });
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
             Ok(format!(
-                "{}, {}, {}, {}",
+                "{{{}, {}}}, {{{}, {}}}",
                 this.0.x.scale, this.0.x.offset, this.0.y.scale, this.0.y.offset
             ))
         });

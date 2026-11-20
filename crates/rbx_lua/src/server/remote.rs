@@ -98,6 +98,15 @@ pub enum Packet {
         id: String,
         source: Option<Ref>,
     },
+    /// A client's drag of a `DragDetector` that doesn't run locally, for
+    /// the server to move and fire: the phase (`start`, `continue`, `end`),
+    /// the part clicked, and the cursor ray and view frame as numbers.
+    Drag {
+        phase: String,
+        detector: Ref,
+        part: Option<Ref>,
+        numbers: Vec<f64>,
+    },
 }
 
 /// A packet a VM sent, with the sending DOM's mutation count at the time:
@@ -476,8 +485,8 @@ pub(super) fn receive(
             };
             scheduler::resolve(lua, id, result)?;
         }
-        // The chat module takes these (`ServerVm::receive`).
-        Packet::Chat { .. } => {}
+        // The chat and drag modules take these (`ServerVm::receive`).
+        Packet::Chat { .. } | Packet::Drag { .. } => {}
     }
     flush(lua, remotes, client)
 }

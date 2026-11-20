@@ -99,6 +99,20 @@ pub(crate) fn apply(ctx: &Ctx, class: &str, referent: Ref) {
                 .set_property(referent, "Active", Variant::Bool(false));
             return;
         }
+        // The dump's defaults leave it out; a new one is selectable
+        // (DragDetectorApi golden).
+        "UIDragDetector" => {
+            let _ = ctx
+                .dom_mut()
+                .set_property(referent, "Selectable", Variant::Bool(true));
+            return;
+        }
+        // Also missing from the dump's defaults (InputActions golden).
+        "InputBinding" => {
+            let deadzone = Variant::NumberRange(rbx_dom::NumberRange { min: 0.1, max: 1.0 });
+            let _ = ctx.dom_mut().set_property(referent, "Deadzone", deadzone);
+            return;
+        }
         _ => {}
     }
     if !ctx.database().is_subclass_of(class, "BasePart") {

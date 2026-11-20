@@ -741,3 +741,94 @@ fn a_touch_device_gets_context_action_buttons() {
     assert!(has(&lines, Peer::Client(0), "boost Begin"), "{lines:#?}");
     assert_eq!(at.map(|[x, _]| x), Some(800.0 - 60.0 - 95.0 + 35.0));
 }
+
+#[test]
+fn a_drag_detector_crate_and_a_ui_drag_detector_follow_the_mouse() {
+    let mut s = session(
+        place(
+            "local crate = Instance.new('Part') crate.Name = 'Crate' crate.Anchored = true \
+             crate.Size = Vector3.new(4, 4, 4) crate.Position = Vector3.new(10, 5, -10) \
+             local drag = Instance.new('DragDetector') drag.Parent = crate crate.Parent = workspace \
+             drag.DragStart:Connect(function(player, ray, view, hit, part) print('start', player.Name, part.Name) end) \
+             drag.DragEnd:Connect(function(player) print('end', player.Name, math.round(crate.Position.Z)) end)",
+            "local camera = workspace.CurrentCamera task.wait(0.5) camera.CameraType = Enum.CameraType.Scriptable \
+             camera.CFrame = CFrame.lookAt(Vector3.new(10, 15, 10), Vector3.new(10, 5, -10)) \
+             local gui = Instance.new('ScreenGui') local frame = Instance.new('Frame') \
+             frame.Position = UDim2.fromOffset(100, 100) frame.Size = UDim2.fromOffset(100, 100) \
+             local ui = Instance.new('UIDragDetector') ui.Parent = frame frame.Parent = gui \
+             ui.DragEnd:Connect(function() print('ui', frame.Position.X.Offset, frame.Position.Y.Offset) end) \
+             gui.Parent = game:GetService('Players').LocalPlayer:WaitForChild('PlayerGui')",
+        ),
+        1,
+    );
+    if let Some(sim) = s.sim_mut(Peer::Client(0)) {
+        sim.set_viewport([800.0, 600.0]);
+    }
+    let mut lines = Vec::new();
+    for _ in 0..90 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    let gesture = |s: &mut Session, from: [f32; 2], to: [f32; 2]| {
+        s.input(
+            0,
+            Input::Move {
+                position: from,
+                delta: [0.0, 0.0],
+            },
+        );
+        s.step();
+        s.input(
+            0,
+            Input::Button {
+                button: 1,
+                down: true,
+            },
+        );
+        s.step();
+        for i in 1..=4 {
+            let t = i as f32 / 4.0;
+            let at = [
+                from[0] + (to[0] - from[0]) * t,
+                from[1] + (to[1] - from[1]) * t,
+            ];
+            s.input(
+                0,
+                Input::Move {
+                    position: at,
+                    delta: [0.0, 0.0],
+                },
+            );
+            s.step();
+        }
+        s.input(
+            0,
+            Input::Button {
+                button: 1,
+                down: false,
+            },
+        );
+        for _ in 0..10 {
+            s.step();
+        }
+    };
+    // Up the screen on the horizontal plane: the crate goes away (-Z).
+    gesture(&mut s, [400.0, 300.0], [400.0, 260.0]);
+    gesture(&mut s, [150.0, 208.0], [190.0, 228.0]);
+    printed(&mut s, &mut lines);
+    assert!(
+        has(&lines, Peer::Server, "start Player1 Crate"),
+        "{lines:#?}"
+    );
+    let ended = lines
+        .iter()
+        .find_map(|(p, l)| {
+            (*p == Peer::Server)
+                .then(|| l.strip_prefix("end Player1 "))
+                .flatten()
+        })
+        .and_then(|z| z.parse::<f32>().ok())
+        .unwrap_or_else(|| panic!("{lines:#?}"));
+    assert!(ended < -11.0, "{lines:#?}");
+    assert!(has(&lines, Peer::Client(0), "ui 140 120"), "{lines:#?}");
+}

@@ -20,6 +20,9 @@ pub struct PropertyDescriptor {
     /// False when the dump's write security is `NotAccessibleSecurity`
     /// (`MeshPart.MeshId`): no script, plugin or command bar may set it.
     pub script_writable: bool,
+    /// True when the dump's write security is `RobloxScriptSecurity`
+    /// (`Highlight.LineThickness`): game scripts may not set it.
+    pub roblox_write: bool,
 }
 
 impl PropertyDescriptor {
