@@ -92,6 +92,11 @@
   </screenshots>
 
   <releases>
+    <release version="0.2.1" date="2026-11-20">
+      <description>
+        <p>Places open on machines without a usable GPU (Windows on ARM VMs, software renderers) instead of crashing, and crashes now leave a log.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-11-18">
       <description>
         <p>Windows and macOS builds, Team Presence with Roblox Studio, plugin widgets as their own windows, and fixes from the Windows and Mac test runs.</p>

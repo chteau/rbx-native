@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-20
+
+- **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)
+
 ## 2026-11-19
 
 - **Opening a place on Windows on ARM without a GPU driver doesn't crash anymore.** In a Windows 11 VM on an Apple Silicon Mac (VMware Fusion) every place, templates too, killed RbxNative the moment the 3D view drew its first part, with nothing written anywhere. There's no DirectX 12 driver in that VM, so the 3D view runs on WARP (Microsoft's software renderer), and on ARM WARP's shader compiler blows its own stack on our surface shader. On WARP on ARM the local lights' shadows are now left out, which is what tips it over, so the place opens and draws (slowly, it's a CPU renderer). Lights still shine, they just don't cast shadows there. (@chteau)
