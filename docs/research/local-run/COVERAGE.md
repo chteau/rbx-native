@@ -6,9 +6,9 @@ Read the property numbers with care: any property the reflection database knows 
 
 | Member type | There | Total | |
 |---|---|---|---|
-| Function | 372 | 1385 | 27% |
-| Event | 134 | 355 | 38% |
-| Property | 1949 | 2510 | 78% |
+| Function | 480 | 1385 | 35% |
+| Event | 172 | 355 | 48% |
+| Property | 1950 | 2510 | 78% |
 
 ## By class
 
@@ -17,7 +17,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | Class | Properties | Functions | Events | Functions and events there | Not there |
 |---|---|---|---|---|---|
 | Object | 1/1 | 2/2 | 1/1 | GetPropertyChangedSignal, IsA, Changed |  |
-| Instance | 3/5 | 24/30 | 7/8 | AddTag, ClearAllChildren, Clone, Destroy, FindFirstAncestor, FindFirstAncestorOfClass, FindFirstAncestorWhichIsA, FindFirstChild, FindFirstChildOfClass, FindFirstChildWhichIsA, GetAttribute, GetAttributeChangedSignal, GetAttributes, GetChildren, GetDescendants, GetFullName, GetTags, HasTag, IsAncestorOf, IsDescendantOf, RemoveTag, ResetPropertyToDefault, SetAttribute, WaitForChild, AncestryChanged, AttributeChanged, ChildAdded, ChildRemoved, DescendantAdded, DescendantRemoving, Destroying | FindFirstDescendant, GetActor, GetStyled, GetStyledPropertyChangedSignal, IsPropertyModified, QueryDescendants, StyledPropertiesChanged |
+| Instance | 3/5 | 26/30 | 8/8 | AddTag, ClearAllChildren, Clone, Destroy, FindFirstAncestor, FindFirstAncestorOfClass, FindFirstAncestorWhichIsA, FindFirstChild, FindFirstChildOfClass, FindFirstChildWhichIsA, GetAttribute, GetAttributeChangedSignal, GetAttributes, GetChildren, GetDescendants, GetFullName, GetStyled, GetStyledPropertyChangedSignal, GetTags, HasTag, IsAncestorOf, IsDescendantOf, RemoveTag, ResetPropertyToDefault, SetAttribute, WaitForChild, AncestryChanged, AttributeChanged, ChildAdded, ChildRemoved, DescendantAdded, DescendantRemoving, Destroying, StyledPropertiesChanged | FindFirstDescendant, GetActor, IsPropertyModified, QueryDescendants |
 | AccessoryDescription | 7/8 | 0/1 | - |  | GetAppliedInstance |
 | Accoutrement | 1/1 | - | - |  |  |
 | Accessory | 1/1 | - | - |  |  |
@@ -28,36 +28,37 @@ Classes with at least one member there. Properties, functions and events as ther
 | AnimationValueNodeDefinition | 2/2 | - | - |  |  |
 | Animator | 4/4 | 2/6 | 1/1 | GetPlayingAnimationTracks, LoadAnimation, AnimationPlayed | ApplyJointVelocities, GetTrackByAnimationId, RegisterEvaluationParallelCallback, StepAnimations |
 | AssetDeliveryProxy | 3/3 | - | - |  |  |
-| AssetService | - | 2/24 | - | CreateEditableMesh, CreateMeshPartAsync | CreateEditableImage, ComposeDecalAsync, CreateAssetAsync, CreateAssetVersionAsync, CreateDataModelContentAsync, CreateDecalAsync, CreateEditableImageAsync, CreateEditableMeshAsync, CreatePlaceAsync, CreatePlaceInPlayerInventoryAsync, CreateSurfaceAppearanceAsync, CreateTextureAsync, GetAssetIdsForPackageAsync, GetAudioMetadataAsync, GetBundleDetailsAsync, GetGamePlacesAsync, GetLatestVersionUriAsync, LoadAssetAsync, PromptCreatePlatformContentAsync, PromptImportAnimationClipFromVideoAsync, SavePlaceAsync, SearchAudioAsync |
+| AssetService | - | 5/24 | - | CreateEditableImage, CreateEditableMesh, CreateEditableImageAsync, CreateEditableMeshAsync, CreateMeshPartAsync | ComposeDecalAsync, CreateAssetAsync, CreateAssetVersionAsync, CreateDataModelContentAsync, CreateDecalAsync, CreatePlaceAsync, CreatePlaceInPlayerInventoryAsync, CreateSurfaceAppearanceAsync, CreateTextureAsync, GetAssetIdsForPackageAsync, GetAudioMetadataAsync, GetBundleDetailsAsync, GetGamePlacesAsync, GetLatestVersionUriAsync, LoadAssetAsync, PromptCreatePlatformContentAsync, PromptImportAnimationClipFromVideoAsync, SavePlaceAsync, SearchAudioAsync |
 | Atmosphere | 6/6 | - | - |  |  |
 | Attachment | 7/7 | 0/1 | - |  | GetConstraints |
 | Bone | 2/2 | - | - |  |  |
-| AudioAnalyzer | 4/4 | 0/4 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, GetSpectrum, WiringChanged |
-| AudioChannelMixer | 1/1 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioChannelSplitter | 1/1 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioChorus | 4/4 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioCompressor | 6/6 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioDeviceInput | 4/5 | 0/5 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, GetUserIdAccessList, SetUserIdAccessList, WiringChanged |
-| AudioDistortion | 2/2 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioEcho | 6/6 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioEmitter | 8/9 | 0/9 | 0/1 |  | GetAngleAttenuation, GetAudibilityFor, GetConnectedWires, GetDistanceAttenuation, GetInputPins, GetInteractingListeners, GetOutputPins, SetAngleAttenuation, SetDistanceAttenuation, WiringChanged |
-| AudioEqualizer | 5/5 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioFader | 2/2 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioFilter | 5/5 | 0/4 | 0/1 |  | GetConnectedWires, GetGainAt, GetInputPins, GetOutputPins, WiringChanged |
-| AudioFlanger | 4/4 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
+| AudioAnalyzer | 4/4 | 4/4 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, GetSpectrum, WiringChanged |  |
+| AudioChannelMixer | 1/1 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioChannelSplitter | 1/1 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioChorus | 4/4 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioCompressor | 6/6 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioDeviceInput | 4/5 | 3/5 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged | GetUserIdAccessList, SetUserIdAccessList |
+| AudioDeviceOutput | 0/1 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioDistortion | 2/2 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioEcho | 6/6 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioEmitter | 8/9 | 9/9 | 1/1 | GetAngleAttenuation, GetAudibilityFor, GetConnectedWires, GetDistanceAttenuation, GetInputPins, GetInteractingListeners, GetOutputPins, SetAngleAttenuation, SetDistanceAttenuation, WiringChanged |  |
+| AudioEqualizer | 5/5 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioFader | 2/2 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioFilter | 5/5 | 4/4 | 1/1 | GetConnectedWires, GetGainAt, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioFlanger | 4/4 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioGate | 4/4 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioLimiter | 3/3 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioListener | 6/7 | 0/9 | 0/1 |  | GetAngleAttenuation, GetAudibilityFor, GetConnectedWires, GetDistanceAttenuation, GetInputPins, GetInteractingEmitters, GetOutputPins, SetAngleAttenuation, SetDistanceAttenuation, WiringChanged |
-| AudioPitchShifter | 3/3 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| AudioPlayer | 13/13 | 0/7 | 0/3 |  | Cancel, GetConnectedWires, GetInputPins, GetOutputPins, Play, Stop, GetWaveformAsync, Ended, Looped, WiringChanged |
+| AudioLimiter | 3/3 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioListener | 6/7 | 9/9 | 1/1 | GetAngleAttenuation, GetAudibilityFor, GetConnectedWires, GetDistanceAttenuation, GetInputPins, GetInteractingEmitters, GetOutputPins, SetAngleAttenuation, SetDistanceAttenuation, WiringChanged |  |
+| AudioPitchShifter | 3/3 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| AudioPlayer | 13/13 | 5/7 | 3/3 | GetConnectedWires, GetInputPins, GetOutputPins, Play, Stop, Ended, Looped, WiringChanged | Cancel, GetWaveformAsync |
 | AudioRecorder | 2/2 | 1/9 | 0/1 | Clear | GetConnectedWires, GetInputPins, GetOutputPins, GetTemporaryContent, Stop, CanRecordAsync, GetUnrecordableInstancesAsync, RecordAsync, WiringChanged |
-| AudioReverb | 13/13 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
+| AudioReverb | 13/13 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioSearchParams | 8/10 | - | - |  |  |
 | AudioSpeechToText | 3/3 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
 | AudioStreamReader | 1/4 | 0/5 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, Peek, Read, WiringChanged |
 | AudioStreamWriter | 1/4 | 0/5 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, Space, Write, WiringChanged |
 | AudioTextToSpeech | 12/12 | 0/8 | 0/3 |  | GetConnectedWires, GetInputPins, GetOutputPins, Pause, Play, Unload, GetWaveformAsync, LoadAsync, Ended, Looped, WiringChanged |
-| AudioTremolo | 7/7 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
+| AudioTremolo | 7/7 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioWindSynthesizer | 4/5 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
 | AvatarAccessoryRules | 15/15 | - | - |  |  |
 | AvatarAnimationRules | 11/11 | - | - |  |  |
@@ -84,8 +85,8 @@ Classes with at least one member there. Properties, functions and events as ther
 | Shirt | 2/2 | - | - |  |  |
 | ShirtGraphic | 3/3 | - | - |  |  |
 | Chat | 2/2 | 8/8 | 1/1 | Chat, InvokeChatCallback, RegisterChatCallback, SetBubbleChatSettings, CanUserChatAsync, CanUsersChatAsync, FilterStringAsync, FilterStringForBroadcast, Chatted |  |
-| ClickDetector | 3/3 | - | 0/4 |  | MouseClick, MouseHoverEnter, MouseHoverLeave, RightMouseClick |
-| DragDetector | 26/27 | 0/5 | 0/3 |  | AddConstraintFunction, GetReferenceFrame, RestartDrag, SetDragStyleFunction, SetPermissionPolicyFunction, DragContinue, DragEnd, DragStart |
+| ClickDetector | 3/3 | - | 4/4 | MouseClick, MouseHoverEnter, MouseHoverLeave, RightMouseClick |  |
+| DragDetector | 26/27 | 5/5 | 3/3 | AddConstraintFunction, GetReferenceFrame, RestartDrag, SetDragStyleFunction, SetPermissionPolicyFunction, DragContinue, DragEnd, DragStart |  |
 | Clouds | 4/4 | - | - |  |  |
 | CollectionService | - | 8/10 | 2/2 | AddTag, GetAllTags, GetInstanceAddedSignal, GetInstanceRemovedSignal, GetTagged, GetTags, HasTag, RemoveTag, TagAdded, TagRemoved | CreateCollection, GetCollections |
 | CompositeValueCurve | 1/1 | 0/2 | - |  | GetComponentCurves, GetValueAtTime |
@@ -201,8 +202,8 @@ Classes with at least one member there. Properties, functions and events as ther
 | HumanoidRigDescription | 89/111 | 0/8 | - |  | GetJoint, GetJointFromName, GetJointNames, GetR15JointLabels, GetR15JointNames, GetR6JointNames, SetJoint, SetTposeAdjustment |
 | IKControl | 7/11 | 0/6 | - |  | GetChainCount, GetChainLength, GetNodeLocalCFrame, GetNodeWorldCFrame, GetRawFinalTarget, GetSmoothedFinalTarget |
 | IncrementalPatchBuilder | 6/6 | - | - |  |  |
-| InputAction | 3/4 | 0/1 | 0/3 |  | GetState, Pressed, Released, StateChanged |
-| InputBinding | 20/23 | 0/1 | - |  | Fire |
+| InputAction | 3/4 | 1/1 | 3/3 | GetState, Pressed, Released, StateChanged |  |
+| InputBinding | 21/23 | 1/1 | - | Fire |  |
 | InputContext | 3/3 | - | - |  |  |
 | JointInstance | 4/6 | - | - |  |  |
 | Motor | 3/3 | 0/1 | - |  | SetDesiredAngle |
@@ -242,7 +243,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | MeshPart | 6/6 | 0/2 | - |  | ApplyMesh, GetSurfaceSlotsAsync |
 | PartOperation | 4/4 | 0/1 | - |  | SubstituteGeometry |
 | VehicleSeat | 10/11 | 1/1 | - | Sit |  |
-| Camera | 14/17 | 0/9 | 0/1 |  | GetPartsObscuringTarget, GetRenderCFrame, GetRoll, ScreenPointToRay, SetRoll, ViewportPointToRay, WorldToScreenPoint, WorldToViewportPoint, ZoomToExtents, InterpolationFinished |
+| Camera | 14/17 | 7/9 | 1/1 | GetRenderCFrame, GetRoll, ScreenPointToRay, SetRoll, ViewportPointToRay, WorldToScreenPoint, WorldToViewportPoint, InterpolationFinished | GetPartsObscuringTarget, ZoomToExtents |
 | Model | 3/5 | 2/9 | - | GetBoundingBox, GetExtentsSize | AddPersistentPlayer, GetPersistentPlayers, GetScale, MoveTo, RemovePersistentPlayer, ScaleTo, TranslateBy |
 | BackpackItem | 2/2 | - | - |  |  |
 | Tool | 6/6 | 2/2 | 4/4 | Activate, Deactivate, Activated, Deactivated, Equipped, Unequipped |  |
@@ -313,7 +314,9 @@ Classes with at least one member there. Properties, functions and events as ther
 | Stats | 22/22 | 0/9 | - |  | GetHarmonyQualityLevel, GetMemoryCategoryNames, GetMemoryUsageMbAllCategories, GetMemoryUsageMbAllCategoriesFiltered, GetMemoryUsageMbFiltered, GetMemoryUsageMbForTag, GetTotalMemoryUsageMb, ResetHarmonyMemoryTarget, SetHarmonyMemoryTarget |
 | StudioAttachment | 5/5 | - | - |  |  |
 | StudioService | 6/7 | - | - |  |  |
-| StyleRule | 3/3 | 0/9 | - |  | GetDefaultPropertyTransition, GetProperties, GetProperty, GetPropertyTransitions, SetDefaultPropertyTransition, SetProperties, SetProperty, SetPropertyTransition, SetPropertyTransitions |
+| StyleBase | - | 3/3 | 1/1 | GetStyleRules, InsertStyleRule, SetStyleRules, StyleRulesChanged |  |
+| StyleRule | 3/3 | 4/9 | - | GetProperties, GetProperty, SetProperties, SetProperty | GetDefaultPropertyTransition, GetPropertyTransitions, SetDefaultPropertyTransition, SetPropertyTransition, SetPropertyTransitions |
+| StyleSheet | - | 2/2 | - | GetDerives, SetDerives |  |
 | StyleDerive | 1/2 | - | - |  |  |
 | StyleQuery | 1/1 | 0/4 | - |  | GetCondition, GetConditions, SetCondition, SetConditions |
 | SurfaceAppearance | 11/11 | - | - |  |  |
@@ -340,7 +343,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | UISizeConstraint | 2/2 | - | - |  |  |
 | UITextSizeConstraint | 2/2 | - | - |  |  |
 | UICorner | 4/5 | - | - |  |  |
-| UIDragDetector | 21/23 | 0/4 | 0/3 |  | AddConstraintFunction, GetReferencePosition, GetReferenceRotation, SetDragStyleFunction, DragContinue, DragEnd, DragStart |
+| UIDragDetector | 21/23 | 4/4 | 3/3 | AddConstraintFunction, GetReferencePosition, GetReferenceRotation, SetDragStyleFunction, DragContinue, DragEnd, DragStart |  |
 | UIFlexItem | 4/4 | - | - |  |  |
 | UIGradient | 8/8 | - | - |  |  |
 | UIGridStyleLayout | 5/5 | - | - |  |  |
@@ -377,4 +380,4 @@ Classes with at least one member there. Properties, functions and events as ther
 
 ## Nothing there yet
 
-153 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AudioDeviceOutput, AvatarCreationService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, PatchMapping, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleBase, StyleSheet, StyleLink, Teams, TeleportAsyncResult, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.
+150 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AvatarCreationService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, PatchMapping, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleLink, Teams, TeleportAsyncResult, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.

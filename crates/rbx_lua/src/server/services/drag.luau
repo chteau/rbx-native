@@ -39,6 +39,7 @@ local extras = {}
 -- one this client holds on a client.
 local drags = {}
 local local3d, localUi, pressedClick
+local viewportRay
 local heartbeat
 
 local function extra(id)
@@ -124,6 +125,65 @@ local function constrained(id, ...)
 	return table.unpack(values, 1, values.n)
 end
 
+-- Camera's screen math, which the drags share: a ray through a viewport
+-- pixel (from the camera's position, `depth` studs along it) and back.
+-- Screen points count from below the top bar, viewport points from the
+-- window's top.
+local TOPBAR_INSET = 58
+
+viewportRay = function(camera, x, y, depth)
+	local size = camera.ViewportSize
+	local cf = camera.CFrame
+	local tan = math.tan(math.rad(camera.FieldOfView) / 2)
+	local aspect = size.X / math.max(size.Y, 1)
+	local px = (2 * x / math.max(size.X, 1) - 1) * aspect * tan
+	local py = (1 - 2 * y / math.max(size.Y, 1)) * tan
+	local direction = cf:VectorToWorldSpace(Vector3.new(px, py, -1)).Unit
+	return Ray.new(cf.Position + direction * (depth or 0), direction)
+end
+
+local function toViewport(camera, point)
+	local size = camera.ViewportSize
+	local tan = math.tan(math.rad(camera.FieldOfView) / 2)
+	local aspect = size.X / math.max(size.Y, 1)
+	local p = camera.CFrame:PointToObjectSpace(point)
+	local depth = -p.Z
+	local d = if math.abs(depth) < 1e-6 then 1e-6 else depth
+	local x = (p.X / (d * aspect * tan) + 1) / 2 * size.X
+	local y = (1 - p.Y / (d * tan)) / 2 * size.Y
+	local onScreen = depth > 0 and x >= 0 and y >= 0 and x <= size.X and y <= size.Y
+	return Vector3.new(x, y, depth), onScreen
+end
+
+local CAMERA = {
+	ViewportPointToRay = function(self, x, y, depth)
+		return viewportRay(self, x, y, depth)
+	end,
+	ScreenPointToRay = function(self, x, y, depth)
+		return viewportRay(self, x, y + TOPBAR_INSET, depth)
+	end,
+	WorldToViewportPoint = function(self, point)
+		return toViewport(self, point)
+	end,
+	WorldToScreenPoint = function(self, point)
+		local v, onScreen = toViewport(self, point)
+		return Vector3.new(v.X, v.Y - TOPBAR_INSET, v.Z), onScreen
+	end,
+	GetRenderCFrame = function(self)
+		return self.CFrame
+	end,
+	GetRoll = function(self)
+		local cf = self.CFrame
+		local flat = CFrame.lookAt(Vector3.zero, cf.LookVector)
+		local up = flat:VectorToObjectSpace(cf.UpVector)
+		return math.atan2(-up.X, up.Y)
+	end,
+	SetRoll = function(self, angle)
+		local cf = self.CFrame
+		self.CFrame = CFrame.lookAt(cf.Position, cf.Position + cf.LookVector) * CFrame.Angles(0, 0, angle)
+	end,
+}
+
 local DRAG_METHODS = {
 	GetReferenceFrame = function(self)
 		return referenceFrame(self)
@@ -167,6 +227,13 @@ local UI_METHODS = {
 }
 
 function M.member(class, id, key)
+	if class == "Camera" then
+		if key == "InterpolationFinished" then
+			return host.signal(id, key), true
+		end
+		local f = CAMERA[key]
+		return f, f ~= nil
+	end
 	if SIGNALS[key] and (class ~= "UIDragDetector" or not CLICK_SIGNALS[key]) then
 		return host.signal(id, key), true
 	end
@@ -548,14 +615,7 @@ end
 local function cursorRay()
 	local camera = workspace.CurrentCamera
 	local location = UserInputService:GetMouseLocation()
-	local size = camera.ViewportSize
-	local cf = camera.CFrame
-	local tan = math.tan(math.rad(camera.FieldOfView) / 2)
-	local aspect = size.X / math.max(size.Y, 1)
-	local x = (2 * location.X / math.max(size.X, 1) - 1) * aspect * tan
-	local y = (1 - 2 * location.Y / math.max(size.Y, 1)) * tan
-	local direction = cf:VectorToWorldSpace(Vector3.new(x, y, -1)).Unit
-	return Ray.new(cf.Position, direction), cf
+	return viewportRay(camera, location.X, location.Y, 0), camera.CFrame
 end
 
 local function find(part, class)
@@ -700,10 +760,16 @@ local function visible(object)
 end
 
 local function pressUi(point)
+	local player = Players.LocalPlayer
+	local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
+		return false
+	end
 	local best, bestZ
 	for _, detector in host.of_class("UIDragDetector") do
 		local object = detector.Parent
-		if detector.Enabled and object and object:IsA("GuiObject") and visible(object) and inside(object, point) then
+		local shown = object and object:IsA("GuiObject") and object:IsDescendantOf(playerGui) and visible(object)
+		if detector.Enabled and shown and inside(object, point) then
 			local z = object.ZIndex
 			if not best or z >= bestZ then
 				best, bestZ = detector, z

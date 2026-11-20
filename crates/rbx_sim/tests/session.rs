@@ -757,7 +757,10 @@ fn a_drag_detector_crate_and_a_ui_drag_detector_follow_the_mouse() {
              frame.Position = UDim2.fromOffset(100, 100) frame.Size = UDim2.fromOffset(100, 100) \
              local ui = Instance.new('UIDragDetector') ui.Parent = frame frame.Parent = gui \
              ui.DragEnd:Connect(function() print('ui', frame.Position.X.Offset, frame.Position.Y.Offset) end) \
-             gui.Parent = game:GetService('Players').LocalPlayer:WaitForChild('PlayerGui')",
+             gui.Parent = game:GetService('Players').LocalPlayer:WaitForChild('PlayerGui') \
+             task.wait(0.2) local v, on = camera:WorldToViewportPoint(Vector3.new(10, 5, -10)) \
+             local back = camera:ViewportPointToRay(v.X, v.Y) \
+             print('vp', math.round(v.X), math.round(v.Y), on, math.round(back.Direction.Z * 100))",
         ),
         1,
     );
@@ -831,4 +834,8 @@ fn a_drag_detector_crate_and_a_ui_drag_detector_follow_the_mouse() {
         .unwrap_or_else(|| panic!("{lines:#?}"));
     assert!(ended < -11.0, "{lines:#?}");
     assert!(has(&lines, Peer::Client(0), "ui 140 120"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "vp 400 300 true -89"),
+        "{lines:#?}"
+    );
 }

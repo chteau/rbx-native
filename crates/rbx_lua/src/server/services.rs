@@ -357,7 +357,7 @@ fn module_of(class: &str) -> Option<&'static str> {
         "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
         "GuiService" => "GuiService",
         "AudioEmitter" | "AudioListener" | "AudioDeviceInput" => "Audio",
-        "DragDetector" | "UIDragDetector" | "ClickDetector" => "Drag",
+        "DragDetector" | "UIDragDetector" | "ClickDetector" | "Camera" => "Drag",
         "InputAction" | "InputBinding" | "InputContext" => "InputActions",
         _ => return None,
     })

@@ -1589,7 +1589,7 @@ b	 c` |  | ok |
 | HttpJson | guid_bare | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |  | ok |
 | HttpJson | guid_braced | `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}` | `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}` |  | ok |
 | HttpJson | guid_case | `lower` | `lower` |  | ok |
-| HttpJson | guid_variant | `true` | `false` |  | ok |
+| HttpJson | guid_variant | `true` | `true` |  | ok |
 | HttpJson | guid_version | `4` | `4` |  | ok |
 | HttpJson | http_enabled | `ok` | `ok` |  | ok |
 | HttpJson | inf | `{"m":null,"t":"numeric","v":"inf"}` | `{"m":null,"t":"numeric","v":"inf"}` |  | ok |
@@ -1932,6 +1932,541 @@ b	 c` |  | ok |
 | Pathfinding | wall_length | `53.67` | `54.3` | +0.630 | ok |
 | Pathfinding | wall_status | `Success` | `Success` |  | ok |
 | Pathfinding | waypoint_new | `1, 2, 3 Jump L` | `1, 2, 3 Jump L` |  | ok |
+| TeleportApi | async_bad_options | `Unable to cast value to Object` | `Unable to cast value to Object` |  | ok |
+| TeleportApi | async_players_empty | `Invalid list of players for teleport.` | `Invalid list of players for teleport.` |  | ok |
+| TeleportApi | async_players_nil | `Argument 2 missing or nil` | `Argument 2 missing or nil` |  | ok |
+| TeleportApi | async_string_place | `Unable to cast string to int64` | `Unable to cast string to int64` |  | ok |
+| TeleportApi | instance_here | `true` | `true` |  | ok |
+| TeleportApi | instance_job | `true` | `true` |  | ok |
+| TeleportApi | instance_message | `` | `` |  | ok |
+| TeleportApi | instance_place | `true` | `true` |  | ok |
+| TeleportApi | join_data_keys | `GameJoinContext,LaunchData` | `GameJoinContext,LaunchData` |  | ok |
+| TeleportApi | local_data_server | `ok` | `ok` |  | ok |
+| TeleportApi | options_data | `3x` | `3x` |  | ok |
+| TeleportApi | options_function | `ok` | `ok` |  | ok |
+| TeleportApi | private_bad_code | `ok` | `ok` |  | ok |
+| TeleportApi | reserve_distinct | `true` | `true` |  | ok |
+| TeleportApi | reserve_types | `string string` | `string string` |  | ok |
+| TeleportApi | teleport_nil_player | `ok` | `ok` |  | ok |
+| BadgeApi | award_string_user | `Unable to cast string to User` | `Unable to cast string to User` |  | ok |
+| BadgeApi | check_none | `0.0` | `0.0` | +0.000 | ok |
+| BadgeApi | check_not_table | `Unable to cast double to Array` | `Unable to cast double to Array` |  | ok |
+| BadgeApi | check_too_many | `CheckUserBadgesAsync: Cannot query more than 10 badges.` | `CheckUserBadgesAsync: Cannot query more than 10 badges.` |  | ok |
+| BadgeApi | has_nil_badge | `Argument 2 missing or nil` | `Argument 2 missing or nil` |  | ok |
+| BadgeApi | has_string_user | `Unable to cast string to User` | `Unable to cast string to User` |  | ok |
+| BadgeApi | has_unknown | `false` | `false` |  | ok |
+| BadgeApi | info_string | `Unable to cast string to int64` | `Unable to cast string to int64` |  | ok |
+| TextFilter | broadcast | `hello world` | `hello world` |  | ok |
+| TextFilter | can_chat | `true` | `true` |  | ok |
+| TextFilter | chat_filter | `hello` | `hello` |  | ok |
+| TextFilter | chat_filter_nil_player | `Argument 2 missing or nil` | `Argument 2 missing or nil` |  | ok |
+| TextFilter | filter_bad_user | `Unable to cast string to int64` | `Unable to cast string to int64` |  | ok |
+| TextFilter | filter_nil | `Argument 1 missing or nil` | `Argument 1 missing or nil` |  | ok |
+| TextFilter | for_user | `hello world` | `hello world` |  | ok |
+| TextFilter | result_class | `TextFilterResult` | `TextFilterResult` |  | ok |
+| TextFilter | size_bad_frame | `Unable to cast double to Vector2` | `Unable to cast double to Vector2` |  | ok |
+| TextFilter | size_empty_y | `20.0` | `20.0` | +0.000 | ok |
+| TextFilter | size_lines | `2.0` | `2.0` | +0.000 | ok |
+| TextFilter | size_same_width | `true` | `true` |  | ok |
+| Localization | after_remove | `2.0` | `2.0` | +0.000 | ok |
+| Localization | by_key | `Bonjour` | `Bonjour` |  | ok |
+| Localization | by_key_args | `5.00 pièces` | `5.00 pièces` |  | ok |
+| Localization | by_key_named | `Salut Ana` | `Salut Ana` |  | ok |
+| Localization | entries | `3.0` | `3.0` | +0.000 | ok |
+| Localization | entry_values | `de,es,fr` | `de,es,fr` |  | ok |
+| Localization | key_miss | `Key Missing not found for locale fr-fr` | `Key Missing not found for locale fr-fr` |  | ok |
+| Localization | locale | `fr-fr` | `fr-fr` |  | ok |
+| Localization | no_value_falls_back | `Key Greeting not found for locale ja` | `Key Greeting not found for locale ja` |  | ok |
+| Localization | no_value_translate | `Hello` | `Hello` |  | ok |
+| Localization | player_translator | `Translator` | `Translator` |  | ok |
+| Localization | table_translator | `Hallo` | `Hallo` |  | ok |
+| Localization | translate | `Bonjour` | `Bonjour` |  | ok |
+| Localization | translate_bad_context | `Context must be an Instance.` | `Context must be an Instance.` |  | ok |
+| Localization | translate_miss | `Nothing here` | `Nothing here` |  | ok |
+| SocialPolicy | can_invite | `SocialService:CanSendGameInviteAsync Must be called from a local script.` | `SocialService:CanSendGameInviteAsync Must be called from a local script.` |  | ok |
+| SocialPolicy | can_invite_nil | `Argument 1 missing or nil` | `Argument 1 missing or nil` |  | ok |
+| SocialPolicy | groups_string | `Unable to cast string to User` | `Unable to cast string to User` |  | ok |
+| SocialPolicy | policy_china | `false` | `false` |  | ok |
+| SocialPolicy | policy_keys | `AllowedExternalLinkReferences,AreAdsAllowed,ArePaidRandomItemsRestricted,IsContentSharingAllowed,IsEligibleToPurchaseCommerceProduct,IsEligibleToPurchaseSubscription,IsEndlessContentAutoplayAllowed,IsEndlessContentLoadAllowed,IsPaidItemTradingAllowed,IsPhotoToAvatarAllowed,IsSubjectToChinaPolicies,IsThirdPartyAccountLinkingAllowed` | `AllowedExternalLinkReferences,AreAdsAllowed,ArePaidRandomItemsRestricted,IsContentSharingAllowed,IsEligibleToPurchaseCommerceProduct,IsEligibleToPurchaseSubscription,IsEndlessContentAutoplayAllowed,IsEndlessContentLoadAllowed,IsPaidItemTradingAllowed,IsPhotoToAvatarAllowed,IsSubjectToChinaPolicies,IsThirdPartyAccountLinkingAllowed` |  | ok |
+| SocialPolicy | policy_nil | `Argument 1 missing or nil` | `Argument 1 missing or nil` |  | ok |
+| SocialPolicy | voice_enabled | `true` | `false` |  | known gap |
+| ClientApis | arriving_gui | `true` | `true` |  | ok |
+| ClientApis | button_desktop | `true` | `true` |  | ok |
+| ClientApis | emotes_default | `false` | `false` |  | ok |
+| ClientApis | focused | `true` | `true` |  | ok |
+| ClientApis | gamepad | `false` | `false` |  | ok |
+| ClientApis | info_inputs | `1.0` | `1.0` | +0.000 | ok |
+| ClientApis | info_missing | `true` | `true` |  | ok |
+| ClientApis | info_priority | `1000.0` | `1000.0` | +0.000 | ok |
+| ClientApis | info_touch | `true` | `true` |  | ok |
+| ClientApis | inspect_bad | `Unable to cast string to User` | `Unable to cast string to User` |  | ok |
+| ClientApis | inspect_default | `true` | `true` |  | ok |
+| ClientApis | key_a | `A` | `A` |  | ok |
+| ClientApis | key_one | `One` | `1` |  | known gap |
+| ClientApis | key_semicolon | `Semicolon` | `;` |  | known gap |
+| ClientApis | key_shift | `LeftShift` | `` |  | known gap |
+| ClientApis | keyboard | `true` | `true` |  | ok |
+| ClientApis | keys_pressed | `0.0` | `0.0` | +0.000 | ok |
+| ClientApis | mouse | `true` | `true` |  | ok |
+| ClientApis | select_picks | `nil` | `nil` |  | ok |
+| ClientApis | selected_nil | `true` | `true` |  | ok |
+| ClientApis | selection_gained | `false` | `false` |  | ok |
+| ClientApis | set_position | `ok` | `ok` |  | ok |
+| ClientApis | set_title | `ok` | `ok` |  | ok |
+| ClientApis | shop_enabled | `true` | `true` |  | ok |
+| ClientApis | switcher_off | `false` | `false` |  | ok |
+| ClientApis | system_message | `ok` | `ok` |  | ok |
+| ClientApis | teleport_data | `true` | `true` |  | ok |
+| ClientApis | teleport_gui_bad | `Unable to cast value to Object` | `Unable to cast value to Object` |  | ok |
+| ClientApis | touch | `false` | `false` |  | ok |
+| AudioApi | AudioAnalyzer.PeakLevel | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioAnalyzer.RmsLevel | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioAnalyzer.SpectrumEnabled | `true` | `true` |  | ok |
+| AudioApi | AudioAnalyzer.WindowSize | `EnumItem:Enum.AudioWindowSize.Medium` | `EnumItem:Enum.AudioWindowSize.Medium` |  | ok |
+| AudioApi | AudioAnalyzer.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioAnalyzer.out | `` | `` |  | ok |
+| AudioApi | AudioChannelMixer.Layout | `EnumItem:Enum.AudioChannelLayout.Stereo` | `EnumItem:Enum.AudioChannelLayout.Stereo` |  | ok |
+| AudioApi | AudioChannelMixer.in | `BackLeft,BackRight,Center,Input,Left,Right,Sub,SurroundLeft,SurroundRight,TopBackLeft,TopBackRight,TopLeft,TopRight` | `BackLeft,BackRight,Center,Input,Left,Right,Sub,SurroundLeft,SurroundRight,TopBackLeft,TopBackRight,TopLeft,TopRight` |  | ok |
+| AudioApi | AudioChannelMixer.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioChannelSplitter.Layout | `EnumItem:Enum.AudioChannelLayout.Stereo` | `EnumItem:Enum.AudioChannelLayout.Stereo` |  | ok |
+| AudioApi | AudioChannelSplitter.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioChannelSplitter.out | `BackLeft,BackRight,Center,Left,Output,Right,Sub,SurroundLeft,SurroundRight,TopBackLeft,TopBackRight,TopLeft,TopRight` | `BackLeft,BackRight,Center,Left,Output,Right,Sub,SurroundLeft,SurroundRight,TopBackLeft,TopBackRight,TopLeft,TopRight` |  | ok |
+| AudioApi | AudioChorus.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioChorus.Depth | `0.45` | `0.45` | +0.000 | ok |
+| AudioApi | AudioChorus.Mix | `0.85` | `0.85` | +0.000 | ok |
+| AudioApi | AudioChorus.Rate | `5.0` | `5.0` | +0.000 | ok |
+| AudioApi | AudioChorus.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioChorus.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioCompressor.Attack | `0.1` | `0.1` | +0.000 | ok |
+| AudioApi | AudioCompressor.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioCompressor.MakeupGain | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioCompressor.Ratio | `40.0` | `40.0` | +0.000 | ok |
+| AudioApi | AudioCompressor.Release | `0.1` | `0.1` | +0.000 | ok |
+| AudioApi | AudioCompressor.Threshold | `-40.0` | `-40.0` | +0.000 | ok |
+| AudioApi | AudioCompressor.in | `Input,Sidechain` | `Input,Sidechain` |  | ok |
+| AudioApi | AudioCompressor.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioDeviceInput.AccessType | `EnumItem:Enum.AccessModifierType.Deny` | `EnumItem:Enum.AccessModifierType.Deny` |  | ok |
+| AudioApi | AudioDeviceInput.Active | `false` | `false` |  | ok |
+| AudioApi | AudioDeviceInput.IsReady | `err: The current thread cannot read 'IsReady' (lacking capability RobloxScript)` | `err: The current thread cannot read 'IsReady' (lacking capability RobloxScript)` |  | ok |
+| AudioApi | AudioDeviceInput.Muted | `false` | `false` |  | ok |
+| AudioApi | AudioDeviceInput.Player | `nil` | `nil` |  | ok |
+| AudioApi | AudioDeviceInput.Volume | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioDeviceInput.in | `` | `` |  | ok |
+| AudioApi | AudioDeviceInput.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioDeviceOutput.Player | `nil` | `nil` |  | ok |
+| AudioApi | AudioDeviceOutput.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioDeviceOutput.out | `` | `` |  | ok |
+| AudioApi | AudioDistortion.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioDistortion.Level | `0.5` | `0.5` | +0.000 | ok |
+| AudioApi | AudioDistortion.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioDistortion.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioEcho.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioEcho.DelayTime | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioEcho.DryLevel | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioEcho.Feedback | `0.5` | `0.5` | +0.000 | ok |
+| AudioApi | AudioEcho.RampTime | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioEcho.WetLevel | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioEcho.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioEcho.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioEmitter.AudioInteractionGroup | `` | `` |  | ok |
+| AudioApi | AudioEmitter.DistanceAttenuationBounds | `NumberRange:4 10000 ` | `NumberRange:4 10000 ` |  | ok |
+| AudioApi | AudioEmitter.DistanceAttenuationMode | `EnumItem:Enum.DistanceAttenuationMode.Custom` | `EnumItem:Enum.DistanceAttenuationMode.Custom` |  | ok |
+| AudioApi | AudioEmitter.PositionType | `EnumItem:Enum.EmitterPositionType.Parent` | `EnumItem:Enum.EmitterPositionType.Parent` |  | ok |
+| AudioApi | AudioEmitter.SimulationFidelity | `EnumItem:Enum.AudioSimulationFidelity.Automatic` | `EnumItem:Enum.AudioSimulationFidelity.Automatic` |  | ok |
+| AudioApi | AudioEmitter.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioEmitter.out | `` | `` |  | ok |
+| AudioApi | AudioEqualizer.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioEqualizer.HighGain | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioEqualizer.LowGain | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioEqualizer.MidGain | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioEqualizer.MidRange | `NumberRange:400 4000 ` | `NumberRange:400 4000 ` |  | ok |
+| AudioApi | AudioEqualizer.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioEqualizer.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioFader.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioFader.Volume | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioFader.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioFader.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioFilter.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioFilter.FilterType | `EnumItem:Enum.AudioFilterType.Peak` | `EnumItem:Enum.AudioFilterType.Peak` |  | ok |
+| AudioApi | AudioFilter.Frequency | `2000.0` | `2000.0` | +0.000 | ok |
+| AudioApi | AudioFilter.Gain | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioFilter.Q | `0.707` | `0.707` | +0.000 | ok |
+| AudioApi | AudioFilter.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioFilter.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioFlanger.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioFlanger.Depth | `0.45` | `0.45` | +0.000 | ok |
+| AudioApi | AudioFlanger.Mix | `0.85` | `0.85` | +0.000 | ok |
+| AudioApi | AudioFlanger.Rate | `5.0` | `5.0` | +0.000 | ok |
+| AudioApi | AudioFlanger.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioFlanger.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioLimiter.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioLimiter.MaxLevel | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioLimiter.Release | `0.01` | `0.01` | +0.000 | ok |
+| AudioApi | AudioLimiter.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioLimiter.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioListener.AudioInteractionGroup | `` | `` |  | ok |
+| AudioApi | AudioListener.PositionType | `EnumItem:Enum.ListenerPositionType.Parent` | `EnumItem:Enum.ListenerPositionType.Parent` |  | ok |
+| AudioApi | AudioListener.SimulationFidelity | `EnumItem:Enum.AudioSimulationFidelity.Automatic` | `EnumItem:Enum.AudioSimulationFidelity.Automatic` |  | ok |
+| AudioApi | AudioListener.in | `` | `` |  | ok |
+| AudioApi | AudioListener.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioPitchShifter.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioPitchShifter.Pitch | `1.25` | `1.25` | +0.000 | ok |
+| AudioApi | AudioPitchShifter.WindowSize | `EnumItem:Enum.AudioWindowSize.Medium` | `EnumItem:Enum.AudioWindowSize.Medium` |  | ok |
+| AudioApi | AudioPitchShifter.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioPitchShifter.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioPlayer.AutoLoad | `true` | `true` |  | ok |
+| AudioApi | AudioPlayer.AutoPlay | `false` | `false` |  | ok |
+| AudioApi | AudioPlayer.IsPlaying | `false` | `false` |  | ok |
+| AudioApi | AudioPlayer.IsReady | `false` | `false` |  | ok |
+| AudioApi | AudioPlayer.LoopRegion | `NumberRange:0 60000 ` | `NumberRange:0 60000 ` |  | ok |
+| AudioApi | AudioPlayer.Looping | `false` | `false` |  | ok |
+| AudioApi | AudioPlayer.PlaybackRegion | `NumberRange:0 60000 ` | `NumberRange:0 60000 ` |  | ok |
+| AudioApi | AudioPlayer.PlaybackSpeed | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioPlayer.TimeLength | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioPlayer.TimePosition | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioPlayer.Volume | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioPlayer.in | `` | `` |  | ok |
+| AudioApi | AudioPlayer.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioReverb.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioReverb.DecayRatio | `0.5` | `0.5` | +0.000 | ok |
+| AudioApi | AudioReverb.DecayTime | `1.5` | `1.5` | +0.000 | ok |
+| AudioApi | AudioReverb.Density | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioReverb.Diffusion | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioReverb.DryLevel | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioReverb.EarlyDelayTime | `0.02` | `0.02` | +0.000 | ok |
+| AudioApi | AudioReverb.HighCutFrequency | `20000.0` | `20000.0` | +0.000 | ok |
+| AudioApi | AudioReverb.LateDelayTime | `0.04` | `0.04` | +0.000 | ok |
+| AudioApi | AudioReverb.LowShelfFrequency | `250.0` | `250.0` | +0.000 | ok |
+| AudioApi | AudioReverb.LowShelfGain | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioReverb.ReferenceFrequency | `5000.0` | `5000.0` | +0.000 | ok |
+| AudioApi | AudioReverb.WetLevel | `-6.0` | `-6.0` | +0.000 | ok |
+| AudioApi | AudioReverb.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioReverb.out | `Output` | `Output` |  | ok |
+| AudioApi | AudioTremolo.Bypass | `false` | `false` |  | ok |
+| AudioApi | AudioTremolo.Depth | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | AudioTremolo.Duty | `0.5` | `0.5` | +0.000 | ok |
+| AudioApi | AudioTremolo.Frequency | `5.0` | `5.0` | +0.000 | ok |
+| AudioApi | AudioTremolo.Shape | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioTremolo.Skew | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioTremolo.Square | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | AudioTremolo.in | `Input` | `Input` |  | ok |
+| AudioApi | AudioTremolo.out | `Output` | `Output` |  | ok |
+| AudioApi | Wire.Connected | `false` | `false` |  | ok |
+| AudioApi | Wire.SourceInstance | `nil` | `nil` |  | ok |
+| AudioApi | Wire.SourceName | `Output` | `Output` |  | ok |
+| AudioApi | Wire.TargetInstance | `nil` | `nil` |  | ok |
+| AudioApi | Wire.TargetName | `Input` | `Input` |  | ok |
+| AudioApi | analyzer_rms | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | asset_length | `0.56` | `0.56` | +0.000 | ok |
+| AudioApi | asset_ready | `true` | `true` |  | ok |
+| AudioApi | audibility | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | bad_pin | `table:table: 0x36c9a7d3e695f903` | `table 0` |  | known gap |
+| AudioApi | emitter_angle | `` | `` |  | ok |
+| AudioApi | emitter_angle_big | `nil` | `nil` |  | ok |
+| AudioApi | emitter_cframe | `err: The current thread cannot call 'GetWorldCFrame' (lacking capability RobloxScript)` | `err: The current thread cannot call 'GetWorldCFrame' (lacking capability RobloxScript)` |  | ok |
+| AudioApi | emitter_curve | `` | `` |  | ok |
+| AudioApi | emitter_curve_loud | `nil` | `nil` |  | ok |
+| AudioApi | emitter_curve_negative | `nil` | `nil` |  | ok |
+| AudioApi | emitter_curve_set | `0=1 50=0.5 100=0` | `0=1 50=0.5 100=0` |  | ok |
+| AudioApi | emitter_curve_string | `err: AudioEmitter:SetDistanceAttenuation: numeric key expected.` | `err: AudioEmitter:SetDistanceAttenuation: numeric key expected.` |  | ok |
+| AudioApi | empty_playing | `true` | `true` |  | ok |
+| AudioApi | empty_position | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | fader_in_wires | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | fader_out_wires | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | gain_Bandpass_100 | `-23.0587` | `-23.0587` | +0.000 | ok |
+| AudioApi | gain_Bandpass_1000 | `-3.3059` | `-3.3059` | +0.000 | ok |
+| AudioApi | gain_Bandpass_2000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_Bandpass_8000 | `-9.8405` | `-9.8405` | +0.000 | ok |
+| AudioApi | gain_HighShelf_100 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_HighShelf_1000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_HighShelf_2000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_HighShelf_8000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_Highpass12dB_100 | `-52.1418` | `-52.1381` | +0.004 | ok |
+| AudioApi | gain_Highpass12dB_1000 | `-12.3755` | `-12.3755` | +0.000 | ok |
+| AudioApi | gain_Highpass12dB_2000 | `-3.0116` | `-3.0116` | +0.000 | ok |
+| AudioApi | gain_Highpass12dB_8000 | `-0.0119` | `-0.0119` | +0.000 | ok |
+| AudioApi | gain_Highpass24dB_100 | `-104.2659` | `-104.2659` | +0.000 | ok |
+| AudioApi | gain_Highpass24dB_1000 | `-23.4727` | `-23.4726` | +0.000 | ok |
+| AudioApi | gain_Highpass24dB_2000 | `-3.0116` | `-3.0116` | +0.000 | ok |
+| AudioApi | gain_Highpass24dB_8000 | `0.2444` | `0.2444` | +0.000 | ok |
+| AudioApi | gain_Highpass48dB_100 | `-208.528` | `-208.528` | +0.000 | ok |
+| AudioApi | gain_Highpass48dB_1000 | `-45.854` | `-45.8538` | +0.000 | ok |
+| AudioApi | gain_Highpass48dB_2000 | `-3.0116` | `-3.0116` | +0.000 | ok |
+| AudioApi | gain_Highpass48dB_8000 | `0.6992` | `0.6992` | +0.000 | ok |
+| AudioApi | gain_LowShelf_100 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_LowShelf_1000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_LowShelf_2000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_LowShelf_8000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_Lowpass12dB_100 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_Lowpass12dB_1000 | `-0.2595` | `-0.2595` | +0.000 | ok |
+| AudioApi | gain_Lowpass12dB_2000 | `-3.0116` | `-3.0116` | +0.000 | ok |
+| AudioApi | gain_Lowpass12dB_8000 | `-25.6923` | `-25.6923` | +0.000 | ok |
+| AudioApi | gain_Lowpass24dB_100 | `0.0126` | `0.0125` | -0.000 | ok |
+| AudioApi | gain_Lowpass24dB_1000 | `0.7593` | `0.7593` | +0.000 | ok |
+| AudioApi | gain_Lowpass24dB_2000 | `-3.0116` | `-3.0116` | +0.000 | ok |
+| AudioApi | gain_Lowpass24dB_8000 | `-51.1164` | `-51.1164` | +0.000 | ok |
+| AudioApi | gain_Lowpass48dB_100 | `0.0348` | `0.0348` | +0.000 | ok |
+| AudioApi | gain_Lowpass48dB_1000 | `2.6101` | `2.6101` | +0.000 | ok |
+| AudioApi | gain_Lowpass48dB_2000 | `-3.0116` | `-3.0116` | +0.000 | ok |
+| AudioApi | gain_Lowpass48dB_8000 | `-102.0224` | `-102.0224` | +0.000 | ok |
+| AudioApi | gain_Lowpass6dB_100 | `-0.0108` | `-0.0108` | +0.000 | ok |
+| AudioApi | gain_Lowpass6dB_1000 | `-0.9629` | `-0.9629` | +0.000 | ok |
+| AudioApi | gain_Lowpass6dB_2000 | `-2.9856` | `-2.9856` | +0.000 | ok |
+| AudioApi | gain_Lowpass6dB_8000 | `-11.9053` | `-11.9053` | +0.000 | ok |
+| AudioApi | gain_Notch_100 | `-0.0215` | `-0.0215` | +0.000 | ok |
+| AudioApi | gain_Notch_1000 | `-2.7335` | `-2.7335` | +0.000 | ok |
+| AudioApi | gain_Notch_2000 | `-122.5659` | `-122.5659` | +0.000 | ok |
+| AudioApi | gain_Notch_8000 | `-0.4757` | `-0.4757` | +0.000 | ok |
+| AudioApi | gain_Peak_100 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_Peak_1000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_Peak_2000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_Peak_8000 | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | gain_peak6_2000 | `6.0` | `6.0` | +0.000 | ok |
+| AudioApi | gain_peak6_4000 | `0.6027` | `0.6027` | +0.000 | ok |
+| AudioApi | interacting | `2.0` | `2.0` | +0.000 | ok |
+| AudioApi | listener_audibility | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | listener_curve | `` | `` |  | ok |
+| AudioApi | play_empty | `true` | `true` |  | ok |
+| AudioApi | player_out_wires | `1.0` | `1.0` | +0.000 | ok |
+| AudioApi | rename | `err: The current thread cannot call 'RenameToDefault' (lacking capability RobloxScript)` | `err: The current thread cannot call 'RenameToDefault' (lacking capability RobloxScript)` |  | ok |
+| AudioApi | spectrum | `0.0` | `0.0` | +0.000 | ok |
+| AudioApi | state | `err: The current thread cannot call 'GetPlaybackState' (lacking capability RobloxScript)` | `err: The current thread cannot call 'GetPlaybackState' (lacking capability RobloxScript)` |  | ok |
+| AudioApi | stopped | `false` | `false` |  | ok |
+| AudioApi | wire_bad_target | `false` | `false` |  | ok |
+| AudioApi | wire_half | `false` | `false` |  | ok |
+| AudioApi | wire_loose | `false` | `false` |  | ok |
+| AudioApi | wire_parented | `true` | `true` |  | ok |
+| AudioApi | wire_renamed | `Input` | `Input` |  | ok |
+| AudioApi | wire_renamed_connected | `true` | `true` |  | ok |
+| AudioApi | wire_second | `true` | `true` |  | ok |
+| AudioApi | wire_to_part | `false` | `false` |  | ok |
+| AudioApi | wire_unparented | `false` | `false` |  | ok |
+| AudioApi | wiring_events | `true Input Instance AudioPlayer \| true Output Instance AudioEmitter \| false Output Instance AudioEmitter \| true Output Instance AudioEmitter \| false Input Instance AudioPlayer` | `true Input Instance AudioPlayer \| true Output Instance AudioEmitter \| false Output Instance AudioEmitter \| true Output Instance AudioEmitter \| false Input Instance AudioPlayer` |  | ok |
+| EditableApi | adjacent | `2.0` | `2.0` | +0.000 | ok |
+| EditableApi | bad_position | `err: Unexpected EditableMesh id type. Expected Vertex id, received value that doesn't appear to be an id` | `err: Unexpected EditableMesh id type. Expected Vertex id, received value that doesn't appear to be an id` |  | ok |
+| EditableApi | bad_triangle | `err: Unable to add new triangle, vertex id 123456 is invalid` | `err: Unable to add new triangle, vertex id 123456 is invalid` |  | ok |
+| EditableApi | blank | `0,0,0,0` | `0,0,0,0` |  | ok |
+| EditableApi | buffer_len | `1024.0` | `1024.0` | +0.000 | ok |
+| EditableApi | center | `Vector3:0.5,0,0.5` | `Vector3:0.5,0,0.5` |  | ok |
+| EditableApi | circle | `nil` | `nil` |  | ok |
+| EditableApi | circle_center | `255,255,255,255` | `255,255,255,255` |  | ok |
+| EditableApi | circle_edge | `0,0,0,0` | `0,0,0,0` |  | ok |
+| EditableApi | circle_out | `0,0,0,0` | `0,0,0,0` |  | ok |
+| EditableApi | closest | `true 0.25,0,0.25 0.5,0.25,0.25` | `true 0.25,0,0.25 0.5,0.25,0.25` |  | ok |
+| EditableApi | closest_vertex | `true` | `true` |  | ok |
+| EditableApi | color_alpha | `0.502` | `0.502` | +0.000 | ok |
+| EditableApi | colors | `4.0` | `4.0` | +0.000 | ok |
+| EditableApi | content | `EnumItem:Enum.ContentSourceType.Object` | `EnumItem:Enum.ContentSourceType.Object` |  | ok |
+| EditableApi | destroyed_read | `buffer:buffer: 0x10f23263452f5c32` | `buffer:buffer: 0x00005e6515eac520` |  | known gap |
+| EditableApi | draw_image | `nil` | `nil` |  | ok |
+| EditableApi | draw_image_clipped | `nil` | `nil` |  | ok |
+| EditableApi | drawn_image | `255,255,0,255` | `255,255,0,255` |  | ok |
+| EditableApi | face_normals | `3.0` | `3.0` | +0.000 | ok |
+| EditableApi | face_type | `number` | `number` |  | ok |
+| EditableApi | face_uvs | `3.0` | `3.0` | +0.000 | ok |
+| EditableApi | faces | `2.0` | `2.0` | +0.000 | ok |
+| EditableApi | fixed | `false` | `false` |  | ok |
+| EditableApi | fixed_mesh | `false` | `false` |  | ok |
+| EditableApi | image_default | `Vector2:512, 512` | `Vector2:512, 512` |  | ok |
+| EditableApi | image_huge | `err: AssetService:CreateEditableImage expects size.X and size.Y to be less than 1024` | `err: AssetService:CreateEditableImage expects size.X and size.Y to be less than 1024` |  | ok |
+| EditableApi | image_new | `Object:EditableImage` | `Object:EditableImage` |  | ok |
+| EditableApi | image_zero | `err: AssetService:CreateEditableImage expects size.X and size.Y to be positive` | `err: AssetService:CreateEditableImage expects size.X and size.Y to be positive` |  | ok |
+| EditableApi | label | `EnumItem:Enum.ContentSourceType.Object` | `EnumItem:Enum.ContentSourceType.Object` |  | ok |
+| EditableApi | line | `nil` | `nil` |  | ok |
+| EditableApi | line_end | `0,127,127,127` | `0,127,127,127` |  | ok |
+| EditableApi | line_mid | `0,255,255,255` | `0,255,255,255` |  | ok |
+| EditableApi | line_off | `0,0,0,0` | `0,0,0,0` |  | ok |
+| EditableApi | mesh_content | `EnumItem:Enum.ContentSourceType.Object` | `EnumItem:Enum.ContentSourceType.Object` |  | ok |
+| EditableApi | mesh_new | `Object:EditableMesh` | `Object:EditableMesh` |  | ok |
+| EditableApi | mesh_size | `Vector3:1,0,1` | `Vector3:1,0,1` |  | ok |
+| EditableApi | meshpart | `Vector3:1,0.001,1` | `Vector3:1,0.001,1` |  | ok |
+| EditableApi | normal_type | `number` | `number` |  | ok |
+| EditableApi | normals | `4.0` | `4.0` | +0.000 | ok |
+| EditableApi | position | `Vector3:1,0,1` | `Vector3:1,0,1` |  | ok |
+| EditableApi | ray | `err: attempt to index number with 'X'` | `err: attempt to index number with 'X'` |  | ok |
+| EditableApi | ray_miss | `nil` | `nil` |  | ok |
+| EditableApi | read_outside | `err: EditableImage:ReadPixelsBuffer expects position + size to be within EditableImage bounds` | `err: EditableImage:ReadPixelsBuffer expects position + size to be within EditableImage bounds` |  | ok |
+| EditableApi | rect | `nil` | `nil` |  | ok |
+| EditableApi | rect_alpha | `nil` | `nil` |  | ok |
+| EditableApi | rect_alphad | `0,128,0,64` | `0,128,0,64` |  | ok |
+| EditableApi | rect_blend | `nil` | `nil` |  | ok |
+| EditableApi | rect_blended | `126,0,128,255` | `126,0,128,255` |  | ok |
+| EditableApi | rect_edge | `0,0,0,0` | `0,0,0,0` |  | ok |
+| EditableApi | rect_in | `255,0,0,255` | `255,0,0,255` |  | ok |
+| EditableApi | remove_face | `1.0` | `1.0` | +0.000 | ok |
+| EditableApi | remove_unused | `3.0` | `3.0` | +0.000 | ok |
+| EditableApi | set_face_colors | `Color3:1, 0, 0` | `Color3:1, 0, 0` |  | ok |
+| EditableApi | set_face_normals | `Vector3:0,1,0` | `Vector3:0,1,0` |  | ok |
+| EditableApi | set_face_uvs | `Vector2:0.5, 0.5` | `Vector2:0.5, 0.5` |  | ok |
+| EditableApi | size | `Vector2:16, 16` | `Vector2:16, 16` |  | ok |
+| EditableApi | sum | `34120.0` | `34120.0` | +0.000 | ok |
+| EditableApi | sum_after | `38710.0` | `38710.0` | +0.000 | ok |
+| EditableApi | uvs | `4.0` | `4.0` | +0.000 | ok |
+| EditableApi | vertex_distinct | `true` | `true` |  | ok |
+| EditableApi | vertex_faces | `2.0` | `2.0` | +0.000 | ok |
+| EditableApi | vertex_type | `number` | `number` |  | ok |
+| EditableApi | vertices | `4.0` | `4.0` | +0.000 | ok |
+| EditableApi | within | `3.0` | `3.0` | +0.000 | ok |
+| EditableApi | write | `nil` | `nil` |  | ok |
+| EditableApi | write_short | `err: EditableImage:WritePixelsBuffer expects buffer length to equal size.X * size.Y * 4 bytes` | `err: EditableImage:WritePixelsBuffer expects buffer length to equal size.X * size.Y * 4 bytes` |  | ok |
+| EditableApi | written | `30,20,30,255` | `30,20,30,255` |  | ok |
+| DragDetectorApi | axis_set | `Vector3:0,1,0` | `Vector3:0,1,0` |  | ok |
+| DragDetectorApi | constraint | `RBXScriptConnection:Connection` | `RBXScriptConnection:Connection` |  | ok |
+| DragDetectorApi | drag.ActivatedCursorIcon | `` | `` |  | ok |
+| DragDetectorApi | drag.ApplyAtCenterOfMass | `false` | `false` |  | ok |
+| DragDetectorApi | drag.Axis | `Vector3:0,1,0` | `Vector3:0,1,0` |  | ok |
+| DragDetectorApi | drag.CursorIcon | `` | `` |  | ok |
+| DragDetectorApi | drag.DragFrame | `CFrame:0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1` | `CFrame:0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1` |  | ok |
+| DragDetectorApi | drag.DragStyle | `EnumItem:Enum.DragDetectorDragStyle.TranslatePlane` | `EnumItem:Enum.DragDetectorDragStyle.TranslatePlane` |  | ok |
+| DragDetectorApi | drag.Enabled | `true` | `true` |  | ok |
+| DragDetectorApi | drag.GamepadModeSwitchKeyCode | `EnumItem:Enum.KeyCode.ButtonR1` | `EnumItem:Enum.KeyCode.ButtonR1` |  | ok |
+| DragDetectorApi | drag.KeyboardModeSwitchKeyCode | `EnumItem:Enum.KeyCode.LeftControl` | `EnumItem:Enum.KeyCode.LeftControl` |  | ok |
+| DragDetectorApi | drag.MaxActivationDistance | `32.0` | `32.0` | +0.000 | ok |
+| DragDetectorApi | drag.MaxDragAngle | `0.0` | `0.0` | +0.000 | ok |
+| DragDetectorApi | drag.MaxDragTranslation | `Vector3:0,0,0` | `Vector3:0,0,0` |  | ok |
+| DragDetectorApi | drag.MaxForce | `10000000.0` | `10000000.0` | +0.000 | ok |
+| DragDetectorApi | drag.MaxTorque | `10000.0` | `10000.0` | +0.000 | ok |
+| DragDetectorApi | drag.MinDragAngle | `0.0` | `0.0` | +0.000 | ok |
+| DragDetectorApi | drag.MinDragTranslation | `Vector3:0,0,0` | `Vector3:0,0,0` |  | ok |
+| DragDetectorApi | drag.Orientation | `Vector3:0,180,90` | `Vector3:0,180,90` |  | ok |
+| DragDetectorApi | drag.PermissionPolicy | `EnumItem:Enum.DragDetectorPermissionPolicy.Everybody` | `EnumItem:Enum.DragDetectorPermissionPolicy.Everybody` |  | ok |
+| DragDetectorApi | drag.ReferenceInstance | `nil` | `nil` |  | ok |
+| DragDetectorApi | drag.ResponseStyle | `EnumItem:Enum.DragDetectorResponseStyle.Physical` | `EnumItem:Enum.DragDetectorResponseStyle.Physical` |  | ok |
+| DragDetectorApi | drag.Responsiveness | `10.0` | `10.0` | +0.000 | ok |
+| DragDetectorApi | drag.RunLocally | `false` | `false` |  | ok |
+| DragDetectorApi | drag.SecondaryAxis | `Vector3:1,0,0` | `Vector3:1,0,0` |  | ok |
+| DragDetectorApi | drag.TrackballRadialPullFactor | `1.0` | `1.0` | +0.000 | ok |
+| DragDetectorApi | drag.TrackballRollFactor | `1.0` | `1.0` | +0.000 | ok |
+| DragDetectorApi | drag.VRSwitchKeyCode | `EnumItem:Enum.KeyCode.ButtonL2` | `EnumItem:Enum.KeyCode.ButtonL2` |  | ok |
+| DragDetectorApi | drag.WorldAxis | `Vector3:0,1,0` | `Vector3:0,1,0` |  | ok |
+| DragDetectorApi | drag.WorldSecondaryAxis | `Vector3:1,0,0` | `Vector3:1,0,0` |  | ok |
+| DragDetectorApi | drag_frame | `0,0,0 0,0,-1` | `0,0,0 0,0,-1` |  | ok |
+| DragDetectorApi | drag_frame_loose | `CFrame:0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1` | `CFrame:0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1` |  | ok |
+| DragDetectorApi | drag_isa | `true` | `true` |  | ok |
+| DragDetectorApi | events | `RBXScriptSignalRBXScriptSignalRBXScriptSignalRBXScriptSignal` | `RBXScriptSignalRBXScriptSignalRBXScriptSignalRBXScriptSignal` |  | ok |
+| DragDetectorApi | highlight.Adornee | `nil` | `nil` |  | ok |
+| DragDetectorApi | highlight.DepthMode | `EnumItem:Enum.HighlightDepthMode.AlwaysOnTop` | `EnumItem:Enum.HighlightDepthMode.AlwaysOnTop` |  | ok |
+| DragDetectorApi | highlight.Enabled | `true` | `true` |  | ok |
+| DragDetectorApi | highlight.FillColor | `Color3:1, 0, 0` | `Color3:1, 0, 0` |  | ok |
+| DragDetectorApi | highlight.FillTransparency | `0.5` | `0.5` | +0.000 | ok |
+| DragDetectorApi | highlight.OutlineColor | `Color3:1, 1, 1` | `Color3:1, 1, 1` |  | ok |
+| DragDetectorApi | highlight.OutlineTransparency | `0.0` | `0.0` | +0.000 | ok |
+| DragDetectorApi | highlight_thickness | `err: The current thread cannot write 'LineThickness' (lacking capability RobloxScript)` | `err: The current thread cannot write 'LineThickness' (lacking capability RobloxScript)` |  | ok |
+| DragDetectorApi | max_angle_big | `180.0` | `180.0` | +0.000 | ok |
+| DragDetectorApi | max_force_negative | `0.0` | `0.0` | +0.000 | ok |
+| DragDetectorApi | max_translation_negative | `Vector3:-1,5,5` | `Vector3:-1,5,5` |  | ok |
+| DragDetectorApi | permission_fn | `nil` | `nil` |  | ok |
+| DragDetectorApi | responsiveness_negative | `-3.0` | `-3.0` | +0.000 | ok |
+| DragDetectorApi | restart | `nil` | `nil` |  | ok |
+| DragDetectorApi | style_fn_plain | `nil` | `nil` |  | ok |
+| DragDetectorApi | ui.ActivatedCursorIcon | `` | `` |  | ok |
+| DragDetectorApi | ui.BoundingBehavior | `EnumItem:Enum.UIDragDetectorBoundingBehavior.Automatic` | `EnumItem:Enum.UIDragDetectorBoundingBehavior.Automatic` |  | ok |
+| DragDetectorApi | ui.BoundingUI | `nil` | `nil` |  | ok |
+| DragDetectorApi | ui.CursorIcon | `` | `` |  | ok |
+| DragDetectorApi | ui.DragAxis | `Vector2:1, 0` | `Vector2:1, 0` |  | ok |
+| DragDetectorApi | ui.DragRelativity | `EnumItem:Enum.UIDragDetectorDragRelativity.Absolute` | `EnumItem:Enum.UIDragDetectorDragRelativity.Absolute` |  | ok |
+| DragDetectorApi | ui.DragRotation | `0.0` | `0.0` | +0.000 | ok |
+| DragDetectorApi | ui.DragSpace | `EnumItem:Enum.UIDragDetectorDragSpace.Parent` | `EnumItem:Enum.UIDragDetectorDragSpace.Parent` |  | ok |
+| DragDetectorApi | ui.DragStyle | `EnumItem:Enum.UIDragDetectorDragStyle.TranslatePlane` | `EnumItem:Enum.UIDragDetectorDragStyle.TranslatePlane` |  | ok |
+| DragDetectorApi | ui.DragUDim2 | `UDim2:{0, 0}, {0, 0}` | `UDim2:{0, 0}, {0, 0}` |  | ok |
+| DragDetectorApi | ui.Enabled | `true` | `true` |  | ok |
+| DragDetectorApi | ui.MaxDragAngle | `0.0` | `0.0` | +0.000 | ok |
+| DragDetectorApi | ui.MaxDragTranslation | `UDim2:{0, 0}, {0, 0}` | `UDim2:{0, 0}, {0, 0}` |  | ok |
+| DragDetectorApi | ui.MinDragAngle | `0.0` | `0.0` | +0.000 | ok |
+| DragDetectorApi | ui.MinDragTranslation | `UDim2:{0, 0}, {0, 0}` | `UDim2:{0, 0}, {0, 0}` |  | ok |
+| DragDetectorApi | ui.ReferenceUIInstance | `nil` | `nil` |  | ok |
+| DragDetectorApi | ui.ResponseStyle | `EnumItem:Enum.UIDragDetectorResponseStyle.Offset` | `EnumItem:Enum.UIDragDetectorResponseStyle.Offset` |  | ok |
+| DragDetectorApi | ui.Selectable | `true` | `true` |  | ok |
+| DragDetectorApi | ui.SelectionModeDragSpeed | `UDim2:{0, 300}, {0, 300}` | `UDim2:{0, 300}, {0, 300}` |  | ok |
+| DragDetectorApi | ui.SelectionModeRotateSpeed | `90.0` | `90.0` | +0.000 | ok |
+| DragDetectorApi | ui.UIDragSpeedAxisMapping | `EnumItem:Enum.UIDragSpeedAxisMapping.XY` | `EnumItem:Enum.UIDragSpeedAxisMapping.XY` |  | ok |
+| DragDetectorApi | ui_constraint | `RBXScriptConnection:Connection` | `RBXScriptConnection:Connection` |  | ok |
+| DragDetectorApi | ui_isa_component | `true` | `true` |  | ok |
+| DragDetectorApi | ui_reference_position | `UDim2:{0.25, 10}, {0, 20}` | `UDim2:{0.25, 10}, {0, 20}` |  | ok |
+| DragDetectorApi | ui_reference_rotation | `15.0` | `15.0` | +0.000 | ok |
+| DragDetectorApi | ui_style_fn | `nil` | `nil` |  | ok |
+| DragDetectorApi | world_axis | `Vector3:0,1,0` | `Vector3:0,1,0` |  | ok |
+| DragDetectorApi | world_axis_turned | `Vector3:0,1,0` | `Vector3:0,1,0` |  | ok |
+| DragDetectorApi | world_secondary | `Vector3:-1,0,0` | `Vector3:-1,0,0` |  | ok |
+| InputActions | action.BoolState | `err: BoolState is not a valid member of InputAction "InputAction"` | `err: BoolState is not a valid member of InputAction "InputAction"` |  | ok |
+| InputActions | action.Direction1DState | `err: Direction1DState is not a valid member of InputAction "InputAction"` | `err: Direction1DState is not a valid member of InputAction "InputAction"` |  | ok |
+| InputActions | action.Direction2DState | `err: Direction2DState is not a valid member of InputAction "InputAction"` | `err: Direction2DState is not a valid member of InputAction "InputAction"` |  | ok |
+| InputActions | action.Direction3DState | `err: Direction3DState is not a valid member of InputAction "InputAction"` | `err: Direction3DState is not a valid member of InputAction "InputAction"` |  | ok |
+| InputActions | action.DisplayName | `` | `` |  | ok |
+| InputActions | action.Enabled | `true` | `true` |  | ok |
+| InputActions | action.PreferredBinding | `nil` | `nil` |  | ok |
+| InputActions | action.Type | `EnumItem:Enum.InputActionType.Bool` | `EnumItem:Enum.InputActionType.Bool` |  | ok |
+| InputActions | action.ViewportPositionState | `err: ViewportPositionState is not a valid member of InputAction "InputAction"` | `err: ViewportPositionState is not a valid member of InputAction "InputAction"` |  | ok |
+| InputActions | actions | `err: The current thread cannot call 'GetInputActions' (lacking capability RobloxScript)` | `err: The current thread cannot call 'GetInputActions' (lacking capability RobloxScript)` |  | ok |
+| InputActions | axis_state | `0.0` | `0.0` | +0.000 | ok |
+| InputActions | binding.Backward | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.ClampMagnitudeToOne | `true` | `true` |  | ok |
+| InputActions | binding.Deadzone | `NumberRange:0.1 1 ` | `NumberRange:0.1 1 ` |  | ok |
+| InputActions | binding.DisplayName | `` | `` |  | ok |
+| InputActions | binding.Down | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.Forward | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.KeyCode | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.Left | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.PointerIndex | `0.0` | `0.0` | +0.000 | ok |
+| InputActions | binding.PressedThreshold | `0.5` | `0.5` | +0.000 | ok |
+| InputActions | binding.PrimaryModifier | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.ReleasedThreshold | `0.2` | `0.2` | +0.000 | ok |
+| InputActions | binding.ResponseCurve | `1.0` | `1.0` | +0.000 | ok |
+| InputActions | binding.Right | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.Scale | `1.0` | `1.0` | +0.000 | ok |
+| InputActions | binding.SecondaryModifier | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.Type | `EnumItem:Enum.InputBindingType.Automatic` | `EnumItem:Enum.InputBindingType.Automatic` |  | ok |
+| InputActions | binding.UIButton | `nil` | `nil` |  | ok |
+| InputActions | binding.Up | `EnumItem:Enum.KeyCode.None` | `EnumItem:Enum.KeyCode.None` |  | ok |
+| InputActions | binding.Vector2Scale | `Vector2:1, 1` | `Vector2:1, 1` |  | ok |
+| InputActions | binding.Vector3Scale | `Vector3:1,1,1` | `Vector3:1,1,1` |  | ok |
+| InputActions | bindings | `err: The current thread cannot call 'GetInputBindings' (lacking capability RobloxScript)` | `err: The current thread cannot call 'GetInputBindings' (lacking capability RobloxScript)` |  | ok |
+| InputActions | client_fire | `ok` | `ok` |  | ok |
+| InputActions | client_fire_log | `pressed,state true,released,state false` | `pressed,state true,released,state false` |  | ok |
+| InputActions | client_fired_state | `true` | `true` |  | ok |
+| InputActions | client_state | `false` | `false` |  | ok |
+| InputActions | context.Enabled | `true` | `true` |  | ok |
+| InputActions | context.Priority | `1000.0` | `1000.0` | +0.000 | ok |
+| InputActions | context.Sink | `false` | `false` |  | ok |
+| InputActions | fire_wrong_type | `err: Action:Fire() on InputActionType.Bool should be called with a bool state` | `err: Action:Fire() on InputActionType.Bool should be called with a bool state` |  | ok |
+| InputActions | log_Axis | `state 1,state 0` | `state 1,state 0` |  | ok |
+| InputActions | log_High | `pressed,state true,released,state false` | `pressed,state true,released,state false` |  | ok |
+| InputActions | log_Low | `` | `` |  | ok |
+| InputActions | log_Use | `pressed,state true,released,state false` | `pressed,state true,released,state false` |  | ok |
+| InputActions | server_fire | `true` | `true` |  | ok |
+| InputActions | server_fired | `pressed,state true` | `pressed,state true` |  | ok |
+| InputActions | server_state | `false` | `false` |  | ok |
+| InputActions | state_1d | `0.0` | `0.0` | +0.000 | ok |
+| InputActions | use_state | `false` | `false` |  | ok |
+| StyleRuntime | after_set | `10,20,30` | `10,20,30` |  | ok |
+| StyleRuntime | after_tag | `0,255,0` | `0,255,0` |  | ok |
+| StyleRuntime | after_token | `1,2,3` | `1,2,3` |  | ok |
+| StyleRuntime | bad_prop | `err: GetStyled(): No such property named `Nope`` | `err: GetStyled(): No such property named `Nope`` |  | ok |
+| StyleRuntime | big_border | `4.0` | `4.0` | +0.000 | ok |
+| StyleRuntime | big_color | `0,255,0` | `0,255,0` |  | ok |
+| StyleRuntime | big_size | `UDim2:{0, 200}, {0, 100}` | `UDim2:{0, 200}, {0, 100}` |  | ok |
+| StyleRuntime | changed | `2.0` | `2.0` | +0.000 | ok |
+| StyleRuntime | derived_frame | `10,20,30` | `10,20,30` |  | ok |
+| StyleRuntime | derived_label | `200,100,50` | `200,100,50` |  | ok |
+| StyleRuntime | derives | `1.0` | `1.0` | +0.000 | ok |
+| StyleRuntime | inner_rotation | `0.0` | `0.0` | +0.000 | ok |
+| StyleRuntime | label_color | `0,0,255` | `0,0,255` |  | ok |
+| StyleRuntime | label_size | `7.0` | `7.0` | +0.000 | ok |
+| StyleRuntime | plain_color | `255,0,0` | `255,0,0` |  | ok |
+| StyleRuntime | plain_prop | `163,162,165` | `163,162,165` |  | ok |
+| StyleRuntime | plain_rotation | `10.0` | `10.0` | +0.000 | ok |
+| StyleRuntime | plain_transparency | `0.25` | `0.25` | +0.000 | ok |
+| StyleRuntime | rule_get | `255,0,0` | `255,0,0` |  | ok |
+| StyleRuntime | rule_missing | `nil` | `nil` |  | ok |
+| StyleRuntime | rule_props | `BackgroundColor3,BackgroundTransparency` | `BackgroundColor3,BackgroundTransparency` |  | ok |
+| StyleRuntime | rules | `7.0` | `7.0` | +0.000 | ok |
+| StyleRuntime | selector_error | `` | `` |  | ok |
+| StyleRuntime | selector_ok | `` | `` |  | ok |
+| StyleRuntime | set_over_prop | `9,9,9` | `9,9,9` |  | ok |
+| StyleRuntime | set_over_style | `9,9,9` | `9,9,9` |  | ok |
+| StyleRuntime | styled_changed | `3.0` | `3.0` | +0.000 | ok |
+| StyleRuntime | unlinked | `163,162,165` | `163,162,165` |  | ok |
+| StyleRuntime | unstyled | `1.0` | `1.0` | +0.000 | ok |
 
 Known gaps:
 
@@ -1950,5 +2485,9 @@ Known gaps:
 - **MemoryStore**: queue_waited measures ReadAsync's wait with os.clock, the host's CPU clock; a headless run steps the game faster than real time, so the one-second wait (game time) passes in less. In a live Play (local) the two agree.
 - **HttpJson**: num_third_e10: 1e10/3 needs 17 digits to round-trip and Roblox picks 3333333333.3333337 among the 17-digit strings that do, where ours prints the nearest, 3333333333.3333335. Both read back as the same number.
 - **Pathfinding**: pass_through_*: the live server gave NoPath for a PathfindingModifier with PassThrough added just before ComputeAsync (its navigation mesh hadn't caught up); Local Run builds its grid per request, so the door is passed at once.
-
-No golden recorded yet: TeleportApi, BadgeApi, TextFilter, Localization, SocialPolicy, ClientApis.
+- **SocialPolicy.voice_enabled**: the recording account has voice chat; a local run has no voice, so IsVoiceEnabledForUserIdAsync is false
+- **ClientApis.key_one**: Sober is the Android client and answers the KeyCode's name; desktop Roblox (the target) gives the character a US layout types for the key, per the GetStringForKeyCode reference, which is what we answer
+- **ClientApis.key_semicolon**: Sober is the Android client and answers the KeyCode's name; desktop Roblox (the target) gives the character a US layout types for the key, per the GetStringForKeyCode reference, which is what we answer
+- **ClientApis.key_shift**: Sober answers the KeyCode name; what desktop Roblox gives for a key that types no character isn't documented or measured, we answer an empty string
+- **AudioApi.bad_pin**: the recording printed a table address; the test now prints the type and length, awaiting a new recording
+- **EditableApi.destroyed_read**: the row prints a buffer's memory address, which no two runs share; the part that matters, a read after Destroy still handing back a buffer rather than erroring, matches
