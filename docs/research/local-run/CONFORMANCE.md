@@ -1950,3 +1950,5 @@ Known gaps:
 - **MemoryStore**: queue_waited measures ReadAsync's wait with os.clock, the host's CPU clock; a headless run steps the game faster than real time, so the one-second wait (game time) passes in less. In a live Play (local) the two agree.
 - **HttpJson**: num_third_e10: 1e10/3 needs 17 digits to round-trip and Roblox picks 3333333333.3333337 among the 17-digit strings that do, where ours prints the nearest, 3333333333.3333335. Both read back as the same number.
 - **Pathfinding**: pass_through_*: the live server gave NoPath for a PathfindingModifier with PassThrough added just before ComputeAsync (its navigation mesh hadn't caught up); Local Run builds its grid per request, so the door is passed at once.
+
+No golden recorded yet: TeleportApi, BadgeApi, TextFilter, Localization, SocialPolicy, ClientApis.

@@ -700,6 +700,8 @@ fn a_touch_device_gets_context_action_buttons() {
     });
     s.start();
     s.join("Player1", -1, None).unwrap();
+    // A phone's home-bar side: the buttons keep clear of it, as drawn.
+    s.clients[0].sim.set_safe_insets([0.0, 0.0, 60.0, 0.0]);
     let mut lines = Vec::new();
     let mut at = None;
     for _ in 0..90 {
@@ -737,4 +739,5 @@ fn a_touch_device_gets_context_action_buttons() {
         "{lines:#?}"
     );
     assert!(has(&lines, Peer::Client(0), "boost Begin"), "{lines:#?}");
+    assert_eq!(at.map(|[x, _]| x), Some(800.0 - 60.0 - 95.0 + 35.0));
 }

@@ -1171,6 +1171,9 @@ impl Shell {
         // `RBX_STUDIO_TERRAIN` (see `shell::terrain`), the same aid for the
         // Terrain Editor.
         shell.apply_debug_terrain(cx);
+        // `RBX_STUDIO_LOCAL_RUN` (see `shell::local_run`): Play (local) or Run
+        // at startup.
+        shell.apply_debug_local_run(cx);
 
         // `--select` / `RBX_STUDIO_SELECT`: `main::load` already resolved a
         // single target into the initial `Place.selected` before the window

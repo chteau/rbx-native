@@ -145,6 +145,9 @@ pub struct PlayerRow {
 pub struct Gui {
     /// The window in pixels (`Camera.ViewportSize`).
     pub viewport: [f32; 2],
+    /// The device's safe-area insets (left, top, right, bottom): a phone's
+    /// notch and home bar.
+    pub safe_insets: [f32; 4],
     pub(crate) laid: Vec<Laid>,
     mouse: [f32; 2],
     hover: Vec<Ref>,
@@ -166,6 +169,7 @@ impl Default for Gui {
         Gui {
             // The window conformance runs at (GuiRuntime `_screen`).
             viewport: [800.0, 600.0],
+            safe_insets: [0.0; 4],
             laid: Vec::new(),
             mouse: [0.0; 2],
             hover: Vec::new(),
@@ -276,7 +280,7 @@ impl Gui {
     /// changed (counted from below the top bar inset, as Roblox's are
     /// whether or not a screen ignores it: GuiRuntime `button_pos`).
     pub(crate) fn relayout(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase, root: Ref) {
-        self.laid = layout::layout(dom, db, root, self.viewport);
+        self.laid = layout::layout(dom, db, root, self.viewport, self.safe_insets);
         for laid in &self.laid {
             let v2 = |x: f32, y: f32| Variant::Vector2(Vector2Data { x, y });
             let mut values = vec![

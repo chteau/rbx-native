@@ -968,21 +968,39 @@ impl WorkspaceView {
     }
 
     /// The view's size in the pixels a game's mouse is measured in, what
-    /// its `ScreenGui`s lay out in.
+    /// its `ScreenGui`s lay out in: an emulated device's screen, drawn
+    /// scaled to fit, or the view itself.
     pub(crate) fn play_viewport_size(&self) -> [f32; 2] {
+        if let Some((w, h)) = self.screen {
+            return [w as f32, h as f32];
+        }
         let scale = self.play_scale.max(0.01);
         let (w, h) = self.viewport.get().size;
         [w as f32 / scale, h as f32 / scale]
     }
 
+    /// The emulated device's safe-area insets (left, top, right, bottom),
+    /// which the renderer keeps `ScreenGui`s clear of.
+    pub(crate) fn play_safe_insets(&self) -> [f32; 4] {
+        self.device
+            .as_ref()
+            .map(|d| [d.insets.left, d.insets.top, d.insets.right, d.insets.bottom])
+            .unwrap_or_default()
+    }
+
     /// Where `position` (window, logical pixels) sits in the view: what a
-    /// game reads as the mouse location.
+    /// game reads as the mouse location, in `play_viewport_size`'s pixels.
     fn play_position(&self, position: Point<Pixels>) -> [f32; 2] {
-        let origin = self.viewport.get().origin;
+        let shown = self.viewport.get();
         let scale = self.play_scale.max(0.01);
+        let [w, h] = self.play_viewport_size();
+        let to_game = |at: Pixels, origin: u32, shown: u32, game: f32| {
+            let local = f32::from(at) - origin as f32 / scale;
+            local * game / (shown as f32 / scale).max(1.0)
+        };
         [
-            f32::from(position.x) - origin.0 as f32 / scale,
-            f32::from(position.y) - origin.1 as f32 / scale,
+            to_game(position.x, shown.origin.0, shown.size.0, w),
+            to_game(position.y, shown.origin.1, shown.size.1, h),
         ]
     }
 

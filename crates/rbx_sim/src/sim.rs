@@ -636,6 +636,11 @@ impl Simulation {
         self.shared.borrow_mut().gui.viewport = size;
     }
 
+    /// The device's safe-area insets (left, top, right, bottom).
+    pub fn set_safe_insets(&mut self, insets: [f32; 4]) {
+        self.shared.borrow_mut().gui.safe_insets = insets;
+    }
+
     /// The client's GUI state: focus, the core GUI switches, notifications.
     pub fn gui(&self) -> std::cell::Ref<'_, crate::gui::Gui> {
         std::cell::Ref::map(self.shared.borrow(), |s| &s.gui)

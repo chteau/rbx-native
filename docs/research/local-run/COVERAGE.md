@@ -6,8 +6,8 @@ Read the property numbers with care: any property the reflection database knows 
 
 | Member type | There | Total | |
 |---|---|---|---|
-| Function | 281 | 1385 | 20% |
-| Event | 118 | 355 | 33% |
+| Function | 372 | 1385 | 27% |
+| Event | 134 | 355 | 38% |
 | Property | 1949 | 2510 | 78% |
 
 ## By class
@@ -64,7 +64,9 @@ Classes with at least one member there. Properties, functions and events as ther
 | AvatarBodyRules | 8/15 | - | - |  |  |
 | AvatarClothingRules | 14/14 | - | - |  |  |
 | AvatarCollisionRules | 4/5 | - | - |  |  |
+| AvatarEditorService | - | 9/22 | 7/7 | GetAccessoryType, PromptAllowInventoryReadAccess, PromptCreateOutfit, PromptDeleteOutfit, PromptRenameOutfit, PromptSaveAvatar, PromptSetFavorite, PromptUpdateOutfit, GetFavoriteAsync, PromptAllowInventoryReadAccessCompleted, PromptCreateOutfitCompleted, PromptDeleteOutfitCompleted, PromptRenameOutfitCompleted, PromptSaveAvatarCompleted, PromptSetFavoriteCompleted, PromptUpdateOutfitCompleted | CheckApplyDefaultClothingAsync, ConformToAvatarRulesAsync, GetAvatarRulesAsync, GetBatchItemDetailsAsync, GetBundlesByAssetIdAsync, GetHeadShapesAsync, GetInventoryAsync, GetItemDetailsAsync, GetOutfitDetailsAsync, GetOutfitsAsync, GetRecommendedAssetsAsync, GetRecommendedBundlesAsync, SearchCatalogAsync |
 | AvatarEffectDescription | 1/2 | - | - |  |  |
+| BadgeService | - | 5/5 | - | AwardBadgeAsync, CheckUserBadgesAsync, GetBadgeInfoAsync, GetUserBadgesAsync, UserHasBadgeAsync |  |
 | CoreGui | 1/1 | - | - |  |  |
 | StarterGui | 2/2 | 4/4 | - | GetCoreGuiEnabled, SetCore, SetCoreGuiEnabled, GetCore |  |
 | RemoteEvent | - | 3/3 | 1/2 | FireAllClients, FireClient, FireServer, OnClientEvent | OnServerEvent |
@@ -81,7 +83,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | Pants | 2/2 | - | - |  |  |
 | Shirt | 2/2 | - | - |  |  |
 | ShirtGraphic | 3/3 | - | - |  |  |
-| Chat | 2/2 | 0/8 | 0/1 |  | Chat, InvokeChatCallback, RegisterChatCallback, SetBubbleChatSettings, CanUserChatAsync, CanUsersChatAsync, FilterStringAsync, FilterStringForBroadcast, Chatted |
+| Chat | 2/2 | 8/8 | 1/1 | Chat, InvokeChatCallback, RegisterChatCallback, SetBubbleChatSettings, CanUserChatAsync, CanUsersChatAsync, FilterStringAsync, FilterStringForBroadcast, Chatted |  |
 | ClickDetector | 3/3 | - | 0/4 |  | MouseClick, MouseHoverEnter, MouseHoverLeave, RightMouseClick |
 | DragDetector | 26/27 | 0/5 | 0/3 |  | AddConstraintFunction, GetReferenceFrame, RestartDrag, SetDragStyleFunction, SetPermissionPolicyFunction, DragContinue, DragEnd, DragStart |
 | Clouds | 4/4 | - | - |  |  |
@@ -152,6 +154,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | GlobalDataStore | - | 5/6 | - | GetAsync, IncrementAsync, RemoveAsync, SetAsync, UpdateAsync | BatchGetAsync |
 | DataStore | - | 4/4 | - | GetVersionAsync, GetVersionAtTimeAsync, ListKeysAsync, ListVersionsAsync |  |
 | OrderedDataStore | - | 1/1 | - | GetSortedAsync |  |
+| GroupService | - | 6/6 | - | GetAlliesAsync, GetEnemiesAsync, GetGroupInfoAsync, GetGroupsAsync, GetRolesInGroupAsync, PromptJoinAsync |  |
 | GuiBase2d | 9/10 | - | 0/1 |  | SelectionChanged |
 | GuiObject | 19/26 | - | 11/16 | InputBegan, InputChanged, InputEnded, MouseEnter, MouseLeave, MouseMoved, MouseWheelBackward, MouseWheelForward, SelectionGained, SelectionLost, TouchTap | TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe |
 | CanvasGroup | 2/2 | - | - |  |  |
@@ -189,7 +192,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | Handles | 1/2 | - | 0/5 |  | MouseButton1Down, MouseButton1Up, MouseDrag, MouseEnter, MouseLeave |
 | SurfaceSelection | 1/1 | - | - |  |  |
 | Path2D | 5/5 | 0/13 | 0/1 |  | GetBoundingRect, GetControlPoint, GetControlPoints, GetLength, GetMaxControlPoints, GetPositionOnCurve, GetPositionOnCurveArcLength, GetTangentOnCurve, GetTangentOnCurveArcLength, InsertControlPoint, RemoveControlPoint, SetControlPoints, UpdateControlPoint, ControlPointChanged |
-| GuiService | 4/8 | 2/15 | 0/2 | GetGuiInset, IsTenFootInterface | CloseInspectMenu, DismissNotification, GetEmotesMenuOpen, GetGameplayPausedNotificationEnabled, GetInsetArea, GetInspectMenuEnabled, InspectPlayerFromHumanoidDescription, InspectPlayerFromUserId, Select, SendNotification, SetEmotesMenuOpen, SetGameplayPausedNotificationEnabled, SetInspectMenuEnabled, MenuClosed, MenuOpened |
+| GuiService | 4/8 | 15/15 | 2/2 | CloseInspectMenu, DismissNotification, GetEmotesMenuOpen, GetGameplayPausedNotificationEnabled, GetGuiInset, GetInsetArea, GetInspectMenuEnabled, InspectPlayerFromHumanoidDescription, InspectPlayerFromUserId, IsTenFootInterface, Select, SendNotification, SetEmotesMenuOpen, SetGameplayPausedNotificationEnabled, SetInspectMenuEnabled, MenuClosed, MenuOpened |  |
 | HapticEffect | 4/4 | 0/4 | 0/1 |  | GetWaveformKeys, Play, SetWaveformKeys, Stop, Ended |
 | Highlight | 6/7 | - | - |  |  |
 | HttpService | 1/1 | 7/9 | - | GenerateGUID, JSONDecode, JSONEncode, UrlEncode, GetAsync, PostAsync, RequestAsync | CreateWebStreamClient, GetSecret |
@@ -213,8 +216,8 @@ Classes with at least one member there. Properties, functions and events as ther
 | SurfaceLight | 3/3 | - | - |  |  |
 | Lighting | 18/19 | 0/5 | 0/1 |  | GetMinutesAfterMidnight, GetMoonDirection, GetMoonPhase, GetSunDirection, SetMinutesAfterMidnight, LightingChanged |
 | LiveSyncService | 1/1 | 0/1 | 0/1 |  | GetSyncState, SyncStatusChanged |
-| LocalizationService | 2/2 | 0/5 | - |  | GetCorescriptLocalizations, GetTableEntries, GetCountryRegionForPlayerAsync, GetTranslatorForLocaleAsync, GetTranslatorForPlayerAsync |
-| LocalizationTable | 1/1 | 0/11 | - |  | GetEntries, GetTranslator, RemoveEntry, RemoveEntryValue, RemoveTargetLocale, SetEntries, SetEntryContext, SetEntryExample, SetEntryKey, SetEntrySource, SetEntryValue |
+| LocalizationService | 2/2 | 5/5 | - | GetCorescriptLocalizations, GetTableEntries, GetCountryRegionForPlayerAsync, GetTranslatorForLocaleAsync, GetTranslatorForPlayerAsync |  |
+| LocalizationTable | 1/1 | 11/11 | - | GetEntries, GetTranslator, RemoveEntry, RemoveEntryValue, RemoveTargetLocale, SetEntries, SetEntryContext, SetEntryExample, SetEntryKey, SetEntrySource, SetEntryValue |  |
 | BaseScript | 3/3 | - | - |  |  |
 | Script | 1/1 | - | - |  |  |
 | ModuleScript | 1/1 | - | - |  |  |
@@ -260,6 +263,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | Player | 15/31 | 15/24 | 4/7 | AddReplicationFocus, DistanceFromCharacter, GetJoinData, GetNetworkPing, HasAppearanceLoaded, IsVerified, Kick, Move, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsOnlineAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, RequestStreamAroundAsync, CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | ClearCachedAvatarAppearance, ClearCharacterAppearance, GetCameraState, GetMouse, PromptAgeCheck, GetFriendsInUniverseAsync, GetFriendsWhoPlayedAsync, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, EmotesLoaded, Idled, OnTeleport |
 | Players | 8/9 | 11/16 | 2/4 | GetPlayerByUserId, GetPlayerFromCharacter, GetPlayers, CreateHumanoidModelFromDescriptionAsync, CreateHumanoidModelFromUserIdAsync, GetCharacterAppearanceInfoAsync, GetFriendsAsync, GetHumanoidDescriptionFromUserIdAsync, GetNameFromUserIdAsync, GetUserIdFromNameAsync, GetUserThumbnailAsync, PlayerAdded, PlayerRemoving | BanAsync, GetBanHistoryAsync, GetHumanoidDescriptionFromOutfitIdAsync, GetProfileConfigurationFromUserIdAsync, UnbanAsync, PlayerMembershipChanged, UserSubscriptionStatusChanged |
 | PluginAction | 4/4 | - | - |  |  |
+| PolicyService | - | 2/2 | - | CanViewBrandProjectAsync, GetPolicyInfoForPlayerAsync |  |
 | PoseBase | 3/3 | - | - |  |  |
 | NumberPose | 1/1 | - | - |  |  |
 | Pose | 1/1 | 0/3 | - |  | AddSubPose, GetSubPoses, RemoveSubPose |
@@ -288,6 +292,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | PhysicsActivitySensor | 3/3 | - | - |  |  |
 | Sky | 21/21 | - | - |  |  |
 | Smoke | 6/6 | - | - |  |  |
+| SocialService | - | 11/15 | 4/4 | GetPlayersByPartyId, HideSelfView, PromptGameInvite, PromptPhoneBook, ShowSelfView, CanSendCallInviteAsync, CanSendGameInviteAsync, GetEventRsvpStatusAsync, GetPartyAsync, GetUpcomingExperienceEventsAsync, PromptLinkSharingAsync, CallInviteStateChanged, GameInvitePromptClosed, PhoneBookPromptClosed, ShareSheetClosed | GetExperienceEventAsync, PromptFeedbackSubmissionAsync, PromptRateExperienceAsync, PromptRsvpToEventAsync |
 | Sound | 18/19 | 4/4 | 7/7 | Pause, Play, Resume, Stop, DidLoop, Ended, Loaded, Paused, Played, Resumed, Stopped |  |
 | SoundEffect | 2/2 | - | - |  |  |
 | ChorusSoundEffect | 3/3 | - | - |  |  |
@@ -314,7 +319,8 @@ Classes with at least one member there. Properties, functions and events as ther
 | SurfaceAppearance | 11/11 | - | - |  |  |
 | TaskScheduler | 3/4 | - | - |  |  |
 | Team | 2/2 | 1/1 | 2/2 | GetPlayers, PlayerAdded, PlayerRemoved |  |
-| TeleportOptions | 4/4 | 0/2 | - |  | GetTeleportData, SetTeleportData |
+| TeleportOptions | 4/4 | 2/2 | - | GetTeleportData, SetTeleportData |  |
+| TeleportService | - | 9/9 | 2/2 | GetArrivingTeleportGui, GetLocalPlayerTeleportData, GetTeleportSetting, SetTeleportGui, SetTeleportSetting, Teleport, GetPlayerPlaceInstanceAsync, PromptExperienceDetailsAsync, TeleportAsync, LocalPlayerArrivedFromTeleport, TeleportInitFailed |  |
 | TerrainDetail | 5/5 | - | - |  |  |
 | TerrainRegion | 1/1 | - | - |  |  |
 | TestService | 13/13 | 2/33 | 0/3 | getTestSessionProviderStats, isFeatureEnabled | Check, Checkpoint, Done, Error, Fail, GetTestControlSchema, GetTestControls, ListTests, Message, RegisterSuite, RegisterTest, Require, ResetTestControl, ResetTestRegistry, ScopeTime, SetTestControl, SignalProfilingCapture, SignalProfilingStart, SignalProfilingStop, StartTestSession, StopTestSession, TakeSnapshot, Warn, CaptureScreenshotAsync, FetchTestControlsAsync, RequestValidationAsync, RunTestsAsync, StartAudioCaptureAsync, StartVideoCaptureAsync, StopAudioCaptureAsync, StopVideoCaptureAsync, ServerCollectConditionalResult, ServerCollectResult, TestRegistryChanged |
@@ -325,6 +331,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | TextChatService | 4/4 | 3/5 | 3/3 | CanUserChatAsync, CanUsersChatAsync, CanUsersDirectChatAsync, BubbleDisplayed, MessageReceived, SendingMessage | DisplayBubble, GetChatGroupsAsync |
 | TextDocument | 1/1 | 0/1 | - |  | ReadAsync |
 | TextGenerator | 4/4 | 0/1 | - |  | GenerateTextAsync |
+| TextService | - | 6/6 | - | GetTextSize, FilterAndTranslateStringAsync, FilterStringAsync, GetFamilyInfoAsync, GetTextBoundsAsync, GetTextSizeOffsetAsync |  |
 | Trail | 15/17 | 1/1 | - | Clear |  |
 | TweenBase | 0/1 | 0/3 | 1/1 | Completed | Cancel, Pause, Play |
 | TweenService | - | 2/3 | - | Create, GetValue | SmoothDamp |
@@ -347,6 +354,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | UIStroke | 10/10 | - | - |  |  |
 | UserGameSettings | 6/13 | 0/7 | 0/2 |  | GetCameraYInvertValue, GetOnboardingCompleted, InFullScreen, InStudioMode, SetCameraYInvertVisible, SetGamepadCameraSensitivityVisible, SetOnboardingCompleted, FullscreenChanged, StudioModeChanged |
 | UserInputService | 13/16 | 18/24 | 16/26 | GamepadSupports, GetConnectedGamepads, GetFocusedTextBox, GetGamepadConnected, GetGamepadState, GetKeysPressed, GetLastInputType, GetMouseButtonsPressed, GetMouseDelta, GetMouseLocation, GetNavigationGamepads, GetStringForKeyCode, GetSupportedGamepadKeyCodes, IsGamepadButtonDown, IsKeyDown, IsMouseButtonPressed, IsNavigationGamepad, SetNavigationGamepad, GamepadConnected, GamepadDisconnected, InputBegan, InputChanged, InputEnded, JumpRequest, LastInputTypeChanged, PointerAction, TextBoxFocusReleased, TextBoxFocused, TouchEnded, TouchMoved, TouchStarted, TouchTap, WindowFocusReleased, WindowFocused | CreateVirtualInput, GetDeviceAcceleration, GetDeviceGravity, GetDeviceRotation, GetImageForKeyCode, RecenterUserHeadCFrame, DeviceAccelerationChanged, DeviceGravityChanged, DeviceRotationChanged, TouchDrag, TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe, TouchTapInWorld |
+| UserService | - | 2/2 | - | GetUserFromGlobalUserIdAsync, GetUserInfosByUserIdsAsync |  |
 | VRService | 7/8 | 0/6 | 0/4 |  | GetTouchpadMode, GetUserCFrame, GetUserCFrameEnabled, RecenterUserHeadCFrame, RequestNavigation, SetTouchpadMode, NavigationRequested, TouchpadModeChanged, UserCFrameChanged, UserCFrameEnabled |
 | BinaryStringValue | - | - | 1/1 | Changed |  |
 | BoolValue | 1/1 | - | 1/1 | Changed |  |
@@ -362,11 +370,11 @@ Classes with at least one member there. Properties, functions and events as ther
 | ValueCurve | 2/2 | 0/8 | - |  | GetKeyAtIndex, GetKeyIndicesAtTime, GetKeys, GetValueAtTime, InsertKey, InsertKeyValue, RemoveKeyAtIndex, SetKeys |
 | VideoDeviceInput | 3/4 | - | - |  |  |
 | VideoPlayer | 9/9 | 0/7 | 0/4 |  | GetConnectedWires, GetInputPins, GetOutputPins, Pause, Play, Unload, LoadAsync, DidEnd, DidLoop, PlayFailed, WiringChanged |
-| VoiceChatService | 3/3 | 0/2 | - |  | GetChatGroupsAsync, IsVoiceEnabledForUserIdAsync |
+| VoiceChatService | 3/3 | 2/2 | - | GetChatGroupsAsync, IsVoiceEnabledForUserIdAsync |  |
 | WeldConstraint | 2/4 | - | - |  |  |
 | Wire | 3/5 | - | - |  |  |
 | WrapTextureTransfer | 3/3 | 0/1 | - |  | PrepareProjectionMeshDataAsync |
 
 ## Nothing there yet
 
-161 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AudioDeviceOutput, AvatarCreationService, AvatarEditorService, BadgeService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, GroupService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, PatchMapping, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, PolicyService, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, SocialService, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleBase, StyleSheet, StyleLink, Teams, TeleportAsyncResult, TeleportService, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextService, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, UserService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.
+153 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AudioDeviceOutput, AvatarCreationService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, PatchMapping, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, ReplicatedFirst, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptContext, ScriptDebugger, ScriptService, SerializationService, ServiceProvider, DataModel, GlobalSettings, UserSettings, SharedTableRegistry, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleBase, StyleSheet, StyleLink, Teams, TeleportAsyncResult, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.

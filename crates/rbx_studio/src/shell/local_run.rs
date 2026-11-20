@@ -163,12 +163,12 @@ fn mirror(from: &WeakDom, into: &mut WeakDom, changes: &[Change]) {
                     let _ = into.remove_property(*referent, name);
                 }
             }
-            // A parentless instance (an AnimationTrack, a script's
-            // `Instance.new` not parented yet, an old character) isn't in
-            // the game's tree, so it stays out of the shown one.
-            Change::Added(referent) if from.parent(*referent).is_none() => {}
+            // An instance outside the game's tree (an AnimationTrack, a script's
+            // `Instance.new` not parented yet or under one that isn't, an old
+            // character) stays out of the shown one.
+            Change::Added(referent) if hidden(from, *referent) => {}
             Change::Added(referent) => copy_subtree(from, into, *referent),
-            Change::Parent { referent, .. } if from.parent(*referent).is_none() => {
+            Change::Parent { referent, .. } if hidden(from, *referent) => {
                 into.remove(*referent);
             }
             Change::Parent { referent, .. } => {
@@ -191,6 +191,12 @@ fn mirror(from: &WeakDom, into: &mut WeakDom, changes: &[Change]) {
             }
         }
     }
+}
+
+/// Whether `referent` is parentless (an engine-made `InputObject`, a
+/// script's `Instance.new`) or under something that is.
+fn hidden(from: &WeakDom, referent: Ref) -> bool {
+    from.parent(referent).is_none() || !from.in_tree(referent)
 }
 
 /// Inserts `root` and everything under it that `into` lacks, parents as in
@@ -413,6 +419,17 @@ impl Shell {
     pub(crate) fn run_local(&mut self, cx: &mut Context<Self>) {
         if self.local_run_can_start() {
             self.start_local(None, cx);
+        }
+    }
+
+    /// `RBX_STUDIO_LOCAL_RUN=play` (or `run`) starts Play (local) (or Run)
+    /// at startup, a screenshot aid for the live checks, as
+    /// `RBX_STUDIO_TERRAIN` is for the Terrain Editor. The beta has to be on.
+    pub(super) fn apply_debug_local_run(&mut self, cx: &mut Context<Self>) {
+        match std::env::var("RBX_STUDIO_LOCAL_RUN").as_deref() {
+            Ok("play") => self.play_local(cx),
+            Ok("run") => self.run_local(cx),
+            _ => {}
         }
     }
 
@@ -839,15 +856,17 @@ impl Shell {
         let steps = due.min(MAX_FRAMES_PER_TICK);
         let viewing_client = matches!(run.view, rbx_sim::Peer::Client(_));
         if run.playing && viewing_client {
-            let (inputs, size) = self.viewport.update(cx, |viewport, _| {
+            let (inputs, size, safe) = self.viewport.update(cx, |viewport, _| {
                 (
                     viewport.play.as_mut().map(|p| p.take()),
                     viewport.play_viewport_size(),
+                    viewport.play_safe_insets(),
                 )
             });
             if let rbx_sim::Peer::Client(i) = run.view {
                 if let Some(client) = run.session.clients.get_mut(i) {
                     client.sim.set_viewport(size);
+                    client.sim.set_safe_insets(safe);
                 }
                 for input in inputs.unwrap_or_default() {
                     run.session.input(i, input);

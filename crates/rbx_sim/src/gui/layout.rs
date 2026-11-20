@@ -111,12 +111,15 @@ pub(crate) fn inside(rect: [f32; 4], p: [f32; 2]) -> bool {
 
 /// Every `ScreenGui` under `root` (a `PlayerGui`) and the objects in it,
 /// in paint order: screens by `DisplayOrder`, then each screen's objects
-/// bottom to top.
+/// bottom to top. `safe` is the device's safe-area insets (left, top,
+/// right, bottom), which `ScreenInsets` keeps screens clear of, as the
+/// renderer does.
 pub(crate) fn layout(
     dom: &WeakDom,
     db: &ReflectionDatabase,
     root: Ref,
     viewport: [f32; 2],
+    safe: [f32; 4],
 ) -> Vec<Laid> {
     let mut screens: Vec<(i64, Ref)> = dom
         .get(root)
@@ -130,13 +133,22 @@ pub(crate) fn layout(
     let window = [0.0, 0.0, viewport[0], viewport[1]];
     let mut out = Vec::new();
     for (_, screen) in screens {
-        let ignore = flag(dom, db, screen, "IgnoreGuiInset")
-            || item(dom, db, screen, "ScreenInsets", "ScreenInsets") == "None";
-        let frame = if ignore {
-            window
-        } else {
-            [0.0, TOPBAR_INSET, viewport[0], viewport[1] - TOPBAR_INSET]
+        let ignore_inset = flag(dom, db, screen, "IgnoreGuiInset");
+        let insets = item(dom, db, screen, "ScreenInsets", "ScreenInsets");
+        let [left, top, right, bottom] = match ignore_inset || insets != "None" {
+            true => safe,
+            false => [0.0; 4],
         };
+        let top = match ignore_inset || matches!(insets, "None" | "DeviceSafeInsets") {
+            true => top,
+            false => top.max(TOPBAR_INSET),
+        };
+        let frame = [
+            left,
+            top,
+            (viewport[0] - left - right).max(0.0),
+            (viewport[1] - top - bottom).max(0.0),
+        ];
         let shown = flag(dom, db, screen, "Enabled");
         out.push(Laid {
             referent: screen,

@@ -12,20 +12,23 @@ pub(crate) fn instance() -> wgpu::Instance {
 
 /// An instance limited to `backends`, with the rest of wgpu's knobs still
 /// read from the environment.
+#[cfg(not(test))]
 pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
-    #[cfg(test)]
-    {
-        static SHARED: Mutex<Vec<(wgpu::Backends, wgpu::Instance)>> = Mutex::new(Vec::new());
-        let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((_, instance)) = shared.iter().find(|(b, _)| *b == backends) {
-            return instance.clone();
-        }
-        let instance = new_instance(backends);
-        shared.push((backends, instance.clone()));
-        return instance;
-    }
-    #[cfg(not(test))]
     new_instance(backends)
+}
+
+/// Tests share one instance per backend set: each its own brought up a
+/// display per thread, which the NVIDIA driver crashes on in parallel.
+#[cfg(test)]
+pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
+    static SHARED: Mutex<Vec<(wgpu::Backends, wgpu::Instance)>> = Mutex::new(Vec::new());
+    let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, instance)) = shared.iter().find(|(b, _)| *b == backends) {
+        return instance.clone();
+    }
+    let instance = new_instance(backends);
+    shared.push((backends, instance.clone()));
+    instance
 }
 
 fn new_instance(backends: wgpu::Backends) -> wgpu::Instance {
