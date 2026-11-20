@@ -82,7 +82,8 @@ return function(h)
 	r.fader_out_wires = #fader:GetConnectedWires("Output")
 	r.player_out_wires = #player:GetConnectedWires("Output")
 	r.bad_pin = h.try(function()
-		return fader:GetConnectedWires("Bogus")
+		local wires = fader:GetConnectedWires("Bogus")
+		return typeof(wires) .. " " .. #wires
 	end)
 	second.TargetName = "Nope"
 	h.beats(2)

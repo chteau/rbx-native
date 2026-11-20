@@ -132,5 +132,10 @@
     "info_priority": 0.0,
     "keys_pressed": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "key_one": "Sober is the Android client and answers the KeyCode's name; desktop Roblox (the target) gives the character a US layout types for the key, per the GetStringForKeyCode reference, which is what we answer",
+    "key_semicolon": "Sober is the Android client and answers the KeyCode's name; desktop Roblox (the target) gives the character a US layout types for the key, per the GetStringForKeyCode reference, which is what we answer",
+    "key_shift": "Sober answers the KeyCode name; what desktop Roblox gives for a key that types no character isn't documented or measured, we answer an empty string"
+  }
 }

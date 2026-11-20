@@ -78,6 +78,9 @@ fn main() {
             gaps.push(format!("- **{}**: {gap}", test.name));
         }
         for row in conformance::compare(test, &golden, &mine) {
+            if let (false, Some(gap)) = (row.pass, &row.gap) {
+                gaps.push(format!("- **{}.{}**: {gap}", row.test, row.field));
+            }
             println!(
                 "{:<16} {:<20} roblox {:<14} ours {:<14} {}",
                 row.test,
@@ -127,6 +130,7 @@ fn mark(row: &Row) -> String {
     match (row.pass, row.matched_pass) {
         (true, Some(pass)) => format!("ok (pass {pass})"),
         (true, None) => "ok".into(),
+        (false, _) if row.gap.is_some() => "known gap".into(),
         (false, _) => "off".into(),
     }
 }

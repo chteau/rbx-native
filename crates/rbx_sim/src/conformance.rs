@@ -1078,6 +1078,8 @@ pub struct Row {
     pub pass: bool,
     /// Passed only against this one recorded pass (1-based), not the median.
     pub matched_pass: Option<usize>,
+    /// Why this field is allowed to differ (the golden's `known_gaps`).
+    pub gap: Option<String>,
 }
 
 fn show(value: Option<&Value>) -> String {
@@ -1181,6 +1183,7 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
                 delta,
                 pass,
                 matched_pass,
+                gap: file["known_gaps"][field.as_str()].as_str().map(str::to_owned),
             }
         })
         .collect()

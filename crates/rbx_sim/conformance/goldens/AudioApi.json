@@ -1022,5 +1022,8 @@
     "player_out_wires": 0.0,
     "spectrum": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "bad_pin": "the recording printed a table address; the test now prints the type and length, awaiting a new recording"
+  }
 }

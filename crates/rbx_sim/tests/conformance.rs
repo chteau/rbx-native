@@ -1,6 +1,6 @@
 //! rbx_sim against the goldens recorded from real Roblox. A test whose
 //! golden names a `known_gap` is reported, not failed; an unrecorded one
-//! is skipped.
+//! is skipped, and so is a field named in the golden's `known_gaps`.
 
 use rbx_sim::conformance::{self, TESTS};
 
@@ -18,6 +18,12 @@ fn matches_the_recorded_goldens() {
         let off: Vec<String> = rows
             .iter()
             .filter(|r| !r.pass)
+            .filter(|r| {
+                r.gap
+                    .as_ref()
+                    .inspect(|gap| eprintln!("known gap in {}.{}: {gap}", r.test, r.field))
+                    .is_none()
+            })
             .map(|r| {
                 format!(
                     "{}.{}: roblox {} ours {}",
