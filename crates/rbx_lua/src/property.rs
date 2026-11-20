@@ -3,7 +3,7 @@
 
 pub mod clock;
 pub(crate) mod from_lua;
-mod pseudo;
+pub(crate) mod pseudo;
 pub(crate) mod to_lua;
 
 use mlua::{Lua, Result, Value};

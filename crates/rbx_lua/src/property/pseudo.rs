@@ -160,6 +160,13 @@ fn attachment_frames(ctx: &Ctx, referent: Ref) -> Result<Option<(CFrameData, CFr
     Ok(Some((parent_frame, local)))
 }
 
+/// An attachment's world position, `None` when it isn't on a part.
+pub(crate) fn attachment_world_position(ctx: &Ctx, referent: Ref) -> Option<[f64; 3]> {
+    let (parent, local) = attachment_frames(ctx, referent).ok()??;
+    let p = world_frame(&parent, &local).position;
+    Some([f64::from(p.x), f64::from(p.y), f64::from(p.z)])
+}
+
 fn world_frame(parent: &CFrameData, local: &CFrameData) -> CFrameData {
     let p = rot_apply(
         &parent.rotation,

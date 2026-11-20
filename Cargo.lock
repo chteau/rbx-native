@@ -7133,6 +7133,7 @@ dependencies = [
  "rbx_net",
  "rbx_reflection",
  "rbx_xml",
+ "serde",
  "serde_json",
  "toml 0.9.12+spec-1.1.0",
  "unicode-segmentation",

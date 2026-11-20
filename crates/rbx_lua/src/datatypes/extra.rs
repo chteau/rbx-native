@@ -1,5 +1,6 @@
 //! `TweenInfo`, `Ray`, `Random` and `DateTime`.
 
+pub(crate) mod path_waypoint;
 mod random;
 mod tween_info;
 
@@ -267,6 +268,7 @@ fn date_time(lua: &Lua) -> Result<Table> {
 pub(crate) fn register(lua: &Lua) -> Result<()> {
     let globals = lua.globals();
     globals.set("TweenInfo", tween_info::constructors(lua)?)?;
+    globals.set("PathWaypoint", path_waypoint::constructors(lua)?)?;
     globals.set("Random", random::constructors(lua)?)?;
     globals.set("Ray", ray(lua)?)?;
     globals.set("DateTime", date_time(lua)?)?;

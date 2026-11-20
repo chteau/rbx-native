@@ -48,8 +48,9 @@ return function(h, origin)
 			if w.Action ~= Enum.PathWaypointAction.Walk then
 				table.insert(actions, i .. ":" .. w.Action.Name)
 			end
-			if w.Label ~= "" then
-				table.insert(labels, i .. ":" .. w.Label)
+			-- Runs of the same label (the counts are compared on their own).
+			if w.Label ~= "" and labels[#labels] ~= w.Label then
+				table.insert(labels, w.Label)
 			end
 		end
 		result[name .. "_length"] = math.floor(length * 100 + 0.5) / 100

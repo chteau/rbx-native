@@ -11,6 +11,7 @@ mod chat;
 mod hooks;
 mod input;
 mod meshes;
+mod pathfinding;
 mod query;
 mod remote;
 mod services;
@@ -346,7 +347,7 @@ impl ServerVm {
             log: Rc::default(),
         };
         let loaded = Rc::new(Cell::new(true));
-        let services = services::Runtime::new(client.clone());
+        let services = services::Runtime::new(client.clone(), physics.clone());
         lua.set_app_data(HookSlot(Rc::new(hooks::ServerHooks {
             physics,
             groups: groups.clone(),

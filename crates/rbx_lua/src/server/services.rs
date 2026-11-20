@@ -28,6 +28,10 @@ use crate::engine::{engine, json};
 use crate::instance::LuaInstance;
 use crate::plugin::http::{self, HttpRequest};
 
+use super::pathfinding::PathRequest;
+
+type PathArgs = (f64, f64, f64, f64, f64, f64, f64, bool, f64, Table);
+
 /// How a run's services are set up.
 #[derive(Clone, Debug)]
 pub struct Services {
@@ -125,13 +129,14 @@ pub(crate) struct Runtime {
     prompts: RefCell<Vec<PurchasePrompt>>,
     finished: Finished,
     client: Rc<Cell<bool>>,
+    physics: Rc<dyn super::Physics>,
 }
 
 static PRODUCT_INFO: LazyLock<Mutex<HashMap<String, serde_json::Value>>> =
     LazyLock::new(Mutex::default);
 
 impl Runtime {
-    pub(crate) fn new(client: Rc<Cell<bool>>) -> Rc<Runtime> {
+    pub(crate) fn new(client: Rc<Cell<bool>>, physics: Rc<dyn super::Physics>) -> Rc<Runtime> {
         let config = Services::default();
         let universe = universe(&config);
         let cursor = universe.bus.lock().map(|b| b.next).unwrap_or(0);
@@ -142,6 +147,7 @@ impl Runtime {
             prompts: RefCell::default(),
             finished: Arc::default(),
             client,
+            physics,
         })
     }
 
@@ -176,6 +182,10 @@ const MODULES: &[(&str, &str)] = &[
         include_str!("services/marketplace.luau"),
     ),
     ("HttpService", include_str!("services/http.luau")),
+    (
+        "PathfindingService",
+        include_str!("services/pathfinding.luau"),
+    ),
 ];
 
 /// The module that answers `class`.
@@ -204,6 +214,7 @@ fn module_of(class: &str) -> Option<&'static str> {
         "MessagingService" => "MessagingService",
         "MarketplaceService" => "MarketplaceService",
         "HttpService" => "HttpService",
+        "PathfindingService" | "Path" => "PathfindingService",
         _ => return None,
     })
 }
@@ -654,6 +665,52 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
             }))
         }))
     })?;
+    let r = runtime.clone();
+    host.set(
+        "find_path",
+        lua.create_function(move |lua, args: PathArgs| {
+            let (sx, sy, sz, gx, gy, gz, height, can_jump, spacing, costs) = args;
+            let request = PathRequest {
+                start: [sx, sy, sz],
+                goal: [gx, gy, gz],
+                height,
+                can_jump,
+                spacing,
+                costs: costs.pairs::<String, f64>().collect::<Result<_>>()?,
+            };
+            let ctx = engine(lua).ctx.clone();
+            let Some(found) = super::pathfinding::compute(r.physics.as_ref(), &ctx, &request)
+            else {
+                return Ok(Value::Nil);
+            };
+            let list = lua.create_table()?;
+            for (i, w) in found.into_iter().enumerate() {
+                let t = lua.create_table()?;
+                t.set("x", w.position[0])?;
+                t.set("y", w.position[1])?;
+                t.set("z", w.position[2])?;
+                t.set("action", w.action)?;
+                t.set("label", w.label)?;
+                list.raw_set(i + 1, t)?;
+            }
+            Ok(Value::Table(list))
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "occlusion",
+        lua.create_function(move |lua, (flat, from, height): (Vec<f64>, f64, f64)| {
+            let points: Vec<[f64; 3]> = flat.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+            let ctx = engine(lua).ctx.clone();
+            Ok(super::pathfinding::occlusion(
+                r.physics.as_ref(),
+                &ctx,
+                &points,
+                from.max(1.0) as usize,
+                height,
+            ))
+        })?,
+    )?;
     let request = scheduler::yielding(lua, request)?;
     host.set("request", checked(lua, request)?)?;
     let r = runtime.clone();
