@@ -28,6 +28,7 @@ use crate::shell::rig::{
 };
 
 /// The player a run is played as.
+#[derive(Clone)]
 pub(super) struct Player {
     pub(super) user_id: i64,
     pub(super) name: String,
@@ -57,6 +58,12 @@ fn noob(note: String) -> Player {
 }
 
 /// Works out the player; blocking (network), so off the UI thread.
+/// The avatar lookups for a run that restarts (a teleport), its player
+/// already resolved.
+pub(super) fn lookups() -> StudioAvatars {
+    StudioAvatars::new(Client::new(ApiKey::from_env_or_config()))
+}
+
 pub(super) fn resolve() -> (Player, StudioAvatars) {
     let key = ApiKey::from_env_or_config();
     let avatars = StudioAvatars::new(Client::new(key.clone()));

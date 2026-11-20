@@ -55,13 +55,12 @@ pub(crate) use gui::{
     GradientPx as GuiGradient, Grouped as GuiGroup, ImageScale as GuiImageScale, Join as GuiJoin,
     Painted, PixelRect as GuiPixelRect, Rect as GuiRect, Screen as GuiScreen,
     ScrollWindow as GuiScrollWindow, ShadowPx as GuiShadow, SpaceGui, StrokePx as GuiStroke,
-    Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile, Typeset as GuiTypeset,
-    ViewCamera as GuiViewCamera, Viewport as GuiViewport,
+    Text as GuiText, TextMeasure as GuiTextMeasure, TextSpan as GuiTextSpan, Tile as GuiTile,
+    Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 #[cfg(test)]
 pub(crate) use gui::{
     plan as gui_plan, resolve_with as gui_layout_with, GroupTint as GuiGroupTint,
-    TextSpan as GuiTextSpan,
 };
 pub use gui::{
     player_gui, pseudo_localize, rich_runs, set_player_gui, shows_screen, GuiScrolls, PseudoLocale,

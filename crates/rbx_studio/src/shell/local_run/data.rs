@@ -1,7 +1,9 @@
 //! A place's Local Run data: its DataStores and what its test players
 //! bought, kept between runs in `<config>/local-run/<place>/`, and how the
-//! next run treats them (Test › Data).
+//! next run treats them (Test › Data), and the place files a teleport may
+//! reload into.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,23 @@ impl DataMode {
 struct Settings {
     #[serde(default)]
     data: DataMode,
+    /// Place files a teleport to their place id reloads into, besides the
+    /// place itself (TeleportService in Local Run). Edited in the place's
+    /// `settings.json`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    teleport_places: BTreeMap<i64, PathBuf>,
+}
+
+fn settings(path: &Path) -> Settings {
+    folder(path)
+        .and_then(|dir| std::fs::read(dir.join("settings.json")).ok())
+        .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// The place file a teleport to `place` reloads into, if one's mapped.
+pub(crate) fn teleport_place(path: &Path, place: i64) -> Option<PathBuf> {
+    settings(path).teleport_places.get(&place).cloned()
 }
 
 /// The place's folder: its published place id when it's linked, else a
@@ -65,17 +84,17 @@ pub(crate) fn folder(path: &Path) -> Option<PathBuf> {
 }
 
 pub(crate) fn mode(path: &Path) -> DataMode {
-    folder(path)
-        .and_then(|dir| std::fs::read(dir.join("settings.json")).ok())
-        .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
-        .map(|s| s.data)
-        .unwrap_or_default()
+    settings(path).data
 }
 
 pub(crate) fn set_mode(path: &Path, data: DataMode) {
     let Some(dir) = folder(path) else { return };
     let _ = std::fs::create_dir_all(&dir);
-    if let Ok(text) = serde_json::to_vec_pretty(&Settings { data }) {
+    let settings = Settings {
+        data,
+        ..settings(path)
+    };
+    if let Ok(text) = serde_json::to_vec_pretty(&settings) {
         let _ = std::fs::write(dir.join("settings.json"), text);
     }
 }
@@ -91,6 +110,8 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
         },
         api_access: mode != DataMode::Off,
         cache_dir: rbx_assets::cache_root().map(|root| root.join("local-run")),
+        teleport_places: settings(path).teleport_places.into_keys().collect(),
+        ..Default::default()
     }
 }
 

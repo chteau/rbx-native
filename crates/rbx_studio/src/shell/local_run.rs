@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::*;
-use rbx_dom::{Change, Ref, WeakDom};
+use rbx_dom::{Change, Ref, Variant, WeakDom};
 
 use super::output::game::Context as OutputContext;
 use super::play::Phase;
@@ -66,6 +66,16 @@ struct Running {
     /// Purchase prompts waiting for the test purchase dialog, the shown
     /// one first.
     prompts: std::collections::VecDeque<rbx_lua::server::PurchasePrompt>,
+    /// Who Play (local) plays as, for a teleport's restart.
+    player: Option<avatars::Player>,
+}
+
+/// What the next run starts from after a teleport: the place it lands in
+/// (`None`: the edited one) and what each player brings.
+struct Arriving {
+    place: Option<WeakDom>,
+    arrivals: std::collections::HashMap<i64, rbx_lua::server::Arrival>,
+    guis: Vec<(i64, WeakDom)>,
 }
 
 pub(crate) struct LocalRun {
@@ -74,6 +84,8 @@ pub(crate) struct LocalRun {
     pub(in crate::shell) starting: bool,
     /// Test › Players: how many local players Play (local) starts with.
     pub(in crate::shell) players: usize,
+    /// A teleport's landing, taken by the run it restarts.
+    arriving: Option<Arriving>,
 }
 
 impl Default for LocalRun {
@@ -82,6 +94,7 @@ impl Default for LocalRun {
             running: None,
             starting: false,
             players: 1,
+            arriving: None,
         }
     }
 }
@@ -338,6 +351,32 @@ fn purchase_text(
         "GamePass" => format!("game pass {}", prompt.id),
         "Bundle" => format!("bundle {}", prompt.id),
         "Subscription" => format!("subscription {}", prompt.subscription),
+        "GroupService.PromptJoinAsync" => {
+            return (
+                "Join group (test)".to_owned(),
+                format!(
+                    "{who} is asked to join group {}. This is a test: nobody joins anything.",
+                    prompt.id
+                ),
+            )
+        }
+        kind if kind.starts_with("AvatarEditorService.") => {
+            let what = match kind.trim_start_matches("AvatarEditorService.Prompt") {
+                "SaveAvatar" => "save this avatar",
+                "CreateOutfit" => "create an outfit",
+                "DeleteOutfit" => "delete an outfit",
+                "RenameOutfit" => "rename an outfit",
+                "UpdateOutfit" => "update an outfit",
+                "SetFavorite" => "change a favorite",
+                _ => "let the game read their inventory",
+            };
+            return (
+                "Avatar (test)".to_owned(),
+                format!(
+                    "The game asks {who} to {what}. This is a test: nothing changes on the account."
+                ),
+            );
+        }
         _ => format!("item {}", prompt.id),
     };
     (
@@ -408,7 +447,12 @@ impl Shell {
         player: Option<(avatars::Player, avatars::StudioAvatars)>,
         cx: &mut Context<Self>,
     ) {
-        let mut session = match rbx_sim::Session::new(self.dom.clone()) {
+        let arriving = self.play.live.local.arriving.take();
+        let place = arriving
+            .as_ref()
+            .and_then(|a| a.place.clone())
+            .unwrap_or_else(|| self.dom.clone());
+        let mut session = match rbx_sim::Session::new(place) {
             Ok(session) => session,
             Err(why) => {
                 push_row(
@@ -422,10 +466,31 @@ impl Shell {
         session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
             rbx_cloud::ApiKey::from_env_or_config(),
         ))));
+        rbx_lua::server::set_text_measure(Arc::new(rbx_viewer::measure_text));
         let mode = data::mode(&self.path);
-        session.set_services(data::services(&self.path, mode));
+        let mut services = data::services(&self.path, mode);
+        if let Some(device) = self.device_sim.device() {
+            let touch = matches!(
+                device.platform,
+                crate::device_sim::Platform::Phone | crate::device_sim::Platform::Tablet
+            );
+            services.device = rbx_lua::server::Device {
+                touch,
+                keyboard: !touch,
+                mouse: !touch,
+                gamepad: device.platform == crate::device_sim::Platform::Console,
+            };
+        }
+        if let Some(arriving) = arriving {
+            services.arrivals = arriving.arrivals;
+            for (user, gui) in arriving.guis {
+                session.set_arriving_gui(user, gui);
+            }
+        }
+        session.set_services(services);
         session.start();
         let playing = player.is_some();
+        let kept = player.as_ref().map(|(p, _)| p.clone());
         let mut note = None;
         if let Some((player, avatars)) = player {
             session.server.set_avatars(Box::new(avatars));
@@ -495,6 +560,7 @@ impl Shell {
             playing,
             sound: sound::Mixer::new(self.viewport.read(cx).core_gui.volume),
             prompts: std::collections::VecDeque::new(),
+            player: kept,
         });
         if playing {
             self.viewport
@@ -689,6 +755,66 @@ impl Shell {
         cx.notify();
     }
 
+    /// A script teleported players into a place this run can reload into:
+    /// the run stops and starts again there, each player bringing their
+    /// TeleportData and teleport GUI.
+    fn local_run_teleport(&mut self, teleport: rbx_sim::Teleport, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_ref() else {
+            return;
+        };
+        let place = teleport.request.place;
+        let target = match data::teleport_place(&self.path, place) {
+            Some(file) => match rbx_sim::load::read_place(&file) {
+                Ok(dom) => Some(dom),
+                Err(why) => {
+                    push_row(
+                        &mut self.output,
+                        Feedback::Error(format!("Teleport to {} failed: {why}", file.display())),
+                    );
+                    return;
+                }
+            },
+            None => None,
+        };
+        let dom = run.session.server.dom();
+        let mut arrivals = std::collections::HashMap::new();
+        let mut guis = Vec::new();
+        for player in &teleport.request.players {
+            let Some(Variant::Int64(user)) = dom
+                .get(*player)
+                .and_then(|p| p.properties().get("UserId"))
+                .cloned()
+            else {
+                continue;
+            };
+            arrivals.insert(
+                user,
+                rbx_lua::server::Arrival {
+                    data: teleport.request.data.clone(),
+                    source_place: 0,
+                    gui: None,
+                },
+            );
+            if let Some(gui) = &teleport.gui {
+                guis.push((user, gui.clone()));
+            }
+        }
+        drop(dom);
+        let player = run.player.clone();
+        push_row(
+            &mut self.output,
+            Feedback::Info(format!("Teleporting to place {place}\u{2026}")),
+        );
+        self.play.live.local.arriving = Some(Arriving {
+            place: target,
+            arrivals,
+            guis,
+        });
+        self.local_run_stop(cx);
+        let player = player.map(|p| (p, avatars::lookups()));
+        self.start_local(player, cx);
+    }
+
     /// One tick of the frame loop: steps the frames due on the wall clock.
     fn local_run_tick(&mut self, cx: &mut Context<Self>) {
         let Some(run) = self.play.live.local.running.as_mut() else {
@@ -752,6 +878,18 @@ impl Shell {
             run.clock = run.session.time();
         }
         run.prompts.extend(run.session.take_prompts());
+        let teleports = run.session.take_teleports();
+        if let Some(teleport) = teleports.into_iter().next() {
+            self.local_run_teleport(teleport, cx);
+            return;
+        }
+        let notices: Vec<(String, String)> = run
+            .session
+            .take_notices()
+            .into_iter()
+            .filter(|n| n.player.is_none() || n.player == viewed_player)
+            .map(|n| (n.title, n.text))
+            .collect();
         let dialog = run
             .prompts
             .front()
@@ -886,7 +1024,8 @@ impl Shell {
                 .map(rbx_sim::Simulation::core_gui);
             self.show_player_gui(player_gui, cx);
             self.viewport.update(cx, |viewport, _| {
-                if let Some(core) = core {
+                if let Some(mut core) = core {
+                    core.notifications.extend(notices);
                     viewport.core_gui.update(core);
                 }
                 if let Some(play) = viewport.play.as_mut() {

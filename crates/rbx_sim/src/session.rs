@@ -167,10 +167,7 @@ impl Session {
                 dom.take_changes();
                 Some(made)
             });
-            if let Some(arrival) = services
-                .as_mut()
-                .and_then(|s| s.arrivals.get_mut(&user_id))
-            {
+            if let Some(arrival) = services.as_mut().and_then(|s| s.arrivals.get_mut(&user_id)) {
                 arrival.gui = made;
             }
         }

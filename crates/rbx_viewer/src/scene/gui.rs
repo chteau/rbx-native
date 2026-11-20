@@ -42,7 +42,6 @@ pub(crate) use layout::{resolve, resolve_canvas, resolve_on_device, resolve_with
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
 #[cfg(test)]
 pub(crate) use plan::GroupTint;
-#[cfg(test)]
 pub(crate) use plan::TextSpan;
 pub(crate) use plan::{
     plan, plan_root, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,

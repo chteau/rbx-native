@@ -601,10 +601,7 @@ fn a_teleport_into_the_same_place_carries_its_data_and_gui() {
         teleports.extend(s.take_teleports());
         printed(&mut s, &mut lines);
     }
-    assert!(
-        has(&lines, Peer::Client(0), "failed Failure"),
-        "{lines:#?}"
-    );
+    assert!(has(&lines, Peer::Client(0), "failed Failure"), "{lines:#?}");
     assert_eq!(teleports.len(), 1);
     let teleport = teleports.remove(0);
     assert_eq!(teleport.request.data.as_deref(), Some(r#"{"level":7}"#));
@@ -671,11 +668,7 @@ fn a_badge_award_lands_in_the_ledger_with_a_toast() {
     assert!(has(&lines, Peer::Server, "again false"), "{lines:#?}");
     assert!(has(&lines, Peer::Server, "has true 1"), "{lines:#?}");
     assert!(
-        has(
-            &lines,
-            Peer::Client(0),
-            "client true false"
-        ),
+        has(&lines, Peer::Client(0), "client true false"),
         "{lines:#?}"
     );
     assert_eq!(notices.len(), 1, "{notices:#?}");

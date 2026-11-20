@@ -49,12 +49,13 @@ end
 
 local function familyOf(font)
 	if typeof(font) == "EnumItem" then
-		return font.Name
+		local ok, face = pcall(Font.fromEnum, font)
+		return if ok then face.Family else ""
 	end
 	if typeof(font) == "Font" then
-		return string.match(font.Family, "([^/]+)%.json$") or font.Family
+		return font.Family
 	end
-	return "SourceSans"
+	return ""
 end
 
 local results = {} -- TextFilterResult id -> its text

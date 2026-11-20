@@ -45,7 +45,10 @@ const CORE_TYPES: &[&str] = &[
 /// The `SetCore` prompts Local Run has no friends or block list for: the
 /// toast each gives instead.
 const PROMPT_NOTICES: &[(&str, &str)] = &[
-    ("PromptSendFriendRequest", "Local Run has no friends to add."),
+    (
+        "PromptSendFriendRequest",
+        "Local Run has no friends to add.",
+    ),
     ("PromptUnfriend", "Local Run has no friends to remove."),
     ("PromptBlockPlayer", "Local Run has no block list."),
     ("PromptUnblockPlayer", "Local Run has no block list."),

@@ -336,8 +336,13 @@ fn module_of(class: &str) -> Option<&'static str> {
         "Debris" | "Players" | "Player" | "RunService" | "FriendPages" => "Helpers",
         "TeleportService" | "TeleportOptions" | "TeleportAsyncResult" => "TeleportService",
         "BadgeService" => "BadgeService",
-        "GroupService" | "UserService" | "SocialService" | "PolicyService"
-        | "AvatarEditorService" | "VoiceChatService" | "StandardPages" => "Social",
+        "GroupService"
+        | "UserService"
+        | "SocialService"
+        | "PolicyService"
+        | "AvatarEditorService"
+        | "VoiceChatService"
+        | "StandardPages" => "Social",
         "TextService" | "TextFilterResult" | "Chat" => "Text",
         "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
         "GuiService" => "GuiService",
@@ -961,9 +966,11 @@ fn host_more(lua: &Lua, runtime: &Rc<Runtime>, host: &Table) -> Result<()> {
         lua.create_function(
             move |_, (player, title, text): (Option<Value>, String, String)| {
                 let player = player.as_ref().map(instance_id).transpose()?.map(Ref::new);
-                r.notices
-                    .borrow_mut()
-                    .push(Notice { player, title, text });
+                r.notices.borrow_mut().push(Notice {
+                    player,
+                    title,
+                    text,
+                });
                 Ok(())
             },
         )?,

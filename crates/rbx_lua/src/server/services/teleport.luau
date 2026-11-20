@@ -80,7 +80,7 @@ local function go(placeId, players, data, code, gui, teleportOptions)
 			placeId,
 			"Local Run can only teleport into this place or a place file mapped to place "
 				.. placeId
-				.. " in Test > Teleport places",
+				.. " in its Local Run settings",
 			teleportOptions
 		)
 		return false

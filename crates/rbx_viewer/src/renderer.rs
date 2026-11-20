@@ -83,7 +83,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::{GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
+pub use gui::{measure_text, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};

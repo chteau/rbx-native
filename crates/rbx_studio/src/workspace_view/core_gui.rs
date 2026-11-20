@@ -601,8 +601,14 @@ impl WorkspaceView {
             )
     }
 
-    /// The test purchase dialog: Buy or Cancel, never real Robux.
+    /// The test purchase dialog: Buy or Cancel, never real Robux; the other
+    /// prompts (avatar saves, group joins) Allow or Cancel, nothing saved.
     fn purchase_dialog(&self, title: &str, line: &str, cx: &mut Context<Self>) -> Div {
+        let confirm = if title == "Test purchase" {
+            "Buy (test)"
+        } else {
+            "Allow (test)"
+        };
         let button = |id: &'static str, label: &'static str, bought: bool| {
             div()
                 .id(id)
@@ -658,7 +664,7 @@ impl WorkspaceView {
                             .flex()
                             .gap_2()
                             .child(button("core-purchase-cancel", "Cancel", false))
-                            .child(button("core-purchase-buy", "Buy (test)", true)),
+                            .child(button("core-purchase-buy", confirm, true)),
                     ),
             )
     }
