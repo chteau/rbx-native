@@ -1,0 +1,83 @@
+{
+  "passes": 2,
+  "raw": [
+    {
+      "all_tags_has": true,
+      "all_tags_type": "table",
+      "clone_tags": 2,
+      "get_tags": "LocalRunM12_5a29fa99",
+      "has_loose": true,
+      "has_nil": "ok",
+      "log_clone": "added:Copy TagAdded added:Inner removed:Inner",
+      "log_live": "added:A after_add after_add_again TagAdded beat added:B removed:A after_remove after_remove_again beat removed:B after_destroy TagRemoved beat",
+      "log_loose": "after_add_loose beat added:Loose after_parent_in TagAdded beat removed:Loose after_parent_out TagRemoved beat",
+      "same_signal": true,
+      "tag_empty": "ok",
+      "tag_long": "ok",
+      "tag_nil": "Argument 3 missing or nil",
+      "tag_number": "ok",
+      "tagged_bad": "ok",
+      "tagged_loose": 0,
+      "tagged_order": "A B",
+      "tagged_parented": 1,
+      "tags_property": "Tags is not a valid member of Part \"Workspace.A\""
+    },
+    {
+      "all_tags_has": true,
+      "all_tags_type": "table",
+      "clone_tags": 2,
+      "get_tags": "LocalRunM12_693b3d23",
+      "has_loose": true,
+      "has_nil": "ok",
+      "log_clone": "added:Copy TagAdded added:Inner removed:Inner",
+      "log_live": "added:A after_add after_add_again TagAdded beat added:B removed:A after_remove after_remove_again beat removed:B after_destroy TagRemoved beat",
+      "log_loose": "after_add_loose beat added:Loose after_parent_in TagAdded beat removed:Loose after_parent_out TagRemoved beat",
+      "same_signal": true,
+      "tag_empty": "ok",
+      "tag_long": "ok",
+      "tag_nil": "Argument 3 missing or nil",
+      "tag_number": "ok",
+      "tagged_bad": "ok",
+      "tagged_loose": 0,
+      "tagged_order": "B A",
+      "tagged_parented": 1,
+      "tags_property": "Tags is not a valid member of Part \"Workspace.A\""
+    }
+  ],
+  "result": {
+    "all_tags_has": true,
+    "all_tags_type": "table",
+    "clone_tags": 2.0,
+    "get_tags": "LocalRunM12_5a29fa99",
+    "has_loose": true,
+    "has_nil": "ok",
+    "log_clone": "added:Copy TagAdded added:Inner removed:Inner",
+    "log_live": "added:A after_add after_add_again TagAdded beat added:B removed:A after_remove after_remove_again beat removed:B after_destroy TagRemoved beat",
+    "log_loose": "after_add_loose beat added:Loose after_parent_in TagAdded beat removed:Loose after_parent_out TagRemoved beat",
+    "same_signal": true,
+    "tag_empty": "ok",
+    "tag_long": "ok",
+    "tag_nil": "Argument 3 missing or nil",
+    "tag_number": "ok",
+    "tagged_bad": "ok",
+    "tagged_loose": 0.0,
+    "tagged_order": "A B",
+    "tagged_parented": 1.0,
+    "tags_property": "Tags is not a valid member of Part \"Workspace.A\""
+  },
+  "source": "real Roblox server, place 3086963177 version 582, joined with Sober",
+  "spread": {
+    "clone_tags": 0.0,
+    "get_tags": [
+      "LocalRunM12_5a29fa99",
+      "LocalRunM12_693b3d23"
+    ],
+    "tagged_loose": 0.0,
+    "tagged_order": [
+      "A B",
+      "B A"
+    ],
+    "tagged_parented": 0.0
+  },
+  "status": "recorded"
+}

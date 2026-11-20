@@ -502,6 +502,46 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/Swim.luau"),
         tolerance: &[("*", 0.5)],
     },
+    Test {
+        name: "DataStoreLimits",
+        source: include_str!("../conformance/tests/DataStoreLimits.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "DataStoreValues",
+        source: include_str!("../conformance/tests/DataStoreValues.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "MemoryStore",
+        source: include_str!("../conformance/tests/MemoryStore.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "HttpJson",
+        source: include_str!("../conformance/tests/HttpJson.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Messaging",
+        source: include_str!("../conformance/tests/Messaging.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "CollectionTags",
+        source: include_str!("../conformance/tests/CollectionTags.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Marketplace",
+        source: include_str!("../conformance/tests/Marketplace.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Pathfinding",
+        source: include_str!("../conformance/tests/Pathfinding.luau"),
+        tolerance: &[("*", 2.0), ("*_length*", 6.0), ("*_count*", 3.0)],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
