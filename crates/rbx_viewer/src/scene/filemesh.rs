@@ -55,6 +55,9 @@ pub(super) struct Entry {
     /// (next to the real client, a white floatie at 210 drew at 133 when
     /// this was the part's colour).
     tint: [f32; 3],
+    /// A `MeshPart`: where its image is see-through, its colour shows (as
+    /// the client draws a dynamic head's face over its skin).
+    reveals_color: bool,
     alpha: f32,
     reflectance: f32,
     casts_shadow: bool,
@@ -360,6 +363,9 @@ pub(crate) fn resolve(
             .clone()
             .filter(|reference| images.contains_key(reference));
         let (mut mesh_key, mut color) = (entry.mesh.clone(), entry.color_for(texture.is_some()));
+        if let Some(reference) = texture.clone().filter(|_| entry.reveals_color) {
+            texture = Some(over_color(&reference, entry.color, &mut images));
+        }
         if let Some(dressed) = dressed.get(&entry.referent) {
             let (key, derived) = &dressed.mesh;
             let (image_key, image) = &dressed.image;
@@ -476,8 +482,7 @@ fn from_mesh_part(
     let appearance = appearance::of(dom, instance);
     // A SurfaceAppearance replaces the mesh's own texture, so reading both
     // would only queue a download nothing goes on to sample.
-    let texture = properties
-        .get("TextureID")
+    let texture = crate::textures::content_property(properties, "TextureID")
         .filter(|_| appearance.is_none())
         .and_then(parsed_asset_ref);
     let color = match properties.get("Color3uint8") {
@@ -496,6 +501,7 @@ fn from_mesh_part(
         fit,
         color: color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0)),
         tint: [1.0; 3],
+        reveals_color: true,
         alpha: super::alpha(properties, material.kind),
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(properties),
@@ -524,7 +530,8 @@ fn from_special_mesh_child(
     };
 
     let properties = child.properties();
-    let texture = properties.get("TextureId").and_then(parsed_asset_ref);
+    let texture =
+        crate::textures::content_property(properties, "TextureId").and_then(parsed_asset_ref);
     // "Changes the hue of a mesh's texture" (creator-docs `VertexColor`), and
     // only that: Studio leaves an untextured mesh the part's own colour.
     let vertex_color = vector3(properties.get("VertexColor"), Vec3::ONE).to_array();
@@ -544,6 +551,7 @@ fn from_special_mesh_child(
         fit,
         color,
         tint,
+        reveals_color: false,
         // A SpecialMesh has no Transparency of its own: the part it hangs under
         // owns both properties.
         alpha: super::alpha(part.properties(), material.kind),
@@ -565,6 +573,53 @@ fn vector3(value: Option<&Variant>, default: Vec3) -> Vec3 {
 
 /// Reads a `MeshId`/`TextureID`/`TextureId` property, empty references included
 /// as `None` since Roblox uses the empty string for "no asset".
+/// What [`over_color`] keeps `texture` over `color` under.
+fn over_key(texture: &AssetRef, color: [f32; 3]) -> AssetRef {
+    AssetRef::Thumb(format!("over/{texture:?}/{color:?}"))
+}
+
+/// A `MeshPart`'s image laid over its colour, opaque: the key it is kept
+/// under (the image itself where it has no see-through texel).
+fn over_color(
+    texture: &AssetRef,
+    color: [f32; 3],
+    images: &mut HashMap<AssetRef, Arc<Image>>,
+) -> AssetRef {
+    let key = over_key(texture, color);
+    if !images.contains_key(&key) {
+        let source = images[texture].clone();
+        let image = if source
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| p[3] == u8::MAX)
+        {
+            source
+        } else {
+            let under = color.map(|c| super::linear_to_srgb(c) * 255.0);
+            let pixels = source
+                .pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|p| {
+                    let a = f32::from(p[3]) / 255.0;
+                    let mix = |i: usize| (f32::from(p[i]) * a + under[i] * (1.0 - a)).round() as u8;
+                    [mix(0), mix(1), mix(2), u8::MAX]
+                })
+                .collect();
+            Arc::new(Image {
+                width: source.width,
+                height: source.height,
+                pixels,
+            })
+        };
+        images.insert(key.clone(), image);
+    }
+    key
+}
+
 fn parsed_asset_ref(value: &Variant) -> Option<AssetRef> {
     match AssetRef::parse(asset_uri(value)?).ok()? {
         AssetRef::Empty => None,

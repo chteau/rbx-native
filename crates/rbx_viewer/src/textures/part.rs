@@ -66,6 +66,23 @@ pub(crate) fn asset_uri(value: &Variant) -> Option<&str> {
     }
 }
 
+/// A legacy ContentId property (`MeshId`, `TextureID`), or its `Content`
+/// twin when the legacy one is unset: Studio now saves a MeshPart's mesh
+/// and texture under `MeshContent`/`TextureContent` alone.
+pub(crate) fn content_property<'a>(
+    properties: &'a std::collections::BTreeMap<String, Variant>,
+    legacy: &str,
+) -> Option<&'a Variant> {
+    let set = |value: &&Variant| asset_uri(value).is_some_and(|uri| !uri.is_empty());
+    properties.get(legacy).filter(set).or_else(|| {
+        let stem = legacy
+            .strip_suffix("Id")
+            .or_else(|| legacy.strip_suffix("ID"))
+            .unwrap_or(legacy);
+        properties.get(&format!("{stem}Content")).filter(set)
+    })
+}
+
 const EDITABLE: &str = "editable/";
 
 /// The key a `Content::Object` property's `EditableImage`/`EditableMesh` is
@@ -306,6 +323,26 @@ mod tests {
 
         assert_eq!(asset_uri(&Variant::Float32(1.0)), None);
         assert_eq!(asset_uri(&Variant::Content(rbx_dom::Content::None)), None);
+    }
+
+    #[test]
+    fn an_unset_content_id_falls_back_to_its_content_twin() {
+        let uri = |s: &str| Variant::Content(rbx_dom::Content::Uri(s.to_string()));
+        let mut properties = std::collections::BTreeMap::new();
+        properties.insert("MeshId".to_string(), Variant::String(String::new()));
+        properties.insert("MeshContent".to_string(), uri("rbxassetid://7"));
+        properties.insert("TextureContent".to_string(), uri("rbxassetid://8"));
+        let read = |name| content_property(&properties, name).and_then(asset_uri);
+        assert_eq!(read("MeshId"), Some("rbxassetid://7"));
+        assert_eq!(read("TextureID"), Some("rbxassetid://8"));
+        properties.insert(
+            "MeshId".to_string(),
+            Variant::String("rbxassetid://9".into()),
+        );
+        assert_eq!(
+            content_property(&properties, "MeshId").and_then(asset_uri),
+            Some("rbxassetid://9")
+        );
     }
 
     fn r6_character(pants: &str, shirt: &str, graphic: &str) -> (WeakDom, Ref) {

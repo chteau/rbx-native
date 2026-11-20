@@ -194,7 +194,13 @@ impl PartData {
 /// `MeshPart.MeshId`: a string, or a `Content` whose URI is the first
 /// quoted text of its debug form.
 fn mesh_id(db: &ReflectionDatabase, instance: &Instance) -> String {
-    match read(db, instance, "MeshId").or_else(|| read(db, instance, "MeshID")) {
+    let legacy = read(db, instance, "MeshId").or_else(|| read(db, instance, "MeshID"));
+    // Studio now saves only the `Content` twin.
+    let set = |v: &Variant| !matches!(v, Variant::String(s) if s.is_empty());
+    match legacy
+        .filter(|v| set(v))
+        .or_else(|| read(db, instance, "MeshContent"))
+    {
         Some(Variant::String(uri)) => uri.clone(),
         Some(Variant::Content(content)) => {
             let text = format!("{content:?}");

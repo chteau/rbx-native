@@ -857,11 +857,16 @@ impl Metrics {
         let geometry = if let Some((mesh, _)) = mesh_part_asset(database, instance) {
             match appearance_of(dom, instance) {
                 Some(appearance) => textures.extend(appearance.maps.iter().flatten().cloned()),
-                None => textures.extend(properties.get("TextureID").and_then(reference)),
+                None => textures.extend(
+                    crate::textures::content_property(properties, "TextureID").and_then(reference),
+                ),
             }
             Geometry::Mesh(mesh)
         } else if let Some((child, mesh, _)) = special_mesh_asset(dom, instance) {
-            textures.extend(child.properties().get("TextureId").and_then(reference));
+            textures.extend(
+                crate::textures::content_property(child.properties(), "TextureId")
+                    .and_then(reference),
+            );
             Geometry::Mesh(mesh)
         } else if union {
             Geometry::Union(union_triangles(properties, fetch, &mut self.unions))

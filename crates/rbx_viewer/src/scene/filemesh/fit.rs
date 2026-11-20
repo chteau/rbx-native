@@ -11,6 +11,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::{parsed_asset_ref, vector3, FILE_MESH, HEAD_MESH, MESH_PART};
 use crate::scene::{cframe_matrix, shape::head_extent};
+use crate::textures::content_property;
 
 /// What a `SpecialMesh` of `MeshType.Head` draws: the Studio content file the
 /// engine itself names for it, fetched like any other `rbxasset://` file.
@@ -91,7 +92,7 @@ pub(crate) fn mesh_part(
         return None;
     }
     let properties = instance.properties();
-    let mesh = parsed_asset_ref(properties.get("MeshId")?)?;
+    let mesh = parsed_asset_ref(content_property(properties, "MeshId")?)?;
     let Some(&Variant::Vector3(size)) = properties.get("size") else {
         return None;
     };
@@ -133,7 +134,7 @@ pub(crate) fn special_mesh<'a>(
     let offset = vector3(properties.get("Offset"), Vec3::ZERO);
     match properties.get("MeshType") {
         Some(&Variant::Enum(FILE_MESH)) => {
-            let mesh = parsed_asset_ref(properties.get("MeshId")?)?;
+            let mesh = parsed_asset_ref(content_property(properties, "MeshId")?)?;
             let fit = Fit::Special {
                 cframe,
                 scale,

@@ -13,7 +13,7 @@ mod sky;
 
 pub(crate) use decor::{Celestial, Decor, Group, Panel};
 pub(crate) use face::{NormalId, Projection};
-pub(crate) use part::{asset_uri, editable_key, editable_of, is_makeup};
+pub(crate) use part::{asset_uri, content_property, editable_key, editable_of, is_makeup};
 pub(crate) use sky::stars::Star;
 pub(crate) use sky::Body;
 
