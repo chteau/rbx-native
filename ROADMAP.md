@@ -697,6 +697,11 @@ and, on a model, each part's own face middles and centre, as the
   kit doesn't cover, Roblox's own sprite sheet is no longer downloaded or
   drawn anywhere in the editor. Default service filter with a "show all"
   toggle, selection with a viewport highlight, instance insert/delete.
+  A `Folder` or `Model` whose `ExplorerIconContent` names an image shows
+  that image as its row icon (2026-11-20), the way Studio 0.748 does: fit
+  into the icon's square, untouched by `IconTint` or a colour tag, and the
+  class icon until it loads or when it fails to. Editing the property in
+  Properties swaps the icon right away.
 - [x] Properties panel: real per-type widgets (checkbox, colour picker,
   enum dropdown, `BrickColor` palette, numeric fields), grouped into
   collapsible categories named as Roblox's own Properties panel names

@@ -2,6 +2,7 @@
 
 ## 2026-11-20
 
+- **Custom Explorer icons.** A Folder or Model with `ExplorerIconContent` set shows that image as its Explorer icon, like Studio does now. It's fitted into the icon square, folder colour tags don't recolour it (Studio's `IconTint` doesn't either), and until it's downloaded, or if it can't be, you get the normal class icon. Change it in Properties and the row updates right away. (@chteau)
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)
 
 ## 2026-11-19

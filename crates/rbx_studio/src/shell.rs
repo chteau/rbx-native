@@ -29,6 +29,7 @@ mod documents;
 mod drag;
 mod edit;
 mod explorer_edit;
+mod explorer_icons;
 mod export;
 mod folder_color;
 mod format;
@@ -361,6 +362,7 @@ pub(crate) struct Shell {
     /// property name; see `shell::edit`.
     edits: edit::Edits,
     image_sizes: image_size::ImageSizes,
+    explorer_icons: explorer_icons::ExplorerIcons,
     sound_preview: sound_preview::SoundPreview,
     /// The Attributes/Tags section's own rename box and add-attribute/add-tag
     /// fields; see `shell::attributes_panel`.
@@ -968,6 +970,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             image_sizes: image_size::ImageSizes::default(),
+            explorer_icons: explorer_icons::ExplorerIcons::default(),
             sound_preview: sound_preview::SoundPreview::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
@@ -1125,6 +1128,8 @@ impl Shell {
         // Its light guides, for the same reason.
         shell.sync_light_guides(cx);
         shell.sync_layers(cx);
+        // Any `ExplorerIconContent` images the place names.
+        shell.refresh_explorer_icons(cx);
         // And the screen it sits in, for the UI editor's canvas.
         shell.ui_follow_selection();
 
