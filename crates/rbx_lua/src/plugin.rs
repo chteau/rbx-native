@@ -35,7 +35,7 @@ mod require;
 mod services;
 mod undo;
 mod vm;
-mod world;
+pub(crate) mod world;
 
 #[cfg(test)]
 pub(crate) mod testing;

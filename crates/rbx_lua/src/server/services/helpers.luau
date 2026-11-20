@@ -120,8 +120,19 @@ function PLAYER.DistanceFromCharacter(self, point)
 	return root and (root.Position - point).Magnitude or 0
 end
 
-function PLAYER.GetJoinData(_)
-	return { Members = {} }
+-- What the player joined with: a teleport's data and source place, when
+-- the run started from one (see teleport.luau).
+function PLAYER.GetJoinData(self)
+	local data = { Members = {} }
+	local arrival = host.arrival(self.UserId)
+	if arrival then
+		data.SourcePlaceId = arrival.source
+		data.SourceGameId = ""
+		if arrival.data ~= nil then
+			data.TeleportData = host.decode(arrival.data)
+		end
+	end
+	return data
 end
 
 function PLAYER.GetNetworkPing(_)

@@ -86,6 +86,33 @@ pub struct Session {
     moving: HashSet<Ref>,
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
     services: Option<rbx_lua::server::Services>,
+    /// Teleport GUIs players bring into this run, by user id, placed in
+    /// their client's DataModel as they join.
+    arriving: std::collections::HashMap<i64, WeakDom>,
+}
+
+/// A teleport a peer's script asked for, with the teleport GUI copied out
+/// of that peer's DataModel (a lone root).
+pub struct Teleport {
+    pub request: rbx_lua::server::TeleportRequest,
+    pub gui: Option<WeakDom>,
+}
+
+/// Copies `root`'s subtree from `from` under `parent` in `into`, with fresh
+/// referents (properties pointing at instances are left out); the copy's
+/// root.
+fn copy_subtree(from: &WeakDom, root: Ref, into: &mut WeakDom, parent: Option<Ref>) -> Option<Ref> {
+    let instance = from.get(root)?;
+    let made = into.new_instance(instance.class(), instance.name(), parent);
+    for (name, value) in instance.properties() {
+        if !matches!(value, rbx_dom::Variant::Ref(_)) {
+            let _ = into.set_property(made, name, value.clone());
+        }
+    }
+    for child in instance.children().to_vec() {
+        copy_subtree(from, child, into, Some(made));
+    }
+    Some(made)
 }
 
 impl Session {
@@ -101,6 +128,7 @@ impl Session {
             moving: HashSet::new(),
             fetcher: None,
             services: None,
+            arriving: std::collections::HashMap::new(),
         })
     }
 
@@ -129,8 +157,25 @@ impl Session {
         if let Some(fetcher) = &self.fetcher {
             sim.set_fetcher(fetcher.clone());
         }
-        if let Some(services) = &self.services {
-            sim.set_services(services.clone());
+        let mut services = self.services.clone();
+        if let Some(gui) = self.arriving.remove(&user_id) {
+            let root = gui.root_refs().first().copied();
+            let made = root.and_then(|root| {
+                let mut dom = sim.dom_mut();
+                let made = copy_subtree(&gui, root, &mut dom, None)?;
+                dom.unparent(made);
+                dom.take_changes();
+                Some(made)
+            });
+            if let Some(arrival) = services
+                .as_mut()
+                .and_then(|s| s.arrivals.get_mut(&user_id))
+            {
+                arrival.gui = made;
+            }
+        }
+        if let Some(services) = services {
+            sim.set_services(services);
         }
         sim.start();
         self.clients.push(Client {
@@ -283,6 +328,40 @@ impl Session {
             client.sim.set_services(config.clone());
         }
         self.services = Some(config);
+    }
+
+    /// The teleport GUI player `user_id` brings from the run they left
+    /// (with their `arrivals` entry in the services): call before they
+    /// join.
+    pub fn set_arriving_gui(&mut self, user_id: i64, gui: WeakDom) {
+        self.arriving.insert(user_id, gui);
+    }
+
+    /// Every teleport a script asked for since the last call, the
+    /// server's and the clients'.
+    pub fn take_teleports(&mut self) -> Vec<Teleport> {
+        let peers = std::iter::once(&self.server).chain(self.clients.iter().map(|c| &c.sim));
+        let mut out = Vec::new();
+        for sim in peers {
+            for request in sim.take_teleports() {
+                let gui = request.gui.and_then(|gui| {
+                    let mut copy = WeakDom::new();
+                    copy_subtree(&sim.dom(), gui, &mut copy, None)?;
+                    Some(copy)
+                });
+                out.push(Teleport { request, gui });
+            }
+        }
+        out
+    }
+
+    /// Every toast a script asked the core GUI for since the last call.
+    pub fn take_notices(&mut self) -> Vec<rbx_lua::server::Notice> {
+        let mut out = self.server.take_notices();
+        for client in &self.clients {
+            out.extend(client.sim.take_notices());
+        }
+        out
     }
 
     /// Every purchase prompt a script asked for since the last call, the

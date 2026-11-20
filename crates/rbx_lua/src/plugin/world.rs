@@ -8,6 +8,7 @@ mod standin;
 #[cfg(test)]
 mod tests;
 mod text;
+pub(crate) use text::text_size;
 mod tween;
 
 use mlua::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods, Value};

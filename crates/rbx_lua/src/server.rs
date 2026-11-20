@@ -47,7 +47,10 @@ pub use chat::ChatLine;
 pub use hooks::CollisionGroups;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
-pub use services::{PurchasePrompt, Services};
+pub use services::{
+    set_text_measure, Arrival, Device, Notice, PurchasePrompt, Services, TeleportRequest,
+    TextMeasure,
+};
 pub use terrain::{TerrainOp, TerrainReply};
 
 /// Roblox's message for a script that ran too long without yielding.
@@ -516,6 +519,17 @@ impl ServerVm {
     /// The purchase prompts scripts asked for since the last call.
     pub fn take_prompts(&self) -> Vec<PurchasePrompt> {
         self.services.take_prompts()
+    }
+
+    /// The teleports into reloadable places scripts asked for since the
+    /// last call.
+    pub fn take_teleports(&self) -> Vec<TeleportRequest> {
+        self.services.take_teleports()
+    }
+
+    /// The toasts scripts asked the core GUI for since the last call.
+    pub fn take_notices(&self) -> Vec<Notice> {
+        self.services.take_notices()
     }
 
     /// The test purchase dialog for `prompt` closed (`bought` when the

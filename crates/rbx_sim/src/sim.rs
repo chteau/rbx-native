@@ -551,6 +551,12 @@ impl Simulation {
             return;
         }
         let _ = dom.set_property(gui, "MenuIsOpen", rbx_dom::Variant::Bool(open));
+        drop(dom);
+        self.fire(Event::Signal {
+            owner: gui,
+            name: if open { "MenuOpened" } else { "MenuClosed" }.into(),
+            args: Vec::new(),
+        });
     }
 
     /// The menu's Reset button: what `ResetButtonCallback` asks for, a
@@ -1238,7 +1244,15 @@ impl Simulation {
 
     /// The chat messages this client showed since the last call.
     pub fn take_chat(&mut self) -> Vec<rbx_lua::server::ChatLine> {
-        self.vm.take_chat()
+        let mut lines = self.vm.take_chat();
+        let system = std::mem::take(&mut self.shared.borrow_mut().gui.system_messages);
+        lines.extend(system.into_iter().map(|text| rbx_lua::server::ChatLine {
+            prefix: String::new(),
+            text,
+            channel: "RBXSystem".into(),
+            user_id: 0,
+        }));
+        lines
     }
 
     /// The local player says `text` in the general channel (the editor's
@@ -1304,6 +1318,17 @@ impl Simulation {
     /// The purchase prompts scripts asked for since the last call.
     pub fn take_prompts(&self) -> Vec<rbx_lua::server::PurchasePrompt> {
         self.vm.take_prompts()
+    }
+
+    /// The teleports into reloadable places scripts asked for since the
+    /// last call.
+    pub fn take_teleports(&self) -> Vec<rbx_lua::server::TeleportRequest> {
+        self.vm.take_teleports()
+    }
+
+    /// The toasts scripts asked the core GUI for since the last call.
+    pub fn take_notices(&self) -> Vec<rbx_lua::server::Notice> {
+        self.vm.take_notices()
     }
 
     /// The test purchase dialog for `prompt` closed.

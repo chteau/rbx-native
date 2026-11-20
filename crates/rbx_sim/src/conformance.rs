@@ -542,6 +542,36 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/Pathfinding.luau"),
         tolerance: &[("*", 2.0), ("*_length*", 6.0), ("*_count*", 3.0)],
     },
+    Test {
+        name: "TeleportApi",
+        source: include_str!("../conformance/tests/TeleportApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "BadgeApi",
+        source: include_str!("../conformance/tests/BadgeApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "TextFilter",
+        source: include_str!("../conformance/tests/TextFilter.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "Localization",
+        source: include_str!("../conformance/tests/Localization.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "SocialPolicy",
+        source: include_str!("../conformance/tests/SocialPolicy.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "ClientApis",
+        source: include_str!("../conformance/tests/ClientApis.luau"),
+        tolerance: &[],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
@@ -603,6 +633,10 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
     (
         "ToolPose",
         include_str!("../conformance/client/ToolPose.luau"),
+    ),
+    (
+        "ClientApis",
+        include_str!("../conformance/client/ClientApis.luau"),
     ),
 ];
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");

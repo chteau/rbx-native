@@ -38,6 +38,17 @@ const CORE_TYPES: &[&str] = &[
     "EmotesMenu",
     "SelfView",
     "Captures",
+    "AvatarSwitcher",
+    "ExperienceShop",
+];
+
+/// The `SetCore` prompts Local Run has no friends or block list for: the
+/// toast each gives instead.
+const PROMPT_NOTICES: &[(&str, &str)] = &[
+    ("PromptSendFriendRequest", "Local Run has no friends to add."),
+    ("PromptUnfriend", "Local Run has no friends to remove."),
+    ("PromptBlockPlayer", "Local Run has no block list."),
+    ("PromptUnblockPlayer", "Local Run has no block list."),
 ];
 
 /// What `SetCore`/`GetCore` know, with what `GetCore` gives before any
@@ -143,6 +154,8 @@ pub struct Gui {
     topbar: f64,
     /// `SendNotification`s, for the editor to show: (title, text).
     pub notifications: Vec<(String, String)>,
+    /// `ChatMakeSystemMessage`s, for the chat window.
+    pub system_messages: Vec<String>,
 }
 
 impl Default for Gui {
@@ -160,6 +173,7 @@ impl Default for Gui {
             core: HashMap::new(),
             topbar: TOPBAR_TRANSPARENCY,
             notifications: Vec::new(),
+            system_messages: Vec::new(),
         }
     }
 }
@@ -571,18 +585,29 @@ pub(crate) fn call(
             };
             if method == "SetCore" {
                 let value = args.get(1).cloned().unwrap_or(Arg::Nil);
-                if name == "SendNotification" {
-                    if let Arg::Table(fields) = &value {
-                        let field = |key: &str| {
-                            fields.iter().find_map(|(k, v)| match v {
-                                Arg::String(s) if k == key => Some(s.clone()),
-                                _ => None,
-                            })
-                        };
+                let field = |key: &str| match &value {
+                    Arg::Table(fields) => fields.iter().find_map(|(k, v)| match v {
+                        Arg::String(s) if k == key => Some(s.clone()),
+                        _ => None,
+                    }),
+                    _ => None,
+                };
+                match name.as_str() {
+                    "SendNotification" if matches!(value, Arg::Table(_)) => {
                         gui.notifications.push((
                             field("Title").unwrap_or_default(),
                             field("Text").unwrap_or_default(),
                         ));
+                    }
+                    "ChatMakeSystemMessage" => {
+                        if let Some(text) = field("Text") {
+                            gui.system_messages.push(text);
+                        }
+                    }
+                    _ => {
+                        if let Some((_, text)) = PROMPT_NOTICES.iter().find(|(n, _)| n == name) {
+                            gui.notifications.push((name.clone(), (*text).to_owned()));
+                        }
                     }
                 }
                 gui.core.insert(name.clone(), value);

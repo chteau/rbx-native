@@ -39,5 +39,5 @@ mod tools;
 pub use input::{Input, MouseBehavior};
 pub use players::Avatars;
 pub use rbx_lua::{LineKind, Output};
-pub use session::{Peer, Session};
+pub use session::{Peer, Session, Teleport};
 pub use sim::{Role, Simulation, FRAME_HZ};

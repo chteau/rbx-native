@@ -10,6 +10,8 @@ use crate::engine::events::instance_key;
 use crate::engine::signal::LuaSignal;
 use crate::instance::LuaInstance;
 
+use super::services::Device;
+
 const SOURCE: &str = include_str!("input.luau");
 const KEY: &str = "rbxn.server.input";
 
@@ -51,6 +53,7 @@ pub(super) fn member(
     referent: Option<Ref>,
     service: &str,
     key: &str,
+    device: Device,
 ) -> Result<Option<Value>> {
     if let Some(referent) = referent.filter(|_| SIGNALS.contains(&key)) {
         let signal = LuaSignal(instance_key(referent, key));
@@ -58,9 +61,21 @@ pub(super) fn member(
             .create_userdata(signal)
             .map(|u| Some(Value::UserData(u)));
     }
-    let (value, found): (Value, bool) = module(lua)?
-        .get::<Function>("member")?
-        .call((service, key))?;
+    if service == "UserInputService" {
+        let enabled = match key {
+            "TouchEnabled" => Some(device.touch),
+            "KeyboardEnabled" => Some(device.keyboard),
+            "MouseEnabled" => Some(device.mouse),
+            "GamepadEnabled" => Some(device.gamepad),
+            _ => None,
+        };
+        if let Some(on) = enabled {
+            return Ok(Some(Value::Boolean(on)));
+        }
+    }
+    let module = module(lua)?;
+    module.set("touch", device.touch)?;
+    let (value, found): (Value, bool) = module.get::<Function>("member")?.call((service, key))?;
     Ok(found.then_some(value))
 }
 

@@ -256,7 +256,7 @@ impl ServerHooks {
             "IsClient" => flag(lua, client),
             "IsEdit" => flag(lua, false),
             "BindToRenderStep" | "UnbindFromRenderStep" if client => {
-                super::input::member(lua, None, "RunService", key)
+                super::input::member(lua, None, "RunService", key, Default::default())
             }
             "BindToRenderStep" | "UnbindFromRenderStep" => method(lua, |_, _: MultiValue| {
                 Err::<(), _>(mlua::Error::runtime(
@@ -537,7 +537,7 @@ impl Hooks for ServerHooks {
             }
             "UserInputService" | "ContextActionService" if self.client.get() => {
                 let signals = (class == "UserInputService").then_some(referent);
-                super::input::member(lua, signals, class, key)
+                super::input::member(lua, signals, class, key, self.services.device())
             }
             _ if db.is_subclass_of(class, "BasePart") => self.base_part(lua, referent, key),
             _ => Ok(None),

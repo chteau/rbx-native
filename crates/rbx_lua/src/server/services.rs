@@ -1,7 +1,10 @@
 //! The game services a Local Run server keeps beyond its scripts:
 //! DataStoreService (a per-place store on disk), MemoryStoreService,
 //! MessagingService (between every server of the run), HttpService's
-//! requests and MarketplaceService's test purchases.
+//! requests, MarketplaceService's test purchases, TeleportService's
+//! reloads, badges, the social and policy lookups, localization, text
+//! filtering and measuring, and the prompts the editor answers with its
+//! own dialogs.
 //!
 //! Each service's rules live in its own Luau module (`services/*.luau`,
 //! our own, from the creator docs and the goldens); this file is their
@@ -46,6 +49,91 @@ pub struct Services {
     pub api_access: bool,
     /// Where `GetProductInfo` answers are kept for offline runs.
     pub cache_dir: Option<PathBuf>,
+    /// Places a teleport reloads into besides the running place itself
+    /// (local files the editor maps to place ids).
+    pub teleport_places: Vec<i64>,
+    /// What each player arrived with from the teleport that started this
+    /// run, by user id.
+    pub arrivals: HashMap<i64, Arrival>,
+    /// What the clients report themselves as.
+    pub device: Device,
+}
+
+/// A player's arrival from a teleport.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Arrival {
+    /// `TeleportData`, as JSON.
+    pub data: Option<String>,
+    /// The place they left.
+    pub source_place: i64,
+    /// The teleport GUI they brought, unparented in their client's
+    /// DataModel.
+    pub gui: Option<Ref>,
+}
+
+/// The input a client has (`UserInputService.*Enabled`); touch also gives
+/// ContextActionService its on-screen buttons.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Device {
+    pub touch: bool,
+    pub keyboard: bool,
+    pub mouse: bool,
+    pub gamepad: bool,
+}
+
+impl Default for Device {
+    /// A desktop's.
+    fn default() -> Self {
+        Device {
+            touch: false,
+            keyboard: true,
+            mouse: true,
+            gamepad: false,
+        }
+    }
+}
+
+/// A teleport a script asked for into a place this run can reload into.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TeleportRequest {
+    pub players: Vec<Ref>,
+    pub place: i64,
+    /// `TeleportData`, as JSON.
+    pub data: Option<String>,
+    /// The reserved server's access code, for `TeleportToPrivateServer`
+    /// and options with `ReservedServerAccessCode`.
+    pub reserved: Option<String>,
+    /// The teleport GUI (`SetTeleportGui`, or the call's own), in the
+    /// asking peer's DataModel.
+    pub gui: Option<Ref>,
+}
+
+/// A toast the core GUI shows: an awarded badge, a stand-in's word on a
+/// prompt Local Run can't honour. `player` `None` for whoever's viewed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Notice {
+    pub player: Option<Ref>,
+    pub title: String,
+    pub text: String,
+}
+
+/// Measures GUI text: (text, size, font family name, wrap width) to
+/// (width, height) in pixels.
+pub type TextMeasure = dyn Fn(&str, f32, &str, Option<f32>) -> [f32; 2] + Send + Sync;
+
+static MEASURE: LazyLock<Mutex<Option<Arc<TextMeasure>>>> = LazyLock::new(Mutex::default);
+
+/// What `TextService` measures with; until set, a coarse estimate.
+pub fn set_text_measure(measure: Arc<TextMeasure>) {
+    *MEASURE.lock().unwrap_or_else(|e| e.into_inner()) = Some(measure);
+}
+
+fn measure_text(text: &str, size: f32, font: &str, width: Option<f32>) -> [f32; 2] {
+    let measure = MEASURE.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    match measure {
+        Some(measure) => measure(text, size, font, width),
+        None => crate::plugin::world::text_size(text, size, width.unwrap_or(0.0)),
+    }
 }
 
 impl Default for Services {
@@ -56,13 +144,17 @@ impl Default for Services {
             data_file: None,
             api_access: true,
             cache_dir: None,
+            teleport_places: Vec::new(),
+            arrivals: HashMap::new(),
+            device: Device::default(),
         }
     }
 }
 
-/// A purchase prompt a script asked for, for the editor to show its test
-/// purchase dialog: `kind` is `Asset`, `Product`, `GamePass`, `Bundle` or
-/// `Subscription`.
+/// A prompt a script asked for, for the editor to show its own dialog:
+/// `kind` is a test purchase's `Asset`, `Product`, `GamePass`, `Bundle` or
+/// `Subscription`, or `<Service>.<Method>` for the other prompts
+/// (`AvatarEditorService.PromptSaveAvatar`, `GroupService.PromptJoinAsync`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PurchasePrompt {
     pub kind: String,
@@ -127,6 +219,8 @@ pub(crate) struct Runtime {
     /// The next message number this VM hasn't delivered.
     cursor: Cell<u64>,
     prompts: RefCell<Vec<PurchasePrompt>>,
+    teleports: RefCell<Vec<TeleportRequest>>,
+    notices: RefCell<Vec<Notice>>,
     finished: Finished,
     client: Rc<Cell<bool>>,
     physics: Rc<dyn super::Physics>,
@@ -145,6 +239,8 @@ impl Runtime {
             universe: RefCell::new(universe),
             cursor: Cell::new(cursor),
             prompts: RefCell::default(),
+            teleports: RefCell::default(),
+            notices: RefCell::default(),
             finished: Arc::default(),
             client,
             physics,
@@ -161,6 +257,18 @@ impl Runtime {
 
     pub(crate) fn take_prompts(&self) -> Vec<PurchasePrompt> {
         std::mem::take(&mut self.prompts.borrow_mut())
+    }
+
+    pub(crate) fn take_teleports(&self) -> Vec<TeleportRequest> {
+        std::mem::take(&mut self.teleports.borrow_mut())
+    }
+
+    pub(crate) fn take_notices(&self) -> Vec<Notice> {
+        std::mem::take(&mut self.notices.borrow_mut())
+    }
+
+    pub(crate) fn device(&self) -> Device {
+        self.config.borrow().device
     }
 
     fn data<R>(&self, f: impl FnOnce(&mut store::Data) -> R) -> R {
@@ -187,6 +295,15 @@ const MODULES: &[(&str, &str)] = &[
         include_str!("services/pathfinding.luau"),
     ),
     ("Helpers", include_str!("services/helpers.luau")),
+    ("TeleportService", include_str!("services/teleport.luau")),
+    ("BadgeService", include_str!("services/badges.luau")),
+    ("Social", include_str!("services/social.luau")),
+    ("Text", include_str!("services/text.luau")),
+    (
+        "LocalizationService",
+        include_str!("services/localization.luau"),
+    ),
+    ("GuiService", include_str!("services/gui.luau")),
 ];
 
 /// The module that answers `class`.
@@ -217,12 +334,25 @@ fn module_of(class: &str) -> Option<&'static str> {
         "HttpService" => "HttpService",
         "PathfindingService" | "Path" => "PathfindingService",
         "Debris" | "Players" | "Player" | "RunService" | "FriendPages" => "Helpers",
+        "TeleportService" | "TeleportOptions" | "TeleportAsyncResult" => "TeleportService",
+        "BadgeService" => "BadgeService",
+        "GroupService" | "UserService" | "SocialService" | "PolicyService"
+        | "AvatarEditorService" | "VoiceChatService" | "StandardPages" => "Social",
+        "TextService" | "TextFilterResult" | "Chat" => "Text",
+        "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
+        "GuiService" => "GuiService",
         _ => return None,
     })
 }
 
 /// Services only a server has.
 const SERVER_ONLY: &[&str] = &["DataStoreService", "MemoryStoreService", "MessagingService"];
+
+/// Members only a client's module answers; the server's read as the
+/// engine's own (`GetGuiInset` on a server, say).
+fn client_only(name: &str) -> bool {
+    name == "GuiService"
+}
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -266,6 +396,9 @@ pub(crate) fn member(
     let Some(name) = module_of(class) else {
         return Ok(None);
     };
+    if client_only(name) && !runtime.client.get() {
+        return Ok(None);
+    }
     if runtime.client.get() && SERVER_ONLY.contains(&name) && class == name {
         let message = format!("{name} can't be accessed from the client");
         let f = lua.create_function(move |_, _: MultiValue| -> Result<()> {
@@ -282,7 +415,8 @@ pub(crate) fn member(
     Ok(found.then_some(value))
 }
 
-/// A write the services take (`MarketplaceService.ProcessReceipt`).
+/// A write the services take (`MarketplaceService.ProcessReceipt`), or
+/// watch before it's stored (`GuiService.SelectedObject`).
 pub(crate) fn set(
     lua: &Lua,
     runtime: &Rc<Runtime>,
@@ -291,10 +425,15 @@ pub(crate) fn set(
     key: &str,
     value: &Value,
 ) -> Result<bool> {
-    if class != "MarketplaceService" || key != "ProcessReceipt" {
+    let watched = match (class, key) {
+        ("MarketplaceService", "ProcessReceipt") => true,
+        ("GuiService", "SelectedObject") => runtime.client.get(),
+        _ => false,
+    };
+    let Some(name) = module_of(class).filter(|_| watched) else {
         return Ok(false);
-    }
-    module(lua, runtime, class)?.get::<Function>("set")?.call((
+    };
+    module(lua, runtime, name)?.get::<Function>("set")?.call((
         class,
         referent.value(),
         key,
@@ -342,14 +481,19 @@ pub(crate) fn poll(lua: &Lua, runtime: &Rc<Runtime>) -> Result<()> {
     Ok(())
 }
 
-/// The editor's purchase dialog closed on `prompt`.
+/// The editor's dialog closed on `prompt`: `bought` when the player
+/// confirmed.
 pub(crate) fn finished(
     lua: &Lua,
     runtime: &Rc<Runtime>,
     prompt: &PurchasePrompt,
     bought: bool,
 ) -> Result<()> {
-    if loaded(lua, "MarketplaceService")?.is_none() {
+    let name = match prompt.kind.split_once('.') {
+        Some((service, _)) => module_of(service).unwrap_or("MarketplaceService"),
+        None => "MarketplaceService",
+    };
+    if loaded(lua, name)?.is_none() {
         return Ok(());
     }
     let ctx = engine(lua).ctx.clone();
@@ -357,7 +501,7 @@ pub(crate) fn finished(
         return Ok(());
     }
     let player = LuaInstance::new(prompt.player, ctx).into_lua(lua)?;
-    module(lua, runtime, "MarketplaceService")?
+    module(lua, runtime, name)?
         .get::<Function>("finished")?
         .call::<()>((
             prompt.kind.as_str(),
@@ -740,7 +884,167 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         host.set(name, checked(lua, scheduler::yielding(lua, call)?)?)?;
     }
     host.set("product_info", checked(lua, info)?)?;
+    let r = runtime.clone();
+    let web = lua.create_function(
+        move |lua, (url, method, body, what): (String, String, Option<String>, String)| {
+            let cache = r.config.borrow().cache_dir.clone();
+            Ok(in_background(lua, &r, move || {
+                web_cached(url, method, body, &what, cache)
+            }))
+        },
+    )?;
+    host.set("web", checked(lua, scheduler::yielding(lua, web)?)?)?;
+    host_more(lua, runtime, &host)?;
     Ok(host)
+}
+
+/// The host calls of the services added after the stores: teleports,
+/// notices, raw properties, text measuring, the arrival and the device.
+fn host_more(lua: &Lua, runtime: &Rc<Runtime>, host: &Table) -> Result<()> {
+    let r = runtime.clone();
+    host.set(
+        "teleport_ok",
+        lua.create_function(move |_, place: i64| {
+            Ok(r.config.borrow().teleport_places.contains(&place))
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "teleport",
+        lua.create_function(
+            move |_,
+                  (place, players, data, reserved, gui): (
+                i64,
+                Vec<Value>,
+                Option<String>,
+                Option<String>,
+                Option<Value>,
+            )| {
+                let players = players
+                    .iter()
+                    .map(|p| instance_id(p).map(Ref::new))
+                    .collect::<Result<_>>()?;
+                let gui = gui.as_ref().map(instance_id).transpose()?.map(Ref::new);
+                r.teleports.borrow_mut().push(TeleportRequest {
+                    players,
+                    place,
+                    data,
+                    reserved,
+                    gui,
+                });
+                Ok(())
+            },
+        )?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "arrival",
+        lua.create_function(move |lua, user: i64| {
+            let Some(arrival) = r.config.borrow().arrivals.get(&user).cloned() else {
+                return Ok(Value::Nil);
+            };
+            let t = lua.create_table()?;
+            t.set("data", arrival.data)?;
+            t.set("source", arrival.source_place)?;
+            if let Some(gui) = arrival.gui {
+                let ctx = engine(lua).ctx.clone();
+                if ctx.dom().get(gui).is_some() {
+                    t.set("gui", LuaInstance::new(gui, ctx))?;
+                }
+            }
+            Ok(Value::Table(t))
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "notify",
+        lua.create_function(
+            move |_, (player, title, text): (Option<Value>, String, String)| {
+                let player = player.as_ref().map(instance_id).transpose()?.map(Ref::new);
+                r.notices
+                    .borrow_mut()
+                    .push(Notice { player, title, text });
+                Ok(())
+            },
+        )?,
+    )?;
+    host.set(
+        "raw",
+        lua.create_function(|lua, (id, name): (u32, String)| {
+            let ctx = engine(lua).ctx.clone();
+            let dom = ctx.dom();
+            Ok(dom
+                .get(Ref::new(id))
+                .and_then(|i| match i.properties().get(name.as_str()) {
+                    Some(Variant::String(s)) => Some(s.clone()),
+                    _ => None,
+                }))
+        })?,
+    )?;
+    host.set(
+        "set_raw",
+        lua.create_function(|lua, (id, name, text): (u32, String, String)| {
+            let ctx = engine(lua).ctx.clone();
+            let _ = ctx
+                .dom_mut()
+                .set_property(Ref::new(id), &name, Variant::String(text));
+            Ok(())
+        })?,
+    )?;
+    host.set(
+        "text_size",
+        lua.create_function(
+            |_, (text, size, font, width): (String, f32, String, Option<f32>)| {
+                let [w, h] = measure_text(&text, size, &font, width.filter(|w| *w > 0.0));
+                Ok((w, h))
+            },
+        )?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "device",
+        lua.create_function(move |lua, ()| {
+            let d = r.device();
+            let t = lua.create_table()?;
+            t.set("touch", d.touch)?;
+            t.set("keyboard", d.keyboard)?;
+            t.set("mouse", d.mouse)?;
+            t.set("gamepad", d.gamepad)?;
+            Ok(t)
+        })?,
+    )?;
+    Ok(())
+}
+
+/// A JSON answer from one of Roblox's public web APIs, kept like product
+/// info (by its URL and body) for offline runs.
+fn web_cached(
+    url: String,
+    method: String,
+    body: Option<String>,
+    what: &str,
+    cache: Option<PathBuf>,
+) -> std::result::Result<serde_json::Value, String> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (&url, &method, &body).hash(&mut hasher);
+    let key = format!("web-{:016x}", hasher.finish());
+    let file = cache.map(|dir| dir.join("web").join(format!("{key}.json")));
+    let headers = match body {
+        Some(_) => vec![("Content-Type".into(), "application/json".into())],
+        None => Vec::new(),
+    };
+    fetch_cached(
+        key,
+        HttpRequest {
+            url,
+            method,
+            headers,
+            body,
+        },
+        what,
+        file,
+    )
 }
 
 /// A yielding host call that answers `(ok, value)` as its value, or an

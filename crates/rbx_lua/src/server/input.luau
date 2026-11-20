@@ -18,6 +18,32 @@ local location = Vector2.zero
 local lastType = Enum.UserInputType.None
 
 local DEFAULT_PRIORITY = Enum.ContextActionPriority.Medium.Value
+
+-- What a US keyboard types for the keys whose name isn't the character.
+local KEY_STRINGS = {
+	Zero = "0",
+	One = "1",
+	Two = "2",
+	Three = "3",
+	Four = "4",
+	Five = "5",
+	Six = "6",
+	Seven = "7",
+	Eight = "8",
+	Nine = "9",
+	Space = " ",
+	Minus = "-",
+	Equals = "=",
+	LeftBracket = "[",
+	RightBracket = "]",
+	BackSlash = "\\",
+	Semicolon = ";",
+	Quote = "'",
+	Backquote = "`",
+	Comma = ",",
+	Period = ".",
+	Slash = "/",
+}
 -- GuiService:GetGuiInset()'s top (rbx_sim's GuiRuntime golden).
 local TOPBAR_INSET = 58
 
@@ -118,6 +144,101 @@ function M.render(dt)
 	end
 end
 
+-- On a touch device a binding that asks for one gets an on-screen button:
+-- an ImageButton with an `ActionTitle` label in the player's
+-- `ContextActionGui`, our own look (round, dark, up the right side above
+-- the jump button), which a script styles with SetTitle/SetImage/
+-- SetPosition or reaches through GetButton.
+local SLOTS = {
+	UDim2.new(1, -95, 1, -170),
+	UDim2.new(1, -170, 1, -95),
+	UDim2.new(1, -170, 1, -170),
+	UDim2.new(1, -95, 1, -245),
+	UDim2.new(1, -245, 1, -95),
+	UDim2.new(1, -170, 1, -245),
+	UDim2.new(1, -245, 1, -170),
+}
+
+local function buttonFrame()
+	local player = game:GetService("Players").LocalPlayer
+	local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
+		return nil
+	end
+	local screen = playerGui:FindFirstChild("ContextActionGui")
+	if not screen then
+		screen = Instance.new("ScreenGui")
+		screen.Name = "ContextActionGui"
+		screen.ResetOnSpawn = false
+		local frame = Instance.new("Frame")
+		frame.Name = "ContextButtonFrame"
+		frame.BackgroundTransparency = 1
+		frame.Size = UDim2.fromScale(1, 1)
+		frame.Parent = screen
+		screen.Parent = playerGui
+	end
+	return screen:FindFirstChild("ContextButtonFrame")
+end
+
+local function freeSlot()
+	local taken = {}
+	for _, binding in bindings do
+		if binding.slot then
+			taken[binding.slot] = true
+		end
+	end
+	for i = 1, #SLOTS do
+		if not taken[i] then
+			return i
+		end
+	end
+	return #SLOTS
+end
+
+local function makeButton(binding)
+	local frame = buttonFrame()
+	if not frame then
+		return
+	end
+	binding.slot = freeSlot()
+	local button = Instance.new("ImageButton")
+	button.Name = "ContextActionButton"
+	button.Size = UDim2.fromOffset(70, 70)
+	button.Position = SLOTS[binding.slot]
+	button.BackgroundColor3 = Color3.new(0, 0, 0)
+	button.BackgroundTransparency = 0.5
+	button.AutoButtonColor = false
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.5, 0)
+	corner.Parent = button
+	local title = Instance.new("TextLabel")
+	title.Name = "ActionTitle"
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.fromScale(1, 1)
+	title.Text = ""
+	title.TextColor3 = Color3.new(1, 1, 1)
+	title.TextSize = 18
+	title.Font = Enum.Font.BuilderSansBold
+	title.Parent = button
+	local function press(input)
+		local kind = input.UserInputType
+		if kind == Enum.UserInputType.Touch or kind == Enum.UserInputType.MouseButton1 then
+			handle(binding, input)
+		end
+	end
+	button.InputBegan:Connect(press)
+	button.InputEnded:Connect(press)
+	button.Parent = frame
+	binding.button = button
+end
+
+local function dropButton(binding)
+	if binding and binding.button then
+		binding.button:Destroy()
+		binding.button = nil
+	end
+end
+
 local function bind(name, callback, touch, priority, ...)
 	if type(name) ~= "string" then
 		error("Argument 1 missing or nil", 3)
@@ -125,8 +246,9 @@ local function bind(name, callback, touch, priority, ...)
 	if type(callback) ~= "function" then
 		error("Argument 2 missing or nil", 3)
 	end
+	dropButton(bindings[name])
 	bound += 1
-	bindings[name] = {
+	local binding = {
 		name = name,
 		callback = callback,
 		touch = touch == true,
@@ -134,6 +256,20 @@ local function bind(name, callback, touch, priority, ...)
 		order = bound,
 		inputs = { ... },
 	}
+	bindings[name] = binding
+	if binding.touch and M.touch then
+		makeButton(binding)
+	end
+end
+
+-- `f(button, value)` on `name`'s button, when it has one.
+local function onButton(f)
+	return function(_, name, value)
+		local binding = bindings[name]
+		if binding and binding.button then
+			f(binding.button, value)
+		end
+	end
 end
 
 local function info(binding)
@@ -155,9 +291,13 @@ local CAS = {
 		bind(name, callback, touch, tonumber(priority) or DEFAULT_PRIORITY, ...)
 	end,
 	UnbindAction = function(_, name)
+		dropButton(bindings[name])
 		bindings[name] = nil
 	end,
 	UnbindAllActions = function()
+		for _, binding in bindings do
+			dropButton(binding)
+		end
 		table.clear(bindings)
 	end,
 	GetBoundActionInfo = function(_, name)
@@ -171,13 +311,24 @@ local CAS = {
 		end
 		return all
 	end,
-	GetButton = function()
-		return nil
+	GetButton = function(_, name)
+		local binding = bindings[name]
+		return binding and binding.button
 	end,
-	SetTitle = nothing,
-	SetImage = nothing,
-	SetDescription = nothing,
-	SetPosition = nothing,
+	SetTitle = onButton(function(button, title)
+		button.ActionTitle.Text = tostring(title)
+	end),
+	SetImage = onButton(function(button, image)
+		button.Image = tostring(image)
+	end),
+	SetDescription = onButton(function(button, text)
+		button:SetAttribute("Description", tostring(text))
+	end),
+	SetPosition = onButton(function(button, position)
+		if typeof(position) == "UDim2" then
+			button.Position = position
+		end
+	end),
 	BindActivate = nothing,
 	UnbindActivate = nothing,
 }
@@ -230,15 +381,15 @@ local UIS = {
 	end,
 	SetNavigationGamepad = nothing,
 	GetStringForKeyCode = function(_, keyCode)
-		return if #keyCode.Name == 1 then keyCode.Name else ""
+		if typeof(keyCode) ~= "EnumItem" then
+			error("Argument 1 missing or nil", 2)
+		end
+		local name = keyCode.Name
+		return KEY_STRINGS[name] or (if #name == 1 then name else "")
 	end,
 	GetPlatform = function()
 		return Enum.Platform.None
 	end,
-	KeyboardEnabled = true,
-	MouseEnabled = true,
-	TouchEnabled = false,
-	GamepadEnabled = false,
 	VREnabled = false,
 	AccelerometerEnabled = false,
 	GyroscopeEnabled = false,
