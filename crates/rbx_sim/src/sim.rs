@@ -423,10 +423,15 @@ impl Simulation {
         };
         let (health, backpack, list) = {
             let shared = self.shared.borrow();
+            let gui = &shared.gui;
+            core.topbar = !gui.core_flag("TopbarEnabled", false);
+            core.chat =
+                core.topbar && gui.core_enabled("Chat") && !gui.core_flag("ChatActive", false);
+            core.chat_bar = core.chat && !gui.core_flag("ChatBarDisabled", true);
             (
-                shared.gui.core_enabled("Health"),
-                shared.gui.core_enabled("Backpack"),
-                shared.gui.core_enabled("PlayerList"),
+                core.topbar && gui.core_enabled("Health"),
+                core.topbar && gui.core_enabled("Backpack"),
+                core.topbar && gui.core_enabled("PlayerList"),
             )
         };
         if backpack {
@@ -526,8 +531,13 @@ impl Simulation {
                                 _ => None,
                             }
                         });
+                        let display_name = match i.properties().get("DisplayName") {
+                            Some(Variant::String(d)) if !d.is_empty() => d.clone(),
+                            _ => i.name().to_owned(),
+                        };
                         Some(crate::gui::PlayerRow {
                             name: i.name().to_owned(),
+                            display_name,
                             team,
                             stats: values,
                         })

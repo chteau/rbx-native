@@ -130,6 +130,14 @@ pub struct CoreGui {
     pub can_reset: bool,
     /// Each player's head, for chat bubbles: (user id, world position).
     pub heads: Vec<(i64, [f32; 3])>,
+    /// The chat window and its top bar toggle: `Chat` on and
+    /// `SetCore("ChatActive", false)` not set.
+    pub chat: bool,
+    /// Whether the chat window takes typing (`ChatBarDisabled` not true).
+    pub chat_bar: bool,
+    /// The top bar's buttons (`SetCore("TopbarEnabled", false)` hides them,
+    /// and every core GUI with them).
+    pub topbar: bool,
 }
 
 /// One player in the list: name, team colour, and a value per `stats`
@@ -137,6 +145,8 @@ pub struct CoreGui {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlayerRow {
     pub name: String,
+    /// `Player.DisplayName`, the name when empty.
+    pub display_name: String,
     pub team: Option<[u8; 3]>,
     pub stats: Vec<String>,
 }
@@ -266,6 +276,12 @@ impl Gui {
     /// What `SetCore("ResetButtonCallback", …)` was given, if anything.
     pub(crate) fn reset_callback(&self) -> Option<&Arg> {
         self.core.get("ResetButtonCallback")
+    }
+
+    /// Whether `SetCore(name, …)` left a flag at `value` (`false` for
+    /// `TopbarEnabled`); unset or set to anything else reads as not.
+    pub(crate) fn core_flag(&self, name: &str, value: bool) -> bool {
+        matches!(self.core.get(name), Some(Arg::Bool(b)) if *b == value)
     }
 
     pub fn core_enabled(&self, kind: &str) -> bool {

@@ -59,6 +59,45 @@ fn leaderstats_are_player_list_columns() {
     assert!(core.can_reset);
 }
 
+#[test]
+fn set_core_gui_enabled_toggles_each_part() {
+    let mut session = playing(LEADERSTATS, "");
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    assert!(core.chat && core.chat_bar && core.topbar);
+    assert!(core.health.is_some() && core.hotbar.is_some() && core.players.is_some());
+    assert_eq!(core.players.unwrap()[0].display_name, "Player1");
+
+    let client = r#"
+local StarterGui = game:GetService("StarterGui")
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+"#;
+    let mut session = playing(LEADERSTATS, client);
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    assert!(core.players.is_none() && core.health.is_none() && !core.chat);
+    assert!(core.hotbar.is_some() && core.topbar);
+
+    let client = r#"
+local StarterGui = game:GetService("StarterGui")
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true)
+StarterGui:SetCore("ChatBarDisabled", true)
+"#;
+    let mut session = playing("", client);
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    assert!(core.hotbar.is_some() && core.players.is_none() && !core.chat && !core.chat_bar);
+}
+
+#[test]
+fn topbar_enabled_false_hides_the_core_gui() {
+    let client = r#"game:GetService("StarterGui"):SetCore("TopbarEnabled", false)"#;
+    let mut session = playing(LEADERSTATS, client);
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    assert!(!core.topbar && !core.chat);
+    assert!(core.players.is_none() && core.health.is_none() && core.hotbar.is_none());
+}
+
 fn health(session: &Session) -> f64 {
     let sim = session.sim(Peer::Server).unwrap();
     let (_, character) = sim.local_player().unwrap();

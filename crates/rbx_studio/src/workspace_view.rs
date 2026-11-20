@@ -1730,7 +1730,9 @@ impl Render for WorkspaceView {
             // Only for the moment after the wheel changes the speed: anything
             // that stays belongs in the Viewport dock, not over the scene.
             .when_some(
-                self.speed_shown_until.map(|_| label::speed(self.speed)),
+                self.speed_shown_until
+                    .filter(|_| self.play.is_none())
+                    .map(|_| label::speed(self.speed)),
                 |this, speed| {
                     this.child(
                         div()
