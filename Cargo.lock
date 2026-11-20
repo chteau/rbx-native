@@ -7251,6 +7251,7 @@ dependencies = [
  "rbx_lua",
  "rbx_materials",
  "rbx_mesh",
+ "rbx_net",
  "rbx_play",
  "rbx_reflection",
  "rbx_terrain",

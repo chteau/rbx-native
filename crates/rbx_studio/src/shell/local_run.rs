@@ -25,6 +25,7 @@ use super::play::Phase;
 use super::Shell;
 
 mod avatars;
+pub(crate) mod data;
 mod sound;
 use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
@@ -62,6 +63,9 @@ struct Running {
     playing: bool,
     /// What the viewed peer hears.
     sound: sound::Mixer,
+    /// Purchase prompts waiting for the test purchase dialog, the shown
+    /// one first.
+    prompts: std::collections::VecDeque<rbx_lua::server::PurchasePrompt>,
 }
 
 pub(crate) struct LocalRun {
@@ -319,6 +323,29 @@ pub(crate) fn view_label(session: &rbx_sim::Session, view: rbx_sim::Peer) -> Str
 }
 
 /// One row of the run's own, tagged "Local Run" like a game row.
+/// The test purchase dialog's title and line for `prompt`.
+fn purchase_text(
+    session: &rbx_sim::Session,
+    prompt: &rbx_lua::server::PurchasePrompt,
+) -> (String, String) {
+    let who = session
+        .clients
+        .iter()
+        .find(|c| c.player == prompt.player)
+        .map_or_else(|| "A player".to_owned(), |c| c.name.clone());
+    let what = match prompt.kind.as_str() {
+        "Product" => format!("developer product {}", prompt.id),
+        "GamePass" => format!("game pass {}", prompt.id),
+        "Bundle" => format!("bundle {}", prompt.id),
+        "Subscription" => format!("subscription {}", prompt.subscription),
+        _ => format!("item {}", prompt.id),
+    };
+    (
+        "Test purchase".to_owned(),
+        format!("{who} wants to buy {what}. This is a test: nothing is charged."),
+    )
+}
+
 fn push_row(log: &mut super::output::OutputLog, row: Feedback) {
     log.push_game(OutputContext::LocalRun, row, Vec::new(), None);
 }
@@ -395,6 +422,8 @@ impl Shell {
         session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
             rbx_cloud::ApiKey::from_env_or_config(),
         ))));
+        let mode = data::mode(&self.path);
+        session.set_services(data::services(&self.path, mode));
         session.start();
         let playing = player.is_some();
         let mut note = None;
@@ -465,6 +494,7 @@ impl Shell {
             task: Some(task),
             playing,
             sound: sound::Mixer::new(self.viewport.read(cx).core_gui.volume),
+            prompts: std::collections::VecDeque::new(),
         });
         if playing {
             self.viewport
@@ -721,6 +751,11 @@ impl Shell {
         if due > steps {
             run.clock = run.session.time();
         }
+        run.prompts.extend(run.session.take_prompts());
+        let dialog = run
+            .prompts
+            .front()
+            .map(|prompt| purchase_text(&run.session, prompt));
         // Someone kicked: the Output says so; the viewed player's own view
         // keeps their last frame under the message, the run goes on.
         let kicked: Vec<(String, String)> = run.session.kicked[kicked_before..].to_vec();
@@ -779,10 +814,12 @@ impl Shell {
         }
         let (actions, menu_open) = self.viewport.update(cx, |viewport, _| {
             viewport.core_gui.push_chat(chat);
-            (
-                viewport.core_gui.take_actions(),
-                viewport.core_gui.menu_open(),
-            )
+            let actions = viewport.core_gui.take_actions();
+            // The prompt just answered stays closed; the next shows next tick.
+            if !actions.iter().any(|a| matches!(a, CoreAction::Purchase(_))) {
+                viewport.core_gui.purchase = dialog;
+            }
+            (actions, viewport.core_gui.menu_open())
         });
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
@@ -803,6 +840,11 @@ impl Shell {
                     }
                 }
                 CoreAction::Volume(volume) => run.sound.set_volume(volume),
+                CoreAction::Purchase(bought) => {
+                    if let Some(prompt) = run.prompts.pop_front() {
+                        run.session.purchase_finished(&prompt, bought);
+                    }
+                }
                 CoreAction::Leave => {
                     self.local_run_stop(cx);
                     return;

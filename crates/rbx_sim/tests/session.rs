@@ -28,12 +28,145 @@ fn tags_replicate_and_debris_and_player_helpers_work() {
         s.step();
         printed(&mut s, &mut lines);
     }
-    assert!(has(&lines, Peer::Client(0), "client has true 1"), "{lines:#?}");
-    assert!(has(&lines, Peer::Client(0), "client added Late"), "{lines:#?}");
-    assert!(has(&lines, Peer::Client(0), "client removed Tagged"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "client has true 1"),
+        "{lines:#?}"
+    );
+    assert!(
+        has(&lines, Peer::Client(0), "client added Late"),
+        "{lines:#?}"
+    );
+    assert!(
+        has(&lines, Peer::Client(0), "client removed Tagged"),
+        "{lines:#?}"
+    );
     assert!(has(&lines, Peer::Server, "debris gone true"), "{lines:#?}");
     assert!(has(&lines, Peer::Server, "name Player1"), "{lines:#?}");
     assert!(has(&lines, Peer::Server, "ping 0 false"), "{lines:#?}");
+}
+
+#[test]
+fn a_purchase_prompt_reaches_the_dialog_and_process_receipt() {
+    let mut s = Session::new(place(
+        "local mps = game:GetService('MarketplaceService') \
+         mps.ProcessReceipt = function(info) print('receipt', info.ProductId) return Enum.ProductPurchaseDecision.PurchaseGranted end \
+         mps.PromptGamePassPurchaseFinished:Connect(function(p, id, bought) print('pass', id, bought) \
+           print('owns', mps:UserOwnsGamePassAsync(p.UserId, id)) end)",
+        "local mps = game:GetService('MarketplaceService') local me = game:GetService('Players').LocalPlayer \
+         mps.PromptProductPurchaseFinished:Connect(function(user, id, bought) print('client product', id, bought) end) \
+         task.wait(0.5) mps:PromptProductPurchase(me, 77) task.wait(0.5) mps:PromptGamePassPurchase(me, 88)",
+    ))
+    .unwrap();
+    s.set_services(rbx_lua::server::Services {
+        universe: Some(format!("purchase-test-{}", std::process::id())),
+        ..Default::default()
+    });
+    s.start();
+    s.join("Player1", 1, None).unwrap();
+    let mut lines = Vec::new();
+    let mut prompts = Vec::new();
+    for _ in 0..180 {
+        s.step();
+        for prompt in s.take_prompts() {
+            prompts.push((prompt.kind.clone(), prompt.id));
+            s.purchase_finished(&prompt, true);
+        }
+        printed(&mut s, &mut lines);
+    }
+    assert_eq!(
+        prompts,
+        vec![("Product".to_owned(), 77), ("GamePass".to_owned(), 88)]
+    );
+    assert!(has(&lines, Peer::Server, "receipt 77"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "client product 77 true"),
+        "{lines:#?}"
+    );
+    assert!(has(&lines, Peer::Server, "pass 88 true"), "{lines:#?}");
+    assert!(has(&lines, Peer::Server, "owns true"), "{lines:#?}");
+}
+
+#[test]
+fn datastores_persist_between_runs_of_a_place() {
+    let dir = std::env::temp_dir().join(format!("rbx_sim_datastore_{}", std::process::id()));
+    let file = dir.join("place.json");
+    let run = |script: &str| {
+        let mut s = Session::new(place(script, "")).unwrap();
+        s.set_services(rbx_lua::server::Services {
+            data_file: Some(file.clone()),
+            ..Default::default()
+        });
+        s.start();
+        let mut lines = Vec::new();
+        for _ in 0..60 {
+            s.step();
+            printed(&mut s, &mut lines);
+        }
+        lines
+    };
+    run("game:GetService('DataStoreService'):GetDataStore('Saves'):SetAsync('k', { coins = 12 })");
+    let lines = run(
+        "print('loaded', game:GetService('DataStoreService'):GetDataStore('Saves'):GetAsync('k').coins)",
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(has(&lines, Peer::Server, "loaded 12"), "{lines:#?}");
+}
+
+/// HttpService against a local test server, with HttpEnabled off, and
+/// offline (one test: the offline switch is the whole process's).
+#[test]
+fn http_requests_reach_a_local_server_and_fail_like_roblox_offline() {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0u8; 4096];
+        let n = stream.read(&mut buffer).unwrap();
+        let request = String::from_utf8_lossy(&buffer[..n]).into_owned();
+        let body = r#"{"ok":true}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+        request
+    });
+    let script = format!(
+        "local http = game:GetService('HttpService') \
+         print('off', select(2, pcall(http.GetAsync, http, 'http://127.0.0.1:{port}/'))) \
+         http.HttpEnabled = true \
+         local answer = http:RequestAsync({{ Url = 'http://127.0.0.1:{port}/save', Method = 'POST', Body = 'hi' }}) \
+         print('answer', answer.StatusCode, http:JSONDecode(answer.Body).ok) \
+         print('offline', select(2, pcall(http.GetAsync, http, 'https://example.com/')))"
+    );
+    rbx_net::set_forced(true);
+    let mut s = session(place(&script, ""), 0);
+    let mut lines = Vec::new();
+    for _ in 0..240 {
+        s.step();
+        printed(&mut s, &mut lines);
+        if lines.iter().any(|(_, l)| l.starts_with("offline")) {
+            break;
+        }
+    }
+    rbx_net::set_forced(false);
+    let request = server.join().unwrap();
+    assert!(request.starts_with("POST /save"), "{request}");
+    assert!(
+        has(
+            &lines,
+            Peer::Server,
+            "off Http requests are not enabled. Enable via game settings"
+        ),
+        "{lines:#?}"
+    );
+    assert!(has(&lines, Peer::Server, "answer 200 true"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Server, "offline HttpError: ConnectFail"),
+        "{lines:#?}"
+    );
 }
 
 fn service(dom: &WeakDom, class: &str) -> Ref {

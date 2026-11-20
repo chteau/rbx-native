@@ -296,7 +296,9 @@ fn services_are_not_creatable() {
         .run(r#"Instance.new("Workspace")"#)
         .expect_err("services cannot be created");
     assert!(
-        error.to_string().contains("not creatable"),
+        error
+            .to_string()
+            .contains("Unable to create an Instance of type \"Workspace\""),
         "unexpected message: {error}"
     );
 }

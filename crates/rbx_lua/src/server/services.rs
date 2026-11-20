@@ -731,7 +731,9 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
                 Value::String(s) => s.to_str()?.to_owned(),
                 other => format!("{}", other.as_i64().unwrap_or_default()),
             };
-            Ok(in_background(lua, &r, move || user_lookup(&who, by_name, cache)))
+            Ok(in_background(lua, &r, move || {
+                user_lookup(&who, by_name, cache)
+            }))
         })?;
         host.set(name, checked(lua, scheduler::yielding(lua, call)?)?)?;
     }
@@ -865,8 +867,10 @@ fn fetch_cached(
             .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
     };
     let value = match fetched {
-        Ok(response) if response.success => serde_json::from_str::<serde_json::Value>(&response.body)
-            .map_err(|_| format!("{what} failed: the answer wasn't JSON"))?,
+        Ok(response) if response.success => {
+            serde_json::from_str::<serde_json::Value>(&response.body)
+                .map_err(|_| format!("{what} failed: the answer wasn't JSON"))?
+        }
         Ok(response) => {
             return from_disk().ok_or_else(|| {
                 format!(

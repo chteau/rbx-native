@@ -635,7 +635,7 @@ mod tests {
              obj = HttpService:JSONDecode(HttpService:JSONEncode(t))
              again = obj.a[3][1] .. ''
              empty = HttpService:JSONEncode({})
-             bad = select(2, pcall(HttpService.JSONEncode, HttpService, 0/0))",
+             nan = HttpService:JSONEncode(0/0)",
         );
         no_errors(&env);
         let g = lua.globals();
@@ -645,12 +645,11 @@ mod tests {
         assert_eq!(g.get::<String>("encoded").unwrap(), "[1,2,[3,4]]");
         assert_eq!(g.get::<String>("again").unwrap(), "3");
         assert_eq!(g.get::<String>("empty").unwrap(), "[]");
-        assert!(g
-            .get::<Value>("bad")
-            .unwrap()
-            .to_string()
-            .unwrap()
-            .contains("non-finite"));
+        // As a live server writes it.
+        assert_eq!(
+            g.get::<String>("nan").unwrap(),
+            r#"{"m":null,"t":"numeric","v":"nan"}"#
+        );
     }
 
     #[test]
@@ -748,7 +747,11 @@ mod tests {
 
     #[test]
     fn collection_tags_round_trip() {
-        let (dom, a, b) = two_parts();
+        // GetTagged lists what's in the game: under a service.
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let a = dom.new_instance("Part", "A", Some(workspace));
+        let b = dom.new_instance("Part", "B", Some(workspace));
         let (lua, env) = vm(dom);
         lua.globals()
             .set("pa", LuaInstance::new(a, env.ctx.clone()))

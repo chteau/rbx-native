@@ -1125,6 +1125,7 @@ impl Shell {
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),
             self.players_tile(cx).into_any_element(),
+            self.data_tile(cx).into_any_element(),
             self.network_tile(cx),
             self.device_tile(cx),
             self.controller_tile(cx).into_any_element(),
@@ -1194,6 +1195,38 @@ impl Shell {
             )
         })
         .on_click(cx.listener(|shell, _, _, cx| shell.local_run_next_players(cx)))
+    }
+
+    /// Test › Data: whether Local Run keeps this place's DataStores between
+    /// runs, starts them empty, or has API access off; a click cycles.
+    fn data_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        use super::local_run::data;
+        let mode = data::mode(&self.path);
+        if !crate::beta::enabled(super::local_run::BETA_ID) {
+            return unavailable_tile(
+                "ribbon-data",
+                IconName::Database,
+                "Data",
+                "turn on the Local Run beta in Settings",
+            );
+        }
+        let tip = match mode {
+            data::DataMode::Kept => "DataStores are kept from one local run of this place to the next. Click to change.",
+            data::DataMode::Fresh => "Every local run of this place starts with empty DataStores. Click to change.",
+            data::DataMode::Off => "Studio access to API services is off: DataStore calls fail as they do in Studio. Click to change.",
+        };
+        tile(
+            &self.ribbon_nav,
+            "ribbon-data",
+            IconName::Database,
+            mode.label(),
+            cx,
+        )
+        .tooltip(move |window, cx| super::tooltip::text(tip, window, cx))
+        .on_click(cx.listener(|shell, _, _, cx| {
+            data::set_mode(&shell.path, data::mode(&shell.path).next());
+            cx.notify();
+        }))
     }
 
     /// Test › Controller: the Controller Emulator window.

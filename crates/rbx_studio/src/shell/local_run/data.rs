@@ -1,0 +1,108 @@
+//! A place's Local Run data: its DataStores and what its test players
+//! bought, kept between runs in `<config>/local-run/<place>/`, and how the
+//! next run treats them (Test › Data).
+
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+/// Test › Data, per place.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DataMode {
+    /// DataStores are kept from one run to the next.
+    #[default]
+    Kept,
+    /// Every run starts with empty DataStores, forgotten when it stops.
+    Fresh,
+    /// "Enable Studio Access to API Services" off: DataStore calls fail as
+    /// Studio's do.
+    Off,
+}
+
+impl DataMode {
+    pub(crate) fn next(self) -> DataMode {
+        match self {
+            DataMode::Kept => DataMode::Fresh,
+            DataMode::Fresh => DataMode::Off,
+            DataMode::Off => DataMode::Kept,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            DataMode::Kept => "Data: Kept",
+            DataMode::Fresh => "Data: Fresh",
+            DataMode::Off => "Data: Off",
+        }
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Settings {
+    #[serde(default)]
+    data: DataMode,
+}
+
+/// The place's folder: its published place id when it's linked, else a
+/// hash of where the file is.
+pub(crate) fn folder(path: &Path) -> Option<PathBuf> {
+    let key = match crate::home::link_of(path) {
+        Some(link) => format!("place-{}", link.place_id),
+        None => {
+            let full = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+            let digest = Sha256::digest(full.to_string_lossy().as_bytes());
+            let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
+            format!("file-{hex}")
+        }
+    };
+    Some(
+        crate::settings::default_config_dir()?
+            .join("local-run")
+            .join(key),
+    )
+}
+
+pub(crate) fn mode(path: &Path) -> DataMode {
+    folder(path)
+        .and_then(|dir| std::fs::read(dir.join("settings.json")).ok())
+        .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
+        .map(|s| s.data)
+        .unwrap_or_default()
+}
+
+pub(crate) fn set_mode(path: &Path, data: DataMode) {
+    let Some(dir) = folder(path) else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(text) = serde_json::to_vec_pretty(&Settings { data }) {
+        let _ = std::fs::write(dir.join("settings.json"), text);
+    }
+}
+
+/// What the run's scripts get for `path` in `mode`.
+pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services {
+    let dir = folder(path);
+    rbx_lua::server::Services {
+        universe: dir.as_ref().map(|d| d.to_string_lossy().into_owned()),
+        data_file: match mode {
+            DataMode::Fresh => None,
+            _ => dir.map(|d| d.join("datastores.json")),
+        },
+        api_access: mode != DataMode::Off,
+        cache_dir: rbx_assets::cache_root().map(|root| root.join("local-run")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_modes_cycle_and_off_turns_api_access_off() {
+        assert_eq!(DataMode::Kept.next().next().next(), DataMode::Kept);
+        let path = Path::new("/nowhere/place.rbxl");
+        assert!(!services(path, DataMode::Off).api_access);
+        assert!(services(path, DataMode::Fresh).data_file.is_none());
+    }
+}

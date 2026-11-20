@@ -85,6 +85,7 @@ pub struct Session {
     /// Parts the server moved last frame, to say when they stop.
     moving: HashSet<Ref>,
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
+    services: Option<rbx_lua::server::Services>,
 }
 
 impl Session {
@@ -99,6 +100,7 @@ impl Session {
             relayed: Vec::new(),
             moving: HashSet::new(),
             fetcher: None,
+            services: None,
         })
     }
 
@@ -126,6 +128,9 @@ impl Session {
         sim.make_client(index, player);
         if let Some(fetcher) = &self.fetcher {
             sim.set_fetcher(fetcher.clone());
+        }
+        if let Some(services) = &self.services {
+            sim.set_services(services.clone());
         }
         sim.start();
         self.clients.push(Client {
@@ -267,6 +272,35 @@ impl Session {
         match peer {
             Peer::Server => Some(&self.server),
             Peer::Client(i) => self.clients.get(i).map(|c| &c.sim),
+        }
+    }
+
+    /// The DataStores, purchases and web lookups of every peer, the
+    /// clients that join later too. Call before `start`.
+    pub fn set_services(&mut self, config: rbx_lua::server::Services) {
+        self.server.set_services(config.clone());
+        for client in &self.clients {
+            client.sim.set_services(config.clone());
+        }
+        self.services = Some(config);
+    }
+
+    /// Every purchase prompt a script asked for since the last call, the
+    /// server's and the clients'.
+    pub fn take_prompts(&mut self) -> Vec<rbx_lua::server::PurchasePrompt> {
+        let mut out = self.server.take_prompts();
+        for client in &self.clients {
+            out.extend(client.sim.take_prompts());
+        }
+        out
+    }
+
+    /// The test purchase dialog for `prompt` closed: the server (ownership,
+    /// `ProcessReceipt`) and the buyer's client hear it.
+    pub fn purchase_finished(&mut self, prompt: &rbx_lua::server::PurchasePrompt, bought: bool) {
+        self.server.purchase_finished(prompt, bought);
+        if let Some(client) = self.clients.iter_mut().find(|c| c.player == prompt.player) {
+            client.sim.purchase_finished(prompt, bought);
         }
     }
 

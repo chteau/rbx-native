@@ -1296,6 +1296,23 @@ impl Simulation {
         }
     }
 
+    /// The DataStores, purchases and web lookups this peer's scripts use.
+    pub fn set_services(&self, config: rbx_lua::server::Services) {
+        self.vm.set_services(config);
+    }
+
+    /// The purchase prompts scripts asked for since the last call.
+    pub fn take_prompts(&self) -> Vec<rbx_lua::server::PurchasePrompt> {
+        self.vm.take_prompts()
+    }
+
+    /// The test purchase dialog for `prompt` closed.
+    pub fn purchase_finished(&mut self, prompt: &rbx_lua::server::PurchasePrompt, bought: bool) {
+        let changes = self.vm.purchase_finished(prompt, bought);
+        self.apply(changes);
+        self.collect_output();
+    }
+
     /// Where animations not in the asset cache are downloaded from.
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
         let mut shared = self.shared.borrow_mut();

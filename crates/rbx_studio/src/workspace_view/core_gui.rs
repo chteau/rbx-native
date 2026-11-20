@@ -47,6 +47,8 @@ pub(crate) enum CoreAction {
     Reset,
     Leave,
     Volume(f32),
+    /// The test purchase dialog closed: bought or cancelled.
+    Purchase(bool),
 }
 
 /// What the overlay holds between frames.
@@ -55,6 +57,8 @@ pub(crate) struct CoreGuiView {
     toasts: Vec<(String, String, Instant)>,
     /// The message shown once the viewed player was kicked.
     pub(crate) kicked: Option<String>,
+    /// The test purchase dialog (title, line) a script's prompt opened.
+    pub(crate) purchase: Option<(String, String)>,
     /// The Escape menu is open.
     menu: bool,
     /// What the player is typing into the chat bar, while it has the keys.
@@ -73,6 +77,7 @@ impl Default for CoreGuiView {
             state: None,
             toasts: Vec::new(),
             kicked: None,
+            purchase: None,
             menu: false,
             draft: None,
             chat: Vec::new(),
@@ -596,6 +601,68 @@ impl WorkspaceView {
             )
     }
 
+    /// The test purchase dialog: Buy or Cancel, never real Robux.
+    fn purchase_dialog(&self, title: &str, line: &str, cx: &mut Context<Self>) -> Div {
+        let button = |id: &'static str, label: &'static str, bought: bool| {
+            div()
+                .id(id)
+                .h(px(36.))
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(8.))
+                .cursor_pointer()
+                .when(bought, |this| {
+                    this.bg(rgb(ACCENT)).text_color(rgb(0x0b1220))
+                })
+                .when(!bought, |this| {
+                    this.bg(rgba(0xffffff0f))
+                        .hover(|this| this.bg(rgba(0xffffff1f)))
+                })
+                .child(label)
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |view, _: &MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        view.core_gui.purchase = None;
+                        view.core_gui.actions.push(CoreAction::Purchase(bought));
+                        cx.notify();
+                    }),
+                )
+        };
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(0x0000008c))
+            .child(
+                panel()
+                    .w(px(340.))
+                    .p_4()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .text_size(px(13.))
+                    .child(
+                        div()
+                            .text_size(px(16.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(title.to_owned()),
+                    )
+                    .child(div().text_color(rgba(0xf2f3f5cc)).child(line.to_owned()))
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .child(button("core-purchase-cancel", "Cancel", false))
+                            .child(button("core-purchase-buy", "Buy (test)", true)),
+                    ),
+            )
+    }
+
     /// The core GUI over the view, while Play (local) shows a client.
     pub(super) fn core_gui_element(
         &self,
@@ -603,7 +670,7 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let core = &self.core_gui;
-        if core.state.is_none() && core.kicked.is_none() {
+        if core.state.is_none() && core.kicked.is_none() && core.purchase.is_none() {
             return None;
         }
         let mut root = div().absolute().inset_0();
@@ -714,6 +781,9 @@ impl WorkspaceView {
         }
         if core.menu && core.state.is_some() {
             root = root.child(self.core_menu(cx));
+        }
+        if let Some((title, line)) = &core.purchase {
+            root = root.child(self.purchase_dialog(title, line, cx));
         }
         if let Some(message) = &core.kicked {
             root = root.child(kicked(message));
