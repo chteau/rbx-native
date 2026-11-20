@@ -88,7 +88,14 @@ struct LightingUniform {
 // in `shade`, so a place that sets it to 0 is matte here whatever this value
 // is (see `shade` for why). Verified against the material-sample fixture
 // (scale 1, glossy) and marked.rbxl (scale 0, matte).
-const PLASTIC_SHININESS: f32 = 30.0;
+const PLASTIC_SHININESS: f32 = 15.0;
+// How much of `spec_strength` the sun's own highlight takes, at
+// EnvironmentSpecularScale 0 and at 1. Fitted on the stage and material
+// fidelity scenes (M9): the real client's sun highlight is broad and about half
+// as strong as the reflection's dial, and does not vanish at scale 0, where
+// a small one is left (`default_lighting`).
+const SUN_SPECULAR_AT_ZERO: f32 = 0.15;
+const SUN_SPECULAR_AT_FULL: f32 = 0.5;
 // The strength itself is `lighting.calibration.y`, 0.28 unless the user has
 // recalibrated it (Studio Settings › Viewport › Advanced).
 const PLASTIC_ROUGHNESS: f32 = 0.25;
@@ -344,17 +351,12 @@ fn shade(surface: Surface) -> vec3<f32> {
         u32(max(lighting.locals.x, 0.0))
     );
 
-    // The sun's own specular highlight is scaled by EnvironmentSpecularScale
-    // (`tuning.y`), the same dial the environment reflection below is: a place
-    // that turns it to 0 (as many low-poly/stylised places do) reads as matte
-    // in Studio, its flat colours full and unwashed, and adding a broad sun
-    // highlight there is exactly what greyed the greens out. A place that
-    // leaves it at 1 keeps the full highlight. Roblox publishes no formula, so
-    // this ties the direct highlight to the same scale as the reflection it is
-    // physically the sharp end of, matched against Studio on a place with the
-    // scale at 0 (matte) and one at 1 (glossy).
+    // The sun's own highlight follows EnvironmentSpecularScale (`tuning.y`),
+    // the dial the environment reflection below is under, between the two
+    // fitted strengths: a place at scale 0 reads nearly matte, its flat colours
+    // unwashed, but keeps the small highlight the real client leaves there.
     var color = surface.albedo * (direct + ambient + locals.diffuse)
-        + (specular * lighting.sun_color.rgb * lighting.tuning.y
+        + (specular * lighting.sun_color.rgb * mix(SUN_SPECULAR_AT_ZERO, SUN_SPECULAR_AT_FULL, lighting.tuning.y)
             + locals.specular
             + environment * lighting.tuning.y * surface.spec_strength * env_fresnel(normal, to_eye))
             * surface.spec_tint;

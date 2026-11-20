@@ -21,6 +21,15 @@ const NIGHT_ELEVATION: f32 = -0.1;
 const NIGHT_BRIGHTNESS: f32 = 0.029;
 const NIGHT_TINT: Vec3 = Vec3::new(1.0, 0.72, 0.7);
 
+/// What the sky is multiplied by with the sun a few degrees up: the real
+/// client's sky (and the light it bounces) at `ClockTime` 17.8 on the equator
+/// over ours, in linear light (the `evening` fidelity scene). It fades out by
+/// [`WARM_GONE_ELEVATION`] (about 13 degrees, the `morning` scene is
+/// untouched) and toward night, which has its own [`NIGHT_TINT`].
+const TWILIGHT_TINT: Vec3 = Vec3::new(1.12, 0.8, 0.6);
+const WARM_FULL_ELEVATION: f32 = 0.04;
+const WARM_GONE_ELEVATION: f32 = 0.22;
+
 /// Stars are out entirely below this elevation and gone by the time the sun is
 /// back on the horizon, which is what "they come out as the sun sets" means in
 /// a renderer with no twilight scattering of its own.
@@ -32,7 +41,10 @@ const STARS_GONE_ELEVATION: f32 = 0.0;
 pub(super) fn tint(sun_elevation: f32) -> Vec3 {
     let day = smoothstep(NIGHT_ELEVATION, DAY_ELEVATION, sun_elevation);
 
-    (NIGHT_TINT * NIGHT_BRIGHTNESS).lerp(Vec3::ONE, day)
+    let warmth = (1.0 - smoothstep(WARM_FULL_ELEVATION, WARM_GONE_ELEVATION, sun_elevation))
+        * smoothstep(NIGHT_ELEVATION, 0.0, sun_elevation);
+
+    (NIGHT_TINT * NIGHT_BRIGHTNESS).lerp(Vec3::ONE, day) * Vec3::ONE.lerp(TWILIGHT_TINT, warmth)
 }
 
 /// How much of the star field shows, 0 by day to 1 at night.
@@ -65,6 +77,13 @@ mod tests {
         assert_eq!(night, tint(NIGHT_ELEVATION));
         assert!(night.x >= night.z);
         assert!(night.max_element() <= NIGHT_BRIGHTNESS);
+    }
+
+    #[test]
+    fn a_low_sun_warms_the_sky() {
+        let dusk = tint(0.05);
+        assert!(dusk.x > dusk.y && dusk.y > dusk.z, "{dusk}");
+        assert_eq!(tint(WARM_GONE_ELEVATION), Vec3::ONE);
     }
 
     #[test]

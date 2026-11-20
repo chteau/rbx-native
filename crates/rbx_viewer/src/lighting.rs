@@ -112,9 +112,9 @@ impl Calibration {
 /// is in.
 const FILL_FRACTION: f32 = 0.10;
 const FILL_TINT: Vec3 = Vec3::new(0.82, 0.9, 1.0);
-/// Moonlight, once the sun is below the horizon: same lamp, 0.155 as bright
-/// and as white as the sun, measured on the real client at midnight.
-const MOON_FRACTION: f32 = 0.155;
+/// Moonlight, once the sun is below the horizon: same lamp, 0.21 as bright
+/// and as white as the sun, fitted to the lit tops of the `night` scene.
+const MOON_FRACTION: f32 = 0.21;
 const MOON_TINT: Vec3 = Vec3::ONE;
 /// Half-width, in `sun_direction.y`, of the band the sun hands the fill lamp
 /// over to the moon across. Without it dawn and dusk would pop in one frame.
