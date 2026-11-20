@@ -214,6 +214,17 @@ struct Mapped {
     edge: f32,
 }
 
+/// How much of Plastic's normal map reaches the shading: the real client's
+/// plastic is nearly flat past a few studs, and the whole map read as a
+/// visible grain over every grey part (the Local Run side-by-sides).
+const PLASTIC_GRAIN: f32 = 0.4;
+
+/// Plastic's normal: its map's tilt scaled down to [`PLASTIC_GRAIN`].
+fn plastic_normal(mapped: Mapped) -> vec3<f32> {
+    let flat = normalize(mapped.geometric_normal);
+    return normalize(mix(flat, mapped.normal, PLASTIC_GRAIN));
+}
+
 /// Whether a material shades procedurally whatever maps it is handed: Neon is
 /// unlit and a ForceField is a tinted shell, so neither reads a texture.
 fn is_procedural(kind: u32) -> bool {
@@ -237,7 +248,7 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
         // `tangent_normal` hands straight back.
         var surface = plastic(
             mapped.base_albedo,
-            mapped.normal,
+            plastic_normal(mapped),
             mapped.world_position,
             mapped.reflectance,
         );
