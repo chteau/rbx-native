@@ -54,6 +54,8 @@
   "spread": {},
   "status": "recorded",
   "known_gaps": {
+    "after_tracks": "Animate picks the idle variant at random by weight (9 to 1), as Roblox's does; a run that rolls the second idle (180435792) differs from the recorded passes, which all rolled the first",
+    "held_tracks": "Animate picks the idle variant at random by weight (9 to 1), as Roblox's does; a run that rolls the second idle (180435792) differs from the recorded passes, which all rolled the first",
     "idle_tracks": "Animate picks the idle variant at random by weight (9 to 1), as Roblox's does; a run that rolls the second idle (180435792) differs from the recorded passes, which all rolled the first"
   }
 }
