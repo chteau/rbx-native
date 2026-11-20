@@ -1,0 +1,44 @@
+{
+  "passes": 3,
+  "raw": [
+    {
+      "can_invite": "SocialService:CanSendGameInviteAsync Must be called from a local script.",
+      "can_invite_nil": "Argument 1 missing or nil",
+      "groups_string": "Unable to cast string to User",
+      "policy_china": false,
+      "policy_keys": "AllowedExternalLinkReferences,AreAdsAllowed,ArePaidRandomItemsRestricted,IsContentSharingAllowed,IsEligibleToPurchaseCommerceProduct,IsEligibleToPurchaseSubscription,IsEndlessContentAutoplayAllowed,IsEndlessContentLoadAllowed,IsPaidItemTradingAllowed,IsPhotoToAvatarAllowed,IsSubjectToChinaPolicies,IsThirdPartyAccountLinkingAllowed",
+      "policy_nil": "Argument 1 missing or nil",
+      "voice_enabled": true
+    },
+    {
+      "can_invite": "SocialService:CanSendGameInviteAsync Must be called from a local script.",
+      "can_invite_nil": "Argument 1 missing or nil",
+      "groups_string": "Unable to cast string to User",
+      "policy_china": false,
+      "policy_keys": "AllowedExternalLinkReferences,AreAdsAllowed,ArePaidRandomItemsRestricted,IsContentSharingAllowed,IsEligibleToPurchaseCommerceProduct,IsEligibleToPurchaseSubscription,IsEndlessContentAutoplayAllowed,IsEndlessContentLoadAllowed,IsPaidItemTradingAllowed,IsPhotoToAvatarAllowed,IsSubjectToChinaPolicies,IsThirdPartyAccountLinkingAllowed",
+      "policy_nil": "Argument 1 missing or nil",
+      "voice_enabled": true
+    },
+    {
+      "can_invite": "SocialService:CanSendGameInviteAsync Must be called from a local script.",
+      "can_invite_nil": "Argument 1 missing or nil",
+      "groups_string": "Unable to cast string to User",
+      "policy_china": false,
+      "policy_keys": "AllowedExternalLinkReferences,AreAdsAllowed,ArePaidRandomItemsRestricted,IsContentSharingAllowed,IsEligibleToPurchaseCommerceProduct,IsEligibleToPurchaseSubscription,IsEndlessContentAutoplayAllowed,IsEndlessContentLoadAllowed,IsPaidItemTradingAllowed,IsPhotoToAvatarAllowed,IsSubjectToChinaPolicies,IsThirdPartyAccountLinkingAllowed",
+      "policy_nil": "Argument 1 missing or nil",
+      "voice_enabled": true
+    }
+  ],
+  "result": {
+    "can_invite": "SocialService:CanSendGameInviteAsync Must be called from a local script.",
+    "can_invite_nil": "Argument 1 missing or nil",
+    "groups_string": "Unable to cast string to User",
+    "policy_china": false,
+    "policy_keys": "AllowedExternalLinkReferences,AreAdsAllowed,ArePaidRandomItemsRestricted,IsContentSharingAllowed,IsEligibleToPurchaseCommerceProduct,IsEligibleToPurchaseSubscription,IsEndlessContentAutoplayAllowed,IsEndlessContentLoadAllowed,IsPaidItemTradingAllowed,IsPhotoToAvatarAllowed,IsSubjectToChinaPolicies,IsThirdPartyAccountLinkingAllowed",
+    "policy_nil": "Argument 1 missing or nil",
+    "voice_enabled": true
+  },
+  "source": "real Roblox server, place 3086963177 version 586, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}

@@ -63,6 +63,39 @@ function Harness.vec(v, digits)
 	return string.format("%s,%s,%s", Harness.round(v.X, d), Harness.round(v.Y, d), Harness.round(v.Z, d))
 end
 
+-- A value as a golden field: numbers rounded, booleans and strings kept,
+-- anything else as its type and text.
+function Harness.show(v)
+	if type(v) == "number" then
+		return Harness.round(v, 4)
+	elseif type(v) == "boolean" or type(v) == "string" then
+		return v
+	elseif v == nil then
+		return "nil"
+	elseif typeof(v) == "Vector3" then
+		return "Vector3:" .. Harness.vec(v, 3)
+	end
+	return typeof(v) .. ":" .. tostring(v)
+end
+
+-- `f(...)` shown, or its error message without the script position.
+function Harness.try(f, ...)
+	local ok, value = pcall(f, ...)
+	if ok then
+		return Harness.show(value)
+	end
+	return "err: " .. (tostring(value):gsub("^.-:%d+: ", ""))
+end
+
+-- Each property in `props` of `instance` into `result` as `prefix.prop`.
+function Harness.props(result, prefix, instance, props)
+	for _, prop in props do
+		result[prefix .. "." .. prop] = Harness.try(function()
+			return instance[prop]
+		end)
+	end
+end
+
 -- The anchored scene the spatial query tests look at, around `origin`.
 -- QueryMask doesn't collide with QueryGroup.
 function Harness.queryScene(origin)

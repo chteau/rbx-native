@@ -1,0 +1,67 @@
+{
+  "passes": 3,
+  "raw": [
+    {
+      "broadcast": "hello world",
+      "can_chat": true,
+      "chat_filter": "hello",
+      "chat_filter_nil_player": "Argument 2 missing or nil",
+      "filter_bad_user": "Unable to cast string to int64",
+      "filter_nil": "Argument 1 missing or nil",
+      "for_user": "hello world",
+      "result_class": "TextFilterResult",
+      "size_bad_frame": "Unable to cast double to Vector2",
+      "size_empty_y": 20,
+      "size_lines": 2,
+      "size_same_width": true
+    },
+    {
+      "broadcast": "hello world",
+      "can_chat": true,
+      "chat_filter": "hello",
+      "chat_filter_nil_player": "Argument 2 missing or nil",
+      "filter_bad_user": "Unable to cast string to int64",
+      "filter_nil": "Argument 1 missing or nil",
+      "for_user": "hello world",
+      "result_class": "TextFilterResult",
+      "size_bad_frame": "Unable to cast double to Vector2",
+      "size_empty_y": 20,
+      "size_lines": 2,
+      "size_same_width": true
+    },
+    {
+      "broadcast": "hello world",
+      "can_chat": true,
+      "chat_filter": "hello",
+      "chat_filter_nil_player": "Argument 2 missing or nil",
+      "filter_bad_user": "Unable to cast string to int64",
+      "filter_nil": "Argument 1 missing or nil",
+      "for_user": "hello world",
+      "result_class": "TextFilterResult",
+      "size_bad_frame": "Unable to cast double to Vector2",
+      "size_empty_y": 20,
+      "size_lines": 2,
+      "size_same_width": true
+    }
+  ],
+  "result": {
+    "broadcast": "hello world",
+    "can_chat": true,
+    "chat_filter": "hello",
+    "chat_filter_nil_player": "Argument 2 missing or nil",
+    "filter_bad_user": "Unable to cast string to int64",
+    "filter_nil": "Argument 1 missing or nil",
+    "for_user": "hello world",
+    "result_class": "TextFilterResult",
+    "size_bad_frame": "Unable to cast double to Vector2",
+    "size_empty_y": 20.0,
+    "size_lines": 2.0,
+    "size_same_width": true
+  },
+  "source": "real Roblox server, place 3086963177 version 585, joined with Sober",
+  "spread": {
+    "size_empty_y": 0.0,
+    "size_lines": 0.0
+  },
+  "status": "recorded"
+}

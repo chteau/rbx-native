@@ -572,6 +572,31 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/ClientApis.luau"),
         tolerance: &[],
     },
+    Test {
+        name: "AudioApi",
+        source: include_str!("../conformance/tests/AudioApi.luau"),
+        tolerance: &[("*gain_*", 0.05), ("audibility", 0.01), ("listener_audibility", 0.01)],
+    },
+    Test {
+        name: "EditableApi",
+        source: include_str!("../conformance/tests/EditableApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "DragDetectorApi",
+        source: include_str!("../conformance/tests/DragDetectorApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "InputActions",
+        source: include_str!("../conformance/tests/InputActions.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "StyleRuntime",
+        source: include_str!("../conformance/tests/StyleRuntime.luau"),
+        tolerance: &[],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
@@ -637,6 +662,10 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
     (
         "ClientApis",
         include_str!("../conformance/client/ClientApis.luau"),
+    ),
+    (
+        "InputActions",
+        include_str!("../conformance/client/InputActions.luau"),
     ),
 ];
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
