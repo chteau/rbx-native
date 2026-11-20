@@ -108,3 +108,23 @@ end)"
     let output = session.clients[0].sim.take_output();
     assert!(output.lines().iter().any(|l| l == "jumped"), "{output:?}");
 }
+
+/// `/e dance` in the chat bar plays the dance and is not a message.
+#[test]
+fn the_emote_command_dances() {
+    let mut session = Session::new(place(&format!(
+        "{PLAYING}game:GetService('RunService').Heartbeat:Connect(function()
+    print('playing', playing(a))
+end)"
+    )))
+    .expect("the place runs");
+    session.start();
+    session.join("Player1", 1, None).expect("joins");
+    session.run_for(1.0);
+    session.clients[0].sim.take_chat();
+    session.clients[0].sim.chat_say("/e dance");
+    session.run_for(0.3);
+    let dancing = playing_now(&mut session);
+    assert!(dancing.contains("dance/"), "{dancing}");
+    assert!(session.clients[0].sim.take_chat().is_empty());
+}

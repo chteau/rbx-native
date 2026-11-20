@@ -194,6 +194,15 @@ end
 -- The editor's chat bar: what the local player typed, to the general
 -- channel.
 function M.say(text)
+	-- The emote command (TextChatService's RBXEmoteCommand) is not a
+	-- message: the local Animate hears it through `Player.Chatted`.
+	local player = Players.LocalPlayer
+	if player then
+		host.fire(player, "Chatted", text)
+	end
+	if string.match(text, "^/e%s") or string.match(text, "^/emote%s") then
+		return
+	end
 	local channels = TextChatService:FindFirstChild("TextChannels")
 	local general = channels and channels:FindFirstChild("RBXGeneral")
 	if general then

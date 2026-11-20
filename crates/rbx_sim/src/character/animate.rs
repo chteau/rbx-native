@@ -78,6 +78,34 @@ const R6: &[State] = &[
     ("toolnone", &[("ToolNoneAnim", 182393478, None)]),
     ("fall", &[("FallAnim", 180436148, None)]),
     ("sit", &[("SitAnim", 178130996, None)]),
+    ("wave", &[("WaveAnim", 128777973, None)]),
+    ("point", &[("PointAnim", 128853357, None)]),
+    (
+        "dance",
+        &[
+            ("Animation1", 182435998, Some(10.)),
+            ("Animation2", 182491037, Some(10.)),
+            ("Animation3", 182491065, Some(10.)),
+        ],
+    ),
+    (
+        "dance2",
+        &[
+            ("Animation1", 182436842, Some(10.)),
+            ("Animation2", 182491248, Some(10.)),
+            ("Animation3", 182491277, Some(10.)),
+        ],
+    ),
+    (
+        "dance3",
+        &[
+            ("Animation1", 182436935, Some(10.)),
+            ("Animation2", 182491368, Some(10.)),
+            ("Animation3", 182491423, Some(10.)),
+        ],
+    ),
+    ("laugh", &[("LaughAnim", 129423131, None)]),
+    ("cheer", &[("CheerAnim", 129423030, None)]),
 ];
 
 fn animation_url(id: u64) -> Variant {
