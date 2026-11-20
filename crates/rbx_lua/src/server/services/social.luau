@@ -31,6 +31,13 @@ local function int64(value)
 	return math.floor(value)
 end
 
+local function user(value)
+	if type(value) ~= "number" then
+		fail("Unable to cast " .. typeName(value) .. " to User")
+	end
+	return math.floor(value)
+end
+
 local function isPlayer(value)
 	return typeof(value) == "Instance" and value:IsA("Player")
 end
@@ -38,6 +45,20 @@ end
 local function clientOnly(method)
 	if host.server() then
 		fail(method .. " can only be called from the client")
+	end
+end
+
+-- A SocialService/PolicyService player argument: nil first, then the
+-- client-only rule of `clientSide` calls, then the type.
+local function playerArg(method, player, clientSide)
+	if player == nil then
+		fail("Argument 1 missing or nil")
+	end
+	if clientSide and host.server() then
+		fail(method .. " Must be called from a local script.")
+	end
+	if not isPlayer(player) then
+		fail(method .. ": player must be a Player")
 	end
 end
 
@@ -96,7 +117,7 @@ function GROUPS.GetGroupInfoAsync(_, groupId)
 end
 
 function GROUPS.GetGroupsAsync(_, userId)
-	userId = int64(userId)
+	userId = user(userId)
 	if userId < 1 then
 		task.wait()
 		return {}
@@ -196,17 +217,13 @@ end
 local SOCIAL = {}
 
 function SOCIAL.CanSendGameInviteAsync(_, player)
-	if not isPlayer(player) then
-		fail("SocialService:CanSendGameInviteAsync(): player must be a Player")
-	end
+	playerArg("SocialService:CanSendGameInviteAsync", player, true)
 	task.wait()
 	return false
 end
 
 function SOCIAL.CanSendCallInviteAsync(_, player)
-	if not isPlayer(player) then
-		fail("SocialService:CanSendCallInviteAsync(): player must be a Player")
-	end
+	playerArg("SocialService:CanSendCallInviteAsync", player, true)
 	task.wait()
 	return false
 end
@@ -215,26 +232,20 @@ local socialId = nil
 
 function SOCIAL.PromptGameInvite(self, player)
 	socialId = host.id(self)
-	if not isPlayer(player) then
-		fail("SocialService:PromptGameInvite(): player must be a Player")
-	end
+	playerArg("SocialService:PromptGameInvite", player, true)
 	host.notify(player, "Invite friends", "Local Run has no friends to invite.")
 	task.defer(host.fire, socialId, "GameInvitePromptClosed", player, {})
 end
 
 function SOCIAL.PromptPhoneBook(self, player)
 	socialId = host.id(self)
-	if not isPlayer(player) then
-		fail("SocialService:PromptPhoneBook(): player must be a Player")
-	end
+	playerArg("SocialService:PromptPhoneBook", player, true)
 	host.notify(player, "Call friends", "Local Run has no friends to call.")
 	task.defer(host.fire, socialId, "PhoneBookPromptClosed", player)
 end
 
 function SOCIAL.PromptLinkSharingAsync(_, player)
-	if not isPlayer(player) then
-		fail("SocialService:PromptLinkSharingAsync(): player must be a Player")
-	end
+	playerArg("SocialService:PromptLinkSharingAsync", player, true)
 	host.notify(player, "Share", "Local Run has no links to share.")
 	task.wait()
 	return Enum.PromptLinkSharingResult.PlayerLeft
@@ -265,9 +276,7 @@ function SOCIAL.HideSelfView(_) end
 local POLICY = {}
 
 function POLICY.GetPolicyInfoForPlayerAsync(_, player)
-	if not isPlayer(player) then
-		fail("PolicyService:GetPolicyInfoForPlayerAsync(): player must be a Player")
-	end
+	playerArg("PolicyService:GetPolicyInfoForPlayerAsync", player)
 	task.wait()
 	return {
 		AreAdsAllowed = true,
@@ -278,13 +287,15 @@ function POLICY.GetPolicyInfoForPlayerAsync(_, player)
 		IsEligibleToPurchaseSubscription = true,
 		IsPaidItemTradingAllowed = true,
 		IsSubjectToChinaPolicies = false,
+		IsEndlessContentAutoplayAllowed = true,
+		IsEndlessContentLoadAllowed = true,
+		IsPhotoToAvatarAllowed = true,
+		IsThirdPartyAccountLinkingAllowed = true,
 	}
 end
 
 function POLICY.CanViewBrandProjectAsync(_, player)
-	if not isPlayer(player) then
-		fail("PolicyService:CanViewBrandProjectAsync(): player must be a Player")
-	end
+	playerArg("PolicyService:CanViewBrandProjectAsync", player)
 	task.wait()
 	return true
 end

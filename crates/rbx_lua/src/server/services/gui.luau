@@ -36,14 +36,18 @@ local function localPlayer()
 end
 
 local function selectable(object)
-	return object:IsA("GuiObject") and object.Selectable and object.Visible
+	return object:IsA("GuiObject")
+		and object.Selectable
+		and object.Visible
+		and object.AbsoluteSize.X > 0
+		and object.AbsoluteSize.Y > 0
 end
 
 local SERVICE = {}
 
 function SERVICE.Select(self, parent)
 	if typeof(parent) ~= "Instance" then
-		fail("Unable to cast " .. typeName(parent) .. " to Instance")
+		fail("Unable to cast value to Object")
 	end
 	for _, object in parent:GetDescendants() do
 		if selectable(object) then
@@ -55,7 +59,7 @@ end
 
 function SERVICE.InspectPlayerFromUserId(_, userId)
 	if type(userId) ~= "number" then
-		fail("Unable to cast " .. typeName(userId) .. " to int64")
+		fail("Unable to cast " .. typeName(userId) .. " to User")
 	end
 	local player = game:GetService("Players"):GetPlayerByUserId(userId)
 	local who = if player then player.DisplayName else "user " .. userId

@@ -22,6 +22,20 @@ local function int64(value)
 	return math.floor(value)
 end
 
+local function user(value)
+	if type(value) ~= "number" then
+		fail("Unable to cast " .. (if type(value) == "table" then "table" else typeof(value)) .. " to User")
+	end
+	return math.floor(value)
+end
+
+local function badge(value, position)
+	if value == nil then
+		fail("Argument " .. position .. " missing or nil")
+	end
+	return int64(value)
+end
+
 local function info(badgeId)
 	local found = host.web("https://badges.roblox.com/v1/badges/" .. badgeId, "GET", nil, "BadgeService:GetBadgeInfoAsync()")
 	return {
@@ -46,8 +60,8 @@ function SERVICE.AwardBadgeAsync(_, userId, badgeId)
 	if not host.server() then
 		fail("BadgeService:AwardBadgeAsync() can only be called from the server")
 	end
-	userId = int64(userId)
-	badgeId = int64(badgeId)
+	userId = user(userId)
+	badgeId = badge(badgeId, 2)
 	local player = game:GetService("Players"):GetPlayerByUserId(userId)
 	if not player then
 		fail("BadgeService:AwardBadgeAsync(): the player is not in the game")
@@ -68,20 +82,20 @@ end
 SERVICE.AwardBadge = SERVICE.AwardBadgeAsync
 
 function SERVICE.UserHasBadgeAsync(_, userId, badgeId)
-	userId = int64(userId)
-	badgeId = int64(badgeId)
+	userId = user(userId)
+	badgeId = badge(badgeId, 2)
 	task.wait()
 	return host.owns(userId, "badge:" .. badgeId)
 end
 SERVICE.UserHasBadge = SERVICE.UserHasBadgeAsync
 
 function SERVICE.CheckUserBadgesAsync(_, userId, badgeIds)
-	userId = int64(userId)
+	userId = user(userId)
 	if type(badgeIds) ~= "table" then
 		fail("Unable to cast " .. (if type(badgeIds) == "number" then "double" else typeof(badgeIds)) .. " to Array")
 	end
 	if #badgeIds > MAX_CHECK then
-		fail("BadgeService:CheckUserBadgesAsync(): at most " .. MAX_CHECK .. " badge ids can be checked at once")
+		fail("CheckUserBadgesAsync: Cannot query more than " .. MAX_CHECK .. " badges.")
 	end
 	task.wait()
 	local owned = {}

@@ -123,7 +123,7 @@ end
 -- What the player joined with: a teleport's data and source place, when
 -- the run started from one (see teleport.luau).
 function PLAYER.GetJoinData(self)
-	local data = { Members = {} }
+	local data = { GameJoinContext = {}, LaunchData = "" }
 	local arrival = host.arrival(self.UserId)
 	if arrival then
 		data.SourcePlaceId = arrival.source

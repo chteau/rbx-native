@@ -32,6 +32,9 @@ local function int64(value)
 end
 
 local function text(value)
+	if value == nil then
+		fail("Argument 1 missing or nil")
+	end
 	if type(value) == "number" then
 		return tostring(value)
 	end
@@ -203,6 +206,9 @@ end
 function CHAT.FilterStringForBroadcast(_, value, playerFrom)
 	serverOnly("Chat:FilterStringForBroadcast()")
 	value = text(value)
+	if playerFrom == nil then
+		fail("Argument 2 missing or nil")
+	end
 	if not isPlayer(playerFrom) then
 		fail("Chat:FilterStringForBroadcast(): playerFrom must be a Player")
 	end

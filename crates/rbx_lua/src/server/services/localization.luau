@@ -148,7 +148,7 @@ local function format(text, args)
 			end
 			if spec == "int" and type(value) == "number" then
 				return tostring(math.round(value))
-			elseif spec == "fixed" and type(value) == "number" then
+			elseif (spec == "fixed" or spec == "") and type(value) == "number" then
 				return string.format("%.2f", value)
 			end
 			return tostring(value)
@@ -160,7 +160,7 @@ local TRANSLATOR = {}
 
 function TRANSLATOR.Translate(self, context, text)
 	if typeof(context) ~= "Instance" then
-		fail("Unable to cast " .. typeName(context) .. " to Instance")
+		fail("Context must be an Instance.")
 	end
 	text = str(text)
 	local list, locale = lookIn(self)
@@ -182,12 +182,13 @@ function TRANSLATOR.FormatByKey(self, key, args)
 	local list, locale = lookIn(self)
 	for _, tbl in list do
 		for _, entry in load(tbl) do
-			if entry.key == key then
-				return format(valueFor(entry, locale) or entry.source or "", args)
+			local found = entry.key == key and valueFor(entry, locale)
+			if found then
+				return format(found, args)
 			end
 		end
 	end
-	fail("Translator:FormatByKey(): no entry with key " .. key .. " for locale " .. locale)
+	fail("Key " .. key .. " not found for locale " .. locale)
 end
 
 local SERVICE = {}

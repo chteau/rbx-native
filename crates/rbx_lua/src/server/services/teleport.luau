@@ -90,11 +90,14 @@ local function go(placeId, players, data, code, gui, teleportOptions)
 end
 
 local function playerList(value, method)
+	if value == nil then
+		fail("Argument 2 missing or nil")
+	end
 	if type(value) ~= "table" then
 		fail("Unable to cast " .. typeName(value) .. " to Array")
 	end
 	if #value == 0 then
-		fail(method .. ": players array is empty")
+		fail("Invalid list of players for teleport.")
 	end
 	for _, player in value do
 		if not isPlayer(player) then
@@ -113,8 +116,11 @@ function SERVICE.TeleportAsync(self, placeId, players, teleportOptions)
 	players = playerList(players, "TeleportService:TeleportAsync()")
 	local data, code = nil, nil
 	if teleportOptions ~= nil then
-		if typeof(teleportOptions) ~= "Instance" or not teleportOptions:IsA("TeleportOptions") then
-			fail("Unable to cast " .. typeName(teleportOptions) .. " to TeleportOptions")
+		if typeof(teleportOptions) ~= "Instance" then
+			fail("Unable to cast value to Object")
+		end
+		if not teleportOptions:IsA("TeleportOptions") then
+			fail("Unable to cast Instance to TeleportOptions")
 		end
 		data = options[host.id(teleportOptions)]
 		local given = teleportOptions.ReservedServerId
@@ -145,6 +151,9 @@ function SERVICE.Teleport(self, placeId, player, data, gui)
 	placeId = int64(placeId)
 	if player == nil and not host.server() then
 		player = localPlayer()
+	end
+	if player == nil then
+		return
 	end
 	if not isPlayer(player) then
 		fail("TeleportService:Teleport(): player must be a Player")
@@ -188,7 +197,8 @@ function SERVICE.TeleportToPrivateServer(self, placeId, code, players, _spawnNam
 	end
 	players = playerList(players, "TeleportService:TeleportToPrivateServer()")
 	if not reserved[code] then
-		fail("TeleportService:TeleportToPrivateServer(): invalid reserved server access code")
+		failed(players, placeId, "Invalid reserved server access code", nil)
+		return
 	end
 	go(placeId, players, data, code, gui, nil)
 end
@@ -238,8 +248,11 @@ function SERVICE.GetArrivingTeleportGui(_)
 end
 
 function SERVICE.SetTeleportGui(_, gui)
-	if gui ~= nil and (typeof(gui) ~= "Instance" or not gui:IsA("ScreenGui")) then
-		fail("Unable to cast " .. typeName(gui) .. " to ScreenGui")
+	if gui ~= nil and typeof(gui) ~= "Instance" then
+		fail("Unable to cast value to Object")
+	end
+	if gui ~= nil and not gui:IsA("ScreenGui") then
+		fail("Unable to cast Instance to ScreenGui")
 	end
 	teleportGui = gui
 end
