@@ -304,6 +304,7 @@ const MODULES: &[(&str, &str)] = &[
         include_str!("services/localization.luau"),
     ),
     ("GuiService", include_str!("services/gui.luau")),
+    ("Audio", include_str!("services/audio.luau")),
 ];
 
 /// The module that answers `class`.
@@ -346,6 +347,7 @@ fn module_of(class: &str) -> Option<&'static str> {
         "TextService" | "TextFilterResult" | "Chat" => "Text",
         "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
         "GuiService" => "GuiService",
+        "AudioEmitter" | "AudioListener" | "AudioDeviceInput" => "Audio",
         _ => return None,
     })
 }

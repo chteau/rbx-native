@@ -2,11 +2,12 @@
 //! the voices the viewed peer's sim hears (`Simulation::voices`). The sim
 //! keeps each sound's clock; the mix follows it, resampling by
 //! `PlaybackSpeed`, and jumps only when the two drift apart (a seek, a
-//! restart). Silent, and never playing ahead, while the run is paused or
-//! the editor isn't playing. No output device: nothing is heard and
-//! nothing fails.
+//! restart). The Audio API's graph arrives already rendered
+//! (`Simulation::take_audio`) and plays as it comes. Silent, and never
+//! playing ahead, while the run is paused or the editor isn't playing. No
+//! output device: nothing is heard and nothing fails.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use rbx_dom::Ref;
@@ -17,6 +18,8 @@ use crate::audio::{self, Source};
 const RATE: u32 = 48_000;
 /// How far the mix may wander from the sim's clock before it jumps back.
 const DRIFT: f64 = 0.12;
+/// The most rendered graph audio kept waiting, in frames.
+const BACKLOG: usize = RATE as usize / 4;
 
 struct Track {
     clip: Arc<Clip>,
@@ -31,6 +34,8 @@ struct Track {
 #[derive(Default)]
 struct Mix {
     tracks: HashMap<Ref, Track>,
+    /// The graph's frames still to play.
+    graph: VecDeque<[f32; 2]>,
     /// The play bar's volume, 0 to 1.
     volume: f32,
     muted: bool,
@@ -47,8 +52,7 @@ impl Mix {
         let master = self.volume;
         self.tracks.retain(|_, track| {
             let clip = &track.clip;
-            let (channels, frames) = (clip.channels as usize, clip.frames());
-            if frames == 0 {
+            if clip.frames() == 0 {
                 return false;
             }
             let length = clip.seconds();
@@ -64,29 +68,23 @@ impl Mix {
                     }
                     track.position %= length;
                 }
-                let at = track.position * f64::from(clip.rate);
-                let i = (at as usize).min(frames - 1);
-                let j = (i + 1).min(frames - 1);
-                let t = (at - i as f64) as f32;
-                let sample = |c: usize| {
-                    let (a, b) = (
-                        clip.samples[i * channels + c],
-                        clip.samples[j * channels + c],
-                    );
-                    a + (b - a) * t
-                };
-                let (l, r) = if channels == 1 {
-                    let m = sample(0);
-                    (m, m)
-                } else {
-                    (sample(0), sample(1))
-                };
+                let [l, r] = clip.frame_at(track.position);
                 frame[0] += l * left * gain;
                 frame[1] += r * right * gain;
                 track.position += step;
             }
             true
         });
+        let ready = self.graph.len().min(out.len() / 2);
+        for (frame, [l, r]) in out
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .zip(self.graph.drain(..ready))
+        {
+            frame[0] += l * master;
+            frame[1] += r * master;
+        }
         for s in out.iter_mut() {
             *s = s.clamp(-1., 1.);
         }
@@ -168,13 +166,19 @@ impl Mixer {
         Mixer { mix, _stop: stop }
     }
 
-    /// What the viewed peer hears this frame; `playing` false mutes the
-    /// mix (paused, or the editor isn't the focus of a run).
-    pub(crate) fn update(&self, voices: Vec<Voice>, playing: bool) {
+    /// What the viewed peer hears this frame (its sounds, and what its
+    /// audio graph rendered); `playing` false mutes the mix (paused, or
+    /// the editor isn't the focus of a run).
+    pub(crate) fn update(&self, voices: Vec<Voice>, graph: Vec<[f32; 2]>, playing: bool) {
         if let Ok(mut mix) = self.mix.lock() {
             mix.muted = !playing;
             if playing {
                 mix.update(voices);
+                mix.graph.extend(graph);
+                let excess = mix.graph.len().saturating_sub(BACKLOG);
+                mix.graph.drain(..excess);
+            } else {
+                mix.graph.clear();
             }
         }
     }

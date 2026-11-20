@@ -1268,18 +1268,28 @@ impl Simulation {
         self.collect_output();
     }
 
-    /// Moves every playing sound's clock `dt` and fires what that did; a
-    /// sound that ended stops once its `Ended` handlers have run.
+    /// Moves every playing sound's and audio player's clock `dt` and fires
+    /// what that did (and what the audio wiring did); a sound that ended
+    /// stops once its `Ended` handlers have run. A client renders its audio
+    /// graph here too.
     fn sound_step(&mut self, dt: f64) {
-        let (events, ended) = {
+        let (mut events, ended) = {
             let dom = self.dom.borrow();
             self.shared.borrow_mut().sounds.step(&dom, self.db, dt)
         };
+        {
+            let mut dom = self.dom.borrow_mut();
+            let mut shared = self.shared.borrow_mut();
+            let Shared {
+                audio,
+                sounds,
+                players,
+                ..
+            } = &mut *shared;
+            events.extend(audio.step(sounds, &mut dom, self.db, dt, players.client, players.local));
+        }
         for event in events {
             self.fire(event);
-        }
-        if ended.is_empty() {
-            return;
         }
         {
             let mut dom = self.dom.borrow_mut();
@@ -1300,6 +1310,12 @@ impl Simulation {
             .borrow_mut()
             .sounds
             .voices(&dom, self.db, listener.as_ref())
+    }
+
+    /// What this client's audio graph played since the last call, stereo
+    /// frames at [`crate::audio_graph::RATE`].
+    pub fn take_audio(&self) -> Vec<crate::audio_graph::Frame> {
+        std::mem::take(&mut self.shared.borrow_mut().audio.out)
     }
 
     /// Steps every Animator `dt` and fires what its tracks did.
@@ -1610,8 +1626,10 @@ impl Simulation {
         let dom = self.dom.borrow();
         let mut shared = self.shared.borrow_mut();
         for r in scripts::subtree(&dom, root) {
-            if dom.get(r).is_some_and(|i| i.class() == "Sound") {
-                shared.sounds.watch(r);
+            match dom.get(r).map(|i| i.class()) {
+                Some("Sound") => shared.sounds.watch(r),
+                Some(class) if crate::audio_api::watches(class) => shared.audio.watch(r),
+                _ => {}
             }
         }
     }

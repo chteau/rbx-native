@@ -122,6 +122,7 @@ pub struct Shared {
     /// `ParticleEmitter:Emit`/`Clear` calls not yet handed to a renderer.
     pub(crate) bursts: Vec<(Ref, crate::Burst)>,
     pub(crate) sounds: crate::sound::Sounds,
+    pub(crate) audio: crate::audio_api::Audio,
     pub(crate) terrain: crate::terrain::Terrain,
 }
 

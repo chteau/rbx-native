@@ -7,6 +7,8 @@
 
 pub mod animation;
 pub mod audio;
+mod audio_api;
+pub mod audio_graph;
 
 /// What a script asked of a `ParticleEmitter` beyond its properties.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

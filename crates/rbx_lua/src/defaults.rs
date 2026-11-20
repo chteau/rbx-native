@@ -91,6 +91,14 @@ pub(crate) fn apply(ctx: &Ctx, class: &str, referent: Ref) {
                 .set_property(referent, "Axes", Variant::Axes(all));
             return;
         }
+        // Studio's own inserts one active; a script's starts off
+        // (AudioApi golden).
+        "AudioDeviceInput" => {
+            let _ = ctx
+                .dom_mut()
+                .set_property(referent, "Active", Variant::Bool(false));
+            return;
+        }
         _ => {}
     }
     if !ctx.database().is_subclass_of(class, "BasePart") {

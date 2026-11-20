@@ -50,6 +50,7 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         || crate::gui::is_method(class, key)
         || crate::tools::is_method(class, key)
         || crate::sound::is_method(class, key)
+        || crate::audio_api::is_method(class, key)
         || crate::teams::is_method(class, key)
         || (class == "ParticleEmitter" && matches!(key, "Emit" | "Clear"))
 }
@@ -61,6 +62,7 @@ pub(crate) fn is_signal(class: &str, key: &str) -> bool {
         || crate::gui::is_signal(class, key)
         || crate::tools::is_signal(class, key)
         || crate::sound::is_signal(class, key)
+        || crate::audio_api::is_signal(class, key)
         || crate::teams::is_signal(class, key)
 }
 
@@ -99,6 +101,11 @@ pub(crate) fn call(
                 .push(crate::tools::ClientOp::Sound(referent, playing));
         }
         return Ok(reply);
+    }
+    if crate::audio_api::is_method(class, method) {
+        return shared
+            .audio
+            .call(&mut dom, db, referent, class, method, &args);
     }
     if crate::teams::is_method(class, method) {
         return Ok(crate::teams::call(&dom, db, referent));
@@ -154,14 +161,17 @@ pub(crate) fn property(
     class: &str,
     key: &str,
 ) -> Option<Arg> {
-    if class == "Sound" {
+    if class == "Sound" || crate::audio_api::is_property(class, key) {
         let (dom, db) = shared.borrow().dom_and_db()?;
         let dom = dom.try_borrow().ok()?;
+        let mut shared = shared.try_borrow_mut().ok()?;
+        let shared = &mut *shared;
+        if class == "Sound" {
+            return shared.sounds.property(&dom, db, referent, key);
+        }
         return shared
-            .try_borrow_mut()
-            .ok()?
-            .sounds
-            .property(&dom, db, referent, key);
+            .audio
+            .property(&mut shared.sounds, &dom, db, referent, key);
     }
     let shared = shared.borrow();
     match class {
@@ -185,6 +195,12 @@ pub(crate) fn write(
     }
     if class == "Sound" {
         return shared.borrow_mut().sounds.write(referent, key, value);
+    }
+    if class == "AudioPlayer" && key == "TimePosition" {
+        let (dom, db) = shared.borrow().dom_and_db()?;
+        let dom = dom.borrow();
+        shared.borrow_mut().audio.write(&dom, db, referent, value);
+        return None;
     }
     if class != "Humanoid" || !matches!(key, "Health" | "MaxHealth") {
         return None;

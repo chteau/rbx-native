@@ -22,6 +22,31 @@ impl Clip {
     pub fn seconds(&self) -> f64 {
         self.frames() as f64 / self.rate.max(1) as f64
     }
+
+    /// The stereo frame `seconds` in, between samples (a mono clip on
+    /// both sides).
+    pub fn frame_at(&self, seconds: f64) -> [f32; 2] {
+        let (channels, frames) = (self.channels.max(1) as usize, self.frames());
+        if frames == 0 {
+            return [0.0; 2];
+        }
+        let at = seconds.max(0.0) * f64::from(self.rate);
+        let i = (at as usize).min(frames - 1);
+        let j = (i + 1).min(frames - 1);
+        let t = (at - i as f64) as f32;
+        let sample = |c: usize| {
+            let (a, b) = (
+                self.samples[i * channels + c],
+                self.samples[j * channels + c],
+            );
+            a + (b - a) * t
+        };
+        if channels == 1 {
+            [sample(0); 2]
+        } else {
+            [sample(0), sample(1)]
+        }
+    }
 }
 
 /// One playing sound as the listener hears it this frame.

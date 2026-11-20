@@ -95,7 +95,7 @@ impl Sounds {
     /// decoded at once (a real server has Roblox's own sounds loaded the
     /// moment they're parented), anything else is fetched in the
     /// background.
-    fn clip(&mut self, id: u64) -> Option<Arc<Clip>> {
+    pub(crate) fn clip(&mut self, id: u64) -> Option<Arc<Clip>> {
         if let Some(Load::Pending(receiver)) = self.clips.get(&id) {
             if let Ok(done) = receiver.try_recv() {
                 let load = done.map_or(Load::Failed, |c| Load::Ready(Arc::new(c)));
@@ -330,7 +330,7 @@ fn service(dom: &WeakDom, class: &str) -> Option<Ref> {
         .find(|r| dom.get(*r).is_some_and(|i| i.class() == class))
 }
 
-fn enum_of(dom: &WeakDom, db: &ReflectionDatabase, r: Ref, name: &str) -> u32 {
+pub(crate) fn enum_of(dom: &WeakDom, db: &ReflectionDatabase, r: Ref, name: &str) -> u32 {
     match dom.get(r).and_then(|i| db.stored_or_default(i, name)) {
         Some((_, Variant::Enum(v))) => *v,
         _ => 0,
@@ -358,34 +358,23 @@ fn group_volume(dom: &WeakDom, db: &ReflectionDatabase, sound: Ref) -> f64 {
 /// Where a sound parented to a part or an attachment is; `None` for one
 /// heard everywhere alike.
 fn emitter(dom: &WeakDom, db: &ReflectionDatabase, sound: Ref) -> Option<[f64; 3]> {
-    let parent = dom.parent(sound)?;
-    let instance = dom.get(parent)?;
-    let class = instance.class();
+    let p = world_cframe(dom, db, dom.parent(sound)?)?.position;
+    Some([f64::from(p.x), f64::from(p.y), f64::from(p.z)])
+}
+
+/// Where a part, a camera or an attachment is in the world.
+pub(crate) fn world_cframe(dom: &WeakDom, db: &ReflectionDatabase, at: Ref) -> Option<CFrameData> {
+    let class = dom.get(at)?.class();
     let cframe = |r: Ref| match dom.get(r).and_then(|i| db.stored_or_default(i, "CFrame")) {
         Some((_, Variant::CFrame(cf))) => Some(*cf),
         _ => None,
     };
-    if db.is_subclass_of(class, "BasePart") {
-        let cf = cframe(parent)?;
-        return Some([
-            f64::from(cf.position.x),
-            f64::from(cf.position.y),
-            f64::from(cf.position.z),
-        ]);
+    if db.is_subclass_of(class, "BasePart") || class == "Camera" {
+        return cframe(at);
     }
     if db.is_subclass_of(class, "Attachment") {
-        let local = cframe(parent)?;
-        let part = cframe(dom.parent(parent)?)?;
-        let r = part.rotation;
-        let p = local.position;
-        let world = |i: usize, base: f32| {
-            f64::from(base + r[i * 3] * p.x + r[i * 3 + 1] * p.y + r[i * 3 + 2] * p.z)
-        };
-        return Some([
-            world(0, part.position.x),
-            world(1, part.position.y),
-            world(2, part.position.z),
-        ]);
+        let part = cframe(dom.parent(at)?)?;
+        return Some(crate::humanoid::mul(&part, &cframe(at)?));
     }
     None
 }

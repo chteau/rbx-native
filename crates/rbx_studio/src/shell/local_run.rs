@@ -841,7 +841,7 @@ impl Shell {
         let elapsed = now.duration_since(run.last).as_secs_f64();
         run.last = now;
         if run.paused {
-            run.sound.update(Vec::new(), false);
+            run.sound.update(Vec::new(), Vec::new(), false);
             return;
         }
         run.clock += elapsed;
@@ -1017,6 +1017,7 @@ impl Shell {
         };
         run.sound.update(
             viewed.voices(),
+            viewed.take_audio(),
             run.playing && !run.paused && viewing_client,
         );
         mirror(&viewed.dom(), &mut self.dom, &changes);

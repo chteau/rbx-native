@@ -178,7 +178,7 @@ impl UserData for LuaNumberRange {
             Ok(*this == other)
         });
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
-            Ok(format!("{} {}", this.0.min, this.0.max))
+            Ok(format!("{} {} ", this.0.min, this.0.max))
         });
     }
 }

@@ -575,7 +575,11 @@ pub const TESTS: &[Test] = &[
     Test {
         name: "AudioApi",
         source: include_str!("../conformance/tests/AudioApi.luau"),
-        tolerance: &[("*gain_*", 0.05), ("audibility", 0.01), ("listener_audibility", 0.01)],
+        tolerance: &[
+            ("*gain_*", 0.05),
+            ("audibility", 0.01),
+            ("listener_audibility", 0.01),
+        ],
     },
     Test {
         name: "EditableApi",
