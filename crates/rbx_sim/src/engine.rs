@@ -67,6 +67,7 @@ pub(crate) fn is_signal(class: &str, key: &str) -> bool {
         || crate::sound::is_signal(class, key)
         || crate::audio_api::is_signal(class, key)
         || crate::teams::is_signal(class, key)
+        || (class == "Explosion" && key == "Hit")
 }
 
 pub(crate) fn call(
@@ -84,9 +85,7 @@ pub(crate) fn call(
     if crate::joints::is_method(class, method) {
         let bridge = crate::physics::Bridge(shared.clone());
         let dom = dom.borrow();
-        return Ok(crate::joints::call(
-            &bridge, &dom, db, referent, method, &args,
-        ));
+        return crate::joints::call(&bridge, &dom, db, referent, method, &args);
     }
     let mut dom = dom.borrow_mut();
     if class == "Model" && method == "MoveTo" {
@@ -206,7 +205,7 @@ pub(crate) fn property(
     if crate::joints::is_property(class, key) {
         let (dom, db) = shared.borrow().dom_and_db()?;
         let dom = dom.try_borrow().ok()?;
-        return Some(Arg::Instance(crate::joints::root_part(&dom, db, referent)));
+        return Some(crate::joints::property(&dom, db, referent, key));
     }
     let shared = shared.borrow();
     match class {

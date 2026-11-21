@@ -6,9 +6,9 @@ Read the property numbers with care: any property the reflection database knows 
 
 | Member type | There | Total | |
 |---|---|---|---|
-| Function | 516 | 1385 | 37% |
-| Event | 189 | 355 | 53% |
-| Property | 1959 | 2510 | 78% |
+| Function | 572 | 1385 | 41% |
+| Event | 192 | 355 | 54% |
+| Property | 1962 | 2510 | 78% |
 
 ## By class
 
@@ -30,7 +30,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | AssetDeliveryProxy | 3/3 | - | - |  |  |
 | AssetService | - | 5/24 | - | CreateEditableImage, CreateEditableMesh, CreateEditableImageAsync, CreateEditableMeshAsync, CreateMeshPartAsync | ComposeDecalAsync, CreateAssetAsync, CreateAssetVersionAsync, CreateDataModelContentAsync, CreateDecalAsync, CreatePlaceAsync, CreatePlaceInPlayerInventoryAsync, CreateSurfaceAppearanceAsync, CreateTextureAsync, GetAssetIdsForPackageAsync, GetAudioMetadataAsync, GetBundleDetailsAsync, GetGamePlacesAsync, GetLatestVersionUriAsync, LoadAssetAsync, PromptCreatePlatformContentAsync, PromptImportAnimationClipFromVideoAsync, SavePlaceAsync, SearchAudioAsync |
 | Atmosphere | 6/6 | - | - |  |  |
-| Attachment | 7/7 | 0/1 | - |  | GetConstraints |
+| Attachment | 7/7 | 1/1 | - | GetConstraints |  |
 | Bone | 2/2 | - | - |  |  |
 | AudioAnalyzer | 4/4 | 4/4 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, GetSpectrum, WiringChanged |  |
 | AudioChannelMixer | 1/1 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
@@ -74,7 +74,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | UnreliableRemoteEvent | - | 3/3 | 1/2 | FireAllClients, FireClient, FireServer, OnClientEvent | OnServerEvent |
 | BaseWrap | 6/6 | - | - |  |  |
 | WrapLayer | 9/12 | - | - |  |  |
-| Beam | 18/20 | 0/1 | - |  | SetTextureOffset |
+| Beam | 18/20 | 1/1 | - | SetTextureOffset |  |
 | BindableEvent | - | 1/1 | 1/1 | Fire, Event |  |
 | BindableFunction | - | 1/1 | - | Invoke |  |
 | BodyPartDescription | 4/5 | - | - |  |  |
@@ -138,7 +138,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | DraggerService | 12/15 | - | - |  |  |
 | EulerRotationCurve | 1/1 | 0/5 | - |  | GetAnglesAtTime, GetRotationAtTime, X, Y, Z |
 | ExperienceInviteOptions | 4/4 | - | - |  |  |
-| Explosion | 7/7 | - | 0/1 |  | Hit |
+| Explosion | 7/7 | - | 1/1 | Hit |  |
 | FaceControls | 50/50 | - | - |  |  |
 | FaceInstance | 1/1 | - | - |  |  |
 | Decal | 16/18 | - | - |  |  |
@@ -192,7 +192,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | SelectionSphere | 2/2 | - | - |  |  |
 | Handles | 1/2 | - | 0/5 |  | MouseButton1Down, MouseButton1Up, MouseDrag, MouseEnter, MouseLeave |
 | SurfaceSelection | 1/1 | - | - |  |  |
-| Path2D | 5/5 | 0/13 | 0/1 |  | GetBoundingRect, GetControlPoint, GetControlPoints, GetLength, GetMaxControlPoints, GetPositionOnCurve, GetPositionOnCurveArcLength, GetTangentOnCurve, GetTangentOnCurveArcLength, InsertControlPoint, RemoveControlPoint, SetControlPoints, UpdateControlPoint, ControlPointChanged |
+| Path2D | 5/5 | 13/13 | 1/1 | GetBoundingRect, GetControlPoint, GetControlPoints, GetLength, GetMaxControlPoints, GetPositionOnCurve, GetPositionOnCurveArcLength, GetTangentOnCurve, GetTangentOnCurveArcLength, InsertControlPoint, RemoveControlPoint, SetControlPoints, UpdateControlPoint, ControlPointChanged |  |
 | GuiService | 5/8 | 15/15 | 2/2 | CloseInspectMenu, DismissNotification, GetEmotesMenuOpen, GetGameplayPausedNotificationEnabled, GetGuiInset, GetInsetArea, GetInspectMenuEnabled, InspectPlayerFromHumanoidDescription, InspectPlayerFromUserId, IsTenFootInterface, Select, SendNotification, SetEmotesMenuOpen, SetGameplayPausedNotificationEnabled, SetInspectMenuEnabled, MenuClosed, MenuOpened |  |
 | HapticEffect | 4/4 | 0/4 | 0/1 |  | GetWaveformKeys, Play, SetWaveformKeys, Stop, Ended |
 | Highlight | 6/7 | - | - |  |  |
@@ -234,22 +234,22 @@ Classes with at least one member there. Properties, functions and events as ther
 | NetworkSettings | 9/9 | - | - |  |  |
 | NoCollisionConstraint | 1/3 | - | - |  |  |
 | PVInstance | - | 2/2 | - | GetPivot, PivotTo |  |
-| BasePart | 37/40 | 13/24 | 2/2 | ApplyAngularImpulse, ApplyImpulse, CanCollideWith, CanSetNetworkOwnership, GetConnectedParts, GetJoints, GetMass, GetNetworkOwner, GetNetworkOwnershipAuto, GetNoCollisionConstraints, GetTouchingParts, SetNetworkOwner, SetNetworkOwnershipAuto, TouchEnded, Touched | AngularAccelerationToTorque, ApplyImpulseAtPosition, BindToCollisionSummaries, GetClosestPointOnSurface, GetVelocityAtPosition, IsGrounded, Resize, TorqueToAngularAcceleration, IntersectAsync, SubtractAsync, UnionAsync |
+| BasePart | 39/40 | 20/24 | 2/2 | AngularAccelerationToTorque, ApplyAngularImpulse, ApplyImpulse, ApplyImpulseAtPosition, CanCollideWith, CanSetNetworkOwnership, GetClosestPointOnSurface, GetConnectedParts, GetJoints, GetMass, GetNetworkOwner, GetNetworkOwnershipAuto, GetNoCollisionConstraints, GetTouchingParts, GetVelocityAtPosition, IsGrounded, Resize, SetNetworkOwner, SetNetworkOwnershipAuto, TorqueToAngularAcceleration, TouchEnded, Touched | BindToCollisionSummaries, IntersectAsync, SubtractAsync, UnionAsync |
 | Part | 1/1 | - | - |  |  |
 | Seat | 1/2 | 1/1 | - | Sit |  |
 | SpawnLocation | 5/5 | - | - |  |  |
-| Terrain | 7/8 | 16/29 | - | CellCenterToWorld, CellCornerToWorld, Clear, FillBall, FillBlock, FillCylinder, FillRegion, FillWedge, GetMaterialColor, ReadVoxels, ReplaceMaterial, SetMaterialColor, WorldToCell, WorldToCellPreferEmpty, WorldToCellPreferSolid, WriteVoxels | ClearVoxelsAsync_beta, CopyRegion, CountCells, GetMaterialSlot, IterateVoxelsAsync_beta, ModifyVoxelsAsync_beta, PasteRegion, ReadVoxelChannels, ReadVoxelsAsync_beta, ResetMaterialSlot, SetMaterialSlot, WriteVoxelChannels, WriteVoxelsAsync_beta |
+| Terrain | 8/8 | 24/29 | - | CellCenterToWorld, CellCornerToWorld, Clear, CopyRegion, CountCells, FillBall, FillBlock, FillCylinder, FillRegion, FillWedge, GetMaterialColor, GetMaterialSlot, PasteRegion, ReadVoxelChannels, ReadVoxels, ReplaceMaterial, ResetMaterialSlot, SetMaterialColor, SetMaterialSlot, WorldToCell, WorldToCellPreferEmpty, WorldToCellPreferSolid, WriteVoxelChannels, WriteVoxels | ClearVoxelsAsync_beta, IterateVoxelsAsync_beta, ModifyVoxelsAsync_beta, ReadVoxelsAsync_beta, WriteVoxelsAsync_beta |
 | TriangleMeshPart | 2/4 | - | - |  |  |
 | MeshPart | 6/6 | 0/2 | - |  | ApplyMesh, GetSurfaceSlotsAsync |
 | PartOperation | 4/4 | 0/1 | - |  | SubstituteGeometry |
 | VehicleSeat | 10/11 | 1/1 | - | Sit |  |
-| Camera | 14/17 | 7/9 | 1/1 | GetRenderCFrame, GetRoll, ScreenPointToRay, SetRoll, ViewportPointToRay, WorldToScreenPoint, WorldToViewportPoint, InterpolationFinished | GetPartsObscuringTarget, ZoomToExtents |
-| Model | 3/5 | 3/9 | - | GetBoundingBox, GetExtentsSize, MoveTo | AddPersistentPlayer, GetPersistentPlayers, GetScale, RemovePersistentPlayer, ScaleTo, TranslateBy |
+| Camera | 14/17 | 9/9 | 1/1 | GetPartsObscuringTarget, GetRenderCFrame, GetRoll, ScreenPointToRay, SetRoll, ViewportPointToRay, WorldToScreenPoint, WorldToViewportPoint, ZoomToExtents, InterpolationFinished |  |
+| Model | 3/5 | 9/9 | - | AddPersistentPlayer, GetBoundingBox, GetExtentsSize, GetPersistentPlayers, GetScale, MoveTo, RemovePersistentPlayer, ScaleTo, TranslateBy |  |
 | BackpackItem | 2/2 | - | - |  |  |
 | Tool | 6/6 | 2/2 | 4/4 | Activate, Deactivate, Activated, Deactivated, Equipped, Unequipped |  |
 | ProceduralModel | 2/3 | 0/2 | - |  | ForceGeneration, WaitForGenerationAsync |
-| WorldRoot | - | 7/17 | - | Blockcast, GetPartBoundsInBox, GetPartBoundsInRadius, GetPartsInPart, Raycast, Shapecast, Spherecast | ArePartsTouchingOthers, BulkMoveTo, CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, RenameCollisionGroup, UnregisterCollisionGroup |
-| Workspace | 22/25 | 0/7 | 0/1 |  | GetNumAwakeParts, GetPhysicsThrottling, GetRealPhysicsFPS, GetServerTimeNow, JoinToOutsiders, PGSIsEnabled, UnjoinFromOutsiders, PersistentLoaded |
+| WorldRoot | - | 17/17 | - | ArePartsTouchingOthers, Blockcast, BulkMoveTo, CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetPartBoundsInBox, GetPartBoundsInRadius, GetPartsInPart, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, Raycast, RegisterCollisionGroup, RenameCollisionGroup, Shapecast, Spherecast, UnregisterCollisionGroup |  |
+| Workspace | 22/25 | 7/7 | 1/1 | GetNumAwakeParts, GetPhysicsThrottling, GetRealPhysicsFPS, GetServerTimeNow, JoinToOutsiders, PGSIsEnabled, UnjoinFromOutsiders, PersistentLoaded |  |
 | WorldModel | 1/1 | - | - |  |  |
 | Pages | 1/1 | 2/2 | - | GetCurrentPage, AdvanceToNextPageAsync |  |
 | DataStoreKeyPages | 1/1 | - | - |  |  |
@@ -260,7 +260,7 @@ Classes with at least one member there. Properties, functions and events as ther
 | PathfindingLink | 2/4 | - | - |  |  |
 | PathfindingModifier | 2/2 | - | - |  |  |
 | PathfindingService | - | 2/2 | - | CreatePath, FindPathAsync |  |
-| PhysicsService | - | 7/8 | - | CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, UnregisterCollisionGroup | RenameCollisionGroup |
+| PhysicsService | - | 8/8 | - | CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, RenameCollisionGroup, UnregisterCollisionGroup |  |
 | Player | 15/31 | 16/24 | 4/7 | AddReplicationFocus, DistanceFromCharacter, GetJoinData, GetMouse, GetNetworkPing, HasAppearanceLoaded, IsVerified, Kick, Move, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsOnlineAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, RequestStreamAroundAsync, CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | ClearCachedAvatarAppearance, ClearCharacterAppearance, GetCameraState, PromptAgeCheck, GetFriendsInUniverseAsync, GetFriendsWhoPlayedAsync, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, EmotesLoaded, Idled, OnTeleport |
 | Players | 8/9 | 11/16 | 2/4 | GetPlayerByUserId, GetPlayerFromCharacter, GetPlayers, CreateHumanoidModelFromDescriptionAsync, CreateHumanoidModelFromUserIdAsync, GetCharacterAppearanceInfoAsync, GetFriendsAsync, GetHumanoidDescriptionFromUserIdAsync, GetNameFromUserIdAsync, GetUserIdFromNameAsync, GetUserThumbnailAsync, PlayerAdded, PlayerRemoving | BanAsync, GetBanHistoryAsync, GetHumanoidDescriptionFromOutfitIdAsync, GetProfileConfigurationFromUserIdAsync, UnbanAsync, PlayerMembershipChanged, UserSubscriptionStatusChanged |
 | PluginAction | 4/4 | - | - |  |  |

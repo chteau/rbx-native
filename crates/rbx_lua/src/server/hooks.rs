@@ -1,6 +1,7 @@
 //! The members a running server adds: `RunService`'s frame signals and
 //! run-mode flags, `BasePart`'s touch signals, network ownership and
-//! impulses, `PhysicsService`'s collision groups.
+//! impulses, `PhysicsService`'s collision groups (also on every
+//! `WorldRoot`).
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -57,6 +58,18 @@ const RUN_SERVICE_SIGNALS: &[&str] = &[
     "Heartbeat",
 ];
 
+/// The collision group calls `WorldRoot` shares with `PhysicsService`.
+const WORLD_ROOT_GROUPS: &[&str] = &[
+    "RegisterCollisionGroup",
+    "UnregisterCollisionGroup",
+    "RenameCollisionGroup",
+    "CollisionGroupSetCollidable",
+    "CollisionGroupsAreCollidable",
+    "GetRegisteredCollisionGroups",
+    "IsCollisionGroupRegistered",
+    "GetMaxCollisionGroups",
+];
+
 /// Roblox's cap on collision groups, `PhysicsService:GetMaxCollisionGroups`.
 const MAX_GROUPS: usize = 32;
 const DEFAULT_GROUP: &str = "Default";
@@ -68,6 +81,9 @@ pub struct CollisionGroups {
     names: Vec<String>,
     apart: HashSet<(String, String)>,
 }
+
+/// What Roblox says to a script that removes or renames `Default`.
+const DEFAULT_LOCKED: &str = "Can not use/change the Default collision group.";
 
 impl Default for CollisionGroups {
     fn default() -> Self {
@@ -128,10 +144,52 @@ impl CollisionGroups {
 
     fn unregister(&mut self, name: &str) -> std::result::Result<(), String> {
         if name == DEFAULT_GROUP {
-            return Err("Cannot remove the Default collision group".to_owned());
+            return Err(DEFAULT_LOCKED.to_owned());
         }
         self.names.retain(|n| n != name);
         self.apart.retain(|(a, b)| a != name && b != name);
+        Ok(())
+    }
+
+    /// The bits of the groups `name` collides with, by index, as Roblox's
+    /// `GetRegisteredCollisionGroups` gives them: slots no group holds
+    /// are set.
+    pub fn mask(&self, name: &str) -> i32 {
+        let mut bits = u32::MAX;
+        for (index, other) in self.names.iter().enumerate().take(32) {
+            if !self.collides(name, other) {
+                bits &= !(1 << index);
+            }
+        }
+        bits as i32
+    }
+
+    /// Renames a group, its pairs with it; parts keep the old name, which
+    /// no longer names a group (so they collide as `Default`). Renaming a
+    /// group that isn't there does nothing, as on Roblox.
+    fn rename(&mut self, from: &str, to: &str) -> std::result::Result<(), String> {
+        if from == DEFAULT_GROUP || to == DEFAULT_GROUP {
+            return Err(DEFAULT_LOCKED.to_owned());
+        }
+        if !self.is_registered(from) {
+            return Ok(());
+        }
+        if self.is_registered(to) {
+            return Err(format!("Collision group already exists: {to}"));
+        }
+        for name in &mut self.names {
+            if name == from {
+                *name = to.to_owned();
+            }
+        }
+        self.apart = self
+            .apart
+            .drain()
+            .map(|(a, b)| {
+                let swap = |n: String| if n == from { to.to_owned() } else { n };
+                Self::pair(&swap(a), &swap(b))
+            })
+            .collect();
         Ok(())
     }
 
@@ -476,6 +534,11 @@ impl ServerHooks {
             "UnregisterCollisionGroup" => method(lua, move |_, (_s, name): (Value, String)| {
                 groups.borrow_mut().unregister(&name).map_err(fail)
             }),
+            "RenameCollisionGroup" => {
+                method(lua, move |_, (_s, from, to): (Value, String, String)| {
+                    groups.borrow_mut().rename(&from, &to).map_err(fail)
+                })
+            }
             "CollisionGroupSetCollidable" => method(
                 lua,
                 move |_, (_s, a, b, on): (Value, String, String, bool)| {
@@ -503,7 +566,7 @@ impl ServerHooks {
                 for name in groups.names() {
                     let entry = lua.create_table()?;
                     entry.set("name", name.as_str())?;
-                    entry.set("mask", 0)?;
+                    entry.set("mask", groups.mask(name))?;
                     list.push(entry)?;
                 }
                 Ok(list)
@@ -536,11 +599,12 @@ impl ServerHooks {
             }),
             "GetCollisionGroups" => method(lua, move |lua, _: MultiValue| {
                 let list = lua.create_table()?;
-                for (id, name) in groups.borrow().names().iter().enumerate() {
+                let groups = groups.borrow();
+                for (id, name) in groups.names().iter().enumerate() {
                     let entry = lua.create_table()?;
                     entry.set("name", name.as_str())?;
                     entry.set("id", id)?;
-                    entry.set("mask", 0)?;
+                    entry.set("mask", groups.mask(name))?;
                     list.push(entry)?;
                 }
                 Ok(list)
@@ -690,6 +754,10 @@ impl Hooks for ServerHooks {
         if let Some(value) = super::styles::member(lua, ctx, &self.styles, referent, class, key)? {
             return Ok(Some(value));
         }
+        if let Some(value) = super::services::world(lua, &self.services, ctx, referent, class, key)?
+        {
+            return Ok(Some(value));
+        }
         if let Some(value) = super::services::member(lua, &self.services, referent, class, key)? {
             return Ok(Some(value));
         }
@@ -707,6 +775,13 @@ impl Hooks for ServerHooks {
                     .map(|f| Some(Value::Function(f)))
             }
             "PhysicsService" => self.physics_service(lua, key),
+            "Workspace" if key == "GetNumAwakeParts" => {
+                let physics = self.physics.clone();
+                method(lua, move |_, _: MultiValue| Ok(physics.awake_parts()))
+            }
+            _ if WORLD_ROOT_GROUPS.contains(&key) && db.is_subclass_of(class, "WorldRoot") => {
+                self.physics_service(lua, key)
+            }
             "HttpService" => json::member(lua, key),
             "AssetService" => match super::editable_image::member(lua, key)? {
                 Some(value) => Ok(Some(value)),

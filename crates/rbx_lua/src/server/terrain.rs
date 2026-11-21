@@ -10,6 +10,7 @@ use super::Physics;
 use crate::ctx::Ctx;
 use crate::datatypes::cframe::LuaCFrame;
 use crate::datatypes::color3::LuaColor3;
+use crate::datatypes::int16::{LuaRegion3int16, LuaVector3int16};
 use crate::datatypes::params::LuaRegion3;
 use crate::datatypes::vector3::LuaVector3;
 use crate::lua_enum::LuaEnumItem;
@@ -68,6 +69,25 @@ pub enum TerrainOp {
     Clear,
     GetColor(String),
     SetColor(String, [f32; 3]),
+    /// `CountCells`: the cells holding anything.
+    Count,
+    /// `ReadVoxelChannels`: each cell's solid material and fill and its
+    /// water, from `min` (inclusive) to `max` (exclusive).
+    ReadChannels {
+        min: [i32; 3],
+        max: [i32; 3],
+    },
+    /// `WriteVoxelChannels` and `PasteRegion`: cells X fastest, `size` of
+    /// them from `min`; a channel left out keeps each cell's own, and a
+    /// cell whose `keep` is set is left alone.
+    WriteChannels {
+        min: [i32; 3],
+        size: [usize; 3],
+        materials: Option<Vec<String>>,
+        solid: Option<Vec<f64>>,
+        liquid: Option<Vec<f64>>,
+        keep: Option<Vec<bool>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,7 +100,84 @@ pub enum TerrainReply {
         occupancies: Vec<f64>,
     },
     Color([f32; 3]),
+    Count(usize),
+    /// Cells X fastest, then Y, then Z.
+    Channels {
+        size: [usize; 3],
+        materials: Vec<String>,
+        solid: Vec<f64>,
+        liquid: Vec<f64>,
+    },
 }
+
+/// The channels `ReadVoxelChannels`/`WriteVoxelChannels` know.
+const CHANNELS: [&str; 3] = ["SolidMaterial", "SolidOccupancy", "LiquidOccupancy"];
+
+/// Roblox's terrain bounds, `Terrain.MaxExtents`, in cells.
+const MAX_CELLS: i16 = 32000;
+
+/// A `[x][y][z]` array of `size`, from cells X fastest.
+fn grid_table(
+    lua: &Lua,
+    size: [usize; 3],
+    value: impl Fn(usize) -> Result<Value>,
+) -> Result<Table> {
+    let out = lua.create_table()?;
+    for x in 0..size[0] {
+        let tx = lua.create_table()?;
+        for y in 0..size[1] {
+            let ty = lua.create_table()?;
+            for z in 0..size[2] {
+                ty.raw_set(z + 1, value(x + size[0] * (y + size[1] * z))?)?;
+            }
+            tx.raw_set(y + 1, ty)?;
+        }
+        out.raw_set(x + 1, tx)?;
+    }
+    Ok(out)
+}
+
+/// A `[x][y][z]` array flattened X fastest, and its size.
+fn flat<T>(
+    table: &Table,
+    mut read: impl FnMut(Value) -> Result<T>,
+) -> Result<([usize; 3], Vec<T>)> {
+    let nx = table.raw_len();
+    let first: Option<Table> = table.raw_get(1)?;
+    let ny = first.as_ref().map_or(0, |t| t.raw_len());
+    let nz = match first
+        .as_ref()
+        .map(|t| t.raw_get::<Option<Table>>(1))
+        .transpose()?
+    {
+        Some(Some(t)) => t.raw_len(),
+        _ => 0,
+    };
+    let mut cells = Vec::with_capacity(nx * ny * nz);
+    for z in 0..nz {
+        for y in 0..ny {
+            for x in 0..nx {
+                let column: Table = table.raw_get::<Table>(x + 1)?.raw_get(y + 1)?;
+                cells.push(read(column.raw_get(z + 1)?)?);
+            }
+        }
+    }
+    Ok(([nx, ny, nz], cells))
+}
+
+fn material_item(lua: &Lua, ctx: &Ctx, name: &str) -> Result<Value> {
+    crate::plugin::arg::to_lua(
+        lua,
+        ctx,
+        &Arg::Enum {
+            enum_name: "Material".into(),
+            item: name.to_owned(),
+        },
+    )
+}
+
+/// What `CopyRegion` kept, by `TerrainRegion` referent.
+const REGIONS: &str = "rbxn.server.terrain_regions";
 
 fn array(v: rbx_dom::Vector3Data) -> [f64; 3] {
     [v.x, v.y, v.z].map(f64::from)
@@ -225,6 +322,14 @@ pub(super) fn member(
     let cells_physics = physics.clone();
     let physics = physics.clone();
     let run = move |op: TerrainOp| physics.terrain(op).map_err(mlua::Error::runtime);
+    if key == "MaxExtents" {
+        return LuaRegion3int16 {
+            min: [-MAX_CELLS; 3],
+            max: [MAX_CELLS; 3],
+        }
+        .into_lua(lua)
+        .map(Some);
+    }
     let function = match key {
         "FillBlock" => lua.create_function(
             move |_, (_, cframe, size, m): (Value, LuaCFrame, LuaVector3, AnyUserData)| {
@@ -337,6 +442,153 @@ pub(super) fn member(
             },
         )?,
         "Clear" => lua.create_function(move |_, _: Value| run(TerrainOp::Clear).map(drop))?,
+        "CountCells" => lua.create_function(move |_, _: Value| match run(TerrainOp::Count)? {
+            TerrainReply::Count(n) => Ok(n),
+            _ => Err(mlua::Error::runtime("CountCells failed")),
+        })?,
+        "ReadVoxelChannels" => lua.create_function(
+            move |lua, (_, region, resolution, wanted): (Value, LuaRegion3, f64, Table)| {
+                let wanted: Vec<String> = wanted.sequence_values().collect::<Result<_>>()?;
+                if let Some(bad) = wanted.iter().find(|w| !CHANNELS.contains(&w.as_str())) {
+                    return Err(mlua::Error::runtime(format!("Unknown channel id '{bad}'")));
+                }
+                let (min, max) = cells(&region, resolution)?;
+                let TerrainReply::Channels {
+                    size,
+                    materials,
+                    solid,
+                    liquid,
+                } = run(TerrainOp::ReadChannels { min, max })?
+                else {
+                    return Err(mlua::Error::runtime("ReadVoxelChannels failed"));
+                };
+                let out = lua.create_table()?;
+                for name in wanted {
+                    let table = match name.as_str() {
+                        "SolidMaterial" => {
+                            grid_table(lua, size, |i| material_item(lua, &ctx, &materials[i]))?
+                        }
+                        "SolidOccupancy" => grid_table(lua, size, |i| Ok(Value::Number(solid[i])))?,
+                        _ => grid_table(lua, size, |i| Ok(Value::Number(liquid[i])))?,
+                    };
+                    out.raw_set(name, table)?;
+                }
+                out.raw_set("Size", vector(lua, size.map(|n| n as f64))?)?;
+                Ok(out)
+            },
+        )?,
+        "WriteVoxelChannels" => lua.create_function(
+            move |_, (_, region, resolution, channels): (Value, LuaRegion3, f64, Table)| {
+                let (min, max) = cells(&region, resolution)?;
+                let wanted = [0, 1, 2].map(|i| (max[i] - min[i]).max(0) as usize);
+                let mut materials = None;
+                let mut solid = None;
+                let mut liquid = None;
+                for pair in channels.pairs::<String, Table>() {
+                    let (name, table) = pair?;
+                    let size = match name.as_str() {
+                        "SolidMaterial" => {
+                            let (size, list) = flat(&table, |v| match v {
+                                Value::UserData(u) => material(&u),
+                                _ => Err(mlua::Error::runtime("Material expected")),
+                            })?;
+                            materials = Some(list);
+                            size
+                        }
+                        "SolidOccupancy" | "LiquidOccupancy" => {
+                            let (size, list) = flat(&table, |v| match v {
+                                Value::Number(n) => Ok(n),
+                                Value::Integer(n) => Ok(n as f64),
+                                _ => Err(mlua::Error::runtime("number expected")),
+                            })?;
+                            if name == "SolidOccupancy" {
+                                solid = Some(list);
+                            } else {
+                                liquid = Some(list);
+                            }
+                            size
+                        }
+                        _ => {
+                            return Err(mlua::Error::runtime(format!(
+                                "Unknown channel id '{name}'"
+                            )))
+                        }
+                    };
+                    if size != wanted {
+                        return Err(mlua::Error::runtime(
+                            "Region size does not match the size of the channel arrays",
+                        ));
+                    }
+                }
+                run(TerrainOp::WriteChannels {
+                    min,
+                    size: wanted,
+                    materials,
+                    solid,
+                    liquid,
+                    keep: None,
+                })
+                .map(drop)
+            },
+        )?,
+        "CopyRegion" => lua.create_function(move |lua, (_, region): (Value, AnyUserData)| {
+            let region = *region.borrow::<LuaRegion3int16>()?;
+            let min = region.min.map(i32::from);
+            let max = region.max.map(|v| i32::from(v) + 1);
+            let TerrainReply::Channels {
+                size,
+                materials,
+                solid,
+                liquid,
+            } = run(TerrainOp::ReadChannels { min, max })?
+            else {
+                return Err(mlua::Error::runtime("CopyRegion failed"));
+            };
+            let referent = ctx
+                .dom_mut()
+                .new_instance("TerrainRegion", "TerrainRegion", None);
+            ctx.dom_mut().unparent(referent);
+            let dims = size.map(|n| n as f32);
+            let _ = ctx.dom_mut().set_property(
+                referent,
+                "SizeInCells",
+                rbx_dom::Variant::Vector3(rbx_dom::Vector3Data {
+                    x: dims[0],
+                    y: dims[1],
+                    z: dims[2],
+                }),
+            );
+            let kept = lua.create_table()?;
+            kept.raw_set("size", size.to_vec())?;
+            kept.raw_set("materials", materials)?;
+            kept.raw_set("solid", solid)?;
+            kept.raw_set("liquid", liquid)?;
+            crate::engine::events::registry_table(lua, REGIONS)?.raw_set(referent.value(), kept)?;
+            crate::instance::LuaInstance::new(referent, ctx.clone()).into_lua(lua)
+        })?,
+        "PasteRegion" => lua.create_function(
+            move |lua, (_, region, corner, empty): (Value, AnyUserData, AnyUserData, bool)| {
+                let referent = region.borrow::<crate::instance::LuaInstance>()?.referent();
+                let corner = corner.borrow::<LuaVector3int16>()?.0;
+                let kept: Option<Table> = crate::engine::events::registry_table(lua, REGIONS)?
+                    .raw_get(referent.value())?;
+                let Some(kept) = kept else {
+                    return Ok(());
+                };
+                let size: Vec<usize> = kept.raw_get("size")?;
+                let materials: Vec<String> = kept.raw_get("materials")?;
+                let keep = (!empty).then(|| materials.iter().map(|m| m == "Air").collect());
+                run(TerrainOp::WriteChannels {
+                    min: corner.map(i32::from),
+                    size: [size[0], size[1], size[2]],
+                    materials: Some(materials),
+                    solid: Some(kept.raw_get("solid")?),
+                    liquid: Some(kept.raw_get("liquid")?),
+                    keep,
+                })
+                .map(drop)
+            },
+        )?,
         "GetMaterialColor" => {
             lua.create_function(move |_, (_, m): (Value, AnyUserData)| {
                 match run(TerrainOp::GetColor(material(&m)?))? {

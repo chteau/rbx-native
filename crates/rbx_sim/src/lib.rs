@@ -22,6 +22,7 @@ pub mod character;
 mod chat;
 pub mod conformance;
 mod engine;
+mod explosion;
 pub mod gui;
 pub mod humanoid;
 pub mod input;

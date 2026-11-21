@@ -26,6 +26,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use mlua::{AnyUserData, Function, IntoLua, Lua, MultiValue, Result, Table, Value};
 use rbx_dom::{Ref, Variant};
 
+use crate::ctx::Ctx;
 use crate::engine::events::instance_key;
 use crate::engine::scheduler::{self, AwaitId};
 use crate::engine::signal::{self, LuaSignal};
@@ -398,6 +399,7 @@ const MODULES: &[(&str, &str)] = &[
     ("InputActions", include_str!("services/input_actions.luau")),
     ("Prompts", include_str!("services/prompts.luau")),
     ("Web", include_str!("services/web.luau")),
+    ("World", include_str!("services/world.luau")),
 ];
 
 /// The module that answers `class`.
@@ -459,6 +461,94 @@ fn module_of(class: &str) -> Option<&'static str> {
         | "BanHistoryPages" => "Web",
         _ => return None,
     })
+}
+
+/// The 3D world's members `services/world.luau` answers, by the class
+/// that declares them.
+const WORLD: &[(&str, &[&str])] = &[
+    (
+        "Workspace",
+        &[
+            "GetServerTimeNow",
+            "GetRealPhysicsFPS",
+            "GetPhysicsThrottling",
+            "PGSIsEnabled",
+            "JoinToOutsiders",
+            "UnjoinFromOutsiders",
+            "PersistentLoaded",
+        ],
+    ),
+    ("WorldRoot", &["BulkMoveTo", "ArePartsTouchingOthers"]),
+    (
+        "BasePart",
+        &[
+            "GetClosestPointOnSurface",
+            "Resize",
+            "ResizeableFaces",
+            "ResizeIncrement",
+            "ExtentsSize",
+            "ExtentsCFrame",
+            "CurrentPhysicalProperties",
+        ],
+    ),
+    (
+        "Model",
+        &[
+            "GetScale",
+            "ScaleTo",
+            "TranslateBy",
+            "AddPersistentPlayer",
+            "RemovePersistentPlayer",
+            "GetPersistentPlayers",
+        ],
+    ),
+    ("Camera", &["GetPartsObscuringTarget", "ZoomToExtents"]),
+    ("Beam", &["SetTextureOffset"]),
+    (
+        "Terrain",
+        &["GetMaterialSlot", "SetMaterialSlot", "ResetMaterialSlot"],
+    ),
+    (
+        "Path2D",
+        &[
+            "GetBoundingRect",
+            "GetControlPoint",
+            "GetControlPoints",
+            "GetLength",
+            "GetMaxControlPoints",
+            "GetPositionOnCurve",
+            "GetPositionOnCurveArcLength",
+            "GetTangentOnCurve",
+            "GetTangentOnCurveArcLength",
+            "InsertControlPoint",
+            "RemoveControlPoint",
+            "SetControlPoints",
+            "UpdateControlPoint",
+            "ControlPointChanged",
+        ],
+    ),
+];
+
+/// `class.key` when `services/world.luau` answers it.
+pub(crate) fn world(
+    lua: &Lua,
+    runtime: &Rc<Runtime>,
+    ctx: &Ctx,
+    referent: Ref,
+    class: &str,
+    key: &str,
+) -> Result<Option<Value>> {
+    let db = ctx.database();
+    let ours = WORLD
+        .iter()
+        .any(|(base, keys)| keys.contains(&key) && db.is_subclass_of(class, base));
+    if !ours {
+        return Ok(None);
+    }
+    let (value, found, _): (Value, bool, Option<String>) = module(lua, runtime, "World")?
+        .get::<Function>("member")?
+        .call((class, referent.value(), key))?;
+    Ok(found.then_some(value))
 }
 
 /// Services only a server has.
@@ -800,6 +890,43 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         lua.create_function(|lua, ()| Ok(engine(lua).host.now()))?,
     )?;
     host.set("now_ms", lua.create_function(|_, ()| Ok(now_ms()))?)?;
+    host.set(
+        "epoch",
+        lua.create_function(|_, ()| {
+            Ok(SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0.0, |d| d.as_secs_f64()))
+        })?,
+    )?;
+    // A number the DOM keeps that scripts can't name (`Model.Scale`, saved
+    // as `ScaleFactor`).
+    host.set(
+        "raw_get",
+        lua.create_function(|lua, (id, name): (u32, String)| {
+            let ctx = engine(lua).ctx.clone();
+            let dom = ctx.dom();
+            Ok(
+                match dom
+                    .get(Ref::new(id))
+                    .and_then(|i| i.properties().get(name.as_str()))
+                {
+                    Some(Variant::Float32(v)) => Some(f64::from(*v)),
+                    Some(Variant::Float64(v)) => Some(*v),
+                    _ => None,
+                },
+            )
+        })?,
+    )?;
+    host.set(
+        "raw_set",
+        lua.create_function(|lua, (id, name, value): (u32, String, f32)| {
+            let ctx = engine(lua).ctx.clone();
+            let _ = ctx
+                .dom_mut()
+                .set_property(Ref::new(id), &name, Variant::Float32(value));
+            Ok(())
+        })?,
+    )?;
     let r = runtime.clone();
     host.set(
         "api_access",

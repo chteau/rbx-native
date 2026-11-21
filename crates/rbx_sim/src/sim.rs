@@ -4,7 +4,7 @@ use std::cell::{Ref as CellRef, RefCell};
 use std::rc::Rc;
 
 use rbx_dom::{Change, Ref, Variant, WeakDom};
-use rbx_lua::server::{Event, ServerVm};
+use rbx_lua::server::{Event, Physics, ServerVm};
 use rbx_lua::Output;
 use rbx_reflection::ReflectionDatabase;
 
@@ -72,6 +72,9 @@ pub struct Simulation {
     shared: Rc<RefCell<Shared>>,
     frame: u64,
     dirty: bool,
+    /// The collision groups the world was last built with: a script
+    /// changing which groups collide rebuilds it.
+    built_groups: rbx_lua::server::CollisionGroups,
     /// Roots added under Workspace, and parts and joints taken out of it,
     /// since the last build: unless `dirty`, the world takes just those.
     added: Vec<Ref>,
@@ -114,6 +117,7 @@ impl Simulation {
             shared,
             frame: 0,
             dirty: true,
+            built_groups: Default::default(),
             added: Vec::new(),
             removed: Vec::new(),
             refit: Vec::new(),
@@ -804,6 +808,7 @@ impl Simulation {
     pub fn start(&mut self) {
         if self.role != Role::Client {
             crate::chat::setup(&mut self.dom.borrow_mut(), self.db);
+            crate::input::server_camera(&mut self.dom.borrow_mut());
         }
         let roots = self.dom.borrow().root_refs().to_vec();
         for root in roots {
@@ -1236,6 +1241,7 @@ impl Simulation {
     fn physics_step(&mut self) -> Vec<Touch> {
         let (gravity, fallen_height) = self.workspace_numbers();
         self.players_step();
+        self.explode();
         {
             let mut dom = self.dom.borrow_mut();
             let mut shared = self.shared.borrow_mut();
@@ -1570,6 +1576,11 @@ impl Simulation {
     }
 
     fn rebuild_if_changed(&mut self) {
+        let groups = self.vm.collision_groups();
+        if *groups.borrow() != self.built_groups {
+            self.built_groups = groups.borrow().clone();
+            self.dirty = true;
+        }
         if self.dirty
             || !self.added.is_empty()
             || !self.removed.is_empty()
@@ -1751,6 +1762,11 @@ impl Simulation {
                         self.shared.borrow_mut().terrain.load(&dom);
                     }
                     self.watch_sounds_under(referent);
+                    if in_workspace(&self.dom.borrow(), referent) {
+                        let dom = self.dom.borrow();
+                        let under = scripts::subtree(&dom, referent);
+                        self.shared.borrow_mut().explosions.watch(&dom, &under);
+                    }
                     self.start_scripts_under(referent);
                 }
                 Change::Removed(referent) => {
@@ -1846,6 +1862,52 @@ impl Simulation {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Sets off the explosions put in Workspace since the last step: their
+    /// `Hit`s, broken joints and pushes (`explosion.rs`).
+    fn explode(&mut self) {
+        let lifetime = (crate::explosion::LIFETIME * crate::FRAME_HZ) as u64;
+        let expired = self
+            .shared
+            .borrow_mut()
+            .explosions
+            .expired(self.frame, lifetime);
+        for explosion in expired {
+            if self.dom.borrow().get(explosion).is_some() {
+                self.destroy(explosion);
+            }
+        }
+        let pending = self.shared.borrow_mut().explosions.take(self.frame);
+        for explosion in pending {
+            let blast = {
+                let dom = self.dom.borrow();
+                if !in_workspace(&dom, explosion) {
+                    continue;
+                }
+                let bridge = crate::physics::Bridge(self.shared.clone());
+                crate::explosion::blast(&bridge, &dom, self.db, explosion)
+            };
+            for joint in blast.joints {
+                self.destroy(joint);
+            }
+            {
+                let bridge = crate::physics::Bridge(self.shared.clone());
+                for (part, impulse) in &blast.impulses {
+                    bridge.apply_impulse(*part, *impulse, false);
+                }
+            }
+            for (part, distance) in blast.hits {
+                self.fire(Event::Signal {
+                    owner: explosion,
+                    name: "Hit".into(),
+                    args: vec![
+                        rbx_lua::server::Arg::Instance(part),
+                        rbx_lua::server::Arg::Number(distance),
+                    ],
+                });
+            }
         }
     }
 
