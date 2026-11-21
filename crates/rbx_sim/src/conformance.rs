@@ -627,6 +627,27 @@ pub const TESTS: &[Test] = &[
         tolerance: &[("*", 0.15)],
     },
     Test {
+        name: "WorldApi",
+        source: include_str!("../conformance/tests/WorldApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "PartPhysics",
+        source: include_str!("../conformance/tests/PartPhysics.luau"),
+        tolerance: &[("*", 0.05), ("*group*", 0.3)],
+    },
+    Test {
+        name: "Explosion",
+        source: include_str!("../conformance/tests/Explosion.luau"),
+        tolerance: &[("*", 0.5)],
+    },
+    Test {
+        name: "Path2DCurve",
+        source: include_str!("../conformance/tests/Path2DCurve.luau"),
+        // Positions are single-precision UDim2s, printed to nine digits.
+        tolerance: &[("*pos_*", 1e-5), ("*arc_*", 1e-5), ("scale_pos", 1e-5)],
+    },
+    Test {
         name: "NewApis",
         source: include_str!("../conformance/tests/NewApis.luau"),
         tolerance: &[],
@@ -1247,13 +1268,15 @@ fn show(value: Option<&Value>) -> String {
     }
 }
 
-/// Two texts of whitespace-separated numbers (TweenCurves' samples), the
-/// same count, each pair within `tolerance`: Roblox computes in single
-/// precision, so a sample can round the other way at the fourth decimal.
+/// Two texts of whitespace-separated numbers (TweenCurves' samples, or
+/// a UDim2's `{0.25, 0}, {0.5, 0}`), the same count, each pair within
+/// `tolerance`: Roblox computes in single precision, so a sample can round
+/// the other way at the fourth decimal.
 fn numbers_match(g: Option<&Value>, o: Option<&Value>, tolerance: f64) -> bool {
     let list = |v: Option<&Value>| -> Option<Vec<f64>> {
         v?.as_str()?
-            .split(|c: char| c.is_whitespace() || c == ',')
+            .split(|c: char| c.is_whitespace() || matches!(c, ',' | '{' | '}'))
+            .filter(|w| !w.is_empty())
             .map(|w| w.parse().ok())
             .collect()
     };
