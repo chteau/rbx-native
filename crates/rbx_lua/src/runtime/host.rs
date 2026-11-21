@@ -94,6 +94,9 @@ impl Hooks for CommandBarHooks {
         if let Some(value) = edit::member(lua, class, key)? {
             return Ok(Some(value));
         }
+        if let Some(value) = crate::studio::member(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
         match class {
             "HttpService" => http_member(lua, key),
             "CollectionService" => collection::member(lua, key),
@@ -119,6 +122,9 @@ impl Hooks for CommandBarHooks {
     }
 
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
+        if let Some(value) = crate::studio::game_member(lua, key)? {
+            return Ok(Some(value));
+        }
         events::game_member(lua, key)
     }
 }

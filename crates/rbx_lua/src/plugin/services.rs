@@ -4,7 +4,6 @@
 //! folders), plus the `settings()` global.
 
 mod http_service;
-mod palette;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -19,7 +18,6 @@ use rbx_dom::Ref;
 use super::api::{Answer, Request, UiId};
 use super::env::env;
 use super::http::HttpRequest;
-use crate::datatypes::color3::LuaColor3;
 use crate::engine::scheduler::AwaitId;
 use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
@@ -385,6 +383,18 @@ fn run_service(lua: &Lua, key: &str) -> Result<Value> {
         "BindToRenderStep" => render_step(lua, false),
         "UnbindFromRenderStep" => render_step(lua, true),
         "Heartbeat" | "RenderStepped" | "Stepped" => signal(lua, "RunService", key),
+        "Run" | "Pause" | "Stop" => {
+            use crate::plugin::api::StudioAction;
+            let action = match key {
+                "Run" => StudioAction::Run,
+                "Pause" => StudioAction::Pause,
+                _ => StudioAction::Stop,
+            };
+            func(lua, move |lua, _: mlua::MultiValue| {
+                super::plugin_object::studio_action(lua, action.clone());
+                Ok(())
+            })
+        }
         _ => crate::engine::edit::member(lua, "RunService", key)?
             .ok_or_else(|| no_member("RunService", key)),
     }
@@ -403,6 +413,20 @@ fn studio_service(lua: &Lua, key: &str) -> Result<Value> {
             Ok(Value::Boolean(false))
         }
         "InstalledPluginData" => Ok(Value::String(lua.create_string("")?)),
+        // Studio's own gizmos are not instances; what a plugin can hit
+        // here is the place, as `Workspace:Raycast` sees it.
+        "GizmoRaycast" => func(lua, |lua, args: mlua::MultiValue| {
+            let raycast: mlua::Function = lua
+                .load("local _, o, d, p = ... return workspace:Raycast(o, d, p)")
+                .into_function()?;
+            raycast.call::<Value>(args)
+        }),
+        "PromptImportFileAsync" | "PromptImportFile" => {
+            super::plugin_object::import_prompt(lua, false).map(Value::Function)
+        }
+        "PromptImportFilesAsync" | "PromptImportFiles" => {
+            super::plugin_object::import_prompt(lua, true).map(Value::Function)
+        }
         // Studio's class icons come from its own sheet, which rbx-native
         // does not ship; an empty image keeps an icon row laid out.
         "GetClassIcon" => func(lua, |lua, _: mlua::MultiValue| {
@@ -416,79 +440,6 @@ fn studio_service(lua: &Lua, key: &str) -> Result<Value> {
         }),
         _ => Err(no_member("StudioService", key)),
     }
-}
-
-/// Studio's Dark theme colour for an `Enum.StudioStyleGuideColor` (or its
-/// name) under an optional `Enum.StudioStyleGuideModifier`; mid grey for a
-/// name Studio does not know.
-fn palette(color: &Value, modifier: Option<&Value>) -> Result<[f32; 3]> {
-    let name = |value: &Value| -> Result<String> {
-        let text = match value {
-            Value::String(s) => s.to_string_lossy().to_string(),
-            other => other.to_string()?,
-        };
-        Ok(text.rsplit('.').next().unwrap_or("").to_string())
-    };
-    let modifier = match modifier {
-        Some(Value::Nil) | None => String::new(),
-        Some(value) => name(value)?,
-    };
-    let [r, g, b] = palette::dark(&name(color)?, &modifier).unwrap_or([128, 128, 128]);
-    Ok([r, g, b].map(|channel| f32::from(channel) / 255.0))
-}
-
-/// Installs `settings()` (and `UserSettings()`): `settings().Studio.Theme`
-/// with `Name` "Dark", `GetColor(styleGuideColor, modifier?)` from Studio's
-/// own Dark palette (see `palette`, falling back to mid grey) and
-/// `ThemeChanged` (never fires).
-pub(crate) fn install_settings(lua: &Lua) -> Result<()> {
-    let theme = lua.create_table()?;
-    theme.set("Name", "Dark")?;
-    theme.set(
-        "GetColor",
-        lua.create_function(|lua, (_, color, modifier): (Value, Value, Option<Value>)| {
-            let [r, g, b] = palette(&color, modifier.as_ref())?;
-            lua.create_userdata(LuaColor3::new(r, g, b))
-        })?,
-    )?;
-    theme.set(
-        "ThemeChanged",
-        LuaSignal(SignalKey::new(
-            Owner::Service("StudioTheme"),
-            "ThemeChanged",
-        )),
-    )?;
-    let studio = lua.create_table()?;
-    // `ThemeChanged` belongs to `Studio` (settings().Studio.ThemeChanged);
-    // the theme keeps a copy for older plugins that read it there.
-    studio.set("ThemeChanged", theme.get::<Value>("ThemeChanged")?)?;
-    // Only the Dark palette is known (see `palette`), so that is the one
-    // theme on offer; a fresh list per call, as in Studio.
-    let themes = theme.clone();
-    studio.set(
-        "GetAvailableThemes",
-        lua.create_function(move |lua, _: MultiValueRest| {
-            lua.create_sequence_from([themes.clone()])
-        })?,
-    )?;
-    studio.set("Theme", theme)?;
-    let root = lua.create_table()?;
-    root.set("Studio", studio)?;
-    // `settings():GetService("Studio")`, the long way to the same table.
-    root.set(
-        "GetService",
-        lua.create_function(|_, (this, name): (Table, String)| {
-            match this.get::<Value>(name.as_str())? {
-                Value::Nil => Err(mlua::Error::runtime(format!(
-                    "{name} is not a valid service of settings()"
-                ))),
-                found => Ok(found),
-            }
-        })?,
-    )?;
-    let getter = lua.create_function(move |_, ()| Ok(root.clone()))?;
-    lua.globals().set("settings", getter.clone())?;
-    lua.globals().set("UserSettings", getter)
 }
 
 /// Continues HTTP requests that were waiting on a permission prompt:
@@ -520,7 +471,7 @@ mod tests {
             let value = service(&lua, name).unwrap().unwrap();
             lua.globals().set(name, value).unwrap();
         }
-        install_settings(&lua).unwrap();
+        crate::studio::install(&lua, &env.ctx).unwrap();
         (lua, env)
     }
 

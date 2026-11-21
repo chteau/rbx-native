@@ -212,7 +212,13 @@ impl Shell {
         .detach();
     }
 
-    fn export_to(&mut self, kind: Export, roots: &[Ref], path: &Path, cx: &mut Context<Self>) {
+    pub(super) fn export_to(
+        &mut self,
+        kind: Export,
+        roots: &[Ref],
+        path: &Path,
+        cx: &mut Context<Self>,
+    ) {
         if kind == Export::Place {
             let _ = self.save_as(path, cx);
             return;
