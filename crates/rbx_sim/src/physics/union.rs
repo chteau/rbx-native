@@ -52,7 +52,7 @@ fn piece(bytes: &[u8], at: usize) -> Option<(Hull, usize)> {
         }
     }
     let floats = r.u32()? as usize;
-    if floats == 0 || floats % 3 != 0 || r.u32()? != 4 || floats * 4 > bytes.len() {
+    if floats == 0 || !floats.is_multiple_of(3) || r.u32()? != 4 || floats * 4 > bytes.len() {
         return None;
     }
     let mut vertices = Vec::with_capacity(floats / 3);
@@ -64,7 +64,7 @@ fn piece(bytes: &[u8], at: usize) -> Option<(Hull, usize)> {
         vertices.push(v);
     }
     let indices = r.u32()? as usize;
-    if indices % 3 != 0 || indices * 4 > bytes.len() {
+    if !indices.is_multiple_of(3) || indices * 4 > bytes.len() {
         return None;
     }
     for _ in 0..indices {
