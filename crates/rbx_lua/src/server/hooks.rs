@@ -26,19 +26,18 @@ use crate::plugin::arg;
 /// `RunService:BindToSimulationParallel`/`BindToAnimationParallel`: only a
 /// script under an Actor may bind (a live server's error otherwise,
 /// NewApis `bind_sim`); the function then runs every `frequency`'s worth of
-/// frames before simulation or animation. Parallel Luau runs serially here,
-/// as `ConnectParallel` does.
+/// frames before simulation or animation, in the parallel phase (see
+/// `engine::parallel`).
 const BIND_PARALLEL: &str = r#"
-local name, signal = ...
+local name, signal, parallel = ...
 local EVERY = { Hz60 = 1, Hz30 = 2, Hz15 = 4, Hz10 = 6, Hz5 = 12, Hz1 = 60 }
 return function(self, callback, frequency)
-	local env = getfenv(2)
-	local script = env and env.script
-	if typeof(script) ~= "Instance" or script:FindFirstAncestorWhichIsA("Actor") == nil then
+	if not parallel.underActor() then
 		error("RunService:" .. name .. ": The calling script must be rooted under an Actor.", 2)
 	end
 	local every = EVERY[if frequency then frequency.Name else "Hz30"] or 2
 	local frame = 0
+	callback = parallel.inParallel(callback)
 	return self[signal]:Connect(function(dt)
 		frame += 1
 		if frame % every == 0 then
@@ -324,7 +323,7 @@ impl ServerHooks {
                 };
                 lua.load(BIND_PARALLEL)
                     .set_name("=RunService")
-                    .call::<Function>((key, signal))
+                    .call::<Function>((key, signal, crate::engine::parallel::module(lua)?))
                     .map(|f| Some(Value::Function(f)))
             }
             _ => Ok(None),
@@ -697,6 +696,16 @@ impl Hooks for ServerHooks {
         let db = ctx.database();
         match class {
             "RunService" => self.run_service(lua, key),
+            "SharedTableRegistry" => {
+                let name = match key {
+                    "GetSharedTable" => "getShared",
+                    "SetSharedTable" => "setShared",
+                    _ => return Ok(None),
+                };
+                crate::engine::parallel::module(lua)?
+                    .get::<Function>(name)
+                    .map(|f| Some(Value::Function(f)))
+            }
             "PhysicsService" => self.physics_service(lua, key),
             "HttpService" => json::member(lua, key),
             "AssetService" => match super::editable_image::member(lua, key)? {

@@ -353,7 +353,8 @@ impl UserData for LuaInstance {
                 )))
             }
         });
-        methods.add_method("ClearAllChildren", |_, this, ()| {
+        methods.add_method("ClearAllChildren", |lua, this, ()| {
+            crate::engine::parallel::check_method(lua, "ClearAllChildren")?;
             this.ctx.check_write(this.referent)?;
             let children = this
                 .ctx
@@ -395,7 +396,8 @@ impl UserData for LuaInstance {
                 None => Err(this.not_a_member("GetPivot")),
             }
         });
-        methods.add_method("PivotTo", |_, this, target: Value| {
+        methods.add_method("PivotTo", |lua, this, target: Value| {
+            crate::engine::parallel::check_method(lua, "PivotTo")?;
             let target: LuaCFrame = from_userdata(&target, "CFrame")?;
             this.ctx.check_write(this.referent)?;
             let moved = crate::pivot::pivot_to(
@@ -410,10 +412,12 @@ impl UserData for LuaInstance {
             }
         });
         methods.add_method("Destroy", |lua, this, ()| {
+            crate::engine::parallel::check_method(lua, "Destroy")?;
             this.ctx.check_write(this.referent)?;
             crate::engine::changes::destroy(lua, &this.ctx, this.referent)
         });
         methods.add_method("AddTag", |lua, this, args: MultiValue| {
+            crate::engine::parallel::check_method(lua, "AddTag")?;
             if let Some(answer) =
                 tags::service_call(lua, &this.ctx, this.referent, "AddTag", &args)?
             {
@@ -430,6 +434,7 @@ impl UserData for LuaInstance {
             Ok(MultiValue::new())
         });
         methods.add_method("RemoveTag", |lua, this, args: MultiValue| {
+            crate::engine::parallel::check_method(lua, "RemoveTag")?;
             if let Some(answer) =
                 tags::service_call(lua, &this.ctx, this.referent, "RemoveTag", &args)?
             {
@@ -466,6 +471,7 @@ impl UserData for LuaInstance {
         });
         // Deprecated: parents the instance to nil, children and all.
         methods.add_method("Remove", |lua, this, mut args: MultiValue| {
+            crate::engine::parallel::check_method(lua, "Remove")?;
             // Methods answer before `__index`, so `Selection:Remove`, an
             // unrelated method with the same name, has to be sent on from here.
             if matches!(this.class().as_deref(), Ok("Selection")) {
@@ -482,6 +488,21 @@ impl UserData for LuaInstance {
             this.ctx.dom_mut().unparent(this.referent);
             Ok(MultiValue::new())
         });
+        methods.add_method("GetActor", |_, this, ()| {
+            let dom = this.ctx.dom();
+            let db = this.ctx.database();
+            let mut current = Some(this.referent);
+            while let Some(referent) = current {
+                if dom
+                    .get(referent)
+                    .is_some_and(|i| db.is_subclass_of(i.class(), "Actor"))
+                {
+                    return Ok(Some(LuaInstance::new(referent, this.ctx.clone())));
+                }
+                current = tree::parent_of(&dom, referent);
+            }
+            Ok(None)
+        });
         methods.add_method("Clone", |_, this, ()| {
             let copy = tree::deep_clone(&mut this.ctx.dom_mut(), this.referent, None)
                 .ok_or_else(property::missing_instance)?;
@@ -489,6 +510,7 @@ impl UserData for LuaInstance {
             Ok(LuaInstance::new(copy, this.ctx.clone()))
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
+            crate::engine::parallel::check_method(lua, &key)?;
             match key.as_str() {
                 "Name" => return this.instance_name()?.into_lua(lua),
                 "ClassName" => return this.class()?.into_lua(lua),
@@ -538,6 +560,12 @@ impl UserData for LuaInstance {
         methods.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, value): (String, Value)| {
+                crate::engine::parallel::check_write(
+                    lua,
+                    &this.ctx.database(),
+                    &this.class()?,
+                    &key,
+                )?;
                 match key.as_str() {
                     "Name" => {
                         // A number is written as its text, as for any

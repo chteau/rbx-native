@@ -213,6 +213,11 @@ pub const TESTS: &[Test] = &[
         tolerance: &[("*", 0.1), ("*still_from*", 20.0)],
     },
     Test {
+        name: "ParallelLuau",
+        source: include_str!("../conformance/tests/ParallelLuau.luau"),
+        tolerance: &[("*fired*", 3.0)],
+    },
+    Test {
         name: "BoxStack",
         source: include_str!("../conformance/tests/BoxStack.luau"),
         tolerance: &[("*", 0.02)],
@@ -702,6 +707,7 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
         include_str!("../conformance/client/InputActions.luau"),
     ),
 ];
+const PARALLEL_PROBE: &str = include_str!("../conformance/client/ParallelProbe.luau");
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
 const FIRST_PROBE: &str = include_str!("../conformance/client/FirstProbe.luau");
 
@@ -769,6 +775,10 @@ pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
         let module = child(dom, "ModuleScript", name, folder);
         let _ = dom.set_property(module, "Source", Variant::String(source.into()));
     }
+    // ParallelLuau: a script inside an Actor, from the start.
+    let actor = child(dom, "Actor", "ConfActor", sss);
+    let probe = child(dom, "Script", "ParallelProbe", actor);
+    let _ = dom.set_property(probe, "Source", Variant::String(PARALLEL_PROBE.into()));
     let runner = child(dom, "Script", RUNNER, sss);
     let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs, only)));
     add_client_half(dom);

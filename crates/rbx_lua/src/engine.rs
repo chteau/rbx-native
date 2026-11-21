@@ -11,6 +11,7 @@ pub(crate) mod collection;
 pub(crate) mod edit;
 pub(crate) mod events;
 pub(crate) mod json;
+pub(crate) mod parallel;
 pub(crate) mod require;
 pub(crate) mod scheduler;
 pub(crate) mod signal;
@@ -120,5 +121,6 @@ pub(crate) fn engine(lua: &Lua) -> Rc<Engine> {
 /// before sandboxing.
 pub(crate) fn install(lua: &Lua, engine: Rc<Engine>) -> mlua::Result<()> {
     lua.set_app_data(engine);
-    scheduler::install(lua)
+    scheduler::install(lua)?;
+    parallel::install(lua)
 }

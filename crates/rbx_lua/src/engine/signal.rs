@@ -117,7 +117,8 @@ impl Signals {
 }
 
 /// The userdata scripts see. Methods: `Connect(fn)`, `Once(fn)`,
-/// `ConnectParallel(fn)` (= `Connect`); `Wait()` is served through
+/// `ConnectParallel(fn)` (`Connect` from under an Actor, the handler in
+/// the parallel phase); `Wait()` is served through
 /// `__index` as a yielding function (see `scheduler::yielding`) that
 /// resumes with the next fire's arguments. `tostring` gives
 /// `"Signal <event>"`.
@@ -169,7 +170,8 @@ impl UserData for LuaSignal {
             Ok(connect(lua, &this.0, func, false))
         });
         methods.add_method("ConnectParallel", |lua, this, func: Function| {
-            Ok(connect(lua, &this.0, func, false))
+            let handler = super::parallel::connect_handler(lua, func)?;
+            Ok(connect(lua, &this.0, handler, false))
         });
         methods.add_method("Once", |lua, this, func: Function| {
             Ok(connect(lua, &this.0, func, true))
