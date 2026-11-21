@@ -6,6 +6,7 @@ fn part(dom: &mut WeakDom, parent: Ref, size: [f64; 3], x: f64) -> Ref {
     let r = dom.new_instance("Part", "Part", Some(parent));
     let props = dom.get_mut(r).unwrap().properties_mut();
     props.insert("size".into(), Variant::Vector3(vector3(DVec3::from(size))));
+    props.insert("Anchored".into(), Variant::Bool(true));
     props.insert(
         "CFrame".into(),
         Variant::CFrame(cframe(DMat4::from_translation(DVec3::new(x, 0.0, 0.0)))),

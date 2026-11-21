@@ -92,9 +92,11 @@ pub fn encode(solid: &Solid, color: [u8; 3]) -> Option<Vec<u8>> {
         .collect();
     units(&mut out, count, &tangents);
 
+    // Every real blob carries a second LOD; ours repeats the first.
+    let n = indices.len() as u32;
     let mut stream = Vec::new();
     let mut current: i64 = 0;
-    for &index in &indices {
+    for &index in indices.iter().chain(&indices) {
         let delta = i64::from(index) - current;
         current = i64::from(index);
         if (-64..64).contains(&delta) {
@@ -104,12 +106,13 @@ pub fn encode(solid: &Solid, color: [u8; 3]) -> Option<Vec<u8>> {
             stream.extend([WIDE | (word >> 16) as u8, (word >> 8) as u8, word as u8]);
         }
     }
-    out.extend((indices.len() as u32).to_le_bytes());
+    out.extend((2 * n).to_le_bytes());
     out.extend((stream.len() as u32).to_le_bytes());
     out.extend(stream);
-    out.push(2);
-    out.extend(0u32.to_le_bytes());
-    out.extend((indices.len() as u32).to_le_bytes());
+    out.push(3);
+    for offset in [0, n, 2 * n] {
+        out.extend(offset.to_le_bytes());
+    }
     Some(out)
 }
 
