@@ -12,11 +12,11 @@ const SEGMENTS: usize = 24;
 const RADIUS: f32 = 0.5;
 const HALF_LENGTH: f32 = 0.5;
 
-pub(crate) fn cylinder_y() -> MeshData {
+pub fn cylinder_y() -> MeshData {
     cylinder(|h, cos, sin| Vec3::new(cos * RADIUS, h * HALF_LENGTH, sin * RADIUS))
 }
 
-pub(crate) fn cylinder_x() -> MeshData {
+pub fn cylinder_x() -> MeshData {
     cylinder(|h, cos, sin| Vec3::new(h * HALF_LENGTH, cos * RADIUS, sin * RADIUS))
 }
 

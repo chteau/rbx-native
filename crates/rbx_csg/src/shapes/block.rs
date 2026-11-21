@@ -8,7 +8,7 @@ use super::MeshData;
 
 const HALF: f32 = 0.5;
 
-pub(crate) fn block() -> MeshData {
+pub fn block() -> MeshData {
     let mut mesh = MeshData::default();
     let inside = Vec3::ZERO;
     let corner = |x: f32, y: f32, z: f32| Vec3::new(x, y, z) * HALF;

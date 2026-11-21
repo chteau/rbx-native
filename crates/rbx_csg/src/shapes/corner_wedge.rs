@@ -11,7 +11,7 @@ use super::MeshData;
 
 const H: f32 = 0.5;
 
-pub(crate) fn corner_wedge() -> MeshData {
+pub fn corner_wedge() -> MeshData {
     let front_left = Vec3::new(-H, -H, -H);
     let front_right = Vec3::new(H, -H, -H);
     let back_right = Vec3::new(H, -H, H);

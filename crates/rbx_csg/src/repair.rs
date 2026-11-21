@@ -1,7 +1,7 @@
 //! Turning the BSP's polygon soup into a mesh fit to draw, and deciding
 //! whether it is: snapping the near-coincident vertices Roblox's own
 //! floating-point noise leaves apart, closing T-junctions, dropping
-//! disconnected debris, and the watertightness check [`super::evaluate`]
+//! disconnected debris, and the watertightness check [`super::Solid::finish`]
 //! gates the result on.
 
 use std::collections::HashMap;
@@ -26,10 +26,7 @@ use super::bsp::Polygon;
 /// `is_watertight` still holds afterward: every discarded group is its own
 /// individually closed piece, so removing it only removes matched edge
 /// pairs, never leaves one side dangling.
-pub(super) fn discard_disconnected_debris(
-    polygons: Vec<Polygon>,
-    bake: Option<DVec3>,
-) -> Vec<Polygon> {
+pub fn discard_disconnected_debris(polygons: Vec<Polygon>, bake: Option<DVec3>) -> Vec<Polygon> {
     let key = |v: DVec3| {
         (
             (v.x / WELD_EPSILON).round() as i64,
@@ -130,12 +127,12 @@ const BAKE_PAD: f64 = 0.01;
 /// Snap tolerance for the edge-adjacency check below: coarser than any
 /// legitimate vertex spacing this codebase's shapes produce, fine enough not
 /// to merge genuinely distinct nearby edges.
-pub(super) const WELD_EPSILON: f64 = 1e-4;
+pub const WELD_EPSILON: f64 = 1e-4;
 
 /// A vertex position snapped to the `WELD_EPSILON` grid, used to recognize
 /// "the same point" (or edge) across independently-computed fragments.
-pub(super) type GridPoint = (i64, i64, i64);
-pub(super) type DirectedEdge = (GridPoint, GridPoint);
+pub type GridPoint = (i64, i64, i64);
+pub type DirectedEdge = (GridPoint, GridPoint);
 
 fn grid(v: DVec3) -> GridPoint {
     (
@@ -157,7 +154,7 @@ fn grid(v: DVec3) -> GridPoint {
 /// [`is_watertight`]; on real places that was most of what failed it.
 /// Neighbouring cells are searched as well as a vertex's own, so two noisy
 /// copies of one corner that straddle a cell boundary still meet.
-pub(super) fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
+pub fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
     let mut cells: HashMap<GridPoint, Vec<DVec3>> = HashMap::new();
     let mut snap = |v: DVec3| {
         let (x, y, z) = grid(v);
@@ -216,7 +213,7 @@ pub(super) fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
 /// own value, not a recomputed one, so the two sides end up bit-identical)
 /// to turn that T-junction back into a matching pair of edges before
 /// [`is_watertight`] ever runs.
-pub(super) fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
+pub fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
     const T_MARGIN: f64 = 1e-7;
     let quantize = |v: DVec3| {
         (
@@ -289,7 +286,7 @@ const MAX_LEAK_FRACTION: f64 = 0.02;
 /// touching only along an edge (a door frame's jambs and lintel) meet in a
 /// legitimately non-manifold edge that four faces share. Called once, by
 /// [`evaluate`], on the finished result.
-pub(super) fn is_watertight(polygons: &[Polygon]) -> bool {
+pub fn is_watertight(polygons: &[Polygon]) -> bool {
     let key = |v: DVec3| {
         (
             (v.x / WELD_EPSILON).round() as i64,
@@ -324,7 +321,7 @@ const MAX_SLIVER_EDGES: usize = 512;
 /// back alongside it within that distance. Such a gap, a cylinder's facet
 /// corner landing a few ten-thousandths off a box's edge, has no area
 /// anyone could see, however many of a small mesh's edges it touches.
-pub(super) fn only_slivers(bad: &[DirectedEdge]) -> bool {
+pub fn only_slivers(bad: &[DirectedEdge]) -> bool {
     // Pairwise: past this many open edges the mesh is broken anyway, and
     // the check would cost more than the boolean.
     if bad.len() > MAX_SLIVER_EDGES {
