@@ -122,7 +122,7 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
 /// has them, when the place is published, API access is on and the editor
 /// is online with an Open Cloud key; else they stay in the local store.
 /// The one line Output shows either way. `RBXNATIVE_LOCAL_RUN_READONLY=1`
-/// refuses every live write (for testing against games that must not
+/// keeps every live write in the run, never sent (for testing against games that must not
 /// change).
 pub(crate) fn go_live(
     path: &Path,

@@ -10,7 +10,7 @@
 //! once the walk ends; `--track` prints the character's root and health
 //! every second. `--place-id`/`--game-id` are what `game.PlaceId`/`GameId`
 //! read. `--live` runs the DataStores against `--game-id`'s real ones,
-//! read-only unless `--live-write` also says so. `PLAY_UID` sets the player's user id (1 by default). Assets come
+//! read-only (writes kept in the run) unless `--live-write` also says so. `PLAY_UID` sets the player's user id (1 by default). Assets come
 //! from Roblox through `rbx_cloud`, with the Open Cloud key it finds.
 
 use std::path::PathBuf;

@@ -4,7 +4,8 @@
 //! local store answers (see `rbx_lua::server::LiveData`), so the Luau side's
 //! rules, budgets and messages are the same either way.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rbx_cloud::{Client, CloudError, EntryWrite, OrderedQuery, StoreRef, ALL_SCOPES};
@@ -19,8 +20,12 @@ const PROBE_STORE: &str = "RbxNativeLocalRunProbe";
 pub struct LiveStores {
     client: Client,
     universe: u64,
-    /// Writes fail instead of reaching the experience (a test guard).
+    /// Writes never reach the experience (a test guard): they're kept in
+    /// `written` for the rest of the run instead, so a game that must write
+    /// before it reads (a session lock) still loads its real data.
     read_only: bool,
+    /// Bucket and key → the entry a guarded write left (`Null`: removed).
+    written: Mutex<HashMap<(String, String), Value>>,
 }
 
 /// Why a run's DataStores stay local, one line for Output.
@@ -45,7 +50,7 @@ impl Local {
 
 /// The experience `universe`'s DataStores, when they can be reached: online,
 /// with a key that may read them (checked by reading a key that isn't
-/// there). `read_only` turns every write into an error.
+/// there). `read_only` keeps every write in the run (see [`LiveStores`]).
 pub fn connect(universe: u64, read_only: bool) -> Result<Arc<LiveStores>, Local> {
     if rbx_net::is_offline() {
         return Err(Local::Offline);
@@ -57,6 +62,7 @@ pub fn connect(universe: u64, read_only: bool) -> Result<Arc<LiveStores>, Local>
         client: Client::new(Some(key)),
         universe,
         read_only,
+        written: Mutex::default(),
     };
     match live
         .client
@@ -98,14 +104,25 @@ impl LiveStores {
         }
     }
 
-    fn write_guard(&self) -> Result<(), String> {
-        match self.read_only {
-            true => Err("Local Run's read-only guard is on: DataStore writes are refused".into()),
-            false => Ok(()),
-        }
+    /// What a guarded write left at `bucket`/`key`, if one did.
+    fn kept(&self, bucket: &str, key: &str) -> Option<Value> {
+        let written = self.written.lock().unwrap_or_else(|e| e.into_inner());
+        written.get(&(bucket.to_owned(), key.to_owned())).cloned()
+    }
+
+    /// Under the guard, keeps `entry` in the run instead of writing it.
+    fn keep(&self, bucket: &str, key: &str, entry: Value) -> Option<Value> {
+        self.read_only.then(|| {
+            let mut written = self.written.lock().unwrap_or_else(|e| e.into_inner());
+            written.insert((bucket.to_owned(), key.to_owned()), entry.clone());
+            entry
+        })
     }
 
     fn get(&self, bucket: &str, key: &str) -> Result<Value, String> {
+        if let Some(kept) = self.kept(bucket, key) {
+            return Ok(kept);
+        }
         let (ordered, at) = self.bucket(bucket)?;
         if ordered {
             return match self.client.get_ordered(&at, key) {
@@ -130,9 +147,18 @@ impl LiveStores {
         users: &str,
         meta: &str,
     ) -> Result<Value, String> {
-        self.write_guard()?;
-        let (ordered, at) = self.bucket(bucket)?;
         let parsed: Value = serde_json::from_str(value).map_err(|e| e.to_string())?;
+        let (ordered, at) = self.bucket(bucket)?;
+        if self.read_only {
+            let mut kept = ordered_entry(parsed.as_f64().unwrap_or(0.0).round() as i64);
+            if !ordered {
+                kept["value"] = Value::from(value);
+                kept["version"] = Value::from("local-run-guard");
+                kept["users"] = Value::from(users);
+                kept["meta"] = Value::from(meta);
+            }
+            return Ok(self.keep(bucket, key, kept).unwrap_or_default());
+        }
         if ordered {
             let number = parsed.as_f64().unwrap_or(0.0).round() as i64;
             let written = match self.client.update_ordered(&at, key, number) {
@@ -157,9 +183,8 @@ impl LiveStores {
     }
 
     fn remove(&self, bucket: &str, key: &str) -> Result<Value, String> {
-        self.write_guard()?;
         let old = self.get(bucket, key)?;
-        if old.is_null() {
+        if old.is_null() || self.keep(bucket, key, Value::Null).is_some() {
             return Ok(old);
         }
         let (ordered, at) = self.bucket(bucket)?;
@@ -304,7 +329,6 @@ impl rbx_lua::server::LiveData for LiveStores {
                 }
             }
             "remove_version" => {
-                self.write_guard()?;
                 Err("RemoveVersionAsync has no Open Cloud equivalent: versions of live DataStores can't be removed from Local Run".into())
             }
             "keys" => self.keys(text(0), args.get(1).and_then(Value::as_str), text(2)),
@@ -429,6 +453,7 @@ mod tests {
             client: Client::new(None),
             universe: 7,
             read_only: true,
+            written: Mutex::default(),
         };
         let (ordered, at) = live.bucket("o\u{1}Coins\u{1}global").unwrap();
         assert!(ordered);
@@ -436,8 +461,12 @@ mod tests {
             (at.universe_id, at.store.as_str(), at.scope.as_str()),
             (7, "Coins", "global")
         );
-        assert!(live
+        let kept = live
             .put("d\u{1}A\u{1}global", "k", "1", "[]", "{}")
-            .is_err());
+            .unwrap();
+        assert_eq!(kept["value"], "1");
+        assert_eq!(live.get("d\u{1}A\u{1}global", "k").unwrap(), kept);
+        assert_eq!(live.remove("d\u{1}A\u{1}global", "k").unwrap(), kept);
+        assert!(live.get("d\u{1}A\u{1}global", "k").unwrap().is_null());
     }
 }
