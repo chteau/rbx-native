@@ -1950,6 +1950,24 @@ fn stat_number(v: f64) -> String {
     format!("{sign}{body}{suffix}")
 }
 
+/// `AssetService:LoadAssetAsync`'s models, through the asset fetcher.
+struct Models(std::sync::Arc<dyn rbx_assets::AssetFetcher>);
+
+impl std::fmt::Debug for Models {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Models")
+    }
+}
+
+impl rbx_lua::server::AssetSource for Models {
+    fn fetch(&self, id: u64) -> Result<Vec<u8>, String> {
+        self.0.fetch_id(id).map_err(|e| match e {
+            rbx_assets::FetchError::NotFound(_) => "HTTP 404 (Not Found)".to_owned(),
+            other => other.to_string(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod stat_tests {
     use super::stat_number;
@@ -1976,23 +1994,5 @@ mod stat_tests {
         ] {
             assert_eq!(stat_number(value), shown, "{value}");
         }
-    }
-}
-
-/// `AssetService:LoadAssetAsync`'s models, through the asset fetcher.
-struct Models(std::sync::Arc<dyn rbx_assets::AssetFetcher>);
-
-impl std::fmt::Debug for Models {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Models")
-    }
-}
-
-impl rbx_lua::server::AssetSource for Models {
-    fn fetch(&self, id: u64) -> Result<Vec<u8>, String> {
-        self.0.fetch_id(id).map_err(|e| match e {
-            rbx_assets::FetchError::NotFound(_) => "HTTP 404 (Not Found)".to_owned(),
-            other => other.to_string(),
-        })
     }
 }
