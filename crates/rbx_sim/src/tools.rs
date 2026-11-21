@@ -68,7 +68,9 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
 }
 
 pub(crate) fn is_signal(class: &str, key: &str) -> bool {
-    class == "Tool" && matches!(key, "Equipped" | "Unequipped" | "Activated" | "Deactivated")
+    (class == "Tool" && matches!(key, "Equipped" | "Unequipped" | "Activated" | "Deactivated"))
+        || (class == "ContextActionService"
+            && matches!(key, "LocalToolEquipped" | "LocalToolUnequipped"))
 }
 
 fn class_is(dom: &WeakDom, r: Ref, class: &str) -> bool {
@@ -213,7 +215,16 @@ impl Tools {
             if server {
                 unweld(dom, db, tool, character);
             }
-            return vec![(tool, "Unequipped".into(), Vec::new())];
+            let mut fire = vec![(tool, "Unequipped".into(), Vec::new())];
+            fire.extend(local_tool(
+                dom,
+                server,
+                local,
+                character,
+                tool,
+                "LocalToolUnequipped",
+            ));
+            return fire;
         }
         if !server && !self.remote {
             if let Some(player) = local {
@@ -241,7 +252,16 @@ impl Tools {
         }
         let player = owner_of(dom, character).unwrap_or(character);
         let mouse = self.mouse(dom, player);
-        vec![(tool, "Equipped".into(), vec![Arg::Instance(mouse)])]
+        let mut fire = vec![(tool, "Equipped".into(), vec![Arg::Instance(mouse)])];
+        fire.extend(local_tool(
+            dom,
+            server,
+            local,
+            character,
+            tool,
+            "LocalToolEquipped",
+        ));
+        fire
     }
 
     /// The hotbar as it stands: tools of `player`'s Backpack and the one
@@ -410,4 +430,21 @@ pub(crate) fn allowed(
         || (from == character
             && parent.is_some_and(|p| class_is(dom, p, "Workspace"))
             && flag(dom, db, tool, "CanBeDropped"))
+}
+
+/// `ContextActionService`'s `LocalToolEquipped`/`LocalToolUnequipped`: on
+/// a client, for its own player's character.
+fn local_tool(
+    dom: &mut WeakDom,
+    server: bool,
+    local: Option<Ref>,
+    character: Ref,
+    tool: Ref,
+    name: &str,
+) -> Option<(Ref, String, Vec<Arg>)> {
+    let player = local.filter(|_| !server)?;
+    (reference(dom, player, "Character") == Some(character)).then(|| {
+        let cas = crate::input::service(dom, "ContextActionService");
+        (cas, name.to_owned(), vec![Arg::Instance(tool)])
+    })
 }

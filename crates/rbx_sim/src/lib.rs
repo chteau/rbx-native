@@ -40,8 +40,10 @@ mod spatial;
 mod teams;
 mod terrain;
 mod tools;
+mod touch;
+mod video;
 
-pub use input::{Input, MouseBehavior};
+pub use input::{Input, MouseBehavior, Phase, Sensor};
 pub use players::Avatars;
 pub use rbx_lua::{LineKind, Output};
 pub use session::{Peer, Session, Teleport};

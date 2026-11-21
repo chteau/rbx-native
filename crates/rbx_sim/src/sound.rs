@@ -67,6 +67,8 @@ pub(crate) struct Sounds {
     clips: HashMap<u64, Load>,
     tracks: HashMap<Ref, Track>,
     known: BTreeSet<Ref>,
+    /// What each `AudioRecorder` last recorded.
+    pub(crate) recordings: HashMap<Ref, Arc<Clip>>,
 }
 
 fn sound_id(dom: &WeakDom, sound: Ref) -> String {
@@ -380,6 +382,36 @@ pub(crate) fn world_cframe(dom: &WeakDom, db: &ReflectionDatabase, at: Ref) -> O
 }
 
 /// Whether a client's playback reaches the server.
+/// Where sounds are heard from, as `SoundService:SetListener` left it:
+/// the `camera`, a `CFrame`, or an object (at its position, facing as
+/// the camera does, or with its whole `CFrame`).
+pub(crate) fn listener(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    camera: Option<CFrameData>,
+) -> Option<CFrameData> {
+    let Some(service) = service(dom, "SoundService") else {
+        return camera;
+    };
+    let object = || match dom.get(service)?.properties().get("ListenerObject") {
+        Some(Variant::Ref(r)) => world_cframe(dom, db, *r),
+        _ => None,
+    };
+    match enum_of(dom, db, service, "ListenerType") {
+        1 => match dom.get(service)?.properties().get("ListenerCFrame") {
+            Some(Variant::CFrame(c)) => Some(*c),
+            _ => camera,
+        },
+        2 => object().map(|o| CFrameData {
+            position: o.position,
+            rotation: camera.map_or(o.rotation, |c| c.rotation),
+        }),
+        3 => object(),
+        _ => camera,
+    }
+    .or(camera)
+}
+
 pub(crate) fn replicates(dom: &WeakDom, db: &ReflectionDatabase) -> bool {
     !service(dom, "SoundService").is_some_and(|s| flag(dom, db, s, "RespectFilteringEnabled"))
 }

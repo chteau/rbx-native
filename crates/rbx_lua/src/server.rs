@@ -47,6 +47,7 @@ use crate::LuaError;
 
 pub use chat::ChatLine;
 pub use hooks::CollisionGroups;
+pub use input::VirtualInput;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
 pub use services::{
@@ -508,17 +509,91 @@ impl ServerVm {
         signal_name: &str,
         processed: bool,
     ) -> Vec<Change> {
+        self.input_with(input, uis, signal_name, None, processed)
+    }
+
+    /// [`ServerVm::input`], then `also` (a touch's `TouchStarted`, a
+    /// sensor's `DeviceGravityChanged`) with that signal's own arguments.
+    /// `LastInputTypeChanged` goes first when the input changed the type.
+    pub fn input_with(
+        &mut self,
+        input: Ref,
+        uis: Ref,
+        signal_name: &str,
+        also: Option<&str>,
+        processed: bool,
+    ) -> Vec<Change> {
         let services = self.services.clone();
         self.guarded(|lua| {
-            let processed = input::dispatch(lua, input, processed)?;
-            let object = LuaInstance::new(input, engine(lua).ctx.clone()).into_lua(lua)?;
+            let (processed, changed) = input::dispatch(lua, input, processed)?;
+            let ctx = engine(lua).ctx.clone();
+            if changed {
+                let kind = ctx
+                    .dom()
+                    .get(input)
+                    .and_then(|i| i.properties().get("UserInputType").cloned());
+                if let Some(rbx_dom::Variant::Enum(kind)) = kind {
+                    let item = ctx
+                        .database()
+                        .enum_name("UserInputType", kind)
+                        .unwrap_or_default()
+                        .to_owned();
+                    signal::fire(
+                        lua,
+                        &instance_key(uis, "LastInputTypeChanged"),
+                        &[Arg::Enum {
+                            enum_name: "UserInputType".into(),
+                            item,
+                        }],
+                    )?;
+                }
+            }
+            let object = LuaInstance::new(input, ctx).into_lua(lua)?;
             services::client_input(lua, &services, object, processed)?;
             signal::fire(
                 lua,
                 &instance_key(uis, signal_name),
                 &[Arg::Instance(input), Arg::Bool(processed)],
+            )?;
+            if let Some(also) = also {
+                let args = input::also(lua, also, input, processed)?;
+                signal::fire_values(lua, &instance_key(uis, also), args)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// A gamepad (`pad` 1 to 8) plugged in or out: `uis`'s
+    /// `GamepadConnected`/`GamepadDisconnected` when that changed it.
+    pub fn gamepad(&mut self, uis: Ref, pad: u8, connected: bool) -> Vec<Change> {
+        self.guarded(|lua| {
+            if !input::gamepad(lua, pad, connected)? {
+                return Ok(());
+            }
+            let name = if connected {
+                "GamepadConnected"
+            } else {
+                "GamepadDisconnected"
+            };
+            signal::fire(
+                lua,
+                &instance_key(uis, name),
+                &[Arg::Enum {
+                    enum_name: "UserInputType".into(),
+                    item: format!("Gamepad{pad}"),
+                }],
             )
         })
+    }
+
+    /// What scripts' `VirtualInput`s sent since the last call.
+    pub fn take_virtual_input(&mut self) -> Vec<VirtualInput> {
+        let mut sent = Vec::new();
+        self.guarded(|lua| {
+            sent = input::take_virtual(lua)?;
+            Ok(())
+        });
+        sent
     }
 
     /// A client's render step: the `BindToRenderStep` callbacks in priority

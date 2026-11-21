@@ -718,10 +718,10 @@ impl Hooks for ServerHooks {
             },
             "CollectionService" => collection::member(lua, key),
             "TweenService" | "Tween" => super::tween::member(lua, referent, class, key),
-            "TextChatService" | "TextChannel" => {
+            "TextChatService" | "TextChannel" | "TextChatCommand" | "ChatWindowConfiguration" => {
                 super::chat::member(lua, &self.chat, referent, class, key)
             }
-            "UserInputService" | "ContextActionService" if self.client.get() => {
+            "UserInputService" | "ContextActionService" | "InputObject" if self.client.get() => {
                 let signals = (class == "UserInputService").then_some(referent);
                 super::input::member(lua, signals, class, key, self.services.device())
             }

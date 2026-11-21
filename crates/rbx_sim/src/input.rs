@@ -21,6 +21,63 @@ pub enum Input {
     Move { position: [f32; 2], delta: [f32; 2] },
     /// The wheel, positive notches away from the user (zoom in).
     Wheel { notches: f32 },
+    /// A finger on a touch screen at `position` (viewport pixels); `id`
+    /// tells fingers apart while they're down.
+    Touch {
+        id: u32,
+        position: [f32; 2],
+        phase: Phase,
+    },
+    /// A gamepad (`pad` 1 to 8) plugged in or out.
+    Gamepad { pad: u8, connected: bool },
+    /// A gamepad button by its `Enum.KeyCode` name (`ButtonA`, `DPadUp`).
+    GamepadButton { pad: u8, code: String, down: bool },
+    /// A stick (`Thumbstick1`/`Thumbstick2`: x and y from -1 to 1, up
+    /// positive) or a trigger (`ButtonL2`/`ButtonR2`: z from 0 to 1).
+    GamepadAxis {
+        pad: u8,
+        code: String,
+        position: [f32; 3],
+    },
+    /// A motion sensor's reading: gravity and acceleration in g, rotation
+    /// as X, Y, Z Euler angles in radians.
+    Motion { sensor: Sensor, vector: [f32; 3] },
+}
+
+/// Where a finger is in its touch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    Began,
+    Moved,
+    Ended,
+}
+
+/// A device motion sensor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sensor {
+    Gravity,
+    Acceleration,
+    Rotation,
+}
+
+impl Sensor {
+    /// The `UserInputService` signal it fires besides `InputChanged`.
+    fn signal(self) -> &'static str {
+        match self {
+            Sensor::Gravity => "DeviceGravityChanged",
+            Sensor::Acceleration => "DeviceAccelerationChanged",
+            Sensor::Rotation => "DeviceRotationChanged",
+        }
+    }
+}
+
+/// An input written into its `InputObject`: the object, the
+/// `UserInputService` signal it fires, and the one a touch or a sensor
+/// fires after it (`TouchStarted`, `DeviceGravityChanged`).
+pub(crate) struct Written {
+    pub object: Ref,
+    pub signal: &'static str,
+    pub also: Option<&'static str>,
 }
 
 /// `Enum.MouseBehavior`, as a script left `UserInputService.MouseBehavior`.
@@ -37,6 +94,14 @@ pub(crate) struct Inputs {
     pub(crate) pending: Vec<Input>,
     objects: HashMap<String, Ref>,
     position: [f32; 2],
+    /// Where each slot's input last was, for its `Delta`.
+    last: HashMap<String, [f32; 3]>,
+    pub(crate) touches: crate::touch::Touches,
+    /// The device emulated is a touch screen: the left button and the
+    /// cursor while it's down are a finger, as in Studio's device
+    /// emulator.
+    pub(crate) emulate_touch: bool,
+    finger: Option<[f32; 2]>,
 }
 
 fn item(db: &ReflectionDatabase, enum_name: &str, name: &str) -> Option<Variant> {
@@ -48,15 +113,162 @@ fn v3(x: f32, y: f32, z: f32) -> Variant {
 }
 
 impl Inputs {
+    /// What happened since the last frame, a touch screen's mouse made a
+    /// finger.
+    pub(crate) fn take_pending(&mut self) -> Vec<Input> {
+        let pending = std::mem::take(&mut self.pending);
+        if !self.emulate_touch {
+            return pending;
+        }
+        let mut out = Vec::new();
+        for input in pending {
+            match input {
+                Input::Move { position, .. } => {
+                    self.position = position;
+                    if self.finger.is_some() {
+                        self.finger = Some(position);
+                        out.push(Input::Touch {
+                            id: 0,
+                            position,
+                            phase: Phase::Moved,
+                        });
+                    }
+                }
+                Input::Button { button: 1, down } => {
+                    let phase = if down { Phase::Began } else { Phase::Ended };
+                    if down == self.finger.is_none() {
+                        self.finger = down.then_some(self.position);
+                        out.push(Input::Touch {
+                            id: 0,
+                            position: self.position,
+                            phase,
+                        });
+                    }
+                }
+                Input::Button { .. } | Input::Wheel { .. } => {}
+                other => out.push(other),
+            }
+        }
+        out
+    }
     /// Writes `input` into its `InputObject` and returns it with the
-    /// `UserInputService` signal it fires; `None` for a key Roblox has no
-    /// `KeyCode` for.
+    /// `UserInputService` signals it fires; `None` for a key Roblox has no
+    /// `KeyCode` for, and for a gamepad plugged in or out.
     pub(crate) fn write(
         &mut self,
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
         input: &Input,
-    ) -> Option<(Ref, &'static str)> {
+    ) -> Option<Written> {
+        // Like `AbsolutePosition`, a pointer's position counts from below
+        // the top bar.
+        let pointer = |[x, y]: [f32; 2]| [x, y - crate::gui::TOPBAR_INSET, 0.0];
+        let state_of = |down: bool| if down { "Begin" } else { "End" };
+        let mut also = None;
+        let (slot, kind, code, state, at): (String, String, &str, &str, Option<[f32; 3]>) =
+            match input {
+                Input::Touch {
+                    id,
+                    position,
+                    phase,
+                } => {
+                    let (state, signal) = match phase {
+                        Phase::Began => ("Begin", "TouchStarted"),
+                        Phase::Moved => ("Change", "TouchMoved"),
+                        Phase::Ended => ("End", "TouchEnded"),
+                    };
+                    also = Some(signal);
+                    let slot = format!("touch {id}");
+                    if *phase == Phase::Began {
+                        self.objects.remove(&slot);
+                        self.last.remove(&slot);
+                    }
+                    (
+                        slot,
+                        "Touch".into(),
+                        "Unknown",
+                        state,
+                        Some(pointer(*position)),
+                    )
+                }
+                Input::GamepadButton { pad, code, down } => {
+                    item(db, "KeyCode", code)?;
+                    let slot = format!("pad{pad} {code}");
+                    (slot, format!("Gamepad{pad}"), code, state_of(*down), None)
+                }
+                Input::GamepadAxis {
+                    pad,
+                    code,
+                    position,
+                } => {
+                    item(db, "KeyCode", code)?;
+                    let slot = format!("pad{pad} {code}");
+                    (
+                        slot,
+                        format!("Gamepad{pad}"),
+                        code,
+                        "Change",
+                        Some(*position),
+                    )
+                }
+                Input::Motion { sensor, vector } => {
+                    also = Some(sensor.signal());
+                    let kind = if *sensor == Sensor::Rotation {
+                        "Gyro"
+                    } else {
+                        "Accelerometer"
+                    };
+                    (
+                        format!("{sensor:?}"),
+                        kind.into(),
+                        "Unknown",
+                        "Change",
+                        Some(*vector),
+                    )
+                }
+                Input::Gamepad { .. } => return None,
+                _ => return self.write_desktop(dom, db, input),
+            };
+        let object = self.object(dom, &slot);
+        let at = at.unwrap_or_else(|| self.last.get(&slot).copied().unwrap_or([0.0; 3]));
+        let before = self.last.insert(slot, at).unwrap_or(at);
+        let delta = [at[0] - before[0], at[1] - before[1], at[2] - before[2]];
+        let values = [
+            ("KeyCode", item(db, "KeyCode", code)),
+            ("UserInputType", item(db, "UserInputType", &kind)),
+            ("UserInputState", item(db, "UserInputState", state)),
+            ("Position", Some(v3(at[0], at[1], at[2]))),
+            ("Delta", Some(v3(delta[0], delta[1], delta[2]))),
+        ];
+        for (key, value) in values {
+            if let Some(value) = value {
+                let _ = dom.set_property(object, key, value);
+            }
+        }
+        Some(Written {
+            object,
+            signal: signal_of(state),
+            also,
+        })
+    }
+
+    fn object(&mut self, dom: &mut WeakDom, slot: &str) -> Ref {
+        match self.objects.get(slot) {
+            Some(&r) if dom.get(r).is_some() => r,
+            _ => {
+                let r = dom.new_instance("InputObject", "InputObject", None);
+                self.objects.insert(slot.to_owned(), r);
+                r
+            }
+        }
+    }
+
+    fn write_desktop(
+        &mut self,
+        dom: &mut WeakDom,
+        db: &ReflectionDatabase,
+        input: &Input,
+    ) -> Option<Written> {
         let (slot, kind, code, state, delta, z) = match input {
             Input::Key { code, down } => {
                 item(db, "KeyCode", code)?;
@@ -96,15 +308,9 @@ impl Inputs {
                     *notches,
                 )
             }
+            _ => return None,
         };
-        let object = match self.objects.get(&slot) {
-            Some(&r) if dom.get(r).is_some() => r,
-            _ => {
-                let r = dom.new_instance("InputObject", "InputObject", None);
-                self.objects.insert(slot.clone(), r);
-                r
-            }
-        };
+        let object = self.object(dom, &slot);
         // Like `AbsolutePosition`, an input's position counts from below
         // the top bar.
         let [x, y] = self.position;
@@ -121,13 +327,62 @@ impl Inputs {
                 let _ = dom.set_property(object, key, value);
             }
         }
-        let signal = match state {
-            "Begin" => "InputBegan",
-            "End" => "InputEnded",
-            _ => "InputChanged",
-        };
-        Some((object, signal))
+        Some(Written {
+            object,
+            signal: signal_of(state),
+            also: None,
+        })
     }
+}
+
+fn signal_of(state: &str) -> &'static str {
+    match state {
+        "Begin" => "InputBegan",
+        "End" => "InputEnded",
+        _ => "InputChanged",
+    }
+}
+
+/// What scripts' `VirtualInput`s sent, as the player's own input: text
+/// typed key by key (US layout, Shift held for capitals).
+pub(crate) fn from_virtual(sent: Vec<rbx_lua::server::VirtualInput>) -> Vec<Input> {
+    use rbx_lua::server::VirtualInput as V;
+    const DIGITS: [&str; 10] = [
+        "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    ];
+    let key = |code: &str, down| Input::Key {
+        code: code.to_owned(),
+        down,
+    };
+    let mut out = Vec::new();
+    for input in sent {
+        match input {
+            V::Key { code, down } => out.push(Input::Key { code, down }),
+            V::Button { button, down } => out.push(Input::Button { button, down }),
+            V::Move { position, delta } => out.push(Input::Move { position, delta }),
+            V::Wheel { notches } => out.push(Input::Wheel { notches }),
+            V::Text(text) => {
+                for c in text.chars() {
+                    let code = match c {
+                        'a'..='z' | 'A'..='Z' => c.to_ascii_uppercase().to_string(),
+                        '0'..='9' => DIGITS[c as usize - '0' as usize].to_owned(),
+                        ' ' => "Space".to_owned(),
+                        _ => continue,
+                    };
+                    let shift = c.is_ascii_uppercase();
+                    if shift {
+                        out.push(key("LeftShift", true));
+                    }
+                    out.push(key(&code, true));
+                    out.push(key(&code, false));
+                    if shift {
+                        out.push(key("LeftShift", false));
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// A service under `game`, made if the place has none, as `GetService`

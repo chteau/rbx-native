@@ -26,12 +26,17 @@ local PROMPT_SIGNALS = {
 	PromptButtonHoldEnded = true,
 	PromptShown = true,
 	PromptHidden = true,
+	IndicatorShown = true,
+	IndicatorHidden = true,
 }
 
 -- Client state: the prompts in the workspace, the ones shown (with their
--- billboard), and the hold in progress.
+-- billboard), the ones showing only their indicator, and the hold in
+-- progress.
 local known = {}
 local shown = {}
+local indicated = {}
+local nearby = {}
 local holding
 local watching = false
 local screen
@@ -235,12 +240,16 @@ local function candidates()
 		return {}
 	end
 	local list = {}
+	nearby = {}
 	for prompt in known do
 		local at, parent = nil, nil
 		if prompt.Enabled and prompt:IsDescendantOf(workspace) then
 			at, parent = position(prompt)
 		end
 		local distance = at and (at - root.Position).Magnitude
+		if distance and distance <= prompt.MaxIndicatorDistance then
+			nearby[prompt] = true
+		end
 		if distance and distance <= prompt.MaxActivationDistance then
 			local _, onScreen = camera:WorldToViewportPoint(at)
 			local visible = onScreen
@@ -278,6 +287,26 @@ local function candidates()
 	return chosen
 end
 
+-- A prompt within its MaxIndicatorDistance but not shown shows its
+-- indicator: IndicatorShown when that starts, IndicatorHidden when it
+-- stops (the prompt shown, or out of range).
+local function indicators(wanted)
+	for prompt in nearby do
+		if not wanted[prompt] and not indicated[prompt] then
+			indicated[prompt] = true
+			host.fire(host.id(prompt), "IndicatorShown")
+			host.fire(host.id(service()), "IndicatorShown", prompt)
+		end
+	end
+	for prompt in indicated do
+		if wanted[prompt] or not nearby[prompt] then
+			indicated[prompt] = nil
+			host.fire(host.id(prompt), "IndicatorHidden")
+			host.fire(host.id(service()), "IndicatorHidden", prompt)
+		end
+	end
+end
+
 -- Once a frame on a client.
 function M.step()
 	if host.server() or not Players.LocalPlayer then
@@ -286,15 +315,17 @@ function M.step()
 	if not watching and game:IsLoaded() then
 		watch()
 	end
-	if next(known) == nil and next(shown) == nil then
+	if next(known) == nil and next(shown) == nil and next(indicated) == nil then
 		return
 	end
 	local wanted = {}
+	nearby = {}
 	if service().Enabled then
 		for _, prompt in candidates() do
 			wanted[prompt] = true
 		end
 	end
+	indicators(wanted)
 	for prompt in shown do
 		if not wanted[prompt] then
 			hide(prompt)
@@ -375,6 +406,8 @@ local SERVICE_SIGNALS = {
 	PromptTriggerEnded = true,
 	PromptButtonHoldBegan = true,
 	PromptButtonHoldEnded = true,
+	IndicatorShown = true,
+	IndicatorHidden = true,
 }
 
 function M.member(class, id, key)

@@ -41,8 +41,23 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         && (matches!(key, "GetInputPins" | "GetOutputPins" | "GetConnectedWires")
             || matches!(
                 (class, key),
-                ("AudioPlayer", "Play" | "Stop" | "GetPlaybackState")
-                    | ("AudioFilter", "GetGainAt")
+                (
+                    "AudioPlayer",
+                    "Play" | "Stop" | "GetPlaybackState" | "Cancel" | "GetWaveformAsync"
+                ) | (
+                    "AudioTextToSpeech",
+                    "Play" | "Pause" | "Unload" | "LoadAsync" | "GetWaveformAsync"
+                ) | (
+                    "AudioRecorder",
+                    "RecordAsync"
+                        | "Stop"
+                        | "Clear"
+                        | "CanRecordAsync"
+                        | "GetUnrecordableInstancesAsync"
+                ) | (
+                    "AudioDeviceInput",
+                    "GetUserIdAccessList" | "SetUserIdAccessList"
+                ) | ("AudioFilter", "GetGainAt")
                     | ("AudioAnalyzer", "GetSpectrum")
                     | ("AudioStreamReader", "Read" | "Peek")
                     | ("AudioStreamWriter", "Write" | "Space")
@@ -59,7 +74,9 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
 
 pub(crate) fn is_signal(class: &str, key: &str) -> bool {
     pins(class).is_some()
-        && (key == "WiringChanged" || (class == "AudioPlayer" && matches!(key, "Ended" | "Looped")))
+        && (key == "WiringChanged"
+            || (matches!(class, "AudioPlayer" | "AudioTextToSpeech")
+                && matches!(key, "Ended" | "Looped")))
 }
 
 pub(crate) fn is_property(class: &str, key: &str) -> bool {
@@ -68,6 +85,7 @@ pub(crate) fn is_property(class: &str, key: &str) -> bool {
         ("Wire", "Connected")
             | ("AudioPlayer", "IsReady" | "TimeLength" | "TimePosition")
             | ("AudioAnalyzer", "RmsLevel" | "PeakLevel")
+            | ("AudioRecorder", "TimeLength")
     )
 }
 
@@ -86,6 +104,23 @@ pub(crate) struct Audio {
     renderer: Renderer,
     /// What a client's device outputs played, not yet taken.
     pub(crate) out: Vec<Frame>,
+    /// `SoundService:GetMixerTime()`: seconds of audio mixed so far.
+    pub(crate) clock: f64,
+    /// `AudioPlayer:Play(at)`/`Stop(at)` not yet due: (id, player, play,
+    /// mixer time).
+    scheduled: Vec<(i64, Ref, bool, f64)>,
+    last_id: i64,
+    /// `AudioDeviceInput:SetUserIdAccessList`, by input.
+    access: HashMap<Ref, Vec<f64>>,
+}
+
+/// The longest an `AudioRecorder` keeps, in seconds.
+const RECORD_LIMIT: f64 = 60.0;
+
+/// `rbxtemp://<recorder>`: an `AudioRecorder`'s recording, as its
+/// `GetTemporaryContent()` names it.
+pub(crate) fn temporary(uri: &str) -> Option<Ref> {
+    uri.strip_prefix("rbxtemp://")?.parse().ok().map(Ref::new)
 }
 
 fn class(dom: &WeakDom, r: Ref) -> &str {
@@ -140,13 +175,51 @@ fn connection(dom: &WeakDom, db: &ReflectionDatabase, wire: Ref) -> Option<Wire>
 
 fn clip(sounds: &mut Sounds, dom: &WeakDom, player: Ref) -> Option<Arc<Clip>> {
     let props = dom.get(player)?.properties();
-    let id = ["Asset", "AudioContent", "AssetId"]
+    let uri = ["Asset", "AudioContent", "AssetId"]
         .iter()
         .find_map(|k| match props.get(*k)? {
-            Variant::Content(Content::Uri(s)) | Variant::String(s) => content_id(s),
+            Variant::Content(Content::Uri(s)) | Variant::String(s) if !s.is_empty() => Some(s),
             _ => None,
         })?;
-    sounds.clip(id)
+    match temporary(uri) {
+        Some(recorder) => sounds.recordings.get(&recorder).cloned(),
+        None => sounds.clip(content_id(uri)?),
+    }
+}
+
+/// `samples` peaks of `clip` across `range` (seconds), as
+/// `GetWaveformAsync` gives them; none without a clip.
+fn waveform(clip: Option<&Clip>, range: (f64, f64), samples: usize) -> Arg {
+    let Some(clip) = clip else {
+        return Arg::List(Vec::new());
+    };
+    let channels = usize::from(clip.channels.max(1));
+    let frames = clip.frames();
+    let from = range.0.max(0.0);
+    let span = (range.1.min(clip.seconds()) - from).max(0.0);
+    let at = |k: usize| {
+        (((from + span * k as f64 / samples as f64) * f64::from(clip.rate)).round() as usize)
+            .min(frames)
+    };
+    Arg::List(
+        (0..samples)
+            .map(|i| {
+                let peak = (at(i)..at(i + 1).max(at(i) + 1).min(frames))
+                    .flat_map(|f| &clip.samples[f * channels..(f + 1) * channels])
+                    .fold(0f32, |m, s| m.max(s.abs()));
+                Arg::Number(f64::from(peak))
+            })
+            .collect(),
+    )
+}
+
+/// A recording as a clip an `AudioPlayer` can play.
+fn recording(frames: &[Frame]) -> Clip {
+    Clip {
+        samples: frames.iter().flatten().copied().collect(),
+        channels: 2,
+        rate: RATE as u32,
+    }
 }
 
 /// Where `player` starts and stops, and where looping jumps back from and
@@ -306,8 +379,10 @@ impl Audio {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn call(
         &mut self,
+        sounds: &mut Sounds,
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
         node: Ref,
@@ -346,9 +421,93 @@ impl Audio {
                         .collect(),
                 )
             }
-            "Play" | "Stop" => {
+            "Play" | "Stop" if class == "AudioPlayer" => {
+                let play = method == "Play";
+                if let Some(Arg::Number(at)) = args.first() {
+                    self.last_id += 1;
+                    self.scheduled.push((self.last_id, node, play, *at));
+                    self.due(dom, db);
+                    return Ok(CallReply::value(Arg::Number(self.last_id as f64)));
+                }
                 let position = self.track(dom, db, node).position;
-                set_playing(dom, node, method == "Play", position);
+                set_playing(dom, node, play, position);
+                return Ok(CallReply::default());
+            }
+            "Cancel" => {
+                let id = match args.first() {
+                    Some(Arg::Number(id)) => *id,
+                    _ => return Ok(CallReply::value(Arg::Bool(false))),
+                };
+                let before = self.scheduled.len();
+                self.scheduled
+                    .retain(|(i, r, ..)| !(*r == node && *i as f64 == id));
+                Arg::Bool(self.scheduled.len() < before)
+            }
+            // No text-to-speech voice here: nothing loads, and a play ends
+            // on the next frame.
+            "Play" => {
+                let _ = dom.set_property(node, "IsPlaying", Variant::Bool(true));
+                return Ok(CallReply::default());
+            }
+            "Pause" | "Unload" => {
+                let _ = dom.set_property(node, "IsPlaying", Variant::Bool(false));
+                return Ok(CallReply::default());
+            }
+            "LoadAsync" => Arg::Enum {
+                enum_name: "AssetFetchStatus".into(),
+                item: "Failure".into(),
+            },
+            "GetWaveformAsync" => {
+                let range = match args.first() {
+                    Some(Arg::List(r)) => match r.as_slice() {
+                        [Arg::Number(a), Arg::Number(b)] => (*a, *b),
+                        _ => (0.0, f64::MAX),
+                    },
+                    _ => return Err("Argument 1 missing or nil".into()),
+                };
+                let samples = match args.get(1) {
+                    Some(Arg::Number(n)) => n.clamp(0.0, 65536.0) as usize,
+                    _ => return Err("Argument 2 missing or nil".into()),
+                };
+                let clip = (class == "AudioPlayer")
+                    .then(|| clip(sounds, dom, node))
+                    .flatten();
+                waveform(clip.as_deref(), range, samples)
+            }
+            "RecordAsync" | "Stop" => {
+                let on = method == "RecordAsync";
+                if on {
+                    sounds.recordings.remove(&node);
+                    self.renderer.recorded.insert(node, Vec::new());
+                }
+                let _ = dom.set_property(node, "IsRecording", Variant::Bool(on));
+                return Ok(CallReply::default());
+            }
+            "Clear" => {
+                self.renderer.recorded.remove(&node);
+                sounds.recordings.remove(&node);
+                return Ok(CallReply::default());
+            }
+            // Everything here is ours to record.
+            "CanRecordAsync" => Arg::Bool(true),
+            "GetUnrecordableInstancesAsync" => Arg::Instances(Vec::new()),
+            "GetUserIdAccessList" => Arg::List(
+                self.access
+                    .get(&node)
+                    .map_or_else(Vec::new, |l| l.iter().map(|n| Arg::Number(*n)).collect()),
+            ),
+            "SetUserIdAccessList" => {
+                let Some(Arg::List(list)) = args.first() else {
+                    return Err("Unable to cast to Array".into());
+                };
+                let ids = list
+                    .iter()
+                    .map(|a| match a {
+                        Arg::Number(n) => Ok(*n),
+                        _ => Err("Unable to cast to Array".to_owned()),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.access.insert(node, ids);
                 return Ok(CallReply::default());
             }
             "GetGainAt" => {
@@ -389,6 +548,19 @@ impl Audio {
         Ok(CallReply::value(value))
     }
 
+    /// Plays and stops whose mixer time came.
+    fn due(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase) {
+        let now = self.clock;
+        let (ready, later) = std::mem::take(&mut self.scheduled)
+            .into_iter()
+            .partition::<Vec<_>, _>(|(.., at)| *at <= now);
+        self.scheduled = later;
+        for (_, player, play, _) in ready {
+            let position = self.track(dom, db, player).position;
+            set_playing(dom, player, play, position);
+        }
+    }
+
     pub(crate) fn property(
         &mut self,
         sounds: &mut Sounds,
@@ -408,10 +580,18 @@ impl Audio {
         Some(match key {
             "Connected" => Arg::Bool(connection(dom, db, node).is_some()),
             "IsReady" => Arg::Bool(clip(sounds, dom, node).is_some()),
-            "TimeLength" => Arg::Number(clip(sounds, dom, node).map_or(0.0, |c| c.seconds())),
+            "TimeLength" if class(dom, node) != "AudioRecorder" => {
+                Arg::Number(clip(sounds, dom, node).map_or(0.0, |c| c.seconds()))
+            }
             "RmsLevel" => analysis(|a| a.rms),
             "PeakLevel" => analysis(|a| a.peak),
             "TimePosition" => Arg::Number(self.track(dom, db, node).position),
+            "TimeLength" if class(dom, node) == "AudioRecorder" => {
+                Arg::Number(match self.renderer.recorded.get(&node) {
+                    Some(frames) => frames.len() as f64 / f64::from(RATE),
+                    None => sounds.recordings.get(&node).map_or(0.0, |c| c.seconds()),
+                })
+            }
             _ => return None,
         })
     }
@@ -438,6 +618,8 @@ impl Audio {
     ) -> Vec<Event> {
         self.known.retain(|r| dom.get(*r).is_some());
         self.players.retain(|r, _| dom.get(*r).is_some());
+        self.clock += dt;
+        self.due(dom, db);
         let signal = |owner: Ref, name: &str, args: Vec<Arg>| Event::Signal {
             owner,
             name: name.into(),
@@ -483,6 +665,40 @@ impl Audio {
                 let excess = self.out.len().saturating_sub(BACKLOG);
                 self.out.drain(..excess);
             }
+            // A recorder that stopped, or filled up, keeps its recording as
+            // a clip.
+            let limit = (RECORD_LIMIT * f64::from(RATE)) as usize;
+            let done: Vec<(Ref, bool)> = self
+                .renderer
+                .recorded
+                .iter_mut()
+                .filter_map(|(r, frames)| {
+                    frames.truncate(limit);
+                    let full = frames.len() >= limit;
+                    (full || !flag(dom, db, *r, "IsRecording")).then_some((*r, full))
+                })
+                .collect();
+            for (recorder, full) in done {
+                if full {
+                    let _ = dom.set_property(recorder, "IsRecording", Variant::Bool(false));
+                }
+                if let Some(frames) = self.renderer.recorded.remove(&recorder) {
+                    sounds
+                        .recordings
+                        .insert(recorder, Arc::new(recording(&frames)));
+                }
+            }
+        }
+        // A voice that never loaded is done as soon as it starts.
+        let speakers: Vec<Ref> = self
+            .known
+            .iter()
+            .copied()
+            .filter(|r| class(dom, *r) == "AudioTextToSpeech" && flag(dom, db, *r, "IsPlaying"))
+            .collect();
+        for speaker in speakers {
+            let _ = dom.set_property(speaker, "IsPlaying", Variant::Bool(false));
+            events.push(signal(speaker, "Ended", Vec::new()));
         }
 
         let players: Vec<Ref> = self
@@ -556,7 +772,20 @@ impl Audio {
                         looping,
                     })
                 }
-                "AudioDeviceInput" => Kind::Silence,
+                "AudioDeviceInput"
+                | "AudioTextToSpeech"
+                | "AudioWindSynthesizer"
+                | "VideoPlayer" => Kind::Silence,
+                "AudioGate" => {
+                    let (close, open) = range(dom, db, r, "Threshold");
+                    Kind::Gate {
+                        open: open as f32,
+                        close: close as f32,
+                        attack: n("Attack"),
+                        release: n("Release"),
+                    }
+                }
+                "AudioRecorder" if flag(dom, db, r, "IsRecording") => Kind::Recorder,
                 "AudioFader" => Kind::Fader(n("Volume")),
                 "AudioFilter" => Kind::Filter(filter_of(dom, db, r)),
                 "AudioEqualizer" => {

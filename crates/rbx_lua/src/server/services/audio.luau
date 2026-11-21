@@ -43,7 +43,16 @@ local function setter(class, name)
 	end
 end
 
+-- A recording lives as long as its recorder; rbx_sim plays it back by the
+-- recorder's id.
+local function temporaryContent(self)
+	return Content.fromUri("rbxtemp://" .. host.id(self))
+end
+
 function M.member(class, _, key)
+	if class == "AudioRecorder" then
+		return if key == "GetTemporaryContent" then temporaryContent else nil, key == "GetTemporaryContent"
+	end
 	if class == "AudioDeviceInput" then
 		if key == "IsReady" then
 			return nil, false, "The current thread cannot read 'IsReady' (lacking capability RobloxScript)"

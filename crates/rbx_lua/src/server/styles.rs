@@ -344,7 +344,121 @@ pub(super) fn member(
                 Ok(())
             })?
         }
+        "GetDefaultPropertyTransition" if class == "StyleRule" => {
+            lua.create_function(move |lua, _this: Value| {
+                kept(lua, referent, "default")?.get::<Value>("value")
+            })?
+        }
+        "SetDefaultPropertyTransition" if class == "StyleRule" => {
+            lua.create_function(move |lua, (_this, params): (Value, Value)| {
+                tween_info(lua, &params)?;
+                kept(lua, referent, "default")?.set("value", params)
+            })?
+        }
+        "GetPropertyTransitions" if class == "StyleRule" => {
+            lua.create_function(move |lua, _this: Value| {
+                copy(lua, &kept(lua, referent, "transitions")?)
+            })?
+        }
+        "SetPropertyTransition" if class == "StyleRule" => {
+            lua.create_function(move |lua, (_this, name, params): (Value, String, Value)| {
+                tween_info(lua, &params)?;
+                kept(lua, referent, "transitions")?.set(name, params)
+            })?
+        }
+        "SetPropertyTransitions" if class == "StyleRule" => {
+            lua.create_function(move |lua, (_this, all): (Value, Table)| {
+                let fresh = lua.create_table()?;
+                for pair in all.pairs::<String, Value>() {
+                    let (name, params) = pair?;
+                    tween_info(lua, &params)?;
+                    fresh.set(name, params)?;
+                }
+                replace(lua, referent, "transitions", fresh)
+            })?
+        }
+        "GetCondition" if class == "StyleQuery" => {
+            lua.create_function(move |lua, (_this, name): (Value, String)| {
+                kept(lua, referent, "conditions")?.get::<Value>(name)
+            })?
+        }
+        "GetConditions" if class == "StyleQuery" => {
+            lua.create_function(move |lua, _this: Value| {
+                copy(lua, &kept(lua, referent, "conditions")?)
+            })?
+        }
+        "SetCondition" if class == "StyleQuery" => {
+            lua.create_function(move |lua, (_this, name, value): (Value, String, Value)| {
+                kept(lua, referent, "conditions")?.set(name, value)
+            })?
+        }
+        "SetConditions" if class == "StyleQuery" => {
+            lua.create_function(move |lua, (_this, all): (Value, Table)| {
+                replace(lua, referent, "conditions", copy(lua, &all)?)
+            })?
+        }
         _ => return Ok(None),
     };
     Ok(Some(Value::Function(f)))
+}
+
+/// What a running game keeps of a style instance that the place file
+/// doesn't hold for it here: a rule's transitions (TweenInfos), a query's
+/// conditions. `part` names which.
+fn kept(lua: &Lua, referent: Ref, part: &str) -> Result<Table> {
+    const KEY: &str = "rbxn.server.styles.kept";
+    let root = match lua.named_registry_value::<Option<Table>>(KEY)? {
+        Some(root) => root,
+        None => {
+            let root = lua.create_table()?;
+            lua.set_named_registry_value(KEY, root.clone())?;
+            root
+        }
+    };
+    let id = format!("{}:{part}", referent.value());
+    match root.get::<Option<Table>>(id.as_str())? {
+        Some(table) => Ok(table),
+        None => {
+            let table = lua.create_table()?;
+            root.set(id, table.clone())?;
+            Ok(table)
+        }
+    }
+}
+
+fn replace(lua: &Lua, referent: Ref, part: &str, table: Table) -> Result<()> {
+    let kept = kept(lua, referent, part)?;
+    kept.clear()?;
+    for pair in table.pairs::<Value, Value>() {
+        let (k, v) = pair?;
+        kept.set(k, v)?;
+    }
+    Ok(())
+}
+
+fn copy(lua: &Lua, table: &Table) -> Result<Table> {
+    let out = lua.create_table()?;
+    for pair in table.clone().pairs::<Value, Value>() {
+        let (k, v) = pair?;
+        out.set(k, v)?;
+    }
+    Ok(out)
+}
+
+/// A transition is a `TweenInfo`, or `nil` for none.
+fn tween_info(lua: &Lua, value: &Value) -> Result<()> {
+    if value.is_nil() {
+        return Ok(());
+    }
+    let kind: String = lua
+        .globals()
+        .get::<Function>("typeof")?
+        .call(value.clone())?;
+    if kind == "TweenInfo" {
+        Ok(())
+    } else {
+        Err(mlua::Error::runtime(format!(
+            "Unable to cast {kind} to TweenInfo"
+        )))
+    }
 }

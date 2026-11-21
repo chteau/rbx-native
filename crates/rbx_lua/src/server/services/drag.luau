@@ -182,6 +182,25 @@ local CAMERA = {
 		local cf = self.CFrame
 		self.CFrame = CFrame.lookAt(cf.Position, cf.Position + cf.LookVector) * CFrame.Angles(0, 0, angle)
 	end,
+	-- Backs the camera off along its own look until the box's bounding
+	-- sphere fits the narrower field of view; it keeps its rotation and
+	-- focuses on the box.
+	ZoomToExtents = function(self, cframe, size)
+		if typeof(cframe) ~= "CFrame" then
+			error("Argument 1 missing or nil", 2)
+		end
+		if typeof(size) ~= "Vector3" then
+			error("Argument 2 missing or nil", 2)
+		end
+		local viewport = self.ViewportSize
+		local half = math.rad(self.FieldOfView) / 2
+		local aspect = viewport.X / math.max(viewport.Y, 1)
+		local narrow = math.min(half, math.atan(math.tan(half) * aspect))
+		local distance = size.Magnitude / 2 / math.sin(narrow)
+		local cf = self.CFrame
+		self.CFrame = cf.Rotation + cframe.Position - cf.LookVector * distance
+		self.Focus = CFrame.new(cframe.Position)
+	end,
 }
 
 local DRAG_METHODS = {

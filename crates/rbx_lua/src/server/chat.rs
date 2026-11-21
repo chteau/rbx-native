@@ -198,6 +198,7 @@ const SIGNALS: &[(&str, &str)] = &[
     ("TextChatService", "SendingMessage"),
     ("TextChatService", "BubbleDisplayed"),
     ("TextChannel", "MessageReceived"),
+    ("TextChatCommand", "Triggered"),
 ];
 
 /// A member of `TextChatService` or a `TextChannel`.

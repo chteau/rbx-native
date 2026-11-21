@@ -16,6 +16,59 @@ local buttons = {}
 local delta = Vector2.zero
 local location = Vector2.zero
 local lastType = Enum.UserInputType.None
+-- Connected gamepads (by UserInputType) to their InputObjects by KeyCode
+-- name; the gamepads set to navigate GUIs.
+local gamepads = {}
+local navigation = {}
+-- The motion sensors' last readings, by the signal they fire.
+local motion = {}
+-- What VirtualInput objects sent, for the engine to take each frame.
+local virtual = {}
+
+-- What a standard gamepad has, in the order GetGamepadState lists it.
+local GAMEPAD_CODES = {
+	"ButtonX",
+	"ButtonY",
+	"ButtonA",
+	"ButtonB",
+	"ButtonR1",
+	"ButtonL1",
+	"ButtonR2",
+	"ButtonL2",
+	"ButtonR3",
+	"ButtonL3",
+	"ButtonStart",
+	"ButtonSelect",
+	"DPadLeft",
+	"DPadRight",
+	"DPadUp",
+	"DPadDown",
+	"Thumbstick1",
+	"Thumbstick2",
+}
+
+-- The engine's own prompt images for gamepad buttons (rbxasset paths the
+-- client ships, not images of ours); anything else has none.
+local KEY_IMAGES = {
+	ButtonA = "xboxA",
+	ButtonB = "xboxB",
+	ButtonX = "xboxX",
+	ButtonY = "xboxY",
+	ButtonL1 = "xboxLB",
+	ButtonR1 = "xboxRB",
+	ButtonL2 = "xboxLT",
+	ButtonR2 = "xboxRT",
+	ButtonL3 = "xboxLS",
+	ButtonR3 = "xboxRS",
+	ButtonStart = "xboxmenu",
+	ButtonSelect = "xboxView",
+	DPadUp = "dpadUp",
+	DPadDown = "dpadDown",
+	DPadLeft = "dpadLeft",
+	DPadRight = "dpadRight",
+	Thumbstick1 = "xboxLSDirectional",
+	Thumbstick2 = "xboxRSDirectional",
+}
 
 local DEFAULT_PRIORITY = Enum.ContextActionPriority.Medium.Value
 
@@ -107,22 +160,126 @@ function M.dispatch(input, sunk)
 		buttons[kind.Name] = if began then input else nil
 	elseif kind == Enum.UserInputType.MouseMovement then
 		delta += Vector2.new(input.Delta.X, input.Delta.Y)
+	elseif gamepads[kind] then
+		gamepads[kind][input.KeyCode.Name] = input
 	end
 	if kind == Enum.UserInputType.MouseMovement or string.sub(kind.Name, 1, 5) == "Mouse" then
 		-- A mouse InputObject counts from below the top bar; the location
 		-- doesn't.
 		location = Vector2.new(input.Position.X, input.Position.Y + TOPBAR_INSET)
 	end
+	local changed = kind ~= lastType
 	lastType = kind
 	if sunk then
-		return true
+		return true, changed
 	end
 	for _, binding in ordered() do
 		if matches(binding, input) and handle(binding, input) ~= Enum.ContextActionResult.Pass then
-			return true
+			return true, changed
 		end
 	end
-	return false
+	return false, changed
+end
+
+-- The arguments of the signal a touch or a sensor fires after its
+-- InputBegan/InputChanged/InputEnded; a sensor's reading is kept for the
+-- getters.
+function M.also(name, input, processed)
+	if string.sub(name, 1, 5) == "Touch" then
+		return input, processed
+	end
+	motion[name] = input
+	if name == "DeviceRotationChanged" then
+		local p = input.Position
+		return input, CFrame.fromEulerAnglesXYZ(p.X, p.Y, p.Z)
+	end
+	return input
+end
+
+-- A gamepad plugged in or out; whether that changed anything.
+function M.gamepad(pad, connected)
+	local kind = Enum.UserInputType["Gamepad" .. pad]
+	if (gamepads[kind] ~= nil) == connected then
+		return false
+	end
+	gamepads[kind] = if connected then {} else nil
+	if not connected then
+		navigation[kind] = nil
+	end
+	return true
+end
+
+function M.takeVirtual()
+	local sent = virtual
+	virtual = {}
+	return sent
+end
+
+local function connected(kind)
+	return typeof(kind) == "EnumItem" and gamepads[kind] ~= nil
+end
+
+local function supports(kind, code)
+	return connected(kind) and typeof(code) == "EnumItem" and table.find(GAMEPAD_CODES, code.Name) ~= nil
+end
+
+local function sensor(name, kindName)
+	return motion[name] or M.newInput(kindName, "Unknown")
+end
+
+-- A VirtualInput: what it sends reaches the game on the next frame, as
+-- the player's own input would.
+local function virtualInput(target)
+	local object = {}
+	local function send(...)
+		table.insert(virtual, table.pack(...))
+	end
+	function object.SendKey(_, pressed, keyCode)
+		assert(typeof(keyCode) == "EnumItem", "Argument 2 missing or nil")
+		send("key", keyCode.Name, pressed == true)
+	end
+	function object.SendMouseButton(_, position, button, down)
+		assert(typeof(position) == "Vector2", "Argument 1 missing or nil")
+		assert(typeof(button) == "EnumItem", "Argument 2 missing or nil")
+		local n = tonumber(string.match(button.Name, "^MouseButton(%d)$"))
+		send("move", position.X, position.Y + TOPBAR_INSET, 0, 0)
+		if n then
+			send("button", n, down == true)
+		end
+	end
+	function object.SendMouseDelta(_, d)
+		assert(typeof(d) == "Vector2", "Argument 1 missing or nil")
+		send("move", location.X + d.X, location.Y + d.Y, d.X, d.Y)
+	end
+	function object.SendMousePosition(_, position)
+		assert(typeof(position) == "Vector2", "Argument 1 missing or nil")
+		send("move", position.X, position.Y + TOPBAR_INSET, position.X - location.X, position.Y + TOPBAR_INSET - location.Y)
+	end
+	function object.SendPointerAction(_, position, action)
+		assert(typeof(position) == "Vector2", "Argument 1 missing or nil")
+		send("move", position.X, position.Y + TOPBAR_INSET, 0, 0)
+		local wheel = type(action) == "table" and tonumber(action.Wheel)
+		if wheel and wheel ~= 0 then
+			send("wheel", wheel)
+		end
+	end
+	function object.SendTextInput(_, text)
+		send("text", tostring(text))
+	end
+	return setmetatable(object, {
+		__tostring = function()
+			return "VirtualInput"
+		end,
+		__index = function(_, key)
+			if key == "ClassName" then
+				return "VirtualInput"
+			end
+			if key == "Target" then
+				return target
+			end
+			error(`{key} is not a valid member of VirtualInput`, 2)
+		end,
+	})
 end
 
 -- Runs the render-step bindings, lowest priority value first.
@@ -283,7 +440,35 @@ end
 
 local function nothing() end
 
+local MODIFIERS = {
+	Shift = { "LeftShift", "RightShift" },
+	Ctrl = { "LeftControl", "RightControl" },
+	Alt = { "LeftAlt", "RightAlt" },
+	Meta = { "LeftMeta", "RightMeta", "LeftSuper", "RightSuper" },
+}
+
+local INPUT_OBJECT = {
+	IsModifierKeyDown = function(_, modifier)
+		if typeof(modifier) ~= "EnumItem" or modifier.EnumType ~= Enum.ModifierKey then
+			error("Argument 1 missing or nil", 2)
+		end
+		for _, name in MODIFIERS[modifier.Name] do
+			if keys[name] then
+				return true
+			end
+		end
+		return false
+	end,
+}
+
+local function currentToolIcon()
+	local player = game:GetService("Players").LocalPlayer
+	local tool = player and player.Character and player.Character:FindFirstChildOfClass("Tool")
+	return if tool then tool.TextureId else ""
+end
+
 local CAS = {
+	GetCurrentLocalToolIcon = currentToolIcon,
 	BindAction = function(_, name, callback, touch, ...)
 		bind(name, callback, touch, DEFAULT_PRIORITY, ...)
 	end,
@@ -356,30 +541,93 @@ local UIS = {
 		return lastType
 	end,
 	GetConnectedGamepads = function()
-		return {}
+		local list = {}
+		for kind in gamepads do
+			table.insert(list, kind)
+		end
+		table.sort(list, function(a, b)
+			return a.Value < b.Value
+		end)
+		return list
 	end,
 	GetNavigationGamepads = function()
-		return {}
+		local list = {}
+		for kind in navigation do
+			table.insert(list, kind)
+		end
+		table.sort(list, function(a, b)
+			return a.Value < b.Value
+		end)
+		return list
 	end,
-	GetSupportedGamepadKeyCodes = function()
-		return {}
+	GetSupportedGamepadKeyCodes = function(_, kind)
+		local list = {}
+		if connected(kind) then
+			for _, name in GAMEPAD_CODES do
+				table.insert(list, Enum.KeyCode[name])
+			end
+		end
+		return list
 	end,
-	GetGamepadState = function()
-		return {}
+	GetGamepadState = function(_, kind)
+		local list = {}
+		if connected(kind) then
+			local pad = gamepads[kind]
+			for _, name in GAMEPAD_CODES do
+				pad[name] = pad[name] or M.newInput(kind.Name, name)
+				table.insert(list, pad[name])
+			end
+		end
+		return list
 	end,
-	GetGamepadConnected = function()
-		return false
+	GetGamepadConnected = function(_, kind)
+		return connected(kind)
 	end,
-	GamepadSupports = function()
-		return false
+	GamepadSupports = function(_, kind, code)
+		return supports(kind, code)
 	end,
-	IsGamepadButtonDown = function()
-		return false
+	IsGamepadButtonDown = function(_, kind, code)
+		local input = supports(kind, code) and gamepads[kind][code.Name]
+		return input ~= nil and input ~= false and input.UserInputState == Enum.UserInputState.Begin
 	end,
-	IsNavigationGamepad = function()
-		return false
+	-- With none set, every gamepad navigates.
+	IsNavigationGamepad = function(_, kind)
+		if next(navigation) == nil then
+			return connected(kind)
+		end
+		return navigation[kind] == true
 	end,
-	SetNavigationGamepad = nothing,
+	SetNavigationGamepad = function(_, kind, enabled)
+		if typeof(kind) ~= "EnumItem" then
+			error("Argument 1 missing or nil", 2)
+		end
+		navigation[kind] = if enabled then true else nil
+	end,
+	GetImageForKeyCode = function(_, keyCode)
+		if typeof(keyCode) ~= "EnumItem" then
+			error("Argument 1 missing or nil", 2)
+		end
+		local image = KEY_IMAGES[keyCode.Name]
+		return if image then `rbxasset://textures/ui/Controls/{image}.png` else ""
+	end,
+	GetDeviceGravity = function()
+		return sensor("DeviceGravityChanged", "Accelerometer")
+	end,
+	GetDeviceAcceleration = function()
+		return sensor("DeviceAccelerationChanged", "Accelerometer")
+	end,
+	GetDeviceRotation = function()
+		local input = sensor("DeviceRotationChanged", "Gyro")
+		local p = input.Position
+		return input, CFrame.fromEulerAnglesXYZ(p.X, p.Y, p.Z)
+	end,
+	CreateVirtualInput = function(_, target)
+		if typeof(target) ~= "Instance" then
+			error("Argument 1 missing or nil", 2)
+		end
+		return virtualInput(target)
+	end,
+	RecenterUserHeadCFrame = nothing,
 	GetStringForKeyCode = function(_, keyCode)
 		if typeof(keyCode) ~= "EnumItem" then
 			error("Argument 1 missing or nil", 2)
@@ -415,6 +663,7 @@ function M.member(service, key)
 	local members = if service == "ContextActionService"
 		then CAS
 		elseif service == "UserInputService" then UIS
+		elseif service == "InputObject" then INPUT_OBJECT
 		else RUN
 	local member = members[key]
 	if member == nil then
