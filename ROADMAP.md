@@ -3725,6 +3725,29 @@ Overrides, InputActionLabel, UI Particles and Solid Modeling On Meshes
 (their items below). The rest are items in "Studio Beta Features not
 mirrored yet" at the end of this section.
 
+On 2026-11-21 every one of them was switched on in Studio 0.748 and tried
+there. What each does live, and where it stands here:
+
+| Beta | What it does in Studio, switched on | Here |
+|---|---|---|
+| UI Particles | `ParticleEmitter2D` emits, animates in edit, `Emit`/`Clear` work from Luau | Built behind a beta of the same name (PR #397) |
+| Orthographic Camera | `ProjectionType` Orthographic flattens the edit view over black; `OrthographicSize` spans the axis `OrthographicMode` names; a new Camera's size is 35 | Built behind a beta of the same name (PR #398) |
+| Luau Exports and Cyclic Requires | `export local`/`const`/`function` make a module return a table of them; modules that export may require each other; `export` plus a top-level `return` is a compile error | Built behind a beta of the same name (PR #399) |
+| If Local/Const Bindings | `const x = 1` and `if local y = f() then` both run | Not built: `if local` needs Luau 740, newer than the 736 mlua ships |
+| InputActionLabel | A `GuiObject` (TextColor3 0.105, 0.164, 0.207, ImageColor3 white, TextSize 8); in edit it draws a white box with a placeholder cube glyph | Not built: the keybinding glyph set is Roblox's art, and what it shows in Play is unmeasured |
+| MaterialVariant Alpha Mode | `MaterialVariant.AlphaMode`, default Opaque (Overlay 0, Transparency 1, TintMask 2, Opaque 3) | Not built: the variant path has no alpha blending to switch yet |
+| Collections | `CollectionService:CreateCollection(query)` returns a `CollectionHandle` (`Query`, `Root`, `Destroy`), no `GetInstances` | Not built: the handle's reads and callbacks aren't discoverable yet |
+| CreateAssetAsync Lua API | `AssetService:CreateAssetAsync` exists | Not built: an upload API, nothing for the editor to draw |
+| Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run's business (runtime API) |
+| Solid Modeling On Meshes | `GeometryService:SubtractAsync` takes a `MeshPart` and returns a `MeshPart`; `FragmentAsync` is new | Runtime half is Local Run's; the editor half is "CSG on meshes" below |
+| New Video API | `VideoPlayer` (Looping, PlaybackSpeed, Volume, TimeLength, IsPlaying, Resolution) and a `VideoDisplay` GuiObject (VideoColor3, VideoTransparency, ScaleType, ResampleMode, TileSize) | Not built: no video decoding here |
+| AvatarAbilities Character Controller Library | No new creatable class beyond `ControllerManager` | Not built: nothing to mirror yet |
+| Animation Graph State Machines | `AnimationGraphDefinition` creatable | Already here (Animation) |
+| Next-Gen Draggers, New Studio Camera Controls (Updated) | Studio's own draggers and edit camera | Not built: Studio UI feel, a re-measure job each |
+| Face Capture, Live Animation Creator, Animation Generation, Prompt-to-Avatar, Scene Generation, Playtest Agent | Assistant/camera/AI tools in Studio | Not built: Roblox's cloud AI services |
+| Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
+| Package Overrides, Auto-Reimport, Video Uploads, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
+
 #### Renderer
 - [ ] 📋 **New primitive shapes: Capsule, Cone, Disc and rounded
   primitives** (Early 2027). These are new `Enum.PartType` values, and
@@ -3762,8 +3785,14 @@ mirrored yet" at the end of this section.
   to measure what `OrthographicSize` spans, nothing is built on it yet.
   On 2026-11-20 it turned up as a Studio beta, "Orthographic Camera"
   ("Select the Camera object and change its ProjectionType to
-  Orthographic"), off by default. Measuring `OrthographicSize` means
-  switching that beta on, which is the next step for this item.
+  Orthographic"), off by default. Measured with it on (2026-11-21):
+  `OrthographicSize` is the full span of the side `OrthographicMode` names
+  (Vertical the height, Horizontal the width, Diagonal, MaxAxis the longer
+  side), a new Camera's size is 35, switching to Orthographic keeps the
+  size, changing the mode keeps the picture and rewrites the size, and the
+  view draws over black with no sky. Built behind an "Orthographic Camera"
+  beta here (PR #398): the 3D view follows the place camera, the wheel
+  writes the size back. Play and `ViewportFrame` cameras are still open.
 - [ ] 📋 **Material layering and finer PBR response** (Mid 2027): PBR
   textures layered under custom masks, plus controls for specular response
   and more accurate scattering and reflection. This lands in the material
@@ -3813,14 +3842,18 @@ mirrored yet" at the end of this section.
   (`ParticleEmitter2D`, tagged `NotBrowsable`, with the 3D emitter's
   properties in 2D form), but Studio renders none of its particles yet, in
   edit or in Play. Not shipped yet. Roblox opened it as a Studio beta on
-  2026-11-19 ("UI Particles"), on for this account by the next day but not
-  yet looked at in Studio; that is the next check for this item.
+  2026-11-19 ("UI Particles"). Measured with it on and built behind a "UI
+  Particles" beta here (PR #397): screen GUI, UI Editor canvas,
+  BillboardGui and SurfaceGui, every property, `Emit` and `Clear`.
 - [ ] 📋 **Input action label** (Early 2027): UI that shows the right
   hotkey or button hint for the player's device. In the viewer and the UI
   Editor, the device picked by the Screen setting (the one both of them
   share) is the natural choice for which set of hints to draw. A Studio
-  beta since at least 2026-11-20 ("InputActionLabel", off by default), so
-  the class can be measured once the beta is switched on.
+  beta since at least 2026-11-20 ("InputActionLabel", off by default).
+  Switched on 2026-11-21: a `GuiObject` with TextColor3 (0.105, 0.164,
+  0.207), white ImageColor3 and TextSize 8, drawing a white box with a
+  placeholder cube in edit. The per-device glyphs are Roblox's own art, so
+  this needs our own glyph set and a look at what it shows in Play.
 
 #### Editor
 - [ ] ⚠️ **Package overrides** (Late 2026): inspect, diff, selectively
@@ -3912,19 +3945,24 @@ on in real Studio and measuring it there, the same as everything above.
 - [ ] 📋 **Collections** (`CollectionService:CreateCollection`):
   query-based collections. The Tags editor already sits on
   `CollectionService`; a Collections view (and the "Collections Debugger"
-  Roblox announced with it) would sit beside it.
+  Roblox announced with it) would sit beside it. Tried 2026-11-21:
+  `CreateCollection(query)` returns a `CollectionHandle` with `Query`,
+  `Root` and `Destroy` and no `GetInstances`, so how it hands results back
+  is still unknown.
 - [ ] 📋 **Face Capture** and **Live Animation Creator**: the Animation
   Editor recording a face from a camera, and posing an avatar from a video.
   Both need a pose tracker running locally; neither has a Roblox format of
   its own beyond the keyframes it writes, which this editor already saves.
 - [ ] 📋 **If Local/Const Bindings** and **Luau Exports and Cyclic
-  Requires**: Luau syntax. The script editor's lexer, the outline and the
-  bundled `luau-lsp` need to accept it once the Luau release carrying it is
-  out, and the Command Bar's Luau with them.
+  Requires**: Luau syntax. Exports and cyclic requires are built behind a
+  beta here (PR #399), from the `LuauExportValueSyntax` flag the shipped
+  Luau 736 already has. `if local` needs Luau 740, so it waits for an mlua
+  release carrying it. The bundled `luau-lsp` still needs to accept both.
 - [ ] 📋 **MaterialVariant Alpha Mode**: `AlphaMode` on a `MaterialVariant`
   (plus an Opaque mode), the way a `SurfaceAppearance` already has one. The
   material pass already honours `SurfaceAppearance.AlphaMode`; this is the
-  same switch on the variant path.
+  same switch on the variant path. Measured 2026-11-21: default Opaque, enum
+  Overlay 0, Transparency 1, TintMask 2, Opaque 3.
 - [ ] 📋 **New Studio Camera Controls (Updated)**: Studio's reworked edit
   camera. The viewport camera here was matched to the old one; this needs
   the new one's speeds, focus and orbit measured.
