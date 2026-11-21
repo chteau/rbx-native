@@ -700,6 +700,75 @@ function CREATION.GetValidationRules(_)
 	}
 end
 
+-- The rest needs Roblox's avatar generation and creation services, which a
+-- Local Run has no access to: past the checks a live server makes first
+-- (AvatarApi `acs_*`), each says so.
+local function needed(value)
+	if value == nil then
+		fail("Argument 1 missing or nil")
+	end
+end
+
+local function offline(name)
+	fail("AvatarCreationService:" .. name .. " is not available in a Local Run")
+end
+
+for _, name in {
+	"AutoSetupAvatarAsync",
+	"GenerateAvatar2DPreviewAsync",
+	"GenerateAvatarAsync",
+	"PromptCreateAvatarAssetAsync",
+	"PromptCreateAvatarAsync",
+	"PromptCreateMakeupAsync",
+	"PromptSelectAvatarGenerationImageAsync",
+	"RequestAvatarGenerationSessionAsync",
+	"ValidateUGCAccessoryAsync",
+	"ValidateUGCBodyPartAsync",
+	"ValidateUGCFullBodyAsync",
+} do
+	CREATION[name] = function(_, first)
+		needed(first)
+		offline(name)
+	end
+end
+
+function CREATION.PrepareAvatarForPreviewAsync(_, model)
+	needed(model)
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then
+		fail("Unable to cast " .. typeof(model) .. " to Model")
+	end
+end
+
+function CREATION.GetBatchTokenDetailsAsync(_, tokenIds)
+	if type(tokenIds) ~= "table" then
+		fail("Unable to cast " .. typeof(tokenIds) .. " to Array")
+	end
+	if #tokenIds == 0 then
+		fail("AvatarCreationService:getTokenDetailsAsync - tokenIds must not be empty")
+	end
+	offline("GetBatchTokenDetailsAsync")
+end
+
+function CREATION.LoadAvatar2DPreviewAsync(_)
+	if host.server() then
+		fail("AvatarCreationService:LoadAvatarPreviewImageAsync should only be called on the client.")
+	end
+	offline("LoadAvatar2DPreviewAsync")
+end
+
+function CREATION.LoadGeneratedAvatarAsync(_, id)
+	if id == nil or tostring(id) == "" then
+		fail("AvatarCreationService:LoadAvatarModelAsync expects Id to be non empty.")
+	end
+	offline("LoadGeneratedAvatarAsync")
+end
+
+local CREATION_SIGNALS = {
+	AvatarAssetModerationCompleted = true,
+	AvatarModerationCompleted = true,
+	AvatarOutfitModerationCompleted = true,
+}
+
 local EDITOR = {}
 
 local function clientOnly()
@@ -801,6 +870,18 @@ function EDITOR.GetRecommendedBundlesAsync(_, bundleId)
 		"GET",
 		nil,
 		"recommendations"
+	)
+	return pascal(reply.data or {})
+end
+
+function EDITOR.GetBundlesByAssetIdAsync(_, assetId)
+	needed(assetId)
+	assetId = integer(assetId)
+	local reply = host.web(
+		"https://catalog.roblox.com/v1/assets/" .. assetId .. "/bundles?limit=100",
+		"GET",
+		nil,
+		"bundles"
 	)
 	return pascal(reply.data or {})
 end
@@ -952,6 +1033,7 @@ local SIGNALS = {
 	HumanoidDescription = DESCRIPTION_SIGNALS,
 	Player = PLAYER_SIGNALS,
 	Players = PLAYERS_SIGNALS,
+	AvatarCreationService = CREATION_SIGNALS,
 }
 
 local FINISHED = { BanHistoryPages = true, InventoryPages = true, OutfitPages = true }

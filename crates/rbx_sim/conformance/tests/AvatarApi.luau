@@ -502,6 +502,46 @@ return function(h, origin)
 	result.teams = try(function()
 		return #game:GetService("Teams"):GetTeams()
 	end)
+	-- The rest of AvatarCreationService, with arguments it refuses (no
+	-- prompt or generation is ever started).
+	local acs = game:GetService("AvatarCreationService")
+	local refused = {
+		AutoSetupAvatarAsync = {},
+		GenerateAvatar2DPreviewAsync = {},
+		GenerateAvatarAsync = {},
+		GetBatchTokenDetailsAsync = { {} },
+		LoadAvatar2DPreviewAsync = { "" },
+		LoadGeneratedAvatarAsync = { "" },
+		PrepareAvatarForPreviewAsync = {},
+		PromptCreateAvatarAssetAsync = {},
+		PromptCreateAvatarAsync = {},
+		PromptCreateMakeupAsync = {},
+		PromptSelectAvatarGenerationImageAsync = {},
+		RequestAvatarGenerationSessionAsync = {},
+		ValidateUGCAccessoryAsync = {},
+		ValidateUGCBodyPartAsync = {},
+		ValidateUGCFullBodyAsync = {},
+	}
+	for name, args in refused do
+		result["acs_" .. name] = try(function()
+			return acs[name](acs, table.unpack(args))
+		end)
+	end
+	result.acs_signals = try(function()
+		return {
+			typeof(acs.AvatarAssetModerationCompleted),
+			typeof(acs.AvatarModerationCompleted),
+			typeof(acs.AvatarOutfitModerationCompleted),
+		}
+	end)
+	result.acp_evaluator = try(function()
+		local acp = game:GetService("AnimationClipProvider")
+		return acp:GetClipEvaluatorAsync(nil)
+	end)
+	result.aes_bundles = try(function()
+		local list = game:GetService("AvatarEditorService"):GetBundlesByAssetIdAsync(nil)
+		return typeof(list)
+	end)
 	result.acs_rules = try(function()
 		local rules = game:GetService("AvatarCreationService"):GetValidationRules()
 		local keys = {}

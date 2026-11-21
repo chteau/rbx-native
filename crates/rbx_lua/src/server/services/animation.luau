@@ -129,6 +129,15 @@ end
 
 CLIP_PROVIDER.GetAnimationsAsync = PROVIDER.GetAnimationsAsync
 
+-- Past the argument check a live server makes (AvatarApi `acp_evaluator`),
+-- clip evaluators aren't modelled.
+function CLIP_PROVIDER.GetClipEvaluatorAsync(_, clip)
+	if clip == nil then
+		fail("Argument 1 missing or nil")
+	end
+	fail("AnimationClipProvider:GetClipEvaluatorAsync is not available in a Local Run")
+end
+
 local ANIMATOR = {}
 
 function ANIMATOR.ApplyJointVelocities(_, _motors) end
