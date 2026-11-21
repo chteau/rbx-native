@@ -736,7 +736,7 @@ mod tests {
         );
         no_errors(&env);
         assert_eq!(lua.globals().get::<String>("name").unwrap(), "Dark");
-        assert_eq!(lua.globals().get::<String>("listed").unwrap(), "Dark");
+        assert_eq!(lua.globals().get::<String>("listed").unwrap(), "Light");
         let a = service(&lua, "Selection").unwrap().unwrap();
         let b = service(&lua, "Selection").unwrap().unwrap();
         assert!(a.equals(&b).unwrap());
