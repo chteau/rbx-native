@@ -108,7 +108,10 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         "AnimationTrack" => TRACK_METHODS.contains(&key),
         "Humanoid" | "AnimationController" => ANIMATOR_METHODS.contains(&key),
         "KeyframeSequenceProvider" => {
-            matches!(key, "RegisterKeyframeSequence" | "GetKeyframeSequenceAsync#fetch")
+            matches!(
+                key,
+                "RegisterKeyframeSequence" | "GetKeyframeSequenceAsync#fetch"
+            )
         }
         "AnimationClipProvider" => key == "GetAnimationClipAsync#fetch",
         _ => false,

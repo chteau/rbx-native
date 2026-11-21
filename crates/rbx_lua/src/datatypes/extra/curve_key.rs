@@ -57,7 +57,11 @@ fn cast_number(value: &Value) -> f32 {
     match value {
         Value::Number(n) => *n as f32,
         Value::Integer(i) => *i as f32,
-        Value::String(s) => s.to_str().ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0.0),
+        Value::String(s) => s
+            .to_str()
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0.0),
         _ => 0.0,
     }
 }
@@ -118,7 +122,11 @@ impl<const K: u8> UserData for Typed<K> {
         fields.add_field_method_get("Time", |_, Typed(this)| Ok(this.time));
         fields.add_field_method_get("Value", |_, Typed(this)| Ok(this.value.clone()));
         fields.add_field_method_get("Interpolation", |lua, Typed(this)| {
-            enum_item(lua, "KeyInterpolationMode", MODES[this.interpolation.min(2) as usize])
+            enum_item(
+                lua,
+                "KeyInterpolationMode",
+                MODES[this.interpolation.min(2) as usize],
+            )
         });
         fields.add_field_method_get("LeftTangent", |_, Typed(this)| Ok(this.left));
         fields.add_field_method_get("RightTangent", |_, Typed(this)| Ok(this.right));
@@ -138,15 +146,18 @@ impl<const K: u8> UserData for Typed<K> {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method(MetaMethod::Eq, |_, Typed(this), other: UserDataRef<Self>| {
-            let other = &other.0;
-            Ok(this.kind == other.kind
-                && this.time == other.time
-                && this.interpolation == other.interpolation
-                && this.left == other.left
-                && this.right == other.right
-                && this.value.equals(&other.value)?)
-        });
+        methods.add_meta_method(
+            MetaMethod::Eq,
+            |_, Typed(this), other: UserDataRef<Self>| {
+                let other = &other.0;
+                Ok(this.kind == other.kind
+                    && this.time == other.time
+                    && this.interpolation == other.interpolation
+                    && this.left == other.left
+                    && this.right == other.right
+                    && this.value.equals(&other.value)?)
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |lua, Typed(this), ()| {
             let tostring: Function = lua.globals().get("tostring")?;
             let text = |v: Value| -> Result<String> { tostring.call::<String>(v) };
@@ -155,8 +166,14 @@ impl<const K: u8> UserData for Typed<K> {
                 MODES[this.interpolation.min(2) as usize],
                 text(Value::Number(f64::from(this.time)))?,
                 text(this.value.clone())?,
-                text(this.left.map_or(Value::Nil, |l| Value::Number(f64::from(l))))?,
-                text(this.right.map_or(Value::Nil, |r| Value::Number(f64::from(r))))?,
+                text(
+                    this.left
+                        .map_or(Value::Nil, |l| Value::Number(f64::from(l)))
+                )?,
+                text(
+                    this.right
+                        .map_or(Value::Nil, |r| Value::Number(f64::from(r)))
+                )?,
             ))
         });
     }
@@ -166,21 +183,23 @@ fn constructor(lua: &Lua, kind: KeyKind) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "new",
-        lua.create_function(move |lua, (time, value, mode): (Value, Value, Option<Value>)| {
-            let value = match kind {
-                KeyKind::Float => Value::Number(f64::from(cast_number(&value))),
-                _ => value,
-            };
-            let key = LuaCurveKey {
-                kind,
-                time: cast_number(&time),
-                value,
-                interpolation: mode_arg(mode)?,
-                left: None,
-                right: None,
-            };
-            into_lua(lua, key)
-        })?,
+        lua.create_function(
+            move |lua, (time, value, mode): (Value, Value, Option<Value>)| {
+                let value = match kind {
+                    KeyKind::Float => Value::Number(f64::from(cast_number(&value))),
+                    _ => value,
+                };
+                let key = LuaCurveKey {
+                    kind,
+                    time: cast_number(&time),
+                    value,
+                    interpolation: mode_arg(mode)?,
+                    left: None,
+                    right: None,
+                };
+                into_lua(lua, key)
+            },
+        )?,
     )?;
     Ok(table)
 }

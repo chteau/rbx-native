@@ -40,7 +40,10 @@ fn defaults(lua: &Lua) -> Result<BTreeMap<&'static str, Value>> {
         "SortAggregation",
         enum_item(lua, "CatalogSortAggregation", "AllTime")?,
     );
-    f.insert("CategoryFilter", enum_item(lua, "CatalogCategoryFilter", "None")?);
+    f.insert(
+        "CategoryFilter",
+        enum_item(lua, "CatalogCategoryFilter", "None")?,
+    );
     f.insert("SalesTypeFilter", enum_item(lua, "SalesTypeFilter", "All")?);
     f.insert("BundleTypes", Value::Table(lua.create_table()?));
     f.insert("AssetTypes", Value::Table(lua.create_table()?));
@@ -53,11 +56,11 @@ fn defaults(lua: &Lua) -> Result<BTreeMap<&'static str, Value>> {
 }
 
 fn field(key: &str) -> Result<&'static str> {
-    FIELDS
-        .iter()
-        .copied()
-        .find(|f| *f == key)
-        .ok_or_else(|| mlua::Error::runtime(format!("{key} is not a valid member of CatalogSearchParams")))
+    FIELDS.iter().copied().find(|f| *f == key).ok_or_else(|| {
+        mlua::Error::runtime(format!(
+            "{key} is not a valid member of CatalogSearchParams"
+        ))
+    })
 }
 
 impl UserData for LuaCatalogParams {
@@ -69,10 +72,13 @@ impl UserData for LuaCatalogParams {
         methods.add_meta_method(MetaMethod::Index, |_, this, key: String| {
             Ok(this.fields.get(field(&key)?).cloned().unwrap_or(Value::Nil))
         });
-        methods.add_meta_method_mut(MetaMethod::NewIndex, |_, this, (key, value): (String, Value)| {
-            this.fields.insert(field(&key)?, value);
-            Ok(())
-        });
+        methods.add_meta_method_mut(
+            MetaMethod::NewIndex,
+            |_, this, (key, value): (String, Value)| {
+                this.fields.insert(field(&key)?, value);
+                Ok(())
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("CatalogSearchParams"));
     }
 }

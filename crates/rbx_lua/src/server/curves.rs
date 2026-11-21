@@ -261,7 +261,14 @@ fn float_at(keys: &[Key], time: f32) -> Option<f32> {
 }
 
 fn rotation_cframe(q: [f32; 4]) -> LuaCFrame {
-    quat_to_matrix(q, rbx_dom::Vector3Data { x: 0.0, y: 0.0, z: 0.0 })
+    quat_to_matrix(
+        q,
+        rbx_dom::Vector3Data {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+    )
 }
 
 fn rotation_at(keys: &[Key], time: f32) -> Option<LuaCFrame> {
@@ -441,7 +448,9 @@ pub(crate) fn member(
         if matches!(class.as_str(), "Vector3Curve" | "EulerRotationCurve") {
             return Ok(None);
         }
-        return Ok(Some(Value::Integer(read(ctx, referent, &class).len() as i64)));
+        return Ok(Some(Value::Integer(
+            read(ctx, referent, &class).len() as i64
+        )));
     }
     if key == "ValueType" && class == "ValueCurve" {
         return Ok(Some(Value::Nil));
@@ -457,7 +466,11 @@ pub(crate) fn member(
     let out_of_range = |class: &str| {
         mlua::Error::runtime(format!(
             "{} index is out of range",
-            if class == "MarkerCurve" { "MarkerCurve" } else { class }
+            if class == "MarkerCurve" {
+                "MarkerCurve"
+            } else {
+                class
+            }
         ))
     };
     match (class.as_str(), key) {
@@ -468,9 +481,9 @@ pub(crate) fn member(
         ("ValueCurve", "RemoveKeyAtIndex" | "SetKeys") => {
             method(Box::new(|_, _| Ok(Value::Integer(0))))
         }
-        ("ValueCurve", "GetKeyAtIndex") => {
-            method(Box::new(|_, _| Err(mlua::Error::runtime("ValueCurve index is out of range"))))
-        }
+        ("ValueCurve", "GetKeyAtIndex") => method(Box::new(|_, _| {
+            Err(mlua::Error::runtime("ValueCurve index is out of range"))
+        })),
         ("FloatCurve" | "RotationCurve", "GetKeys") => method(Box::new(move |lua, _| {
             let keys = read(&ctx, referent, &class);
             let list = lua.create_table()?;
@@ -479,30 +492,38 @@ pub(crate) fn member(
             }
             Ok(Value::Table(list))
         })),
-        ("FloatCurve" | "RotationCurve", "GetKeyAtIndex") => {
-            method(Box::new(move |lua, args| {
-                let keys = read(&ctx, referent, &class);
-                let i = index_arg(args.first());
-                match usize::try_from(i - 1).ok().and_then(|i| keys.get(i)) {
-                    Some(k) => key_value(lua, &class, k),
-                    None => Err(out_of_range(&class)),
-                }
-            }))
-        }
+        ("FloatCurve" | "RotationCurve", "GetKeyAtIndex") => method(Box::new(move |lua, args| {
+            let keys = read(&ctx, referent, &class);
+            let i = index_arg(args.first());
+            match usize::try_from(i - 1).ok().and_then(|i| keys.get(i)) {
+                Some(k) => key_value(lua, &class, k),
+                None => Err(out_of_range(&class)),
+            }
+        })),
         ("FloatCurve" | "RotationCurve" | "MarkerCurve", "GetKeyIndicesAtTime") => {
             method(Box::new(move |lua, args| {
-                let time = args.first().and_then(crate::datatypes::number_arg).unwrap_or(0.0);
+                let time = args
+                    .first()
+                    .and_then(crate::datatypes::number_arg)
+                    .unwrap_or(0.0);
                 let keys = read(&ctx, referent, &class);
-                lua.create_sequence_from(indices(&keys, time)).map(Value::Table)
+                lua.create_sequence_from(indices(&keys, time))
+                    .map(Value::Table)
             }))
         }
         ("FloatCurve", "GetValueAtTime") => method(Box::new(move |_, args| {
-            let time = args.first().and_then(crate::datatypes::number_arg).unwrap_or(0.0);
+            let time = args
+                .first()
+                .and_then(crate::datatypes::number_arg)
+                .unwrap_or(0.0);
             let keys = read(&ctx, referent, &class);
             Ok(float_at(&keys, time).map_or(Value::Nil, |v| Value::Number(f64::from(v))))
         })),
         ("RotationCurve", "GetValueAtTime") => method(Box::new(move |lua, args| {
-            let time = args.first().and_then(crate::datatypes::number_arg).unwrap_or(0.0);
+            let time = args
+                .first()
+                .and_then(crate::datatypes::number_arg)
+                .unwrap_or(0.0);
             let keys = read(&ctx, referent, &class);
             match rotation_at(&keys, time) {
                 Some(c) => c.into_lua(lua),
@@ -554,7 +575,10 @@ pub(crate) fn member(
             Ok(Value::Integer((to - from) as i64))
         })),
         ("MarkerCurve", "InsertMarkerAtTime") => method(Box::new(move |lua, args| {
-            let time = args.first().and_then(crate::datatypes::number_arg).unwrap_or(0.0);
+            let time = args
+                .first()
+                .and_then(crate::datatypes::number_arg)
+                .unwrap_or(0.0);
             let text = match args.get(1) {
                 Some(Value::String(s)) => s.to_str()?.to_owned(),
                 Some(Value::Number(n)) => n.to_string(),
@@ -601,12 +625,18 @@ pub(crate) fn member(
         }
         ("Vector3Curve", "GetValueAtTime") | ("EulerRotationCurve", "GetAnglesAtTime") => {
             method(Box::new(move |lua, args| {
-                let time = args.first().and_then(crate::datatypes::number_arg).unwrap_or(0.0);
+                let time = args
+                    .first()
+                    .and_then(crate::datatypes::number_arg)
+                    .unwrap_or(0.0);
                 number_list(lua, &axes_at(&ctx, referent, time)).map(Value::Table)
             }))
         }
         ("EulerRotationCurve", "GetRotationAtTime") => method(Box::new(move |lua, args| {
-            let time = args.first().and_then(crate::datatypes::number_arg).unwrap_or(0.0);
+            let time = args
+                .first()
+                .and_then(crate::datatypes::number_arg)
+                .unwrap_or(0.0);
             let [x, y, z] = axes_at(&ctx, referent, time).map(|a| a.unwrap_or(0.0));
             let order = match ctx
                 .dom()

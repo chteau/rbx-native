@@ -1288,7 +1288,10 @@ impl Humanoids {
             // The walk it is asked for: `MoveDirection` at `WalkSpeed`.
             "GetMoveVelocity" => {
                 let speed = number(dom, db, humanoid, "WalkSpeed");
-                let dir = self.characters.get(&humanoid).map_or([0.0; 3], |c| c.move_dir);
+                let dir = self
+                    .characters
+                    .get(&humanoid)
+                    .map_or([0.0; 3], |c| c.move_dir);
                 Ok(CallReply::value(vec_arg(dir.map(|d| d * speed))))
             }
             "GetRelativeVelocityAtFloor" => {
@@ -1297,7 +1300,11 @@ impl Humanoids {
                 };
                 let v = vector(dom, db, c.root, "AssemblyLinearVelocity");
                 let f = c.floor_velocity;
-                Ok(CallReply::value(vec_arg([v[0] - f[0], v[1] - f[1], v[2] - f[2]])))
+                Ok(CallReply::value(vec_arg([
+                    v[0] - f[0],
+                    v[1] - f[1],
+                    v[2] - f[2],
+                ])))
             }
             // Not switched on in live servers yet (NewApis
             // `collide_on_death`).

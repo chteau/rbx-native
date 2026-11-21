@@ -13,7 +13,10 @@ fn place(server: &str) -> WeakDom {
         .root_refs()
         .iter()
         .copied()
-        .find(|r| dom.get(*r).is_some_and(|i| i.class() == "ServerScriptService"))
+        .find(|r| {
+            dom.get(*r)
+                .is_some_and(|i| i.class() == "ServerScriptService")
+        })
         .unwrap_or_else(|| dom.new_instance("ServerScriptService", "ServerScriptService", None));
     let script = dom.new_instance("Script", "Server", Some(sss));
     let _ = dom.set_property(script, "Source", Variant::String(server.into()));
