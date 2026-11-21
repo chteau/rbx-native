@@ -2,7 +2,8 @@
 -- The social and account services in Local Run: GroupService and
 -- UserService read Roblox's public web APIs (kept for offline runs; the
 -- run's own players, user ids below 1, are answered here), SocialService
--- has no friends to invite, PolicyService gives an adult's policy in a
+-- has no friends to invite (its feedback prompt sends nothing),
+-- PolicyService gives an adult's policy in a
 -- country without extra rules, VoiceChatService reports voice off, and
 -- AvatarEditorService's and GroupService's prompts open the editor's own
 -- dialog, nothing saved to the account.
@@ -72,17 +73,7 @@ end
 
 -- An empty, finished listing.
 local function emptyPages()
-	return (host.new("StandardPages", "StandardPages"))
-end
-
-local PAGES = {}
-
-function PAGES.GetCurrentPage(_)
-	return {}
-end
-
-function PAGES.AdvanceToNextPageAsync(_)
-	fail("No pages to advance to")
+	return host.pages("StandardPages", {}, 50)
 end
 
 -- Dialog answers: kind -> what the dialog said, read by the waiting call.
@@ -283,6 +274,37 @@ function SOCIAL.GetExperienceEventAsync(_, eventId)
 	return nil
 end
 
+-- The feedback prompt: the editor shows a notice, nothing is sent. A
+-- live server's call does nothing (golden WebServices).
+function SOCIAL.PromptFeedbackSubmissionAsync(_, options)
+	if options ~= nil and type(options) ~= "table" then
+		fail(`Unable to cast {typeName(options)} to Dictionary`)
+	end
+	if host.server() then
+		return
+	end
+	host.notify(localPlayer(), "Feedback (test)", "The game asks for feedback. A Local Run sends none.")
+	task.wait()
+end
+
+-- Not switched on yet on Roblox.
+function SOCIAL.PromptRateExperienceAsync(_)
+	fail("SocialService:PromptRateExperienceAsync is not yet enabled.")
+end
+
+-- No experience events offline (see GetExperienceEventAsync). Roblox's
+-- server-side error names GetEventRsvpStatusAsync.
+function SOCIAL.PromptRsvpToEventAsync(_, eventId)
+	if host.server() then
+		fail("SocialService:GetEventRsvpStatusAsync must be called on the client.")
+	end
+	if type(eventId) ~= "string" and type(eventId) ~= "number" then
+		fail(`Unable to cast {typeName(eventId)} to string`)
+	end
+	task.wait()
+	fail(`SocialService:PromptRsvpToEventAsync(): event {eventId} was not found`)
+end
+
 function SOCIAL.ShowSelfView(_) end
 function SOCIAL.HideSelfView(_) end
 
@@ -415,7 +437,6 @@ local TABLES = {
 	PolicyService = POLICY,
 	VoiceChatService = VOICE,
 	AvatarEditorService = AVATAR,
-	StandardPages = PAGES,
 }
 
 function M.member(class, id, key)

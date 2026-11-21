@@ -3,7 +3,10 @@
 -- and what the Messaging golden measured on a live server: a server hears
 -- its own messages (before PublishAsync returns), every subscriber gets
 -- { Data, Sent }, and the errors for long topics and big or unencodable
--- messages. Messages go through the host to every server of the run.
+-- messages. Messages go through the host to every server of the run;
+-- with the experience's live data on, PublishAsync also reaches its live
+-- servers through Open Cloud. Subscribing can't be live: Open Cloud has no
+-- way to listen, so a Local Run hears only its own servers.
 local host = ...
 
 local M = {}
@@ -12,6 +15,7 @@ local TOPIC_LIMIT = 80
 local MESSAGE_LIMIT = 1024
 
 local serviceId = nil
+local liveFailed = false
 
 local function fail(message)
 	error(message, 0)
@@ -62,7 +66,15 @@ function SERVICE.PublishAsync(self, topic, message)
 	end
 	serviceId = host.id(self)
 	host.publish(topic, text)
-	task.wait()
+	if host.live() and not host.live_read_only() and not liveFailed then
+		local ok, why = pcall(host.ds_live, "publish", topic, text)
+		if not ok then
+			liveFailed = true
+			warn("MessagingService: publishing to the experience's live servers failed (" .. tostring(why) .. "); messages stay in this run")
+		end
+	else
+		task.wait()
+	end
 end
 
 function SERVICE.SubscribeAsync(self, topic, callback)

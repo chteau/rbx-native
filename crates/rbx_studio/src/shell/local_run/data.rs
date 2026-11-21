@@ -105,6 +105,10 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
     let link = crate::home::link_of(path);
     rbx_lua::server::Services {
         universe: dir.as_ref().map(|d| d.to_string_lossy().into_owned()),
+        secrets: dir
+            .as_ref()
+            .map(|d| secrets(&d.join("secrets.json")))
+            .unwrap_or_default(),
         data_file: match mode {
             DataMode::Fresh => None,
             _ => dir.map(|d| d.join("datastores.json")),
@@ -117,6 +121,15 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
         web_lookups: true,
         ..Default::default()
     }
+}
+
+/// Studio's local secrets for `HttpService:GetSecret`, in the format
+/// Studio's Game Settings take them: `{"name": ["value", "domain"]}`.
+fn secrets(file: &Path) -> std::collections::HashMap<String, (String, String)> {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
 /// Connects the run to the experience's real DataStores, as Studio's Play
@@ -164,5 +177,17 @@ mod tests {
         let mut config = services(path, DataMode::Kept);
         assert!(go_live(path, DataMode::Kept, &mut config).contains("isn\u{2019}t published"));
         assert!(config.live.is_none());
+    }
+
+    #[test]
+    fn local_secrets_read_studio_s_format() {
+        let dir = std::env::temp_dir().join(format!("rbxnative-secrets-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("secrets.json");
+        std::fs::write(&file, r#"{"key": ["abc", "*.example.com"]}"#).unwrap();
+        let found = secrets(&file);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(found["key"], ("abc".into(), "*.example.com".into()));
+        assert!(secrets(Path::new("/nowhere/secrets.json")).is_empty());
     }
 }

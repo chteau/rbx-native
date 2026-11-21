@@ -13,6 +13,8 @@
 //! the editor.
 
 mod store;
+mod stream;
+mod web;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -70,19 +72,53 @@ pub struct Services {
     /// real users, as on Roblox; off, everyone is a guest owning nothing
     /// (headless tests stay hermetic).
     pub web_lookups: bool,
+    /// Where `AssetService:LoadAssetAsync` and `InsertService:LoadAsset`
+    /// download models from; `None` fails them as an offline run would.
+    pub assets: Option<Arc<dyn AssetSource>>,
+    /// The editor's Roblox web sign-in, for what only a signed-in user may
+    /// read (their friends); `None` answers as Studio's test players do.
+    pub web_session: Option<WebSession>,
+    /// Studio's local secrets for `HttpService:GetSecret`: name → (value,
+    /// the domain it may be sent to).
+    pub secrets: HashMap<String, (String, String)>,
 }
 
-/// A run's live DataStores: each `DataStoreService` storage call (`op` is
+/// A model asset's file (binary or XML), by id. Called off the script
+/// thread.
+pub trait AssetSource: Send + Sync + std::fmt::Debug {
+    fn fetch(&self, id: u64) -> std::result::Result<Vec<u8>, String>;
+}
+
+/// A `.ROBLOSECURITY` cookie's value, never printed.
+#[derive(Clone, PartialEq)]
+pub struct WebSession(pub String);
+
+impl std::fmt::Debug for WebSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WebSession(..)")
+    }
+}
+
+/// A run's live web data: each `DataStoreService` storage call (`op` is
 /// `get`, `put`, `remove`, `versions`, `version`, `version_at`,
 /// `remove_version`, `keys`, `stores` or `entries`, with the local store's
-/// arguments) answered as the local store answers it, as JSON, or with the
-/// error message the script sees. Called off the script thread.
+/// arguments), each `MemoryStoreService` sorted map and queue call
+/// (`map_get`, `map_set`, `map_remove`, `map_list`, `queue_add`,
+/// `queue_read`, `queue_remove`) and MessagingService's `publish`,
+/// answered as the local store answers it, as JSON, or with the error
+/// message the script sees. Called off the script thread.
 pub trait LiveData: Send + Sync + std::fmt::Debug {
     fn call(
         &self,
         op: &str,
         args: &[serde_json::Value],
     ) -> std::result::Result<serde_json::Value, String>;
+
+    /// Writes stay in the run (the guard for games that must not change):
+    /// queues and messages then stay local altogether.
+    fn read_only(&self) -> bool {
+        false
+    }
 }
 
 /// A player's arrival from a teleport.
@@ -177,6 +213,9 @@ impl Default for Services {
             game_id: 0,
             live: None,
             web_lookups: false,
+            assets: None,
+            web_session: None,
+            secrets: HashMap::new(),
         }
     }
 }
@@ -252,11 +291,17 @@ pub(crate) struct Runtime {
     teleports: RefCell<Vec<TeleportRequest>>,
     notices: RefCell<Vec<Notice>>,
     finished: Finished,
+    /// What the run's web stream clients heard, and how to talk to them.
+    streams: stream::Inbox,
+    stream_out: RefCell<HashMap<u32, std::sync::mpsc::Sender<stream::Out>>>,
     client: Rc<Cell<bool>>,
     physics: Rc<dyn super::Physics>,
     /// For the drag packets a client sends its server.
     remotes: super::remote::Shared,
 }
+
+/// Downloaded model assets waiting to be made into instances.
+static DOWNLOADS: LazyLock<Mutex<HashMap<u64, Vec<u8>>>> = LazyLock::new(Mutex::default);
 
 static PRODUCT_INFO: LazyLock<Mutex<HashMap<String, serde_json::Value>>> =
     LazyLock::new(Mutex::default);
@@ -278,6 +323,8 @@ impl Runtime {
             teleports: RefCell::default(),
             notices: RefCell::default(),
             finished: Arc::default(),
+            streams: Arc::default(),
+            stream_out: RefCell::default(),
             client,
             physics,
             remotes,
@@ -350,6 +397,7 @@ const MODULES: &[(&str, &str)] = &[
     ("Drag", include_str!("services/drag.luau")),
     ("InputActions", include_str!("services/input_actions.luau")),
     ("Prompts", include_str!("services/prompts.luau")),
+    ("Web", include_str!("services/web.luau")),
 ];
 
 /// The module that answers `class`.
@@ -379,18 +427,17 @@ fn module_of(class: &str) -> Option<&'static str> {
         "MarketplaceService" => "MarketplaceService",
         "HttpService" => "HttpService",
         "PathfindingService" | "Path" => "PathfindingService",
-        "Debris" | "Players" | "Player" | "RunService" | "FriendPages" | "ContentProvider"
-        | "ReplicatedFirst" | "UserSettings" | "UserGameSettings" | "PlayerScripts"
-        | "ScriptContext" => "Helpers",
+        "Debris" | "Players" | "Player" | "RunService" | "ContentProvider" | "ReplicatedFirst"
+        | "UserSettings" | "UserGameSettings" | "PlayerScripts" | "ScriptContext" => "Helpers",
         "TeleportService" | "TeleportOptions" | "TeleportAsyncResult" => "TeleportService",
+        "WebStreamClient" => "HttpService",
         "BadgeService" => "BadgeService",
         "GroupService"
         | "UserService"
         | "SocialService"
         | "PolicyService"
         | "AvatarEditorService"
-        | "VoiceChatService"
-        | "StandardPages" => "Social",
+        | "VoiceChatService" => "Social",
         "TextService" | "TextFilterResult" | "Chat" => "Text",
         "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
         "GuiService" => "GuiService",
@@ -398,6 +445,18 @@ fn module_of(class: &str) -> Option<&'static str> {
         "DragDetector" | "UIDragDetector" | "ClickDetector" | "Camera" | "PlayerMouse" => "Drag",
         "InputAction" | "InputBinding" | "InputContext" => "InputActions",
         "ProximityPromptService" | "ProximityPrompt" => "Prompts",
+        "AssetService"
+        | "InsertService"
+        | "AnalyticsService"
+        | "ExperienceNotificationService"
+        | "CommerceService"
+        | "ConfigService"
+        | "ConfigSnapshot"
+        | "MatchmakingService"
+        | "StandardPages"
+        | "FriendPages"
+        | "AudioPages"
+        | "BanHistoryPages" => "Web",
         _ => return None,
     })
 }
@@ -632,6 +691,22 @@ pub(crate) fn poll(lua: &Lua, runtime: &Rc<Runtime>) -> Result<()> {
     if let Some(last) = fresh.last() {
         runtime.cursor.set(last.0 + 1);
     }
+    let heard = std::mem::take(&mut *runtime.streams.lock().unwrap_or_else(|e| e.into_inner()));
+    if !heard.is_empty() {
+        let deliver: Function = module(lua, runtime, "HttpService")?.get("stream_event")?;
+        for (id, event) in heard {
+            let (kind, code, text) = match event {
+                stream::Event::Opened(code, headers) => ("Opened", code, headers),
+                stream::Event::Message(text) => ("MessageReceived", 0, text),
+                stream::Event::Error(code, text) => ("Error", code, text),
+                stream::Event::Closed => {
+                    runtime.stream_out.borrow_mut().remove(&id);
+                    ("Closed", 0, String::new())
+                }
+            };
+            deliver.call::<()>((id, kind, code, text))?;
+        }
+    }
     if fresh.is_empty() || runtime.client.get() {
         return Ok(());
     }
@@ -739,6 +814,17 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "live",
         lua.create_function(move |_, ()| Ok(r.config.borrow().live.is_some()))?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "live_read_only",
+        lua.create_function(move |_, ()| {
+            Ok(r.config
+                .borrow()
+                .live
+                .as_ref()
+                .is_some_and(|l| l.read_only()))
+        })?,
     )?;
     let r = runtime.clone();
     let live = lua.create_function(move |lua, (op, args): (String, MultiValue)| {
@@ -940,6 +1026,120 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     )?;
     let r = runtime.clone();
     host.set(
+        "stream_open",
+        lua.create_function(
+            move |_,
+                  (id, kind, url, method, headers, body): (
+                u32,
+                String,
+                String,
+                String,
+                Table,
+                Option<String>,
+            )| {
+                let kind = match kind.as_str() {
+                    "SSE" => stream::Kind::Sse,
+                    "WebSocket" => stream::Kind::WebSocket,
+                    _ => stream::Kind::Raw,
+                };
+                let request = HttpRequest {
+                    url,
+                    method,
+                    headers: headers
+                        .pairs::<String, String>()
+                        .collect::<Result<Vec<_>>>()?,
+                    body,
+                };
+                let out = stream::open(id, kind, request, r.streams.clone());
+                r.stream_out.borrow_mut().insert(id, out);
+                Ok(())
+            },
+        )?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "stream_send",
+        lua.create_function(move |_, (id, text): (u32, Option<String>)| {
+            let out = r.stream_out.borrow();
+            let Some(out) = out.get(&id) else {
+                return Ok(false);
+            };
+            let _ = out.send(match text {
+                Some(text) => stream::Out::Send(text),
+                None => stream::Out::Close,
+            });
+            Ok(true)
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "secret",
+        lua.create_function(
+            move |lua, name: String| match r.config.borrow().secrets.get(&name) {
+                Some((value, domain)) => crate::datatypes::secret::LuaSecret {
+                    value: value.clone(),
+                    domain: domain.clone(),
+                }
+                .into_lua(lua),
+                None => Ok(Value::Nil),
+            },
+        )?,
+    )?;
+    // A request part as sent: a Secret's value when `url` may carry it
+    // (nil for anything else).
+    host.set(
+        "reveal",
+        lua.create_function(|_, (value, url): (Value, Option<String>)| {
+            let Some(secret) = value
+                .as_userdata()
+                .and_then(|u| u.borrow::<crate::datatypes::secret::LuaSecret>().ok())
+                .map(|s| s.clone())
+            else {
+                return Ok(None);
+            };
+            // Without a URL the secret is the URL itself.
+            let host = http::host_of(url.as_deref().unwrap_or(&secret.value)).unwrap_or_default();
+            if !secret.allows(&host) {
+                return Err(mlua::Error::runtime(
+                    "Secret can't be used with this domain",
+                ));
+            }
+            Ok(Some(secret.value))
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "analytics",
+        lua.create_function(move |_, line: String| {
+            let file = r
+                .config
+                .borrow()
+                .data_file
+                .as_ref()
+                .and_then(|f| f.parent().map(|d| d.join("analytics.jsonl")));
+            if let Some(file) = file {
+                use std::io::Write;
+                if let Ok(mut out) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(file)
+                {
+                    let _ = writeln!(out, "{line}");
+                }
+            }
+            Ok(())
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "revoke",
+        lua.create_function(move |_, (user, item): (i64, String)| {
+            r.data(|d| d.revoke(user, &item));
+            Ok(())
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
         "publish",
         lua.create_function(move |_, (topic, text): (String, String)| {
             let universe = r.universe.borrow().clone();
@@ -1090,6 +1290,91 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         },
     )?;
     host.set("web", checked(lua, scheduler::yielding(lua, web)?)?)?;
+    // A GET as the editor's signed-in user, never kept on disk; fails as
+    // a refused request without a sign-in.
+    let r = runtime.clone();
+    let signed = lua.create_function(move |lua, (url, what): (String, String)| {
+        let session = r.config.borrow().web_session.clone();
+        Ok(in_background(lua, &r, move || {
+            let Some(WebSession(cookie)) = session else {
+                return Err(format!("{what} failed because HTTP 401 (Unauthorized)"));
+            };
+            let request = HttpRequest {
+                url,
+                method: "GET".into(),
+                headers: vec![("Cookie".into(), format!(".ROBLOSECURITY={cookie}"))],
+                body: None,
+            };
+            fetch_cached(format!("signed {}", request.url), request, &what, None)
+        }))
+    })?;
+    host.set(
+        "web_signed",
+        checked(lua, scheduler::yielding(lua, signed)?)?,
+    )?;
+    host.set(
+        "signed_in",
+        lua.create_function({
+            let r = runtime.clone();
+            move |_, ()| Ok(r.config.borrow().web_session.is_some())
+        })?,
+    )?;
+    // A model asset downloaded off the script thread (its bytes wait in
+    // `DOWNLOADS` under the answer's number), then made into a Model here.
+    let r = runtime.clone();
+    let download = lua.create_function(move |lua, id: i64| {
+        let source = r.config.borrow().assets.clone();
+        Ok(in_background(lua, &r, move || {
+            let source = source.ok_or_else(|| "HTTP 0 (offline)".to_owned())?;
+            let bytes = source.fetch(id.max(0) as u64)?;
+            let mut downloads = DOWNLOADS.lock().unwrap_or_else(|e| e.into_inner());
+            let token = downloads.keys().max().map_or(1, |k| k + 1);
+            downloads.insert(token, bytes);
+            Ok(serde_json::json!(token))
+        }))
+    })?;
+    host.set(
+        "download_asset",
+        checked(lua, scheduler::yielding(lua, download)?)?,
+    )?;
+    host.set(
+        "model_of_download",
+        lua.create_function(|lua, (token, name): (u64, String)| {
+            let bytes = DOWNLOADS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&token)
+                .unwrap_or_default();
+            let model = if bytes.starts_with(b"<roblox!") {
+                rbx_binary::deserialize(&bytes[..]).map_err(|e| e.to_string())
+            } else {
+                std::str::from_utf8(&bytes)
+                    .map_err(|e| e.to_string())
+                    .and_then(|text| rbx_xml::deserialize(text).map_err(|e| e.to_string()))
+            }
+            .map_err(mlua::Error::runtime)?;
+            let ctx = engine(lua).ctx.clone();
+            let root = {
+                let mut dom = ctx.dom_mut();
+                let root = dom.new_instance("Model", &name, None);
+                dom.unparent(root);
+                for &child in model.root_refs() {
+                    crate::plugin::loader::copy_tree(&model, child, &mut dom, Some(root));
+                }
+                root
+            };
+            LuaInstance::new(root, ctx).into_lua(lua)
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "pages",
+        lua.create_function(move |lua, args: MultiValue| {
+            module(lua, &r, "Web")?
+                .get::<Function>("pages")?
+                .call::<Value>(args)
+        })?,
+    )?;
     // What a real user owns, as the public inventory API says
     // (a private inventory or a failed request owns nothing). Test players
     // (ids below 1) are never asked about, nor anyone without `web_lookups`.
@@ -1418,6 +1703,28 @@ fn user_lookup(
     Ok(answer)
 }
 
+/// How long a request Roblox refused as bad (an unknown user, a missing
+/// asset) answers from memory, so a game asking again and again doesn't
+/// spend its budget on it.
+const REFUSAL_KEPT: std::time::Duration = std::time::Duration::from_secs(60);
+
+static REFUSED: LazyLock<Mutex<HashMap<String, (std::time::Instant, String)>>> =
+    LazyLock::new(Mutex::default);
+
+fn refused(key: &str) -> Option<String> {
+    let map = REFUSED.lock().ok()?;
+    map.get(key)
+        .filter(|(at, _)| at.elapsed() < REFUSAL_KEPT)
+        .map(|(_, message)| message.clone())
+}
+
+fn remember_refusal(key: String, message: &str) {
+    if let Ok(mut map) = REFUSED.lock() {
+        map.retain(|_, (at, _)| at.elapsed() < REFUSAL_KEPT);
+        map.insert(key, (std::time::Instant::now(), message.to_owned()));
+    }
+}
+
 /// A JSON answer from Roblox's web APIs, kept in memory and in `file`; the
 /// kept copy answers when the request fails. `what` names the call in the
 /// errors.
@@ -1430,7 +1737,10 @@ fn fetch_cached(
     if let Some(found) = PRODUCT_INFO.lock().ok().and_then(|m| m.get(&key).cloned()) {
         return Ok(found);
     }
-    let fetched = http::send(&request);
+    if let Some(message) = refused(&key) {
+        return Err(message);
+    }
+    let fetched = web::send(&request);
 
     let from_disk = || {
         file.as_ref()
@@ -1444,10 +1754,14 @@ fn fetch_cached(
         }
         Ok(response) => {
             return from_disk().ok_or_else(|| {
-                format!(
+                let message = format!(
                     "{what} failed because HTTP {} ({})",
                     response.status_code, response.status_message
-                )
+                );
+                if matches!(response.status_code, 400 | 404) {
+                    remember_refusal(key, &message);
+                }
+                message
             })
         }
         Err(error) => {

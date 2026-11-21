@@ -377,6 +377,37 @@ function STORE.GetAsync(self, key)
 	return decode(entry.value), keyInfo(entry)
 end
 
+local BATCH_LIMIT = 100
+
+-- Ordered stores only: each key there maps to { value = ... }, missing
+-- keys are left out. Each key spends a read.
+function STORE.BatchGetAsync(self, keys)
+	if not self.ordered then
+		fail(
+			'{"errorType":"BatchGetUnsupportedOperation","errorMessage":"BatchGetAsync is not supported.","callbackMessage":"BatchGetAsync is not supported."}'
+		)
+	end
+	if type(keys) ~= "table" then
+		fail("Unable to cast " .. typeof(keys) .. " to Array")
+	end
+	if #keys == 0 then
+		fail("OrderedDataStore BatchGetAsync keys array cannot be empty.")
+	end
+	if #keys > BATCH_LIMIT then
+		fail("OrderedDataStore BatchGetAsync takes at most " .. BATCH_LIMIT .. " keys.")
+	end
+	local out = {}
+	for _, key in keys do
+		local bucket, name = locate(self, key)
+		request({ "GetAsync", "OrderedRead" }, name)
+		local entry = ds("get", bucket, name)
+		if entry then
+			out[name] = { value = decode(entry.value) }
+		end
+	end
+	return out
+end
+
 local function orderedValue(value)
 	if type(value) == "number" then
 		if value ~= math.floor(value) then

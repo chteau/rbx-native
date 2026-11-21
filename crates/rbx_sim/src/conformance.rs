@@ -578,6 +578,16 @@ pub const TESTS: &[Test] = &[
         tolerance: &[],
     },
     Test {
+        name: "WebMarket",
+        source: include_str!("../conformance/tests/WebMarket.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "WebServices",
+        source: include_str!("../conformance/tests/WebServices.luau"),
+        tolerance: &[],
+    },
+    Test {
         name: "ClientApis",
         source: include_str!("../conformance/tests/ClientApis.luau"),
         tolerance: &[],

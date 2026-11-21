@@ -61,13 +61,14 @@ end
 -- The handler for a receipt: the newest bound one whose filter takes its
 -- product, else ProcessReceipt.
 local function handlerFor(receipt)
+	local kind = receipt.ReceiptType or Enum.ReceiptType.DeveloperProduct
 	for i = #handlers, 1, -1 do
 		local entry = handlers[i]
-		if not entry.filter or entry.filter[receipt.ProductId] then
+		if entry.receiptType == kind and (not entry.filter or entry.filter[receipt.ProductId]) then
 			return entry.handler
 		end
 	end
-	return processReceipt
+	return if kind == Enum.ReceiptType.DeveloperProduct then processReceipt else nil
 end
 
 local function grant(receipt)
@@ -158,7 +159,7 @@ function SERVICE.BindReceiptHandler(self, receiptType, handler, filter)
 			set[productId] = true
 		end
 	end
-	local entry = { handler = handler, filter = set }
+	local entry = { handler = handler, filter = set, receiptType = receiptType }
 	table.insert(handlers, entry)
 	if host.server() then
 		startRetries()
@@ -239,6 +240,245 @@ function SERVICE.GetProductInfo(_, id, infoType)
 end
 SERVICE.GetProductInfoAsync = SERVICE.GetProductInfo
 
+-- The newer prompts: each goes to the host's test dialog, nothing paid.
+local function playerOf(method, player)
+	if not isPlayer(player) then
+		fail("MarketplaceService:" .. method .. "(): player should be of type Player.")
+	end
+	return player
+end
+
+-- Not released on Roblox yet: a live server refuses these (golden
+-- WebMarket).
+local function unreleased(method)
+	fail("MarketplaceService:" .. method .. "() API is not yet released.")
+end
+
+function SERVICE.OpenShop(_, _player)
+	unreleased("OpenShop")
+end
+
+local BULK_LIMIT = 20
+
+function SERVICE.PromptBulkPurchase(self, player, lineItems, _options)
+	serviceId = host.id(self)
+	if type(lineItems) ~= "table" then
+		fail("Unable to cast " .. typeof(lineItems) .. " to Array")
+	end
+	-- A live server shrugs off an empty list (even without a player).
+	if #lineItems == 0 then
+		return
+	end
+	playerOf("PromptBulkPurchase", player)
+	if not host.server() then
+		fail("MarketplaceService:PromptBulkPurchase() can only be called from the server")
+	end
+	if #lineItems > BULK_LIMIT then
+		fail("MarketplaceService:PromptBulkPurchase(): lineItems must hold 1 to " .. BULK_LIMIT .. " items")
+	end
+	local ids = {}
+	for _, item in lineItems do
+		if type(item) ~= "table" or typeof(item.Type) ~= "EnumItem" or item.Id == nil then
+			fail("MarketplaceService:PromptBulkPurchase(): each line item needs a Type and an Id")
+		end
+		if type(item.PurchaseOptions) == "table" and #item.PurchaseOptions > 1 then
+			fail("MarketplaceService:PromptBulkPurchase(): PurchaseOptions supports only one entry")
+		end
+		local what = if item.Type == Enum.MarketplaceProductType.AvatarBundle then "bundle:" else "asset:"
+		table.insert(ids, what .. tostring(item.Id))
+	end
+	host.prompt("MarketplaceService.PromptBulkPurchase", player, #ids, table.concat(ids, ","))
+end
+
+function SERVICE.PromptCancelSubscription(self, player, subscription)
+	serviceId = host.id(self)
+	if not isPlayer(player) then
+		fail("First argument to PromptCancelSubscription must be a player")
+	end
+	host.prompt("MarketplaceService.PromptCancelSubscription", player, 0, tostring(subscription))
+end
+
+function SERVICE.PromptRobloxSubscriptionPurchase(self, player)
+	serviceId = host.id(self)
+	if not isPlayer(player) then
+		fail("MarketplaceService:promptRobloxSubscriptionPurchase() player should be of type Player")
+	end
+	host.prompt("MarketplaceService.PromptRobloxSubscriptionPurchase", player, 0)
+end
+
+function SERVICE.PromptVIPServerPurchase(_, _player)
+	unreleased("PromptVIPServerPurchase")
+end
+
+local transfers = {} -- transfer id -> { sender, receiver, amount }
+
+function SERVICE.PromptRobuxTransferAsync(self, sender, receiver, amount)
+	serviceId = host.id(self)
+	if sender == nil then
+		fail("Argument 1 missing or nil")
+	end
+	playerOf("PromptRobuxTransferAsync", sender)
+	if not host.server() then
+		fail("MarketplaceService:PromptRobuxTransferAsync() can only be called from the server")
+	end
+	receiver = userId(receiver)
+	amount = int64(amount)
+	if amount <= 0 then
+		fail("amount must be a positive integer")
+	end
+	local id = host.guid()
+	transfers[id] = { sender = sender.UserId, receiver = receiver, amount = amount }
+	host.prompt("MarketplaceService.PromptRobuxTransferAsync", sender, amount, id .. "," .. receiver)
+	task.wait()
+	return id
+end
+
+-- Switched off on Roblox for now (golden WebMarket).
+function SERVICE.CanUsersTransferRobuxAsync(_, sender, receiver)
+	if sender == nil then
+		fail("Argument 1 missing or nil")
+	end
+	playerOf("CanUsersTransferRobuxAsync", sender)
+	userId(receiver)
+	task.wait()
+	fail("CanUsersTransferRobuxAsync is not enabled")
+end
+
+-- The experience's developer products, from Roblox's public listing
+-- (none for a place that isn't published).
+function SERVICE.GetDeveloperProductsAsync(_)
+	task.wait()
+	local list = {}
+	if game.GameId ~= 0 then
+		local cursor = ""
+		repeat
+			local found = host.web(
+				"https://apis.roblox.com/developer-products/v2/universes/"
+					.. game.GameId
+					.. "/developerproducts?limit=50"
+					.. cursor,
+				"GET",
+				nil,
+				"MarketplaceService:GetDeveloperProductsAsync()"
+			)
+			for _, product in found.developerProducts or {} do
+				table.insert(list, {
+					ProductId = product.productId or product.id,
+					DeveloperProductId = product.id or product.productId,
+					Name = product.name,
+					Description = product.description,
+					PriceInRobux = product.priceInRobux,
+					IconImageAssetId = product.iconImageAssetId,
+				})
+			end
+			cursor = if type(found.nextPageCursor) == "string" then "&cursor=" .. found.nextPageCursor else ""
+		until cursor == ""
+	end
+	return host.pages("StandardPages", list, 50)
+end
+
+-- Roblox refuses a subscription id it doesn't know with HTTP 400; offline
+-- an id is known once the ledger has it or when it looks like a real one
+-- (EXP- and a long number).
+local function subscriptionArgs(method, player, subscription)
+	if not isPlayer(player) then
+		fail("Argument 1 missing or nil")
+	end
+	if type(subscription) ~= "string" then
+		fail("Unable to cast " .. typeof(subscription) .. " to string")
+	end
+	if not host.server() then
+		fail("MarketplaceService:" .. method .. "() can only be called from the server")
+	end
+	task.wait()
+	if not subscription:match("^EXP%-%d%d%d%d%d+$") and not host.owns(player.UserId, "subscription:" .. subscription) then
+		fail("MarketPlaceService::" .. method .. " failed because: HTTP 400")
+	end
+end
+
+function SERVICE.GetSubscriptionProductInfoAsync(_, subscription)
+	if host.server() then
+		fail("Can only call GetSubscriptionProductInfoAsync from Script with RunContext = Client")
+	end
+	if type(subscription) ~= "string" then
+		fail("Unable to cast " .. typeof(subscription) .. " to string")
+	end
+	task.wait()
+	fail("MarketplaceService:GetSubscriptionProductInfoAsync() failed: subscription " .. subscription .. " was not found")
+end
+
+local MONTH = 30 * 24 * 3600
+
+function SERVICE.GetUserSubscriptionDetailsAsync(_, player, subscription)
+	subscriptionArgs("GetUserSubscriptionDetailsAsync", player, subscription)
+	if host.owns(player.UserId, "subscription:" .. subscription) then
+		return {
+			SubscriptionState = Enum.SubscriptionState.SubscribedWillRenew,
+			NextRenewTime = DateTime.fromUnixTimestamp(os.time() + MONTH),
+		}
+	end
+	return { SubscriptionState = Enum.SubscriptionState.NeverSubscribed }
+end
+
+function SERVICE.GetUserSubscriptionPaymentHistoryAsync(_, player, subscription)
+	subscriptionArgs("GetUserSubscriptionPaymentHistoryAsync", player, subscription)
+	if host.owns(player.UserId, "subscription:" .. subscription) then
+		return {
+			{
+				CycleStartTime = DateTime.fromUnixTimestamp(os.time()),
+				CycleEndTime = DateTime.fromUnixTimestamp(os.time() + MONTH),
+				PaymentStatus = Enum.SubscriptionPaymentStatus.Paid,
+			},
+		}
+	end
+	return {}
+end
+
+function SERVICE.GetRobloxSubscriptionDetailsAsync(_, player)
+	if not isPlayer(player) then
+		fail("Argument 1 missing or nil")
+	end
+	task.wait()
+	return { IsSubscribed = host.owns(player.UserId, "roblox-subscription"), IsOriginExperience = false }
+end
+
+-- Regional price levels: Roblox's base market (100) for everyone here.
+function SERVICE.GetUsersPriceLevelsAsync(_, userIds)
+	if type(userIds) ~= "table" then
+		fail("Unable to cast " .. typeof(userIds) .. " to Array")
+	end
+	task.wait()
+	local out = {}
+	for _, id in userIds do
+		table.insert(out, { UserId = userId(id), PriceLevel = 100 })
+	end
+	return out
+end
+
+-- No personalisation without Roblox's recommender: the products come
+-- back in the order given, recommendations empty.
+function SERVICE.RankProductsAsync(_, products)
+	if type(products) ~= "table" then
+		fail("Unable to cast " .. typeof(products) .. " to Array")
+	end
+	if #products == 0 then
+		fail("MarketplaceService:RankProductsAsync() must have at least one ProductIdentifier.")
+	end
+	task.wait()
+	return table.clone(products)
+end
+
+function SERVICE.RecommendTopProductsAsync(_, infoTypes)
+	if host.server() then
+		fail("MarketplaceService:RecommendTopProductsAsync() Cannot be called from the Server.")
+	end
+	if type(infoTypes) ~= "table" then
+		fail("Unable to cast " .. typeof(infoTypes) .. " to Array")
+	end
+	task.wait()
+	return {}
+end
+
 local EVENTS = {
 	PromptPurchaseFinished = true,
 	PromptProductPurchaseFinished = true,
@@ -250,6 +490,7 @@ local EVENTS = {
 	PromptGamePassPurchaseRequested = true,
 	PromptBulkPurchaseFinished = true,
 	PromptPremiumPurchaseFinished = true,
+	PromptRobloxSubscriptionPurchaseFinished = true,
 }
 
 function M.member(_, id, key)
@@ -281,11 +522,82 @@ function M.set(_, id, key, value)
 end
 
 -- The host's purchase dialog closed: `bought` when the player confirmed.
+-- A receipt for whoever bound a handler of its type.
+local function deliver(receipt)
+	table.insert(pending, receipt)
+	startRetries()
+	task.spawn(retry, receipt.PlayerId)
+end
+
+-- The host's dialog closed on one of the newer prompts.
+local function finishedMore(kind, player, bought, extra)
+	local user = player.UserId
+	if kind == "MarketplaceService.PromptBulkPurchase" then
+		local items = {}
+		for entry in string.gmatch(extra, "[^,]+") do
+			local what, itemId = string.match(entry, "^(%a+):(.+)$")
+			if bought then
+				host.grant(user, entry)
+			end
+			table.insert(items, {
+				type = if what == "bundle"
+					then Enum.MarketplaceProductType.AvatarBundle
+					else Enum.MarketplaceProductType.AvatarAsset,
+				id = itemId,
+				status = if bought
+					then Enum.MarketplaceItemPurchaseStatus.Success
+					else Enum.MarketplaceItemPurchaseStatus.SystemError,
+			})
+		end
+		local status = if bought
+			then Enum.MarketplaceBulkPurchasePromptStatus.Completed
+			else Enum.MarketplaceBulkPurchasePromptStatus.Aborted
+		host.fire(serviceId, "PromptBulkPurchaseFinished", player, status, { RobuxSpent = 0, Items = items })
+	elseif kind == "MarketplaceService.PromptCancelSubscription" then
+		if bought and host.owns(user, "subscription:" .. extra) then
+			host.revoke(user, "subscription:" .. extra)
+			local players = game:GetService("Players")
+			host.fire(host.id(players), "UserSubscriptionStatusChanged", player, extra)
+		end
+	elseif kind == "MarketplaceService.PromptRobloxSubscriptionPurchase" then
+		if bought then
+			host.grant(user, "roblox-subscription")
+		end
+		host.fire(serviceId, "PromptRobloxSubscriptionPurchaseFinished", player, bought)
+	elseif kind == "MarketplaceService.PromptRobuxTransferAsync" then
+		local transferId = string.match(extra, "^([^,]+)")
+		local transfer = transfers[transferId]
+		transfers[transferId] = nil
+		if bought and transfer and host.server() then
+			local function receipt(receiptType, who)
+				return {
+					ReceiptType = receiptType,
+					PlayerId = who,
+					TransferRequestId = transferId,
+					SenderUserId = transfer.sender,
+					ReceiverUserId = transfer.receiver,
+					CurrencySpent = transfer.amount,
+					CurrencyType = Enum.CurrencyType.Robux,
+					PurchaseId = host.guid(),
+					PlaceIdWherePurchased = game.PlaceId,
+				}
+			end
+			deliver(receipt(Enum.ReceiptType.RobuxTransferSender, transfer.sender))
+			deliver(receipt(Enum.ReceiptType.RobuxTransferReceiver, transfer.receiver))
+		end
+	end
+end
+
 function M.finished(kind, player, id, bought, subscription)
 	if not serviceId or not player then
 		return
 	end
+	if string.find(kind, "MarketplaceService.", 1, true) == 1 then
+		finishedMore(kind, player, bought, subscription)
+		return
+	end
 	local user = player.UserId
+
 	if bought then
 		if kind == "GamePass" then
 			host.grant(user, "pass:" .. id)

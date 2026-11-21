@@ -1,7 +1,7 @@
 --!nonstrict
 -- The smaller helpers of Debris, Players, Player and RunService that a
--- Local Run answers by itself: one machine, no friends or groups online,
--- no network delay, no prediction. Members not listed here fall through
+-- Local Run answers by itself: one machine, friends and groups as the web
+-- tells the editor's signed-in user, no network delay, no prediction. Members not listed here fall through
 -- to the engine's own.
 local host = ...
 
@@ -22,19 +22,57 @@ local function userId(value)
 	return value
 end
 
--- A friends listing: one (empty) page, finished.
-local function pages()
-	return (host.new("FriendPages", "FriendPages"))
+-- The friends of `user` as the web tells the editor's signed-in user
+-- ({ id, name, displayName } each, kept for the run). Test players (ids
+-- below 1) and a run without a sign-in have none, as Studio's test
+-- players.
+local friendsKept = {}
+local function friendsOf(user)
+	if user < 1 or not host.signed_in() then
+		return {}
+	end
+	if friendsKept[user] then
+		return friendsKept[user]
+	end
+	local ok, found = pcall(host.web_signed, "https://friends.roblox.com/v1/users/" .. user .. "/friends", "Players:GetFriendsAsync()")
+	local list = {}
+	local missing = {}
+	for _, entry in (ok and type(found) == "table" and found.data) or {} do
+		local friend = { id = entry.id, name = entry.name, displayName = entry.displayName }
+		if friend.name == nil or friend.name == "" then
+			table.insert(missing, friend)
+		end
+		table.insert(list, friend)
+	end
+	-- The friends API may leave the names out: the users API has them.
+	for from = 1, #missing, 100 do
+		local ids = {}
+		for i = from, math.min(from + 99, #missing) do
+			table.insert(ids, missing[i].id)
+		end
+		local okNames, names = pcall(host.web, "https://users.roblox.com/v1/users", "POST", host.encode({ userIds = ids, excludeBannedUsers = false }), "Players:GetFriendsAsync()")
+		local byId = {}
+		for _, user in (okNames and type(names) == "table" and names.data) or {} do
+			byId[user.id] = user
+		end
+		for i = from, math.min(from + 99, #missing) do
+			local user = byId[missing[i].id]
+			missing[i].name = user and user.name or ""
+			missing[i].displayName = user and user.displayName or missing[i].name
+		end
+	end
+	friendsKept[user] = list
+	return list
 end
 
-local FRIEND_PAGES = {}
-
-function FRIEND_PAGES.GetCurrentPage(_)
-	return {}
-end
-
-function FRIEND_PAGES.AdvanceToNextPageAsync(_)
-	fail("No pages to advance to")
+-- Who of `user`'s friends is online, as the presence API tells the
+-- signed-in user about their own friends.
+local function onlineFriends(user)
+	if user < 1 or not host.signed_in() then
+		return {}
+	end
+	local ok, found = pcall(host.web_signed, "https://friends.roblox.com/v1/users/" .. user .. "/friends/online", "Player:GetFriendsOnlineAsync()")
+	return (ok and type(found) == "table" and found.data) or {}
 end
 
 local DEBRIS = {}
@@ -104,12 +142,86 @@ local function roleIn(user, group)
 	return nil
 end
 
--- Friends lists need a signed-in session on the web, which a Local Run
--- doesn't have: nobody has friends here.
-function PLAYERS.GetFriendsAsync(_, id)
-	userId(id)
-	return pages()
+function PLAYERS.GetFriendsAsync(self, id)
+	id = userId(id)
+	local list = {}
+	for _, friend in friendsOf(id) do
+		local here = playerById(self, friend.id) ~= nil
+		table.insert(list, { Id = friend.id, Username = friend.name, DisplayName = friend.displayName, IsOnline = here })
+	end
+	task.wait()
+	return host.pages("FriendPages", list, 50)
 end
+
+-- Bans, as Studio tests them: kept for the run and never sent to
+-- production. A banned player is kicked with the display reason, and so
+-- is one joining while banned.
+local bans = {} -- user id -> ban config
+local watching = false
+
+local function banConfig(method, config)
+	if not host.server() then
+		fail("Players:" .. method .. "() can only be called from the server")
+	end
+	if type(config) ~= "table" then
+		fail("Unable to cast " .. (config == nil and "nil" or typeof(config)) .. " to Dictionary")
+	end
+	if type(config.UserIds) ~= "table" or #config.UserIds == 0 then
+		fail("Config must contain field UserIds with type array")
+	end
+	local ids = {}
+	for _, id in config.UserIds do
+		table.insert(ids, userId(id))
+	end
+	return ids
+end
+
+function PLAYERS.BanAsync(self, config)
+	local ids = banConfig("BanAsync", config)
+	if type(config.Duration) ~= "number" or (config.Duration < 1 and config.Duration ~= -1) then
+		fail("Players:BanAsync(): Duration must be a positive number of seconds, or -1 for a permanent ban")
+	end
+	local reason = config.DisplayReason
+	if type(reason) ~= "string" or #reason > 400 then
+		fail("Players:BanAsync(): DisplayReason must be a string of at most 400 characters")
+	end
+	if config.PrivateReason ~= nil and (type(config.PrivateReason) ~= "string" or #config.PrivateReason > 1000) then
+		fail("Players:BanAsync(): PrivateReason must be a string of at most 1000 characters")
+	end
+	task.wait()
+	if not watching then
+		watching = true
+		self.PlayerAdded:Connect(function(player)
+			local ban = bans[player.UserId]
+			if ban then
+				player:Kick(ban.DisplayReason)
+			end
+		end)
+	end
+	for _, id in ids do
+		bans[id] = table.clone(config)
+		local player = playerById(self, id)
+		if player then
+			player:Kick(reason)
+		end
+	end
+end
+
+function PLAYERS.UnbanAsync(_, config)
+	local ids = banConfig("UnbanAsync", config)
+	task.wait()
+	for _, id in ids do
+		bans[id] = nil
+	end
+end
+
+-- The history lives on Roblox's servers, which only a live server asks.
+function PLAYERS.GetBanHistoryAsync(_, id)
+	userId(id)
+	task.wait()
+	fail("Players:GetBanHistoryAsync() only works on a live server, not in Studio")
+end
+
 
 -- A web call on Roblox: it yields, so a script that fetches one inside a
 -- RemoteEvent handler sees what arrived alongside the event first.
@@ -203,8 +315,14 @@ function PLAYER.LoadCharacterAsync(self)
 	self:LoadCharacter()
 end
 
-function PLAYER.IsFriendsWithAsync(_, id)
-	userId(id)
+function PLAYER.IsFriendsWithAsync(self, id)
+	id = userId(id)
+	task.wait()
+	for _, friend in friendsOf(self.UserId) do
+		if friend.id == id then
+			return true
+		end
+	end
 	return false
 end
 
@@ -226,11 +344,69 @@ function PLAYER.GetRoleInGroupAsync(self, id)
 end
 PLAYER.GetRoleInGroup = PLAYER.GetRoleInGroupAsync
 
-function PLAYER.GetFriendsOnlineAsync(_)
-	return {}
+function PLAYER.GetFriendsOnlineAsync(self, maxFriends)
+	maxFriends = math.clamp(tonumber(maxFriends) or 200, 1, 200)
+	task.wait()
+	local out = {}
+	for _, entry in onlineFriends(self.UserId) do
+		if #out >= maxFriends then
+			break
+		end
+		local presence = entry.userPresence or {}
+		table.insert(out, {
+			VisitorId = entry.id,
+			UserName = entry.name,
+			DisplayName = entry.displayName,
+			LastOnline = presence.lastOnline or "",
+			IsOnline = true,
+			LastLocation = presence.lastLocation or "",
+			PlaceId = presence.placeId,
+			GameId = presence.gameInstanceId,
+			LocationType = if presence.UserPresenceType == "InGame" then 4 else 2,
+		})
+	end
+	return out
 end
 
-function PLAYER.GetFriendsInServerAsync(_)
+function PLAYER.GetFriendsInServerAsync(self)
+	local players = game:GetService("Players")
+	local out = {}
+	for _, friend in friendsOf(self.UserId) do
+		local here = playerById(players, friend.id)
+		if here then
+			table.insert(out, here)
+		end
+	end
+	return out
+end
+
+-- Friends playing this experience now: the ones in this run, and the
+-- online ones whose presence says this universe.
+function PLAYER.GetFriendsInUniverseAsync(self)
+	if host.server() or self ~= game:GetService("Players").LocalPlayer then
+		fail("GetFriendsInUniverse must be invoked on the Local Player")
+	end
+	task.wait()
+	local players = game:GetService("Players")
+	local out = {}
+	for _, friend in friendsOf(self.UserId) do
+		if playerById(players, friend.id) then
+			table.insert(out, friend.id)
+		end
+	end
+	for _, entry in onlineFriends(self.UserId) do
+		local presence = entry.userPresence or {}
+		if game.GameId ~= 0 and presence.universeId == game.GameId and not table.find(out, entry.id) then
+			table.insert(out, entry.id)
+		end
+	end
+	return out
+end
+
+-- Who played the experience is only on Roblox's servers: no friend has,
+-- as for Studio's test players.
+function PLAYER.GetFriendsWhoPlayedAsync(_)
+	task.wait()
 	return {}
 end
 
@@ -389,14 +565,13 @@ local TABLES = {
 	Players = PLAYERS,
 	Player = PLAYER,
 	RunService = RUN,
-	FriendPages = FRIEND_PAGES,
 	ContentProvider = CONTENT,
 	ReplicatedFirst = REPLICATED_FIRST,
 }
 
 function M.member(class, id, key)
-	if class == "FriendPages" and key == "IsFinished" then
-		return true, true
+	if class == "Players" and (key == "UserSubscriptionStatusChanged" or key == "PlayerMembershipChanged") then
+		return host.signal(id, key), true
 	end
 	if class == "PlayerScripts" and type(key) == "string" and key:match("Registered$") then
 		for _, kind in MODE_KINDS do

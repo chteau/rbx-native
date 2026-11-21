@@ -27,7 +27,7 @@ mod guard;
 mod host;
 pub(crate) mod http;
 mod input;
-mod loader;
+pub(crate) mod loader;
 mod lot;
 mod native;
 mod plugin_object;
