@@ -6959,6 +6959,7 @@ version = "0.1.0"
 dependencies = [
  "mlua",
  "rbx_binary",
+ "rbx_csg",
  "rbx_dom",
  "rbx_reflection",
  "rbx_xml",
