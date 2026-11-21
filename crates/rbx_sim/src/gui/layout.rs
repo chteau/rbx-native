@@ -274,8 +274,9 @@ fn children(
     }
 }
 
-/// `Size` against the parent's content box (`SizeConstraint`), then the
-/// object's `UISizeConstraint` and `UIAspectRatioConstraint`.
+/// `Size` against the parent's content box (`SizeConstraint`), grown by
+/// `AutomaticSize`, then the object's `UIAspectRatioConstraint` and
+/// `UISizeConstraint`.
 fn size_of(dom: &WeakDom, db: &ReflectionDatabase, r: Ref, parent: [f32; 2]) -> [f32; 2] {
     let s = udim2(dom, db, r, "Size");
     let [pw, ph] = match item(dom, db, r, "SizeConstraint", "SizeConstraint") {
@@ -284,13 +285,74 @@ fn size_of(dom: &WeakDom, db: &ReflectionDatabase, r: Ref, parent: [f32; 2]) -> 
         _ => parent,
     };
     let mut size = [pw * s[0] + s[1], ph * s[2] + s[3]];
-    if let Some(limit) = child_of(dom, db, r, "UISizeConstraint") {
-        let min = vec2(dom, db, limit, "MinSize");
-        let max = vec2(dom, db, limit, "MaxSize");
-        for i in 0..2 {
-            size[i] = size[i].max(min[i]).min(max[i].max(min[i]));
+    let auto = match item(dom, db, r, "AutomaticSize", "AutomaticSize") {
+        "X" => [true, false],
+        "Y" => [false, true],
+        "XY" => [true, true],
+        _ => [false, false],
+    };
+    if auto != [false, false] {
+        let content = content_of(dom, db, r, size, parent, auto);
+        for axis in 0..2 {
+            if auto[axis] {
+                size[axis] = size[axis].max(content[axis]);
+            }
         }
     }
+    constrained(dom, db, r, size)
+}
+
+/// What an `AutomaticSize` object's children need along its automatic
+/// axes (the renderer's rule, GuiLayout golden): a layout's items measured
+/// against the object's parent box there, a grid by its cells; children
+/// placed by their own `Position`/`Size` by their offsets only.
+fn content_of(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    r: Ref,
+    size: [f32; 2],
+    parent: [f32; 2],
+    auto: [bool; 2],
+) -> [f32; 2] {
+    let kids: Vec<Ref> = dom
+        .get(r)
+        .map(|i| i.children().to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|&c| is(db, dom, c, "GuiObject") && flag(dom, db, c, "Visible"))
+        .collect();
+    let probe = [0, 1].map(|axis| if auto[axis] { parent[axis] } else { size[axis] });
+    let padded = padded(dom, db, r, [0.0, 0.0, probe[0], probe[1]]);
+    let pads = [probe[0] - padded[2], probe[1] - padded[3]];
+    let inner = [padded[2], padded[3]];
+    let mut need = [0.0f32; 2];
+    if let Some(list) = child_of(dom, db, r, "UIListLayout") {
+        let main =
+            usize::from(item(dom, db, list, "FillDirection", "FillDirection") != "Horizontal");
+        let pad = udim(dom, db, list, "Padding");
+        let gap = inner[main] * pad[0] + pad[1];
+        for &c in &kids {
+            let item = size_of(dom, db, c, inner);
+            need[main] += item[main];
+            need[1 - main] = need[1 - main].max(item[1 - main]);
+        }
+        need[main] += gap * kids.len().saturating_sub(1) as f32;
+    } else if let Some(grid) = child_of(dom, db, r, "UIGridLayout") {
+        need = grid_cells(dom, db, grid, inner, kids.len()).3;
+    } else {
+        for &c in &kids {
+            let s = udim2(dom, db, c, "Size");
+            let p = udim2(dom, db, c, "Position");
+            need[0] = need[0].max(p[1] + s[1]);
+            need[1] = need[1].max(p[3] + s[3]);
+        }
+    }
+    [need[0] + pads[0], need[1] + pads[1]]
+}
+
+/// `size` through the object's `UIAspectRatioConstraint` and then its
+/// `UISizeConstraint`.
+fn constrained(dom: &WeakDom, db: &ReflectionDatabase, r: Ref, mut size: [f32; 2]) -> [f32; 2] {
     if let Some(aspect) = child_of(dom, db, r, "UIAspectRatioConstraint") {
         let ratio = float(dom, db, aspect, "AspectRatio").max(1e-6);
         let by_width = match item(dom, db, aspect, "DominantAxis", "DominantAxis") {
@@ -304,6 +366,13 @@ fn size_of(dom: &WeakDom, db: &ReflectionDatabase, r: Ref, parent: [f32; 2]) -> 
             size[1] = size[0] / ratio;
         } else {
             size[0] = size[1] * ratio;
+        }
+    }
+    if let Some(limit) = child_of(dom, db, r, "UISizeConstraint") {
+        let min = vec2(dom, db, limit, "MinSize");
+        let max = vec2(dom, db, limit, "MaxSize");
+        for i in 0..2 {
+            size[i] = size[i].max(min[i]).min(max[i].max(min[i]));
         }
     }
     size
@@ -386,6 +455,39 @@ fn list_layout(
     }
 }
 
+/// A grid's cell size, gap, cells per line and the extent `count` cells
+/// cover, in a content box of `inner` pixels.
+fn grid_cells(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    grid: Ref,
+    inner: [f32; 2],
+    count: usize,
+) -> ([f32; 2], [f32; 2], usize, [f32; 2]) {
+    let cell = udim2(dom, db, grid, "CellSize");
+    let pad = udim2(dom, db, grid, "CellPadding");
+    let size = [inner[0] * cell[0] + cell[1], inner[1] * cell[2] + cell[3]];
+    let gap = [inner[0] * pad[0] + pad[1], inner[1] * pad[2] + pad[3]];
+    let main = usize::from(item(dom, db, grid, "FillDirection", "FillDirection") == "Vertical");
+    let per_line = match float(dom, db, grid, "FillDirectionMaxCells") as usize {
+        0 => ((inner[main] + gap[main]) / (size[main] + gap[main]).max(1e-6))
+            .floor()
+            .max(1.0) as usize,
+        limit => limit,
+    };
+    let run = |n: usize, axis: usize| match n {
+        0 => 0.0,
+        n => n as f32 * size[axis] + (n - 1) as f32 * gap[axis],
+    };
+    let mut extent = [0.0; 2];
+    extent[main] = run(count.min(per_line), main);
+    extent[1 - main] = run(count.div_ceil(per_line), 1 - main);
+    (size, gap, per_line, extent)
+}
+
+/// `UIGridLayout`: cells filled a line at a time from the aligned corner,
+/// each item taking the cell's size through its own constraints, centred in
+/// its cell.
 fn grid_layout(
     dom: &WeakDom,
     db: &ReflectionDatabase,
@@ -393,24 +495,27 @@ fn grid_layout(
     content: [f32; 4],
     rects: &mut [(Ref, [f32; 4])],
 ) {
-    let cell = udim2(dom, db, grid, "CellSize");
-    let pad = udim2(dom, db, grid, "CellPadding");
-    let size = [
-        content[2] * cell[0] + cell[1],
-        content[3] * cell[2] + cell[3],
+    let order = sorted(dom, db, grid, rects);
+    let inner = [content[2], content[3]];
+    let (size, gap, per_line, extent) = grid_cells(dom, db, grid, inner, order.len());
+    let main = usize::from(item(dom, db, grid, "FillDirection", "FillDirection") == "Vertical");
+    let h = item(dom, db, grid, "HorizontalAlignment", "HorizontalAlignment");
+    let v = item(dom, db, grid, "VerticalAlignment", "VerticalAlignment");
+    let origin = [
+        content[0] + align(h, inner[0] - extent[0]),
+        content[1] + align(v, inner[1] - extent[1]),
     ];
-    let gap = [content[2] * pad[0] + pad[1], content[3] * pad[2] + pad[3]];
-    let rows_first = item(dom, db, grid, "FillDirection", "FillDirection") != "Vertical";
-    let (main, cross) = if rows_first { (0, 1) } else { (1, 0) };
-    let fit = ((content[2 + main] + gap[main]) / (size[main] + gap[main]).max(1e-6))
-        .floor()
-        .max(1.0) as usize;
-    for (n, i) in sorted(dom, db, grid, rects).into_iter().enumerate() {
-        let rect = &mut rects[i].1;
-        rect[2] = size[0];
-        rect[3] = size[1];
-        rect[main] = content[main] + (n % fit) as f32 * (size[main] + gap[main]);
-        rect[cross] = content[cross] + (n / fit) as f32 * (size[cross] + gap[cross]);
+    for (n, i) in order.into_iter().enumerate() {
+        let mut at = [0.0; 2];
+        at[main] = (n % per_line) as f32 * (size[main] + gap[main]);
+        at[1 - main] = (n / per_line) as f32 * (size[1 - main] + gap[1 - main]);
+        let [w, h] = constrained(dom, db, rects[i].0, size);
+        rects[i].1 = [
+            origin[0] + at[0] + (size[0] - w) / 2.0,
+            origin[1] + at[1] + (size[1] - h) / 2.0,
+            w,
+            h,
+        ];
     }
 }
 

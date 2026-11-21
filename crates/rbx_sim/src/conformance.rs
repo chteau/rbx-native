@@ -375,6 +375,11 @@ pub const TESTS: &[Test] = &[
         tolerance: &[],
     },
     Test {
+        name: "GuiLayout",
+        source: include_str!("../conformance/tests/GuiLayout.luau"),
+        tolerance: &[("*", 0.6)],
+    },
+    Test {
         name: "CoreGuiApi",
         source: include_str!("../conformance/tests/CoreGuiApi.luau"),
         tolerance: &[],
@@ -674,6 +679,10 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
     (
         "GuiRuntime",
         include_str!("../conformance/client/GuiRuntime.luau"),
+    ),
+    (
+        "GuiLayout",
+        include_str!("../conformance/client/GuiLayout.luau"),
     ),
     (
         "CoreGuiApi",
