@@ -127,7 +127,6 @@
   },
   "status": "recorded",
   "known_gaps": {
-    "breaks_hand_moved_15": "Roblox's broken R15 collapses (the head on the floor by 60 beats, a hand 0.8 stud away by 15); ours drops the torsos out of the HumanoidRootPart and the legs, root and head stay stacked and balanced. The overlap resolution that topples Roblox's stack isn't modelled.",
-    "breaks_head_dy_60": "Roblox's broken R15 collapses (the head on the floor by 60 beats, a hand 0.8 stud away by 15); ours drops the torsos out of the HumanoidRootPart and the legs, root and head stay stacked and balanced. The overlap resolution that topples Roblox's stack isn't modelled."
+    "breaks_hand_moved_15": "Roblox's broken R15 topples slower at first: a hand 0.8 stud away by 15 beats; ours is 2 studs away by then (the head lands as Roblox's by 60). The early push apart is quicker than Roblox's."
   }
 }

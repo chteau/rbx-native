@@ -1773,8 +1773,10 @@ impl World {
         let mut kicked: Vec<(RigidBodyHandle, u32, bool)> = Vec::new();
         // Characters always step at 240 Hz (HumanoidDrop: a falling
         // character's first frames are 240 Hz free fall).
+        // A dead (undriven) root is a loose part like the rest.
         let driven: HashSet<RigidBodyHandle> = drives
             .iter()
+            .filter(|d| d.mode != DriveMode::Off)
             .filter_map(|d| self.parts.get(&d.root))
             .map(|p| self.assemblies[p.assembly].body)
             .collect();
