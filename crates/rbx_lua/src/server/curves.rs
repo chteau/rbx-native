@@ -432,6 +432,9 @@ fn pair(lua: &Lua, inserted: bool, index: usize) -> Result<Table> {
     lua.create_sequence_from([Value::Boolean(inserted), Value::Integer(index as i64)])
 }
 
+/// A curve method's body, given the arguments after `self`.
+type Method = Box<dyn Fn(&Lua, &[Value]) -> Result<Value>>;
+
 /// `curve[key]` for the curve classes, `None` for anything else.
 pub(crate) fn member(
     lua: &Lua,
@@ -456,7 +459,7 @@ pub(crate) fn member(
         return Ok(Some(Value::Nil));
     }
     let ctx = ctx.clone();
-    let method = |f: Box<dyn Fn(&Lua, &[Value]) -> Result<Value>>| -> Result<Option<Value>> {
+    let method = |f: Method| -> Result<Option<Value>> {
         let f = lua.create_function(move |lua, args: MultiValue| {
             let args: Vec<Value> = args.into_iter().skip(1).collect();
             f(lua, &args)

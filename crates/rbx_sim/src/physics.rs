@@ -992,7 +992,7 @@ impl World {
             stack.extend(instance.children().iter().rev());
             if let Some(part) = PartData::read(db, instance) {
                 parts.push(part);
-            } else if let Some(joint) = Joint::read(&dom, db, instance) {
+            } else if let Some(joint) = Joint::read(dom, db, instance) {
                 joints.push(joint);
             } else if is_constraint(instance.class()) {
                 rigging.push(at);
@@ -1084,7 +1084,7 @@ impl World {
                     return false;
                 }
                 parts.push(part);
-            } else if let Some(joint) = Joint::read(&dom, db, instance) {
+            } else if let Some(joint) = Joint::read(dom, db, instance) {
                 if self.parts.contains_key(&joint.part0) || self.parts.contains_key(&joint.part1) {
                     return false;
                 }
