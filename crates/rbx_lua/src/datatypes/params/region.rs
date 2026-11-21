@@ -116,6 +116,15 @@ impl UserData for LuaFaces {
             MetaMethod::Eq,
             |_, this, other: LuaFaces| Ok(*this == other),
         );
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+            Ok(FACE_NAMES
+                .iter()
+                .zip(this.flags)
+                .filter(|(_, on)| *on)
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>()
+                .join(", "))
+        });
     }
 }
 
