@@ -183,11 +183,21 @@ fn build(geometry: &Geometry, size: [f32; 3], fidelity: Fidelity) -> SharedShape
                         ..Default::default()
                     }
                 };
-                Some(SharedShape::convex_decomposition_with_params(
+                // parry's own `convex_decomposition_with_params`, minus its
+                // panic when no piece survives (a degenerate mesh).
+                let decomposed = rapier3d::parry::transformation::vhacd::VHACD::decompose(
+                    &params,
                     &points,
                     &geometry.triangles,
-                    &params,
-                ))
+                    true,
+                );
+                let pieces: Vec<_> = decomposed
+                    .compute_exact_convex_hulls(&points, &geometry.triangles)
+                    .into_iter()
+                    .filter_map(|(vertices, indices)| SharedShape::convex_mesh(vertices, &indices))
+                    .map(|piece| (Pose::IDENTITY, piece))
+                    .collect();
+                (!pieces.is_empty()).then(|| SharedShape::compound(pieces))
             }
         }
     };
@@ -292,5 +302,16 @@ mod tests {
             assert!(!hits(&shape, 0.0), "{fidelity:?} filled the gap");
             assert!(hits(&shape, 2.0), "{fidelity:?} lost a cube");
         }
+    }
+
+    #[test]
+    fn a_flat_mesh_that_decomposes_to_nothing_falls_back_to_its_box() {
+        let geometry = Geometry {
+            id: 0,
+            vertices: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            triangles: vec![[0, 1, 2]],
+        };
+        let shape = build(&geometry, [2.0, 1.0, 1.0], Fidelity::Default);
+        assert!(shape.as_cuboid().is_some() || shape.as_compound().is_some());
     }
 }
