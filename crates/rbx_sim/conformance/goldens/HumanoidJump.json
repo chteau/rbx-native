@@ -1,5 +1,5 @@
 {
-  "known_gap": "JumpPower jumps match; a JumpHeight jump of 15 studs (UseJumpPower false) launches at 74.27 against 75.09 and peaks 0.2 stud low. Roblox's height-to-speed conversion has a small extra term the fit doesn't have yet.",
+  "known_gap": "JumpPower jumps match; a JumpHeight jump of 15 studs (UseJumpPower false) launches at 74.27 against 75.09 and peaks 0.2 stud low. Giving fast take-offs one substep of gravity back (as the 1st-frame loss suggests: 2 substeps at 76.7 stud/s, 3 below) makes vy1 75.09 but then peaks 0.13 high and lands a frame late: the live per-frame rise runs ~0.3 stud/s under ours in every jump (walk 0.863 vs 0.868 on frame 1) while vy1 reads the same, which looks like how Roblox integrates position inside a frame rather than the take-off speed. Not changed for one row.",
   "passes": 5,
   "raw": [
     {
