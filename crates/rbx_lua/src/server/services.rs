@@ -66,6 +66,10 @@ pub struct Services {
     /// with API access on, as Studio's Play has them; `None` keeps them in
     /// `data_file`.
     pub live: Option<Arc<dyn LiveData>>,
+    /// Group membership and inventory ownership are asked of the web for
+    /// real users, as on Roblox; off, everyone is a guest owning nothing
+    /// (headless tests stay hermetic).
+    pub web_lookups: bool,
 }
 
 /// A run's live DataStores: each `DataStoreService` storage call (`op` is
@@ -172,6 +176,7 @@ impl Default for Services {
             place_id: 0,
             game_id: 0,
             live: None,
+            web_lookups: false,
         }
     }
 }
@@ -727,6 +732,11 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     )?;
     let r = runtime.clone();
     host.set(
+        "web_lookups",
+        lua.create_function(move |_, ()| Ok(r.config.borrow().web_lookups))?,
+    )?;
+    let r = runtime.clone();
+    host.set(
         "live",
         lua.create_function(move |_, ()| Ok(r.config.borrow().live.is_some()))?,
     )?;
@@ -1082,7 +1092,7 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set("web", checked(lua, scheduler::yielding(lua, web)?)?)?;
     // What a real user owns, as the public inventory API says
     // (a private inventory or a failed request owns nothing). Test players
-    // (ids below 1) are never asked about.
+    // (ids below 1) are never asked about, nor anyone without `web_lookups`.
     let owns_live: Function = lua
         .load(
             r#"local host = ...
@@ -1092,7 +1102,7 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
                 asset = "https://inventory.roblox.com/v1/users/%d/items/Asset/%d",
             }
             return function(user, kind, id)
-                if user < 1 then
+                if user < 1 or not host.web_lookups() then
                     return false
                 end
                 local ok, found = pcall(host.web, string.format(URLS[kind], user, id), "GET", nil, "ownership")

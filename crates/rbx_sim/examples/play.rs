@@ -104,6 +104,7 @@ fn main() {
     let mut services = rbx_lua::server::Services {
         place_id,
         game_id,
+        web_lookups: true,
         ..Default::default()
     };
     if live {

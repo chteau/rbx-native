@@ -114,6 +114,7 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
         teleport_places: settings(path).teleport_places.into_keys().collect(),
         place_id: link.as_ref().map_or(0, |l| l.place_id as i64),
         game_id: link.as_ref().map_or(0, |l| l.universe_id as i64),
+        web_lookups: true,
         ..Default::default()
     }
 }

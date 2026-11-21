@@ -84,14 +84,15 @@ function PLAYERS.GetUserIdFromNameAsync(self, name)
 end
 
 -- The user's real groups, as the web reports them (cached for offline
--- runs). Test players (ids below 1) and a failed request have none.
+-- runs). Test players (ids below 1), a failed request and a run without
+-- web lookups have none.
 local function web(url, context)
 	local ok, found = pcall(host.web, url, "GET", nil, context)
 	return if ok and type(found) == "table" then found else {}
 end
 
 local function roleIn(user, group)
-	if user < 1 then
+	if user < 1 or not host.web_lookups() then
 		return nil
 	end
 	local found = web("https://groups.roblox.com/v2/users/" .. user .. "/groups/roles", "Player:IsInGroupAsync()")
