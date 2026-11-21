@@ -64,6 +64,10 @@ impl AssetFetcher for CloudFetcher {
             })
             .map_err(|err| fetch_error(id, err))
     }
+
+    fn fetch_thumb(&self, spec: &str) -> Result<Vec<u8>, FetchError> {
+        self.0.rbxthumb(spec).map_err(|err| fetch_error(0, err))
+    }
 }
 
 /// An asset that is not there to be had is a different answer from a

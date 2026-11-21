@@ -29,6 +29,12 @@ pub struct Asset {
 /// from a handful of threads through a single shared [`AssetResolver`].
 pub trait AssetFetcher: Send + Sync {
     fn fetch_id(&self, id: u64) -> Result<Vec<u8>, FetchError>;
+
+    /// The image an `rbxthumb://` content id names (`spec` is what follows
+    /// the scheme), for a fetcher that can reach the thumbnails service.
+    fn fetch_thumb(&self, _spec: &str) -> Result<Vec<u8>, FetchError> {
+        Err(FetchError::NotFound(0))
+    }
 }
 
 /// Combines the disk cache, a network fetcher and native content resolution
@@ -51,7 +57,7 @@ impl AssetResolver {
     pub fn resolve(&self, r: &AssetRef) -> Result<Asset, AssetError> {
         let bytes = match r {
             AssetRef::Empty => return Err(AssetError::Empty),
-            AssetRef::Thumb(_) => return Err(AssetError::Empty),
+            AssetRef::Thumb(spec) => self.fetcher.fetch_thumb(spec)?,
             AssetRef::Id(id) => self.resolve_id(*id)?,
             AssetRef::Native(path) => self.resolve_native(path)?,
         };
