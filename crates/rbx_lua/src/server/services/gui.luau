@@ -197,17 +197,31 @@ function M.member(class, id, key)
 end
 
 -- SelectedObject is about to change: the old object loses the selection,
--- the new one gains it; the write itself goes on.
+-- the new one gains it, then every GuiBase2d holding either (itself
+-- included) hears SelectionChanged(amISelected, old, new); the write
+-- itself goes on.
 function M.set(_, id, _, value)
 	local old = game:GetService("GuiService").SelectedObject
 	if old == value then
 		return false
 	end
+	local new = if typeof(value) == "Instance" then value else nil
 	if old then
 		task.defer(host.fire, host.id(old), "SelectionLost")
 	end
-	if typeof(value) == "Instance" then
-		task.defer(host.fire, host.id(value), "SelectionGained")
+	if new then
+		task.defer(host.fire, host.id(new), "SelectionGained")
+	end
+	local seen = {}
+	for _, object in { old, new } do
+		local at = object
+		while at do
+			if at:IsA("GuiBase2d") and not seen[at] then
+				seen[at] = true
+				task.defer(host.fire, host.id(at), "SelectionChanged", at == new, old, new)
+			end
+			at = at.Parent
+		end
 	end
 	return false
 end

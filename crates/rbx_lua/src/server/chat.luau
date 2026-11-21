@@ -71,6 +71,25 @@ local function incoming(channel, m)
 	end
 end
 
+-- The enabled TextChatCommand whose PrimaryAlias or SecondaryAlias is
+-- the message's first word (any case), if any.
+local function commandFor(text)
+	local word = string.lower(string.match(text, "^%s*(%S+)") or "")
+	if word == "" then
+		return nil
+	end
+	for _, command in TextChatService:GetDescendants() do
+		if command:IsA("TextChatCommand") and command.Enabled then
+			for _, alias in { command.PrimaryAlias, command.SecondaryAlias } do
+				if alias ~= "" and string.lower(alias) == word then
+					return command
+				end
+			end
+		end
+	end
+	return nil
+end
+
 local function sendAsync(channel, text)
 	if not host.client() then
 		error("TextChannel:SendAsync can only be called on the client.", 3)
@@ -80,6 +99,14 @@ local function sendAsync(channel, text)
 	local source = player and sourceOf(channel, player.UserId)
 	local id = host.guid()
 	local m = message(channel, text, "Sending", source, id)
+	-- A command runs instead of being said: Triggered here, and on the
+	-- server once the text gets there.
+	local command = commandFor(text)
+	if command then
+		host.fire(command, "Triggered", source, text)
+		host.send(channel, text, id)
+		return m
+	end
 	incoming(channel, m)
 	host.fire(TextChatService, "SendingMessage", m)
 	host.send(channel, text, id)
@@ -112,11 +139,46 @@ local function addUserAsync(channel, userId)
 	return source, true
 end
 
+-- DisplayBubble: a bubble over a part or character that isn't a message
+-- anyone sent; OnBubbleAdded may restyle it, BubbleDisplayed tells scripts.
+local function displayBubble(_, adornee, text)
+	if typeof(adornee) ~= "Instance" then
+		error("Argument 1 missing or nil", 3)
+	end
+	local m = host.new("TextChatMessage")
+	host.write(m, "Text", tostring(text or ""))
+	host.write(m, "Status", Enum.TextChatMessageStatus.Success)
+	host.write(m, "MessageId", host.guid())
+	local f = callback(TextChatService, "OnBubbleAdded")
+	if f then
+		local ok, err = pcall(f, m, adornee)
+		if not ok then
+			warn(err)
+		end
+	end
+	host.fire(TextChatService, "BubbleDisplayed", adornee, m)
+end
+
 local methods = {
 	TextChannel = {
 		SendAsync = sendAsync,
 		DisplaySystemMessage = displaySystemMessage,
 		AddUserAsync = addUserAsync,
+		SetDirectChatRequester = function(channel, requester)
+			if requester ~= nil and not (typeof(requester) == "Instance" and requester:IsA("Player")) then
+				error("Unable to cast value to Object", 2)
+			end
+			host.write(channel, "DirectChatRequester", requester)
+		end,
+	},
+	ChatWindowConfiguration = {
+		DeriveNewMessageProperties = function(config)
+			local props = host.new("ChatWindowMessageProperties")
+			for _, name in { "FontFace", "TextColor3", "TextSize", "TextStrokeColor3", "TextStrokeTransparency" } do
+				host.write(props, name, config[name])
+			end
+			return props
+		end,
 	},
 	TextChatService = {
 		CanUserChatAsync = function()
@@ -128,6 +190,7 @@ local methods = {
 		CanUsersDirectChatAsync = function(_, _, ids)
 			return ids
 		end,
+		DisplayBubble = displayBubble,
 		-- Chat groups need Roblox's chat backend (golden WebServices).
 		GetChatGroupsAsync = function(_, players)
 			if type(players) ~= "table" then
@@ -172,6 +235,11 @@ function M.fromClient(player, channel, text, id)
 	end
 	local sender = player and sourceOf(channel, player.UserId)
 	if sender and not sender.CanSend then
+		return
+	end
+	local command = commandFor(text)
+	if command then
+		host.fire(command, "Triggered", sender, text)
 		return
 	end
 	for _, to in channel:GetChildren() do

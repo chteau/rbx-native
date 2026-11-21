@@ -52,8 +52,11 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         || crate::tools::is_method(class, key)
         || crate::sound::is_method(class, key)
         || crate::audio_api::is_method(class, key)
+        || crate::video::is_method(class, key)
         || crate::teams::is_method(class, key)
-        || (class == "ParticleEmitter" && matches!(key, "Emit" | "Clear"))
+        || (matches!(class, "ParticleEmitter" | "ParticleEmitter2D")
+            && matches!(key, "Emit" | "Clear"))
+        || (class == "SoundService" && matches!(key, "PlayLocalSound" | "GetMixerTime"))
         || crate::joints::is_method(class, key)
         || (class == "Model" && key == "MoveTo")
 }
@@ -66,6 +69,7 @@ pub(crate) fn is_signal(class: &str, key: &str) -> bool {
         || crate::tools::is_signal(class, key)
         || crate::sound::is_signal(class, key)
         || crate::audio_api::is_signal(class, key)
+        || crate::video::is_signal(class, key)
         || crate::teams::is_signal(class, key)
         || (class == "Explosion" && key == "Hit")
 }
@@ -119,21 +123,48 @@ pub(crate) fn call(
         return Ok(reply);
     }
     if crate::audio_api::is_method(class, method) {
-        return shared
-            .audio
-            .call(&mut dom, db, referent, class, method, &args);
+        let shared = &mut *shared;
+        return shared.audio.call(
+            &mut shared.sounds,
+            &mut dom,
+            db,
+            referent,
+            class,
+            method,
+            &args,
+        );
+    }
+    if crate::video::is_method(class, method) {
+        return shared.videos.call(&mut dom, referent, class, method);
+    }
+    // A sound played for this client alone: never replicated, wherever it
+    // is.
+    if class == "SoundService" {
+        if method == "GetMixerTime" {
+            return Ok(CallReply::value(Arg::Number(shared.audio.clock)));
+        }
+        return match args.first() {
+            Some(Arg::Instance(sound)) if dom.get(*sound).is_some_and(|i| i.class() == "Sound") => {
+                Ok(shared.sounds.call(&mut dom, *sound, "Play").1)
+            }
+            _ => Err("Unable to cast value to Object".into()),
+        };
     }
     if crate::teams::is_method(class, method) {
         return Ok(crate::teams::call(&dom, db, referent));
     }
     // `Emit(count)` (16 when not given) and `Clear()`, for the renderer.
-    if class == "ParticleEmitter" {
+    if matches!(class, "ParticleEmitter" | "ParticleEmitter2D") {
         let burst = match (method, args.first()) {
             ("Emit", Some(Arg::Number(n))) => crate::Burst::Emit(n.max(0.0) as u32),
             ("Emit", _) => crate::Burst::Emit(16),
             _ => crate::Burst::Clear,
         };
-        shared.bursts.push((referent, burst));
+        if class == "ParticleEmitter" {
+            shared.bursts.push((referent, burst));
+        } else {
+            shared.gui_bursts.push((referent, burst));
+        }
         return Ok(CallReply::default());
     }
     if crate::animation::is_method(class, method) {
@@ -177,6 +208,15 @@ pub(crate) fn property(
     class: &str,
     key: &str,
 ) -> Option<Arg> {
+    if crate::video::is_property(class, key) {
+        let (dom, _) = shared.borrow().dom_and_db()?;
+        let dom = dom.try_borrow().ok()?;
+        return shared
+            .try_borrow_mut()
+            .ok()?
+            .videos
+            .property(&dom, referent, key);
+    }
     if class == "Sound" || crate::audio_api::is_property(class, key) {
         let (dom, db) = shared.borrow().dom_and_db()?;
         let dom = dom.try_borrow().ok()?;
@@ -229,6 +269,12 @@ pub(crate) fn write(
     }
     if class == "Sound" {
         return shared.borrow_mut().sounds.write(referent, key, value);
+    }
+    if crate::video::watches(class) && matches!(key, "TimePosition" | "Playing") {
+        let (dom, _) = shared.borrow().dom_and_db()?;
+        let dom = dom.borrow();
+        shared.borrow_mut().videos.write(&dom, referent, key, value);
+        return None;
     }
     if class == "AudioPlayer" && key == "TimePosition" {
         let (dom, db) = shared.borrow().dom_and_db()?;

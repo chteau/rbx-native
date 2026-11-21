@@ -229,11 +229,20 @@ impl Simulation {
         let changes = self.vm.input_frame();
         self.apply(changes);
         let uis = crate::input::service(&mut self.dom.borrow_mut(), "UserInputService");
-        for input in std::mem::take(&mut inputs.pending) {
+        let now = self.time();
+        let sent = self.vm.take_virtual_input();
+        inputs.pending.extend(crate::input::from_virtual(sent));
+        for input in inputs.take_pending() {
+            if let Input::Gamepad { pad, connected } = input {
+                let changes = self.vm.gamepad(uis, pad, connected);
+                self.apply(changes);
+                continue;
+            }
             let written = inputs.write(&mut self.dom.borrow_mut(), self.db, &input);
-            let Some((object, signal)) = written else {
+            let Some(written) = written else {
                 continue;
             };
+            let object = written.object;
             let handled = {
                 let dom = self.dom.borrow();
                 self.shared
@@ -242,9 +251,34 @@ impl Simulation {
                     .input(&dom, self.db, &input, object, uis)
             };
             self.gui_steps(handled.before);
-            let changes = self.vm.input(object, uis, signal, handled.processed);
+            let changes =
+                self.vm
+                    .input_with(object, uis, written.signal, written.also, handled.processed);
             self.apply(changes);
             self.gui_steps(handled.after);
+            if let Input::Wheel { notches } = input {
+                use rbx_lua::server::Arg;
+                let args = vec![
+                    Arg::Number(f64::from(notches)),
+                    Arg::Vector2([0.0, 0.0]),
+                    Arg::Number(0.0),
+                    Arg::Bool(handled.processed),
+                ];
+                self.fire_signal(uis, "PointerAction", args);
+            }
+            if let Input::Touch {
+                id,
+                position,
+                phase,
+            } = input
+            {
+                let target = self.shared.borrow().gui.touch_target(position);
+                let at = [position[0], position[1] - crate::gui::TOPBAR_INSET];
+                let gestures = inputs
+                    .touches
+                    .touch(id, phase, at, now, target, handled.processed);
+                self.fire_gestures(uis, gestures);
+            }
             if handled.processed {
                 continue;
             }
@@ -258,6 +292,8 @@ impl Simulation {
                 self.apply(changes);
             }
         }
+        let gestures = inputs.touches.tick(now);
+        self.fire_gestures(uis, gestures);
         self.inputs = Some(inputs);
         // The hotbar keeps each tool's slot from when it first came.
         let player = self.shared.borrow().players.local;
@@ -942,6 +978,13 @@ impl Simulation {
         self.apply(changes);
     }
 
+    /// Touch gestures, on `uis` or their GuiObject.
+    fn fire_gestures(&mut self, uis: Ref, gestures: Vec<crate::touch::Gesture>) {
+        for (owner, name, args) in gestures {
+            self.fire_signal(owner.unwrap_or(uis), name, args);
+        }
+    }
+
     pub(crate) fn fire_signal(&mut self, owner: Ref, name: &str, args: Vec<rbx_lua::server::Arg>) {
         self.fire(Event::Signal {
             owner,
@@ -1375,6 +1418,12 @@ impl Simulation {
         std::mem::take(&mut self.shared.borrow_mut().bursts)
     }
 
+    /// The `ParticleEmitter2D:Emit(count)`/`Clear()` calls scripts made
+    /// since the last call, for the GUI renderer.
+    pub fn take_gui_bursts(&mut self) -> Vec<(Ref, crate::Burst)> {
+        std::mem::take(&mut self.shared.borrow_mut().gui_bursts)
+    }
+
     /// The chat messages this client showed since the last call.
     pub fn take_chat(&mut self) -> Vec<rbx_lua::server::ChatLine> {
         let mut lines = self.vm.take_chat();
@@ -1411,10 +1460,12 @@ impl Simulation {
             let Shared {
                 audio,
                 sounds,
+                videos,
                 players,
                 ..
             } = &mut *shared;
             events.extend(audio.step(sounds, &mut dom, self.db, dt, players.client, players.local));
+            events.extend(videos.step(&mut dom, self.db, dt));
         }
         for event in events {
             self.fire(event);
@@ -1432,8 +1483,9 @@ impl Simulation {
     /// The sounds playing now as the camera hears them, for the editor's
     /// audio output.
     pub fn voices(&self) -> Vec<crate::audio::Voice> {
-        let listener = self.camera().map(|(cf, _)| cf);
+        let camera = self.camera().map(|(cf, _)| cf);
         let dom = self.dom.borrow();
+        let listener = crate::sound::listener(&dom, self.db, camera);
         self.shared
             .borrow_mut()
             .sounds
@@ -1461,7 +1513,7 @@ impl Simulation {
 
     /// The DataStores, purchases and web lookups this peer's scripts use;
     /// models load through the fetcher sounds use, unless they say.
-    pub fn set_services(&self, mut config: rbx_lua::server::Services) {
+    pub fn set_services(&mut self, mut config: rbx_lua::server::Services) {
         if config.assets.is_none() {
             config.assets = self
                 .shared
@@ -1470,6 +1522,17 @@ impl Simulation {
                 .fetcher
                 .clone()
                 .map(|f| std::sync::Arc::new(Models(f)) as _);
+        }
+        if let Some(inputs) = &mut self.inputs {
+            inputs.emulate_touch = config.device.touch;
+            self.shared.borrow_mut().gui.touch = config.device.touch;
+            // A console comes with its gamepad.
+            if config.device.gamepad {
+                inputs.pending.push(Input::Gamepad {
+                    pad: 1,
+                    connected: true,
+                });
+            }
         }
         self.vm.set_services(config);
     }
@@ -1501,6 +1564,7 @@ impl Simulation {
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
         let mut shared = self.shared.borrow_mut();
         shared.animations.fetcher = Some(fetcher.clone());
+        shared.videos.fetcher = Some(fetcher.clone());
         shared.sounds.fetcher = Some(fetcher);
     }
 
@@ -1917,6 +1981,7 @@ impl Simulation {
         for r in scripts::subtree(&dom, root) {
             match dom.get(r).map(|i| i.class()) {
                 Some("Sound") => shared.sounds.watch(r),
+                Some(class) if crate::video::watches(class) => shared.videos.watch(r),
                 Some(class) if crate::audio_api::watches(class) => shared.audio.watch(r),
                 _ => {}
             }

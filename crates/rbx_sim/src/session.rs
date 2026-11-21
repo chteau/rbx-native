@@ -366,7 +366,7 @@ impl Session {
     /// clients that join later too. Call before `start`.
     pub fn set_services(&mut self, config: rbx_lua::server::Services) {
         self.server.set_services(config.clone());
-        for client in &self.clients {
+        for client in &mut self.clients {
             client.sim.set_services(config.clone());
         }
         self.services = Some(config);

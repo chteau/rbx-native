@@ -400,6 +400,8 @@ const MODULES: &[(&str, &str)] = &[
     ("Prompts", include_str!("services/prompts.luau")),
     ("Web", include_str!("services/web.luau")),
     ("World", include_str!("services/world.luau")),
+    ("Media", include_str!("services/media.luau")),
+    ("GuiObjects", include_str!("services/gui_objects.luau")),
 ];
 
 /// The module that answers `class`.
@@ -443,7 +445,9 @@ fn module_of(class: &str) -> Option<&'static str> {
         "TextService" | "TextFilterResult" | "Chat" => "Text",
         "LocalizationService" | "LocalizationTable" | "Translator" => "LocalizationService",
         "GuiService" => "GuiService",
-        "AudioEmitter" | "AudioListener" | "AudioDeviceInput" => "Audio",
+        "AudioEmitter" | "AudioListener" | "AudioDeviceInput" | "AudioRecorder" => "Audio",
+        "SoundService" | "VRService" | "HapticService" | "VideoService" => "Media",
+        "UIPageLayout" => "GuiObjects",
         "DragDetector" | "UIDragDetector" | "ClickDetector" | "Camera" | "PlayerMouse" => "Drag",
         "InputAction" | "InputBinding" | "InputContext" => "InputActions",
         "ProximityPromptService" | "ProximityPrompt" => "Prompts",
@@ -620,6 +624,10 @@ pub(crate) fn member(
         && matches!(key, "TweenPosition" | "TweenSize" | "TweenSizeAndPosition")
     {
         Some("GuiService")
+    } else if class == "ScrollingFrame"
+        && matches!(key, "GetScrollVelocity" | "ResetScrollVelocity")
+    {
+        Some("GuiObjects")
     } else {
         module_of(class)
     };
@@ -1003,6 +1011,32 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "id",
         lua.create_function(|_, value: Value| instance_id(&value))?,
+    )?;
+    // A property only the engine writes (`UIPageLayout.CurrentPage`).
+    host.set(
+        "set_engine",
+        lua.create_function(|lua, (id, name, value): (u32, String, Value)| {
+            let ctx = engine(lua).ctx.clone();
+            let referent = Ref::new(id);
+            let kind = {
+                let dom = ctx.dom();
+                dom.get(referent).and_then(|i| {
+                    ctx.database()
+                        .resolve_property(i.class(), &name)
+                        .map(|d| d.value_type.clone())
+                })
+            };
+            let Some(kind) = kind else {
+                return Err(mlua::Error::runtime(format!("no property {name}")));
+            };
+            if value.is_nil() {
+                let _ = ctx.dom_mut().remove_property(referent, &name);
+                return Ok(());
+            }
+            let variant = crate::property::from_lua::lua_to_variant(&ctx, &name, &kind, &value)?;
+            let _ = ctx.dom_mut().set_property(referent, &name, variant);
+            Ok(())
+        })?,
     )?;
     host.set(
         "instance",

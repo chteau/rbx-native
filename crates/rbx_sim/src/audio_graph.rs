@@ -63,15 +63,21 @@ const SPLITTER_OUT: &[&str] = &[
 /// `None` for a class that isn't one.
 pub fn pins(class: &str) -> Option<(&'static [&'static str], &'static [&'static str])> {
     Some(match class {
-        "AudioPlayer" | "AudioDeviceInput" | "AudioListener" => (&[], OUT),
-        "AudioEmitter" | "AudioDeviceOutput" | "AudioAnalyzer" | "AudioStreamReader" => (IN, &[]),
+        "AudioPlayer"
+        | "AudioDeviceInput"
+        | "AudioListener"
+        | "AudioTextToSpeech"
+        | "AudioWindSynthesizer"
+        | "VideoPlayer" => (&[], OUT),
+        "AudioEmitter" | "AudioDeviceOutput" | "AudioAnalyzer" | "AudioStreamReader"
+        | "AudioRecorder" | "AudioSpeechToText" | "VideoDisplay" => (IN, &[]),
         "AudioStreamWriter" => (&[], OUT),
         "AudioCompressor" => (&["Input", "Sidechain"], OUT),
         "AudioChannelMixer" => (MIXER_IN, OUT),
         "AudioChannelSplitter" => (IN, SPLITTER_OUT),
         "AudioEqualizer" | "AudioReverb" | "AudioEcho" | "AudioDistortion" | "AudioChorus"
         | "AudioFader" | "AudioPitchShifter" | "AudioFlanger" | "AudioTremolo" | "AudioFilter"
-        | "AudioLimiter" => (IN, OUT),
+        | "AudioLimiter" | "AudioGate" => (IN, OUT),
         _ => return None,
     })
 }
@@ -247,6 +253,16 @@ pub enum Kind {
         pitch: f32,
         window: f32,
     },
+    /// `AudioGate`: opens above `open` dB, closes below `close` dB,
+    /// fading in over `attack` and out over `release` seconds.
+    Gate {
+        open: f32,
+        close: f32,
+        attack: f32,
+        release: f32,
+    },
+    /// `AudioRecorder` while `IsRecording`: keeps what its input carries.
+    Recorder,
     Mixer,
     Splitter,
     Emitter,
@@ -355,6 +371,8 @@ struct Pass<'a> {
 pub struct Renderer {
     states: HashMap<Ref, State>,
     pub analysis: HashMap<Ref, Analysis>,
+    /// What each recording `AudioRecorder` heard so far.
+    pub recorded: HashMap<Ref, Vec<Frame>>,
 }
 
 impl Renderer {
@@ -384,6 +402,10 @@ impl Renderer {
                     let state = self.states.entry(node).or_default();
                     self.analysis
                         .insert(node, analyze(state, &input, spectrum.then_some(window)));
+                }
+                Kind::Recorder => {
+                    let input = self.input(&mut pass, node, "Input");
+                    self.recorded.entry(node).or_default().extend(input);
                 }
                 _ => {}
             }
@@ -703,6 +725,35 @@ fn effect(state: &mut State, kind: &Kind, mut x: Vec<Frame>, side: Option<&[Fram
                     y = [y[0] + tap[0] * gain, y[1] + tap[1] * gain];
                 }
                 *f = y;
+            }
+        }
+        &Kind::Gate {
+            open,
+            close,
+            attack,
+            release,
+        } => {
+            // `level` follows the input's peak (5 ms), `phase` is the gain.
+            let follow = (-1.0 / seconds(0.005)).exp();
+            let (up, down) = (
+                1.0 / seconds(attack).max(1.0),
+                1.0 / seconds(release).max(1.0),
+            );
+            for f in &mut x {
+                let peak = f[0].abs().max(f[1].abs());
+                state.level = peak.max(state.level * follow);
+                let db = 20.0 * state.level.max(1e-9).log10();
+                if db >= open {
+                    state.smooth[0] = 1.0;
+                } else if db < close {
+                    state.smooth[0] = 0.0;
+                }
+                state.phase = if state.smooth[0] > state.phase {
+                    (state.phase + up).min(1.0)
+                } else {
+                    (state.phase - down).max(0.0)
+                };
+                *f = f.map(|s| s * state.phase);
             }
         }
         _ => {}

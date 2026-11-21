@@ -101,8 +101,14 @@ const GUI_OBJECT_SIGNALS: &[&str] = &[
     "SelectionGained",
     "SelectionLost",
     "TouchTap",
+    "TouchLongPress",
+    "TouchPan",
+    "TouchPinch",
+    "TouchRotate",
+    "TouchSwipe",
 ];
 const GUI_BUTTON_SIGNALS: &[&str] = &[
+    "SecondaryActivated",
     "MouseButton1Down",
     "MouseButton1Up",
     "MouseButton1Click",
@@ -188,6 +194,8 @@ pub struct Gui {
     pub notifications: Vec<(String, String)>,
     /// `ChatMakeSystemMessage`s, for the chat window.
     pub system_messages: Vec<String>,
+    /// The device is a touch screen, typing on its on-screen keyboard.
+    pub(crate) touch: bool,
 }
 
 impl Default for Gui {
@@ -207,6 +215,7 @@ impl Default for Gui {
             topbar: TOPBAR_TRANSPARENCY,
             notifications: Vec::new(),
             system_messages: Vec::new(),
+            touch: false,
         }
     }
 }
@@ -349,6 +358,12 @@ impl Gui {
         ]
     }
 
+    /// The GuiObject a finger at `position` (viewport pixels) is on, for
+    /// its gestures: the topmost one there.
+    pub(crate) fn touch_target(&self, position: [f32; 2]) -> Option<Ref> {
+        layout::hits(&self.laid, position).first().copied()
+    }
+
     /// The object a press lands on: the topmost one that takes input (a
     /// GuiButton, a TextBox, or `Active`).
     fn target(&self, dom: &WeakDom, db: &ReflectionDatabase) -> Option<Ref> {
@@ -399,6 +414,26 @@ impl Gui {
         let mut out = Handled::default();
         let me = Arg::Instance(object);
         match input {
+            // A finger presses the GUI as the left button does, where it is.
+            Input::Touch {
+                position, phase, ..
+            } => {
+                let moved = Input::Move {
+                    position: *position,
+                    delta: [0.0; 2],
+                };
+                out = self.input(dom, db, &moved, object, uis);
+                if *phase != crate::input::Phase::Moved {
+                    let button = Input::Button {
+                        button: 1,
+                        down: *phase == crate::input::Phase::Began,
+                    };
+                    let pressed = self.input(dom, db, &button, object, uis);
+                    out.before.extend(pressed.before);
+                    out.after.extend(pressed.after);
+                    out.processed = pressed.processed;
+                }
+            }
             Input::Move { position, .. } => {
                 self.mouse = *position;
                 let hits = layout::hits(&self.laid, self.mouse);
@@ -452,6 +487,9 @@ impl Gui {
                                 "Activated",
                                 vec![me.clone(), Arg::Number(0.0)],
                             ));
+                        } else {
+                            out.before
+                                .push(signal(t, "SecondaryActivated", vec![me.clone()]));
                         }
                     }
                     out.before.push(signal(t, "InputEnded", vec![me]));
@@ -492,6 +530,13 @@ impl Gui {
                 let text = text_of(dom, box_);
                 match code.as_str() {
                     "Return" | "KeypadEnter" if !multi => {
+                        if self.touch {
+                            out.before.push(signal(
+                                box_,
+                                "ReturnPressedFromOnScreenKeyboard",
+                                Vec::new(),
+                            ));
+                        }
                         self.release_focus(true, me, uis, &mut out.before);
                     }
                     "Escape" => self.release_focus(false, me, uis, &mut out.before),
@@ -521,6 +566,9 @@ impl Gui {
 pub(crate) fn is_method(class: &str, key: &str) -> bool {
     let db = ReflectionDatabase::shared();
     match class {
+        _ if key == "GetGuiObjectsAtPosition" => {
+            db.is_subclass_of(class, "LayerCollector") || db.is_subclass_of(class, "BasePlayerGui")
+        }
         "StarterGui" => matches!(
             key,
             "SetCoreGuiEnabled" | "GetCoreGuiEnabled" | "SetCore" | "GetCore"
@@ -539,7 +587,12 @@ pub(crate) fn is_signal(class: &str, key: &str) -> bool {
     let db = ReflectionDatabase::shared();
     (db.is_subclass_of(class, "GuiObject") && GUI_OBJECT_SIGNALS.contains(&key))
         || (db.is_subclass_of(class, "GuiButton") && GUI_BUTTON_SIGNALS.contains(&key))
-        || (db.is_subclass_of(class, "TextBox") && matches!(key, "Focused" | "FocusLost"))
+        || (db.is_subclass_of(class, "TextBox")
+            && matches!(
+                key,
+                "Focused" | "FocusLost" | "ReturnPressedFromOnScreenKeyboard"
+            ))
+        || (db.is_subclass_of(class, "GuiBase2d") && key == "SelectionChanged")
         || (class == "StarterGui" && key == "CoreGuiChangedSignal")
         || (class == "PlayerGui" && key == "TopbarTransparencyChangedSignal")
         || (class == "UserInputService" && matches!(key, "TextBoxFocused" | "TextBoxFocusReleased"))
@@ -578,6 +631,25 @@ pub(crate) fn call(
         ..CallReply::default()
     };
     match method {
+        // Topmost first, within a layer collector's own; counted from below
+        // the top bar, as `AbsolutePosition` is.
+        "GetGuiObjectsAtPosition" => {
+            let number = |i: usize| match args.get(i) {
+                Some(Arg::Number(n)) => Ok(*n as f32),
+                _ => Err(format!("Argument {} missing or nil", i + 1)),
+            };
+            let point = [number(0)?, number(1)? + TOPBAR_INSET];
+            let within = class != "PlayerGui";
+            let found = layout::hits(&gui.laid, point)
+                .into_iter()
+                .filter(|r| {
+                    !within
+                        || std::iter::successors(dom.parent(*r), |p| dom.parent(*p))
+                            .any(|p| p == referent)
+                })
+                .collect();
+            Ok(CallReply::value(Arg::Instances(found)))
+        }
         "GetCoreGuiEnabled" => {
             let kind = core_type(args.first())?;
             Ok(CallReply::value(Arg::Bool(gui.core_enabled(&kind))))
