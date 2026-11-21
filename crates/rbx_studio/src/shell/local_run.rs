@@ -392,6 +392,30 @@ fn purchase_text(
                 ),
             )
         }
+        "MarketplaceService.PromptBulkPurchase" => {
+            format!("{} avatar items ({})", prompt.id, prompt.subscription)
+        }
+        "MarketplaceService.PromptRobloxSubscriptionPurchase" => "a Roblox subscription".to_owned(),
+        "MarketplaceService.PromptVIPServerPurchase" => "a private server".to_owned(),
+        "MarketplaceService.PromptRobuxTransferAsync" => {
+            let receiver = prompt.subscription.split(',').nth(1).unwrap_or("?");
+            return (
+                "Robux transfer (test)".to_owned(),
+                format!(
+                    "{who} sends {} Robux to user {receiver}. This is a test: no Robux move.",
+                    prompt.id
+                ),
+            );
+        }
+        "MarketplaceService.PromptCancelSubscription" => {
+            return (
+                "Cancel subscription (test)".to_owned(),
+                format!(
+                    "{who} is asked to cancel subscription {}. This is a test: nothing is charged or refunded.",
+                    prompt.subscription
+                ),
+            );
+        }
         kind if kind.starts_with("AvatarEditorService.") => {
             let what = match kind.trim_start_matches("AvatarEditorService.Prompt") {
                 "SaveAvatar" => "save this avatar",
@@ -526,6 +550,9 @@ impl Shell {
         let mode = data::mode(&self.path);
         let mut services = data::services(&self.path, mode);
         let data_line = data::go_live(&self.path, mode, &mut services);
+        services.web_session = self
+            .roblox_session()
+            .map(|s| rbx_lua::server::WebSession(s.expose_secret().to_owned()));
         push_row(&mut self.output, Feedback::Info(data_line));
         if let Some(device) = self.device_sim.device() {
             let touch = matches!(

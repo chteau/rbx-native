@@ -128,6 +128,14 @@ local methods = {
 		CanUsersDirectChatAsync = function(_, _, ids)
 			return ids
 		end,
+		-- Studio has chat groups only in a Team Test.
+		GetChatGroupsAsync = function(_, players)
+			if type(players) ~= "table" then
+				error("Unable to cast " .. typeof(players) .. " to Instances", 0)
+			end
+			task.wait()
+			error("TextChatService:GetChatGroupsAsync() is only available in a Team Test", 0)
+		end,
 	},
 }
 

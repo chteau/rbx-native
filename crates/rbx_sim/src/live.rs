@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod memory;
+
 use rbx_cloud::{Client, CloudError, EntryWrite, OrderedQuery, StoreRef, ALL_SCOPES};
 use serde_json::{json, Map, Value};
 
@@ -298,6 +300,10 @@ impl LiveStores {
 }
 
 impl rbx_lua::server::LiveData for LiveStores {
+    fn read_only(&self) -> bool {
+        self.read_only
+    }
+
     fn call(&self, op: &str, args: &[Value]) -> Result<Value, String> {
         let text = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
         match op {
@@ -334,7 +340,9 @@ impl rbx_lua::server::LiveData for LiveStores {
             "keys" => self.keys(text(0), args.get(1).and_then(Value::as_str), text(2)),
             "stores" => self.stores(text(0)),
             "entries" => self.entries(text(0)),
-            other => Err(format!("unknown DataStore call {other}")),
+            other => self
+                .memory(other, args)
+                .unwrap_or_else(|| Err(format!("unknown live call {other}"))),
         }
     }
 }

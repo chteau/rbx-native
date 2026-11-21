@@ -274,6 +274,13 @@ impl Data {
             .insert(item.to_owned());
         self.save();
     }
+
+    pub fn revoke(&mut self, user: i64, item: &str) {
+        if let Some(items) = self.owned.get_mut(&user.to_string()) {
+            items.remove(item);
+            self.save();
+        }
+    }
 }
 
 /// When the run of versions ending the slice started: the first version

@@ -14,6 +14,7 @@ pub(crate) mod misc;
 pub(crate) mod params;
 pub(crate) mod physical_properties;
 pub(crate) mod rect;
+pub(crate) mod secret;
 pub(crate) mod sequence;
 pub(crate) mod udim;
 pub(crate) mod vector3;

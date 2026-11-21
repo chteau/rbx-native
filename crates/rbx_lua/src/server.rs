@@ -50,7 +50,8 @@ pub use hooks::CollisionGroups;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
 pub use services::{
-    set_text_measure, Arrival, Device, LiveData, Notice, PurchasePrompt, Services, TeleportRequest,
+    set_text_measure, Arrival, AssetSource, Device, LiveData, Notice, PurchasePrompt, Services,
+    TeleportRequest, WebSession,
     TextMeasure,
 };
 pub use terrain::{TerrainOp, TerrainReply};

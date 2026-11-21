@@ -1453,8 +1453,18 @@ impl Simulation {
         }
     }
 
-    /// The DataStores, purchases and web lookups this peer's scripts use.
-    pub fn set_services(&self, config: rbx_lua::server::Services) {
+    /// The DataStores, purchases and web lookups this peer's scripts use;
+    /// models load through the fetcher sounds use, unless they say.
+    pub fn set_services(&self, mut config: rbx_lua::server::Services) {
+        if config.assets.is_none() {
+            config.assets = self
+                .shared
+                .borrow()
+                .sounds
+                .fetcher
+                .clone()
+                .map(|f| std::sync::Arc::new(Models(f)) as _);
+        }
         self.vm.set_services(config);
     }
 
@@ -1966,5 +1976,23 @@ mod stat_tests {
         ] {
             assert_eq!(stat_number(value), shown, "{value}");
         }
+    }
+}
+
+/// `AssetService:LoadAssetAsync`'s models, through the asset fetcher.
+struct Models(std::sync::Arc<dyn rbx_assets::AssetFetcher>);
+
+impl std::fmt::Debug for Models {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Models")
+    }
+}
+
+impl rbx_lua::server::AssetSource for Models {
+    fn fetch(&self, id: u64) -> Result<Vec<u8>, String> {
+        self.0.fetch_id(id).map_err(|e| match e {
+            rbx_assets::FetchError::NotFound(_) => "HTTP 404 (Not Found)".to_owned(),
+            other => other.to_string(),
+        })
     }
 }

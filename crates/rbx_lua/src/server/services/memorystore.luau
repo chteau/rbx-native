@@ -3,8 +3,12 @@
 -- and what the MemoryStore golden measured on a live server: sorted maps
 -- (ordered by numeric sort key, then string sort key, then none, each by
 -- key), hash maps, queues (priority first, then first in, with read
--- invisibility), item expiry on the game clock, and the errors with their
--- exact text. Everything lives in this server's memory.
+-- invisibility), item expiry on the game clock, distributed counters, and
+-- the errors with their exact text. With the experience's live data on
+-- (see DataStoreService), sorted maps and queues are the experience's
+-- real ones through Open Cloud; hash maps and counters, which Open Cloud
+-- can't reach, stay in this server's memory, and so do queues under the
+-- read-only guard (reading a queue hides its items: a write).
 local host = ...
 
 local M = {}
@@ -74,6 +78,23 @@ local function sortKeyOf(value)
 	return nil
 end
 
+-- Whether `object` goes to the experience's real memory store.
+local function remote(object)
+	if not host.live() then
+		return false
+	end
+	return object.kind == "map" or (object.kind == "queue" and not host.live_read_only())
+end
+
+-- A live sorted map's items, as the local ones are kept.
+local function remoteItems(self)
+	local items = {}
+	for _, item in host.ds_live("map_list", self.name) do
+		items[item.key] = { key = item.key, value = item.value, expires = math.huge, sortKey = sortKeyOf(item.sortKey) }
+	end
+	return items
+end
+
 -- Sorted map order: numeric sort keys, string sort keys, then none.
 local function rank(sortKey)
 	return type(sortKey) == "number" and 0 or type(sortKey) == "string" and 1 or 2
@@ -116,16 +137,27 @@ function MAP.SetAsync(self, key, value, seconds, sortKey)
 	local text = encode(value)
 	local expires = expiration(seconds)
 	request()
+	if remote(self) then
+		return host.ds_live("map_set", self.name, key, text, seconds, sortKeyOf(sortKey))
+	end
 	local items = live(self.items)
 	local existed = items[key] ~= nil
 	items[key] = { key = key, value = text, expires = expires, sortKey = sortKeyOf(sortKey) }
 	return existed
 end
 
+local function itemOf(self, key)
+	if remote(self) then
+		local found = host.ds_live("map_get", self.name, key)
+		return found and { key = key, value = found.value, sortKey = sortKeyOf(found.sortKey) }
+	end
+	return live(self.items)[key]
+end
+
 function MAP.GetAsync(self, key)
 	key = checkKey(key)
 	request()
-	local item = live(self.items)[key]
+	local item = itemOf(self, key)
 	if not item then
 		return nil
 	end
@@ -136,7 +168,7 @@ function MAP.UpdateAsync(self, key, transform, seconds)
 	key = checkKey(key)
 	local expires = expiration(seconds)
 	request()
-	local item = live(self.items)[key]
+	local item = itemOf(self, key)
 	local value, sortKey = transform(item and host.decode(item.value), item and item.sortKey)
 	if value == nil then
 		return nil
@@ -147,6 +179,10 @@ function MAP.UpdateAsync(self, key, transform, seconds)
 	elseif sortKey == nil and item then
 		sortKey = item.sortKey
 	end
+	if remote(self) then
+		host.ds_live("map_set", self.name, key, text, seconds, sortKeyOf(sortKey))
+		return host.decode(text)
+	end
 	self.items[key] = { key = key, value = text, expires = expires, sortKey = sortKeyOf(sortKey) }
 	return host.decode(text)
 end
@@ -154,13 +190,17 @@ end
 function MAP.RemoveAsync(self, key)
 	key = checkKey(key)
 	request()
+	if remote(self) then
+		host.ds_live("map_remove", self.name, key)
+		return
+	end
 	self.items[key] = nil
 end
 
 function MAP.GetSizeAsync(self)
 	request()
 	local n = 0
-	for _ in live(self.items) do
+	for _ in if remote(self) then remoteItems(self) else live(self.items) do
 		n += 1
 	end
 	return n
@@ -172,7 +212,7 @@ function MAP.GetRangeAsync(self, direction, count, lower, upper)
 	end
 	request()
 	local list = {}
-	for _, item in live(self.items) do
+	for _, item in if remote(self) then remoteItems(self) else live(self.items) do
 		if past(item, lower, 1) and past(item, upper, -1) then
 			table.insert(list, item)
 		end
@@ -209,6 +249,10 @@ function QUEUE.AddAsync(self, value, seconds, priority)
 	local text = encode(value)
 	local expires = expiration(seconds)
 	request()
+	if remote(self) then
+		host.ds_live("queue_add", self.name, text, seconds, type(priority) == "number" and priority or 0)
+		return
+	end
 	self.serial += 1
 	table.insert(self.items, {
 		value = text,
@@ -248,6 +292,25 @@ function QUEUE.ReadAsync(self, count, allOrNothing, waitTimeout)
 	waitTimeout = type(waitTimeout) == "number" and waitTimeout or -1
 	local deadline = now() + (waitTimeout < 0 and 30 or waitTimeout)
 	request()
+	if remote(self) then
+		-- Open Cloud reads don't wait: ask again each second until the
+		-- timeout.
+		while true do
+			local read = host.ds_live("queue_read", self.name, count, self.timeout)
+			local enough = #read.values > 0 and (not allOrNothing or #read.values >= count)
+			if enough then
+				local values = {}
+				for _, text in read.values do
+					table.insert(values, host.decode(text))
+				end
+				return values, read.id
+			end
+			if now() >= deadline then
+				return nil
+			end
+			task.wait(1)
+		end
+	end
 	local list = visible(self)
 	while (#list == 0 or (allOrNothing and #list < count)) and now() < deadline do
 		task.wait()
@@ -271,6 +334,10 @@ end
 
 function QUEUE.RemoveAsync(self, id)
 	request()
+	if remote(self) then
+		host.ds_live("queue_remove", self.name, tostring(id))
+		return
+	end
 	local taken = self.reads[tostring(id)]
 	if not taken then
 		return
@@ -285,6 +352,9 @@ end
 
 function QUEUE.GetSizeAsync(self, excludeInvisible)
 	request()
+	if remote(self) then
+		fail("GetSizeAsync isn't available for the experience's live queues: Open Cloud can't count them")
+	end
 	if excludeInvisible then
 		return #visible(self)
 	end
@@ -301,13 +371,47 @@ local function structure(class, kind, name, extra)
 	local instance, id = host.new(class, name)
 	local object = extra or {}
 	object.kind = kind
+	object.name = name
 	object.items = object.items or {}
 	objects[id] = object
 	byName[key] = instance
 	return instance
 end
 
+-- Distributed counters: kept in this server's memory (Open Cloud has
+-- none), each expiring `expiration` seconds after its last increment.
+local COUNTER = {}
+
+function COUNTER.IncrementAsync(self, delta, seconds)
+	if type(delta) == "string" and tonumber(delta) then
+		delta = tonumber(delta)
+	end
+	if type(delta) ~= "number" then
+		fail("Unable to cast " .. typeof(delta) .. " to int64")
+	end
+	local expires = expiration(seconds)
+	request()
+	if self.expires <= now() then
+		self.value = 0
+	end
+	self.value += math.floor(delta)
+	self.expires = expires
+	return self.value
+end
+
+function COUNTER.GetAsync(self)
+	request()
+	if self.expires <= now() then
+		self.value = 0
+	end
+	return self.value
+end
+
 local SERVICE = {}
+
+function SERVICE.GetDistributedCounter(_, name)
+	return structure("MemoryStoreDistributedCounter", "counter", tostring(name), { value = 0, expires = 0 })
+end
 
 function SERVICE.GetSortedMap(_, name)
 	return structure("MemoryStoreSortedMap", "map", tostring(name), { sorted = true })
@@ -359,7 +463,7 @@ function M.member(class, id, key)
 		end
 		return nil, false
 	end
-	local methods = object.kind == "queue" and QUEUE or MAP
+	local methods = if object.kind == "queue" then QUEUE elseif object.kind == "counter" then COUNTER else MAP
 	local f = methods[key]
 	if not f or (SORTED_ONLY[key] and not object.sorted) or (HASH_ONLY[key] and object.sorted) then
 		return nil, false
