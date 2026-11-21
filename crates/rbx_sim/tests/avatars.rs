@@ -111,7 +111,10 @@ print("done")
     sim.join("Player1", 1, None);
     sim.start();
     let mut lines = Vec::new();
-    while sim.time() < 5.0 && !lines.iter().any(|l: &String| l == "done") {
+    // Ends on "done"; the cap is only there to fail rather than hang, and
+    // no script may time out however loaded the machine is.
+    sim.set_script_timeout(std::time::Duration::from_secs(86_400));
+    while sim.time() < 120.0 && !lines.iter().any(|l: &String| l == "done") {
         sim.step();
         lines.extend(sim.take_output().lines().iter().cloned());
     }

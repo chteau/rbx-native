@@ -2041,5 +2041,8 @@
     "top_drift": 0.49700000000000005,
     "top_dy": 0.08399999999999999
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "top_dy": "Roblox's five-high stack never sleeps: a box in it keeps jittering at 0.4 stud/s and the top sinks 0.0005 stud a frame for seconds; ours goes still at the shared sleep speed (0.6 stud/s, from SleepPile's sliders and pile) and keeps the first frames' settle"
+  }
 }

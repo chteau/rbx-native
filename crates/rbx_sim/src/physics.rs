@@ -64,6 +64,22 @@ const IMPACT_SPEED: Real = 1.5;
 const KICKED_IMPACT: Real = 6.0;
 const IMPACT_KICK: Real = 0.75;
 const FRAME: Real = 1.0 / 60.0;
+/// A body deeper than this in something is put back out at once, to
+/// `RESTING_DEPTH`: Roblox resolves a deep overlap within the frame (a block
+/// made 6 studs into a slab is out 5.89 studs one frame later, two that
+/// share 1.5 studs part by 1.45; SleepPile), while shallow resting contacts
+/// stay soft (BoxStack).
+const DEEP_OVERLAP: Real = 0.25;
+const RESTING_DEPTH: Real = 0.05;
+/// Below this speed (studs/s, at the body's farthest point) for half a
+/// second, a body sleeps: frictionless blocks at 0.4 stud/s stop dead, at
+/// 0.8 they slide on (SleepPile `slide_*`). Rapier compares half the
+/// speed against its threshold.
+const SLEEP_SPEED: Real = 0.6;
+/// How long a body stays under [`SLEEP_SPEED`] before it sleeps. Roblox's
+/// moments of going still scatter from 11 to 32 frames with no single rule
+/// (SleepWake, SleepPile `*_still_from`); this splits them.
+const SLEEP_AFTER: Real = 0.35;
 /// Drag of terrain water per stud³ submerged, per stud/s (Buoyancy).
 const WATER_DRAG: Real = 5.7;
 /// Studs between the points a part is sampled at for water.
@@ -104,6 +120,12 @@ struct Assembly {
     was_free: std::cell::Cell<bool>,
     /// Written back on the last frame: awake, or just fallen asleep.
     moved: std::cell::Cell<bool>,
+    /// Asleep on its own (see [`World::freeze_resting`]): its body is fixed
+    /// until something wakes it.
+    frozen: bool,
+    /// Its pose at the end of the last frame and how long it has been
+    /// still.
+    rest: std::cell::Cell<(Pose, Real)>,
 }
 
 /// What scripts can ask of physics between steps (`Physics` for the VM):
@@ -1179,6 +1201,11 @@ impl World {
             shared.masses.remove(&part);
         }
         assembly.anchored = true;
+        let handle = assembly.body;
+        drop(shared);
+        // What rested on it wakes and falls (SleepWake `upper_dy_30`).
+        let partners = self.partners(handle);
+        let assembly = &mut self.assemblies[i];
         if let Some(body) = self.bodies.remove(
             assembly.body,
             &mut self.islands,
@@ -1191,6 +1218,9 @@ impl World {
             for collider in body.colliders() {
                 self.by_collider.remove(collider);
             }
+        }
+        for partner in partners {
+            self.thaw(partner);
         }
     }
 
@@ -1211,8 +1241,13 @@ impl World {
                 .linvel(vec3(parts[root].linear_velocity))
                 .angvel(vec3(parts[root].angular_velocity))
         };
-        let body = self.bodies.insert(builder.pose(root_pose).build());
         let assembly = self.assemblies.len();
+        let body = self
+            .bodies
+            .insert(builder.pose(root_pose).user_data(assembly as u128).build());
+        let activation = self.bodies[body].activation_mut();
+        activation.normalized_linear_threshold = SLEEP_SPEED / 2.0;
+        activation.time_until_sleep = SLEEP_AFTER;
         for &i in member {
             let part = &parts[i];
             let offset = root_pose.inverse() * pose_of(&part.cframe);
@@ -1288,6 +1323,8 @@ impl World {
             rate: std::cell::Cell::new(4),
             was_free: std::cell::Cell::new(false),
             moved: std::cell::Cell::new(true),
+            frozen: false,
+            rest: std::cell::Cell::new((Pose::IDENTITY, 0.0)),
         });
     }
 
@@ -1315,17 +1352,19 @@ impl World {
             return;
         };
         let pose = pose_of(cframe) * placed.offset.inverse();
-        if let Some(body) = self.bodies.get_mut(self.assemblies[placed.assembly].body) {
+        let handle = self.assemblies[placed.assembly].body;
+        self.thaw(handle);
+        if let Some(body) = self.bodies.get_mut(handle) {
             body.set_position(pose, true);
         }
     }
 
     /// A script's velocity write.
     pub fn set_velocity(&mut self, part: Ref, velocity: Vector3Data, angular: bool) {
-        let Some(placed) = self.parts.get(&part) else {
+        let Some(index) = self.parts.get(&part).map(|p| p.assembly) else {
             return;
         };
-        let assembly = &self.assemblies[placed.assembly];
+        let assembly = &self.assemblies[index];
         if assembly.anchored && !angular {
             if let Some(body) = self.bodies.get(assembly.body) {
                 for collider in body.colliders() {
@@ -1337,12 +1376,20 @@ impl World {
             }
             return;
         }
+        let handle = assembly.body;
+        self.thaw(handle);
+        let assembly = &self.assemblies[index];
+        // A speed under the sleep speed wakes the body without restarting
+        // its rest timer: a resting block given one is asleep again a frame
+        // later (SleepPile `slide_*`).
         if let Some(body) = self.bodies.get_mut(assembly.body) {
+            let v = vec3(velocity);
             if angular {
-                body.set_angvel(vec3(velocity), true);
+                body.set_angvel(v, false);
             } else {
-                body.set_linvel(vec3(velocity), true);
+                body.set_linvel(v, false);
             }
+            body.wake_up(v.length() >= SLEEP_SPEED);
         }
     }
 
@@ -1363,6 +1410,7 @@ impl World {
                 continue;
             }
             assembly.remote = remote;
+            assembly.frozen = false;
             let Some(body) = self.bodies.get_mut(assembly.body) else {
                 continue;
             };
@@ -1464,6 +1512,220 @@ impl World {
         out
     }
 
+    /// The bodies `handle` is in contact with.
+    fn partners(&self, handle: RigidBodyHandle) -> Vec<RigidBodyHandle> {
+        let Some(body) = self.bodies.get(handle) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for &collider in body.colliders() {
+            for pair in self.narrow.contact_pairs_with(collider) {
+                if !pair.has_any_active_contact() {
+                    continue;
+                }
+                let other = if pair.collider1 == collider {
+                    pair.collider2
+                } else {
+                    pair.collider1
+                };
+                if let Some(parent) = self.colliders.get(other).and_then(|c| c.parent()) {
+                    if parent != handle && !out.contains(&parent) {
+                        out.push(parent);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// How fast `body`'s farthest point moves (studs/s).
+    fn speed(body: &RigidBody) -> Real {
+        body.linvel().length() + body.angvel().length() * body.mass_properties().max_extent()
+    }
+
+    /// Wakes a frozen body (see [`World::freeze_resting`]).
+    fn thaw(&mut self, handle: RigidBodyHandle) {
+        let Some(body) = self.bodies.get_mut(handle) else {
+            return;
+        };
+        let i = body.user_data as usize;
+        let Some(assembly) = self.assemblies.get_mut(i).filter(|a| a.body == handle) else {
+            return;
+        };
+        if assembly.frozen {
+            assembly.frozen = false;
+            body.set_body_type(RigidBodyType::Dynamic, true);
+            body.wake_up(true);
+            for &collider in body.colliders() {
+                self.colliders[collider]
+                    .set_active_collision_types(ActiveCollisionTypes::default());
+            }
+        }
+    }
+
+    /// Roblox sleeps assemblies one by one, and a sleeping one holds still
+    /// for the awake ones touching it, like an anchored part: a settled
+    /// prop in a pile sleeps while a neighbour still slides (Rapier would
+    /// only sleep the whole pile at once). An assembly under the sleep
+    /// speed for [`SLEEP_AFTER`], touching nothing awake that moves faster,
+    /// freezes: its body turns fixed.
+    fn freeze_resting(&mut self, driven: &HashSet<RigidBodyHandle>) {
+        let mut freeze = Vec::new();
+        for (i, assembly) in self.assemblies.iter().enumerate() {
+            if assembly.anchored || assembly.remote || assembly.frozen {
+                continue;
+            }
+            let handle = assembly.body;
+            if driven.contains(&handle) || self.constrained.contains(&handle) {
+                continue;
+            }
+            let Some(body) = self.bodies.get(handle) else {
+                continue;
+            };
+            if body.is_sleeping() {
+                continue;
+            }
+            // Still is judged on what the frame did to its pose, so the
+            // solver's position corrections count as motion too.
+            let pose = *body.position();
+            let (last, still) = assembly.rest.get();
+            let moved = (pose.translation - last.translation).length()
+                + pose.rotation.angle_between(last.rotation) * assembly.size;
+            let slow = moved < SLEEP_SPEED * FRAME && Self::speed(body) < SLEEP_SPEED;
+            let still = if slow { still + FRAME } else { 0.0 };
+            assembly.rest.set((pose, still));
+            if still < SLEEP_AFTER {
+                continue;
+            }
+            let fast_neighbour = self.partners(handle).into_iter().any(|partner| {
+                self.bodies.get(partner).is_some_and(|other| {
+                    other.is_kinematic()
+                        || driven.contains(&partner)
+                        || other.is_dynamic()
+                            && !other.is_sleeping()
+                            && Self::speed(other) >= SLEEP_SPEED
+                })
+            });
+            if !fast_neighbour {
+                freeze.push(i);
+            }
+        }
+        for i in freeze {
+            let body = &mut self.bodies[self.assemblies[i].body];
+            body.set_body_type(RigidBodyType::Fixed, false);
+            body.sleep();
+            // It keeps touching what it rests on (TouchedOrder: no
+            // TouchEnded when the block goes still on the floor).
+            for &collider in body.colliders() {
+                self.colliders[collider].set_active_collision_types(
+                    ActiveCollisionTypes::default() | ActiveCollisionTypes::FIXED_FIXED,
+                );
+            }
+            self.assemblies[i].frozen = true;
+            self.assemblies[i].rest.set((Pose::IDENTITY, 0.0));
+        }
+    }
+
+    /// Wakes the frozen bodies an awake one moving faster than the sleep
+    /// speed touches, as Roblox wakes a sleeping assembly that is hit.
+    fn wake_touched(&mut self) {
+        let mut thaw = Vec::new();
+        for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.frozen) {
+            let Some(body) = self.bodies.get(assembly.body) else {
+                continue;
+            };
+            if body.is_sleeping() || Self::speed(body) < SLEEP_SPEED {
+                continue;
+            }
+            for partner in self.partners(assembly.body) {
+                let i = self
+                    .bodies
+                    .get(partner)
+                    .map_or(usize::MAX, |b| b.user_data as usize);
+                if self
+                    .assemblies
+                    .get(i)
+                    .is_some_and(|a| a.frozen && a.body == partner)
+                {
+                    thaw.push(partner);
+                }
+            }
+        }
+        for handle in thaw {
+            self.thaw(handle);
+        }
+    }
+
+    /// Puts every awake body that is more than [`DEEP_OVERLAP`] into
+    /// something back out to [`RESTING_DEPTH`], along each deep contact's
+    /// normal; two free bodies share the move by inverse mass. `skip`:
+    /// characters, which keep to their own drive, and bodies that fell
+    /// free this frame, which come out the way they went in (`way_out`).
+    fn push_out_deep(&mut self, skip: &HashSet<RigidBodyHandle>) {
+        let mut moves: Vec<(RigidBodyHandle, Vector)> = Vec::new();
+        for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
+            let handle = assembly.body;
+            let Some(body) = self.bodies.get(handle) else {
+                continue;
+            };
+            if body.is_sleeping() || skip.contains(&handle) {
+                continue;
+            }
+            let inverse = |b: &RigidBody| {
+                if b.is_dynamic() && !b.is_sleeping() && b.mass() > 0.0 {
+                    1.0 / b.mass()
+                } else {
+                    0.0
+                }
+            };
+            let own = inverse(body);
+            let mut out = Vector::ZERO;
+            for &collider in body.colliders() {
+                for pair in self.narrow.contact_pairs_with(collider) {
+                    let (first, other) = if pair.collider1 == collider {
+                        (true, pair.collider2)
+                    } else {
+                        (false, pair.collider1)
+                    };
+                    let Some(other) = self.colliders.get(other) else {
+                        continue;
+                    };
+                    if other.is_sensor() || other.parent() == Some(handle) {
+                        continue;
+                    }
+                    let theirs = other
+                        .parent()
+                        .and_then(|h| self.bodies.get(h))
+                        .map_or(0.0, inverse);
+                    let share = own / (own + theirs);
+                    for manifold in pair.manifolds() {
+                        let deepest = manifold.points.iter().map(|p| -p.dist).fold(0.0, Real::max);
+                        if deepest <= DEEP_OVERLAP {
+                            continue;
+                        }
+                        // The normal points from the first collider to the second.
+                        let normal = if first {
+                            -manifold.data.normal
+                        } else {
+                            manifold.data.normal
+                        };
+                        let needed = (deepest - RESTING_DEPTH) * share - out.dot(normal);
+                        if needed > 0.0 {
+                            out += normal * needed;
+                        }
+                    }
+                }
+            }
+            if out != Vector::ZERO {
+                moves.push((handle, out));
+            }
+        }
+        for (handle, out) in moves {
+            let body = &mut self.bodies[handle];
+            body.set_translation(body.translation() + out, true);
+        }
+    }
+
     /// Whether any of `assembly`'s parts is in contact with something.
     fn in_contact(&self, assembly: &Assembly) -> bool {
         let Some(body) = self.bodies.get(assembly.body) else {
@@ -1501,6 +1763,7 @@ impl World {
     ) -> Vec<Touch> {
         self.shared.borrow_mut().generation += 1;
         self.sync_terrain();
+        self.wake_touched();
         self.out_of_terrain();
         let wet = self.water_forces(gravity);
         // A world just built has no contacts yet: everything takes 240 Hz once.
@@ -1576,7 +1839,9 @@ impl World {
             let Some(placed) = self.parts.get(&part) else {
                 continue;
             };
-            if let Some(body) = self.bodies.get_mut(self.assemblies[placed.assembly].body) {
+            let handle = self.assemblies[placed.assembly].body;
+            self.thaw(handle);
+            if let Some(body) = self.bodies.get_mut(handle) {
                 let impulse = Vector::from_array(impulse);
                 if angular {
                     body.apply_torque_impulse(impulse, true);
@@ -1622,6 +1887,8 @@ impl World {
             );
             self.push_water(&wet, -1.0);
         }
+        self.push_out_deep(&driven.union(&free_bodies).copied().collect());
+        self.freeze_resting(&driven);
         let events = self
             .events
             .0

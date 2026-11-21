@@ -40,3 +40,39 @@ fn settled_mesh_props_sleep_and_stay_still() {
         "asleep, nothing moves"
     );
 }
+
+/// The swim game's case: loose blocks overlapping each other and sunk in
+/// the ground, as maps leave them. They come out within the first frames
+/// and go still, instead of grinding out at Rapier's corrective speed for
+/// minutes and keeping everything on them awake.
+#[test]
+fn overlapping_and_buried_props_come_out_and_sleep() {
+    let (dom, props) = conformance::prop_pile(400);
+    let slab = props[0];
+    let mut session = Session::new(dom).unwrap();
+    session.start();
+    session.step();
+    session.step();
+    let slab_y = positions(&session, &[slab])[0][1];
+    assert!(
+        slab_y > 1.9,
+        "the slab sunk 6 studs is out within two frames: centre at {slab_y}"
+    );
+    for _ in 0..(3.0 * rbx_sim::FRAME_HZ) as usize {
+        session.step();
+    }
+    let settled = positions(&session, &props);
+    for _ in 0..60 {
+        session.step();
+    }
+    let moving = positions(&session, &props)
+        .iter()
+        .zip(&settled)
+        .filter(|(now, then)| now != then)
+        .count();
+    assert!(
+        moving * 20 <= props.len(),
+        "three seconds in, all but a few of {} props are still: {moving} move",
+        props.len()
+    );
+}

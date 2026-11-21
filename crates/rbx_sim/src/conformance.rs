@@ -208,6 +208,11 @@ pub const TESTS: &[Test] = &[
         tolerance: &[("*", 0.1), ("still_from", 10.0)],
     },
     Test {
+        name: "SleepPile",
+        source: include_str!("../conformance/tests/SleepPile.luau"),
+        tolerance: &[("*", 0.1), ("*still_from*", 20.0)],
+    },
+    Test {
         name: "BoxStack",
         source: include_str!("../conformance/tests/BoxStack.luau"),
         tolerance: &[("*", 0.02)],
@@ -886,6 +891,56 @@ pub fn bare_place() -> WeakDom {
     dom
 }
 
+/// [`bare_place`] with about `n` loose blocks (whole clumps) built the way real maps leave
+/// them: in clumps of four that overlap each other by a stud, every third
+/// clump sunk 3 studs into the baseplate, and a big slab sunk 6 studs with
+/// clumps on it. Roblox pushes them all out within a frame and they sleep
+/// (SleepPile); the busy-place test and `bench_props --pile`.
+pub fn prop_pile(n: usize) -> (WeakDom, Vec<Ref>) {
+    let mut dom = bare_place();
+    let workspace = service(&mut dom, "Workspace");
+    let mut props = Vec::new();
+    let mut add = |dom: &mut WeakDom, position: Vector3Data, size: Vector3Data| {
+        let prop = child(dom, "Part", "Prop", workspace);
+        let rotation = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let _ = dom.set_property(
+            prop,
+            "CFrame",
+            Variant::CFrame(CFrameData { position, rotation }),
+        );
+        let _ = dom.set_property(prop, "Size", Variant::Vector3(size));
+        props.push(prop);
+    };
+    let v = |x: f32, y: f32, z: f32| Vector3Data { x, y, z };
+    add(&mut dom, v(0.0, -2.0, 0.0), v(20.0, 8.0, 20.0));
+    let clumps = n.saturating_sub(1).div_ceil(4);
+    let side = (clumps as f32).sqrt().ceil() as usize;
+    for i in 0..clumps {
+        let (x, z) = (
+            (i % side) as f32 * 8.0 - 60.0,
+            (i / side) as f32 * 8.0 - 60.0,
+        );
+        let on_slab = x.abs() < 8.0 && z.abs() < 8.0;
+        let floor = if on_slab {
+            2.0
+        } else if i % 3 == 0 {
+            -3.0
+        } else {
+            0.0
+        };
+        for k in 0..4 {
+            let k = k as f32;
+            add(
+                &mut dom,
+                v(x + k * 1.0, floor + 1.0 + k * 0.6, z + (k % 2.0)),
+                v(2.0, 2.0, 2.0),
+            );
+        }
+    }
+    dom.take_changes();
+    (dom, props)
+}
+
 /// [`bare_place`] with `n` unanchored rock-like `MeshPart`s dropped in a
 /// grid onto the baseplate, a busy place's props: the busy-place test and
 /// bench. Returns the place and the props, whose mesh the caller hands to
@@ -1097,6 +1152,8 @@ pub fn run_some_in_sim(
     add_to(&mut dom, PASSES, only);
     dom.take_changes();
     let mut session = Session::new(dom)?;
+    // A test's verdict mustn't hang on how loaded the machine is.
+    session.set_script_timeout(std::time::Duration::from_secs(86_400));
     if let Some(fetcher) = fetcher {
         session.set_fetcher(fetcher);
     }

@@ -44,7 +44,7 @@ fn main() {
         }
     }
     let ours =
-        conformance::run_some_in_sim(1200.0, &only, Some(Arc::new(Anonymous(Client::new(None)))))
+        conformance::run_some_in_sim(2400.0, &only, Some(Arc::new(Anonymous(Client::new(None)))))
             .unwrap_or_else(|err| {
                 eprintln!("{err}");
                 std::process::exit(1);

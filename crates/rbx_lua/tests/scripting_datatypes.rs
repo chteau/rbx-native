@@ -221,7 +221,9 @@ fn wrong_argument_errors_for_new_datatype_constructors() {
         let error = runtime
             .run("PhysicalProperties.new(1, 2)")
             .expect_err("elasticity is required");
-        assert!(error.to_string().contains("f32"));
+        assert!(error
+            .to_string()
+            .contains("bad argument #3 to 'new' (number expected)"));
     }
     {
         let mut runtime = runtime();

@@ -429,6 +429,13 @@ impl ServerVm {
         })
     }
 
+    /// How long one resumption of a script may run before it dies (10 s,
+    /// Studio's default). Tests raise it: it is the one wall clock a run
+    /// reads, and a loaded machine can take that long on a heavy test.
+    pub fn set_script_timeout(&mut self, timeout: Duration) {
+        self.budget = timeout;
+    }
+
     /// Makes this VM a client's: `RunService:IsClient()` is true and
     /// `IsServer()` false, `RunService:BindToRenderStep`,
     /// `UserInputService` and `ContextActionService` work, and remotes go

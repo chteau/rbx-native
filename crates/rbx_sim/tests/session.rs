@@ -160,7 +160,9 @@ fn http_requests_reach_a_local_server_and_fail_like_roblox_offline() {
     rbx_net::set_forced(true);
     let mut s = session(place(&script, ""), 0);
     let mut lines = Vec::new();
-    for _ in 0..240 {
+    // The requests run on worker threads: wait on what they print, not
+    // on a number of frames (a loaded machine needs many more).
+    for _ in 0..20_000 {
         s.step();
         printed(&mut s, &mut lines);
         if lines.iter().any(|(_, l)| l.starts_with("offline")) {
@@ -674,7 +676,9 @@ fn a_badge_award_lands_in_the_ledger_with_a_toast() {
     );
     let mut lines = Vec::new();
     let mut notices = Vec::new();
-    for _ in 0..600 {
+    // The badge's name comes from the web: wait on
+    // the last line, not on a number of frames.
+    for _ in 0..20_000 {
         s.step();
         notices.extend(s.take_notices());
         printed(&mut s, &mut lines);

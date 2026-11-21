@@ -91,6 +91,8 @@ pub struct Simulation {
     /// Logged changes with their DOM mutation number, for a session to
     /// replicate; `None` outside one.
     stream: Option<Vec<(u64, Change)>>,
+    /// Parts another peer simulates that a script here moved.
+    overruled: Vec<Ref>,
 }
 
 impl Simulation {
@@ -121,11 +123,17 @@ impl Simulation {
             inputs: None,
             role: Role::Server,
             stream: None,
+            overruled: Vec::new(),
         })
     }
 
     pub fn role(&self) -> Role {
         self.role
+    }
+
+    /// See [`rbx_lua::server::ServerVm::set_script_timeout`].
+    pub fn set_script_timeout(&mut self, timeout: std::time::Duration) {
+        self.vm.set_script_timeout(timeout);
     }
 
     /// Server and client in one VM, with no replication: both kinds of
@@ -298,6 +306,12 @@ impl Simulation {
         for (owner, name, args) in fire {
             self.fire_signal(owner, &name, args);
         }
+    }
+
+    /// Parts another peer simulates that a script here moved since the
+    /// last call.
+    pub(crate) fn take_overruled(&mut self) -> Vec<Ref> {
+        std::mem::take(&mut self.overruled)
     }
 
     /// Players a script kicked since the last call, with the message.
@@ -983,26 +997,32 @@ impl Simulation {
     ) -> Vec<Placed> {
         let mut moved = self.moved_parts();
         let now: std::collections::HashSet<Ref> = moved.iter().map(|p| p.part).collect();
+        let stopped: Vec<Ref> = last.difference(&now).copied().collect();
+        moved.extend(self.poses(&stopped));
+        *last = now;
+        moved
+    }
+
+    /// `parts`' poses here, at rest.
+    pub(crate) fn poses(&self, parts: &[Ref]) -> Vec<Placed> {
         let dom = self.dom.borrow();
         let zero = rbx_dom::Vector3Data {
             x: 0.0,
             y: 0.0,
             z: 0.0,
         };
-        for part in last.difference(&now) {
-            if let Some(Variant::CFrame(cframe)) =
-                dom.get(*part).and_then(|i| i.properties().get("CFrame"))
-            {
-                moved.push(Placed {
-                    part: *part,
+        parts
+            .iter()
+            .filter_map(|&part| match dom.get(part)?.properties().get("CFrame") {
+                Some(Variant::CFrame(cframe)) => Some(Placed {
+                    part,
                     cframe: *cframe,
                     linear: zero,
                     angular: zero,
-                });
-            }
-        }
-        *last = now;
-        moved
+                }),
+                _ => None,
+            })
+            .collect()
     }
 
     pub(crate) fn moved_parts(&self) -> Vec<Placed> {
@@ -1802,6 +1822,9 @@ impl Simulation {
             "CFrame" => {
                 if let Some(Variant::CFrame(cf)) = read("CFrame") {
                     drop(dom);
+                    if self.world.is_remote(referent) {
+                        self.overruled.push(referent);
+                    }
                     self.world.teleport(referent, &cf);
                 }
             }

@@ -139,6 +139,10 @@ impl LuaEnumItem {
         }
     }
 
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
     /// The one userdata for this item in `lua`: Roblox enum items are
     /// unique objects, so scripts use them as table keys
     /// (`normals[Enum.NormalId.Top]`) and compare them with `rawequal`.

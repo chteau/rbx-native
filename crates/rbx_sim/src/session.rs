@@ -58,6 +58,10 @@ pub struct Client {
     outbox: Upstream,
     /// Parts it moved last frame, to say when they stop.
     moving: HashSet<Ref>,
+    /// Parts the server simulates that it moved itself: the server's pose
+    /// puts them back next frame, asleep or not (Ownership
+    /// `client_view_server_owned`).
+    overruled: Vec<Ref>,
 }
 
 #[derive(Default)]
@@ -96,6 +100,7 @@ pub struct Session {
     /// Teleport GUIs players bring into this run, by user id, placed in
     /// their client's DataModel as they join.
     arriving: std::collections::HashMap<i64, WeakDom>,
+    script_timeout: Option<std::time::Duration>,
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -138,6 +143,7 @@ impl Session {
             avatars: None,
             services: None,
             arriving: std::collections::HashMap::new(),
+            script_timeout: None,
         })
     }
 
@@ -163,6 +169,9 @@ impl Session {
         let index = self.clients.len();
         let mut sim = Simulation::new(first_view(&self.server.dom(), player))?;
         sim.make_client(index, player);
+        if let Some(timeout) = self.script_timeout {
+            sim.set_script_timeout(timeout);
+        }
         if let Some(fetcher) = &self.fetcher {
             sim.set_fetcher(fetcher.clone());
         }
@@ -196,6 +205,7 @@ impl Session {
             deferred: None,
             outbox: Upstream::default(),
             moving: HashSet::new(),
+            overruled: Vec::new(),
         });
         Ok(index)
     }
@@ -275,6 +285,8 @@ impl Session {
                 }
             }
             client.sim.place_parts(&moved);
+            let overruled = server.poses(&std::mem::take(&mut client.overruled));
+            client.sim.place_parts(&overruled);
             for (humanoid, state) in &states {
                 client.sim.set_humanoid_state(*humanoid, *state);
             }
@@ -435,6 +447,16 @@ impl Session {
             out.push((Peer::Client(i), client.sim.take_output()));
         }
         out
+    }
+
+    /// The script timeout on the server and every client, those to come
+    /// too (see [`Simulation::set_script_timeout`]).
+    pub fn set_script_timeout(&mut self, timeout: std::time::Duration) {
+        self.server.set_script_timeout(timeout);
+        for client in &mut self.clients {
+            client.sim.set_script_timeout(timeout);
+        }
+        self.script_timeout = Some(timeout);
     }
 
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
@@ -799,6 +821,7 @@ impl Client {
                 .filter(|placed| owned.contains(&placed.part))
                 .collect()
         };
+        self.overruled = self.sim.take_overruled();
         let states = self
             .sim
             .humanoid_states()

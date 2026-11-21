@@ -11,6 +11,7 @@ license.workspace = true
 # used here, so no other crate can replace it. `luau` implies vendoring.
 mlua = { version = "0.12", features = ["luau"] }
 rbx_dom = { path = "../rbx_dom" }
+rbx_materials = { path = "../rbx_materials" }
 rbx_reflection = { path = "../rbx_reflection" }
 # Plugin host: plugins ship as .rbxm/.rbxmx models, keep settings as JSON,
 # describe themselves in plugin.toml and reach the web through HttpService.
