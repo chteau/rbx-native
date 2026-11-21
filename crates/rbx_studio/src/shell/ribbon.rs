@@ -183,6 +183,7 @@ impl Shell {
             Tab::Script => vec![self.script_tiles(cx)],
             Tab::Model => vec![
                 self.edit_tiles(cx),
+                self.solid_modeling_tiles(cx),
                 self.pivot_tiles(cx),
                 self.sun_tiles(cx),
                 self.import_tiles(cx),

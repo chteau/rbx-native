@@ -77,6 +77,7 @@ mod rig;
 mod roblox_login;
 mod roblox_publish;
 mod roving;
+mod solid_modeling;
 mod studio_presence;
 mod team_presence;
 
