@@ -8,13 +8,17 @@
 //! `f32` classification drifts far enough to open seams along coplanar faces.
 
 pub mod bsp;
+pub mod csgmdl;
 pub mod repair;
 pub mod shapes;
 
+pub use glam;
 use glam::{DMat4, DVec3, Mat4};
 
 use bsp::{BspNode, Plane, Polygon};
-use repair::{clean, discard_disconnected_debris, is_watertight, weld_t_junctions};
+use repair::{
+    clean, component_roots, discard_disconnected_debris, is_watertight, weld_t_junctions,
+};
 pub use shapes::MeshData;
 
 /// A result that outgrows this many polygons after any single step is
@@ -213,6 +217,44 @@ impl Solid {
         Ok(Solid {
             polygons: discard_disconnected_debris(polygons, bake),
         })
+    }
+
+    /// The solid's separate pieces, as `SplitApart` returns them: every
+    /// connected shell, each enclosed cavity staying with the shell around
+    /// it. One piece is the whole solid.
+    pub fn split_apart(self) -> Vec<Solid> {
+        let roots = component_roots(&self.polygons);
+        let mut groups: Vec<(usize, Solid)> = Vec::new();
+        for (polygon, root) in self.polygons.into_iter().zip(roots) {
+            match groups.iter_mut().find(|(r, _)| *r == root) {
+                Some((_, group)) => group.polygons.push(polygon),
+                None => groups.push((
+                    root,
+                    Solid {
+                        polygons: vec![polygon],
+                    },
+                )),
+            }
+        }
+        let (mut shells, cavities): (Vec<Solid>, Vec<Solid>) = groups
+            .into_iter()
+            .map(|(_, group)| group)
+            .partition(|group| group.volume() > 0.0);
+        for cavity in cavities {
+            let Some((lo, hi)) = cavity.bounds() else {
+                continue;
+            };
+            let around = shells.iter().position(|shell| {
+                shell
+                    .bounds()
+                    .is_some_and(|(a, b)| (a.cmple(lo) & b.cmpge(hi)).all())
+            });
+            match around {
+                Some(at) => shells[at].polygons.extend(cavity.polygons),
+                None => shells.push(cavity),
+            }
+        }
+        shells
     }
 
     /// The same solid moved by `model`.

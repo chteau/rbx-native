@@ -27,6 +27,67 @@ use super::bsp::Polygon;
 /// individually closed piece, so removing it only removes matched edge
 /// pairs, never leaves one side dangling.
 pub fn discard_disconnected_debris(polygons: Vec<Polygon>, bake: Option<DVec3>) -> Vec<Polygon> {
+    let roots = component_roots(&polygons);
+    // A negative-volume component is an inward-facing surface, a fully
+    // enclosed cavity (the classic case: a negation entirely inside the
+    // additive solid, like a bubble) rather than a piece of the outer shell.
+    // It is topologically required, however small: dropping it would silently
+    // undo the carve it represents. Only a same-signed (positive) component
+    // competes to be kept; every negative one always survives.
+    let mut volume: HashMap<usize, f64> = HashMap::new();
+    let mut positive_size: HashMap<usize, usize> = HashMap::new();
+    for (i, polygon) in polygons.iter().enumerate() {
+        let root = roots[i];
+        let first = polygon.vertices[0];
+        let v: f64 = polygon.vertices[1..]
+            .windows(2)
+            .map(|pair| first.dot(pair[0].cross(pair[1])))
+            .sum();
+        *volume.entry(root).or_insert(0.0) += v / 6.0;
+    }
+    let mut extent: HashMap<usize, (DVec3, DVec3)> = HashMap::new();
+    for (i, polygon) in polygons.iter().enumerate() {
+        let root = roots[i];
+        if volume[&root] > 0.0 {
+            *positive_size.entry(root).or_insert(0) += 1;
+        }
+        let (min, max) = extent
+            .entry(root)
+            .or_insert((DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY)));
+        for &v in &polygon.vertices {
+            *min = min.min(v);
+            *max = max.max(v);
+        }
+    }
+    let largest_positive = positive_size
+        .iter()
+        .max_by_key(|&(_, &count)| count)
+        .map(|(&root, _)| root);
+    // Studio's bake is centred on the union's own frame, `bake` across.
+    let fits = |root: usize| {
+        bake.is_none_or(|bake| {
+            let half = bake / 2.0;
+            let pad = half * BAKE_TOLERANCE + DVec3::splat(BAKE_PAD);
+            let (min, max) = extent[&root];
+            (min.cmpge(-half - pad) & max.cmple(half + pad)).all()
+        })
+    };
+    let keep: std::collections::HashSet<usize> = volume
+        .keys()
+        .copied()
+        .filter(|&root| volume[&root] <= 0.0 || Some(root) == largest_positive || fits(root))
+        .collect();
+    polygons
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| keep.contains(&roots[*i]))
+        .map(|(_, polygon)| polygon)
+        .collect()
+}
+
+/// The connected piece each polygon belongs to, by shared-edge adjacency
+/// (union-find): one representative polygon index per piece.
+pub fn component_roots(polygons: &[Polygon]) -> Vec<usize> {
     let key = |v: DVec3| {
         (
             (v.x / WELD_EPSILON).round() as i64,
@@ -61,61 +122,7 @@ pub fn discard_disconnected_debris(polygons: Vec<Polygon>, bake: Option<DVec3>) 
             }
         }
     }
-    // A negative-volume component is an inward-facing surface, a fully
-    // enclosed cavity (the classic case: a negation entirely inside the
-    // additive solid, like a bubble) rather than a piece of the outer shell.
-    // It is topologically required, however small: dropping it would silently
-    // undo the carve it represents. Only a same-signed (positive) component
-    // competes to be kept; every negative one always survives.
-    let mut volume: HashMap<usize, f64> = HashMap::new();
-    let mut positive_size: HashMap<usize, usize> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let root = find(&mut parent, i);
-        let first = polygon.vertices[0];
-        let v: f64 = polygon.vertices[1..]
-            .windows(2)
-            .map(|pair| first.dot(pair[0].cross(pair[1])))
-            .sum();
-        *volume.entry(root).or_insert(0.0) += v / 6.0;
-    }
-    let mut extent: HashMap<usize, (DVec3, DVec3)> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let root = find(&mut parent, i);
-        if volume[&root] > 0.0 {
-            *positive_size.entry(root).or_insert(0) += 1;
-        }
-        let (min, max) = extent
-            .entry(root)
-            .or_insert((DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY)));
-        for &v in &polygon.vertices {
-            *min = min.min(v);
-            *max = max.max(v);
-        }
-    }
-    let largest_positive = positive_size
-        .iter()
-        .max_by_key(|&(_, &count)| count)
-        .map(|(&root, _)| root);
-    // Studio's bake is centred on the union's own frame, `bake` across.
-    let fits = |root: usize| {
-        bake.is_none_or(|bake| {
-            let half = bake / 2.0;
-            let pad = half * BAKE_TOLERANCE + DVec3::splat(BAKE_PAD);
-            let (min, max) = extent[&root];
-            (min.cmpge(-half - pad) & max.cmple(half + pad)).all()
-        })
-    };
-    let keep: std::collections::HashSet<usize> = volume
-        .keys()
-        .copied()
-        .filter(|&root| volume[&root] <= 0.0 || Some(root) == largest_positive || fits(root))
-        .collect();
-    polygons
-        .into_iter()
-        .enumerate()
-        .filter(|(i, _)| keep.contains(&find(&mut parent, *i)))
-        .map(|(_, polygon)| polygon)
-        .collect()
+    (0..polygons.len()).map(|i| find(&mut parent, i)).collect()
 }
 
 /// How far, relative to the bake's own half-extent and then absolutely in
