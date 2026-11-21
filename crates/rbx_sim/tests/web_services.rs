@@ -1,6 +1,6 @@
 //! The web-backed services a Local Run answers by itself: the newer
-//! MarketplaceService prompts through the test dialog, bans, distributed
-//! counters, MessagingService across the servers of one universe, pages,
+//! MarketplaceService prompts through the test dialog, bans,
+//! MessagingService across the servers of one universe, pages,
 //! secrets, web stream clients, analytics and the Studio-only answers.
 
 use std::io::{Read, Write};
@@ -82,16 +82,16 @@ fn bulk_purchases_subscriptions_and_robux_transfers_go_through_the_test_dialog()
          local p = Players:GetPlayers()[1] or Players.PlayerAdded:Wait() task.wait(0.2) \
          mps:PromptBulkPurchase(p, { { Type = Enum.MarketplaceProductType.AvatarAsset, Id = '11' }, \
            { Type = Enum.MarketplaceProductType.AvatarBundle, Id = '22' } }, {}) task.wait(0.3) \
-         mps:PromptSubscriptionPurchase(p, 'EXP-1') task.wait(0.3) \
-         print('details', mps:GetUserSubscriptionDetailsAsync(p, 'EXP-1').SubscriptionState.Name, \
-           #mps:GetUserSubscriptionPaymentHistoryAsync(p, 'EXP-1')) \
-         mps:PromptCancelSubscription(p, 'EXP-1') task.wait(0.3) \
-         print('after', mps:GetUserSubscriptionDetailsAsync(p, 'EXP-1').SubscriptionState.Name) \
+         mps:PromptSubscriptionPurchase(p, 'EXP-12345') task.wait(0.3) \
+         print('details', mps:GetUserSubscriptionDetailsAsync(p, 'EXP-12345').SubscriptionState.Name, \
+           #mps:GetUserSubscriptionPaymentHistoryAsync(p, 'EXP-12345')) \
+         mps:PromptCancelSubscription(p, 'EXP-12345') task.wait(0.3) \
+         print('after', mps:GetUserSubscriptionDetailsAsync(p, 'EXP-12345').SubscriptionState.Name) \
          mps:PromptRobloxSubscriptionPurchase(p) task.wait(0.3) \
          print('transfer bad', pcall(mps.PromptRobuxTransferAsync, mps, p, 5, 0)) \
          _G.transfer = mps:PromptRobuxTransferAsync(p, 5, 40) \
-         print('eligible', mps:CanUsersTransferRobuxAsync(p, 5).Name, mps:CanUsersTransferRobuxAsync(p, -1).Name) \
-         print('levels', mps:GetUsersPriceLevelsAsync({ 1 })[1]['1'], #mps:RecommendTopProductsAsync({ Enum.InfoType.GamePass })) \
+         print('eligible', pcall(mps.CanUsersTransferRobuxAsync, mps, p, 5)) \
+         print('levels', mps:GetUsersPriceLevelsAsync({ 1 })[1].PriceLevel, pcall(mps.RecommendTopProductsAsync, mps, {})) \
          local products = mps:GetDeveloperProductsAsync() print('products', products.ClassName, products.IsFinished, #products:GetCurrentPage()) \
          task.wait(0.3) print('match', _G.got == _G.transfer)",
         "",
@@ -114,31 +114,34 @@ fn bulk_purchases_subscriptions_and_robux_transfers_go_through_the_test_dialog()
         "bulk Completed 0 2 Success",
         "owns true true",
         "details SubscribedWillRenew 1",
-        "changed EXP-1",
+        "changed EXP-12345",
         "after NeverSubscribed",
         "plus true true",
-        "eligible Eligible ReceiverNotEligible",
+        "eligible false CanUsersTransferRobuxAsync is not enabled",
         "sent 40 5",
         "match true",
-        "levels 100 0",
+        "levels 100 false MarketplaceService:RecommendTopProductsAsync() Cannot be called from the Server.",
         "products StandardPages true 0",
     ] {
         assert!(has(&lines, Peer::Server, line), "{line}: {lines:#?}");
     }
-    assert!(lines.iter().any(|(_, l)| l.starts_with("transfer bad false")));
+    assert!(lines
+        .iter()
+        .any(|(_, l)| l.starts_with("transfer bad false")));
 }
 
 #[test]
 fn a_ban_kicks_the_player_and_history_is_live_only() {
-    let (lines, _) = run(place(
-        "local Players = game:GetService('Players') \
+    let (lines, _) = run(
+        place(
+            "local Players = game:GetService('Players') \
          local p = Players:GetPlayers()[1] or Players.PlayerAdded:Wait() \
          Players.PlayerRemoving:Connect(function(left) print('left', left.UserId) end) \
          print('empty', pcall(Players.BanAsync, Players, {})) \
          print('history', pcall(Players.GetBanHistoryAsync, Players, 1)) \
          Players:BanAsync({ UserIds = { p.UserId }, Duration = 60, DisplayReason = 'test ban' })",
-        "",
-    ),
+            "",
+        ),
         universe("ban"),
         120,
         |_| true,
@@ -146,7 +149,7 @@ fn a_ban_kicks_the_player_and_history_is_live_only() {
     assert!(has(&lines, Peer::Server, "left 1"), "{lines:#?}");
     assert!(lines
         .iter()
-        .any(|(_, l)| l.starts_with("empty false Players:BanAsync")));
+        .any(|(_, l)| l == "empty false Config must contain field UserIds with type array"));
     assert!(lines.iter().any(|(_, l)| l.starts_with("history false")));
 }
 
@@ -156,12 +159,11 @@ fn counters_pages_analytics_and_studio_only_answers() {
     std::fs::create_dir_all(&dir).unwrap();
     let (lines, _) = run(place(
         "local ms = game:GetService('MemoryStoreService') \
-         local c = ms:GetDistributedCounter('c') print('counter', c.ClassName, c:IncrementAsync(5, 60), c:IncrementAsync(-2, 60), c:GetAsync()) \
-         print('same', ms:GetDistributedCounter('c') == c) \
+         print('counter', pcall(ms.GetDistributedCounter, ms, 'c')) \
          local Players = game:GetService('Players') local p = Players:GetPlayers()[1] or Players.PlayerAdded:Wait() \
          local friends = Players:GetFriendsAsync(1) print('friends', friends.ClassName, friends.IsFinished, #friends:GetCurrentPage()) \
          print('advance', pcall(friends.AdvanceToNextPageAsync, friends)) \
-         print('played', #p:GetFriendsWhoPlayedAsync(), #p:GetFriendsInUniverseAsync()) \
+         print('played', #p:GetFriendsWhoPlayedAsync(), pcall(p.GetFriendsInUniverseAsync, p)) \
          local a = game:GetService('AnalyticsService') a:LogCustomEvent(p, 'Opened', 2) \
          print('analytics', pcall(a.LogCustomEvent, a, nil, 'x')) \
          print('places', game:GetService('AssetService'):GetGamePlacesAsync().ClassName) \
@@ -173,7 +175,8 @@ fn counters_pages_analytics_and_studio_only_answers() {
          local got = ds:GetOrderedDataStore('o'):BatchGetAsync({ 'k', 'missing' }) print('batch', got.k.value, got.missing) \
          print('standard batch', pcall(ds:GetDataStore('s').BatchGetAsync, ds:GetDataStore('s'), { 'k' }))",
         "local e = game:GetService('ExperienceNotificationService') print('can opt in', e:CanPromptOptInAsync()) \
-         print('rate', game:GetService('SocialService'):PromptRateExperienceAsync().Name)",
+         print('rate', pcall(game:GetService('SocialService').PromptRateExperienceAsync, game:GetService('SocialService'))) \
+         print('universe', #game:GetService('Players').LocalPlayer:GetFriendsInUniverseAsync())",
     ),
         rbx_lua::server::Services {
             data_file: Some(dir.join("datastores.json")),
@@ -185,11 +188,10 @@ fn counters_pages_analytics_and_studio_only_answers() {
     let log = std::fs::read_to_string(dir.join("analytics.jsonl")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dir);
     for line in [
-        "counter MemoryStoreDistributedCounter 5 3 3",
-        "same true",
+        "counter false MemoryStoreDistributedCounter is not enabled.",
         "friends FriendPages true 0",
         "advance false No pages to advance to",
-        "played 0 0",
+        "played 0 false GetFriendsInUniverse must be invoked on the Local Player",
         "places StandardPages",
         "attr ffa nil",
         "config 20",
@@ -197,11 +199,24 @@ fn counters_pages_analytics_and_studio_only_answers() {
     ] {
         assert!(has(&lines, Peer::Server, line), "{line}: {lines:#?}");
     }
-    assert!(has(&lines, Peer::Client(0), "can opt in false"), "{lines:#?}");
-    assert!(has(&lines, Peer::Client(0), "rate Dismissed"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "can opt in false"),
+        "{lines:#?}"
+    );
+    assert!(has(&lines, Peer::Client(0), "universe 0"), "{lines:#?}");
+    assert!(
+        has(
+            &lines,
+            Peer::Client(0),
+            "rate false SocialService:PromptRateExperienceAsync is not yet enabled."
+        ),
+        "{lines:#?}"
+    );
     assert!(lines.iter().any(|(_, l)| l.starts_with("secret false")));
-    assert!(lines.iter().any(|(_, l)| l.starts_with("standard batch false")));
-    assert!(lines.iter().any(|(_, l)| l.starts_with("analytics false")));
+    assert!(lines
+        .iter()
+        .any(|(_, l)| l.starts_with("standard batch false")));
+    assert!(lines.iter().any(|(_, l)| l == "analytics true"));
     assert!(
         log.contains("\"name\":\"Opened\"") && log.contains("LogCustomEvent"),
         "{log}"
@@ -255,7 +270,10 @@ fn secrets_go_only_to_their_domain_and_streams_deliver_events() {
             let body = if request.contains("text/event-stream") {
                 "data: hello\n\n".to_owned()
             } else {
-                format!("auth={}", request.to_lowercase().contains("authorization: bearer abc"))
+                format!(
+                    "auth={}",
+                    request.to_lowercase().contains("authorization: bearer abc")
+                )
             };
             let _ = write!(
                 stream,
@@ -288,12 +306,7 @@ fn secrets_go_only_to_their_domain_and_streams_deliver_events() {
     let http = dom.new_instance("HttpService", "HttpService", None);
     let _ = dom.set_property(http, "HttpEnabled", Variant::Bool(true));
     dom.take_changes();
-    let (lines, _) = run(
-        dom,
-        services,
-        240,
-        |_| true,
-    );
+    let (lines, _) = run(dom, services, 240, |_| true);
     for line in [
         "secret Secret Secret",
         "auth=true",
@@ -303,5 +316,7 @@ fn secrets_go_only_to_their_domain_and_streams_deliver_events() {
     ] {
         assert!(has(&lines, Peer::Server, line), "{line}: {lines:#?}");
     }
-    assert!(lines.iter().any(|(_, l)| l.starts_with("wrong domain false")));
+    assert!(lines
+        .iter()
+        .any(|(_, l)| l.starts_with("wrong domain false")));
 }

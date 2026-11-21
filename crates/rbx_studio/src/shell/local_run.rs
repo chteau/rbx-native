@@ -396,7 +396,6 @@ fn purchase_text(
             format!("{} avatar items ({})", prompt.id, prompt.subscription)
         }
         "MarketplaceService.PromptRobloxSubscriptionPurchase" => "a Roblox subscription".to_owned(),
-        "MarketplaceService.PromptVIPServerPurchase" => "a private server".to_owned(),
         "MarketplaceService.PromptRobuxTransferAsync" => {
             let receiver = prompt.subscription.split(',').nth(1).unwrap_or("?");
             return (

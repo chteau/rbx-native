@@ -51,8 +51,7 @@ pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
 pub use services::{
     set_text_measure, Arrival, AssetSource, Device, LiveData, Notice, PurchasePrompt, Services,
-    TeleportRequest, WebSession,
-    TextMeasure,
+    TeleportRequest, TextMeasure, WebSession,
 };
 pub use terrain::{TerrainOp, TerrainReply};
 

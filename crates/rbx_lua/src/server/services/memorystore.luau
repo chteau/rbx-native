@@ -3,10 +3,10 @@
 -- and what the MemoryStore golden measured on a live server: sorted maps
 -- (ordered by numeric sort key, then string sort key, then none, each by
 -- key), hash maps, queues (priority first, then first in, with read
--- invisibility), item expiry on the game clock, distributed counters, and
--- the errors with their exact text. With the experience's live data on
+-- invisibility), item expiry on the game clock, and the errors with their
+-- exact text (distributed counters aren't enabled on Roblox yet). With the experience's live data on
 -- (see DataStoreService), sorted maps and queues are the experience's
--- real ones through Open Cloud; hash maps and counters, which Open Cloud
+-- real ones through Open Cloud; hash maps, which Open Cloud
 -- can't reach, stay in this server's memory, and so do queues under the
 -- read-only guard (reading a queue hides its items: a write).
 local host = ...
@@ -378,39 +378,11 @@ local function structure(class, kind, name, extra)
 	return instance
 end
 
--- Distributed counters: kept in this server's memory (Open Cloud has
--- none), each expiring `expiration` seconds after its last increment.
-local COUNTER = {}
-
-function COUNTER.IncrementAsync(self, delta, seconds)
-	if type(delta) == "string" and tonumber(delta) then
-		delta = tonumber(delta)
-	end
-	if type(delta) ~= "number" then
-		fail("Unable to cast " .. typeof(delta) .. " to int64")
-	end
-	local expires = expiration(seconds)
-	request()
-	if self.expires <= now() then
-		self.value = 0
-	end
-	self.value += math.floor(delta)
-	self.expires = expires
-	return self.value
-end
-
-function COUNTER.GetAsync(self)
-	request()
-	if self.expires <= now() then
-		self.value = 0
-	end
-	return self.value
-end
-
 local SERVICE = {}
 
-function SERVICE.GetDistributedCounter(_, name)
-	return structure("MemoryStoreDistributedCounter", "counter", tostring(name), { value = 0, expires = 0 })
+-- Not switched on yet on Roblox (golden WebServices).
+function SERVICE.GetDistributedCounter(_, _name)
+	fail("MemoryStoreDistributedCounter is not enabled.")
 end
 
 function SERVICE.GetSortedMap(_, name)
@@ -463,7 +435,7 @@ function M.member(class, id, key)
 		end
 		return nil, false
 	end
-	local methods = if object.kind == "queue" then QUEUE elseif object.kind == "counter" then COUNTER else MAP
+	local methods = object.kind == "queue" and QUEUE or MAP
 	local f = methods[key]
 	if not f or (SORTED_ONLY[key] and not object.sorted) or (HASH_ONLY[key] and object.sorted) then
 		return nil, false

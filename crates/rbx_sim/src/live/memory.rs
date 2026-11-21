@@ -121,7 +121,10 @@ impl LiveStores {
     }
 
     fn map_remove(&self, map: &str, key: &str) -> Result<Value, String> {
-        if self.keep(&Self::map_bucket(map), key, Value::Null).is_some() {
+        if self
+            .keep(&Self::map_bucket(map), key, Value::Null)
+            .is_some()
+        {
             return Ok(Value::Null);
         }
         match self.client.delete_map_item(self.universe, map, key) {
@@ -137,14 +140,15 @@ impl LiveStores {
         let mut items: Vec<Value> = Vec::new();
         let mut token = None;
         for _ in 0..LIST_PAGES {
-            let page = match self
-                .client
-                .list_map_items(self.universe, map, false, None, token.as_deref())
-            {
-                Ok(page) => page,
-                Err(err) if not_found(&err) => break,
-                Err(err) => return Err(roblox_error(&err)),
-            };
+            let page =
+                match self
+                    .client
+                    .list_map_items(self.universe, map, false, None, token.as_deref())
+                {
+                    Ok(page) => page,
+                    Err(err) if not_found(&err) => break,
+                    Err(err) => return Err(roblox_error(&err)),
+                };
             items.extend(page.items.iter().map(item_json));
             token = page.next_page_token.filter(|t| !t.is_empty());
             if token.is_none() {
@@ -159,7 +163,11 @@ impl LiveStores {
             .map(|((_, key), item)| (key, item))
             .collect();
         items.retain(|item| !kept.iter().any(|(key, _)| item["key"] == key.as_str()));
-        items.extend(kept.into_iter().filter(|(_, i)| !i.is_null()).map(|(_, i)| i.clone()));
+        items.extend(
+            kept.into_iter()
+                .filter(|(_, i)| !i.is_null())
+                .map(|(_, i)| i.clone()),
+        );
         Ok(Value::Array(items))
     }
 }

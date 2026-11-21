@@ -422,15 +422,13 @@ fn module_of(class: &str) -> Option<&'static str> {
         | "MemoryStoreSortedMap"
         | "MemoryStoreHashMap"
         | "MemoryStoreQueue"
-        | "MemoryStoreHashMapPages"
-        | "MemoryStoreDistributedCounter" => "MemoryStoreService",
+        | "MemoryStoreHashMapPages" => "MemoryStoreService",
         "MessagingService" => "MessagingService",
         "MarketplaceService" => "MarketplaceService",
         "HttpService" => "HttpService",
         "PathfindingService" | "Path" => "PathfindingService",
-        "Debris" | "Players" | "Player" | "RunService" | "ContentProvider"
-        | "ReplicatedFirst" | "UserSettings" | "UserGameSettings" | "PlayerScripts"
-        | "ScriptContext" => "Helpers",
+        "Debris" | "Players" | "Player" | "RunService" | "ContentProvider" | "ReplicatedFirst"
+        | "UserSettings" | "UserGameSettings" | "PlayerScripts" | "ScriptContext" => "Helpers",
         "TeleportService" | "TeleportOptions" | "TeleportAsyncResult" => "TeleportService",
         "WebStreamClient" => "HttpService",
         "BadgeService" => "BadgeService",
@@ -821,7 +819,11 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "live_read_only",
         lua.create_function(move |_, ()| {
-            Ok(r.config.borrow().live.as_ref().is_some_and(|l| l.read_only()))
+            Ok(r.config
+                .borrow()
+                .live
+                .as_ref()
+                .is_some_and(|l| l.read_only()))
         })?,
     )?;
     let r = runtime.clone();
@@ -1026,7 +1028,15 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "stream_open",
         lua.create_function(
-            move |_, (id, kind, url, method, headers, body): (u32, String, String, String, Table, Option<String>)| {
+            move |_,
+                  (id, kind, url, method, headers, body): (
+                u32,
+                String,
+                String,
+                String,
+                Table,
+                Option<String>,
+            )| {
                 let kind = match kind.as_str() {
                     "SSE" => stream::Kind::Sse,
                     "WebSocket" => stream::Kind::WebSocket,
@@ -1035,7 +1045,9 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
                 let request = HttpRequest {
                     url,
                     method,
-                    headers: headers.pairs::<String, String>().collect::<Result<Vec<_>>>()?,
+                    headers: headers
+                        .pairs::<String, String>()
+                        .collect::<Result<Vec<_>>>()?,
                     body,
                 };
                 let out = stream::open(id, kind, request, r.streams.clone());
@@ -1062,16 +1074,16 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     let r = runtime.clone();
     host.set(
         "secret",
-        lua.create_function(move |lua, name: String| {
-            match r.config.borrow().secrets.get(&name) {
+        lua.create_function(
+            move |lua, name: String| match r.config.borrow().secrets.get(&name) {
                 Some((value, domain)) => crate::datatypes::secret::LuaSecret {
                     value: value.clone(),
                     domain: domain.clone(),
                 }
                 .into_lua(lua),
                 None => Ok(Value::Nil),
-            }
-        })?,
+            },
+        )?,
     )?;
     // A request part as sent: a Secret's value when `url` may carry it
     // (nil for anything else).
@@ -1296,7 +1308,10 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
             fetch_cached(format!("signed {}", request.url), request, &what, None)
         }))
     })?;
-    host.set("web_signed", checked(lua, scheduler::yielding(lua, signed)?)?)?;
+    host.set(
+        "web_signed",
+        checked(lua, scheduler::yielding(lua, signed)?)?,
+    )?;
     host.set(
         "signed_in",
         lua.create_function({
@@ -1318,7 +1333,10 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
             Ok(serde_json::json!(token))
         }))
     })?;
-    host.set("download_asset", checked(lua, scheduler::yielding(lua, download)?)?)?;
+    host.set(
+        "download_asset",
+        checked(lua, scheduler::yielding(lua, download)?)?,
+    )?;
     host.set(
         "model_of_download",
         lua.create_function(|lua, (token, name): (u64, String)| {

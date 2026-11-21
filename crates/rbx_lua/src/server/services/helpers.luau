@@ -167,7 +167,7 @@ local function banConfig(method, config)
 		fail("Unable to cast " .. (config == nil and "nil" or typeof(config)) .. " to Dictionary")
 	end
 	if type(config.UserIds) ~= "table" or #config.UserIds == 0 then
-		fail("Players:" .. method .. "(): UserIds must be a non-empty array of user ids")
+		fail("Config must contain field UserIds with type array")
 	end
 	local ids = {}
 	for _, id in config.UserIds do
@@ -383,6 +383,9 @@ end
 -- Friends playing this experience now: the ones in this run, and the
 -- online ones whose presence says this universe.
 function PLAYER.GetFriendsInUniverseAsync(self)
+	if host.server() or self ~= game:GetService("Players").LocalPlayer then
+		fail("GetFriendsInUniverse must be invoked on the Local Player")
+	end
 	task.wait()
 	local players = game:GetService("Players")
 	local out = {}

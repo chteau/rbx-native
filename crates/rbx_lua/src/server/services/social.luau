@@ -2,8 +2,8 @@
 -- The social and account services in Local Run: GroupService and
 -- UserService read Roblox's public web APIs (kept for offline runs; the
 -- run's own players, user ids below 1, are answered here), SocialService
--- has no friends to invite (its feedback and rating prompts send
--- nothing), PolicyService gives an adult's policy in a
+-- has no friends to invite (its feedback prompt sends nothing),
+-- PolicyService gives an adult's policy in a
 -- country without extra rules, VoiceChatService reports voice off, and
 -- AvatarEditorService's and GroupService's prompts open the editor's own
 -- dialog, nothing saved to the account.
@@ -274,33 +274,30 @@ function SOCIAL.GetExperienceEventAsync(_, eventId)
 	return nil
 end
 
-local function localScriptOnly(method)
-	if host.server() then
-		fail(method .. " Must be called from a local script.")
-	end
-end
-
--- The feedback and rating prompts: the editor shows a notice, nothing is
--- sent; the player dismisses them.
+-- The feedback prompt: the editor shows a notice, nothing is sent. A
+-- live server's call does nothing (golden WebServices).
 function SOCIAL.PromptFeedbackSubmissionAsync(_, options)
-	localScriptOnly("SocialService:PromptFeedbackSubmissionAsync")
 	if options ~= nil and type(options) ~= "table" then
 		fail(`Unable to cast {typeName(options)} to Dictionary`)
+	end
+	if host.server() then
+		return
 	end
 	host.notify(localPlayer(), "Feedback (test)", "The game asks for feedback. A Local Run sends none.")
 	task.wait()
 end
 
+-- Not switched on yet on Roblox.
 function SOCIAL.PromptRateExperienceAsync(_)
-	localScriptOnly("SocialService:PromptRateExperienceAsync")
-	host.notify(localPlayer(), "Rate (test)", "The game asks for a rating. A Local Run sends none.")
-	task.wait()
-	return Enum.ExperienceRatingResult.Dismissed
+	fail("SocialService:PromptRateExperienceAsync is not yet enabled.")
 end
 
--- No experience events offline (see GetExperienceEventAsync).
+-- No experience events offline (see GetExperienceEventAsync). Roblox's
+-- server-side error names GetEventRsvpStatusAsync.
 function SOCIAL.PromptRsvpToEventAsync(_, eventId)
-	localScriptOnly("SocialService:PromptRsvpToEventAsync")
+	if host.server() then
+		fail("SocialService:GetEventRsvpStatusAsync must be called on the client.")
+	end
 	if type(eventId) ~= "string" and type(eventId) ~= "number" then
 		fail(`Unable to cast {typeName(eventId)} to string`)
 	end

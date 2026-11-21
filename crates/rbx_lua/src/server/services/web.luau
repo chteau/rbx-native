@@ -110,29 +110,44 @@ function ASSETS.GetGamePlacesAsync(_)
 	return M.pages("StandardPages", list, 50)
 end
 
+-- The catalog numbers asset types; Roblox answers the AssetType's name.
+local function assetTypeName(value)
+	for _, item in Enum.AssetType:GetEnumItems() do
+		if item.Value == value then
+			return item.Name
+		end
+	end
+	return tostring(value or "")
+end
+
 function ASSETS.GetBundleDetailsAsync(_, bundleId)
 	bundleId = int64(bundleId)
 	local ok, found = pcall(web, "https://catalog.roblox.com/v1/bundles/" .. bundleId .. "/details", "AssetService:GetBundleDetailsAsync()")
 	if not ok then
-		fail(found)
+		-- Roblox gives only the status ("HTTP 400").
+		fail(tostring(found):match("HTTP %d+") or found)
 	end
 	local items = {}
 	for _, item in found.items or {} do
-		table.insert(items, { Id = item.id, Name = item.name, Type = item.type })
+		table.insert(items, { Id = item.id, Name = item.name, Type = item.type, AssetType = assetTypeName(item.assetType) })
 	end
+	local product = found.product or {}
 	return {
 		Id = found.id,
 		Name = found.name,
 		Description = found.description,
 		BundleType = found.bundleType,
 		Items = items,
+		UserBasePriceInRobux = product.priceInRobux or 0,
+		PriceDiscountDetails = {},
 	}
 end
 
 local AUDIO_LIMIT = 30
 
--- What the toolbox says of `ids`, as GetAudioMetadataAsync's entries.
-local function audioMetadata(ids, what)
+-- What the toolbox says of `ids`: GetAudioMetadataAsync's entries, or
+-- with `searched` SearchAudioAsync's (a different shape on Roblox).
+local function audioMetadata(ids, what, searched)
 	if #ids == 0 then
 		return {}
 	end
@@ -141,15 +156,34 @@ local function audioMetadata(ids, what)
 	for _, entry in found.data or {} do
 		local asset = entry.asset or {}
 		local audio = asset.audioDetails or {}
-		table.insert(out, {
-			AssetId = asset.id,
-			Title = audio.title or asset.name,
-			Artist = audio.artist or (entry.creator and entry.creator.name) or "",
-			Duration = asset.duration or 0,
-			AudioType = if audio.audioType == "SoundEffect"
-				then Enum.AudioSubType.SoundEffect
-				else Enum.AudioSubType.Music,
-		})
+		local creator = entry.creator or {}
+		local title = audio.title or asset.name or ""
+		local artist = audio.artist or creator.name or ""
+		local effect = audio.audioType == "SoundEffect"
+		table.insert(
+			out,
+			if searched
+				then {
+					Id = asset.id,
+					Title = title,
+					Artist = artist,
+					Description = asset.description or "",
+					Duration = asset.duration or 0,
+					AudioType = if effect then "SoundEffect" else "Music",
+					Tags = {},
+					Creator = { Id = creator.id, Name = creator.name, Type = creator.type },
+					CreateTime = asset.createdUtc or "",
+					UpdateTime = asset.updatedUtc or "",
+				}
+				else {
+					AssetId = tostring(asset.id),
+					Title = title,
+					Artist = artist,
+					Duration = asset.duration or 0,
+					RecordingCode = audio.recordingCode or "",
+					AudioType = if effect then Enum.AudioSubType.SoundEffect else Enum.AudioSubType.Music,
+				}
+		)
 	end
 	return out
 end
@@ -190,7 +224,7 @@ function ASSETS.SearchAudioAsync(_, params)
 			table.insert(ids, tostring(item.id))
 		end
 		local next = if type(found.nextPageCursor) == "string" then found.nextPageCursor else nil
-		return audioMetadata(ids, "AssetService:SearchAudioAsync()"), next
+		return audioMetadata(ids, "AssetService:SearchAudioAsync()", true), next
 	end
 	local first, cursor = page(nil)
 	return lazyPages("AudioPages", first, cursor == nil, function()
@@ -201,10 +235,10 @@ function ASSETS.SearchAudioAsync(_, params)
 end
 
 -- A model asset, its roots under a Model (as Roblox wraps them).
-local function loadAsset(method, assetId)
+local function loadAsset(method, assetId, missing)
 	assetId = int64(assetId)
 	if assetId <= 0 then
-		fail(method .. " failed because HTTP 404 (Not Found)")
+		fail(missing or method .. " failed because HTTP 404 (Not Found)")
 	end
 	local ok, token = pcall(host.download_asset, assetId)
 	if not ok then
@@ -214,12 +248,12 @@ local function loadAsset(method, assetId)
 end
 
 function ASSETS.LoadAssetAsync(_, assetId)
-	return loadAsset("AssetService:LoadAssetAsync()", assetId)
+	return loadAsset("AssetService:LoadAssetAsync()", assetId, "Request asset was not found")
 end
 
 function ASSETS.GetAssetIdsForPackageAsync(_, packageId)
 	packageId = int64(packageId)
-	local model = loadAsset("AssetService:GetAssetIdsForPackageAsync()", packageId)
+	local model = loadAsset("AssetService:GetAssetIdsForPackageAsync()", packageId, "HTTP 404")
 	model:Destroy()
 	return { packageId }
 end
@@ -241,7 +275,7 @@ local function contentMaps(method, content, keys)
 		end
 	end
 	if next(maps) == nil then
-		fail(method .. ": no content maps were provided")
+		fail(method .. ": No Content Maps provided")
 	end
 	return maps
 end
@@ -259,15 +293,16 @@ local function created(class, method, content, keys)
 end
 
 function ASSETS.CreateSurfaceAppearanceAsync(_, content)
-	return created("SurfaceAppearance", "AssetService:CreateSurfaceAppearanceAsync", content, DECAL_MAPS)
+	return created("SurfaceAppearance", "AssetService:CreateSurfaceAppearance", content, DECAL_MAPS)
 end
 
 function ASSETS.CreateDecalAsync(_, content)
 	return created("Decal", "AssetService:CreateDecalAsync", content, DECAL_MAPS)
 end
 
-function ASSETS.CreateTextureAsync(_, content)
-	return created("Texture", "AssetService:CreateTextureAsync", content, DECAL_MAPS)
+-- Not switched on yet on Roblox (golden WebMarket).
+function ASSETS.CreateTextureAsync(_, _content)
+	fail("AssetService::CreateTextureAsync is not yet enabled")
 end
 
 local COMPOSE_LIMIT = 8
@@ -378,12 +413,13 @@ INSERT.GetFreeDecalsAsync = freeSearch(13, "InsertService:GetFreeDecalsAsync()")
 
 local ANALYTICS = {}
 
+-- A live server takes a nil player too (golden WebServices).
 local function logEvent(method, player, fields)
-	if not isPlayer(player) then
+	if player ~= nil and not isPlayer(player) then
 		fail("AnalyticsService:" .. method .. "(): player must be a Player")
 	end
 	fields.event = method
-	fields.userId = player.UserId
+	fields.userId = player and player.UserId
 	fields.time = host.now_ms()
 	host.analytics(host.encode(fields))
 end
@@ -481,8 +517,9 @@ for _, kind in { "Start", "Complete", "Fail" } do
 	end
 end
 
+-- Roblox's own scripts only.
 function ANALYTICS.GetDurationLoggerTimestamp(_)
-	return math.floor(host.clock() * 1000)
+	fail("The current thread cannot call 'GetDurationLoggerTimestamp' (lacking capability InternalTest)")
 end
 
 function ANALYTICS.GetPlayerSegmentsAsync(_, player)
@@ -499,18 +536,18 @@ local NOTIFICATIONS = {}
 
 local function clientOnly(method)
 	if host.server() then
-		fail(method .. " can only be called from the client")
+		fail(method .. " can only be executed by a local script")
 	end
 end
 
 function NOTIFICATIONS.CanPromptOptInAsync(_)
-	clientOnly("ExperienceNotificationService:CanPromptOptInAsync()")
+	clientOnly("ExperienceNotificationService:CanPromptOptInAsync")
 	task.wait()
 	return false
 end
 
 function NOTIFICATIONS.PromptOptIn(self)
-	clientOnly("ExperienceNotificationService:PromptOptIn()")
+	clientOnly("ExperienceNotificationService:PromptOptIn")
 	local id = host.id(self)
 	host.notify(game:GetService("Players").LocalPlayer, "Notifications (test)", "The game asks to send experience notifications. A Local Run sends none.")
 	task.defer(host.fire, id, "OptInPromptClosed")
@@ -529,7 +566,7 @@ function COMMERCE.GetCommerceProductInfoAsync(_, productId)
 end
 
 function COMMERCE.UserEligibleForRealWorldCommerceAsync(_)
-	clientOnly("CommerceService:UserEligibleForRealWorldCommerceAsync()")
+	clientOnly("CommerceService:UserEligibleForRealWorldCommerceAsync")
 	task.wait()
 	return false
 end

@@ -235,11 +235,21 @@ mod tests {
         };
         let _out = open(7, Kind::Sse, request, inbox.clone());
         let started = std::time::Instant::now();
-        while !inbox.lock().unwrap().iter().any(|(_, e)| *e == Event::Closed) {
+        while !inbox
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, e)| *e == Event::Closed)
+        {
             assert!(started.elapsed() < Duration::from_secs(10));
             std::thread::sleep(Duration::from_millis(10));
         }
-        let events: Vec<Event> = inbox.lock().unwrap().iter().map(|(_, e)| e.clone()).collect();
+        let events: Vec<Event> = inbox
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, e)| e.clone())
+            .collect();
         assert!(matches!(events[0], Event::Opened(200, _)));
         assert_eq!(
             events[1..],

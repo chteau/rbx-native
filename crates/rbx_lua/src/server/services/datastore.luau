@@ -383,13 +383,18 @@ local BATCH_LIMIT = 100
 -- keys are left out. Each key spends a read.
 function STORE.BatchGetAsync(self, keys)
 	if not self.ordered then
-		fail("BatchGetAsync is only supported on OrderedDataStore")
+		fail(
+			'{"errorType":"BatchGetUnsupportedOperation","errorMessage":"BatchGetAsync is not supported.","callbackMessage":"BatchGetAsync is not supported."}'
+		)
 	end
 	if type(keys) ~= "table" then
 		fail("Unable to cast " .. typeof(keys) .. " to Array")
 	end
-	if #keys == 0 or #keys > BATCH_LIMIT then
-		fail("BatchGetAsync takes 1 to " .. BATCH_LIMIT .. " keys")
+	if #keys == 0 then
+		fail("OrderedDataStore BatchGetAsync keys array cannot be empty.")
+	end
+	if #keys > BATCH_LIMIT then
+		fail("OrderedDataStore BatchGetAsync takes at most " .. BATCH_LIMIT .. " keys.")
 	end
 	local out = {}
 	for _, key in keys do

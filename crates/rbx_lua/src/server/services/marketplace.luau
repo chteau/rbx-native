@@ -248,24 +248,32 @@ local function playerOf(method, player)
 	return player
 end
 
-function SERVICE.OpenShop(self, player)
-	serviceId = host.id(self)
-	playerOf("OpenShop", player)
-	host.notify(player, "Shop (test)", "The game opens its shop. Prompt a pass or product to test a purchase.")
+-- Not released on Roblox yet: a live server refuses these (golden
+-- WebMarket).
+local function unreleased(method)
+	fail("MarketplaceService:" .. method .. "() API is not yet released.")
+end
+
+function SERVICE.OpenShop(_, _player)
+	unreleased("OpenShop")
 end
 
 local BULK_LIMIT = 20
 
 function SERVICE.PromptBulkPurchase(self, player, lineItems, _options)
 	serviceId = host.id(self)
+	if type(lineItems) ~= "table" then
+		fail("Unable to cast " .. typeof(lineItems) .. " to Array")
+	end
+	-- A live server shrugs off an empty list (even without a player).
+	if #lineItems == 0 then
+		return
+	end
 	playerOf("PromptBulkPurchase", player)
 	if not host.server() then
 		fail("MarketplaceService:PromptBulkPurchase() can only be called from the server")
 	end
-	if type(lineItems) ~= "table" then
-		fail("Unable to cast " .. typeof(lineItems) .. " to Array")
-	end
-	if #lineItems == 0 or #lineItems > BULK_LIMIT then
+	if #lineItems > BULK_LIMIT then
 		fail("MarketplaceService:PromptBulkPurchase(): lineItems must hold 1 to " .. BULK_LIMIT .. " items")
 	end
 	local ids = {}
@@ -284,26 +292,31 @@ end
 
 function SERVICE.PromptCancelSubscription(self, player, subscription)
 	serviceId = host.id(self)
-	playerOf("PromptCancelSubscription", player)
+	if not isPlayer(player) then
+		fail("First argument to PromptCancelSubscription must be a player")
+	end
 	host.prompt("MarketplaceService.PromptCancelSubscription", player, 0, tostring(subscription))
 end
 
 function SERVICE.PromptRobloxSubscriptionPurchase(self, player)
 	serviceId = host.id(self)
-	playerOf("PromptRobloxSubscriptionPurchase", player)
+	if not isPlayer(player) then
+		fail("MarketplaceService:promptRobloxSubscriptionPurchase() player should be of type Player")
+	end
 	host.prompt("MarketplaceService.PromptRobloxSubscriptionPurchase", player, 0)
 end
 
-function SERVICE.PromptVIPServerPurchase(self, player)
-	serviceId = host.id(self)
-	playerOf("PromptVIPServerPurchase", player)
-	host.prompt("MarketplaceService.PromptVIPServerPurchase", player, game.PlaceId)
+function SERVICE.PromptVIPServerPurchase(_, _player)
+	unreleased("PromptVIPServerPurchase")
 end
 
 local transfers = {} -- transfer id -> { sender, receiver, amount }
 
 function SERVICE.PromptRobuxTransferAsync(self, sender, receiver, amount)
 	serviceId = host.id(self)
+	if sender == nil then
+		fail("Argument 1 missing or nil")
+	end
 	playerOf("PromptRobuxTransferAsync", sender)
 	if not host.server() then
 		fail("MarketplaceService:PromptRobuxTransferAsync() can only be called from the server")
@@ -311,7 +324,7 @@ function SERVICE.PromptRobuxTransferAsync(self, sender, receiver, amount)
 	receiver = userId(receiver)
 	amount = int64(amount)
 	if amount <= 0 then
-		fail("MarketplaceService:PromptRobuxTransferAsync(): amount must be a positive integer")
+		fail("amount must be a positive integer")
 	end
 	local id = host.guid()
 	transfers[id] = { sender = sender.UserId, receiver = receiver, amount = amount }
@@ -320,18 +333,15 @@ function SERVICE.PromptRobuxTransferAsync(self, sender, receiver, amount)
 	return id
 end
 
+-- Switched off on Roblox for now (golden WebMarket).
 function SERVICE.CanUsersTransferRobuxAsync(_, sender, receiver)
+	if sender == nil then
+		fail("Argument 1 missing or nil")
+	end
 	playerOf("CanUsersTransferRobuxAsync", sender)
-	receiver = userId(receiver)
+	userId(receiver)
 	task.wait()
-	-- Test players (ids below 1) hold no Robux.
-	if sender.UserId < 1 then
-		return Enum.RobuxTransferEligibility.SenderNotEligible
-	end
-	if receiver < 1 then
-		return Enum.RobuxTransferEligibility.ReceiverNotEligible
-	end
-	return Enum.RobuxTransferEligibility.Eligible
+	fail("CanUsersTransferRobuxAsync is not enabled")
 end
 
 -- The experience's developer products, from Roblox's public listing
@@ -367,6 +377,9 @@ function SERVICE.GetDeveloperProductsAsync(_)
 	return host.pages("StandardPages", list, 50)
 end
 
+-- Roblox refuses a subscription id it doesn't know with HTTP 400; offline
+-- an id is known once the ledger has it or when it looks like a real one
+-- (EXP- and a long number).
 local function subscriptionArgs(method, player, subscription)
 	if not isPlayer(player) then
 		fail("Argument 1 missing or nil")
@@ -377,11 +390,15 @@ local function subscriptionArgs(method, player, subscription)
 	if not host.server() then
 		fail("MarketplaceService:" .. method .. "() can only be called from the server")
 	end
+	task.wait()
+	if not subscription:match("^EXP%-%d%d%d%d%d+$") and not host.owns(player.UserId, "subscription:" .. subscription) then
+		fail("MarketPlaceService::" .. method .. " failed because: HTTP 400")
+	end
 end
 
 function SERVICE.GetSubscriptionProductInfoAsync(_, subscription)
 	if host.server() then
-		fail("MarketplaceService:GetSubscriptionProductInfoAsync() can only be called from the client")
+		fail("Can only call GetSubscriptionProductInfoAsync from Script with RunContext = Client")
 	end
 	if type(subscription) ~= "string" then
 		fail("Unable to cast " .. typeof(subscription) .. " to string")
@@ -394,7 +411,6 @@ local MONTH = 30 * 24 * 3600
 
 function SERVICE.GetUserSubscriptionDetailsAsync(_, player, subscription)
 	subscriptionArgs("GetUserSubscriptionDetailsAsync", player, subscription)
-	task.wait()
 	if host.owns(player.UserId, "subscription:" .. subscription) then
 		return {
 			SubscriptionState = Enum.SubscriptionState.SubscribedWillRenew,
@@ -406,7 +422,6 @@ end
 
 function SERVICE.GetUserSubscriptionPaymentHistoryAsync(_, player, subscription)
 	subscriptionArgs("GetUserSubscriptionPaymentHistoryAsync", player, subscription)
-	task.wait()
 	if host.owns(player.UserId, "subscription:" .. subscription) then
 		return {
 			{
@@ -435,7 +450,7 @@ function SERVICE.GetUsersPriceLevelsAsync(_, userIds)
 	task.wait()
 	local out = {}
 	for _, id in userIds do
-		table.insert(out, { [tostring(userId(id))] = 100 })
+		table.insert(out, { UserId = userId(id), PriceLevel = 100 })
 	end
 	return out
 end
@@ -446,11 +461,17 @@ function SERVICE.RankProductsAsync(_, products)
 	if type(products) ~= "table" then
 		fail("Unable to cast " .. typeof(products) .. " to Array")
 	end
+	if #products == 0 then
+		fail("MarketplaceService:RankProductsAsync() must have at least one ProductIdentifier.")
+	end
 	task.wait()
 	return table.clone(products)
 end
 
 function SERVICE.RecommendTopProductsAsync(_, infoTypes)
+	if host.server() then
+		fail("MarketplaceService:RecommendTopProductsAsync() Cannot be called from the Server.")
+	end
 	if type(infoTypes) ~= "table" then
 		fail("Unable to cast " .. typeof(infoTypes) .. " to Array")
 	end

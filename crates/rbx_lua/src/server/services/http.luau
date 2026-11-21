@@ -126,7 +126,7 @@ end
 -- Secret values only a request may carry.
 function SERVICE.GetSecret(_, key)
 	if type(key) ~= "string" then
-		fail("Unable to cast " .. (key == nil and "nil" or typeof(key)) .. " to string")
+		fail(if key == nil then "Argument 1 missing or nil" else "Unable to cast " .. typeof(key) .. " to string")
 	end
 	local secret = host.secret(key)
 	if secret == nil then
