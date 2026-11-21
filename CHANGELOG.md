@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-21
+
+- **Luau exports and cyclic requires (beta).** Turn on "Luau Exports and Cyclic Requires" in Beta Features and ModuleScripts can use `export local`, `export const` and `export function` like Studio's beta of the same name: the module hands back a table of what it exports, two modules that export can require each other, and reading an export of a module that's still loading errors the same way Studio does. Mixing `export` with a top-level `return` is a compile error, also like Studio. A ModuleScript that doesn't compile now fails like one that errors: its message goes to Output and `require` says "Requested module experienced an error while loading". (@chteau)
+
 ## 2026-11-20
 
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)

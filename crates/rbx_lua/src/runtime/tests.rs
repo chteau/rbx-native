@@ -701,3 +701,76 @@ fn writing_back_what_is_there_logs_no_change() {
         dom.changes()
     );
 }
+
+#[test]
+fn exports_make_a_module_table_and_allow_cycles() {
+    crate::set_luau_exports(true);
+    let dom = place_with_modules(&[
+        (
+            "A",
+            "local B = require(script.Parent.B)\nexport const name = 'A'\nexport function other() return B.name end",
+        ),
+        (
+            "B",
+            "local A = require(script.Parent.A)\nexport local name = 'B'\nexport function other() return A.name end",
+        ),
+        ("Mixed", "export local x = 1\nreturn { x = x }"),
+        ("Plain", "return require(script.Parent.PlainBack)"),
+        ("PlainBack", "return require(script.Parent.Plain)"),
+    ]);
+    let mut runtime = Runtime::new(dom, ReflectionDatabase::embedded()).unwrap();
+    let run = runtime
+        .run(
+            "local A = require(workspace.A) print(A.name, A.other(), require(workspace.B).other())",
+        )
+        .unwrap();
+    assert_eq!(
+        run.lines(),
+        ["A B A"],
+        "each sees the other's finished exports"
+    );
+
+    let error = runtime.run("require(workspace.Mixed)").unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("experienced an error while loading")
+            && error
+                .output
+                .lines()
+                .iter()
+                .any(|line| line.contains("top-level return")),
+        "{error} {:?}",
+        error.output.lines()
+    );
+
+    let error = runtime.run("require(workspace.Plain)").unwrap_err();
+    assert_eq!(
+        error.output.lines()[0],
+        "Requested module was required recursively",
+        "modules without exports still can't cycle"
+    );
+}
+
+#[test]
+fn a_cyclic_export_errors_while_its_module_still_loads() {
+    crate::set_luau_exports(true);
+    let dom = place_with_modules(&[
+        (
+            "A",
+            "local B = require(script.Parent.B)\nexport local name = 'A'",
+        ),
+        (
+            "B",
+            "local A = require(script.Parent.A)\nexport local seen = A.name",
+        ),
+    ]);
+    let mut runtime = Runtime::new(dom, ReflectionDatabase::embedded()).unwrap();
+    let error = runtime.run("require(workspace.A)").unwrap_err();
+    assert!(
+        error.output.lines()[0]
+            .contains("Cannot access the exported field 'name' because it has a cyclic dependency"),
+        "{:?}",
+        error.output.lines()
+    );
+}
