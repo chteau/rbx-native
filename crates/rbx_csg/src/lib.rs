@@ -263,7 +263,7 @@ impl Solid {
         let polygons = self
             .polygons
             .iter()
-            .filter_map(|polygon| {
+            .map(|polygon| {
                 let mut vertices: Vec<DVec3> = polygon
                     .vertices
                     .iter()
@@ -274,7 +274,7 @@ impl Solid {
                 }
                 let plane = Plane::from_points(vertices[0], vertices[1], vertices[2])
                     .unwrap_or(polygon.plane);
-                Some(Polygon { vertices, plane })
+                Polygon { vertices, plane }
             })
             .collect();
         Solid { polygons }
