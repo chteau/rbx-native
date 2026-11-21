@@ -382,6 +382,8 @@ pub(crate) struct WorkspaceView {
     /// Everything screen-to-world unprojects against this, so a click resolves
     /// against the view it was aimed at.
     view: Option<Pose>,
+    /// The newest frame's width per height.
+    aspect: f32,
     /// The 3D notes' billboards (see `notes`).
     notes: Vec<NoteMark>,
     /// The file meshes resident on the render thread, as of the last scene it
@@ -472,6 +474,12 @@ impl WorkspaceView {
         viewer.set_selection(&selected);
         let outlined = selected;
         viewer.set_orthographic(orthographic);
+        // The Orthographic Camera beta: a place saved with an orthographic
+        // camera opens at its size; the shell turned `orthographic` on.
+        if let Some((size, axis)) = camera.and_then(|camera| camera.ortho) {
+            viewer.set_place_orthographic(true);
+            viewer.set_ortho_span(size, axis);
+        }
         // Applied here rather than after the view exists, so a saved
         // preference is already in force on the first frame instead of
         // flashing the default for one.
@@ -574,6 +582,7 @@ impl WorkspaceView {
             targets: Targets::default(),
             neighbours: Vec::new(),
             view: None,
+            aspect: 1.0,
             notes: Vec::new(),
             meshes: Meshes::default(),
             drag: None,
@@ -616,6 +625,17 @@ impl WorkspaceView {
     /// The camera as of the last frame, `None` before the first one.
     pub(crate) fn pose(&self) -> Option<Pose> {
         self.view
+    }
+
+    /// The newest frame's width per height.
+    pub(crate) fn aspect(&self) -> f32 {
+        self.aspect
+    }
+
+    /// The place camera's orthographic span, `None` once it is
+    /// perspective, see `rbx_viewer::Headless::set_ortho_span`.
+    pub(crate) fn set_place_ortho(&self, span: Option<(f32, rbx_viewer::OrthoAxis)>) {
+        self.pump.place_ortho(span);
     }
 
     /// A press on the orientation indicator: snaps the view square-on to
@@ -698,6 +718,7 @@ impl WorkspaceView {
             level = Some(ready.level);
             if let Some(pixels) = ready.pixels {
                 latest = Some((pixels, ready.size));
+                self.aspect = ready.size.0 as f32 / ready.size.1.max(1) as f32;
             }
             // The render thread already throttles and dedupes this (see
             // `pump::due_pose`), so whichever of possibly several drained

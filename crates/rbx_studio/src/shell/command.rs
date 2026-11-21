@@ -326,6 +326,10 @@ impl Shell {
             self.viewport
                 .read(cx)
                 .look_at_with(view.eye, view.look_at, view.fov_degrees);
+            if crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+                self.set_orthographic(view.ortho.is_some(), cx);
+                self.viewport.read(cx).set_place_ortho(view.ortho);
+            }
         }
         self.forward_to_argon(changes, cx);
     }
