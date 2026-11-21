@@ -4,6 +4,8 @@
 //! raised at the write: the host reads the changes a run made once it has
 //! run and hands them to [`fire_changes`].
 
+use std::collections::HashMap;
+
 use mlua::{Lua, MultiValue, Result, Value};
 use rbx_dom::{Change, Ref, WeakDom};
 
@@ -58,6 +60,11 @@ fn subtree(dom: &WeakDom, root: Ref) -> Vec<Ref> {
 struct Firing<'a> {
     lua: &'a Lua,
     change: Option<u64>,
+    /// This change's place in its batch, and where each instance's last
+    /// parenting in the batch is: a descendant parented after this change
+    /// wasn't under the instance yet, so its own change fires it.
+    index: usize,
+    last_parented: &'a HashMap<Ref, usize>,
 }
 
 impl Firing<'_> {
@@ -75,7 +82,11 @@ impl Firing<'_> {
         let (moved, old_chain, new_chain) = {
             let ctx = engine(self.lua).ctx.clone();
             let dom = ctx.dom();
-            (subtree(&dom, referent), chain(&dom, old), chain(&dom, new))
+            let mut moved = subtree(&dom, referent);
+            moved.retain(|r| {
+                *r == referent || self.last_parented.get(r).is_none_or(|i| *i <= self.index)
+            });
+            (moved, chain(&dom, old), chain(&dom, new))
         };
         let child = [Arg::Instance(referent)];
         let up = |chain: &[Ref], name: &str, parent: Option<Ref>, last: &str| -> Result<()> {
@@ -215,10 +226,18 @@ impl Firing<'_> {
 pub(crate) fn fire_changes(lua: &Lua, changes: &[Change], first: Option<u64>) -> Result<()> {
     let engine = engine(lua);
     let ctx = engine.ctx.clone();
+    let mut last_parented = HashMap::new();
+    for (index, change) in changes.iter().enumerate() {
+        if let Change::Parent { referent, .. } | Change::Added(referent) = change {
+            last_parented.insert(*referent, index);
+        }
+    }
     for (index, change) in changes.iter().enumerate() {
         let firing = Firing {
             lua,
             change: first.map(|first| first + index as u64),
+            index,
+            last_parented: &last_parented,
         };
         match change {
             Change::Property { referent, name } => firing.property(&ctx, *referent, name)?,
