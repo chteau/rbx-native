@@ -314,6 +314,10 @@ impl Offscreen {
         &self.renderer
     }
 
+    pub(crate) fn renderer_mut(&mut self) -> &mut Renderer {
+        &mut self.renderer
+    }
+
     /// The renderer with the device and queue it draws through, for an
     /// edit applied one instance at a time (see `Headless::apply_changes`):
     /// every per-instance write the renderer offers needs the same two

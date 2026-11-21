@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-21
+
+- **UI particles (`ParticleEmitter2D`).** Put one under any GUI object and it emits like it does in Studio with the UI Particles beta on: in the 3D view's screen GUI, on the UI Editor canvas (live, not a still), and on BillboardGuis and SurfaceGuis. Every property is in: emission area and offset, angle and spread, speed, acceleration, drag, size, squash, colour, brightness, transparency, blend, rotation, LockedToParent, TimeScale and flipbooks, all checked against Studio 0.748 to the pixel where it could be. Particles draw right on top of their parent and under its children, follow the parent's rotation and UIScale, and get clipped by ClipsDescendants. Scripts can `Emit(n)` and `Clear()` from the Command Bar and plugins, and `Content.fromUri` works now so `TextureContent` can be set from a script. Turn on "UI Particles" in Beta Features to get it in the Explorer's insert list and the UI Editor's +, same as Studio. (@chteau)
+
 ## 2026-11-20
 
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)

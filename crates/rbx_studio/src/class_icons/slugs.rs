@@ -204,6 +204,7 @@ pub(super) const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("PartOperation", "union-operation"),
     ("PartPairLasso", "lasso"),
     ("ParticleEmitter", "particle-emitter"),
+    ("ParticleEmitter2D", "particle-emitter-2d"),
     ("PathfindingLink", "pathfinding-link"),
     ("PathfindingModifier", "pathfinding-modifier"),
     ("PitchShiftSoundEffect", "sound-effect"),

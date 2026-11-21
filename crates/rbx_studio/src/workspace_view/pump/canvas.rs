@@ -100,13 +100,17 @@ impl Canvas {
 
     /// Draws the canvas if it is owed a frame.
     pub(super) fn draw(&mut self, viewer: &mut Headless) -> Option<Drawn> {
-        let request = self.request.filter(|_| self.dirty)?;
+        // Moving particles owe the canvas a frame every tick.
+        let request = self
+            .request
+            .filter(|_| self.dirty || viewer.gui_animating())?;
         self.dirty = false;
         // ponytail: two full draws per change; clearing to transparent with a
         // fixed alpha blend in the GUI pipelines would make it one.
         let drawn = viewer
             .render_gui(request.screen, request.size, WHITE)
             .and_then(|white| {
+                viewer.hold_gui_particles();
                 let mut black = viewer.render_gui(request.screen, request.size, BLACK)?;
                 unblend(&mut black.pixels, &white.pixels);
                 // `RBX_STUDIO_CANVAS_DUMP=<path.png>`: the canvas exactly as

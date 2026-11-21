@@ -2,9 +2,11 @@
 //! once into an offscreen canvas by the very same painter the screen overlay
 //! uses, and that canvas is then drawn as a textured quad inside the scene.
 //!
-//! Baking happens in [`Space::new`] rather than per frame because nothing in
-//! one of these trees moves; what does move is a billboard's quad, which needs
-//! the eye and so is rebuilt every frame (see [`quad`]).
+//! Baking happens in [`Space::new`] rather than per frame because almost
+//! nothing in one of these trees moves; what does move is a billboard's quad,
+//! which needs the eye and so is rebuilt every frame (see [`quad`]), and a
+//! `ParticleEmitter2D`'s particles, so a canvas with one keeps a painter of
+//! its own and is painted again every frame (see [`Space::animate`]).
 
 mod pipeline;
 mod quad;
@@ -15,6 +17,7 @@ use glam::{Mat4, Vec3};
 
 use super::atlas::Atlas;
 use super::paint::Painter;
+use super::particles::Sims;
 use super::text::Typesetter;
 use super::viewport::Viewports;
 use crate::renderer::pipeline::Target;
@@ -31,8 +34,10 @@ const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 /// One baked canvas, kept alive beside the bind group that views it.
 struct Canvas {
     bind_group: wgpu::BindGroup,
-    #[allow(dead_code)]
     texture: wgpu::Texture,
+    /// A canvas with particles: its own painter, still holding the tree, and
+    /// the canvas' pixel size.
+    live: Option<(Painter, (u32, u32))>,
 }
 
 struct Item {
@@ -153,10 +158,10 @@ impl Space {
             )
         });
         for (index, gui) in spaces.iter().enumerate() {
-            let canvas = bake(
+            let (canvas, live) = bake(
                 device,
                 queue,
-                &mut painter,
+                (&mut painter, viewport_layout),
                 (atlas, fonts, viewports),
                 (materials, index),
                 gui,
@@ -164,6 +169,7 @@ impl Space {
             self.canvases.push(Canvas {
                 bind_group: self.bind(device, &canvas, &sampler),
                 texture: canvas,
+                live,
             });
             self.items.push(Item {
                 anchor: gui.anchor,
@@ -174,6 +180,39 @@ impl Space {
             });
         }
         self.painter = Some(painter);
+    }
+
+    /// Paints every canvas with particles again, its particles moved on to
+    /// this frame. Before [`Space::draw`], outside any render pass.
+    pub(super) fn animate(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sims: &mut Sims,
+        atlas: &Atlas,
+    ) {
+        let mut encoder = None;
+        for canvas in &mut self.canvases {
+            let Some((painter, size)) = &mut canvas.live else {
+                continue;
+            };
+            painter.animate(device, queue, sims, atlas.slot_of());
+            let encoder = encoder.get_or_insert_with(|| {
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("rbxview gui canvas particles"),
+                })
+            });
+            painter.draw(
+                encoder,
+                &super::pipeline::encoded_view(&canvas.texture),
+                wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                atlas.groups(),
+                *size,
+            );
+        }
+        if let Some(encoder) = encoder {
+            queue.submit(std::iter::once(encoder.finish()));
+        }
     }
 
     /// Rebuilds both pipelines for a new sample count, see `renderer::switch`.
@@ -330,20 +369,23 @@ impl Space {
     }
 }
 
-/// Paints one container's tree into a texture of its own `CanvasSize`.
+/// Paints one container's tree into a texture of its own `CanvasSize`, with
+/// `shared`, or with a painter of its own, handed back, when the tree has
+/// particles to paint again every frame.
 ///
 /// Submitted on the spot rather than folded into the frame encoder: the canvas
 /// is a one-off, and `Renderer::new` has no encoder of its own to borrow.
 /// `index` keeps this canvas' `ViewportFrame` textures apart from every
 /// other's in the shared atlas.
+#[allow(clippy::type_complexity)]
 fn bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    painter: &mut Painter,
+    (shared, viewport_layout): (&mut Painter, &wgpu::BindGroupLayout),
     (atlas, fonts, viewports): (&mut Atlas, &mut Typesetter, &mut Viewports),
     (materials, index): (&wgpu::BindGroup, usize),
     gui: &SpaceGui,
-) -> wgpu::Texture {
+) -> (wgpu::Texture, Option<(Painter, (u32, u32))>) {
     let size = (gui.canvas[0].max(1.0) as u32, gui.canvas[1].max(1.0) as u32);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("rbxview gui canvas"),
@@ -374,6 +416,19 @@ fn bake(
         &format!("canvas/{index}"),
         &mut elements,
     );
+    let mut own = elements
+        .iter()
+        .any(|element| !element.particles.is_empty())
+        .then(|| {
+            Painter::new(
+                device,
+                queue,
+                CANVAS_FORMAT,
+                viewport_layout,
+                &atlas.image_layout,
+            )
+        });
+    let painter = own.as_mut().unwrap_or(shared);
     painter.prepare(device, queue, &elements, atlas.slot_of(), size, fonts);
     atlas.sync_glyphs(device, queue, &mut fonts.atlas);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -389,5 +444,5 @@ fn bake(
         size,
     );
     queue.submit(std::iter::once(encoder.finish()));
-    texture
+    (texture, own.map(|painter| (painter, size)))
 }
