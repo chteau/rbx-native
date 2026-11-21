@@ -893,6 +893,33 @@ Not verified: the swim game past its loading screen (walking, carrying, the sea)
 
 Side-by-sides: `rbx-native-targets/local-run-m18-shots/<game>/` (real client and ours at 1166x632; part 2's are suffixed `-b`, ours cropped from a 1600x636 Play (local) view, so the 3D framing matches and the corner GUI is cut).
 
+Part 3, client input, GUI and media members:
+
+- Touch: `Input::Touch` from the device simulator (a touch device turns the mouse into finger 0) or the host. `touch.rs` recognises TouchTap, TouchTapInWorld, TouchLongPress, TouchPan, TouchSwipe, TouchPinch, TouchRotate and TouchDrag, and fires them on UserInputService (with gameProcessed) and on the GuiObject under the finger.
+- Gamepads: `Input::Gamepad`/`GamepadButton`/`GamepadAxis`, with the Controller Emulator as Gamepad1 in Play (local). The UIS gamepad functions read real state: GetConnectedGamepads, GetGamepadState, IsGamepadButtonDown, GamepadSupports, navigation gamepads, GamepadConnected/Disconnected.
+- Device sensors (`Input::Motion`) feed GetDeviceGravity/Acceleration/Rotation and the Device*Changed events. `CreateVirtualInput` queues keys, buttons, moves, wheel and text for the client's next frame. Also added: `InputObject:IsModifierKeyDown`, `LastInputTypeChanged`, `PointerAction` from the wheel, and CAS LocalToolEquipped/Unequipped with `GetCurrentLocalToolIcon`.
+- GUI: SecondaryActivated, SelectionChanged, ReturnPressedFromOnScreenKeyboard, `GetGuiObjectsAtPosition` (LayerCollector and PlayerGui), UIPageLayout JumpTo/Next/Previous with its page events, ScrollingFrame scroll velocity. Camera `ZoomToExtents`.
+- Styles: StyleRule property transitions and StyleQuery conditions are kept and read back. They don't animate yet.
+- Chat (local only): TextChatCommand.Triggered on both peers, DisplayBubble, GetChatGroupsAsync, SetDirectChatRequester, DeriveNewMessageProperties.
+- ProximityPrompt IndicatorShown/IndicatorHidden inside MaxIndicatorDistance.
+- Sound: SoundService listener, PlayLocalSound and GetMixerTime. Media: VRService, HapticService, VideoFrame/VideoPlayer/VideoDisplay.
+- Audio: scheduled AudioPlayer Play/Stop with Cancel, GetWaveformAsync, AudioRecorder (records its input into `rbxtemp://` content that AudioPlayer plays), AudioGate, AudioTextToSpeech, AudioDeviceInput access lists.
+- ParticleEmitter2D Emit/Clear queue bursts (`Sim::take_gui_bursts`). They reach `rbx_viewer::gui_particle_burst` once feat/ui-particles lands.
+
+Behaves as real Studio Play does, or as close as runs locally:
+
+| Member | Ours | Why |
+|---|---|---|
+| VideoFrame, VideoPlayer | the clocks, events and `TimeLength`/`Resolution` from the WebM header; no picture | no MIT-compatible pure-Rust VP8/VP9 decoder exists |
+| AudioTextToSpeech | `LoadAsync` returns Failure; Play ends at once in silence | no voice backend offline |
+| AudioDeviceInput, AudioRecorder from a mic | silence | no microphone capture |
+| VRService | a desktop: VREnabled false, identity user CFrames, touchpad modes kept | no headset |
+| HapticService | vibration unsupported, motors read back what was set | no rumble output |
+| VideoService `CreateVideoSamplerAsync` | errors | no decoder |
+| Gesture thresholds | slop 10 px, tap 0.4 s, long press 0.5 s, swipe 600 px/s | ours, not measured on a device |
+| `GetImageForKeyCode` | `rbxasset://textures/ui/Controls/<name>.png` paths | mapping not checked against a client |
+| `SoundService:GetInputDevice` | the tuple shape from the docs | not checked live |
+
 ## Milestone 19 (proposed): multi-client testing, then what M18 left off
 
 1. Studio-style multi-client tests: Test → Clients and Servers, N player windows plus a server window, each with its own Explorer and Output, all fed by one `Session`.
