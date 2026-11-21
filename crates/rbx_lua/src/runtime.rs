@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod edit_tests;
-mod globals;
+pub(crate) mod globals;
 mod host;
 mod report;
 mod resume;
@@ -115,7 +115,7 @@ impl Runtime {
         let output = Rc::new(RefCell::new(Output::default()));
         let ctx = Ctx::new(dom.clone(), Rc::new(database), output.clone());
         let host = Rc::new(CommandBar::new(output.clone()));
-        let lua = Lua::new();
+        let lua = crate::luau::new_vm();
         // Luau's import optimization resolves and caches `a.b.c` chains rooted at a
         // global once per chunk, which would make `workspace.Part.Size` return a
         // stale value after a script wrote to it. Declaring the DOM-backed globals

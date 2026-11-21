@@ -32,7 +32,7 @@ const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
 /// allowed execution time" once `Shared::deadline` has passed. Sandboxed
 /// last.
 pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
-    let lua = Lua::new();
+    let lua = crate::luau::new_vm();
     lua.set_compiler(Compiler::new().set_mutable_globals([
         "game",
         "workspace",

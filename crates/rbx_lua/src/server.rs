@@ -362,7 +362,7 @@ impl ServerVm {
             physics: physics.clone(),
         });
         let groups = Rc::new(RefCell::new(CollisionGroups::default()));
-        let lua = Lua::new();
+        let lua = crate::luau::new_vm();
         // See `Runtime::build`: DOM-backed globals must not be import-cached.
         lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
         let fired = Rc::new(Cell::new(0));

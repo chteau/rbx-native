@@ -40,7 +40,7 @@ pub(crate) fn test_vm(mut dom: WeakDom, hooks: bool) -> (Lua, Rc<Env>, Rc<RefCel
         core_gui,
         plugin_gui_service,
     });
-    let lua = Lua::new();
+    let lua = crate::luau::new_vm();
     if hooks {
         lua.set_app_data(HookSlot(Rc::new(PluginHooks)));
     }

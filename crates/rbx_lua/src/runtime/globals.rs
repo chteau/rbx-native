@@ -128,7 +128,7 @@ fn install_graphemes(lua: &Lua) -> Result<(), LuaError> {
 /// What a script sees of an error a binding raised: Roblox hands scripts
 /// the bare message ("Part is not a valid member of Workspace"), never an
 /// error object, and code such as Roact formats it with `%s`.
-fn error_text(error: &LuaError) -> String {
+pub(crate) fn error_text(error: &LuaError) -> String {
     match error {
         LuaError::CallbackError { cause, .. } => error_text(cause),
         LuaError::RuntimeError(message) => message.clone(),

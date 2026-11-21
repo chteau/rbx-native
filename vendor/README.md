@@ -180,3 +180,47 @@ a plain top-level window, so a torn-out plugin dock went behind the editor
 the moment the editor was clicked. Owned, it stays above the editor, hides
 with it when minimized and has no taskbar button of its own.
 
+
+## `luau0-src` (0.24.1+luau748, MIT, `mlua-rs/luau-src-rs`)
+
+luau0-src 0.24.0+luau747 (its `testcrate` dropped, and its `[workspace]`
+with it) with the Luau sources under `luau/` (`Ast`, `Bytecode`, `CodeGen`,
+`Common`, `Compiler`, `Config`, `Inliner`, `Require`, `VM`) replaced by
+upstream `luau-lang/luau`'s 0.748 release, unmodified, and the version
+raised to 0.24.1+luau748 so mlua-sys's `luau0-src = "0.24.0"` takes it.
+`luau/Custom` (mlua's `luau_setfflag` and two helpers) is luau0-src's own.
+Patched in through the root `Cargo.toml`, which also takes `mlua` and
+`mlua-sys` from mlua's master at a pinned commit: no mlua release has the
+Luau 0.747 C API yet (the `integer` type is gone, so the type tags moved),
+and 0.747 to 0.748 changed no public header.
+
+Why: scripts must parse and run as on live Roblox, the day Roblox turns a
+feature on. `rbx_lua::LUAU_VERSION` records the Luau live Roblox runs, and
+`luau::tests::the_linked_luau_is_not_behind_roblox` fails when this build
+links an older one.
+
+Finding Roblox's version: every fast flag a Luau release adds is in the
+Studio binary that ships it and every flag it removes is gone, so compare
+`strings RobloxStudioBeta.exe` against each release's
+`LUAU_FASTFLAGVARIABLE`s (Studio 0.748 matches 0.748 exactly). The flags
+Roblox has on are in `https://clientsettingscdn.roblox.com/v2/settings/application/PCStudioApp`.
+
+Bumping:
+
+1. Download the release
+   (`https://codeload.github.com/luau-lang/luau/tar.gz/refs/tags/0.NNN`) and
+   replace each of the nine directories above with its `include` and `src`.
+2. Raise the version here and in `vendor/luau0-src/Cargo.toml`
+   (`+luauNNN`; keep it semver-compatible with what mlua-sys asks for),
+   then `cargo update -p luau0-src`.
+3. If the release changed `VM/include` or `Compiler/include`, mlua-sys's
+   bindings must change with it: move the `mlua`/`mlua-sys` pin to an mlua
+   commit that bumped to that Luau, or back to crates.io once a release has.
+4. Raise `rbx_lua::LUAU_VERSION`, and refresh `ROBLOX_FFLAGS` in
+   `crates/rbx_lua/src/luau.rs` from the live settings (the flags Luau's
+   VM, compiler and code generator define that Roblox has on).
+5. Run `cargo test -p rbx_lua luau::` and `-p rbx_bytecode` (the Bytecode
+   dock's shim compiles against these headers).
+
+Once an mlua release bundles a Luau at least as new as Roblox's, drop this
+directory and the three patch lines.

@@ -16,6 +16,7 @@ mod game;
 mod hooks;
 mod instance;
 mod lua_enum;
+mod luau;
 mod not_creatable;
 mod output;
 pub mod pattern;
@@ -29,6 +30,9 @@ pub mod server;
 pub mod test_runner;
 
 pub use debugger::{Breakpoint, Frame, Paused, Resume, Variable, STOPPED};
+pub use luau::{
+    linked_version as luau_linked_version, set_if_local, IF_LOCAL_FFLAGS, LUAU_VERSION,
+};
 pub use mlua::Error as LuaError;
 pub use output::{LineKind, Output};
 pub use printed::{PrintPart, PrintValue, TableDump, TableEntry};
@@ -37,7 +41,7 @@ pub use runtime::{Reported, RunError, RunState, Runtime, Step};
 /// Whether `source` compiles as Luau (nothing runs). `Err` is the
 /// compiler's message, e.g. a syntax error or "too many upvalues".
 pub fn compile_check(source: &str, name: &str) -> Result<(), String> {
-    mlua::Lua::new()
+    luau::new_vm()
         .load(source)
         .set_name(name)
         .into_function()
