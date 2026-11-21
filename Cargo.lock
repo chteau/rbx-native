@@ -7132,6 +7132,7 @@ dependencies = [
  "mlua",
  "rbx_binary",
  "rbx_dom",
+ "rbx_materials",
  "rbx_net",
  "rbx_reflection",
  "rbx_xml",
