@@ -987,6 +987,26 @@ Still off, and why:
 | Slopes (HumanoidSlope 60°, MaxSlopeAngle) and R6 climb speed | as M10 | unchanged | not attempted again: the floor sensor's wall-and-edge behaviour on steep wedges and the truss drag are physics work outside this pass |
 | `PlayEmoteAsync` with a description's emotes | plays through `Animate` | plays through `Animate`'s `PlayEmote` bindable when the rig has one | no emote recorded live (needs a published emote on a real avatar) |
 
+## Instance streaming (branch local-run-streaming)
+
+`Workspace.StreamingEnabled` places now stream between the session's server and each client (`crates/rbx_sim/src/streaming.rs`, the client half in `session.rs`). The rules come from a probe place recorded on a real server: `cargo run -p rbx_sim --example record_streaming -- <universe> <sandbox place> <cloudflared> [Variant,...]` publishes one place per variant (Default; Opportunistic with a 256 target radius; MinimumRadiusPause; PauseOutsideLoadedArea), joins it with Sober and writes `conformance/goldens/streaming/<Variant>.json`; `tests/streaming.rs` runs the same scripts in a `Session` and compares.
+
+Measured and implemented:
+
+- At `game.Loaded` the client has everything in Workspace except parts: folders, legacy (Default/Nonatomic) models and their non-part children, values. Then come Persistent models and PersistentPerPlayer ones for players added with `AddPersistentPlayer` (others treat it as Atomic), then `Workspace.PersistentLoaded(player)`, then the minimum radius, and ~0.2 s later the rest of the target radius.
+- The world streams in 64-stud cubes aligned on the origin. A part is in every cube its box touches (a 1000-stud part reaches in by its end), and a cube is within a radius when it is on every axis, not as the crow flies: that's why `P1088` and the diagonal `D1536` came in together on a 1024 radius when the focus stood at x = 0, and neither when it spawned at x = -3.
+- Each part streams by itself with the non-part instances inside it; a part inside a far part brings its parent along (without the parent's other far children). Welded parts, anchored or not, stream one by one. Atomic models come and go whole.
+- The focus is the character's root part, or `Player.ReplicationFocus` instead of it. What comes into range lands ~0.1 s later.
+- `RequestStreamAroundAsync(position, timeout)` returns after a frame with the minimum radius around the position in.
+- Default and LowMemory never stream out. Opportunistic streams out what's beyond the target radius at the next look, and the minimum radius around where the focus was (or an area asked for) 5.05 s after it left. A streamed-out instance is parented to nil (`DescendantRemoving`, `AncestryChanged`), not destroyed; when it comes back it's the same object with the server's values, what the client changed on it lost.
+- Integrity modes: `Player.GameplayPaused` starts true and turns false on the first look; after a teleport it is true until the minimum radius around the character is in (~0.1 s), and the client stops simulating its character meanwhile. Both pause modes behaved the same on the probe, and moving `ReplicationFocus` away never paused.
+- A reference to a part the client doesn't have reads nil (`ObjectValue.Value`, `Model.PrimaryPart`, remote arguments) and resolves when it arrives; `WaitForChild` warns "Infinite yield possible" after 5 s; the server keeps everything.
+- `Workspace.DistributedGameTime` is the server's game time (on Roblox the client's runs a second or two behind it).
+
+Fixed on the way: `DescendantAdded` fired once per ancestor level for the join's snapshot (a model's grandchild three times), and a client's pose overrode a part the server had just anchored (a server script anchoring a character and teleporting it).
+
+Not done: terrain voxels still arrive whole (Roblox streams them by region), LowMemory's memory pressure (we never stream out under it), `ModelStreamingBehavior` Improved, `Model.LevelOfDetail` imposters, `AddReplicationFocus` (not in the public API dump), Studio's `NetworkSettings.RenderStreamedRegions`. The Explorer already shows the viewed client's DataModel, so in Play it shows what that client has streamed in.
+
 ## Milestone 19 (proposed): multi-client testing, then what M18 left off
 
 1. Studio-style multi-client tests: Test → Clients and Servers, N player windows plus a server window, each with its own Explorer and Output, all fed by one `Session`.

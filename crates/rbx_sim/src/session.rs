@@ -16,7 +16,10 @@
 //!   owns, its humanoids' states and its animation tracks; remotes go
 //!   both ways, unreliable ones after the frame's reliable traffic;
 //! - a client starts with `ReplicatedFirst` alone, its LocalScripts
-//!   running before the rest of the place arrives and `game.Loaded` fires.
+//!   running before the rest of the place arrives and `game.Loaded` fires;
+//! - with `Workspace.StreamingEnabled`, the parts and atomic models in
+//!   Workspace stream in and out around the player's focus
+//!   (`crate::streaming`).
 
 use std::collections::HashSet;
 
@@ -26,7 +29,17 @@ use rbx_lua::server::{Arg, Outgoing, Packet, To};
 use crate::animation::TrackOp;
 use crate::humanoid::State;
 use crate::sim::{Placed, Simulation};
+use crate::streaming::{self, Integrity, Kind, Settings};
 use crate::{Input, Output};
+
+/// Frames between two looks at what a streaming client should have: what
+/// comes into range lands ~0.1 s later (the streaming goldens).
+const STREAM_EVERY: u64 = 6;
+/// Frames from the join's first look (the area around the focus, right
+/// after `game.Loaded`) to the rest of the target radius (~0.2 s).
+const STREAM_FIRST: u64 = 12;
+/// Frames an old focus position or a requested area stays streamed in.
+const STREAM_KEEP: u64 = 303;
 
 /// Services whose contents a client never gets.
 const SERVER_ONLY: &[&str] = &["ServerStorage", "ServerScriptService"];
@@ -62,6 +75,28 @@ pub struct Client {
     /// puts them back next frame, asleep or not (Ownership
     /// `client_view_server_owned`).
     overruled: Vec<Ref>,
+    /// With `StreamingEnabled`: what of Workspace it has.
+    stream: Option<Stream>,
+}
+
+/// A client's side of instance streaming.
+struct Stream {
+    settings: Settings,
+    /// The units (`streaming::unit_of`) it has.
+    have: HashSet<Ref>,
+    /// `RequestStreamAroundAsync` calls for the next look.
+    requests: Vec<rbx_lua::server::StreamRequest>,
+    /// The frame of the next full look at what to stream.
+    due: u64,
+    /// Past the join's first look.
+    started: bool,
+    /// Where the focus was lately and the areas asked for, each kept like
+    /// the minimum radius until its frame (Opportunistic streams those
+    /// out 5 s after the focus left, the rest beyond the target radius at
+    /// once).
+    recent: Vec<([f32; 3], u64)>,
+    paused: bool,
+    persistent_loaded: bool,
 }
 
 #[derive(Default)]
@@ -167,7 +202,15 @@ impl Session {
             .join(name, user_id, template)
             .ok_or("the place has no Players service")?;
         let index = self.clients.len();
-        let mut sim = Simulation::new(first_view(&self.server.dom(), player))?;
+        let settings = Settings::read(&self.server.dom());
+        let mut view = first_view(&self.server.dom(), player);
+        // With an integrity mode the client starts paused, until its
+        // first look.
+        if settings.is_some_and(|s| s.integrity != Integrity::Disabled) {
+            let _ = view.set_property(player, "GameplayPaused", Variant::Bool(true));
+            view.take_changes();
+        }
+        let mut sim = Simulation::new(view)?;
         sim.make_client(index, player);
         if let Some(timeout) = self.script_timeout {
             sim.set_script_timeout(timeout);
@@ -196,6 +239,16 @@ impl Session {
             sim.set_services(services);
         }
         sim.start();
+        let stream = settings.map(|settings| Stream {
+            settings,
+            have: HashSet::new(),
+            requests: Vec::new(),
+            due: 0,
+            started: false,
+            recent: Vec::new(),
+            paused: false,
+            persistent_loaded: false,
+        });
         self.clients.push(Client {
             sim,
             player,
@@ -206,6 +259,7 @@ impl Session {
             outbox: Upstream::default(),
             moving: HashSet::new(),
             overruled: Vec::new(),
+            stream,
         });
         Ok(index)
     }
@@ -265,14 +319,26 @@ impl Session {
             .collect();
         let tracks = self.server.take_track_ops();
         let forwarded = self.server.take_forwarded();
+        for request in self.server.take_stream_requests() {
+            match self.clients.iter_mut().find(|c| c.player == request.player) {
+                Some(Client {
+                    stream: Some(stream),
+                    ..
+                }) => stream.requests.push(request),
+                _ => self.server.stream_request_done(request.id),
+            }
+        }
 
         let server = &self.server;
         for client in &mut self.clients {
             let owned = server.ownership_mut().owned_by(client.player);
-            client.sim.ownership_mut().owned = owned;
+            // Paused, the client stops simulating its character.
+            let paused = client.stream.as_ref().is_some_and(|s| s.paused);
+            client.sim.ownership_mut().owned = if paused { HashSet::new() } else { owned };
             client.sim.sync_collision_groups(server);
             if !client.loaded {
                 client.arrive(server);
+                client.stream(server);
             } else {
                 if let Some(character) = client.deferred.take() {
                     let parent = server.dom().parent(character);
@@ -283,6 +349,7 @@ impl Session {
                 for op in &ops {
                     client.deliver(server, op);
                 }
+                client.stream(server);
             }
             client.sim.place_parts(&moved);
             let overruled = server.poses(&std::mem::take(&mut client.overruled));
@@ -531,6 +598,276 @@ impl Client {
         }
     }
 
+    /// Works out what of Workspace the client should have now: what to
+    /// stream in (parents before children, persistent models first, then
+    /// nearest first; `true` for a persistent one) and out. Answers the
+    /// `RequestStreamAroundAsync` calls that came in.
+    fn plan_stream(&mut self, server: &Simulation) -> (Vec<(Ref, bool)>, Vec<Ref>) {
+        let Some(stream) = self.stream.as_mut() else {
+            return Default::default();
+        };
+        let frame = server.frame();
+        let requests = std::mem::take(&mut stream.requests);
+        let full = frame >= stream.due;
+        if !full && requests.is_empty() {
+            return Default::default();
+        }
+        let first = !stream.started;
+        let sdom = server.dom();
+        let characters = streaming::characters(&sdom);
+        let own = match sdom
+            .get(self.player)
+            .map(|p| p.properties().get("Character"))
+        {
+            Some(Some(Variant::Ref(c))) => Some(*c),
+            _ => None,
+        };
+        let units = streaming::units(&sdom, server.db(), self.player, &characters, &|model| {
+            server.persistent_players(model)
+        });
+        let settings = stream.settings;
+        let foci = streaming::foci(&sdom, self.player, &server.replication_foci(self.player));
+        if full {
+            // Right after the join only the minimum radius comes; the rest
+            // of the target radius a moment later.
+            stream.due = frame + if first { STREAM_FIRST } else { STREAM_EVERY };
+            stream.started = true;
+            // The integrity pause: the minimum radius around the character
+            // isn't all here (what this look streams in lands for the next
+            // one).
+            stream.paused = !first
+                && settings.integrity != Integrity::Disabled
+                && streaming::character_root(&sdom, self.player).is_some_and(|f| {
+                    units.iter().any(|u| {
+                        u.kind == Kind::Spatial
+                            && !stream.have.contains(&u.root)
+                            && u.reach(f) <= settings.min
+                    })
+                });
+            stream.recent.retain(|(_, until)| *until > frame);
+            stream
+                .recent
+                .extend(foci.iter().map(|f| (*f, frame + STREAM_KEEP)));
+        }
+        // An area asked for comes in at once and is kept like the focus's
+        // minimum radius for a while.
+        stream
+            .recent
+            .extend(requests.iter().map(|r| (r.position, frame + STREAM_KEEP)));
+        let mut areas: Vec<([f32; 3], f32)> = stream
+            .recent
+            .iter()
+            .map(|(p, _)| (*p, settings.min))
+            .collect();
+        if full {
+            let radius = if first { settings.min } else { settings.target };
+            areas.extend(foci.iter().map(|f| (*f, radius)));
+        }
+        let unit_set: HashSet<Ref> = units.iter().map(|u| u.root).collect();
+        // A unit's ancestors that are units themselves (parts holding
+        // parts): they come before it and stay while it does.
+        let chain = |r: Ref| {
+            let mut up = Vec::new();
+            let mut at = sdom.parent(r);
+            while let Some(p) = at {
+                if unit_set.contains(&p) {
+                    up.push(p);
+                }
+                at = sdom.parent(p);
+            }
+            up.reverse();
+            up
+        };
+        let mut wanted: Vec<(f32, Ref, bool)> = Vec::new();
+        let mut staying = HashSet::new();
+        for unit in &units {
+            let persistent = unit.kind == Kind::Persistent;
+            let reach = areas
+                .iter()
+                .map(|(c, radius)| (unit.reach(*c), *radius))
+                .filter(|(d, radius)| d <= radius)
+                .map(|(d, _)| d)
+                .fold(f32::INFINITY, f32::min);
+            let has = stream.have.contains(&unit.root);
+            if Some(unit.root) == own {
+                // Its own character always; on the join it lands by itself.
+                if !has && first {
+                    stream.have.insert(unit.root);
+                } else if !has {
+                    wanted.push((-1.0, unit.root, false));
+                }
+                staying.insert(unit.root);
+            } else if (persistent && full) || reach.is_finite() {
+                if !has {
+                    wanted.push((if persistent { -2.0 } else { reach }, unit.root, persistent));
+                }
+                staying.insert(unit.root);
+            } else if has
+                && (!full
+                    || !settings.opportunistic
+                    || persistent
+                    || foci.is_empty()
+                    || foci.iter().any(|f| unit.reach(*f) <= settings.target))
+            {
+                staying.insert(unit.root);
+            }
+        }
+        // What the server took away goes by the server's own changes.
+        stream.have.retain(|r| unit_set.contains(r));
+        wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut order = Vec::new();
+        for (_, root, persistent) in wanted {
+            for r in chain(root) {
+                if stream.have.insert(r) {
+                    order.push((r, persistent));
+                }
+            }
+            if stream.have.insert(root) {
+                order.push((root, persistent));
+            }
+        }
+        let pinned: HashSet<Ref> = staying.iter().flat_map(|r| chain(*r)).collect();
+        let out: Vec<Ref> = stream
+            .have
+            .iter()
+            .copied()
+            .filter(|r| !staying.contains(r) && !pinned.contains(r))
+            .collect();
+        for r in &out {
+            stream.have.remove(r);
+        }
+        for request in requests {
+            server.stream_request_done(request.id);
+        }
+        (order, out)
+    }
+
+    /// One look at what to stream in and out after the server's frame.
+    fn stream(&mut self, server: &Simulation) {
+        let (wanted, out) = self.plan_stream(server);
+        let Some(stream) = self.stream.as_ref() else {
+            return;
+        };
+        let paused = stream.paused;
+        let was = matches!(
+            self.sim
+                .dom()
+                .get(self.player)
+                .and_then(|p| p.properties().get("GameplayPaused")),
+            Some(Variant::Bool(true))
+        );
+        if was != paused {
+            let _ = self.sim.dom_mut().set_property(
+                self.player,
+                "GameplayPaused",
+                Variant::Bool(paused),
+            );
+            self.sim.flush();
+        }
+        for (root, persistent) in &wanted {
+            if !persistent {
+                self.persistent_loaded();
+            }
+            self.stream_in(server, *root);
+        }
+        if self.stream.as_ref().is_some_and(|s| s.started) {
+            self.persistent_loaded();
+        }
+        for root in out {
+            // Streamed out: parented to nil, not destroyed.
+            if self.sim.dom().in_tree(root) {
+                self.sim.dom_mut().unparent(root);
+                self.sim.flush();
+            }
+        }
+    }
+
+    /// `Workspace.PersistentLoaded`, once, after the persistent models
+    /// arrived on the join.
+    fn persistent_loaded(&mut self) {
+        let Some(stream) = self.stream.as_mut().filter(|s| !s.persistent_loaded) else {
+            return;
+        };
+        stream.persistent_loaded = true;
+        let workspace = {
+            let dom = self.sim.dom();
+            dom.root_refs()
+                .iter()
+                .copied()
+                .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Workspace"))
+        };
+        if let Some(workspace) = workspace {
+            self.sim.fire_signal(
+                workspace,
+                "PersistentLoaded",
+                vec![Arg::Instance(self.player)],
+            );
+        }
+    }
+
+    /// Unit `root` streams in. One that streamed out earlier is still the
+    /// same object (held references see it come back) with the server's
+    /// values again: what this client changed on it is lost.
+    fn stream_in(&mut self, server: &Simulation, root: Ref) {
+        let back = self.sim.dom().get(root).is_some() && !self.sim.dom().in_tree(root);
+        if back {
+            let sdom = server.dom();
+            let mut stack = vec![root];
+            let mut dom = self.sim.dom_mut();
+            while let Some(at) = stack.pop() {
+                let (Some(source), Some(target)) = (sdom.get(at), dom.get(at)) else {
+                    continue;
+                };
+                stack.extend(target.children().iter().copied());
+                let changed: Vec<(String, Variant)> = source
+                    .properties()
+                    .iter()
+                    .filter(|(k, v)| target.properties().get(k.as_str()) != Some(*v))
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect();
+                let dropped: Vec<String> = target
+                    .properties()
+                    .keys()
+                    .filter(|k| !source.properties().contains_key(k.as_str()))
+                    .map(|k| k.to_string())
+                    .collect();
+                for (key, value) in changed {
+                    let _ = dom.set_property(at, &key, value);
+                }
+                for key in dropped {
+                    let _ = dom.remove_property(at, &key);
+                }
+            }
+        }
+        self.deliver(server, &Op::Tree(root, None));
+        if back {
+            // What was added under it on the server meanwhile.
+            let children: Vec<Ref> = server
+                .dom()
+                .get(root)
+                .map(|i| i.children().to_vec())
+                .unwrap_or_default();
+            for child in children {
+                if self.sim.dom().get(child).is_none() {
+                    self.deliver(server, &Op::Tree(child, None));
+                }
+            }
+        }
+    }
+
+    /// Whether streaming keeps `r` from this client for now.
+    fn streamed_out(
+        &self,
+        sdom: &WeakDom,
+        db: &rbx_reflection::ReflectionDatabase,
+        r: Ref,
+        characters: &HashSet<Ref>,
+    ) -> bool {
+        self.stream.as_ref().is_some_and(|s| {
+            streaming::unit_of(sdom, db, r, characters).is_some_and(|u| !s.have.contains(&u))
+        })
+    }
+
     /// One replicated change or packet.
     fn deliver(&mut self, server: &Simulation, op: &Op) {
         // What the server's frame moves is the server's doing; a remote's
@@ -693,13 +1030,21 @@ impl Client {
         }
         // One instance at a time, depth first, each one's events fired
         // before the next arrives.
+        let characters = if self.stream.is_some() {
+            streaming::characters(&sdom)
+        } else {
+            HashSet::new()
+        };
         let mut order = Vec::new();
         let mut stack = vec![r];
         while let Some(at) = stack.pop() {
             let Some(source) = sdom.get(at) else {
                 continue;
             };
-            if !in_scope(&sdom, at, self.player) || replicates_not(&sdom, at) {
+            if !in_scope(&sdom, at, self.player)
+                || replicates_not(&sdom, at)
+                || self.streamed_out(&sdom, server.db(), at, &characters)
+            {
                 continue;
             }
             order.push((

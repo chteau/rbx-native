@@ -53,7 +53,7 @@ pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{Outgoing, Packet, To, Wire};
 pub use services::{
     set_text_measure, Arrival, AssetSource, Device, LiveData, Notice, PurchasePrompt, Services,
-    TeleportRequest, TextMeasure, WebSession,
+    StreamRequest, TeleportRequest, TextMeasure, WebSession,
 };
 pub use terrain::{TerrainOp, TerrainReply};
 
@@ -652,6 +652,27 @@ impl ServerVm {
     /// last call.
     pub fn take_teleports(&self) -> Vec<TeleportRequest> {
         self.services.take_teleports()
+    }
+
+    /// The `RequestStreamAroundAsync` calls scripts made since the last
+    /// call.
+    pub fn take_stream_requests(&self) -> Vec<StreamRequest> {
+        self.services.take_stream_requests()
+    }
+
+    /// Stream request `id`'s area has reached its client: the call returns.
+    pub fn stream_request_done(&self, id: u64) {
+        self.services.stream_request_done(id)
+    }
+
+    /// The parts `player:AddReplicationFocus` added.
+    pub fn replication_foci(&self, player: Ref) -> Vec<Ref> {
+        self.services.replication_foci(player)
+    }
+
+    /// The players `PersistentPerPlayer` model `model` is persistent for.
+    pub fn persistent_players(&self, model: Ref) -> Vec<Ref> {
+        self.services.persistent_players(model)
     }
 
     /// The toasts scripts asked the core GUI for since the last call.
