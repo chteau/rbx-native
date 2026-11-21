@@ -99,5 +99,9 @@
     "group_restored_y": 0.0,
     "group_solid_y": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "impulse_v": "A live server's beat after the push takes 1.5 frames of gravity (vy -4.9); ours takes one (-3.3). The push itself matches.",
+    "group_restored_y": "Roblox's part, put back above the floor once its group collides again, barely moves in 30 beats (503.2); ours lands and settles at 504.5. Not traced."
+  }
 }

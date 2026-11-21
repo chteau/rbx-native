@@ -400,5 +400,9 @@
     "throttling": 0.0,
     "unjoin": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "terrain_write_channels": "Roblox reads a half-solid cell sharing water back as 0.496 (127/256); ours as 0.5. Quantisation detail.",
+    "translate": "A script-made model's WorldPivot reads as its live bounding-box centre on Roblox; ours keeps the pivot it was carried to (pivot.rs stores one on the first move)."
+  }
 }

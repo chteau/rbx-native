@@ -136,5 +136,16 @@
     "humanoid_health": 0.0,
     "weak_hits": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "v_D20": "A live server's beat after the push takes 1.5 frames of gravity (vy -4.9); ours takes one (-3.3). The push itself matches.",
+    "v_heavy": "A live server's beat after the push takes 1.5 frames of gravity (vy -4.9); ours takes one (-3.3). The push itself matches.",
+    "weak_v": "A live server's beat after the push takes 1.5 frames of gravity (vy -4.9); ours takes one (-3.3). The push itself matches.",
+    "w_heavy": "Roblox's blast also spins a cube 6 studs off (19 rad/s about Z) though the push is straight along Z; the source of that spin is not found.",
+    "moved_D2": "Ten beats after the blast the cubes have hit each other; where each ends up is within 3 studs of Roblox's but not closer.",
+    "moved_D4": "Ten beats after the blast the cubes have hit each other; where each ends up is within 3 studs of Roblox's but not closer.",
+    "moved_D8": "Ten beats after the blast the cubes have hit each other; where each ends up is within 3 studs of Roblox's but not closer.",
+    "moved_D12": "Ten beats after the blast the cubes have hit each other; where each ends up is within 3 studs of Roblox's but not closer.",
+    "moved_D20": "Ten beats after the blast the cubes have hit each other; where each ends up is within 3 studs of Roblox's but not closer."
+  }
 }
