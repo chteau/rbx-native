@@ -418,6 +418,20 @@ fn module(lua: &Lua, runtime: &Rc<Runtime>, name: &str) -> Result<Table> {
     Ok(module)
 }
 
+/// The GuiObject classes, for their legacy tween methods.
+const GUI_OBJECTS: &[&str] = &[
+    "Frame",
+    "ScrollingFrame",
+    "TextLabel",
+    "TextButton",
+    "TextBox",
+    "ImageLabel",
+    "ImageButton",
+    "ViewportFrame",
+    "CanvasGroup",
+    "VideoFrame",
+];
+
 /// `class.key` for the services here, `None` for anything else.
 pub(crate) fn member(
     lua: &Lua,
@@ -429,6 +443,10 @@ pub(crate) fn member(
     // `Player:GetMouse()` belongs with the cursor's other readers.
     let name = if class == "Player" && key == "GetMouse" {
         Some("Drag")
+    } else if GUI_OBJECTS.contains(&class)
+        && matches!(key, "TweenPosition" | "TweenSize" | "TweenSizeAndPosition")
+    {
+        Some("GuiService")
     } else {
         module_of(class)
     };

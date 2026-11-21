@@ -136,7 +136,57 @@ local function topbarInset()
 	return Rect.new(TOPBAR_LEFT, 0, math.max(size.X - TOPBAR_RIGHT, TOPBAR_LEFT), TOPBAR_INSET)
 end
 
-function M.member(_, id, key)
+-- GuiObject:TweenPosition/TweenSize/TweenSizeAndPosition, the legacy
+-- tweens: Out and Quad over 1 second by default; a running one is only
+-- replaced with `override`, else the call returns false; the callback gets
+-- a TweenStatus (Tween.Completed's PlaybackState mapped).
+local running = setmetatable({}, { __mode = "k" })
+
+local function legacyTween(object, goal, direction, style, time, override, callback)
+	if running[object] then
+		if not override then
+			return false
+		end
+		running[object]:Cancel()
+	end
+	if type(direction) == "string" then
+		direction = Enum.EasingDirection[direction]
+	end
+	if type(style) == "string" then
+		style = Enum.EasingStyle[style]
+	end
+	local info = TweenInfo.new(time or 1, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out)
+	local tween = game:GetService("TweenService"):Create(object, info, goal)
+	running[object] = tween
+	tween.Completed:Connect(function(status)
+		if running[object] == tween then
+			running[object] = nil
+		end
+		if callback then
+			local done = status == Enum.PlaybackState.Completed
+			task.spawn(callback, if done then Enum.TweenStatus.Completed else Enum.TweenStatus.Canceled)
+		end
+	end)
+	tween:Play()
+	return true
+end
+
+local GUI_OBJECT = {
+	TweenPosition = function(self, position, ...)
+		return legacyTween(self, { Position = position }, ...)
+	end,
+	TweenSize = function(self, size, ...)
+		return legacyTween(self, { Size = size }, ...)
+	end,
+	TweenSizeAndPosition = function(self, size, position, ...)
+		return legacyTween(self, { Size = size, Position = position }, ...)
+	end,
+}
+
+function M.member(class, id, key)
+	if class ~= "GuiService" then
+		return GUI_OBJECT[key], GUI_OBJECT[key] ~= nil
+	end
 	if key == "MenuOpened" or key == "MenuClosed" then
 		return host.signal(id, key), true
 	end
