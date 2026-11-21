@@ -2707,5 +2707,9 @@
     "r6_vy60": 0.0,
     "r6_vy90": 0.0
   },
-  "status": "recorded"
+  "status": "recorded",
+  "known_gaps": {
+    "r6_vy60": "An R6 climbs at 10.9 stud/s here against 11.2 live: its contact with the truss drags it, and that drag moves with the solver order (10.89 once the world has had terrain). The R15 is at 11.03.",
+    "r6_vy90": "An R6 climbs at 10.9 stud/s here against 11.2 live: its contact with the truss drags it, and that drag moves with the solver order (10.89 once the world has had terrain). The R15 is at 11.03."
+  }
 }

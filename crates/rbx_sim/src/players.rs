@@ -1134,84 +1134,111 @@ pub(crate) fn call(
 
 /// `Model:MoveTo(position)`: the model's pivot (its `PrimaryPart`, else its
 /// bounds' centre) lands on `position`, rotation kept, then rises until no
-/// colliding part in Workspace overlaps it (boxes, not exact shapes).
+/// colliding part in Workspace overlaps it, exact shapes against exact
+/// shapes; terrain, water and all, never lifts it (ModelMoveTo).
 pub(crate) fn model_move_to(
     dom: &mut WeakDom,
     db: &ReflectionDatabase,
     model: Ref,
     args: &[Arg],
 ) -> Result<CallReply, String> {
+    use rapier3d::parry::bounding_volume::BoundingVolume;
+    use rapier3d::parry::query::{cast_shapes, intersection_test, ShapeCastOptions};
+    use rapier3d::prelude::{Pose, SharedShape, Vector};
+
     let Some(Arg::Vector3([x, y, z])) = args.first() else {
         return Err("Unable to cast value to Vector3".into());
     };
     let Some(mut to) = rbx_lua::pivot::pivot(dom, db, model) else {
         return Ok(CallReply::default());
     };
-    let is_part = |dom: &WeakDom, r: Ref| {
-        dom.get(r)
-            .is_some_and(|i| i.class() != "Terrain" && db.is_subclass_of(i.class(), "BasePart"))
-    };
-    let own: Vec<Ref> = descendants(dom, model)
-        .into_iter()
-        .filter(|r| is_part(dom, *r))
-        .collect();
-    let world_box = |dom: &WeakDom, part: Ref| {
-        let c = cframe(dom, db, part)?;
-        let s = vector(dom, db, part, "Size");
-        let r = c.rotation.map(f64::from);
-        let p = [c.position.x, c.position.y, c.position.z].map(f64::from);
-        let reach: [f64; 3] = std::array::from_fn(|row| {
-            (r[row * 3].abs() * s[0] + r[row * 3 + 1].abs() * s[1] + r[row * 3 + 2].abs() * s[2])
-                / 2.0
-        });
+    let solid = |dom: &WeakDom, r: Ref| -> Option<(Pose, SharedShape)> {
+        let instance = dom.get(r)?;
+        if instance.class() == "Terrain" || !db.is_subclass_of(instance.class(), "BasePart") {
+            return None;
+        }
+        let part = crate::physics::part::PartData::read(db, instance)?;
         Some((
-            std::array::from_fn::<f64, 3, _>(|i| p[i] - reach[i]),
-            std::array::from_fn::<f64, 3, _>(|i| p[i] + reach[i]),
+            crate::physics::pose_of(&part.cframe),
+            part.shape_collider().shape,
         ))
     };
-    let others: Vec<([f64; 3], [f64; 3])> = service(dom, "Workspace")
+    let own_parts = descendants(dom, model);
+    let offset = Vector::new(
+        f64::from(*x) - f64::from(to.position.x),
+        f64::from(*y) - f64::from(to.position.y),
+        f64::from(*z) - f64::from(to.position.z),
+    );
+    let own: Vec<(Pose, SharedShape)> = own_parts
+        .iter()
+        .filter_map(|r| solid(dom, *r))
+        .map(|(mut pose, shape)| {
+            pose.translation += offset;
+            (pose, shape)
+        })
+        .collect();
+    // Only what stands in the model's column can lift it.
+    let column = own
+        .iter()
+        .map(|(pose, shape)| shape.compute_aabb(pose))
+        .reduce(|a, b| a.merged(&b));
+    let in_column = |dom: &WeakDom, r: Ref| {
+        let (Some(column), Some(c)) = (column, cframe(dom, db, r)) else {
+            return false;
+        };
+        let size = vector(dom, db, r, "Size");
+        let reach = size[0].hypot(size[1]).hypot(size[2]) / 2.0;
+        let p = [c.position.x, c.position.z].map(f64::from);
+        p[0] + reach > column.mins.x
+            && p[0] - reach < column.maxs.x
+            && p[1] + reach > column.mins.z
+            && p[1] - reach < column.maxs.z
+    };
+    let others: Vec<(Pose, SharedShape)> = service(dom, "Workspace")
         .map(|w| descendants(dom, w))
         .unwrap_or_default()
         .into_iter()
-        .filter(|r| is_part(dom, *r) && !own.contains(r) && flag(dom, db, *r, "CanCollide"))
-        .filter_map(|r| world_box(dom, r))
+        .filter(|r| !own_parts.contains(r) && flag(dom, db, *r, "CanCollide") && in_column(dom, *r))
+        .filter_map(|r| solid(dom, r))
         .collect();
-    let shift = |from: f64| [f64::from(*x), f64::from(*y), f64::from(*z)].map(|v| v - from);
-    let from = [to.position.x, to.position.y, to.position.z].map(f64::from);
-    let offset = std::array::from_fn::<f64, 3, _>(|i| shift(from[i])[i]);
-    let boxes: Vec<_> = own
-        .iter()
-        .filter_map(|p| world_box(dom, *p))
-        .map(|(lo, hi)| {
-            (
-                std::array::from_fn::<f64, 3, _>(|i| lo[i] + offset[i]),
-                std::array::from_fn::<f64, 3, _>(|i| hi[i] + offset[i]),
-            )
-        })
-        .collect();
+    // Dropped from this far above, a model lands where it rests.
+    const DROP: f64 = 4096.0;
+    let options = ShapeCastOptions {
+        max_time_of_impact: 1.0,
+        target_distance: 0.0,
+        stop_at_penetration: false,
+        compute_impact_geometry_on_penetration: false,
+    };
     let mut lift = 0.0f64;
     // Each rise can land the model in something higher up: settle.
     for _ in 0..64 {
-        let overlap = |(lo, hi): &([f64; 3], [f64; 3]), (olo, ohi): &([f64; 3], [f64; 3])| {
-            (0..3).all(|i| {
-                let (a, b) = if i == 1 {
-                    (lo[i] + lift, hi[i] + lift)
-                } else {
-                    (lo[i], hi[i])
-                };
-                a < ohi[i] - 1e-3 && olo[i] < b - 1e-3
-            })
-        };
-        let rise = boxes
-            .iter()
-            .flat_map(|b| {
-                others
-                    .iter()
-                    .filter(move |o| overlap(b, o))
-                    .map(move |o| o.1[1] - (b.0[1] + lift))
-            })
-            .fold(0.0f64, f64::max);
-        if rise <= 0.0 {
+        let mut rise = 0.0f64;
+        for (pose, shape) in &own {
+            let mut at = *pose;
+            at.translation.y += lift;
+            for (other, obstacle) in &others {
+                if !intersection_test(&at, &**shape, other, &**obstacle)
+                    .is_ok_and(|i| i.intersecting)
+                {
+                    continue;
+                }
+                let mut high = at;
+                high.translation.y += DROP;
+                let hit = cast_shapes(
+                    &high,
+                    Vector::new(0.0, -DROP, 0.0),
+                    &**shape,
+                    other,
+                    Vector::ZERO,
+                    &**obstacle,
+                    options,
+                );
+                if let Ok(Some(hit)) = hit {
+                    rise = rise.max(DROP * (1.0 - hit.time_of_impact));
+                }
+            }
+        }
+        if rise <= 1e-6 {
             break;
         }
         lift += rise;

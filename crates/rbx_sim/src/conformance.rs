@@ -213,11 +213,6 @@ pub const TESTS: &[Test] = &[
         tolerance: &[("*", 0.1), ("*still_from*", 20.0)],
     },
     Test {
-        name: "ParallelLuau",
-        source: include_str!("../conformance/tests/ParallelLuau.luau"),
-        tolerance: &[("*fired*", 3.0)],
-    },
-    Test {
         name: "BoxStack",
         source: include_str!("../conformance/tests/BoxStack.luau"),
         tolerance: &[("*", 0.02)],
@@ -635,6 +630,16 @@ pub const TESTS: &[Test] = &[
         name: "NewApis",
         source: include_str!("../conformance/tests/NewApis.luau"),
         tolerance: &[],
+    },
+    Test {
+        name: "ParallelLuau",
+        source: include_str!("../conformance/tests/ParallelLuau.luau"),
+        tolerance: &[("*fired*", 3.0)],
+    },
+    Test {
+        name: "ModelMoveTo",
+        source: include_str!("../conformance/tests/ModelMoveTo.luau"),
+        tolerance: &[("*", 0.05)],
     },
 ];
 
