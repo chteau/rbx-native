@@ -1,0 +1,514 @@
+Instance	DataCost	1
+Instance	RobloxLocked	1
+Instance	GetDebugId	1
+AnalyticsService	ApiKey	1
+KeyframeSequence	AuthoredHipHeight	1
+AnimationClipProvider	GetAnimationClip	1
+AnimationClipProvider	GetAnimationClipById	1
+StarterGui	ProcessUserInput	1
+ChangeHistoryService	FinishRecording	1
+ChangeHistoryService	GetCanRedo	1
+ChangeHistoryService	GetCanUndo	1
+ChangeHistoryService	IsRecordingInProgress	1
+ChangeHistoryService	Redo	1
+ChangeHistoryService	ResetWaypoints	1
+ChangeHistoryService	SetEnabled	1
+ChangeHistoryService	SetWaypoint	1
+ChangeHistoryService	TryBeginRecording	1
+ChangeHistoryService	Undo	1
+ChangeHistoryService	OnRecordingFinished	1
+ChangeHistoryService	OnRecordingStarted	1
+ChangeHistoryService	OnRedo	1
+ChangeHistoryService	OnUndo	1
+ContentProvider	SetBaseUrl	1
+DataStoreService	AutomaticRetry	1
+DataStoreService	LegacyNamingScheme	1
+Debris	SetLegacyMaxItems	1
+DebugSettings	DataModel	1
+DebugSettings	InstanceCount	1
+DebugSettings	IsScriptStackTracingEnabled	1
+DebugSettings	JobCount	1
+DebugSettings	PlayerCount	1
+DebugSettings	ReportSoundWarnings	1
+DebugSettings	RobloxVersion	1
+DebugSettings	TickCountPreciseOverride	1
+DebuggerManager	EnableDebugging	1
+File	Size	0
+File	GetBinaryContents	0
+File	GetTemporaryId	0
+GameSettings	VideoCaptureEnabled	1
+PluginGui	GetRelativeMousePosition	1
+PluginGui	PluginDragDropped	1
+PluginGui	PluginDragEntered	1
+PluginGui	PluginDragLeft	1
+PluginGui	PluginDragMoved	1
+PluginGui	WindowFocusReleased	1
+PluginGui	WindowFocused	1
+GuiService	SetUiMessage	1
+HeapProfilerService	ClientRequestDataAsync	1
+HeapProfilerService	ServerRequestDataAsync	1
+HeapProfilerService	OnNewData	1
+HttpService	RequestAccessTokenScopesAsync	1
+IXPService	ClearCreatorLayers	0
+IXPService	ClearUserLayers	0
+IXPService	GetBrowserTrackerLayerLoadingStatus	0
+IXPService	GetBrowserTrackerLayerVariables	0
+IXPService	GetBrowserTrackerStatusForLayer	0
+IXPService	GetCreatorLayerLoadingStatus	0
+IXPService	GetCreatorLayerVariables	0
+IXPService	GetCreatorStatusForLayer	0
+IXPService	GetRegisteredCreatorLayersToStatus	0
+IXPService	GetRegisteredUserLayersToStatus	0
+IXPService	GetUserLayerLoadingStatus	0
+IXPService	GetUserLayerVariables	0
+IXPService	GetUserStatusForLayer	0
+IXPService	InitializeCreatorLayers	0
+IXPService	InitializeUserLayers	0
+IXPService	LogBrowserTrackerLayerExposure	0
+IXPService	LogCreatorLayerExposure	0
+IXPService	LogFlagLinkedUserLayerExposure	0
+IXPService	LogUserLayerExposure	0
+IXPService	RegisterCreatorLayers	0
+IXPService	RegisterUserLayers	0
+IXPService	OnBrowserTrackerLayerLoadingStatusChanged	0
+IXPService	OnCreatorLayerLoadingStatusChanged	0
+IXPService	OnUserLayerLoadingStatusChanged	0
+InstanceFileSyncService	GetAllInstances	1
+InstanceFileSyncService	GetStatus	1
+InstanceFileSyncService	GetSyncedInstance	1
+InstanceFileSyncService	StatusChanged	1
+KeyframeSequenceProvider	GetKeyframeSequence	1
+KeyframeSequenceProvider	GetKeyframeSequenceById	1
+LocalizationService	ForcePlayModeGameLocaleId	1
+LocalizationService	ForcePlayModeRobloxLocaleId	1
+Script	GetHash	1
+MarketplaceService	PromptThirdPartyPurchase	1
+MarketplaceService	ThirdPartyPurchaseFinished	1
+MaterialVariant	ColorMap	1
+MaterialVariant	ColorMapContent	1
+MaterialVariant	EmissiveMaskContent	1
+MaterialVariant	MetalnessMap	1
+MaterialVariant	MetalnessMapContent	1
+MaterialVariant	NormalMap	1
+MaterialVariant	NormalMapContent	1
+MaterialVariant	RoughnessMap	1
+MaterialVariant	RoughnessMapContent	1
+MemStorageConnection	Disconnect	0
+PluginMouse	DragEnter	1
+NetworkPeer	SetOutgoingKBPSLimit	1
+NetworkSettings	EmulatedTotalMemoryInMB	1
+NetworkSettings	FreeMemoryMBytes	1
+NetworkSettings	InboundNetworkJitterMs	1
+NetworkSettings	InboundNetworkLossPercent	1
+NetworkSettings	InboundNetworkMinDelayMs	1
+NetworkSettings	OutboundNetworkJitterMs	1
+NetworkSettings	OutboundNetworkLossPercent	1
+NetworkSettings	OutboundNetworkMinDelayMs	1
+NotificationService	CancelAllNotification	1
+NotificationService	CancelNotification	1
+NotificationService	ScheduleNotification	1
+NotificationService	GetScheduledNotifications	1
+Terrain	ConvertToSmooth	1
+Camera	FirstPersonTransition	1
+WorldRoot	IKMoveTo	1
+WorldRoot	StepPhysics	1
+Workspace	ApplyRecommendedStreamingSettings	1
+Workspace	BreakJoints	1
+Workspace	ExperimentalSolverIsEnabled	1
+Workspace	MakeJoints	1
+Workspace	SetPhysicsThrottleEnabled	1
+Workspace	ZoomToExtents	1
+PhysicsService	LocalIkSolve	1
+PhysicsSettings	AllowSleep	1
+PhysicsSettings	AreAnchorsShown	1
+PhysicsSettings	AreAssembliesShown	1
+PhysicsSettings	AreAwakePartsHighlighted	1
+PhysicsSettings	AreBodyTypesShown	1
+PhysicsSettings	AreContactIslandsShown	1
+PhysicsSettings	AreContactPointsShown	1
+PhysicsSettings	AreJointCoordinatesShown	1
+PhysicsSettings	AreMechanismsShown	1
+PhysicsSettings	AreModelCoordsShown	1
+PhysicsSettings	AreNonAnchorsShown	1
+PhysicsSettings	AreOwnersShown	1
+PhysicsSettings	ArePartCoordsShown	1
+PhysicsSettings	AreRegionsShown	1
+PhysicsSettings	AreTerrainReplicationRegionsShown	1
+PhysicsSettings	AreUnalignedPartsShown	1
+PhysicsSettings	AreWorldCoordsShown	1
+PhysicsSettings	DisableCSGv2	1
+PhysicsSettings	DisableCSGv3ForPlugins	1
+PhysicsSettings	DrawShapecast	1
+PhysicsSettings	ForceCSGv2	1
+PhysicsSettings	IsInterpolationThrottleShown	1
+PhysicsSettings	IsReceiveAgeShown	1
+PhysicsSettings	IsTreeShown	1
+PhysicsSettings	PhysicsEnvironmentalThrottle	1
+PhysicsSettings	ShowDecompositionGeometry	1
+PhysicsSettings	ThrottleAdjustTime	1
+PhysicsSettings	UseCSGv2	1
+Player	DataComplexityLimit	0
+Player	MaximumSimulationRadius	0
+Player	SimulationRadius	0
+Player	LoadData	0
+Player	RemoveCharacter	0
+Player	SaveData	0
+Player	SetAccountAge	0
+Player	SetSuperSafeChat	0
+Player	LoadCharacterBlocking	0
+Player	SimulationRadiusChanged	0
+Players	MaxPlayersInternal	1
+Players	PreferredPlayersInternal	1
+Players	Chat	1
+Players	CreateLocalPlayer	1
+Players	ReportAbuse	1
+Players	ResetLocalPlayer	1
+Players	SetChatStyle	1
+Players	TeamChat	1
+Players	WhisperChat	1
+Players	PlayerChatted	1
+Players	PlayerConnecting	1
+Players	PlayerDisconnecting	1
+Players	PlayerRejoining	1
+Plugin	Activate	1
+Plugin	CreatePluginAction	1
+Plugin	CreatePluginMenu	1
+Plugin	CreateToolbar	1
+Plugin	Deactivate	1
+Plugin	GetJoinMode	1
+Plugin	GetMouse	1
+Plugin	GetSelectedRibbonTool	1
+Plugin	GetSetting	1
+Plugin	GetStudioUserId	1
+Plugin	Intersect	1
+Plugin	IsActivated	1
+Plugin	IsActivatedWithExclusiveMouse	1
+Plugin	Negate	1
+Plugin	OpenScript	1
+Plugin	OpenWikiPage	1
+Plugin	SaveSelectedToRoblox	1
+Plugin	SelectRibbonTool	1
+Plugin	Separate	1
+Plugin	SetSetting	1
+Plugin	StartDrag	1
+Plugin	Union	1
+Plugin	CreateDockWidgetPluginGui	1
+Plugin	CreateDockWidgetPluginGuiAsync	1
+Plugin	ImportFbxAnimation	1
+Plugin	ImportFbxAnimationAsync	1
+Plugin	ImportFbxRig	1
+Plugin	ImportFbxRigAsync	1
+Plugin	PromptForExistingAssetId	1
+Plugin	PromptForExistingAssetIdAsync	1
+Plugin	PromptSaveSelection	1
+Plugin	PromptSaveSelectionAsync	1
+Plugin	Deactivation	1
+Plugin	Unloading	1
+PluginAction	Triggered	1
+PluginConnectionService	CanHaveConnectionType	1
+PluginConnectionService	GetPluginConnectionsOfType	1
+PluginConnectionService	Connected	1
+PluginManager	CreatePlugin	1
+PluginManager	ExportPlace	1
+PluginManager	ExportSelection	1
+PluginManagerInterface	CreatePlugin	0
+PluginManagerInterface	ExportPlace	0
+PluginManagerInterface	ExportSelection	0
+PluginMenu	AddAction	1
+PluginMenu	AddMenu	1
+PluginMenu	AddNewAction	1
+PluginMenu	AddSeparator	1
+PluginMenu	Clear	1
+PluginMenu	ShowAsync	1
+PluginToolbar	CreateButton	1
+PluginToolbarButton	IconContent	1
+PluginToolbarButton	SetActive	1
+PluginToolbarButton	Click	1
+RenderSettings	AutoFRMLevel	1
+RenderSettings	EagerBulkExecution	1
+RenderSettings	EditQualityLevel	1
+RenderSettings	EnableFRM	1
+RenderSettings	Enable VR Mode	1
+RenderSettings	ExportMergeByMaterial	1
+RenderSettings	FrameRateManager	1
+RenderSettings	GraphicsMode	1
+RenderSettings	MeshCacheSize	1
+RenderSettings	MeshPartDetailLevel	1
+RenderSettings	QualityLevel	1
+RenderSettings	ReloadAssets	1
+RenderSettings	RenderCSGTrianglesDebug	1
+RenderSettings	ShowBoundingBoxes	1
+RenderSettings	ViewMode	1
+RenderSettings	GetMaxQualityLevel	1
+RunService	Pause	1
+RunService	Reset	1
+RunService	Run	1
+RunService	Stop	1
+ScriptContext	ScriptsDisabled	1
+ScriptContext	SetTimeout	1
+ScriptDebuggerService	AddBreakpoint	1
+ScriptDebuggerService	ClearBreakpoints	1
+ScriptDebuggerService	Evaluate	1
+ScriptDebuggerService	GetRootVariables	1
+ScriptDebuggerService	GetStackTrace	1
+ScriptDebuggerService	GetThreads	1
+ScriptDebuggerService	GetVariables	1
+ScriptDebuggerService	Pause	1
+ScriptDebuggerService	RemoveBreakpoint	1
+ScriptDebuggerService	SetExceptionBreakMode	1
+ScriptDebuggerService	Resumed	1
+ScriptDocument	GetLine	1
+ScriptDocument	GetLineCount	1
+ScriptDocument	GetReadOnlyReasons	1
+ScriptDocument	GetScript	1
+ScriptDocument	GetSelectedText	1
+ScriptDocument	GetSelection	1
+ScriptDocument	GetSelectionEnd	1
+ScriptDocument	GetSelectionStart	1
+ScriptDocument	GetText	1
+ScriptDocument	GetViewport	1
+ScriptDocument	HasSelectedText	1
+ScriptDocument	IsCommandBar	1
+ScriptDocument	IsReadOnly	1
+ScriptDocument	AddReadOnlyReasonsAsync	1
+ScriptDocument	CloseAsync	1
+ScriptDocument	EditTextAsync	1
+ScriptDocument	ForceSetSelectionAsync	1
+ScriptDocument	MultiEditTextAsync	1
+ScriptDocument	RemoveReadOnlyReasonsAsync	1
+ScriptDocument	RequestSetSelectionAsync	1
+ScriptDocument	ReviewableTextEditsAsync	1
+ScriptDocument	SelectionChanged	1
+ScriptDocument	ViewportChanged	1
+ScriptEditorService	DeregisterAutocompleteCallback	1
+ScriptEditorService	DeregisterScriptAnalysisCallback	1
+ScriptEditorService	FindScriptDocument	1
+ScriptEditorService	GetEditorSource	1
+ScriptEditorService	GetScriptDocuments	1
+ScriptEditorService	RegisterAutocompleteCallback	1
+ScriptEditorService	RegisterScriptAnalysisCallback	1
+ScriptEditorService	OpenScriptDocumentAsync	1
+ScriptEditorService	UpdateSourceAsync	1
+ScriptEditorService	TextDocumentDidChange	1
+ScriptEditorService	TextDocumentDidClose	1
+ScriptEditorService	TextDocumentDidOpen	1
+ScriptProfilerService	ClientRequestData	1
+ScriptProfilerService	ClientStart	1
+ScriptProfilerService	ClientStop	1
+ScriptProfilerService	DeserializeJSON	1
+ScriptProfilerService	ServerRequestData	1
+ScriptProfilerService	ServerStart	1
+ScriptProfilerService	ServerStop	1
+ScriptProfilerService	OnNewData	1
+Selection	Add	1
+Selection	Get	1
+Selection	Remove	1
+Selection	Set	1
+ServiceProvider	CloseLate	0
+DataModel	SetPlaceId	0
+DataModel	SetUniverseId	0
+DataModel	GetObjects	0
+DataModel	GetEngineFeature	0
+DataModel	GetFastFlag	0
+DataModel	GetFastInt	0
+DataModel	GetFastString	0
+DataModel	GetJobsInfo	0
+DataModel	Load	0
+DataModel	Shutdown	0
+SoundService	OpenAttenuationCurveEditor	1
+SoundService	OpenDirectionalCurveEditor	1
+StatsItem	DisplayName	1
+StatsItem	GetValue	1
+StatsItem	GetValueString	1
+Studio	ActionOnStopSync	1
+Studio	Active Color	1
+Studio	Active Hover Over Color	1
+Studio	Always Save Script Changes	1
+Studio	Animate Hover Over	1
+Studio	Animation Skeleton Scale	1
+Studio	Animation Skeleton Transparency	1
+Studio	Auto Clean Empty Line	1
+Studio	Auto Closing Brackets	1
+Studio	Auto Closing Quotes	1
+Studio	Auto Delete Closing Brackets and Quotes	1
+Studio	Auto Indent Rule	1
+Studio	Auto-Recovery Enabled	1
+Studio	Auto-Recovery Interval (Minutes)	1
+Studio	Background Color	1
+Studio	Basic Objects Display Mode	1
+Studio	Bool Color	1
+Studio	Bracket Color	1
+Studio	Built-in Function Color	1
+Studio	Camera Mouse Wheel Speed	1
+Studio	Camera Shift Speed	1
+Studio	Camera Speed	1
+Studio	Camera Zoom to Mouse Position	1
+Studio	Clear Output On Start	1
+Studio	CommandBarLocalState	1
+Studio	Comment Color	1
+Studio	Current Line Highlight Color	1
+Studio	Debugger Current Line Color	1
+Studio	Debugger Error Line Color	1
+Studio	DeprecatedObjectsShown	1
+Studio	Enable Autocomplete	1
+Studio	Enable CoreScript Debugger	1
+Studio	Enable Http Sandboxing	1
+Studio	Enable Internal Beta Features	1
+Studio	Enable Internal Features	1
+Studio	Enable Temporary Tabs	1
+Studio	Enable Temporary Tabs In Explorer	1
+Studio	Error Color	1
+Studio	Find Selection Background Color	1
+Studio	Font	0
+Studio	Format On Paste	1
+Studio	Format On Type	1
+Studio	Function Name Color	1
+Studio	Highlight Current Line	1
+Studio	Highlight Occurances	1
+Studio	HintColor	1
+Studio	Hover Animate Speed	1
+Studio	Hover Over Color	1
+Studio	Indent Using Spaces	1
+Studio	InformationColor	1
+Studio	Keyword Color	1
+Studio	Line Thickness	1
+Studio	LuaDebuggerEnabled	1
+Studio	LuaDebuggerEnabledAtStartup	1
+Studio	Luau Keyword Color	1
+Studio	Matching Word Background Color	1
+Studio	Maximum Output Lines	1
+Studio	Menu Item Background Color	1
+Studio	Method Color	1
+Studio	Number Color	1
+Studio	Only Play Audio from Window in Focus	1
+Studio	Operator Color	1
+Studio	Output Font	0
+Studio	Output Layout Mode	1
+Studio	PermissionLevelShown	1
+Studio	PluginsDir	0
+Studio	PreferredTextSize	1
+Studio	Primary Text Color	1
+Studio	Property Color	1
+Studio	Respect Studio shortcuts when game has focus	1
+Studio	Ruler Color	1
+Studio	Rulers	1
+Studio	RuntimeUndoBehavior	1
+Studio	ScriptTimeoutLength	1
+Studio	Script Editor Color Preset	1
+Studio	Script Editor Scrollbar Background Color	1
+Studio	Script Editor Scrollbar Handle Color	1
+Studio	Scroll Past Last Line	1
+Studio	Secondary Text Color	1
+Studio	Select Color	1
+Studio	Select/Hover Color	1
+Studio	Selected Menu Item Background Color	1
+Studio	Selected Text Color	1
+Studio	Selection Background Color	1
+Studio	Selection Color	1
+Studio	Set Pivot of Imported Parts	1
+Studio	Show Animation Skeleton	1
+Studio	Show Animation Skeleton Attachments	1
+Studio	Show Animation Skeleton Axes	1
+Studio	Show Animation Skeleton Rotations	1
+Studio	Show Animation Skeleton Text	1
+Studio	Show Core GUI in Explorer while Playing	1
+Studio	Show Diagnostics Bar	1
+Studio	Show FileSyncService	1
+Studio	Show Hidden Objects in Explorer	1
+Studio	Show Hover Over	1
+Studio	Show Navigation Mesh	1
+Studio	Show Plugin GUI Service in Explorer	1
+Studio	Show Whitespace	1
+Studio	Show plus button on hover in Explorer	1
+Studio	Skip Closing Brackets and Quotes	1
+Studio	String Color	1
+Studio	"TODO" Color	1
+Studio	Tab Width	1
+Studio	Text Color	1
+Studio	Text Wrapping	1
+Studio	Theme	1
+Studio	TypeColor	1
+Studio	UI Theme	1
+Studio	Warning Color	1
+Studio	Whitespace Color	1
+Studio	"function" Color	1
+Studio	"local" Color	1
+Studio	"nil" Color	1
+Studio	"self" Color	1
+Studio	GetAvailableThemes	1
+Studio	ThemeChanged	1
+StudioCaptureService	CanCaptureScreenshot	1
+StudioCaptureService	CaptureScreenshot	1
+StudioCaptureService	RequestScreenshotPermissionAsync	1
+StudioDeviceSimulatorService	CreateDeviceAsync	1
+StudioDeviceSimulatorService	GetDeviceAsync	1
+StudioDeviceSimulatorService	GetDeviceInfoAsync	1
+StudioDeviceSimulatorService	GetDeviceListAsync	1
+StudioDeviceSimulatorService	GetOrientationAsync	1
+StudioDeviceSimulatorService	GetPixelDensityAsync	1
+StudioDeviceSimulatorService	GetResolutionAsync	1
+StudioDeviceSimulatorService	GetScalingModeAsync	1
+StudioDeviceSimulatorService	RemoveDeviceAsync	1
+StudioDeviceSimulatorService	SetDeviceAsync	1
+StudioDeviceSimulatorService	SetOrientationAsync	1
+StudioDeviceSimulatorService	SetPixelDensityAsync	1
+StudioDeviceSimulatorService	SetResolutionAsync	1
+StudioDeviceSimulatorService	SetScalingModeAsync	1
+StudioDeviceSimulatorService	StopSimulationAsync	1
+StudioDeviceSimulatorService	UpdateDeviceAsync	1
+StudioDeviceSimulatorService	ConfigurationChanged	1
+StudioScreenshotCapture	BufferFormat	0
+StudioScreenshotCapture	BufferStatus	0
+StudioScreenshotCapture	OriginalSize	0
+StudioScreenshotCapture	Position	0
+StudioScreenshotCapture	Resolution	0
+StudioScreenshotCapture	UICaptureMode	0
+StudioScreenshotCapture	GetBuffer	0
+StudioScreenshotCapture	GetErrors	0
+StudioScreenshotCapture	ScaleAsync	0
+StudioService	GetClassIcon	1
+StudioService	GetUserId	1
+StudioService	GizmoRaycast	1
+StudioService	PromptImportFile	1
+StudioService	PromptImportFileAsync	1
+StudioService	PromptImportFiles	1
+StudioService	PromptImportFilesAsync	1
+StudioTestService	EditModeActive	1
+StudioTestService	ExecuteMultiplayerTestAsync	1
+StudioTestService	ExecutePlayModeAsync	1
+StudioTestService	ExecuteRunModeAsync	1
+StudioTheme	GetColor	1
+SurfaceAppearance	ColorMap	1
+SurfaceAppearance	MetalnessMap	1
+SurfaceAppearance	NormalMap	1
+SurfaceAppearance	RoughnessMap	1
+TerrainDetail	ColorMap	1
+TerrainDetail	ColorMapContent	1
+TerrainDetail	EmissiveMaskContent	1
+TerrainDetail	MetalnessMap	1
+TerrainDetail	MetalnessMapContent	1
+TerrainDetail	NormalMap	1
+TerrainDetail	NormalMapContent	1
+TerrainDetail	RoughnessMap	1
+TerrainDetail	RoughnessMapContent	1
+TerrainRegion	ConvertToSmooth	1
+TestService	Run	1
+TestService	RunAsync	1
+VirtualUser	Button1Down	1
+VirtualUser	Button1Up	1
+VirtualUser	Button2Down	1
+VirtualUser	Button2Up	1
+VirtualUser	CaptureController	1
+VirtualUser	ClickButton1	1
+VirtualUser	ClickButton2	1
+VirtualUser	MoveMouse	1
+VirtualUser	SetKeyDown	1
+VirtualUser	SetKeyUp	1
+VirtualUser	StartRecording	1
+VirtualUser	StopRecording	1
+VirtualUser	TypeKey	1
+PluginConnection	Connected	0
+PluginConnection	TargetId	0
+PluginConnection	Type	0
+PluginConnection	BindToMessage	0
+PluginConnection	SendMessage	0

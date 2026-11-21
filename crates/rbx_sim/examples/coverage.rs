@@ -26,7 +26,12 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_sim::Simulation;
 use serde_json::Value;
 
-const PREFIX: &str = "COV ";
+const PREFIX: &str = "COV\t";
+/// What real Studio's Command Bar reaches, from `--import-studio`.
+const STUDIO_REACH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/research/local-run/studio-reach.tsv"
+);
 const KINDS: [&str; 3] = ["Function", "Event", "Property"];
 
 /// The dump's security levels, lowest first.
@@ -83,6 +88,9 @@ enum Host {
     Game,
     Plugin,
     CommandBar,
+    /// Real Studio's Command Bar (`--studio-probe`): every level Roblox's
+    /// own scripts stop short of, to see which ones it refuses.
+    Studio,
 }
 
 fn tags(value: &Value) -> Vec<String> {
@@ -277,7 +285,12 @@ end
 FACTORIES.PluginManager = function()
 	return PluginManager()
 end
-if plugin then
+-- The Command Bar has no `plugin`, but Studio's PluginManager makes one.
+local plugin = plugin
+	or select(2, pcall(function()
+		return PluginManager():CreatePlugin()
+	end))
+if typeof(plugin) == "Instance" then
 	local toolbar
 	local function bar()
 		toolbar = toolbar or plugin:CreateToolbar("Coverage")
@@ -313,7 +326,12 @@ if plugin then
 end
 "#;
 
-const PROBE: &str = r#"local function probe(declared, class, service, members)
+const PROBE: &str = r#"-- Every script reaches the data model itself as `game`.
+FACTORIES.DataModel = function()
+	return game
+end
+FACTORIES.ServiceProvider = FACTORIES.DataModel
+local function probe(declared, class, service, members)
 	local ok, instance = pcall(function()
 		local factory = FACTORIES[declared]
 		if factory then
@@ -328,14 +346,17 @@ const PROBE: &str = r#"local function probe(declared, class, service, members)
 		return Instance.new(class)
 	end)
 	for _, member in members do
-		local there = false
+		-- After the verdict: what the read gave, or why it failed.
+		local there, detail = false, "no instance: " .. tostring(instance)
 		if ok and instance ~= nil then
 			local found, value = pcall(function()
 				return instance[member]
 			end)
 			there = found and value ~= nil
+			detail = if found then typeof(value) .. " " .. tostring(value) else tostring(value)
 		end
-		print("COV " .. declared .. " " .. member .. " " .. (there and "1" or "0"))
+		detail = string.sub((string.gsub(detail, "%s+", " ")), 1, 160)
+		print(table.concat({ "COV", declared, member, there and "1" or "0", detail }, "\t"))
 	end
 end
 "#;
@@ -346,6 +367,7 @@ fn levels(host: Host) -> &'static [Level] {
         Host::Game => &[Level::None],
         Host::Plugin => &[Level::None, Level::Plugin],
         Host::CommandBar => &[Level::Plugin, Level::LocalUser],
+        Host::Studio => &[Level::Plugin, Level::LocalUser, Level::RobloxScript],
     }
 }
 
@@ -395,7 +417,7 @@ fn parse(lines: &[String]) -> BTreeSet<(String, String)> {
         .iter()
         .filter_map(|line| line.strip_prefix(PREFIX))
         .filter_map(|rest| {
-            let mut words = rest.split(' ');
+            let mut words = rest.split('\t');
             let (class, member, there) = (words.next()?, words.next()?, words.next()?);
             (there == "1").then(|| (class.to_owned(), member.to_owned()))
         })
@@ -483,10 +505,13 @@ fn count(counts: &mut Counts, kind: &str, ok: bool) {
 }
 
 /// A section's per-class table and its classes with nothing there.
+/// `studio`, when given, also lists the missing properties and marks with
+/// † the missing members real Studio doesn't reach either.
 fn section(
     classes: &[Class],
     there: &BTreeSet<(String, String)>,
     wanted: impl Fn(&Member) -> bool,
+    studio: Option<&BTreeSet<(String, String)>>,
 ) -> (Counts, String, Vec<String>) {
     let mut totals = Counts::new();
     let mut rows = String::new();
@@ -495,11 +520,15 @@ fn section(
         let mut counts = Counts::new();
         let (mut have, mut missing) = (Vec::new(), Vec::new());
         for member in class.members.iter().filter(|m| wanted(m)) {
-            let ok = there.contains(&(class.name.clone(), member.name.clone()));
+            let key = (class.name.clone(), member.name.clone());
+            let ok = there.contains(&key);
             count(&mut counts, &member.kind, ok);
             count(&mut totals, &member.kind, ok);
-            if member.kind != "Property" {
-                if ok { &mut have } else { &mut missing }.push(member.name.as_str());
+            if ok && member.kind != "Property" {
+                have.push(member.name.clone());
+            } else if !ok && (member.kind != "Property" || studio.is_some()) {
+                let absent = studio.is_some_and(|s| !s.contains(&key));
+                missing.push(format!("{}{}", member.name, if absent { "†" } else { "" }));
             }
         }
         if counts.is_empty() {
@@ -563,8 +592,51 @@ fn by_class(title: &str, intro: &str, rows: &str, untouched: &[String]) -> Strin
 }
 
 fn main() {
-    let out = std::env::args().nth(1);
+    let args: Vec<String> = std::env::args().skip(1).collect();
     let classes = load_dump();
+    // The same probe for real Studio's Command Bar: its printed `COV` lines
+    // (grep them from Studio's log) are what this tool's are checked against.
+    match args.as_slice() {
+        [flag, path] if flag == "--studio-probe" => {
+            let source = probe_source(&classes, Host::Studio, false);
+            std::fs::write(path, source).unwrap_or_else(|err| panic!("{path}: {err}"));
+            return;
+        }
+        // Studio's log after running the probe: what it reached, for the
+        // plugin and Command Bar levels, kept as `studio-reach.tsv`.
+        [flag, log] if flag == "--import-studio" => {
+            let text = std::fs::read_to_string(log).unwrap_or_else(|err| panic!("{log}: {err}"));
+            let lines: Vec<String> = text
+                .lines()
+                .filter_map(|l| l.find(PREFIX).map(|at| l[at..].to_owned()))
+                .collect();
+            let there = parse(&lines);
+            let mut out = String::new();
+            for class in &classes {
+                for m in &class.members {
+                    if matches!(m.level, Level::Plugin | Level::LocalUser) {
+                        let key = (class.name.clone(), m.name.clone());
+                        let ok = u8::from(there.contains(&key));
+                        out.push_str(&format!("{}\t{}\t{ok}\n", class.name, m.name));
+                    }
+                }
+            }
+            std::fs::write(STUDIO_REACH, out).expect("studio-reach.tsv");
+            return;
+        }
+        _ => {}
+    }
+    let studio: Option<BTreeSet<(String, String)>> =
+        std::fs::read_to_string(STUDIO_REACH).ok().map(|text| {
+            text.lines()
+                .filter_map(|l| {
+                    let mut words = l.split('\t');
+                    let (class, member, there) = (words.next()?, words.next()?, words.next()?);
+                    (there == "1").then(|| (class.to_owned(), member.to_owned()))
+                })
+                .collect()
+        });
+    let out = args.first().cloned();
     let mut game = probe_game(&classes, false);
     game.extend(probe_game(&classes, true));
     let plugin = probe_plugin(&classes);
@@ -572,41 +644,55 @@ fn main() {
 
     let at = |level: Level| move |m: &Member| m.level == level && !m.retired;
     let retired = |level: Level| move |m: &Member| m.level == level && m.retired;
-    let (game_totals, game_rows, game_none) = section(&classes, &game, at(Level::None));
-    let (plugin_totals, plugin_rows, plugin_none) = section(&classes, &plugin, at(Level::Plugin));
-    let (bar_totals, bar_rows, bar_none) = section(&classes, &command_bar, at(Level::LocalUser));
-    let target = [
+    let s = studio.as_ref();
+    let (game_totals, game_rows, game_none) = section(&classes, &game, at(Level::None), None);
+    let (plugin_totals, plugin_rows, plugin_none) =
+        section(&classes, &plugin, at(Level::Plugin), s);
+    let (bar_totals, bar_rows, bar_none) = section(&classes, &command_bar, at(Level::LocalUser), s);
+    let mut target = vec![
         summary_row("Game scripts (Local Run)", "None", &game_totals),
         summary_row("Plugins (plugin host)", "PluginSecurity", &plugin_totals),
         summary_row("Command Bar", "LocalUserSecurity", &bar_totals),
     ];
+    if let Some(studio) = s {
+        target.push(summary_row(
+            "Real Studio's Command Bar",
+            "PluginSecurity",
+            &section(&classes, studio, at(Level::Plugin), None).0,
+        ));
+        target.push(summary_row(
+            "Real Studio's Command Bar",
+            "LocalUserSecurity",
+            &section(&classes, studio, at(Level::LocalUser), None).0,
+        ));
+    }
     let also = [
         summary_row(
             "Plugins: the game API in the plugin host",
             "None",
-            &section(&classes, &plugin, at(Level::None)).0,
+            &section(&classes, &plugin, at(Level::None), None).0,
         ),
         summary_row(
             "Command Bar: the plugin API",
             "PluginSecurity",
-            &section(&classes, &command_bar, at(Level::Plugin)).0,
+            &section(&classes, &command_bar, at(Level::Plugin), None).0,
         ),
     ];
     let retired_rows = [
         summary_row(
             "Game scripts (Local Run)",
             "None",
-            &section(&classes, &game, retired(Level::None)).0,
+            &section(&classes, &game, retired(Level::None), None).0,
         ),
         summary_row(
             "Plugins (plugin host)",
             "PluginSecurity",
-            &section(&classes, &plugin, retired(Level::Plugin)).0,
+            &section(&classes, &plugin, retired(Level::Plugin), None).0,
         ),
         summary_row(
             "Command Bar",
             "LocalUserSecurity",
-            &section(&classes, &command_bar, retired(Level::LocalUser)).0,
+            &section(&classes, &command_bar, retired(Level::LocalUser), None).0,
         ),
     ];
     let unreachable: Vec<String> = [Level::RobloxScript, Level::Roblox]
@@ -634,9 +720,14 @@ fn main() {
          `assets/API-Dump.json`, by security level. Each member counts once, under the class that declares it. \
          Each place a script runs gets a probe: a server script in a fresh Local Run for game scripts (security \
          `None`), a plugin in the plugin host for plugins (`PluginSecurity`), and a Command Bar run for \
-         `LocalUserSecurity`, which in Studio only the Command Bar reaches. The probe makes an instance of each \
-         class (or of its first creatable subclass, or asks the API that hands one out) and indexes every member; \
-         it counts as there when that gives a value, not an error or nil.\n\n\
+         `LocalUserSecurity`. The probe makes an instance of each class (or of its first creatable subclass, or \
+         asks the API that hands one out) and indexes every member; it counts as there when that gives a value, \
+         not an error or nil.\n\n\
+         The same probe ran in real Studio 0.748's Command Bar (`--studio-probe`, then `--import-studio` on \
+         Studio's log, kept in `studio-reach.tsv`). The Command Bar runs at identity 4 and reaches every \
+         `PluginSecurity` and `LocalUserSecurity` member whose instance a script can get (`PluginManager():\
+         CreatePlugin()` hands it a `Plugin`); the member lists below mark with † what Studio didn't reach \
+         either (`IXPService` isn't a service there, `File`, `PluginConnection` and the like aren't handed out).\n\n\
          Read the property numbers with care: any property the reflection database knows reads back as data \
          (its saved value or default), whether or not the runtime acts on it. What the sim actually simulates is \
          listed in `PLAN.md`. Functions and events count when they exist, whether or not the runtime acts on \
@@ -650,7 +741,10 @@ fn main() {
          Counted on their own, outside the target.\n\n{header}\n{}\n\n\
          ## Out of reach\n\n\
          Neither plugins nor the Command Bar may use these in Studio (they're for Roblox's own scripts and \
-         built-in plugins), so they aren't counted. Members by type:\n\n\
+         built-in plugins), so they aren't counted. In Studio's Command Bar a `RobloxScriptSecurity` property \
+         read fails with \"The current thread cannot read 'X' (lacking capability RobloxScript)\"; its functions \
+         and events index fine, and a call fails with \"The current thread cannot call 'X' (lacking capability \
+         RobloxScript)\". Members by type:\n\n\
          | Security | Functions | Events | Properties |\n|---|---|---|---|\n{}\n\n{}{}{}",
         target.join("\n"),
         also.join("\n"),
