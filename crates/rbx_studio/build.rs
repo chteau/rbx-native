@@ -25,7 +25,7 @@ use sha2::{Digest as _, Sha256};
 
 /// Bumping this means updating every hash below from the release page
 /// (`gh release view -R JohnnyMorganz/luau-lsp <version> --json assets`).
-const VERSION: &str = "1.70.0";
+const VERSION: &str = "1.70.1";
 
 /// `(target_os, target_arch, asset, sha256)`. The macOS asset is universal.
 const ASSETS: &[(&str, &str, &str, &str)] = &[
@@ -33,31 +33,31 @@ const ASSETS: &[(&str, &str, &str, &str)] = &[
         "linux",
         "x86_64",
         "luau-lsp-linux-x86_64.zip",
-        "4ff08890ea0d4b6d9de25fdff1a4c87e0dc9f2e45d782c894e83475e51d55813",
+        "1a2ea1ae4f98f8946cefd970a4b54853e11ab4775e6932faa7f60cf920346567",
     ),
     (
         "linux",
         "aarch64",
         "luau-lsp-linux-arm64.zip",
-        "24c185fb7c4fe5feae9c9c95de83ae3eb1cd284766ce2d151aea75235501034a",
+        "6062345b95124ca937b8c324b74bc3fddb1d6919ba133c58f8b17945ce1acbc2",
     ),
     (
         "macos",
         "x86_64",
         "luau-lsp-macos.zip",
-        "b0491a64f441a37f187b34f01c932ddcfc7f3603cefd043cd5a385da33ba7de8",
+        "7d3936e8dec6dc77547abd061d2e950da392562a5f94858b880f23dba50d84cd",
     ),
     (
         "macos",
         "aarch64",
         "luau-lsp-macos.zip",
-        "b0491a64f441a37f187b34f01c932ddcfc7f3603cefd043cd5a385da33ba7de8",
+        "7d3936e8dec6dc77547abd061d2e950da392562a5f94858b880f23dba50d84cd",
     ),
     (
         "windows",
         "x86_64",
         "luau-lsp-win64.zip",
-        "26e6d32069cb5dd74f06bbdc2f3033d3ba66da76d3dbdfc3dcc2b085ddaa274a",
+        "64225b9738102a30de6ee09fb28e5a3827edc402ecf2a6364af570312468159f",
     ),
 ];
 
