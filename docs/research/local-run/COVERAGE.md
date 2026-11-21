@@ -12,7 +12,7 @@ Members that aren't deprecated, hidden or `NotScriptable`.
 
 | Where | Security | Functions | Events | Properties | All |
 |---|---|---|---|---|---|
-| Game scripts (Local Run) | `None` | 550/1385 (40%) | 191/355 (54%) | 1970/2510 (78%) | 2711/4250 (64%) |
+| Game scripts (Local Run) | `None` | 766/1385 (55%) | 249/355 (70%) | 1973/2510 (79%) | 2988/4250 (70%) |
 | Plugins (plugin host) | `PluginSecurity` | 148/169 (88%) | 27/27 (100%) | 189/201 (94%) | 364/397 (92%) |
 | Command Bar | `LocalUserSecurity` | 0/60 (0%) | 0/11 (0%) | 1/1 (100%) | 1/72 (1%) |
 | Real Studio's Command Bar | `PluginSecurity` | 153/169 (91%) | 27/27 (100%) | 189/201 (94%) | 369/397 (93%) |
@@ -58,22 +58,23 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | Accoutrement | 1/1 | - | - |  |  |
 | Accessory | 1/1 | - | - |  |  |
 | AdPlacement | 5/7 | - | - |  |  |
+| AnalyticsService | - | 11/11 | - | GetDurationLoggerTimestamp, LogCustomEvent, LogEconomyEvent, LogFunnelStepEvent, LogJourneyEvent, LogOnboardingFunnelStepEvent, LogProgressionCompleteEvent, LogProgressionEvent, LogProgressionFailEvent, LogProgressionStartEvent, GetPlayerSegmentsAsync |  |
 | Animation | 2/2 | - | - |  |  |
 | AnimationClip | 3/3 | - | - |  |  |
 | AnimationNodeDefinition | 2/2 | 0/4 | 0/1 |  | AddInputPin, GetOrderedInputPinNames, RemoveInputPin, SetOrderedInputPinNames, InputPinsChanged |
 | AnimationValueNodeDefinition | 2/2 | - | - |  |  |
 | Animator | 4/4 | 2/6 | 1/1 | GetPlayingAnimationTracks, LoadAnimation, AnimationPlayed | ApplyJointVelocities, GetTrackByAnimationId, RegisterEvaluationParallelCallback, StepAnimations |
 | AssetDeliveryProxy | 3/3 | - | - |  |  |
-| AssetService | - | 5/24 | - | CreateEditableImage, CreateEditableMesh, CreateEditableImageAsync, CreateEditableMeshAsync, CreateMeshPartAsync | ComposeDecalAsync, CreateAssetAsync, CreateAssetVersionAsync, CreateDataModelContentAsync, CreateDecalAsync, CreatePlaceAsync, CreatePlaceInPlayerInventoryAsync, CreateSurfaceAppearanceAsync, CreateTextureAsync, GetAssetIdsForPackageAsync, GetAudioMetadataAsync, GetBundleDetailsAsync, GetGamePlacesAsync, GetLatestVersionUriAsync, LoadAssetAsync, PromptCreatePlatformContentAsync, PromptImportAnimationClipFromVideoAsync, SavePlaceAsync, SearchAudioAsync |
+| AssetService | - | 24/24 | - | CreateEditableImage, CreateEditableMesh, ComposeDecalAsync, CreateAssetAsync, CreateAssetVersionAsync, CreateDataModelContentAsync, CreateDecalAsync, CreateEditableImageAsync, CreateEditableMeshAsync, CreateMeshPartAsync, CreatePlaceAsync, CreatePlaceInPlayerInventoryAsync, CreateSurfaceAppearanceAsync, CreateTextureAsync, GetAssetIdsForPackageAsync, GetAudioMetadataAsync, GetBundleDetailsAsync, GetGamePlacesAsync, GetLatestVersionUriAsync, LoadAssetAsync, PromptCreatePlatformContentAsync, PromptImportAnimationClipFromVideoAsync, SavePlaceAsync, SearchAudioAsync |  |
 | Atmosphere | 6/6 | - | - |  |  |
-| Attachment | 7/7 | 0/1 | - |  | GetConstraints |
+| Attachment | 7/7 | 1/1 | - | GetConstraints |  |
 | Bone | 2/2 | - | - |  |  |
 | AudioAnalyzer | 4/4 | 4/4 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, GetSpectrum, WiringChanged |  |
 | AudioChannelMixer | 1/1 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioChannelSplitter | 1/1 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioChorus | 4/4 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioCompressor | 6/6 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
-| AudioDeviceInput | 4/5 | 3/5 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged | GetUserIdAccessList, SetUserIdAccessList |
+| AudioDeviceInput | 4/5 | 5/5 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, GetUserIdAccessList, SetUserIdAccessList, WiringChanged |  |
 | AudioDeviceOutput | 0/1 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioDistortion | 2/2 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioEcho | 6/6 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
@@ -82,20 +83,20 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | AudioFader | 2/2 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioFilter | 5/5 | 4/4 | 1/1 | GetConnectedWires, GetGainAt, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioFlanger | 4/4 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
-| AudioGate | 4/4 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
+| AudioGate | 4/4 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioLimiter | 3/3 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioListener | 6/7 | 9/9 | 1/1 | GetAngleAttenuation, GetAudibilityFor, GetConnectedWires, GetDistanceAttenuation, GetInputPins, GetInteractingEmitters, GetOutputPins, SetAngleAttenuation, SetDistanceAttenuation, WiringChanged |  |
 | AudioPitchShifter | 3/3 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
-| AudioPlayer | 13/13 | 5/7 | 3/3 | GetConnectedWires, GetInputPins, GetOutputPins, Play, Stop, Ended, Looped, WiringChanged | Cancel, GetWaveformAsync |
-| AudioRecorder | 2/2 | 1/9 | 0/1 | Clear | GetConnectedWires, GetInputPins, GetOutputPins, GetTemporaryContent, Stop, CanRecordAsync, GetUnrecordableInstancesAsync, RecordAsync, WiringChanged |
+| AudioPlayer | 13/13 | 7/7 | 3/3 | Cancel, GetConnectedWires, GetInputPins, GetOutputPins, Play, Stop, GetWaveformAsync, Ended, Looped, WiringChanged |  |
+| AudioRecorder | 2/2 | 9/9 | 1/1 | Clear, GetConnectedWires, GetInputPins, GetOutputPins, GetTemporaryContent, Stop, CanRecordAsync, GetUnrecordableInstancesAsync, RecordAsync, WiringChanged |  |
 | AudioReverb | 13/13 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioSearchParams | 8/10 | - | - |  |  |
-| AudioSpeechToText | 3/3 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
+| AudioSpeechToText | 3/3 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AudioStreamReader | 4/4 | 5/5 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, Peek, Read, WiringChanged |  |
 | AudioStreamWriter | 4/4 | 5/5 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, Space, Write, WiringChanged |  |
-| AudioTextToSpeech | 12/12 | 0/8 | 0/3 |  | GetConnectedWires, GetInputPins, GetOutputPins, Pause, Play, Unload, GetWaveformAsync, LoadAsync, Ended, Looped, WiringChanged |
+| AudioTextToSpeech | 12/12 | 8/8 | 3/3 | GetConnectedWires, GetInputPins, GetOutputPins, Pause, Play, Unload, GetWaveformAsync, LoadAsync, Ended, Looped, WiringChanged |  |
 | AudioTremolo | 7/7 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
-| AudioWindSynthesizer | 4/5 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
+| AudioWindSynthesizer | 4/5 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
 | AvatarAccessoryRules | 15/15 | - | - |  |  |
 | AvatarAnimationRules | 11/11 | - | - |  |  |
 | AvatarBodyRules | 8/15 | - | - |  |  |
@@ -104,13 +105,14 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | AvatarEditorService | - | 9/22 | 7/7 | GetAccessoryType, PromptAllowInventoryReadAccess, PromptCreateOutfit, PromptDeleteOutfit, PromptRenameOutfit, PromptSaveAvatar, PromptSetFavorite, PromptUpdateOutfit, GetFavoriteAsync, PromptAllowInventoryReadAccessCompleted, PromptCreateOutfitCompleted, PromptDeleteOutfitCompleted, PromptRenameOutfitCompleted, PromptSaveAvatarCompleted, PromptSetFavoriteCompleted, PromptUpdateOutfitCompleted | CheckApplyDefaultClothingAsync, ConformToAvatarRulesAsync, GetAvatarRulesAsync, GetBatchItemDetailsAsync, GetBundlesByAssetIdAsync, GetHeadShapesAsync, GetInventoryAsync, GetItemDetailsAsync, GetOutfitDetailsAsync, GetOutfitsAsync, GetRecommendedAssetsAsync, GetRecommendedBundlesAsync, SearchCatalogAsync |
 | AvatarEffectDescription | 1/2 | - | - |  |  |
 | BadgeService | - | 5/5 | - | AwardBadgeAsync, CheckUserBadgesAsync, GetBadgeInfoAsync, GetUserBadgesAsync, UserHasBadgeAsync |  |
+| BasePlayerGui | - | 1/1 | - | GetGuiObjectsAtPosition |  |
 | CoreGui | 1/1 | - | - |  |  |
 | StarterGui | 2/2 | 4/4 | - | GetCoreGuiEnabled, SetCore, SetCoreGuiEnabled, GetCore |  |
 | RemoteEvent | - | 3/3 | 1/2 | FireAllClients, FireClient, FireServer, OnClientEvent | OnServerEvent |
 | UnreliableRemoteEvent | - | 3/3 | 1/2 | FireAllClients, FireClient, FireServer, OnClientEvent | OnServerEvent |
 | BaseWrap | 6/6 | - | - |  |  |
 | WrapLayer | 9/12 | - | - |  |  |
-| Beam | 18/20 | 0/1 | - |  | SetTextureOffset |
+| Beam | 18/20 | 1/1 | - | SetTextureOffset |  |
 | BindableEvent | - | 1/1 | 1/1 | Fire, Event |  |
 | BindableFunction | - | 1/1 | - | Invoke |  |
 | BodyPartDescription | 4/5 | - | - |  |  |
@@ -125,7 +127,9 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | DragDetector | 26/27 | 5/5 | 3/3 | AddConstraintFunction, GetReferenceFrame, RestartDrag, SetDragStyleFunction, SetPermissionPolicyFunction, DragContinue, DragEnd, DragStart |  |
 | Clouds | 4/4 | - | - |  |  |
 | CollectionService | - | 8/10 | 2/2 | AddTag, GetAllTags, GetInstanceAddedSignal, GetInstanceRemovedSignal, GetTagged, GetTags, HasTag, RemoveTag, TagAdded, TagRemoved | CreateCollection, GetCollections |
+| CommerceService | - | 4/4 | 1/1 | PromptCommerceProductPurchase, PromptRealWorldCommerceBrowser, GetCommerceProductInfoAsync, UserEligibleForRealWorldCommerceAsync, PromptCommerceProductPurchaseFinished |  |
 | CompositeValueCurve | 1/1 | 0/2 | - |  | GetComponentCurves, GetValueAtTime |
+| ConfigService | - | 4/4 | - | ClearTestingValue, SetTestingValue, GetConfigAsync, GetConfigForPlayerAsync |  |
 | Constraint | 4/6 | - | - |  |  |
 | AlignOrientation | 12/12 | - | - |  |  |
 | AlignPosition | 11/11 | - | - |  |  |
@@ -145,7 +149,7 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | UniversalConstraint | 4/4 | - | - |  |  |
 | VectorForce | 3/3 | - | - |  |  |
 | ContentProvider | 2/2 | 4/10 | 0/1 | GetAssetFetchStatus, GetAssetFetchStatusChangedSignal, UnregisterDefaultEncryptionKey, PreloadAsync | ListEncryptedAssets, RegisterDefaultEncryptionKey, RegisterDefaultSessionKey, RegisterEncryptedAsset, RegisterSessionEncryptedAsset, UnregisterEncryptedAsset, AssetFetchFailed |
-| ContextActionService | - | 13/14 | 0/2 | BindAction, BindActionAtPriority, BindActivate, GetAllBoundActionInfo, GetBoundActionInfo, SetDescription, SetImage, SetPosition, SetTitle, UnbindAction, UnbindActivate, UnbindAllActions, GetButton | GetCurrentLocalToolIcon, LocalToolEquipped, LocalToolUnequipped |
+| ContextActionService | - | 14/14 | 2/2 | BindAction, BindActionAtPriority, BindActivate, GetAllBoundActionInfo, GetBoundActionInfo, GetCurrentLocalToolIcon, SetDescription, SetImage, SetPosition, SetTitle, UnbindAction, UnbindActivate, UnbindAllActions, GetButton, LocalToolEquipped, LocalToolUnequipped |  |
 | SkateboardController | 2/2 | - | 0/1 |  | AxisChanged |
 | ControllerBase | 3/3 | - | - |  |  |
 | AirController | 7/7 | - | - |  |  |
@@ -174,7 +178,8 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | DraggerService | 12/15 | - | - |  |  |
 | EulerRotationCurve | 1/1 | 0/5 | - |  | GetAnglesAtTime, GetRotationAtTime, X, Y, Z |
 | ExperienceInviteOptions | 4/4 | - | - |  |  |
-| Explosion | 7/7 | - | 0/1 |  | Hit |
+| ExperienceNotificationService | - | 2/2 | 1/1 | PromptOptIn, CanPromptOptInAsync, OptInPromptClosed |  |
+| Explosion | 7/7 | - | 1/1 | Hit |  |
 | FaceControls | 50/50 | - | - |  |  |
 | FaceInstance | 1/1 | - | - |  |  |
 | Decal | 16/18 | - | - |  |  |
@@ -188,27 +193,27 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | ForceField | 1/1 | - | - |  |  |
 | GamepadService | 1/1 | 0/2 | - |  | DisableGamepadCursor, EnableGamepadCursor |
 | GetTextBoundsParams | 4/5 | - | - |  |  |
-| GlobalDataStore | - | 5/6 | - | GetAsync, IncrementAsync, RemoveAsync, SetAsync, UpdateAsync | BatchGetAsync |
+| GlobalDataStore | - | 6/6 | - | BatchGetAsync, GetAsync, IncrementAsync, RemoveAsync, SetAsync, UpdateAsync |  |
 | DataStore | - | 4/4 | - | GetVersionAsync, GetVersionAtTimeAsync, ListKeysAsync, ListVersionsAsync |  |
 | OrderedDataStore | - | 1/1 | - | GetSortedAsync |  |
 | GroupService | - | 6/6 | - | GetAlliesAsync, GetEnemiesAsync, GetGroupInfoAsync, GetGroupsAsync, GetRolesInGroupAsync, PromptJoinAsync |  |
-| GuiBase2d | 9/10 | - | 0/1 |  | SelectionChanged |
-| GuiObject | 19/26 | - | 11/16 | InputBegan, InputChanged, InputEnded, MouseEnter, MouseLeave, MouseMoved, MouseWheelBackward, MouseWheelForward, SelectionGained, SelectionLost, TouchTap | TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe |
+| GuiBase2d | 9/10 | - | 1/1 | SelectionChanged |  |
+| GuiObject | 19/26 | - | 16/16 | InputBegan, InputChanged, InputEnded, MouseEnter, MouseLeave, MouseMoved, MouseWheelBackward, MouseWheelForward, SelectionGained, SelectionLost, TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe, TouchTap |  |
 | CanvasGroup | 2/2 | - | - |  |  |
 | Frame | 1/1 | - | - |  |  |
-| GuiButton | 4/6 | - | 7/8 | Activated, MouseButton1Click, MouseButton1Down, MouseButton1Up, MouseButton2Click, MouseButton2Down, MouseButton2Up | SecondaryActivated |
+| GuiButton | 4/6 | - | 8/8 | Activated, MouseButton1Click, MouseButton1Down, MouseButton1Up, MouseButton2Click, MouseButton2Down, MouseButton2Up, SecondaryActivated |  |
 | ImageButton | 16/16 | - | - |  |  |
 | TextButton | 21/21 | - | - |  |  |
 | ImageLabel | 12/12 | - | - |  |  |
 | TextLabel | 21/21 | - | - |  |  |
 | InputActionLabel | 10/12 | - | - |  |  |
-| ScrollingFrame | 20/20 | 0/2 | - |  | GetScrollVelocity, ResetScrollVelocity |
-| TextBox | 29/29 | 3/3 | 2/3 | CaptureFocus, IsFocused, ReleaseFocus, FocusLost, Focused | ReturnPressedFromOnScreenKeyboard |
+| ScrollingFrame | 20/20 | 2/2 | - | GetScrollVelocity, ResetScrollVelocity |  |
+| TextBox | 29/29 | 3/3 | 3/3 | CaptureFocus, IsFocused, ReleaseFocus, FocusLost, Focused, ReturnPressedFromOnScreenKeyboard |  |
 | TextChannelWindow | 2/3 | - | - |  |  |
-| VideoDisplay | 7/7 | 0/3 | 0/1 |  | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |
-| VideoFrame | 12/12 | 0/2 | 0/6 |  | Pause, Play, DidLoop, Ended, Loaded, Paused, Played, SubtitlesChanged |
+| VideoDisplay | 7/7 | 3/3 | 1/1 | GetConnectedWires, GetInputPins, GetOutputPins, WiringChanged |  |
+| VideoFrame | 12/12 | 2/2 | 6/6 | Pause, Play, DidLoop, Ended, Loaded, Paused, Played, SubtitlesChanged |  |
 | ViewportFrame | 5/6 | - | - |  |  |
-| LayerCollector | 3/4 | 0/1 | - |  | GetGuiObjectsAtPosition |
+| LayerCollector | 3/4 | 1/1 | - | GetGuiObjectsAtPosition |  |
 | BillboardGui | 14/16 | - | - |  |  |
 | ScreenGui | 5/5 | - | - |  |  |
 | SurfaceGuiBase | 1/3 | - | - |  |  |
@@ -228,11 +233,12 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | SelectionSphere | 2/2 | - | - |  |  |
 | Handles | 1/2 | - | 0/5 |  | MouseButton1Down, MouseButton1Up, MouseDrag, MouseEnter, MouseLeave |
 | SurfaceSelection | 1/1 | - | - |  |  |
-| Path2D | 5/5 | 0/13 | 0/1 |  | GetBoundingRect, GetControlPoint, GetControlPoints, GetLength, GetMaxControlPoints, GetPositionOnCurve, GetPositionOnCurveArcLength, GetTangentOnCurve, GetTangentOnCurveArcLength, InsertControlPoint, RemoveControlPoint, SetControlPoints, UpdateControlPoint, ControlPointChanged |
+| Path2D | 5/5 | 13/13 | 1/1 | GetBoundingRect, GetControlPoint, GetControlPoints, GetLength, GetMaxControlPoints, GetPositionOnCurve, GetPositionOnCurveArcLength, GetTangentOnCurve, GetTangentOnCurveArcLength, InsertControlPoint, RemoveControlPoint, SetControlPoints, UpdateControlPoint, ControlPointChanged |  |
 | GuiService | 5/8 | 15/15 | 2/2 | CloseInspectMenu, DismissNotification, GetEmotesMenuOpen, GetGameplayPausedNotificationEnabled, GetGuiInset, GetInsetArea, GetInspectMenuEnabled, InspectPlayerFromHumanoidDescription, InspectPlayerFromUserId, IsTenFootInterface, Select, SendNotification, SetEmotesMenuOpen, SetGameplayPausedNotificationEnabled, SetInspectMenuEnabled, MenuClosed, MenuOpened |  |
 | HapticEffect | 4/4 | 0/4 | 0/1 |  | GetWaveformKeys, Play, SetWaveformKeys, Stop, Ended |
+| HapticService | - | 4/4 | - | GetMotor, IsMotorSupported, IsVibrationSupported, SetMotor |  |
 | Highlight | 6/7 | - | - |  |  |
-| HttpService | 1/1 | 7/9 | - | GenerateGUID, JSONDecode, JSONEncode, UrlEncode, GetAsync, PostAsync, RequestAsync | CreateWebStreamClient, GetSecret |
+| HttpService | 1/1 | 9/9 | - | CreateWebStreamClient, GenerateGUID, GetSecret, JSONDecode, JSONEncode, UrlEncode, GetAsync, PostAsync, RequestAsync |  |
 | Humanoid | 28/32 | 11/24 | 15/18 | ChangeState, EquipTool, GetAppliedDescription, GetCanCollideOnDeath, GetState, GetStateEnabled, Move, MoveTo, SetStateEnabled, TakeDamage, UnequipTools, Climbing, Died, FallingDown, FreeFalling, GettingUp, HealthChanged, Jumping, MoveToFinished, PlatformStanding, Ragdoll, Running, Seated, StateChanged, StateEnabledChanged, Swimming | AddAccessory, BuildRigFromAttachments, GetAccessories, GetBodyPartR15, GetLimb, GetMoveVelocity, GetRelativeVelocityAtFloor, RemoveAccessories, ReplaceBodyPartR15, ApplyAvatarRulesAsync, ApplyDescriptionAsync, ApplyDescriptionResetAsync, PlayEmoteAsync, ApplyDescriptionFinished, Strafing, Touched |
 | HumanoidDescription | 34/40 | 0/8 | 0/2 |  | AddEmote, GetAccessories, GetEmotes, GetEquippedEmotes, RemoveEmote, SetAccessories, SetEmotes, SetEquippedEmotes, EmotesChanged, EquippedEmotesChanged |
 | HumanoidRigDescription | 89/111 | 0/8 | - |  | GetJoint, GetJointFromName, GetJointNames, GetR15JointLabels, GetR15JointNames, GetR6JointNames, SetJoint, SetTposeAdjustment |
@@ -241,6 +247,7 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | InputAction | 3/4 | 1/1 | 3/3 | GetState, Pressed, Released, StateChanged |  |
 | InputBinding | 21/23 | 1/1 | - | Fire |  |
 | InputContext | 3/3 | - | - |  |  |
+| InsertService | - | 5/6 | - | GetFreeDecalsAsync, GetFreeModelsAsync, GetLatestAssetVersionAsync, LoadAsset, LoadAssetVersion | CreateMeshPartAsync |
 | JointInstance | 4/6 | - | - |  |  |
 | Motor | 3/3 | 0/1 | - |  | SetDesiredAngle |
 | VelocityMotor | 3/4 | - | - |  |  |
@@ -260,7 +267,8 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | ModuleScript | 1/1 | - | - |  |  |
 | MakeupDescription | 3/4 | 0/1 | - |  | GetAppliedInstance |
 | MarkerCurve | 1/1 | 0/4 | - |  | GetMarkerAtIndex, GetMarkers, InsertMarkerAtTime, RemoveMarkerAtIndex |
-| MarketplaceService | - | 12/27 | 7/8 | BindReceiptHandler, PromptBundlePurchase, PromptGamePassPurchase, PromptProductPurchase, PromptPurchase, PromptSubscriptionPurchase, GetPassOwnershipAsync, GetProductInfoAsync, GetUserSubscriptionStatusAsync, PlayerOwnsAssetAsync, PlayerOwnsBundleAsync, UserOwnsGamePassAsync, PromptBulkPurchaseFinished, PromptBundlePurchaseFinished, PromptGamePassPurchaseFinished, PromptPremiumPurchaseFinished, PromptProductPurchaseFinished, PromptPurchaseFinished, PromptSubscriptionPurchaseFinished | OpenShop, PromptBulkPurchase, PromptCancelSubscription, PromptRobloxSubscriptionPurchase, PromptVIPServerPurchase, CanUsersTransferRobuxAsync, GetDeveloperProductsAsync, GetRobloxSubscriptionDetailsAsync, GetSubscriptionProductInfoAsync, GetUserSubscriptionDetailsAsync, GetUserSubscriptionPaymentHistoryAsync, GetUsersPriceLevelsAsync, PromptRobuxTransferAsync, RankProductsAsync, RecommendTopProductsAsync, PromptRobloxSubscriptionPurchaseFinished |
+| MarketplaceService | - | 27/27 | 8/8 | BindReceiptHandler, OpenShop, PromptBulkPurchase, PromptBundlePurchase, PromptCancelSubscription, PromptGamePassPurchase, PromptProductPurchase, PromptPurchase, PromptRobloxSubscriptionPurchase, PromptSubscriptionPurchase, PromptVIPServerPurchase, CanUsersTransferRobuxAsync, GetDeveloperProductsAsync, GetPassOwnershipAsync, GetProductInfoAsync, GetRobloxSubscriptionDetailsAsync, GetSubscriptionProductInfoAsync, GetUserSubscriptionDetailsAsync, GetUserSubscriptionPaymentHistoryAsync, GetUserSubscriptionStatusAsync, GetUsersPriceLevelsAsync, PlayerOwnsAssetAsync, PlayerOwnsBundleAsync, PromptRobuxTransferAsync, RankProductsAsync, RecommendTopProductsAsync, UserOwnsGamePassAsync, PromptBulkPurchaseFinished, PromptBundlePurchaseFinished, PromptGamePassPurchaseFinished, PromptPremiumPurchaseFinished, PromptProductPurchaseFinished, PromptPurchaseFinished, PromptRobloxSubscriptionPurchaseFinished, PromptSubscriptionPurchaseFinished |  |
+| MatchmakingService | - | 3/3 | - | GetServerAttribute, InitializeServerAttributesForStudio, SetServerAttribute |  |
 | MaterialVariant | 6/7 | - | - |  |  |
 | MemoryStoreHashMap | - | 5/5 | - | GetAsync, ListItemsAsync, RemoveAsync, SetAsync, UpdateAsync |  |
 | MemoryStoreQueue | - | 4/4 | - | AddAsync, GetSizeAsync, ReadAsync, RemoveAsync |  |
@@ -270,35 +278,35 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | NetworkSettings | 9/9 | - | - |  |  |
 | NoCollisionConstraint | 1/3 | - | - |  |  |
 | PVInstance | - | 2/2 | - | GetPivot, PivotTo |  |
-| BasePart | 37/40 | 13/24 | 2/2 | ApplyAngularImpulse, ApplyImpulse, CanCollideWith, CanSetNetworkOwnership, GetConnectedParts, GetJoints, GetMass, GetNetworkOwner, GetNetworkOwnershipAuto, GetNoCollisionConstraints, GetTouchingParts, SetNetworkOwner, SetNetworkOwnershipAuto, TouchEnded, Touched | AngularAccelerationToTorque, ApplyImpulseAtPosition, BindToCollisionSummaries, GetClosestPointOnSurface, GetVelocityAtPosition, IsGrounded, Resize, TorqueToAngularAcceleration, IntersectAsync, SubtractAsync, UnionAsync |
+| BasePart | 39/40 | 20/24 | 2/2 | AngularAccelerationToTorque, ApplyAngularImpulse, ApplyImpulse, ApplyImpulseAtPosition, CanCollideWith, CanSetNetworkOwnership, GetClosestPointOnSurface, GetConnectedParts, GetJoints, GetMass, GetNetworkOwner, GetNetworkOwnershipAuto, GetNoCollisionConstraints, GetTouchingParts, GetVelocityAtPosition, IsGrounded, Resize, SetNetworkOwner, SetNetworkOwnershipAuto, TorqueToAngularAcceleration, TouchEnded, Touched | BindToCollisionSummaries, IntersectAsync, SubtractAsync, UnionAsync |
 | Part | 1/1 | - | - |  |  |
 | Seat | 1/2 | 1/1 | - | Sit |  |
 | SpawnLocation | 5/5 | - | - |  |  |
-| Terrain | 7/8 | 16/29 | - | CellCenterToWorld, CellCornerToWorld, Clear, FillBall, FillBlock, FillCylinder, FillRegion, FillWedge, GetMaterialColor, ReadVoxels, ReplaceMaterial, SetMaterialColor, WorldToCell, WorldToCellPreferEmpty, WorldToCellPreferSolid, WriteVoxels | ClearVoxelsAsync_beta, CopyRegion, CountCells, GetMaterialSlot, IterateVoxelsAsync_beta, ModifyVoxelsAsync_beta, PasteRegion, ReadVoxelChannels, ReadVoxelsAsync_beta, ResetMaterialSlot, SetMaterialSlot, WriteVoxelChannels, WriteVoxelsAsync_beta |
+| Terrain | 8/8 | 24/29 | - | CellCenterToWorld, CellCornerToWorld, Clear, CopyRegion, CountCells, FillBall, FillBlock, FillCylinder, FillRegion, FillWedge, GetMaterialColor, GetMaterialSlot, PasteRegion, ReadVoxelChannels, ReadVoxels, ReplaceMaterial, ResetMaterialSlot, SetMaterialColor, SetMaterialSlot, WorldToCell, WorldToCellPreferEmpty, WorldToCellPreferSolid, WriteVoxelChannels, WriteVoxels | ClearVoxelsAsync_beta, IterateVoxelsAsync_beta, ModifyVoxelsAsync_beta, ReadVoxelsAsync_beta, WriteVoxelsAsync_beta |
 | TriangleMeshPart | 2/4 | - | - |  |  |
 | MeshPart | 6/6 | 0/2 | - |  | ApplyMesh, GetSurfaceSlotsAsync |
 | PartOperation | 4/4 | 0/1 | - |  | SubstituteGeometry |
 | VehicleSeat | 10/11 | 1/1 | - | Sit |  |
-| Camera | 14/17 | 7/9 | 1/1 | GetRenderCFrame, GetRoll, ScreenPointToRay, SetRoll, ViewportPointToRay, WorldToScreenPoint, WorldToViewportPoint, InterpolationFinished | GetPartsObscuringTarget, ZoomToExtents |
-| Model | 3/5 | 3/9 | - | GetBoundingBox, GetExtentsSize, MoveTo | AddPersistentPlayer, GetPersistentPlayers, GetScale, RemovePersistentPlayer, ScaleTo, TranslateBy |
+| Camera | 14/17 | 9/9 | 1/1 | GetPartsObscuringTarget, GetRenderCFrame, GetRoll, ScreenPointToRay, SetRoll, ViewportPointToRay, WorldToScreenPoint, WorldToViewportPoint, ZoomToExtents, InterpolationFinished |  |
+| Model | 3/5 | 9/9 | - | AddPersistentPlayer, GetBoundingBox, GetExtentsSize, GetPersistentPlayers, GetScale, MoveTo, RemovePersistentPlayer, ScaleTo, TranslateBy |  |
 | BackpackItem | 2/2 | - | - |  |  |
 | Tool | 6/6 | 2/2 | 4/4 | Activate, Deactivate, Activated, Deactivated, Equipped, Unequipped |  |
 | ProceduralModel | 2/3 | 0/2 | - |  | ForceGeneration, WaitForGenerationAsync |
-| WorldRoot | - | 7/17 | - | Blockcast, GetPartBoundsInBox, GetPartBoundsInRadius, GetPartsInPart, Raycast, Shapecast, Spherecast | ArePartsTouchingOthers, BulkMoveTo, CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, RenameCollisionGroup, UnregisterCollisionGroup |
-| Workspace | 22/25 | 0/7 | 0/1 |  | GetNumAwakeParts, GetPhysicsThrottling, GetRealPhysicsFPS, GetServerTimeNow, JoinToOutsiders, PGSIsEnabled, UnjoinFromOutsiders, PersistentLoaded |
+| WorldRoot | - | 17/17 | - | ArePartsTouchingOthers, Blockcast, BulkMoveTo, CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetPartBoundsInBox, GetPartBoundsInRadius, GetPartsInPart, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, Raycast, RegisterCollisionGroup, RenameCollisionGroup, Shapecast, Spherecast, UnregisterCollisionGroup |  |
+| Workspace | 22/25 | 7/7 | 1/1 | GetNumAwakeParts, GetPhysicsThrottling, GetRealPhysicsFPS, GetServerTimeNow, JoinToOutsiders, PGSIsEnabled, UnjoinFromOutsiders, PersistentLoaded |  |
 | WorldModel | 1/1 | - | - |  |  |
 | Pages | 1/1 | 2/2 | - | GetCurrentPage, AdvanceToNextPageAsync |  |
 | DataStoreKeyPages | 1/1 | - | - |  |  |
 | DataStoreListingPages | 1/1 | - | - |  |  |
 | ParticleEmitter | 37/37 | 2/2 | - | Clear, Emit |  |
-| ParticleEmitter2D | 18/31 | 1/2 | - | Clear | Emit |
+| ParticleEmitter2D | 18/31 | 2/2 | - | Clear, Emit |  |
 | Path | 1/1 | 3/3 | 2/2 | GetWaypoints, CheckOcclusionAsync, ComputeAsync, Blocked, Unblocked |  |
 | PathfindingLink | 2/4 | - | - |  |  |
 | PathfindingModifier | 2/2 | - | - |  |  |
 | PathfindingService | - | 2/2 | - | CreatePath, FindPathAsync |  |
-| PhysicsService | - | 7/8 | - | CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, UnregisterCollisionGroup | RenameCollisionGroup |
-| Player | 15/31 | 16/24 | 4/7 | AddReplicationFocus, DistanceFromCharacter, GetJoinData, GetMouse, GetNetworkPing, HasAppearanceLoaded, IsVerified, Kick, Move, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsOnlineAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, RequestStreamAroundAsync, CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | ClearCachedAvatarAppearance, ClearCharacterAppearance, GetCameraState, PromptAgeCheck, GetFriendsInUniverseAsync, GetFriendsWhoPlayedAsync, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, EmotesLoaded, Idled, OnTeleport |
-| Players | 8/9 | 11/16 | 2/4 | GetPlayerByUserId, GetPlayerFromCharacter, GetPlayers, CreateHumanoidModelFromDescriptionAsync, CreateHumanoidModelFromUserIdAsync, GetCharacterAppearanceInfoAsync, GetFriendsAsync, GetHumanoidDescriptionFromUserIdAsync, GetNameFromUserIdAsync, GetUserIdFromNameAsync, GetUserThumbnailAsync, PlayerAdded, PlayerRemoving | BanAsync, GetBanHistoryAsync, GetHumanoidDescriptionFromOutfitIdAsync, GetProfileConfigurationFromUserIdAsync, UnbanAsync, PlayerMembershipChanged, UserSubscriptionStatusChanged |
+| PhysicsService | - | 8/8 | - | CollisionGroupSetCollidable, CollisionGroupsAreCollidable, GetMaxCollisionGroups, GetRegisteredCollisionGroups, IsCollisionGroupRegistered, RegisterCollisionGroup, RenameCollisionGroup, UnregisterCollisionGroup |  |
+| Player | 15/31 | 18/24 | 4/7 | AddReplicationFocus, DistanceFromCharacter, GetJoinData, GetMouse, GetNetworkPing, HasAppearanceLoaded, IsVerified, Kick, Move, RemoveReplicationFocus, GetFriendsInServerAsync, GetFriendsInUniverseAsync, GetFriendsOnlineAsync, GetFriendsWhoPlayedAsync, IsFriendsWithAsync, IsInGroupAsync, LoadCharacterAsync, RequestStreamAroundAsync, CharacterAdded, CharacterAppearanceLoaded, CharacterRemoving, Chatted | ClearCachedAvatarAppearance, ClearCharacterAppearance, GetCameraState, PromptAgeCheck, LoadCharacterWithAvatarRulesAsync, LoadCharacterWithHumanoidDescriptionAsync, EmotesLoaded, Idled, OnTeleport |
+| Players | 8/9 | 14/16 | 4/4 | GetPlayerByUserId, GetPlayerFromCharacter, GetPlayers, BanAsync, CreateHumanoidModelFromDescriptionAsync, CreateHumanoidModelFromUserIdAsync, GetBanHistoryAsync, GetCharacterAppearanceInfoAsync, GetFriendsAsync, GetHumanoidDescriptionFromUserIdAsync, GetNameFromUserIdAsync, GetUserIdFromNameAsync, GetUserThumbnailAsync, UnbanAsync, PlayerAdded, PlayerMembershipChanged, PlayerRemoving, UserSubscriptionStatusChanged | GetHumanoidDescriptionFromOutfitIdAsync, GetProfileConfigurationFromUserIdAsync |
 | PluginAction | 4/4 | - | - |  |  |
 | PolicyService | - | 2/2 | - | CanViewBrandProjectAsync, GetPolicyInfoForPlayerAsync |  |
 | PoseBase | 3/3 | - | - |  |  |
@@ -311,8 +319,8 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | ColorGradingEffect | 1/1 | - | - |  |  |
 | DepthOfFieldEffect | 4/4 | - | - |  |  |
 | SunRaysEffect | 2/2 | - | - |  |  |
-| ProximityPrompt | 14/15 | 2/2 | 6/8 | InputHoldBegin, InputHoldEnd, PromptButtonHoldBegan, PromptButtonHoldEnded, PromptHidden, PromptShown, TriggerEnded, Triggered | IndicatorHidden, IndicatorShown |
-| ProximityPromptService | 3/3 | - | 6/8 | PromptButtonHoldBegan, PromptButtonHoldEnded, PromptHidden, PromptShown, PromptTriggerEnded, PromptTriggered | IndicatorHidden, IndicatorShown |
+| ProximityPrompt | 14/15 | 2/2 | 8/8 | InputHoldBegin, InputHoldEnd, IndicatorHidden, IndicatorShown, PromptButtonHoldBegan, PromptButtonHoldEnded, PromptHidden, PromptShown, TriggerEnded, Triggered |  |
+| ProximityPromptService | 3/3 | - | 8/8 | IndicatorHidden, IndicatorShown, PromptButtonHoldBegan, PromptButtonHoldEnded, PromptHidden, PromptShown, PromptTriggerEnded, PromptTriggered |  |
 | RealtimeMedia | 3/3 | 0/6 | 0/4 |  | Disconnect, GetConnectedWires, GetInputPins, GetOutputPins, SendMessage, ConnectAsync, AudioInputRequested, Disconnected, OnMessage, WiringChanged |
 | ReflectionMetadataItem | 16/16 | - | - |  |  |
 | ReflectionMetadataClass | 4/4 | - | - |  |  |
@@ -334,7 +342,7 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | SharedTableRegistry | - | 2/2 | - | GetSharedTable, SetSharedTable |  |
 | Sky | 21/21 | - | - |  |  |
 | Smoke | 6/6 | - | - |  |  |
-| SocialService | - | 12/15 | 4/4 | GetPlayersByPartyId, HideSelfView, PromptGameInvite, PromptPhoneBook, ShowSelfView, CanSendCallInviteAsync, CanSendGameInviteAsync, GetEventRsvpStatusAsync, GetExperienceEventAsync, GetPartyAsync, GetUpcomingExperienceEventsAsync, PromptLinkSharingAsync, CallInviteStateChanged, GameInvitePromptClosed, PhoneBookPromptClosed, ShareSheetClosed | PromptFeedbackSubmissionAsync, PromptRateExperienceAsync, PromptRsvpToEventAsync |
+| SocialService | - | 15/15 | 4/4 | GetPlayersByPartyId, HideSelfView, PromptGameInvite, PromptPhoneBook, ShowSelfView, CanSendCallInviteAsync, CanSendGameInviteAsync, GetEventRsvpStatusAsync, GetExperienceEventAsync, GetPartyAsync, GetUpcomingExperienceEventsAsync, PromptFeedbackSubmissionAsync, PromptLinkSharingAsync, PromptRateExperienceAsync, PromptRsvpToEventAsync, CallInviteStateChanged, GameInvitePromptClosed, PhoneBookPromptClosed, ShareSheetClosed |  |
 | Sound | 18/19 | 4/4 | 7/7 | Pause, Play, Resume, Stop, DidLoop, Ended, Loaded, Paused, Played, Resumed, Stopped |  |
 | SoundEffect | 2/2 | - | - |  |  |
 | ChorusSoundEffect | 3/3 | - | - |  |  |
@@ -347,7 +355,7 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | ReverbSoundEffect | 5/5 | - | - |  |  |
 | TremoloSoundEffect | 3/3 | - | - |  |  |
 | SoundGroup | 1/1 | - | - |  |  |
-| SoundService | 13/14 | 0/6 | - |  | GetInputDevice, GetListener, GetMixerTime, PlayLocalSound, SetInputDevice, SetListener |
+| SoundService | 13/14 | 6/6 | - | GetInputDevice, GetListener, GetMixerTime, PlayLocalSound, SetInputDevice, SetListener |  |
 | Sparkles | 3/3 | - | - |  |  |
 | StarterGear | 1/1 | - | - |  |  |
 | StarterPlayer | 23/24 | - | - |  |  |
@@ -356,10 +364,10 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | StudioAttachment | 5/5 | - | - |  |  |
 | StudioService | 6/7 | - | - |  |  |
 | StyleBase | - | 3/3 | 1/1 | GetStyleRules, InsertStyleRule, SetStyleRules, StyleRulesChanged |  |
-| StyleRule | 3/3 | 4/9 | - | GetProperties, GetProperty, SetProperties, SetProperty | GetDefaultPropertyTransition, GetPropertyTransitions, SetDefaultPropertyTransition, SetPropertyTransition, SetPropertyTransitions |
+| StyleRule | 3/3 | 9/9 | - | GetDefaultPropertyTransition, GetProperties, GetProperty, GetPropertyTransitions, SetDefaultPropertyTransition, SetProperties, SetProperty, SetPropertyTransition, SetPropertyTransitions |  |
 | StyleSheet | - | 2/2 | - | GetDerives, SetDerives |  |
 | StyleDerive | 1/2 | - | - |  |  |
-| StyleQuery | 1/1 | 0/4 | - |  | GetCondition, GetConditions, SetCondition, SetConditions |
+| StyleQuery | 1/1 | 4/4 | - | GetCondition, GetConditions, SetCondition, SetConditions |  |
 | SurfaceAppearance | 11/11 | - | - |  |  |
 | TaskScheduler | 3/4 | - | - |  |  |
 | Team | 2/2 | 1/1 | 2/2 | GetPlayers, PlayerAdded, PlayerRemoved |  |
@@ -368,11 +376,11 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | TerrainDetail | 5/5 | - | - |  |  |
 | TerrainRegion | 1/1 | - | - |  |  |
 | TestService | 13/13 | 23/33 | 0/3 | Check, Checkpoint, Done, Error, Fail, GetTestControlSchema, GetTestControls, ListTests, Message, Require, ResetTestControl, ResetTestRegistry, ScopeTime, SetTestControl, SignalProfilingCapture, SignalProfilingStart, SignalProfilingStop, StartTestSession, StopTestSession, TakeSnapshot, Warn, getTestSessionProviderStats, isFeatureEnabled | RegisterSuite, RegisterTest, CaptureScreenshotAsync, FetchTestControlsAsync, RequestValidationAsync, RunTestsAsync, StartAudioCaptureAsync, StartVideoCaptureAsync, StopAudioCaptureAsync, StopVideoCaptureAsync, ServerCollectConditionalResult, ServerCollectResult, TestRegistryChanged |
-| TextChannel | 1/2 | 3/4 | 1/1 | DisplaySystemMessage, AddUserAsync, SendAsync, MessageReceived | SetDirectChatRequester |
-| TextChatCommand | 4/4 | - | 0/1 |  | Triggered |
+| TextChannel | 1/2 | 4/4 | 1/1 | DisplaySystemMessage, SetDirectChatRequester, AddUserAsync, SendAsync, MessageReceived |  |
+| TextChatCommand | 4/4 | - | 1/1 | Triggered |  |
 | TextChatMessageProperties | 3/3 | - | - |  |  |
 | BubbleChatMessageProperties | 3/6 | - | - |  |  |
-| TextChatService | 4/4 | 3/5 | 3/3 | CanUserChatAsync, CanUsersChatAsync, CanUsersDirectChatAsync, BubbleDisplayed, MessageReceived, SendingMessage | DisplayBubble, GetChatGroupsAsync |
+| TextChatService | 4/4 | 5/5 | 3/3 | DisplayBubble, CanUserChatAsync, CanUsersChatAsync, CanUsersDirectChatAsync, GetChatGroupsAsync, BubbleDisplayed, MessageReceived, SendingMessage |  |
 | TextDocument | 1/1 | 0/1 | - |  | ReadAsync |
 | TextGenerator | 4/4 | 0/1 | - |  | GenerateTextAsync |
 | TextService | - | 6/6 | - | GetTextSize, FilterAndTranslateStringAsync, FilterStringAsync, GetFamilyInfoAsync, GetTextBoundsAsync, GetTextSizeOffsetAsync |  |
@@ -390,16 +398,16 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | UIGridStyleLayout | 5/5 | - | - |  |  |
 | UIGridLayout | 6/6 | - | - |  |  |
 | UIListLayout | 5/5 | - | - |  |  |
-| UIPageLayout | 9/10 | 0/4 | 0/3 |  | JumpTo, JumpToIndex, Next, Previous, PageEnter, PageLeave, Stopped |
+| UIPageLayout | 9/10 | 4/4 | 3/3 | JumpTo, JumpToIndex, Next, Previous, PageEnter, PageLeave, Stopped |  |
 | UITableLayout | 4/4 | - | - |  |  |
 | UIPadding | 4/4 | - | - |  |  |
 | UIScale | 1/1 | - | - |  |  |
 | UIShadow | 10/10 | - | - |  |  |
 | UIStroke | 10/10 | - | - |  |  |
 | UserGameSettings | 6/13 | 7/7 | 2/2 | GetCameraYInvertValue, GetOnboardingCompleted, InFullScreen, InStudioMode, SetCameraYInvertVisible, SetGamepadCameraSensitivityVisible, SetOnboardingCompleted, FullscreenChanged, StudioModeChanged |  |
-| UserInputService | 13/16 | 18/24 | 16/26 | GamepadSupports, GetConnectedGamepads, GetFocusedTextBox, GetGamepadConnected, GetGamepadState, GetKeysPressed, GetLastInputType, GetMouseButtonsPressed, GetMouseDelta, GetMouseLocation, GetNavigationGamepads, GetStringForKeyCode, GetSupportedGamepadKeyCodes, IsGamepadButtonDown, IsKeyDown, IsMouseButtonPressed, IsNavigationGamepad, SetNavigationGamepad, GamepadConnected, GamepadDisconnected, InputBegan, InputChanged, InputEnded, JumpRequest, LastInputTypeChanged, PointerAction, TextBoxFocusReleased, TextBoxFocused, TouchEnded, TouchMoved, TouchStarted, TouchTap, WindowFocusReleased, WindowFocused | CreateVirtualInput, GetDeviceAcceleration, GetDeviceGravity, GetDeviceRotation, GetImageForKeyCode, RecenterUserHeadCFrame, DeviceAccelerationChanged, DeviceGravityChanged, DeviceRotationChanged, TouchDrag, TouchLongPress, TouchPan, TouchPinch, TouchRotate, TouchSwipe, TouchTapInWorld |
+| UserInputService | 13/16 | 24/24 | 26/26 | CreateVirtualInput, GamepadSupports, GetConnectedGamepads, GetDeviceAcceleration, GetDeviceGravity, GetDeviceRotation, GetFocusedTextBox, GetGamepadConnected, GetGamepadState, GetImageForKeyCode, GetKeysPressed, GetLastInputType, GetMouseButtonsPressed, GetMouseDelta, GetMouseLocation, GetNavigationGamepads, GetStringForKeyCode, GetSupportedGamepadKeyCodes, IsGamepadButtonDown, IsKeyDown, IsMouseButtonPressed, IsNavigationGamepad, RecenterUserHeadCFrame, SetNavigationGamepad, DeviceAccelerationChanged, DeviceGravityChanged, DeviceRotationChanged, GamepadConnected, GamepadDisconnected, InputBegan, InputChanged, InputEnded, JumpRequest, LastInputTypeChanged, PointerAction, TextBoxFocusReleased, TextBoxFocused, TouchDrag, TouchEnded, TouchLongPress, TouchMoved, TouchPan, TouchPinch, TouchRotate, TouchStarted, TouchSwipe, TouchTap, TouchTapInWorld, WindowFocusReleased, WindowFocused |  |
 | UserService | - | 2/2 | - | GetUserFromGlobalUserIdAsync, GetUserInfosByUserIdsAsync |  |
-| VRService | 7/8 | 0/6 | 0/4 |  | GetTouchpadMode, GetUserCFrame, GetUserCFrameEnabled, RecenterUserHeadCFrame, RequestNavigation, SetTouchpadMode, NavigationRequested, TouchpadModeChanged, UserCFrameChanged, UserCFrameEnabled |
+| VRService | 7/8 | 6/6 | 4/4 | GetTouchpadMode, GetUserCFrame, GetUserCFrameEnabled, RecenterUserHeadCFrame, RequestNavigation, SetTouchpadMode, NavigationRequested, TouchpadModeChanged, UserCFrameChanged, UserCFrameEnabled |  |
 | BinaryStringValue | - | - | 1/1 | Changed |  |
 | BoolValue | 1/1 | - | 1/1 | Changed |  |
 | BrickColorValue | 1/1 | - | 1/1 | Changed |  |
@@ -413,13 +421,14 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | Vector3Value | 1/1 | - | 1/1 | Changed |  |
 | ValueCurve | 2/2 | 0/8 | - |  | GetKeyAtIndex, GetKeyIndicesAtTime, GetKeys, GetValueAtTime, InsertKey, InsertKeyValue, RemoveKeyAtIndex, SetKeys |
 | VideoDeviceInput | 3/4 | - | - |  |  |
-| VideoPlayer | 9/9 | 0/7 | 0/4 |  | GetConnectedWires, GetInputPins, GetOutputPins, Pause, Play, Unload, LoadAsync, DidEnd, DidLoop, PlayFailed, WiringChanged |
+| VideoPlayer | 9/9 | 7/7 | 4/4 | GetConnectedWires, GetInputPins, GetOutputPins, Pause, Play, Unload, LoadAsync, DidEnd, DidLoop, PlayFailed, WiringChanged |  |
+| VideoService | - | 1/1 | - | CreateVideoSamplerAsync |  |
 | VoiceChatService | 3/3 | 2/2 | - | GetChatGroupsAsync, IsVoiceEnabledForUserIdAsync |  |
 | WeldConstraint | 2/4 | - | - |  |  |
 | Wire | 3/5 | - | - |  |  |
 | WrapTextureTransfer | 3/3 | 0/1 | - |  | PrepareProjectionMeshDataAsync |
 
-Nothing there yet, 145 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, AnalyticsService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AvatarCreationService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, BasePlayerGui, PlayerGui, WrapDeformer, WrapTarget, CaptureService, CommerceService, ConfigService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DebuggerBreakpoint, Dragger, EncodingService, ExperienceNotificationService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HapticService, HttpRbxApiService, ImportSession, InputObject, InsertService, DynamicRotate, LanguageService, LogService, MLService, MatchmakingService, MaterialService, MemoryStoreDistributedCounter, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, PatchMapping, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptDebugger, ScriptService, SerializationService, GlobalSettings, UserSettings, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleLink, Teams, TeleportAsyncResult, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, Vector3Curve, VideoCaptureService, VideoService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.
+Nothing there yet, 136 classes: AppHandle, Capture, VideoCapture, ConfigSnapshot, EditableImage, EditableMesh, ExecutedRemoteCommand, FeatureMatchingSession, FeatureSearchParams, AdPortal, AdService, KeyframeSequence, AnimationClipProvider, AnimationRigData, AnimationTrack, AssetPatchSettings, AvatarCreationService, BaseCoreGuiConfiguration, CapturesViewConfiguration, PlayerListConfiguration, SelfViewConfiguration, BaseImportData, AnimationImportData, GroupImportData, MaterialImportData, MeshImportData, RootImportData, PlayerGui, WrapDeformer, WrapTarget, CaptureService, ControlState, Controller, CoreGuiConfiguration, CustomLog, DebuggerBreakpoint, Dragger, EncodingService, ExplorerServiceVisibilityService, Feature, FeatureMatchingService, GeneratedFolder, GenerationService, GeometryService, PluginGui, DockWidgetPluginGui, InstanceAdornment, PVAdornment, PartAdornment, ArcHandles, SelectionLasso, HttpRbxApiService, ImportSession, InputObject, DynamicRotate, LanguageService, LogService, MLService, MaterialService, MemoryStoreDistributedCounter, MicroProfilerService, ModerationService, Mouse, NetworkMarker, NetworkClient, NetworkServer, NetworkReplicator, NotificationService, TrussPart, Actor, PackageLink, PatchMapping, PlaceSettings, PlayerScripts, PlayerViewService, Plugin, PluginDragEvent, PluginMenu, PluginToolbarButton, QueueService, RTAnimationTracker, RecommendationService, ReflectionService, RemoteCommandService, RomarkService, RuntimeContentService, SceneAnalysisService, ScreenshotHud, SyncScriptBuilder, ScriptDebugger, ScriptService, SerializationService, GlobalSettings, UserSettings, ChannelSelectorSoundEffect, StandardQueue, Studio, StudioTestService, StyleLink, Teams, TeleportAsyncResult, TestCoordinatorService, BubbleChatConfiguration, ChannelTabsConfiguration, ChatInputBarConfiguration, ChatWindowConfiguration, TextChatMessage, ChatWindowMessageProperties, TextFilterResult, TextFilterTranslatedResult, TextSource, TrackerLodController, Translator, Tween, UniqueIdLookupService, Vector3Curve, VideoCaptureService, VoiceChatInternal, WebSocketClient, WebSocketService, Logger, MLSession, ParticipantHandle, TerrainIterateOperation, TerrainModifyOperation, TerrainReadOperation, TerrainWriteOperation, TestCase, TestExecutionContext, TestFailure, TestResult, TestRunResult, TestSuite, VideoSampler, VirtualInput, WebStreamClient.
 
 ## Plugins by class
 
