@@ -46,6 +46,7 @@ fn a_rounded_stroked_shaded_element_draws_through_the_pipeline() {
             on_text: false,
             thickness: 3.0,
             scaled: false,
+            gradient: None,
         }],
         shadows: Vec::new(),
         gradient: Some(GuiGradient {

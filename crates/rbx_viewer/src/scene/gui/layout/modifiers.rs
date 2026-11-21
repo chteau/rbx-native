@@ -8,7 +8,7 @@ use super::super::plan::{
 };
 
 /// A `UIStroke` as a band of signed distances from the element's edge.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct StrokePx {
     pub(crate) color: [f32; 3],
     pub(crate) alpha: f32,
@@ -25,6 +25,8 @@ pub(crate) struct StrokePx {
     /// renderer knows.
     pub(crate) thickness: f32,
     pub(crate) scaled: bool,
+    /// The stroke's own `UIGradient`, laid over the parent's box.
+    pub(crate) gradient: Option<GradientPx>,
 }
 
 /// A `UIShadow` as the box it fills, relative to the element's own.
@@ -111,6 +113,7 @@ pub(super) fn stroke(stroke: &Stroke, size: [f32; 2]) -> StrokePx {
         on_text: stroke.on_text,
         thickness: stroke.thickness,
         scaled: stroke.scaled,
+        gradient: stroke.gradient.as_ref().map(|g| gradient(g, size)),
     }
 }
 

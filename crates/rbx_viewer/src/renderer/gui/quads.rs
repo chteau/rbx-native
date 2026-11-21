@@ -207,7 +207,10 @@ fn build_once(
                     color: stroke.color,
                     alpha: stroke.alpha,
                     band: stroke.band,
-                    gradient: None,
+                    gradient: stroke
+                        .gradient
+                        .as_ref()
+                        .map(|gradient| (rows.row(gradient), gradient)),
                 };
                 let shape = Shape {
                     join: stroke.join,

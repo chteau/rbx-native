@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::modifiers;
 use super::props::{alpha, color, enum_of, flag, float, integer, udim};
+use super::{gradient, modifiers, Gradient};
 use crate::scene::gui::style::Styled;
 
 const CLASS: &str = "UIStroke";
@@ -29,7 +29,7 @@ pub(in crate::scene::gui) enum StrokePosition {
     Inner,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(in crate::scene::gui) struct Stroke {
     pub(in crate::scene::gui) color: [f32; 3],
     pub(in crate::scene::gui) alpha: f32,
@@ -46,6 +46,10 @@ pub(in crate::scene::gui) struct Stroke {
     /// class parent left in `ApplyStrokeMode.Contextual`. Glyph outlines are
     /// the text renderer's to draw; the box stroke ignores such a node.
     pub(in crate::scene::gui) on_text: bool,
+    /// A `UIGradient` under the stroke itself, which colours and fades the
+    /// band across the parent's box (the real client's look: a stroke with
+    /// a transparency ramp fades out along it rather than staying solid).
+    pub(in crate::scene::gui) gradient: Option<Gradient>,
 }
 
 /// `Enum.ApplyStrokeMode.Border`; `Contextual` (the default) is 0.
@@ -76,7 +80,9 @@ pub(super) fn read(
         .filter(|instance| flag(styles.properties_of(instance), "Enabled", true))
         .map(|instance| {
             let properties = styles.properties_of(instance);
-            (integer(properties, "ZIndex", 1), stroke(properties, text))
+            let mut stroke = stroke(properties, text);
+            stroke.gradient = gradient::read(dom, database, styles, instance.children());
+            (integer(properties, "ZIndex", 1), stroke)
         })
         .collect();
     strokes.sort_by_key(|(z_index, _)| *z_index);
@@ -101,5 +107,6 @@ fn stroke(properties: &BTreeMap<String, Variant>, text: bool) -> Stroke {
             _ => Join::Round,
         },
         on_text: text && enum_of(properties, "ApplyStrokeMode", 0) != APPLY_BORDER,
+        gradient: None,
     }
 }

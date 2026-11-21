@@ -142,7 +142,7 @@ fn a_stroke_defaults_to_an_opaque_black_pixel_outside_the_edge() {
     let frame = boxed(&mut dom, gui);
     dom.new_instance("UIStroke", "UIStroke", Some(frame));
 
-    let stroke = only(&dom).strokes[0];
+    let stroke = only(&dom).strokes[0].clone();
 
     assert_eq!(stroke.color, [0.0; 3]);
     assert_eq!(stroke.alpha, 1.0);
@@ -163,7 +163,7 @@ fn a_stroke_reads_its_colour_thickness_transparency_and_join() {
     dom.set_property(stroke, "LineJoinMode", Variant::Enum(2))
         .unwrap();
 
-    let stroke = only(&dom).strokes[0];
+    let stroke = only(&dom).strokes[0].clone();
 
     assert_eq!(stroke.color, [1.0; 3]);
     assert_eq!(stroke.alpha, 0.75);
@@ -443,4 +443,20 @@ fn a_corner_with_no_radius_set_rounds_by_eight_pixels() {
     dom.new_instance("UICorner", "UICorner", Some(frame));
 
     assert_eq!(only(&dom).corner_radii, [8.0; 4]);
+}
+
+#[test]
+fn a_gradient_under_a_stroke_shades_the_stroke_not_the_frame() {
+    let (mut dom, gui) = screen_gui();
+    let frame = boxed(&mut dom, gui);
+    let stroke = stroke(&mut dom, frame, 4.0);
+    gradient(&mut dom, stroke, 90.0);
+
+    let element = only(&dom);
+
+    assert!(element.gradient.is_none());
+    let shade = element.strokes[0].gradient.as_ref().unwrap();
+    assert_eq!(shade.kind, GradientKind::Linear);
+    // Rotation 90: the ramp runs down the frame's 100 px height.
+    assert!((shade.axis[1] - 1.0 / 100.0).abs() < 1e-4);
 }

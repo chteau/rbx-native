@@ -44,6 +44,7 @@ pub(super) fn mark_overflows(elements: &mut [GuiElement], fonts: &mut Typesetter
             on_text: false,
             thickness: -MARK_BAND[0],
             scaled: false,
+            gradient: None,
         });
         if !marked.contains(&element.referent) {
             marked.push(element.referent);
