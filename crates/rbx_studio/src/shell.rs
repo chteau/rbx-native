@@ -314,6 +314,9 @@ pub(crate) struct Shell {
     require_graph_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Controller Emulator, while open, see `controller_emulator`.
     controller_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// What the Controller Emulator's pad reports while its window is
+    /// open, for Play (local)'s client.
+    controller_pad: std::rc::Rc<std::cell::Cell<Option<rbx_play::gamepad::PadState>>>,
     /// Version History, while open, see `roblox_publish::history`.
     version_history: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Game Settings, while open, see `game_settings`.
@@ -959,6 +962,7 @@ impl Shell {
             shortcuts_window: None,
             require_graph_window: None,
             controller_window: None,
+            controller_pad: Default::default(),
             version_history: None,
             game_settings: None,
             data_stores: None,

@@ -44,6 +44,8 @@ const FLATPAK_INPUT: &str = "--device=input";
 
 pub(crate) struct ControllerEmulator {
     shell: Entity<Shell>,
+    /// The pad as Play (local) reads it (`Shell::controller_pad`).
+    local_pad: std::rc::Rc<std::cell::Cell<Option<PadState>>>,
     saved: Saved,
     bindings: Bindings,
     /// Keys held down in this window that a binding uses.
@@ -100,6 +102,13 @@ impl Shell {
     }
 }
 
+/// Closing the window unplugs the pad from Play (local) too.
+impl Drop for ControllerEmulator {
+    fn drop(&mut self) {
+        self.local_pad.set(None);
+    }
+}
+
 impl ControllerEmulator {
     fn open(shell: Entity<Shell>, cx: &mut App) -> Option<WindowHandle<Root>> {
         let options = WindowOptions {
@@ -134,8 +143,10 @@ impl ControllerEmulator {
         focus.focus(window, cx);
         // Play starting and stopping is what plugs the pad in and out.
         let subscriptions = vec![cx.observe(&shell, |this, _, cx| this.sync_connection(cx))];
+        let local_pad = shell.read(cx).controller_pad.clone();
         let mut this = ControllerEmulator {
             shell,
+            local_pad,
             saved,
             bindings,
             held: HashSet::new(),
@@ -149,6 +160,7 @@ impl ControllerEmulator {
             _subscriptions: subscriptions,
         };
         this.sync_connection(cx);
+        this.local_pad.set(Some(this.output()));
         this
     }
 
@@ -205,6 +217,7 @@ impl ControllerEmulator {
     #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
     fn push(&mut self, cx: &App) {
         let output = self.output();
+        self.local_pad.set(Some(output));
         if let Some(pad) = &mut self.pad {
             // This window holds the keyboard while it is used, and the client
             // ignores a pad while it lacks the focus (`Embedded::lend_focus`).

@@ -71,6 +71,8 @@ struct Running {
     player: Option<avatars::Player>,
     /// `rbx_dom::editable::generation` as of the last frame shown.
     editables: u64,
+    /// The Controller Emulator's pad as the viewed client last heard it.
+    pad: Option<rbx_play::gamepad::PadState>,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -100,6 +102,74 @@ impl Default for LocalRun {
             arriving: None,
         }
     }
+}
+
+/// What the Controller Emulator's pad going from `old` to `new` is to a
+/// client: Gamepad1 plugged in or out, its buttons, sticks and triggers.
+fn pad_inputs(
+    old: Option<rbx_play::gamepad::PadState>,
+    new: Option<rbx_play::gamepad::PadState>,
+) -> Vec<rbx_sim::Input> {
+    use rbx_play::gamepad::{Button, Side};
+    use rbx_sim::Input;
+    let mut out = Vec::new();
+    if old.is_some() != new.is_some() {
+        out.push(Input::Gamepad {
+            pad: 1,
+            connected: new.is_some(),
+        });
+    }
+    let Some(new) = new else {
+        return out;
+    };
+    let before = old.unwrap_or_default();
+    for button in Button::ALL {
+        let code = match button {
+            Button::South => "ButtonA",
+            Button::East => "ButtonB",
+            Button::West => "ButtonX",
+            Button::North => "ButtonY",
+            Button::LeftBumper => "ButtonL1",
+            Button::RightBumper => "ButtonR1",
+            Button::Select => "ButtonSelect",
+            Button::Start => "ButtonStart",
+            Button::LeftStick => "ButtonL3",
+            Button::RightStick => "ButtonR3",
+            Button::DpadUp => "DPadUp",
+            Button::DpadDown => "DPadDown",
+            Button::DpadLeft => "DPadLeft",
+            Button::DpadRight => "DPadRight",
+            Button::Home => continue,
+        };
+        if new.pressed(button) != before.pressed(button) {
+            out.push(Input::GamepadButton {
+                pad: 1,
+                code: code.into(),
+                down: new.pressed(button),
+            });
+        }
+    }
+    for (side, stick, trigger) in [
+        (Side::Left, "Thumbstick1", "ButtonL2"),
+        (Side::Right, "Thumbstick2", "ButtonR2"),
+    ] {
+        if new.stick(side) != before.stick(side) {
+            let (x, y) = new.stick(side);
+            out.push(Input::GamepadAxis {
+                pad: 1,
+                code: stick.into(),
+                position: [x, y, 0.0],
+            });
+        }
+        if new.trigger(side) != before.trigger(side) {
+            out.push(Input::GamepadAxis {
+                pad: 1,
+                code: trigger.into(),
+                position: [0.0, 0.0, new.trigger(side)],
+            });
+        }
+    }
+    out
 }
 
 /// The most local players Play (local) runs.
@@ -618,6 +688,7 @@ impl Shell {
             prompts: std::collections::VecDeque::new(),
             editables: rbx_dom::editable::generation(),
             player: kept,
+            pad: None,
         });
         if playing {
             self.viewport
@@ -912,6 +983,13 @@ impl Shell {
                 for input in inputs.unwrap_or_default() {
                     run.session.input(i, input);
                 }
+                // The Controller Emulator is the client's gamepad while
+                // its window is open.
+                let pad = self.controller_pad.get();
+                for input in pad_inputs(run.pad, pad) {
+                    run.session.input(i, input);
+                }
+                run.pad = pad;
             }
         }
         let viewed_player = match run.view {
