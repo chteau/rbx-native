@@ -18,10 +18,12 @@ use crate::game::LuaGame;
 use crate::not_creatable;
 use crate::property;
 
-#[derive(Clone)]
 pub(crate) struct LuaInstance {
     referent: Ref,
     ctx: Ctx,
+    /// This is the interned userdata (see [`InstanceRef`]), whose collection
+    /// means no script holds the instance.
+    held: bool,
 }
 
 /// What [`LuaInstance::new`] hands back. Converting it into Lua yields
@@ -51,9 +53,31 @@ impl IntoLua for InstanceRef {
         if let Value::UserData(_) = found {
             return Ok(found);
         }
-        let value = Value::UserData(lua.create_userdata(self.0)?);
+        let mut instance = self.0;
+        instance.ctx.hold(instance.referent);
+        instance.held = true;
+        let value = Value::UserData(lua.create_userdata(instance)?);
         cache.set(key, value.clone())?;
         Ok(value)
+    }
+}
+
+/// A copy is not the interned userdata, so dropping it lets nothing go.
+impl Clone for LuaInstance {
+    fn clone(&self) -> Self {
+        LuaInstance {
+            referent: self.referent,
+            ctx: self.ctx.clone(),
+            held: false,
+        }
+    }
+}
+
+impl Drop for LuaInstance {
+    fn drop(&mut self) {
+        if self.held {
+            self.ctx.let_go(self.referent);
+        }
     }
 }
 
@@ -62,7 +86,11 @@ impl LuaInstance {
     // route into Lua has to go through the one cache (see `InstanceRef`).
     #[allow(clippy::new_ret_no_self)]
     pub(crate) fn new(referent: Ref, ctx: Ctx) -> InstanceRef {
-        InstanceRef(LuaInstance { referent, ctx })
+        InstanceRef(LuaInstance {
+            referent,
+            ctx,
+            held: false,
+        })
     }
 
     fn find_child(

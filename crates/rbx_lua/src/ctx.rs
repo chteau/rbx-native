@@ -118,9 +118,25 @@ impl Ctx {
         while let Some(r) = stack.pop() {
             if let Some(i) = dom.get(r) {
                 tombstones.insert(r, (i.class().to_string(), i.name().to_string()));
-                remains.keep(i);
+                if remains.held.contains(&r) {
+                    remains.kept.insert(r, i.clone());
+                }
                 stack.extend_from_slice(i.children());
             }
+        }
+    }
+
+    /// A script now holds `referent` (its one userdata was made).
+    pub(crate) fn hold(&self, referent: Ref) {
+        self.remains.borrow_mut().held.insert(referent);
+    }
+
+    /// No script holds `referent` any more (its userdata was collected):
+    /// what it was, if it was destroyed, can go.
+    pub(crate) fn let_go(&self, referent: Ref) {
+        if let Ok(mut remains) = self.remains.try_borrow_mut() {
+            remains.held.remove(&referent);
+            remains.kept.remove(&referent);
         }
     }
 
@@ -152,34 +168,18 @@ impl Ctx {
     }
 }
 
-/// Destroyed instances as they were, the newest `Remains::CAP` of them:
-/// Roblox keeps a destroyed instance's properties readable for as long as a
-/// script holds it, which here is bounded so a game that destroys parts
-/// all session long does not grow without end.
+/// Destroyed instances as they were, for as long as a script holds them,
+/// as Roblox keeps them readable: kept when destroyed while held, let go
+/// when the script's handle is collected, so a game that destroys parts
+/// all session long keeps only what it still refers to.
 #[derive(Default)]
 pub(crate) struct Remains {
     kept: std::collections::HashMap<Ref, rbx_dom::Instance>,
-    order: std::collections::VecDeque<Ref>,
+    /// Instances a script holds a handle to.
+    held: std::collections::HashSet<Ref>,
 }
 
 impl Remains {
-    const CAP: usize = 16_384;
-
-    fn keep(&mut self, instance: &rbx_dom::Instance) {
-        if self
-            .kept
-            .insert(instance.referent(), instance.clone())
-            .is_none()
-        {
-            self.order.push_back(instance.referent());
-        }
-        while self.order.len() > Self::CAP {
-            if let Some(old) = self.order.pop_front() {
-                self.kept.remove(&old);
-            }
-        }
-    }
-
     pub(crate) fn get(&self, referent: Ref) -> Option<&rbx_dom::Instance> {
         self.kept.get(&referent)
     }

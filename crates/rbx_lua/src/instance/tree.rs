@@ -104,8 +104,33 @@ pub(crate) fn find_ancestor_where(
     None
 }
 
-/// Copies a subtree under fresh referents, the way `Instance:Clone` does.
+/// Copies a subtree under fresh referents, the way `Instance:Clone` does: a
+/// reference to an instance inside the copied subtree (a joint's `Part0`, a
+/// model's `PrimaryPart`) points at its copy; one outside stays as it was.
 pub(crate) fn deep_clone(dom: &mut WeakDom, source: Ref, parent: Option<Ref>) -> Option<Ref> {
+    let mut copies = std::collections::HashMap::new();
+    let copy = copy_tree(dom, source, parent, &mut copies)?;
+    for new in copies.values() {
+        let Some(instance) = dom.get_mut(*new) else {
+            continue;
+        };
+        for value in instance.properties_mut().values_mut() {
+            if let rbx_dom::Variant::Ref(target) = value {
+                if let Some(moved) = copies.get(target) {
+                    *target = *moved;
+                }
+            }
+        }
+    }
+    Some(copy)
+}
+
+fn copy_tree(
+    dom: &mut WeakDom,
+    source: Ref,
+    parent: Option<Ref>,
+    copies: &mut std::collections::HashMap<Ref, Ref>,
+) -> Option<Ref> {
     let (class, name, properties, children) = {
         let instance = dom.get(source)?;
         (
@@ -123,8 +148,9 @@ pub(crate) fn deep_clone(dom: &mut WeakDom, source: Ref, parent: Option<Ref>) ->
     if let Some(instance) = dom.get_mut(copy) {
         *instance.properties_mut() = properties;
     }
+    copies.insert(source, copy);
     for child in children {
-        deep_clone(dom, child, Some(copy));
+        copy_tree(dom, child, Some(copy), copies);
     }
     Some(copy)
 }
