@@ -69,6 +69,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Adds Total and Physics to the Viewport dock's Performance view and ranks the costliest models with a breakdown of what each costs: triangles, texture memory, instances, physics, shadows and overdraw. The weights are an estimate, not Roblox's own costs.",
     },
     Feature {
+        id: LUAU_EXPORTS_BETA_ID,
+        name: "Luau Exports and Cyclic Requires",
+        description: "export local, export const and export function in a ModuleScript, like Studio's beta of the same name: the module returns a table of what it exports, and two modules that export can require each other. Mixing export with a top-level return is a compile error there too.",
+    },
+    Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
         name: "Module require graph",
         description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
@@ -169,12 +174,17 @@ pub(crate) fn features() -> Vec<Feature> {
     all
 }
 
+/// Studio's "Luau Exports and Cyclic Requires" beta, see
+/// `rbx_lua::set_luau_exports`.
+pub(crate) const LUAU_EXPORTS_BETA_ID: &str = "luau-exports";
+
 /// Reads `beta.json` once, at launch; later calls do nothing. Before it
 /// runs, every feature is off.
 pub(crate) fn init() {
     let choices = stored_path()
         .map(|path| Choices::load(&path))
         .unwrap_or_default();
+    rbx_lua::set_luau_exports(choices.is_on(LUAU_EXPORTS_BETA_ID));
     let _ = LAUNCH.set(choices);
 }
 
