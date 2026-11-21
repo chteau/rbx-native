@@ -104,10 +104,13 @@ const TRACK_PROPERTIES: &[&str] = &[
 
 pub(crate) fn is_method(class: &str, key: &str) -> bool {
     match class {
-        "Animator" => ANIMATOR_METHODS.contains(&key),
+        "Animator" => ANIMATOR_METHODS.contains(&key) || key == "GetTrackByAnimationId",
         "AnimationTrack" => TRACK_METHODS.contains(&key),
         "Humanoid" | "AnimationController" => ANIMATOR_METHODS.contains(&key),
-        "KeyframeSequenceProvider" => key == "RegisterKeyframeSequence",
+        "KeyframeSequenceProvider" => {
+            matches!(key, "RegisterKeyframeSequence" | "GetKeyframeSequenceAsync#fetch")
+        }
+        "AnimationClipProvider" => key == "GetAnimationClipAsync#fetch",
         _ => false,
     }
 }
@@ -141,6 +144,11 @@ fn number(args: &[Arg], i: usize) -> Option<f64> {
 }
 
 fn load_clip(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Clip, String> {
+    clip_from_model(&fetch(id, fetcher)?, &id.to_string()).map_err(|e| e.to_string())
+}
+
+/// An asset's bytes: the asset cache's, else the fetcher's, kept.
+fn fetch(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Vec<u8>, String> {
     let cache = AssetCache::new(None).ok();
     let bytes = match cache.as_ref().and_then(|c| c.get_id(id)) {
         Some(bytes) => bytes,
@@ -154,7 +162,7 @@ fn load_clip(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Clip, St
             bytes
         }
     };
-    clip_from_model(&bytes, &id.to_string()).map_err(|e| e.to_string())
+    Ok(bytes)
 }
 
 impl Animations {
@@ -282,6 +290,47 @@ impl Animations {
                     .collect();
                 playing.sort();
                 Ok(CallReply::value(Arg::Instances(playing)))
+            }
+            // The playing track of that animation, nil when none plays
+            // (AnimationApi `an_by_id`: a loaded, stopped one isn't found).
+            ("Animator", "GetTrackByAnimationId") => {
+                let asset = match args.first() {
+                    Some(Arg::String(text)) => content_id(text),
+                    _ => None,
+                };
+                let found = self
+                    .tracks
+                    .iter()
+                    .filter(|(_, t)| t.animator == referent && asset.is_some() && t.asset == asset)
+                    .filter(|(r, _)| self.inner(**r).is_some_and(|t| t.playing))
+                    .map(|(r, _)| *r)
+                    .min();
+                Ok(CallReply::value(found.map_or(Arg::Nil, Arg::Instance)))
+            }
+            // The asset's own KeyframeSequence or CurveAnimation, unparented;
+            // `animation.luau` words the failure.
+            (_, "GetKeyframeSequenceAsync#fetch" | "GetAnimationClipAsync#fetch") => {
+                let id = match args.first() {
+                    Some(Arg::String(text)) => content_id(text),
+                    Some(Arg::Number(n)) => Some(*n as u64),
+                    _ => None,
+                }
+                .ok_or("no asset")?;
+                let bytes = fetch(id, self.fetcher.clone())?;
+                let model = crate::load::parse_place(&bytes)?;
+                let wanted: &[&str] = if method.starts_with("GetKeyframe") {
+                    &["KeyframeSequence"]
+                } else {
+                    &["KeyframeSequence", "CurveAnimation"]
+                };
+                let root = model
+                    .root_refs()
+                    .iter()
+                    .copied()
+                    .find(|r| model.get(*r).is_some_and(|i| wanted.contains(&i.class())))
+                    .ok_or("not an animation")?;
+                let copy = crate::players::graft(dom, &model, root, None);
+                Ok(CallReply::value(Arg::Instance(copy)))
             }
             ("KeyframeSequenceProvider", "RegisterKeyframeSequence") => {
                 // A running server refuses it (AnimationTrack `register`).

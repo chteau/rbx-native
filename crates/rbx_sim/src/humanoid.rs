@@ -182,6 +182,8 @@ pub struct Character {
     /// How fast AutoRotate is turning it, rad/s.
     spin: f64,
     move_dir: [f64; 3],
+    /// The floor's velocity under the root, zero with no floor.
+    floor_velocity: [f64; 3],
     walk_to: Option<WalkTo>,
     running: f64,
     had_neck: bool,
@@ -543,6 +545,7 @@ impl Humanoids {
                 yaw: yaw_of(&root_cf),
                 spin: 0.0,
                 move_dir: [0.0; 3],
+                floor_velocity: [0.0; 3],
                 walk_to: None,
                 running: 0.0,
                 had_neck,
@@ -816,6 +819,9 @@ impl Humanoids {
                 .unwrap_or_else(|| enum_value(dom, db, f.part, "Material"))
         });
         set(dom, db, id, "FloorMaterial", Variant::Enum(material));
+        if let Some(c) = self.characters.get_mut(&id) {
+            c.floor_velocity = floor.map_or([0.0; 3], |f| f.velocity);
+        }
         // In water once the root is under the surface (Swim: in at beat 13
         // of a drop from 2 above it).
         let water = if terrain.has_water() {
@@ -1131,6 +1137,14 @@ impl Humanoids {
     /// A part touched another: a humanoid's part on an enabled, empty seat
     /// sits it there (HumanoidSeat `touch_sit`, `disabled_sit`).
     pub fn touched(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase, a: Ref, b: Ref) {
+        // `Humanoid.Touched(touchingPart, humanoidPart)` for a body part.
+        for (mine, other) in [(a, b), (b, a)] {
+            let model = dom.parent(mine);
+            if let Some(c) = self.characters.values().find(|c| Some(c.model) == model) {
+                let args = vec![Arg::Instance(other), Arg::Instance(mine)];
+                self.events.push(signal(c.humanoid, "Touched", args));
+            }
+        }
         for (seat, other) in [(a, b), (b, a)] {
             let Some(class) = dom.get(seat).map(|i| i.class().to_owned()) else {
                 continue;
@@ -1271,6 +1285,20 @@ impl Humanoids {
                 }
                 Ok(CallReply::default())
             }
+            // The walk it is asked for: `MoveDirection` at `WalkSpeed`.
+            "GetMoveVelocity" => {
+                let speed = number(dom, db, humanoid, "WalkSpeed");
+                let dir = self.characters.get(&humanoid).map_or([0.0; 3], |c| c.move_dir);
+                Ok(CallReply::value(vec_arg(dir.map(|d| d * speed))))
+            }
+            "GetRelativeVelocityAtFloor" => {
+                let Some(c) = self.characters.get(&humanoid) else {
+                    return Ok(CallReply::value(vec_arg([0.0; 3])));
+                };
+                let v = vector(dom, db, c.root, "AssemblyLinearVelocity");
+                let f = c.floor_velocity;
+                Ok(CallReply::value(vec_arg([v[0] - f[0], v[1] - f[1], v[2] - f[2]])))
+            }
             // Not switched on in live servers yet (NewApis
             // `collide_on_death`).
             "GetCanCollideOnDeath" => {
@@ -1384,4 +1412,8 @@ pub(crate) fn inverse(c: &CFrameData) -> CFrameData {
         },
         rotation: t,
     }
+}
+
+fn vec_arg(v: [f64; 3]) -> Arg {
+    Arg::Vector3(v.map(|x| x as f32))
 }
