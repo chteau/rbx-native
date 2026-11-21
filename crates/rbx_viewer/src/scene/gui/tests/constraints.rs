@@ -154,6 +154,28 @@ fn ui_scale_multiplies_the_size_and_so_every_descendant_with_it() {
     assert_eq!(rects[1].height, 50.0);
 }
 
+#[test]
+fn a_collapsed_ui_scale_hides_offset_sized_descendants() {
+    let (mut dom, gui) = screen_gui();
+    let parent = frame(
+        &mut dom,
+        gui,
+        udim2(0.5, 0, 0.5, 0),
+        udim2(0.5, 0, 0.5, 0),
+    );
+    let scale = component(&mut dom, parent, "UIScale");
+    dom.set_property(scale, "Scale", Variant::Float32(1e-7))
+        .unwrap();
+    frame(
+        &mut dom,
+        parent,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 300, 0.0, 40),
+    );
+
+    assert_eq!(rects(&dom).len(), 1);
+}
+
 /// One frame with an aspect ratio constraint, sized `size` against the
 /// viewport; returns its resolved rect.
 fn with_aspect(size: Variant, ratio: f32, aspect_type: u32, dominant: u32) -> Rect {

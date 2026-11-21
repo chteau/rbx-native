@@ -263,7 +263,11 @@ pub(super) fn read(dom: &WeakDom, database: &ReflectionDatabase, lighting: Ref) 
         // multi-instance rule explicitly: "Only one BlurEffect can be applied
         // at once (the instance with the greatest Size takes priority)",
         // create.roblox.com/docs, BlurEffect.Size. Not "first enabled".
-        blur: strongest_blur(dom, database, lighting).map(blur),
+        // Size 0 is no blur at all (a blur a script tweens in from 0 sits
+        // there enabled until it runs).
+        blur: strongest_blur(dom, database, lighting)
+            .map(blur)
+            .filter(|blur| blur.size > 0.0),
         color_correction: enabled(dom, lighting, |instance| {
             database.is_subclass_of(instance.class(), COLOR_CORRECTION_CLASS)
         })
