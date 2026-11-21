@@ -17,6 +17,15 @@
 //!   as far as `MaxForce`/`MaxTorque` allow; `VectorForce`/`Torque` push
 //!   every substep.
 //!
+//! - The legacy body movers act on their parent part. `BodyForce` and
+//!   `BodyThrust` push like a `VectorForce` (world, and the part's frame at
+//!   `Location`). `BodyPosition`/`BodyGyro` are a spring `P` and damper `D`
+//!   per world axis, capped per axis by `MaxForce`/`MaxTorque` and solved
+//!   implicitly so a stiff one stays stable at 240 Hz; gravity still pulls
+//!   (a `BodyPosition` sags by its weight over `P`, as the docs describe).
+//!   `BodyVelocity`/`BodyAngularVelocity` reach their target within a
+//!   substep as far as the per-axis caps allow.
+//!
 //! Parameters are read again from the DOM every frame
 //! ([`World::refresh_constraints`]), so a script changing `TargetAngle` or
 //! `VectorVelocity` takes effect on the next step without a rebuild.
@@ -110,6 +119,26 @@ enum Drive {
         torque: Vector,
         relative: Relative,
     },
+    BodyPosition {
+        position: Vector,
+        max_force: Vector,
+        p: Real,
+        d: Real,
+    },
+    BodyVelocity {
+        velocity: Vector,
+        max_force: Vector,
+    },
+    BodyGyro {
+        target: Rotation,
+        max_torque: Vector,
+        p: Real,
+        d: Real,
+    },
+    BodyAngularVelocity {
+        velocity: Vector,
+        max_torque: Vector,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -121,6 +150,13 @@ pub(super) struct Constraint {
     two: bool,
     joint: Option<ImpulseJointHandle>,
     drive: Drive,
+}
+
+impl Constraint {
+    /// Whether it acts on `body`.
+    pub(super) fn holds(&self, body: RigidBodyHandle) -> bool {
+        self.ends.iter().any(|end| end.body == body)
+    }
 }
 
 fn prop<'a>(
@@ -159,6 +195,17 @@ fn enum_name(db: &ReflectionDatabase, instance: &Instance, name: &str, enum_: &s
         Some(Variant::Enum(raw)) => db.enum_name(enum_, *raw).unwrap_or_default().to_owned(),
         _ => String::new(),
     }
+}
+
+/// A per-axis cap: `inf` (`math.huge`) as Rapier's largest force.
+fn caps(db: &ReflectionDatabase, instance: &Instance, name: &str) -> Vector {
+    let v = vector(db, instance, name);
+    Vector::new(cap(v.x), cap(v.y), cap(v.z))
+}
+
+/// `v` with each component within `max`'s.
+fn clamp_axes(v: Vector, max: Vector) -> Vector {
+    v.clamp(-max, max)
 }
 
 /// `inf` (`math.huge`) as Rapier's largest force.
@@ -278,6 +325,39 @@ fn read_drive(db: &ReflectionDatabase, instance: &Instance) -> Option<Drive> {
             torque: vector(db, instance, "Torque"),
             relative: relative(db, instance, Relative::Attachment0),
         },
+        "BodyForce" => Drive::VectorForce {
+            force: vector(db, instance, "Force"),
+            relative: Relative::World,
+            at_center: true,
+        },
+        "BodyThrust" => Drive::VectorForce {
+            force: vector(db, instance, "Force"),
+            relative: Relative::Attachment0,
+            at_center: false,
+        },
+        "BodyPosition" => Drive::BodyPosition {
+            position: vector(db, instance, "Position"),
+            max_force: caps(db, instance, "MaxForce"),
+            p: num(db, instance, "P", 10000.0),
+            d: num(db, instance, "D", 1250.0),
+        },
+        "BodyVelocity" => Drive::BodyVelocity {
+            velocity: vector(db, instance, "Velocity"),
+            max_force: caps(db, instance, "MaxForce"),
+        },
+        "BodyGyro" => Drive::BodyGyro {
+            target: match prop(db, instance, "CFrame") {
+                Some(Variant::CFrame(cf)) => pose_of(cf).rotation,
+                _ => Rotation::IDENTITY,
+            },
+            max_torque: caps(db, instance, "MaxTorque"),
+            p: num(db, instance, "P", 3000.0),
+            d: num(db, instance, "D", 500.0),
+        },
+        "BodyAngularVelocity" => Drive::BodyAngularVelocity {
+            velocity: vector(db, instance, "AngularVelocity"),
+            max_torque: caps(db, instance, "MaxTorque"),
+        },
         _ => return None,
     })
 }
@@ -297,6 +377,19 @@ pub(crate) fn is_constraint(class: &str) -> bool {
             | "AngularVelocity"
             | "VectorForce"
             | "Torque"
+    ) || is_body_mover(class)
+}
+
+/// The legacy movers, which act on their parent part.
+fn is_body_mover(class: &str) -> bool {
+    matches!(
+        class,
+        "BodyForce"
+            | "BodyThrust"
+            | "BodyPosition"
+            | "BodyVelocity"
+            | "BodyGyro"
+            | "BodyAngularVelocity"
     )
 }
 
@@ -330,6 +423,22 @@ impl World {
         })
     }
 
+    /// A body mover's end: its parent part's body, at `BodyThrust`'s
+    /// `Location` in the part's frame.
+    fn mover_end(&self, dom: &WeakDom, db: &ReflectionDatabase, mover: Ref) -> Option<End> {
+        let instance = dom.get(mover)?;
+        let placed = self.parts.get(&dom.parent(mover)?)?;
+        let location = if instance.class() == "BodyThrust" {
+            vector(db, instance, "Location")
+        } else {
+            Vector::ZERO
+        };
+        Some(End {
+            body: self.assemblies[placed.assembly].body,
+            frame: placed.offset * Pose::from_translation(location),
+        })
+    }
+
     /// Builds every enabled constraint under the workspace whose
     /// attachments sit on simulated parts. Called at the end of a rebuild.
     pub(super) fn add_constraints(
@@ -345,9 +454,12 @@ impl World {
             let Some(drive) = read_drive(db, instance) else {
                 continue;
             };
-            let Some(end0) =
+            let end0 = if is_body_mover(instance.class()) {
+                self.mover_end(dom, db, referent)
+            } else {
                 attachment(instance, "Attachment0").and_then(|a| self.end_of(dom, db, a))
-            else {
+            };
+            let Some(end0) = end0 else {
                 continue;
             };
             let end1 = attachment(instance, "Attachment1").and_then(|a| self.end_of(dom, db, a));
@@ -692,6 +804,85 @@ impl World {
                 Drive::Torque { torque, relative } => {
                     let end = constraint.ends[0];
                     let torque = self.oriented(constraint, torque, relative);
+                    if let Some(body) = self.bodies.get_mut(end.body) {
+                        if body.is_dynamic() {
+                            body.add_torque(torque, true);
+                        }
+                    }
+                }
+                Drive::BodyPosition {
+                    position,
+                    max_force,
+                    p,
+                    d,
+                } => {
+                    let end = constraint.ends[0];
+                    let at = self.frame_of(&end).translation;
+                    let Some(body) = self.bodies.get(end.body) else {
+                        continue;
+                    };
+                    let (mass, v) = (body.mass(), body.linvel());
+                    if mass <= 0.0 {
+                        continue;
+                    }
+                    // v' = v + h (P (x - h v') - D v') / m, solved for v'.
+                    let goal =
+                        (v + (position - at) * (h * p / mass)) / (1.0 + h * (d + h * p) / mass);
+                    let force = clamp_axes((goal - v) * (mass / h), max_force);
+                    self.push(end.body, force * h, None, h);
+                }
+                Drive::BodyVelocity {
+                    velocity,
+                    max_force,
+                } => {
+                    let end = constraint.ends[0];
+                    let Some(body) = self.bodies.get(end.body) else {
+                        continue;
+                    };
+                    let mass = body.mass();
+                    let dv = velocity - body.linvel() - g * (h * body.gravity_scale());
+                    let force = clamp_axes(dv * (mass / h), max_force);
+                    self.push(end.body, force * h, None, h);
+                }
+                Drive::BodyGyro {
+                    target,
+                    max_torque,
+                    p,
+                    d,
+                } => {
+                    let end = constraint.ends[0];
+                    let current = self.frame_of(&end).rotation;
+                    let mut error = target * current.inverse();
+                    if error.w < 0.0 {
+                        error = -error;
+                    }
+                    let (axis, angle) = error.to_axis_angle();
+                    let Some(body) = self.bodies.get(end.body) else {
+                        continue;
+                    };
+                    let w = body.angvel();
+                    let inertia = body.mass_properties().effective_angular_inertia();
+                    // Per world axis, as BodyPosition, with that axis's inertia.
+                    let i =
+                        Vector::new(inertia.m11, inertia.m22, inertia.m33).max(Vector::splat(1e-9));
+                    let goal = (w + axis * angle * h * p / i) / (Vector::ONE + h * (d + h * p) / i);
+                    let torque = clamp_axes((goal - w) * i / h, max_torque);
+                    if let Some(body) = self.bodies.get_mut(end.body) {
+                        if body.is_dynamic() {
+                            body.add_torque(torque, true);
+                        }
+                    }
+                }
+                Drive::BodyAngularVelocity {
+                    velocity,
+                    max_torque,
+                } => {
+                    let end = constraint.ends[0];
+                    let Some(body) = self.bodies.get(end.body) else {
+                        continue;
+                    };
+                    let inertia = body.mass_properties().effective_angular_inertia();
+                    let torque = clamp_axes(inertia * ((velocity - body.angvel()) / h), max_torque);
                     if let Some(body) = self.bodies.get_mut(end.body) {
                         if body.is_dynamic() {
                             body.add_torque(torque, true);
