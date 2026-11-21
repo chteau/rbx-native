@@ -161,7 +161,7 @@ fn joints_holding(dom: &WeakDom, db: &ReflectionDatabase, parts: &HashSet<Ref>) 
     while let Some(at) = stack.pop() {
         let Some(i) = dom.get(at) else { continue };
         stack.extend(i.children().iter().copied());
-        if let Some((a, b)) = crate::physics::joint_parts(db, i) {
+        if let Some((a, b)) = crate::physics::joint_parts(dom, db, i) {
             if parts.contains(&a) || parts.contains(&b) {
                 found.push(at);
             }

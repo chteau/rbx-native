@@ -402,6 +402,8 @@ const MODULES: &[(&str, &str)] = &[
     ("World", include_str!("services/world.luau")),
     ("Media", include_str!("services/media.luau")),
     ("GuiObjects", include_str!("services/gui_objects.luau")),
+    ("Avatar", include_str!("services/avatar.luau")),
+    ("Animation", include_str!("services/animation.luau")),
 ];
 
 /// The module that answers `class`.
@@ -461,8 +463,27 @@ fn module_of(class: &str) -> Option<&'static str> {
         | "MatchmakingService"
         | "StandardPages"
         | "FriendPages"
-        | "AudioPages"
-        | "BanHistoryPages" => "Web",
+        | "AudioPages" => "Web",
+        "Humanoid"
+        | "HumanoidDescription"
+        | "AccessoryDescription"
+        | "AvatarCreationService"
+        | "Teams"
+        | "BanHistoryPages"
+        | "OutfitPages"
+        | "InventoryPages"
+        | "CatalogPages" => "Avatar",
+        "KeyframeSequence"
+        | "Keyframe"
+        | "Pose"
+        | "KeyframeSequenceProvider"
+        | "AnimationClipProvider"
+        | "Animator"
+        | "AnimationTrack"
+        | "HumanoidRigDescription"
+        | "DigitsRigDescription"
+        | "IKControl"
+        | "AnimationNodeDefinition" => "Animation",
         _ => return None,
     })
 }
@@ -555,6 +576,12 @@ pub(crate) fn world(
     Ok(found.then_some(value))
 }
 
+/// The module asked first for a class another module answers the rest of:
+/// the avatar members of Players, Player and AvatarEditorService.
+fn overlay_of(class: &str) -> Option<&'static str> {
+    matches!(class, "Players" | "Player" | "AvatarEditorService").then_some("Avatar")
+}
+
 /// Services only a server has.
 const SERVER_ONLY: &[&str] = &["DataStoreService", "MemoryStoreService", "MessagingService"];
 
@@ -631,6 +658,11 @@ pub(crate) fn member(
     } else {
         module_of(class)
     };
+    if let Some(first) = overlay_of(class) {
+        if let Some(value) = ask(lua, runtime, first, referent, class, key)? {
+            return Ok(Some(value));
+        }
+    }
     let Some(name) = name else {
         return Ok(None);
     };
@@ -644,6 +676,18 @@ pub(crate) fn member(
         })?;
         return Ok(Some(Value::Function(f)));
     }
+    ask(lua, runtime, name, referent, class, key)
+}
+
+/// `class.key` as module `name` answers it.
+fn ask(
+    lua: &Lua,
+    runtime: &Rc<Runtime>,
+    name: &str,
+    referent: Ref,
+    class: &str,
+    key: &str,
+) -> Result<Option<Value>> {
     let (value, found, error): (Value, bool, Option<String>) = module(lua, runtime, name)?
         .get::<Function>("member")?
         .call((class, referent.value(), key))?;

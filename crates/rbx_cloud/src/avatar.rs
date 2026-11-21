@@ -56,6 +56,8 @@ pub struct AvatarBodyColors {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Avatar {
+    /// `scale` in an outfit's details.
+    #[serde(alias = "scale")]
     pub scales: AvatarScales,
     /// "R15" or "R6".
     #[serde(rename = "playerAvatarType")]
@@ -75,7 +77,20 @@ impl Avatar {
 
 impl Client {
     pub fn avatar(&self, user_id: u64) -> Result<Avatar, CloudError> {
-        let url = format!("https://avatar.roblox.com/v1/users/{user_id}/avatar");
+        self.avatar_at(&format!(
+            "https://avatar.roblox.com/v1/users/{user_id}/avatar"
+        ))
+    }
+
+    /// A saved outfit's (or a bundle's) avatar.
+    pub fn outfit(&self, outfit_id: u64) -> Result<Avatar, CloudError> {
+        self.avatar_at(&format!(
+            "https://avatar.roblox.com/v1/outfits/{outfit_id}/details"
+        ))
+    }
+
+    fn avatar_at(&self, url: &str) -> Result<Avatar, CloudError> {
+        let url = url.to_owned();
         let response = self.get_raw(&url, false, true)?;
         if !(200..300).contains(&response.status) {
             return Err(error::error_for_status(

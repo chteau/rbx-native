@@ -677,6 +677,16 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/ModelMoveTo.luau"),
         tolerance: &[("*", 0.05)],
     },
+    Test {
+        name: "AnimationApi",
+        source: include_str!("../conformance/tests/AnimationApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "AvatarApi",
+        source: include_str!("../conformance/tests/AvatarApi.luau"),
+        tolerance: &[],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the

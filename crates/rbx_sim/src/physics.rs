@@ -543,10 +543,11 @@ impl Bridge {
 
 /// The two parts a rigid joint holds together.
 pub(crate) fn joint_parts(
+    dom: &WeakDom,
     db: &ReflectionDatabase,
     instance: &rbx_dom::Instance,
 ) -> Option<(Ref, Ref)> {
-    Joint::read(db, instance).map(|j| (j.part0, j.part1))
+    Joint::read(dom, db, instance).map(|j| (j.part0, j.part1))
 }
 
 /// A touch that began or ended during a step, between two parts.
@@ -1054,7 +1055,7 @@ impl World {
             stack.extend(instance.children().iter().rev());
             if let Some(part) = PartData::read(db, instance) {
                 parts.push(part);
-            } else if let Some(joint) = Joint::read(db, instance) {
+            } else if let Some(joint) = Joint::read(dom, db, instance) {
                 joints.push(joint);
             } else if is_constraint(instance.class()) {
                 rigging.push(at);
@@ -1146,7 +1147,7 @@ impl World {
                     return false;
                 }
                 parts.push(part);
-            } else if let Some(joint) = Joint::read(db, instance) {
+            } else if let Some(joint) = Joint::read(dom, db, instance) {
                 if self.parts.contains_key(&joint.part0) || self.parts.contains_key(&joint.part1) {
                     return false;
                 }

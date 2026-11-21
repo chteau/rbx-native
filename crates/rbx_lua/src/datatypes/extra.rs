@@ -1,5 +1,7 @@
 //! `TweenInfo`, `Ray`, `Random` and `DateTime`.
 
+pub(crate) mod catalog_params;
+pub(crate) mod curve_key;
 pub(crate) mod path2d;
 pub(crate) mod path_waypoint;
 mod random;
@@ -274,5 +276,7 @@ pub(crate) fn register(lua: &Lua) -> Result<()> {
     globals.set("Random", random::constructors(lua)?)?;
     globals.set("Ray", ray(lua)?)?;
     globals.set("DateTime", date_time(lua)?)?;
+    curve_key::register(lua)?;
+    catalog_params::register(lua)?;
     Ok(())
 }

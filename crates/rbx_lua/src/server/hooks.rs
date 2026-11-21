@@ -761,6 +761,9 @@ impl Hooks for ServerHooks {
         {
             return Ok(Some(value));
         }
+        if let Some(value) = super::curves::member(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
         if let Some(value) = super::services::member(lua, &self.services, referent, class, key)? {
             return Ok(Some(value));
         }

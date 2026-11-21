@@ -357,8 +357,15 @@ pub(super) struct Joint {
 }
 
 impl Joint {
-    pub(super) fn read(db: &ReflectionDatabase, instance: &Instance) -> Option<Joint> {
+    pub(super) fn read(
+        dom: &rbx_dom::WeakDom,
+        db: &ReflectionDatabase,
+        instance: &Instance,
+    ) -> Option<Joint> {
         let class = instance.class();
+        if class == "RigidConstraint" {
+            return Self::rigid(dom, db, instance);
+        }
         if !(db.is_subclass_of(class, "JointInstance") || class == "WeldConstraint") {
             return None;
         }
@@ -377,6 +384,27 @@ impl Joint {
             referent: instance.referent(),
             part0: part(&["Part0", "Part0Internal"])?,
             part1: part(&["Part1", "Part1Internal"])?,
+        })
+    }
+
+    /// A `RigidConstraint` (what `Humanoid:AddAccessory` holds a handle
+    /// with) welds its attachments' parts where they stand.
+    fn rigid(
+        dom: &rbx_dom::WeakDom,
+        db: &ReflectionDatabase,
+        instance: &Instance,
+    ) -> Option<Joint> {
+        if !flag(db, instance, "Enabled", true) {
+            return None;
+        }
+        let part = |name: &str| match instance.properties().get(name) {
+            Some(Variant::Ref(a)) => dom.parent(*a),
+            _ => None,
+        };
+        Some(Joint {
+            referent: instance.referent(),
+            part0: part("Attachment0")?,
+            part1: part("Attachment1")?,
         })
     }
 }

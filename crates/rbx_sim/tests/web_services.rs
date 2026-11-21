@@ -131,7 +131,7 @@ fn bulk_purchases_subscriptions_and_robux_transfers_go_through_the_test_dialog()
 }
 
 #[test]
-fn a_ban_kicks_the_player_and_history_is_live_only() {
+fn a_ban_kicks_the_player_and_history_reads_the_run() {
     let (lines, _) = run(
         place(
             "local Players = game:GetService('Players') \
@@ -150,7 +150,7 @@ fn a_ban_kicks_the_player_and_history_is_live_only() {
     assert!(lines
         .iter()
         .any(|(_, l)| l == "empty false Config must contain field UserIds with type array"));
-    assert!(lines.iter().any(|(_, l)| l.starts_with("history false")));
+    assert!(lines.iter().any(|(_, l)| l.starts_with("history true")));
 }
 
 #[test]

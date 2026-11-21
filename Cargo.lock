@@ -7130,7 +7130,9 @@ dependencies = [
 name = "rbx_lua"
 version = "0.1.0"
 dependencies = [
+ "glam 0.33.7",
  "mlua",
+ "rbx_animation",
  "rbx_binary",
  "rbx_dom",
  "rbx_materials",
