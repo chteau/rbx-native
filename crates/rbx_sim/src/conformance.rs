@@ -13,6 +13,8 @@ use serde_json::Value;
 
 use crate::{Peer, Session};
 
+pub mod streaming;
+
 /// What a test's printed line starts with, and the runner's last line.
 pub const PREFIX: &str = "CONFORMANCE ";
 pub const DONE: &str = "CONFORMANCE_DONE";
