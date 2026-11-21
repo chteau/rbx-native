@@ -155,6 +155,15 @@ impl Shared {
         });
     }
 
+    /// Takes note of `changes`, drained from the DOM's log (numbered from
+    /// `first`), for the indexes kept up from its edits.
+    pub(crate) fn note(&mut self, dom: &WeakDom, first: u64, changes: &[rbx_dom::Change]) {
+        self.humanoids.note(dom, first, changes);
+        if let Some(q) = &self.queries {
+            q.spatial.borrow_mut().note(dom, q.db, first, changes);
+        }
+    }
+
     /// The DOM and the reflection database, once connected.
     pub(crate) fn dom_and_db(&self) -> Option<(Rc<RefCell<WeakDom>>, &'static ReflectionDatabase)> {
         self.queries.as_ref().map(|q| (q.dom.clone(), q.db))
@@ -584,6 +593,11 @@ pub struct World {
     /// Joints and parts the last build saw, so a change can tell whether
     /// it touches physics.
     joints: HashSet<Ref>,
+    /// The parts each built joint joins, and every part some joint names,
+    /// so adding or removing one can tell whether it joins or splits
+    /// assemblies.
+    joint_ends: HashMap<Ref, (Ref, Ref)>,
+    jointed: HashSet<Ref>,
     shared: Rc<RefCell<Shared>>,
     /// Built since the last step, so no contact is known yet.
     fresh: bool,
@@ -634,6 +648,8 @@ impl World {
             by_collider: HashMap::new(),
             assemblies: Vec::new(),
             joints: HashSet::new(),
+            joint_ends: HashMap::new(),
+            jointed: HashSet::new(),
             shared,
             fresh: true,
             events: Events::default(),
@@ -888,22 +904,6 @@ impl World {
                 rigging.push(at);
             }
         }
-        let index: HashMap<Ref, usize> = parts
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (p.referent, i))
-            .collect();
-        let mut sets = UnionFind::new(parts.len());
-        for joint in &joints {
-            self.joints.insert(joint.referent);
-            if let (Some(&a), Some(&b)) = (index.get(&joint.part0), index.get(&joint.part1)) {
-                sets.union(a, b);
-            }
-        }
-        let mut groups_of: HashMap<usize, Vec<usize>> = HashMap::new();
-        for i in 0..parts.len() {
-            groups_of.entry(sets.find(i)).or_default().push(i);
-        }
         let default = "Default".to_owned();
         let filter = groups
             .names()
@@ -917,12 +917,8 @@ impl World {
             InteractionTestMode::And,
         ));
         self.sync_terrain();
-        let mut members: Vec<Vec<usize>> = groups_of.into_values().collect();
-        members.sort_by_key(|m| m[0]);
-        for member in members {
-            self.add_assembly(&parts, &member, groups);
-        }
-        self.publish_masses(&parts);
+        self.shared.borrow_mut().masses.clear();
+        self.add_assemblies(&parts, &joints, groups);
         self.add_constraints(dom, db, &rigging);
         // A change to a constraint or its attachments rebuilds the world.
         for &referent in &rigging {
@@ -933,6 +929,196 @@ impl World {
                         self.joints.insert(*a);
                     }
                 }
+            }
+        }
+    }
+
+    /// `parts` as assemblies, joined by `joints`.
+    fn add_assemblies(&mut self, parts: &[PartData], joints: &[Joint], groups: &CollisionGroups) {
+        let index: HashMap<Ref, usize> = parts
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.referent, i))
+            .collect();
+        let mut sets = UnionFind::new(parts.len());
+        for joint in joints {
+            self.joints.insert(joint.referent);
+            self.joint_ends
+                .insert(joint.referent, (joint.part0, joint.part1));
+            self.jointed.extend([joint.part0, joint.part1]);
+            if let (Some(&a), Some(&b)) = (index.get(&joint.part0), index.get(&joint.part1)) {
+                sets.union(a, b);
+            }
+        }
+        let mut groups_of: HashMap<usize, Vec<usize>> = HashMap::new();
+        for i in 0..parts.len() {
+            groups_of.entry(sets.find(i)).or_default().push(i);
+        }
+        let mut members: Vec<Vec<usize>> = groups_of.into_values().collect();
+        members.sort_by_key(|m| m[0]);
+        for member in members {
+            self.add_assembly(parts, &member, groups);
+        }
+        self.publish_masses(parts);
+    }
+
+    /// Builds what is new under `roots` (in Workspace) as new assemblies,
+    /// leaving the rest of the world as it is. `false`, with nothing
+    /// changed, when that isn't enough and the world needs a rebuild: a
+    /// joint to a built part, a part a built joint names, a constraint.
+    pub fn add(
+        &mut self,
+        dom: &WeakDom,
+        db: &ReflectionDatabase,
+        groups: &CollisionGroups,
+        roots: &[Ref],
+    ) -> bool {
+        let mut parts = Vec::new();
+        let mut joints = Vec::new();
+        let mut seen = HashSet::new();
+        let mut stack = roots.to_vec();
+        while let Some(at) = stack.pop() {
+            let Some(instance) = dom.get(at).filter(|_| seen.insert(at)) else {
+                continue;
+            };
+            stack.extend(instance.children().iter().copied());
+            if self.parts.contains_key(&at) || self.joints.contains(&at) {
+                continue;
+            }
+            if let Some(part) = PartData::read(db, instance) {
+                if self.jointed.contains(&at) {
+                    return false;
+                }
+                parts.push(part);
+            } else if let Some(joint) = Joint::read(db, instance) {
+                if self.parts.contains_key(&joint.part0) || self.parts.contains_key(&joint.part1) {
+                    return false;
+                }
+                joints.push(joint);
+            } else if is_constraint(instance.class()) {
+                return false;
+            }
+        }
+        if parts.is_empty() && joints.is_empty() {
+            return true;
+        }
+        self.add_assemblies(&parts, &joints, groups);
+        self.shared.borrow_mut().generation += 1;
+        self.fresh = true;
+        true
+    }
+
+    /// Takes out the parts and joints in `gone` (no longer in Workspace),
+    /// whole assemblies at a time, leaving the rest of the world as it is.
+    /// `false`, with nothing changed, when the world needs a rebuild: an
+    /// assembly losing only some of its parts, a joint between two parts
+    /// that stay, a constraint or its attachments.
+    pub fn remove(&mut self, gone: &[Ref], present: impl Fn(Ref) -> bool) -> bool {
+        let mut assemblies = std::collections::BTreeSet::new();
+        for &r in gone {
+            if let Some(placed) = self.parts.get(&r) {
+                assemblies.insert(placed.assembly);
+            } else if let Some(&(a, b)) = self.joint_ends.get(&r) {
+                if [a, b]
+                    .iter()
+                    .all(|&p| self.parts.contains_key(&p) && present(p))
+                {
+                    return false;
+                }
+            } else if self.joints.contains(&r) {
+                return false;
+            }
+        }
+        if assemblies
+            .iter()
+            .any(|&i| self.assemblies[i].parts.iter().any(|&p| present(p)) || self.constrained(i))
+        {
+            return false;
+        }
+        for &r in gone {
+            self.joints.remove(&r);
+            self.joint_ends.remove(&r);
+        }
+        if assemblies.is_empty() {
+            return true;
+        }
+        for i in assemblies {
+            self.take_out(i);
+        }
+        self.shared.borrow_mut().generation += 1;
+        true
+    }
+
+    /// Builds the assemblies of `parts` again from the DOM, joined as they
+    /// were: a part's size, shape, anchoring or surface changed. `false`,
+    /// with nothing changed, when one of their parts is gone.
+    pub fn refit(
+        &mut self,
+        dom: &WeakDom,
+        db: &ReflectionDatabase,
+        groups: &CollisionGroups,
+        parts: &[Ref],
+    ) -> bool {
+        let assemblies: std::collections::BTreeSet<usize> = parts
+            .iter()
+            .filter_map(|p| self.parts.get(p).map(|placed| placed.assembly))
+            .collect();
+        if assemblies.iter().any(|&i| self.constrained(i)) {
+            return false;
+        }
+        let mut rebuilt = Vec::new();
+        for &i in &assemblies {
+            let Some(data) = self.assemblies[i]
+                .parts
+                .iter()
+                .map(|p| PartData::read(db, dom.get(*p)?))
+                .collect::<Option<Vec<_>>>()
+            else {
+                return false;
+            };
+            rebuilt.push(data);
+        }
+        for i in assemblies {
+            self.take_out(i);
+        }
+        for data in &rebuilt {
+            self.add_assembly(data, &(0..data.len()).collect::<Vec<_>>(), groups);
+            self.publish_masses(data);
+        }
+        if !rebuilt.is_empty() {
+            self.shared.borrow_mut().generation += 1;
+            self.fresh = true;
+        }
+        true
+    }
+
+    /// Whether a constraint acts on assembly `i`.
+    fn constrained(&self, i: usize) -> bool {
+        let body = self.assemblies[i].body;
+        self.constraints.iter().any(|c| c.holds(body))
+    }
+
+    /// Takes assembly `i`'s body and parts out of the world; it stays in
+    /// the list, dead, skipped like an anchored one.
+    fn take_out(&mut self, i: usize) {
+        let assembly = &mut self.assemblies[i];
+        let mut shared = self.shared.borrow_mut();
+        for part in std::mem::take(&mut assembly.parts) {
+            self.parts.remove(&part);
+            shared.masses.remove(&part);
+        }
+        assembly.anchored = true;
+        if let Some(body) = self.bodies.remove(
+            assembly.body,
+            &mut self.islands,
+            &mut self.colliders,
+            &mut self.impulse_joints,
+            &mut self.multibody_joints,
+            &mut self.soft,
+            true,
+        ) {
+            for collider in body.colliders() {
+                self.by_collider.remove(collider);
             }
         }
     }
@@ -1034,7 +1220,6 @@ impl World {
 
     fn publish_masses(&self, parts: &[PartData]) {
         let mut shared = self.shared.borrow_mut();
-        shared.masses.clear();
         for part in parts {
             let Some(placed) = self.parts.get(&part.referent) else {
                 continue;
@@ -1367,6 +1552,13 @@ impl World {
                     CollisionEvent::Stopped(a, b, _) => (a, b, false),
                 };
                 let (a, b) = (*self.by_collider.get(&c1)?, *self.by_collider.get(&c2)?);
+                // The older part's Touched fires first (TouchedOrder), whatever
+                // order the colliders were built in.
+                let (a, b) = if a.value() <= b.value() {
+                    (a, b)
+                } else {
+                    (b, a)
+                };
                 let terrain = self.shared.borrow().terrain.referent;
                 let touchable =
                     |r: Ref| Some(r) == terrain || self.parts.get(&r).is_some_and(|p| p.can_touch);

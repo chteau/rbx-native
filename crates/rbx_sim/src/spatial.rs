@@ -9,14 +9,16 @@ use rapier3d::parry::partitioning::{Bvh, BvhBuildStrategy, BvhNode};
 use rapier3d::parry::query::{cast_shapes, intersection_test, Ray, ShapeCastOptions};
 use rapier3d::parry::shape::Shape;
 use rapier3d::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::{Change, Instance, Ref, Variant, WeakDom};
 use rbx_lua::server::{CollisionGroups, QueryFilter, QueryHit, QueryShape};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::journal::Journal;
 use crate::physics::part::PartData;
 use crate::physics::pose_of;
+use crate::scripts;
 
 /// A hit at time of impact zero is a start inside, not a hit.
 const EPSILON: Real = 1e-6;
@@ -54,6 +56,7 @@ struct Built {
     class: String,
     keys: Vec<Option<rbx_dom::Variant>>,
     entry: Option<Entry>,
+    anchored: bool,
 }
 
 #[derive(Default)]
@@ -65,12 +68,33 @@ pub struct Spatial {
     built_from: HashMap<Ref, Built>,
     /// Per class, whether it's a `BasePart`.
     part_classes: HashMap<String, bool>,
+    /// Each part's index in `entries`.
+    slots: HashMap<Ref, usize>,
+    /// The unanchored parts, which physics moves between edits.
+    free: HashSet<Ref>,
     built: bool,
     generation: u64,
-    seen_changes: usize,
-    /// Built over a non-empty change log, which the VM drains without
-    /// telling us: until physics steps, nothing can be trusted.
-    unsettled: bool,
+    /// The DOM edits seen since the last refresh, and what they touched.
+    journal: Journal,
+    touched: HashSet<Ref>,
+    /// Roots of subtrees with parts that came or went.
+    moved: Vec<Ref>,
+    structural: bool,
+}
+
+/// Whether `r` is under Workspace.
+fn in_workspace(dom: &WeakDom, r: Ref) -> bool {
+    let mut at = Some(r);
+    while let Some(here) = at {
+        let Some(instance) = dom.get(here) else {
+            return false;
+        };
+        if instance.class() == "Workspace" {
+            return true;
+        }
+        at = dom.parent(here);
+    }
+    false
 }
 
 fn to_vec(v: [f64; 3]) -> Vector {
@@ -106,19 +130,149 @@ impl Spatial {
         spatial
     }
 
-    /// Rebuilds from `dom` unless nothing could have changed since the
-    /// last build.
+    /// Takes note of `changes`, drained from the DOM's log (numbered from
+    /// `first`), so the next refresh knows what they touched.
+    pub fn note(&mut self, dom: &WeakDom, db: &ReflectionDatabase, first: u64, changes: &[Change]) {
+        let fresh = self.journal.fresh(first, changes);
+        self.classify(dom, db, fresh);
+    }
+
+    /// Brings the index up to `dom` unless nothing could have changed
+    /// since the last time: only the parts that changed when every edit
+    /// since was seen and no part came or went, everything otherwise.
     pub fn refresh(&mut self, dom: &WeakDom, db: &ReflectionDatabase, generation: u64) {
-        let changes = dom.changes().len();
+        let log = self.journal.log(dom);
+        self.classify(dom, db, log);
+        let moved = generation != self.generation;
         if self.built
-            && self.generation == generation
-            && self.seen_changes == changes
-            && !self.unsettled
+            && !moved
+            && self.touched.is_empty()
+            && self.moved.is_empty()
+            && !self.structural
+            && self.journal.whole()
         {
             return;
         }
+        let whole = self.journal.reset(dom);
+        let structural = std::mem::take(&mut self.structural);
+        let touched = std::mem::take(&mut self.touched);
+        let came_or_went = std::mem::take(&mut self.moved);
+        if !(self.built
+            && whole
+            && !structural
+            && self.update(dom, db, moved, touched, came_or_went))
+        {
+            self.rebuild(dom, db);
+        }
+        self.built = true;
+        self.generation = generation;
+    }
+
+    /// Sorts `changes` into parts to re-read and edits that need the whole
+    /// Workspace walked again (a part coming or going).
+    fn classify(&mut self, dom: &WeakDom, db: &ReflectionDatabase, changes: &[Change]) {
+        for change in changes {
+            if self.structural {
+                return;
+            }
+            match change {
+                // A part with no query shape yet may get one.
+                Change::Property { referent, .. } if self.built_from.contains_key(referent) => {
+                    if self.slots.contains_key(referent) {
+                        self.touched.insert(*referent);
+                    } else {
+                        self.structural = true;
+                    }
+                }
+                Change::Property { .. } => {}
+                Change::Removed(referent) => {
+                    if self.built_from.contains_key(referent) {
+                        self.moved.push(*referent);
+                    }
+                }
+                Change::Added(referent) | Change::Parent { referent, .. } => {
+                    let parts = self.built_from.contains_key(referent)
+                        || scripts::subtree(dom, *referent)
+                            .into_iter()
+                            .any(|r| dom.get(r).is_some_and(|i| self.is_part(db, i.class())));
+                    if parts {
+                        self.moved.push(*referent);
+                    }
+                }
+                Change::Class(_) => self.structural = true,
+            }
+        }
+    }
+
+    /// Re-reads the `touched` parts, and the unanchored ones when physics
+    /// `moved` them. `false` when a part's entry is gone.
+    fn update(
+        &mut self,
+        dom: &WeakDom,
+        db: &ReflectionDatabase,
+        moved: bool,
+        mut touched: HashSet<Ref>,
+        came_or_went: Vec<Ref>,
+    ) -> bool {
+        if moved {
+            touched.extend(self.free.iter().copied());
+        }
+        if touched.is_empty() && came_or_went.is_empty() {
+            return true;
+        }
+        for root in came_or_went {
+            let placed = in_workspace(dom, root);
+            let subtree = if dom.get(root).is_some() {
+                scripts::subtree(dom, root)
+            } else {
+                vec![root]
+            };
+            for r in subtree {
+                let part = dom.get(r).filter(|i| self.is_part(db, i.class()));
+                match part {
+                    Some(instance) if placed => {
+                        if self.built_from.contains_key(&r) {
+                            touched.insert(r);
+                        } else {
+                            let built = self.read(db, instance, None);
+                            self.place(r, built);
+                        }
+                    }
+                    _ => {
+                        touched.remove(&r);
+                        self.take_out(r);
+                    }
+                }
+            }
+        }
+        for referent in touched {
+            let Some(instance) = dom.get(referent) else {
+                return false;
+            };
+            let previous = self.built_from.remove(&referent);
+            let built = self.read(db, instance, previous);
+            let Some(entry) = &built.entry else {
+                return false;
+            };
+            self.entries[self.slots[&referent]] = entry.clone();
+            if built.anchored {
+                self.free.remove(&referent);
+            } else {
+                self.free.insert(referent);
+            }
+            self.built_from.insert(referent, built);
+        }
+        self.index();
+        true
+    }
+
+    /// Walks the whole Workspace again, keeping the shapes of parts whose
+    /// shape properties stayed the same.
+    fn rebuild(&mut self, dom: &WeakDom, db: &ReflectionDatabase) {
         let mut previous = std::mem::take(&mut self.built_from);
         self.entries.clear();
+        self.slots.clear();
+        self.free.clear();
         if let Some(workspace) = dom
             .root_refs()
             .iter()
@@ -131,53 +285,90 @@ impl Spatial {
                     continue;
                 };
                 stack.extend(instance.children().iter().rev());
-                let class = instance.class();
-                let is_part = match self.part_classes.get(class) {
-                    Some(known) => *known,
-                    None => {
-                        let known = db.is_subclass_of(class, "BasePart");
-                        self.part_classes.insert(class.to_owned(), known);
-                        known
-                    }
-                };
-                if !is_part {
+                if !self.is_part(db, instance.class()) {
                     continue;
                 }
-                let properties = instance.properties();
-                let keys: Vec<_> = SHAPE_KEYS
-                    .iter()
-                    .map(|k| properties.get(*k).cloned())
-                    .collect();
-                let mut built = match previous.remove(&at) {
-                    Some(old) if old.class == class && old.keys == keys => old,
-                    _ => Built {
-                        class: class.to_owned(),
-                        keys,
-                        entry: PartData::read(db, instance).map(|part| Entry {
-                            referent: part.referent,
-                            shape: part.shape_collider().build().shared_shape().clone(),
-                            pose: pose_of(&part.cframe),
-                            size: [part.size.x, part.size.y, part.size.z].map(Real::from),
-                            can_query: part.can_query,
-                            can_collide: part.can_collide,
-                            group: part.collision_group,
-                        }),
-                    },
-                };
-                if let Some(entry) = &mut built.entry {
-                    if let Some(rbx_dom::Variant::CFrame(cf)) = properties.get("CFrame") {
-                        entry.pose = pose_of(cf);
-                    }
-                    self.entries.push(entry.clone());
-                }
-                self.built_from.insert(at, built);
+                let built = self.read(db, instance, previous.remove(&at));
+                self.place(at, built);
             }
         }
         self.index();
-        self.built = true;
-        self.generation = generation;
-        self.seen_changes = changes;
-        self.unsettled = changes > 0;
+    }
+
+    /// Adds `part`'s entry.
+    fn place(&mut self, part: Ref, built: Built) {
+        if let Some(entry) = &built.entry {
+            self.slots.insert(part, self.entries.len());
+            self.entries.push(entry.clone());
+            if !built.anchored {
+                self.free.insert(part);
+            }
+        }
+        self.built_from.insert(part, built);
+    }
+
+    /// Takes `part`'s entry out, the last entry taking its slot.
+    fn take_out(&mut self, part: Ref) {
+        self.built_from.remove(&part);
+        self.free.remove(&part);
+        if let Some(slot) = self.slots.remove(&part) {
+            self.entries.swap_remove(slot);
+            if let Some(moved) = self.entries.get(slot) {
+                self.slots.insert(moved.referent, slot);
+            }
+        }
+    }
+
+    /// Whether `class` is a `BasePart`, remembered per class.
+    fn is_part(&mut self, db: &ReflectionDatabase, class: &str) -> bool {
+        if let Some(known) = self.part_classes.get(class) {
+            return *known;
+        }
+        let known = db.is_subclass_of(class, "BasePart");
+        self.part_classes.insert(class.to_owned(), known);
+        known
+    }
+
+    /// A part's entry as it stands, reusing `previous`'s shape while its
+    /// shape properties stay the same.
+    fn read(&self, db: &ReflectionDatabase, instance: &Instance, previous: Option<Built>) -> Built {
+        let properties = instance.properties();
+        let class = instance.class();
+        let same = |old: &Built| {
+            old.class == class
+                && old
+                    .keys
+                    .iter()
+                    .zip(SHAPE_KEYS)
+                    .all(|(v, k)| v.as_ref() == properties.get(*k))
+        };
+        let mut built = match previous {
+            Some(old) if same(&old) => old,
+            _ => Built {
+                class: class.to_owned(),
+                keys: SHAPE_KEYS
+                    .iter()
+                    .map(|k| properties.get(*k).cloned())
+                    .collect(),
+                entry: PartData::read(db, instance).map(|part| Entry {
+                    referent: part.referent,
+                    shape: part.shape_collider().build().shared_shape().clone(),
+                    pose: pose_of(&part.cframe),
+                    size: [part.size.x, part.size.y, part.size.z].map(Real::from),
+                    can_query: part.can_query,
+                    can_collide: part.can_collide,
+                    group: part.collision_group,
+                }),
+                anchored: false,
+            },
+        };
+        built.anchored = matches!(properties.get("Anchored"), Some(Variant::Bool(true)));
+        if let Some(entry) = &mut built.entry {
+            if let Some(Variant::CFrame(cf)) = properties.get("CFrame") {
+                entry.pose = pose_of(cf);
+            }
+        }
+        built
     }
 
     fn index(&mut self) {

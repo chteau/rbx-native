@@ -4,9 +4,9 @@
 //! Humanoid goldens recorded on a real server; numbers are cited where
 //! they're used.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
+use rbx_dom::{CFrameData, Change, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::server::{Arg, CallReply, Event};
 use rbx_reflection::ReflectionDatabase;
 
@@ -206,11 +206,34 @@ pub struct Character {
 #[derive(Default)]
 pub struct Humanoids {
     pub characters: BTreeMap<Ref, Character>,
+    /// Every `Humanoid` in the DOM, kept up from its edits.
+    found: BTreeSet<Ref>,
+    journal: crate::journal::Journal,
     health_seen: HashMap<Ref, f64>,
     pub events: Vec<Event>,
     /// Instances to destroy (broken joints), in order.
     pub destroy: Vec<Ref>,
     pub frame: u64,
+}
+
+/// `found` after `changes`: a humanoid comes with its `Added` and goes with
+/// its `Removed`, wherever it sits.
+fn track(found: &mut BTreeSet<Ref>, dom: &WeakDom, changes: &[Change]) {
+    for change in changes {
+        match change {
+            Change::Added(r) | Change::Class(r) => {
+                if dom.get(*r).is_some_and(|i| i.class() == "Humanoid") {
+                    found.insert(*r);
+                } else {
+                    found.remove(r);
+                }
+            }
+            Change::Removed(r) => {
+                found.remove(r);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn signal(owner: Ref, name: &str, args: Vec<Arg>) -> Event {
@@ -425,21 +448,33 @@ impl Humanoids {
     /// those that left. A new one is Running at once (HumanoidStand
     /// `*_state0`) and says so a beat later (`RunningNoPhysics>Running@0`).
     pub fn sync(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase) {
-        let mut found = Vec::new();
-        let mut stack: Vec<Ref> = dom.root_refs().to_vec();
-        while let Some(at) = stack.pop() {
-            let Some(i) = dom.get(at) else { continue };
-            stack.extend(i.children().iter().copied());
-            if i.class() == "Humanoid" {
-                found.push(at);
+        let log = self.journal.log(dom);
+        track(&mut self.found, dom, log);
+        if !self.journal.reset(dom) {
+            self.found.clear();
+            let mut stack: Vec<Ref> = dom.root_refs().to_vec();
+            while let Some(at) = stack.pop() {
+                let Some(i) = dom.get(at) else { continue };
+                stack.extend(i.children().iter().copied());
+                if i.class() == "Humanoid" {
+                    self.found.insert(at);
+                }
             }
         }
+        let found = &self.found;
         self.characters.retain(|h, c| {
             found.contains(h) && rig_of(dom, db, *h).is_some_and(|(_, r)| r == c.root)
         });
-        for humanoid in found {
+        for humanoid in self.found.clone() {
             self.register(dom, db, humanoid);
         }
+    }
+
+    /// Takes note of `changes`, drained from the DOM's log (numbered from
+    /// `first`): the humanoids that came and went.
+    pub(crate) fn note(&mut self, dom: &WeakDom, first: u64, changes: &[Change]) {
+        let fresh = self.journal.fresh(first, changes);
+        track(&mut self.found, dom, fresh);
     }
 
     /// Takes `humanoid` over if it has a rig and isn't run yet.

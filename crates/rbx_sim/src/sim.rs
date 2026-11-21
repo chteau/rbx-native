@@ -72,6 +72,13 @@ pub struct Simulation {
     shared: Rc<RefCell<Shared>>,
     frame: u64,
     dirty: bool,
+    /// Roots added under Workspace, and parts and joints taken out of it,
+    /// since the last build: unless `dirty`, the world takes just those.
+    added: Vec<Ref>,
+    removed: Vec<Ref>,
+    /// Built parts whose shape or surface changed: their assemblies are
+    /// built again.
+    refit: Vec<Ref>,
     output: Output,
     /// Changes kept for [`Simulation::take_view_changes`], once watched.
     view_changes: Option<Vec<Change>>,
@@ -105,6 +112,9 @@ impl Simulation {
             shared,
             frame: 0,
             dirty: true,
+            added: Vec::new(),
+            removed: Vec::new(),
+            refit: Vec::new(),
             output: Output::default(),
             view_changes: None,
             held_scripts: None,
@@ -726,7 +736,7 @@ impl Simulation {
 
     /// Where avatars come from (`GetHumanoidDescriptionFromUserId`,
     /// `ApplyDescription`).
-    pub fn set_avatars(&mut self, avatars: Box<dyn Avatars>) {
+    pub fn set_avatars(&mut self, avatars: std::rc::Rc<dyn Avatars>) {
         self.shared.borrow_mut().players.avatars = Some(avatars);
     }
 
@@ -1184,9 +1194,7 @@ impl Simulation {
         }
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
-        if self.dirty {
-            self.rebuild();
-        }
+        self.rebuild_if_changed();
         let mut drives: Vec<Drive> = {
             let mut dom = self.dom.borrow_mut();
             let mut shared = self.shared.borrow_mut();
@@ -1203,9 +1211,7 @@ impl Simulation {
         // Deaths and seats can break or make joints: rebuild now.
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
-        if self.dirty {
-            self.rebuild();
-        }
+        self.rebuild_if_changed();
         self.sync_ownership();
         let steps = (PHYSICS_HZ / FRAME_HZ).round() as u32;
         self.world.refresh_constraints(&self.dom.borrow(), self.db);
@@ -1498,10 +1504,36 @@ impl Simulation {
         }
     }
 
+    fn rebuild_if_changed(&mut self) {
+        if self.dirty
+            || !self.added.is_empty()
+            || !self.removed.is_empty()
+            || !self.refit.is_empty()
+        {
+            self.rebuild();
+        }
+    }
+
+    /// Builds the world again, or only what was added and removed when
+    /// that is enough.
     fn rebuild(&mut self) {
+        let added = std::mem::take(&mut self.added);
+        let removed = std::mem::take(&mut self.removed);
+        let refit = std::mem::take(&mut self.refit);
         let groups = self.vm.collision_groups();
-        self.world
-            .rebuild(&self.dom.borrow(), self.db, &groups.borrow());
+        let groups = groups.borrow();
+        let dom = self.dom.borrow();
+        if !self.dirty {
+            let present = |r| dom.get(r).is_some() && in_workspace(&dom, r);
+            let roots: Vec<Ref> = added.into_iter().filter(|&r| present(r)).collect();
+            if self.world.remove(&removed, present)
+                && self.world.refit(&dom, self.db, &groups, &refit)
+                && self.world.add(&dom, self.db, &groups, &roots)
+            {
+                return;
+            }
+        }
+        self.world.rebuild(&dom, self.db, &groups);
         self.dirty = false;
     }
 
@@ -1602,8 +1634,11 @@ impl Simulation {
         if let Some(seen) = &mut self.view_changes {
             seen.extend(changes.iter().cloned());
         }
+        let first = self.dom.borrow().mutations() + 1 - changes.len() as u64;
+        self.shared
+            .borrow_mut()
+            .note(&self.dom.borrow(), first, &changes);
         if let Some(stream) = &mut self.stream {
-            let first = self.dom.borrow().mutations() + 1 - changes.len() as u64;
             stream.extend(
                 changes
                     .iter()
@@ -1633,8 +1668,15 @@ impl Simulation {
                 }
                 Change::Property { referent, name } => self.property_changed(referent, &name),
                 Change::Added(referent) | Change::Parent { referent, .. } => {
-                    if self.touches_physics(referent) {
-                        self.dirty = true;
+                    if !in_workspace(&self.dom.borrow(), referent) {
+                        let dom = self.dom.borrow();
+                        self.removed.extend(
+                            scripts::subtree(&dom, referent)
+                                .into_iter()
+                                .filter(|r| self.world.is_part(*r) || self.world.is_joint(*r)),
+                        );
+                    } else if self.touches_physics(referent) {
+                        self.added.push(referent);
                     }
                     // A client's Terrain arrives with the place, voxels and
                     // all.
@@ -1648,7 +1690,7 @@ impl Simulation {
                 }
                 Change::Removed(referent) => {
                     if self.world.is_part(referent) || self.world.is_joint(referent) {
-                        self.dirty = true;
+                        self.removed.push(referent);
                     }
                 }
                 Change::Class(_) => self.dirty = true,
@@ -1700,8 +1742,17 @@ impl Simulation {
         // posed) has no body: moving it rebuilds nothing.
         let placed = in_workspace(&dom, referent);
         let unbuilt = is_part && !self.world.is_part(referent) && placed;
-        if (STRUCTURAL.contains(&name) && placed) || unbuilt {
-            self.dirty = true;
+        if unbuilt {
+            self.added.push(referent);
+            return;
+        }
+        if STRUCTURAL.contains(&name) && placed {
+            // A part's own shape and surface: its assembly is built again.
+            if is_part {
+                self.refit.push(referent);
+            } else {
+                self.dirty = true;
+            }
             return;
         }
         if !is_part {
@@ -1744,13 +1795,10 @@ impl Simulation {
 
     /// Whether `root`'s arrival or move changes the world: physical
     /// instances that came into Workspace, or ones with bodies that left.
+    /// Whether the subtree at `root` (in Workspace) has anything physics
+    /// builds.
     fn touches_physics(&self, root: Ref) -> bool {
         let dom = self.dom.borrow();
-        if !in_workspace(&dom, root) {
-            return scripts::subtree(&dom, root)
-                .into_iter()
-                .any(|r| self.world.is_part(r) || self.world.is_joint(r));
-        }
         scripts::subtree(&dom, root).into_iter().any(|r| {
             dom.get(r).is_some_and(|i| {
                 let class = i.class();
