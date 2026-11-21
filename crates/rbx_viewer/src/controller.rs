@@ -199,6 +199,14 @@ impl Controller {
     /// nothing to resync until the first input hands off to a free pose,
     /// which seeds its own `ortho_scale` the same way `Camera::orbit_pose`
     /// always has.
+    /// Sets the free camera's orthographic zoom outright: a place's own
+    /// `Camera.OrthographicSize`.
+    pub(crate) fn set_ortho_scale(&mut self, half_height: f32) {
+        if let Mode::Free(pose) = &mut self.mode {
+            pose.ortho_scale = half_height;
+        }
+    }
+
     pub(crate) fn sync_ortho_scale(&mut self, bounds: &Bounds) {
         if let Mode::Free(pose) = &mut self.mode {
             let distance = (pose.position - bounds.center()).length();

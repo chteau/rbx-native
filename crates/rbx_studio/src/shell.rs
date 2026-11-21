@@ -822,6 +822,12 @@ impl Shell {
         transform.translate.increment = controls.move_increment;
         transform.rotate.increment = controls.rotate_increment;
         transform.pivot_snap = controls.pivot_snap;
+        // With the Orthographic Camera beta the place camera decides, as in
+        // Studio: a place saved looking orthographically opens that way.
+        let orthographic = match crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+            true => camera.is_some_and(|camera| camera.ortho.is_some()),
+            false => orthographic,
+        };
         let viewport = cx.new(|cx| {
             let opened = Opened {
                 viewer,
@@ -1449,6 +1455,10 @@ impl Shell {
     /// by a pose update landing mid-edit.
     fn sync_camera_pose(&mut self, pose: rbx_viewer::Pose, cx: &mut Context<Self>) {
         crate::camera::write_pose(&mut self.dom, pose);
+        if self.orthographic && crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+            let aspect = self.viewport.read(cx).aspect();
+            crate::camera::write_ortho_size(&mut self.dom, pose.ortho_scale, aspect);
+        }
         // Not a `reflect_changes`, so the Properties cache is told here,
         // only when a camera is among the selection, or a flight would
         // rebuild a large selection's rows five times a second for nothing.

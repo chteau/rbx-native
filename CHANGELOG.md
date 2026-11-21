@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-21
+
+- **Orthographic place cameras (beta).** Turn on "Orthographic Camera" in Beta Features and the 3D view follows `workspace.CurrentCamera` like Studio's beta does: set `ProjectionType` to Orthographic and the view goes flat over black, `OrthographicSize` 40 shows 40 studs top to bottom, and `OrthographicMode` picks the side it measures (width, diagonal or the longer side). Zooming with the wheel writes the size back, a place saved orthographic opens that way, and a script switching it back to Perspective switches the view back. (@chteau)
+
 ## 2026-11-20
 
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)
