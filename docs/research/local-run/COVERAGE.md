@@ -12,8 +12,8 @@ Members that aren't deprecated, hidden or `NotScriptable`.
 
 | Where | Security | Functions | Events | Properties | All |
 |---|---|---|---|---|---|
-| Game scripts (Local Run) | `None` | 520/1385 (38%) | 191/355 (54%) | 1970/2510 (78%) | 2681/4250 (63%) |
-| Plugins (plugin host) | `PluginSecurity` | 51/169 (30%) | 15/27 (56%) | 24/201 (12%) | 90/397 (23%) |
+| Game scripts (Local Run) | `None` | 550/1385 (40%) | 191/355 (54%) | 1970/2510 (78%) | 2711/4250 (64%) |
+| Plugins (plugin host) | `PluginSecurity` | 148/169 (88%) | 27/27 (100%) | 189/201 (94%) | 364/397 (92%) |
 | Command Bar | `LocalUserSecurity` | 0/60 (0%) | 0/11 (0%) | 1/1 (100%) | 1/72 (1%) |
 | Real Studio's Command Bar | `PluginSecurity` | 153/169 (91%) | 27/27 (100%) | 189/201 (94%) | 369/397 (93%) |
 | Real Studio's Command Bar | `LocalUserSecurity` | 31/60 (52%) | 6/11 (55%) | 1/1 (100%) | 38/72 (53%) |
@@ -22,8 +22,8 @@ Also measured: a plugin uses the game API too, and the Command Bar the plugin AP
 
 | Where | Security | Functions | Events | Properties | All |
 |---|---|---|---|---|---|
-| Plugins: the game API in the plugin host | `None` | 166/1385 (12%) | 84/355 (24%) | 1937/2510 (77%) | 2187/4250 (51%) |
-| Command Bar: the plugin API | `PluginSecurity` | 5/169 (3%) | 0/27 (0%) | 23/201 (11%) | 28/397 (7%) |
+| Plugins: the game API in the plugin host | `None` | 196/1385 (14%) | 84/355 (24%) | 1937/2510 (77%) | 2217/4250 (52%) |
+| Command Bar: the plugin API | `PluginSecurity` | 64/169 (38%) | 7/27 (26%) | 188/201 (94%) | 259/397 (65%) |
 
 Plugins during Play: real Studio loads every plugin again into Play's server and client data models. Local Run hosts no plugins yet, so none of the plugin API is there during a Local Run.
 
@@ -34,7 +34,7 @@ Counted on their own, outside the target.
 | Where | Security | Functions | Events | Properties | All |
 |---|---|---|---|---|---|
 | Game scripts (Local Run) | `None` | 92/235 (39%) | 13/35 (37%) | 153/260 (59%) | 258/530 (49%) |
-| Plugins (plugin host) | `PluginSecurity` | 6/20 (30%) | - | 3/12 (25%) | 9/32 (28%) |
+| Plugins (plugin host) | `PluginSecurity` | 9/20 (45%) | - | 9/12 (75%) | 18/32 (56%) |
 | Command Bar | `LocalUserSecurity` | 0/2 (0%) | - | 11/11 (100%) | 11/13 (85%) |
 
 ## Out of reach
@@ -352,7 +352,7 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | StarterGear | 1/1 | - | - |  |  |
 | StarterPlayer | 23/24 | - | - |  |  |
 | StateMachineTransitionDefinition | 2/4 | - | - |  |  |
-| Stats | 22/22 | 0/9 | - |  | GetHarmonyQualityLevel, GetMemoryCategoryNames, GetMemoryUsageMbAllCategories, GetMemoryUsageMbAllCategoriesFiltered, GetMemoryUsageMbFiltered, GetMemoryUsageMbForTag, GetTotalMemoryUsageMb, ResetHarmonyMemoryTarget, SetHarmonyMemoryTarget |
+| Stats | 22/22 | 9/9 | - | GetHarmonyQualityLevel, GetMemoryCategoryNames, GetMemoryUsageMbAllCategories, GetMemoryUsageMbAllCategoriesFiltered, GetMemoryUsageMbFiltered, GetMemoryUsageMbForTag, GetTotalMemoryUsageMb, ResetHarmonyMemoryTarget, SetHarmonyMemoryTarget |  |
 | StudioAttachment | 5/5 | - | - |  |  |
 | StudioService | 6/7 | - | - |  |  |
 | StyleBase | - | 3/3 | 1/1 | GetStyleRules, InsertStyleRule, SetStyleRules, StyleRulesChanged |  |
@@ -367,7 +367,7 @@ Security `None`, measured in Local Run. Properties, functions and events as ther
 | TeleportService | - | 9/9 | 2/2 | GetArrivingTeleportGui, GetLocalPlayerTeleportData, GetTeleportSetting, SetTeleportGui, SetTeleportSetting, Teleport, GetPlayerPlaceInstanceAsync, PromptExperienceDetailsAsync, TeleportAsync, LocalPlayerArrivedFromTeleport, TeleportInitFailed |  |
 | TerrainDetail | 5/5 | - | - |  |  |
 | TerrainRegion | 1/1 | - | - |  |  |
-| TestService | 13/13 | 2/33 | 0/3 | getTestSessionProviderStats, isFeatureEnabled | Check, Checkpoint, Done, Error, Fail, GetTestControlSchema, GetTestControls, ListTests, Message, RegisterSuite, RegisterTest, Require, ResetTestControl, ResetTestRegistry, ScopeTime, SetTestControl, SignalProfilingCapture, SignalProfilingStart, SignalProfilingStop, StartTestSession, StopTestSession, TakeSnapshot, Warn, CaptureScreenshotAsync, FetchTestControlsAsync, RequestValidationAsync, RunTestsAsync, StartAudioCaptureAsync, StartVideoCaptureAsync, StopAudioCaptureAsync, StopVideoCaptureAsync, ServerCollectConditionalResult, ServerCollectResult, TestRegistryChanged |
+| TestService | 13/13 | 23/33 | 0/3 | Check, Checkpoint, Done, Error, Fail, GetTestControlSchema, GetTestControls, ListTests, Message, Require, ResetTestControl, ResetTestRegistry, ScopeTime, SetTestControl, SignalProfilingCapture, SignalProfilingStart, SignalProfilingStop, StartTestSession, StopTestSession, TakeSnapshot, Warn, getTestSessionProviderStats, isFeatureEnabled | RegisterSuite, RegisterTest, CaptureScreenshotAsync, FetchTestControlsAsync, RequestValidationAsync, RunTestsAsync, StartAudioCaptureAsync, StartVideoCaptureAsync, StopAudioCaptureAsync, StopVideoCaptureAsync, ServerCollectConditionalResult, ServerCollectResult, TestRegistryChanged |
 | TextChannel | 1/2 | 3/4 | 1/1 | DisplaySystemMessage, AddUserAsync, SendAsync, MessageReceived | SetDirectChatRequester |
 | TextChatCommand | 4/4 | - | 0/1 |  | Triggered |
 | TextChatMessageProperties | 3/3 | - | - |  |  |
@@ -429,24 +429,46 @@ Security `PluginSecurity`, measured in the plugin host. Properties, functions an
 |---|---|---|---|---|---|
 | Instance | - | 1/1 | - | GetDebugId |  |
 | ChangeHistoryService | - | 10/10 | 4/4 | FinishRecording, GetCanRedo, GetCanUndo, IsRecordingInProgress, Redo, ResetWaypoints, SetEnabled, SetWaypoint, TryBeginRecording, Undo, OnRecordingFinished, OnRecordingStarted, OnRedo, OnUndo |  |
-| PluginGui | - | 1/1 | 2/6 | GetRelativeMousePosition, WindowFocusReleased, WindowFocused | PluginDragDropped, PluginDragEntered, PluginDragLeft, PluginDragMoved |
+| DebugSettings | 8/8 | - | - |  |  |
+| PluginGui | - | 1/1 | 6/6 | GetRelativeMousePosition, PluginDragDropped, PluginDragEntered, PluginDragLeft, PluginDragMoved, WindowFocusReleased, WindowFocused |  |
+| HeapProfilerService | - | 2/2 | 1/1 | ClientRequestDataAsync, ServerRequestDataAsync, OnNewData |  |
+| InstanceFileSyncService | - | 3/3 | 1/1 | GetAllInstances, GetStatus, GetSyncedInstance, StatusChanged |  |
 | MaterialVariant | 9/9 | - | - |  |  |
 | PluginMouse | - | - | 1/1 | DragEnter |  |
-| Plugin | - | 19/26 | 2/2 | Activate, CreatePluginAction, CreatePluginMenu, CreateToolbar, Deactivate, GetJoinMode, GetMouse, GetSelectedRibbonTool, GetSetting, IsActivated, IsActivatedWithExclusiveMouse, Negate, OpenWikiPage, SelectRibbonTool, Separate, SetSetting, StartDrag, Union, CreateDockWidgetPluginGuiAsync, Deactivation, Unloading | Intersect, SaveSelectedToRoblox, ImportFbxAnimationAsync, ImportFbxRigAsync, PromptForExistingAssetId, PromptForExistingAssetIdAsync, PromptSaveSelectionAsync |
+| NetworkPeer | - | 1/1 | - | SetOutgoingKBPSLimit |  |
+| NetworkSettings | 6/6 | - | - |  |  |
+| WorldRoot | - | 2/2 | - | IKMoveTo, StepPhysics |  |
+| Workspace | - | 2/2 | - | ApplyRecommendedStreamingSettings, ZoomToExtents |  |
+| PhysicsSettings | 27/27 | - | - |  |  |
+| Player | - | 2/2 | - | SetAccountAge, SetSuperSafeChat |  |
+| Players | - | 3/3 | - | Chat, SetChatStyle, TeamChat |  |
+| Plugin | - | 22/26 | 2/2 | Activate, CreatePluginAction, CreatePluginMenu, CreateToolbar, Deactivate, GetJoinMode, GetMouse, GetSelectedRibbonTool, GetSetting, Intersect, IsActivated, IsActivatedWithExclusiveMouse, Negate, OpenWikiPage, SaveSelectedToRoblox, SelectRibbonTool, Separate, SetSetting, StartDrag, Union, CreateDockWidgetPluginGuiAsync, PromptSaveSelectionAsync, Deactivation, Unloading | ImportFbxAnimationAsync, ImportFbxRigAsync, PromptForExistingAssetId, PromptForExistingAssetIdAsync |
 | PluginAction | - | - | 1/1 | Triggered |  |
+| PluginConnectionService | - | 2/2 | 1/1 | CanHaveConnectionType, GetPluginConnectionsOfType, Connected |  |
+| PluginManager | - | 2/2 | - | ExportPlace, ExportSelection |  |
 | PluginMenu | - | 6/6 | - | AddAction, AddMenu, AddNewAction, AddSeparator, Clear, ShowAsync |  |
 | PluginToolbar | - | 1/1 | - | CreateButton |  |
-| PluginToolbarButton | 0/1 | 1/1 | 1/1 | SetActive, Click | IconContent |
-| ScriptEditorService | - | 4/9 | 3/3 | FindScriptDocument, GetEditorSource, GetScriptDocuments, UpdateSourceAsync, TextDocumentDidChange, TextDocumentDidClose, TextDocumentDidOpen | DeregisterAutocompleteCallback, DeregisterScriptAnalysisCallback, RegisterAutocompleteCallback, RegisterScriptAnalysisCallback, OpenScriptDocumentAsync |
+| PluginToolbarButton | 1/1 | 1/1 | 1/1 | SetActive, Click |  |
+| RenderSettings | 14/14 | 1/1 | - | GetMaxQualityLevel |  |
+| RunService | - | 3/3 | - | Pause, Run, Stop |  |
+| ScriptContext | - | 1/1 | - | SetTimeout |  |
+| ScriptDebuggerService | - | 10/10 | 1/1 | AddBreakpoint, ClearBreakpoints, Evaluate, GetRootVariables, GetStackTrace, GetThreads, GetVariables, Pause, RemoveBreakpoint, SetExceptionBreakMode, Resumed |  |
+| ScriptDocument | - | 21/21 | 2/2 | GetLine, GetLineCount, GetReadOnlyReasons, GetScript, GetSelectedText, GetSelection, GetSelectionEnd, GetSelectionStart, GetText, GetViewport, HasSelectedText, IsCommandBar, IsReadOnly, AddReadOnlyReasonsAsync, CloseAsync, EditTextAsync, ForceSetSelectionAsync, MultiEditTextAsync, RemoveReadOnlyReasonsAsync, RequestSetSelectionAsync, ReviewableTextEditsAsync, SelectionChanged, ViewportChanged |  |
+| ScriptEditorService | - | 9/9 | 3/3 | DeregisterAutocompleteCallback, DeregisterScriptAnalysisCallback, FindScriptDocument, GetEditorSource, GetScriptDocuments, RegisterAutocompleteCallback, RegisterScriptAnalysisCallback, OpenScriptDocumentAsync, UpdateSourceAsync, TextDocumentDidChange, TextDocumentDidClose, TextDocumentDidOpen |  |
+| ScriptProfilerService | - | 7/7 | 1/1 | ClientRequestData, ClientStart, ClientStop, DeserializeJSON, ServerRequestData, ServerStart, ServerStop, OnNewData |  |
 | Selection | - | 4/4 | - | Add, Get, Remove, Set |  |
-| Studio | 1/113 | 1/1 | 1/1 | GetAvailableThemes, ThemeChanged | ActionOnStopSync, Active Color, Active Hover Over Color, Always Save Script Changes, Animate Hover Over, Animation Skeleton Scale, Animation Skeleton Transparency, Auto Clean Empty Line, Auto Closing Brackets, Auto Closing Quotes, Auto Delete Closing Brackets and Quotes, Auto Indent Rule, Auto-Recovery Enabled, Auto-Recovery Interval (Minutes), Background Color, Basic Objects Display Mode, Bool Color, Bracket Color, Built-in Function Color, Camera Mouse Wheel Speed, Camera Shift Speed, Camera Speed, Camera Zoom to Mouse Position, Clear Output On Start, CommandBarLocalState, Comment Color, Current Line Highlight Color, Debugger Current Line Color, Debugger Error Line Color, DeprecatedObjectsShown, Enable Autocomplete, Enable CoreScript Debugger, Enable Http Sandboxing, Enable Internal Beta Features, Enable Internal Features, Enable Temporary Tabs, Enable Temporary Tabs In Explorer, Error Color, Find Selection Background Color, Font†, Format On Paste, Format On Type, Function Name Color, Highlight Current Line, Highlight Occurances, HintColor, Hover Animate Speed, Hover Over Color, Indent Using Spaces, InformationColor, Keyword Color, Line Thickness, LuaDebuggerEnabled, Luau Keyword Color, Matching Word Background Color, Maximum Output Lines, Menu Item Background Color, Method Color, Number Color, Only Play Audio from Window in Focus, Operator Color, Output Font†, Output Layout Mode, PermissionLevelShown, PluginsDir†, PreferredTextSize, Primary Text Color, Property Color, Respect Studio shortcuts when game has focus, Ruler Color, Rulers, RuntimeUndoBehavior, ScriptTimeoutLength, Script Editor Color Preset, Script Editor Scrollbar Background Color, Script Editor Scrollbar Handle Color, Scroll Past Last Line, Secondary Text Color, Select Color, Select/Hover Color, Selected Menu Item Background Color, Selected Text Color, Selection Background Color, Selection Color, Set Pivot of Imported Parts, Show Animation Skeleton, Show Animation Skeleton Attachments, Show Animation Skeleton Axes, Show Animation Skeleton Rotations, Show Animation Skeleton Text, Show Core GUI in Explorer while Playing, Show Diagnostics Bar, Show FileSyncService, Show Hidden Objects in Explorer, Show Hover Over, Show Navigation Mesh, Show Plugin GUI Service in Explorer, Show Whitespace, Show plus button on hover in Explorer, Skip Closing Brackets and Quotes, String Color, "TODO" Color, Tab Width, Text Color, Text Wrapping, TypeColor, Warning Color, Whitespace Color, "function" Color, "local" Color, "nil" Color, "self" Color |
-| StudioService | - | 2/5 | - | GetClassIcon, GetUserId | GizmoRaycast, PromptImportFileAsync, PromptImportFilesAsync |
+| DataModel | - | 3/4 | - | SetPlaceId, SetUniverseId, GetJobsInfo | GetObjects† |
+| SoundService | - | 2/2 | - | OpenAttenuationCurveEditor, OpenDirectionalCurveEditor |  |
+| Studio | 110/113 | 1/1 | 1/1 | GetAvailableThemes, ThemeChanged | Font†, Output Font†, PluginsDir† |
+| StudioCaptureService | - | 3/3 | - | CanCaptureScreenshot, CaptureScreenshot, RequestScreenshotPermissionAsync |  |
+| StudioDeviceSimulatorService | - | 16/16 | 1/1 | CreateDeviceAsync, GetDeviceAsync, GetDeviceInfoAsync, GetDeviceListAsync, GetOrientationAsync, GetPixelDensityAsync, GetResolutionAsync, GetScalingModeAsync, RemoveDeviceAsync, SetDeviceAsync, SetOrientationAsync, SetPixelDensityAsync, SetResolutionAsync, SetScalingModeAsync, StopSimulationAsync, UpdateDeviceAsync, ConfigurationChanged |  |
+| StudioService | - | 5/5 | - | GetClassIcon, GetUserId, GizmoRaycast, PromptImportFileAsync, PromptImportFilesAsync |  |
 | StudioTestService | 1/1 | 0/3 | - |  | ExecuteMultiplayerTestAsync, ExecutePlayModeAsync, ExecuteRunModeAsync |
 | StudioTheme | - | 1/1 | - | GetColor |  |
 | SurfaceAppearance | 4/4 | - | - |  |  |
 | TerrainDetail | 9/9 | - | - |  |  |
 
-Nothing there yet, 29 classes: DebugSettings, File, HeapProfilerService, InstanceFileSyncService, MemStorageConnection, NetworkPeer, NetworkSettings, WorldRoot, Workspace, PhysicsSettings, Player, Players, PluginConnectionService, PluginManager, PluginManagerInterface, RenderSettings, RunService, ScriptContext, ScriptDebuggerService, ScriptDocument, ScriptProfilerService, DataModel, SoundService, StatsItem, StudioCaptureService, StudioDeviceSimulatorService, StudioScreenshotCapture, TestService, PluginConnection.
+Nothing there yet, 7 classes: File, MemStorageConnection, PluginManagerInterface, StatsItem, StudioScreenshotCapture, TestService, PluginConnection.
 
 ## Command Bar by class
 
