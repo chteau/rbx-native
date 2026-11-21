@@ -66,6 +66,11 @@ pub(super) fn member(
     class: &str,
     key: &str,
 ) -> Result<Option<Value>> {
+    if class == "ScriptEditorService" {
+        if let Some(value) = crate::plugin::script_document::service_member(lua, key)? {
+            return Ok(Some(value));
+        }
+    }
     let ctx = ctx.clone();
     let f = match (class, key) {
         // Nothing to fetch ahead of time: assets load as they are drawn.
@@ -93,12 +98,6 @@ pub(super) fn member(
                 let new = new.into_lua(lua)?;
                 crate::property::set(&ctx, script, "Source", &new).map(|_| ())
             })?
-        }
-        ("ScriptEditorService", "GetScriptDocuments") => {
-            lua.create_function(|lua, _: Value| lua.create_table())?
-        }
-        ("ScriptEditorService", "FindScriptDocument") => {
-            lua.create_function(|_, _: MultiValue| Ok(Value::Nil))?
         }
         ("ScriptEditorService", "TextDocumentDidOpen" | "TextDocumentDidClose" | "TextDocumentDidChange") => {
             let signal = LuaSignal(SignalKey::new(Owner::Instance(referent), key));

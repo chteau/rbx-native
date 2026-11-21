@@ -126,6 +126,7 @@ impl Runtime {
         install_globals(&lua, &ctx)?;
         lua.globals()
             .set("printidentity", globals::printidentity(&lua, &ctx, 4)?)?;
+        crate::studio::install(&lua, &ctx)?;
         engine::install(&lua, Engine::new(ctx, host.clone()))?;
         lua.set_app_data(selection::Selection::default());
         host::install_require(&lua)?;
@@ -147,6 +148,11 @@ impl Runtime {
     /// What `Selection:Get` answers until a run sets its own.
     pub fn set_selection(&mut self, refs: Vec<rbx_dom::Ref>) {
         selection::load(&self.lua, refs);
+    }
+
+    /// The editor's theme, "Light" or "Dark", for `settings().Studio.Theme`.
+    pub fn set_theme(&mut self, name: &str) {
+        let _ = crate::studio::set_theme(&self.lua, name);
     }
 
     /// The selection a run set since the last call, if it set one.

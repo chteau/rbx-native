@@ -969,6 +969,27 @@ Behaves as real Studio Play does, or as close as runs locally:
 2. Collaborators from our co-edit session (our own presence and p2p, never native Team Create) joining a Local Run as players.
 3. The M18 leftovers above, the swim game's loading screen first.
 
+### Plugin and Studio-only APIs (branch api-plugin-studio)
+
+`COVERAGE.md` now counts members by security level: game scripts (`None`), plugins (`PluginSecurity`, measured in the plugin host), the Command Bar (`LocalUserSecurity`), with deprecated and hidden members apart. What real Studio's Command Bar can't reach either is marked there, with its error text.
+
+Done, checked against Studio 0.748's Command Bar (2026-11-21):
+
+- `settings()` and `UserSettings()` as Studio builds them (`crates/rbx_lua/src/studio/`): the whole tree with Studio's names and order, 164 values captured from Studio, its coercions and errors on write, `Changed` and `GetPropertyChangedSignal`, `Studio.Theme` following the editor's theme (`Context.theme`, and `Runtime::set_theme` for the Command Bar), `ThemeChanged`, both palettes for `StudioTheme:GetColor`.
+- `TestService`: output lines, `ErrorCount`/`TestCount`/`WarnCount`, `ListTests`' edit-mode error. Game scripts get it too.
+- `Stats`: `GetTotalMemoryUsageMb`, `GetMemoryUsageMbForTag` (0 outside a playtest, as Studio), and Studio's `InternalTest` capability error for the rest.
+- `StudioDeviceSimulatorService` with Studio's 43 devices, the profiler, file-sync, plugin-connection, script-debugger and capture services, `game:SetPlaceId`/`GetJobsInfo`, `Workspace:IKMoveTo`/`StepPhysics`/`ApplyRecommendedStreamingSettings`.
+- Script documents: `ScriptEditorService:GetScriptDocuments`/`FindScriptDocument`/`OpenScriptDocumentAsync`, `TextDocumentDidOpen`/`DidClose` from the editor's tabs (`Context.scripts`), `ScriptDocument` reads and edits (edits write `Source`, the open tab re-seeds), callback registration and its errors, the Command Bar's document refusing edits and `CloseAsync` as Studio does.
+- Editor requests: `StudioService:PromptImportFile[s]Async` (system file chooser, `File` objects), `plugin:PromptSaveSelectionAsync`, `PluginManager():ExportPlace`/`ExportSelection`, `Workspace:ZoomToExtents`, `RunService:Run`/`Pause`/`Stop` (the Local Run), `ScriptDocument:CloseAsync`, `PluginToolbarButton.IconContent`, `PluginGui` drag events.
+
+Left, and why:
+
+- Plugins don't run inside a Local Run or Play (local): real Studio loads plugins into the play data models too. The plugin host is edit-only.
+- `ScriptDocument` selection and viewport are fixed at line 1: the editor doesn't report its cursor to plugins yet; the Command Bar's text isn't passed either.
+- `plugin:Union`/`Negate`/`Separate`/`Intersect`, `ImportFbxAnimation`/`ImportFbxRig`, `PromptForExistingAssetId`, `SaveSelectedToRoblox` and the sound curve editors: rbx-native has no CSG from plugins, no FBX rig import, no asset picker or upload dialog there. Each says so (an error or an Output line) rather than doing nothing.
+- `StudioTestService:Execute*` needs the multi-client test sessions of M19.
+- Not checked in Studio: `PromptSaveSelectionAsync`'s return value (we give the saved file's name), what `TestService` prints for a missing source with a line.
+
 Later, the old animation proposal:
 
 1. Layered clothing at run time: `WrapLayer`/`WrapTarget` deformation on the avatar, layered in `Order`, with the auto-rig cages the editor already fits (`rbx_animation`), and `AutoSkin`.

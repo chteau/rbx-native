@@ -730,6 +730,9 @@ impl Hooks for ServerHooks {
         if let Some(value) = events::index(lua, ctx, referent, class, key)? {
             return Ok(Some(value));
         }
+        if let Some(value) = crate::studio::diagnostics(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
         if key == "WaitForChild" {
             return wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }

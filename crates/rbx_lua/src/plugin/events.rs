@@ -55,7 +55,14 @@ const HANDLE_ADORNMENT_SIGNALS: &[&str] = &[
     "MouseEnter",
     "MouseLeave",
 ];
-const PLUGIN_GUI_SIGNALS: &[&str] = &["WindowFocused", "WindowFocusReleased"];
+const PLUGIN_GUI_SIGNALS: &[&str] = &[
+    "WindowFocused",
+    "WindowFocusReleased",
+    "PluginDragDropped",
+    "PluginDragEntered",
+    "PluginDragLeft",
+    "PluginDragMoved",
+];
 const NORMAL_IDS: [&str; 6] = ["Right", "Top", "Back", "Left", "Bottom", "Front"];
 const AXES: [&str; 3] = ["X", "Y", "Z"];
 
@@ -379,6 +386,9 @@ fn plugin_member(lua: &Lua, key: &str) -> Result<Value> {
 
 impl Hooks for PluginHooks {
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
+        if let Some(value) = crate::studio::game_member(lua, key)? {
+            return Ok(Some(value));
+        }
         events::game_member(lua, key)
     }
 

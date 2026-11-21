@@ -109,6 +109,11 @@ pub struct Context {
     /// The signed-in Roblox user, for `StudioService:GetUserId()` and
     /// `plugin:GetStudioUserId()` (0 when nobody is).
     pub user_id: Option<u64>,
+    /// The editor's theme, "Light" or "Dark" (anything else reads as
+    /// Dark), for `settings().Studio.Theme`.
+    pub theme: String,
+    /// The scripts open in the editor's tabs, in tab order.
+    pub scripts: Vec<Ref>,
 }
 
 impl Context {
@@ -192,6 +197,8 @@ pub enum Answer {
     Allow(bool),
     /// A `PluginMenu:ShowAsync`: the chosen action, `None` = dismissed.
     Menu(Option<UiId>),
+    /// A file prompt: the paths picked, `None` = cancelled.
+    Paths(Option<Vec<std::path::PathBuf>>),
 }
 
 /// A 3D-view mouse event for the activated plugin's `PluginMouse`.
@@ -391,6 +398,33 @@ pub enum Request {
     },
     /// `plugin:SetClipboard(text)`: put `text` on the system clipboard.
     SetClipboard(String),
+    /// Something Studio does in its own windows.
+    Studio(StudioAction),
+    /// `ScriptDocument:CloseAsync()`: close the script's tab.
+    CloseScript(Ref),
+}
+
+/// What a plugin asked Studio itself to do.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StudioAction {
+    /// `Workspace:ZoomToExtents`: frame the whole place.
+    ZoomToExtents,
+    /// `RunService:Run()`: start a Run (server only) session.
+    Run,
+    /// `RunService:Pause()`.
+    Pause,
+    /// `RunService:Stop()`: end the session.
+    Stop,
+    /// `plugin:SaveSelectedToRoblox()`: the upload dialog for the selection.
+    SaveSelectedToRoblox,
+    /// `PluginManager():ExportPlace(path)`/`ExportSelection(path)`: write
+    /// the place or the selection there, or ask where when `path` is `None`.
+    Export {
+        selection: bool,
+        path: Option<PathBuf>,
+    },
+    /// `SoundService:OpenAttenuationCurveEditor`/`OpenDirectionalCurveEditor`.
+    CurveEditor { directional: bool, curves: Vec<Ref> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -409,6 +443,17 @@ pub enum PromptKind {
     Menu {
         title: String,
         items: Vec<MenuItem>,
+    },
+    /// `StudioService:PromptImportFile[s]Async`: files to open, by extension
+    /// (empty: any); answer with [`Answer::Paths`].
+    OpenFiles {
+        extensions: Vec<String>,
+        multiple: bool,
+    },
+    /// `plugin:PromptSaveSelectionAsync`, `PluginManager():ExportPlace("")`:
+    /// where to save; answer with [`Answer::Paths`].
+    SaveFile {
+        suggested: String,
     },
 }
 

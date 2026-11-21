@@ -1,0 +1,164 @@
+DebugSettings	IsScriptStackTracingEnabled	boolean	true
+DebugSettings	ReportSoundWarnings	boolean	false
+DebugSettings	RobloxVersion	string	0.748.0.7481526
+DebugSettings	TickCountPreciseOverride	EnumItem	Enum.TickCountSampleMethod.Precise
+NetworkSettings	InboundNetworkJitterMs	number	0
+NetworkSettings	InboundNetworkLossPercent	number	0
+NetworkSettings	InboundNetworkMinDelayMs	number	0
+NetworkSettings	OutboundNetworkJitterMs	number	0
+NetworkSettings	OutboundNetworkLossPercent	number	0
+NetworkSettings	OutboundNetworkMinDelayMs	number	0
+PhysicsSettings	AllowSleep	boolean	true
+PhysicsSettings	AreAnchorsShown	boolean	false
+PhysicsSettings	AreAssembliesShown	boolean	false
+PhysicsSettings	AreAwakePartsHighlighted	boolean	false
+PhysicsSettings	AreBodyTypesShown	boolean	false
+PhysicsSettings	AreContactIslandsShown	boolean	false
+PhysicsSettings	AreContactPointsShown	boolean	false
+PhysicsSettings	AreJointCoordinatesShown	boolean	false
+PhysicsSettings	AreMechanismsShown	boolean	false
+PhysicsSettings	AreModelCoordsShown	boolean	false
+PhysicsSettings	AreNonAnchorsShown	boolean	false
+PhysicsSettings	AreOwnersShown	boolean	false
+PhysicsSettings	ArePartCoordsShown	boolean	false
+PhysicsSettings	AreRegionsShown	boolean	false
+PhysicsSettings	AreTerrainReplicationRegionsShown	boolean	false
+PhysicsSettings	AreUnalignedPartsShown	boolean	false
+PhysicsSettings	AreWorldCoordsShown	boolean	false
+PhysicsSettings	DisableCSGv2	boolean	false
+PhysicsSettings	DisableCSGv3ForPlugins	boolean	false
+PhysicsSettings	DrawShapecast	boolean	false
+PhysicsSettings	ForceCSGv2	boolean	true
+PhysicsSettings	IsInterpolationThrottleShown	boolean	false
+PhysicsSettings	IsReceiveAgeShown	boolean	false
+PhysicsSettings	IsTreeShown	boolean	false
+PhysicsSettings	PhysicsEnvironmentalThrottle	EnumItem	Enum.EnviromentalPhysicsThrottle.DefaultAuto
+PhysicsSettings	ShowDecompositionGeometry	boolean	false
+PhysicsSettings	ThrottleAdjustTime	number	1
+PhysicsSettings	UseCSGv2	boolean	false
+RenderSettings	AutoFRMLevel	number	21
+RenderSettings	EagerBulkExecution	boolean	false
+RenderSettings	EditQualityLevel	EnumItem	Enum.QualityLevel.Level21
+RenderSettings	EnableFRM	boolean	false
+RenderSettings	Enable VR Mode	boolean	false
+RenderSettings	ExportMergeByMaterial	boolean	false
+RenderSettings	FrameRateManager	EnumItem	Enum.FramerateManagerMode.Automatic
+RenderSettings	GraphicsMode	EnumItem	Enum.GraphicsMode.Automatic
+RenderSettings	MeshCacheSize	number	33554432
+RenderSettings	MeshPartDetailLevel	EnumItem	Enum.MeshPartDetailLevel.DistanceBased
+RenderSettings	QualityLevel	EnumItem	Enum.QualityLevel.Automatic
+RenderSettings	ReloadAssets	boolean	false
+RenderSettings	RenderCSGTrianglesDebug	boolean	false
+RenderSettings	ShowBoundingBoxes	boolean	false
+RenderSettings	ViewMode	EnumItem	Enum.ViewMode.None
+Studio	ActionOnStopSync	EnumItem	Enum.ActionOnStopSync.AlwaysAsk
+Studio	Active Color	Color3	1, 0.5, 0
+Studio	Active Hover Over Color	Color3	1, 0.8, 0.6
+Studio	Always Save Script Changes	boolean	false
+Studio	Animate Hover Over	boolean	false
+Studio	Animation Skeleton Scale	number	1
+Studio	Animation Skeleton Transparency	number	0
+Studio	Auto Clean Empty Line	boolean	true
+Studio	Auto Closing Brackets	boolean	true
+Studio	Auto Closing Quotes	boolean	true
+Studio	Auto Delete Closing Brackets and Quotes	boolean	true
+Studio	Auto Indent Rule	EnumItem	Enum.AutoIndentRule.Absolute
+Studio	Auto-Recovery Enabled	boolean	true
+Studio	Auto-Recovery Interval (Minutes)	number	5
+Studio	Background Color	Color3	1, 1, 1
+Studio	Basic Objects Display Mode	EnumItem	Enum.ListDisplayMode.Vertical
+Studio	Bool Color	Color3	0.0470588, 0.607843, 0.352941
+Studio	Bracket Color	Color3	0.592157, 0.423529, 0
+Studio	Built-in Function Color	Color3	0.513726, 0.0588235, 0.027451
+Studio	Camera Mouse Wheel Speed	number	15
+Studio	Camera Shift Speed	number	0.20000000298023224
+Studio	Camera Speed	number	4
+Studio	Camera Zoom to Mouse Position	boolean	true
+Studio	Clear Output On Start	boolean	true
+Studio	CommandBarLocalState	boolean	false
+Studio	Comment Color	Color3	0.00392157, 0.372549, 0.207843
+Studio	Current Line Highlight Color	Color3	0.933333, 0.937255, 0.945098
+Studio	Debugger Current Line Color	Color3	0.992157, 0.92549, 0.756863
+Studio	Debugger Error Line Color	Color3	0.968628, 0.803922, 0.796079
+Studio	DeprecatedObjectsShown	boolean	false
+Studio	Enable Autocomplete	boolean	true
+Studio	Enable CoreScript Debugger	boolean	false
+Studio	Enable Http Sandboxing	boolean	false
+Studio	Enable Internal Beta Features	boolean	false
+Studio	Enable Internal Features	boolean	true
+Studio	Enable Temporary Tabs	boolean	true
+Studio	Enable Temporary Tabs In Explorer	boolean	false
+Studio	Error Color	Color3	0.87451, 0.156863, 0.121569
+Studio	Find Selection Background Color	Color3	0.980392, 0.894118, 0.666667
+Studio	Format On Paste	boolean	true
+Studio	Format On Type	boolean	true
+Studio	Function Name Color	Color3	0, 0.176471, 0.839216
+Studio	Highlight Current Line	boolean	true
+Studio	Highlight Occurances	boolean	true
+Studio	HintColor	Color3	0.2, 0.372549, 1
+Studio	Hover Animate Speed	EnumItem	Enum.HoverAnimateSpeed.Slow
+Studio	Hover Over Color	Color3	0.7, 0.9, 1
+Studio	Indent Using Spaces	boolean	false
+Studio	InformationColor	Color3	0.737255, 0.745098, 0.784314
+Studio	Keyword Color	Color3	0, 0.105882, 0.478431
+Studio	Line Thickness	number	0.03999999910593033
+Studio	LuaDebuggerEnabled	boolean	true
+Studio	LuaDebuggerEnabledAtStartup	boolean	true
+Studio	Luau Keyword Color	Color3	0, 0.105882, 0.478431
+Studio	Matching Word Background Color	Color3	0.901961, 0.905882, 0.917647
+Studio	Maximum Output Lines	number	5000
+Studio	Menu Item Background Color	Color3	1, 1, 1
+Studio	Method Color	Color3	0, 0.176471, 0.839216
+Studio	Number Color	Color3	0.0470588, 0.607843, 0.352941
+Studio	Only Play Audio from Window in Focus	boolean	true
+Studio	Operator Color	Color3	0.592157, 0.423529, 0
+Studio	Output Layout Mode	EnumItem	Enum.OutputLayoutMode.Vertical
+Studio	PermissionLevelShown	EnumItem	Enum.PermissionLevelShown.Game
+Studio	PreferredTextSize	EnumItem	Enum.PreferredTextSize.Medium
+Studio	Primary Text Color	Color3	0, 0, 0
+Studio	Property Color	Color3	0.415686, 0.435294, 0.505882
+Studio	Respect Studio shortcuts when game has focus	boolean	true
+Studio	Ruler Color	Color3	0.737255, 0.745098, 0.784314
+Studio	Rulers	string	
+Studio	RuntimeUndoBehavior	EnumItem	Enum.RuntimeUndoBehavior.Aggregate
+Studio	ScriptTimeoutLength	number	10
+Studio	Script Editor Color Preset	EnumItem	Enum.StudioScriptEditorColorPresets.Custom
+Studio	Script Editor Scrollbar Background Color	Color3	1, 1, 1
+Studio	Script Editor Scrollbar Handle Color	Color3	0.737255, 0.745098, 0.784314
+Studio	Scroll Past Last Line	boolean	true
+Studio	Secondary Text Color	Color3	0.737255, 0.745098, 0.784314
+Studio	Select Color	Color3	0.929412, 0.729412, 0.0941176
+Studio	Select/Hover Color	Color3	0.5, 0.5, 0.5
+Studio	Selected Menu Item Background Color	Color3	0, 0.152941, 0.721569
+Studio	Selected Text Color	Color3	1, 1, 1
+Studio	Selection Background Color	Color3	0.815686, 0.854902, 0.996078
+Studio	Selection Color	Color3	0, 0, 0
+Studio	Set Pivot of Imported Parts	boolean	false
+Studio	Show Animation Skeleton	boolean	false
+Studio	Show Animation Skeleton Attachments	boolean	false
+Studio	Show Animation Skeleton Axes	boolean	false
+Studio	Show Animation Skeleton Rotations	boolean	false
+Studio	Show Animation Skeleton Text	boolean	false
+Studio	Show Core GUI in Explorer while Playing	boolean	false
+Studio	Show Diagnostics Bar	boolean	false
+Studio	Show FileSyncService	boolean	false
+Studio	Show Hidden Objects in Explorer	boolean	false
+Studio	Show Hover Over	boolean	true
+Studio	Show Navigation Mesh	boolean	false
+Studio	Show Plugin GUI Service in Explorer	boolean	false
+Studio	Show Whitespace	boolean	false
+Studio	Show plus button on hover in Explorer	boolean	true
+Studio	Skip Closing Brackets and Quotes	boolean	true
+Studio	String Color	Color3	0.431373, 0.027451, 0.521569
+Studio	"TODO" Color	Color3	0.00392157, 0.372549, 0.207843
+Studio	Tab Width	number	4
+Studio	Text Color	Color3	0, 0, 0
+Studio	Text Wrapping	boolean	false
+Studio	TypeColor	Color3	0.0470588, 0.607843, 0.352941
+Studio	UI Theme	EnumItem	Enum.UITheme.Light
+Studio	Warning Color	Color3	0, 0.207843, 0.960784
+Studio	Whitespace Color	Color3	0.737255, 0.745098, 0.784314
+Studio	"function" Color	Color3	0, 0.105882, 0.478431
+Studio	"local" Color	Color3	0, 0.105882, 0.478431
+Studio	"nil" Color	Color3	0.0470588, 0.607843, 0.352941
+Studio	"self" Color	Color3	0, 0.105882, 0.478431

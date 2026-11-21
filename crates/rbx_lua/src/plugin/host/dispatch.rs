@@ -18,7 +18,7 @@ use crate::plugin::api::{
     Outcome, OutputKind, Permission, SourceBody, WidgetKind,
 };
 use crate::plugin::env::{engine_for, Env};
-use crate::plugin::{debugger_api, events, loader, plugin_object, services, vm};
+use crate::plugin::{debugger_api, events, loader, plugin_object, script_document, services, vm};
 
 #[path = "overlays.rs"]
 mod overlays;
@@ -36,17 +36,23 @@ pub(super) fn run(
     input: Input,
 ) -> Outcome {
     std::mem::swap(&mut *host.dom.borrow_mut(), dom);
-    let debugger_before = {
+    let (debugger_before, scripts_before) = {
         let mut shared = host.shared.borrow_mut();
-        let before = std::mem::replace(&mut shared.context, context).debugger;
+        let before = std::mem::replace(&mut shared.context, context);
         shared.deadline = Some(Instant::now() + BUDGET);
-        before
+        (before.debugger, before.scripts)
     };
     let merge = host.lot.merge(&mut host.dom.borrow_mut());
     let place_roots = merge.place_roots.clone();
     host.undo.borrow_mut().arm(place_roots.clone());
 
     let mut seen = host.shared.borrow().context.selection.clone();
+    let theme = host.shared.borrow().context.theme.clone();
+    let scripts = host.shared.borrow().context.scripts.clone();
+    for (lua, env) in vms(host) {
+        report(&env, crate::studio::set_theme(&lua, &theme));
+        report(&env, script_document::sync(&lua, &scripts_before, &scripts));
+    }
     handle(host, input, &debugger_before);
     // A plugin another one's `Activate` displaced hears `Deactivation`.
     let displaced = std::mem::take(&mut host.shared.borrow_mut().displaced);
