@@ -823,6 +823,127 @@ pub fn scenes() -> Vec<Scene> {
             ],
             build: local_lights,
         },
+        Scene {
+            name: "game_day_effects",
+            about: "A white path in the sun under a game's stack of effects: blue Atmosphere, saturated ColorCorrection, strong Bloom, DepthOfField",
+            eye: [0.0, 9.0, 18.0],
+            look_at: [0.0, 2.0, 0.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: vec![
+                ("lit path", [-6.0, 0.0, 8.0]),
+                ("block shadow", [2.6, 0.0, -1.0]),
+                ("black block", [0.0, 3.0, 1.5]),
+                ("black top", [0.0, 6.0, 0.0]),
+                ("grass", [-12.0, 0.0, -4.0]),
+                ("grass shadow", [10.4, 0.0, -9.0]),
+                ("sky", [0.0, 300.0, -2000.0]),
+            ],
+            build: day_effects,
+        },
+        Scene {
+            name: "game_retro_room",
+            about: "A lobby's look: Voxel mid-morning, Brightness 0.6, no environment light, a grey ColorCorrection and a Retro ColorGradingEffect, inside a room with a doorway",
+            eye: [0.0, 5.0, 7.0],
+            look_at: [0.0, 3.0, -10.0],
+            fov: 70.0,
+            lighting: with(
+                studio(),
+                &[
+                    ("ClockTime", float(10.3)),
+                    ("Brightness", float(0.607)),
+                    ("EnvironmentDiffuseScale", float(0.0)),
+                    ("EnvironmentSpecularScale", float(0.0)),
+                    ("Technology", Variant::Enum(VOXEL)),
+                ],
+            ),
+            probes: vec![
+                ("room floor", [-3.0, 0.0, 0.0]),
+                ("back wall", [-4.0, 4.0, -9.5]),
+                ("side wall", [-7.5, 4.0, -3.0]),
+                ("outside floor", [0.0, 0.0, -14.0]),
+                ("white block", [3.0, 1.0, -4.0]),
+            ],
+            build: retro_room,
+        },
+        Scene {
+            name: "game_voxel_night",
+            about: "Voxel at midnight, Brightness 0.6, no environment light: a room with a doorway, unlit",
+            eye: [0.0, 5.0, 7.0],
+            look_at: [0.0, 3.0, -10.0],
+            fov: 70.0,
+            lighting: with(
+                studio(),
+                &[
+                    ("ClockTime", float(0.0)),
+                    ("Brightness", float(0.607)),
+                    ("EnvironmentDiffuseScale", float(0.0)),
+                    ("EnvironmentSpecularScale", float(0.0)),
+                    ("Technology", Variant::Enum(VOXEL)),
+                ],
+            ),
+            probes: vec![
+                ("room floor", [-3.0, 0.0, 0.0]),
+                ("back wall", [-4.0, 4.0, -9.5]),
+                ("side wall", [-7.5, 4.0, -3.0]),
+                ("outside floor", [0.0, 0.0, -14.0]),
+                ("white block", [3.0, 1.0, -4.0]),
+            ],
+            build: night_room,
+        },
+        Scene {
+            name: "game_voxel_night_bright",
+            about: "game_voxel_night at Brightness 3: what the moon adds",
+            eye: [0.0, 5.0, 7.0],
+            look_at: [0.0, 3.0, -10.0],
+            fov: 70.0,
+            lighting: with(
+                studio(),
+                &[
+                    ("ClockTime", float(0.0)),
+                    ("Brightness", float(0.607)),
+                    ("EnvironmentDiffuseScale", float(0.0)),
+                    ("EnvironmentSpecularScale", float(0.0)),
+                    ("Technology", Variant::Enum(VOXEL)),
+                    ("Brightness", float(3.0)),
+                ],
+            ),
+            probes: vec![
+                ("room floor", [-3.0, 0.0, 0.0]),
+                ("back wall", [-4.0, 4.0, -9.5]),
+                ("side wall", [-7.5, 4.0, -3.0]),
+                ("outside floor", [0.0, 0.0, -14.0]),
+                ("white block", [3.0, 1.0, -4.0]),
+            ],
+            build: night_room,
+        },
+        Scene {
+            name: "game_voxel_night_dark",
+            about: "game_voxel_night with Ambient and OutdoorAmbient black: the moon alone",
+            eye: [0.0, 5.0, 7.0],
+            look_at: [0.0, 3.0, -10.0],
+            fov: 70.0,
+            lighting: with(
+                studio(),
+                &[
+                    ("ClockTime", float(0.0)),
+                    ("Brightness", float(0.607)),
+                    ("EnvironmentDiffuseScale", float(0.0)),
+                    ("EnvironmentSpecularScale", float(0.0)),
+                    ("Technology", Variant::Enum(VOXEL)),
+                    ("Ambient", rgb(0, 0, 0)),
+                    ("OutdoorAmbient", rgb(0, 0, 0)),
+                ],
+            ),
+            probes: vec![
+                ("room floor", [-3.0, 0.0, 0.0]),
+                ("back wall", [-4.0, 4.0, -9.5]),
+                ("side wall", [-7.5, 4.0, -3.0]),
+                ("outside floor", [0.0, 0.0, -14.0]),
+                ("white block", [3.0, 1.0, -4.0]),
+            ],
+            build: night_room,
+        },
     ]
     .into_iter()
     .chain(tone_scenes())
@@ -833,6 +954,64 @@ pub fn scenes() -> Vec<Scene> {
 
 /// `Enum.Technology.Future`.
 const FUTURE: u32 = 4;
+/// `Enum.Technology.Voxel`.
+const VOXEL: u32 = 1;
+
+/// A grass field with a white path, a tall black block and a tree-sized
+/// one casting their shadows, under the effects a bright day game stacks.
+fn day_effects(b: &mut Builder) {
+    b.block([2048.0, 16.0, 2048.0], [0.0, -8.0, 0.0], [75, 151, 75]);
+    b.block([16.0, 0.2, 200.0], [0.0, 0.1, 0.0], [248, 248, 248]);
+    b.block([4.0, 6.0, 3.0], [0.0, 3.0, 0.0], [27, 42, 53]);
+    b.block([4.0, 10.0, 4.0], [12.0, 5.0, -12.0], [27, 42, 53]);
+    template_sky(b);
+    let rays = b.lighting_child("SunRaysEffect");
+    b.set(rays, "Intensity", float(0.252));
+    b.set(rays, "Spread", float(0.139));
+    let atmosphere = b.lighting_child("Atmosphere");
+    b.set(atmosphere, "Color", rgb(67, 131, 191));
+    b.set(atmosphere, "Decay", rgb(105, 215, 221));
+    b.set(atmosphere, "Density", float(0.319));
+    b.set(atmosphere, "Offset", float(0.153));
+    b.set(atmosphere, "Glare", float(0.0));
+    b.set(atmosphere, "Haze", float(0.0));
+    let bloom = b.lighting_child("BloomEffect");
+    b.set(bloom, "Size", float(24.0));
+    b.set(bloom, "Intensity", float(5.0));
+    b.set(bloom, "Threshold", float(2.0));
+    let focus = b.lighting_child("DepthOfFieldEffect");
+    b.set(focus, "FarIntensity", float(0.1));
+    b.set(focus, "FocusDistance", float(0.05));
+    b.set(focus, "InFocusRadius", float(30.0));
+    b.set(focus, "NearIntensity", float(0.75));
+    let grade = b.lighting_child("ColorCorrectionEffect");
+    b.set(grade, "Contrast", float(0.1));
+    b.set(grade, "Saturation", float(0.3));
+}
+
+fn retro_room(b: &mut Builder) {
+    night_room(b);
+    let grade = b.lighting_child("ColorCorrectionEffect");
+    b.set(grade, "Brightness", float(-0.1));
+    b.set(grade, "Saturation", float(-1.0));
+    let grading = b.lighting_child("ColorGradingEffect");
+    b.set(grading, "TonemapperPreset", Variant::Enum(1));
+}
+
+/// A grey room, 16 wide and 20 deep with a roof, its back wall open in a
+/// doorway onto the floor outside; a white block inside.
+fn night_room(b: &mut Builder) {
+    b.floor();
+    let wall = [163, 162, 165];
+    b.block([16.0, 0.4, 20.0], [0.0, 8.2, 0.0], wall);
+    b.block([0.4, 8.0, 20.0], [-8.0, 4.0, 0.0], wall);
+    b.block([0.4, 8.0, 20.0], [8.0, 4.0, 0.0], wall);
+    b.block([6.0, 8.0, 0.4], [-5.0, 4.0, -10.0], wall);
+    b.block([6.0, 8.0, 0.4], [5.0, 4.0, -10.0], wall);
+    b.block([16.0, 8.0, 0.4], [0.0, 4.0, 10.0], wall);
+    b.block([2.0, 2.0, 2.0], [3.0, 1.0, -4.0], [248, 248, 248]);
+    template_effects(b);
+}
 
 /// The grey levels of [`ramp`], 0 to 255 in steps of 17.
 const RAMP: usize = 16;
@@ -871,6 +1050,13 @@ fn ramp(b: &mut Builder) {
     }
 }
 
+/// [`ramp`] under a `ColorGradingEffect` set to `Retro`.
+fn ramp_retro(b: &mut Builder) {
+    ramp(b);
+    let grading = b.lighting_child("ColorGradingEffect");
+    b.set(grading, "TonemapperPreset", Variant::Enum(1));
+}
+
 /// The sun straight overhead (noon at latitude 23.5), nothing else lighting
 /// the ramp unless a scene adds it: what turns a top face's colour into the
 /// renderer's response to `grey × light`.
@@ -901,7 +1087,7 @@ fn tone_scenes() -> Vec<Scene> {
         }
         lighting
     };
-    let scene = |name, about, lighting, studio_place| Scene {
+    let graded = |name, about, lighting, studio_place, build: fn(&mut Builder)| Scene {
         name,
         about,
         eye: [0.0, 9.0, 16.0],
@@ -917,9 +1103,39 @@ fn tone_scenes() -> Vec<Scene> {
             })
             .chain([("sky", [-500.0, -150.0, -1000.0])])
             .collect(),
-        build: ramp,
+        build,
     };
+    let scene =
+        |name, about, lighting, studio_place| graded(name, about, lighting, studio_place, ramp);
     vec![
+        graded(
+            "tone_sun_2_retro",
+            "tone_sun_2 under a ColorGradingEffect with TonemapperPreset Retro",
+            tone(2.0, &[]),
+            true,
+            ramp_retro,
+        ),
+        graded(
+            "tone_sun_2_voxel_retro",
+            "tone_sun_2_voxel under a ColorGradingEffect with TonemapperPreset Retro",
+            tone(2.0, &[]),
+            false,
+            ramp_retro,
+        ),
+        graded(
+            "tone_sun_8_voxel_retro",
+            "The ramp under an overhead sun, Brightness 8, Voxel, TonemapperPreset Retro",
+            tone(8.0, &[]),
+            false,
+            ramp_retro,
+        ),
+        graded(
+            "tone_ambient_voxel_retro",
+            "tone_ambient_voxel under a ColorGradingEffect with TonemapperPreset Retro",
+            tone(0.0, &[("OutdoorAmbient", rgb(255, 255, 255))]),
+            false,
+            ramp_retro,
+        ),
         scene(
             "tone_sun_1",
             "The ramp under an overhead sun, Brightness 1",

@@ -52,7 +52,7 @@
     "delta_e": 2.907,
     "delta_e_p90": 4.698,
     "ssim": 0.937,
-    "tolerance_delta_e": 0.43604108691215515,
+    "tolerance_delta_e": 0.4360410869121551,
     "tolerance_ssim": 0.019999999552965164
   },
   "evening": {
@@ -79,12 +79,52 @@
     "tolerance_delta_e": 0.45362356305122375,
     "tolerance_ssim": 0.019999999552965164
   },
+  "game_day_effects": {
+    "about": "A white path in the sun under a game's stack of effects: blue Atmosphere, saturated ColorCorrection, strong Bloom, DepthOfField",
+    "delta_e": 2.3,
+    "delta_e_p90": 3.874,
+    "ssim": 0.981,
+    "tolerance_delta_e": 0.3449826240539551,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_retro_room": {
+    "about": "A lobby's look: Voxel mid-morning, Brightness 0.6, no environment light, a grey ColorCorrection and a Retro ColorGradingEffect, inside a room with a doorway",
+    "delta_e": 1.824,
+    "delta_e_p90": 3.283,
+    "ssim": 0.783,
+    "tolerance_delta_e": 0.27353155612945557,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_voxel_night": {
+    "about": "Voxel at midnight, Brightness 0.6, no environment light: a room with a doorway, unlit",
+    "delta_e": 0.681,
+    "delta_e_p90": 1.147,
+    "ssim": 0.979,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_voxel_night_bright": {
+    "about": "game_voxel_night at Brightness 3: what the moon adds",
+    "delta_e": 0.749,
+    "delta_e_p90": 1.206,
+    "ssim": 0.971,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_voxel_night_dark": {
+    "about": "game_voxel_night with Ambient and OutdoorAmbient black: the moon alone",
+    "delta_e": 0.07,
+    "delta_e_p90": 0.157,
+    "ssim": 0.97,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
   "latitude": {
     "about": "GeographicLatitude 60 at noon",
     "delta_e": 3.002,
     "delta_e_p90": 4.731,
     "ssim": 0.94,
-    "tolerance_delta_e": 0.45028164982795715,
+    "tolerance_delta_e": 0.4502816498279571,
     "tolerance_ssim": 0.019999999552965164
   },
   "light_point_1": {
@@ -311,6 +351,14 @@
     "tolerance_delta_e": 0.4335128366947174,
     "tolerance_ssim": 0.019999999552965164
   },
+  "tone_ambient_voxel_retro": {
+    "about": "tone_ambient_voxel under a ColorGradingEffect with TonemapperPreset Retro",
+    "delta_e": 2.89,
+    "delta_e_p90": 5.638,
+    "ssim": 0.926,
+    "tolerance_delta_e": 0.4335128366947174,
+    "tolerance_ssim": 0.019999999552965164
+  },
   "tone_exposure": {
     "about": "The ramp under an overhead sun, Brightness 1, ExposureCompensation 2",
     "delta_e": 3.822,
@@ -340,7 +388,7 @@
     "delta_e": 2.846,
     "delta_e_p90": 5.776,
     "ssim": 0.919,
-    "tolerance_delta_e": 0.42694762349128723,
+    "tolerance_delta_e": 0.4269476234912872,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2": {
@@ -351,12 +399,28 @@
     "tolerance_delta_e": 0.41240832209587097,
     "tolerance_ssim": 0.019999999552965164
   },
+  "tone_sun_2_retro": {
+    "about": "tone_sun_2 under a ColorGradingEffect with TonemapperPreset Retro",
+    "delta_e": 2.92,
+    "delta_e_p90": 5.649,
+    "ssim": 0.92,
+    "tolerance_delta_e": 0.43806618452072144,
+    "tolerance_ssim": 0.019999999552965164
+  },
   "tone_sun_2_voxel": {
     "about": "tone_sun_2 in a place that leaves Technology and LightingStyle at their defaults",
     "delta_e": 2.951,
     "delta_e_p90": 5.664,
     "ssim": 0.916,
-    "tolerance_delta_e": 0.44272392988204956,
+    "tolerance_delta_e": 0.4427239298820496,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_2_voxel_retro": {
+    "about": "tone_sun_2_voxel under a ColorGradingEffect with TonemapperPreset Retro",
+    "delta_e": 2.92,
+    "delta_e_p90": 5.649,
+    "ssim": 0.92,
+    "tolerance_delta_e": 0.43806618452072144,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_30": {
@@ -397,6 +461,14 @@
     "delta_e_p90": 5.771,
     "ssim": 0.924,
     "tolerance_delta_e": 0.4321487247943878,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_8_voxel_retro": {
+    "about": "The ramp under an overhead sun, Brightness 8, Voxel, TonemapperPreset Retro",
+    "delta_e": 3.09,
+    "delta_e_p90": 5.777,
+    "ssim": 0.918,
+    "tolerance_delta_e": 0.46348461508750916,
     "tolerance_ssim": 0.019999999552965164
   }
 }

@@ -121,12 +121,10 @@ pub(crate) struct SunRays {
 /// `ColorGradingEffect.TonemapperPreset`: how the final HDR colour is folded
 /// into the displayable range.
 ///
-/// Roblox publishes no formula for either curve, only that `Retro` "emulates
-/// the pre-2019 Roblox lighting system", so both are principled
-/// approximations, not a reproduction. `Default` is exactly this renderer's
-/// existing tonemap (a plain clamp; see `renderer::post`'s resolve shader), so
-/// a place with no `ColorGradingEffect`, or one that resolves to `Default`,
-/// looks pixel-identical to before this enum existed.
+/// `Retro` ("emulates the pre-2019 Roblox lighting system") is the Voxel
+/// look under any `Technology`: the real client's ramps under it match its
+/// Voxel ones to the step, sun and ambient scales included (the
+/// `tone_*_retro` fidelity scenes). `Default` is the Technology's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Tonemap {
     #[default]

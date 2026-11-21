@@ -74,8 +74,7 @@ impl Post {
             }),
             misc: [
                 match self.effects.tonemap {
-                    Tonemap::Default => 0.0,
-                    Tonemap::Retro => 1.0,
+                    Tonemap::Default | Tonemap::Retro => 0.0,
                     Tonemap::Filmic => 2.0,
                 },
                 f32::from(u8::from(self.effects.blur.is_some())),

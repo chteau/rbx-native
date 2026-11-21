@@ -58,6 +58,14 @@ const SUN_BASE: f32 = 0.45;
 const FILMIC_SUN: f32 = 0.387;
 const FILMIC_AMBIENT: f32 = 0.757;
 const VOXEL_SUN: f32 = 0.528;
+/// Night under Voxel (and Retro), measured on a room at midnight
+/// (`game_voxel_night`, `_bright`, `_dark`): the moon is 0.14 of what the
+/// filmic look gives it (a floor outside reads sRGB 3 at Brightness 0.607
+/// with no ambient, 20 with ambient at Brightness 3), and `Ambient` and
+/// `OutdoorAmbient` light at 0.4 of their face value (walls and floors
+/// alike, inside and out), back to full by day (`tone_ambient_voxel`).
+const VOXEL_MOON: f32 = 0.14;
+const VOXEL_NIGHT_AMBIENT: f32 = 0.4;
 /// `Enum.Technology.ShadowMap`, the first value lit the filmic way, and
 /// `Future`, the only one whose local lights are drawn per pixel rather than
 /// kept in the voxel grid (`renderer/lights.wgsl`).
@@ -438,17 +446,22 @@ impl Lighting {
         mut effects: Effects,
         clouds: Option<Clouds>,
     ) -> Self {
-        let (sun_base, ambient_scale) = if read.technology >= TECHNOLOGY_SHADOW_MAP {
-            if effects.tonemap == Tonemap::Default {
-                effects.tonemap = Tonemap::Filmic;
-            }
-            (FILMIC_SUN, FILMIC_AMBIENT)
-        } else {
-            (VOXEL_SUN, 1.0)
-        };
+        // Retro is the Voxel look whatever the Technology: its ramps read
+        // the same as Voxel's to the step, under ShadowMap too
+        // (`tone_sun_2_retro`, `tone_sun_2_voxel_retro`).
+        let filmic = read.technology >= TECHNOLOGY_SHADOW_MAP && effects.tonemap != Tonemap::Retro;
         let sun_direction = sun_direction(read.clock, read.latitude);
         // 1 in full daylight, 0 once the sun is a hair below the horizon.
         let day = ((sun_direction.y + TWILIGHT_BAND) / (2.0 * TWILIGHT_BAND)).clamp(0.0, 1.0);
+        let (sun_base, ambient_scale, moon) = if filmic {
+            if effects.tonemap == Tonemap::Default {
+                effects.tonemap = Tonemap::Filmic;
+            }
+            (FILMIC_SUN, FILMIC_AMBIENT, 1.0)
+        } else {
+            let ambient = VOXEL_NIGHT_AMBIENT + (1.0 - VOXEL_NIGHT_AMBIENT) * day;
+            (VOXEL_SUN, ambient, VOXEL_MOON)
+        };
         let lamp = sun_base * read.brightness.max(0.0);
 
         Lighting {
@@ -459,7 +472,8 @@ impl Lighting {
             // One lamp does both jobs: a bounce opposite the sun by day, the
             // moon by night (see `Lighting::fill_direction`).
             fill_color: Vec3::splat(lamp)
-                * (FILL_FRACTION * FILL_TINT * day + MOON_FRACTION * MOON_TINT * (1.0 - day))
+                * (FILL_FRACTION * FILL_TINT * day
+                    + moon * MOON_FRACTION * MOON_TINT * (1.0 - day))
                 * (Vec3::ONE + read.shift_bottom),
             ambient: read.ambient * ambient_scale,
             exposure: read.exposure.exp2(),

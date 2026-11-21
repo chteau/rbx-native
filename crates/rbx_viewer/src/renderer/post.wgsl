@@ -20,8 +20,8 @@ struct PostUniform {
     correction: vec4<f32>,
     // TintColor, as the raw components Studio shows: a gain, not a radiance.
     tint: vec4<f32>,
-    // x: the tone curve: 0 a clamp (Default under Voxel or Compatibility), 1
-    // Reinhard (a ColorGradingEffect's TonemapperPreset.Retro), 2 `filmic`
+    // x: the tone curve: 0 a clamp (Default under Voxel or Compatibility, and
+    // a ColorGradingEffect's TonemapperPreset.Retro under any), 2 `filmic`
     // (Default under ShadowMap or Future). y: 1 where a BlurEffect is enabled, 0
     // otherwise. z: the camera's near plane in studs, which is the whole of what
     // view_distance needs. w: 1 where a DepthOfFieldEffect is enabled.
@@ -287,22 +287,11 @@ fn fs_resolve(in: VertexOutput) -> @location(0) vec4<f32> {
         color += sun_rays(in.uv) * post.sun_rays.z;
     }
 
-    // Roblox publishes no formula for either preset. `Default` is exactly the
-    // plain clamp this renderer always used, so a place with no
-    // ColorGradingEffect (or one that resolves to Default) is unchanged; the
-    // only "curve" it has ever had is the `*Srgb` target's own gamma encode on
-    // write, which happens after this shader and cannot be toggled per effect.
-    // That rules out approximating `Retro` by "removing" a sqrt this pipeline
-    // never applied, it would just collapse back to Default. A Reinhard
-    // rolloff (`color / (1 + color)`) is used instead: a real, well-known
-    // legacy tonemap that reads flatter than the clamp, which is the
-    // principled approximation this renderer can actually justify.
+    // A plain clamp under Voxel and Compatibility, and under Retro whatever
+    // the Technology (the real client's Retro ramps match its Voxel ones to
+    // the step); the fitted filmic curve under ShadowMap and Future.
     let hdr = max(color, vec3<f32>(0.0));
-    var mapped = select(
-        clamp(hdr, vec3<f32>(0.0), vec3<f32>(1.0)),
-        hdr / (vec3<f32>(1.0) + hdr),
-        post.misc.x > 0.5,
-    );
+    var mapped = clamp(hdr, vec3<f32>(0.0), vec3<f32>(1.0));
     if post.misc.x > 1.5 {
         mapped = filmic(hdr);
     }
