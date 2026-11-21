@@ -15,7 +15,7 @@ use super::MeshData;
 // is more useful here than a shorter name clippy would prefer.
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TrussStyle {
+pub enum TrussStyle {
     #[default]
     AlternatingSupports,
     BridgeStyleSupports,
@@ -26,7 +26,7 @@ pub(crate) enum TrussStyle {
 /// bakes it as X; [`oriented`] rotates that onto whichever axis
 /// `scene::shape` finds to be the part's largest `size` dimension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TrussAxis {
+pub enum TrussAxis {
     X,
     Y,
     Z,
@@ -64,7 +64,7 @@ const FACES: [(CornerAt, CornerAt); 4] = [
 
 /// Builds a truss lattice fitting `[-0.5, 0.5]^3`, long axis X: four rails
 /// running the full length, plus `segments` repeats of `style`'s bracing.
-pub(crate) fn truss(segments: u32, style: TrussStyle) -> MeshData {
+pub fn truss(segments: u32, style: TrussStyle) -> MeshData {
     let segments = segments.max(1);
     let mut mesh = MeshData::default();
 
@@ -108,7 +108,7 @@ pub(crate) fn truss(segments: u32, style: TrussStyle) -> MeshData {
 /// Both rotations used here (90 degrees about Z for Y, about Y for Z) have
 /// determinant +1, so applying the same map to positions and normals keeps
 /// winding and outward-facing normals correct with no extra fix-up.
-pub(crate) fn oriented(mesh: MeshData, axis: TrussAxis) -> MeshData {
+pub fn oriented(mesh: MeshData, axis: TrussAxis) -> MeshData {
     match axis {
         TrussAxis::X => mesh,
         TrussAxis::Y => rotate(mesh, |v| Vec3::new(-v.y, v.x, v.z)),
