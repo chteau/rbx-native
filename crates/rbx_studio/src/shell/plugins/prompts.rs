@@ -152,6 +152,8 @@ impl Shell {
             PromptKind::BrickColor { initial } => self.brick_prompt(initial, cx),
             PromptKind::HttpPermission { host } => self.http_prompt(plugin, &host, cx),
             PromptKind::Menu { title, items } => self.menu_prompt(&title, &items, window, cx),
+            // The system's own file chooser, never queued (`plugin_prompt`).
+            PromptKind::OpenFiles { .. } | PromptKind::SaveFile { .. } => return None,
         })
     }
 

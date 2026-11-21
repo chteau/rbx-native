@@ -934,13 +934,13 @@ pub(crate) fn answer(lua: &Lua, prompt: UiId, answer: &Answer) -> Result<bool> {
             Value::UserData(lua.create_userdata(menu::LuaAction(*id))?)
         }
         (Pending::Files { multiple: false }, Answer::Paths(Some(paths))) => match paths.first() {
-            Some(path) => super::file::LuaFile::new(lua, path.clone())?,
+            Some(path) => super::file::LuaFile::make(lua, path.clone())?,
             None => Value::Nil,
         },
         (Pending::Files { multiple: true }, Answer::Paths(Some(paths))) => {
             let files = lua.create_table()?;
             for path in paths {
-                files.push(super::file::LuaFile::new(lua, path.clone())?)?;
+                files.push(super::file::LuaFile::make(lua, path.clone())?)?;
             }
             Value::Table(files)
         }

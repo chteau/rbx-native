@@ -11,7 +11,7 @@ pub(crate) struct LuaFile {
 }
 
 impl LuaFile {
-    pub(crate) fn new(lua: &Lua, path: PathBuf) -> Result<Value> {
+    pub(crate) fn make(lua: &Lua, path: PathBuf) -> Result<Value> {
         const KEY: &str = "rbxn.next_file_id";
         let id = lua.named_registry_value::<Option<u32>>(KEY)?.unwrap_or(0) + 1;
         lua.set_named_registry_value(KEY, id)?;

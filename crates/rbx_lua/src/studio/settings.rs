@@ -73,7 +73,7 @@ fn static_class(class: &str) -> &'static str {
 }
 
 impl SettingsObject {
-    fn new(
+    fn make(
         lua: &Lua,
         ctx: &Ctx,
         class: &str,
@@ -489,9 +489,10 @@ pub(crate) fn install(lua: &Lua, ctx: &Ctx) -> Result<()> {
     let global = lua.create_function(move |lua, ()| {
         cached(lua, "rbxn.settings", || {
             let root =
-                SettingsObject::new(lua, &ctx_global, "GlobalSettings", "Global Settings", None)?;
+                SettingsObject::make(lua, &ctx_global, "GlobalSettings", "Global Settings", None)?;
             for (class, name) in GLOBAL {
-                let child = SettingsObject::new(lua, &ctx_global, class, name, Some(root.clone()))?;
+                let child =
+                    SettingsObject::make(lua, &ctx_global, class, name, Some(root.clone()))?;
                 root.borrow::<SettingsObject>()?
                     .children
                     .borrow_mut()
@@ -505,8 +506,8 @@ pub(crate) fn install(lua: &Lua, ctx: &Ctx) -> Result<()> {
     let user = lua.create_function(move |lua, ()| {
         cached(lua, "rbxn.user_settings", || {
             let root =
-                SettingsObject::new(lua, &ctx_user, "UserSettings", "GlobalBasicSettings", None)?;
-            let game = SettingsObject::new(
+                SettingsObject::make(lua, &ctx_user, "UserSettings", "GlobalBasicSettings", None)?;
+            let game = SettingsObject::make(
                 lua,
                 &ctx_user,
                 "UserGameSettings",
@@ -558,7 +559,7 @@ pub(crate) fn new_object(
     name: &str,
     parent: Option<AnyUserData>,
 ) -> Result<AnyUserData> {
-    SettingsObject::new(lua, ctx, class, name, parent)
+    SettingsObject::make(lua, ctx, class, name, parent)
 }
 
 pub(crate) fn name_of(object: &SettingsObject) -> &str {
