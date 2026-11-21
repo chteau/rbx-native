@@ -27,6 +27,9 @@ pub(crate) struct Ctx {
     /// destroyed instance readable (`Parent` nil), so a handler that gets
     /// one late can still ask what it was.
     tombstones: Rc<RefCell<std::collections::HashMap<Ref, (String, String)>>>,
+    /// The properties the most recently destroyed instances had, for a
+    /// script still holding one to read (`Remains`).
+    remains: Rc<RefCell<Remains>>,
     /// Lets host objects that are instances in Roblox but handles here fill
     /// an `Instance` property; see [`HandleBridge`].
     handles: Rc<RefCell<Option<Rc<dyn HandleBridge>>>>,
@@ -102,6 +105,7 @@ impl Ctx {
             guard: None,
             on_write: None,
             tombstones: Rc::default(),
+            remains: Rc::default(),
             handles: Rc::default(),
         }
     }
@@ -109,13 +113,21 @@ impl Ctx {
     /// Notes `root` and its descendants as destroyed; call before removing.
     pub(crate) fn bury(&self, dom: &WeakDom, root: Ref) {
         let mut tombstones = self.tombstones.borrow_mut();
+        let mut remains = self.remains.borrow_mut();
         let mut stack = vec![root];
         while let Some(r) = stack.pop() {
             if let Some(i) = dom.get(r) {
                 tombstones.insert(r, (i.class().to_string(), i.name().to_string()));
+                remains.keep(i);
                 stack.extend_from_slice(i.children());
             }
         }
+    }
+
+    /// What a destroyed instance was when it went, while it is among the
+    /// most recent ones.
+    pub(crate) fn remains(&self) -> std::cell::Ref<'_, Remains> {
+        self.remains.borrow()
     }
 
     /// The class and name a destroyed instance had.
@@ -137,5 +149,38 @@ impl Ctx {
 
     pub(crate) fn print(&self, kind: LineKind, parts: Vec<PrintPart>) {
         self.output.borrow_mut().push(kind, parts);
+    }
+}
+
+/// Destroyed instances as they were, the newest `Remains::CAP` of them:
+/// Roblox keeps a destroyed instance's properties readable for as long as a
+/// script holds it, which here is bounded so a game that destroys parts
+/// all session long does not grow without end.
+#[derive(Default)]
+pub(crate) struct Remains {
+    kept: std::collections::HashMap<Ref, rbx_dom::Instance>,
+    order: std::collections::VecDeque<Ref>,
+}
+
+impl Remains {
+    const CAP: usize = 16_384;
+
+    fn keep(&mut self, instance: &rbx_dom::Instance) {
+        if self
+            .kept
+            .insert(instance.referent(), instance.clone())
+            .is_none()
+        {
+            self.order.push_back(instance.referent());
+        }
+        while self.order.len() > Self::CAP {
+            if let Some(old) = self.order.pop_front() {
+                self.kept.remove(&old);
+            }
+        }
+    }
+
+    pub(crate) fn get(&self, referent: Ref) -> Option<&rbx_dom::Instance> {
+        self.kept.get(&referent)
     }
 }

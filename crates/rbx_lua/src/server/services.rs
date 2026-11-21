@@ -357,7 +357,8 @@ fn module_of(class: &str) -> Option<&'static str> {
         "HttpService" => "HttpService",
         "PathfindingService" | "Path" => "PathfindingService",
         "Debris" | "Players" | "Player" | "RunService" | "FriendPages" | "ContentProvider"
-        | "UserSettings" | "UserGameSettings" | "PlayerScripts" | "ScriptContext" => "Helpers",
+        | "ReplicatedFirst" | "UserSettings" | "UserGameSettings" | "PlayerScripts"
+        | "ScriptContext" => "Helpers",
         "TeleportService" | "TeleportOptions" | "TeleportAsyncResult" => "TeleportService",
         "BadgeService" => "BadgeService",
         "GroupService"

@@ -535,7 +535,7 @@ impl Shell {
         let kept = player.as_ref().map(|(p, _)| p.clone());
         let mut note = None;
         if let Some((player, avatars)) = player {
-            session.server.set_avatars(Box::new(avatars));
+            session.set_avatars(std::rc::Rc::new(avatars));
             // You, then the extra test players: noobs, numbered as Studio
             // numbers its test players.
             let mut joined = session

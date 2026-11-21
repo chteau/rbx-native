@@ -107,7 +107,7 @@ print("done")
     );
     dom.take_changes();
     let mut sim = Simulation::new(dom).expect("the place runs");
-    sim.set_avatars(Box::new(OneUser));
+    sim.set_avatars(std::rc::Rc::new(OneUser));
     sim.join("Player1", 1, None);
     sim.start();
     let mut lines = Vec::new();
@@ -127,4 +127,55 @@ print("done")
     assert!(has("applied 123"), "{lines:#?}");
     assert!(has("head 4"), "{lines:#?}");
     assert!(has("built true true 123"), "{lines:#?}");
+}
+
+#[test]
+fn a_client_dresses_its_own_dummy_but_not_a_replicated_humanoid() {
+    let mut dom = conformance::bare_place();
+    let starter = dom
+        .root_refs()
+        .iter()
+        .copied()
+        .find(|r| dom.get(*r).is_some_and(|i| i.class() == "StarterPlayer"))
+        .and_then(|s| dom.get(s).map(|i| i.children()[0]))
+        .expect("StarterPlayerScripts");
+    let script = dom.new_instance("LocalScript", "Lobby", Some(starter));
+    let _ = dom.set_property(
+        script,
+        "Source",
+        Variant::String(
+            r#"
+local Players = game:GetService("Players")
+local character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
+local description = Players:GetHumanoidDescriptionFromUserId(7)
+print("replicated", pcall(character:WaitForChild("Humanoid").ApplyDescription, character.Humanoid, description))
+local dummy = Instance.new("Model")
+Instance.new("Humanoid", dummy)
+local head = Instance.new("Part", dummy)
+head.Name = "Head"
+dummy.Parent = workspace
+dummy.Humanoid:ApplyDescription(description)
+print("dummy", dummy:FindFirstChild("Hat") ~= nil)
+"#
+            .into(),
+        ),
+    );
+    dom.take_changes();
+    let mut session = rbx_sim::Session::new(dom).expect("the place runs");
+    session.set_avatars(std::rc::Rc::new(OneUser));
+    session.start();
+    session.join("Player1", 1, None).expect("joins");
+    let mut lines = Vec::new();
+    for _ in 0..60 {
+        session.step();
+        for (_, output) in session.take_output() {
+            lines.extend(output.lines().iter().cloned());
+        }
+    }
+    assert!(
+        lines.iter().any(|l| l
+            == "replicated false Humanoid::ApplyDescription() can only be called by the backend server"),
+        "{lines:#?}"
+    );
+    assert!(lines.iter().any(|l| l == "dummy true"), "{lines:#?}");
 }

@@ -146,9 +146,6 @@ fn main() {
         for (name, message) in session.kicked.drain(..) {
             println!("[{t:7.3} S] kicked: {name}: {message}");
         }
-        if session.clients.is_empty() {
-            break;
-        }
         if track && frame % (rbx_sim::FRAME_HZ as u64) == 0 {
             println!(
                 "[{t:7.3} C] track: {}",
@@ -169,6 +166,9 @@ fn main() {
                 };
                 println!("[{t:7.3} {side}] {tag}{line}");
             }
+        }
+        if session.clients.is_empty() {
+            break;
         }
     }
     println!(

@@ -425,3 +425,151 @@ fn a_ragdoll_in_the_physics_state_lives_without_its_neck() {
     );
     assert!(has(&lines, C, "ragdoll 100 Physics"), "{lines:#?}");
 }
+
+#[test]
+fn the_legacy_body_movers_act_on_their_part() {
+    let lines = run(
+        place(
+            "local function part(x) local p = Instance.new('Part') p.Size = Vector3.new(2, 2, 2) p.Position = Vector3.new(x, 20, 0) p.Parent = workspace return p end \
+             local floated = part(0) local f = Instance.new('BodyForce') f.Force = Vector3.new(0, floated.AssemblyMass * workspace.Gravity, 0) f.Parent = floated \
+             local pushed = part(10) local v = Instance.new('BodyVelocity') v.Velocity = Vector3.new(10, 0, 0) v.MaxForce = Vector3.one * math.huge v.Parent = pushed \
+             local held = part(20) held.Position = Vector3.new(20, 10, 0) local bp = Instance.new('BodyPosition') bp.Position = Vector3.new(20, 20, 0) bp.MaxForce = Vector3.one * math.huge bp.Parent = held \
+             local turned = part(30) local g = Instance.new('BodyGyro') g.CFrame = CFrame.Angles(0, math.rad(90), 0) g.MaxTorque = Vector3.one * math.huge g.Parent = turned \
+             local lifted = part(40) local onlyY = Instance.new('BodyPosition') onlyY.Position = Vector3.new(99, 25, 99) onlyY.MaxForce = Vector3.new(0, math.huge, 0) onlyY.Parent = lifted \
+             task.wait(3) \
+             print('floated', floated.Position.Y > 18.5, math.round(floated.AssemblyLinearVelocity.Y)) \
+             print('pushed', math.round(pushed.AssemblyLinearVelocity.X), math.round(pushed.AssemblyLinearVelocity.Y)) \
+             print('held', math.round(held.Position.Y)) \
+             print('turned', math.round(turned.Orientation.Y)) \
+             print('lifted', math.round(lifted.Position.X), math.round(lifted.Position.Y))",
+            "",
+        ),
+        3.5,
+    );
+    // A force steps like a VectorForce: the first free kick drops it a
+    // little before the force has caught up, then it hangs still.
+    assert!(has(&lines, S, "floated true 0"), "{lines:#?}");
+    assert!(has(&lines, S, "pushed 10 0"), "{lines:#?}");
+    assert!(has(&lines, S, "held 20"), "{lines:#?}");
+    assert!(has(&lines, S, "turned 90"), "{lines:#?}");
+    assert!(has(&lines, S, "lifted 40 25"), "{lines:#?}");
+}
+
+#[test]
+fn a_body_position_holds_a_character_up() {
+    let lines = run(
+        place(
+            "",
+            "local character = game:GetService('Players').LocalPlayer.Character or game:GetService('Players').LocalPlayer.CharacterAdded:Wait() \
+             local root = character:WaitForChild('HumanoidRootPart') task.wait(0.5) \
+             local bp = Instance.new('BodyPosition') bp.MaxForce = Vector3.new(0, math.huge, 0) bp.Position = root.Position + Vector3.new(0, 10, 0) bp.Parent = root \
+             task.wait(2) print('up', math.abs(root.Position.Y - bp.Position.Y) < 0.5)",
+        ),
+        3.0,
+    );
+    assert!(has(&lines, C, "up true"), "{lines:#?}");
+}
+
+#[test]
+fn queries_follow_parts_that_come_go_and_move() {
+    let lines = run(
+        place(
+            "local function hit(x) local r = workspace:Raycast(Vector3.new(x, 100, 0), Vector3.new(0, -200, 0)) return r and math.round(r.Position.Y) end \
+             local p = Instance.new('Part') p.Anchored = true p.Size = Vector3.new(4, 2, 4) p.Position = Vector3.new(50, 10, 0) p.Parent = workspace \
+             print('placed', hit(50)) \
+             p.Position = Vector3.new(60, 20, 0) print('moved', hit(50), hit(60)) \
+             p.Parent = game:GetService('ReplicatedStorage') print('stored', hit(60)) \
+             p.Parent = workspace print('back', hit(60)) \
+             local f = Instance.new('Part') f.Size = Vector3.new(4, 2, 4) f.Position = Vector3.new(80, 50, 0) f.Parent = workspace \
+             task.wait(2) print('fell', hit(80) < 10) \
+             p:Destroy() print('gone', hit(60))",
+            "",
+        ),
+        2.5,
+    );
+    for line in [
+        "placed 11",
+        "moved 0 21",
+        "stored 0",
+        "back 21",
+        "fell true",
+        "gone 0",
+    ] {
+        assert!(has(&lines, S, line), "{line}: {lines:#?}");
+    }
+}
+
+#[test]
+fn model_move_to_carries_the_model_by_its_primary_part() {
+    let lines = run(
+        place(
+            "",
+            "local m = Instance.new('Model') \
+             local a = Instance.new('Part') a.Anchored = true a.Position = Vector3.new(0, 5, 0) a.Parent = m \
+             local b = Instance.new('Part') b.Anchored = true b.Position = Vector3.new(4, 5, 0) b.Parent = m \
+             m.PrimaryPart = a m.Parent = workspace \
+             m:MoveTo(Vector3.new(10, 20, 30)) \
+             print('moved', a.Position, b.Position)",
+        ),
+        1.0,
+    );
+    assert!(has(&lines, C, "moved 10, 20, 30 14, 20, 30"), "{lines:#?}");
+}
+
+#[test]
+fn model_move_to_rises_out_of_what_it_would_overlap() {
+    let lines = run(
+        place(
+            "",
+            "local block = Instance.new('Part') block.Anchored = true block.Size = Vector3.new(4, 4, 4) block.Position = Vector3.new(40, 2, 0) block.Parent = workspace \
+             local m = Instance.new('Model') \
+             local a = Instance.new('Part') a.Anchored = true a.Size = Vector3.new(2, 2, 2) a.Parent = m \
+             m.PrimaryPart = a m.Parent = workspace \
+             m:MoveTo(Vector3.new(40, 2, 0)) \
+             print('lifted', a.Position.Y)",
+        ),
+        1.0,
+    );
+    assert!(has(&lines, C, "lifted 5"), "{lines:#?}");
+}
+
+#[test]
+fn a_replicated_first_loader_sees_its_character_arrive() {
+    let mut dom = place("", "");
+    let first = service(&dom, "ReplicatedFirst");
+    let module = dom.new_instance(
+        "ModuleScript",
+        "Loader",
+        Some(service(&dom, "ReplicatedStorage")),
+    );
+    let _ = dom.set_property(module, "Source", Variant::String("return 1".into()));
+    let local = dom.new_instance("LocalScript", "Boot", Some(first));
+    let _ = dom.set_property(
+        local,
+        "Source",
+        Variant::String(
+            "require(game:GetService('ReplicatedStorage'):WaitForChild('Loader')) \
+             local character = game:GetService('Players').LocalPlayer.CharacterAdded:Wait() \
+             print('arrived', character.Parent == workspace)"
+                .into(),
+        ),
+    );
+    dom.take_changes();
+    let lines = run(dom, 2.0);
+    assert!(has(&lines, C, "arrived true"), "{lines:#?}");
+}
+
+#[test]
+fn a_destroyed_instance_still_reads_as_it_was() {
+    let lines = run(
+        place(
+            "local p = Instance.new('Part') p.Name = 'X' p.Transparency = 0.5 p.Parent = workspace \
+             local v = Instance.new('IntValue') v.Value = 7 v.Parent = p \
+             p:Destroy() \
+             print('kept', v.Value, p.Transparency, p.Name, p.Parent, v.Parent)",
+            "",
+        ),
+        0.5,
+    );
+    assert!(has(&lines, S, "kept 7 0.5 X nil nil"), "{lines:#?}");
+}

@@ -50,6 +50,10 @@ pub struct Client {
     loaded: bool,
     /// `CharacterAdded` waiting for its character to arrive: (player, model).
     characters: Vec<(Ref, Ref)>,
+    /// Its own character, held out of the join's snapshot for a frame: on
+    /// Roblox it lands after ReplicatedFirst has started, so a loader there
+    /// waiting on `CharacterAdded` sees it fire.
+    deferred: Option<Ref>,
     /// What the client sends the server at the start of the next frame.
     outbox: Upstream,
     /// Parts it moved last frame, to say when they stop.
@@ -80,11 +84,14 @@ pub struct Session {
     /// Players kicked, with the message their client shows: (name,
     /// message), oldest first.
     pub kicked: Vec<(String, String)>,
+    /// What a client printed before it left, not yet taken.
+    left: Vec<(Peer, Output)>,
     /// Server parts moved this frame on a client's behalf, for the others.
     relayed: Vec<Placed>,
     /// Parts the server moved last frame, to say when they stop.
     moving: HashSet<Ref>,
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
+    avatars: Option<std::rc::Rc<dyn crate::players::Avatars>>,
     services: Option<rbx_lua::server::Services>,
     /// Teleport GUIs players bring into this run, by user id, placed in
     /// their client's DataModel as they join.
@@ -124,9 +131,11 @@ impl Session {
             server,
             clients: Vec::new(),
             kicked: Vec::new(),
+            left: Vec::new(),
             relayed: Vec::new(),
             moving: HashSet::new(),
             fetcher: None,
+            avatars: None,
             services: None,
             arriving: std::collections::HashMap::new(),
         })
@@ -157,6 +166,9 @@ impl Session {
         if let Some(fetcher) = &self.fetcher {
             sim.set_fetcher(fetcher.clone());
         }
+        if let Some(avatars) = &self.avatars {
+            sim.set_avatars(avatars.clone());
+        }
         let mut services = self.services.clone();
         if let Some(gui) = self.arriving.remove(&user_id) {
             let root = gui.root_refs().first().copied();
@@ -181,6 +193,7 @@ impl Session {
             name: name.into(),
             loaded: false,
             characters: Vec::new(),
+            deferred: None,
             outbox: Upstream::default(),
             moving: HashSet::new(),
         });
@@ -251,6 +264,12 @@ impl Session {
             if !client.loaded {
                 client.arrive(server);
             } else {
+                if let Some(character) = client.deferred.take() {
+                    let parent = server.dom().parent(character);
+                    if parent.is_some() {
+                        client.deliver(server, &Op::Tree(character, parent));
+                    }
+                }
                 for op in &ops {
                     client.deliver(server, op);
                 }
@@ -294,7 +313,9 @@ impl Session {
         if index >= self.clients.len() {
             return;
         }
-        let client = self.clients.remove(index);
+        let mut client = self.clients.remove(index);
+        self.left
+            .push((Peer::Client(index), client.sim.take_output()));
         self.server.remove_player(client.player);
     }
 
@@ -409,6 +430,7 @@ impl Session {
     /// What every peer printed since the last call, server first.
     pub fn take_output(&mut self) -> Vec<(Peer, Output)> {
         let mut out = vec![(Peer::Server, self.server.take_output())];
+        out.append(&mut self.left);
         for (i, client) in self.clients.iter_mut().enumerate() {
             out.push((Peer::Client(i), client.sim.take_output()));
         }
@@ -421,6 +443,16 @@ impl Session {
             client.sim.set_fetcher(fetcher.clone());
         }
         self.fetcher = Some(fetcher);
+    }
+
+    /// Where avatars come from, on the server and every client (a
+    /// LocalScript may ask for a description and dress its own dummy).
+    pub fn set_avatars(&mut self, avatars: std::rc::Rc<dyn crate::players::Avatars>) {
+        self.server.set_avatars(avatars.clone());
+        for client in &mut self.clients {
+            client.sim.set_avatars(avatars.clone());
+        }
+        self.avatars = Some(avatars);
     }
 }
 
@@ -451,6 +483,16 @@ impl Client {
                 })
                 .collect()
         };
+        let own = match server
+            .dom()
+            .get(self.player)
+            .map(|p| p.properties().get("Character"))
+        {
+            Some(Some(Variant::Ref(c))) if server.dom().in_tree(*c) => Some(*c),
+            _ => None,
+        };
+        let roots: Vec<Ref> = roots.into_iter().filter(|r| Some(*r) != own).collect();
+        self.deferred = own;
         // The whole snapshot lands before its LocalScripts start: one in
         // PlayerGui finds ReplicatedStorage's contents.
         self.sim.hold_scripts();

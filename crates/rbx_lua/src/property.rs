@@ -24,7 +24,12 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
 
     let (value_type, stored) = {
         let dom = ctx.dom();
-        let instance = dom.get(referent).ok_or_else(missing_instance)?;
+        let remains = ctx.remains();
+        // A destroyed instance still reads as it was when it went.
+        let instance = dom
+            .get(referent)
+            .or_else(|| remains.get(referent))
+            .ok_or_else(missing_instance)?;
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(None);
         };
@@ -118,7 +123,12 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
 
     let (value_type, key, existing) = {
         let dom = ctx.dom();
-        let instance = dom.get(referent).ok_or_else(missing_instance)?;
+        let remains = ctx.remains();
+        // A destroyed instance still reads as it was when it went.
+        let instance = dom
+            .get(referent)
+            .or_else(|| remains.get(referent))
+            .ok_or_else(missing_instance)?;
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(false);
         };

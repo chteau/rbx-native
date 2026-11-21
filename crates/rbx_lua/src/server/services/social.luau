@@ -274,6 +274,15 @@ function SOCIAL.GetUpcomingExperienceEventsAsync(_)
 	return {}
 end
 
+-- No experience events offline: an id names none (the result is optional).
+function SOCIAL.GetExperienceEventAsync(_, eventId)
+	if type(eventId) ~= "string" and type(eventId) ~= "number" then
+		fail(`Unable to cast {typeName(eventId)} to string`)
+	end
+	task.wait()
+	return nil
+end
+
 function SOCIAL.ShowSelfView(_) end
 function SOCIAL.HideSelfView(_) end
 

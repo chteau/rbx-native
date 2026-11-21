@@ -53,7 +53,7 @@ pub struct Players {
     pub local: Option<Ref>,
     /// The character for players who bring none.
     pub template: Option<WeakDom>,
-    pub avatars: Option<Box<dyn Avatars>>,
+    pub avatars: Option<std::rc::Rc<dyn Avatars>>,
     /// Old characters to destroy, once their removal has been seen.
     pub old: Vec<Ref>,
     pub frame: u64,
@@ -69,7 +69,9 @@ const PLAYERS_METHODS: &[&str] = &[
     "GetPlayers",
     "GetPlayerFromCharacter",
     "GetPlayerByUserId",
-    "GetHumanoidDescriptionFromUserId",
+    // The fetch behind `GetHumanoidDescriptionFromUserId`, which
+    // `helpers.luau` makes yield like the web call it is on Roblox.
+    "GetHumanoidDescriptionFromUserId#fetch",
     "CreateHumanoidModelFromDescription",
 ];
 const HUMANOID_METHODS: &[&str] = &["ApplyDescription", "GetAppliedDescription"];
@@ -151,6 +153,21 @@ fn graft_with(
     parent: Option<Ref>,
     outside: &mut dyn FnMut(Ref) -> Option<Ref>,
 ) -> Ref {
+    let order = snapshot(from, root);
+    insert(to, order, root, parent, outside)
+}
+
+/// `root` and everything under it, parents before children: referent,
+/// class, name, properties and parent.
+type Snapshot = Vec<(
+    Ref,
+    String,
+    String,
+    std::collections::BTreeMap<String, Variant>,
+    Option<Ref>,
+)>;
+
+fn snapshot(from: &WeakDom, root: Ref) -> Snapshot {
     let mut order = Vec::new();
     let mut stack = vec![root];
     while let Some(at) = stack.pop() {
@@ -160,20 +177,31 @@ fn graft_with(
                 i.class().to_owned(),
                 i.name().to_owned(),
                 i.properties().clone(),
+                from.parent(at),
             ));
             stack.extend(i.children().iter().rev());
         }
     }
+    order
+}
+
+fn insert(
+    to: &mut WeakDom,
+    order: Snapshot,
+    root: Ref,
+    parent: Option<Ref>,
+    outside: &mut dyn FnMut(Ref) -> Option<Ref>,
+) -> Ref {
     let mut map = HashMap::new();
-    for (old, class, name, _) in &order {
+    for (old, class, name, _, old_parent) in &order {
         let new_parent = if *old == root {
             parent
         } else {
-            from.parent(*old).and_then(|p| map.get(&p).copied())
+            old_parent.and_then(|p| map.get(&p).copied())
         };
         map.insert(*old, to.new_instance(class, name, new_parent));
     }
-    for (old, _, _, props) in order {
+    for (old, _, _, props, _) in order {
         let new = map[&old];
         for (key, value) in props {
             let value = match value {
@@ -431,8 +459,8 @@ fn copy_player_settings(dom: &mut WeakDom, db: &ReflectionDatabase, from: Ref, p
 
 /// Copies within one DOM.
 fn copy(dom: &mut WeakDom, root: Ref, parent: Option<Ref>) -> Ref {
-    let source = dom.clone();
-    graft(dom, &source, root, parent)
+    let order = snapshot(dom, root);
+    insert(dom, order, root, parent, &mut Some)
 }
 
 /// The `Player`s under `Players`, in child order.
@@ -984,7 +1012,7 @@ pub(crate) fn call(
             });
             Ok(CallReply::value(found.map_or(Arg::Nil, Arg::Instance)))
         }
-        ("Players", "GetHumanoidDescriptionFromUserId") => {
+        ("Players", "GetHumanoidDescriptionFromUserId#fetch") => {
             let id = match args.first() {
                 Some(Arg::Number(n)) => *n as i64,
                 _ => return Err("Argument 1 missing or nil".into()),
@@ -1062,7 +1090,11 @@ pub(crate) fn call(
             players.place(dom, db, referent);
             Ok(CallReply::default())
         }
-        ("Humanoid", "ApplyDescription") if players.client => {
+        // A client may dress a humanoid it made itself (a lobby's dummy),
+        // not one the server replicated.
+        ("Humanoid", "ApplyDescription")
+            if players.client && !crate::ownership::client_made(referent) =>
+        {
             Err("Humanoid::ApplyDescription() can only be called by the backend server".into())
         }
         ("Humanoid", "ApplyDescription") => {
@@ -1082,4 +1114,99 @@ pub(crate) fn call(
         }
         _ => Err(format!("{method} is not a valid member of {class}")),
     }
+}
+
+/// `Model:MoveTo(position)`: the model's pivot (its `PrimaryPart`, else its
+/// bounds' centre) lands on `position`, rotation kept, then rises until no
+/// colliding part in Workspace overlaps it (boxes, not exact shapes).
+pub(crate) fn model_move_to(
+    dom: &mut WeakDom,
+    db: &ReflectionDatabase,
+    model: Ref,
+    args: &[Arg],
+) -> Result<CallReply, String> {
+    let Some(Arg::Vector3([x, y, z])) = args.first() else {
+        return Err("Unable to cast value to Vector3".into());
+    };
+    let Some(mut to) = rbx_lua::pivot::pivot(dom, db, model) else {
+        return Ok(CallReply::default());
+    };
+    let is_part = |dom: &WeakDom, r: Ref| {
+        dom.get(r)
+            .is_some_and(|i| i.class() != "Terrain" && db.is_subclass_of(i.class(), "BasePart"))
+    };
+    let own: Vec<Ref> = descendants(dom, model)
+        .into_iter()
+        .filter(|r| is_part(dom, *r))
+        .collect();
+    let world_box = |dom: &WeakDom, part: Ref| {
+        let c = cframe(dom, db, part)?;
+        let s = vector(dom, db, part, "Size");
+        let r = c.rotation.map(f64::from);
+        let p = [c.position.x, c.position.y, c.position.z].map(f64::from);
+        let reach: [f64; 3] = std::array::from_fn(|row| {
+            (r[row * 3].abs() * s[0] + r[row * 3 + 1].abs() * s[1] + r[row * 3 + 2].abs() * s[2])
+                / 2.0
+        });
+        Some((
+            std::array::from_fn::<f64, 3, _>(|i| p[i] - reach[i]),
+            std::array::from_fn::<f64, 3, _>(|i| p[i] + reach[i]),
+        ))
+    };
+    let others: Vec<([f64; 3], [f64; 3])> = service(dom, "Workspace")
+        .map(|w| descendants(dom, w))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| is_part(dom, *r) && !own.contains(r) && flag(dom, db, *r, "CanCollide"))
+        .filter_map(|r| world_box(dom, r))
+        .collect();
+    let shift = |from: f64| [f64::from(*x), f64::from(*y), f64::from(*z)].map(|v| v - from);
+    let from = [to.position.x, to.position.y, to.position.z].map(f64::from);
+    let offset = std::array::from_fn::<f64, 3, _>(|i| shift(from[i])[i]);
+    let boxes: Vec<_> = own
+        .iter()
+        .filter_map(|p| world_box(dom, *p))
+        .map(|(lo, hi)| {
+            (
+                std::array::from_fn::<f64, 3, _>(|i| lo[i] + offset[i]),
+                std::array::from_fn::<f64, 3, _>(|i| hi[i] + offset[i]),
+            )
+        })
+        .collect();
+    let mut lift = 0.0f64;
+    // Each rise can land the model in something higher up: settle.
+    for _ in 0..64 {
+        let overlap = |(lo, hi): &([f64; 3], [f64; 3]), (olo, ohi): &([f64; 3], [f64; 3])| {
+            (0..3).all(|i| {
+                let (a, b) = if i == 1 {
+                    (lo[i] + lift, hi[i] + lift)
+                } else {
+                    (lo[i], hi[i])
+                };
+                a < ohi[i] - 1e-3 && olo[i] < b - 1e-3
+            })
+        };
+        let rise = boxes
+            .iter()
+            .flat_map(|b| {
+                others
+                    .iter()
+                    .filter(move |o| overlap(b, o))
+                    .map(move |o| o.1[1] - (b.0[1] + lift))
+            })
+            .fold(0.0f64, f64::max);
+        if rise <= 0.0 {
+            break;
+        }
+        lift += rise;
+    }
+    to.position = rbx_dom::Vector3Data {
+        x: *x,
+        y: (f64::from(*y) + lift) as f32,
+        z: *z,
+    };
+    if let Some(Err(error)) = rbx_lua::pivot::pivot_to(dom, db, model, &to) {
+        return Err(error);
+    }
+    Ok(CallReply::default())
 }

@@ -88,8 +88,16 @@ function PLAYERS.GetFriendsAsync(_, id)
 	return pages()
 end
 
+-- A web call on Roblox: it yields, so a script that fetches one inside a
+-- RemoteEvent handler sees what arrived alongside the event first.
+function PLAYERS.GetHumanoidDescriptionFromUserId(self, id)
+	id = userId(id)
+	task.wait()
+	return self["GetHumanoidDescriptionFromUserId#fetch"](self, id)
+end
+
 function PLAYERS.GetHumanoidDescriptionFromUserIdAsync(self, id)
-	return self:GetHumanoidDescriptionFromUserId(userId(id))
+	return self:GetHumanoidDescriptionFromUserId(id)
 end
 
 function PLAYERS.CreateHumanoidModelFromDescriptionAsync(self, description, rigType, assetTypeVerification)
@@ -251,6 +259,21 @@ end
 function CONTENT.UnregisterDefaultEncryptionKey(_) end
 function CONTENT.UnregisterEncryptionKey(_) end
 
+-- ReplicatedFirst: a Local Run shows no default loading screen to remove,
+-- and its join snapshot lands whole.
+local REPLICATED_FIRST = {}
+
+function REPLICATED_FIRST.RemoveDefaultLoadingScreen(_) end
+function REPLICATED_FIRST.SetDefaultLoadingScreen(_, _show) end
+
+function REPLICATED_FIRST.IsDefaultLoadingScreen(_)
+	return false
+end
+
+function REPLICATED_FIRST.IsFinishedReplicating(_)
+	return true
+end
+
 -- UserSettings(): the player's own settings, which a game's scripts read
 -- (the PlayerModule's ControlModule and camera read UserGameSettings) and
 -- may watch. One object per VM, with the defaults a fresh install has.
@@ -346,6 +369,7 @@ local TABLES = {
 	RunService = RUN,
 	FriendPages = FRIEND_PAGES,
 	ContentProvider = CONTENT,
+	ReplicatedFirst = REPLICATED_FIRST,
 }
 
 function M.member(class, id, key)

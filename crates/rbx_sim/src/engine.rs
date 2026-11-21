@@ -55,6 +55,7 @@ pub(crate) fn is_method(class: &str, key: &str) -> bool {
         || crate::teams::is_method(class, key)
         || (class == "ParticleEmitter" && matches!(key, "Emit" | "Clear"))
         || crate::joints::is_method(class, key)
+        || (class == "Model" && key == "MoveTo")
 }
 
 pub(crate) fn is_signal(class: &str, key: &str) -> bool {
@@ -88,6 +89,9 @@ pub(crate) fn call(
         ));
     }
     let mut dom = dom.borrow_mut();
+    if class == "Model" && method == "MoveTo" {
+        return crate::players::model_move_to(&mut dom, db, referent, &args);
+    }
     let mut shared = shared.borrow_mut();
     if crate::gui::is_method(class, method) {
         let client = shared.players.client;

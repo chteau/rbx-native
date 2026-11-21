@@ -285,7 +285,24 @@ impl Deadline {
     }
 }
 
+/// The engine's own Luau chunks: a traceback names scripts only, as
+/// Roblox's does.
+const INTERNAL_CHUNKS: &[&str] = &[
+    "errors", "runner", "run", "yielding", "wait", "watch", "require", "alias", "getfenv",
+    "services",
+];
+
 fn report(lua: &Lua, text: String) {
+    let text = text
+        .lines()
+        .filter(|line| {
+            !line.split_once(':').is_some_and(|(chunk, rest)| {
+                (INTERNAL_CHUNKS.contains(&chunk) || chunk.starts_with("__mlua"))
+                    && rest.starts_with(|c: char| c.is_ascii_digit())
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     engine(lua).host.output(LineKind::Error, text.clone());
     script_error(lua, &text);
 }
