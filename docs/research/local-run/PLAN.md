@@ -785,9 +785,72 @@ Gaps from M16:
 
 Not verified: hotbar icons on a live capture; the camera's shift lock and the truss/stairs/slope rows beyond M10/M11's goldens; the real client on Windows or macOS.
 
-## Milestone 17 (proposed): animation and avatar fidelity
+## Milestone 17 (done): real games, played next to the real client
 
-The old M16 proposal, moved here unchanged. The broken-body collapse and the shadow colour from M16's gaps come first.
+Four of the maintainer's own published games, played from local copies in Play (local) and compared with the same games joined in the real client. The games were only read: nothing in them was changed, published or saved, and none of their files or script names are in the repo; the tests use minimal places of our own.
+
+| Game | Before M17 | Now |
+|---|---|---|
+| Physics sandbox (rules card, tools, ragdolls) | ran | still runs; same spawn, rules card and hotbar |
+| Rolling game (roll button, leaderstats) | ran | still runs; same spawn and roll |
+| Camera-watching game, lobby place | menu only: no lobby dummy, "Waiting for the host", code 000000 | menu, lobby with its code, "Start game", the dummy dressed and placed |
+| Camera-watching game, game place | stuck on "Initializing scripts", then kicked | loads, cameras switch, the guide opens and closes, anomalies fire on schedule |
+| Swim game (plots, water, carrying) | 5 s of play in 212 s | spawns at the plot with its daily-rewards window, as live; 3 s in about 90 s once its meshes collide as meshes |
+
+Fixed for them:
+- Engine:
+  - incremental world: parts and joints that come, go or change shape add, remove or refit only their own assemblies, in a sorted order;
+  - the query index follows the change log;
+  - humanoids are found from the change log;
+  - joining no longer clones the whole DOM;
+  - touch pairs come out older-part first (TouchedOrder);
+  - a mesh whose convex decomposition comes out empty collides as its box instead of crashing.
+- Movers: BodyPosition, BodyVelocity, BodyGyro, BodyAngularVelocity, BodyForce and BodyThrust.
+- Avatars:
+  - clients get the avatar provider;
+  - a client may `ApplyDescription` on a humanoid it made itself;
+  - `GetHumanoidDescriptionFromUserId` yields like the web call it is.
+- Model and instance behaviour:
+  - `Model:MoveTo`, rising out of what it would overlap;
+  - a destroyed instance's properties stay readable (the newest 16k).
+- Joining: the client's own character lands a frame after the join snapshot, so a ReplicatedFirst loader waiting on `CharacterAdded` sees it fire.
+- APIs:
+  - `ReplicatedFirst:RemoveDefaultLoadingScreen`, `SetDefaultLoadingScreen`, `IsDefaultLoadingScreen`, `IsFinishedReplicating`;
+  - `SocialService:GetExperienceEventAsync`;
+  - GuiObject's legacy `TweenPosition`/`TweenSize`/`TweenSizeAndPosition`;
+  - `Humanoid.RootPart`;
+  - default leaderstats values.
+- Output:
+  - error tracebacks name scripts only, with no engine chunks;
+  - a kicked client's last lines are kept.
+- Rendering: a size-0 blur and a collapsed UIScale draw nothing.
+
+Tests: `rbx_sim/tests/corpus.rs` (BodyMovers, a BodyPosition holding a character, the query index following parts, `Model:MoveTo`, the ReplicatedFirst loader, destroyed-instance reads), `tests/avatars.rs` (client dummy), the empty-decomposition mesh test.
+
+## Milestone 18 (proposed): what M17 left off, then animation fidelity
+
+Still off, first:
+
+| Area | Roblox | ours |
+|---|---|---|
+| Speed in busy places | real time | the swim game runs at about 1/30 speed: ~1100 loose props never sleep (they jitter at 0.05–0.3 stud/s), and their convex-mesh contacts dominate the frame; the query index also rebuilds mesh colliders, mass properties included |
+| Broken body on death | the R15 stack topples (head on the floor by 60 beats) | the torsos drop out and the rest stays balanced |
+| Exposure and shadow tint | bright rooms, grey-blue shadows | rooms lit by their lamps read much darker; shadows a saturated blue |
+| Spawn point | a random point on a large SpawnLocation (6x6 ones land at the centre, as ours) | its centre; needs a golden on a big spawn |
+| Jump apex | 15.48 | 15.28 |
+| Slopes, buoyancy, swimming, terrain | as live | only M10/M11's goldens; the swim game's own water parts and swim states not compared in motion (too slow to drive) |
+| Parallel Luau | parallel inside Actors | serial |
+| Lobby dummy | dressed, animated, name billboard | there, but its pieces read as loose parts and the billboard does not show |
+| `Model:MoveTo` | lifts clear of exact shapes and terrain | boxes only, terrain skipped |
+| Incremental query index | sees every moved part | misses anchored parts that animation posing moves without logging |
+| `AwardBadge` on an owned badge | unverified | returns false |
+| Replicated data on the first frame | a stamina UI reads its value | the value is nil on the first render (a replication-library ordering case, not yet traced) |
+| Destroyed instances | readable while referenced | readable, but only the newest 16k |
+| Editor Auto-Recovery during a run | — | warns it cannot save `AbsolutePosition` |
+
+Not verified: the swim game past its spawn (walking, carrying, the sea), the camera game's anomaly reports, `GetExperienceEventAsync` data (nil here), the real client on Windows or macOS.
+
+Then the old animation proposal:
 
 1. Layered clothing at run time: `WrapLayer`/`WrapTarget` deformation on the avatar, layered in `Order`, with the auto-rig cages the editor already fits (`rbx_animation`), and `AutoSkin`.
 2. FACS face animation: `FaceControls` properties driven by animation tracks and scripts, dynamic heads deforming in the viewport, `Animator` playing face curves.
