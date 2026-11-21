@@ -690,6 +690,9 @@ impl Hooks for ServerHooks {
         if let Some(value) = super::styles::member(lua, ctx, &self.styles, referent, class, key)? {
             return Ok(Some(value));
         }
+        if let Some(value) = super::curves::member(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
         if let Some(value) = super::services::member(lua, &self.services, referent, class, key)? {
             return Ok(Some(value));
         }

@@ -66,7 +66,7 @@ fn look_at(at: Vector3Data, target: Vector3Data, up: Vector3Data) -> LuaCFrame {
     from_columns(at, right, new_up, back)
 }
 
-fn quat_to_matrix(q: [f32; 4], position: Vector3Data) -> LuaCFrame {
+pub(crate) fn quat_to_matrix(q: [f32; 4], position: Vector3Data) -> LuaCFrame {
     let n = q.iter().map(|c| c * c).sum::<f32>().sqrt();
     let [x, y, z, w] = if n > 1e-12 {
         q.map(|c| c / n)
@@ -89,7 +89,7 @@ fn quat_to_matrix(q: [f32; 4], position: Vector3Data) -> LuaCFrame {
     })
 }
 
-fn matrix_to_quat(c: &LuaCFrame) -> [f32; 4] {
+pub(crate) fn matrix_to_quat(c: &LuaCFrame) -> [f32; 4] {
     let m = &c.0.rotation;
     let t = m[0] + m[4] + m[8];
     if t > 0.0 {
@@ -157,7 +157,7 @@ fn to_euler_xyz(c: &LuaCFrame) -> (f32, f32, f32) {
     }
 }
 
-fn lerp(a: &LuaCFrame, b: &LuaCFrame, t: f32) -> LuaCFrame {
+pub(crate) fn lerp(a: &LuaCFrame, b: &LuaCFrame, t: f32) -> LuaCFrame {
     let (pa, pb) = (a.0.position, b.0.position);
     let position = v3(
         pa.x + (pb.x - pa.x) * t,

@@ -212,6 +212,22 @@ pub fn write_float(keys: &[RawKey]) -> Vec<u8> {
     out
 }
 
+/// A `RotationCurve`'s bytes, with the 0x0C Studio sets above the
+/// interpolation.
+pub fn write_rotation(keys: &[RawRotationKey]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(16 + 29 * keys.len());
+    out.extend(ROTATION_VERSION.to_le_bytes());
+    out.extend((keys.len() as u32).to_le_bytes());
+    for k in keys {
+        out.push(k.interpolation | 0x0C);
+        for f in k.rotation.into_iter().chain([k.left, k.right]) {
+            out.extend(f.to_le_bytes());
+        }
+    }
+    times(&mut out, keys.iter().map(|k| k.ticks));
+    out
+}
+
 pub fn write_markers(markers: &[RawMarker]) -> Vec<u8> {
     let mut out = Vec::new();
     header(&mut out, markers.len());
