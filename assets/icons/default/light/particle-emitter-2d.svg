@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- particle-emitter-2d.svg - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>particle-emitter-2d</title>
+  <rect x="1.6" y="7.6" width="7.8" height="6.8" rx="1" fill="none" stroke="#552F8E" stroke-width="1.6"/>
+  <path d="M11.5,1 L12.3,3.7 L15,4.5 L12.3,5.3 L11.5,8 L10.7,5.3 L8,4.5 L10.7,3.7 Z" fill="#2C74C0"/>
+  <path d="M5.5,1.5 L5.95,3.05 L7.5,3.5 L5.95,3.95 L5.5,5.5 L5.05,3.95 L3.5,3.5 L5.05,3.05 Z" fill="#2C74C0"/>
+  <path d="M13,10 L13,13 M11.5,11.5 L14.5,11.5" fill="none" stroke="#1A4E88" stroke-width="1.1" stroke-linecap="round"/>
+</svg>

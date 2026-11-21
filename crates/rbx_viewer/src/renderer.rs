@@ -82,7 +82,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::{GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
+pub use gui::{gui_particle_burst, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};
@@ -726,7 +726,18 @@ impl Renderer {
             || (drawn.terrain && self.terrain.grass.is_drawn())
             || (drawn.effects && (self.beams.is_live() || self.trails.is_live()))
             || (drawn.effects && self.particles.is_live())
+            || self.gui.animating()
             || self.textured.has_pending()
+    }
+
+    /// Whether a GUI's particles are moving, so a canvas of it is owed frames.
+    pub(crate) fn gui_animating(&self) -> bool {
+        self.gui.animating()
+    }
+
+    /// See `Headless::hold_gui_particles`.
+    pub(crate) fn hold_gui_particles(&mut self) {
+        self.gui.hold_particles();
     }
 
     /// The terrain half of an edit: re-meshes `keys`, rewrites every

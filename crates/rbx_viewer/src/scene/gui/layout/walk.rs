@@ -6,7 +6,7 @@ use super::super::plan::{Group, Layout, Node};
 use super::{arrange, emit, Arranged, Element, Rect, TextMeasure};
 
 /// What an element hands down to the subtree under it.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub(in crate::scene::gui) struct Context {
     /// The scissor rect inherited from the nearest `ClipsDescendants`
     /// ancestor, already intersected down the whole chain.
@@ -21,6 +21,22 @@ pub(in crate::scene::gui) struct Context {
     /// `ZIndexBehavior.Global`, where siblings are emitted in tree order and
     /// [`resolve`] sorts the whole screen by `ZIndex` afterwards.
     pub(in crate::scene::gui) global_z_index: bool,
+    /// Every ancestor's `UIScale`, multiplied: what a particle's pixels are
+    /// scaled by, see `particles::flat`.
+    pub(in crate::scene::gui) scale: f32,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Context {
+            clip: None,
+            rotated: false,
+            angle: 0.0,
+            pivot: [0.0, 0.0],
+            global_z_index: false,
+            scale: 1.0,
+        }
+    }
 }
 
 impl Context {
