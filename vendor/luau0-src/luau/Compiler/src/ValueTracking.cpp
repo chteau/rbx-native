@@ -1,0 +1,243 @@
+// This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
+#include "ValueTracking.h"
+
+#include "Luau/Ast.h"
+#include "Luau/Lexer.h"
+#include "Luau/SmallVector.h"
+
+LUAU_FASTFLAG(LuauOptimizeExportTable)
+
+namespace Luau
+{
+namespace Compile
+{
+
+struct ValueVisitor : AstVisitor
+{
+
+    DenseHashMap<AstName, Global>& globals;
+    DenseHashMap<AstLocal*, Variable>& variables;
+    DenseHashSet<AstLocal*>* exportedFunctions = nullptr;
+    std::vector<AstLocal*>* exportedVariables = nullptr;
+    SmallVector<AstStatBlock*, 4> blockOwnerStack;
+
+    // with LuauOptimizeExportTable, remove this constructor
+    ValueVisitor(DenseHashMap<AstName, Global>& globals, DenseHashMap<AstLocal*, Variable>& variables)
+        : globals(globals)
+        , variables(variables)
+    {
+    }
+
+    ValueVisitor(
+        DenseHashMap<AstName, Global>& globals,
+        DenseHashMap<AstLocal*, Variable>& variables,
+        DenseHashSet<AstLocal*>* exportedFunctions,
+        std::vector<AstLocal*>* exportedVariables
+    )
+        : globals(globals)
+        , variables(variables)
+        , exportedFunctions(exportedFunctions)
+        , exportedVariables(exportedVariables)
+    {
+    }
+
+    void assign(AstExpr* var)
+    {
+        if (AstExprLocal* lv = var->as<AstExprLocal>())
+        {
+            Variable& variable = variables[lv->local];
+
+            variable.written = true;
+            LUAU_ASSERT(!variable.lastUsed || lv->location.end >= variable.lastUsed->location.end);
+            variable.lastUsed = lv;
+
+            if (lv->upvalue || lv->local->isExported)
+                variable.nonLexicalUse = true;
+        }
+        else if (AstExprGlobal* gv = var->as<AstExprGlobal>())
+        {
+            globals[gv->name] = Global::Written;
+        }
+        else
+        {
+            // we need to be able to track assignments in all expressions, including crazy ones like t[function() t = nil end] = 5
+            var->visit(this);
+        }
+    }
+
+    bool visit(AstExprLocal* node) override
+    {
+        Variable& variable = variables[node->local];
+
+        LUAU_ASSERT(!variable.lastUsed || node->location.end >= variable.lastUsed->location.end);
+        variable.lastUsed = node;
+
+        if (node->upvalue || node->local->isExported)
+            variable.nonLexicalUse = true;
+
+        return false;
+    }
+
+    bool visit(AstStatLocal* node) override
+    {
+        for (size_t i = 0; i < node->vars.size && i < node->values.size; ++i)
+            variables[node->vars.data[i]].init = node->values.data[i];
+
+        for (size_t i = node->values.size; i < node->vars.size; ++i)
+            variables[node->vars.data[i]].init = nullptr;
+
+        if (FFlag::LuauOptimizeExportTable && exportedVariables)
+        {
+            for (size_t i = 0; i < node->vars.size; ++i)
+            {
+                AstLocal* local = node->vars.data[i];
+                if (local->isExported)
+                {
+                    exportedVariables->push_back(local);
+                }
+            }
+        }
+
+        for (size_t i = 0; i < node->vars.size; ++i)
+        {
+            AstLocal* local = node->vars.data[i];
+
+            LUAU_ASSERT(!blockOwnerStack.empty());
+            variables[local].owner = blockOwnerStack.back();
+        }
+
+        return true;
+    }
+
+    bool visit(AstStatIf* node) override
+    {
+        if (node->conditionLocal)
+            variables[node->conditionLocal].init = node->condition;
+
+        return true;
+    }
+
+    bool visit(AstExprIfElse* node) override
+    {
+        if (node->conditionLocal)
+            variables[node->conditionLocal].init = node->condition;
+
+        return true;
+    }
+
+    bool visit(AstStatAssign* node) override
+    {
+        for (size_t i = 0; i < node->vars.size; ++i)
+            assign(node->vars.data[i]);
+
+        for (size_t i = 0; i < node->values.size; ++i)
+            node->values.data[i]->visit(this);
+
+        return false;
+    }
+
+    bool visit(AstStatCompoundAssign* node) override
+    {
+        assign(node->var);
+        node->value->visit(this);
+
+        return false;
+    }
+
+    bool visit(AstStatClass* node) override
+    {
+        LUAU_ASSERT(FFlag::DebugLuauUserDefinedClasses);
+
+        if (node->declModifier == AstStatClass::DeclModifier::None)
+            assign(node->exprName);
+        // we can do more here if we decide to constant fold classes/objects
+
+        if (node->super)
+            node->super->visit(this);
+
+        for (const AstClassMember& member : node->members)
+        {
+            if (const AstClassMethod* method = member.get_if<AstClassMethod>())
+                method->function->visit(this);
+        }
+
+        return false;
+    }
+
+    bool visit(AstStatLocalFunction* node) override
+    {
+        Variable& variable = variables[node->name];
+
+        variable.init = node->func;
+
+        LUAU_ASSERT(!blockOwnerStack.empty());
+        variable.owner = blockOwnerStack.back();
+
+        if (node->name->isExported)
+            variable.nonLexicalUse = true;
+
+        if (FFlag::LuauOptimizeExportTable && exportedFunctions && node->name->isExported)
+        {
+            exportedFunctions->insert(node->name);
+            exportedVariables->push_back(node->name);
+        }
+
+        return true;
+    }
+
+    bool visit(AstStatFunction* node) override
+    {
+        assign(node->name);
+        node->func->visit(this);
+
+        return false;
+    }
+
+    bool visit(AstExprFunction* node) override
+    {
+        for (AstLocal* arg : node->args)
+            variables[arg].init = nullptr;
+
+        return true;
+    }
+
+    bool visit(AstStatBlock* block) override
+    {
+        blockOwnerStack.push_back(block);
+        for (AstStat* stat : block->body)
+            stat->visit(this);
+        blockOwnerStack.pop_back();
+        return false;
+    }
+};
+
+void assignMutable(DenseHashMap<AstName, Global>& globals, const AstNameTable& names, const char* const* mutableGlobals)
+{
+    if (AstName name = names.get("_G"); name.value)
+        globals[name] = Global::Mutable;
+
+    if (mutableGlobals)
+        for (const char* const* ptr = mutableGlobals; *ptr; ++ptr)
+            if (AstName name = names.get(*ptr); name.value)
+                globals[name] = Global::Mutable;
+}
+
+void trackValues(
+    DenseHashMap<AstName, Global>& globals,
+    DenseHashMap<AstLocal*, Variable>& variables,
+    DenseHashSet<AstLocal*>& exportedFunctions,
+    std::vector<AstLocal*>& exportedVariables,
+    AstNode* root
+)
+{
+    ValueVisitor visitor{globals, variables, &exportedFunctions, &exportedVariables};
+    root->visit(&visitor);
+}
+void trackValues_DEPRECATED(DenseHashMap<AstName, Global>& globals, DenseHashMap<AstLocal*, Variable>& variables, AstNode* root)
+{
+    ValueVisitor visitor{globals, variables};
+    root->visit(&visitor);
+}
+
+} // namespace Compile
+} // namespace Luau
