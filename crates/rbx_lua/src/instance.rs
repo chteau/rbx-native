@@ -562,7 +562,7 @@ impl UserData for LuaInstance {
             |lua, this, (key, value): (String, Value)| {
                 crate::engine::parallel::check_write(
                     lua,
-                    &this.ctx.database(),
+                    this.ctx.database(),
                     &this.class()?,
                     &key,
                 )?;

@@ -863,32 +863,41 @@ Fixed:
 - Auto-Recovery no longer copies the DOM during a Local Run (its run-time GUI values made the `AbsolutePosition` warning).
 - Perf regression guards: `tests/busy.rs` (256 settled mesh props fall asleep and stay put) and `examples/bench_props.rs` (1000+ props, mean and worst frame per second).
 
+Part 2:
+
+- Speed. Loose props come out of deep overlaps in the frame they're found (`DEEP_OVERLAP`, `RESTING_DEPTH`) and fall asleep one by one: a body still for 0.35 s under 0.6 stud/s freezes unless a fast, kinematic or driven partner touches it, and keeps its touches while frozen. A server-owned part a client script moves is put back from the server's pose next frame, so server sleep no longer drops replication. Place loads hash referents with Fx, parent in bulk and decompose each mesh once (in mesh space, scaled per part). The swim game: 8 s of simulation took 64 s, 30 s now take ~109 s, under 2x real time after its first 10 s (29–38 ms frames); first frame 17.3 s → ~12 s. `bench_props --pile` (1200 buried and overlapping props): 7 ms frames in the first second, 2.1 ms at rest; `busy.rs` checks the pile comes out and sleeps. The two load-flaky tests no longer read wall time (`Session::set_script_timeout`).
+- Lighting. ColorGradingEffect `Retro` is the Voxel look under any Technology (ramps ΔE 11–14 → 2.9), which is most of the camera game's darkness. Under Voxel at night the moon is 0.14 of ours and ambient lights at 0.4 (`game_voxel_night` ΔE 4.64 → 0.68). New fidelity scenes and goldens: the Retro ramps, a lobby-like room, a midnight room three ways, a day path under a game's effect stack.
+- Death. A dead character's root is a loose part, so a broken R15 topples (HumanoidDeath `breaks_head_dy_60` -3.78, live -3.86).
+- Parallel Luau, run serially (`engine/parallel.rs`, `parallel.luau`): `task.desynchronize`/`synchronize`, `ConnectParallel`, `BindToSimulationParallel`/`BindToAnimationParallel` only under an Actor; in the parallel phase property writes and mutating calls fail with a live server's messages; `SharedTable`, `SharedTableRegistry`, `Instance:GetActor` (ParallelLuau golden, 49 keys).
+- `Model:MoveTo` rises out of exact shapes and never out of terrain or water (ModelMoveTo golden).
+
 Still off:
 
 | Area | Roblox | ours | Why |
 |---|---|---|---|
-| Speed in the swim game | real time | ~1/7 | ~1100 unanchored map props (borders, invisible walls, island extras) never fall asleep; whether they stay still live was not measured. Play (local) in the editor is slower still: its loading screen takes minutes to clear |
-| Stat column order | added order when the folder is parented whole; other orders when stats are added one by one to a parented folder | always added order | the rolling and camera games show their two stats reversed live, and a six-stat probe showed Mid, Beta, alpha, Yak for Zeta, alpha, Mid, Beta, Yak, Aard; no rule found yet |
-| Exposure and shadow tint | lit floor (121,129,147), shadow core (19,37,74) | (132,137,152), (9,24,64) | not attempted this milestone |
-| R15 toppling on death | the stack topples | torsos drop, the rest stays balanced | not attempted |
-| Jump apex | 15.48 | 15.28 | live apexes scatter ±0.15 around √(2gh) across JumpPower values; no single formula fits them |
-| Slopes, buoyancy, swimming | as live | M10/M11 goldens only | the swim game is still too slow to drive past its spawn |
-| Parallel Luau | parallel inside Actors | serial | not attempted |
-| `Model:MoveTo` | exact shapes and terrain | boxes, terrain skipped | not attempted |
-| `AwardBadge` on an owned badge | unverified live | returns false | needs a live badge probe |
-| First-frame replicated nil | value present | nil on the first render | not traced |
-| HD Admin `clean` error | — | not re-checked | not traced |
-| 4:3 against wide framing | — | compared at the same 1166x632 viewport this time | the side-by-sides use one size now |
+| Swim game in Play (local) | plays in seconds | the place opens in 3 s and the run starts within 40 s, but the game's own loading screen was still up after 90 s | not traced; its join-group prompt also still blocks until answered |
+| Stat column order | added order when the folder is parented whole; other orders when stats are added one by one | always added order | no rule found; not probed again |
+| Camera game lobby | wall 89, floor 92 (sRGB, M17 capture) | 79, 76 (was 64, 61) | closer after Retro; the M17 reference is a small window, so not a strict match |
+| Day shadow under a heavy effect stack | path shadow (111,153,216) | (159,189,238) | `game_day_effects` ΔE 2.30; the in-game sample went the other way, so the effects' handling of shadow needs its own probe |
+| Hard shadow core | (32,62,84) | (23,50,75) | `shadows_hard` |
+| Broken R15 early fall | a hand 0.78 stud away by 15 beats | 2.02 | the pieces part quicker at first |
+| R6 climb speed | 11.2 | 10.9 (10.89 once the world has had terrain) | truss contact drags it; known gap |
+| Pile and stack sleep | pile still by frame 32; a 5-high stack creeps | 60–75; the stack freezes | SleepPile, BoxStack known gaps |
+| Jump apex | 15.48 | 15.28 | live apexes scatter ±0.15 around √(2gh); no formula fits |
+| Parallel Luau | runs in parallel | serial, same results and errors | one VM per peer |
+| `AwardBadge` on an owned badge | unverified live | returns false | the sandbox universe has no badge to probe with |
+| First-frame replicated nil, HD Admin `clean`, the camera game's "Level" column | — | not traced | |
+| Slopes, buoyancy, swimming | as live | M10/M11 goldens only | the swim game's loading screen still blocks walking it |
 
-Not verified: the swim game past its spawn (walking, carrying, the sea), the camera game's anomaly reports, the real client on Windows or macOS.
+Not verified: the swim game past its loading screen (walking, carrying, the sea), the camera game's anomaly reports, the real client on Windows or macOS.
 
-Side-by-sides: `rbx-native-targets/local-run-m18-shots/<game>/` (real client and ours at 1166x632).
+Side-by-sides: `rbx-native-targets/local-run-m18-shots/<game>/` (real client and ours at 1166x632; part 2's are suffixed `-b`, ours cropped from a 1600x636 Play (local) view, so the 3D framing matches and the corner GUI is cut).
 
 ## Milestone 19 (proposed): multi-client testing, then what M18 left off
 
 1. Studio-style multi-client tests: Test → Clients and Servers, N player windows plus a server window, each with its own Explorer and Output, all fed by one `Session`.
 2. Collaborators from our co-edit session (our own presence and p2p, never native Team Create) joining a Local Run as players.
-3. The M18 leftovers above, the swim game's speed first.
+3. The M18 leftovers above, the swim game's loading screen first.
 
 Later, the old animation proposal:
 
