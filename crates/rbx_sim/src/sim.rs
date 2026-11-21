@@ -520,7 +520,10 @@ impl Simulation {
                     .into_iter()
                     .filter_map(|c| {
                         let i = dom.get(c)?;
-                        Some((i.name().to_owned(), stat_text(i.properties().get("Value"))?))
+                        // A value never written (or written back to its
+                        // default) still shows its default: an IntValue's 0.
+                        let value = self.db.stored_or_default(i, "Value").map(|(_, v)| v);
+                        Some((i.name().to_owned(), stat_text(value)?))
                     })
                     .collect()
             };
@@ -1294,7 +1297,9 @@ impl Simulation {
                 .players
                 .place(&mut dom, self.db, player);
         }
-        let edits = self.dom.borrow_mut().take_changes();
+        // Placing fires its own events (the character's Workspace.ChildAdded,
+        // the PlayerGui's copies arriving), so a script waiting on them goes on.
+        let edits = self.vm.flush_changes();
         self.apply(edits);
     }
 

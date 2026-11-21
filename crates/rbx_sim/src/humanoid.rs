@@ -656,7 +656,14 @@ impl Humanoids {
             }
             return;
         }
-        if had_neck && flag(dom, db, id, "RequiresNeck") && !has_neck(dom, db, model) {
+        // In the Physics state the humanoid runs nothing, the neck check
+        // included: a ragdoll that takes its Motor6Ds out lives (seen live
+        // in a real game that does exactly that).
+        if had_neck
+            && state != State::Physics
+            && flag(dom, db, id, "RequiresNeck")
+            && !has_neck(dom, db, model)
+        {
             set(dom, db, id, "Health", Variant::Float64(0.0));
         }
         if number(dom, db, id, "Health") > 0.0 {

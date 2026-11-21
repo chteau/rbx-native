@@ -186,6 +186,19 @@ pub(crate) fn property(
             .audio
             .property(&mut shared.sounds, &dom, db, referent, key);
     }
+    // Never stored: the `HumanoidRootPart` beside the humanoid, as it stands.
+    if class == "Humanoid" && key == "RootPart" {
+        let (dom, db) = shared.borrow().dom_and_db()?;
+        let dom = dom.try_borrow().ok()?;
+        let root = dom.parent(referent).and_then(|model| {
+            dom.get(model)?.children().iter().copied().find(|c| {
+                dom.get(*c).is_some_and(|i| {
+                    i.name() == "HumanoidRootPart" && db.is_subclass_of(i.class(), "BasePart")
+                })
+            })
+        });
+        return Some(root.map_or(Arg::Nil, Arg::Instance));
+    }
     if crate::joints::is_property(class, key) {
         let (dom, db) = shared.borrow().dom_and_db()?;
         let dom = dom.try_borrow().ok()?;

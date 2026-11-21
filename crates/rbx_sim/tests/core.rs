@@ -60,6 +60,26 @@ fn leaderstats_are_player_list_columns() {
 }
 
 #[test]
+fn a_stat_left_at_its_default_is_still_a_column() {
+    let server = r#"
+game:GetService("Players").PlayerAdded:Connect(function(player)
+	local stats = Instance.new("Folder", player)
+	stats.Name = "leaderstats"
+	local rolls = Instance.new("IntValue", stats)
+	rolls.Name = "Rolls"
+	rolls.Value = 0
+	local best = Instance.new("StringValue", stats)
+	best.Name = "Highest rarity"
+	best.Value = "None"
+end)
+"#;
+    let mut session = playing(server, "");
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    assert_eq!(core.stats, ["Rolls", "Highest rarity"]);
+    assert_eq!(core.players.expect("the list")[0].stats, ["0", "None"]);
+}
+
+#[test]
 fn set_core_gui_enabled_toggles_each_part() {
     let mut session = playing(LEADERSTATS, "");
     let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();

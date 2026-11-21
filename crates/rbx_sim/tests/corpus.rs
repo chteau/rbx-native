@@ -320,3 +320,108 @@ fn player_gui_scripts_start_after_the_whole_place() {
     let lines = run(dom, 0.3);
     assert!(has(&lines, C, "shared true true"), "{lines:#?}");
 }
+
+#[test]
+fn a_camera_tween_completes() {
+    let lines = run(
+        place(
+            "",
+            "local camera = workspace:WaitForChild('Camera') \
+             local blur = Instance.new('BlurEffect', game:GetService('Lighting')) blur.Size = 0 \
+             local ts = game:GetService('TweenService') \
+             local info = TweenInfo.new(0.3) \
+             local a = ts:Create(blur, info, { Size = 24 }) \
+             local b = ts:Create(camera, info, { FieldOfView = 60 }) \
+             a:Play() b:Play() \
+             b.Completed:Wait() print('camera done', math.floor(camera.FieldOfView + 0.5)) \
+             print('blur', blur.Size)",
+        ),
+        1.0,
+    );
+    assert!(has(&lines, C, "camera done 60"), "{lines:#?}");
+    assert!(has(&lines, C, "blur 24"), "{lines:#?}");
+}
+
+#[test]
+fn a_remote_drops_what_cannot_cross() {
+    let lines = run(
+        place(
+            "local rf = Instance.new('RemoteFunction') rf.Name = 'Roll' rf.Parent = game:GetService('ReplicatedStorage') \
+             local hidden = Instance.new('Folder', game:GetService('ServerStorage')) \
+             rf.OnServerInvoke = function() return { Rarity = { Label = 'Rare' }, Item = { Name = 'Taco', Gear = hidden, Script = function() end } } end",
+            "local rf = game:GetService('ReplicatedStorage'):WaitForChild('Roll') \
+             local ok, result = pcall(rf.InvokeServer, rf) \
+             print('roll', ok, ok and result.Rarity.Label, ok and result.Item.Name, ok and result.Item.Gear, ok and result.Item.Script)",
+        ),
+        0.5,
+    );
+    assert!(has(&lines, C, "roll true Rare Taco nil nil"), "{lines:#?}");
+}
+
+#[test]
+fn the_legacy_gui_tweens_run() {
+    let lines = run(
+        place(
+            "",
+            "local f = Instance.new('Frame') \
+             f:TweenPosition(UDim2.fromOffset(100, 0), 'Out', 'Linear', 0.2, false, function(s) print('done', s.Name, f.Position.X.Offset) end) \
+             print('busy', f:TweenSize(UDim2.fromOffset(5, 5))) \
+             print('override', f:TweenSizeAndPosition(UDim2.fromOffset(5, 5), UDim2.fromOffset(100, 0), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true))",
+        ),
+        1.0,
+    );
+    assert!(has(&lines, C, "busy false"), "{lines:#?}");
+    assert!(has(&lines, C, "override true"), "{lines:#?}");
+    assert!(has(&lines, C, "done Canceled 0"), "{lines:#?}");
+}
+
+#[test]
+fn the_server_can_turn_on_a_player_s_screen_gui() {
+    let mut dom = place(
+        "game:GetService('Players').PlayerAdded:Connect(function(player) \
+         player.PlayerGui:WaitForChild('RulesUI').Enabled = true end)",
+        "local gui = game:GetService('Players').LocalPlayer:WaitForChild('PlayerGui'):WaitForChild('RulesUI') \
+         task.wait(0.5) print('rules', gui.Enabled)",
+    );
+    let starter = service(&dom, "StarterGui");
+    let rules = dom.new_instance("ScreenGui", "RulesUI", Some(starter));
+    let _ = dom.set_property(rules, "Enabled", Variant::Bool(false));
+    dom.take_changes();
+    let lines = run(dom, 1.0);
+    assert!(has(&lines, C, "rules true"), "{lines:#?}");
+}
+
+#[test]
+fn a_humanoid_s_root_part_is_its_humanoid_root_part() {
+    let lines = run(
+        place(
+            "",
+            "local player = game:GetService('Players').LocalPlayer local character = player.Character or player.CharacterAdded:Wait() \
+             local humanoid = character:WaitForChild('Humanoid') \
+             print('root', humanoid.RootPart == character:FindFirstChild('HumanoidRootPart')) \
+             character.HumanoidRootPart.Name = 'Gone' \
+             print('renamed', humanoid.RootPart)",
+        ),
+        0.5,
+    );
+    assert!(has(&lines, C, "root true"), "{lines:#?}");
+    assert!(has(&lines, C, "renamed nil"), "{lines:#?}");
+}
+
+#[test]
+fn a_ragdoll_in_the_physics_state_lives_without_its_neck() {
+    let lines = run(
+        place(
+            "",
+            "local player = game:GetService('Players').LocalPlayer local character = player.Character or player.CharacterAdded:Wait() \
+             local humanoid = character:WaitForChild('Humanoid') \
+             task.wait(0.2) \
+             humanoid:ChangeState(Enum.HumanoidStateType.Physics) \
+             local folder = Instance.new('Folder', game:GetService('ReplicatedStorage')) \
+             for _, d in character:GetDescendants() do if d:IsA('Motor6D') then d.Parent = folder end end \
+             task.wait(0.3) print('ragdoll', humanoid.Health, humanoid:GetState().Name)",
+        ),
+        0.8,
+    );
+    assert!(has(&lines, C, "ragdoll 100 Physics"), "{lines:#?}");
+}
