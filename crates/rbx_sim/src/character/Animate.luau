@@ -47,6 +47,10 @@ local emote: AnimationTrack? = nil
 local toolTrack: AnimationTrack? = nil
 local toolWatch: RBXScriptConnection? = nil
 local moveSpeed = 0
+-- Each character rolls its weighted variants from its own generator, so
+-- what other scripts draw from `math.random` does not change which idle a
+-- fresh character starts on (Roblox seeds its Animate from the clock).
+local rolls = Random.new(1)
 -- Bumped by every pose change, so a delayed follow-up knows it is stale.
 local epoch = 0
 
@@ -82,7 +86,7 @@ local function pick(name: string): Animation?
 			total += weight
 		end
 	end
-	local roll = math.random() * total
+	local roll = rolls:NextNumber() * total
 	for index, animation in candidates do
 		roll -= weights[index]
 		if roll <= 0 and weights[index] > 0 then
