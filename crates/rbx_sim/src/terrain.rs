@@ -543,6 +543,94 @@ impl Terrain {
                     false,
                 ));
             }
+            TerrainOp::Count => {
+                let n = self.grid.voxels().filter(|(_, c)| !c.is_air()).count();
+                return Ok((TerrainReply::Count(n), false));
+            }
+            TerrainOp::ReadChannels { min, max } => {
+                let size = [0, 1, 2].map(|a| (max[a] - min[a]).max(0) as usize);
+                let count = size.iter().product();
+                let mut materials = Vec::with_capacity(count);
+                let mut solid = Vec::with_capacity(count);
+                let mut liquid = Vec::with_capacity(count);
+                for z in 0..size[2] {
+                    for y in 0..size[1] {
+                        for x in 0..size[0] {
+                            let cell = self.grid.get([
+                                min[0] + x as i32,
+                                min[1] + y as i32,
+                                min[2] + z as i32,
+                            ]);
+                            let own = if cell.material.is_solid() {
+                                cell.material
+                            } else {
+                                Material::Air
+                            };
+                            materials.push(own.name().to_owned());
+                            solid.push(f64::from(cell.solid_fraction()));
+                            liquid.push(f64::from(cell.water_fraction()));
+                        }
+                    }
+                }
+                return Ok((
+                    TerrainReply::Channels {
+                        size,
+                        materials,
+                        solid,
+                        liquid,
+                    },
+                    false,
+                ));
+            }
+            TerrainOp::WriteChannels {
+                min,
+                size,
+                materials,
+                solid,
+                liquid,
+                keep,
+            } => {
+                let count: usize = size.iter().product();
+                let names = match materials {
+                    Some(list) => Some(
+                        list.iter()
+                            .map(|n| material(n))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    ),
+                    None => None,
+                };
+                let max = [0, 1, 2].map(|a| min[a] + size[a] as i32);
+                self.each(*min, max, |v, cell| {
+                    let [x, y, z] = [0, 1, 2].map(|a| (v[a] - min[a]) as usize);
+                    let i = x + size[0] * (y + size[1] * z);
+                    if i >= count || keep.as_ref().is_some_and(|k| k[i]) {
+                        return None;
+                    }
+                    let own = if cell.material.is_solid() {
+                        cell.material
+                    } else {
+                        Material::Air
+                    };
+                    let m = names.as_ref().map_or(own, |n| n[i]);
+                    let s = solid
+                        .as_ref()
+                        .map_or(f64::from(cell.solid_fraction()), |v| v[i]);
+                    let w = liquid
+                        .as_ref()
+                        .map_or(f64::from(cell.water_fraction()), |v| v[i]);
+                    Some(if m == Material::Air || s <= 0.0 {
+                        Cell::with_fraction(Material::Water, w as f32)
+                    } else if s >= 1.0 {
+                        Cell::full(m)
+                    } else {
+                        Cell::new(
+                            m,
+                            rbx_terrain::quantize(s as f32),
+                            (w.clamp(0.0, 1.0) * 255.0).round() as u8,
+                        )
+                    })
+                });
+            }
             TerrainOp::GetColor(name) | TerrainOp::SetColor(name, _)
                 if matches!(name.as_str(), "Air" | "Water") =>
             {

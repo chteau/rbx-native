@@ -99,6 +99,11 @@ pub trait Physics {
     /// at the next physics step.
     fn apply_impulse(&self, part: Ref, impulse: [f64; 3], angular: bool);
 
+    /// `Workspace:GetNumAwakeParts()`: the unanchored parts not asleep.
+    fn awake_parts(&self) -> usize {
+        0
+    }
+
     /// A `MeshPart` made at runtime: its geometry, `vertices` centred on
     /// the part's origin, for collision.
     fn register_mesh(&self, _part: Ref, _vertices: Vec<[f32; 3]>, _triangles: Vec<[u32; 3]>) {}

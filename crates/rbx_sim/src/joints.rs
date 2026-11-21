@@ -2,8 +2,11 @@
 //! `GetJoints`, `GetConnectedParts`, `GetRootPart` / `AssemblyRootPart`,
 //! `GetNoCollisionConstraints` and `GetTouchingParts`, read from the DOM as
 //! it stands (a weld made this frame counts at once), as the creator docs
-//! describe them.
+//! describe them; and what follows from the assembly's mass: its centre,
+//! the velocity at a point, impulses off centre, torque and angular
+//! acceleration, `IsGrounded`, plus `Attachment:GetConstraints`.
 
+use rapier3d::prelude::{Mat3, Vector};
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_lua::server::{Arg, CallReply, Physics, QueryFilter, QueryShape};
 use rbx_reflection::ReflectionDatabase;
@@ -16,18 +19,157 @@ const METHODS: &[&str] = &[
     "GetRootPart",
     "GetNoCollisionConstraints",
     "GetTouchingParts",
+    "GetVelocityAtPosition",
+    "ApplyImpulseAtPosition",
+    "IsGrounded",
+    "AngularAccelerationToTorque",
+    "TorqueToAngularAcceleration",
 ];
+
+const PROPERTIES: &[&str] = &["AssemblyRootPart", "AssemblyCenterOfMass", "CenterOfMass"];
 
 fn is_part(class: &str) -> bool {
     ReflectionDatabase::shared().is_subclass_of(class, "BasePart")
 }
 
 pub(crate) fn is_method(class: &str, key: &str) -> bool {
-    METHODS.contains(&key) && is_part(class)
+    (METHODS.contains(&key) && is_part(class))
+        || (key == "GetConstraints"
+            && ReflectionDatabase::shared().is_subclass_of(class, "Attachment"))
 }
 
 pub(crate) fn is_property(class: &str, key: &str) -> bool {
-    key == "AssemblyRootPart" && is_part(class)
+    PROPERTIES.contains(&key) && is_part(class)
+}
+
+/// `AssemblyRootPart`, `AssemblyCenterOfMass` (world space; an anchored
+/// part's own, as each anchored part answers alone) and `CenterOfMass`
+/// (the part's own, in its own space).
+pub(crate) fn property(dom: &WeakDom, db: &ReflectionDatabase, part: Ref, key: &str) -> Arg {
+    if key == "AssemblyRootPart" {
+        return Arg::Instance(root_part(dom, db, part));
+    }
+    let (assembly, anchored) = crate::ownership::assembly_in_dom(dom, db, part);
+    let parts = if key == "CenterOfMass" || anchored {
+        vec![part]
+    } else {
+        assembly
+    };
+    let frame = crate::humanoid::cframe(dom, db, part);
+    let position = frame.map_or(Vector::ZERO, |f| {
+        Vector::new(
+            f.position.x.into(),
+            f.position.y.into(),
+            f.position.z.into(),
+        )
+    });
+    let center = crate::physics::mass_props(dom, db, &parts).map_or(position, |m| m.center);
+    let center = match (key, frame) {
+        ("CenterOfMass", Some(frame)) => {
+            let r = frame.rotation.map(f64::from);
+            let d = center - position;
+            Vector::new(
+                r[0] * d.x + r[3] * d.y + r[6] * d.z,
+                r[1] * d.x + r[4] * d.y + r[7] * d.z,
+                r[2] * d.x + r[5] * d.y + r[8] * d.z,
+            )
+        }
+        _ => center,
+    };
+    Arg::Vector3(center.to_array().map(|v| v as f32))
+}
+
+fn vec_arg(v: Vector) -> CallReply {
+    CallReply::value(Arg::Vector3(v.to_array().map(|c| c as f32)))
+}
+
+fn vec_of(arg: Option<&Arg>) -> Option<Vector> {
+    match arg {
+        Some(Arg::Vector3(v)) => Some(Vector::new(v[0].into(), v[1].into(), v[2].into())),
+        _ => None,
+    }
+}
+
+/// The assembly's mass properties, `None` when it is anchored.
+fn free_mass(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    part: Ref,
+) -> Option<crate::physics::MassProps> {
+    let (parts, anchored) = crate::ownership::assembly_in_dom(dom, db, part);
+    if anchored {
+        return None;
+    }
+    crate::physics::mass_props(dom, db, &parts)
+}
+
+fn assembly_call(
+    physics: &dyn Physics,
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    part: Ref,
+    method: &str,
+    args: &[Arg],
+) -> Result<CallReply, String> {
+    let first = vec_of(args.first());
+    let second = vec_of(args.get(1));
+    let missing = |n: usize| format!("Argument {n} missing or nil");
+    match method {
+        // Rigid joints only: a hinge or a rope to an anchored part doesn't
+        // ground it.
+        "IsGrounded" => {
+            let grounded = crate::ownership::assembly_in_dom(dom, db, part).1;
+            Ok(CallReply::value(Arg::Bool(grounded)))
+        }
+        // From the velocities the assembly holds, anchored or not.
+        "GetVelocityAtPosition" => {
+            let at = first.ok_or_else(|| missing(1))?;
+            let parts = crate::ownership::assembly_in_dom(dom, db, part).0;
+            let Some(mass) = crate::physics::mass_props(dom, db, &parts) else {
+                return Ok(vec_arg(Vector::ZERO));
+            };
+            let v = Vector::from(vector(dom, db, part, "AssemblyLinearVelocity"));
+            let w = Vector::from(vector(dom, db, part, "AssemblyAngularVelocity"));
+            Ok(vec_arg(v + w.cross(at - mass.center)))
+        }
+        "ApplyImpulseAtPosition" => {
+            let impulse = first.ok_or_else(|| missing(1))?;
+            let at = second.ok_or_else(|| missing(2))?;
+            if let Some(mass) = free_mass(dom, db, part) {
+                physics.apply_impulse(part, impulse.to_array(), false);
+                let spin = (at - mass.center).cross(impulse);
+                physics.apply_impulse(part, spin.to_array(), true);
+            }
+            Ok(CallReply::default())
+        }
+        _ => {
+            let given = first.ok_or_else(|| missing(1))?;
+            let spin = second.unwrap_or(Vector::ZERO);
+            let Some(mass) = free_mass(dom, db, part) else {
+                return Ok(vec_arg(Vector::ZERO));
+            };
+            let i: Mat3 = mass.inertia;
+            let gyro = spin.cross(i * spin);
+            Ok(vec_arg(if method == "AngularAccelerationToTorque" {
+                i * given + gyro
+            } else {
+                i.inverse() * (given - gyro)
+            }))
+        }
+    }
+}
+
+/// `Attachment:GetConstraints()`: the constraints using it.
+fn constraints_of(dom: &WeakDom, db: &ReflectionDatabase, attachment: Ref) -> Vec<Ref> {
+    every(dom)
+        .into_iter()
+        .filter(|r| {
+            dom.get(*r)
+                .is_some_and(|i| db.is_subclass_of(i.class(), "Constraint"))
+                && (reference(dom, *r, "Attachment0") == Some(attachment)
+                    || reference(dom, *r, "Attachment1") == Some(attachment))
+        })
+        .collect()
 }
 
 fn every(dom: &WeakDom) -> Vec<Ref> {
@@ -180,7 +322,22 @@ pub(crate) fn call(
     part: Ref,
     method: &str,
     args: &[Arg],
-) -> CallReply {
+) -> Result<CallReply, String> {
+    if method == "GetConstraints" {
+        return Ok(CallReply::value(Arg::Instances(constraints_of(
+            dom, db, part,
+        ))));
+    }
+    if !matches!(
+        method,
+        "GetJoints"
+            | "GetNoCollisionConstraints"
+            | "GetConnectedParts"
+            | "GetTouchingParts"
+            | "GetRootPart"
+    ) {
+        return assembly_call(physics, dom, db, part, method, args);
+    }
     let list = match method {
         "GetJoints" => joints_of(dom, db, part, false),
         "GetNoCollisionConstraints" => joints_of(dom, db, part, true),
@@ -188,7 +345,7 @@ pub(crate) fn call(
             connected(dom, db, part, matches!(args.first(), Some(Arg::Bool(true))))
         }
         "GetTouchingParts" => touching(physics, dom, db, part),
-        _ => return CallReply::value(Arg::Instance(root_part(dom, db, part))),
+        _ => return Ok(CallReply::value(Arg::Instance(root_part(dom, db, part)))),
     };
-    CallReply::value(Arg::Instances(list))
+    Ok(CallReply::value(Arg::Instances(list)))
 }

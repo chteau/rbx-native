@@ -170,6 +170,51 @@ impl PartData {
         }
     }
 
+    /// The moments of inertia about the part's own axes through its centre
+    /// for `mass`: a box's, a ball's, or a cylinder's along X.
+    /// The centre of mass in the part's own space and the inertia about it
+    /// for `mass`. A wedge's (a right prism whose slope faces front and
+    /// up) sits a third of the way towards the back bottom edge, and its
+    /// slope couples Y and Z, as the PartPhysics golden shows.
+    pub(super) fn local_mass(&self, mass: f64) -> (Vector, Mat3) {
+        let [x, y, z] = [self.size.x, self.size.y, self.size.z].map(f64::from);
+        let box_inertia = |m: f64| {
+            Vector::new(
+                m * (y * y + z * z),
+                m * (x * x + z * z),
+                m * (x * x + y * y),
+            ) / 12.0
+        };
+        match self.shape {
+            Shape::Ball => {
+                let r = x.min(y).min(z) / 2.0;
+                (
+                    Vector::ZERO,
+                    Mat3::from_diagonal(Vector::splat(0.4 * mass * r * r)),
+                )
+            }
+            Shape::Cylinder | Shape::Capsule => {
+                let r = y.min(z) / 2.0;
+                let side = mass * (3.0 * r * r + x * x) / 12.0;
+                (
+                    Vector::ZERO,
+                    Mat3::from_diagonal(Vector::new(mass * r * r / 2.0, side, side)),
+                )
+            }
+            Shape::Wedge => {
+                let (yy, zz, xx) = (y * y / 18.0, z * z / 18.0, x * x / 12.0);
+                let yz = y * z / 36.0;
+                let inertia = Mat3::from_cols(
+                    Vector::new(yy + zz, 0.0, 0.0),
+                    Vector::new(0.0, xx + zz, -yz),
+                    Vector::new(0.0, -yz, xx + yy),
+                ) * mass;
+                (Vector::new(0.0, -y / 6.0, z / 6.0), inertia)
+            }
+            _ => (Vector::ZERO, Mat3::from_diagonal(box_inertia(mass))),
+        }
+    }
+
     pub(crate) fn shape_collider(&self) -> ColliderBuilder {
         let half = |v: f32| Real::from(v) / 2.0;
         let (hx, hy, hz) = (half(self.size.x), half(self.size.y), half(self.size.z));

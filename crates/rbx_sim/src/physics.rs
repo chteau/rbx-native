@@ -134,6 +134,9 @@ struct Assembly {
 pub struct Shared {
     masses: HashMap<Ref, (f64, f64)>,
     impulses: Vec<(Ref, [f64; 3], bool)>,
+    /// Unanchored parts awake after the last step.
+    pub(crate) awake: usize,
+    pub(crate) explosions: crate::explosion::Explosions,
     /// Bumped whenever the world steps or is rebuilt.
     generation: u64,
     /// Parts moved without a logged edit (physics, replication, animation
@@ -212,6 +215,59 @@ impl Shared {
         let data = PartData::read(queries.db, dom.get(part)?)?;
         Some(data.volume() * f64::from(data.physics[0]))
     }
+}
+
+/// An assembly's mass, centre of mass and inertia tensor about that
+/// centre in world axes, read from the DOM.
+pub(crate) struct MassProps {
+    pub(crate) center: Vector,
+    pub(crate) inertia: Mat3,
+}
+
+/// The mass properties of `parts` as they stand in the DOM: each part's
+/// volume times its density at its own centre, its inertia that of its
+/// shape (box, ball, cylinder along X), moved to the joint centre. A
+/// massless part adds nothing unless every part is massless.
+pub(crate) fn mass_props(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    parts: &[Ref],
+) -> Option<MassProps> {
+    let data: Vec<PartData> = parts
+        .iter()
+        .filter_map(|p| PartData::read(db, dom.get(*p)?))
+        .collect();
+    let all_massless = data.iter().all(|d| d.massless);
+    let weighed: Vec<(&PartData, f64)> = data
+        .iter()
+        .filter(|d| all_massless || !d.massless)
+        .map(|d| (d, d.volume() * f64::from(d.physics[0])))
+        .collect();
+    let mass: f64 = weighed.iter().map(|(_, m)| m).sum();
+    if weighed.is_empty() || mass <= 0.0 {
+        return None;
+    }
+    let placed: Vec<(Mat3, Vector, Mat3, f64)> = weighed
+        .iter()
+        .map(|(d, m)| {
+            let rotation = Mat3::from_quat(pose_of(&d.cframe).rotation);
+            let (offset, own) = d.local_mass(*m);
+            let at = vec3(d.cframe.position) + rotation * offset;
+            (rotation, at, own, *m)
+        })
+        .collect();
+    let center = placed
+        .iter()
+        .fold(Vector::ZERO, |sum, (_, at, _, m)| sum + *at * *m)
+        / mass;
+    let mut inertia = Mat3::ZERO;
+    for (rotation, at, own, m) in &placed {
+        let r = *at - center;
+        let shift = Mat3::from_diagonal(Vector::splat(r.length_squared()))
+            - Mat3::from_cols(r * r.x, r * r.y, r * r.z);
+        inertia += *rotation * *own * rotation.transpose() + shift * *m;
+    }
+    Some(MassProps { center, inertia })
 }
 
 /// The VM's view of [`Shared`].
@@ -350,6 +406,10 @@ impl Physics for Bridge {
 
     fn apply_impulse(&self, part: Ref, impulse: [f64; 3], angular: bool) {
         self.0.borrow_mut().impulses.push((part, impulse, angular));
+    }
+
+    fn awake_parts(&self) -> usize {
+        self.0.borrow().awake
     }
 
     fn engine_method(&self, class: &str, key: &str) -> bool {
@@ -1925,6 +1985,7 @@ impl World {
     /// moves. A body asleep since the last frame stays as it was written.
     pub fn write_back(&self, dom: &mut WeakDom, db: &ReflectionDatabase) {
         let mut shared = self.shared.borrow_mut();
+        shared.awake = 0;
         for assembly in &self.assemblies {
             if assembly.anchored || assembly.remote {
                 continue;
@@ -1933,6 +1994,9 @@ impl World {
                 continue;
             };
             let awake = !body.is_sleeping();
+            if awake {
+                shared.awake += assembly.parts.len();
+            }
             if !assembly.moved.replace(awake) && !awake {
                 continue;
             }

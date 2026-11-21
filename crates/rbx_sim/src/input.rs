@@ -208,6 +208,32 @@ pub(crate) fn camera(dom: &WeakDom) -> Option<(CFrameData, f32)> {
     Some((cframe, fov))
 }
 
+/// Gives a server's workspace a camera when the place saved none, as a
+/// Roblox server's `workspace.CurrentCamera` always is one.
+pub(crate) fn server_camera(dom: &mut WeakDom) {
+    let Some(workspace) = dom
+        .root_refs()
+        .iter()
+        .copied()
+        .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Workspace"))
+    else {
+        return;
+    };
+    let saved = match dom
+        .get(workspace)
+        .and_then(|w| w.properties().get("CurrentCamera"))
+    {
+        Some(Variant::Ref(saved)) => Some(*saved),
+        _ => None,
+    };
+    if saved.is_some_and(|r| dom.get(r).is_some_and(|i| i.class() == "Camera")) {
+        return;
+    }
+    let camera = dom.new_instance("Camera", "Camera", Some(workspace));
+    let _ = dom.set_property(camera, "FieldOfView", Variant::Float32(70.0));
+    let _ = dom.set_property(workspace, "CurrentCamera", Variant::Ref(camera));
+}
+
 /// Gives the workspace the client's own camera: cameras don't replicate,
 /// so a client never sees the place's saved one, and its own starts as
 /// `Custom`, for the camera scripts to drive.
