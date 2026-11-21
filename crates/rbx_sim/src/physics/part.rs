@@ -25,6 +25,14 @@ pub enum Shape {
     /// A union's convex pieces, in its space as made, and the size it was
     /// made at (`union.rs`).
     Union(Arc<Vec<super::union::Hull>>, Vector3Data),
+    /// A union carved here (or saved with a carved mesh and no convex
+    /// pieces): collides like a `MeshPart` per its `CollisionFidelity`, and
+    /// weighs its real volume. The mesh's volume, centroid and extent.
+    Operation {
+        volume: f64,
+        centroid: [f64; 3],
+        extent: [f64; 3],
+    },
 }
 
 pub(crate) struct PartData {
@@ -88,17 +96,28 @@ impl PartData {
             "CornerWedgePart" => Shape::CornerWedge,
             "MeshPart" => Shape::Mesh,
             _ if db.is_subclass_of(class, "PartOperation") => {
-                match (
+                let hulls = match (
                     read(db, instance, "PhysicalConfigData"),
                     read(db, instance, "InitialSize"),
                 ) {
                     (Some(Variant::Unknown { raw, .. }), Some(Variant::Vector3(made))) => {
-                        match super::union::hulls(raw) {
-                            Some(hulls) => Shape::Union(hulls, *made),
-                            None => Shape::Block,
-                        }
+                        super::union::hulls(raw).map(|hulls| (hulls, *made))
                     }
-                    _ => Shape::Block,
+                    _ => None,
+                };
+                match hulls {
+                    Some((hulls, made)) => Shape::Union(hulls, made),
+                    None => match super::mesh::operation(instance.referent(), instance) {
+                        Some(geometry) => {
+                            let (volume, centroid, extent) = geometry.mass();
+                            Shape::Operation {
+                                volume,
+                                centroid,
+                                extent,
+                            }
+                        }
+                        None => Shape::Block,
+                    },
                 }
             }
             _ if db.is_subclass_of(class, "Part") => match read(db, instance, "Shape") {
@@ -152,6 +171,10 @@ impl PartData {
         let [x, y, z] = [self.size.x, self.size.y, self.size.z].map(f64::from);
         match self.shape {
             Shape::Block | Shape::Mesh | Shape::Union(..) => x * y * z,
+            Shape::Operation { volume, extent, .. } => {
+                let scale = self.operation_scale(extent);
+                volume * scale[0] * scale[1] * scale[2]
+            }
             Shape::Wedge => x * y * z / 2.0,
             Shape::CornerWedge => x * y * z / 3.0,
             Shape::Ball => {
@@ -211,8 +234,35 @@ impl PartData {
                 ) * mass;
                 (Vector::new(0.0, -y / 6.0, z / 6.0), inertia)
             }
+            Shape::Mesh => (
+                super::mesh::mass_centre(self),
+                Mat3::from_diagonal(box_inertia(mass)),
+            ),
+            Shape::Operation {
+                centroid, extent, ..
+            } => {
+                let scale = self.operation_scale(extent);
+                let at = Vector::new(
+                    centroid[0] * scale[0],
+                    centroid[1] * scale[1],
+                    centroid[2] * scale[2],
+                );
+                (at, Mat3::from_diagonal(box_inertia(mass)))
+            }
             _ => (Vector::ZERO, Mat3::from_diagonal(box_inertia(mass))),
         }
+    }
+
+    /// How far a carved mesh of `extent` stretches to fill `Size`.
+    fn operation_scale(&self, extent: [f64; 3]) -> [f64; 3] {
+        let size = [self.size.x, self.size.y, self.size.z].map(f64::from);
+        std::array::from_fn(|i| {
+            if extent[i] > 0.0 {
+                size[i] / extent[i]
+            } else {
+                1.0
+            }
+        })
     }
 
     pub(crate) fn shape_collider(&self) -> ColliderBuilder {
@@ -256,7 +306,7 @@ impl PartData {
                     ColliderBuilder::compound(pieces)
                 }
             }
-            Shape::Mesh => super::mesh::collider(self),
+            Shape::Mesh | Shape::Operation { .. } => super::mesh::collider(self),
             Shape::Ball => ColliderBuilder::ball(hx.min(hy).min(hz)),
             Shape::Cylinder => {
                 ColliderBuilder::compound(vec![(along_x, SharedShape::cylinder(hx, hy.min(hz)))])

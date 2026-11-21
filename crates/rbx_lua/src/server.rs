@@ -8,6 +8,7 @@
 //! simulation knows (masses) or can do (impulses).
 
 mod chat;
+mod csg;
 pub(crate) mod editable_image;
 mod hooks;
 mod input;

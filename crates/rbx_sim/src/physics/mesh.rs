@@ -79,6 +79,63 @@ pub(crate) fn share(parts: &[Ref], vertices: Vec<[f32; 3]>, triangles: Vec<[u32;
     });
 }
 
+/// A union's (or intersection's) carved mesh, in its own space at its
+/// `InitialSize`: the one a script made it with, or read back from its
+/// `MeshData2`, remembered either way so it decomposes once.
+pub(crate) fn operation(part: Ref, instance: &rbx_dom::Instance) -> Option<Arc<Geometry>> {
+    if let Some(known) = REGISTERED.with(|all| all.borrow().get(&part).cloned()) {
+        return Some(known);
+    }
+    let (positions, indices) = rbx_lua::csg::local_mesh(instance)?;
+    register(part, positions, indices.as_chunks::<3>().0.to_vec());
+    REGISTERED.with(|all| all.borrow().get(&part).cloned())
+}
+
+/// Where a `MeshPart`'s mass sits in its own space: the middle of its
+/// mesh's bounding box fitted to `Size` (a fragment's mesh lies off the
+/// part's origin, the CsgApi golden), the origin with no mesh.
+pub(crate) fn mass_centre(part: &PartData) -> Vector {
+    let Some(geometry) = geometry_of(part) else {
+        return Vector::ZERO;
+    };
+    let (min, max) = bounds(&geometry);
+    let scale = scale_of(&geometry, [part.size.x, part.size.y, part.size.z]);
+    Vector::new(
+        ((min[0] + max[0]) / 2.0 * scale[0]).into(),
+        ((min[1] + max[1]) / 2.0 * scale[1]).into(),
+        ((min[2] + max[2]) / 2.0 * scale[2]).into(),
+    )
+}
+
+impl Geometry {
+    /// Volume, centroid and bounding-box extent in the mesh's own space,
+    /// by the divergence theorem over its triangles.
+    pub(crate) fn mass(&self) -> (f64, [f64; 3], [f64; 3]) {
+        let v = |i: u32| self.vertices[i as usize].map(f64::from);
+        let (mut volume, mut moment) = (0.0, [0.0; 3]);
+        for [a, b, c] in self.triangles.iter().map(|t| t.map(v)) {
+            let dv = (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                / 6.0;
+            volume += dv;
+            for axis in 0..3 {
+                moment[axis] += dv * (a[axis] + b[axis] + c[axis]) / 4.0;
+            }
+        }
+        let (min, max) = bounds(self);
+        let centroid = if volume.abs() > f64::EPSILON {
+            moment.map(|m| m / volume)
+        } else {
+            [0.0; 3]
+        };
+        (
+            volume.abs(),
+            centroid,
+            std::array::from_fn(|i| f64::from(max[i] - min[i])),
+        )
+    }
+}
+
 fn asset_geometry(mesh_id: &str) -> Option<Arc<Geometry>> {
     if let Some(known) = ASSETS.with(|all| all.borrow().get(mesh_id).cloned()) {
         return known;

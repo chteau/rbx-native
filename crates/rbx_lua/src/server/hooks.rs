@@ -754,6 +754,9 @@ impl Hooks for ServerHooks {
         if let Some(value) = super::styles::member(lua, ctx, &self.styles, referent, class, key)? {
             return Ok(Some(value));
         }
+        if let Some(value) = super::csg::member(lua, ctx, &self.physics, class, key)? {
+            return Ok(Some(value));
+        }
         if let Some(value) = super::services::world(lua, &self.services, ctx, referent, class, key)?
         {
             return Ok(Some(value));

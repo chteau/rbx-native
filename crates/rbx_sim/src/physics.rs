@@ -396,8 +396,12 @@ impl Physics for Bridge {
         let fresh = shared.queries.as_ref().and_then(|queries| {
             let dom = queries.dom.try_borrow().ok()?;
             let (parts, _) = crate::ownership::assembly_in_dom(&dom, queries.db, part);
+            // An anchored assembly is immovable: its mass reads as inf.
             parts.iter().try_fold(0.0, |sum, &p| {
                 let data = PartData::read(queries.db, dom.get(p)?)?;
+                if data.anchored {
+                    return Some(f64::INFINITY);
+                }
                 (!data.massless).then(|| sum + data.volume() * f64::from(data.physics[0]))
             })
         });
