@@ -893,6 +893,31 @@ Not verified: the swim game past its loading screen (walking, carrying, the sea)
 
 Side-by-sides: `rbx-native-targets/local-run-m18-shots/<game>/` (real client and ours at 1166x632; part 2's are suffixed `-b`, ours cropped from a 1600x636 Play (local) view, so the 3D framing matches and the corner GUI is cut).
 
+## API sweep: the 3D world
+
+Goldens: WorldApi, PartPhysics, Explosion, Path2DCurve (all recorded on the sandbox place). Code: `server/services/world.luau` (members past the engine's own), `rbx_sim/src/joints.rs` (mass helpers), `explosion.rs`, `physics/part.rs` (`local_mass`), `server/terrain.rs`.
+
+- Workspace: `GetServerTimeNow`, `GetRealPhysicsFPS` (60), `GetPhysicsThrottling` (100), `PGSIsEnabled`, `GetNumAwakeParts` (counted in the step), `JoinToOutsiders` (a `Weld` in each part per touching outsider; `Surface` joins the same, `None` nothing), `UnjoinFromOutsiders`, `PersistentLoaded`. A server's `workspace.CurrentCamera` is always a Camera.
+- WorldRoot: `BulkMoveTo` with live messages, `ArePartsTouchingOthers`, every collision-group call on Workspace too, `RenameCollisionGroup`. `Default` can't be removed or renamed ("Can not use/change the Default collision group."), renaming a missing group does nothing, `GetRegisteredCollisionGroups` gives real masks. Changing which groups collide rebuilds the world, so it takes effect mid-run.
+- BasePart: `GetVelocityAtPosition` (from the held velocities, anchored too), `ApplyImpulseAtPosition`, `IsGrounded` (rigid joints only), `AngularAccelerationToTorque`/`TorqueToAngularAcceleration` with the full inertia tensor (a wedge's slope couples Y and Z), `GetClosestPointOnSurface`, `Resize` (other parts don't stop it, the size stops at 0.001 while the part moves the whole way), `ResizeableFaces`, `ResizeIncrement`, `ExtentsSize`/`ExtentsCFrame`, `CurrentPhysicalProperties`, `AssemblyCenterOfMass` (an anchored part's own), `CenterOfMass` (in the part's space).
+- Model: `ScaleTo`/`GetScale` (parts about the pivot, joints, attachments, mesh offsets, constraint lengths, fire, emitters; lights keep their range), `TranslateBy`, persistent players. Attachment: `GetConstraints`. Camera: `GetPartsObscuringTarget`, `ZoomToExtents`. Beam: `SetTextureOffset`.
+- Terrain: `CountCells`, `ReadVoxelChannels`/`WriteVoxelChannels`, `CopyRegion`/`PasteRegion` (TerrainRegion, `Region3int16`), `MaxExtents` (±32000), `Get`/`Set`/`ResetMaterialSlot`.
+- Explosion: goes off in the next step: `Hit` per part in the radius with its distance; when it has pressure, joints in `DestroyJointRadiusPercent` break and loose parts get the same push anywhere inside the radius (impulse 1.645e-4 × pressure × the area they show); it is removed 2 s later.
+- Path2D: control points (max 100, live messages), curve maths in the parent's pixels answered in its scale; a tangent left at zero drops its control point (a segment with none is straight), tangents are the raw derivative. `Path2DControlPoint` datatype.
+
+Still off or not done:
+
+| Area | Roblox | ours | Why |
+|---|---|---|---|
+| A script-made model's `WorldPivot` after moves | the live bounding-box centre | the pivot carried | `pivot.rs` stores a pivot on first move; reading an unset one needs the shared pivot code reworked |
+| One beat after an impulse | gravity for 1.5 frames (vy -4.91) | 1 frame (-3.27) | the harness's beat lands mid-step on a live server |
+| Blast spin, debris after 10 beats | a cube 6 studs off spins at 19 rad/s; parts scatter | no spin; ±3 studs | spin source not found |
+| BallSocket pendulum at 40 beats | x -1.97 | -3.04 | chaotic swing: joint stiffness, damping and angular drag scans moved it < 0.2 |
+| PathfindingModifier `PassThrough` added just before `ComputeAsync` | `NoPath` | a path through | likely the live navmesh not rebuilt yet; not probed with a delay |
+| Mixed solid and water occupancy read back | 0.496 | 0.5 | quantisation detail |
+| `UnionAsync`/`SubtractAsync`/`IntersectAsync`, GeometryService, `PartOperation:SubstituteGeometry`, `MeshPart:ApplyMesh`/`GetSurfaceSlotsAsync` | CSG and mesh services | missing | no MIT CSG kernel yet; needs a solid-modelling engine and union rendering |
+| Terrain `*_beta` voxel calls, `BindToCollisionSummaries` | beta | missing | not enabled on the sandbox place to observe |
+
 ## Milestone 19 (proposed): multi-client testing, then what M18 left off
 
 1. Studio-style multi-client tests: Test → Clients and Servers, N player windows plus a server window, each with its own Explorer and Output, all fed by one `Session`.
