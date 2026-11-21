@@ -60,6 +60,8 @@ const STRUCTURAL: &[&str] = &[
     "Part1",
     "Part0Internal",
     "Part1Internal",
+    "Attachment0",
+    "Attachment1",
     "Enabled",
 ];
 
@@ -1767,7 +1769,8 @@ impl Simulation {
             return;
         }
         let is_part = self.db.is_subclass_of(class, "BasePart");
-        let is_joint = self.db.is_subclass_of(class, "JointInstance") || class == "WeldConstraint";
+        let is_joint = self.db.is_subclass_of(class, "JointInstance")
+            || matches!(class, "WeldConstraint" | "RigidConstraint");
         // Constraint parameters are re-read every frame; what a constraint
         // joins (and where its attachments sit) needs a rebuild.
         if crate::physics::is_constraint(class) {
@@ -1862,7 +1865,7 @@ impl Simulation {
                 let class = i.class();
                 self.db.is_subclass_of(class, "BasePart")
                     || self.db.is_subclass_of(class, "JointInstance")
-                    || class == "WeldConstraint"
+                    || matches!(class, "WeldConstraint" | "RigidConstraint")
                     || crate::physics::is_constraint(class)
             })
         })

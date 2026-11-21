@@ -175,7 +175,7 @@ pub(crate) fn assembly_in_dom(
             continue;
         };
         stack.extend(instance.children().iter().copied());
-        if let Some(joint) = crate::physics::joint_parts(db, instance) {
+        if let Some(joint) = crate::physics::joint_parts(dom, db, instance) {
             links.entry(joint.0).or_default().push(joint.1);
             links.entry(joint.1).or_default().push(joint.0);
         }

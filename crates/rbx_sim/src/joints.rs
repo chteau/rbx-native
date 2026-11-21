@@ -82,7 +82,7 @@ fn connected(dom: &WeakDom, db: &ReflectionDatabase, part: Ref, recursive: bool)
     }
     let mut out = vec![part];
     for r in every(dom) {
-        let Some((a, b)) = dom.get(r).and_then(|i| crate::physics::joint_parts(db, i)) else {
+        let Some((a, b)) = dom.get(r).and_then(|i| crate::physics::joint_parts(dom, db, i)) else {
             continue;
         };
         let other = if a == part {
