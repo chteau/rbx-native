@@ -139,9 +139,11 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use rbx_dom::{CFrameData, Variant, Vector3Data};
+    use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
+    use rbx_reflection::ReflectionDatabase;
 
-    use super::*;
+    // Not `super::*`: the glob of `gpui_kit` would shadow `#[test]`.
+    use super::{apply, can, Command};
 
     fn database() -> ReflectionDatabase {
         rbx_reflection::ReflectionDatabase::embedded()
