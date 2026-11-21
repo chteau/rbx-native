@@ -411,14 +411,14 @@ impl rbx_sim::Avatars for StudioAvatars {
             Ok(fetched) => fetched,
             Err(why) => self.cached(user).ok_or(why)?,
         };
-        let model = build(&fetched, None);
-        let rig = *model.root_refs().first().ok_or("no rig was built")?;
-        let description = find(&model, rig, "Humanoid")
-            .and_then(|humanoid| find(&model, humanoid, "HumanoidDescription"))
-            .ok_or("the rig has no HumanoidDescription")?;
-        let mut out = WeakDom::new();
-        rbx_sim::players::graft(&mut out, &model, description, None);
-        Ok(out)
+        description_of(&fetched)
+    }
+
+    fn outfit(&self, outfit_id: i64) -> Result<WeakDom, String> {
+        let id = u64::try_from(outfit_id).map_err(|_| format!("Outfit {outfit_id} not found"))?;
+        let avatar = self.client.outfit(id).map_err(|err| err.to_string())?;
+        self.learn(&avatar);
+        description_of(&gather(avatar, |id| self.download(id)))
     }
 
     fn character(&self, description: &WeakDom) -> Result<WeakDom, String> {
@@ -427,6 +427,19 @@ impl rbx_sim::Avatars for StudioAvatars {
         let fetched = gather(avatar, |id| self.download(id));
         Ok(build(&fetched, Some(colors_of(description, root))))
     }
+}
+
+/// The `HumanoidDescription` our rig dressed as `fetched` gets, alone in a
+/// DOM.
+fn description_of(fetched: &Fetched) -> Result<WeakDom, String> {
+    let model = build(fetched, None);
+    let rig = *model.root_refs().first().ok_or("no rig was built")?;
+    let description = find(&model, rig, "Humanoid")
+        .and_then(|humanoid| find(&model, humanoid, "HumanoidDescription"))
+        .ok_or("the rig has no HumanoidDescription")?;
+    let mut out = WeakDom::new();
+    rbx_sim::players::graft(&mut out, &model, description, None);
+    Ok(out)
 }
 
 fn find(dom: &WeakDom, parent: Ref, name: &str) -> Option<Ref> {

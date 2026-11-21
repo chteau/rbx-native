@@ -28,6 +28,11 @@ pub trait Avatars {
     /// A character model (the DOM's one root) dressed as `description`
     /// says, facing -Z with its feet at the origin.
     fn character(&self, description: &WeakDom) -> Result<WeakDom, String>;
+    /// `Players:GetHumanoidDescriptionFromOutfitId`: like `description`,
+    /// for a saved outfit or a bundle's.
+    fn outfit(&self, outfit_id: i64) -> Result<WeakDom, String> {
+        Err(format!("Outfit {outfit_id} is not available offline"))
+    }
 }
 
 /// A player in the game, as the server keeps them.
@@ -74,6 +79,7 @@ const PLAYERS_METHODS: &[&str] = &[
     // The fetch behind `GetHumanoidDescriptionFromUserId`, which
     // `helpers.luau` makes yield like the web call it is on Roblox.
     "GetHumanoidDescriptionFromUserId#fetch",
+    "GetHumanoidDescriptionFromOutfitId#fetch",
     "CreateHumanoidModelFromDescription",
 ];
 const HUMANOID_METHODS: &[&str] = &["ApplyDescription", "GetAppliedDescription"];
@@ -1028,7 +1034,10 @@ pub(crate) fn call(
             });
             Ok(CallReply::value(found.map_or(Arg::Nil, Arg::Instance)))
         }
-        ("Players", "GetHumanoidDescriptionFromUserId#fetch") => {
+        (
+            "Players",
+            "GetHumanoidDescriptionFromUserId#fetch" | "GetHumanoidDescriptionFromOutfitId#fetch",
+        ) => {
             let id = match args.first() {
                 Some(Arg::Number(n)) => *n as i64,
                 _ => return Err("Argument 1 missing or nil".into()),
@@ -1037,7 +1046,11 @@ pub(crate) fn call(
                 .avatars
                 .as_ref()
                 .ok_or("Avatars are not available offline")?;
-            let description = avatars.description(id)?;
+            let description = if method.contains("Outfit") {
+                avatars.outfit(id)?
+            } else {
+                avatars.description(id)?
+            };
             let root = description
                 .root_refs()
                 .first()
