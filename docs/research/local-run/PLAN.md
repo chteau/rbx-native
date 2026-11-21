@@ -915,8 +915,19 @@ Still off or not done:
 | BallSocket pendulum at 40 beats | x -1.97 | -3.04 | chaotic swing: joint stiffness, damping and angular drag scans moved it < 0.2 |
 | PathfindingModifier `PassThrough` added just before `ComputeAsync` | `NoPath` | a path through | likely the live navmesh not rebuilt yet; not probed with a delay |
 | Mixed solid and water occupancy read back | 0.496 | 0.5 | quantisation detail |
-| `UnionAsync`/`SubtractAsync`/`IntersectAsync`, GeometryService, `PartOperation:SubstituteGeometry`, `MeshPart:ApplyMesh`/`GetSurfaceSlotsAsync` | CSG and mesh services | missing | no MIT CSG kernel yet; needs a solid-modelling engine and union rendering |
+| `MeshPart:ApplyMesh`/`GetSurfaceSlotsAsync` | mesh services | missing | not part of the CSG pass |
+| A union saved here, opened in real Studio | drawn, `CollisionFidelity` kept | opens, reads its properties, `Separate` gives the parts back exactly; not drawn, collision falls back to `Box` until re-unioned there | Studio now keeps its geometry in `SolidMeshHolder`, an undocumented B-rep blob, and neither redraws from `ChildData2` on load nor takes our `MeshData2` (v5) |
 | Terrain `*_beta` voxel calls, `BindToCollisionSummaries` | beta | missing | not enabled on the sandbox place to observe |
+
+## API sweep: CSG
+
+Golden: CsgApi (sandbox place). Code: `crates/rbx_csg` (the BSP kernel, repair pass, primitive meshes and the CSGMDL v5 writer/reader, lifted out of the viewer, which now uses it unchanged; intersection added), `rbx_lua/src/csg.rs` (parts to solids, results to operations with `MeshData2` + `ChildData2`, Union/Negate/Separate in place), `rbx_lua/src/server/csg.rs` (the script API), `rbx_sim/src/physics/{mesh,part}.rs` (mass, centre of mass and collision from the carved mesh), `rbx_studio/src/shell/solid_modeling.rs` (Model tab).
+
+- `BasePart:UnionAsync`/`SubtractAsync`/`IntersectAsync`: answer in the same frame (no yield), a `UnionOperation` "Union" or `IntersectOperation` "Intersection", unparented, sources kept; the base's rotation, centred on the bounds, `Size` the bounds in that frame; the base's look, `Anchored`, `CanCollide`; the collision-fidelity argument applies, the render one is ignored. Nothing left gives nil. A non-part: "CSG: One of the primitives was of unknown type (error -4)"; a bad list: "Unable to cast value to Objects".
+- Mass from the real volume × the base's density, the centre of mass where the solid's is; collision is the carved mesh decomposed once per fidelity.
+- `GeometryService` `UnionAsync`/`SubtractAsync`/`IntersectAsync`: yield a frame, return a table of `PartOperation`s in the base part's own frame (the mesh off-centre in it); `SplitApart` on by default; options checked ("Key 'X' is not a valid member of CSGOptions", "argument for Key 'SplitApart' needs to be a boolean"); nothing left gives `{}`.
+- `FragmentAsync`: Voronoi cells of the given sites as `{Index, Instance = MeshPart}` entries, each in the part's frame; `GenerateFragmentSites`: 8 `Vector3`s. `CalculateConstraintsToPreserve`: an attachment+constraint entry per constraint on the source's attachments and a `WeldConstraint` entry per weld (dropped with `weldConstraintPreserve = None`), option keys checked against `CSGConstraintOptions`. `PartOperation:SubstituteGeometry`: takes the source's mesh and size, keeps frame and look; a plain part source does nothing.
+- `plugin:Union`/`Intersect`/`Negate`/`Separate` and the Model tab's Solid Modeling group (one undo step each) make what Studio saves: a whole union keeps its parts' tree, so it separates back, here and in real Studio.
 
 ## Milestone 19 (proposed): multi-client testing, then what M18 left off
 
