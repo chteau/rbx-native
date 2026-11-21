@@ -157,12 +157,7 @@ fn ui_scale_multiplies_the_size_and_so_every_descendant_with_it() {
 #[test]
 fn a_collapsed_ui_scale_hides_offset_sized_descendants() {
     let (mut dom, gui) = screen_gui();
-    let parent = frame(
-        &mut dom,
-        gui,
-        udim2(0.5, 0, 0.5, 0),
-        udim2(0.5, 0, 0.5, 0),
-    );
+    let parent = frame(&mut dom, gui, udim2(0.5, 0, 0.5, 0), udim2(0.5, 0, 0.5, 0));
     let scale = component(&mut dom, parent, "UIScale");
     dom.set_property(scale, "Scale", Variant::Float32(1e-7))
         .unwrap();

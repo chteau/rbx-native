@@ -381,7 +381,11 @@ pub(in crate::scene::gui) fn emit(
     // A `UIScale` scales the whole subtree, not only this box. Only the
     // collapsed case is modelled for descendants: a scale tweened up from
     // (nearly) zero, the usual pop-in, draws nothing until it grows.
-    if node.constraints.scale.is_some_and(|scale| scale.abs() < 1e-3) {
+    if node
+        .constraints
+        .scale
+        .is_some_and(|scale| scale.abs() < 1e-3)
+    {
         return;
     }
     match &node.scrolling {
