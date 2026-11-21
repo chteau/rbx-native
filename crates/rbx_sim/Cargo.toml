@@ -18,7 +18,7 @@ rbx_mesh = { path = "../rbx_mesh" }
 rbx_terrain = { path = "../rbx_terrain" }
 # Rigid-body physics (Apache-2.0), the stand-in for Roblox's own solver,
 # in f64: places sit thousands of studs out and f32 loses whole substeps.
-rapier3d = { package = "rapier3d-f64", version = "0.36" }
+rapier3d = { package = "rapier3d-f64", version = "0.36", features = ["parallel"] }
 rbx_materials = { path = "../rbx_materials" }
 serde_json = "1"
 # Sounds at run time (`audio`): decoding what Roblox accepts, pure Rust

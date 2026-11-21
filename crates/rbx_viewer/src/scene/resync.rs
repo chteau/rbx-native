@@ -561,9 +561,20 @@ impl Scene {
 
     /// Whether any `BillboardGui`/`SurfaceGui` canvas this scene placed hangs
     /// off `referent`: through `Adornee`, which can name a part anywhere,
-    /// not only the container's parent.
-    pub(crate) fn adorns(&self, referent: Ref) -> bool {
-        self.gui_spaces.iter().any(|gui| gui.adornee == referent)
+    /// not only the container's parent, or a model holding it (a canvas
+    /// on a model hangs off the middle of its parts).
+    pub(crate) fn adorns(&self, dom: &WeakDom, referent: Ref) -> bool {
+        if self.gui_spaces.is_empty() {
+            return false;
+        }
+        let mut at = Some(referent);
+        while let Some(here) = at {
+            if self.gui_spaces.iter().any(|gui| gui.adornee == here) {
+                return true;
+            }
+            at = dom.parent(here);
+        }
+        false
     }
 }
 

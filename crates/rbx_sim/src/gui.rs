@@ -159,6 +159,7 @@ pub struct HotbarSlot {
 /// column (empty where they have none).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlayerRow {
+    pub user_id: i64,
     pub name: String,
     /// `Player.DisplayName`, the name when empty.
     pub display_name: String,

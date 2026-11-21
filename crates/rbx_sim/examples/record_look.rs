@@ -7,7 +7,9 @@
 //!
 //! Publishes only to the place given, which must be the sandbox place from
 //! the editor's settings. The API key is read from the keyring (or
-//! `RBX_API_KEY`) and never printed.
+//! `RBX_API_KEY`) and never printed. A place file of `-` publishes nothing:
+//! the client only joins the place as it is live, for comparing against a
+//! game that must stay untouched.
 //!
 //! ```text
 //! cargo run -p rbx_sim --example record_look -- \
@@ -47,22 +49,24 @@ fn main() {
     );
     let seconds: u64 = seconds.parse().expect("seconds");
 
-    let database = rbx_reflection::ReflectionDatabase::shared();
-    let dom = rbx_sim::load::read_place(std::path::Path::new(file)).expect("place file");
-    let bytes = rbx_binary::serialize_with_defaults(&dom, |class, key| {
-        database.stored_default(class, key).cloned()
-    })
-    .expect("serialize");
-    let key = rbx_cloud::ApiKey::from_env_or_config()
-        .or_else(rbx_cloud::keyring::stored_api_key)
-        .expect("no API key: set RBX_API_KEY or run rbxstudio's key wizard");
-    let client = rbx_cloud::Client::new(Some(key));
-    let version = client
-        .publish_place(universe, place, &bytes, rbx_cloud::PublishMode::Published)
-        .expect("publish");
-    println!("published version {version}");
-    if let Err(err) = client.restart_servers(universe, true) {
-        println!("restart servers: {err}");
+    if file != "-" {
+        let database = rbx_reflection::ReflectionDatabase::shared();
+        let dom = rbx_sim::load::read_place(std::path::Path::new(file)).expect("place file");
+        let bytes = rbx_binary::serialize_with_defaults(&dom, |class, key| {
+            database.stored_default(class, key).cloned()
+        })
+        .expect("serialize");
+        let key = rbx_cloud::ApiKey::from_env_or_config()
+            .or_else(rbx_cloud::keyring::stored_api_key)
+            .expect("no API key: set RBX_API_KEY or run rbxstudio's key wizard");
+        let client = rbx_cloud::Client::new(Some(key));
+        let version = client
+            .publish_place(universe, place, &bytes, rbx_cloud::PublishMode::Published)
+            .expect("publish");
+        println!("published version {version}");
+        if let Err(err) = client.restart_servers(universe, true) {
+            println!("restart servers: {err}");
+        }
     }
     let launcher = Launcher::detect();
     let game = ClientProcess::spawn_with(launcher, &join_uri(place, ""), &ClientOptions::default())

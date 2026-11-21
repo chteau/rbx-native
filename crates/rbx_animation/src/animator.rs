@@ -265,9 +265,12 @@ impl Animator {
             .collect();
         active.sort_by_key(|(t, _)| std::cmp::Reverse(rank(t.priority)));
 
-        let mut joints: Vec<String> = active.iter().flat_map(|(t, _)| t.clip.joints()).collect();
-        joints.sort();
-        joints.dedup();
+        // Borrowed names: this runs for every rig every frame.
+        let joints: std::collections::BTreeSet<&str> = active
+            .iter()
+            .flat_map(|(t, _)| t.clip.keyframes.iter())
+            .flat_map(|k| k.poses.keys().map(String::as_str))
+            .collect();
 
         let mut out = BTreeMap::new();
         for joint in joints {
@@ -279,7 +282,7 @@ impl Animator {
                 let mut group: Vec<(Frame, f32)> = Vec::new();
                 while i < active.len() && rank(active[i].0.priority) == level {
                     let (track, time) = active[i];
-                    if let Some(s) = sample_joint(&track.clip, &joint, time) {
+                    if let Some(s) = sample_joint(&track.clip, joint, time) {
                         group.push((s.transform, track.weight * s.weight));
                     }
                     i += 1;
@@ -292,7 +295,7 @@ impl Animator {
                 total += sum.min(1.);
             }
             if let Some(frame) = average(&parts) {
-                out.insert(joint, frame);
+                out.insert(joint.to_owned(), frame);
             }
         }
         out

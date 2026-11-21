@@ -511,18 +511,21 @@ impl Animations {
             self.loading.remove(&id);
             self.clips.insert(id, clip);
         }
+        // Only a track still waiting on its clip takes a copy: copying every
+        // track's clip each frame was most of a busy lobby's frame.
         let waiting: Vec<(Ref, Clip)> = self
             .tracks
             .iter()
-            .filter_map(|(r, t)| Some((*r, self.clips.get(&t.asset?)?.as_ref().ok()?.clone())))
+            .filter(|(r, _)| self.inner(**r).is_some_and(|t| t.clip.keyframes.is_empty()))
+            .filter_map(|(r, t)| Some((*r, self.clips.get(&t.asset?)?.as_ref().ok()?)))
+            .filter(|(_, clip)| !clip.keyframes.is_empty())
+            .map(|(r, clip)| (r, clip.clone()))
             .collect();
         for (track, clip) in waiting {
             if let Some(t) = self.inner_mut(track) {
-                if t.clip.keyframes.is_empty() && !clip.keyframes.is_empty() {
-                    t.looped = clip.looped;
-                    t.priority = clip.priority;
-                    t.clip = clip;
-                }
+                t.looped = clip.looped;
+                t.priority = clip.priority;
+                t.clip = clip;
             }
         }
         // `Ended` comes the frame after the fade-out's last (AnimationTrack
@@ -676,8 +679,10 @@ fn pose_rig(dom: &mut WeakDom, animator: Ref, rig: &Animator) {
 /// `Part1 = Part0 * C0 * Transform * C1⁻¹`, and a weld (an accessory's
 /// `AccessoryWeld`, its handle as `Part0`) holds its two parts the same way
 /// with no `Transform`, whichever side is reached first. Where the renderer
-/// and scripts see the limbs and what they wear. Not logged.
-pub fn lay_out(dom: &mut WeakDom, animations: &Animations) {
+/// and scripts see the limbs and what they wear. Not logged: returns the
+/// parts it moved.
+pub fn lay_out(dom: &mut WeakDom, animations: &Animations) -> Vec<Ref> {
+    let mut posed = Vec::new();
     for animator in animations.rigs.keys() {
         let Some(model) = model_of(dom, *animator) else {
             continue;
@@ -731,11 +736,16 @@ pub fn lay_out(dom: &mut WeakDom, animations: &Animations) {
                     continue;
                 }
                 if let Some(i) = dom.get_mut(next) {
-                    i.properties_mut()
+                    let old = i
+                        .properties_mut()
                         .insert("CFrame".into(), Variant::CFrame(frame));
+                    if old != Some(Variant::CFrame(frame)) {
+                        posed.push(next);
+                    }
                 }
                 frontier.push(next);
             }
         }
     }
+    posed
 }

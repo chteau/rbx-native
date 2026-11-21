@@ -21,6 +21,8 @@ use gpui_kit::*;
 use rbx_lua::server::ChatLine;
 use rbx_sim::gui::{CoreGui, HotbarSlot, PlayerRow};
 
+use crate::shell::local_run::badges::Badges;
+
 use self::icons::{icon, Glyph};
 use super::WorkspaceView;
 
@@ -141,6 +143,8 @@ pub(crate) struct CoreGuiView {
     icons: HashMap<String, Icon>,
     /// Icons the loading threads finished, not yet in `icons`.
     arrived: Arc<Mutex<Vec<(String, Icon)>>>,
+    /// Who the People list marks as the owner and as verified.
+    pub(crate) badges: crate::shell::local_run::badges::Badges,
 }
 
 impl Default for CoreGuiView {
@@ -163,6 +167,7 @@ impl Default for CoreGuiView {
             actions: Vec::new(),
             icons: HashMap::new(),
             arrived: Arc::default(),
+            badges: Default::default(),
         }
     }
 }
@@ -415,6 +420,8 @@ impl CoreGuiView {
             volume: self.volume,
             icons: std::mem::take(&mut self.icons),
             arrived: self.arrived.clone(),
+            // Set as Play (local) starts, before the run clears the rest.
+            badges: std::mem::take(&mut self.badges),
             ..CoreGuiView::default()
         };
     }
@@ -533,38 +540,51 @@ fn vignette() -> Div {
 }
 
 /// The People list, top right; with `leaderstats`, a column per stat.
-fn player_list(players: &[PlayerRow], stats: &[String], cx: &mut Context<WorkspaceView>) -> Div {
-    const STAT: f32 = 66.;
-    let row = || div().flex().items_center().pl(px(14.)).pr(px(6.));
+/// Sizes are the real client's at 800x600 (M18 probe): 165 px plus 77 a
+/// stat wide, stat columns 64 px apart ending 22 px in, 13 px headings and
+/// 16 px names, the owner's mark in a 16 px slot before every name and the
+/// verified badge 4 px after it.
+fn player_list(
+    players: &[PlayerRow],
+    stats: &[String],
+    badges: &Badges,
+    cx: &mut Context<WorkspaceView>,
+) -> Div {
+    const STAT: f32 = 64.;
+    let row = || div().flex().items_center().pr(px(22.));
     let header = row()
-        .h(px(26.))
-        .text_size(px(15.))
+        .h(px(18.))
+        .pl(px(15.))
+        .text_size(px(13.))
         .text_color(rgb(0xb8babf))
         .child(div().flex_1().child("People"))
         .children(stats.iter().map(|name| {
+            // Too long for its column: cut with an ellipsis, never wrapped.
+            // Headings cut shorter than values (the real client's "Mid...").
             div()
                 .w(px(STAT))
+                .px(px(8.))
                 .text_center()
-                .overflow_hidden()
+                .truncate()
                 .child(name.clone())
         }));
     div()
         .absolute()
         .top(px(62.))
-        .right(px(8.))
-        .w(px(186. + STAT * stats.len() as f32))
-        .pt(px(4.))
-        .pb(px(2.))
+        .right(px(5.))
+        .w(px(165. + 77. * stats.len() as f32))
+        .pt(px(6.))
+        .pb(px(3.))
         .rounded(px(8.))
         .bg(rgba(0x161619b8))
         .text_color(rgb(WHITE))
         .child(
             div()
                 .id("core-list-close")
-                .ml(px(6.))
-                .size(px(16.))
+                .ml(px(4.))
+                .size(px(14.))
                 .cursor_pointer()
-                .child(icon(Glyph::Close, 16.))
+                .child(icon(Glyph::Close, 14.))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(|view, _: &MouseDownEvent, _, cx| {
@@ -578,29 +598,46 @@ fn player_list(players: &[PlayerRow], stats: &[String], cx: &mut Context<Workspa
         .children(players.iter().map(|player| {
             row()
                 .h(px(40.))
-                .gap_2()
-                .text_size(px(17.))
-                .when_some(player.team, |this, [r, g, b]| {
-                    this.child(
-                        div()
-                            .size(px(8.))
-                            .rounded_full()
-                            .bg(rgb(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b))),
-                    )
-                })
+                .mt(px(4.))
+                .pl(px(13.))
+                .text_size(px(16.))
+                .child(
+                    div()
+                        .w(px(27.))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .when_some(player.team, |this, [r, g, b]| {
+                            this.child(
+                                div()
+                                    .size(px(8.))
+                                    .rounded_full()
+                                    .bg(rgb(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b))),
+                            )
+                        })
+                        .when(badges.owners.contains(&player.user_id), |this| {
+                            this.child(icon(Glyph::Owner, 16.))
+                        }),
+                )
                 .child(
                     div()
                         .flex_1()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .child(player.display_name.clone()),
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .child(div().truncate().child(player.display_name.clone()))
+                        .when(badges.verified.contains(&player.user_id), |this| {
+                            this.child(icon(Glyph::Verified, 14.))
+                        }),
                 )
-                .children(
-                    player
-                        .stats
-                        .iter()
-                        .map(|value| div().w(px(STAT)).text_center().child(value.clone())),
-                )
+                .children(player.stats.iter().map(|value| {
+                    div()
+                        .w(px(STAT))
+                        .text_center()
+                        .truncate()
+                        .child(value.clone())
+                }))
         }))
 }
 
@@ -1556,7 +1593,7 @@ impl WorkspaceView {
                     root = root.child(self.core_chat(state.chat_bar, cx));
                 }
                 if let Some(players) = state.players.as_ref().filter(|_| !core.list_hidden) {
-                    root = root.child(player_list(players, &state.stats, cx));
+                    root = root.child(player_list(players, &state.stats, &core.badges, cx));
                 }
             }
             if let Some((now, max)) = state.health.filter(|(now, max)| now < max) {

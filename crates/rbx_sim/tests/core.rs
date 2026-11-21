@@ -80,6 +80,36 @@ end)
 }
 
 #[test]
+fn stats_keep_added_order_honour_priority_and_skip_bools() {
+    let server = r#"
+game:GetService("Players").PlayerAdded:Connect(function(player)
+	local stats = Instance.new("Folder", player)
+	stats.Name = "leaderstats"
+	local function add(class, name, value)
+		local v = Instance.new(class, stats)
+		v.Name = name
+		v.Value = value
+		return v
+	end
+	add("IntValue", "Zeta", 766001)
+	add("BoolValue", "Flag", true)
+	add("NumberValue", "alpha", 1234567.5)
+	local kills = add("IntValue", "Kills", 3)
+	local priority = Instance.new("NumberValue", kills)
+	priority.Name = "Priority"
+	priority.Value = 5
+end)
+"#;
+    let mut session = playing(server, "");
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    assert_eq!(core.stats, ["Kills", "Zeta", "alpha"]);
+    assert_eq!(
+        core.players.expect("the list")[0].stats,
+        ["3", "766,001", "1.2M"]
+    );
+}
+
+#[test]
 fn set_core_gui_enabled_toggles_each_part() {
     let mut session = playing(LEADERSTATS, "");
     let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();

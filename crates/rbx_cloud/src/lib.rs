@@ -76,7 +76,7 @@ pub use new_experience::{
     create_experience, creator_groups, name_experience, own_experiences, CreatedExperience,
     CreatorGroup, OwnExperience,
 };
-pub use places::{place_id_from_link, PlaceSummary};
+pub use places::{place_id_from_link, PlaceSummary, UserInfo};
 pub use publish::PublishMode;
 pub use retry::rate_limit_waits;
 pub use scopes::{

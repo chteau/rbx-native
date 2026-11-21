@@ -27,6 +27,10 @@ pub(super) enum Glyph {
     List,
     Zoom,
     Smile,
+    /// Next to the name of the experience's owner in the People list.
+    Owner,
+    /// Next to the name of a verified account.
+    Verified,
 }
 
 const OPEN: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F7F7F8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">"##;
@@ -69,6 +73,14 @@ fn body(glyph: Glyph) -> &'static str {
         }
         Glyph::Smile => {
             r##"<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14c.8 1.4 2 2.1 3.5 2.1s2.7-.7 3.5-2.1"/><path d="M9.3 9.5v.8M14.7 9.5v.8" stroke-width="2.2"/>"##
+        }
+        // A builder's hammer leaning on a small cog: the maker of the place.
+        Glyph::Owner => {
+            r##"<path d="M4.5 19.5l8-8"/><path d="M9.5 5.5l3-2 6 6-2 3z" fill="#F7F7F8"/><circle cx="17.5" cy="17.5" r="2.3"/><path d="M17.5 13.6v1.3M17.5 20.1v1.3M13.6 17.5h1.3M20.1 17.5h1.3" stroke-width="1.5"/>"##
+        }
+        // A blue rounded tile with a white tick.
+        Glyph::Verified => {
+            r##"<rect x="3" y="3" width="18" height="18" rx="4.5" fill="#1F6FEB" stroke="none"/><path d="M7.5 12.3l3 3 6-6.3" stroke-width="2.4"/>"##
         }
     }
 }
@@ -126,6 +138,8 @@ mod tests {
             Glyph::List,
             Glyph::Zoom,
             Glyph::Smile,
+            Glyph::Owner,
+            Glyph::Verified,
         ] {
             assert!(tile(glyph).is_some(), "{glyph:?}");
         }

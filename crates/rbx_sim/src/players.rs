@@ -15,6 +15,8 @@ use crate::humanoid::{cframe, flag, inverse, mul, number, reference, set, vector
 /// Where a character goes when no spawn will have it (PlayersCharacter
 /// `spawn_none`: the root of an R6 at 103, so its feet at 100).
 const NO_SPAWN_HEIGHT: f32 = 100.0;
+/// How far in from a SpawnLocation's edges a character may land.
+const SPAWN_MARGIN: f64 = 3.0;
 
 /// Builds characters and descriptions from avatars: what the app knows
 /// about signed-in users (public avatar endpoints, the asset cache). The
@@ -801,7 +803,8 @@ impl Players {
 
     /// An enabled SpawnLocation the player may use: neutral ones for
     /// everyone, the others for their team's colour only (PlayersCharacter
-    /// `spawn_bc`, `spawn_b_only`). Several: one in turn.
+    /// `spawn_bc`, `spawn_b_only`). Several: one in turn. Where on it is
+    /// random (see below).
     fn pick_spawn(
         &self,
         dom: &WeakDom,
@@ -838,11 +841,24 @@ impl Players {
         }
         let at = found[(self.frame as usize) % found.len()];
         let mut top = cframe(dom, db, at)?;
-        let up = vector(dom, db, at, "Size")[1] as f32 / 2.0;
+        let size = vector(dom, db, at, "Size");
+        // A random point on the top, 3 studs in from its edges: a 6x6 spawn
+        // puts everyone at its centre (PlayersCharacter `spawn_a`), a 40x40
+        // one scattered the M18 probe's spawns over ±17.
+        let roll = |salt: u64| {
+            use std::hash::BuildHasher;
+            // Randomly keyed each call: a fresh point every spawn.
+            let h =
+                std::collections::hash_map::RandomState::new().hash_one((self.frame, player, salt));
+            (h >> 11) as f64 / (1u64 << 53) as f64 * 2.0 - 1.0
+        };
+        let dx = (roll(1) * (size[0] / 2.0 - SPAWN_MARGIN).max(0.0)) as f32;
+        let dz = (roll(2) * (size[2] / 2.0 - SPAWN_MARGIN).max(0.0)) as f32;
+        let up = size[1] as f32 / 2.0;
         let r = top.rotation;
-        top.position.x += r[1] * up;
-        top.position.y += r[4] * up;
-        top.position.z += r[7] * up;
+        top.position.x += r[0] * dx + r[1] * up + r[2] * dz;
+        top.position.y += r[3] * dx + r[4] * up + r[5] * dz;
+        top.position.z += r[6] * dx + r[7] * up + r[8] * dz;
         Some(top)
     }
 }

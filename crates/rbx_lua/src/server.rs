@@ -689,12 +689,21 @@ impl ServerVm {
         })
     }
 
-    /// Whether anything listens to `part`'s `Touched` or `TouchEnded`.
-    pub fn listens_to_touch(&self, part: Ref) -> bool {
+    /// The parts something listens to the `Touched` or `TouchEnded` of.
+    pub fn touch_listeners(&self) -> std::collections::HashSet<Ref> {
         let engine = engine(&self.lua);
         let signals = engine.signals.borrow();
-        signals.has(&instance_key(part, "Touched"))
-            || signals.has(&instance_key(part, "TouchEnded"))
+        signals
+            .connections
+            .iter()
+            .filter(|(key, list)| {
+                !list.is_empty() && matches!(key.event.as_str(), "Touched" | "TouchEnded")
+            })
+            .filter_map(|(key, _)| match key.owner {
+                signal::Owner::Instance(part) => Some(part),
+                _ => None,
+            })
+            .collect()
     }
 
     /// When the next timer is due, `None` when nothing waits on time.

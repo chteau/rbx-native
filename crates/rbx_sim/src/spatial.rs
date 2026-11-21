@@ -1,8 +1,9 @@
 //! The workspace's parts as parry shapes, for `WorldRoot` spatial queries
 //! (`Raycast`, `Blockcast`, `GetPartBoundsInBox`, ...).
 //!
-//! The index answers for the DOM as it is now: it is rebuilt when physics
-//! stepped since it was built, or when scripts changed the DOM.
+//! The index answers for the DOM as it is now: the parts physics (or
+//! replication, or animation posing) moved and the ones scripts changed
+//! are read again; a part coming or going walks the Workspace again.
 
 use rapier3d::parry::bounding_volume::{Aabb, BoundingVolume};
 use rapier3d::parry::partitioning::{Bvh, BvhBuildStrategy, BvhNode};
@@ -56,7 +57,6 @@ struct Built {
     class: String,
     keys: Vec<Option<rbx_dom::Variant>>,
     entry: Option<Entry>,
-    anchored: bool,
 }
 
 #[derive(Default)]
@@ -70,10 +70,7 @@ pub struct Spatial {
     part_classes: HashMap<String, bool>,
     /// Each part's index in `entries`.
     slots: HashMap<Ref, usize>,
-    /// The unanchored parts, which physics moves between edits.
-    free: HashSet<Ref>,
     built: bool,
-    generation: u64,
     /// The DOM edits seen since the last refresh, and what they touched.
     journal: Journal,
     touched: HashSet<Ref>,
@@ -138,14 +135,15 @@ impl Spatial {
     }
 
     /// Brings the index up to `dom` unless nothing could have changed
-    /// since the last time: only the parts that changed when every edit
-    /// since was seen and no part came or went, everything otherwise.
-    pub fn refresh(&mut self, dom: &WeakDom, db: &ReflectionDatabase, generation: u64) {
+    /// since the last time: only the parts that changed (`moved`, moved
+    /// without a logged edit, and the edited ones) when every edit since
+    /// was seen and no part came or went, everything otherwise.
+    pub fn refresh(&mut self, dom: &WeakDom, db: &ReflectionDatabase, moved: HashSet<Ref>) {
         let log = self.journal.log(dom);
         self.classify(dom, db, log);
-        let moved = generation != self.generation;
+        self.touched
+            .extend(moved.into_iter().filter(|r| self.slots.contains_key(r)));
         if self.built
-            && !moved
             && self.touched.is_empty()
             && self.moved.is_empty()
             && !self.structural
@@ -157,15 +155,10 @@ impl Spatial {
         let structural = std::mem::take(&mut self.structural);
         let touched = std::mem::take(&mut self.touched);
         let came_or_went = std::mem::take(&mut self.moved);
-        if !(self.built
-            && whole
-            && !structural
-            && self.update(dom, db, moved, touched, came_or_went))
-        {
+        if !(self.built && whole && !structural && self.update(dom, db, touched, came_or_went)) {
             self.rebuild(dom, db);
         }
         self.built = true;
-        self.generation = generation;
     }
 
     /// Sorts `changes` into parts to re-read and edits that need the whole
@@ -204,22 +197,20 @@ impl Spatial {
         }
     }
 
-    /// Re-reads the `touched` parts, and the unanchored ones when physics
-    /// `moved` them. `false` when a part's entry is gone.
+    /// Re-reads the `touched` parts. `false` when a part's entry is gone.
     fn update(
         &mut self,
         dom: &WeakDom,
         db: &ReflectionDatabase,
-        moved: bool,
         mut touched: HashSet<Ref>,
         came_or_went: Vec<Ref>,
     ) -> bool {
-        if moved {
-            touched.extend(self.free.iter().copied());
-        }
         if touched.is_empty() && came_or_went.is_empty() {
             return true;
         }
+        // A few parts moved in place: their leaves move in the tree. Many,
+        // or parts that came or went (slots shift), and it is built again.
+        let in_place = came_or_went.is_empty() && touched.len() * 8 < self.entries.len();
         for root in came_or_went {
             let placed = in_workspace(dom, root);
             let subtree = if dom.get(root).is_some() {
@@ -254,15 +245,17 @@ impl Spatial {
             let Some(entry) = &built.entry else {
                 return false;
             };
-            self.entries[self.slots[&referent]] = entry.clone();
-            if built.anchored {
-                self.free.remove(&referent);
-            } else {
-                self.free.insert(referent);
+            let slot = self.slots[&referent];
+            if in_place {
+                self.tree
+                    .insert(entry.shape.compute_aabb(&entry.pose), slot as u32);
             }
+            self.entries[slot] = entry.clone();
             self.built_from.insert(referent, built);
         }
-        self.index();
+        if !in_place {
+            self.index();
+        }
         true
     }
 
@@ -272,7 +265,6 @@ impl Spatial {
         let mut previous = std::mem::take(&mut self.built_from);
         self.entries.clear();
         self.slots.clear();
-        self.free.clear();
         if let Some(workspace) = dom
             .root_refs()
             .iter()
@@ -300,9 +292,6 @@ impl Spatial {
         if let Some(entry) = &built.entry {
             self.slots.insert(part, self.entries.len());
             self.entries.push(entry.clone());
-            if !built.anchored {
-                self.free.insert(part);
-            }
         }
         self.built_from.insert(part, built);
     }
@@ -310,7 +299,6 @@ impl Spatial {
     /// Takes `part`'s entry out, the last entry taking its slot.
     fn take_out(&mut self, part: Ref) {
         self.built_from.remove(&part);
-        self.free.remove(&part);
         if let Some(slot) = self.slots.remove(&part) {
             self.entries.swap_remove(slot);
             if let Some(moved) = self.entries.get(slot) {
@@ -352,17 +340,15 @@ impl Spatial {
                     .collect(),
                 entry: PartData::read(db, instance).map(|part| Entry {
                     referent: part.referent,
-                    shape: part.shape_collider().build().shared_shape().clone(),
+                    shape: part.shape_collider().shape,
                     pose: pose_of(&part.cframe),
                     size: [part.size.x, part.size.y, part.size.z].map(Real::from),
                     can_query: part.can_query,
                     can_collide: part.can_collide,
                     group: part.collision_group,
                 }),
-                anchored: false,
             },
         };
-        built.anchored = matches!(properties.get("Anchored"), Some(Variant::Bool(true)));
         if let Some(entry) = &mut built.entry {
             if let Some(Variant::CFrame(cf)) = properties.get("CFrame") {
                 entry.pose = pose_of(cf);

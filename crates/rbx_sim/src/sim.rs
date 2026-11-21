@@ -524,7 +524,11 @@ impl Simulation {
                 }) else {
                     return Vec::new();
                 };
-                dom.get(folder)
+                // Added order, then a child `Priority` NumberValue (higher
+                // first), an `IsPrimary` BoolValue before all (leaderboard
+                // docs; the M18 probe saw added order, not names').
+                let mut ranked: Vec<(bool, f64, String, String)> = dom
+                    .get(folder)
                     .map(|f| f.children().to_vec())
                     .unwrap_or_default()
                     .into_iter()
@@ -533,8 +537,29 @@ impl Simulation {
                         // A value never written (or written back to its
                         // default) still shows its default: an IntValue's 0.
                         let value = self.db.stored_or_default(i, "Value").map(|(_, v)| v);
-                        Some((i.name().to_owned(), stat_text(value)?))
+                        let text = stat_text(value)?;
+                        let marker = |name: &str| {
+                            i.children()
+                                .iter()
+                                .filter_map(|m| dom.get(*m))
+                                .find(|m| m.name() == name)
+                                .and_then(|m| m.properties().get("Value").cloned())
+                        };
+                        let primary = matches!(marker("IsPrimary"), Some(Variant::Bool(true)));
+                        let priority = match marker("Priority") {
+                            Some(Variant::Float64(v)) => v,
+                            Some(Variant::Float32(v)) => f64::from(v),
+                            _ => 0.0,
+                        };
+                        Some((primary, priority, i.name().to_owned(), text))
                     })
+                    .collect();
+                ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.total_cmp(&a.1)));
+                // The real list shows four stats at most (a six-stat probe).
+                ranked.truncate(4);
+                ranked
+                    .into_iter()
+                    .map(|(_, _, name, text)| (name, text))
                     .collect()
             };
             let all = crate::players::players_of(&dom);
@@ -573,6 +598,10 @@ impl Simulation {
                             _ => i.name().to_owned(),
                         };
                         Some(crate::gui::PlayerRow {
+                            user_id: match i.properties().get("UserId") {
+                                Some(Variant::Int64(id)) => *id,
+                                _ => 0,
+                            },
                             name: i.name().to_owned(),
                             display_name,
                             team,
@@ -1032,6 +1061,7 @@ impl Simulation {
                 }
             }
             self.world.teleport(*part, cf);
+            self.shared.borrow_mut().moved.insert(*part);
             if let Some(seen) = &mut self.view_changes {
                 seen.push(Change::Property {
                     referent: *part,
@@ -1215,12 +1245,17 @@ impl Simulation {
         self.sync_ownership();
         let steps = (PHYSICS_HZ / FRAME_HZ).round() as u32;
         self.world.refresh_constraints(&self.dom.borrow(), self.db);
+        if self.role == Role::Client {
+            self.world.set_listened(self.vm.touch_listeners());
+        }
         let touches = self
             .world
             .step(gravity, steps, self.adaptive_stepping(), &mut drives);
         self.world.write_back(&mut self.dom.borrow_mut(), self.db);
         self.world.write_constraints(&mut self.dom.borrow_mut());
-        crate::animation::lay_out(&mut self.dom.borrow_mut(), &self.shared.borrow().animations);
+        let posed =
+            crate::animation::lay_out(&mut self.dom.borrow_mut(), &self.shared.borrow().animations);
+        self.shared.borrow_mut().moved.extend(posed);
         self.shared
             .borrow_mut()
             .humanoids
@@ -1830,23 +1865,83 @@ fn in_workspace(dom: &WeakDom, r: Ref) -> bool {
     false
 }
 
-/// A `leaderstats` value as the player list shows it: whole numbers
-/// without a fraction.
+/// A `leaderstats` value as the player list shows it (M18 probe on a real
+/// client): thousands separated by commas, a fraction kept; once that runs
+/// past 7 characters, cut to K, M or B with one decimal under 100 (12.3K,
+/// 1.2M, 123M, 1B, 1,000B). A BoolValue isn't shown.
 fn stat_text(value: Option<&Variant>) -> Option<String> {
-    let number = |v: f64| {
-        if v.fract() == 0.0 && v.abs() < 1e15 {
-            format!("{}", v as i64)
-        } else {
-            format!("{v}")
-        }
-    };
     Some(match value? {
-        Variant::Int64(v) => v.to_string(),
-        Variant::Int32(v) => v.to_string(),
-        Variant::Float64(v) => number(*v),
-        Variant::Float32(v) => number(f64::from(*v)),
+        Variant::Int64(v) => stat_number(*v as f64),
+        Variant::Int32(v) => stat_number(f64::from(*v)),
+        Variant::Float64(v) => stat_number(*v),
+        Variant::Float32(v) => stat_number(f64::from(*v)),
         Variant::String(v) => v.clone(),
-        Variant::Bool(v) => v.to_string(),
         _ => return None,
     })
+}
+
+fn stat_number(v: f64) -> String {
+    let commas = |whole: u64| {
+        let digits = whole.to_string();
+        let mut out = String::new();
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && (digits.len() - i).is_multiple_of(3) {
+                out.push(',');
+            }
+            out.push(c);
+        }
+        out
+    };
+    let sign = if v < 0.0 { "-" } else { "" };
+    let a = v.abs();
+    // Rust's shortest form gives the fraction as typed (1234.1, not
+    // 1234.0999…).
+    let typed = format!("{a}");
+    let fraction = typed.find('.').map_or("", |dot| &typed[dot..]);
+    let plain = format!("{sign}{}{fraction}", commas(a.trunc() as u64));
+    if plain.trim_start_matches('-').len() <= 7 || !a.is_finite() {
+        return plain;
+    }
+    let (scaled, suffix) = match a {
+        a if a >= 1e9 => (a / 1e9, "B"),
+        a if a >= 1e6 => (a / 1e6, "M"),
+        _ => (a / 1e3, "K"),
+    };
+    let body = if scaled < 100.0 {
+        let tenths = (scaled * 10.0).trunc() / 10.0;
+        let text = format!("{tenths:.1}");
+        text.strip_suffix(".0").map(str::to_owned).unwrap_or(text)
+    } else {
+        commas(scaled.trunc() as u64)
+    };
+    format!("{sign}{body}{suffix}")
+}
+
+#[cfg(test)]
+mod stat_tests {
+    use super::stat_number;
+
+    #[test]
+    fn leaderstats_numbers_read_as_the_real_client_shows_them() {
+        for (value, shown) in [
+            (0.0, "0"),
+            (0.5, "0.5"),
+            (1000.0, "1,000"),
+            (1000.5, "1,000.5"),
+            (9999.5, "9,999.5"),
+            (12345.0, "12,345"),
+            (12345.5, "12.3K"),
+            (123456.5, "123K"),
+            (766001.0, "766,001"),
+            (766001.5, "766K"),
+            (1234567.0, "1.2M"),
+            (12345678.0, "12.3M"),
+            (123456789.0, "123M"),
+            (1e9, "1B"),
+            (1e12, "1,000B"),
+            (1e15, "1,000,000B"),
+        ] {
+            assert_eq!(stat_number(value), shown, "{value}");
+        }
+    }
 }

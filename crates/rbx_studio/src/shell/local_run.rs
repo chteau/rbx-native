@@ -25,6 +25,7 @@ use super::play::Phase;
 use super::Shell;
 
 mod avatars;
+pub(crate) mod badges;
 pub(crate) mod data;
 mod sound;
 use crate::command_bar::Feedback;
@@ -434,6 +435,11 @@ fn rows_of(output: &rbx_lua::Output) -> Vec<Feedback> {
 }
 
 impl Shell {
+    /// A Local Run or Play (local) is going.
+    pub(super) fn local_run_running(&self) -> bool {
+        self.play.live.local.running.is_some()
+    }
+
     fn local_run_can_start(&self) -> bool {
         crate::beta::enabled(BETA_ID)
             && !self.local_run_active()
@@ -469,14 +475,22 @@ impl Shell {
             Feedback::Info("Play (local): getting your avatar\u{2026}".to_owned()),
         );
         cx.notify();
+        let universe = crate::home::link_of(&self.path).map_or(0, |l| l.universe_id);
         cx.spawn(async move |this, cx| {
-            let player = cx
+            let (player, badges) = cx
                 .background_executor()
-                .spawn(async { avatars::resolve() })
+                .spawn(async move {
+                    let player = avatars::resolve();
+                    let badges = badges::resolve(universe, player.0.user_id);
+                    (player, badges)
+                })
                 .await;
             let _ = this.update(cx, |shell, cx| {
                 shell.play.live.local.starting = false;
                 if shell.local_run_can_start() {
+                    shell
+                        .viewport
+                        .update(cx, |viewport, _| viewport.core_gui.badges = badges);
                     shell.start_local(Some(player), cx);
                 }
             });

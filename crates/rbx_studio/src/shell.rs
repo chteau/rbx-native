@@ -108,7 +108,7 @@ mod argon_dock;
 mod datastores;
 mod find_in_place;
 mod game_settings;
-mod local_run;
+pub(crate) mod local_run;
 mod require_graph;
 mod rows;
 mod save;

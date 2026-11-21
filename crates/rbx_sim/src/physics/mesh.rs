@@ -55,13 +55,23 @@ thread_local! {
 
 /// Remembers the geometry of a mesh a script made for `part`.
 pub(crate) fn register(part: Ref, vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) {
+    share(&[part], vertices, triangles);
+}
+
+/// Remembers one geometry for all of `parts`, decomposed once.
+pub(crate) fn share(parts: &[Ref], vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) {
     let id = NEXT_ID.with(|next| next.replace(next.get() + 1));
     let geometry = Arc::new(Geometry {
         id,
         vertices,
         triangles,
     });
-    REGISTERED.with(|all| all.borrow_mut().insert(part, geometry));
+    REGISTERED.with(|all| {
+        let mut all = all.borrow_mut();
+        for part in parts {
+            all.insert(*part, geometry.clone());
+        }
+    });
 }
 
 fn asset_geometry(mesh_id: &str) -> Option<Arc<Geometry>> {

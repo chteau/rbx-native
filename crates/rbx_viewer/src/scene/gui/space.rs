@@ -371,7 +371,20 @@ fn origin(context: Context<'_>, adornee: Ref) -> Option<Vec3> {
         return world_cframe(context.dom, context.parents, adornee)
             .map(|frame| frame.w_axis.truncate());
     }
-    Some(context.placements.get(&adornee)?.model.w_axis.truncate())
+    if let Some(placement) = context.placements.get(&adornee) {
+        return Some(placement.model.w_axis.truncate());
+    }
+    // A model (a nameplate hung straight off a character): the middle of
+    // its parts.
+    let (mut low, mut high) = (Vec3::INFINITY, Vec3::NEG_INFINITY);
+    for part in crate::scene::descendants_of(context.dom, adornee) {
+        if let Some(placement) = context.placements.get(&part) {
+            let at = placement.model.w_axis.truncate();
+            low = low.min(at);
+            high = high.max(at);
+        }
+    }
+    (low.x <= high.x).then(|| (low + high) / 2.0)
 }
 
 fn vector3(properties: &BTreeMap<String, Variant>, name: &str) -> Vec3 {

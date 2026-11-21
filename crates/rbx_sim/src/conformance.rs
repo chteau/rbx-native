@@ -886,6 +886,66 @@ pub fn bare_place() -> WeakDom {
     dom
 }
 
+/// [`bare_place`] with `n` unanchored rock-like `MeshPart`s dropped in a
+/// grid onto the baseplate, a busy place's props: the busy-place test and
+/// bench. Returns the place and the props, whose mesh the caller hands to
+/// [`crate::physics::share_mesh`] (with [`rock`]).
+pub fn prop_field(n: usize) -> (WeakDom, Vec<Ref>) {
+    let mut dom = bare_place();
+    let workspace = service(&mut dom, "Workspace");
+    let side = (n as f64).sqrt().ceil() as usize;
+    let half = side as f32 * 1.5;
+    let props = (0..n)
+        .map(|i| {
+            let (x, z) = ((i % side) as f32, (i / side) as f32);
+            let prop = child(&mut dom, "MeshPart", "Rock", workspace);
+            let position = Vector3Data {
+                x: x * 3.0 - half,
+                y: 2.0 + (i % 3) as f32 * 0.5,
+                z: z * 3.0 - half,
+            };
+            let rotation = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+            let _ = dom.set_property(
+                prop,
+                "CFrame",
+                Variant::CFrame(CFrameData { position, rotation }),
+            );
+            let size = Vector3Data {
+                x: 2.0,
+                y: 1.5,
+                z: 2.0,
+            };
+            let _ = dom.set_property(prop, "Size", Variant::Vector3(size));
+            prop
+        })
+        .collect();
+    dom.take_changes();
+    (dom, props)
+}
+
+/// [`prop_field`]'s rock, an irregular solid: `(vertices, triangles)`.
+pub fn rock() -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let vertices = vec![
+        [0.0, 1.0, 0.0],
+        [0.0, -0.8, 0.0],
+        [1.0, 0.1, 0.0],
+        [-0.9, 0.0, 0.2],
+        [0.1, 0.0, 1.0],
+        [-0.2, 0.2, -0.95],
+    ];
+    let triangles = vec![
+        [0, 4, 2],
+        [0, 3, 4],
+        [0, 5, 3],
+        [0, 2, 5],
+        [1, 2, 4],
+        [1, 4, 3],
+        [1, 3, 5],
+        [1, 5, 2],
+    ];
+    (vertices, triangles)
+}
+
 /// [`bare_place`] with the suite.
 pub fn place() -> WeakDom {
     let mut dom = bare_place();

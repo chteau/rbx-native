@@ -366,16 +366,34 @@ fn the_client_walks_its_character_and_the_server_follows() {
 
 #[test]
 fn a_second_player_spawns_on_top_of_the_first() {
-    let mut s = session(
-        place(
-            "task.wait(0.5) local a, b = unpack(game:GetService('Players'):GetPlayers()) \
-             local ya = a.Character.HumanoidRootPart.Position.Y \
-             local yb = b.Character.HumanoidRootPart.Position.Y \
-             print('apart', math.abs(ya - yb) > 3)",
-            "",
-        ),
-        2,
+    let mut dom = place(
+        "task.wait(0.5) local a, b = unpack(game:GetService('Players'):GetPlayers()) \
+         local ya = a.Character.HumanoidRootPart.Position.Y \
+         local yb = b.Character.HumanoidRootPart.Position.Y \
+         print('apart', math.abs(ya - yb) > 3)",
+        "",
     );
+    // A 6x6 spawn puts both at its centre (a bigger one picks random spots).
+    let workspace = service(&dom, "Workspace");
+    let spawn = dom
+        .get(workspace)
+        .unwrap()
+        .children()
+        .iter()
+        .copied()
+        .find(|c| dom.get(*c).unwrap().class() == "SpawnLocation")
+        .unwrap();
+    let _ = dom.set_property(
+        spawn,
+        "Size",
+        Variant::Vector3(rbx_dom::Vector3Data {
+            x: 6.0,
+            y: 1.0,
+            z: 6.0,
+        }),
+    );
+    dom.take_changes();
+    let mut s = session(dom, 2);
     let mut lines = Vec::new();
     for _ in 0..60 {
         s.step();

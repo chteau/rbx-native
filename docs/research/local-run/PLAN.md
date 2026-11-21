@@ -827,30 +827,70 @@ Fixed for them:
 
 Tests: `rbx_sim/tests/corpus.rs` (BodyMovers, a BodyPosition holding a character, the query index following parts, `Model:MoveTo`, the ReplicatedFirst loader, destroyed-instance reads), `tests/avatars.rs` (client dummy), the empty-decomposition mesh test.
 
-## Milestone 18 (proposed): what M17 left off, then animation fidelity
+## Milestone 18 (done): what M17 left off
 
-Still off, first:
+A fix milestone: the M17 side-by-sides reviewed by the maintainer, and the gaps M17 listed. The four games were again only read (local copies, plain joins in the real client); probes ran on our own places and the sandbox.
 
-| Area | Roblox | ours |
+Speed (wall seconds per simulated second, headless `play`):
+
+| Place | Before | Now |
 |---|---|---|
-| Speed in busy places | real time | the swim game runs at about 1/30 speed: ~1100 loose props never sleep (they jitter at 0.05–0.3 stud/s), and their convex-mesh contacts dominate the frame; the query index also rebuilds mesh colliders, mass properties included |
-| Broken body on death | the R15 stack topples (head on the floor by 60 beats) | the torsos drop out and the rest stays balanced |
-| Exposure and shadow tint | bright rooms, grey-blue shadows | rooms lit by their lamps read much darker; shadows a saturated blue |
-| Spawn point | a random point on a large SpawnLocation (6x6 ones land at the centre, as ours) | its centre; needs a golden on a big spawn |
-| Jump apex | 15.48 | 15.28 |
-| Slopes, buoyancy, swimming, terrain | as live | only M10/M11's goldens; the swim game's own water parts and swim states not compared in motion (too slow to drive) |
-| Parallel Luau | parallel inside Actors | serial |
-| Lobby dummy | dressed, animated, name billboard | there, but its pieces read as loose parts and the billboard does not show |
-| `Model:MoveTo` | lifts clear of exact shapes and terrain | boxes only, terrain skipped |
-| Incremental query index | sees every moved part | misses anchored parts that animation posing moves without logging |
-| `AwardBadge` on an owned badge | unverified | returns false |
-| Replicated data on the first frame | a stamina UI reads its value | the value is nil on the first render (a replication-library ordering case, not yet traced) |
-| Destroyed instances | readable while referenced | readable, but only the newest 16k |
-| Editor Auto-Recovery during a run | — | warns it cannot save `AbsolutePosition` |
+| Swim game, steady state | ~20 (8 s took 220 s) | ~6.9 (12 s in 83 s) |
+| Camera game, lobby place | 1.5 | 0.36 |
+| 1200 resting mesh props (`bench_props`), settling | 131 ms a frame | 19 ms |
+| the same, at rest | 0.4 ms | 0.5 ms |
 
-Not verified: the swim game past its spawn (walking, carrying, the sea), the camera game's anomaly reports, `GetExperienceEventAsync` data (nil here), the real client on Windows or macOS.
+What did it:
+- rapier's `parallel` feature (the narrow phase on all cores), CCD off (Roblox has none; every golden unchanged, one HumanoidStep value closer);
+- bodies asleep since the last frame are skipped by write-back, terrain and water forces, and the query index refreshes only what moved;
+- client sims drop kinematic–kinematic pairs (remote assemblies) and ask contact pairs of remote parts only when a script listens to their touches;
+- one shared convex decomposition per mesh asset instead of one per part;
+- animation clips are cloned once when they load, not every frame (37% of the lobby's time);
+- the pose step borrows joint names instead of allocating them.
 
-Then the old animation proposal:
+Fixed:
+- Lobby dummy: `Instance:Clone()` copied references verbatim, so a cloned rig's joints still pointed at the original's parts and the clone fell apart (the head dropped through the floor and the humanoid died). References inside the copied subtree now point at the copies, outside ones stay. This touches every cloned model with joints, welds, `PrimaryPart` or `ObjectValue`s.
+- Name billboards adorned to a Model (or under one) sit on the model's bounds, so the dummy's name shows.
+- People list:
+  - Roblox's measured geometry: width 165 + 77 per stat, 62 from the top, 40 px rows, 13 px headings, 16 px names;
+  - the owner and verified badges, drawn as our own SVGs; the owner comes from the experience's creator (a group's owner for a group game, plus the player when their key manages the experience), the verified flag from the user API, both cached in the avatar cache for offline runs;
+  - names, headings and values cut with an ellipsis, never wrapped;
+  - numbers as the real client prints them: commas, then K/M/B past 7 characters with tenths below 100 (`12.3K`, `1.2M`, `766,001`, `1,000B`), checked on the sandbox;
+  - stats in added order, `IsPrimary` first, then `Priority` high to low; BoolValues not listed; four stats at most.
+- Random spawn point: a random spot on the spawn's top, 3 studs in from each edge (6x6 spawns still land at the centre), as live on a 40x40 spawn.
+- The query index sees anchored parts that animation posing moves (posing reports what it moved).
+- Destroyed instances stay readable while a script holds them, with no 16k cap.
+- Auto-Recovery no longer copies the DOM during a Local Run (its run-time GUI values made the `AbsolutePosition` warning).
+- Perf regression guards: `tests/busy.rs` (256 settled mesh props fall asleep and stay put) and `examples/bench_props.rs` (1000+ props, mean and worst frame per second).
+
+Still off:
+
+| Area | Roblox | ours | Why |
+|---|---|---|---|
+| Speed in the swim game | real time | ~1/7 | ~1100 unanchored map props (borders, invisible walls, island extras) never fall asleep; whether they stay still live was not measured. Play (local) in the editor is slower still: its loading screen takes minutes to clear |
+| Stat column order | added order when the folder is parented whole; other orders when stats are added one by one to a parented folder | always added order | the rolling and camera games show their two stats reversed live, and a six-stat probe showed Mid, Beta, alpha, Yak for Zeta, alpha, Mid, Beta, Yak, Aard; no rule found yet |
+| Exposure and shadow tint | lit floor (121,129,147), shadow core (19,37,74) | (132,137,152), (9,24,64) | not attempted this milestone |
+| R15 toppling on death | the stack topples | torsos drop, the rest stays balanced | not attempted |
+| Jump apex | 15.48 | 15.28 | live apexes scatter ±0.15 around √(2gh) across JumpPower values; no single formula fits them |
+| Slopes, buoyancy, swimming | as live | M10/M11 goldens only | the swim game is still too slow to drive past its spawn |
+| Parallel Luau | parallel inside Actors | serial | not attempted |
+| `Model:MoveTo` | exact shapes and terrain | boxes, terrain skipped | not attempted |
+| `AwardBadge` on an owned badge | unverified live | returns false | needs a live badge probe |
+| First-frame replicated nil | value present | nil on the first render | not traced |
+| HD Admin `clean` error | — | not re-checked | not traced |
+| 4:3 against wide framing | — | compared at the same 1166x632 viewport this time | the side-by-sides use one size now |
+
+Not verified: the swim game past its spawn (walking, carrying, the sea), the camera game's anomaly reports, the real client on Windows or macOS.
+
+Side-by-sides: `rbx-native-targets/local-run-m18-shots/<game>/` (real client and ours at 1166x632).
+
+## Milestone 19 (proposed): multi-client testing, then what M18 left off
+
+1. Studio-style multi-client tests: Test → Clients and Servers, N player windows plus a server window, each with its own Explorer and Output, all fed by one `Session`.
+2. Collaborators from our co-edit session (our own presence and p2p, never native Team Create) joining a Local Run as players.
+3. The M18 leftovers above, the swim game's speed first.
+
+Later, the old animation proposal:
 
 1. Layered clothing at run time: `WrapLayer`/`WrapTarget` deformation on the avatar, layered in `Order`, with the auto-rig cages the editor already fits (`rbx_animation`), and `AutoSkin`.
 2. FACS face animation: `FaceControls` properties driven by animation tracks and scripts, dynamic heads deforming in the viewport, `Animator` playing face curves.

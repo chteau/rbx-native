@@ -15,6 +15,14 @@
 mod character;
 mod constraints;
 pub(crate) mod mesh;
+
+/// Gives each of `parts` (`MeshPart`s) the mesh `(vertices, triangles)` to
+/// collide as, decomposed once: the busy-place test and bench, whose place
+/// has no mesh assets to load. For this thread's simulations, set before
+/// they start.
+pub fn share_mesh(parts: &[Ref], vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) {
+    mesh::share(parts, vertices, triangles);
+}
 pub(crate) mod part;
 #[cfg(test)]
 mod tests;
@@ -94,6 +102,8 @@ struct Assembly {
     rate: std::cell::Cell<u32>,
     /// Free (adaptive) on the last frame: it went through whatever it met.
     was_free: std::cell::Cell<bool>,
+    /// Written back on the last frame: awake, or just fallen asleep.
+    moved: std::cell::Cell<bool>,
 }
 
 /// What scripts can ask of physics between steps (`Physics` for the VM):
@@ -104,6 +114,9 @@ pub struct Shared {
     impulses: Vec<(Ref, [f64; 3], bool)>,
     /// Bumped whenever the world steps or is rebuilt.
     generation: u64,
+    /// Parts moved without a logged edit (physics, replication, animation
+    /// posing) since the query index last caught up.
+    pub(crate) moved: HashSet<Ref>,
     queries: Option<Queries>,
     /// The humanoids the simulation runs (scripts call into them).
     pub(crate) humanoids: crate::humanoid::Humanoids,
@@ -184,20 +197,21 @@ pub struct Bridge(pub Rc<RefCell<Shared>>);
 
 impl Bridge {
     fn query<R>(&self, f: impl FnOnce(&Spatial, &CollisionGroups) -> R) -> Option<R> {
-        let (dom, db, groups, spatial, generation) = {
-            let shared = self.0.borrow();
+        let (dom, db, groups, spatial, moved) = {
+            let mut shared = self.0.borrow_mut();
+            let moved = std::mem::take(&mut shared.moved);
             let q = shared.queries.as_ref()?;
             (
                 q.dom.clone(),
                 q.db,
                 q.groups.clone(),
                 q.spatial.clone(),
-                shared.generation,
+                moved,
             )
         };
         let dom = dom.borrow();
         let mut spatial = spatial.borrow_mut();
-        spatial.refresh(&dom, db, generation);
+        spatial.refresh(&dom, db, moved);
         let groups = groups.borrow();
         Some(f(&spatial, &groups))
     }
@@ -489,9 +503,54 @@ impl EventHandler for Events {
 
 /// The contact hook: surfaces by collider, and the bodies that are free
 /// (on adaptive stepping) this frame.
-struct Mixer<'a>(&'a [Surface], &'a HashSet<RigidBodyHandle>);
+struct Mixer<'a>(
+    &'a [Surface],
+    &'a HashSet<RigidBodyHandle>,
+    Option<Quiet<'a>>,
+);
+
+/// On a client, what keeps contacts between two bodies it doesn't simulate
+/// (remote ones and anchored ones) from being worked out: only a touch a
+/// script there listens to is. Remote props resting on the map cost their
+/// contacts every substep otherwise, for nothing.
+struct Quiet<'a> {
+    by_collider: &'a HashMap<ColliderHandle, Ref>,
+    listened: &'a HashSet<Ref>,
+}
+
+impl Mixer<'_> {
+    /// Whether the pair in `context` is worth working out.
+    fn wanted(&self, context: &PairFilterContext) -> bool {
+        let Some(quiet) = &self.2 else {
+            return true;
+        };
+        let dynamic = |b: Option<RigidBodyHandle>| {
+            b.and_then(|b| context.bodies.get(b))
+                .is_some_and(|b| b.is_dynamic())
+        };
+        let listened = |c: ColliderHandle| {
+            quiet
+                .by_collider
+                .get(&c)
+                .is_some_and(|part| quiet.listened.contains(part))
+        };
+        dynamic(context.rigid_body1)
+            || dynamic(context.rigid_body2)
+            || listened(context.collider1)
+            || listened(context.collider2)
+    }
+}
 
 impl PhysicsHooks for Mixer<'_> {
+    fn filter_contact_pair(&self, context: &PairFilterContext) -> Option<SolverFlags> {
+        self.wanted(context)
+            .then_some(SolverFlags::COMPUTE_RIGID_IMPULSES)
+    }
+
+    fn filter_intersection_pair(&self, context: &PairFilterContext) -> bool {
+        self.wanted(context)
+    }
+
     fn modify_solver_contacts(&self, context: &mut ContactModificationContext) {
         // A free body moves its whole frame through what it meets; the
         // contact is found after, and resolved the next frame (TouchedOrder
@@ -589,6 +648,9 @@ pub struct World {
     surfaces: Vec<Surface>,
     parts: HashMap<Ref, Placed>,
     by_collider: HashMap<ColliderHandle, Ref>,
+    /// On a client, the parts its scripts listen to touches of (see
+    /// [`Quiet`]); `None` on a server.
+    listened: Option<HashSet<Ref>>,
     assemblies: Vec<Assembly>,
     /// Joints and parts the last build saw, so a change can tell whether
     /// it touches physics.
@@ -625,8 +687,12 @@ struct TerrainColliders {
 impl World {
     pub fn new(shared: Rc<RefCell<Shared>>) -> Self {
         // Contacts between two moving bodies softer than Rapier's 30 Hz: a
-        // stack of five sinks 0.16 to 0.25 stud at the top (BoxStack).
+        // stack of five sinks 0.16 to 0.25 stud at the top (BoxStack). No
+        // continuous collision: Roblox has none to speak of (fast parts
+        // tunnel there too), the goldens read the same without it, and its
+        // sweeps were a tenth of a busy place's frame.
         let params = IntegrationParameters {
+            max_ccd_substeps: 0,
             dt: 1.0 / PHYSICS_HZ,
             contact_softness: SpringCoefficients::new(25.0, 10.0),
             ..Default::default()
@@ -646,6 +712,7 @@ impl World {
             surfaces: Vec::new(),
             parts: HashMap::new(),
             by_collider: HashMap::new(),
+            listened: None,
             assemblies: Vec::new(),
             joints: HashSet::new(),
             joint_ends: HashMap::new(),
@@ -751,7 +818,7 @@ impl World {
             return;
         }
         for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
-            let Some(body) = self.bodies.get(assembly.body) else {
+            let Some(body) = self.bodies.get(assembly.body).filter(|b| !b.is_sleeping()) else {
                 continue;
             };
             let lift = body
@@ -785,7 +852,7 @@ impl World {
         }
         let mut out = Vec::new();
         for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
-            let Some(body) = self.bodies.get(assembly.body) else {
+            let Some(body) = self.bodies.get(assembly.body).filter(|b| !b.is_sleeping()) else {
                 continue;
             };
             let centre = body.center_of_mass();
@@ -841,11 +908,15 @@ impl World {
         out
     }
 
+    /// Water's push as forces for one substep (`sign` 1), taken off after
+    /// (-1). It wakes nothing: a body settled in water sleeps as one on the
+    /// ground does (pushing woke every wet body every substep, so nothing
+    /// in a sea ever slept).
     fn push_water(&mut self, wet: &[(RigidBodyHandle, Vector, Vector)], sign: Real) {
         for &(handle, force, torque) in wet {
             if let Some(body) = self.bodies.get_mut(handle) {
-                body.add_force(force * sign, true);
-                body.add_torque(torque * sign, true);
+                body.add_force(force * sign, false);
+                body.add_torque(torque * sign, false);
             }
         }
     }
@@ -1127,6 +1198,7 @@ impl World {
         let anchored = member.iter().any(|&i| parts[i].anchored);
         let referents: Vec<Ref> = member.iter().map(|&i| parts[i].referent).collect();
         let remote = !anchored && self.shared.borrow().ownership.remote(&referents);
+        let client = self.shared.borrow().players.client;
         let root = root_part(parts, member);
         let root_pose = pose_of(&parts[root].cframe);
         let builder = if anchored {
@@ -1175,7 +1247,7 @@ impl World {
                 .density(density.into())
                 .sensor(!part.can_collide)
                 .user_data(surface as u128)
-                .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
+                .active_hooks(hooks(remote, client))
                 .active_events(if part.can_touch {
                     ActiveEvents::COLLISION_EVENTS
                 } else {
@@ -1186,7 +1258,7 @@ impl World {
                     Group::from_bits_truncate(filter),
                     InteractionTestMode::And,
                 ))
-                .active_collision_types(collision_types(remote))
+                .active_collision_types(collision_types(remote, client))
                 .build();
             let handle = self
                 .colliders
@@ -1215,6 +1287,7 @@ impl World {
                 .fold(0.0, Real::max),
             rate: std::cell::Cell::new(4),
             was_free: std::cell::Cell::new(false),
+            moved: std::cell::Cell::new(true),
         });
     }
 
@@ -1273,6 +1346,11 @@ impl World {
         }
     }
 
+    /// A client's parts its scripts listen to touches of, for this frame.
+    pub fn set_listened(&mut self, listened: HashSet<Ref>) {
+        self.listened = Some(listened);
+    }
+
     /// Hands assemblies to and from other peers as ownership changed:
     /// a remote one is kinematic, moved where replication puts it.
     pub fn sync_ownership(&mut self) {
@@ -1280,6 +1358,7 @@ impl World {
         let shared = shared.borrow();
         for assembly in self.assemblies.iter_mut().filter(|a| !a.anchored) {
             let remote = shared.ownership.remote(&assembly.parts);
+            let client = shared.players.client;
             if remote == assembly.remote {
                 continue;
             }
@@ -1297,7 +1376,8 @@ impl World {
             );
             for collider in body.colliders().to_vec() {
                 if let Some(c) = self.colliders.get_mut(collider) {
-                    c.set_active_collision_types(collision_types(remote));
+                    c.set_active_collision_types(collision_types(remote, client));
+                    c.set_active_hooks(hooks(remote, client));
                 }
             }
         }
@@ -1520,7 +1600,11 @@ impl World {
             // ahead of the step reads back a frame's gravity short).
             let wet = self.water_forces(gravity);
             self.push_water(&wet, 1.0);
-            let mixer = Mixer(&self.surfaces, &free_bodies);
+            let quiet = self.listened.as_ref().map(|listened| Quiet {
+                by_collider: &self.by_collider,
+                listened,
+            });
+            let mixer = Mixer(&self.surfaces, &free_bodies, quiet);
             self.pipeline.step(
                 g,
                 &self.params,
@@ -1569,8 +1653,9 @@ impl World {
 
     /// Writes every moving part's `CFrame` and its assembly's velocities
     /// into `dom`, unlogged: Roblox fires no `Changed` for what physics
-    /// moves.
+    /// moves. A body asleep since the last frame stays as it was written.
     pub fn write_back(&self, dom: &mut WeakDom, db: &ReflectionDatabase) {
+        let mut shared = self.shared.borrow_mut();
         for assembly in &self.assemblies {
             if assembly.anchored || assembly.remote {
                 continue;
@@ -1578,6 +1663,11 @@ impl World {
             let Some(body) = self.bodies.get(assembly.body) else {
                 continue;
             };
+            let awake = !body.is_sleeping();
+            if !assembly.moved.replace(awake) && !awake {
+                continue;
+            }
+            shared.moved.extend(assembly.parts.iter().copied());
             let pose = *body.position();
             let linear = vector_data(body.linvel());
             let angular = vector_data(body.angvel());
@@ -1610,12 +1700,13 @@ impl World {
         }
     }
 
-    /// Every part physics moves (the unanchored assemblies' parts, awake or
-    /// not): what [`World::write_back`] writes `CFrame` for.
+    /// The parts physics moved this frame: what [`World::write_back`]
+    /// wrote `CFrame` for (awake assemblies, and ones that just fell
+    /// asleep).
     pub fn moving_parts(&self) -> impl Iterator<Item = Ref> + '_ {
         self.assemblies
             .iter()
-            .filter(|a| !a.anchored && !a.remote)
+            .filter(|a| !a.anchored && !a.remote && a.moved.get())
             .flat_map(|a| a.parts.iter().copied())
     }
 
@@ -1646,13 +1737,29 @@ impl World {
     }
 }
 
-/// What a collider reports contacts with: a remote (kinematic) assembly
-/// still touches anchored parts, so `Touched` fires where it lands.
-fn collision_types(remote: bool) -> ActiveCollisionTypes {
-    if remote {
-        ActiveCollisionTypes::all()
+/// The hooks a collider asks for: every one has its contacts mixed, and a
+/// client's remote ones are filtered (see [`Quiet`]).
+fn hooks(remote: bool, client: bool) -> ActiveHooks {
+    if remote && client {
+        ActiveHooks::MODIFY_SOLVER_CONTACTS
+            | ActiveHooks::FILTER_CONTACT_PAIRS
+            | ActiveHooks::FILTER_INTERSECTION_PAIR
     } else {
-        ActiveCollisionTypes::default()
+        ActiveHooks::MODIFY_SOLVER_CONTACTS
+    }
+}
+
+/// What a collider reports contacts with: a remote (kinematic) assembly
+/// still touches anchored parts, so `Touched` fires where it lands. On a
+/// server, remote assemblies are players' characters and their touches with
+/// each other count; on a client, two remote assemblies are the server's
+/// (or another player's) to report, and a busy place's thousand remote
+/// props resting on each other would cost their contacts every substep.
+fn collision_types(remote: bool, client: bool) -> ActiveCollisionTypes {
+    match (remote, client) {
+        (false, _) => ActiveCollisionTypes::default(),
+        (true, false) => ActiveCollisionTypes::all(),
+        (true, true) => ActiveCollisionTypes::all() - ActiveCollisionTypes::KINEMATIC_KINEMATIC,
     }
 }
 

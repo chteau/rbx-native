@@ -384,7 +384,7 @@ impl Patcher<'_> {
         self.pending.parts = true;
         // A canvas adorned to this part hangs off it from anywhere in the
         // tree, so the children below are not the only thing that moved.
-        if self.loaded.scene().adorns(referent) {
+        if self.loaded.scene().adorns(self.dom, referent) {
             self.pending.spaces = true;
         }
         // A 3D adornment is placed against the part it adorns in the same
