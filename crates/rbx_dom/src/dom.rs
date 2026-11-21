@@ -2,7 +2,9 @@
 
 mod mirror;
 
-use std::collections::{HashMap, HashSet};
+// Refs are small integers handed out in order: Fx hashes them in a couple
+// of instructions where SipHash was a fifth of a big place's load.
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use crate::change::Change;
 use crate::error::DomError;
@@ -300,6 +302,46 @@ impl WeakDom {
         });
     }
 
+    /// [`WeakDom::set_parent`] for many children at once, as a file loads:
+    /// every instance arrives as a root, then gets its parent. Taking them
+    /// out of the roots one by one scanned the whole root list each time.
+    pub fn set_parents(&mut self, links: &[(Ref, Option<Ref>)]) {
+        let leaving: HashSet<Ref> = links
+            .iter()
+            .map(|&(child, _)| child)
+            .filter(|child| {
+                self.instances.contains_key(child)
+                    && !self.parents.contains_key(child)
+                    && !self.unparented.contains(child)
+            })
+            .collect();
+        self.root_refs.retain(|r| !leaving.contains(r));
+        let mut left = leaving;
+        for &(child, parent) in links {
+            if !self.instances.contains_key(&child) {
+                continue;
+            }
+            let old = self.parents.get(&child).copied();
+            if !left.remove(&child) {
+                self.detach(child);
+            }
+            match parent {
+                Some(parent_ref) => {
+                    self.parents.insert(child, parent_ref);
+                    if let Some(parent_instance) = self.instances.get_mut(&parent_ref) {
+                        parent_instance.children_mut().push(child);
+                    }
+                }
+                None => self.root_refs.push(child),
+            }
+            self.log(Change::Parent {
+                referent: child,
+                old,
+                new: parent,
+            });
+        }
+    }
+
     /// Whether `referent` sits in the place's tree: alive, and its topmost
     /// ancestor is a root rather than an instance parented to nil. Only
     /// these are saved and listed, so only edits to them change the place.
@@ -366,12 +408,21 @@ impl WeakDom {
         match self.parents.remove(&child) {
             Some(old_parent) => {
                 if let Some(parent_instance) = self.instances.get_mut(&old_parent) {
-                    parent_instance.children_mut().retain(|&r| r != child);
+                    remove_one(parent_instance.children_mut(), child);
                 }
             }
             None if self.unparented.remove(&child) => {}
-            None => self.root_refs.retain(|&r| r != child),
+            None => remove_one(&mut self.root_refs, child),
         }
+    }
+}
+
+/// Takes `child` out of `list`, keeping the order. It looks from the end:
+/// what moves is mostly what just arrived (a new instance starts as a
+/// root), and a big folder's scan is what made reparenting slow.
+fn remove_one(list: &mut Vec<Ref>, child: Ref) {
+    if let Some(at) = list.iter().rposition(|&r| r == child) {
+        list.remove(at);
     }
 }
 

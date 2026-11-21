@@ -50,8 +50,13 @@ thread_local! {
     static REGISTERED: RefCell<HashMap<Ref, Arc<Geometry>>> = RefCell::default();
     static ASSETS: RefCell<HashMap<String, Option<Arc<Geometry>>>> = RefCell::default();
     static SHAPES: RefCell<HashMap<ShapeKey, SharedShape>> = RefCell::default();
+    static PIECES: RefCell<HashMap<(u64, Fidelity), Arc<Pieces>>> = RefCell::default();
     static NEXT_ID: Cell<u64> = const { Cell::new(1) };
 }
+
+/// A mesh's convex decomposition in its own space: each piece's hull
+/// vertices and triangles.
+type Pieces = Vec<(Vec<Vector>, Vec<[u32; 3]>)>;
 
 /// Remembers the geometry of a mesh a script made for `part`.
 pub(crate) fn register(part: Ref, vertices: Vec<[f32; 3]>, triangles: Vec<[u32; 3]>) {
@@ -179,32 +184,16 @@ fn build(geometry: &Geometry, size: [f32; 3], fidelity: Fidelity) -> SharedShape
             if geometry.triangles.is_empty() {
                 None
             } else {
-                let params = if fidelity == Fidelity::Default {
-                    VHACDParameters {
-                        resolution: 32,
-                        max_convex_hulls: 16,
-                        ..Default::default()
-                    }
-                } else {
-                    VHACDParameters {
-                        resolution: 64,
-                        concavity: 0.0025,
-                        max_convex_hulls: 64,
-                        ..Default::default()
-                    }
-                };
-                // parry's own `convex_decomposition_with_params`, minus its
-                // panic when no piece survives (a degenerate mesh).
-                let decomposed = rapier3d::parry::transformation::vhacd::VHACD::decompose(
-                    &params,
-                    &points,
-                    &geometry.triangles,
-                    true,
-                );
-                let pieces: Vec<_> = decomposed
-                    .compute_exact_convex_hulls(&points, &geometry.triangles)
-                    .into_iter()
-                    .filter_map(|(vertices, indices)| SharedShape::convex_mesh(vertices, &indices))
+                let scale = scale_of(geometry, size).map(Real::from);
+                let pieces: Vec<_> = pieces(geometry, fidelity)
+                    .iter()
+                    .filter_map(|(vertices, indices)| {
+                        let scaled = vertices
+                            .iter()
+                            .map(|v| Vector::new(v.x * scale[0], v.y * scale[1], v.z * scale[2]))
+                            .collect();
+                        SharedShape::convex_mesh(scaled, indices)
+                    })
                     .map(|piece| (Pose::IDENTITY, piece))
                     .collect();
                 (!pieces.is_empty()).then(|| SharedShape::compound(pieces))
@@ -212,6 +201,48 @@ fn build(geometry: &Geometry, size: [f32; 3], fidelity: Fidelity) -> SharedShape
         }
     };
     shape.unwrap_or_else(|| cuboid(size))
+}
+
+/// The mesh's decomposition, worked out once per mesh and fidelity in the
+/// mesh's own space and scaled to each part's size after: a convex piece
+/// stays convex under a scale, and a map of one rock at a hundred sizes
+/// decomposes it once (the swim game's first frame spent most of its time
+/// here). Like Roblox, whose collision geometry belongs to the mesh.
+fn pieces(geometry: &Geometry, fidelity: Fidelity) -> Arc<Pieces> {
+    let key = (geometry.id, fidelity);
+    if let Some(found) = PIECES.with(|all| all.borrow().get(&key).cloned()) {
+        return found;
+    }
+    let points: Vec<Vector> = geometry
+        .vertices
+        .iter()
+        .map(|v| Vector::new(v[0].into(), v[1].into(), v[2].into()))
+        .collect();
+    let params = if fidelity == Fidelity::Default {
+        VHACDParameters {
+            resolution: 32,
+            max_convex_hulls: 16,
+            ..Default::default()
+        }
+    } else {
+        VHACDParameters {
+            resolution: 64,
+            concavity: 0.0025,
+            max_convex_hulls: 64,
+            ..Default::default()
+        }
+    };
+    // parry's own `convex_decomposition_with_params`, minus its panic when
+    // no piece survives (a degenerate mesh).
+    let decomposed = rapier3d::parry::transformation::vhacd::VHACD::decompose(
+        &params,
+        &points,
+        &geometry.triangles,
+        true,
+    );
+    let pieces = Arc::new(decomposed.compute_exact_convex_hulls(&points, &geometry.triangles));
+    PIECES.with(|all| all.borrow_mut().insert(key, pieces.clone()));
+    pieces
 }
 
 fn shape(geometry: &Geometry, size: [f32; 3], fidelity: Fidelity) -> SharedShape {
