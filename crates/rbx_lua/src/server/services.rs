@@ -62,6 +62,23 @@ pub struct Services {
     /// tell their own game from a copy.
     pub place_id: i64,
     pub game_id: i64,
+    /// The experience's real DataStores, for a published place run online
+    /// with API access on, as Studio's Play has them; `None` keeps them in
+    /// `data_file`.
+    pub live: Option<Arc<dyn LiveData>>,
+}
+
+/// A run's live DataStores: each `DataStoreService` storage call (`op` is
+/// `get`, `put`, `remove`, `versions`, `version`, `version_at`,
+/// `remove_version`, `keys`, `stores` or `entries`, with the local store's
+/// arguments) answered as the local store answers it, as JSON, or with the
+/// error message the script sees. Called off the script thread.
+pub trait LiveData: Send + Sync + std::fmt::Debug {
+    fn call(
+        &self,
+        op: &str,
+        args: &[serde_json::Value],
+    ) -> std::result::Result<serde_json::Value, String>;
 }
 
 /// A player's arrival from a teleport.
@@ -154,6 +171,7 @@ impl Default for Services {
             device: Device::default(),
             place_id: 0,
             game_id: 0,
+            live: None,
         }
     }
 }
@@ -709,6 +727,28 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     )?;
     let r = runtime.clone();
     host.set(
+        "live",
+        lua.create_function(move |_, ()| Ok(r.config.borrow().live.is_some()))?,
+    )?;
+    let r = runtime.clone();
+    let live = lua.create_function(move |lua, (op, args): (String, MultiValue)| {
+        let args = args
+            .iter()
+            .map(|value| match value {
+                Value::Nil => Ok(serde_json::Value::Null),
+                other => serde_json::from_str(&json::encode(other)?)
+                    .map_err(|e| mlua::Error::runtime(e.to_string())),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let store = r.config.borrow().live.clone();
+        Ok(in_background(lua, &r, move || match store {
+            Some(store) => store.call(&op, &args),
+            None => Err("DataStores are not live".into()),
+        }))
+    })?;
+    host.set("ds_live", checked(lua, scheduler::yielding(lua, live)?)?)?;
+    let r = runtime.clone();
+    host.set(
         "server",
         lua.create_function(move |_, ()| Ok(!r.client.get()))?,
     )?;
@@ -1040,6 +1080,28 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         },
     )?;
     host.set("web", checked(lua, scheduler::yielding(lua, web)?)?)?;
+    // What a real user owns, as the public inventory API says
+    // (a private inventory or a failed request owns nothing). Test players
+    // (ids below 1) are never asked about.
+    let owns_live: Function = lua
+        .load(
+            r#"local host = ...
+            local URLS = {
+                badge = "https://inventory.roblox.com/v1/users/%d/items/Badge/%d",
+                pass = "https://inventory.roblox.com/v1/users/%d/items/GamePass/%d",
+                asset = "https://inventory.roblox.com/v1/users/%d/items/Asset/%d",
+            }
+            return function(user, kind, id)
+                if user < 1 then
+                    return false
+                end
+                local ok, found = pcall(host.web, string.format(URLS[kind], user, id), "GET", nil, "ownership")
+                return ok and type(found) == "table" and type(found.data) == "table" and #found.data > 0
+            end"#,
+        )
+        .set_name("=services")
+        .call(host.clone())?;
+    host.set("owns_live", owns_live)?;
     host_more(lua, runtime, &host)?;
     Ok(host)
 }

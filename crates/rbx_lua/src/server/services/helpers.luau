@@ -83,6 +83,28 @@ function PLAYERS.GetUserIdFromNameAsync(self, name)
 	return host.user_id(name)
 end
 
+-- The user's real groups, as the web reports them (cached for offline
+-- runs). Test players (ids below 1) and a failed request have none.
+local function web(url, context)
+	local ok, found = pcall(host.web, url, "GET", nil, context)
+	return if ok and type(found) == "table" then found else {}
+end
+
+local function roleIn(user, group)
+	if user < 1 then
+		return nil
+	end
+	local found = web("https://groups.roblox.com/v2/users/" .. user .. "/groups/roles", "Player:IsInGroupAsync()")
+	for _, entry in found.data or {} do
+		if entry.group and entry.group.id == group then
+			return entry.role
+		end
+	end
+	return nil
+end
+
+-- Friends lists need a signed-in session on the web, which a Local Run
+-- doesn't have: nobody has friends here.
 function PLAYERS.GetFriendsAsync(_, id)
 	userId(id)
 	return pages()
@@ -185,22 +207,21 @@ function PLAYER.IsFriendsWithAsync(_, id)
 	return false
 end
 
-function PLAYER.IsInGroupAsync(_, id)
-	userId(id)
-	return false
+function PLAYER.IsInGroupAsync(self, id)
+	return roleIn(self.UserId, userId(id)) ~= nil
 end
 PLAYER.IsInGroup = PLAYER.IsInGroupAsync
 
--- No groups here: everyone is a guest, rank 0.
-function PLAYER.GetRankInGroupAsync(_, id)
-	userId(id)
-	return 0
+-- Outside a group a player is a guest, rank 0.
+function PLAYER.GetRankInGroupAsync(self, id)
+	local role = roleIn(self.UserId, userId(id))
+	return if role then role.rank else 0
 end
 PLAYER.GetRankInGroup = PLAYER.GetRankInGroupAsync
 
-function PLAYER.GetRoleInGroupAsync(_, id)
-	userId(id)
-	return "Guest"
+function PLAYER.GetRoleInGroupAsync(self, id)
+	local role = roleIn(self.UserId, userId(id))
+	return if role then role.name else "Guest"
 end
 PLAYER.GetRoleInGroup = PLAYER.GetRoleInGroupAsync
 

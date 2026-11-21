@@ -189,14 +189,14 @@ function SERVICE.GetPassOwnershipAsync(_, user, pass)
 	user = userId(user)
 	pass = int64(pass)
 	task.wait()
-	return host.owns(user, "pass:" .. pass)
+	return host.owns(user, "pass:" .. pass) or host.owns_live(user, "pass", pass)
 end
 
 function SERVICE.UserOwnsGamePassAsync(_, user, pass)
 	user = userId(user)
 	pass = int64(pass)
 	task.wait()
-	return host.owns(user, "pass:" .. pass)
+	return host.owns(user, "pass:" .. pass) or host.owns_live(user, "pass", pass)
 end
 
 function SERVICE.PlayerOwnsAsset(_, player, asset)
@@ -210,7 +210,7 @@ function SERVICE.PlayerOwnsAsset(_, player, asset)
 		)
 	end
 	task.wait()
-	return host.owns(player.UserId, "asset:" .. asset)
+	return host.owns(player.UserId, "asset:" .. asset) or host.owns_live(player.UserId, "asset", asset)
 end
 SERVICE.PlayerOwnsAssetAsync = SERVICE.PlayerOwnsAsset
 

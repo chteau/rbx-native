@@ -4,10 +4,19 @@
 -- server: the argument rules and their exact messages, JSON storage rules,
 -- versions and key info, ordered stores' pages and the request budgets.
 -- The keys and versions live in the host's store (per place, on disk), so
--- what a run saves is there next run.
+-- what a run saves is there next run; or, for a published place run online
+-- with an Open Cloud key, in the experience's real DataStores, as Studio's
+-- Play uses them (`host.live`), where every call yields like a web request.
 local host = ...
 
 local M = {}
+
+local function ds(op, ...)
+	if host.live() then
+		return host.ds_live(op, ...)
+	end
+	return host["ds_" .. op](...)
+end
 
 local objects = {} -- instance id -> what it is
 local stores = {} -- bucket -> store instance
@@ -358,7 +367,7 @@ local STORE = {}
 function STORE.GetAsync(self, key)
 	local bucket, name = locate(self, key)
 	request(kinds(self, { "GetAsync", "StandardRead" }, { "GetAsync", "OrderedRead" }), name)
-	local entry = host.ds_get(bucket, name)
+	local entry = ds("get", bucket, name)
 	if not entry then
 		return nil, nil
 	end
@@ -389,7 +398,7 @@ function STORE.SetAsync(self, key, value, ids, options)
 	local users = self.ordered and "[]" or userIds(ids)
 	local meta = self.ordered and "{}" or metadata(options)
 	request(kinds(self, { "SetIncrementAsync", "StandardWrite" }, { "SetIncrementSortedAsync", "OrderedWrite" }), name)
-	local entry = host.ds_put(bucket, name, text, users, meta)
+	local entry = ds("put", bucket, name, text, users, meta)
 	if self.ordered then
 		return nil
 	end
@@ -400,7 +409,7 @@ function STORE.UpdateAsync(self, key, transform)
 	local bucket, name = locate(self, key)
 	func(transform)
 	request(kinds(self, { "UpdateAsync", "StandardWrite" }, { "UpdateAsync", "OrderedWrite" }), name)
-	local entry = host.ds_get(bucket, name)
+	local entry = ds("get", bucket, name)
 	local old = entry and decode(entry.value)
 	local value, ids, meta
 	if self.ordered then
@@ -422,7 +431,7 @@ function STORE.UpdateAsync(self, key, transform)
 			fail("511: Metadata attribute size exceeds 300 bytes limit.")
 		end
 	end
-	local written = host.ds_put(bucket, name, text, users, metaText)
+	local written = ds("put", bucket, name, text, users, metaText)
 	if self.ordered then
 		return decode(written.value)
 	end
@@ -435,12 +444,12 @@ function STORE.IncrementAsync(self, key, delta, ids, options)
 	local users = self.ordered and "[]" or userIds(ids)
 	local meta = self.ordered and "{}" or metadata(options)
 	request(kinds(self, { "SetIncrementAsync", "StandardWrite" }, { "SetIncrementSortedAsync", "OrderedWrite" }), name)
-	local entry = host.ds_get(bucket, name)
+	local entry = ds("get", bucket, name)
 	local old = entry and decode(entry.value) or 0
 	if type(old) ~= "number" or old ~= math.floor(old) then
 		rejected(24, "Key value is not numeric.")
 	end
-	local written = host.ds_put(bucket, name, host.encode(old + delta), users, meta)
+	local written = ds("put", bucket, name, host.encode(old + delta), users, meta)
 	if self.ordered then
 		return old + delta
 	end
@@ -450,7 +459,7 @@ end
 function STORE.RemoveAsync(self, key)
 	local bucket, name = locate(self, key)
 	request(kinds(self, { "SetIncrementAsync", "StandardRemove" }, { "SetIncrementSortedAsync", "OrderedRemove" }), name)
-	local entry = host.ds_remove(bucket, name)
+	local entry = ds("remove", bucket, name)
 	if not entry then
 		return nil, nil
 	end
@@ -475,7 +484,7 @@ function STORE.GetSortedAsync(self, ascending, pageSize, minValue, maxValue)
 	end
 	request({ "GetSortedAsync", "OrderedList" }, "")
 	local entries = {}
-	for _, item in host.ds_entries(host.bucket(true, self.name, self.scope)) do
+	for _, item in ds("entries", host.bucket(true, self.name, self.scope)) do
 		local value = decode(item.value)
 		if (minValue == nil or value >= minValue) and (maxValue == nil or value <= maxValue) then
 			table.insert(entries, { key = item.key, value = value })
@@ -502,7 +511,7 @@ function STORE.ListKeysAsync(self, prefix, pageSize, _cursor, excludeDeleted)
 	prefix = prefix == nil and "" or str(prefix, 1)
 	pageSize = pageSize == nil and 0 or int(pageSize, "int")
 	request({ "ListAsync", "StandardList" }, prefix)
-	local keys = host.ds_keys(self.name, not self.allScopes and self.scope or nil, prefix, excludeDeleted ~= true)
+	local keys = ds("keys", self.name, not self.allScopes and self.scope or nil, prefix, excludeDeleted ~= true)
 	return pages("DataStoreKeyPages", keys, pageSize, function(name)
 		local item, id = host.new("DataStoreKey", "DataStoreKey")
 		objects[id] = { kind = "key", KeyName = name }
@@ -523,7 +532,7 @@ function STORE.ListVersionsAsync(self, key, direction, minDate, maxDate, pageSiz
 	pageSize = pageSize and int(pageSize, "int") or 0
 	request({ "ListAsync", "StandardList" }, name)
 	local list = {}
-	for _, v in host.ds_versions(bucket, name) do
+	for _, v in ds("versions", bucket, name) do
 		if v.created >= minDate and (maxDate <= 0 or v.created <= maxDate) then
 			table.insert(list, v)
 		end
@@ -541,7 +550,7 @@ function STORE.GetVersionAsync(self, key, version)
 	local bucket, name = locate(self, key)
 	version = str(version, 2)
 	request({ "GetVersionAsync", "StandardRead" }, name)
-	local entry = host.ds_version(bucket, name, version)
+	local entry = ds("version", bucket, name, version)
 	if not entry then
 		rejected(25, "The provided version is not valid.")
 	end
@@ -558,7 +567,7 @@ function STORE.GetVersionAtTimeAsync(self, key, timestamp)
 		fail("InvalidTimestamp: Timestamp must be positive and not more than ten minutes in the future.")
 	end
 	request({ "GetVersionAsync", "StandardRead" }, name)
-	local entry = host.ds_version_at(bucket, name, timestamp)
+	local entry = ds("version_at", bucket, name, timestamp)
 	if not entry or entry.deleted then
 		return nil, nil
 	end
@@ -569,7 +578,7 @@ function STORE.RemoveVersionAsync(self, key, version)
 	local bucket, name = locate(self, key)
 	version = str(version, 2)
 	request({ "RemoveVersionAsync", "StandardRemove" }, name)
-	if not host.ds_remove_version(bucket, name, version) then
+	if not ds("remove_version", bucket, name, version) then
 		rejected(25, "The provided version is not valid.")
 	end
 end
@@ -621,7 +630,7 @@ function SERVICE.ListDataStoresAsync(_, prefix, pageSize)
 	prefix = prefix == nil and "" or str(prefix, 1)
 	pageSize = pageSize == nil and 0 or int(pageSize, "int")
 	request({ "ListAsync", "StandardList" }, prefix)
-	return pages("DataStoreListingPages", host.ds_stores(prefix), pageSize, function(s)
+	return pages("DataStoreListingPages", ds("stores", prefix), pageSize, function(s)
 		local item, id = host.new("DataStoreInfo", "DataStoreInfo")
 		objects[id] = { kind = "storeInfo", CreatedTime = s.created, DataStoreName = s.name, UpdatedTime = s.updated }
 		return item

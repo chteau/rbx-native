@@ -89,7 +89,7 @@ function SERVICE.UserHasBadgeAsync(_, userId, badgeId)
 	userId = user(userId)
 	badgeId = badge(badgeId, 2)
 	task.wait()
-	return host.owns(userId, "badge:" .. badgeId)
+	return host.owns(userId, "badge:" .. badgeId) or host.owns_live(userId, "badge", badgeId)
 end
 SERVICE.UserHasBadge = SERVICE.UserHasBadgeAsync
 

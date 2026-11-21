@@ -3,13 +3,14 @@
 //!
 //! ```text
 //! cargo run -p rbx_sim --example play -- place.rbxl --seconds 20 [--walk 3] [--jump]
-//!     [--place-id N] [--game-id N] [--track]
+//!     [--place-id N] [--game-id N] [--track] [--live] [--live-write]
 //! ```
 //!
 //! `--walk N` holds W from second N for two seconds; `--jump` presses Space
 //! once the walk ends; `--track` prints the character's root and health
 //! every second. `--place-id`/`--game-id` are what `game.PlaceId`/`GameId`
-//! read. `PLAY_UID` sets the player's user id (1 by default). Assets come
+//! read. `--live` runs the DataStores against `--game-id`'s real ones,
+//! read-only unless `--live-write` also says so. `PLAY_UID` sets the player's user id (1 by default). Assets come
 //! from Roblox through `rbx_cloud`, with the Open Cloud key it finds.
 
 use std::path::PathBuf;
@@ -76,6 +77,7 @@ fn character(session: &Session, peer: Peer) -> String {
 fn main() {
     let mut args = std::env::args().skip(1);
     let (mut place, mut seconds, mut walk, mut jump) = (None, 10.0, None, false);
+    let (mut live, mut live_write) = (false, false);
     let (mut place_id, mut game_id, mut track) = (0, 0, false);
     while let Some(arg) = args.next() {
         let mut number = || args.next().and_then(|s| s.parse::<f64>().ok());
@@ -84,6 +86,8 @@ fn main() {
             "--walk" => walk = Some(number().expect("--walk N")),
             "--jump" => jump = true,
             "--track" => track = true,
+            "--live" => live = true,
+            "--live-write" => live_write = true,
             "--place-id" => place_id = number().expect("--place-id N") as i64,
             "--game-id" => game_id = number().expect("--game-id N") as i64,
             _ => place = Some(PathBuf::from(arg)),
@@ -97,11 +101,26 @@ fn main() {
     session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
         rbx_cloud::ApiKey::from_env_or_config().or_else(rbx_cloud::keyring::stored_api_key),
     ))));
-    session.set_services(rbx_lua::server::Services {
+    let mut services = rbx_lua::server::Services {
         place_id,
         game_id,
         ..Default::default()
-    });
+    };
+    if live {
+        // Writes only ever reach the sandbox experience the suite records on.
+        let live_write = live_write && game_id == 1_113_565_074;
+        match rbx_sim::live::connect(game_id as u64, !live_write) {
+            Ok(store) => {
+                println!(
+                    "[info] DataStores: live, experience {game_id} (read-only: {})",
+                    !live_write
+                );
+                services.live = Some(store);
+            }
+            Err(why) => println!("[info] DataStores: local ({})", why.reason()),
+        }
+    }
+    session.set_services(services);
     session.start();
     let uid = std::env::var("PLAY_UID")
         .ok()

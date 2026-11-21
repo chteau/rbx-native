@@ -118,6 +118,38 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
     }
 }
 
+/// Connects the run to the experience's real DataStores, as Studio's Play
+/// has them, when the place is published, API access is on and the editor
+/// is online with an Open Cloud key; else they stay in the local store.
+/// The one line Output shows either way. `RBXNATIVE_LOCAL_RUN_READONLY=1`
+/// refuses every live write (for testing against games that must not
+/// change).
+pub(crate) fn go_live(
+    path: &Path,
+    mode: DataMode,
+    services: &mut rbx_lua::server::Services,
+) -> String {
+    let local = |why: &str| format!("DataStores: local ({why})");
+    if mode == DataMode::Off {
+        return local("Studio access to API services is off");
+    }
+    let Some(link) = crate::home::link_of(path) else {
+        return local("the place isn\u{2019}t published");
+    };
+    let read_only = std::env::var("RBXNATIVE_LOCAL_RUN_READONLY").is_ok_and(|v| v == "1");
+    match rbx_sim::live::connect(link.universe_id, read_only) {
+        Ok(live) => {
+            services.live = Some(live);
+            format!(
+                "DataStores: live, experience {}{}",
+                link.universe_id,
+                if read_only { " (read-only)" } else { "" }
+            )
+        }
+        Err(why) => local(&why.reason()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +160,8 @@ mod tests {
         let path = Path::new("/nowhere/place.rbxl");
         assert!(!services(path, DataMode::Off).api_access);
         assert!(services(path, DataMode::Fresh).data_file.is_none());
+        let mut config = services(path, DataMode::Kept);
+        assert!(go_live(path, DataMode::Kept, &mut config).contains("isn\u{2019}t published"));
+        assert!(config.live.is_none());
     }
 }

@@ -525,6 +525,8 @@ impl Shell {
         rbx_lua::server::set_text_measure(Arc::new(rbx_viewer::measure_text));
         let mode = data::mode(&self.path);
         let mut services = data::services(&self.path, mode);
+        let data_line = data::go_live(&self.path, mode, &mut services);
+        push_row(&mut self.output, Feedback::Info(data_line));
         if let Some(device) = self.device_sim.device() {
             let touch = matches!(
                 device.platform,

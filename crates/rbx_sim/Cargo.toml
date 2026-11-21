@@ -12,6 +12,9 @@ rbx_binary = { path = "../rbx_binary" }
 rbx_xml = { path = "../rbx_xml" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_lua = { path = "../rbx_lua" }
+# live.rs: a published place's real DataStores through Open Cloud.
+rbx_cloud = { path = "../rbx_cloud" }
+rbx_net = { path = "../rbx_net" }
 rbx_animation = { path = "../rbx_animation" }
 rbx_assets = { path = "../rbx_assets" }
 rbx_mesh = { path = "../rbx_mesh" }
@@ -30,8 +33,6 @@ symphonia = { version = "0.5", default-features = false, features = ["ogg", "vor
 # examples/record_goldens.rs: publish the suite over the sandbox place,
 # join it with the real client and read results back through the Play probe.
 rbx_play = { path = "../rbx_play" }
-rbx_cloud = { path = "../rbx_cloud" }
-rbx_net = { path = "../rbx_net" }
 ureq = "3"
 # examples/record_goldens.rs: finds the client window for its gestures.
 x11rb = "0.13"
