@@ -108,7 +108,7 @@ impl UserData for LuaEnum {
             let db = this.ctx.database();
             let value = db.enum_value(&this.name, &item).ok_or_else(|| {
                 mlua::Error::runtime(format!(
-                    "{item} is not a valid member of Enum.{}",
+                    "{item} is not a valid member of \"Enum.{}\"",
                     this.name
                 ))
             })?;
