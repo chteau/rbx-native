@@ -40,6 +40,7 @@ pub(crate) fn is_signal(db: &ReflectionDatabase, class: &str, key: &str) -> bool
     INSTANCE_SIGNALS.contains(&key)
         || has(&["Event"], "BindableEvent")
         || has(&["OnServerEvent", "OnClientEvent"], "BaseRemoteEvent")
+        || has(&["MessageOut"], "LogService")
 }
 
 /// `instance[key]` for the members above: `None` lets the property and

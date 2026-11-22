@@ -70,6 +70,11 @@ pub(crate) fn member(
 ) -> Result<Option<Value>> {
     match class {
         "TestService" => test_service(lua, ctx, referent, key),
+        // Every instance in the game (ProfilerApi), as
+        // `DebugSettings.InstanceCount` counts them.
+        "Stats" if key == "InstanceCount" => Ok(Some(Value::Number(
+            super::settings::count_instances(ctx) as f64,
+        ))),
         "Stats" => stats(lua, key),
         _ if ctx.database().is_subclass_of(class, "StatsItem") => {
             stats_item(lua, ctx, referent, key)
@@ -184,19 +189,34 @@ fn resident_mb() -> f64 {
 }
 
 /// Studio answers `GetMemoryUsageMbForTag` with 0 for every tag outside a
-/// playtest; the rest of `Stats`' functions need a capability no script has.
+/// playtest; a live server gives the Lua heap for `LuaHeap` and `Script`
+/// (the ProfilerApi golden), 0 for the rest. A tag's name works as well as
+/// the enum item. The
+/// rest of `Stats`' functions need a capability no script has.
 fn stats(lua: &Lua, key: &str) -> Result<Option<Value>> {
     let f = match key {
         "GetTotalMemoryUsageMb" => lua.create_function(|_, _: MultiValue| Ok(resident_mb()))?,
-        "GetMemoryUsageMbForTag" => lua.create_function(|_, args: MultiValue| {
+        "GetMemoryUsageMbForTag" => lua.create_function(|lua, args: MultiValue| {
             let tag = arg(&args, 0);
-            if tag
-                .as_userdata()
-                .is_none_or(|u| !u.is::<crate::lua_enum::LuaEnumItem>())
-            {
+            let named = tag.is_string()
+                || tag
+                    .as_userdata()
+                    .is_some_and(|u| u.is::<crate::lua_enum::LuaEnumItem>());
+            if !named {
                 return Err(mlua::Error::runtime("Argument 1 missing or nil"));
             }
-            Ok(0.0)
+            let name = match tag.as_userdata() {
+                Some(item) => item
+                    .borrow::<crate::lua_enum::LuaEnumItem>()?
+                    .name()
+                    .to_owned(),
+                None => tag.to_string()?,
+            };
+            let live = crate::profiler::of(lua).borrow().live;
+            Ok(match name.as_str() {
+                "LuaHeap" | "Script" if live => lua.used_memory() as f64 / 1_048_576.0,
+                _ => 0.0,
+            })
         })?,
         "GetMemoryCategoryNames"
         | "GetMemoryUsageMbAllCategories"

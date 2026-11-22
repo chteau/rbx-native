@@ -733,6 +733,12 @@ impl Hooks for ServerHooks {
         if let Some(value) = crate::studio::diagnostics(lua, ctx, referent, class, key)? {
             return Ok(Some(value));
         }
+        // Its calls refuse a game script for want of the Plugin capability.
+        if class == "ScriptProfilerService" {
+            if let Some(value) = crate::studio::member(lua, ctx, referent, class, key)? {
+                return Ok(Some(value));
+            }
+        }
         if key == "WaitForChild" {
             return wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }
