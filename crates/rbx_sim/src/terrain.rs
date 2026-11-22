@@ -389,14 +389,20 @@ impl Terrain {
     /// each crossing `f` of the way from a solid voxel's centre (`f` its
     /// fill) toward the empty one, its vertex in each dual cell the mean of
     /// its crossings. The faces between a voxel and the one above, north
-    /// or east of it belong to the voxel's chunk.
+    /// or east of it belong to the voxel's chunk. A quad splits along one
+    /// diagonal, or along the other when its corners' materials (each the
+    /// fullest voxel around it) are not all the same (TerrainRaycast
+    /// `sand_ball`: a Sand ball on a Grass slab is hit 0.2 to 0.8 off along its
+    /// rim otherwise, where a Grass one matches throughout).
     fn collision_triangles(&self, key: ChunkKey) -> Vec<[Vector; 3]> {
         let fill = |v: [i32; 3]| self.grid.get(v).solid_fraction();
         let centre =
             |v: [i32; 3]| (Vector::new(v[0] as Real, v[1] as Real, v[2] as Real) + 0.5) * CELL;
-        let mut vertices: std::collections::HashMap<[i32; 3], Option<Vector>> = Default::default();
-        // The vertex of the dual cell whose least corner is voxel `v`.
-        let mut vertex = |v: [i32; 3]| -> Option<Vector> {
+        let mut vertices: std::collections::HashMap<[i32; 3], Option<(Vector, Material)>> =
+            Default::default();
+        // The vertex of the dual cell whose least corner is voxel `v`, and
+        // its material.
+        let mut vertex = |v: [i32; 3]| -> Option<(Vector, Material)> {
             *vertices.entry(v).or_insert_with(|| {
                 let corner = |i: usize| {
                     [
@@ -406,7 +412,12 @@ impl Terrain {
                     ]
                 };
                 let (mut sum, mut n) = (Vector::ZERO, 0.0);
+                let mut fullest = (0.0, Material::Air);
                 for i in 0..8 {
+                    let cell = self.grid.get(corner(i));
+                    if cell.solid_fraction() > fullest.0 {
+                        fullest = (cell.solid_fraction(), cell.material);
+                    }
                     for bit in [1, 2, 4] {
                         let j = i | bit;
                         if j == i {
@@ -422,7 +433,7 @@ impl Terrain {
                         n += 1.0;
                     }
                 }
-                (n > 0.0).then(|| sum / n)
+                (n > 0.0).then(|| (sum / n, fullest.1))
             })
         };
         let origin = key.origin();
@@ -448,7 +459,13 @@ impl Terrain {
                         let quad =
                             [cell(0, 0), cell(1, 0), cell(1, 1), cell(0, 1)].map(&mut vertex);
                         // Wound to face the empty side.
-                        if let [Some(p0), Some(p1), Some(p2), Some(p3)] = quad {
+                        if let [Some(q0), Some(q1), Some(q2), Some(q3)] = quad {
+                            let mixed = [q1, q2, q3].iter().any(|q| q.1 != q0.1);
+                            let [p0, p1, p2, p3] = if mixed {
+                                [q1.0, q2.0, q3.0, q0.0]
+                            } else {
+                                [q0.0, q1.0, q2.0, q3.0]
+                            };
                             if here {
                                 triangles.push([p0, p1, p3]);
                                 triangles.push([p1, p2, p3]);

@@ -53,10 +53,21 @@ return function(h, origin)
 		local y0 = root.Position.Y
 		humanoid.Jump = true
 		local peak = 0
+		local jumpTrace = {}
 		for _ = 1, 45 do
 			clock.tick()
 			peak = math.max(peak, root.Position.Y - y0)
+			table.insert(
+				jumpTrace,
+				string.format(
+					"%s %s %s",
+					h.round(root.Position.Y - origin.Y, 2),
+					h.round(root.AssemblyLinearVelocity.Y, 1),
+					humanoid:GetState().Name
+				)
+			)
 		end
+		result["_" .. name .. "_jump"] = table.concat(jumpTrace, ", ")
 		result[name .. "_jump_rise"] = h.round(peak, 2)
 		local jumpLog = {}
 		for i = first + 1, #log do
@@ -69,9 +80,22 @@ return function(h, origin)
 		end
 		-- Onto the shelf.
 		humanoid:Move(Vector3.new(1, 0, 0))
-		for _ = 1, 210 do
+		local shelfTrace = {}
+		for i = 1, 210 do
 			clock.tick()
+			if i % 10 == 0 then
+				table.insert(
+					shelfTrace,
+					string.format(
+						"%s %s %s",
+						h.round(root.Position.X - origin.X, 1),
+						h.round(root.Position.Y - origin.Y, 2),
+						humanoid.FloorMaterial.Name
+					)
+				)
+			end
 		end
+		result["_" .. name .. "_shelf"] = table.concat(shelfTrace, ", ")
 		humanoid:Move(Vector3.zero)
 		for _ = 1, 30 do
 			clock.tick()

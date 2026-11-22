@@ -80,8 +80,16 @@ const SLEEP_SPEED: Real = 0.6;
 /// moments of going still scatter from 11 to 32 frames with no single rule
 /// (SleepWake, SleepPile `*_still_from`); this splits them.
 const SLEEP_AFTER: Real = 0.35;
-/// Drag of terrain water per stud³ submerged, per stud/s (Buoyancy).
-const WATER_DRAG: Real = 5.7;
+/// Drag of terrain water on the face a part moves toward, per stud² of
+/// it, per stud/s, once that face is under (Buoyancy: a 1.5 block sinks
+/// at 17.4 stud/s, a 0.95 one rises at 1.7).
+const WATER_FACE_DRAG: Real = 11.3;
+/// Studs a face goes under before its drag is whole (Buoyancy `*_min`:
+/// blocks dropped in dip 0.15 to 3.35 under).
+const WATER_FACE_RAMP: Real = 0.75;
+/// A character's drag in water per stud³ submerged, per stud/s: its
+/// controller's, not its faces' (Swim `r15_vx*`, `r15_jump_rise`).
+const WATER_DRAG_CHARACTER: Real = 5.7;
 /// Studs between the points a part is sampled at for water.
 const WATER_SAMPLE: Real = 0.5;
 
@@ -96,6 +104,8 @@ struct Surface {
     /// An anchored part's `AssemblyLinearVelocity`: it stays put, but what
     /// touches it is carried as on a conveyor belt (Conveyor golden).
     conveyor: Vector,
+    /// A terrain chunk's collider.
+    terrain: bool,
 }
 
 struct Placed {
@@ -629,6 +639,48 @@ impl Mixer<'_> {
             || listened(context.collider1)
             || listened(context.collider2)
     }
+
+    /// Whether the pair is a ball whose centre is under the terrain surface
+    /// it touches: terrain is a skin, not a solid, and such a ball goes on
+    /// through it where a block half under is lifted out (TerrainPhysics
+    /// `ball_y`: a ball made half into the ground falls through it,
+    /// `placed_y`: a block does not).
+    fn buried_ball(&self, context: &mut ContactModificationContext) -> bool {
+        let terrain = |c: ColliderHandle| {
+            context
+                .colliders
+                .get(c)
+                .and_then(|c| self.0.get(c.user_data as usize))
+                .is_some_and(|s| s.terrain)
+        };
+        let (ball, sign) = if terrain(context.collider1) {
+            (context.collider2, 1.0)
+        } else if terrain(context.collider2) {
+            (context.collider1, -1.0)
+        } else {
+            return false;
+        };
+        let Some(centre) = context
+            .colliders
+            .get(ball)
+            .filter(|c| c.shape().as_ball().is_some())
+            .map(|c| c.position().translation)
+        else {
+            return false;
+        };
+        let Some(rigid) = context.rigid_mut() else {
+            return false;
+        };
+        let out = *rigid.normal * sign;
+        rigid.solver_contacts.iter().any(|contact| {
+            let surface = if sign > 0.0 {
+                contact.anchor1
+            } else {
+                contact.anchor2
+            };
+            (centre - surface).dot(out) < 0.0
+        })
+    }
 }
 
 impl PhysicsHooks for Mixer<'_> {
@@ -642,6 +694,12 @@ impl PhysicsHooks for Mixer<'_> {
     }
 
     fn modify_solver_contacts(&self, context: &mut ContactModificationContext) {
+        if self.buried_ball(context) {
+            if let Some(rigid) = context.rigid_mut() {
+                rigid.solver_contacts.clear();
+            }
+            return;
+        }
         // A free body moves its whole frame through what it meets; the
         // contact is found after, and resolved the next frame (TouchedOrder
         // `_y`: the block ends its last falling frame 0.9 stud into the
@@ -878,6 +936,7 @@ impl World {
                         friction_weight: p[3],
                         elasticity_weight: p[4],
                         conveyor: Vector::ZERO,
+                        terrain: true,
                     });
                     surfaces.len() - 1
                 });
@@ -900,7 +959,8 @@ impl World {
 
     /// Lifts every free body with a part's centre inside terrain onto its
     /// surface: a block made under the collision surface comes up to rest
-    /// on it (TerrainPhysics `placed_y`).
+    /// on it (TerrainPhysics `placed_y`). A ball is left to fall through
+    /// ([`Mixer::buried_ball`]).
     fn out_of_terrain(&mut self) {
         let shared = self.shared.clone();
         let shared = shared.borrow();
@@ -915,7 +975,7 @@ impl World {
                 .colliders()
                 .iter()
                 .filter_map(|&c| self.colliders.get(c))
-                .filter(|c| !c.is_sensor())
+                .filter(|c| !c.is_sensor() && c.shape().as_ball().is_none())
                 .filter_map(|c| {
                     let depth = shared.terrain.depth(c.position().translation)?;
                     Some(depth + c.compute_aabb().half_extents().y)
@@ -930,11 +990,15 @@ impl World {
 
     /// Terrain water's push on every free body: the weight of the water
     /// each part displaces, up, where it displaces it, and a drag against
-    /// the motion of every submerged bit, `WATER_DRAG` per stud³ (Buoyancy:
-    /// blocks float as deep as their density, 1 being water's, a 1.5 one
-    /// sinks at 18 stud/s and a 0.95 one rises at 1.7). Force and torque
-    /// for this frame, by body.
-    fn water_forces(&self, gravity: Real) -> Vec<(RigidBodyHandle, Vector, Vector)> {
+    /// the motion on the faces moving into it ([`Self::face_drag`];
+    /// Buoyancy: blocks float as deep as their density, 1 being water's).
+    /// `driven` bodies are characters, whose drag is their controller's.
+    /// Force and torque for this frame, by body.
+    fn water_forces(
+        &self,
+        gravity: Real,
+        driven: &HashSet<RigidBodyHandle>,
+    ) -> Vec<(RigidBodyHandle, Vector, Vector)> {
         let shared = self.shared.borrow();
         let terrain = &shared.terrain;
         if !terrain.has_water() {
@@ -946,6 +1010,7 @@ impl World {
                 continue;
             };
             let centre = body.center_of_mass();
+            let character = driven.contains(&assembly.body);
             let (mut force, mut torque) = (Vector::ZERO, Vector::ZERO);
             for collider in body
                 .colliders()
@@ -969,7 +1034,7 @@ impl World {
                     );
                     let p = local.mins + (at + 0.5) * step;
                     if shape.contains_local_point(p) {
-                        points.push(collider.position() * p);
+                        points.push(p);
                     }
                 }
                 if points.is_empty() {
@@ -977,16 +1042,23 @@ impl World {
                 }
                 let dv = collider.volume() / points.len() as Real;
                 let edge = dv.cbrt();
-                for p in points {
+                let pose = collider.position();
+                for local_p in points {
+                    let p = pose * local_p;
                     // Studs above the surface, from the water fraction
                     // there (it falls by a quarter a stud across it).
                     let above = (0.5 - terrain.water_at(p)) * 4.0;
                     let wet = (0.5 - above / edge).clamp(0.0, 1.0);
-                    if wet == 0.0 {
+                    let v = body.velocity_at_point(p);
+                    let drag = if character {
+                        v * (WATER_DRAG_CHARACTER * dv * wet)
+                    } else {
+                        Self::face_drag(shape, terrain, pose, local_p, v, dv)
+                    };
+                    if wet == 0.0 && drag == Vector::ZERO {
                         continue;
                     }
-                    let push = Vector::new(0.0, gravity * dv * wet, 0.0)
-                        - body.velocity_at_point(p) * (WATER_DRAG * dv * wet);
+                    let push = Vector::new(0.0, gravity * dv * wet, 0.0) - drag;
                     force += push;
                     torque += (p - centre).cross(push);
                 }
@@ -996,6 +1068,41 @@ impl World {
             }
         }
         out
+    }
+
+    /// The drag on one sample of a part moving through water at `v`: the
+    /// face it moves toward pushes back once that face is under, so a
+    /// block entering water is braked where one bobbing up out of it
+    /// coasts (Buoyancy `_d03`: it dips 0.54 under its float line and
+    /// bobs back 0.55 over it). `dv` over the chord through the sample
+    /// along the motion is the sample's share of that face.
+    fn face_drag(
+        shape: &dyn rapier3d::parry::shape::Shape,
+        terrain: &crate::terrain::Terrain,
+        pose: &Pose,
+        local_p: Vector,
+        v: Vector,
+        dv: Real,
+    ) -> Vector {
+        let speed = v.length();
+        if speed < 1e-9 {
+            return Vector::ZERO;
+        }
+        let dir = pose.rotation.inverse() * (v / speed);
+        let exit = |d: Vector| {
+            shape
+                .cast_local_ray(&Ray::new(local_p, d), Real::MAX, false)
+                .unwrap_or(0.0)
+        };
+        let (ahead, behind) = (exit(dir), exit(-dir));
+        let chord = ahead + behind;
+        if chord < 1e-6 {
+            return Vector::ZERO;
+        }
+        let face = pose * (local_p + dir * ahead);
+        let depth = (terrain.water_at(face) - 0.5) * 4.0;
+        let wet = (depth / WATER_FACE_RAMP).clamp(0.0, 1.0);
+        v * (WATER_FACE_DRAG * dv / chord * wet)
     }
 
     /// Water's push as forces for one substep (`sign` 1), taken off after
@@ -1330,6 +1437,7 @@ impl World {
                 } else {
                     Vector::ZERO
                 },
+                terrain: false,
             });
             // A massless part adds no mass, unless it is the root (docs).
             let density = if part.massless && i != root {
@@ -1833,12 +1941,6 @@ impl World {
         self.sync_terrain();
         self.wake_touched();
         self.out_of_terrain();
-        let wet = self.water_forces(gravity);
-        // A world just built has no contacts yet: everything takes 240 Hz once.
-        let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
-        let g = Vector::new(0.0, -gravity, 0.0);
-        let h = self.params.dt;
-        let mut kicked: Vec<(RigidBodyHandle, u32, bool)> = Vec::new();
         // Characters always step at 240 Hz (HumanoidDrop: a falling
         // character's first frames are 240 Hz free fall).
         // A dead (undriven) root is a loose part like the rest.
@@ -1848,6 +1950,12 @@ impl World {
             .filter_map(|d| self.parts.get(&d.root))
             .map(|p| self.assemblies[p.assembly].body)
             .collect();
+        let wet = self.water_forces(gravity, &driven);
+        // A world just built has no contacts yet: everything takes 240 Hz once.
+        let adaptive = adaptive && !std::mem::replace(&mut self.fresh, false);
+        let g = Vector::new(0.0, -gravity, 0.0);
+        let h = self.params.dt;
+        let mut kicked: Vec<(RigidBodyHandle, u32, bool)> = Vec::new();
         for assembly in self.assemblies.iter().filter(|a| !a.anchored && !a.remote) {
             let free = adaptive
                 && !driven.contains(&assembly.body)
@@ -1933,7 +2041,7 @@ impl World {
             self.drive_characters(drives, h, gravity, substep);
             // Water pushes as a force, integrated with gravity (an impulse
             // ahead of the step reads back a frame's gravity short).
-            let wet = self.water_forces(gravity);
+            let wet = self.water_forces(gravity, &driven);
             self.push_water(&wet, 1.0);
             let quiet = self.listened.as_ref().map(|listened| Quiet {
                 by_collider: &self.by_collider,
