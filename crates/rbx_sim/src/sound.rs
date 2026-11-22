@@ -64,6 +64,8 @@ struct Track {
 #[derive(Default)]
 pub(crate) struct Sounds {
     pub fetcher: Option<Arc<dyn AssetFetcher>>,
+    /// Record or replay: when loads land.
+    pub(crate) gate: Option<crate::replay::Gate>,
     /// The warnings a client prints for sounds that failed to load, for
     /// the Output.
     pub failures: Vec<String>,
@@ -102,7 +104,9 @@ impl Sounds {
     /// background.
     pub(crate) fn clip(&mut self, id: u64) -> Option<Arc<Clip>> {
         if let Some(Load::Pending(receiver)) = self.clips.get(&id) {
-            if let Ok(done) = receiver.try_recv() {
+            if let Some(done) =
+                crate::replay::Gate::take(&self.gate, || format!("sound:{id}"), receiver)
+            {
                 if done.is_err() {
                     self.failures.push(format!(
                         "Failed to load sound rbxassetid://{id}: Unable to download sound data"

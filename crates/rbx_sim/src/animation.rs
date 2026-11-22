@@ -77,6 +77,8 @@ pub struct Animations {
     clips: HashMap<u64, Result<Clip, String>>,
     loading: HashMap<u64, Receiver<Result<Clip, String>>>,
     pub fetcher: Option<Arc<dyn AssetFetcher>>,
+    /// Record or replay: when loads land.
+    pub(crate) gate: Option<crate::replay::Gate>,
     /// The warnings a client prints for animations that failed to load,
     /// for the Output.
     pub failures: Vec<String>,
@@ -560,7 +562,10 @@ impl Animations {
         let done: Vec<(u64, Result<Clip, String>)> = self
             .loading
             .iter()
-            .filter_map(|(id, r)| r.try_recv().ok().map(|clip| (*id, clip)))
+            .filter_map(|(id, r)| {
+                crate::replay::Gate::take(&self.gate, || format!("animation:{id}"), r)
+                    .map(|clip| (*id, clip))
+            })
             .collect();
         for (id, clip) in done {
             self.loading.remove(&id);

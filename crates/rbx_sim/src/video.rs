@@ -81,6 +81,8 @@ struct Clock {
 #[derive(Default)]
 pub(crate) struct Videos {
     pub fetcher: Option<Arc<dyn AssetFetcher>>,
+    /// Record or replay: when loads land.
+    pub(crate) gate: Option<crate::replay::Gate>,
     loads: HashMap<u64, Load>,
     clocks: HashMap<Ref, Clock>,
     known: BTreeSet<Ref>,
@@ -135,7 +137,9 @@ impl Videos {
     fn info(&mut self, dom: &WeakDom, r: Ref) -> Option<Result<Info, ()>> {
         let id = content_id(&video_uri(dom, r))?;
         if let Some(Load::Pending(receiver)) = self.loads.get(&id) {
-            if let Ok(done) = receiver.try_recv() {
+            if let Some(done) =
+                crate::replay::Gate::take(&self.gate, || format!("video:{id}"), receiver)
+            {
                 self.loads
                     .insert(id, done.map_or(Load::Failed, Load::Ready));
             }

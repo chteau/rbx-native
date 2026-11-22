@@ -32,6 +32,7 @@ use rbx_lua::server::{Arg, Outgoing, Packet, To};
 use crate::animation::TrackOp;
 use crate::humanoid::State;
 use crate::link::{Meter, Network, Pipe};
+use crate::replay::{self, Action, Recording, Trace};
 use crate::sim::{Placed, Simulation};
 use crate::streaming::{self, Integrity, Kind, Settings};
 use crate::{Input, Output, FRAME_HZ};
@@ -241,6 +242,8 @@ pub struct Session {
     arriving: std::collections::HashMap<i64, WeakDom>,
     script_timeout: Option<std::time::Duration>,
     network: Network,
+    /// Recording or replaying.
+    pub(crate) trace: Option<Trace>,
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -288,12 +291,17 @@ impl Session {
             arriving: std::collections::HashMap::new(),
             script_timeout: None,
             network: Network::default(),
+            trace: None,
         })
     }
 
     /// The link every client has to the server, now and for those who join
     /// later; `Player:GetNetworkPing()` and `Stats` report it at once.
     pub fn set_network(&mut self, network: Network) {
+        self.act(Peer::Server, Action::Network(network));
+    }
+
+    fn network_now(&mut self, network: Network) {
         self.network = network;
         self.server.set_network_ping(network.ping());
         for client in &mut self.clients {
@@ -307,7 +315,112 @@ impl Session {
 
     /// Starts the server's scripts. Players join after.
     pub fn start(&mut self) {
-        self.server.start();
+        self.act(Peer::Server, Action::Start);
+    }
+
+    /// Records the run from here (call right after [`Session::new`]):
+    /// the place as it is, `seed` for every VM's `math.random`, and from
+    /// then on what [`replay`] keeps. [`Session::recording`] has it.
+    pub fn record(&mut self, seed: u64) {
+        // As the session was given it: what `new` added (the Stats
+        // service) is added again by the replay's own session.
+        let mut place = self.server.dom().clone();
+        for change in self.server.dom().changes() {
+            if let Change::Added(r) = change {
+                if place.get(*r).is_some() {
+                    place.remove(*r);
+                }
+            }
+        }
+        let place = rbx_xml::serialize(&place).unwrap_or_default().into_bytes();
+        self.trace = Some(Trace::record(seed, place));
+        self.tape_server();
+    }
+
+    /// A replay's trace: every VM reads its recorded tape, assets and
+    /// avatars come from the recording.
+    pub(crate) fn replay_trace(&mut self, trace: Trace) {
+        self.trace = Some(trace);
+        self.tape_server();
+        let trace = self.trace.as_ref().expect("just set");
+        let (fetcher, avatars) = (trace.fetcher(None), trace.avatars(None));
+        self.set_fetcher(fetcher);
+        self.set_avatars(avatars);
+    }
+
+    fn tape_server(&mut self) {
+        if let Some(trace) = &mut self.trace {
+            let (tape, gate) = trace.next_tape();
+            self.server.set_tape(tape, gate);
+        }
+    }
+
+    /// The run so far, while recording.
+    pub fn recording(&self) -> Option<Recording> {
+        self.trace
+            .as_ref()
+            .filter(|t| t.recording())
+            .map(Trace::finish)
+    }
+
+    /// Does `action` to `peer` (a client's own actions name it), kept
+    /// when recording.
+    pub fn act(&mut self, peer: Peer, action: Action) {
+        let frame = self.server.frame();
+        if let Some(trace) = &mut self.trace {
+            trace.log(frame, peer, action.clone());
+        }
+        let client = match peer {
+            Peer::Client(i) => Some(i),
+            Peer::Server => None,
+        };
+        match action {
+            Action::Start => self.server.start(),
+            Action::Join {
+                name,
+                user_id,
+                template,
+            } => {
+                let template = template.and_then(|b| rbx_binary::deserialize(&b).ok());
+                if let Err(err) = self.join_now(&name, user_id, template) {
+                    let mut output = Output::default();
+                    output.push_text(
+                        rbx_lua::LineKind::Error,
+                        format!("{name} couldn\u{2019}t join: {err}"),
+                    );
+                    self.left.push((Peer::Server, output));
+                }
+            }
+            Action::Leave => {
+                if let Some(i) = client {
+                    self.leave_now(i);
+                }
+            }
+            Action::Network(network) => self.network_now(network),
+            Action::Purchase { nth, bought } => {
+                let prompt = self
+                    .trace
+                    .as_ref()
+                    .and_then(|t| t.prompts.get(nth).cloned());
+                if let Some(prompt) = prompt {
+                    self.purchase_now(&prompt, bought);
+                }
+            }
+            action => {
+                let Some(sim) = self.sim_mut(peer) else {
+                    return;
+                };
+                match action {
+                    Action::Input(input) => sim.input(input),
+                    Action::Viewport(size) => sim.set_viewport(size),
+                    Action::SafeInsets(insets) => sim.set_safe_insets(insets),
+                    Action::MenuOpen(open) => sim.set_menu_open(open),
+                    Action::Chat(text) => sim.chat_say(&text),
+                    Action::Reset => sim.reset_character(),
+                    _ => {}
+                }
+            }
+        }
     }
 
     /// A local player joins as `name`, wearing `template` or the default
@@ -315,6 +428,30 @@ impl Session {
     /// with `ReplicatedFirst` alone, its LocalScripts run; the rest comes
     /// on the session's next frame.
     pub fn join(
+        &mut self,
+        name: &str,
+        user_id: i64,
+        template: Option<WeakDom>,
+    ) -> Result<usize, String> {
+        let frame = self.server.frame();
+        if let Some(trace) = self.trace.as_mut().filter(|t| t.recording()) {
+            let template = template
+                .as_ref()
+                .and_then(|t| rbx_binary::serialize(t).ok());
+            trace.log(
+                frame,
+                Peer::Server,
+                Action::Join {
+                    name: name.into(),
+                    user_id,
+                    template,
+                },
+            );
+        }
+        self.join_now(name, user_id, template)
+    }
+
+    fn join_now(
         &mut self,
         name: &str,
         user_id: i64,
@@ -363,6 +500,10 @@ impl Session {
         if let Some(services) = services {
             sim.set_services(services);
         }
+        if let Some(trace) = &mut self.trace {
+            let (tape, gate) = trace.next_tape();
+            sim.set_tape(tape, gate);
+        }
         sim.start();
         let stream = settings.map(|settings| Stream {
             settings,
@@ -400,6 +541,18 @@ impl Session {
     /// One frame: what the clients sent arrives at the server, the server
     /// steps, then each client gets the server's frame and steps.
     pub fn step(&mut self) {
+        if let Some(trace) = &self.trace {
+            trace.set_frame(self.server.frame());
+        }
+        self.step_peers();
+        if let Some(trace) = &mut self.trace {
+            let (hash, last) = replay::hash_frame(&mut self.server, &mut self.clients);
+            trace.frames.push(hash);
+            trace.last = last;
+        }
+    }
+
+    fn step_peers(&mut self) {
         self.relayed.clear();
         let now = self.server.frame();
         for client in &mut self.clients {
@@ -586,6 +739,10 @@ impl Session {
     /// character and player go (the other clients see the same next
     /// frame), and their client stops.
     pub fn leave(&mut self, index: usize) {
+        self.act(Peer::Client(index), Action::Leave);
+    }
+
+    fn leave_now(&mut self, index: usize) {
         if index >= self.clients.len() {
             return;
         }
@@ -600,7 +757,7 @@ impl Session {
     /// is saved, as when a Studio test stops.
     pub fn shutdown(&mut self) {
         while !self.clients.is_empty() {
-            self.leave(self.clients.len() - 1);
+            self.leave_now(self.clients.len() - 1);
         }
         self.server.step();
         self.server.close();
@@ -629,6 +786,9 @@ impl Session {
     /// The DataStores, purchases and web lookups of every peer, the
     /// clients that join later too. Call before `start`.
     pub fn set_services(&mut self, config: rbx_lua::server::Services) {
+        if let Some(trace) = self.trace.as_mut().filter(|t| t.recording()) {
+            trace.set_services(&config);
+        }
         self.server.set_services(config.clone());
         for client in &mut self.clients {
             client.sim.set_services(config.clone());
@@ -677,12 +837,26 @@ impl Session {
         for client in &self.clients {
             out.extend(client.sim.take_prompts());
         }
+        if let Some(trace) = &mut self.trace {
+            trace.prompts.extend(out.iter().cloned());
+        }
         out
     }
 
     /// The test purchase dialog for `prompt` closed: the server (ownership,
     /// `ProcessReceipt`) and the buyer's client hear it.
     pub fn purchase_finished(&mut self, prompt: &rbx_lua::server::PurchasePrompt, bought: bool) {
+        let nth = self
+            .trace
+            .as_ref()
+            .and_then(|t| t.prompts.iter().rposition(|p| p == prompt));
+        match nth {
+            Some(nth) => self.act(Peer::Server, Action::Purchase { nth, bought }),
+            None => self.purchase_now(prompt, bought),
+        }
+    }
+
+    fn purchase_now(&mut self, prompt: &rbx_lua::server::PurchasePrompt, bought: bool) {
         self.server.purchase_finished(prompt, bought);
         if let Some(client) = self.clients.iter_mut().find(|c| c.player == prompt.player) {
             client.sim.purchase_finished(prompt, bought);
@@ -698,9 +872,7 @@ impl Session {
 
     /// Queues what local player `index` did, for their client's next frame.
     pub fn input(&mut self, index: usize, input: Input) {
-        if let Some(client) = self.clients.get_mut(index) {
-            client.sim.input(input);
-        }
+        self.act(Peer::Client(index), Action::Input(input));
     }
 
     /// What every peer printed since the last call, server first.
@@ -724,6 +896,10 @@ impl Session {
     }
 
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
+        let fetcher = match &self.trace {
+            Some(trace) => trace.fetcher(Some(fetcher)),
+            None => fetcher,
+        };
         self.server.set_fetcher(fetcher.clone());
         for client in &mut self.clients {
             client.sim.set_fetcher(fetcher.clone());
@@ -734,6 +910,10 @@ impl Session {
     /// Where avatars come from, on the server and every client (a
     /// LocalScript may ask for a description and dress its own dummy).
     pub fn set_avatars(&mut self, avatars: std::rc::Rc<dyn crate::players::Avatars>) {
+        let avatars = match &self.trace {
+            Some(trace) => trace.avatars(Some(avatars)),
+            None => avatars,
+        };
         self.server.set_avatars(avatars.clone());
         for client in &mut self.clients {
             client.sim.set_avatars(avatars.clone());
