@@ -1082,6 +1082,35 @@ Local Run's server and clients talk over a simulated link (`crates/rbx_sim/src/l
 - The editor: the Test ribbon's Network Simulator (`shell/play/network.rs`) also drives Local Run and Play (local): inbound is what reaches a client, outbound what it sends; Apply changes a running Local Run at once; Off (the default) is no added latency.
 - Checked by `crates/rbx_sim/tests/netsim.rs`: same-frame delivery at zero, 100 ms each way delays a new instance by 6 frames and a remote round trip by ~0.2 s, ping and Data Ping read 0.2 s / 200 ms, ordered delivery of 200 events through 20% loss and jitter while unreliable ones get lost and overtake, the 1000-byte limit, the no-listener discard, the 500 a second cap, a walking character trailing on the server by the uplink, and the RemoteOrder golden reproduced across a 24.5 ms each way link (the recording's ~49 ms round trip): every ordering field, `s2c_arrival_beats` 1, `InvokeClient` 3 server beats as in every recorded pass, an event round trip of 9 beats (recorded 3 to 12). Not checked against a live server under a shaped network (the real-client netsim in `rbx_play` could do that: Sober behind netem with the RemoteOrder test, left for later).
 
+## Script limits and the profiler (branch feat/local-run-limits)
+
+Measured on the sandbox place (version 636, 3 passes) with three new conformance tests: `ScriptLimits`, `ProfilerApi`, `FrameOverrun`.
+
+What a live server does, and what Local Run now does too:
+
+- No script timeout on a live server: a `while true do end` (or a 12 s busy loop) hangs the server for good, the recorder never hears back. Local Run keeps Studio's 10 s timeout, which is the friendlier failure. A frame that overruns is what scripts see instead: the next `Heartbeat`/`Stepped` dt is the frame's real length (2.0 after a 2 s stall), while `time()` and physics move on at most 3 frames (0.05 s); the rest is skipped. `Simulation::set_wall_clock` turns this on; the editor's Local Run and the `FrameOverrun` session use it, headless runs keep exact 1/60 s frames.
+- Stack overflow: `stack overflow` at depth 19994 (ours 19992, the harness's frames), `C stack overflow` at 198 through `__index` (ours 196).
+- `task.defer` chain: stops at depth 80 per chain, all in the first frame; the 81st call is dropped with a `MessageError` line, `Maximum re-entrancy depth (80) exceeded calling task.defer` plus a `Stack Begin` / `Script '<name>', Line N - function f` / `Stack End` trace. `ScriptContext.Error` doesn't fire for it.
+- An event firing itself from its handler (`BindableEvent.Event`, `IntValue.Changed`): 6 handler runs, then `Maximum event re-entrancy depth exceeded for <Class>.<Event> when calling anonymous function on line N in <script>`.
+- Legacy `wait`/`spawn`/`delay`: `spawn` and `delay(0)` run 2 heartbeats later and pass (time waited, game time); `wait(0)` takes 2 heartbeats; 3000 legacy waits from one frame all resume in frame 4. `task.wait` under a frame takes 1 heartbeat, 1/60 s takes 2, 1/30 s 3. `task.wait("x")` is an argument error.
+- `GetService`/`FindService` on a name that's no class: `'<name>' is not a valid Service name`; `GetService("Part")` gives nil. `require(-5)`: `Downloading asset failed for asset id -5.  Is the asset id correct and is the asset type "Model"?`. The other require errors and the size limits (`string.rep`, `buffer.create`, `table.create`, `string.char`, `string.format`, `table.concat`, `table.unpack`) already matched.
+- `LogService.MessageOut` fires on the server for every Output line (message, `Enum.MessageType`).
+- `debug.profilebegin`'s and `setmemorycategory`'s argument errors; `setmemorycategory` returns the previous category, at first the root script's name. `Stats:GetMemoryUsageMbForTag` gives the Lua heap for `LuaHeap` and `Script` on a live server, 0 for other tags; `Stats.InstanceCount` counts the game. `ScriptProfilerService`'s calls refuse game scripts (`lacking capability Plugin`).
+
+The profiler (`crates/rbx_lua/src/profiler/`, `crates/rbx_sim/src/profile.rs`, `crates/rbx_studio/src/shell/profiler_dock/`):
+
+- Each frame of a Local Run records script, physics, replication, other and render time per peer, with the `debug.profilebegin` scopes that closed in it (600 frames kept).
+- A sampling ScriptProfiler at 1 or 10 KHz on Luau's interrupt, per peer, exporting Roblox's JSON (version 2: `Categories`, `Nodes`, `Functions`, 1-based ids, durations in µs); categories are what resumed the thread (`Heartbeat`, `Stepped`, `Resume`, a signal's name).
+- The MicroProfiler dock (View, Ctrl+F6): 240 stacked frame bars against the 16.7 ms budget, Hold/Resume, click a frame for its split and its labels by depth; a Scripts half with the ScriptProfiler's callgraph and functions; a Memory half with each peer's Lua heap, memory category and the editor's resident size. There's no Developer Console, so the dock stands in for its Memory and Scripts tabs.
+
+Left, and why:
+
+- Through `pcall` the overflow comes at 6664 levels (Roblox 9997): our `pcall` is a Luau wrapper (binding errors become strings), so each level costs 3 frames, not 2.
+- In `ScriptLimits` a plain `BindableEvent:Fire()` ran its handler before `Fire` returned (and a self-firing one ran its 6 there), against the `SignalBehavior` golden's deferred order. It needs a measurement of its own before anything changes; ours stays deferred.
+- Instance-count and memory warnings: none documented, none measured.
+- The ScriptProfiler isn't reachable from game scripts (as on Roblox); the Developer Console's own profiler pages aren't copied beyond the dock.
+- A plugin's `ScriptProfilerService` keeps the edit-mode behaviour (`ServerStart`/`ServerStop` do nothing, `OnNewData` never fires, `DeserializeJSON` reads version 2): plugins don't run inside a Local Run's server VM yet, so the dock is the sampler's only driver.
+
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.
