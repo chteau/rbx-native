@@ -456,6 +456,26 @@ impl Session {
         self.join_now(name, user_id, template)
     }
 
+    /// Studio's Server & Clients test players: `count` more, numbered on
+    /// from the highest `PlayerN` here (`Player1` first, UserId -1, then
+    /// -2, ...), joining in that order and each wearing `template`. Their
+    /// client indices, in order.
+    pub fn join_test_players(
+        &mut self,
+        count: usize,
+        template: Option<&WeakDom>,
+    ) -> Result<Vec<usize>, String> {
+        let last = self
+            .clients
+            .iter()
+            .filter_map(|c| c.name.strip_prefix("Player")?.parse::<usize>().ok())
+            .max()
+            .unwrap_or(0);
+        (last + 1..=last + count)
+            .map(|n| self.join(&format!("Player{n}"), -(n as i64), template.cloned()))
+            .collect()
+    }
+
     fn join_now(
         &mut self,
         name: &str,
