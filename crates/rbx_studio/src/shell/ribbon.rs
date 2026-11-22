@@ -1126,6 +1126,7 @@ impl Shell {
             self.view_tile(cx).into_any_element(),
             self.players_tile(cx).into_any_element(),
             self.data_tile(cx).into_any_element(),
+            self.offline_tile(cx),
             self.network_tile(cx),
             self.device_tile(cx),
             self.controller_tile(cx).into_any_element(),

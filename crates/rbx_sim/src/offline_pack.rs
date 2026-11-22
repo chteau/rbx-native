@@ -137,6 +137,10 @@ pub fn build(
     cancel: &AtomicBool,
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Manifest {
+    progress(Progress {
+        found: seeds.len(),
+        ..Progress::default()
+    });
     let state = Mutex::new(State {
         seen: seeds.iter().cloned().collect(),
         queue: seeds.into_iter().collect(),
@@ -314,7 +318,7 @@ mod tests {
         assert_eq!(manifest.failed.len(), 1);
         assert_eq!(manifest.failed[0].0, "rbxassetid://404");
         assert!(manifest.complete);
-        assert_eq!(heard.load(Ordering::Relaxed), 6);
+        assert_eq!(heard.load(Ordering::Relaxed), 7, "the start, then each asset");
 
         let cache = resolver.cache();
         assert_eq!(load(cache, "place-1"), Some(manifest.clone()));

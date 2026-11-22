@@ -27,6 +27,7 @@ use super::Shell;
 mod avatars;
 pub(crate) mod badges;
 pub(crate) mod data;
+mod offline;
 mod sound;
 use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
@@ -91,6 +92,8 @@ pub(crate) struct LocalRun {
     pub(in crate::shell) players: usize,
     /// A teleport's landing, taken by the run it restarts.
     arriving: Option<Arriving>,
+    /// Test › Offline: the open place's offline pack.
+    offline: offline::Offline,
 }
 
 impl Default for LocalRun {
@@ -100,6 +103,7 @@ impl Default for LocalRun {
             starting: false,
             players: 1,
             arriving: None,
+            offline: offline::Offline::default(),
         }
     }
 }
@@ -176,7 +180,8 @@ fn pad_inputs(
 pub(crate) const MAX_PLAYERS: usize = 4;
 
 /// Animations (the default ones, the catalog's) from Roblox's asset
-/// delivery; they land in the asset cache for the next run.
+/// delivery; they land in the asset cache for the next run. An offline
+/// pack downloads through it too.
 struct Fetcher(rbx_cloud::Client);
 
 impl rbx_assets::AssetFetcher for Fetcher {
@@ -186,6 +191,15 @@ impl rbx_assets::AssetFetcher for Fetcher {
             .map(|content| content.bytes)
             .map_err(|err| rbx_assets::FetchError::Other {
                 id,
+                message: err.to_string(),
+            })
+    }
+
+    fn fetch_thumb(&self, spec: &str) -> Result<Vec<u8>, rbx_assets::FetchError> {
+        self.0
+            .rbxthumb(spec)
+            .map_err(|err| rbx_assets::FetchError::Other {
+                id: 0,
                 message: err.to_string(),
             })
     }
@@ -546,13 +560,15 @@ impl Shell {
         }
     }
 
-    /// `RBX_STUDIO_LOCAL_RUN=play` (or `run`) starts Play (local) (or Run)
+    /// `RBX_STUDIO_LOCAL_RUN=play` (or `run`, `offline-pack`) starts Play
+    /// (local) (or Run, Make available offline)
     /// at startup, a screenshot aid for the live checks, as
     /// `RBX_STUDIO_TERRAIN` is for the Terrain Editor. The beta has to be on.
     pub(super) fn apply_debug_local_run(&mut self, cx: &mut Context<Self>) {
         match std::env::var("RBX_STUDIO_LOCAL_RUN").as_deref() {
             Ok("play") => self.play_local(cx),
             Ok("run") => self.run_local(cx),
+            Ok("offline-pack") => self.offline_pack(cx),
             _ => {}
         }
     }
