@@ -467,7 +467,7 @@ pub const TESTS: &[Test] = &[
     Test {
         name: "SurfaceMix",
         source: include_str!("../conformance/tests/SurfaceMix.luau"),
-        tolerance: &[("*", 0.3)],
+        tolerance: &[("*", 0.3), ("*_apex", 0.2)],
     },
     Test {
         name: "DensityMass",
