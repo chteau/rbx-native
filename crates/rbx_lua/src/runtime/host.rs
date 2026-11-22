@@ -206,8 +206,5 @@ pub(crate) fn compile_in(lua: &Lua, module: &Value, fallback: Table) -> Result<F
     let meta = lua.create_table()?;
     meta.set("__index", fallback)?;
     scope.set_metatable(Some(meta))?;
-    lua.load(source)
-        .set_name(format!("={name}"))
-        .set_environment(scope)
-        .into_function()
+    crate::luau::load_scoped(lua, source, format!("={name}"), scope)
 }

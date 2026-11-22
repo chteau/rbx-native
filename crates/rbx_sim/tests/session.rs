@@ -260,9 +260,32 @@ fn a_place_without_starter_player_plays_with_its_defaults() {
     }
     assert!(has(&lines, Peer::Server, "folders true true"), "{lines:#?}");
     assert!(
-        has(&lines, Peer::Server, "camera Enum.CameraMode.Classic 400 0.5"),
+        has(
+            &lines,
+            Peer::Server,
+            "camera Enum.CameraMode.Classic 400 0.5"
+        ),
         "{lines:#?}"
     );
+}
+
+/// Janitor-style alias loops add keys while they walk the table; on a live
+/// server (sandbox probe) all 14 aliases land, 28 keys.
+#[test]
+fn a_loop_that_adds_keys_as_it_walks_sees_them_as_live() {
+    let probe = "local t = {} \
+         for _, k in {'Add','AddPromise','AddObject','Remove','Get','Cleanup','Destroy','LinkToInstance', \
+           'LinkToInstances','Give','GivePromise','GiveObject','Clean','CurrentlyCleaning'} do t[k] = true end \
+         for k, v in next, t do t[string.lower(string.sub(k, 1, 1)) .. string.sub(k, 2)] = v end \
+         local n = 0 for _ in pairs(t) do n += 1 end print('keys', n, t.clean)";
+    let mut s = session(place(probe, probe), 1);
+    let mut lines = Vec::new();
+    for _ in 0..10 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "keys 28 true"), "{lines:#?}");
+    assert!(has(&lines, Peer::Client(0), "keys 28 true"), "{lines:#?}");
 }
 
 #[test]

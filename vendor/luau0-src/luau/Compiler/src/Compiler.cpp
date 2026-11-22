@@ -1549,7 +1549,9 @@ struct Compiler
         int fastPcallId = -1;
         if (options.optimizationLevel >= 1 && !expr->self)
         {
-            if (AstExprGlobal* g = expr->func->as<AstExprGlobal>(); g && canImport(g))
+            // rbx-native patch: a pcall/xpcall named in mutableGlobals keeps the
+            // global the host installed (upstream: canImport).
+            if (AstExprGlobal* g = expr->func->as<AstExprGlobal>(); g && canImportChain(g))
             {
                 if (g->name == "pcall" && expr->args.size >= 1)
                     fastPcallId = 0;
