@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI assistants - RbxNative docs</title>
+<meta name="description" content="Connect Claude, Cursor or VS Code to the place you have open.">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="icon" href="../assets/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs">
+<nav class="nav solid">
+  <a class="brand" href="../index.html"><img src="../assets/logo.svg" alt="" width="24" height="17">RbxNative</a>
+  <div class="nav-links">
+    <a class="nav-wide" href="../index.html#features">Features</a>
+    <a aria-current="page" href="../docs/index.html">Docs</a>
+    <a class="nav-mid" href="../docs/install.html">Install</a>
+    <a class="nav-wide" href="../changelog.html">Changelog</a>
+    <a class="nav-wide" href="../theme-builder/">Theme builder</a>
+    <a class="nav-wide" href="../index.html#team-create">Studio plugin</a>
+    <a href="https://github.com/chteau/rbx-native">GitHub</a>
+    <a class="nav-dc" href="https://discord.gg/5KSmhcqHt5" aria-label="Discord"><svg class="dc" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg><span>Discord</span></a>
+  </div>
+</nav>
+<div class="doc-wrap">
+<aside class="doc-side"><span>Docs</span><a href="index.html">Getting started</a><a href="install.html">Install</a><a href="open-cloud.html">Roblox key</a><a href="playtesting.html">Playtesting</a><a href="team-create.html">Team Create</a><a href="plugins.html">Plugins</a><a href="themes.html">Themes</a><a href="command-line.html">Command line</a><a href="ai-assistants.html" class="on" aria-current="page">AI assistants</a><span>Project</span><a href="https://discord.gg/5KSmhcqHt5">Discord</a><a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">Roadmap</a><a href="../changelog.html">Changelog</a><a href="https://github.com/chteau/rbx-native/blob/dev/CONTRIBUTING.md">Contributing</a><a href="../contributors.html">Contributors</a></aside>
+<article>
+<h1>Use RbxNative with Claude</h1>
+<p class="sub">Connect Claude, Cursor or VS Code to the place you have open.</p>
+<p class="lead">RbxNative has an MCP server, like the one built into Roblox Studio. Once it's on, an AI assistant can read and edit your scripts, run Luau, start a playtest, read the Output and grab a screenshot of the viewport, in the place you have open right now.</p>
+<p class="experimental"><strong>Beta.</strong> The server is off by default. Every edit it makes is a normal undo step, so Ctrl+Z works on it like on your own edits.</p>
+<h2 id="turn-on">Turn it on</h2>
+<ol>
+<li>Open Settings (<code>Alt+S</code>), go to <strong>AI assistants</strong> (also File, Connect an AI Assistant).</li>
+<li>Switch on <strong>MCP server</strong> and restart RbxNative when it asks.</li>
+<li>Back on that page it should say <strong>Running</strong>. Pick your client there and hit Copy: the setup it shows already has the right path for your install, so it's the easiest way.</li>
+</ol>
+<p>The rest of this page is the same thing by hand.</p>
+<h2 id="command">The command</h2>
+<p>Your AI client starts <code>rbxnative --mcp</code>, a small bridge that talks to every RbxNative window you have open. It's a stdio server, there's no URL or port to type in. Most clients want the full path to the program:</p>
+<table>
+<tr><th>Installed with</th><th>Command</th></tr>
+<tr><td>install.sh (Linux)</td><td><code>~/.local/bin/rbxnative --mcp</code></td></tr>
+<tr><td>Flathub</td><td><code>flatpak run io.github.chteau.rbx_native.Editor --mcp</code></td></tr>
+<tr><td>install.sh (macOS)</td><td><code>~/Applications/RbxNative.app/Contents/MacOS/RbxNative --mcp</code></td></tr>
+<tr><td>install.ps1 (Windows)</td><td><code>%LOCALAPPDATA%\Programs\RbxNative\RbxNative.exe --mcp</code></td></tr>
+</table>
+<p>JSON config files don't expand <code>~</code> or <code>%LOCALAPPDATA%</code>, so write the path out in full there (<code>/home/you/...</code>, or <code>C:\\Users\\you\\...</code> on Windows, backslashes doubled). The AI assistants page does this for you.</p>
+<h2 id="claude-code">Claude Code</h2>
+<p>One command in a terminal, it adds the server for all your projects:</p>
+<pre><code>claude mcp add --scope user rbx-native -- ~/.local/bin/rbxnative --mcp</code></pre>
+<p>Then <code>claude mcp list</code> should show <code>rbx-native</code> as connected. Swap the path for yours from the table above.</p>
+<h2 id="claude-desktop">Claude Desktop</h2>
+<p>The easy way: on the AI assistants page pick Claude Desktop and click <strong>Add to Claude Desktop</strong>. It backs up your config first, keeps your other servers, and tells you what it changed. Then quit Claude Desktop fully and open it again.</p>
+<p>By hand, open the config file (Claude Desktop, Settings, Developer, Edit Config) and add <code>rbx-native</code> under <code>mcpServers</code>:</p>
+<pre><code>{
+  "mcpServers": {
+    "rbx-native": {
+      "command": "/home/you/.local/bin/rbxnative",
+      "args": ["--mcp"]
+    }
+  }
+}</code></pre>
+<table>
+<tr><th>System</th><th>Config file</th></tr>
+<tr><td>macOS</td><td><code>~/Library/Application Support/Claude/claude_desktop_config.json</code></td></tr>
+<tr><td>Windows</td><td><code>%APPDATA%\Claude\claude_desktop_config.json</code></td></tr>
+<tr><td>Linux (community builds)</td><td><code>~/.config/Claude/claude_desktop_config.json</code></td></tr>
+</table>
+<p>If you installed Claude Desktop from the Microsoft Store, its file lives under <code>%LOCALAPPDATA%\Packages\Claude_...\LocalCache\Roaming\Claude\</code> instead. The button finds that one on its own.</p>
+<h2 id="cursor">Cursor</h2>
+<p>Same JSON as Claude Desktop, in <code>~/.cursor/mcp.json</code> (Settings, MCP, Add new global MCP server opens it).</p>
+<h2 id="vscode">VS Code</h2>
+<p>Save this as <code>.vscode/mcp.json</code> in your project, or run <strong>MCP: Open User Configuration</strong> and merge it there. Copilot Chat lists the tools in Agent mode.</p>
+<pre><code>{
+  "servers": {
+    "rbx-native": {
+      "type": "stdio",
+      "command": "/home/you/.local/bin/rbxnative",
+      "args": ["--mcp"]
+    }
+  }
+}</code></pre>
+<h2 id="other">Other clients</h2>
+<p>Anything that can launch a stdio MCP server works: command is the path above, argument is <code>--mcp</code>. If you set <code>XDG_CONFIG_HOME</code> yourself, pass the same value to the client (an <code>env</code> block) so the bridge finds the editor.</p>
+<h2 id="check">Checking it works</h2>
+<p>Hit <strong>Test connection</strong> on the AI assistants page. It runs the bridge exactly like a client would and tells you if it reached this window. Once your client makes its first call, the page shows it as attached.</p>
+<p>Then ask your assistant something like "list the scripts in ServerScriptService" or "what's in the Output?". If it says no editor is serving MCP, the place isn't open or the server switch is off.</p>
+<h2 id="tools">What it can do</h2>
+<table>
+<tr><th>Group</th><th>What for</th></tr>
+<tr><td>Explore the place</td><td>Search the tree, inspect any instance's properties, tell open windows apart</td></tr>
+<tr><td>Scripts</td><td>Read, search and grep every script, edit them (one undo step per edit)</td></tr>
+<tr><td>Run Luau</td><td>In the edited place, or a playtest's client or server</td></tr>
+<tr><td>Playtest</td><td>Start and stop Play, read the Output, screenshot the viewport, walk the character, type and click</td></tr>
+<tr><td>Assets</td><td>Search the Creator Store, insert models, upload images (needs your <a href="open-cloud.html">Open Cloud key</a>)</td></tr>
+<tr><td>Docs and guides</td><td>Roblox's creator docs, plus built-in guides on scripting, UI style, monetization, performance and more</td></tr>
+<tr><td>Save</td><td>Save, or Save As to a new file</td></tr>
+</table>
+<p>Tool names match Roblox Studio's own MCP server, so prompts written for Studio work here too. Studio's AI generation tools are listed but can't run, Roblox has no public API for them, and they say so. With several windows open, the assistant picks one by its studio id (<code>list_roblox_studios</code>).</p>
+<div class="pager"><a href="command-line.html"><small>Previous</small>Command line</a><span></span></div>
+</article>
+</div>
+<script src="docs.js"></script>
+</body>
+</html>
