@@ -943,6 +943,19 @@ impl Simulation {
         self.frame += 1;
         let now = self.time();
         self.vm.set_time(now);
+        // `Workspace.DistributedGameTime`: the server's game time, which
+        // its clients get with the rest of the frame.
+        if self.role != Role::Client {
+            let mut dom = self.dom.borrow_mut();
+            let workspace = dom
+                .root_refs()
+                .iter()
+                .copied()
+                .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Workspace"));
+            if let Some(workspace) = workspace {
+                let _ = dom.set_property(workspace, "DistributedGameTime", Variant::Float64(now));
+            }
+        }
 
         // Tweens step first (TweenRuntime `phase`: a tween played after
         // Heartbeat has moved by PreAnimation, on a client by
@@ -1112,6 +1125,15 @@ impl Simulation {
                 let Some(instance) = dom.get_mut(*part) else {
                     continue;
                 };
+                // Anchored here since the peer moved it (a server script
+                // anchoring a character it then teleports): this side's
+                // pose stands.
+                if matches!(
+                    instance.properties().get("Anchored"),
+                    Some(Variant::Bool(true))
+                ) {
+                    continue;
+                }
                 let class = instance.class().to_owned();
                 let props = instance.properties_mut();
                 props.insert("CFrame".into(), Variant::CFrame(*cf));
@@ -1548,6 +1570,24 @@ impl Simulation {
     /// last call.
     pub fn take_teleports(&self) -> Vec<rbx_lua::server::TeleportRequest> {
         self.vm.take_teleports()
+    }
+
+    /// The `RequestStreamAroundAsync` calls scripts made since the last
+    /// call.
+    pub(crate) fn take_stream_requests(&self) -> Vec<rbx_lua::server::StreamRequest> {
+        self.vm.take_stream_requests()
+    }
+
+    pub(crate) fn stream_request_done(&self, id: u64) {
+        self.vm.stream_request_done(id)
+    }
+
+    pub(crate) fn replication_foci(&self, player: Ref) -> Vec<Ref> {
+        self.vm.replication_foci(player)
+    }
+
+    pub(crate) fn persistent_players(&self, model: Ref) -> Vec<Ref> {
+        self.vm.persistent_players(model)
     }
 
     /// The toasts scripts asked the core GUI for since the last call.

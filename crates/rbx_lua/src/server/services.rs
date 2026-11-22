@@ -156,6 +156,28 @@ impl Default for Device {
     }
 }
 
+/// `Player:RequestStreamAroundAsync(position)` on the server: the session
+/// streams the area in for `player`'s client, then calls
+/// [`crate::server::ServerVm::stream_request_done`] with `id`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StreamRequest {
+    pub id: u64,
+    pub player: Ref,
+    pub position: [f32; 3],
+}
+
+/// The streaming state scripts reach: requests in flight, the players
+/// each `PersistentPerPlayer` model is persistent for, and the parts each
+/// player's `AddReplicationFocus` added.
+#[derive(Default)]
+struct Streaming {
+    next: u64,
+    requests: Vec<StreamRequest>,
+    done: std::collections::HashSet<u64>,
+    persistent: HashMap<Ref, Vec<Ref>>,
+    foci: HashMap<Ref, Vec<Ref>>,
+}
+
 /// A teleport a script asked for into a place this run can reload into.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TeleportRequest {
@@ -291,6 +313,7 @@ pub(crate) struct Runtime {
     prompts: RefCell<Vec<PurchasePrompt>>,
     teleports: RefCell<Vec<TeleportRequest>>,
     notices: RefCell<Vec<Notice>>,
+    streaming: RefCell<Streaming>,
     finished: Finished,
     /// What the run's web stream clients heard, and how to talk to them.
     streams: stream::Inbox,
@@ -323,6 +346,7 @@ impl Runtime {
             prompts: RefCell::default(),
             teleports: RefCell::default(),
             notices: RefCell::default(),
+            streaming: RefCell::default(),
             finished: Arc::default(),
             streams: Arc::default(),
             stream_out: RefCell::default(),
@@ -350,6 +374,32 @@ impl Runtime {
 
     pub(crate) fn take_notices(&self) -> Vec<Notice> {
         std::mem::take(&mut self.notices.borrow_mut())
+    }
+
+    pub(crate) fn take_stream_requests(&self) -> Vec<StreamRequest> {
+        std::mem::take(&mut self.streaming.borrow_mut().requests)
+    }
+
+    pub(crate) fn stream_request_done(&self, id: u64) {
+        self.streaming.borrow_mut().done.insert(id);
+    }
+
+    pub(crate) fn replication_foci(&self, player: Ref) -> Vec<Ref> {
+        self.streaming
+            .borrow()
+            .foci
+            .get(&player)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn persistent_players(&self, model: Ref) -> Vec<Ref> {
+        self.streaming
+            .borrow()
+            .persistent
+            .get(&model)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub(crate) fn place(&self) -> (i64, i64) {
@@ -1609,6 +1659,58 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
 /// The host calls of the services added after the stores: teleports,
 /// notices, raw properties, text measuring, the arrival and the device.
 fn host_more(lua: &Lua, runtime: &Rc<Runtime>, host: &Table) -> Result<()> {
+    let r = runtime.clone();
+    host.set(
+        "stream_request",
+        lua.create_function(move |_, (player, x, y, z): (Value, f32, f32, f32)| {
+            let player = Ref::new(instance_id(&player)?);
+            let mut streaming = r.streaming.borrow_mut();
+            streaming.next += 1;
+            let id = streaming.next;
+            streaming.requests.push(StreamRequest {
+                id,
+                player,
+                position: [x, y, z],
+            });
+            Ok(id)
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "stream_done",
+        lua.create_function(move |_, id: u64| Ok(r.streaming.borrow_mut().done.remove(&id)))?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "persistent_players",
+        lua.create_function(move |_, model: Value| {
+            let model = Ref::new(instance_id(&model)?);
+            Ok(r.persistent_players(model)
+                .into_iter()
+                .map(|p| p.value())
+                .collect::<Vec<_>>())
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "set_replication_foci",
+        lua.create_function(move |_, (player, parts): (Value, Vec<u32>)| {
+            let player = Ref::new(instance_id(&player)?);
+            let parts = parts.into_iter().map(Ref::new).collect();
+            r.streaming.borrow_mut().foci.insert(player, parts);
+            Ok(())
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "set_persistent_players",
+        lua.create_function(move |_, (model, players): (Value, Vec<u32>)| {
+            let model = Ref::new(instance_id(&model)?);
+            let players = players.into_iter().map(Ref::new).collect();
+            r.streaming.borrow_mut().persistent.insert(model, players);
+            Ok(())
+        })?,
+    )?;
     let r = runtime.clone();
     host.set(
         "teleport_ok",

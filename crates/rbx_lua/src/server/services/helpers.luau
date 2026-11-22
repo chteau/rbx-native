@@ -232,12 +232,51 @@ function PLAYER.Move(self, direction, relativeToCamera)
 	end
 end
 
-function PLAYER.AddReplicationFocus(_, part) end
-function PLAYER.RemoveReplicationFocus(_, part) end
+-- Extra streaming foci, which the session streams around too.
+local foci = {}
+local function setFoci(player, change)
+	local id = host.id(player)
+	local list = foci[id] or {}
+	foci[id] = list
+	change(list)
+	local ids = {}
+	for _, part in list do
+		table.insert(ids, host.id(part))
+	end
+	host.set_replication_foci(player, ids)
+end
+function PLAYER.AddReplicationFocus(self, part)
+	if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
+		fail("Unable to cast value to Object")
+	end
+	setFoci(self, function(list)
+		if not table.find(list, part) then
+			table.insert(list, part)
+		end
+	end)
+end
+function PLAYER.RemoveReplicationFocus(self, part)
+	setFoci(self, function(list)
+		local i = table.find(list, part)
+		if i then
+			table.remove(list, i)
+		end
+	end)
+end
 
-function PLAYER.RequestStreamAroundAsync(_, position)
+-- The session streams the area in for the player's client (at once when
+-- streaming is off) and says when it's there; a timeout gives up waiting.
+function PLAYER.RequestStreamAroundAsync(self, position, timeout)
 	if typeof(position) ~= "Vector3" then
 		fail("Unable to cast " .. typeof(position) .. " to Vector3")
+	end
+	local id = host.stream_request(self, position.X, position.Y, position.Z)
+	local started = host.clock()
+	while not host.stream_done(id) do
+		if timeout and host.clock() - started >= timeout then
+			return
+		end
+		task.wait()
 	end
 end
 

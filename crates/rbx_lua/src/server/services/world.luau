@@ -364,6 +364,15 @@ local function players(model)
 	return persistent[id]
 end
 
+-- The session streams by the list too.
+local function publish(model)
+	local ids = {}
+	for _, p in players(model) do
+		table.insert(ids, host.id(p))
+	end
+	host.set_persistent_players(model, ids)
+end
+
 local NO_PLAYER = "PersistentPerPlayer player not specified."
 
 function MODEL.AddPersistentPlayer(model, player)
@@ -377,6 +386,7 @@ function MODEL.AddPersistentPlayer(model, player)
 	if not table.find(list, player) then
 		table.insert(list, player)
 	end
+	publish(model)
 end
 
 function MODEL.RemovePersistentPlayer(model, player)
@@ -388,6 +398,7 @@ function MODEL.RemovePersistentPlayer(model, player)
 	if i then
 		table.remove(list, i)
 	end
+	publish(model)
 end
 
 function MODEL.GetPersistentPlayers(model)
