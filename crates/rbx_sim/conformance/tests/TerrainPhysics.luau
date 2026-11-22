@@ -52,10 +52,12 @@ return function(h, origin)
 		end
 	end
 	local rollTrace = {}
+	local ballTrace = {}
 	for i = 1, 30 do
 		h.beat()
 		track()
 		table.insert(rollTrace, h.round(roller.Position.Z - origin.Z, 2))
+		table.insert(ballTrace, h.round(ball.Position.Y - origin.Y, 2))
 	end
 	result.placed_y = h.round(placed.Position.Y - origin.Y, 3)
 	result.ball_y = h.round(ball.Position.Y - origin.Y, 3)
@@ -67,11 +69,15 @@ return function(h, origin)
 	end
 	local z0 = { GrassSlider = grass.Position.Z, IceSlider = ice.Position.Z }
 	local stopped = {}
+	local iceTrace = {}
 	for i = 1, 150 do
 		h.beat()
 		track()
 		if i <= 30 then
 			table.insert(rollTrace, h.round(roller.Position.Z - origin.Z, 2))
+		end
+		if i <= 80 then
+			table.insert(iceTrace, h.round(ice.AssemblyLinearVelocity.Z, 2))
 		end
 		for _, p in { grass, ice } do
 			local speed = p.AssemblyLinearVelocity.Magnitude
@@ -92,6 +98,8 @@ return function(h, origin)
 	result.grass_bounce = h.round(peaks.GrassDrop, 2)
 	result.ice_bounce = h.round(peaks.IceDrop, 2)
 	result._roll = rollTrace
+	result._ball = ballTrace
+	result._ice = iceTrace
 	h.clear({ placed, ball, grass, ice, grassDrop, iceDrop, roller })
 	terrain:Clear()
 	return result
