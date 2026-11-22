@@ -72,10 +72,13 @@ end
 
 game:GetService("Players").PlayerAdded:Connect(function(player)
 	local stats = leaderstats(player, { { "Visits", 0 } })
-	local character = player.Character or player.CharacterAdded:Wait()
+	if not player.Character then
+		player.CharacterAdded:Wait()
+	end
+	-- Give the client a moment to see the far zone missing.
+	task.wait(1)
 	player:RequestStreamAroundAsync(Vector3.new(0, 3, 1500))
 	print("requested stream")
-	character:PivotTo(CFrame.new(0, 6, 1490))
 	stats.Visits.Value += 1
 end)
 ]]></ProtectedString>
@@ -96,6 +99,7 @@ end)
           <ProtectedString name="Source"><![CDATA[print("streaming", workspace.StreamingEnabled)
 local tower = workspace:WaitForChild("Tower", 10)
 print("persistent", tower and tower.Name)
+print("far absent", workspace:FindFirstChild("FarCoin", true) == nil)
 local zone = workspace:WaitForChild("FarZone", 10)
 local coin = zone and zone:WaitForChild("FarCoin", 10)
 print("streamed", coin and coin.Name)

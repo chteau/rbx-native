@@ -60,12 +60,15 @@ fn the_shop_button_buys_through_a_remote_function() {
 }
 
 #[test]
-fn a_streaming_map_runs() {
+/// The far coin only arrives once the server asks for its area; the
+/// persistent tower, as far, is there from the join.
+fn a_streaming_map_streams_the_far_zone_in_on_request() {
     play(
         "streaming.rbxlx",
         &[
             "streaming true",
             "persistent Tower",
+            "far absent true",
             "requested stream",
             "streamed FarCoin",
         ],
