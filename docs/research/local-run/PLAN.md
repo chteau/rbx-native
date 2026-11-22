@@ -1111,6 +1111,25 @@ Left, and why:
 - The ScriptProfiler isn't reachable from game scripts (as on Roblox); the Developer Console's own profiler pages aren't copied beyond the dock.
 - A plugin's `ScriptProfilerService` keeps the edit-mode behaviour (`ServerStart`/`ServerStop` do nothing, `OnNewData` never fires, `DeserializeJSON` reads version 2): plugins don't run inside a Local Run's server VM yet, so the dock is the sampler's only driver.
 
+## Look fidelity (branch feat/local-run-fidelity)
+
+Judged against real-client captures, never by eye: the `template_spawn`, `noob` and `decals_textures` fidelity scenes (`crates/rbx_viewer/src/fidelity/scenes/look.rs`, references in `crates/rbx_viewer/fidelity/refs/`) beside the earlier ones, and live Play (local) captures next to a Sober join of the same place.
+
+- The noob a player without an avatar gets is the classic one: Bright yellow head and arms, Bright blue torso, Br. yellowish green legs, and the default face (`rbxasset://textures/face.png`) as a `face` Decal on its head.
+- Decals and Textures on a MeshPart, or on a part whose SpecialMesh replaced its box (a character's head), land on the mesh, projected in the part's box space as Roblox does, instead of being dropped.
+- Plastic has almost no grain; the real client shows none on a flat Plastic face.
+- The sky's light from straight above is lifted by day and the fill lamp halved under the filmic look: floors in shadow were 15 to 30% too dark per channel.
+- The People list has no heading row when nobody has leaderstats.
+
+Built-in content (`rbxasset://`) is never committed. At run time it resolves, in order, from Roblox's own content packages on the CDN, Sober's install, a local install (Vinegar or Studio), then a public asset id standing in for it, and is cached under `~/.cache/rbx-native/assets/`. `textures/face.png` is in the `content-textures2` package, so it resolves anywhere with a network. `textures/SpawnLocation.png` is not in any CDN package; its stand-in id (6891610111) answers 401 without a key. With no install, no Open Cloud key and no cache, a SpawnLocation draws without its decal (the plain part shows), and the decal comes back as soon as any of the three is there. Offline, only what's already cached draws.
+
+Left, and why:
+
+- The sky's clouds and the horizon haze differ (ours lighter at the horizon in `template_spawn`).
+- A tinted Texture comes out too blue (real 143,35,118, ours 161,32,146 in `decals_textures`).
+- The top-left button can't be Roblox's logo (no Roblox images); a player who isn't signed in has no owner badge.
+- The RNG game floor colour against Atmosphere haze is still open.
+
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.
