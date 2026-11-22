@@ -235,6 +235,37 @@ fn has(lines: &[(Peer, String)], peer: Peer, text: &str) -> bool {
 }
 
 #[test]
+fn a_place_without_starter_player_plays_with_its_defaults() {
+    let mut dom = place("", "");
+    let starter_player = service(&dom, "StarterPlayer");
+    dom.remove(starter_player);
+    let sss = service(&dom, "ServerScriptService");
+    let script = dom.new_instance("Script", "Check", Some(sss));
+    let _ = dom.set_property(
+        script,
+        "Source",
+        Variant::String(
+            "local sp = game:GetService('StarterPlayer') \
+             print('folders', sp:FindFirstChild('StarterPlayerScripts') ~= nil, sp:FindFirstChild('StarterCharacterScripts') ~= nil) \
+             local p = game:GetService('Players').PlayerAdded:Wait() \
+             print('camera', p.CameraMode, p.CameraMaxZoomDistance, p.CameraMinZoomDistance)"
+                .into(),
+        ),
+    );
+    let mut s = session(dom, 1);
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "folders true true"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Server, "camera Enum.CameraMode.Classic 400 0.5"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
 fn each_player_has_a_client_of_their_own() {
     let mut s = session(
         place(

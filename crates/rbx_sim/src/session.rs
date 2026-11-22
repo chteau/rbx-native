@@ -127,9 +127,26 @@ fn copy_subtree(from: &WeakDom, root: Ref, into: &mut WeakDom, parent: Option<Re
     Some(made)
 }
 
+/// Roblox makes `StarterPlayer` with its two script folders in every
+/// DataModel, so a place saved without one still plays with its defaults
+/// (third person, Classic camera).
+fn add_starter_player(dom: &mut WeakDom) {
+    let has = dom
+        .root_refs()
+        .iter()
+        .any(|r| dom.get(*r).is_some_and(|i| i.class() == "StarterPlayer"));
+    if !has {
+        let starter = dom.new_instance("StarterPlayer", "StarterPlayer", None);
+        for class in ["StarterPlayerScripts", "StarterCharacterScripts"] {
+            dom.new_instance(class, class, Some(starter));
+        }
+    }
+}
+
 impl Session {
     /// A session over `dom`, the place as the server loads it.
-    pub fn new(dom: WeakDom) -> Result<Session, String> {
+    pub fn new(mut dom: WeakDom) -> Result<Session, String> {
+        add_starter_player(&mut dom);
         let mut server = Simulation::new(dom)?;
         server.make_server();
         Ok(Session {
