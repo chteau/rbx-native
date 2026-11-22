@@ -242,7 +242,13 @@ pub fn cache_root() -> Option<PathBuf> {
 /// A thumbnail spec (`type=Asset&id=1&w=150&h=150`) as one file name.
 fn thumb_file(spec: &str) -> String {
     spec.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || "=&-_.".contains(c) { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "=&-_.".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 

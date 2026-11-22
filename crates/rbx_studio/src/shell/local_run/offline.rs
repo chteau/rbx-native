@@ -243,7 +243,9 @@ impl Shell {
             });
             if alive.is_err()
                 || this
-                    .read_with(cx, |shell, _| shell.play.live.local.offline.packing.is_none())
+                    .read_with(cx, |shell, _| {
+                        shell.play.live.local.offline.packing.is_none()
+                    })
                     .unwrap_or(true)
             {
                 break;
@@ -274,7 +276,9 @@ impl Shell {
         for (uri, why) in manifest.failed.iter().take(LISTED_FAILURES) {
             push_row(
                 &mut self.output,
-                Feedback::Warning(format!("Offline pack: {uri} couldn\u{2019}t be downloaded ({why})")),
+                Feedback::Warning(format!(
+                    "Offline pack: {uri} couldn\u{2019}t be downloaded ({why})"
+                )),
             );
         }
         let mut line = format!(

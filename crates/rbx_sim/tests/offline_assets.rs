@@ -56,7 +56,10 @@ fn an_offline_run_loads_what_the_pack_cached_and_warns_for_the_rest() {
         .root_refs()
         .iter()
         .copied()
-        .find(|r| dom.get(*r).is_some_and(|i| i.class() == "ServerScriptService"))
+        .find(|r| {
+            dom.get(*r)
+                .is_some_and(|i| i.class() == "ServerScriptService")
+        })
         .unwrap();
     let script = dom.new_instance("Script", "Main", Some(sss));
     let _ = dom.set_property(

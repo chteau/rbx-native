@@ -215,7 +215,10 @@ pub fn build(
         complete: !cancel.load(Ordering::Relaxed),
         assets: packed
             .into_iter()
-            .map(|(r, bytes)| Packed { uri: r.uri(), bytes })
+            .map(|(r, bytes)| Packed {
+                uri: r.uri(),
+                bytes,
+            })
             .collect(),
         failed,
     };
@@ -279,7 +282,10 @@ mod tests {
         }
     }
 
-    fn resolver(dir: &std::path::Path, fetcher: impl rbx_assets::AssetFetcher + 'static) -> AssetResolver {
+    fn resolver(
+        dir: &std::path::Path,
+        fetcher: impl rbx_assets::AssetFetcher + 'static,
+    ) -> AssetResolver {
         let cache = AssetCache::new(Some(dir.to_path_buf())).unwrap();
         let native = NativeContent::new(cache.native_packages_dir());
         AssetResolver::new(cache, Box::new(fetcher), native)
@@ -306,9 +312,15 @@ mod tests {
         let resolver = resolver(&dir, fixture());
         let seeds = [100, 200, 300, 404].map(AssetRef::Id).into();
         let heard = AtomicUsize::new(0);
-        let manifest = build(&resolver, "place-1", seeds, &AtomicBool::new(false), &|_| {
-            heard.fetch_add(1, Ordering::Relaxed);
-        });
+        let manifest = build(
+            &resolver,
+            "place-1",
+            seeds,
+            &AtomicBool::new(false),
+            &|_| {
+                heard.fetch_add(1, Ordering::Relaxed);
+            },
+        );
 
         let uris: Vec<&str> = manifest.assets.iter().map(|a| a.uri.as_str()).collect();
         assert_eq!(
@@ -318,7 +330,11 @@ mod tests {
         assert_eq!(manifest.failed.len(), 1);
         assert_eq!(manifest.failed[0].0, "rbxassetid://404");
         assert!(manifest.complete);
-        assert_eq!(heard.load(Ordering::Relaxed), 7, "the start, then each asset");
+        assert_eq!(
+            heard.load(Ordering::Relaxed),
+            7,
+            "the start, then each asset"
+        );
 
         let cache = resolver.cache();
         assert_eq!(load(cache, "place-1"), Some(manifest.clone()));
@@ -362,14 +378,23 @@ mod tests {
         let dir = temp_cache("cancel");
         let resolver = resolver(&dir, fixture());
         let cancel = AtomicBool::new(false);
-        let manifest = build(&resolver, "place-3", [100].map(AssetRef::Id).into(), &cancel, &|p| {
-            if p.done == 1 {
-                cancel.store(true, Ordering::Relaxed);
-            }
-        });
+        let manifest = build(
+            &resolver,
+            "place-3",
+            [100].map(AssetRef::Id).into(),
+            &cancel,
+            &|p| {
+                if p.done == 1 {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            },
+        );
         assert!(!manifest.complete);
         assert_eq!(manifest.assets.len(), 1);
-        assert_eq!(load(resolver.cache(), "place-3").map(|m| m.complete), Some(false));
+        assert_eq!(
+            load(resolver.cache(), "place-3").map(|m| m.complete),
+            Some(false)
+        );
     }
 
     #[test]

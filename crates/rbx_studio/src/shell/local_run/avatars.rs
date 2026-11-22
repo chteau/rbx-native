@@ -139,10 +139,18 @@ pub(super) fn pack_seeds() -> (Vec<u64>, String) {
     let avatars = StudioAvatars::new(Client::new(key));
     let user = match avatars.client.introspect() {
         Ok(info) => info.authorized_user_id,
-        Err(err) => return (ids, format!("Your avatar couldn\u{2019}t be packed ({err})")),
+        Err(err) => {
+            return (
+                ids,
+                format!("Your avatar couldn\u{2019}t be packed ({err})"),
+            )
+        }
     };
     if let Err(why) = avatars.online(user) {
-        return (ids, format!("Your avatar couldn\u{2019}t be packed ({why})"));
+        return (
+            ids,
+            format!("Your avatar couldn\u{2019}t be packed ({why})"),
+        );
     }
     let worn = root()
         .and_then(|root| fs::read(root.join(user.to_string()).join("avatar.json")).ok())

@@ -217,8 +217,12 @@ mod tests {
             .unwrap();
         dom.set_property(description, "Pants", Variant::Int64(0))
             .unwrap();
-        dom.set_property(description, "HatAccessory", Variant::String("16, 17".into()))
-            .unwrap();
+        dom.set_property(
+            description,
+            "HatAccessory",
+            Variant::String("16, 17".into()),
+        )
+        .unwrap();
         let script = dom.new_instance("Script", "Main", Some(workspace));
         dom.set_property(
             script,
