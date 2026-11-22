@@ -685,6 +685,40 @@ pub(super) fn handle(lua: &Lua, referent: Ref, mesh: Arc<dyn MeshSource>) -> Res
     lua.create_userdata(LuaEditableMesh { referent, mesh })
 }
 
+/// Shows `part` (a `MeshPart` made by the engine, a fragment say) as the
+/// triangles given, through an `EditableMesh` its `MeshContent` holds.
+pub(super) fn bind(
+    lua: &Lua,
+    ctx: &Ctx,
+    part: Ref,
+    positions: &[V3],
+    triangles: &[[u32; 3]],
+) -> Result<()> {
+    let mut data = MeshData::default();
+    let ids: Vec<u32> = positions.iter().map(|&p| data.add_vertex(p)).collect();
+    for triangle in triangles {
+        let corners = triangle.map(|i| ids[i as usize]);
+        let pick = |f: fn(&Vertex) -> u32| corners.map(|id| f(&data.vertices[&id]));
+        let face = Face {
+            vertices: corners,
+            normals: pick(|v| v.normal),
+            uvs: pick(|v| v.uv),
+            colors: pick(|v| v.color),
+        };
+        let id = data.id();
+        data.faces.insert(id, face);
+    }
+    let mesh = new_mesh(lua, data);
+    ctx.dom_mut()
+        .set_property(
+            part,
+            "MeshContent",
+            Variant::Content(Content::Object(mesh.referent)),
+        )
+        .map_err(|error| mlua::Error::runtime(error.to_string()))?;
+    Ok(())
+}
+
 fn new_mesh(lua: &Lua, data: MeshData) -> LuaEditableMesh {
     let mesh = Arc::new(SharedMesh(Mutex::new(data)));
     let referent = super::editable_image::publish(lua, Editable::Mesh(mesh.clone()));

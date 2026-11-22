@@ -1,7 +1,7 @@
 //! Turning the BSP's polygon soup into a mesh fit to draw, and deciding
 //! whether it is: snapping the near-coincident vertices Roblox's own
 //! floating-point noise leaves apart, closing T-junctions, dropping
-//! disconnected debris, and the watertightness check [`super::evaluate`]
+//! disconnected debris, and the watertightness check [`super::Solid::finish`]
 //! gates the result on.
 
 use std::collections::HashMap;
@@ -26,10 +26,68 @@ use super::bsp::Polygon;
 /// `is_watertight` still holds afterward: every discarded group is its own
 /// individually closed piece, so removing it only removes matched edge
 /// pairs, never leaves one side dangling.
-pub(super) fn discard_disconnected_debris(
-    polygons: Vec<Polygon>,
-    bake: Option<DVec3>,
-) -> Vec<Polygon> {
+pub fn discard_disconnected_debris(polygons: Vec<Polygon>, bake: Option<DVec3>) -> Vec<Polygon> {
+    let roots = component_roots(&polygons);
+    // A negative-volume component is an inward-facing surface, a fully
+    // enclosed cavity (the classic case: a negation entirely inside the
+    // additive solid, like a bubble) rather than a piece of the outer shell.
+    // It is topologically required, however small: dropping it would silently
+    // undo the carve it represents. Only a same-signed (positive) component
+    // competes to be kept; every negative one always survives.
+    let mut volume: HashMap<usize, f64> = HashMap::new();
+    let mut positive_size: HashMap<usize, usize> = HashMap::new();
+    for (i, polygon) in polygons.iter().enumerate() {
+        let root = roots[i];
+        let first = polygon.vertices[0];
+        let v: f64 = polygon.vertices[1..]
+            .windows(2)
+            .map(|pair| first.dot(pair[0].cross(pair[1])))
+            .sum();
+        *volume.entry(root).or_insert(0.0) += v / 6.0;
+    }
+    let mut extent: HashMap<usize, (DVec3, DVec3)> = HashMap::new();
+    for (i, polygon) in polygons.iter().enumerate() {
+        let root = roots[i];
+        if volume[&root] > 0.0 {
+            *positive_size.entry(root).or_insert(0) += 1;
+        }
+        let (min, max) = extent
+            .entry(root)
+            .or_insert((DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY)));
+        for &v in &polygon.vertices {
+            *min = min.min(v);
+            *max = max.max(v);
+        }
+    }
+    let largest_positive = positive_size
+        .iter()
+        .max_by_key(|&(_, &count)| count)
+        .map(|(&root, _)| root);
+    // Studio's bake is centred on the union's own frame, `bake` across.
+    let fits = |root: usize| {
+        bake.is_none_or(|bake| {
+            let half = bake / 2.0;
+            let pad = half * BAKE_TOLERANCE + DVec3::splat(BAKE_PAD);
+            let (min, max) = extent[&root];
+            (min.cmpge(-half - pad) & max.cmple(half + pad)).all()
+        })
+    };
+    let keep: std::collections::HashSet<usize> = volume
+        .keys()
+        .copied()
+        .filter(|&root| volume[&root] <= 0.0 || Some(root) == largest_positive || fits(root))
+        .collect();
+    polygons
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| keep.contains(&roots[*i]))
+        .map(|(_, polygon)| polygon)
+        .collect()
+}
+
+/// The connected piece each polygon belongs to, by shared-edge adjacency
+/// (union-find): one representative polygon index per piece.
+pub fn component_roots(polygons: &[Polygon]) -> Vec<usize> {
     let key = |v: DVec3| {
         (
             (v.x / WELD_EPSILON).round() as i64,
@@ -64,61 +122,7 @@ pub(super) fn discard_disconnected_debris(
             }
         }
     }
-    // A negative-volume component is an inward-facing surface, a fully
-    // enclosed cavity (the classic case: a negation entirely inside the
-    // additive solid, like a bubble) rather than a piece of the outer shell.
-    // It is topologically required, however small: dropping it would silently
-    // undo the carve it represents. Only a same-signed (positive) component
-    // competes to be kept; every negative one always survives.
-    let mut volume: HashMap<usize, f64> = HashMap::new();
-    let mut positive_size: HashMap<usize, usize> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let root = find(&mut parent, i);
-        let first = polygon.vertices[0];
-        let v: f64 = polygon.vertices[1..]
-            .windows(2)
-            .map(|pair| first.dot(pair[0].cross(pair[1])))
-            .sum();
-        *volume.entry(root).or_insert(0.0) += v / 6.0;
-    }
-    let mut extent: HashMap<usize, (DVec3, DVec3)> = HashMap::new();
-    for (i, polygon) in polygons.iter().enumerate() {
-        let root = find(&mut parent, i);
-        if volume[&root] > 0.0 {
-            *positive_size.entry(root).or_insert(0) += 1;
-        }
-        let (min, max) = extent
-            .entry(root)
-            .or_insert((DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY)));
-        for &v in &polygon.vertices {
-            *min = min.min(v);
-            *max = max.max(v);
-        }
-    }
-    let largest_positive = positive_size
-        .iter()
-        .max_by_key(|&(_, &count)| count)
-        .map(|(&root, _)| root);
-    // Studio's bake is centred on the union's own frame, `bake` across.
-    let fits = |root: usize| {
-        bake.is_none_or(|bake| {
-            let half = bake / 2.0;
-            let pad = half * BAKE_TOLERANCE + DVec3::splat(BAKE_PAD);
-            let (min, max) = extent[&root];
-            (min.cmpge(-half - pad) & max.cmple(half + pad)).all()
-        })
-    };
-    let keep: std::collections::HashSet<usize> = volume
-        .keys()
-        .copied()
-        .filter(|&root| volume[&root] <= 0.0 || Some(root) == largest_positive || fits(root))
-        .collect();
-    polygons
-        .into_iter()
-        .enumerate()
-        .filter(|(i, _)| keep.contains(&find(&mut parent, *i)))
-        .map(|(_, polygon)| polygon)
-        .collect()
+    (0..polygons.len()).map(|i| find(&mut parent, i)).collect()
 }
 
 /// How far, relative to the bake's own half-extent and then absolutely in
@@ -130,12 +134,12 @@ const BAKE_PAD: f64 = 0.01;
 /// Snap tolerance for the edge-adjacency check below: coarser than any
 /// legitimate vertex spacing this codebase's shapes produce, fine enough not
 /// to merge genuinely distinct nearby edges.
-pub(super) const WELD_EPSILON: f64 = 1e-4;
+pub const WELD_EPSILON: f64 = 1e-4;
 
 /// A vertex position snapped to the `WELD_EPSILON` grid, used to recognize
 /// "the same point" (or edge) across independently-computed fragments.
-pub(super) type GridPoint = (i64, i64, i64);
-pub(super) type DirectedEdge = (GridPoint, GridPoint);
+pub type GridPoint = (i64, i64, i64);
+pub type DirectedEdge = (GridPoint, GridPoint);
 
 fn grid(v: DVec3) -> GridPoint {
     (
@@ -157,7 +161,7 @@ fn grid(v: DVec3) -> GridPoint {
 /// [`is_watertight`]; on real places that was most of what failed it.
 /// Neighbouring cells are searched as well as a vertex's own, so two noisy
 /// copies of one corner that straddle a cell boundary still meet.
-pub(super) fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
+pub fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
     let mut cells: HashMap<GridPoint, Vec<DVec3>> = HashMap::new();
     let mut snap = |v: DVec3| {
         let (x, y, z) = grid(v);
@@ -216,7 +220,7 @@ pub(super) fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
 /// own value, not a recomputed one, so the two sides end up bit-identical)
 /// to turn that T-junction back into a matching pair of edges before
 /// [`is_watertight`] ever runs.
-pub(super) fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
+pub fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
     const T_MARGIN: f64 = 1e-7;
     let quantize = |v: DVec3| {
         (
@@ -289,7 +293,7 @@ const MAX_LEAK_FRACTION: f64 = 0.02;
 /// touching only along an edge (a door frame's jambs and lintel) meet in a
 /// legitimately non-manifold edge that four faces share. Called once, by
 /// [`evaluate`], on the finished result.
-pub(super) fn is_watertight(polygons: &[Polygon]) -> bool {
+pub fn is_watertight(polygons: &[Polygon]) -> bool {
     let key = |v: DVec3| {
         (
             (v.x / WELD_EPSILON).round() as i64,
@@ -324,7 +328,7 @@ const MAX_SLIVER_EDGES: usize = 512;
 /// back alongside it within that distance. Such a gap, a cylinder's facet
 /// corner landing a few ten-thousandths off a box's edge, has no area
 /// anyone could see, however many of a small mesh's edges it touches.
-pub(super) fn only_slivers(bad: &[DirectedEdge]) -> bool {
+pub fn only_slivers(bad: &[DirectedEdge]) -> bool {
     // Pairwise: past this many open edges the mesh is broken anyway, and
     // the check would cost more than the boolean.
     if bad.len() > MAX_SLIVER_EDGES {

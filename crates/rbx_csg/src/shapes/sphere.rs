@@ -13,7 +13,7 @@ const SEGMENTS: usize = 24;
 const STACKS: usize = 16;
 const RADIUS: f32 = 0.5;
 
-pub(crate) fn sphere() -> MeshData {
+pub fn sphere() -> MeshData {
     let mut mesh = MeshData::default();
     let inside = Vec3::ZERO;
 

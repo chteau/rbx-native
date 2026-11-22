@@ -9,6 +9,7 @@
 
 mod chat;
 mod curves;
+mod csg;
 pub(crate) mod editable_image;
 mod hooks;
 mod input;

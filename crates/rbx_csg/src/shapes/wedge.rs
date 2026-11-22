@@ -10,7 +10,7 @@ use super::MeshData;
 
 const H: f32 = 0.5;
 
-pub(crate) fn wedge() -> MeshData {
+pub fn wedge() -> MeshData {
     let back_top_left = Vec3::new(-H, H, H);
     let back_bottom_left = Vec3::new(-H, -H, H);
     let back_top_right = Vec3::new(H, H, H);

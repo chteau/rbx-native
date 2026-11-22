@@ -200,7 +200,7 @@ fn finish(decoded: Decoded) -> Result<Baked, Error> {
         .map(|(position, normal)| {
             bounds.min = std::array::from_fn(|axis| bounds.min[axis].min(position[axis]));
             bounds.max = std::array::from_fn(|axis| bounds.max[axis].max(position[axis]));
-            let (u, v) = super::csg::dominant_axes(normal);
+            let (u, v) = rbx_csg::dominant_axes(normal);
             rbx_mesh::Vertex {
                 position,
                 normal,

@@ -145,7 +145,7 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
         if entry.inline && !plan.inline.contains_key(&entry.asset) {
             if let Some(raw) = dom
                 .get(referent)
-                .and_then(|i| inline_document(i.properties()))
+                .and_then(|i| inline_document(i.class(), i.properties()))
             {
                 plan.inline.insert(entry.asset.clone(), raw.to_vec());
             }
@@ -176,8 +176,17 @@ fn inline_key(raw: &[u8]) -> AssetRef {
 
 /// The bytes a union carries for itself: its operation tree, or, only
 /// when it has neither a tree nor an `AssetId` to find one behind, the
-/// mesh Studio baked for it.
-fn inline_document(properties: &std::collections::BTreeMap<String, Variant>) -> Option<&[u8]> {
+/// mesh Studio baked for it. An `IntersectOperation` draws its bake first:
+/// its tree holds the operands, which `csg::evaluate` would union.
+fn inline_document<'a>(
+    class: &str,
+    properties: &'a std::collections::BTreeMap<String, Variant>,
+) -> Option<&'a [u8]> {
+    if class == "IntersectOperation" {
+        if let Some(bake) = baked::mesh_data(properties) {
+            return Some(bake);
+        }
+    }
     tree::child_data(properties).or_else(|| {
         let linked = properties
             .get("AssetId")
@@ -299,7 +308,7 @@ fn frame(
         .and_then(asset_uri)
         .and_then(|uri| AssetRef::parse(uri).ok())
         .filter(|asset| *asset != AssetRef::Empty);
-    let (asset, inline) = match (inline_document(properties), linked) {
+    let (asset, inline) = match (inline_document(instance.class(), properties), linked) {
         (Some(raw), _) => (inline_key(raw), true),
         (None, Some(asset)) => (asset, false),
         (None, None) => return None,
