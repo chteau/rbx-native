@@ -18,7 +18,7 @@ use rbx_dom::{Content, Instance, Ref, Variant, WeakDom};
 use thiserror::Error;
 
 use plan::Plan;
-use sstr::SharedStringTable;
+use sstr::{SharedStringTable, SHARED_STRING_TYPE_ID};
 use writer::Writer;
 
 const MAGIC: &[u8; 8] = b"<roblox!";
@@ -222,27 +222,47 @@ fn prop_header(class_id: i32, name: &str, type_id: u8, payload: &[u8]) -> Vec<u8
     writer.into_bytes()
 }
 
-// Properties old Studio builds wrote that current Studio refuses to load: a place
-// still holding one doesn't open at all. `SolidMeshHolder` is a pre-2019 CSG
-// string on unions (always empty in the files we've seen), so it's dropped.
-const RETIRED_PROPERTIES: &[&str] = &["SolidMeshHolder"];
-
 // Alphabetical union of every property key set on any instance of `class`, plus the
-// synthetic "Name" property every class carries, minus the retired ones.
+// synthetic "Name" property every class carries.
 fn property_names(dom: &WeakDom, class: &plan::ClassPlan) -> BTreeSet<String> {
     let mut names: BTreeSet<String> = class
         .referents
         .iter()
         .filter_map(|&referent| dom.get(referent))
         .flat_map(|instance| instance.properties().keys())
-        .filter(|name| !RETIRED_PROPERTIES.contains(&name.as_str()))
         .cloned()
         .collect();
     names.retain(|name| {
-        !is_legacy_brick_color(dom, class, name) && !has_no_wire_type(dom, class, name)
+        !is_legacy_brick_color(dom, class, name)
+            && !has_no_wire_type(dom, class, name)
+            && !is_legacy_net_asset_ref(dom, class, name)
     });
     names.insert(NAME_PROPERTY.to_owned());
     names
+}
+
+/// Properties current Studio types as NetworkAssetRef, saved as SharedString
+/// (0x1C) columns (`NetAssetRef` in XML). A union's `SolidMeshHolder` is its
+/// whole CSG geometry (its `MeshData2` stays empty), so it must survive a
+/// re-save byte for byte. Old places carry it as an always-empty String column
+/// instead, and current Studio refuses such a file ("Unexpected format 1
+/// (expected 28) << NetworkAssetRef"); a column with no SharedString value is
+/// that legacy shape and is left out.
+const NET_ASSET_REF_PROPERTIES: &[&str] = &["SolidMeshHolder"];
+
+fn is_legacy_net_asset_ref(dom: &WeakDom, class: &plan::ClassPlan, name: &str) -> bool {
+    NET_ASSET_REF_PROPERTIES.contains(&name)
+        && !class.referents.iter().any(|&referent| {
+            dom.get(referent).is_some_and(|i| {
+                matches!(
+                    i.properties().get(name),
+                    Some(Variant::Unknown {
+                        type_id: SHARED_STRING_TYPE_ID,
+                        ..
+                    })
+                )
+            })
+        })
 }
 
 // The type id `rbx_xml` tags a property with when its XML element names a
@@ -539,9 +559,9 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_union_property_is_not_written() {
-        // marked.rbxl's unions carry an empty `SolidMeshHolder` string, and current
-        // Studio won't open a file that still has that chunk.
+    fn a_legacy_string_solid_mesh_holder_is_not_written() {
+        // marked.rbxl's unions carry an empty String `SolidMeshHolder`, and current
+        // Studio refuses that column ("Unexpected format 1 (expected 28)").
         let mut dom = WeakDom::new();
         let union = dom.new_instance("UnionOperation", "Rock", None);
         dom.set_property(union, "SolidMeshHolder", Variant::String(String::new()))
@@ -557,6 +577,35 @@ mod tests {
             .properties();
         assert!(!props.contains_key("SolidMeshHolder"));
         assert_eq!(props.get("Anchored"), Some(&Variant::Bool(true)));
+    }
+
+    #[test]
+    fn a_shared_string_solid_mesh_holder_keeps_its_geometry() {
+        // Current Studio keeps a union's geometry here. A legacy String sibling in
+        // the same column goes out as an empty SharedString beside it.
+        let geometry = Variant::Unknown {
+            type_id: SHARED_STRING_TYPE_ID,
+            raw: vec![0xC5, 0x00, 0xFF, 0x10],
+        };
+        let mut dom = WeakDom::new();
+        let new = dom.new_instance("UnionOperation", "New", None);
+        let old = dom.new_instance("UnionOperation", "Old", None);
+        dom.set_property(new, "SolidMeshHolder", geometry.clone())
+            .unwrap();
+        dom.set_property(old, "SolidMeshHolder", Variant::String(String::new()))
+            .unwrap();
+
+        let round_tripped = deserialize(&serialize(&dom).unwrap()).unwrap();
+        let holder = |r: Ref| round_tripped.get(r).unwrap().properties()["SolidMeshHolder"].clone();
+
+        assert_eq!(holder(new), geometry);
+        assert_eq!(
+            holder(old),
+            Variant::Unknown {
+                type_id: SHARED_STRING_TYPE_ID,
+                raw: Vec::new()
+            }
+        );
     }
 
     #[test]
