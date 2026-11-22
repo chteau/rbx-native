@@ -15,10 +15,10 @@ mod tests;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
@@ -85,6 +85,32 @@ pub(crate) struct Server {
     file: PathBuf,
     requests: Receiver<Request>,
     stopped: Arc<AtomicBool>,
+    activity: Arc<Activity>,
+}
+
+/// What the listener has seen of clients, for Settings to show whether one
+/// is attached.
+#[derive(Default)]
+struct Activity {
+    /// Connections that showed the token and are still open.
+    connected: AtomicUsize,
+    last_call: Mutex<Option<Instant>>,
+}
+
+/// Counts a connection as attached for as long as it is kept.
+struct Attached(Arc<Activity>);
+
+impl Attached {
+    fn new(activity: Arc<Activity>) -> Self {
+        activity.connected.fetch_add(1, Ordering::SeqCst);
+        Attached(activity)
+    }
+}
+
+impl Drop for Attached {
+    fn drop(&mut self) {
+        self.0.connected.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Server {
@@ -109,19 +135,37 @@ impl Server {
         let stopped = Arc::new(AtomicBool::new(false));
         let token = endpoint.token.clone();
         let flag = Arc::clone(&stopped);
+        let activity = Arc::new(Activity::default());
+        let seen = Arc::clone(&activity);
         std::thread::Builder::new()
             .name("mcp-listener".to_owned())
-            .spawn(move || accept(&listener, &token, &sender, &flag))?;
+            .spawn(move || accept(&listener, &token, &sender, &flag, &seen))?;
         Ok(Server {
             endpoint,
             file,
             requests,
             stopped,
+            activity,
         })
     }
 
     pub(crate) fn endpoint(&self) -> &Endpoint {
         &self.endpoint
+    }
+
+    /// How many clients (bridges) hold a connection right now. A bridge
+    /// connects on its client's first call and keeps the connection.
+    pub(crate) fn clients(&self) -> usize {
+        self.activity.connected.load(Ordering::SeqCst)
+    }
+
+    /// When a client last sent anything.
+    pub(crate) fn last_call(&self) -> Option<Instant> {
+        *self
+            .activity
+            .last_call
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Everything clients sent since the last call.
@@ -140,7 +184,13 @@ impl Drop for Server {
     }
 }
 
-fn accept(listener: &TcpListener, token: &str, sender: &Sender<Request>, stopped: &AtomicBool) {
+fn accept(
+    listener: &TcpListener,
+    token: &str,
+    sender: &Sender<Request>,
+    stopped: &AtomicBool,
+    activity: &Arc<Activity>,
+) {
     for stream in listener.incoming() {
         if stopped.load(Ordering::SeqCst) {
             return;
@@ -150,13 +200,14 @@ fn accept(listener: &TcpListener, token: &str, sender: &Sender<Request>, stopped
         };
         let token = token.to_owned();
         let sender = sender.clone();
+        let activity = Arc::clone(activity);
         let _ = std::thread::Builder::new()
             .name("mcp-connection".to_owned())
-            .spawn(move || serve(stream, &token, &sender));
+            .spawn(move || serve(stream, &token, &sender, activity));
     }
 }
 
-fn serve(stream: TcpStream, token: &str, sender: &Sender<Request>) {
+fn serve(stream: TcpStream, token: &str, sender: &Sender<Request>, activity: Arc<Activity>) {
     let Ok(mut writer) = stream.try_clone() else {
         return;
     };
@@ -170,6 +221,7 @@ fn serve(stream: TcpStream, token: &str, sender: &Sender<Request>) {
     if reader.get_ref().set_read_timeout(None).is_err() {
         return;
     }
+    let attached = Attached::new(activity);
     for line in reader.lines() {
         let Ok(line) = line else {
             return;
@@ -177,6 +229,11 @@ fn serve(stream: TcpStream, token: &str, sender: &Sender<Request>) {
         if line.trim().is_empty() {
             continue;
         }
+        *attached
+            .0
+            .last_call
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
         let (reply, answer) = mpsc::channel();
         if sender.send(Request { line, reply }).is_err() {
             return;
