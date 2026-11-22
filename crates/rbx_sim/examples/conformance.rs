@@ -6,6 +6,7 @@
 //! cargo run -p rbx_sim --example conformance -- --write docs/research/local-run/CONFORMANCE.md
 //! ```
 
+use std::path::Path;
 use std::sync::Arc;
 
 use rbx_assets::{AssetFetcher, FetchError};
@@ -30,18 +31,24 @@ impl AssetFetcher for Anonymous {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut write = None;
+    let (mut write, mut drift) = (None, None);
     let mut only: Vec<String> = Vec::new();
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match (arg.as_str(), rest.next()) {
             ("--write", Some(path)) => write = Some(path.clone()),
             ("--only", Some(names)) => only.extend(names.split(',').map(str::to_owned)),
+            ("--drift", Some(dir)) => drift = Some(dir.clone()),
             _ => {
-                eprintln!("usage: conformance [--write <file.md>] [--only Test,Test]");
+                eprintln!(
+                    "usage: conformance [--write <file.md>] [--only Test,Test] [--drift <old goldens dir>]"
+                );
                 std::process::exit(2);
             }
         }
+    }
+    if let Some(dir) = drift {
+        return print_drift(Path::new(&dir), &only);
     }
     let ours =
         conformance::run_some_in_sim(2400.0, &only, Some(Arc::new(Anonymous(Client::new(None)))))
@@ -124,6 +131,53 @@ fn main() {
             std::process::exit(1);
         });
     }
+}
+
+/// `--drift <dir>`: the goldens now in `goldens/` (just re-recorded) against
+/// the ones in `dir` (what was committed), field by field with each test's
+/// tolerance: what moved is Roblox changing behaviour.
+fn print_drift(old: &Path, only: &[String]) {
+    let recorded = |g: &serde_json::Value| g["status"] == "recorded";
+    let (mut rerecorded, mut drifted) = (0, 0);
+    for test in TESTS
+        .iter()
+        .filter(|t| only.is_empty() || only.iter().any(|n| n == t.name))
+    {
+        let before = std::fs::read_to_string(old.join(format!("{}.json", test.name)))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+        let now = conformance::golden(test.name).filter(recorded);
+        let Some(now) = now else {
+            continue;
+        };
+        let Some(before) = before.filter(recorded) else {
+            println!("NEW   {}: first recording", test.name);
+            continue;
+        };
+        if before == now {
+            continue;
+        }
+        rerecorded += 1;
+        let moved: Vec<Row> = conformance::compare(test, &before, &now["result"])
+            .into_iter()
+            .filter(|row| !row.pass)
+            .collect();
+        if moved.is_empty() {
+            println!("same  {}: within tolerance", test.name);
+        }
+        for row in moved {
+            drifted += 1;
+            println!(
+                "DRIFT {}.{}: was {} now {}{}",
+                row.test,
+                row.field,
+                row.golden,
+                row.ours,
+                row.delta.map_or(String::new(), |d| format!(" ({d:+.3})"))
+            );
+        }
+    }
+    println!("{rerecorded} goldens re-recorded, {drifted} fields drifted");
 }
 
 fn mark(row: &Row) -> String {

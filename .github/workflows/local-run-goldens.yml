@@ -1,0 +1,79 @@
+name: Local Run goldens
+
+# Weekly: the conformance goldens should be re-recorded on a real Roblox
+# server to catch Roblox's behaviour drifting. Recording needs a Roblox
+# client, cloudflared and an Open Cloud key, which GitHub's runners can't
+# offer, so by default this only keeps a reminder issue (label
+# local-run-goldens) open; the maintainer runs scripts/rerecord-goldens.sh.
+#
+# Opt-in recording on a self-hosted runner that has Sober and cloudflared:
+# set the repository variable LOCAL_RUN_GOLDENS_RUNNER to that runner's label
+# and the secret RBX_SANDBOX_API_KEY to an Open Cloud key that may publish
+# the sandbox place (3086963177) and nothing else. The changed goldens come
+# back as an artifact and the drift summary goes into the reminder issue;
+# nothing is committed.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  reminder:
+    if: vars.LOCAL_RUN_GOLDENS_RUNNER == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open the reminder issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create local-run-goldens --color 1D76DB \
+            --description "Re-record the Local Run conformance goldens" 2>/dev/null || true
+          if [ -z "$(gh issue list --label local-run-goldens --state open --json number --jq '.[0].number // empty')" ]; then
+            gh issue create --title "Re-record the Local Run conformance goldens" --label local-run-goldens --body \
+          "Weekly reminder. On a machine with Sober, cloudflared and the Open Cloud key:
+
+          \`\`\`
+          scripts/rerecord-goldens.sh
+          \`\`\`
+
+          It records every golden on the sandbox place and prints the fields that drifted from the committed goldens. Review, commit the goldens, then \`cargo test -p rbx_sim\` says whether Local Run still matches. Close this issue when done."
+          fi
+
+  record:
+    if: vars.LOCAL_RUN_GOLDENS_RUNNER != ''
+    runs-on: ${{ vars.LOCAL_RUN_GOLDENS_RUNNER }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Re-record and diff
+        env:
+          RBX_API_KEY: ${{ secrets.RBX_SANDBOX_API_KEY }}
+        run: |
+          [ -n "$RBX_API_KEY" ] || { echo "::error::RBX_SANDBOX_API_KEY is not set"; exit 1; }
+          scripts/rerecord-goldens.sh | tee drift.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldens
+          path: crates/rbx_sim/conformance/goldens/
+
+      - name: Report the drift
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create local-run-goldens --color 1D76DB \
+            --description "Re-record the Local Run conformance goldens" 2>/dev/null || true
+          body=$(printf 'Recorded by run %s; the goldens are its `goldens` artifact.\n\n```\n%s\n```\n' \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$(grep -E '^(DRIFT|NEW|same|[0-9]+ goldens)' drift.txt)")
+          issue=$(gh issue list --label local-run-goldens --state open --json number --jq '.[0].number // empty')
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body "$body"
+          else
+            gh issue create --title "Local Run goldens drift" --label local-run-goldens --body "$body"
+          fi
