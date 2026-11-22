@@ -2010,6 +2010,15 @@ impl Simulation {
 
     fn collect_output(&mut self) {
         self.output.extend(self.vm.take_output());
+        let failures = {
+            let mut shared = self.shared.borrow_mut();
+            let mut all = std::mem::take(&mut shared.sounds.failures);
+            all.append(&mut shared.animations.failures);
+            all
+        };
+        for line in failures {
+            self.output.push_text(rbx_lua::LineKind::Warn, line);
+        }
     }
 }
 
@@ -2080,7 +2089,9 @@ fn stat_number(v: f64) -> String {
     format!("{sign}{body}{suffix}")
 }
 
-/// `AssetService:LoadAssetAsync`'s models, through the asset fetcher.
+/// `AssetService:LoadAssetAsync`'s models and `ContentProvider`'s
+/// preloads: the asset cache first (an offline pack, an earlier run), else
+/// the asset fetcher, kept.
 struct Models(std::sync::Arc<dyn rbx_assets::AssetFetcher>);
 
 impl std::fmt::Debug for Models {
@@ -2091,10 +2102,28 @@ impl std::fmt::Debug for Models {
 
 impl rbx_lua::server::AssetSource for Models {
     fn fetch(&self, id: u64) -> Result<Vec<u8>, String> {
-        self.0.fetch_id(id).map_err(|e| match e {
+        let cache = rbx_assets::AssetCache::new(None).ok();
+        if let Some(bytes) = cache.as_ref().and_then(|c| c.get_id(id)) {
+            return Ok(bytes);
+        }
+        let bytes = self.0.fetch_id(id).map_err(|e| match e {
             rbx_assets::FetchError::NotFound(_) => "HTTP 404 (Not Found)".to_owned(),
             other => other.to_string(),
-        })
+        })?;
+        if let Some(cache) = cache {
+            let _ = cache.put_id(id, &bytes);
+        }
+        Ok(bytes)
+    }
+
+    /// Content shipped with the client (`rbxasset://`) and thumbnails are
+    /// always there to a client; an asset id has to be had.
+    fn preload(&self, content: &str) -> Result<(), String> {
+        match rbx_assets::AssetRef::parse(content) {
+            Ok(rbx_assets::AssetRef::Id(id)) => self.fetch(id).map(drop),
+            Ok(_) => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
     }
 }
 

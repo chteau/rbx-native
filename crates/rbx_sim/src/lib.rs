@@ -31,6 +31,7 @@ mod journal;
 pub mod live;
 pub mod load;
 mod modules;
+pub mod offline_pack;
 pub mod ownership;
 pub mod physics;
 pub mod players;

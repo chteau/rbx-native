@@ -123,6 +123,13 @@ pub fn r15_animation(state: &str) -> Option<u64> {
         .map(|(_, id, _)| *id)
 }
 
+/// Every animation the stock `Animate` scripts (R15 and R6) play.
+pub fn animation_ids() -> impl Iterator<Item = u64> {
+    R15.iter()
+        .chain(R6)
+        .flat_map(|(_, entries)| entries.iter().map(|(_, id, _)| *id))
+}
+
 /// Adds `Animate` under `model`.
 pub fn add(dom: &mut WeakDom, model: Ref, r15: bool) {
     let states = if r15 { R15 } else { R6 };

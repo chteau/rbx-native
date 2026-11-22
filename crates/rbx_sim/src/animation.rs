@@ -77,6 +77,9 @@ pub struct Animations {
     clips: HashMap<u64, Result<Clip, String>>,
     loading: HashMap<u64, Receiver<Result<Clip, String>>>,
     pub fetcher: Option<Arc<dyn AssetFetcher>>,
+    /// The warnings a client prints for animations that failed to load,
+    /// for the Output.
+    pub failures: Vec<String>,
     /// Tracks whose `Ended` is coming, and in how many frames.
     ended: Vec<(Ref, u32)>,
     pub events: Vec<Event>,
@@ -561,6 +564,11 @@ impl Animations {
             .collect();
         for (id, clip) in done {
             self.loading.remove(&id);
+            if clip.is_err() {
+                self.failures.push(format!(
+                    "Failed to load animation with sanitized ID rbxassetid://{id}: Animation failed to load, assetId: https://assetdelivery.roblox.com/v1/asset?id={id}"
+                ));
+            }
             self.clips.insert(id, clip);
         }
         // Only a track still waiting on its clip takes a copy: copying every

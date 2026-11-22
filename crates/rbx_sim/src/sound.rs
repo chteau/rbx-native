@@ -64,6 +64,9 @@ struct Track {
 #[derive(Default)]
 pub(crate) struct Sounds {
     pub fetcher: Option<Arc<dyn AssetFetcher>>,
+    /// The warnings a client prints for sounds that failed to load, for
+    /// the Output.
+    pub failures: Vec<String>,
     clips: HashMap<u64, Load>,
     tracks: HashMap<Ref, Track>,
     known: BTreeSet<Ref>,
@@ -100,6 +103,11 @@ impl Sounds {
     pub(crate) fn clip(&mut self, id: u64) -> Option<Arc<Clip>> {
         if let Some(Load::Pending(receiver)) = self.clips.get(&id) {
             if let Ok(done) = receiver.try_recv() {
+                if done.is_err() {
+                    self.failures.push(format!(
+                        "Failed to load sound rbxassetid://{id}: Unable to download sound data"
+                    ));
+                }
                 let load = done.map_or(Load::Failed, |c| Load::Ready(Arc::new(c)));
                 self.clips.insert(id, load);
             }

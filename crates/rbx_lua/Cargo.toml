@@ -11,6 +11,8 @@ license.workspace = true
 # used here, so no other crate can replace it. `luau` implies vendoring.
 mlua = { version = "0.12", features = ["luau"] }
 rbx_dom = { path = "../rbx_dom" }
+# `ContentProvider:PreloadAsync` of instances: the assets they refer to.
+rbx_assets = { path = "../rbx_assets" }
 rbx_materials = { path = "../rbx_materials" }
 # The FloatCurve/MarkerCurve key bytes (`ValuesAndTimes`) and curve maths.
 rbx_animation = { path = "../rbx_animation" }
