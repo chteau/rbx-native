@@ -104,8 +104,6 @@
   },
   "status": "recorded",
   "known_gaps": {
-    "stream_no_url": "WebStreamClient is Studio-only: the live server (RCC) refuses it, a Local Run follows Studio and opens streams",
-    "ban_history": "GetBanHistoryAsync isn't available in Studio, which a Local Run follows; the live server reads the history",
-    "ban_history_page": "follows ban_history: Studio has no history to page"
+    "stream_no_url": "WebStreamClient is Studio-only: the live server (RCC) refuses it, a Local Run follows Studio and opens streams"
   }
 }
