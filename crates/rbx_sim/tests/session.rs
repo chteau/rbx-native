@@ -917,6 +917,30 @@ fn a_drag_detector_crate_and_a_ui_drag_detector_follow_the_mouse() {
 }
 
 #[test]
+fn the_client_joins_after_the_servers_first_frames() {
+    let mut s = Session::new(place(
+        "task.delay(0.1, function() workspace:SetAttribute('Mark', true) end) \
+             local p = game:GetService('Players').PlayerAdded:Wait() \
+             print('joined', time() >= 1.5)",
+        "print('client sees', workspace:GetAttribute('Mark'))",
+    ))
+    .unwrap();
+    s.set_join_after(rbx_sim::JOIN_AFTER);
+    s.start();
+    s.join("Player1", 1, None).unwrap();
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "joined true"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "client sees true"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
 fn a_tool_given_on_character_added_stays_in_the_backpack() {
     let mut dom = place(
         "local tool = game:GetService('ServerScriptService'):WaitForChild('Kept') \

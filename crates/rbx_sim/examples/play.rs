@@ -122,6 +122,7 @@ fn main() {
         }
     }
     session.set_services(services);
+    session.set_join_after(rbx_sim::JOIN_AFTER);
     session.start();
     let uid = std::env::var("PLAY_UID")
         .ok()

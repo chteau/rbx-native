@@ -5,3 +5,4 @@ if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
 _G.rf_baseplate_after_loaded = workspace:FindFirstChild("Baseplate") ~= nil
+_G.rf_early_mark_when_loaded = workspace:GetAttribute("ConfEarlyMark")

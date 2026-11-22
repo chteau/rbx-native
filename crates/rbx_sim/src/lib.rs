@@ -48,5 +48,5 @@ mod video;
 pub use input::{Input, MouseBehavior, Phase, Sensor};
 pub use players::Avatars;
 pub use rbx_lua::{LineKind, Output};
-pub use session::{Peer, Session, Teleport};
+pub use session::{Peer, Session, Teleport, JOIN_AFTER};
 pub use sim::{Role, Simulation, FRAME_HZ};

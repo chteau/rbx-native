@@ -642,6 +642,7 @@ impl Shell {
             }
         }
         session.set_services(services);
+        session.set_join_after(rbx_sim::JOIN_AFTER);
         session.start();
         let playing = player.is_some();
         let kept = player.as_ref().map(|(p, _)| p.clone());

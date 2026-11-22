@@ -31,6 +31,13 @@ use crate::{Input, Output};
 /// Services whose contents a client never gets.
 const SERVER_ONLY: &[&str] = &["ServerStorage", "ServerScriptService"];
 
+/// How long a fresh server runs before the first player arrives: a real
+/// client joins once the server is up, so the server's first frames (a
+/// `task.wait` or two, the attributes it sets) have run by then. Live joins
+/// on the sandbox fired `PlayerAdded` 1.63 s and 3.28 s into the server's
+/// run (JoinTimeline).
+pub const JOIN_AFTER: f64 = 1.6;
+
 /// The origin a client gives the server's own track operations.
 const SERVER: Ref = Ref::new(u32::MAX);
 
@@ -101,6 +108,8 @@ pub struct Session {
     /// their client's DataModel as they join.
     arriving: std::collections::HashMap<i64, WeakDom>,
     script_timeout: Option<std::time::Duration>,
+    /// Server seconds a join waits for, see [`Session::set_join_after`].
+    join_after: f64,
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -161,7 +170,14 @@ impl Session {
             services: None,
             arriving: std::collections::HashMap::new(),
             script_timeout: None,
+            join_after: 0.0,
         })
+    }
+
+    /// Players join once the server has run `seconds` ([`JOIN_AFTER`] is
+    /// what a live join takes); 0, the default, joins them at once.
+    pub fn set_join_after(&mut self, seconds: f64) {
+        self.join_after = seconds;
     }
 
     /// Starts the server's scripts. Players join after.
@@ -170,7 +186,9 @@ impl Session {
     }
 
     /// A local player joins as `name`, wearing `template` or the default
-    /// character: the server adds their `Player`, and their client starts
+    /// character, once the server has run `join_after` seconds (see
+    /// [`Session::set_join_after`]): the server adds
+    /// their `Player`, and their client starts
     /// with `ReplicatedFirst` alone, its LocalScripts run; the rest comes
     /// on the session's next frame.
     pub fn join(
@@ -179,6 +197,9 @@ impl Session {
         user_id: i64,
         template: Option<WeakDom>,
     ) -> Result<usize, String> {
+        while self.server.time() < self.join_after {
+            self.step();
+        }
         let player = self
             .server
             .join(name, user_id, template)

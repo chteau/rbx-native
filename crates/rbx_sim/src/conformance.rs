@@ -617,6 +617,17 @@ pub const TESTS: &[Test] = &[
         tolerance: &[],
     },
     Test {
+        name: "JoinTimeline",
+        source: include_str!("../conformance/tests/JoinTimeline.luau"),
+        // A live join's timing scatters with the network; what must match
+        // is that the server ran first and the client saw what it did.
+        tolerance: &[
+            ("player_added_s", f64::INFINITY),
+            ("server_beats_before_join", f64::INFINITY),
+            ("character_after_join_s", f64::INFINITY),
+        ],
+    },
+    Test {
         name: "StyleRuntime",
         source: include_str!("../conformance/tests/StyleRuntime.luau"),
         tolerance: &[],
@@ -761,10 +772,15 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
         "InputActions",
         include_str!("../conformance/client/InputActions.luau"),
     ),
+    (
+        "JoinTimeline",
+        include_str!("../conformance/client/JoinTimeline.luau"),
+    ),
 ];
 const PARALLEL_PROBE: &str = include_str!("../conformance/client/ParallelProbe.luau");
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
 const FIRST_PROBE: &str = include_str!("../conformance/client/FirstProbe.luau");
+const JOIN_CLOCK: &str = include_str!("../conformance/tests/JoinClock.server.luau");
 
 /// The tests named in `only` (all of them when it's empty).
 pub fn selected(only: &[String]) -> impl Iterator<Item = (usize, &'static Test)> + '_ {
@@ -834,6 +850,8 @@ pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
     let actor = child(dom, "Actor", "ConfActor", sss);
     let probe = child(dom, "Script", "ParallelProbe", actor);
     let _ = dom.set_property(probe, "Source", Variant::String(PARALLEL_PROBE.into()));
+    let clock = child(dom, "Script", "JoinClock", sss);
+    let _ = dom.set_property(clock, "Source", Variant::String(JOIN_CLOCK.into()));
     let runner = child(dom, "Script", RUNNER, sss);
     let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs, only)));
     add_client_half(dom);
@@ -1222,6 +1240,7 @@ pub fn run_some_in_sim(
     if let Some(fetcher) = fetcher {
         session.set_fetcher(fetcher);
     }
+    session.set_join_after(crate::JOIN_AFTER);
     session.start();
     session.join("Player1", -1, None)?;
     let mut lines = Vec::new();
