@@ -694,6 +694,7 @@ impl Shell {
             (Panel::Layers, IconName::Layers, "Layers"),
             (Panel::Loren, IconName::Layers, "Loren"),
             (Panel::FindInPlace, IconName::Search, "Find in Place"),
+            (Panel::MicroProfiler, IconName::Activity, "MicroProfiler"),
         ];
         if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
             tiles.push((Panel::Localization, IconName::Globe, "Localization"));
