@@ -540,6 +540,9 @@ fn substitute(ctx: &Ctx, physics: &Rc<dyn Physics>, target: Ref, source: Ref) ->
     for (key, value) in copied {
         let _ = dom.set_property(target, &key, value);
     }
+    if let Some(instance) = dom.get_mut(target) {
+        csg::clear_stale_geometry(instance);
+    }
     drop(dom);
     if let Some((positions, indices)) = mesh {
         physics.register_mesh(target, positions, indices.as_chunks::<3>().0.to_vec());

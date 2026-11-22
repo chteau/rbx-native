@@ -1015,6 +1015,7 @@ Golden: CsgApi (sandbox place). Code: `crates/rbx_csg` (the BSP kernel, repair p
 - `GeometryService` `UnionAsync`/`SubtractAsync`/`IntersectAsync`: yield a frame, return a table of `PartOperation`s in the base part's own frame (the mesh off-centre in it); `SplitApart` on by default; options checked ("Key 'X' is not a valid member of CSGOptions", "argument for Key 'SplitApart' needs to be a boolean"); nothing left gives `{}`.
 - `FragmentAsync`: Voronoi cells of the given sites as `{Index, Instance = MeshPart}` entries, each in the part's frame; `GenerateFragmentSites`: 8 `Vector3`s. `CalculateConstraintsToPreserve`: an attachment+constraint entry per constraint on the source's attachments and a `WeldConstraint` entry per weld (dropped with `weldConstraintPreserve = None`), option keys checked against `CSGConstraintOptions`. `PartOperation:SubstituteGeometry`: takes the source's mesh and size, keeps frame and look; a plain part source does nothing.
 - `plugin:Union`/`Intersect`/`Negate`/`Separate` and the Model tab's Solid Modeling group (one undo step each) make what Studio saves: a whole union keeps its parts' tree, so it separates back, here and in real Studio.
+- Carving an operation again (a union of a union, Negate of one, `SubstituteGeometry`) drops the `SolidMeshHolder` and `PhysicalConfigData` it carried from Studio: Studio draws and collides from those over `MeshData2`, so it would keep the old shape.
 
 ## Milestone 19 (proposed): multi-client testing, then what M18 left off
 

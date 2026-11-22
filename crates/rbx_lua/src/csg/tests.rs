@@ -115,3 +115,29 @@ fn a_union_survives_the_place_writer_and_separates_back() {
         .collect();
     assert_eq!(classes, ["Part", "NegateOperation"]);
 }
+
+#[test]
+fn carving_again_drops_studios_cached_geometry() {
+    let db = rbx_reflection::ReflectionDatabase::embedded();
+    let (mut dom, workspace) = place();
+    let a = part(&mut dom, workspace, [2.0, 2.0, 2.0], 0.0);
+    let b = part(&mut dom, workspace, [2.0, 2.0, 2.0], 1.0);
+    let stale = |dom: &mut WeakDom, at: Ref| {
+        let props = dom.get_mut(at).unwrap().properties_mut();
+        for key in STALE_GEOMETRY {
+            props.insert(key.into(), shared(b"stale".to_vec()));
+        }
+    };
+    let cached = |dom: &WeakDom, at: Ref| {
+        let props = dom.get(at).unwrap().properties();
+        STALE_GEOMETRY.iter().any(|k| props.contains_key(*k))
+    };
+    let union = operate_in_place(&mut dom, &db, Operation::Union, &[a, b]).unwrap();
+    stale(&mut dom, union);
+    let c = part(&mut dom, workspace, [2.0, 2.0, 2.0], 3.0);
+    let again = operate_in_place(&mut dom, &db, Operation::Union, &[union, c]).unwrap();
+    assert!(!cached(&dom, again));
+    stale(&mut dom, again);
+    let negate = negate_in_place(&mut dom, &db, &[again])[0];
+    assert!(!cached(&dom, negate));
+}

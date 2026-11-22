@@ -20,6 +20,20 @@ use rbx_reflection::ReflectionDatabase;
 /// `SharedString`, the wire type `ChildData2` and `MeshData2` are saved as.
 const SHARED_STRING: u8 = 0x1c;
 
+/// Where real Studio caches an operation's geometry besides `MeshData2`:
+/// the solid in `SolidMeshHolder`, the collision hull in
+/// `PhysicalConfigData`. Studio draws and collides from these over
+/// `MeshData2`, so an operation carved again here must lose them.
+const STALE_GEOMETRY: [&str; 2] = ["SolidMeshHolder", "PhysicalConfigData"];
+
+/// Drops the cached geometry ([`STALE_GEOMETRY`]) an operation whose
+/// `MeshData2` was just (re)computed still carries from before.
+pub fn clear_stale_geometry(instance: &mut Instance) {
+    instance
+        .properties_mut()
+        .retain(|k, _| !STALE_GEOMETRY.contains(&k.as_str()));
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operation {
     Union,
@@ -300,8 +314,10 @@ fn negated(
     let raw = rbx_binary::serialize(&inner).ok()?;
     let props = into.get_mut(negate)?.properties_mut();
     props.retain(|k, _| {
-        db.resolve_property(CLASS, db.canonical_name(CLASS, k))
-            .is_some()
+        !STALE_GEOMETRY.contains(&k.as_str())
+            && db
+                .resolve_property(CLASS, db.canonical_name(CLASS, k))
+                .is_some()
     });
     props.insert("InitialSize".to_owned(), size);
     props.insert("ChildData2".to_owned(), shared(raw));
@@ -517,6 +533,7 @@ pub fn build(
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
+            clear_stale_geometry(instance);
         }
         set(dom, db, referent, "CFrame", Variant::CFrame(cframe(at)));
         set(dom, db, referent, "Size", Variant::Vector3(vector3(size)));
