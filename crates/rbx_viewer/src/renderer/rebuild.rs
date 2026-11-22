@@ -181,8 +181,13 @@ impl Renderer {
             skinner.retain(|key| skinned.contains(key));
         }
         self.refresh_meshes(device, queue, scene.resolved_file_meshes(), &skinned);
-        self.textured
-            .rebuild(device, queue, &decor.groups, &quality);
+        self.textured.rebuild(
+            device,
+            queue,
+            &decor.groups,
+            &quality,
+            scene.resolved_file_meshes(),
+        );
         self.beams
             .rebuild(device, queue, &scene.drawn_beams(), images, &quality);
         self.trails

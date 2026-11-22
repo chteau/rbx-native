@@ -1,6 +1,8 @@
 //! The second pass: `Decal` and `Texture` images projected back onto the very
 //! surfaces they are pinned to, one instanced draw per (image, shape) pair.
 
+mod meshes;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -16,8 +18,9 @@ use super::slots::Roster;
 use super::texture::{self, Pending};
 use crate::assets::Image;
 use crate::quality::QualityProfile;
-use crate::scene::ShapeKind;
+use crate::scene::{Resolved, ShapeKind};
 use crate::textures::{FaceInstance, Group};
+use meshes::DecalMeshes;
 
 /// A single opaque white texel, uploaded synchronously for every slot before
 /// [`Textured::new`] returns, so a batch always has something valid to bind
@@ -63,7 +66,7 @@ fn reuse_plan(
 
 const INSTANCES_LABEL: &str = "rbxview decal instances";
 
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array![
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 14] = wgpu::vertex_attr_array![
     2 => Float32x4,
     3 => Float32x4,
     4 => Float32x4,
@@ -74,6 +77,10 @@ const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array
     9 => Float32x4,
     10 => Float32x4,
     11 => Uint32,
+    12 => Float32x4,
+    13 => Float32x4,
+    14 => Float32x4,
+    15 => Float32x4,
 ];
 
 /// Depth bias to eliminate z-fighting between a decal and the surface it is
@@ -105,6 +112,10 @@ struct DecalRaw {
     /// 1 on a wedge, whose slope belongs to the Front face however its normal
     /// classifies, the shader has no other way to tell one mesh from another.
     wedge: u32,
+    /// From the drawn mesh's coordinates into the part's unit box: the
+    /// identity on a unit shape, [`crate::textures::MeshFace::to_unit`] on a
+    /// real mesh.
+    to_unit: [[f32; 4]; 4],
 }
 
 impl DecalRaw {
@@ -122,7 +133,11 @@ impl DecalRaw {
                 projection.uv_offset[1],
             ],
             tint: [face.tint[0], face.tint[1], face.tint[2], face.alpha],
-            wedge: u32::from(face.kind == ShapeKind::Wedge),
+            wedge: u32::from(face.mesh.is_none() && face.kind == ShapeKind::Wedge),
+            to_unit: face
+                .mesh
+                .map_or(glam::Mat4::IDENTITY, |mesh| mesh.to_unit)
+                .to_cols_array_2d(),
         }
     }
 
@@ -135,10 +150,25 @@ impl DecalRaw {
     }
 }
 
+/// What a face is drawn on: a unit shape, or a real mesh by
+/// [`crate::textures::MeshFace::key`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Shape {
+    Unit(ShapeKind),
+    Mesh(u64),
+}
+
+impl Shape {
+    fn of(face: &FaceInstance) -> Self {
+        face.mesh
+            .map_or(Shape::Unit(face.kind), |mesh| Shape::Mesh(mesh.key))
+    }
+}
+
 /// One pass's batches, keyed by (image slot, shape), the same key a
 /// [`DecalRaw`] instance is grouped by in [`add_batches`], with the
 /// referent index [`Textured::sync`] moves a single edited instance through.
-type Batches = Keyed<(usize, ShapeKind), (), DecalRaw, ()>;
+type Batches = Keyed<(usize, Shape), (), DecalRaw, ()>;
 
 /// Both textured passes and the GPU state they draw from.
 pub(super) struct Textured {
@@ -166,6 +196,7 @@ pub(super) struct Textured {
     references: Vec<AssetRef>,
     opaque: Batches,
     blended: Batches,
+    meshes: DecalMeshes,
 }
 
 impl Textured {
@@ -176,6 +207,7 @@ impl Textured {
         view_projection: &wgpu::BindGroupLayout,
         groups: &[Group],
         quality: &QualityProfile,
+        resolved: &Resolved,
     ) -> Self {
         let image_layout = texture::layout(device);
         let layouts = [Some(view_projection), Some(&image_layout)];
@@ -190,8 +222,9 @@ impl Textured {
             references: Vec::new(),
             opaque: Keyed::new(INSTANCES_LABEL),
             blended: Keyed::new(INSTANCES_LABEL),
+            meshes: DecalMeshes::default(),
         };
-        textured.rebuild(device, queue, groups, quality);
+        textured.rebuild(device, queue, groups, quality, resolved);
         textured
     }
 
@@ -212,7 +245,14 @@ impl Textured {
         queue: &wgpu::Queue,
         groups: &[Group],
         quality: &QualityProfile,
+        resolved: &Resolved,
     ) {
+        let keys = groups
+            .iter()
+            .flat_map(|group| group.opaque.iter().chain(&group.blended))
+            .filter_map(|face| Some(face.mesh?.key))
+            .collect();
+        self.meshes.rebuild(device, &keys, resolved);
         // Repeat, because a Texture's whole point is tiling past its own edges.
         let sampler = texture::sampler(device, wgpu::AddressMode::Repeat, quality.anisotropy);
         let previous = std::mem::take(&mut self.references);
@@ -321,12 +361,18 @@ impl Textured {
         device: &wgpu::Device,
         reference: &AssetRef,
         face: &FaceInstance,
+        resolved: &Resolved,
     ) -> bool {
         let Some(image) = self.references.iter().position(|held| held == reference) else {
             return false;
         };
+        if let Some(mesh) = face.mesh {
+            if !self.meshes.ensure(device, mesh.key, resolved) {
+                return false;
+            }
+        }
 
-        let key = (image, face.kind);
+        let key = (image, Shape::of(face));
         let raw = DecalRaw::new(face);
         if face.alpha >= 1.0 && !self.image_alpha[image] {
             self.blended.remove(face.referent);
@@ -417,13 +463,21 @@ impl Textured {
             if count == 0 {
                 continue;
             }
-            let (image, kind) = group.key;
-            let Some(mesh) = meshes.get(kind) else {
-                continue;
-            };
+            let (image, shape) = group.key;
             pass.set_bind_group(1, &self.images[image], &[]);
             pass.set_vertex_buffer(1, group.slots.buffer().slice(..));
-            mesh.draw(pass, count);
+            match shape {
+                Shape::Unit(kind) => {
+                    if let Some(mesh) = meshes.get(kind) {
+                        mesh.draw(pass, count);
+                    }
+                }
+                Shape::Mesh(key) => {
+                    if let Some(mesh) = self.meshes.get(key) {
+                        mesh.draw(pass, count);
+                    }
+                }
+            }
         }
     }
 }
@@ -438,12 +492,13 @@ fn has_instances(batches: &Batches) -> bool {
 /// Splits the face instances sharing one image into one batch per shape kind,
 /// since each kind is a different mesh to instance.
 fn add_batches(device: &wgpu::Device, batches: &mut Batches, image: usize, faces: &[FaceInstance]) {
-    let mut grouped: Vec<(ShapeKind, Vec<(Ref, DecalRaw)>)> = Vec::new();
+    let mut grouped: Vec<(Shape, Vec<(Ref, DecalRaw)>)> = Vec::new();
     for face in faces {
         let entry = (face.referent, DecalRaw::new(face));
-        match grouped.iter_mut().find(|(kind, _)| *kind == face.kind) {
+        let shape = Shape::of(face);
+        match grouped.iter_mut().find(|(known, _)| *known == shape) {
             Some((_, instances)) => instances.push(entry),
-            None => grouped.push((face.kind, vec![entry])),
+            None => grouped.push((shape, vec![entry])),
         }
     }
 

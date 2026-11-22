@@ -25,6 +25,12 @@ struct InstanceInput {
     @location(9) uv_transform: vec4<f32>,
     @location(10) tint: vec4<f32>,
     @location(11) wedge: u32,
+    // From the drawn mesh into the part's unit box: the identity for a unit
+    // shape, the mesh's own fit for a real mesh a decal lands on.
+    @location(12) to_unit_0: vec4<f32>,
+    @location(13) to_unit_1: vec4<f32>,
+    @location(14) to_unit_2: vec4<f32>,
+    @location(15) to_unit_3: vec4<f32>,
 }
 
 struct VertexOutput {
@@ -41,6 +47,18 @@ struct VertexOutput {
     @location(9) @interpolate(flat) wedge: u32,
 }
 
+// What carries a normal through `m`: its cofactor matrix, the inverse
+// transpose up to a scale, which stays right under a non-uniform scale (a
+// mesh fitted to its part) where `m` itself would bend the normal.
+fn normal_matrix(m: mat3x3<f32>) -> mat3x3<f32> {
+    let cofactor = mat3x3<f32>(
+        cross(m[1], m[2]),
+        cross(m[2], m[0]),
+        cross(m[0], m[1]),
+    );
+    return cofactor * sign(determinant(m));
+}
+
 @vertex
 fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     let model = mat4x4<f32>(
@@ -50,19 +68,29 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
         instance.model_3,
     );
 
-    let world = model * vec4<f32>(vertex.position, 1.0);
+    let to_unit = mat4x4<f32>(
+        instance.to_unit_0,
+        instance.to_unit_1,
+        instance.to_unit_2,
+        instance.to_unit_3,
+    );
+    let unit = to_unit * vec4<f32>(vertex.position, 1.0);
+    let unit_normal = normalize(
+        normal_matrix(mat3x3<f32>(to_unit[0].xyz, to_unit[1].xyz, to_unit[2].xyz)) * vertex.normal,
+    );
+    let world = model * unit;
 
     var out: VertexOutput;
     out.clip_position = uniforms.view_projection * world;
     out.world_position = world.xyz;
     // The projection lives in object space, where the face axes are constant
     // whichever way the part is turned.
-    out.object_position = vertex.position;
-    out.object_normal = vertex.normal;
+    out.object_position = unit.xyz;
+    out.object_normal = unit_normal;
     // Parts only ever carry an axis-aligned scale, so rotating the normal by the
     // model matrix and renormalizing gives the same direction as the inverse
     // transpose would.
-    out.world_normal = (model * vec4<f32>(vertex.normal, 0.0)).xyz;
+    out.world_normal = (model * vec4<f32>(unit_normal, 0.0)).xyz;
     out.face_normal = instance.face_normal;
     out.u_axis = instance.u_axis;
     out.v_axis = instance.v_axis;

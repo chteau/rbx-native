@@ -377,6 +377,7 @@ impl Renderer {
                 &layout,
                 &decor.groups,
                 quality,
+                scene.resolved_file_meshes(),
             ),
             sky,
             stars,

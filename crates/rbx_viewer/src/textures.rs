@@ -53,9 +53,33 @@ pub(crate) struct FaceInstance {
     pub(crate) referent: Ref,
     pub(crate) kind: ShapeKind,
     pub(crate) model: Mat4,
+    /// The real mesh the face lands on instead of the `kind` unit shape,
+    /// when its part draws one (a `MeshPart`, a `SpecialMesh` head).
+    pub(crate) mesh: Option<MeshFace>,
     pub(crate) projection: Projection,
     pub(crate) tint: [f32; 3],
     pub(crate) alpha: f32,
+}
+
+/// The real mesh a face is projected onto when one draws in place of its
+/// part's box: which mesh (see [`MeshFace::key_of`]) and the transform from
+/// the mesh's own coordinates into the part's unit box, the space the
+/// projection is measured in. Roblox lays a decal on a mesh the same way,
+/// a planar projection along the face's axis onto the mesh's own surface.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MeshFace {
+    pub(crate) key: u64,
+    pub(crate) to_unit: Mat4,
+}
+
+impl MeshFace {
+    /// The key a mesh asset's decal geometry is filed under.
+    pub(crate) fn key_of(mesh: &AssetRef) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        mesh.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 /// One planned face: the part it is pinned to, the image it wants, and where

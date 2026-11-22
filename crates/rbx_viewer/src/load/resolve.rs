@@ -148,7 +148,12 @@ impl Loaded {
         }
         self.want(&references);
         let (images, warnings) = resident.images(&references);
-        self.decor = Decor::assemble(&self.decor_plan, &images, &self.scene.placements());
+        self.decor = Decor::assemble(
+            &self.decor_plan,
+            &images,
+            &self.scene.placements(),
+            &self.scene.decal_meshes(),
+        );
         warnings
     }
 

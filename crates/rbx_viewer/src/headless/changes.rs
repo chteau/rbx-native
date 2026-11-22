@@ -517,19 +517,25 @@ impl Patcher<'_> {
             self.loaded.replan_faces(dom, self.database, parent);
         }
         let face = painted.and_then(|parent| {
-            let placement = self.loaded.scene().placement_of(parent)?;
+            let scene = self.loaded.scene();
+            let (placement, mesh) = match scene.placement_of(parent) {
+                Some(placement) => (placement, None),
+                None => scene.decal_mesh(parent).map(|(p, mesh)| (p, Some(mesh)))?,
+            };
             textures::faces(dom, self.database, parent, &placement)
                 .into_iter()
                 .find(|(_, face)| face.referent == referent)
+                .map(|(reference, face)| (reference, textures::FaceInstance { mesh, ..face }))
         });
         let Some((reference, face)) = face else {
             self.offscreen
                 .with_renderer(|renderer, _, _| renderer.remove_face(referent));
             return Ok(());
         };
-        let synced = self
-            .offscreen
-            .with_renderer(|renderer, device, _| renderer.sync_face(device, &reference, &face));
+        let resolved = self.loaded.scene().resolved_file_meshes();
+        let synced = self.offscreen.with_renderer(|renderer, device, _| {
+            renderer.sync_face(device, &reference, &face, resolved)
+        });
         if !synced && !self.resident.image_failed(&reference) {
             self.loaded.also_wants(std::slice::from_ref(&reference));
             self.resident.images(std::slice::from_ref(&reference));

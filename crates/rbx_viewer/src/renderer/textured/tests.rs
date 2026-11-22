@@ -134,13 +134,13 @@ fn profile_texture_upload_spread() {
     // decals.
     let groups = synthetic_groups(60, 1024);
 
-    let mut before = Textured::new(&device, &queue, target, &view_projection, &groups, &quality);
+    let mut before = Textured::new(&device, &queue, target, &view_projection, &groups, &quality, &Resolved::default());
     let burst = Instant::now();
     before.upload_pending(&device, &queue, &quality, usize::MAX);
     wait_for_gpu(&device);
     let burst = burst.elapsed();
 
-    let mut after = Textured::new(&device, &queue, target, &view_projection, &groups, &quality);
+    let mut after = Textured::new(&device, &queue, target, &view_projection, &groups, &quality, &Resolved::default());
     let mut frames: Vec<Duration> = Vec::new();
     while !after.pending.is_empty() {
         let frame = Instant::now();

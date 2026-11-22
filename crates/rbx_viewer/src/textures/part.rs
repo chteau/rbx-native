@@ -162,6 +162,7 @@ fn painted(
     Some((
         reference,
         FaceInstance {
+            mesh: None,
             referent,
             kind: placement.kind,
             model: placement.model,
@@ -214,6 +215,7 @@ fn worn(dom: &WeakDom, referent: Ref, placement: &Placement) -> Vec<(AssetRef, F
             faces.push((
                 layer.image.clone(),
                 FaceInstance {
+                    mesh: None,
                     referent: layer.referent,
                     kind: placement.kind,
                     model: placement.model,
@@ -269,6 +271,7 @@ fn advertised(
     Some((
         reference,
         FaceInstance {
+            mesh: None,
             referent,
             kind: placement.kind,
             model: placement.model,
