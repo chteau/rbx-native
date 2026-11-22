@@ -1,11 +1,19 @@
 //! Video at run time: `VideoFrame` and `VideoPlayer` clocks over the
-//! asset's own length. There's no MIT-compatible VP8/VP9 decoder in pure
-//! Rust, so nothing is drawn; the WebM container is read for what scripts
-//! see (`TimeLength`, `Resolution`, `IsLoaded`) and the clock runs as the
-//! real one does: `Loaded` once the asset arrives, `Played`/`Paused` as
-//! playback starts and stops, `DidLoop` at the end of a looped video,
-//! `Ended` (`DidEnd` on a player) at the end of any other, which stops it
-//! back at the start.
+//! asset's own length, and what they show and sound like. The WebM
+//! container gives what scripts see (`TimeLength`, `Resolution`,
+//! `IsLoaded`) and the clock runs as the real one does: `Loaded` once the
+//! asset arrives, `Played`/`Paused` as playback starts and stops, `DidLoop`
+//! at the end of a looped video, `Ended` (`DidEnd` on a player) at the end
+//! of any other, which stops it back at the start.
+//!
+//! On a client, a video on screen (a visible `VideoFrame`, or a
+//! `VideoPlayer` wired to a visible `VideoDisplay`) is decoded at its
+//! clock on a worker thread ([`picture`]) and bound to the frame or display
+//! through [`rbx_dom::editable::VIDEO_PICTURE`]. A `VideoFrame`'s sound is
+//! one of the sim's voices, a `VideoPlayer`'s goes through the audio graph;
+//! both follow the same clock as the picture.
+
+mod picture;
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::mpsc::{self, Receiver};
@@ -14,11 +22,14 @@ use std::time::Duration;
 
 use rbx_animation::import::asset::content_id;
 use rbx_assets::{AssetCache, AssetFetcher};
+use rbx_dom::editable::VIDEO_PICTURE;
 use rbx_dom::{Content, Ref, Variant, WeakDom};
 use rbx_lua::server::{Arg, CallReply, Event};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::audio::{Clip, Voice};
 use crate::humanoid::{flag, number};
+use picture::{Movie, Picture};
 
 /// The longest `LoadAsync` holds the script while the asset downloads.
 const LOAD_WAIT: Duration = Duration::from_secs(10);
@@ -64,8 +75,8 @@ pub struct Info {
 }
 
 enum Load {
-    Pending(Receiver<Result<Info, String>>),
-    Ready(Info),
+    Pending(Receiver<Result<Movie, String>>),
+    Ready(Arc<Movie>),
     Failed,
 }
 
@@ -86,6 +97,16 @@ pub(crate) struct Videos {
     known: BTreeSet<Ref>,
     /// Signals a write queued, for the next step.
     queued: Vec<Event>,
+    /// The videos on screen, by `VideoFrame` or `VideoPlayer`.
+    pictures: HashMap<Ref, Picture>,
+    /// The frames and displays a picture is bound to.
+    bound: BTreeSet<Ref>,
+}
+
+/// A `VideoPlayer`'s sound as the audio graph plays it.
+pub(crate) struct Playback {
+    pub clip: Arc<Clip>,
+    pub position: f64,
 }
 
 fn video_uri(dom: &WeakDom, r: Ref) -> String {
@@ -116,13 +137,42 @@ fn class(dom: &WeakDom, r: Ref) -> &str {
     dom.get(r).map_or("", |i| i.class())
 }
 
-fn fetch(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Info, String> {
+/// Whether `r` is drawn: every GUI object up to its screen visible, the
+/// screen enabled, and the screen in the player's `PlayerGui` or (a
+/// `SurfaceGui`/`BillboardGui`) in the world.
+fn on_screen(dom: &WeakDom, db: &ReflectionDatabase, r: Ref) -> bool {
+    let mut at = Some(r);
+    while let Some(here) = at {
+        let class = class(dom, here);
+        match class {
+            "PlayerGui" | "Workspace" => return true,
+            _ if db.is_subclass_of(class, "GuiObject") && !flag(dom, db, here, "Visible") => {
+                return false
+            }
+            _ if db.is_subclass_of(class, "LayerCollector") && !flag(dom, db, here, "Enabled") => {
+                return false
+            }
+            _ => at = dom.parent(here),
+        }
+    }
+    false
+}
+
+/// `AbsoluteSize` as the GUI layout last left it.
+fn absolute_size(dom: &WeakDom, r: Ref) -> [f32; 2] {
+    match dom.get(r).and_then(|i| i.properties().get("AbsoluteSize")) {
+        Some(Variant::Vector2(v)) => [v.x, v.y],
+        _ => [0.0; 2],
+    }
+}
+
+fn fetch(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Movie, String> {
     let fetcher = fetcher.ok_or_else(|| format!("video {id} is not cached and we are offline"))?;
     let bytes = fetcher.fetch_id(id).map_err(|e| e.to_string())?;
     if let Ok(cache) = AssetCache::new(None) {
         let _ = cache.put_id(id, &bytes);
     }
-    webm_info(&bytes).ok_or_else(|| format!("video {id} is not a WebM file"))
+    picture::demux(&bytes).map_err(|e| format!("video {id}: {e}"))
 }
 
 impl Videos {
@@ -132,18 +182,18 @@ impl Videos {
 
     /// The video `r` shows, asking for it the first time; `Err` once it
     /// failed to load.
-    fn info(&mut self, dom: &WeakDom, r: Ref) -> Option<Result<Info, ()>> {
+    fn info(&mut self, dom: &WeakDom, r: Ref) -> Option<Result<Arc<Movie>, ()>> {
         let id = content_id(&video_uri(dom, r))?;
         if let Some(Load::Pending(receiver)) = self.loads.get(&id) {
             if let Ok(done) = receiver.try_recv() {
-                self.loads
-                    .insert(id, done.map_or(Load::Failed, Load::Ready));
+                let load = done.map_or(Load::Failed, |m| Load::Ready(Arc::new(m)));
+                self.loads.insert(id, load);
             }
         }
         if !self.loads.contains_key(&id) {
             let cached = AssetCache::new(None).ok().and_then(|c| c.get_id(id));
-            let load = match cached.as_deref().and_then(webm_info) {
-                Some(info) => Load::Ready(info),
+            let load = match cached.as_deref().and_then(|b| picture::demux(b).ok()) {
+                Some(movie) => Load::Ready(Arc::new(movie)),
                 None => {
                     let (send, receive) = mpsc::channel();
                     let fetcher = self.fetcher.clone();
@@ -156,7 +206,7 @@ impl Videos {
             self.loads.insert(id, load);
         }
         match self.loads.get(&id)? {
-            Load::Ready(info) => Some(Ok(*info)),
+            Load::Ready(movie) => Some(Ok(movie.clone())),
             Load::Failed => Some(Err(())),
             Load::Pending(_) => None,
         }
@@ -171,7 +221,7 @@ impl Videos {
             if let Some(Load::Pending(receiver)) = self.loads.get(&id) {
                 let done = receiver.recv_timeout(LOAD_WAIT);
                 let load = match done {
-                    Ok(Ok(info)) => Load::Ready(info),
+                    Ok(Ok(movie)) => Load::Ready(Arc::new(movie)),
                     _ => Load::Failed,
                 };
                 self.loads.insert(id, load);
@@ -182,7 +232,7 @@ impl Videos {
 
     pub(crate) fn property(&mut self, dom: &WeakDom, r: Ref, key: &str) -> Option<Arg> {
         self.watch(r);
-        let info = self.info(dom, r).and_then(Result::ok);
+        let info = self.info(dom, r).and_then(Result::ok).map(|m| m.info);
         let clock = self.clocks.entry(r).or_default();
         Some(match key {
             "IsLoaded" => Arg::Bool(info.is_some()),
@@ -260,13 +310,129 @@ impl Videos {
         }
     }
 
-    /// One frame: every playing video's clock, and what that fired.
+    /// One frame: every playing video's clock, and what that fired. A
+    /// `client` then draws what's on screen; `displays` are the
+    /// `VideoPlayer` → `VideoDisplay` wires.
     pub(crate) fn step(
         &mut self,
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
         dt: f64,
+        client: bool,
+        displays: &[(Ref, Ref)],
     ) -> Vec<Event> {
+        let events = self.tick(dom, db, dt);
+        self.show(dom, db, client, displays);
+        events
+    }
+
+    /// Starts, moves and stops the pictures of the videos on screen, and
+    /// binds each to where it's drawn.
+    fn show(
+        &mut self,
+        dom: &mut WeakDom,
+        db: &ReflectionDatabase,
+        client: bool,
+        displays: &[(Ref, Ref)],
+    ) {
+        let mut wanted: HashMap<Ref, Vec<Ref>> = HashMap::new();
+        for &r in self.known.iter().filter(|_| client) {
+            match class(dom, r) {
+                "VideoFrame" if on_screen(dom, db, r) => wanted.entry(r).or_default().push(r),
+                "VideoPlayer" => {
+                    let shown = displays
+                        .iter()
+                        .filter(|(p, d)| *p == r && on_screen(dom, db, *d))
+                        .map(|(_, d)| *d);
+                    let shown: Vec<Ref> = shown.collect();
+                    if !shown.is_empty() {
+                        wanted.insert(r, shown);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.pictures.retain(|r, _| wanted.contains_key(r));
+        let bound: BTreeSet<Ref> = wanted.values().flatten().copied().collect();
+        for (r, targets) in wanted {
+            let Some(Ok(movie)) = self.info(dom, r) else {
+                self.pictures.remove(&r);
+                continue;
+            };
+            let picture = match self.pictures.remove(&r) {
+                Some(p) if Arc::ptr_eq(&p.movie, &movie) => p,
+                _ => match Picture::new(movie) {
+                    Some(p) => p,
+                    None => continue,
+                },
+            };
+            let size = targets
+                .iter()
+                .map(|t| absolute_size(dom, *t))
+                .fold([0.0f32; 2], |a, b| [a[0].max(b[0]), a[1].max(b[1])]);
+            picture.show(self.clocks.get(&r).map_or(0.0, |c| c.position), size);
+            let object = Variant::Content(Content::Object(picture.object));
+            for target in targets {
+                let props = dom.get(target).map(|i| i.properties());
+                if props.and_then(|p| p.get(VIDEO_PICTURE)) != Some(&object) {
+                    let _ = dom.set_property(target, VIDEO_PICTURE, object.clone());
+                }
+            }
+            self.pictures.insert(r, picture);
+        }
+        // Frames and displays no longer showing anything let go of it.
+        for r in self.bound.difference(&bound) {
+            if dom.get(*r).is_some() {
+                let _ = dom.remove_property(*r, VIDEO_PICTURE);
+            }
+        }
+        self.bound = bound;
+    }
+
+    /// The `VideoFrame`s playing now as the listener hears them: their
+    /// sound at their clock, `Volume` loud.
+    pub(crate) fn voices(&mut self, dom: &WeakDom, db: &ReflectionDatabase) -> Vec<Voice> {
+        let mut out = Vec::new();
+        for r in self.known.clone() {
+            if class(dom, r) != "VideoFrame" || !dom.in_tree(r) || !flag(dom, db, r, "Playing") {
+                continue;
+            }
+            let Some(Ok(movie)) = self.info(dom, r) else {
+                continue;
+            };
+            let Some(clip) = movie.audio.clone() else {
+                continue;
+            };
+            out.push(Voice {
+                sound: r,
+                clip,
+                position: self.clocks.get(&r).map_or(0.0, |c| c.position),
+                speed: 1.0,
+                gain: number(dom, db, r, "Volume").max(0.0) as f32,
+                pan: 0.0,
+                looped: flag(dom, db, r, "Looped"),
+            });
+        }
+        out
+    }
+
+    /// A playing `VideoPlayer`'s sound, for the audio graph.
+    pub(crate) fn playback(&mut self, dom: &WeakDom, r: Ref) -> Option<Playback> {
+        let clock = self.clocks.get(&r)?;
+        if !clock.playing {
+            return None;
+        }
+        let position = clock.position;
+        let Some(Ok(movie)) = self.info(dom, r) else {
+            return None;
+        };
+        Some(Playback {
+            clip: movie.audio.clone()?,
+            position,
+        })
+    }
+
+    fn tick(&mut self, dom: &mut WeakDom, db: &ReflectionDatabase, dt: f64) -> Vec<Event> {
         self.known.retain(|r| dom.get(*r).is_some());
         self.clocks.retain(|r, _| dom.get(*r).is_some());
         let mut events = std::mem::take(&mut self.queued);
@@ -299,9 +465,10 @@ impl Videos {
                 }
                 _ => {}
             }
-            let Some(Ok(info)) = info else {
+            let Some(Ok(movie)) = info else {
                 continue;
             };
+            let info = movie.info;
             if !playing || info.seconds <= 0.0 {
                 continue;
             }

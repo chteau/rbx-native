@@ -96,8 +96,12 @@ pub(in crate::scene::gui) fn fill(properties: &BTreeMap<String, Variant>) -> Opt
     // carries, and a file written by a recent Studio holds both with only one
     // of them filled in.
     // A script's `EditableImage` bound with `Content.fromObject` wins: it
-    // is what the label shows while it lives.
-    let asset = match properties.get("ImageContent").and_then(editable_key) {
+    // is what the label shows while it lives. A running video's decoded
+    // frame binds the same way, to a `VideoFrame` or `VideoDisplay`.
+    let editable = [rbx_dom::editable::VIDEO_PICTURE, "ImageContent"]
+        .iter()
+        .find_map(|name| properties.get(*name).and_then(editable_key));
+    let asset = match editable {
         Some(editable) => editable,
         None => {
             let uri = ["Image", "ImageContent"]
@@ -111,13 +115,30 @@ pub(in crate::scene::gui) fn fill(properties: &BTreeMap<String, Variant>) -> Opt
         return None;
     }
 
+    // A `VideoDisplay` names its tint and crop after the video.
+    let [tint, transparency, offset, size] =
+        if properties.contains_key(rbx_dom::editable::VIDEO_PICTURE) {
+            [
+                "VideoColor3",
+                "VideoTransparency",
+                "VideoRectOffset",
+                "VideoRectSize",
+            ]
+        } else {
+            [
+                "ImageColor3",
+                "ImageTransparency",
+                "ImageRectOffset",
+                "ImageRectSize",
+            ]
+        };
     Some(Fill {
         asset,
-        tint: color(properties, "ImageColor3", [1.0, 1.0, 1.0]),
-        alpha: alpha(properties, "ImageTransparency"),
+        tint: color(properties, tint, [1.0, 1.0, 1.0]),
+        alpha: alpha(properties, transparency),
         scale: scale_mode(properties),
-        rect_offset: vector2(properties, "ImageRectOffset"),
-        rect_size: vector2(properties, "ImageRectSize"),
+        rect_offset: vector2(properties, offset),
+        rect_size: vector2(properties, size),
         pixelated: enum_of(properties, "ResampleMode", 0) == PIXELATED,
     })
 }

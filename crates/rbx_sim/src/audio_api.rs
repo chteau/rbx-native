@@ -1,7 +1,8 @@
 //! The Audio API's script side on a peer (the AudioApi golden): pins and
 //! wires (`Wire.Connected` live, `WiringChanged` on both ends once a frame
 //! sees the wiring change), `AudioPlayer`'s clock over the asset `Sound`
-//! loads, the filter's response, how audible emitters and listeners are
+//! loads, `AudioTextToSpeech`'s over the line [`crate::speech`] speaks, a
+//! `VideoPlayer`'s sound at its video's clock, the filter's response, how audible emitters and listeners are
 //! to each other, and the members game scripts may not call. On a client
 //! the graph renders every frame ([`crate::audio_graph`]): what its device
 //! outputs play waits for the editor's output, its analyzers read their
@@ -24,6 +25,8 @@ use crate::audio_graph::{
 };
 use crate::humanoid::{flag, number};
 use crate::sound::{enum_of, world_cframe, Sounds};
+use crate::speech::{speak, Line};
+use crate::video::Videos;
 
 /// Rendered frames kept for the editor before the oldest go.
 const BACKLOG: usize = RATE as usize / 2;
@@ -84,6 +87,10 @@ pub(crate) fn is_property(class: &str, key: &str) -> bool {
         (class, key),
         ("Wire", "Connected")
             | ("AudioPlayer", "IsReady" | "TimeLength" | "TimePosition")
+            | (
+                "AudioTextToSpeech",
+                "IsLoaded" | "TimeLength" | "TimePosition"
+            )
             | ("AudioAnalyzer", "RmsLevel" | "PeakLevel")
             | ("AudioRecorder", "TimeLength")
     )
@@ -112,6 +119,17 @@ pub(crate) struct Audio {
     last_id: i64,
     /// `AudioDeviceInput:SetUserIdAccessList`, by input.
     access: HashMap<Ref, Vec<f64>>,
+    /// What each `AudioTextToSpeech` loaded, and the line it says.
+    speech: HashMap<Ref, (Line, Arc<Clip>)>,
+}
+
+fn line(dom: &WeakDom, db: &ReflectionDatabase, r: Ref) -> Line {
+    Line {
+        text: text(dom, db, r, "Text"),
+        voice: text(dom, db, r, "VoiceId"),
+        pitch: number(dom, db, r, "Pitch") as f32,
+        speed: number(dom, db, r, "Speed") as f32,
+    }
 }
 
 /// The longest an `AudioRecorder` keeps, in seconds.
@@ -355,6 +373,51 @@ impl Audio {
         })
     }
 
+    /// What `player` plays: an `AudioPlayer`'s asset, or the line an
+    /// `AudioTextToSpeech` loaded while its properties still say it.
+    fn source(
+        &self,
+        sounds: &mut Sounds,
+        dom: &WeakDom,
+        db: &ReflectionDatabase,
+        player: Ref,
+    ) -> Option<Arc<Clip>> {
+        if class(dom, player) != "AudioTextToSpeech" {
+            return clip(sounds, dom, player);
+        }
+        let (said, clip) = self.speech.get(&player)?;
+        (*said == line(dom, db, player)).then(|| clip.clone())
+    }
+
+    /// Speaks `speaker`'s line (once per line); false for nothing to say.
+    fn load_speech(&mut self, dom: &WeakDom, db: &ReflectionDatabase, speaker: Ref) -> bool {
+        let said = line(dom, db, speaker);
+        if self.speech.get(&speaker).is_some_and(|(s, _)| *s == said) {
+            return true;
+        }
+        match speak(&said) {
+            Some(clip) => {
+                self.speech.insert(speaker, (said, clip));
+                true
+            }
+            None => {
+                self.speech.remove(&speaker);
+                false
+            }
+        }
+    }
+
+    /// The `VideoPlayer` → `VideoDisplay` wires the last frame saw.
+    pub(crate) fn displays(&self, dom: &WeakDom) -> Vec<(Ref, Ref)> {
+        self.wired
+            .iter()
+            .filter(|w| {
+                class(dom, w.source) == "VideoPlayer" && class(dom, w.target) == "VideoDisplay"
+            })
+            .map(|w| (w.source, w.target))
+            .collect()
+    }
+
     fn connections(&self, dom: &WeakDom, db: &ReflectionDatabase) -> Vec<Wire> {
         self.known
             .iter()
@@ -443,19 +506,32 @@ impl Audio {
                     .retain(|(i, r, ..)| !(*r == node && *i as f64 == id));
                 Arg::Bool(self.scheduled.len() < before)
             }
-            // No text-to-speech voice here: nothing loads, and a play ends
-            // on the next frame.
+            // A speaker loads its line as it starts; one with nothing to
+            // say ends on the next frame.
             "Play" => {
-                let _ = dom.set_property(node, "IsPlaying", Variant::Bool(true));
+                self.load_speech(dom, db, node);
+                let position = self.track(dom, db, node).position;
+                set_playing(dom, node, true, position);
                 return Ok(CallReply::default());
             }
-            "Pause" | "Unload" => {
+            "Pause" => {
                 let _ = dom.set_property(node, "IsPlaying", Variant::Bool(false));
+                return Ok(CallReply::default());
+            }
+            "Unload" => {
+                self.speech.remove(&node);
+                self.track(dom, db, node).position = 0.0;
+                set_playing(dom, node, false, 0.0);
                 return Ok(CallReply::default());
             }
             "LoadAsync" => Arg::Enum {
                 enum_name: "AssetFetchStatus".into(),
-                item: "Failure".into(),
+                item: if self.load_speech(dom, db, node) {
+                    "Success"
+                } else {
+                    "Failure"
+                }
+                .into(),
             },
             "GetWaveformAsync" => {
                 let range = match args.first() {
@@ -469,9 +545,7 @@ impl Audio {
                     Some(Arg::Number(n)) => n.clamp(0.0, 65536.0) as usize,
                     _ => return Err("Argument 2 missing or nil".into()),
                 };
-                let clip = (class == "AudioPlayer")
-                    .then(|| clip(sounds, dom, node))
-                    .flatten();
+                let clip = self.source(sounds, dom, db, node);
                 waveform(clip.as_deref(), range, samples)
             }
             "RecordAsync" | "Stop" => {
@@ -579,10 +653,11 @@ impl Audio {
         };
         Some(match key {
             "Connected" => Arg::Bool(connection(dom, db, node).is_some()),
-            "IsReady" => Arg::Bool(clip(sounds, dom, node).is_some()),
-            "TimeLength" if class(dom, node) != "AudioRecorder" => {
-                Arg::Number(clip(sounds, dom, node).map_or(0.0, |c| c.seconds()))
-            }
+            "IsReady" | "IsLoaded" => Arg::Bool(self.source(sounds, dom, db, node).is_some()),
+            "TimeLength" if class(dom, node) != "AudioRecorder" => Arg::Number(
+                self.source(sounds, dom, db, node)
+                    .map_or(0.0, |c| c.seconds()),
+            ),
             "RmsLevel" => analysis(|a| a.rms),
             "PeakLevel" => analysis(|a| a.peak),
             "TimePosition" => Arg::Number(self.track(dom, db, node).position),
@@ -610,6 +685,7 @@ impl Audio {
     pub(crate) fn step(
         &mut self,
         sounds: &mut Sounds,
+        videos: &mut Videos,
         dom: &mut WeakDom,
         db: &ReflectionDatabase,
         dt: f64,
@@ -656,7 +732,7 @@ impl Audio {
         self.wired = now;
 
         if client {
-            let graph = self.graph(sounds, dom, db, local);
+            let graph = self.graph(sounds, videos, dom, db, local);
             if !graph.nodes.is_empty() {
                 let block = self
                     .renderer
@@ -689,26 +765,19 @@ impl Audio {
                 }
             }
         }
-        // A voice that never loaded is done as soon as it starts.
-        let speakers: Vec<Ref> = self
-            .known
-            .iter()
-            .copied()
-            .filter(|r| class(dom, *r) == "AudioTextToSpeech" && flag(dom, db, *r, "IsPlaying"))
-            .collect();
-        for speaker in speakers {
-            let _ = dom.set_property(speaker, "IsPlaying", Variant::Bool(false));
-            events.push(signal(speaker, "Ended", Vec::new()));
-        }
-
         let players: Vec<Ref> = self
             .known
             .iter()
             .copied()
-            .filter(|r| class(dom, *r) == "AudioPlayer")
+            .filter(|r| matches!(class(dom, *r), "AudioPlayer" | "AudioTextToSpeech"))
             .collect();
         for player in players {
-            let Some(clip) = clip(sounds, dom, player) else {
+            let Some(clip) = self.source(sounds, dom, db, player) else {
+                // A voice with nothing loaded is done as soon as it starts.
+                if class(dom, player) == "AudioTextToSpeech" && flag(dom, db, player, "IsPlaying") {
+                    let _ = dom.set_property(player, "IsPlaying", Variant::Bool(false));
+                    events.push(signal(player, "Ended", Vec::new()));
+                }
                 continue;
             };
             let track = self.track(dom, db, player);
@@ -741,6 +810,7 @@ impl Audio {
     fn graph(
         &mut self,
         sounds: &mut Sounds,
+        videos: &mut Videos,
         dom: &WeakDom,
         db: &ReflectionDatabase,
         local: Option<Ref>,
@@ -757,8 +827,10 @@ impl Audio {
             let n = |name| number(dom, db, r, name) as f32;
             let level = |name| decibels(n(name));
             let kind = match class(dom, r) {
-                "AudioPlayer" => {
-                    let clip = clip(sounds, dom, r).filter(|_| flag(dom, db, r, "IsPlaying"));
+                "AudioPlayer" | "AudioTextToSpeech" => {
+                    let clip = self
+                        .source(sounds, dom, db, r)
+                        .filter(|_| flag(dom, db, r, "IsPlaying"));
                     let length = clip.as_ref().map_or(0.0, |c| c.seconds());
                     let [_, end, loop_start, loop_end] = regions(dom, db, r, length);
                     let looping = flag(dom, db, r, "Looping");
@@ -772,10 +844,20 @@ impl Audio {
                         looping,
                     })
                 }
-                "AudioDeviceInput"
-                | "AudioTextToSpeech"
-                | "AudioWindSynthesizer"
-                | "VideoPlayer" => Kind::Silence,
+                "VideoPlayer" => {
+                    let playback = videos.playback(dom, r);
+                    let end = playback.as_ref().map_or(0.0, |p| p.clip.seconds());
+                    Kind::Player(Playback {
+                        position: playback.as_ref().map_or(0.0, |p| p.position),
+                        clip: playback.map(|p| p.clip),
+                        speed: number(dom, db, r, "PlaybackSpeed").max(0.0),
+                        volume: n("Volume"),
+                        end,
+                        loop_start: 0.0,
+                        looping: flag(dom, db, r, "Looping"),
+                    })
+                }
+                "AudioDeviceInput" | "AudioWindSynthesizer" => Kind::Silence,
                 "AudioGate" => {
                     let (close, open) = range(dom, db, r, "Threshold");
                     Kind::Gate {

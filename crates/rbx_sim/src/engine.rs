@@ -278,7 +278,7 @@ pub(crate) fn write(
         shared.borrow_mut().videos.write(&dom, referent, key, value);
         return None;
     }
-    if class == "AudioPlayer" && key == "TimePosition" {
+    if matches!(class, "AudioPlayer" | "AudioTextToSpeech") && key == "TimePosition" {
         let (dom, db) = shared.borrow().dom_and_db()?;
         let dom = dom.borrow();
         shared.borrow_mut().audio.write(&dom, db, referent, value);

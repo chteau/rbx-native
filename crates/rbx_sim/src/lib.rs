@@ -41,6 +41,7 @@ pub mod session;
 mod sim;
 mod sound;
 mod spatial;
+mod speech;
 mod streaming;
 mod teams;
 mod terrain;
