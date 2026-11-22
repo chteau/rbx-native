@@ -88,6 +88,8 @@ pub struct Simulation {
     output: Output,
     /// Changes kept for [`Simulation::take_view_changes`], once watched.
     view_changes: Option<Vec<Change>>,
+    /// The same, kept for a recording's frame hashes.
+    traced: Option<Vec<Change>>,
     /// While a replicated tree arrives: the roots whose scripts start once
     /// all of it is here (see [`Simulation::hold_scripts`]).
     held_scripts: Option<Vec<Ref>>,
@@ -140,6 +142,7 @@ impl Simulation {
             refit: Vec::new(),
             output: Output::default(),
             view_changes: None,
+            traced: None,
             held_scripts: None,
             inputs: None,
             role: Role::Server,
@@ -949,6 +952,39 @@ impl Simulation {
         self.view_changes.get_or_insert_with(Vec::new);
     }
 
+    /// Keeps `changes` for the view and the replay trace, whichever watch.
+    fn seen(&mut self, changes: &[Change]) {
+        for kept in [&mut self.view_changes, &mut self.traced]
+            .into_iter()
+            .flatten()
+        {
+            kept.extend_from_slice(changes);
+        }
+    }
+
+    /// The changes since the last call, as [`Simulation::take_view_changes`]
+    /// has them, for a recording's frame hashes.
+    pub(crate) fn take_trace(&mut self) -> Vec<Change> {
+        self.traced.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    /// Record or replay: the clock, randomness and the web's answers go
+    /// through `tape`, background asset loads land when `gate` says, and
+    /// the changes made are kept for the frame hashes.
+    pub(crate) fn set_tape(&mut self, tape: rbx_lua::tape::Tape, gate: crate::replay::Gate) {
+        if let Err(err) = self.vm.set_tape(tape.clone()) {
+            self.output
+                .push_text(rbx_lua::LineKind::Error, err.to_string());
+        }
+        let mut shared = self.shared.borrow_mut();
+        shared.players.tape = Some(tape);
+        shared.sounds.gate = Some(gate.clone());
+        shared.animations.gate = Some(gate.clone());
+        shared.videos.gate = Some(gate);
+        drop(shared);
+        self.traced.get_or_insert_with(Vec::new);
+    }
+
     /// What scripts printed since the last call.
     pub fn take_output(&mut self) -> Output {
         std::mem::take(&mut self.output)
@@ -1260,12 +1296,10 @@ impl Simulation {
             }
             self.world.teleport(*part, cf);
             self.shared.borrow_mut().moved.insert(*part);
-            if let Some(seen) = &mut self.view_changes {
-                seen.push(Change::Property {
-                    referent: *part,
-                    name: "CFrame".into(),
-                });
-            }
+            self.seen(&[Change::Property {
+                referent: *part,
+                name: "CFrame".into(),
+            }]);
         }
     }
 
@@ -1460,17 +1494,19 @@ impl Simulation {
             .humanoids
             .after_physics(&self.world, &drives);
         self.humanoid_events();
-        if let Some(seen) = &mut self.view_changes {
-            let dom = self.dom.borrow();
-            seen.extend(
+        if self.view_changes.is_some() || self.traced.is_some() {
+            let moved: Vec<Change> = {
+                let dom = self.dom.borrow();
                 self.world
                     .moving_parts()
                     .filter(|part| dom.get(*part).is_some())
                     .map(|referent| Change::Property {
                         referent,
                         name: "CFrame".to_string(),
-                    }),
-            );
+                    })
+                    .collect()
+            };
+            self.seen(&moved);
         }
         let fallen = self.world.fallen(fallen_height, self.role != Role::Client);
         for part in fallen {
@@ -1919,9 +1955,7 @@ impl Simulation {
     /// a velocity write sets it, anything structural rebuilds the world
     /// before the next step. Scripts newly placed where they run start.
     fn apply(&mut self, changes: Vec<Change>) {
-        if let Some(seen) = &mut self.view_changes {
-            seen.extend(changes.iter().cloned());
-        }
+        self.seen(&changes);
         let first = self.dom.borrow().mutations() + 1 - changes.len() as u64;
         self.shared
             .borrow_mut()
@@ -2249,7 +2283,7 @@ impl std::fmt::Debug for Models {
 impl rbx_lua::server::AssetSource for Models {
     fn fetch(&self, id: u64) -> Result<Vec<u8>, String> {
         let cache = rbx_assets::AssetCache::new(None).ok();
-        if let Some(bytes) = cache.as_ref().and_then(|c| c.get_id(id)) {
+        if let Some(bytes) = crate::replay::cached(Some(&self.0), id) {
             return Ok(bytes);
         }
         let bytes = self.0.fetch_id(id).map_err(|e| match e {

@@ -7264,6 +7264,7 @@ dependencies = [
 name = "rbx_sim"
 version = "0.1.0"
 dependencies = [
+ "lz4_flex",
  "rapier3d-f64",
  "rbx_animation",
  "rbx_assets",

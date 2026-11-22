@@ -9,6 +9,8 @@ description = "Headless local Run of a place: server scripts and physics, no Rob
 [dependencies]
 rbx_dom = { path = "../rbx_dom" }
 rbx_binary = { path = "../rbx_binary" }
+# replay.rs: recordings are compressed as rbx_binary compresses its chunks.
+lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-decode"] }
 rbx_xml = { path = "../rbx_xml" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_lua = { path = "../rbx_lua" }

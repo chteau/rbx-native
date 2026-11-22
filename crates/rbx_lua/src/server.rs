@@ -522,6 +522,12 @@ impl ServerVm {
         self.budget = timeout;
     }
 
+    /// Reads the clock, randomness and the web's answers through `tape`
+    /// (Local Run's record and replay), from before the first script.
+    pub fn set_tape(&self, tape: crate::tape::Tape) -> Result<(), LuaError> {
+        crate::tape::install(&self.lua, tape)
+    }
+
     /// This VM's profiling: `debug.profilebegin` scopes, time in Luau, the
     /// ScriptProfiler session.
     pub fn profiler(&self) -> Rc<RefCell<crate::profiler::Profiler>> {

@@ -222,7 +222,7 @@ impl Shell {
         // The live game's tree is not the place, nor is a Local Run's (whose
         // GUI carries run-time values such as `AbsolutePosition` that a
         // place file can't hold); the next write after Play has it back.
-        if self.live_shown() || self.local_run_running() {
+        if self.live_shown() || self.local_run_shown() {
             return;
         }
         let state = &self.recovery;

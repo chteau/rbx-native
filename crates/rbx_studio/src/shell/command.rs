@@ -263,7 +263,7 @@ impl Shell {
             return;
         }
         // During a local run the edits go to the simulation, not the place.
-        if self.local_run_active() {
+        if self.local_run_shown() {
             self.local_run_reflect(changes, cx);
             return;
         }

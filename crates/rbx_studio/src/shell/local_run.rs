@@ -28,11 +28,14 @@ mod avatars;
 pub(crate) mod badges;
 pub(crate) mod data;
 mod offline;
+mod replay;
 mod sound;
+pub(crate) mod windows;
 use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::workspace_view::core_gui::CoreAction;
+use rbx_sim::replay::Action;
 
 pub(crate) const BETA_ID: &str = "local-run";
 const FRAME_HZ: f64 = 60.0;
@@ -76,6 +79,15 @@ struct Running {
     editables: u64,
     /// The Controller Emulator's pad as the viewed client last heard it.
     pad: Option<rbx_play::gamepad::PadState>,
+    /// Playing a recording back instead of taking input.
+    replay: Option<replay::ReplayState>,
+    /// Server & Clients: the session shows in a window per peer (see
+    /// `windows`), this window keeps the edited place.
+    windowed: bool,
+    windows: Vec<windows::PeerWindow>,
+    /// The player whose window last had input: what the run plays aloud
+    /// and the Controller Emulator drives.
+    audible: Option<Ref>,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -96,6 +108,15 @@ pub(crate) struct LocalRun {
     arriving: Option<Arriving>,
     /// Test › Offline: the open place's offline pack.
     offline: offline::Offline,
+    /// The last run's recording, for Replay and Save recording.
+    recording: Option<rbx_sim::replay::Recording>,
+    /// The replay transport's scrub rail.
+    rail: Option<Entity<gpui_kit::component::slider::SliderState>>,
+    /// In a Server & Clients test window: the session it shows.
+    pub(in crate::shell) peer: Option<windows::PeerLink>,
+    /// The `PlayerGui` this window's viewport draws (see
+    /// `WorkspaceView::set_player_gui`).
+    shown_gui: Option<Ref>,
 }
 
 impl Default for LocalRun {
@@ -106,6 +127,10 @@ impl Default for LocalRun {
             players: 1,
             arriving: None,
             offline: offline::Offline::default(),
+            recording: None,
+            rail: None,
+            peer: None,
+            shown_gui: None,
         }
     }
 }
@@ -178,8 +203,9 @@ fn pad_inputs(
     out
 }
 
-/// The most local players Play (local) runs.
-pub(crate) const MAX_PLAYERS: usize = 4;
+/// The most local players a test runs (Studio's Server & Clients count
+/// goes to 8).
+pub(crate) const MAX_PLAYERS: usize = 8;
 
 /// Animations (the default ones, the catalog's) from Roblox's asset
 /// delivery; they land in the asset cache for the next run. An offline
@@ -208,17 +234,28 @@ impl rbx_assets::AssetFetcher for Fetcher {
 }
 
 impl LocalRun {
+    /// A session runs here, or this is one of its test windows.
     pub(in crate::shell) fn active(&self) -> bool {
-        self.running.is_some()
+        self.running.is_some() || self.peer.is_some()
     }
 
     pub(in crate::shell) fn paused(&self) -> bool {
         self.running.as_ref().is_some_and(|run| run.paused)
+            || self.peer.as_ref().is_some_and(|peer| peer.paused)
     }
 
     /// The edited place, while the simulation's copy is shown.
     pub(in crate::shell) fn edited(&self) -> Option<&WeakDom> {
-        self.running.as_ref().map(|run| &run.stash.dom)
+        self.running
+            .as_ref()
+            .filter(|run| !run.windowed)
+            .map(|run| &run.stash.dom)
+    }
+
+    /// This window shows a peer of a running session rather than the
+    /// edited place.
+    pub(in crate::shell) fn shown(&self) -> bool {
+        self.running.as_ref().is_some_and(|run| !run.windowed) || self.peer.is_some()
     }
 }
 
@@ -593,6 +630,11 @@ impl Shell {
         true
     }
 
+    /// This window shows a run: Play (local)'s, or a test window's peer.
+    pub(super) fn local_run_shown(&self) -> bool {
+        self.play.live.local.shown()
+    }
+
     fn local_run_can_start(&self) -> bool {
         crate::beta::enabled(BETA_ID)
             && !self.local_run_active()
@@ -602,25 +644,45 @@ impl Shell {
 
     pub(crate) fn run_local(&mut self, cx: &mut Context<Self>) {
         if self.local_run_can_start() {
-            self.start_local(None, cx);
+            self.start_local(None, None, cx);
         }
     }
 
-    /// `RBX_STUDIO_LOCAL_RUN=play` (or `run`, `offline-pack`) starts Play
-    /// (local) (or Run, Make available offline)
-    /// at startup, a screenshot aid for the live checks, as
+    /// `RBX_STUDIO_LOCAL_RUN=play` (or `run`, `offline-pack`,
+    /// `server-clients:N`, `replay:FILE`) starts Play (local) (or Run, Make
+    /// available offline, Server & Clients with N players, a replay) at
+    /// startup, a screenshot aid for the live checks, as
     /// `RBX_STUDIO_TERRAIN` is for the Terrain Editor. The beta has to be on.
     pub(super) fn apply_debug_local_run(&mut self, cx: &mut Context<Self>) {
         match std::env::var("RBX_STUDIO_LOCAL_RUN").as_deref() {
             Ok("play") => self.play_local(cx),
             Ok("run") => self.run_local(cx),
             Ok("offline-pack") => self.offline_pack(cx),
+            Ok(other) => {
+                if let Some(count) = other.strip_prefix("server-clients:") {
+                    if let Ok(count) = count.parse::<usize>() {
+                        self.play.live.local.players = count.clamp(1, MAX_PLAYERS);
+                        self.server_and_clients(cx);
+                    }
+                }
+                if let Some(file) = other.strip_prefix("replay:") {
+                    if self.local_run_can_start() {
+                        self.local_run_replay_file(std::path::Path::new(file), cx);
+                    }
+                }
+            }
             _ => {}
         }
     }
 
     /// Play (local): works out the player off the UI thread, then starts.
     pub(crate) fn play_local(&mut self, cx: &mut Context<Self>) {
+        self.play_local_in(None, cx);
+    }
+
+    /// Play (local), or with `windows` Server & Clients: that many test
+    /// players, the server and each player in a window of their own.
+    fn play_local_in(&mut self, windows: Option<usize>, cx: &mut Context<Self>) {
         if !self.local_run_can_start() {
             return;
         }
@@ -646,7 +708,7 @@ impl Shell {
                     shell
                         .viewport
                         .update(cx, |viewport, _| viewport.core_gui.badges = badges);
-                    shell.start_local(Some(player), cx);
+                    shell.start_local(Some(player), windows, cx);
                 }
             });
         })
@@ -656,6 +718,7 @@ impl Shell {
     fn start_local(
         &mut self,
         player: Option<(avatars::Player, avatars::StudioAvatars)>,
+        windows: Option<usize>,
         cx: &mut Context<Self>,
     ) {
         let arriving = self.play.live.local.arriving.take();
@@ -674,6 +737,8 @@ impl Shell {
                 return;
             }
         };
+        // Every run is recorded, for Replay and Save recording.
+        session.record(replay::seed());
         session.set_network(local_network(&self.play.network.applied.conditions));
         // A frame scripts overrun stretches the next one's step, as on a
         // real server.
@@ -715,29 +780,47 @@ impl Shell {
         let mut note = None;
         if let Some((player, avatars)) = player {
             session.set_avatars(std::rc::Rc::new(avatars));
-            queue_players(
-                &mut session,
-                &player.name,
-                player.user_id,
-                player.character,
-                self.play.live.local.players,
-            );
+            match windows {
+                // Studio's test players, every one wearing your avatar.
+                Some(count) => {
+                    for n in 1..=count {
+                        session.join_later(
+                            &format!("Player{n}"),
+                            -(n as i64),
+                            player.character.clone(),
+                        );
+                    }
+                }
+                None => queue_players(
+                    &mut session,
+                    &player.name,
+                    player.user_id,
+                    player.character,
+                    self.play.live.local.players,
+                ),
+            }
             note = Some(player.note);
         }
+        let windowed = windows.is_some();
         // Play (local) shows the server under the loading screen until
-        // its players joined.
+        // its players joined; Server & Clients opens their windows then.
         let view = rbx_sim::Peer::Server;
         session.server.watch_view_changes();
-        let mut shown = session
-            .sim(view)
-            .map(|s| s.dom().clone())
-            .unwrap_or_default();
-        shown.take_changes();
         let output = session.take_output();
-        let history = std::mem::replace(&mut self.history, History::new(DEFAULT_CAP));
-        let selection = self.selected_all().to_vec();
-        self.deselect(cx);
-        let dom = stash_edited(&mut self.dom, shown);
+        // Server & Clients leaves this window on the edited place.
+        let (dom, history, selection) = if windowed {
+            (WeakDom::default(), History::new(DEFAULT_CAP), Vec::new())
+        } else {
+            let mut shown = session
+                .sim(view)
+                .map(|s| s.dom().clone())
+                .unwrap_or_default();
+            shown.take_changes();
+            let history = std::mem::replace(&mut self.history, History::new(DEFAULT_CAP));
+            let selection = self.selected_all().to_vec();
+            self.deselect(cx);
+            (stash_edited(&mut self.dom, shown), history, selection)
+        };
         let task = cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(TICK).await;
             if this
@@ -767,7 +850,23 @@ impl Shell {
             editables: rbx_dom::editable::generation(),
             player: kept,
             pad: None,
+            replay: None,
+            windowed,
+            windows: Vec::new(),
+            audible: None,
         });
+        if windowed {
+            push_row(
+                &mut self.output,
+                Feedback::Info("Server & Clients started".to_owned()),
+            );
+            if let Some(note) = note {
+                push_row(&mut self.output, Feedback::Info(note));
+            }
+            self.local_run_open_windows(output, cx);
+            cx.notify();
+            return;
+        }
         if playing {
             self.viewport
                 .update(cx, |viewport, _| viewport.core_gui.joining = true);
@@ -790,7 +889,7 @@ impl Shell {
     /// The view the run shows, while one runs.
     pub(crate) fn local_run_view(&self) -> Option<(rbx_sim::Peer, String)> {
         let run = self.play.live.local.running.as_ref()?;
-        run.playing
+        (!run.windowed && (run.playing || run.replay.is_some()))
             .then(|| (run.view, view_label(&run.session, run.view)))
     }
 
@@ -826,6 +925,10 @@ impl Shell {
         for client in &mut run.session.clients {
             client.sim.watch_view_changes();
         }
+        if run.windowed {
+            self.local_run_open_player_windows(cx);
+            return;
+        }
         self.local_run_show(rbx_sim::Peer::Client(0), cx);
     }
 
@@ -840,10 +943,12 @@ impl Shell {
             return;
         };
         sim.take_view_changes();
-        if !client {
-            rbx_viewer::set_player_gui(None);
-        }
         let shown = sim.dom().clone();
+        if !client {
+            self.play.live.local.shown_gui = None;
+            self.viewport
+                .update(cx, |viewport, _| viewport.set_player_gui(None));
+        }
         self.deselect(cx);
         let changes = changes_between(&self.dom, &shown);
         self.dom = shown;
@@ -862,10 +967,12 @@ impl Shell {
     /// instead of `StarterGui`'s, or (`None`) the edit view's again; the
     /// viewport re-plans its GUI when that changes.
     fn show_player_gui(&mut self, player_gui: Option<rbx_dom::Ref>, cx: &mut Context<Self>) {
-        if rbx_viewer::player_gui() == player_gui {
+        if self.play.live.local.shown_gui == player_gui {
             return;
         }
-        rbx_viewer::set_player_gui(player_gui);
+        self.play.live.local.shown_gui = player_gui;
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_player_gui(player_gui));
         // A reparenting nobody can place re-plans every screen.
         let Some(any) = player_gui.or_else(|| self.dom.root_refs().first().copied()) else {
             return;
@@ -909,7 +1016,7 @@ impl Shell {
     /// How many local players the running game has.
     pub(crate) fn local_run_player_count(&self) -> Option<usize> {
         let run = self.play.live.local.running.as_ref()?;
-        run.playing.then_some(run.session.clients.len())
+        (run.playing && !run.windowed).then_some(run.session.clients.len())
     }
 
     /// Test › Players: 1 to [`MAX_PLAYERS`], for the next Play (local).
@@ -928,6 +1035,9 @@ impl Shell {
     }
 
     pub(crate) fn local_run_pause(&mut self, cx: &mut Context<Self>) {
+        if self.local_run_forward(cx, |host, cx| host.local_run_pause(cx)) {
+            return;
+        }
         if let Some(run) = self.play.live.local.running.as_mut() {
             run.paused = !run.paused;
             cx.notify();
@@ -936,6 +1046,9 @@ impl Shell {
 
     /// Step while paused: one frame of the game, shown as a tick shows it.
     pub(crate) fn local_run_step_frame(&mut self, cx: &mut Context<Self>) {
+        if self.local_run_forward(cx, |host, cx| host.local_run_step_frame(cx)) {
+            return;
+        }
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
@@ -953,6 +1066,9 @@ impl Shell {
     }
 
     pub(crate) fn local_run_stop(&mut self, cx: &mut Context<Self>) {
+        if self.local_run_forward(cx, |host, cx| host.local_run_stop(cx)) {
+            return;
+        }
         let Some(run) = self.play.live.local.running.take() else {
             return;
         };
@@ -961,16 +1077,38 @@ impl Shell {
             stash,
             task,
             playing,
+            replay,
+            windowed,
+            windows,
             ..
         } = run;
         drop(task);
-        self.viewport
-            .update(cx, |viewport, _| viewport.set_play_local(false));
-        rbx_viewer::set_player_gui(None);
+        if replay.is_none() {
+            self.play.live.local.recording = session.recording();
+        }
         let seconds = session.time();
         session.shutdown();
         let output = session.take_output();
         drop(session);
+        if windowed {
+            // End Session: every test window closes with it.
+            for window in windows {
+                let _ = window
+                    .handle
+                    .update(cx, |_, window, _| window.remove_window());
+            }
+            push_row(
+                &mut self.output,
+                Feedback::Info(format!(
+                    "Server & Clients ended after {seconds:.1} s of game time"
+                )),
+            );
+            cx.notify();
+            return;
+        }
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_play_local(false));
+        self.show_player_gui(None, cx);
         self.deselect(cx);
         let back = changes_between(&self.dom, &stash.dom);
         restore_edited(&mut self.dom, stash.dom);
@@ -1037,6 +1175,7 @@ impl Shell {
         }
         drop(dom);
         let player = run.player.clone();
+        let windows = run.windowed.then_some(run.session.clients.len());
         push_row(
             &mut self.output,
             Feedback::Info(format!("Teleporting to place {place}\u{2026}")),
@@ -1048,7 +1187,7 @@ impl Shell {
         });
         self.local_run_stop(cx);
         let player = player.map(|p| (p, avatars::lookups()));
-        self.start_local(player, cx);
+        self.start_local(player, windows, cx);
     }
 
     /// One tick of the frame loop: steps the frames due on the wall clock.
@@ -1059,22 +1198,48 @@ impl Shell {
         let now = Instant::now();
         let elapsed = now.duration_since(run.last).as_secs_f64();
         run.last = now;
-        if run.paused {
+        let seeking = run.replay.as_ref().and_then(|r| r.seek);
+        if run.paused && seeking.is_none() {
             run.sound.update(Vec::new(), Vec::new(), false);
             return;
         }
-        run.clock += elapsed;
+        let speed = run.replay.as_ref().map_or(1.0, |r| r.speed);
+        run.clock += elapsed * speed;
         if run.step_once {
             run.clock = run.session.time() + 1.0 / FRAME_HZ;
         }
+        if let Some(target) = seeking {
+            if target < run.session.server.frame() {
+                self.local_run_restart_replay(cx);
+            }
+            let Some(run) = self.play.live.local.running.as_mut() else {
+                return;
+            };
+            run.clock = target as f64 / FRAME_HZ;
+        }
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
         let due =
             ((run.clock * FRAME_HZ).floor() as u64).saturating_sub(run.session.server.frame());
         if due == 0 {
+            if let Some(replay) = run.replay.as_mut() {
+                replay.seek = None;
+            }
             return;
         }
-        let steps = due.min(MAX_FRAMES_PER_TICK);
+        let most = match (&run.replay, seeking) {
+            (Some(_), Some(_)) => replay::SEEK_FRAMES_PER_TICK,
+            (Some(_), None) => MAX_FRAMES_PER_TICK * speed.ceil() as u64,
+            _ => MAX_FRAMES_PER_TICK,
+        };
+        let steps = due.min(most);
         let viewing_client = matches!(run.view, rbx_sim::Peer::Client(_));
-        if run.playing && viewing_client {
+        let follows = run.playing || run.replay.is_some();
+        if run.windowed && run.replay.is_none() {
+            let pad = self.controller_pad.get();
+            windows::take_inputs(run, pad, cx);
+        } else if run.playing && viewing_client && run.replay.is_none() {
             let (inputs, size, safe) = self.viewport.update(cx, |viewport, _| {
                 (
                     viewport.play.as_mut().map(|p| p.take()),
@@ -1083,10 +1248,8 @@ impl Shell {
                 )
             });
             if let rbx_sim::Peer::Client(i) = run.view {
-                if let Some(client) = run.session.clients.get_mut(i) {
-                    client.sim.set_viewport(size);
-                    client.sim.set_safe_insets(safe);
-                }
+                run.session.act(run.view, Action::Viewport(size));
+                run.session.act(run.view, Action::SafeInsets(safe));
                 for input in inputs.unwrap_or_default() {
                     run.session.input(i, input);
                 }
@@ -1105,8 +1268,31 @@ impl Shell {
         };
         let kicked_before = run.session.kicked.len();
         let mut changes = Vec::new();
+        let mut by_peer = Vec::new();
+        let mut diverged = None;
         for _ in 0..steps {
-            run.session.step();
+            match run.replay.as_mut() {
+                Some(replay) => {
+                    if run.session.server.frame() >= replay.playback.frame_count() {
+                        run.paused = true;
+                        replay.seek = None;
+                        break;
+                    }
+                    // Pauses on the first divergence only; played on from
+                    // there, the rest no longer compares.
+                    if let Err(divergence) = replay.playback.step(&mut run.session) {
+                        if replay.divergence.is_none() {
+                            replay.seek = None;
+                            run.paused = true;
+                            diverged = Some(divergence);
+                        }
+                    }
+                    for client in &mut run.session.clients {
+                        client.sim.watch_view_changes();
+                    }
+                }
+                None => run.session.step(),
+            }
             for peer in std::iter::once(rbx_sim::Peer::Server)
                 .chain((0..run.session.clients.len()).map(rbx_sim::Peer::Client))
             {
@@ -1114,25 +1300,52 @@ impl Shell {
                     continue;
                 };
                 let seen = sim.take_view_changes();
-                if peer == run.view {
+                if run.windowed {
+                    windows::collect(&mut by_peer, peer, seen);
+                } else if peer == run.view {
                     changes.extend(seen);
                 }
             }
+            if diverged.is_some() {
+                break;
+            }
         }
-        if due > steps {
+        if due > steps || run.paused {
             run.clock = run.session.time();
+        }
+        if let Some(divergence) = diverged {
+            push_row(
+                &mut self.output,
+                Feedback::Error(format!("Replay {divergence}")),
+            );
+            if let Some(replay) = run.replay.as_mut() {
+                replay.divergence = Some(divergence);
+            }
         }
         if run.joining && !run.session.joining() {
             run.joining = false;
+            let windowed = run.windowed;
             self.local_run_joined(cx);
-            return;
+            // The test windows still show this frame (the server's new
+            // players are in it).
+            if !windowed {
+                return;
+            }
         }
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
         // What showing the frame costs the editor, the profiler's render.
         let render_started = Instant::now();
         run.prompts.extend(run.session.take_prompts());
         let teleports = run.session.take_teleports();
         if let Some(teleport) = teleports.into_iter().next() {
             self.local_run_teleport(teleport, cx);
+            return;
+        }
+        if run.windowed {
+            let kicked = run.session.kicked[kicked_before..].to_vec();
+            self.local_run_present_windows(by_peer, kicked, cx);
             return;
         }
         let notices: Vec<(String, String)> = run
@@ -1184,25 +1397,20 @@ impl Shell {
         }
         // `Emit`/`Clear` the viewed peer made, and the server's, which
         // every client sees.
+        let mut bursts = Vec::new();
         for peer in std::iter::once(rbx_sim::Peer::Server)
             .chain((0..run.session.clients.len()).map(rbx_sim::Peer::Client))
         {
             let shown = peer == run.view || peer == rbx_sim::Peer::Server;
             if let Some(sim) = run.session.sim_mut(peer) {
-                for (emitter, burst) in sim.take_bursts() {
-                    if shown {
-                        rbx_viewer::particle_burst(
-                            emitter,
-                            match burst {
-                                rbx_sim::Burst::Emit(n) => Some(n),
-                                rbx_sim::Burst::Clear => None,
-                            },
-                        );
-                    }
+                let taken = windows::bursts(sim);
+                if shown {
+                    bursts.extend(taken);
                 }
             }
         }
         let (actions, menu_open) = self.viewport.update(cx, |viewport, _| {
+            viewport.particle_bursts(bursts);
             viewport.core_gui.push_chat(chat);
             let actions = viewport.core_gui.take_actions();
             // The prompt just answered stays closed; the next shows next tick.
@@ -1214,21 +1422,17 @@ impl Shell {
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
-        if let Some(sim) = run.session.sim_mut(run.view) {
-            sim.set_menu_open(menu_open);
-        }
+        // A replay's player acts only as recorded.
+        let actions = if run.replay.is_some() {
+            Vec::new()
+        } else {
+            run.session.act(run.view, Action::MenuOpen(menu_open));
+            actions
+        };
         for action in actions {
             match action {
-                CoreAction::Say(text) => {
-                    if let Some(sim) = run.session.sim_mut(run.view) {
-                        sim.chat_say(&text);
-                    }
-                }
-                CoreAction::Reset => {
-                    if let Some(sim) = run.session.sim_mut(run.view) {
-                        sim.reset_character();
-                    }
-                }
+                CoreAction::Say(text) => run.session.act(run.view, Action::Chat(text)),
+                CoreAction::Reset => run.session.act(run.view, Action::Reset),
                 CoreAction::Volume(volume) => run.sound.set_volume(volume),
                 CoreAction::Purchase(bought) => {
                     if let Some(prompt) = run.prompts.pop_front() {
@@ -1256,13 +1460,13 @@ impl Shell {
         run.sound.update(
             viewed.voices(),
             viewed.take_audio(),
-            run.playing && !run.paused && viewing_client,
+            follows && !run.paused && viewing_client,
         );
         mirror(&viewed.dom(), &mut self.dom, &changes);
         let output = run.session.take_output();
         self.dom.take_changes();
         push_rows(&mut self.output, output, run.playing);
-        if run.playing && viewing_client {
+        if follows && viewing_client {
             let Some(viewed) = run.session.sim(run.view) else {
                 return;
             };
@@ -1319,11 +1523,19 @@ impl Shell {
     /// Edits made to the shown copy during the run: written into the
     /// simulation's DOM (logged, so it routes them) and shown right away.
     pub(super) fn local_run_reflect(&mut self, changes: &[Change], cx: &mut Context<Self>) {
-        if let Some(run) = self.play.live.local.running.as_ref() {
-            if let Some(sim) = run.session.sim(run.view) {
-                let sim_dom = sim.dom_rc();
-                mirror(&self.dom, &mut sim_dom.borrow_mut(), changes);
-            }
+        let sim_dom = match &self.play.live.local.peer {
+            Some(peer) => peer.shown_dom(cx),
+            None => self
+                .play
+                .live
+                .local
+                .running
+                .as_ref()
+                .and_then(|run| run.session.sim(run.view))
+                .map(rbx_sim::Simulation::dom_rc),
+        };
+        if let Some(sim_dom) = sim_dom {
+            mirror(&self.dom, &mut sim_dom.borrow_mut(), changes);
         }
 
         let snapshots = self.dom.snapshot(changes);

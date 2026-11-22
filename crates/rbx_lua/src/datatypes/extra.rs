@@ -241,11 +241,8 @@ fn date_time(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "now",
-        lua.create_function(|_, ()| {
-            let millis = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
+        lua.create_function(|lua, ()| {
+            let millis = (crate::tape::clock(lua, crate::tape::epoch) * 1000.0) as i64;
             Ok(LuaDateTime { millis })
         })?,
     )?;

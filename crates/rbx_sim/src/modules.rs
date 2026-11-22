@@ -42,7 +42,7 @@ pub(crate) fn load(
             return Ok(CallReply::value(Arg::Instance(module)));
         }
     }
-    let cached = AssetCache::new(None).ok().and_then(|c| c.get_id(id));
+    let cached = crate::replay::cached(shared.sounds.fetcher.as_ref(), id);
     let bytes = match cached {
         Some(bytes) => bytes,
         None => {

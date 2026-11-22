@@ -77,6 +77,8 @@ pub struct Animations {
     clips: HashMap<u64, Result<Clip, String>>,
     loading: HashMap<u64, Receiver<Result<Clip, String>>>,
     pub fetcher: Option<Arc<dyn AssetFetcher>>,
+    /// Record or replay: when loads land.
+    pub(crate) gate: Option<crate::replay::Gate>,
     /// The warnings a client prints for animations that failed to load,
     /// for the Output.
     pub failures: Vec<String>,
@@ -156,7 +158,7 @@ fn load_clip(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Clip, St
 /// An asset's bytes: the asset cache's, else the fetcher's, kept.
 fn fetch(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Vec<u8>, String> {
     let cache = AssetCache::new(None).ok();
-    let bytes = match cache.as_ref().and_then(|c| c.get_id(id)) {
+    let bytes = match crate::replay::cached(fetcher.as_ref(), id) {
         Some(bytes) => bytes,
         None => {
             let fetcher = fetcher
@@ -235,7 +237,9 @@ impl Animations {
             .get(animation)
             .map(|i| i.name().to_owned())
             .unwrap_or_default();
+        // A track has no parent: in no tree, so no Explorer lists it.
         let track = dom.new_instance("AnimationTrack", &name, None);
+        dom.unparent(track);
         set(dom, db, track, "Animation", Variant::Ref(animation));
         self.tracks.insert(
             track,
@@ -560,7 +564,10 @@ impl Animations {
         let done: Vec<(u64, Result<Clip, String>)> = self
             .loading
             .iter()
-            .filter_map(|(id, r)| r.try_recv().ok().map(|clip| (*id, clip)))
+            .filter_map(|(id, r)| {
+                crate::replay::Gate::take(&self.gate, || format!("animation:{id}"), r)
+                    .map(|clip| (*id, clip))
+            })
             .collect();
         for (id, clip) in done {
             self.loading.remove(&id);

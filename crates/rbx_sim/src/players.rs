@@ -61,6 +61,8 @@ pub struct Players {
     /// The character for players who bring none.
     pub template: Option<WeakDom>,
     pub avatars: Option<std::rc::Rc<dyn Avatars>>,
+    /// Record or replay: spawn points draw from it.
+    pub(crate) tape: Option<rbx_lua::tape::Tape>,
     /// Old characters to destroy, once their removal has been seen.
     pub old: Vec<Ref>,
     pub frame: u64,
@@ -855,8 +857,13 @@ impl Players {
         let roll = |salt: u64| {
             use std::hash::BuildHasher;
             // Randomly keyed each call: a fresh point every spawn.
-            let h =
-                std::collections::hash_map::RandomState::new().hash_one((self.frame, player, salt));
+            let real = || {
+                std::collections::hash_map::RandomState::new().hash_one((self.frame, player, salt))
+            };
+            let h = match &self.tape {
+                Some(tape) => tape.entropy(real),
+                None => real(),
+            };
             (h >> 11) as f64 / (1u64 << 53) as f64 * 2.0 - 1.0
         };
         let dx = (roll(1) * (size[0] / 2.0 - SPAWN_MARGIN).max(0.0)) as f32;

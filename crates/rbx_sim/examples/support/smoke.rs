@@ -114,13 +114,33 @@ fn side(peer: Peer) -> &'static str {
 
 /// Runs `dom` for `seconds` with the bot playing.
 pub fn run(dom: WeakDom, seconds: f64) -> Result<Report, String> {
+    run_recorded(dom, seconds, None).map(|(report, _)| report)
+}
+
+/// [`run`], recorded with `seed` when there is one.
+#[allow(dead_code)]
+pub fn record(
+    dom: WeakDom,
+    seconds: f64,
+    seed: u64,
+) -> Result<(Report, rbx_sim::replay::Recording), String> {
+    let (report, recording) = run_recorded(dom, seconds, Some(seed))?;
+    Ok((report, recording.ok_or("nothing was recorded")?))
+}
+
+fn run_recorded(
+    dom: WeakDom,
+    seconds: f64,
+    seed: Option<u64>,
+) -> Result<(Report, Option<rbx_sim::replay::Recording>), String> {
     let mut session = Session::new(dom)?;
+    if let Some(seed) = seed {
+        session.record(seed);
+    }
     session.set_services(rbx_lua::server::Services::default());
     session.start();
     session.join("Player1", 1, None)?;
-    if let Some(sim) = session.sim_mut(Peer::Client(0)) {
-        sim.set_viewport(VIEWPORT);
-    }
+    session.act(Peer::Client(0), rbx_sim::replay::Action::Viewport(VIEWPORT));
     let mut report = Report {
         lines: Vec::new(),
         leaderstats: BTreeMap::new(),
@@ -152,7 +172,7 @@ pub fn run(dom: WeakDom, seconds: f64) -> Result<Report, String> {
         }
     }
     report.leaderstats = leaderstats(&session.server.dom());
-    Ok(report)
+    Ok((report, session.recording()))
 }
 
 fn act(session: &mut Session, action: Action) {

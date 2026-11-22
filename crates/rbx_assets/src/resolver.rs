@@ -35,6 +35,13 @@ pub trait AssetFetcher: Send + Sync {
     fn fetch_thumb(&self, _spec: &str) -> Result<Vec<u8>, FetchError> {
         Err(FetchError::NotFound(0))
     }
+
+    /// Whether this fetcher reads the asset cache itself, so a caller
+    /// should not look there first (a Local Run recording keeps cache hits
+    /// too).
+    fn caches(&self) -> bool {
+        false
+    }
 }
 
 /// Combines the disk cache, a network fetcher and native content resolution

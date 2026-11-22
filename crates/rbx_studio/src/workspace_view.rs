@@ -1226,6 +1226,19 @@ impl WorkspaceView {
         self.pump.look_at(eye, target, fov);
     }
 
+    /// Draws the running game's `player_gui` instead of `StarterGui` (`None`:
+    /// the edit view's again); the GUI is re-planned on the next change.
+    pub(crate) fn set_player_gui(&self, player_gui: Option<rbx_dom::Ref>) {
+        self.pump.player_gui(player_gui);
+    }
+
+    /// A running game's `ParticleEmitter:Emit`/`Clear` calls, for this view.
+    pub(crate) fn particle_bursts(&self, bursts: Vec<(rbx_dom::Ref, Option<u32>)>) {
+        if !bursts.is_empty() {
+            self.pump.bursts(bursts);
+        }
+    }
+
     /// The renderer's tuned constants, taken between two frames like the
     /// camera feel.
     pub(crate) fn set_calibration(&self, calibration: rbx_viewer::Calibration) {
