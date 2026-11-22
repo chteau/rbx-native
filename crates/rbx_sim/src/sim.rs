@@ -1,6 +1,7 @@
 //! The frame loop: scripts and physics stepped together.
 
 use std::cell::{Ref as CellRef, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use rbx_dom::{Change, Ref, Variant, WeakDom};
@@ -98,6 +99,11 @@ pub struct Simulation {
     stream: Option<Vec<(u64, Change)>>,
     /// Parts another peer simulates that a script here moved.
     overruled: Vec<Ref>,
+    /// `leaderstats` values renamed after they arrived (a server script's
+    /// `Instance.new(class, folder)` then `.Name =`): the player list sorts
+    /// those by name (live probe: Delta, Bravo, Charlie, Alpha made that
+    /// way show Alpha, Bravo, Charlie, Delta).
+    pub(crate) renamed_stats: HashSet<Ref>,
 }
 
 impl Simulation {
@@ -130,6 +136,7 @@ impl Simulation {
             role: Role::Server,
             stream: None,
             overruled: Vec::new(),
+            renamed_stats: HashSet::new(),
         })
     }
 
@@ -580,10 +587,12 @@ impl Simulation {
                 }) else {
                     return Vec::new();
                 };
-                // Added order, then a child `Priority` NumberValue (higher
-                // first), an `IsPrimary` BoolValue before all (leaderboard
-                // docs; the M18 probe saw added order, not names').
-                let mut ranked: Vec<(bool, f64, String, String)> = dom
+                // Added order, except that values renamed after they
+                // arrived take their slots in name order; then a child
+                // `Priority` NumberValue (higher first), an `IsPrimary`
+                // BoolValue before all (leaderboard docs, M18 and leftovers
+                // probes on a live server).
+                let mut ranked: Vec<(bool, f64, String, String, bool)> = dom
                     .get(folder)
                     .map(|f| f.children().to_vec())
                     .unwrap_or_default()
@@ -607,15 +616,22 @@ impl Simulation {
                             Some(Variant::Float32(v)) => f64::from(v),
                             _ => 0.0,
                         };
-                        Some((primary, priority, i.name().to_owned(), text))
+                        let renamed = self.renamed_stats.contains(&c);
+                        Some((primary, priority, i.name().to_owned(), text, renamed))
                     })
                     .collect();
+                let slots: Vec<usize> = (0..ranked.len()).filter(|&n| ranked[n].4).collect();
+                let mut by_name: Vec<_> = slots.iter().map(|&n| ranked[n].clone()).collect();
+                by_name.sort_by(|a, b| a.2.cmp(&b.2));
+                for (slot, stat) in slots.into_iter().zip(by_name) {
+                    ranked[slot] = stat;
+                }
                 ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.total_cmp(&a.1)));
                 // The real list shows four stats at most (a six-stat probe).
                 ranked.truncate(4);
                 ranked
                     .into_iter()
-                    .map(|(_, _, name, text)| (name, text))
+                    .map(|(_, _, name, text, _)| (name, text))
                     .collect()
             };
             let all = crate::players::players_of(&dom);

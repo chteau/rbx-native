@@ -271,6 +271,7 @@ impl Session {
 
         let stream = self.server.take_stream();
         let packets = self.server.take_outgoing();
+        let renamed = renamed_stats(&self.server.dom(), &stream);
         let ops = frame_ops(stream, packets);
         let mut moved = self.server.moved_parts_since(&mut self.moving);
         moved.extend(self.relayed.iter().copied());
@@ -285,6 +286,7 @@ impl Session {
 
         let server = &self.server;
         for client in &mut self.clients {
+            client.sim.renamed_stats.extend(renamed.iter().copied());
             let owned = server.ownership_mut().owned_by(client.player);
             client.sim.ownership_mut().owned = owned;
             client.sim.sync_collision_groups(server);
@@ -862,6 +864,45 @@ impl Client {
             tools,
         };
     }
+}
+
+/// `leaderstats` values the server renamed once they were in their folder
+/// this frame (`Instance.new(class, folder)` then `.Name =`): a live client
+/// sees the rename arrive after the value, and its player list sorts those
+/// by name.
+fn renamed_stats(dom: &WeakDom, stream: &[(u64, Change)]) -> Vec<Ref> {
+    let mut parented: HashSet<Ref> = HashSet::new();
+    let mut renamed = Vec::new();
+    for (_, change) in stream {
+        match change {
+            Change::Parent {
+                referent: r,
+                new: Some(_),
+                ..
+            } => {
+                parented.insert(*r);
+            }
+            Change::Property { referent, name } if name == "Name" => {
+                let in_stats = dom
+                    .parent(*referent)
+                    .and_then(|p| dom.get(p))
+                    .is_some_and(|p| p.name() == "leaderstats");
+                // Named before it went in (a later move this frame): not
+                // a rename the client sees.
+                let moved_later = || {
+                    !parented.contains(referent)
+                        && stream.iter().any(|(_, c)| {
+                            matches!(c, Change::Parent { referent: r, new: Some(_), .. } if r == referent)
+                        })
+                };
+                if in_stats && !moved_later() {
+                    renamed.push(*referent);
+                }
+            }
+            _ => {}
+        }
+    }
+    renamed
 }
 
 /// The server's frame as one ordered list: its changes (each property once,
