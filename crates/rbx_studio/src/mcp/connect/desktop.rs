@@ -63,7 +63,7 @@ pub(crate) fn config_path(os: Os, dirs: &Dirs) -> PathBuf {
         return path.clone();
     }
     let folder = match os {
-        Os::MacOs => dirs.home.join("Library/Application Support"),
+        Os::Mac => dirs.home.join("Library/Application Support"),
         Os::Windows => match &dirs.store_package {
             Some(package) => package.join(r"LocalCache\Roaming"),
             None => dirs

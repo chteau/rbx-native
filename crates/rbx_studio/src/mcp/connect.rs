@@ -23,14 +23,14 @@ pub(crate) const SERVER_NAME: &str = "rbx-native";
 pub(crate) enum Os {
     Linux,
     Windows,
-    MacOs,
+    Mac,
 }
 
 impl Os {
     pub(crate) const CURRENT: Os = if cfg!(windows) {
         Os::Windows
     } else if cfg!(target_os = "macos") {
-        Os::MacOs
+        Os::Mac
     } else {
         Os::Linux
     };

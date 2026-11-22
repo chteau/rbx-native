@@ -57,7 +57,7 @@ fn a_custom_config_folder_rides_along_so_the_bridge_finds_the_editor() {
 fn shell_words_are_quoted_for_the_os_they_are_pasted_into() {
     assert_eq!(quote("/usr/bin/rbxstudio", Os::Linux), "/usr/bin/rbxstudio");
     assert_eq!(
-        quote("/Users/me/My Apps/x", Os::MacOs),
+        quote("/Users/me/My Apps/x", Os::Mac),
         "'/Users/me/My Apps/x'"
     );
     assert_eq!(quote("/it's/x", Os::Linux), r"'/it'\''s/x'");
@@ -111,7 +111,7 @@ fn claude_desktop_config_lives_where_each_os_keeps_it() {
         ..Dirs::default()
     };
     assert_eq!(
-        slashed(&desktop::config_path(Os::MacOs, &dirs("/Users/me"))),
+        slashed(&desktop::config_path(Os::Mac, &dirs("/Users/me"))),
         "/Users/me/Library/Application Support/Claude/claude_desktop_config.json"
     );
     assert_eq!(
