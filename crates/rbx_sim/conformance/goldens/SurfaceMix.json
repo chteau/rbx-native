@@ -1,4 +1,5 @@
 {
+  "known_gap": "Friction and the other bounces match. Under the 0.2 stud apex tolerance, the bounces off the mixed-elasticity pair (e_mix) and off weight 4 (e_w4) peak 0.32 and 0.40 stud below Roblox's median (within 0.3 of pass 1): our elasticity mix in a contact gives back a little less height there. Not traced.",
   "passes": 12,
   "raw": [
     {
