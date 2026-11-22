@@ -2,8 +2,9 @@
 //! wires (`Wire.Connected` live, `WiringChanged` on both ends once a frame
 //! sees the wiring change), `AudioPlayer`'s clock over the asset `Sound`
 //! loads, `AudioTextToSpeech`'s over the line [`crate::speech`] speaks, a
-//! `VideoPlayer`'s sound at its video's clock, the filter's response, how audible emitters and listeners are
-//! to each other, and the members game scripts may not call. On a client
+//! `VideoPlayer`'s sound at its video's clock, the filter's response, how
+//! audible emitters and listeners are to each other, and the members game
+//! scripts may not call. On a client
 //! the graph renders every frame ([`crate::audio_graph`]): what its device
 //! outputs play waits for the editor's output, its analyzers read their
 //! input. The attenuation curves are set and read in Luau (`rbx_lua`'s

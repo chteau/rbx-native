@@ -952,15 +952,27 @@ Behaves as real Studio Play does, or as close as runs locally:
 
 | Member | Ours | Why |
 |---|---|---|
-| VideoFrame, VideoPlayer | the clocks, events and `TimeLength`/`Resolution` from the WebM header; no picture | no MIT-compatible pure-Rust VP8/VP9 decoder exists |
-| AudioTextToSpeech | `LoadAsync` returns Failure; Play ends at once in silence | no voice backend offline |
+| VideoFrame, VideoPlayer | picture and sound play (see "Video and speech" below) | |
+| AudioTextToSpeech | speaks with Flite's two American English voices, not Roblox's | Roblox's voices are a cloud service |
 | AudioDeviceInput, AudioRecorder from a mic | silence | no microphone capture |
 | VRService | a desktop: VREnabled false, identity user CFrames, touchpad modes kept | no headset |
 | HapticService | vibration unsupported, motors read back what was set | no rumble output |
-| VideoService `CreateVideoSamplerAsync` | errors | no decoder |
+| VideoService `CreateVideoSamplerAsync` | errors | the decoders are there now; `VideoSampler` itself isn't written |
 | Gesture thresholds | slop 10 px, tap 0.4 s, long press 0.5 s, swipe 600 px/s | ours, not measured on a device |
 | `GetImageForKeyCode` | `rbxasset://textures/ui/Controls/<name>.png` paths | mapping not checked against a client |
 | `SoundService:GetInputDevice` | the tuple shape from the docs | not checked live |
+
+### Video and speech
+
+Roblox serves videos as WebM. `rbx_sim::video::picture` demuxes them (`matroska-demuxer`, MIT/Apache-2.0/Zlib), decodes VP8 (`vp8-decoder`, MIT/Apache-2.0 with RFC 6386's BSD-3-Clause tables) or VP9 (`rusty_vp9`, Apache-2.0), and the sound track through symphonia (Vorbis, and WebM with its `mkv` feature, MPL-2.0 unmodified) or `opus-pure` (BSD-3-Clause). All of it is pure Rust, so it builds the same on Linux, Windows (MSVC), macOS and in the Flatpak; both decoders matched ffmpeg/libvpx bit for bit on test clips (VP9 720p decodes in about 2.7 ms a frame here). libvpx itself (BSD-3-Clause) was the fallback, but it needs a C and assembler build per platform.
+
+- On a client, a video on screen is decoded on its own thread at its clock: a visible `VideoFrame` (every GUI ancestor visible, its screen enabled, under `PlayerGui` or a `SurfaceGui`/`BillboardGui` in the world) and a `VideoPlayer` wired to a visible `VideoDisplay`. The frame is scaled down to the `AbsoluteSize` it's drawn at (never up) and published as an editable image bound under the internal `RbxNativeVideoPicture` property, which the viewer draws like an `EditableImage`, on screen and on surfaces. A paused video decodes nothing; an off-screen or server one never starts a decoder. Seeking backwards, or further than the next keyframe, restarts from the keyframe before the target.
+- A `VideoFrame`'s sound is a voice of the sim (`Volume`, `Looped`), mixed by the editor's output, which follows the same clock as the picture (it jumps back when the two drift 0.12 s apart). A `VideoPlayer`'s sound is a source in the audio graph (`Volume`, `PlaybackSpeed`, `Looping`).
+- Colour is BT.601 studio range and scaling is nearest-pixel. A `VideoDisplay`'s `VideoRectOffset`/`VideoRectSize` crop the scaled texture, so they're off by the scale factor when the display is smaller than the video. `RollOffMode`/`RollOffMinDistance`/`RollOffMaxDistance` on a `VideoFrame` in a `SurfaceGui` aren't applied (it plays at full volume). Subtitles (`SubtitlesChanged`) never fire.
+- The picture binding writes a property Roblox doesn't have on the client's copy of the frame, so a script listening to the frame's `Changed` could see one extra change when it starts showing.
+
+`AudioTextToSpeech` speaks with `flite-rs` (Apache-2.0, a pure-Rust Flite; its CMU voice data is under CMU's permissive licence, which asks for the notice to be kept: see the crate's `THIRD-PARTY-LICENSES.md`). `LoadAsync` speaks the line (`Success`, or `Failure` with nothing to say), `IsLoaded`/`TimeLength` follow it, and a change to `Text`, `VoiceId`, `Pitch` or `Speed` makes it load again. It then plays like an `AudioPlayer` through the graph (`TimePosition`, `PlaybackSpeed`, `Looping`, `Ended`, `Looped`, `GetWaveformAsync`). Roblox's voices are a cloud service, so ours sound different: odd `VoiceId`s are Flite's `kal` (male, 8 kHz), even ones `slt` (female, 16 kHz); `Pitch` is taken as semitones and `Speed` as a rate. Neither mapping was checked against Roblox. Options looked at and turned down: espeak-ng and Piper (Piper phonemises through espeak-ng, GPL), Kokoro/KittenTTS (neural, need an ONNX runtime and a phonemiser, tens of MB), the OS voices (SAPI, AVSpeechSynthesizer, speech-dispatcher: per-platform, and speech-dispatcher plays straight to the speakers instead of handing back samples).
+
 ### M18 API pass: characters, avatars, animation, players
 
 Every scriptable member of these classes answers as a live server's does: same return shapes, errors, yields and events, from two goldens recorded on the sandbox place (`AnimationApi`, `AvatarApi`) and `tests/avatar_api.rs`. Most of it is Luau (`services/avatar.luau`, `services/animation.luau`); curves are Rust (`server/curves.rs`, keys in `datatypes/extra/curve_key.rs`).
