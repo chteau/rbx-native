@@ -1177,21 +1177,15 @@ impl Shell {
             )
         };
         let save_recording = if recorded {
-            live_stack_row(
-                nav,
-                "ribbon-save-recording",
-                IconName::Save,
-                "Save run",
-                cx,
-            )
-            .tooltip(|window, cx| {
-                super::tooltip::text(
-                    "Save the recording of the last Local Run, to replay later or in CI.",
-                    window,
-                    cx,
-                )
-            })
-            .on_click(cx.listener(|shell, _, _, cx| shell.local_run_save_recording(cx)))
+            live_stack_row(nav, "ribbon-save-recording", IconName::Save, "Save run", cx)
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Save the recording of the last Local Run, to replay later or in CI.",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_save_recording(cx)))
         } else {
             unavailable_row(
                 "ribbon-save-recording",
@@ -1274,11 +1268,15 @@ impl Shell {
         // Server & Clients: a player window's Exit, Add Clients elsewhere.
         match self.local_run_role() {
             Some(Role::Player) => {
-                return tile(&self.ribbon_nav, "ribbon-players", IconName::LogOut, "Exit", cx)
-                    .tooltip(|window, cx| {
-                        super::tooltip::text("Exit client window.", window, cx)
-                    })
-                    .on_click(cx.listener(|shell, _, _, cx| shell.local_run_exit_client(cx)));
+                return tile(
+                    &self.ribbon_nav,
+                    "ribbon-players",
+                    IconName::LogOut,
+                    "Exit",
+                    cx,
+                )
+                .tooltip(|window, cx| super::tooltip::text("Exit client window.", window, cx))
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_exit_client(cx)));
             }
             Some(_) => {
                 return tile(
