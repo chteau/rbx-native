@@ -1,4 +1,4 @@
-//! `TestService` and `Stats`, open to game scripts as much as to plugins
+//! `TestService`, `Stats` and `StatsItem`, open to game scripts as much as to plugins
 //! and the Command Bar. The output lines and counts were read from real
 //! Studio 0.748 (2026-11-21): `Message` and `Checkpoint` are Info lines,
 //! `Error`, `Fail`, `Require(false)` and `Check(false)` errors (the
@@ -71,8 +71,41 @@ pub(crate) fn member(
     match class {
         "TestService" => test_service(lua, ctx, referent, key),
         "Stats" => stats(lua, key),
+        _ if ctx.database().is_subclass_of(class, "StatsItem") => {
+            stats_item(lua, ctx, referent, key)
+        }
         _ => Ok(None),
     }
+}
+
+/// A `StatsItem`'s reading (`Value`), as a number or with its `Unit`.
+fn stats_item(lua: &Lua, ctx: &Ctx, referent: Ref, key: &str) -> Result<Option<Value>> {
+    if key != "GetValue" && key != "GetValueString" {
+        return Ok(None);
+    }
+    let ctx = ctx.clone();
+    let string = key == "GetValueString";
+    let f = lua.create_function(move |lua, _: MultiValue| {
+        let property = |name: &str| {
+            ctx.dom()
+                .get(referent)
+                .and_then(|i| i.properties().get(name).cloned())
+        };
+        let value = match property("Value") {
+            Some(Variant::Float64(v)) => v,
+            _ => 0.0,
+        };
+        if !string {
+            return Ok(Value::Number(value));
+        }
+        let unit = match property("Unit") {
+            Some(Variant::String(s)) => s,
+            _ => String::new(),
+        };
+        lua.create_string(format!("{}{unit}", value.round()))
+            .map(Value::String)
+    })?;
+    Ok(Some(Value::Function(f)))
 }
 
 fn test_service(lua: &Lua, ctx: &Ctx, referent: Ref, key: &str) -> Result<Option<Value>> {

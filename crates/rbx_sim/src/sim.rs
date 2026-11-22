@@ -1021,6 +1021,35 @@ impl Simulation {
         self.vm.take_outgoing()
     }
 
+    /// The round trip to the server, seconds: what `Player:GetNetworkPing()`
+    /// returns and, on a client, `Stats.Network.ServerStatsItem["Data
+    /// Ping"]` reads (in milliseconds).
+    pub(crate) fn set_network_ping(&mut self, seconds: f64) {
+        self.vm.set_network_ping(seconds);
+        let mut dom = self.dom_mut();
+        let child = |dom: &WeakDom, parent: Ref, name: &str| {
+            dom.get(parent)?
+                .children()
+                .iter()
+                .copied()
+                .find(|c| dom.get(*c).is_some_and(|i| i.name() == name))
+        };
+        let stats = dom
+            .root_refs()
+            .iter()
+            .copied()
+            .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Stats"));
+        let item = stats
+            .and_then(|s| child(&dom, s, "Network"))
+            .and_then(|n| child(&dom, n, "ServerStatsItem"))
+            .and_then(|s| child(&dom, s, "Data Ping"));
+        if let Some(instance) = item.and_then(|i| dom.get_mut(i)) {
+            instance
+                .properties_mut()
+                .insert("Value".into(), Variant::Float64(seconds * 1000.0));
+        }
+    }
+
     /// A remote packet from `from` (`None`: the server).
     pub(crate) fn receive(&mut self, from: Option<Ref>, packet: rbx_lua::server::Packet) {
         let changes = self.vm.receive(from, packet);

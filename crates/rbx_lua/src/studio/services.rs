@@ -219,34 +219,6 @@ pub(crate) fn member(
         }
         ("ScriptDebuggerService", _) => script_debugger(lua, key),
         ("StudioDeviceSimulatorService", _) => super::devices::member(lua, ctx, referent, key),
-        (_, "GetValue" | "GetValueString") if is("StatsItem") => {
-            let ctx = ctx.clone();
-            let string = key == "GetValueString";
-            func(lua, move |lua, _| {
-                let value = match ctx
-                    .dom()
-                    .get(referent)
-                    .and_then(|i| i.properties().get("Value"))
-                {
-                    Some(Variant::Float64(v)) => *v,
-                    _ => 0.0,
-                };
-                if string {
-                    let unit = ctx
-                        .dom()
-                        .get(referent)
-                        .and_then(|i| match i.properties().get("Unit") {
-                            Some(Variant::String(s)) => Some(s.clone()),
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    lua.create_string(format!("{}{unit}", value.round()))
-                        .map(Value::String)
-                } else {
-                    Ok(Value::Number(value))
-                }
-            })
-        }
         _ => Ok(None),
     }
 }

@@ -299,6 +299,8 @@ pub(crate) struct Runtime {
     physics: Rc<dyn super::Physics>,
     /// For the drag packets a client sends its server.
     remotes: super::remote::Shared,
+    /// The round trip to the server, seconds (`Player:GetNetworkPing()`).
+    pub(crate) ping: Cell<f64>,
 }
 
 /// Downloaded model assets waiting to be made into instances.
@@ -329,6 +331,7 @@ impl Runtime {
             client,
             physics,
             remotes,
+            ping: Cell::new(0.0),
         })
     }
 
@@ -1516,6 +1519,13 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "web_signed",
         checked(lua, scheduler::yielding(lua, signed)?)?,
+    )?;
+    host.set(
+        "network_ping",
+        lua.create_function({
+            let r = runtime.clone();
+            move |_, ()| Ok(r.ping.get())
+        })?,
     )?;
     host.set(
         "signed_in",

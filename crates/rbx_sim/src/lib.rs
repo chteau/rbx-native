@@ -28,6 +28,7 @@ pub mod humanoid;
 pub mod input;
 mod joints;
 mod journal;
+pub mod link;
 pub mod live;
 pub mod load;
 mod modules;
