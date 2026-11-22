@@ -4692,9 +4692,7 @@ dependencies = [
 
 [[package]]
 name = "luau0-src"
-version = "0.21.0+luau736"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1972fd3b00746262c87b771f20ab6586f959385d66d484e15cb5182bb09e038b"
+version = "0.24.1+luau748"
 dependencies = [
  "cc",
 ]
@@ -4866,6 +4864,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "maybe-dangling"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59dbb09ed53f8e4f314e353dc6c1853ae5b4c480a668a422657804a544ea9f65"
+
+[[package]]
 name = "maybe-rayon"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5007,13 +5011,13 @@ dependencies = [
 
 [[package]]
 name = "mlua"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d96e5d00f19d8c46c71ceaced99593b90c31c57aa1fe2cb3e93a8b1698eedba9"
+version = "0.12.2"
+source = "git+https://github.com/mlua-rs/mlua?rev=3c0fd85882#3c0fd858825a4756e5e858356c3c70ab83e64dbe"
 dependencies = [
  "bstr",
  "either",
  "libc",
+ "maybe-dangling",
  "mlua-sys",
  "num-traits",
  "parking_lot",
@@ -5022,9 +5026,8 @@ dependencies = [
 
 [[package]]
 name = "mlua-sys"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b806d7ade031f5d6607eae3e283fb034cb795a76247dd0d1ba753c8c42debccf"
+version = "0.14.0"
+source = "git+https://github.com/mlua-rs/mlua?rev=3c0fd85882#3c0fd858825a4756e5e858356c3c70ab83e64dbe"
 dependencies = [
  "cc",
  "cfg-if",

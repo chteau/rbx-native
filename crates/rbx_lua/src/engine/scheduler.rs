@@ -11,8 +11,10 @@ use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use std::ffi::c_int;
+
 use mlua::thread::ThreadStatus;
-use mlua::{Function, Lua, MultiValue, Result, Thread, Value};
+use mlua::{ffi, Function, Lua, MultiValue, Result, Thread, Value};
 
 use super::engine;
 use crate::output::LineKind;
@@ -45,10 +47,20 @@ end
 "#;
 
 /// Runs a callback under `xpcall` so a failure arrives as a value with its
-/// traceback taken where it was raised, not after the thread has unwound.
+/// traceback taken where it was raised, not after the thread has unwound:
+/// `(false, traceback, raised)`, `raised` being the error itself for the
+/// thread's `coroutine.finally` callbacks.
 const RUNNER_SRC: &str = r#"
 return function(f, ...)
-    return xpcall(f, function(e) return debug.traceback(tostring(e), 2) end, ...)
+    local raised
+    local r = table.pack(xpcall(f, function(e)
+        raised = e
+        return debug.traceback(tostring(e), 2)
+    end, ...))
+    if r[1] then
+        return table.unpack(r, 1, r.n)
+    end
+    return false, r[2], raised
 end
 "#;
 
@@ -175,7 +187,8 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
                 scheduler.delayed.remove(&id);
                 scheduler.timers.retain(|(_, timer, _)| *timer != id);
             }
-            Ok(())
+            drop(scheduler);
+            finalize(lua, &thread, End::Cancelled)
         })?,
     )?;
 
@@ -377,22 +390,33 @@ pub(crate) fn resume(lua: &Lua, thread: Thread, args: MultiValue) -> Result<()> 
         let values = match Deadline::fresh(lua, || thread.resume::<MultiValue>(args)) {
             Ok(values) => values,
             Err(error) => {
+                let message = lua.create_string(crate::runtime::globals::error_text(&error))?;
                 engine(lua).host.thread_failed(&thread, error);
-                return Ok(());
+                return finalize(lua, &thread, End::Failed(Value::String(message)));
             }
         };
         if thread.status() != ThreadStatus::Resumable {
             // A runner thread finishes with `xpcall`'s results.
-            let mut iter = values.iter();
-            if let (Some(Value::Boolean(false)), message) = (iter.next(), iter.next()) {
-                let text = match message {
-                    Some(Value::String(s)) => s.to_string_lossy().to_string(),
-                    Some(other) => format!("{other:?}"),
-                    None => "error".to_string(),
-                };
-                report(lua, text);
-            }
-            return Ok(());
+            let mut values = values;
+            let end = match values.front() {
+                Some(Value::Boolean(false)) => {
+                    let message = values.get(1).cloned().unwrap_or(Value::Nil);
+                    let raised = values.get(2).cloned().unwrap_or_else(|| message.clone());
+                    let text = match &message {
+                        Value::String(s) => s.to_string_lossy().to_string(),
+                        Value::Nil => "error".to_string(),
+                        other => format!("{other:?}"),
+                    };
+                    report(lua, text);
+                    End::Failed(raised)
+                }
+                Some(Value::Boolean(true)) => {
+                    values.pop_front();
+                    End::Finished(values)
+                }
+                _ => End::Finished(values),
+            };
+            return finalize(lua, &thread, end);
         }
         let awaited = match (values.front(), values.get(1)) {
             (Some(Value::String(tag)), Some(id)) if tag.as_bytes() == b"__await" => match id {
@@ -420,6 +444,74 @@ pub(crate) fn resume(lua: &Lua, thread: Thread, args: MultiValue) -> Result<()> 
             // park their runner threads exactly this way.
             None => return Ok(()),
         }
+    }
+}
+
+/// How a scheduler thread ended, for its `coroutine.finally` callbacks.
+enum End {
+    Finished(MultiValue),
+    Failed(Value),
+    Cancelled,
+}
+
+/// Runs `thread`'s `coroutine.finally` callbacks, newest first, in a
+/// thread of their own, as Roblox does for the threads its scheduler runs:
+/// `("finished", results…)`, `("error", message)` (the finalizer then
+/// raises the error again, so Output shows it twice, as Studio's does) or
+/// `("cancelled")` for `task.cancel`. The callbacks may yield.
+fn finalize(lua: &Lua, thread: &Thread, end: End) -> Result<()> {
+    unsafe extern "C-unwind" fn raise(state: *mut ffi::lua_State) -> c_int {
+        ffi::lua_error(state)
+    }
+    let (cancelled, failed, mut args) = match end {
+        End::Finished(values) => (false, false, values),
+        End::Failed(message) => (false, true, MultiValue::from_vec(vec![message])),
+        End::Cancelled => (true, false, MultiValue::new()),
+    };
+    args.push_front(Value::Thread(thread.clone()));
+    // SAFETY: Luau C API calls on mlua's state and on the argument thread,
+    // each checked against that thread's status first; none unwinds (the
+    // one error raised is caught by `lua_resume`).
+    let finalizer = unsafe {
+        lua.exec_raw::<Option<Function>>(args, |state| {
+            let co = ffi::lua_tothread(state, 1);
+            let payload = ffi::lua_gettop(state) - 1;
+            let runnable = !co.is_null()
+                && ffi::lua_hasfinalizers(co) != 0
+                && if cancelled {
+                    ffi::lua_costatus(state, co) == ffi::LUA_COSUS
+                } else {
+                    ffi::lua_status(co) != ffi::LUA_YIELD
+                };
+            if !runnable {
+                ffi::lua_settop(state, 0);
+                return;
+            }
+            if cancelled {
+                ffi::lua_pushfinalizerfunction(state, co, 1);
+            } else {
+                ffi::lua_settop(co, 0);
+                if failed && ffi::lua_status(co) == ffi::LUA_OK {
+                    // A runner thread caught its error under `xpcall` and
+                    // ended well: end it again by raising the message, so
+                    // the callbacks are told it failed.
+                    ffi::lua_pushcfunction(co, raise);
+                    ffi::lua_xmove(state, co, 1);
+                    ffi::lua_resume_(co, state, 1);
+                } else {
+                    ffi::lua_xmove(state, co, payload);
+                }
+                ffi::lua_pushfinalizerfunction(state, co, 0);
+            }
+            ffi::lua_replace(state, 1);
+            ffi::lua_settop(state, 1);
+        })?
+    };
+    match finalizer {
+        Some(finalizer) => {
+            start_thread(lua, Value::Function(finalizer), MultiValue::new()).map(drop)
+        }
+        None => Ok(()),
     }
 }
 

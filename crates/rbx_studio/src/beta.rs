@@ -78,7 +78,15 @@ pub(crate) const FEATURES: &[Feature] = &[
         name: "Local Run",
         description: "Model › Run (local) runs the place's server scripts and physics for 5 s of game time on our own clean-room runtime, no Roblox client, and prints what they printed to the Output. Server side only, headless, and nothing is written back to the place yet.",
     },
+    Feature {
+        id: IF_LOCAL_BETA_ID,
+        name: "If Local/Const Bindings",
+        description: "if local, if const and while local/while const, like Studio's beta of the same name: a binding scoped to the block that runs only when its value is truthy. One name and one value for now, as in Studio. Script Analysis knows the syntax too.",
+    },
 ];
+
+/// Studio's "If Local/Const Bindings" beta, see `rbx_lua::set_if_local`.
+pub(crate) const IF_LOCAL_BETA_ID: &str = "if-local";
 
 /// `RBX_STUDIO_BETA_SAMPLE=1` lists this one too, so the page can be
 /// exercised (and captured) while [`FEATURES`] is empty. It gates nothing.
@@ -180,6 +188,7 @@ pub(crate) fn init() {
     let choices = stored_path()
         .map(|path| Choices::load(&path))
         .unwrap_or_default();
+    rbx_lua::set_if_local(choices.is_on(IF_LOCAL_BETA_ID));
     let _ = LAUNCH.set(choices);
 }
 

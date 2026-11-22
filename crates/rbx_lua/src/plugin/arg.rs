@@ -183,7 +183,7 @@ mod tests {
             Rc::new(ReflectionDatabase::embedded()),
             Rc::default(),
         );
-        (Lua::new(), ctx, workspace)
+        (crate::luau::new_vm(), ctx, workspace)
     }
 
     fn round(arg: Arg) -> Arg {

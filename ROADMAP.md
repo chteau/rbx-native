@@ -1100,7 +1100,7 @@ both the plain fetch failure and the silent fall back to a default
     you type.
 - [x] **`luau-lsp` integration**: autocomplete, hover, Go to Definition
   and diagnostics in the script editor, from `luau-lsp` spoken to over
-  stdio (`luau_lsp`). A pinned release (1.70.0) is built into `rbxstudio`
+  stdio (`luau_lsp`). A pinned release (1.70.1) is built into `rbxstudio`
   by `build.rs`, checked against its SHA-256, and unpacked into the cache
   folder on first use; `RBX_STUDIO_LUAU_LSP` runs another.
   - **The place as a workspace**: every script is written to a scratch

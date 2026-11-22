@@ -17,7 +17,7 @@ impl Pattern {
     /// `Err` is Luau's message for a malformed pattern, such as
     /// "malformed pattern (ends with '%')".
     pub fn new(pattern: &str) -> Result<Pattern, String> {
-        let lua = Lua::new();
+        let lua = crate::luau::new_vm();
         let find = lua
             .globals()
             .get::<Table>("string")

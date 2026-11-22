@@ -115,6 +115,7 @@ pub(crate) fn install(lua: &Lua, resolve: Function, compile: Function) -> Result
         let engine = engine(lua);
         let text = match &error {
             Value::String(text) => text.to_string_lossy().to_string(),
+            Value::Error(error) => crate::runtime::globals::error_text(error),
             other => other.to_string()?,
         };
         engine.host.output(LineKind::Error, text);
