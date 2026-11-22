@@ -64,6 +64,18 @@ return function(h, origin)
 			end
 		end
 	end
+	local d15 = parts[4]
+	result._d15_tilt = h.round(math.deg(math.acos(math.clamp(d15.CFrame.UpVector.Y, -1, 1))), 2)
+	result._d15_at = h.vec(d15.Position - origin, 2)
+	local floor = {}
+	local params = RaycastParams.new()
+	params.IgnoreWater = true
+	params.FilterDescendantsInstances = parts
+	for x = 8, 16 do
+		local hit = workspace:Raycast(at(x + 0.5, 4, 0.5), Vector3.new(0, -60, 0), params)
+		table.insert(floor, hit and string.format("%.2f", hit.Position.Y - origin.Y) or "miss")
+	end
+	result._floor = table.concat(floor, " ")
 	for _, p in parts do
 		result[p.Name .. "_min"] = h.round(minY[p.Name], 2)
 		result[p.Name .. "_settled"] = settled[p.Name] or -1
