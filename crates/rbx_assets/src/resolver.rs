@@ -57,12 +57,28 @@ impl AssetResolver {
     pub fn resolve(&self, r: &AssetRef) -> Result<Asset, AssetError> {
         let bytes = match r {
             AssetRef::Empty => return Err(AssetError::Empty),
-            AssetRef::Thumb(spec) => self.fetcher.fetch_thumb(spec)?,
+            AssetRef::Thumb(spec) => self.resolve_thumb(spec)?,
             AssetRef::Id(id) => self.resolve_id(*id)?,
             AssetRef::Native(path) => self.resolve_native(path)?,
         };
         let kind = sniff(&bytes);
         Ok(Asset { bytes, kind })
+    }
+
+    pub fn cache(&self) -> &AssetCache {
+        &self.cache
+    }
+
+    /// A thumbnail changes (a new avatar, a new icon), so the web answers
+    /// first; the copy kept from the last answer stands in when it can't.
+    fn resolve_thumb(&self, spec: &str) -> Result<Vec<u8>, AssetError> {
+        match self.fetcher.fetch_thumb(spec) {
+            Ok(bytes) => {
+                self.cache.put_thumb(spec, &bytes)?;
+                Ok(bytes)
+            }
+            Err(err) => self.cache.get_thumb(spec).ok_or(err.into()),
+        }
     }
 
     fn resolve_id(&self, id: u64) -> Result<Vec<u8>, AssetError> {

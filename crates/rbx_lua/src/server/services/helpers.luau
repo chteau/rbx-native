@@ -398,25 +398,52 @@ function RUN.BindToSimulation(self, callback)
 	return self.PreSimulation:Connect(callback)
 end
 
--- Assets load on demand here, so a preload has nothing to wait for: each
--- entry reports Success at once.
+-- A preload goes to the asset cache (an offline pack, an earlier run)
+-- first, then the network; an instance stands for every asset it and its
+-- descendants use. What can't be had fails with the client's warning.
 local CONTENT = {}
+local fetched = {}
+local queued = 0
 
-function CONTENT.PreloadAsync(_, list, callback)
+local function setQueue(self, delta)
+	queued += delta
+	host.raw_set(host.id(self), "RequestQueueSize", queued)
+end
+
+function CONTENT.PreloadAsync(self, list, callback)
 	if type(list) ~= "table" then
 		fail("Unable to cast to Array")
 	end
-	if callback ~= nil then
-		for _, entry in list do
-			callback(if typeof(entry) == "Instance" then "" else tostring(entry), Enum.AssetFetchStatus.Success)
+	local contents = {}
+	for _, entry in list do
+		if typeof(entry) == "Instance" then
+			for _, content in host.contents_of(entry) do
+				table.insert(contents, content)
+			end
+		elseif type(entry) == "string" and entry ~= "" then
+			table.insert(contents, entry)
+		end
+	end
+	setQueue(self, #contents)
+	for _, content in contents do
+		local ok = fetched[content] == Enum.AssetFetchStatus.Success or pcall(host.preload_asset, content)
+		setQueue(self, -1)
+		local status = if ok then Enum.AssetFetchStatus.Success else Enum.AssetFetchStatus.Failure
+		fetched[content] = status
+		if not ok then
+			warn("ContentProvider:PreloadAsync() failed for " .. content)
+		end
+		if callback ~= nil then
+			callback(content, status)
 		end
 	end
 end
 
 function CONTENT.Preload(_, _content) end
 
-function CONTENT.GetAssetFetchStatus(_)
-	return Enum.AssetFetchStatus.Success
+-- Assets load on demand here: one not preloaded is as good as in.
+function CONTENT.GetAssetFetchStatus(_, content)
+	return fetched[tostring(content)] or Enum.AssetFetchStatus.Success
 end
 
 function CONTENT.GetAssetFetchStatusChangedSignal(self)

@@ -78,6 +78,8 @@ pub(crate) enum MenuId {
     RibbonImport,
     InsertOptions,
     UiResolution,
+    /// Test › Offline: update or remove the place's offline pack.
+    OfflinePack,
     UiInsert,
     UiConstraint,
     ViewportScreen,
@@ -144,6 +146,7 @@ impl MenuId {
             MenuId::RibbonImport => "menu-ribbon-import",
             MenuId::InsertOptions => "menu-insert-options",
             MenuId::UiResolution => "menu-ui-resolution",
+            MenuId::OfflinePack => "menu-offline-pack",
             MenuId::UiInsert => "menu-ui-insert",
             MenuId::UiConstraint => "menu-ui-constraint",
             MenuId::ViewportScreen => "menu-viewport-screen",

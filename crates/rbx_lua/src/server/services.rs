@@ -88,6 +88,12 @@ pub struct Services {
 /// thread.
 pub trait AssetSource: Send + Sync + std::fmt::Debug {
     fn fetch(&self, id: u64) -> std::result::Result<Vec<u8>, String>;
+
+    /// Gets `content` (a content string) ready, as
+    /// `ContentProvider:PreloadAsync` asks; the error says why it can't be.
+    fn preload(&self, _content: &str) -> std::result::Result<(), String> {
+        Ok(())
+    }
 }
 
 /// A `.ROBLOSECURITY` cookie's value, never printed.
@@ -1601,6 +1607,37 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     host.set(
         "download_asset",
         checked(lua, scheduler::yielding(lua, download)?)?,
+    )?;
+    // `ContentProvider:PreloadAsync`: one content string made ready off
+    // the script thread. A run with no asset source (a headless test) has
+    // everything.
+    let r = runtime.clone();
+    let preload = lua.create_function(move |lua, content: String| {
+        let source = r.config.borrow().assets.clone();
+        Ok(in_background(lua, &r, move || {
+            if let Some(source) = source {
+                source.preload(&content)?;
+            }
+            Ok(serde_json::json!(true))
+        }))
+    })?;
+    host.set(
+        "preload_asset",
+        checked(lua, scheduler::yielding(lua, preload)?)?,
+    )?;
+    // The content strings an instance and its descendants use, for a
+    // preload of instances.
+    host.set(
+        "contents_of",
+        lua.create_function(|lua, value: Value| {
+            let root = Ref::new(instance_id(&value)?);
+            let ctx = engine(lua).ctx.clone();
+            let dom = ctx.dom();
+            Ok(rbx_assets::refs::in_subtree(&dom, root)
+                .iter()
+                .map(rbx_assets::AssetRef::uri)
+                .collect::<Vec<_>>())
+        })?,
     )?;
     host.set(
         "model_of_download",

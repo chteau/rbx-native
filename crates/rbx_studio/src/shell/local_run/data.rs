@@ -64,10 +64,10 @@ pub(crate) fn teleport_place(path: &Path, place: i64) -> Option<PathBuf> {
     settings(path).teleport_places.get(&place).cloned()
 }
 
-/// The place's folder: its published place id when it's linked, else a
-/// hash of where the file is.
-pub(crate) fn folder(path: &Path) -> Option<PathBuf> {
-    let key = match crate::home::link_of(path) {
+/// The place's name in Local Run's stores: its published place id when
+/// it's linked, else a hash of where the file is.
+pub(crate) fn key(path: &Path) -> String {
+    match crate::home::link_of(path) {
         Some(link) => format!("place-{}", link.place_id),
         None => {
             let full = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
@@ -75,11 +75,15 @@ pub(crate) fn folder(path: &Path) -> Option<PathBuf> {
             let hex: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
             format!("file-{hex}")
         }
-    };
+    }
+}
+
+/// The place's folder (see [`key`]).
+pub(crate) fn folder(path: &Path) -> Option<PathBuf> {
     Some(
         crate::settings::default_config_dir()?
             .join("local-run")
-            .join(key),
+            .join(key(path)),
     )
 }
 

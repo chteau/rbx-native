@@ -4,8 +4,8 @@
 //! from the public avatar endpoint, built the way Insert › Rig › Player
 //! builds one, onto our own rig. Each run refreshes the cache under
 //! `cache_root()/avatars/`: `<user>/avatar.json` as the endpoint sent it,
-//! `<user>/user.json` with the name, `assets/<asset id>.rbxm` for every
-//! asset worn, and `last_user`, who played last. Offline
+//! `<user>/user.json` with the name, and `last_user`, who played last;
+//! every asset worn goes to the shared asset cache (`rbx_assets`). Offline
 //! the cache stands in; with no key, or offline with no cache, the noob
 //! plays. The same cache serves `GetHumanoidDescriptionFromUserId` and
 //! `ApplyDescription` when Roblox can't be reached.
@@ -126,6 +126,41 @@ pub(super) fn resolve() -> (Player, StudioAvatars) {
     (player, avatars)
 }
 
+/// What an offline pack keeps for Play (local)'s player: the Rig Builder
+/// noob's meshes and, signed in and online, your avatar (refreshed into
+/// the avatar cache, which an offline run plays from) with every asset it
+/// wears. Blocking (network). The note says whose avatar it is.
+pub(super) fn pack_seeds() -> (Vec<u64>, String) {
+    let mut ids = RigOptions::rig_builder_block().asset_ids();
+    let key = ApiKey::from_env_or_config();
+    if key.is_none() {
+        return (ids, "Not signed in: only the noob is packed".to_owned());
+    }
+    let avatars = StudioAvatars::new(Client::new(key));
+    let user = match avatars.client.introspect() {
+        Ok(info) => info.authorized_user_id,
+        Err(err) => {
+            return (
+                ids,
+                format!("Your avatar couldn\u{2019}t be packed ({err})"),
+            )
+        }
+    };
+    if let Err(why) = avatars.online(user) {
+        return (
+            ids,
+            format!("Your avatar couldn\u{2019}t be packed ({why})"),
+        );
+    }
+    let worn = root()
+        .and_then(|root| fs::read(root.join(user.to_string()).join("avatar.json")).ok())
+        .and_then(|json| Avatar::from_json(&json).ok())
+        .map(|avatar| avatar.assets.iter().map(|a| a.id).collect::<Vec<_>>())
+        .unwrap_or_default();
+    ids.extend(worn);
+    (ids, "Your avatar is packed".to_owned())
+}
+
 fn last_user() -> Option<u64> {
     fs::read_to_string(root()?.join("last_user"))
         .ok()?
@@ -220,24 +255,28 @@ impl StudioAvatars {
         Some(gather(avatar, |id| self.download(id)))
     }
 
-    /// An asset by id: from the avatar cache when it's there (an id's
-    /// content doesn't change), else from Roblox, kept for next time.
+    /// An asset by id: from the shared asset cache when it's there (an
+    /// id's content doesn't change; older builds kept avatar assets under
+    /// `avatars/assets/`, still read), else from Roblox, kept for next time.
     fn download(&self, id: u64) -> Result<Vec<u8>, String> {
-        let file = root().map(|root| root.join("assets").join(format!("{id}.rbxm")));
-        if let Some(bytes) = file.as_ref().and_then(|file| fs::read(file).ok()) {
+        let cache = rbx_assets::AssetCache::new(None).ok();
+        if let Some(bytes) = cache.as_ref().and_then(|c| c.get_id(id)) {
             return Ok(bytes);
         }
-        let content = self
-            .client
-            .asset(id)
-            .map_err(|err| format!("asset {id}: {err}"))?;
-        if let Some(file) = &file {
-            if let Some(dir) = file.parent() {
-                let _ = fs::create_dir_all(dir);
+        let legacy = root().map(|root| root.join("assets").join(format!("{id}.rbxm")));
+        let bytes = match legacy.and_then(|file| fs::read(file).ok()) {
+            Some(bytes) => bytes,
+            None => {
+                self.client
+                    .asset(id)
+                    .map_err(|err| format!("asset {id}: {err}"))?
+                    .bytes
             }
-            let _ = fs::write(file, &content.bytes);
+        };
+        if let Some(cache) = cache {
+            let _ = cache.put_id(id, &bytes);
         }
-        Ok(content.bytes)
+        Ok(bytes)
     }
 
     /// What `description` asks for, as the avatar endpoint would say it.

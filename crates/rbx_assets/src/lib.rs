@@ -13,6 +13,7 @@ mod decode;
 mod error;
 mod local_install;
 mod native;
+pub mod refs;
 mod resolver;
 mod sniff;
 mod sober;
