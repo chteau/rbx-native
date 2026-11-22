@@ -191,3 +191,47 @@ fn an_editable_image_a_script_paints_reaches_the_label_it_is_bound_to() {
     assert_eq!(&painted.rgba[..4], &[0, 0, 255, 255]);
     assert_eq!(&painted.rgba[60..], &[255, 0, 0, 255]);
 }
+
+/// A `UIPadding` under the `ScreenGui` itself pads the screen's canvas, as
+/// one under a frame pads the frame (live: a game's HUD with 2% bottom
+/// padding sits that much higher).
+#[test]
+fn a_ui_padding_under_the_screen_gui_pads_its_children() {
+    let mut session = playing(
+        r#"
+local pad = Instance.new("UIPadding")
+pad.PaddingLeft = UDim.new(0, 30)
+pad.PaddingTop = UDim.new(0, 10)
+pad.Parent = script.Parent
+task.wait()
+print("pos", script.Parent.Button.AbsolutePosition)
+"#,
+    );
+    let lines = output(&mut session);
+    assert!(lines.iter().any(|l| l.contains("pos 130, 52")), "{lines:?}");
+}
+
+/// `TopbarSafeInsets` makes the screen the top bar's free strip
+/// (`GuiService.TopbarInset`), even with `IgnoreGuiInset` on, as TopbarPlus
+/// sets both; `AbsolutePosition` counts from under the top bar, so it reads
+/// 58 px up.
+#[test]
+fn a_topbar_safe_screen_lays_out_in_the_top_bar() {
+    let mut session = playing(
+        r#"
+local screen = script.Parent
+screen.IgnoreGuiInset = true
+screen.ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets
+screen.Button.Position = UDim2.new(0, 0, 1, -44)
+screen.Button.Size = UDim2.fromOffset(44, 44)
+task.wait()
+local inset = game:GetService("GuiService").TopbarInset
+print("pos", screen.Button.AbsolutePosition, inset.Min.X, inset.Height)
+"#,
+    );
+    let lines = output(&mut session);
+    assert!(
+        lines.iter().any(|l| l.contains("pos 168, -44 168 58")),
+        "{lines:?}"
+    );
+}

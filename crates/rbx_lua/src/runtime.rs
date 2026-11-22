@@ -120,7 +120,16 @@ impl Runtime {
         // global once per chunk, which would make `workspace.Part.Size` return a
         // stale value after a script wrote to it. Declaring the DOM-backed globals
         // mutable turns that caching off for them, exactly as Roblox does.
-        lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
+        // `pcall`/`xpcall` too: in a safe environment a call to the imported
+        // builtin skips the global that hands scripts a binding error's
+        // message rather than its error object (`globals::install_error_strings`).
+        lua.set_compiler(Compiler::new().set_mutable_globals([
+            "game",
+            "workspace",
+            "Workspace",
+            "pcall",
+            "xpcall",
+        ]));
         lua.set_app_data(HookSlot(Rc::new(CommandBarHooks)));
 
         install_globals(&lua, &ctx)?;

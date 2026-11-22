@@ -435,8 +435,15 @@ impl ServerVm {
         });
         let groups = Rc::new(RefCell::new(CollisionGroups::default()));
         let lua = crate::luau::new_vm();
-        // See `Runtime::build`: DOM-backed globals must not be import-cached.
-        lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
+        // See `Runtime::build`: DOM-backed globals and `pcall`/`xpcall` must
+        // not be import-cached.
+        lua.set_compiler(Compiler::new().set_mutable_globals([
+            "game",
+            "workspace",
+            "Workspace",
+            "pcall",
+            "xpcall",
+        ]));
         let fired = Rc::new(Cell::new(0));
         let client = Rc::new(Cell::new(false));
         let remotes = remote::Shared::default();
@@ -822,12 +829,7 @@ impl ServerVm {
         let meta = self.lua.create_table()?;
         meta.set("__index", self.lua.globals())?;
         scope.set_metatable(Some(meta))?;
-        let chunk = self
-            .lua
-            .load(source)
-            .set_name(format!("={name}"))
-            .set_environment(scope)
-            .into_function();
+        let chunk = crate::luau::load_scoped(&self.lua, source, format!("={name}"), scope);
         match chunk {
             Ok(chunk) => {
                 let main = self.lua.create_thread(chunk)?;

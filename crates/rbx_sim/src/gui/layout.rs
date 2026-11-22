@@ -13,6 +13,11 @@ use rbx_reflection::ReflectionDatabase;
 /// `GuiService:GetGuiInset()`'s top: the top bar's height (GuiRuntime
 /// golden: `0,58 0,0`).
 pub(crate) const TOPBAR_INSET: f32 = 58.0;
+/// The top bar's free strip starts right of the logo and the menu and chat
+/// buttons, and stops 12 px short of the right edge (as `gui.luau`'s
+/// `GuiService.TopbarInset`).
+const TOPBAR_LEFT: f32 = 12.0 + 44.0 + 12.0 + 44.0 + 44.0 + 12.0;
+const TOPBAR_RIGHT: f32 = 12.0;
 
 /// One laid out `ScreenGui` or `GuiObject`.
 #[derive(Clone, Debug)]
@@ -143,12 +148,21 @@ pub(crate) fn layout(
             true => top,
             false => top.max(TOPBAR_INSET),
         };
-        let frame = [
-            left,
-            top,
-            (viewport[0] - left - right).max(0.0),
-            (viewport[1] - top - bottom).max(0.0),
-        ];
+        let frame = match insets {
+            // The top bar's free strip, `GuiService.TopbarInset`.
+            "TopbarSafeInsets" => [
+                TOPBAR_LEFT,
+                0.0,
+                (viewport[0] - TOPBAR_LEFT - TOPBAR_RIGHT).max(0.0),
+                TOPBAR_INSET,
+            ],
+            _ => [
+                left,
+                top,
+                (viewport[0] - left - right).max(0.0),
+                (viewport[1] - top - bottom).max(0.0),
+            ],
+        };
         let shown = flag(dom, db, screen, "Enabled");
         out.push(Laid {
             referent: screen,
@@ -165,7 +179,8 @@ pub(crate) fn layout(
             db,
             screen,
             Parent {
-                content: frame,
+                // A `UIPadding` under the screen pads its canvas.
+                content: padded(dom, db, screen, frame),
                 clip: window,
                 shown,
                 rotation: 0.0,

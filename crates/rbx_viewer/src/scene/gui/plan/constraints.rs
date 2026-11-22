@@ -260,6 +260,16 @@ pub(in crate::scene::gui) fn under_topbar(properties: &BTreeMap<String, Variant>
         )
 }
 
+/// `ScreenInsets.TopbarSafeInsets`: the screen is the top bar's free strip,
+/// `GuiService.TopbarInset`, whatever `IgnoreGuiInset` says (TopbarPlus sets
+/// both and live its icons sit in the top bar, right of the menu buttons).
+pub(in crate::scene::gui) fn in_topbar(properties: &BTreeMap<String, Variant>) -> bool {
+    enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS) == TOPBAR_SAFE_INSETS
+}
+
+/// `Enum.ScreenInsets.TopbarSafeInsets`.
+const TOPBAR_SAFE_INSETS: u32 = 3;
+
 /// `Enum.ScreenInsets.DeviceSafeInsets`.
 const DEVICE_SAFE_INSETS: u32 = 1;
 

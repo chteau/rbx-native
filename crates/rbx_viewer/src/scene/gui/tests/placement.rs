@@ -241,3 +241,32 @@ fn a_screen_gui_with_nothing_set_sorts_globally() {
     dom.new_instance("ScreenGui", "ScreenGui", None);
     assert!(screens(&dom)[0].global_z_index);
 }
+
+/// `TopbarSafeInsets` in a running game makes the screen the top bar's free
+/// strip, right of the menu buttons and 58 px tall, so a frame anchored to
+/// its bottom left sits in the top bar (TopbarPlus's icons, live).
+#[test]
+fn a_topbar_safe_screen_is_the_top_bar_strip() {
+    let (mut dom, gui) = screen_gui();
+    dom.set_property(gui, "ScreenInsets", Variant::Enum(3))
+        .unwrap();
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 1.0, -44),
+        udim2(0.0, 44, 0.0, 44),
+    );
+    let mut planned = screens(&dom);
+    assert!(!planned[0].in_topbar, "the edit view has no top bar");
+    planned[0].in_topbar = true;
+    let rect = resolve(&planned, VIEWPORT)[0].rect;
+    assert_eq!(
+        rect,
+        Rect {
+            x: 168.0,
+            y: 14.0,
+            width: 44.0,
+            height: 44.0,
+        }
+    );
+}
