@@ -424,8 +424,8 @@ const GROUPS: [(&str, &str, &str, usize); 8] = [
     (
         "Roblox docs and guides",
         "book-open",
-        "Read creator-docs pages, and guides on scripting, UI style, monetization, \
-         performance and more.",
+        "Read creator-docs pages, and guides on scripting, building worlds, UI style, \
+         monetization, performance and more.",
         2,
     ),
     (
