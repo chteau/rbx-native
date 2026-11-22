@@ -125,8 +125,12 @@ fn member(value: &Value) -> Option<Member> {
 }
 
 fn load_dump() -> Vec<Class> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/API-Dump.json");
-    let text = std::fs::read_to_string(path).expect("assets/API-Dump.json");
+    // `COVERAGE_DUMP=<file>` measures against another dump (the watchdog's
+    // latest one from Roblox) instead of the bundled one.
+    let path = std::env::var("COVERAGE_DUMP").unwrap_or_else(|_| {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/API-Dump.json").to_owned()
+    });
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("{path}: {err}"));
     let dump: Value = serde_json::from_str(&text).expect("the API dump is JSON");
     dump["Classes"]
         .as_array()
@@ -769,6 +773,26 @@ fn main() {
             &bar_none
         ),
     );
+    // `COVERAGE_MISSING=<file>`: every target member not there, as
+    // `security<TAB>class<TAB>kind<TAB>member` (the watchdog's to-do list).
+    if let Some(path) = std::env::var_os("COVERAGE_MISSING") {
+        let mut tsv = String::new();
+        for (level, there) in [
+            (Level::None, &game),
+            (Level::Plugin, &plugin),
+            (Level::LocalUser, &command_bar),
+        ] {
+            for class in &classes {
+                for m in class.members.iter().filter(|m| at(level)(m)) {
+                    if !there.contains(&(class.name.clone(), m.name.clone())) {
+                        let (tag, kind) = (level.tag(), &m.kind);
+                        tsv.push_str(&format!("{tag}\t{}\t{kind}\t{}\n", class.name, m.name));
+                    }
+                }
+            }
+        }
+        std::fs::write(&path, tsv).expect("COVERAGE_MISSING");
+    }
     for line in target.iter().chain(&also).chain(&retired_rows) {
         println!("{line}");
     }
