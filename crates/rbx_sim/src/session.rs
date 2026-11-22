@@ -241,6 +241,10 @@ pub struct Session {
     arriving: std::collections::HashMap<i64, WeakDom>,
     script_timeout: Option<std::time::Duration>,
     network: Network,
+    wall_clock: bool,
+    /// The last frames' costs (see [`Session::frames`]).
+    profile: crate::profile::FrameLog,
+    frames: u64,
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -288,6 +292,9 @@ impl Session {
             arriving: std::collections::HashMap::new(),
             script_timeout: None,
             network: Network::default(),
+            wall_clock: false,
+            profile: Default::default(),
+            frames: 0,
         })
     }
 
@@ -337,6 +344,7 @@ impl Session {
         sim.make_client(index, player);
         network_items(&mut sim.dom_mut());
         sim.set_network_ping(self.network.ping());
+        sim.set_wall_clock(self.wall_clock);
         if let Some(timeout) = self.script_timeout {
             sim.set_script_timeout(timeout);
         }
@@ -400,6 +408,7 @@ impl Session {
     /// One frame: what the clients sent arrives at the server, the server
     /// steps, then each client gets the server's frame and steps.
     pub fn step(&mut self) {
+        let step_started = std::time::Instant::now();
         self.relayed.clear();
         let now = self.server.frame();
         for client in &mut self.clients {
@@ -552,6 +561,18 @@ impl Session {
         }
         self.meter(sent);
 
+        self.frames += 1;
+        let mut peers = vec![(Peer::Server, self.server.take_costs())];
+        for (index, client) in self.clients.iter_mut().enumerate() {
+            peers.push((Peer::Client(index), client.sim.take_costs()));
+        }
+        self.profile.push(crate::profile::frame(
+            self.frames,
+            step_started,
+            step_started.elapsed(),
+            peers,
+        ));
+
         let mut kicked = self.server.take_kicked();
         for client in &mut self.clients {
             kicked.extend(client.sim.take_kicked());
@@ -580,6 +601,18 @@ impl Session {
         }
         let [down, down_physics, up, up_physics] = server;
         write_rates(&self.server, [up, down, up_physics, down_physics]);
+    }
+
+    /// The last frames' costs, oldest first (see [`crate::profile`]).
+    pub fn frames(&self) -> &std::collections::VecDeque<crate::profile::FrameProfile> {
+        self.profile.frames()
+    }
+
+    /// The editor's time showing the last frame, the frame's render cost.
+    pub fn set_render_time(&mut self, render: std::time::Duration) {
+        if let Some(frame) = self.profile.last_mut() {
+            frame.render = render;
+        }
     }
 
     /// Local player `index` leaves: the server's `PlayerRemoving`, their
@@ -721,6 +754,16 @@ impl Session {
             client.sim.set_script_timeout(timeout);
         }
         self.script_timeout = Some(timeout);
+    }
+
+    /// Wall clock pacing on the server and every client, those to come too
+    /// (see [`Simulation::set_wall_clock`]).
+    pub fn set_wall_clock(&mut self, on: bool) {
+        self.server.set_wall_clock(on);
+        for client in &mut self.clients {
+            client.sim.set_wall_clock(on);
+        }
+        self.wall_clock = on;
     }
 
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
