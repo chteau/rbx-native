@@ -3573,7 +3573,37 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   to the metre. No skinned rigs, since the glTF export has none either
   ([FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566)).
 
+- [ ] 📋 **Pre-publish check**: one button before publishing that lists
+  broken asset ids, deprecated calls (`wait`, `spawn`, `delay`), remotes
+  the server trusts without checking, unanchored parts that fall at
+  start, DataStore calls without `pcall`, and huge unions or part counts,
+  each linking to where it is in the place.
+- [ ] 📋 **Free model kits in the Toolbox**: browse CC0 packs (Kenney,
+  Quaternius, Poly Pizza's CC0 section), preview them and import in one
+  click, scaled to studs with pivots set. Goes with the MCP building
+  skills, so an assistant can pull a kit in itself.
+- [ ] 📋 **Blender integration, someday**: building with Parts covers
+  modeling for now. Later, a live link to Blender (send a selection over,
+  get the mesh back as a MeshPart, keep the two in sync) for anything
+  Parts and CSG can't do.
+
 ### Play / Test workflow
+- [ ] 📋 **Shareable bug repros**: "Record this session" in Local Run
+  writes a `.rbxnrec` a teammate opens to watch exactly what happened,
+  frame by frame (record and replay exist; this is the share and open
+  side).
+- [ ] 📋 **Headless tests in CI**: `rbxnative test place.rbxl` runs TestEZ
+  or Jest-Lua specs on Local Run with no window and prints results CI
+  can read.
+- [ ] 📋 **Remote inspector**: every RemoteEvent and RemoteFunction call
+  per player during Local Run, with arguments, size, rate and the script
+  that fired it, flagging calls over Roblox's limits.
+- [ ] 📋 **Bot players for load tests**: 20 to 50 scripted players that
+  walk, jump, click and fire remotes on a local server, while server load,
+  memory and DataStore calls are watched.
+- [ ] 📋 **Leak finder**: over a Local Run session, connections never
+  disconnected, instances piling up parented to nil and tables that keep
+  growing.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
