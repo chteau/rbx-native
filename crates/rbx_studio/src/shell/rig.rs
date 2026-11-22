@@ -94,16 +94,16 @@ pub(crate) struct BodyColors {
 }
 
 impl Default for BodyColors {
-    /// The classic Roblox starter look: yellow head and arms, blue torso,
-    /// green legs.
+    /// The classic noob: Bright yellow head and arms, Bright blue torso,
+    /// Br. yellowish green legs.
     fn default() -> Self {
         BodyColors {
             head: [245, 205, 48],
             torso: [13, 105, 172],
             left_arm: [245, 205, 48],
             right_arm: [245, 205, 48],
-            left_leg: [75, 151, 75],
-            right_leg: [75, 151, 75],
+            left_leg: [164, 189, 71],
+            right_leg: [164, 189, 71],
         }
     }
 }

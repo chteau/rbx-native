@@ -22,7 +22,24 @@ pub const PLAYER_LOADER_SOURCE: &str = "require(script.Parent:WaitForChild(\"Pla
 /// green.
 const YELLOW: u32 = 24;
 const BLUE: u32 = 23;
-const GREEN: u32 = 37;
+const GREEN: u32 = 119;
+
+/// The default face, a built-in texture of every Roblox install.
+const FACE: &str = "rbxasset://textures/face.png";
+/// `NormalId.Front`.
+const FRONT: u32 = 5;
+
+/// Gives `head` the default face: a `Decal` named `face` on its front, as
+/// every default character carries.
+pub fn add_face(dom: &mut WeakDom, head: Ref) {
+    let face = dom.new_instance("Decal", "face", Some(head));
+    let _ = dom.set_property(
+        face,
+        "Texture",
+        Variant::Content(rbx_dom::Content::Uri(FACE.into())),
+    );
+    let _ = dom.set_property(face, "Face", Variant::Enum(FRONT));
+}
 
 /// What a part's `Color` holds for a `BrickColor` number.
 fn rgb(number: u32) -> [u8; 3] {
@@ -91,8 +108,12 @@ pub fn noob(dom: &mut WeakDom, name: &str, parent: Option<Ref>) -> Ref {
         for (key, value) in props {
             let _ = dom.set_property(part, key, value);
         }
-        if part_name == "HumanoidRootPart" {
-            let _ = dom.set_property(part, "Transparency", Variant::Float32(1.0));
+        match part_name {
+            "HumanoidRootPart" => {
+                let _ = dom.set_property(part, "Transparency", Variant::Float32(1.0));
+            }
+            "Head" => add_face(dom, part),
+            _ => {}
         }
         refs.insert(part_name, part);
     }
@@ -210,5 +231,36 @@ pub fn finish(dom: &mut WeakDom, model: Ref, r15: bool) {
     if child(dom, model, "Health").is_none() {
         let script = dom.new_instance("Script", "Health", Some(model));
         let _ = dom.set_property(script, "Source", Variant::String(HEALTH_SOURCE.into()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rbx_dom::{Content, Ref, Variant, WeakDom};
+
+    fn child(dom: &WeakDom, parent: Ref, name: &str) -> Ref {
+        dom.get(parent)
+            .unwrap()
+            .children()
+            .iter()
+            .copied()
+            .find(|c| dom.get(*c).unwrap().name() == name)
+            .unwrap()
+    }
+
+    #[test]
+    fn the_noob_wears_the_classic_colours_and_the_default_face() {
+        let mut dom = WeakDom::new();
+        let model = super::noob(&mut dom, "Player1", None);
+        let colour = |name: &str| dom.get(child(&dom, model, name)).unwrap().properties()["BrickColor"].clone();
+        assert_eq!(colour("Head"), Variant::BrickColor(24));
+        assert_eq!(colour("Torso"), Variant::BrickColor(23));
+        assert_eq!(colour("Left Leg"), Variant::BrickColor(119));
+        let face = dom.get(child(&dom, child(&dom, model, "Head"), "face")).unwrap();
+        assert_eq!(face.class(), "Decal");
+        assert_eq!(
+            face.properties()["Texture"],
+            Variant::Content(Content::Uri("rbxasset://textures/face.png".into()))
+        );
     }
 }
