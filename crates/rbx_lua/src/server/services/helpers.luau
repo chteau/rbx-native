@@ -213,7 +213,7 @@ function PLAYER.GetJoinData(self)
 end
 
 function PLAYER.GetNetworkPing(_)
-	return 0
+	return host.network_ping()
 end
 
 function PLAYER.HasAppearanceLoaded(self)

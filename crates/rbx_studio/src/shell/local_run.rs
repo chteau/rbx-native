@@ -527,10 +527,37 @@ fn rows_of(output: &rbx_lua::Output) -> Vec<Feedback> {
         .collect()
 }
 
+/// The Network Simulator's values as Local Run's link: inbound is what
+/// reaches a client, outbound what it sends.
+fn local_network(conditions: &rbx_play::netsim::NetConditions) -> rbx_sim::link::Network {
+    let way = |w: rbx_play::netsim::OneWay| rbx_sim::link::Way {
+        latency: w.latency_ms / 1000.0,
+        jitter: w.jitter_ms / 1000.0,
+        loss: w.loss_percent / 100.0,
+    };
+    rbx_sim::link::Network {
+        down: way(conditions.inbound),
+        up: way(conditions.outbound),
+    }
+}
+
 impl Shell {
     /// A Local Run or Play (local) is going.
     pub(super) fn local_run_running(&self) -> bool {
         self.play.live.local.running.is_some()
+    }
+
+    /// The Network Simulator's applied values reach the running Local Run
+    /// at once; false when none is running.
+    pub(super) fn local_run_set_network(
+        &mut self,
+        conditions: &rbx_play::netsim::NetConditions,
+    ) -> bool {
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return false;
+        };
+        run.session.set_network(local_network(conditions));
+        true
     }
 
     fn local_run_can_start(&self) -> bool {
@@ -612,6 +639,7 @@ impl Shell {
                 return;
             }
         };
+        session.set_network(local_network(&self.play.network.applied.conditions));
         session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
             rbx_cloud::ApiKey::from_env_or_config(),
         ))));

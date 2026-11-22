@@ -1240,10 +1240,30 @@ pub fn run_some_in_sim(
     only: &[String],
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
 ) -> Result<BTreeMap<String, Value>, String> {
+    run(limit, only, fetcher, crate::link::Network::default())
+}
+
+/// [`run_some_in_sim`] with the player behind `network`, as the recording
+/// server's player was behind a real one.
+pub fn run_on_network(
+    limit: f64,
+    only: &[String],
+    network: crate::link::Network,
+) -> Result<BTreeMap<String, Value>, String> {
+    run(limit, only, None, network)
+}
+
+fn run(
+    limit: f64,
+    only: &[String],
+    fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
+    network: crate::link::Network,
+) -> Result<BTreeMap<String, Value>, String> {
     let mut dom = bare_place();
     add_to(&mut dom, PASSES, only);
     dom.take_changes();
     let mut session = Session::new(dom)?;
+    session.set_network(network);
     // A test's verdict mustn't hang on how loaded the machine is.
     session.set_script_timeout(std::time::Duration::from_secs(86_400));
     if let Some(fetcher) = fetcher {

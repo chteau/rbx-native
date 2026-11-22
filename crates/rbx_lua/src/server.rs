@@ -644,6 +644,12 @@ impl ServerVm {
         self.services.configure(config);
     }
 
+    /// The round trip between this peer and the server, in seconds, that
+    /// `Player:GetNetworkPing()` returns.
+    pub fn set_network_ping(&self, seconds: f64) {
+        self.services.ping.set(seconds);
+    }
+
     /// The purchase prompts scripts asked for since the last call.
     pub fn take_prompts(&self) -> Vec<PurchasePrompt> {
         self.services.take_prompts()

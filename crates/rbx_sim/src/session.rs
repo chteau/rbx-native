@@ -19,18 +19,22 @@
 //!   running before the rest of the place arrives and `game.Loaded` fires;
 //! - with `Workspace.StreamingEnabled`, the parts and atomic models in
 //!   Workspace stream in and out around the player's focus
-//!   (`crate::streaming`).
+//!   (`crate::streaming`), the server deciding and the link delivering;
+//! - all of it crosses a simulated link ([`crate::link`]), instant by
+//!   default: what a frame sends is snapshotted as it leaves, so a client
+//!   behind a slow link sees the server's world as it was.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rbx_dom::{Change, Ref, Variant, WeakDom};
 use rbx_lua::server::{Arg, Outgoing, Packet, To};
 
 use crate::animation::TrackOp;
 use crate::humanoid::State;
+use crate::link::{Meter, Network, Pipe};
 use crate::sim::{Placed, Simulation};
 use crate::streaming::{self, Integrity, Kind, Settings};
-use crate::{Input, Output};
+use crate::{Input, Output, FRAME_HZ};
 
 /// Frames between two looks at what a streaming client should have: what
 /// comes into range lands ~0.1 s later (the streaming goldens).
@@ -67,8 +71,24 @@ pub struct Client {
     /// Roblox it lands after ReplicatedFirst has started, so a loader there
     /// waiting on `CharacterAdded` sees it fire.
     deferred: Option<Ref>,
-    /// What the client sends the server at the start of the next frame.
-    outbox: Upstream,
+    /// The place's snapshot has left the server (it may still be on the
+    /// way).
+    sent_place: bool,
+    /// Server to client and client to server.
+    down: Pipe<Down>,
+    up: Pipe<Up>,
+    /// Poses a lost physics update carried, for the next one to take.
+    carry_down: Vec<Placed>,
+    carry_up: Vec<Placed>,
+    /// The frame of the newest pose applied per part, at each end: an
+    /// older one arriving late is dropped.
+    newest_down: HashMap<Ref, u64>,
+    newest_up: HashMap<Ref, u64>,
+    /// `UnreliableRemoteEvent` packets the server took from this client in
+    /// one second of frames: (second, count).
+    burst: (u64, u32),
+    /// Bytes each way, for `Stats`: data and physics.
+    meters: [Meter; 4],
     /// Parts it moved last frame, to say when they stop.
     moving: HashSet<Ref>,
     /// Parts the server simulates that it moved itself: the server's pose
@@ -79,7 +99,8 @@ pub struct Client {
     stream: Option<Stream>,
 }
 
-/// A client's side of instance streaming.
+/// A client's side of instance streaming. The server decides (`have` is
+/// what it sent); the link delivers ([`Down::Stream`]).
 struct Stream {
     settings: Settings,
     /// The units (`streaming::unit_of`) it has.
@@ -96,17 +117,100 @@ struct Stream {
     /// once).
     recent: Vec<([f32; 3], u64)>,
     paused: bool,
+    /// `Workspace.PersistentLoaded` fired on the client.
     persistent_loaded: bool,
 }
 
-#[derive(Default)]
-struct Upstream {
-    packets: Vec<Outgoing>,
-    parts: Vec<Placed>,
-    states: Vec<(Ref, State)>,
-    tracks: Vec<TrackOp>,
-    tools: Vec<crate::tools::ClientOp>,
+/// `meters` indexes.
+const DOWN_DATA: usize = 0;
+const DOWN_PHYSICS: usize = 1;
+const UP_DATA: usize = 2;
+const UP_PHYSICS: usize = 3;
+
+/// `UnreliableRemoteEvent` packets a server takes from one client a second
+/// (creator-docs: "approximately 500 requests per second, per client");
+/// the rest are dropped.
+const UNRELIABLE_PER_SECOND: u32 = 500;
+
+/// What crosses the link from the server to one client, each frame in
+/// this order.
+enum Down {
+    /// The place, for a client that just joined.
+    Place(Vec<Snap>),
+    /// The frame's changes and reliable packets.
+    Ops(Vec<Snap>),
+    Unreliable(Packet),
+    /// Poses from the server's frame `.0`.
+    Physics(u64, Vec<Placed>),
+    /// One look at what to stream: the integrity pause, the units coming
+    /// in (`true` for a persistent model) and those going out.
+    Stream {
+        paused: bool,
+        wanted: Vec<(Snap, bool)>,
+        out: Vec<Ref>,
+    },
+    Rest {
+        states: Vec<(Ref, State)>,
+        tracks: Vec<TrackOp>,
+        forwarded: Vec<(Ref, String, Vec<Arg>)>,
+    },
 }
+
+/// What crosses the link from a client to the server, each frame in this
+/// order.
+enum Up {
+    Packets(Vec<Packet>),
+    Unreliable(Packet),
+    Physics(u64, Vec<Placed>),
+    Rest {
+        states: Vec<(Ref, State)>,
+        tracks: Vec<TrackOp>,
+        tools: Vec<crate::tools::ClientOp>,
+    },
+}
+
+/// One replicated change as it left the server for one client: what the
+/// server had then, whatever the server does next.
+enum Snap {
+    /// `value` `None`: the property was cleared. `character`: a `Player`'s
+    /// `Character` changed, to this.
+    Property {
+        r: Ref,
+        name: String,
+        value: Option<Variant>,
+        character: Option<Option<Ref>>,
+    },
+    /// Made and destroyed within the frame: it still arrives (by class and
+    /// name), for the removal that follows to take away.
+    Fleeting {
+        r: Ref,
+        class: String,
+        name: String,
+        parent: Ref,
+    },
+    /// Out of the client's scope now: taken out (to nil).
+    Leave(Ref),
+    /// In scope under `parent`: moved there if the client has it, else
+    /// copied in from `nodes` (when the client lacked it as it left).
+    Place {
+        r: Ref,
+        parent: Option<Ref>,
+        nodes: Option<Vec<Node>>,
+    },
+    Removed(Ref),
+    Packet(Packet),
+    /// A unit streaming in, with its subtree as the server has it: one
+    /// that streamed out earlier takes these values back.
+    StreamIn {
+        r: Ref,
+        parent: Option<Ref>,
+        nodes: Vec<Node>,
+    },
+}
+
+/// An instance being copied in: (referent, class, name, parent,
+/// properties).
+type Node = (Ref, String, String, Option<Ref>, BTreeMap<String, Variant>);
 
 /// What the server sends its clients after a frame.
 enum Op {
@@ -136,6 +240,7 @@ pub struct Session {
     /// their client's DataModel as they join.
     arriving: std::collections::HashMap<i64, WeakDom>,
     script_timeout: Option<std::time::Duration>,
+    network: Network,
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -167,6 +272,9 @@ impl Session {
     pub fn new(dom: WeakDom) -> Result<Session, String> {
         let mut server = Simulation::new(dom)?;
         server.make_server();
+        // Clients copy the server's `Stats`, so their own items under it
+        // never meet a second one replicated later.
+        stats_service(&mut server.dom_mut());
         Ok(Session {
             server,
             clients: Vec::new(),
@@ -179,7 +287,22 @@ impl Session {
             services: None,
             arriving: std::collections::HashMap::new(),
             script_timeout: None,
+            network: Network::default(),
         })
+    }
+
+    /// The link every client has to the server, now and for those who join
+    /// later; `Player:GetNetworkPing()` and `Stats` report it at once.
+    pub fn set_network(&mut self, network: Network) {
+        self.network = network;
+        self.server.set_network_ping(network.ping());
+        for client in &mut self.clients {
+            client.sim.set_network_ping(network.ping());
+        }
+    }
+
+    pub fn network(&self) -> Network {
+        self.network
     }
 
     /// Starts the server's scripts. Players join after.
@@ -212,6 +335,8 @@ impl Session {
         }
         let mut sim = Simulation::new(view)?;
         sim.make_client(index, player);
+        network_items(&mut sim.dom_mut());
+        sim.set_network_ping(self.network.ping());
         if let Some(timeout) = self.script_timeout {
             sim.set_script_timeout(timeout);
         }
@@ -256,7 +381,15 @@ impl Session {
             loaded: false,
             characters: Vec::new(),
             deferred: None,
-            outbox: Upstream::default(),
+            sent_place: false,
+            down: Pipe::new(2 * index as u64 + 1),
+            up: Pipe::new(2 * index as u64 + 2),
+            carry_down: Vec::new(),
+            carry_up: Vec::new(),
+            newest_down: HashMap::new(),
+            newest_up: HashMap::new(),
+            burst: (0, 0),
+            meters: Default::default(),
             moving: HashSet::new(),
             overruled: Vec::new(),
             stream,
@@ -268,44 +401,55 @@ impl Session {
     /// steps, then each client gets the server's frame and steps.
     pub fn step(&mut self) {
         self.relayed.clear();
+        let now = self.server.frame();
         for client in &mut self.clients {
-            let up = std::mem::take(&mut client.outbox);
             let player = client.player;
-            let (mut reliable, unreliable): (Vec<_>, Vec<_>) =
-                up.packets.into_iter().partition(|o| {
-                    !matches!(
-                        o.packet,
-                        Packet::Event {
-                            unreliable: true,
-                            ..
+            for up in client.up.due(now) {
+                match up {
+                    Up::Packets(packets) => {
+                        for packet in packets {
+                            self.server.receive(Some(player), packet);
                         }
-                    )
-                });
-            reliable.extend(unreliable);
-            for out in reliable {
-                if matches!(out.to, To::Server) {
-                    self.server.receive(Some(player), out.packet);
+                    }
+                    Up::Unreliable(packet) => {
+                        let second = now / FRAME_HZ as u64;
+                        if client.burst.0 != second {
+                            client.burst = (second, 0);
+                        }
+                        client.burst.1 += 1;
+                        if client.burst.1 <= UNRELIABLE_PER_SECOND {
+                            self.server.receive(Some(player), packet);
+                        }
+                    }
+                    Up::Physics(frame, parts) => {
+                        let owned = self.server.ownership_mut().owned_by(player);
+                        let parts: Vec<_> = fresh(&mut client.newest_up, frame, parts)
+                            .into_iter()
+                            .filter(|placed| owned.contains(&placed.part))
+                            .collect();
+                        self.server.place_parts(&parts);
+                        self.relayed.extend(parts);
+                    }
+                    Up::Rest {
+                        states,
+                        tracks,
+                        tools,
+                    } => {
+                        for (humanoid, state) in states {
+                            self.server.set_humanoid_state(humanoid, state);
+                        }
+                        for op in tracks {
+                            self.server.mirror_track(Some(player), op);
+                        }
+                        self.server.apply_tool_ops(player, tools);
+                    }
                 }
             }
-            let owned = self.server.ownership_mut().owned_by(player);
-            let parts: Vec<_> = up
-                .parts
-                .into_iter()
-                .filter(|placed| owned.contains(&placed.part))
-                .collect();
-            self.server.place_parts(&parts);
-            self.relayed.extend(parts);
-            for (humanoid, state) in up.states {
-                self.server.set_humanoid_state(humanoid, state);
-            }
-            for op in up.tracks {
-                self.server.mirror_track(Some(player), op);
-            }
-            self.server.apply_tool_ops(player, up.tools);
         }
 
         self.server.step();
 
+        let sent = self.server.frame();
         let stream = self.server.take_stream();
         let packets = self.server.take_outgoing();
         let ops = frame_ops(stream, packets);
@@ -329,6 +473,8 @@ impl Session {
             }
         }
 
+        let network = self.network;
+        let rtt = network.ping();
         let server = &self.server;
         for client in &mut self.clients {
             let owned = server.ownership_mut().owned_by(client.player);
@@ -336,41 +482,75 @@ impl Session {
             let paused = client.stream.as_ref().is_some_and(|s| s.paused);
             client.sim.ownership_mut().owned = if paused { HashSet::new() } else { owned };
             client.sim.sync_collision_groups(server);
-            if !client.loaded {
-                client.arrive(server);
-                client.stream(server);
-            } else {
+            let mut unreliable = Vec::new();
+            let frame = if client.sent_place {
+                let mut snaps = Vec::new();
                 if let Some(character) = client.deferred.take() {
                     let parent = server.dom().parent(character);
                     if parent.is_some() {
-                        client.deliver(server, &Op::Tree(character, parent));
+                        snaps.extend(client.snap(server, &Op::Tree(character, parent)));
                     }
                 }
                 for op in &ops {
-                    client.deliver(server, op);
+                    match client.snap(server, op) {
+                        Some(Snap::Packet(packet)) if unreliable_event(&packet) => {
+                            unreliable.push(packet);
+                        }
+                        snap => snaps.extend(snap),
+                    }
                 }
-                client.stream(server);
+                Down::Ops(snaps)
+            } else {
+                client.sent_place = true;
+                Down::Place(client.snap_place(server))
+            };
+            if let Down::Place(snaps) | Down::Ops(snaps) = &frame {
+                client.meters[DOWN_DATA].add(sent, snaps.iter().map(snap_size).sum());
             }
-            client.sim.place_parts(&moved);
+            client.down.reliable(sent, &network.down, rtt, frame);
+            for packet in unreliable {
+                let bytes = packet_size(&packet);
+                let down = Down::Unreliable(packet);
+                if client.down.unreliable(sent, &network.down, down).is_ok() {
+                    client.meters[DOWN_DATA].add(sent, bytes);
+                }
+            }
+            if let Some(stream) = client.snap_stream(server) {
+                if let Down::Stream { wanted, .. } = &stream {
+                    let bytes = wanted.iter().map(|(snap, _)| snap_size(snap)).sum();
+                    client.meters[DOWN_DATA].add(sent, bytes);
+                }
+                client.down.reliable(sent, &network.down, rtt, stream);
+            }
+            let mut poses = std::mem::take(&mut client.carry_down);
+            merge(&mut poses, moved.iter().copied());
             let overruled = server.poses(&std::mem::take(&mut client.overruled));
-            client.sim.place_parts(&overruled);
-            for (humanoid, state) in &states {
-                client.sim.set_humanoid_state(*humanoid, *state);
+            merge(&mut poses, overruled);
+            client.meters[DOWN_PHYSICS].add(sent, poses.len() * POSE_BYTES);
+            let physics = Down::Physics(sent, poses);
+            if let Err(Down::Physics(_, lost)) =
+                client.down.unreliable(sent, &network.down, physics)
+            {
+                client.carry_down = lost;
             }
-            for (origin, op) in &tracks {
-                if *origin != Some(client.player) {
-                    client.sim.mirror_track(Some(SERVER), op.clone());
-                }
-            }
-            for (humanoid, method, args) in &forwarded {
-                let root = client.sim.humanoid_root(*humanoid);
-                if root.is_some_and(|r| client.sim.simulates(r)) {
-                    client.sim.humanoid_call(*humanoid, method, args);
-                }
+            let rest = Down::Rest {
+                states: states.clone(),
+                tracks: tracks
+                    .iter()
+                    .filter(|(origin, _)| *origin != Some(client.player))
+                    .map(|(_, op)| op.clone())
+                    .collect(),
+                forwarded: forwarded.clone(),
+            };
+            client.down.reliable(sent, &network.down, rtt, rest);
+
+            for frame in client.down.due(sent) {
+                client.apply(frame);
             }
             client.sim.step();
-            client.collect();
+            client.collect(sent, &network);
         }
+        self.meter(sent);
 
         let mut kicked = self.server.take_kicked();
         for client in &mut self.clients {
@@ -383,6 +563,23 @@ impl Session {
                 self.kicked.push((name, message));
             }
         }
+    }
+
+    /// `Stats`' data and physics rates on every peer, over the last second:
+    /// a client receives what goes down and sends what goes up, the server
+    /// the other way round, for all its clients.
+    fn meter(&mut self, now: u64) {
+        let mut server = [0.0; 4];
+        for client in &mut self.clients {
+            let rates = client.meters.each_mut().map(|m| m.kbps(now));
+            for (total, rate) in server.iter_mut().zip(rates) {
+                *total += rate;
+            }
+            let [down, down_physics, up, up_physics] = rates;
+            write_rates(&client.sim, [down, up, down_physics, up_physics]);
+        }
+        let [down, down_physics, up, up_physics] = server;
+        write_rates(&self.server, [up, down, up_physics, down_physics]);
     }
 
     /// Local player `index` leaves: the server's `PlayerRemoving`, their
@@ -546,15 +743,9 @@ impl Session {
 }
 
 impl Client {
-    /// The place reaches a new client: every replicated service's
-    /// contents, then `game.Loaded`, then its `PlayerScripts`.
-    fn arrive(&mut self, server: &Simulation) {
-        self.sim.set_remote(true);
-        self.arrive_all(server);
-        self.sim.set_remote(false);
-    }
-
-    fn arrive_all(&mut self, server: &Simulation) {
+    /// The place as it reaches a new client: every replicated service's
+    /// contents (its own character a frame later).
+    fn snap_place(&mut self, server: &Simulation) -> Vec<Snap> {
         let roots: Vec<Ref> = {
             let dom = server.dom();
             dom.root_refs()
@@ -580,22 +771,130 @@ impl Client {
             Some(Some(Variant::Ref(c))) if server.dom().in_tree(*c) => Some(*c),
             _ => None,
         };
-        let roots: Vec<Ref> = roots.into_iter().filter(|r| Some(*r) != own).collect();
         self.deferred = own;
-        // The whole snapshot lands before its LocalScripts start: one in
-        // PlayerGui finds ReplicatedStorage's contents.
-        self.sim.hold_scripts();
-        for root in roots {
-            self.deliver(server, &Op::Tree(root, None));
+        roots
+            .into_iter()
+            .filter(|r| Some(*r) != own)
+            .filter_map(|root| self.snap(server, &Op::Tree(root, None)))
+            .collect()
+    }
+
+    /// `op` as it leaves the server for this client; `None` when it has
+    /// nothing for it.
+    fn snap(&self, server: &Simulation, op: &Op) -> Option<Snap> {
+        match op {
+            Op::Property(r, name) => self.snap_property(server, *r, name),
+            Op::Tree(r, given) => self.snap_tree(server, *r, *given),
+            Op::Removed(r) => Some(Snap::Removed(*r)),
+            Op::Packet(out) => {
+                let mine = match out.to {
+                    To::Player(p) => p == self.player,
+                    To::AllPlayers => true,
+                    To::Server => false,
+                };
+                mine.then(|| Snap::Packet(out.packet.clone()))
+            }
         }
-        self.loaded = true;
-        self.sim.set_loaded();
-        self.sim.release_scripts();
-        if self.sim.dom().get(self.player).is_some() {
-            let db = self.sim.db();
-            crate::players::player_scripts(&mut self.sim.dom_mut(), db, self.player);
-            self.sim.flush();
+    }
+
+    fn snap_property(&self, server: &Simulation, r: Ref, name: &str) -> Option<Snap> {
+        let sdom = server.dom();
+        if !in_scope(&sdom, r, self.player) {
+            return None;
         }
+        let source = sdom.get(r)?;
+        let value = if name == "Name" {
+            Some(Variant::String(source.name().to_owned()))
+        } else {
+            source.properties().get(name).cloned()
+        };
+        let character = (source.class() == "Player" && name == "Character").then(|| {
+            match source.properties().get("Character") {
+                Some(Variant::Ref(c)) if sdom.get(*c).is_some() => Some(*c),
+                _ => None,
+            }
+        });
+        Some(Snap::Property {
+            r,
+            name: name.to_owned(),
+            value,
+            character,
+        })
+    }
+
+    /// An instance added or moved on the server, with its subtree copied
+    /// out when the client doesn't have it yet.
+    fn snap_tree(&self, server: &Simulation, r: Ref, given: Option<Ref>) -> Option<Snap> {
+        let sdom = server.dom();
+        if sdom.get(r).is_none() {
+            let ((class, name), parent) = server
+                .tombstone(r)
+                .zip(given)
+                .filter(|(_, p)| in_scope(&sdom, *p, self.player))?;
+            return Some(Snap::Fleeting {
+                r,
+                class,
+                name,
+                parent,
+            });
+        }
+        if !in_scope(&sdom, r, self.player) {
+            return Some(Snap::Leave(r));
+        }
+        // The client's own Player was there from the start (`first_view`):
+        // its contents still arrive with the place.
+        let nodes = (r == self.player || self.sim.dom().get(r).is_none())
+            .then(|| self.nodes(server, &sdom, r));
+        Some(Snap::Place {
+            r,
+            parent: sdom.parent(r),
+            nodes,
+        })
+    }
+
+    /// `r`'s subtree as this client gets it, one instance at a time, depth
+    /// first: what is out of scope or streamed out left out.
+    fn nodes(&self, server: &Simulation, sdom: &WeakDom, r: Ref) -> Vec<Node> {
+        let characters = if self.stream.is_some() {
+            streaming::characters(sdom)
+        } else {
+            HashSet::new()
+        };
+        let mut order = Vec::new();
+        let mut stack = vec![r];
+        while let Some(at) = stack.pop() {
+            let Some(source) = sdom.get(at) else {
+                continue;
+            };
+            if !in_scope(sdom, at, self.player)
+                || replicates_not(sdom, at)
+                || self.streamed_out(sdom, server.db(), at, &characters)
+            {
+                continue;
+            }
+            order.push((
+                at,
+                source.class().to_owned(),
+                source.name().to_owned(),
+                sdom.parent(at),
+                source.properties().clone(),
+            ));
+            stack.extend(source.children().iter().rev().copied());
+        }
+        order
+    }
+
+    /// Whether streaming keeps `r` from this client for now.
+    fn streamed_out(
+        &self,
+        sdom: &WeakDom,
+        db: &rbx_reflection::ReflectionDatabase,
+        r: Ref,
+        characters: &HashSet<Ref>,
+    ) -> bool {
+        self.stream.as_ref().is_some_and(|s| {
+            streaming::unit_of(sdom, db, r, characters).is_some_and(|u| !s.have.contains(&u))
+        })
     }
 
     /// Works out what of Workspace the client should have now: what to
@@ -742,13 +1041,95 @@ impl Client {
         (order, out)
     }
 
-    /// One look at what to stream in and out after the server's frame.
-    fn stream(&mut self, server: &Simulation) {
-        let (wanted, out) = self.plan_stream(server);
-        let Some(stream) = self.stream.as_ref() else {
-            return;
-        };
-        let paused = stream.paused;
+    /// One look at what to stream after the server's frame, as it leaves
+    /// for this client; `None` without streaming.
+    fn snap_stream(&mut self, server: &Simulation) -> Option<Down> {
+        self.stream.as_ref()?;
+        let (order, out) = self.plan_stream(server);
+        let paused = self.stream.as_ref()?.paused;
+        let sdom = server.dom();
+        let wanted = order
+            .into_iter()
+            .map(|(r, persistent)| {
+                let snap = Snap::StreamIn {
+                    r,
+                    parent: sdom.parent(r),
+                    nodes: self.nodes(server, &sdom, r),
+                };
+                (snap, persistent)
+            })
+            .collect();
+        Some(Down::Stream {
+            paused,
+            wanted,
+            out,
+        })
+    }
+
+    /// One frame's worth of what the server sent, arriving.
+    fn apply(&mut self, frame: Down) {
+        match frame {
+            Down::Place(snaps) => self.arrive(snaps),
+            Down::Ops(snaps) => {
+                for snap in snaps {
+                    self.deliver(snap);
+                }
+            }
+            Down::Unreliable(packet) => self.deliver(Snap::Packet(packet)),
+            Down::Physics(frame, poses) => {
+                let poses = fresh(&mut self.newest_down, frame, poses);
+                self.sim.place_parts(&poses);
+            }
+            Down::Stream {
+                paused,
+                wanted,
+                out,
+            } => self.streamed(paused, wanted, out),
+            Down::Rest {
+                states,
+                tracks,
+                forwarded,
+            } => {
+                for (humanoid, state) in states {
+                    self.sim.set_humanoid_state(humanoid, state);
+                }
+                for op in tracks {
+                    self.sim.mirror_track(Some(SERVER), op);
+                }
+                for (humanoid, method, args) in forwarded {
+                    let root = self.sim.humanoid_root(humanoid);
+                    if root.is_some_and(|r| self.sim.simulates(r)) {
+                        self.sim.humanoid_call(humanoid, &method, &args);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The place reaches a new client: every replicated service's
+    /// contents, then `game.Loaded`, then its `PlayerScripts`.
+    fn arrive(&mut self, snaps: Vec<Snap>) {
+        self.sim.set_remote(true);
+        // The whole snapshot lands before its LocalScripts start: one in
+        // PlayerGui finds ReplicatedStorage's contents.
+        self.sim.hold_scripts();
+        for snap in snaps {
+            self.deliver(snap);
+        }
+        self.loaded = true;
+        self.sim.set_loaded();
+        self.sim.release_scripts();
+        if self.sim.dom().get(self.player).is_some() {
+            let db = self.sim.db();
+            crate::players::player_scripts(&mut self.sim.dom_mut(), db, self.player);
+            self.sim.flush();
+        }
+        self.sim.set_remote(false);
+    }
+
+    /// A look at what to stream arriving: the integrity pause, then what
+    /// streams in, then what streams out.
+    fn streamed(&mut self, paused: bool, wanted: Vec<(Snap, bool)>, out: Vec<Ref>) {
         let was = matches!(
             self.sim
                 .dom()
@@ -764,15 +1145,13 @@ impl Client {
             );
             self.sim.flush();
         }
-        for (root, persistent) in &wanted {
+        for (snap, persistent) in wanted {
             if !persistent {
                 self.persistent_loaded();
             }
-            self.stream_in(server, *root);
+            self.deliver(snap);
         }
-        if self.stream.as_ref().is_some_and(|s| s.started) {
-            self.persistent_loaded();
-        }
+        self.persistent_loaded();
         for root in out {
             // Streamed out: parented to nil, not destroyed.
             if self.sim.dom().in_tree(root) {
@@ -789,13 +1168,7 @@ impl Client {
             return;
         };
         stream.persistent_loaded = true;
-        let workspace = {
-            let dom = self.sim.dom();
-            dom.root_refs()
-                .iter()
-                .copied()
-                .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Workspace"))
-        };
+        let workspace = find_root(&self.sim.dom(), "Workspace");
         if let Some(workspace) = workspace {
             self.sim.fire_signal(
                 workspace,
@@ -805,131 +1178,138 @@ impl Client {
         }
     }
 
-    /// Unit `root` streams in. One that streamed out earlier is still the
+    /// Unit `r` streams in. One that streamed out earlier is still the
     /// same object (held references see it come back) with the server's
     /// values again: what this client changed on it is lost.
-    fn stream_in(&mut self, server: &Simulation, root: Ref) {
-        let back = self.sim.dom().get(root).is_some() && !self.sim.dom().in_tree(root);
-        if back {
-            let sdom = server.dom();
-            let mut stack = vec![root];
+    fn stream_in(&mut self, r: Ref, parent: Option<Ref>, nodes: Vec<Node>) {
+        let back = self.sim.dom().get(r).is_some() && !self.sim.dom().in_tree(r);
+        if !back {
+            self.place(r, parent, Some(nodes));
+            return;
+        }
+        {
             let mut dom = self.sim.dom_mut();
-            while let Some(at) = stack.pop() {
-                let (Some(source), Some(target)) = (sdom.get(at), dom.get(at)) else {
+            for (at, _, _, _, properties) in &nodes {
+                let Some(target) = dom.get(*at) else {
                     continue;
                 };
-                stack.extend(target.children().iter().copied());
-                let changed: Vec<(String, Variant)> = source
-                    .properties()
+                let changed: Vec<(String, Variant)> = properties
                     .iter()
                     .filter(|(k, v)| target.properties().get(k.as_str()) != Some(*v))
-                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
                 let dropped: Vec<String> = target
                     .properties()
                     .keys()
-                    .filter(|k| !source.properties().contains_key(k.as_str()))
+                    .filter(|k| !properties.contains_key(k.as_str()))
                     .map(|k| k.to_string())
                     .collect();
                 for (key, value) in changed {
-                    let _ = dom.set_property(at, &key, value);
+                    let _ = dom.set_property(*at, &key, value);
                 }
                 for key in dropped {
-                    let _ = dom.remove_property(at, &key);
+                    let _ = dom.remove_property(*at, &key);
                 }
             }
         }
-        self.deliver(server, &Op::Tree(root, None));
-        if back {
-            // What was added under it on the server meanwhile.
-            let children: Vec<Ref> = server
-                .dom()
-                .get(root)
-                .map(|i| i.children().to_vec())
-                .unwrap_or_default();
-            for child in children {
-                if self.sim.dom().get(child).is_none() {
-                    self.deliver(server, &Op::Tree(child, None));
-                }
+        self.place(r, parent, None);
+        // What was added under it on the server meanwhile: depth first,
+        // each child's subtree follows it.
+        let mut added: Vec<(Ref, Vec<Node>)> = Vec::new();
+        for node in nodes.into_iter().filter(|n| n.0 != r) {
+            if node.3 == Some(r) {
+                added.push((node.0, Vec::new()));
+            }
+            if let Some((_, subtree)) = added.last_mut() {
+                subtree.push(node);
             }
         }
-    }
-
-    /// Whether streaming keeps `r` from this client for now.
-    fn streamed_out(
-        &self,
-        sdom: &WeakDom,
-        db: &rbx_reflection::ReflectionDatabase,
-        r: Ref,
-        characters: &HashSet<Ref>,
-    ) -> bool {
-        self.stream.as_ref().is_some_and(|s| {
-            streaming::unit_of(sdom, db, r, characters).is_some_and(|u| !s.have.contains(&u))
-        })
+        for (child, subtree) in added {
+            if self.sim.dom().get(child).is_none() {
+                self.place(child, Some(r), Some(subtree));
+            }
+        }
     }
 
     /// One replicated change or packet.
-    fn deliver(&mut self, server: &Simulation, op: &Op) {
+    fn deliver(&mut self, snap: Snap) {
         // What the server's frame moves is the server's doing; a remote's
         // handler moving a tool is the player's.
-        self.sim.set_remote(!matches!(op, Op::Packet(_)));
-        self.deliver_op(server, op);
+        self.sim.set_remote(!matches!(snap, Snap::Packet(_)));
+        self.deliver_snap(snap);
         self.sim.set_remote(false);
     }
 
-    fn deliver_op(&mut self, server: &Simulation, op: &Op) {
-        match op {
-            Op::Property(r, name) => self.property(server, *r, name),
-            Op::Tree(r, parent) => self.tree(server, *r, *parent),
+    fn deliver_snap(&mut self, snap: Snap) {
+        match snap {
+            Snap::Property {
+                r,
+                name,
+                value,
+                character,
+            } => self.property(r, &name, value, character),
+            Snap::Fleeting {
+                r,
+                class,
+                name,
+                parent,
+            } => {
+                if self.sim.dom().get(parent).is_some() {
+                    if self.sim.dom().get(r).is_none() {
+                        let mut dom = self.sim.dom_mut();
+                        dom.insert(rbx_dom::Instance::new(r, class, name));
+                        dom.set_parent(r, Some(parent));
+                    }
+                    self.sim.flush();
+                }
+            }
+            Snap::Leave(r) => {
+                if self.sim.dom().in_tree(r) {
+                    self.sim.dom_mut().unparent(r);
+                    self.sim.flush();
+                }
+            }
+            Snap::Place { r, parent, nodes } => self.place(r, parent, nodes),
             // Destroyed: it leaves its parent (`ChildRemoved`), then goes.
             // A player leaving is `PlayerRemoving` first.
-            Op::Removed(r) => {
+            Snap::Removed(r) => {
                 let players = {
                     let dom = self.sim.dom();
-                    dom.get(*r)
+                    dom.get(r)
                         .filter(|i| i.class() == "Player")
-                        .and_then(|_| dom.parent(*r))
+                        .and_then(|_| dom.parent(r))
                 };
                 if let Some(players) = players {
                     self.sim
-                        .fire_signal(players, "PlayerRemoving", vec![Arg::Instance(*r)]);
+                        .fire_signal(players, "PlayerRemoving", vec![Arg::Instance(r)]);
                 }
-                if self.sim.dom().in_tree(*r) {
-                    self.sim.dom_mut().unparent(*r);
+                if self.sim.dom().in_tree(r) {
+                    self.sim.dom_mut().unparent(r);
                     self.sim.flush();
                 }
-                if self.sim.dom().get(*r).is_some() {
-                    self.sim.destroy(*r);
+                if self.sim.dom().get(r).is_some() {
+                    self.sim.destroy(r);
                 }
             }
-            Op::Packet(out) => {
-                let mine = match out.to {
-                    To::Player(p) => p == self.player,
-                    To::AllPlayers => true,
-                    To::Server => false,
-                };
-                if mine {
-                    self.sim.receive(None, out.packet.clone());
-                }
-            }
+            Snap::Packet(packet) => self.sim.receive(None, packet),
+            Snap::StreamIn { r, parent, nodes } => self.stream_in(r, parent, nodes),
         }
         self.characters_arrived();
     }
 
-    fn property(&mut self, server: &Simulation, r: Ref, name: &str) {
-        let sdom = server.dom();
-        if !in_scope(&sdom, r, self.player) {
-            return;
-        }
-        let Some(source) = sdom.get(r) else {
-            return;
-        };
+    fn property(
+        &mut self,
+        r: Ref,
+        name: &str,
+        value: Option<Variant>,
+        character: Option<Option<Ref>>,
+    ) {
         // What physics moves arrives unlogged (`place_parts`); a logged
         // move of a part this client simulates is the server's script
         // teleporting it (`PivotTo` on the player's character), which the
         // owner takes.
-        let character = (source.class() == "Player" && name == "Character").then(|| {
-            let old = match self
+        let old = character.and_then(|_| {
+            match self
                 .sim
                 .dom()
                 .get(r)
@@ -937,12 +1317,7 @@ impl Client {
             {
                 Some(Some(Variant::Ref(c))) => Some(*c),
                 _ => None,
-            };
-            let new = match source.properties().get("Character") {
-                Some(Variant::Ref(c)) if sdom.get(*c).is_some() => Some(*c),
-                _ => None,
-            };
-            (old, new)
+            }
         });
         {
             let mut dom = self.sim.dom_mut();
@@ -950,13 +1325,15 @@ impl Client {
                 return;
             };
             if name == "Name" {
-                if target.name() != source.name() {
-                    let _ = dom.set_name(r, source.name());
+                if let Some(Variant::String(new)) = &value {
+                    if target.name() != new {
+                        let _ = dom.set_name(r, new);
+                    }
                 }
             } else {
-                match source.properties().get(name) {
-                    Some(value) if target.properties().get(name) != Some(value) => {
-                        let _ = dom.set_property(r, name, value.clone());
+                match value {
+                    Some(value) if target.properties().get(name) != Some(&value) => {
+                        let _ = dom.set_property(r, name, value);
                     }
                     None if target.properties().contains_key(name) => {
                         let _ = dom.remove_property(r, name);
@@ -965,8 +1342,7 @@ impl Client {
                 }
             }
         }
-        drop(sdom);
-        if let Some((old, new)) = character {
+        if let Some(new) = character {
             if let Some(old) = old.filter(|o| Some(*o) != new) {
                 if self.sim.dom().get(old).is_some() {
                     self.sim
@@ -980,47 +1356,15 @@ impl Client {
         self.sim.flush();
     }
 
-    /// An instance added or moved on the server: copied in if it is now in
-    /// the client's scope and missing, moved if present, or taken out (to
-    /// nil) if it left the scope.
-    fn tree(&mut self, server: &Simulation, r: Ref, given: Option<Ref>) {
-        let sdom = server.dom();
-        if sdom.get(r).is_none() {
-            // Made and destroyed within the frame: it still arrives (by
-            // class and name), for the removal that follows to take away.
-            let fleeting = server.tombstone(r).zip(given).filter(|(_, p)| {
-                in_scope(&sdom, *p, self.player) && self.sim.dom().get(*p).is_some()
-            });
-            drop(sdom);
-            if let Some(((class, name), parent)) = fleeting {
-                if self.sim.dom().get(r).is_none() {
-                    let mut dom = self.sim.dom_mut();
-                    dom.insert(rbx_dom::Instance::new(r, class, name));
-                    dom.set_parent(r, Some(parent));
-                }
-                self.sim.flush();
-            }
-            return;
-        }
-        let scope = in_scope(&sdom, r, self.player);
+    /// An instance added or moved on the server: moved if the client has
+    /// it, else copied in.
+    fn place(&mut self, r: Ref, parent: Option<Ref>, nodes: Option<Vec<Node>>) {
         let present = self.sim.dom().get(r).is_some();
-        if !scope {
-            if present && self.sim.dom().in_tree(r) {
-                self.sim.dom_mut().unparent(r);
-                drop(sdom);
-                self.sim.flush();
-            }
-            return;
-        }
-        let parent = sdom.parent(r);
-        // The client's own Player was there from the start (`first_view`):
-        // its contents still arrive with the place, and it still arrives.
         let own_player = r == self.player && !self.loaded;
         if present && !own_player {
             let here = self.sim.dom().parent(r);
             if here != parent && parent.is_some_and(|p| self.sim.dom().get(p).is_some()) {
                 self.sim.dom_mut().set_parent(r, parent);
-                drop(sdom);
                 self.sim.flush();
             }
             return;
@@ -1028,39 +1372,14 @@ impl Client {
         if parent.is_some_and(|p| self.sim.dom().get(p).is_none()) {
             return;
         }
-        // One instance at a time, depth first, each one's events fired
-        // before the next arrives.
-        let characters = if self.stream.is_some() {
-            streaming::characters(&sdom)
-        } else {
-            HashSet::new()
+        let Some(order) = nodes else {
+            return;
         };
-        let mut order = Vec::new();
-        let mut stack = vec![r];
-        while let Some(at) = stack.pop() {
-            let Some(source) = sdom.get(at) else {
-                continue;
-            };
-            if !in_scope(&sdom, at, self.player)
-                || replicates_not(&sdom, at)
-                || self.streamed_out(&sdom, server.db(), at, &characters)
-            {
-                continue;
-            }
-            order.push((
-                at,
-                source.class().to_owned(),
-                source.name().to_owned(),
-                sdom.parent(at),
-                source.properties().clone(),
-            ));
-            stack.extend(source.children().iter().rev().copied());
-        }
-        drop(sdom);
         // The join's snapshot lands whole before any of its events run, so
         // a ReplicatedFirst script waiting on a module finds the module's
         // children there too. Later additions arrive one instance at a
-        // time (the ReplicationOrder golden).
+        // time (the ReplicationOrder golden), each firing its events
+        // before the next arrives.
         let whole = !self.loaded;
         let mut players = Vec::new();
         let outer = self.sim.holding_scripts();
@@ -1155,9 +1474,16 @@ impl Client {
         }
     }
 
-    /// What the client sends the server after its frame.
-    fn collect(&mut self) {
-        let packets = self.sim.take_outgoing();
+    /// What the client sends the server after its frame `sent`.
+    fn collect(&mut self, sent: u64, network: &Network) {
+        let rtt = network.ping();
+        let (unreliable, reliable): (Vec<_>, Vec<_>) = self
+            .sim
+            .take_outgoing()
+            .into_iter()
+            .filter(|o| matches!(o.to, To::Server))
+            .map(|o| o.packet)
+            .partition(unreliable_event);
         let parts: Vec<_> = {
             let owned = self.sim.ownership_mut().owned.clone();
             self.sim
@@ -1182,14 +1508,155 @@ impl Client {
             .map(|(_, op)| op)
             .collect();
         let tools = self.sim.take_tool_ops();
-        self.outbox = Upstream {
-            packets,
-            parts,
+
+        let bytes = reliable.iter().map(packet_size).sum();
+        self.meters[UP_DATA].add(sent, bytes);
+        self.up
+            .reliable(sent, &network.up, rtt, Up::Packets(reliable));
+        for packet in unreliable {
+            let bytes = packet_size(&packet);
+            if self
+                .up
+                .unreliable(sent, &network.up, Up::Unreliable(packet))
+                .is_ok()
+            {
+                self.meters[UP_DATA].add(sent, bytes);
+            }
+        }
+        let mut poses = std::mem::take(&mut self.carry_up);
+        merge(&mut poses, parts);
+        self.meters[UP_PHYSICS].add(sent, poses.len() * POSE_BYTES);
+        if let Err(Up::Physics(_, lost)) =
+            self.up
+                .unreliable(sent, &network.up, Up::Physics(sent, poses))
+        {
+            self.carry_up = lost;
+        }
+        let rest = Up::Rest {
             states,
             tracks,
             tools,
         };
+        self.up.reliable(sent, &network.up, rtt, rest);
     }
+}
+
+fn unreliable_event(packet: &Packet) -> bool {
+    matches!(
+        packet,
+        Packet::Event {
+            unreliable: true,
+            ..
+        }
+    )
+}
+
+/// Adds `newer` poses to `poses`, each replacing an older one of its part.
+fn merge(poses: &mut Vec<Placed>, newer: impl IntoIterator<Item = Placed>) {
+    for placed in newer {
+        match poses.iter_mut().find(|p| p.part == placed.part) {
+            Some(old) => *old = placed,
+            None => poses.push(placed),
+        }
+    }
+}
+
+/// The poses from frame `frame` that are newer than what was applied.
+fn fresh(newest: &mut HashMap<Ref, u64>, frame: u64, poses: Vec<Placed>) -> Vec<Placed> {
+    poses
+        .into_iter()
+        .filter(|placed| {
+            let seen = newest.entry(placed.part).or_insert(frame);
+            let keep = *seen <= frame;
+            *seen = (*seen).max(frame);
+            keep
+        })
+        .collect()
+}
+
+/// About what a pose takes on the wire (a CFrame and two velocities).
+const POSE_BYTES: usize = 48;
+
+/// About what a packet takes on the wire, for `Stats`.
+fn packet_size(packet: &Packet) -> usize {
+    let wires = |w: &[rbx_lua::server::Wire]| w.iter().map(|w| w.size()).sum::<usize>();
+    8 + match packet {
+        Packet::Event { args, .. } | Packet::Invoke { args, .. } => wires(args),
+        Packet::Reply { result, .. } => match result {
+            Ok(values) => wires(values),
+            Err(message) => message.len(),
+        },
+        Packet::Chat { text, id, .. } => text.len() + id.len(),
+        Packet::Drag { phase, numbers, .. } => phase.len() + 8 * numbers.len(),
+    }
+}
+
+/// About what a replicated change takes on the wire, for `Stats`.
+fn snap_size(snap: &Snap) -> usize {
+    match snap {
+        Snap::Property { name, value, .. } => {
+            8 + name.len() + value.as_ref().map_or(0, crate::link::variant_size)
+        }
+        Snap::Fleeting { class, name, .. } => 16 + class.len() + name.len(),
+        Snap::Place { nodes, .. } => 8 + nodes.iter().flatten().map(node_size).sum::<usize>(),
+        Snap::StreamIn { nodes, .. } => 8 + nodes.iter().map(node_size).sum::<usize>(),
+        Snap::Leave(_) | Snap::Removed(_) => 8,
+        Snap::Packet(packet) => packet_size(packet),
+    }
+}
+
+fn node_size((_, class, name, _, properties): &Node) -> usize {
+    16 + class.len()
+        + name.len()
+        + properties
+            .iter()
+            .map(|(k, v)| k.len() + crate::link::variant_size(v))
+            .sum::<usize>()
+}
+
+/// `Stats`' rates on `sim` (kilobytes a second): data received and sent,
+/// physics received and sent. Engine readings: not logged, never
+/// replicated.
+fn write_rates(sim: &Simulation, rates: [f64; 4]) {
+    let mut dom = sim.dom_mut();
+    let Some(stats) = find_root(&dom, "Stats") else {
+        return;
+    };
+    let Some(instance) = dom.get_mut(stats) else {
+        return;
+    };
+    let properties = instance.properties_mut();
+    let names = [
+        "DataReceiveKbps",
+        "DataSendKbps",
+        "PhysicsReceiveKbps",
+        "PhysicsSendKbps",
+    ];
+    for (name, rate) in names.into_iter().zip(rates) {
+        properties.insert(name.into(), Variant::Float32(rate as f32));
+    }
+}
+
+fn find_root(dom: &WeakDom, class: &str) -> Option<Ref> {
+    dom.root_refs()
+        .iter()
+        .copied()
+        .find(|r| dom.get(*r).is_some_and(|i| i.class() == class))
+}
+
+/// The `Stats` service, made if the place has none.
+fn stats_service(dom: &mut WeakDom) -> Ref {
+    find_root(dom, "Stats").unwrap_or_else(|| dom.new_instance("Stats", "Stats", None))
+}
+
+/// A client's `Stats.Network.ServerStatsItem["Data Ping"]`, the round trip
+/// in milliseconds that scripts read with `GetValue()`
+/// ([`Simulation::set_network_ping`] keeps it current).
+fn network_items(dom: &mut WeakDom) {
+    let stats = stats_service(dom);
+    let network = dom.new_instance("StatsItem", "Network", Some(stats));
+    let server = dom.new_instance("StatsItem", "ServerStatsItem", Some(network));
+    dom.new_instance("StatsItem", "Data Ping", Some(server));
 }
 
 /// The server's frame as one ordered list: its changes (each property once,

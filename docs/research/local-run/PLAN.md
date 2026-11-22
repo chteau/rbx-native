@@ -131,7 +131,7 @@ The docs list the events but not where waits resume, and they say `Stepped` and 
 | ApplyImpulse, ApplyAngularImpulse | applied before the next step | |
 | Workspace.Gravity | yes | default 196.2 |
 | FallenPartsDestroyHeight | parts below it are destroyed (Destroying fires) | default -500 |
-| Network ownership | no-ops | one server, no clients |
+| Network ownership | per assembly, the owner simulates it (Milestone 5, Ownership golden) | across the simulated link when one is set (Networking realism) |
 
 ## Conformance
 
@@ -362,7 +362,7 @@ Gaps from M7 (also in CONFORMANCE.md where a golden measures them):
 | Particles | `Emit` on a client replicates nowhere; a server `Emit` reaches every client | both shown on the viewed client, not replicated as such |
 | Escape menu | Roblox's settings, report, record tabs | ours: Resume, Reset, Leave, volume |
 
-Still open from earlier milestones: BillboardGui/SurfaceGui input, `ScrollingFrame` dragging, gamepad selection, peers on a simulated network, the humanoid and contact leftovers.
+Still open from earlier milestones: BillboardGui/SurfaceGui input, `ScrollingFrame` dragging, gamepad selection, the humanoid and contact leftovers.
 
 ## Milestone 8 (done): rendering fidelity
 
@@ -1053,11 +1053,25 @@ Later, the old animation proposal:
 5. `Bone`s and skinned meshes: bone transforms from animations deforming skinned `MeshPart`s in the viewport, `Bone.TransformedWorldCFrame`.
 6. Goldens for each: Motor6D and bone transforms sampled per frame from a real client, face-control values, IK end-effector positions.
 
+## Networking realism (branch feat/local-run-netsim)
+
+Local Run's server and clients talk over a simulated link (`crates/rbx_sim/src/link.rs`), so replication bugs that only show across a real connection show here too. Off by default: no added latency delivers everything on the frame it was sent, exactly as before (every session and conformance test runs that way).
+
+- The link: per direction (server to client, client to server) a latency, a jitter (± that much, uniform) and a loss rate, counted in whole 60 Hz frames (rounded to the nearest). What a frame sends is snapshotted as it leaves (property values, new subtrees), so a client behind a slow link sees the server's world as it was, not as it is when the packet lands.
+- Reliable and ordered (creator-docs: "RemoteEvents are reliable and ordered … including across different RemoteEvent instances", "Roblox retransmits it until it arrives"): property changes, new/moved/removed instances, `RemoteEvent` and `RemoteFunction` traffic, humanoid states, animation tracks, tool ops. A lost packet is sent again a round trip later and everything behind it waits (head-of-line blocking). One frame's replication travels as one batch.
+- Unreliable: `UnreliableRemoteEvent` packets each take their own delay (they can overtake each other) and a lost one is gone. Physics poses are unreliable too, but a lost update's poses ride with the next one and a pose older than one already applied is dropped, so a part that stops still ends where its owner left it.
+- Documented limits: an `UnreliableRemoteEvent` payload over 1000 bytes is dropped at the sender with a warning saying how many bytes over it was (Studio logs that; the exact text isn't documented, ours is `UnreliableRemoteEvent <path> dropped an event: its payload is N bytes over the 1000 byte limit`; sizes are our estimate of the wire encoding, a type byte plus each type's raw fields); one arriving with no listener is discarded, not queued ("Remote event invocation discarded for <path>; did you forget to implement <event>?", once per remote; the docs give only the "Remote event invocation discarded" part); a server takes about 500 unreliable events a second from each client and drops the rest. Already there from Milestone 5: the reliable queue's "invocation queue exhausted" warning (256 events), the argument rules (functions and threads dropped, mixed tables, non-string keys, instances `nil` when the receiver doesn't have them, which with latency means "doesn't have them yet").
+- Not modelled: a per-player bandwidth budget (the docs give no figure for `RemoteEvent` throughput; the ~50 KB/s folklore isn't documented), the server's re-ordering of throttled events "later instead of dropping them", and MTU splitting.
+- Network ownership is Milestone 5's (`ownership.rs`, Ownership golden: the errors for anchored and welded-to-anchored parts, auto ownership to the nearest player within 1000 studs). Over a link the owner's poses reach the server and the other clients late, and the server's reach the owner late; ownership changes themselves still apply on the frame they happen.
+- Readings: `Player:GetNetworkPing()` returns the round trip (both latencies, seconds; the docs: "the round-trip, isolated network latency"). A client has `Stats.Network.ServerStatsItem["Data Ping"]` (milliseconds, `GetValue()`). `Stats.DataReceiveKbps`, `DataSendKbps`, `PhysicsReceiveKbps` and `PhysicsSendKbps` on every peer are kilobytes a second over the last second, from the same size estimates.
+- The editor: the Test ribbon's Network Simulator (`shell/play/network.rs`) also drives Local Run and Play (local): inbound is what reaches a client, outbound what it sends; Apply changes a running Local Run at once; Off (the default) is no added latency.
+- Checked by `crates/rbx_sim/tests/netsim.rs`: same-frame delivery at zero, 100 ms each way delays a new instance by 6 frames and a remote round trip by ~0.2 s, ping and Data Ping read 0.2 s / 200 ms, ordered delivery of 200 events through 20% loss and jitter while unreliable ones get lost and overtake, the 1000-byte limit, the no-listener discard, the 500 a second cap, a walking character trailing on the server by the uplink, and the RemoteOrder golden reproduced across a 24.5 ms each way link (the recording's ~49 ms round trip): every ordering field, `s2c_arrival_beats` 1, `InvokeClient` 3 server beats as in every recorded pass, an event round trip of 9 beats (recorded 3 to 12). Not checked against a live server under a shaped network (the real-client netsim in `rbx_play` could do that: Sober behind netem with the RemoteOrder test, left for later).
+
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.
 - `crates/rbx_lua/src/server/query.rs`: spatial queries (Luau side). `server/meshes.rs`: `EditableMesh` and `CreateMeshPartAsync`.
-- `crates/rbx_sim/src/session.rs`: a server and its clients, replication. `ownership.rs`: network ownership. `crates/rbx_lua/src/server/remote.rs`: remotes and their argument rules.
+- `crates/rbx_sim/src/session.rs`: a server and its clients, replication. `link.rs`: the simulated network between them. `ownership.rs`: network ownership. `crates/rbx_lua/src/server/remote.rs`: remotes and their argument rules.
 - `crates/rbx_sim/src/sim.rs`: the frame loop.
  `physics.rs`, `physics/part.rs`: Rapier world, shapes, joints, adaptive stepping. `physics/constraints.rs`: constraints and movers. `physics/mesh.rs`: MeshPart collision. `spatial.rs`: the query index. `scripts.rs`: which scripts run. `load.rs`: place files. `conformance.rs`: the suite.
 - `crates/rbx_sim/examples/`: `run` (CLI), `conformance` (table), `record_goldens` (real server), `coverage` (COVERAGE.md).

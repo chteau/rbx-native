@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_sim::conformance::{self, streaming};
+use rbx_sim::link::{Network, Way};
 use rbx_sim::{Peer, Session};
 use serde_json::Value;
 
@@ -280,7 +281,12 @@ fn place(streaming: bool, server: &str, client: &str) -> WeakDom {
 
 /// Runs `seconds` of a one-player session; what each side printed.
 fn run(dom: WeakDom, seconds: f64) -> Vec<(Peer, String)> {
+    run_over(dom, seconds, Network::default())
+}
+
+fn run_over(dom: WeakDom, seconds: f64, network: Network) -> Vec<(Peer, String)> {
     let mut session = Session::new(dom).expect("the place runs");
+    session.set_network(network);
     session.start();
     session.join("Player1", -1, None).expect("joins");
     let mut lines = Vec::new();
@@ -413,5 +419,47 @@ fn descendant_added_fires_once_per_instance_on_the_join() {
     assert!(
         client_printed(&lines).contains(&"counts 1 1 1"),
         "{lines:#?}"
+    );
+}
+
+/// What streams in crosses the link like the rest: the server decides, the
+/// client sees it a latency later.
+#[test]
+fn streamed_parts_arrive_over_the_link() {
+    let arrival = |latency: f64| {
+        let way = Way {
+            latency,
+            jitter: 0.0,
+            loss: 0.0,
+        };
+        let lines = run_over(
+            place(
+                true,
+                r#"
+                task.wait(1)
+                workspace.Far.Position = Vector3.new(20, 5, 0)
+                "#,
+                r#"
+                workspace.ChildAdded:Connect(function(child)
+                    if child.Name == "Far" then
+                        print("added", time())
+                    end
+                end)
+                "#,
+            ),
+            3.0,
+            Network { down: way, up: way },
+        );
+        client_printed(&lines)
+            .iter()
+            .find_map(|l| l.strip_prefix("added "))
+            .and_then(|t| t.parse::<f64>().ok())
+            .unwrap_or_else(|| panic!("never streamed in: {lines:#?}"))
+    };
+    let instant = arrival(0.0);
+    let slow = arrival(0.25);
+    assert!(
+        (slow - instant - 0.25).abs() < 0.05,
+        "instant {instant}, slow {slow}"
     );
 }
