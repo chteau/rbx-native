@@ -6995,6 +6995,7 @@ name = "rbx_assets"
 version = "0.1.0"
 dependencies = [
  "image",
+ "rbx_dom",
  "rbx_net",
  "thiserror 2.0.20",
  "ureq",
@@ -7133,6 +7134,7 @@ dependencies = [
  "glam 0.33.7",
  "mlua",
  "rbx_animation",
+ "rbx_assets",
  "rbx_binary",
  "rbx_dom",
  "rbx_materials",

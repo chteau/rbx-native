@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::CacheError;
+use crate::AssetRef;
 
 /// A directory-backed cache keyed by numeric asset id (`ids/<id>`) or by
 /// native content path (`native/<relative path>`).
@@ -52,16 +53,98 @@ impl AssetCache {
         Some(bytes)
     }
 
-    /// Deletes the least recently used downloads until `ids/` and `native/`
-    /// together hold at most `limit` bytes, and returns how many bytes it
-    /// freed. A read marks an entry used (see [`touch`]), so what a place
-    /// still opens with stays. Content packages (`native-packages/`) are
-    /// left alone: they are few, and re-fetching one is slow.
+    /// A thumbnail's bytes as last fetched, for when the web can't answer.
+    pub fn get_thumb(&self, spec: &str) -> Option<Vec<u8>> {
+        std::fs::read(self.thumb_path(spec)).ok()
+    }
+
+    pub fn put_thumb(&self, spec: &str, bytes: &[u8]) -> Result<(), CacheError> {
+        write_atomic(&self.thumb_path(spec), bytes)
+    }
+
+    /// Where `reference`'s bytes sit, relative to the cache root; `None`
+    /// for the empty reference.
+    pub fn entry_of(&self, reference: &AssetRef) -> Option<String> {
+        Some(match reference {
+            AssetRef::Id(id) => format!("ids/{id}"),
+            AssetRef::Native(path) => format!("native/{path}"),
+            AssetRef::Thumb(spec) => format!("thumbs/{}", thumb_file(spec)),
+            AssetRef::Empty => return None,
+        })
+    }
+
+    /// Whether `reference`'s bytes are on disk.
+    pub fn contains(&self, reference: &AssetRef) -> bool {
+        self.entry_of(reference)
+            .is_some_and(|entry| self.root.join(entry).is_file())
+    }
+
+    /// Offline packs: their manifests, and the entries each one keeps
+    /// out of [`trim`](Self::trim)'s reach.
+    pub fn offline_dir(&self) -> PathBuf {
+        self.root.join("offline")
+    }
+
+    /// Keeps `entries` (as [`entry_of`](Self::entry_of) names them) for
+    /// the pack `key`, replacing what it kept before.
+    pub fn pin(&self, key: &str, entries: &[String]) -> Result<(), CacheError> {
+        write_atomic(&self.pins_path(key), entries.join("\n").as_bytes())
+    }
+
+    /// Every entry some pack keeps.
+    fn pinned(&self) -> std::collections::HashSet<PathBuf> {
+        let Ok(files) = std::fs::read_dir(self.offline_dir()) else {
+            return Default::default();
+        };
+        files
+            .flatten()
+            .filter(|f| f.path().extension().is_some_and(|e| e == "pins"))
+            .filter_map(|f| std::fs::read_to_string(f.path()).ok())
+            .flat_map(|text| {
+                text.lines()
+                    .map(|line| self.root.join(line))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// Drops the pack `key`: its pins, and the entries no other pack
+    /// keeps. The bytes freed.
+    pub fn unpin(&self, key: &str) -> u64 {
+        let path = self.pins_path(key);
+        let entries = std::fs::read_to_string(&path).unwrap_or_default();
+        let _ = std::fs::remove_file(&path);
+        let kept = self.pinned();
+        let mut freed = 0;
+        for entry in entries.lines().map(|line| self.root.join(line)) {
+            if kept.contains(&entry) {
+                continue;
+            }
+            let size = std::fs::metadata(&entry).map_or(0, |m| m.len());
+            if std::fs::remove_file(&entry).is_ok() {
+                freed += size;
+            }
+        }
+        freed
+    }
+
+    fn pins_path(&self, key: &str) -> PathBuf {
+        self.offline_dir().join(format!("{key}.pins"))
+    }
+
+    fn thumb_path(&self, spec: &str) -> PathBuf {
+        self.root.join("thumbs").join(thumb_file(spec))
+    }
+
+    /// Least recently used first, until the cache is under `limit` bytes;
+    /// what an offline pack keeps stays. The bytes freed.
     pub fn trim(&self, limit: u64) -> u64 {
         let mut entries: Vec<(std::time::SystemTime, u64, PathBuf)> = Vec::new();
-        for dir in ["ids", "native"] {
+        for dir in ["ids", "native", "thumbs"] {
             collect_files(&self.root.join(dir), &mut entries);
         }
+        let pinned = self.pinned();
+        entries.retain(|(_, _, path)| !pinned.contains(path));
         let mut total: u64 = entries.iter().map(|(_, size, _)| size).sum();
         if total <= limit {
             return 0;
@@ -156,6 +239,13 @@ pub fn cache_root() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".cache").join("rbx-native"))
 }
 
+/// A thumbnail spec (`type=Asset&id=1&w=150&h=150`) as one file name.
+fn thumb_file(spec: &str) -> String {
+    spec.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || "=&-_.".contains(c) { c } else { '_' })
+        .collect()
+}
+
 fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
 }
@@ -228,6 +318,35 @@ mod tests {
         assert!(cache.get_id(3).is_none());
         assert!(cache.get_id(4).is_some());
         assert_eq!(cache.trim(250), 0, "already under the limit");
+    }
+
+    #[test]
+    fn trim_spares_what_a_pack_keeps_and_unpin_frees_only_the_unshared() {
+        let cache = AssetCache::new(Some(temp_dir())).unwrap();
+        for id in 1..=3 {
+            cache.put_id(id, &[0u8; 100]).unwrap();
+        }
+        let entry = |id| cache.entry_of(&AssetRef::Id(id)).unwrap();
+        cache.pin("place-a", &[entry(1), entry(2)]).unwrap();
+        cache.pin("place-b", &[entry(2)]).unwrap();
+
+        assert_eq!(cache.trim(0), 100, "only the unpinned entry goes");
+        assert!(cache.contains(&AssetRef::Id(1)));
+        assert!(!cache.contains(&AssetRef::Id(3)));
+
+        assert_eq!(cache.unpin("place-a"), 100, "2 is still place-b's");
+        assert!(!cache.contains(&AssetRef::Id(1)));
+        assert!(cache.contains(&AssetRef::Id(2)));
+    }
+
+    #[test]
+    fn thumbs_round_trip_under_a_safe_file_name() {
+        let cache = AssetCache::new(Some(temp_dir())).unwrap();
+        let spec = "type=AvatarHeadShot&id=1&w=150&h=150/../x";
+        cache.put_thumb(spec, b"png").unwrap();
+        assert_eq!(cache.get_thumb(spec), Some(b"png".to_vec()));
+        assert!(cache.contains(&AssetRef::Thumb(spec.into())));
+        assert!(!cache.entry_of(&AssetRef::Thumb(spec.into())).unwrap()[7..].contains('/'));
     }
 
     #[test]
