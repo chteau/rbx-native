@@ -21,7 +21,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use mlua::{AnyUserData, Function, IntoLua, Lua, MultiValue, Result, Table, Value};
 use rbx_dom::{Ref, Variant};
@@ -650,10 +649,8 @@ fn client_only(name: &str) -> bool {
     name == "GuiService"
 }
 
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as i64)
+fn now_ms(lua: &Lua) -> i64 {
+    (crate::tape::clock(lua, crate::tape::epoch) * 1000.0) as i64
 }
 
 fn registry_key(name: &str) -> String {
@@ -867,7 +864,10 @@ pub(crate) fn poll(lua: &Lua, runtime: &Rc<Runtime>) -> Result<()> {
             .get::<Function>("step")?
             .call::<()>(())?;
     }
-    let done = std::mem::take(&mut *runtime.finished.lock().unwrap_or_else(|e| e.into_inner()));
+    let mut done = std::mem::take(&mut *runtime.finished.lock().unwrap_or_else(|e| e.into_inner()));
+    if let Some(tape) = crate::tape::of(lua) {
+        done = tape.poll(done);
+    }
     for (id, result) in done {
         let values = match result {
             Ok(json) => {
@@ -967,8 +967,37 @@ fn entry_table(lua: &Lua, entry: Option<store::Entry>) -> Result<Value> {
 }
 
 /// A request run off the script thread; its answer resumes the script at
-/// the next [`poll`] as `(true, value)` or `(false, message)`.
+/// the next [`poll`] as `(true, value)` or `(false, message)`. A replay
+/// never sends it: the tape has its answer.
 fn in_background(
+    lua: &Lua,
+    runtime: &Rc<Runtime>,
+    work: impl FnOnce() -> std::result::Result<serde_json::Value, String> + Send + 'static,
+) -> AwaitId {
+    if crate::tape::of(lua).is_some_and(|t| t.replaying()) {
+        return scheduler::new_await(lua);
+    }
+    spawn_request(lua, runtime, work)
+}
+
+/// [`in_background`] for work a replay redoes here (it reads only the
+/// tape), its answer taking the kept one's place.
+fn in_background_again(
+    lua: &Lua,
+    runtime: &Rc<Runtime>,
+    work: impl FnOnce() -> std::result::Result<serde_json::Value, String> + Send + 'static,
+) -> AwaitId {
+    match crate::tape::of(lua).filter(|t| t.replaying()) {
+        Some(tape) => {
+            let id = scheduler::new_await(lua);
+            tape.answer_here(id, work());
+            id
+        }
+        None => spawn_request(lua, runtime, work),
+    }
+}
+
+fn spawn_request(
     lua: &Lua,
     runtime: &Rc<Runtime>,
     work: impl FnOnce() -> std::result::Result<serde_json::Value, String> + Send + 'static,
@@ -1000,14 +1029,10 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         "clock",
         lua.create_function(|lua, ()| Ok(engine(lua).host.now()))?,
     )?;
-    host.set("now_ms", lua.create_function(|_, ()| Ok(now_ms()))?)?;
+    host.set("now_ms", lua.create_function(|lua, ()| Ok(now_ms(lua)))?)?;
     host.set(
         "epoch",
-        lua.create_function(|_, ()| {
-            Ok(SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0.0, |d| d.as_secs_f64()))
-        })?,
+        lua.create_function(|lua, ()| Ok(crate::tape::clock(lua, crate::tape::epoch)))?,
     )?;
     // A number the DOM keeps that scripts can't name (`Model.Scale`, saved
     // as `ScaleFactor`).
@@ -1155,7 +1180,10 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         "decode",
         lua.create_function(|lua, text: String| json::decode(lua, &text))?,
     )?;
-    host.set("guid", lua.create_function(|_, ()| Ok(json::guid(false)))?)?;
+    host.set(
+        "guid",
+        lua.create_function(|lua, ()| Ok(json::guid(lua, false)))?,
+    )?;
     host.set(
         "bucket",
         lua.create_function(|_, (ordered, name, scope): (bool, String, String)| {
@@ -1188,7 +1216,7 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         "ds_put",
         lua.create_function(
             move |lua, (bucket, key, value, users, meta): (String, String, String, String, String)| {
-                let entry = r.data(|d| d.put(&bucket, &key, Some(value), users, meta, now_ms()));
+                let entry = r.data(|d| d.put(&bucket, &key, Some(value), users, meta, now_ms(lua)));
                 entry_table(lua, Some(entry))
             },
         )?,
@@ -1199,7 +1227,7 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         lua.create_function(move |lua, (bucket, key): (String, String)| {
             let old = r.data(|d| {
                 let old = d.get(&bucket, &key)?;
-                d.put(&bucket, &key, None, "[]".into(), "{}".into(), now_ms());
+                d.put(&bucket, &key, None, "[]".into(), "{}".into(), now_ms(lua));
                 Some(old)
             });
             entry_table(lua, old)
@@ -1405,13 +1433,13 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     let r = runtime.clone();
     host.set(
         "publish",
-        lua.create_function(move |_, (topic, text): (String, String)| {
+        lua.create_function(move |lua, (topic, text): (String, String)| {
+            let sent = now_ms(lua) as f64 / 1000.0;
             let universe = r.universe.borrow().clone();
             let mut bus = universe.bus.lock().unwrap_or_else(|e| e.into_inner());
             let seq = bus.next;
             bus.next += 1;
-            bus.messages
-                .push((seq, topic, text, now_ms() as f64 / 1000.0));
+            bus.messages.push((seq, topic, text, sent));
             let excess = bus.messages.len().saturating_sub(BUS_KEEP);
             bus.messages.drain(..excess);
             Ok(())
@@ -1595,9 +1623,14 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
     let r = runtime.clone();
     let download = lua.create_function(move |lua, id: i64| {
         let source = r.config.borrow().assets.clone();
-        Ok(in_background(lua, &r, move || {
+        let tape = crate::tape::of(lua);
+        Ok(in_background_again(lua, &r, move || {
             let source = source.ok_or_else(|| "HTTP 0 (offline)".to_owned())?;
-            let bytes = source.fetch(id.max(0) as u64)?;
+            let id = id.max(0) as u64;
+            let bytes = match tape {
+                Some(tape) => tape.asset(id, || source.fetch(id))?,
+                None => source.fetch(id)?,
+            };
             let mut downloads = DOWNLOADS.lock().unwrap_or_else(|e| e.into_inner());
             let token = downloads.keys().max().map_or(1, |k| k + 1);
             downloads.insert(token, bytes);

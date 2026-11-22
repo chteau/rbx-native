@@ -17,8 +17,9 @@ pub(crate) fn member(lua: &Lua, key: &str) -> Result<Option<Value>> {
             let text = string_arg(&text, 1)?;
             decode(lua, &text)
         })?,
-        "GenerateGUID" => lua
-            .create_function(|_, (_, wrap): (Value, Option<bool>)| Ok(guid(wrap != Some(false))))?,
+        "GenerateGUID" => lua.create_function(|lua, (_, wrap): (Value, Option<bool>)| {
+            Ok(guid(lua, wrap != Some(false)))
+        })?,
         "UrlEncode" => lua.create_function(|_, (_, text): (Value, Value)| {
             Ok(url_encode(&string_arg(&text, 1)?))
         })?,
@@ -46,13 +47,23 @@ pub(crate) fn string_arg(value: &Value, index: usize) -> Result<String> {
 
 /// A random version 4 GUID in lower case, braced unless `braced` is
 /// false, as `HttpService:GenerateGUID(wrapInCurlyBraces)` gives it.
-pub(crate) fn guid(braced: bool) -> String {
-    let guid = uuid::Uuid::new_v4().hyphenated().to_string();
+pub(crate) fn guid(lua: &Lua, braced: bool) -> String {
+    let high = crate::tape::entropy(lua, rand_u64);
+    let low = crate::tape::entropy(lua, rand_u64);
+    let bits = (u128::from(high) << 64 | u128::from(low)) & !(0xF000 << 64 | 0xC << 60)
+        | 0x4000 << 64
+        | 0x8 << 60;
+    let guid = uuid::Uuid::from_u128(bits).hyphenated().to_string();
     if braced {
         format!("{{{guid}}}")
     } else {
         guid
     }
+}
+
+fn rand_u64() -> u64 {
+    let (high, _) = uuid::Uuid::new_v4().as_u64_pair();
+    high
 }
 
 /// Every byte but ASCII letters and digits as `%XX`.

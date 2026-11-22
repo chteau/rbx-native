@@ -98,13 +98,15 @@ pub(super) fn constructors(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "new",
-        lua.create_function(|_, seed: Option<f64>| {
+        lua.create_function(|lua, seed: Option<f64>| {
             let seed = match seed {
                 Some(seed) => seed.to_bits(),
-                None => std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos() as u64)
-                    .unwrap_or(1),
+                None => crate::tape::entropy(lua, || {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64)
+                        .unwrap_or(1)
+                }),
             };
             Ok(LuaRandom::seeded(seed))
         })?,

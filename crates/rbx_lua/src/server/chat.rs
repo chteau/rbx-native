@@ -61,7 +61,7 @@ fn host(lua: &Lua, chat: &Chat) -> Result<Table> {
     )?;
     host.set(
         "guid",
-        lua.create_function(|_, ()| Ok(crate::engine::json::guid(false)))?,
+        lua.create_function(|lua, ()| Ok(crate::engine::json::guid(lua, false)))?,
     )?;
     host.set(
         "new",

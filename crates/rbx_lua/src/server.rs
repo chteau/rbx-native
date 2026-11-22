@@ -444,6 +444,12 @@ impl ServerVm {
         self.budget = timeout;
     }
 
+    /// Reads the clock, randomness and the web's answers through `tape`
+    /// (Local Run's record and replay), from before the first script.
+    pub fn set_tape(&self, tape: crate::tape::Tape) -> Result<(), LuaError> {
+        crate::tape::install(&self.lua, tape)
+    }
+
     /// Makes this VM a client's: `RunService:IsClient()` is true and
     /// `IsServer()` false, `RunService:BindToRenderStep`,
     /// `UserInputService` and `ContextActionService` work, and remotes go

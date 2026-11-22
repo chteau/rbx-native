@@ -9,7 +9,7 @@
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use std::ffi::c_int;
 
@@ -195,12 +195,7 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
     globals.set("task", task)?;
     globals.set(
         "tick",
-        lua.create_function(|_, ()| {
-            Ok(SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs_f64())
-                .unwrap_or(0.0))
-        })?,
+        lua.create_function(|lua, ()| Ok(crate::tape::clock(lua, crate::tape::epoch)))?,
     )?;
     let time = lua.create_function(|lua, ()| Ok(engine(lua).host.now()))?;
     globals.set("time", time.clone())?;
