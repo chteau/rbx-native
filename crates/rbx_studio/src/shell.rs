@@ -86,7 +86,6 @@ pub(crate) use export::Export;
 pub(crate) use find_in_place::OpenFindInPlace;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use localization::BETA_ID as PSEUDO_LOC_BETA_ID;
-pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
 pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
@@ -459,6 +458,8 @@ pub(crate) struct Shell {
     /// Whether opening a script's Graph side tidies it; persisted (see
     /// `settings`), written through `Shell::set_optimize_graph_on_open`.
     optimize_graph_on_open: bool,
+    /// Whether the MCP server should listen; see `Settings::mcp_server`.
+    mcp_enabled: bool,
     /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
     script_font_size: f32,
     output_scroll: ScrollHandle,
@@ -591,7 +592,7 @@ pub(crate) struct Shell {
     /// marked Active when several names hold the docks' arrangement.
     last_named_layout: Option<String>,
     output_collapsed: bool,
-    /// Beta Features › MCP server's listener; see `shell::mcp`.
+    /// Settings › AI assistants › MCP server's listener; see `shell::mcp`.
     mcp: Option<crate::mcp::endpoint::Server>,
     /// MCP tool calls waiting on work only the shell can do.
     mcp_jobs: mcp::Jobs,
@@ -683,6 +684,7 @@ impl Shell {
             output_rich_text,
             output_display,
             optimize_graph_on_open,
+            mcp_server,
             increment_names,
             expand_on_select,
             insert_anchored,
@@ -1010,6 +1012,7 @@ impl Shell {
             output_display,
             output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
+            mcp_enabled: mcp_server,
             script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
@@ -1141,7 +1144,7 @@ impl Shell {
             shell.init_team_presence(cx);
             // Loads and starts the installed plugins (see `shell::plugins`).
             shell.plugins_start(cx);
-            // Beta Features › MCP server (see `shell::mcp`).
+            // Settings › AI assistants › MCP server (see `shell::mcp`).
             shell.mcp_start(cx);
         }
         shell.start_credential_watch(cx);
@@ -2108,6 +2111,7 @@ impl Shell {
             output_rich_text: self.output_rich_text,
             output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
+            mcp_server: self.mcp_enabled,
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
             expand_on_select: self.expand_on_select,

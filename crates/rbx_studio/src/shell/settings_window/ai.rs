@@ -11,11 +11,9 @@ use gpui_kit::component::h_flex;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::beta;
 use crate::mcp::connect::desktop::{self, Change, Installed};
 use crate::mcp::connect::probe::{self, Probe};
 use crate::mcp::connect::{Client, Launch, Os, SERVER_NAME};
-use crate::shell::MCP_BETA_ID;
 use crate::tokens;
 
 use super::kit::{icon, mono, secondary_button, segmented, text, toggle, OnPick, Row, Section};
@@ -94,8 +92,7 @@ impl SettingsWindow {
     fn server_row(&self, cx: &mut Context<Self>) -> Row {
         let shell = self.shell.read(cx);
         let running = shell.mcp.as_ref().map(|server| server.endpoint().clone());
-        let enabled = beta::enabled(MCP_BETA_ID);
-        let chosen = beta::chosen(MCP_BETA_ID);
+        let enabled = shell.mcp_enabled();
         let (status, color, description): (&str, Rgba, SharedString) = match &running {
             Some(endpoint) => (
                 "RUNNING",
@@ -122,22 +119,10 @@ impl SettingsWindow {
             .gap(px(12.))
             .items_center()
             .child(tag(status, color))
-            .child(toggle("ai-mcp-toggle", chosen, move |_, _, cx| {
-                shell.update(cx, |shell, cx| {
-                    if let Err(error) = beta::choose(MCP_BETA_ID, !chosen) {
-                        shell
-                            .output
-                            .push_warning(&format!("could not save beta.json: {error}"));
-                    }
-                    cx.notify();
-                });
+            .child(toggle("ai-mcp-toggle", enabled, move |_, _, cx| {
+                shell.update(cx, |shell, cx| shell.set_mcp_enabled(!enabled, cx));
             }));
-        let row = Row::new("MCP server", control).describe(description);
-        if chosen != enabled {
-            row.chip("Restart to apply")
-        } else {
-            row
-        }
+        Row::new("MCP server", control).describe(description)
     }
 
     fn clients_row(&self, cx: &mut Context<Self>) -> Row {

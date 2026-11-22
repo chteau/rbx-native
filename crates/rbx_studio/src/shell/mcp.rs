@@ -1,4 +1,4 @@
-//! Beta Features › MCP server: the shell's end of `crate::mcp`. A timer
+//! Settings › AI assistants › MCP server: the shell's end of `crate::mcp`. A timer
 //! drains what clients sent and answers it against the shell's own DOM, on
 //! the UI thread, so a tool always sees the place as the Explorer does, and
 //! applies a `multi_edit` as one undo step. An `insert_asset` downloads in
@@ -27,16 +27,14 @@ mod tests;
 
 pub(super) use jobs::Jobs;
 
-pub(crate) const BETA_ID: &str = "mcp-server";
-
 /// How long a client waits at most for the next drain: short enough that a
 /// chain of tool calls does not crawl, long enough to cost nothing idle.
 const POLL_INTERVAL: Duration = Duration::from_millis(30);
 
 impl Shell {
-    /// Starts listening when the beta is on.
+    /// Starts listening when the setting is on and it isn't already.
     pub(super) fn mcp_start(&mut self, cx: &mut Context<Self>) {
-        if !crate::beta::enabled(BETA_ID) {
+        if !self.mcp_enabled || self.mcp.is_some() {
             return;
         }
         let Some(dir) = mcp::endpoint_dir() else {
@@ -62,14 +60,47 @@ impl Shell {
                 return;
             }
         }
+        let studio_id = self
+            .mcp
+            .as_ref()
+            .map(|server| server.endpoint().studio_id.clone());
         cx.spawn(async move |shell, cx| loop {
             cx.background_executor().timer(POLL_INTERVAL).await;
-            let alive = shell.update(cx, |shell, cx| shell.mcp_answer(cx)).is_ok();
-            if !alive {
+            // Ends with the server it was started for: switched off, or
+            // replaced by a new one after an off and on.
+            let current = shell.update(cx, |shell, cx| {
+                let same = shell
+                    .mcp
+                    .as_ref()
+                    .map(|server| server.endpoint().studio_id.clone())
+                    == studio_id;
+                if same {
+                    shell.mcp_answer(cx);
+                }
+                same
+            });
+            if !matches!(current, Ok(true)) {
                 break;
             }
         })
         .detach();
+    }
+
+    /// Settings › AI assistants' switch: applies at once and is saved.
+    pub(crate) fn set_mcp_enabled(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.mcp_enabled = on;
+        self.save_settings();
+        if on {
+            self.mcp_start(cx);
+        } else if self.mcp.take().is_some() {
+            self.output
+                .push("MCP server", Feedback::Info("stopped".to_owned()));
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn mcp_enabled(&self) -> bool {
+        self.mcp_enabled
     }
 
     fn mcp_answer(&mut self, cx: &mut Context<Self>) {

@@ -46,7 +46,7 @@ options:
         what --run reported back.
   --mcp
         Run as an MCP client's stdio server, forwarding to the editors
-        already open with Settings › Beta features › MCP server on.
+        already open (Settings › AI assistants › MCP server, on by default).
         Takes no other option.
   --help
         Print this and exit.";
