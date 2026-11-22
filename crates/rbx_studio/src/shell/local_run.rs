@@ -1324,9 +1324,17 @@ impl Shell {
         }
         if run.joining && !run.session.joining() {
             run.joining = false;
+            let windowed = run.windowed;
             self.local_run_joined(cx);
-            return;
+            // The test windows still show this frame (the server's new
+            // players are in it).
+            if !windowed {
+                return;
+            }
         }
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
         // What showing the frame costs the editor, the profiler's render.
         let render_started = Instant::now();
         run.prompts.extend(run.session.take_prompts());
