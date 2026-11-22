@@ -35,25 +35,45 @@ pub const PASSES: u32 = 5;
 pub struct Test {
     pub name: &'static str,
     pub source: &'static str,
-    /// Absolute tolerance per result field, `"*name*"` for every field
-    /// containing `name`, `"*"` for the rest.
+    /// Absolute tolerance per result field, keyed by a glob where `*`
+    /// matches any run of characters (`"name"`, `"name*"`, `"*name"`,
+    /// `"*name*"`, `"*"`). The most specific match wins: an exact name,
+    /// then the pattern with the most literal characters, then the first
+    /// listed.
     pub tolerance: &'static [(&'static str, f64)],
+}
+
+/// Whether `field` matches `pattern`, `*` standing for any run of characters.
+fn glob_matches(pattern: &str, field: &str) -> bool {
+    let mut segments = pattern.split('*');
+    let first = segments.next().unwrap_or_default();
+    let Some(mut rest) = field.strip_prefix(first) else {
+        return false;
+    };
+    let mut segments: Vec<&str> = segments.collect();
+    let Some(last) = segments.pop() else {
+        return rest.is_empty();
+    };
+    for segment in segments {
+        match rest.find(segment) {
+            Some(at) => rest = &rest[at + segment.len()..],
+            None => return false,
+        }
+    }
+    rest.ends_with(last)
 }
 
 impl Test {
     pub fn tolerance_of(&self, field: &str) -> f64 {
-        let find = |key: &str| self.tolerance.iter().find(|(k, _)| *k == key).map(|t| t.1);
-        // `"*part*"`: every field with `part` in its name.
-        let containing = || {
-            self.tolerance.iter().find_map(|(k, t)| {
-                let part = k.strip_prefix('*')?.strip_suffix('*')?;
-                (!part.is_empty() && field.contains(part)).then_some(*t)
+        self.tolerance
+            .iter()
+            .enumerate()
+            .filter(|(_, (k, _))| glob_matches(k, field))
+            .max_by_key(|(i, (k, _))| {
+                let literal = k.chars().filter(|&c| c != '*').count();
+                (!k.contains('*'), literal, std::cmp::Reverse(*i))
             })
-        };
-        find(field)
-            .or_else(containing)
-            .or_else(|| find("*"))
-            .unwrap_or(0.0)
+            .map_or(0.0, |(_, (_, t))| *t)
     }
 }
 
@@ -1405,4 +1425,40 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Test;
+
+    #[test]
+    fn tolerance_keys_are_globs_and_the_most_specific_wins() {
+        let test = Test {
+            name: "Globs",
+            source: "",
+            tolerance: &[
+                ("*", 0.3),
+                ("*_settled", 20.0),
+                ("*bounce", 0.5),
+                ("first*", 4.0),
+                ("*mass*", 0.001),
+                ("first_bounce", 1.0),
+                ("a*b*c", 7.0),
+            ],
+        };
+        assert_eq!(test.tolerance_of("d03_settled"), 20.0);
+        assert_eq!(test.tolerance_of("settled_y"), 0.3);
+        assert_eq!(test.tolerance_of("big_bounce"), 0.5);
+        assert_eq!(test.tolerance_of("first_dy"), 4.0);
+        assert_eq!(test.tolerance_of("first_bounce"), 1.0);
+        assert_eq!(test.tolerance_of("big_mass_y"), 0.001);
+        assert_eq!(test.tolerance_of("a_b_c"), 7.0);
+        assert_eq!(test.tolerance_of("a_c_b"), 0.3);
+        let bare = Test {
+            name: "Bare",
+            source: "",
+            tolerance: &[("x", 1.0)],
+        };
+        assert_eq!(bare.tolerance_of("y"), 0.0);
+    }
 }
