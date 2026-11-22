@@ -157,13 +157,21 @@
 <h2>Coming in 0.2.2</h2>
 <ul>
 <li><strong>AI assistants page in Settings</strong>: connect Claude Code, Claude Desktop, Cursor or VS Code from one page, with a copyable setup and a self-test. The <a href="mcp-server.html">MCP server</a> becomes a normal setting, on by default, instead of a beta.</li>
-<li><strong>MCP building skills</strong>: more skills so an assistant can build a place with you, not just edit scripts.</li>
-<li><strong>A performance pass</strong> over the editor.</li>
+<li><strong>MCP building skills</strong>: guides an assistant reads before it builds: low-poly modeling with Parts and unions, modular kits on a stud grid, colour palettes and materials, lighting presets per mood, level design with real Roblox measurements, and bringing CC0 kits in. Kenney's kits are the style reference.</li>
+<li><strong>A performance pass</strong>: less CPU at rest, faster Explorer and Properties on big places, nothing blocking the window, so it runs smooth on low-end PCs too.</li>
+<li><strong>Pre-publish check</strong>: one button before you publish. It runs the <a href="security-audit.html">Security Audit</a> plus broken asset ids, deprecated calls like <code>wait()</code>, unanchored parts that fall at start, DataStore calls without <code>pcall</code>, and huge unions or part counts.</li>
+<li><strong>Free model kits in the Toolbox</strong>: browse CC0 packs (Kenney, Quaternius, Poly Pizza's CC0 section) and import them in one click, scaled to studs with pivots set.</li>
+<li><strong>Shareable bug repros</strong>: export a <a href="playtest-replays.html">recorded playtest</a>, send it, and your teammate watches exactly what happened.</li>
 </ul>
 <h2>Coming in 0.3.0 (beta)</h2>
 <ul>
-<li><strong>Local Run</strong>: our own runtime for Roblox games, from scratch, so you can run a place without the Roblox client: server and client scripts, physics, Humanoids, your avatar, GUIs, sounds and up to four local players. It'll ship as a beta next to the real Play, which stays the reference.</li>
+<li><strong>Local Run</strong>: our own runtime for Roblox games, from scratch, so you can run a place without the Roblox client: server and client scripts, physics, Humanoids, your avatar, GUIs, sounds and several local players. It'll ship as a beta next to the real Play, which stays the reference.</li>
 <li><strong>Offline mode</strong>: make a place available offline and keep working, assets and avatar included, with no connection.</li>
+<li><strong>Several players and the server in one window</strong>: each one in its own tab, all running at once.</li>
+<li><strong>Integration tests</strong>: the <a href="test-runner.html">Luau test runner</a> running whole-game tests on Local Run, server and clients included, from the same CI command.</li>
+<li><strong>Remote inspector</strong>: every RemoteEvent and RemoteFunction call per player, with size, rate and the script that fired it.</li>
+<li><strong>Bot players</strong>: 20 to 50 scripted players on a local server to see when it falls over, before launch.</li>
+<li><strong>Leak finder</strong>: connections never disconnected, instances piling up and tables that keep growing over a session.</li>
 </ul>
 <p>The <a href="https://github.com/chteau/rbx-native/blob/dev/ROADMAP.md">roadmap</a> has the full list of what's planned.</p>
 </article>
