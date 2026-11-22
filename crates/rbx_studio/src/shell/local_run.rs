@@ -28,11 +28,13 @@ mod avatars;
 pub(crate) mod badges;
 pub(crate) mod data;
 mod offline;
+mod replay;
 mod sound;
 use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::workspace_view::core_gui::CoreAction;
+use rbx_sim::replay::Action;
 
 pub(crate) const BETA_ID: &str = "local-run";
 const FRAME_HZ: f64 = 60.0;
@@ -74,6 +76,8 @@ struct Running {
     editables: u64,
     /// The Controller Emulator's pad as the viewed client last heard it.
     pad: Option<rbx_play::gamepad::PadState>,
+    /// Playing a recording back instead of taking input.
+    replay: Option<replay::ReplayState>,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -94,6 +98,10 @@ pub(crate) struct LocalRun {
     arriving: Option<Arriving>,
     /// Test › Offline: the open place's offline pack.
     offline: offline::Offline,
+    /// The last run's recording, for Replay and Save recording.
+    recording: Option<rbx_sim::replay::Recording>,
+    /// The replay transport's scrub rail.
+    rail: Option<Entity<gpui_kit::component::slider::SliderState>>,
 }
 
 impl Default for LocalRun {
@@ -104,6 +112,8 @@ impl Default for LocalRun {
             players: 1,
             arriving: None,
             offline: offline::Offline::default(),
+            recording: None,
+            rail: None,
         }
     }
 }
@@ -596,6 +606,13 @@ impl Shell {
             Ok("play") => self.play_local(cx),
             Ok("run") => self.run_local(cx),
             Ok("offline-pack") => self.offline_pack(cx),
+            Ok(other) => {
+                if let Some(file) = other.strip_prefix("replay:") {
+                    if self.local_run_can_start() {
+                        self.local_run_replay_file(std::path::Path::new(file), cx);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -655,6 +672,8 @@ impl Shell {
                 return;
             }
         };
+        // Every run is recorded, for Replay and Save recording.
+        session.record(replay::seed());
         session.set_network(local_network(&self.play.network.applied.conditions));
         session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
             rbx_cloud::ApiKey::from_env_or_config(),
@@ -761,6 +780,7 @@ impl Shell {
             editables: rbx_dom::editable::generation(),
             player: kept,
             pad: None,
+            replay: None,
         });
         if playing {
             self.viewport
@@ -784,7 +804,7 @@ impl Shell {
     /// The view the run shows, while one runs.
     pub(crate) fn local_run_view(&self) -> Option<(rbx_sim::Peer, String)> {
         let run = self.play.live.local.running.as_ref()?;
-        run.playing
+        (run.playing || run.replay.is_some())
             .then(|| (run.view, view_label(&run.session, run.view)))
     }
 
@@ -926,9 +946,13 @@ impl Shell {
             stash,
             task,
             playing,
+            replay,
             ..
         } = run;
         drop(task);
+        if replay.is_none() {
+            self.play.live.local.recording = session.recording();
+        }
         self.viewport
             .update(cx, |viewport, _| viewport.set_play_local(false));
         rbx_viewer::set_player_gui(None);
@@ -1024,22 +1048,45 @@ impl Shell {
         let now = Instant::now();
         let elapsed = now.duration_since(run.last).as_secs_f64();
         run.last = now;
-        if run.paused {
+        let seeking = run.replay.as_ref().and_then(|r| r.seek);
+        if run.paused && seeking.is_none() {
             run.sound.update(Vec::new(), Vec::new(), false);
             return;
         }
-        run.clock += elapsed;
+        let speed = run.replay.as_ref().map_or(1.0, |r| r.speed);
+        run.clock += elapsed * speed;
         if run.step_once {
             run.clock = run.session.time() + 1.0 / FRAME_HZ;
         }
+        if let Some(target) = seeking {
+            if target < run.session.server.frame() {
+                self.local_run_restart_replay(cx);
+            }
+            let Some(run) = self.play.live.local.running.as_mut() else {
+                return;
+            };
+            run.clock = target as f64 / FRAME_HZ;
+        }
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
         let due =
             ((run.clock * FRAME_HZ).floor() as u64).saturating_sub(run.session.server.frame());
         if due == 0 {
+            if let Some(replay) = run.replay.as_mut() {
+                replay.seek = None;
+            }
             return;
         }
-        let steps = due.min(MAX_FRAMES_PER_TICK);
+        let most = match (&run.replay, seeking) {
+            (Some(_), Some(_)) => replay::SEEK_FRAMES_PER_TICK,
+            (Some(_), None) => MAX_FRAMES_PER_TICK * speed.ceil() as u64,
+            _ => MAX_FRAMES_PER_TICK,
+        };
+        let steps = due.min(most);
         let viewing_client = matches!(run.view, rbx_sim::Peer::Client(_));
-        if run.playing && viewing_client {
+        let follows = run.playing || run.replay.is_some();
+        if run.playing && viewing_client && run.replay.is_none() {
             let (inputs, size, safe) = self.viewport.update(cx, |viewport, _| {
                 (
                     viewport.play.as_mut().map(|p| p.take()),
@@ -1048,10 +1095,8 @@ impl Shell {
                 )
             });
             if let rbx_sim::Peer::Client(i) = run.view {
-                if let Some(client) = run.session.clients.get_mut(i) {
-                    client.sim.set_viewport(size);
-                    client.sim.set_safe_insets(safe);
-                }
+                run.session.act(run.view, Action::Viewport(size));
+                run.session.act(run.view, Action::SafeInsets(safe));
                 for input in inputs.unwrap_or_default() {
                     run.session.input(i, input);
                 }
@@ -1070,8 +1115,30 @@ impl Shell {
         };
         let kicked_before = run.session.kicked.len();
         let mut changes = Vec::new();
+        let mut diverged = None;
         for _ in 0..steps {
-            run.session.step();
+            match run.replay.as_mut() {
+                Some(replay) => {
+                    if run.session.server.frame() >= replay.playback.frame_count() {
+                        run.paused = true;
+                        replay.seek = None;
+                        break;
+                    }
+                    // Pauses on the first divergence only; played on from
+                    // there, the rest no longer compares.
+                    if let Err(divergence) = replay.playback.step(&mut run.session) {
+                        if replay.divergence.is_none() {
+                            replay.seek = None;
+                            run.paused = true;
+                            diverged = Some(divergence);
+                        }
+                    }
+                    for client in &mut run.session.clients {
+                        client.sim.watch_view_changes();
+                    }
+                }
+                None => run.session.step(),
+            }
             for peer in std::iter::once(rbx_sim::Peer::Server)
                 .chain((0..run.session.clients.len()).map(rbx_sim::Peer::Client))
             {
@@ -1083,9 +1150,21 @@ impl Shell {
                     changes.extend(seen);
                 }
             }
+            if diverged.is_some() {
+                break;
+            }
         }
-        if due > steps {
+        if due > steps || run.paused {
             run.clock = run.session.time();
+        }
+        if let Some(divergence) = diverged {
+            push_row(
+                &mut self.output,
+                Feedback::Error(format!("Replay {divergence}")),
+            );
+            if let Some(replay) = run.replay.as_mut() {
+                replay.divergence = Some(divergence);
+            }
         }
         run.prompts.extend(run.session.take_prompts());
         let teleports = run.session.take_teleports();
@@ -1172,21 +1251,17 @@ impl Shell {
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
-        if let Some(sim) = run.session.sim_mut(run.view) {
-            sim.set_menu_open(menu_open);
-        }
+        // A replay's player acts only as recorded.
+        let actions = if run.replay.is_some() {
+            Vec::new()
+        } else {
+            run.session.act(run.view, Action::MenuOpen(menu_open));
+            actions
+        };
         for action in actions {
             match action {
-                CoreAction::Say(text) => {
-                    if let Some(sim) = run.session.sim_mut(run.view) {
-                        sim.chat_say(&text);
-                    }
-                }
-                CoreAction::Reset => {
-                    if let Some(sim) = run.session.sim_mut(run.view) {
-                        sim.reset_character();
-                    }
-                }
+                CoreAction::Say(text) => run.session.act(run.view, Action::Chat(text)),
+                CoreAction::Reset => run.session.act(run.view, Action::Reset),
                 CoreAction::Volume(volume) => run.sound.set_volume(volume),
                 CoreAction::Purchase(bought) => {
                     if let Some(prompt) = run.prompts.pop_front() {
@@ -1214,13 +1289,13 @@ impl Shell {
         run.sound.update(
             viewed.voices(),
             viewed.take_audio(),
-            run.playing && !run.paused && viewing_client,
+            follows && !run.paused && viewing_client,
         );
         mirror(&viewed.dom(), &mut self.dom, &changes);
         let output = run.session.take_output();
         self.dom.take_changes();
         push_rows(&mut self.output, output, run.playing);
-        if run.playing && viewing_client {
+        if follows && viewing_client {
             let Some(viewed) = run.session.sim(run.view) else {
                 return;
             };

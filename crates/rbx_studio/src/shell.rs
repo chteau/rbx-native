@@ -2367,6 +2367,7 @@ impl Render for Shell {
             .child(self.document_tabs(cx))
             .child(self.ribbon_tabs(cx))
             .child(self.ribbon(cx))
+            .children(self.replay_bar(window, cx))
             .child(self.workspace(window, cx))
             .children((!self.layout.command_bar_hidden()).then(|| {
                 div()

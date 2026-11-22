@@ -1090,6 +1090,55 @@ impl Shell {
                 "there is no local run to pause",
             )
         };
+        // Every Local Run is recorded: Replay plays it back frame for
+        // frame, Save run keeps its recording.
+        let recorded = local_beta && self.local_run_has_recording();
+        let replay = if recorded && !self.local_run_replaying() {
+            live_stack_row(nav, "ribbon-replay", IconName::Film, "Replay", cx)
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Play the last Local Run back exactly, frame for frame, and see where it first differs.",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_replay(cx)))
+        } else {
+            unavailable_row(
+                "ribbon-replay",
+                IconName::Film,
+                "Replay",
+                if recorded {
+                    "a replay is running"
+                } else {
+                    "run the place locally first"
+                },
+            )
+        };
+        let save_recording = if recorded {
+            live_stack_row(
+                nav,
+                "ribbon-save-recording",
+                IconName::Save,
+                "Save run",
+                cx,
+            )
+            .tooltip(|window, cx| {
+                super::tooltip::text(
+                    "Save the recording of the last Local Run, to replay later or in CI.",
+                    window,
+                    cx,
+                )
+            })
+            .on_click(cx.listener(|shell, _, _, cx| shell.local_run_save_recording(cx)))
+        } else {
+            unavailable_row(
+                "ribbon-save-recording",
+                IconName::Save,
+                "Save run",
+                "run the place locally first",
+            )
+        };
         let stop = if local_active {
             tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
                 .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
@@ -1122,6 +1171,7 @@ impl Shell {
             // person reaches for in a hurry.
             stack(vec![play_local, run]).into_any_element(),
             stack(vec![pause]).into_any_element(),
+            stack(vec![replay, save_recording]).into_any_element(),
             primary("ribbon-stop", stop).into_any_element(),
             invite.into_any_element(),
             self.view_tile(cx).into_any_element(),
