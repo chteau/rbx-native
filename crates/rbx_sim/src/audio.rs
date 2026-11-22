@@ -70,7 +70,7 @@ pub struct Voice {
 /// Decodes a whole sound asset. More than two channels fold down to stereo.
 pub fn decode(bytes: Vec<u8>) -> Result<Clip, String> {
     use symphonia::core::audio::SampleBuffer;
-    use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+    use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL, CODEC_TYPE_OPUS};
     use symphonia::core::errors::Error;
     use symphonia::core::formats::FormatOptions;
     use symphonia::core::io::MediaSourceStream;
@@ -97,6 +97,10 @@ pub fn decode(bytes: Vec<u8>) -> Result<Clip, String> {
     // The container's own length: a Vorbis stream's last packet decodes
     // past it (3.087 s for a sound Roblox and ffprobe call 3.072 s).
     let length = ogg_length.or(track.codec_params.n_frames);
+    if track.codec_params.codec == CODEC_TYPE_OPUS {
+        let head = track.codec_params.extra_data.clone().unwrap_or_default();
+        return opus(format, track_id, &head);
+    }
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|err| format!("unsupported audio codec: {err}"))?;
@@ -133,6 +137,45 @@ pub fn decode(bytes: Vec<u8>) -> Result<Clip, String> {
         samples,
         channels: channels as u16,
         rate: spec.rate,
+    })
+}
+
+/// An Opus track (a WebM video's sound), which symphonia demuxes but
+/// doesn't decode. `head` is its `OpusHead`: the channel count and the
+/// pre-skip, the encoder's priming samples dropped from the start.
+fn opus(
+    mut format: Box<dyn symphonia::core::formats::FormatReader>,
+    track: u32,
+    head: &[u8],
+) -> Result<Clip, String> {
+    const RATE: u32 = 48_000;
+    /// The longest Opus packet, 120 ms.
+    const MAX: usize = 5760;
+    let channels = head.get(9).map_or(2, |c| usize::from(*c).clamp(1, 2));
+    let skip = head
+        .get(10..12)
+        .map_or(0, |b| usize::from(u16::from_le_bytes([b[0], b[1]])));
+    let mut decoder = opus_pure::OpusDecoder::new(RATE as i32, channels)
+        .map_err(|err| format!("unsupported audio codec: {err:?}"))?;
+    let mut buffer = vec![0.0; MAX * channels];
+    let mut samples = Vec::new();
+    while let Ok(packet) = format.next_packet() {
+        if packet.track_id() != track {
+            continue;
+        }
+        // A damaged packet is skipped, as players do.
+        if let Ok(frames) = decoder.decode(&packet.data, MAX, &mut buffer) {
+            samples.extend_from_slice(&buffer[..frames * channels]);
+        }
+    }
+    samples.drain(..(skip * channels).min(samples.len()));
+    if samples.is_empty() {
+        return Err("the file holds no audio".into());
+    }
+    Ok(Clip {
+        samples,
+        channels: channels as u16,
+        rate: RATE,
     })
 }
 

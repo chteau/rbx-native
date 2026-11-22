@@ -55,6 +55,11 @@ impl Editable {
     }
 }
 
+/// The property a running game's `VideoFrame` or `VideoDisplay` holds its
+/// decoded picture under, a `Content::Object` naming an editable image. No
+/// Roblox class has it, and it only lives in a running game's DOM.
+pub const VIDEO_PICTURE: &str = "RbxNativeVideoPicture";
+
 static NEXT: AtomicU32 = AtomicU32::new(u32::MAX);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 

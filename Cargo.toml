@@ -49,6 +49,12 @@ font-types = { opt-level = 3 }
 fontdb = { opt-level = 3 }
 zeno = { opt-level = 3 }
 unicode-linebreak = { opt-level = 3 }
+# A playing video decodes every frame (a 720p VP9 frame takes ~3 ms
+# optimised, far longer without), and speech is synthesised on load.
+vp8-decoder = { opt-level = 3 }
+rusty_vp9 = { opt-level = 3 }
+opus-pure = { opt-level = 3 }
+flite-rs = { opt-level = 3 }
 
 # GPUI Kit's editor keeps its selection list private, and Ctrl+D (add the
 # next match of the selection as another selection) needs to add one from

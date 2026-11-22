@@ -1630,8 +1630,10 @@ impl Simulation {
                 players,
                 ..
             } = &mut *shared;
-            events.extend(audio.step(sounds, &mut dom, self.db, dt, players.client, players.local));
-            events.extend(videos.step(&mut dom, self.db, dt));
+            let (client, local) = (players.client, players.local);
+            events.extend(audio.step(sounds, videos, &mut dom, self.db, dt, client, local));
+            let displays = audio.displays(&dom);
+            events.extend(videos.step(&mut dom, self.db, dt, client, &displays));
         }
         for event in events {
             self.fire(event);
@@ -1652,10 +1654,10 @@ impl Simulation {
         let camera = self.camera().map(|(cf, _)| cf);
         let dom = self.dom.borrow();
         let listener = crate::sound::listener(&dom, self.db, camera);
-        self.shared
-            .borrow_mut()
-            .sounds
-            .voices(&dom, self.db, listener.as_ref())
+        let mut shared = self.shared.borrow_mut();
+        let mut voices = shared.sounds.voices(&dom, self.db, listener.as_ref());
+        voices.extend(shared.videos.voices(&dom, self.db));
+        voices
     }
 
     /// What this client's audio graph played since the last call, stereo
