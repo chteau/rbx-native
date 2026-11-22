@@ -409,19 +409,18 @@ fn texture_refs(emitters: &[Emitter]) -> Vec<AssetRef> {
 #[path = "particles/tests.rs"]
 mod tests;
 
-static BURSTS: std::sync::Mutex<Vec<(Ref, Option<u32>)>> = std::sync::Mutex::new(Vec::new());
+thread_local! {
+    /// Per thread, as each editor viewport draws on its own.
+    static BURSTS: std::cell::RefCell<Vec<(Ref, Option<u32>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
 
 /// A running game's `ParticleEmitter:Emit(count)` (`Some`) or `Clear()`
-/// (`None`), for the next frame drawn.
+/// (`None`), for the next frame drawn on this thread.
 pub fn particle_burst(emitter: Ref, burst: Option<u32>) {
-    if let Ok(mut queue) = BURSTS.lock() {
-        queue.push((emitter, burst));
-    }
+    BURSTS.with_borrow_mut(|queue| queue.push((emitter, burst)));
 }
 
 fn take_bursts() -> Vec<(Ref, Option<u32>)> {
-    BURSTS
-        .lock()
-        .map(|mut q| std::mem::take(&mut *q))
-        .unwrap_or_default()
+    BURSTS.with_borrow_mut(std::mem::take)
 }

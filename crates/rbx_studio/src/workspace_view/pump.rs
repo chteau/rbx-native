@@ -114,6 +114,12 @@ enum Command {
     /// Whether the `ScreenGui` overlay is drawn, see
     /// `Headless::set_screen_gui_shown`.
     ScreenGuiShown(bool),
+    /// The running game's `PlayerGui` drawn instead of `StarterGui`, see
+    /// `rbx_viewer::set_player_gui` (per render thread).
+    PlayerGui(Option<rbx_dom::Ref>),
+    /// A running game's `Emit`/`Clear` calls, see
+    /// `rbx_viewer::particle_burst` (per render thread).
+    Bursts(Vec<(rbx_dom::Ref, Option<u32>)>),
     /// The pseudo-localization preview's locale, `None` for text as written,
     /// see `Headless::set_pseudo_locale`.
     PseudoLocale(Option<rbx_viewer::PseudoLocale>),
@@ -297,6 +303,14 @@ impl Pump {
     /// Swaps the main camera between perspective and orthographic projection.
     pub(super) fn orthographic(&self, orthographic: bool) {
         let _ = self.commands.send(Command::Orthographic(orthographic));
+    }
+
+    pub(super) fn player_gui(&self, player_gui: Option<rbx_dom::Ref>) {
+        let _ = self.commands.send(Command::PlayerGui(player_gui));
+    }
+
+    pub(super) fn bursts(&self, bursts: Vec<(rbx_dom::Ref, Option<u32>)>) {
+        let _ = self.commands.send(Command::Bursts(bursts));
     }
 
     /// Draws with flat, shadowless light, or with the place's own again.
@@ -935,6 +949,12 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Fullbright(fullbright) => rendering.viewer.set_fullbright(fullbright),
+        Command::PlayerGui(player_gui) => rbx_viewer::set_player_gui(player_gui),
+        Command::Bursts(bursts) => {
+            for (emitter, burst) in bursts {
+                rbx_viewer::particle_burst(emitter, burst);
+            }
+        }
         Command::CameraFeel(feel) => rendering.viewer.set_camera_feel(feel),
         // Studio's own default field of view.
         Command::LookAt { eye, target, fov } => rendering.viewer.open_at(eye, target, fov),

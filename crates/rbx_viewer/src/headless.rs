@@ -203,6 +203,40 @@ impl Headless {
         Headless::from_dom_in(dom, textures, false)
     }
 
+    /// [`Headless::load_or_undrawn`] for a tree in memory, on one GPU device
+    /// every caller shares (opened by the first): a test's Server and Player
+    /// windows each draw their own peer's world without a device apiece.
+    pub fn from_dom_shared(dom: &WeakDom) -> Result<Self, String> {
+        static SHARED: std::sync::OnceLock<Option<(wgpu::Device, wgpu::Queue)>> =
+            std::sync::OnceLock::new();
+        let shared = SHARED.get_or_init(|| {
+            let instance = gpu::instance();
+            gpu::adapter(&instance, None)
+                .and_then(|adapter| gpu::device(&adapter))
+                .ok()
+        });
+        let Some(device) = shared.clone() else {
+            return Headless::from_dom_in(dom, true, true);
+        };
+        let toggles = Toggles {
+            textures: true,
+            materials: true,
+            ..undrawn_toggles()
+        };
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Headless::build(
+                dom,
+                toggles,
+                ReflectionDatabase::embedded(),
+                View::default(),
+                QualityLevel::MAX,
+                Some(device),
+                true,
+            )
+        }))
+        .unwrap_or_else(|_| Headless::from_dom_in(dom, true, true))
+    }
+
     /// [`Headless::from_dom`], opening undrawn when no GPU can draw if
     /// `or_undrawn` (see [`Headless::load_or_undrawn`]).
     fn from_dom_in(dom: &WeakDom, textures: bool, or_undrawn: bool) -> Result<Self, String> {
