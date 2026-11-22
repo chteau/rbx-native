@@ -37,7 +37,9 @@ impl AssetCache {
 
     pub fn get_id(&self, id: u64) -> Option<Vec<u8>> {
         let path = self.id_path(id);
-        let bytes = std::fs::read(&path).ok()?;
+        // No asset is empty: an empty entry is a write that never finished,
+        // fetched again rather than failing every load.
+        let bytes = std::fs::read(&path).ok().filter(|b| !b.is_empty())?;
         touch(&path);
         Some(bytes)
     }

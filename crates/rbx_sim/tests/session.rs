@@ -4,6 +4,8 @@
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_sim::{conformance, Input, Peer, Session};
 
+mod common;
+
 #[test]
 fn tags_replicate_and_debris_and_player_helpers_work() {
     let mut s = session(
@@ -226,7 +228,13 @@ fn session(dom: WeakDom, players: usize) -> Session {
 /// Every line printed so far, per peer.
 fn printed(session: &mut Session, lines: &mut Vec<(Peer, String)>) {
     for (peer, output) in session.take_output() {
-        lines.extend(output.lines().iter().map(|l| (peer, l.clone())));
+        lines.extend(
+            output
+                .lines()
+                .iter()
+                .filter(|l| !common::animation_warning(l))
+                .map(|l| (peer, l.clone())),
+        );
     }
 }
 
@@ -938,6 +946,56 @@ fn the_client_joins_after_the_servers_first_frames() {
         has(&lines, Peer::Client(0), "client sees true"),
         "{lines:#?}"
     );
+}
+
+#[test]
+fn a_join_later_does_not_run_the_server_and_lands_on_the_joins_frame() {
+    let session = || {
+        let mut s = Session::new(place(
+            "game:GetService('Players').PlayerAdded:Connect(function(p) \
+               print('joined', p.Name, time()) end)",
+            "print('client at', workspace.DistributedGameTime)",
+        ))
+        .unwrap();
+        s.set_join_after(rbx_sim::JOIN_AFTER);
+        s.start();
+        s
+    };
+    let mut waited = session();
+    waited.join("Player1", 1, None).unwrap();
+    waited.join("Player2", 2, None).unwrap();
+    let joined_on = waited.server.frame();
+
+    // The editor's path: queuing returns before the server ran a frame.
+    let mut queued = session();
+    queued.join_later("Player1", 1, None);
+    queued.join_later("Player2", 2, None);
+    assert_eq!(queued.server.frame(), 0);
+    assert!(queued.clients.is_empty() && queued.joining());
+    while queued.joining() {
+        queued.step();
+    }
+    assert!(queued.take_join_failures().is_empty());
+    assert_eq!(queued.clients.len(), 2);
+    assert_eq!(queued.server.frame(), joined_on + 1);
+
+    waited.step();
+    let (mut a, mut b) = (Vec::new(), Vec::new());
+    for _ in 0..30 {
+        waited.step();
+        queued.step();
+        printed(&mut waited, &mut a);
+        printed(&mut queued, &mut b);
+    }
+    for who in ["joined Player1", "joined Player2"] {
+        assert!(
+            a.iter()
+                .any(|(p, l)| *p == Peer::Server && l.starts_with(who)),
+            "{a:#?}"
+        );
+    }
+    assert!(has(&a, Peer::Client(1), "client at 1.6"), "{a:#?}");
+    assert_eq!(a, b);
 }
 
 #[test]

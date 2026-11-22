@@ -4,6 +4,8 @@
 use rbx_dom::{Variant, WeakDom};
 use rbx_sim::{conformance, Input, Phase, Sensor, Session};
 
+mod common;
+
 /// A bare place with a ScreenGui in StarterGui (ignoring the inset)
 /// holding a 200x80 TextButton at (100, 100), and `source` as a
 /// LocalScript in it.
@@ -62,7 +64,13 @@ fn touch(id: u32, x: f32, y: f32, phase: Phase) -> Input {
 }
 
 fn output(session: &mut Session) -> Vec<String> {
-    session.clients[0].sim.take_output().lines().to_vec()
+    let output = session.clients[0].sim.take_output();
+    output
+        .lines()
+        .iter()
+        .filter(|l| !common::animation_warning(l))
+        .cloned()
+        .collect()
 }
 
 #[test]
