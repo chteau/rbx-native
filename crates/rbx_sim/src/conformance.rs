@@ -714,6 +714,21 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/CsgApi.luau"),
         tolerance: &[("*", 0.02)],
     },
+    Test {
+        name: "ScriptLimits",
+        source: include_str!("../conformance/tests/ScriptLimits.luau"),
+        tolerance: &[("stack_depth", 4.0), ("index_stack_depth", 4.0)],
+    },
+    Test {
+        name: "ProfilerApi",
+        source: include_str!("../conformance/tests/ProfilerApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "FrameOverrun",
+        source: include_str!("../conformance/tests/FrameOverrun.luau"),
+        tolerance: &[("after_stall_dts", 0.003), ("overrun_dts", 0.01)],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
@@ -854,6 +869,17 @@ pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
     let modules = std::iter::once(("Harness", HARNESS))
         .chain(selected(only).map(|(_, t)| (t.name, t.source)));
     for (name, source) in modules {
+        let module = child(dom, "ModuleScript", name, folder);
+        let _ = dom.set_property(module, "Source", Variant::String(source.into()));
+    }
+    // ScriptLimits' require cases: a cycle, a module that errors, one that
+    // returns nothing.
+    for (name, source) in [
+        ("LimitsCycleA", "return require(script.Parent.LimitsCycleB)"),
+        ("LimitsCycleB", "return require(script.Parent.LimitsCycleA)"),
+        ("LimitsBroken", "error(\"broken module\")"),
+        ("LimitsEmpty", "local x = 1"),
+    ] {
         let module = child(dom, "ModuleScript", name, folder);
         let _ = dom.set_property(module, "Source", Variant::String(source.into()));
     }
@@ -1259,13 +1285,43 @@ fn run(
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
     network: crate::link::Network,
 ) -> Result<BTreeMap<String, Value>, String> {
+    let (timed, rest): (Vec<String>, Vec<String>) = selected(only)
+        .map(|(_, t)| t.name.to_owned())
+        .partition(|name| WALL_CLOCK.contains(&name.as_str()));
+    let mut out = BTreeMap::new();
+    if !rest.is_empty() {
+        out = run_session(limit, &rest, PASSES, fetcher.clone(), false, network)?;
+    }
+    if !timed.is_empty() {
+        out.extend(run_session(limit, &timed, 1, fetcher, true, network)?);
+    }
+    Ok(out)
+}
+
+/// Tests of frames that overrun: they run in a session of their own, paced
+/// by the wall clock with the real 10 s script timeout, one pass (each
+/// stalls for 3 s of real time).
+const WALL_CLOCK: &[&str] = &["FrameOverrun"];
+
+fn run_session(
+    limit: f64,
+    only: &[String],
+    passes: u32,
+    fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
+    wall_clock: bool,
+    network: crate::link::Network,
+) -> Result<BTreeMap<String, Value>, String> {
     let mut dom = bare_place();
-    add_to(&mut dom, PASSES, only);
+    add_to(&mut dom, passes, only);
     dom.take_changes();
     let mut session = Session::new(dom)?;
     session.set_network(network);
     // A test's verdict mustn't hang on how loaded the machine is.
-    session.set_script_timeout(std::time::Duration::from_secs(86_400));
+    if wall_clock {
+        session.set_wall_clock(true);
+    } else {
+        session.set_script_timeout(std::time::Duration::from_secs(86_400));
+    }
     if let Some(fetcher) = fetcher {
         session.set_fetcher(fetcher);
     }

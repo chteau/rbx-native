@@ -36,6 +36,7 @@ pub mod offline_pack;
 pub mod ownership;
 pub mod physics;
 pub mod players;
+pub mod profile;
 mod scripts;
 pub mod session;
 mod sim;

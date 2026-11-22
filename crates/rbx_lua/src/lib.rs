@@ -24,6 +24,7 @@ pub mod pattern;
 pub mod pivot;
 pub mod plugin;
 mod printed;
+pub mod profiler;
 mod property;
 pub use property::clock;
 mod runtime;

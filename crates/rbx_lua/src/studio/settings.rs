@@ -165,7 +165,7 @@ impl SettingsObject {
     }
 }
 
-fn count_instances(ctx: &Ctx) -> usize {
+pub(crate) fn count_instances(ctx: &Ctx) -> usize {
     let dom = ctx.dom();
     let mut stack: Vec<_> = dom.root_refs().to_vec();
     let mut count = 0;

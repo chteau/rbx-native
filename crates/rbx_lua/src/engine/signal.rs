@@ -9,6 +9,7 @@ use mlua::{
 use rbx_dom::{Ref, Variant};
 
 use super::{engine, scheduler};
+use crate::output::LineKind;
 use crate::plugin::api::{Arg, UiId};
 use crate::plugin::arg;
 
@@ -273,9 +274,69 @@ pub(crate) fn fire_from_script(lua: &Lua, key: &SignalKey, args: MultiValue) -> 
         return deliver(lua, key, args, None);
     }
     for (_, func) in take_listeners(lua, key, None) {
-        scheduler::defer(lua, func, args.clone())?;
+        if let Some(depth) = handler_depth(lua, key, None, &func) {
+            scheduler::defer_handler(lua, func, args.clone(), (key.clone(), depth))?;
+        }
     }
     Ok(())
+}
+
+/// Roblox stops a chain of handlers that each fire their own event again
+/// at this many (ScriptLimits: a `BindableEvent` firing itself from its
+/// handler, an `IntValue` setting itself from `Changed`).
+const EVENT_DEPTH: u32 = 6;
+
+/// How deep in a chain of handlers re-firing `key` a handler of it run now
+/// would be: `None`, with the error Roblox reports, past [`EVENT_DEPTH`].
+/// A firing replayed from the change log (`change`) counts the rounds the
+/// event fired in back to back, any other the handler running now.
+fn handler_depth(lua: &Lua, key: &SignalKey, change: Option<u64>, func: &Function) -> Option<u32> {
+    let engine = engine(lua);
+    let mut scheduler = engine.scheduler.borrow_mut();
+    let depth = match change {
+        Some(_) => scheduler.rounds[0].get(key).map_or(1, |d| d + 1),
+        None => match &scheduler.event {
+            Some((running, depth)) if running == key => depth + 1,
+            _ => 1,
+        },
+    };
+    if depth <= EVENT_DEPTH {
+        if change.is_some() {
+            let seen = scheduler.rounds[1].entry(key.clone()).or_insert(depth);
+            *seen = (*seen).max(depth);
+        }
+        return Some(depth);
+    }
+    drop(scheduler);
+    let class = match &key.owner {
+        Owner::Instance(referent) => engine
+            .ctx
+            .dom()
+            .get(*referent)
+            .map_or_else(String::new, |i| i.class().to_owned()),
+        Owner::Service(class) => (*class).to_owned(),
+        _ => String::new(),
+    };
+    let event = key.event.split(':').next().unwrap_or_default();
+    let info = func.info();
+    let what = match info.name {
+        Some(name) => format!("function {name}"),
+        None => "anonymous function".to_owned(),
+    };
+    let script = info
+        .source
+        .as_deref()
+        .unwrap_or_default()
+        .trim_start_matches('=');
+    engine.host.output(
+        LineKind::Error,
+        format!(
+            "Maximum event re-entrancy depth exceeded for {class}.{event} when calling {what} on \
+             line {} in {script}",
+            info.line_defined.unwrap_or(0)
+        ),
+    );
+    None
 }
 
 /// Runs the handlers at the next resumption point whatever
@@ -337,8 +398,11 @@ fn deliver(lua: &Lua, key: &SignalKey, args: MultiValue, change: Option<u64>) ->
                 .get(key)
                 .is_some_and(|list| list.iter().any(|c| c.id == id))
         });
-        if connected {
-            scheduler::spawn(lua, func, args.clone())?;
+        if !connected {
+            continue;
+        }
+        if let Some(depth) = handler_depth(lua, key, change, &func) {
+            scheduler::spawn_handler(lua, func, args.clone(), (key.clone(), depth))?;
         }
     }
     Ok(())

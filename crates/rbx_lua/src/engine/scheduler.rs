@@ -83,6 +83,18 @@ pub(crate) struct Scheduler {
     /// Each script's main thread: once the script is destroyed the thread
     /// never resumes, as a destroyed script stops in Roblox.
     pub(crate) owners: Vec<(Thread, rbx_dom::Ref)>,
+    /// How deep in a chain of `task.defer` calls each queued thread is.
+    defer_depth: HashMap<usize, u32>,
+    /// The depth of the deferred thread running now, 0 for any other.
+    depth: u32,
+    /// The event whose handler is running now and how deep in a chain of
+    /// handlers re-firing it (see `signal::EVENT_DEPTH`).
+    pub(crate) event: Option<(super::signal::SignalKey, u32)>,
+    /// The same for each queued deferred handler thread.
+    pub(crate) event_depth: HashMap<usize, (super::signal::SignalKey, u32)>,
+    /// The depth each event fired at in the last and in this round of
+    /// instance events replayed from the change log.
+    pub(crate) rounds: [HashMap<super::signal::SignalKey, u32>; 2],
 }
 
 impl Scheduler {
@@ -133,7 +145,23 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
 
     let wait = yielding(
         lua,
-        lua.create_function(|lua, seconds: Option<f64>| Ok(sleep(lua, seconds.unwrap_or(0.0))))?,
+        lua.create_function(|lua, seconds: Value| {
+            let seconds = match &seconds {
+                Value::Nil => 0.0,
+                Value::Integer(n) => *n as f64,
+                Value::Number(n) => *n,
+                other => other
+                    .as_string()
+                    .and_then(|s| s.to_str().ok()?.trim().parse::<f64>().ok())
+                    .ok_or_else(|| {
+                        mlua::Error::runtime(format!(
+                            "invalid argument #1 to 'wait' (number expected, got {})",
+                            other.type_name()
+                        ))
+                    })?,
+            };
+            Ok(sleep(lua, seconds))
+        })?,
     )?;
     task.set("wait", wait.clone())?;
     globals.set("wait", wait)?;
@@ -149,11 +177,26 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
         "defer",
         lua.create_function(|lua, (target, args): (Value, MultiValue)| {
             let (thread, args) = prepare(lua, target, args)?;
-            engine(lua)
-                .scheduler
-                .borrow_mut()
-                .deferred
-                .push_back((thread.clone(), args));
+            let engine = engine(lua);
+            let depth = engine.scheduler.borrow().depth + 1;
+            // A chain of threads deferring the next stops at 80: the call
+            // is reported (not raised) and the thread never runs (the
+            // ScriptLimits golden).
+            if depth > DEFER_DEPTH {
+                engine.host.output(
+                    LineKind::Error,
+                    format!(
+                        "Maximum re-entrancy depth ({DEFER_DEPTH}) exceeded calling task.defer\n{}",
+                        roblox_stack(lua)
+                    ),
+                );
+                return Ok(thread);
+            }
+            let mut scheduler = engine.scheduler.borrow_mut();
+            scheduler
+                .defer_depth
+                .insert(thread.to_pointer() as usize, depth);
+            scheduler.deferred.push_back((thread.clone(), args));
             Ok(thread)
         })?,
     )?;
@@ -261,6 +304,50 @@ pub(crate) fn defer(lua: &Lua, func: Function, args: MultiValue) -> Result<()> {
     Ok(())
 }
 
+/// [`defer`] for a handler of `event`, `depth` deep in a chain of handlers
+/// re-firing it.
+pub(crate) fn defer_handler(
+    lua: &Lua,
+    func: Function,
+    args: MultiValue,
+    event: (super::signal::SignalKey, u32),
+) -> Result<()> {
+    let (thread, args) = prepare(lua, Value::Function(func), args)?;
+    let engine = engine(lua);
+    let mut scheduler = engine.scheduler.borrow_mut();
+    scheduler
+        .event_depth
+        .insert(thread.to_pointer() as usize, event);
+    scheduler.deferred.push_back((thread, args));
+    Ok(())
+}
+
+/// [`spawn`] for a handler of `event` (see [`defer_handler`]).
+pub(crate) fn spawn_handler(
+    lua: &Lua,
+    func: Function,
+    args: MultiValue,
+    event: (super::signal::SignalKey, u32),
+) -> Result<()> {
+    let engine = engine(lua);
+    let outer = engine.scheduler.borrow_mut().event.replace(event);
+    let spawned = spawn(lua, func, args);
+    engine.scheduler.borrow_mut().event = outer;
+    spawned
+}
+
+/// Starts a new round of instance events replayed from the change log.
+pub(crate) fn next_round(lua: &Lua) {
+    let engine = engine(lua);
+    let mut scheduler = engine.scheduler.borrow_mut();
+    scheduler.rounds[0] = std::mem::take(&mut scheduler.rounds[1]);
+}
+
+/// Forgets the rounds, at the start of a resumption point.
+pub(crate) fn reset_rounds(lua: &Lua) {
+    engine(lua).scheduler.borrow_mut().rounds = Default::default();
+}
+
 /// The script timeout's deadline, which the VM's interrupt reads: as in
 /// Roblox, each resumption of a script thread gets the whole budget, and a
 /// thread that runs past it dies alone, the threads after it still run.
@@ -305,13 +392,18 @@ const INTERNAL_CHUNKS: &[&str] = &[
     "services",
 ];
 
+/// Whether `chunk` is one of the engine's own (see [`INTERNAL_CHUNKS`]) or
+/// mlua's.
+pub(crate) fn internal_chunk(chunk: &str) -> bool {
+    INTERNAL_CHUNKS.contains(&chunk) || chunk.starts_with("__mlua")
+}
+
 fn report(lua: &Lua, text: String) {
     let text = text
         .lines()
         .filter(|line| {
             !line.split_once(':').is_some_and(|(chunk, rest)| {
-                (INTERNAL_CHUNKS.contains(&chunk) || chunk.starts_with("__mlua"))
-                    && rest.starts_with(|c: char| c.is_ascii_digit())
+                internal_chunk(chunk) && rest.starts_with(|c: char| c.is_ascii_digit())
             })
         })
         .collect::<Vec<_>>()
@@ -575,10 +667,59 @@ pub(crate) fn sleep(lua: &Lua, seconds: f64) -> AwaitId {
 }
 
 /// How many times one [`tick`] goes back to the deferred queue for what the
-/// threads it resumed deferred in turn, Roblox's re-entrancy depth for
-/// deferred events. A thread that keeps deferring itself waits for the
-/// next tick past that.
-const DEFER_ROUNDS: usize = 10;
+/// threads it resumed deferred in turn: a whole `task.defer` chain runs in
+/// one frame on a real server (ScriptLimits: 80 in the first frame). A
+/// thread that keeps yielding at its top level waits for the next tick
+/// past that.
+const DEFER_ROUNDS: usize = DEFER_DEPTH as usize + 1;
+
+/// How long a chain of `task.defer` calls (each from a thread the last one
+/// deferred) may grow.
+const DEFER_DEPTH: u32 = 80;
+
+/// The running thread's script frames, innermost first: the script's full
+/// name, the line, the function's name.
+pub(crate) fn script_frames(lua: &Lua) -> Vec<(String, Option<usize>, Option<String>)> {
+    let mut frames = Vec::new();
+    for level in 1.. {
+        let Some(frame) = lua.inspect_stack(level, |debug| {
+            let source = debug.source();
+            let name = debug.names().name.map(|n| n.into_owned());
+            (
+                source.what,
+                source.source.map(|s| s.into_owned()).unwrap_or_default(),
+                debug.current_line(),
+                name,
+            )
+        }) else {
+            break;
+        };
+        let (what, source, line, name) = frame;
+        let Some(script) = source.strip_prefix('=') else {
+            continue;
+        };
+        if what == "C" || internal_chunk(script) {
+            continue;
+        }
+        frames.push((script.to_owned(), line, name));
+    }
+    frames
+}
+
+/// The running thread's stack as Roblox lays one out under an engine
+/// error: `Script '<full name>', Line N - function f` per Luau frame.
+pub(crate) fn roblox_stack(lua: &Lua) -> String {
+    let mut lines = vec!["    Stack Begin".to_owned()];
+    for (script, line, name) in script_frames(lua) {
+        let mut text = format!("    Script '{script}', Line {}", line.unwrap_or(0));
+        if let Some(name) = name {
+            text += &format!(" - function {name}");
+        }
+        lines.push(text);
+    }
+    lines.push("    Stack End".to_owned());
+    lines.join("\n")
+}
 
 /// Resolves due timers, runs `task.delay` functions whose time came, then
 /// the deferred queue, as Roblox ends a resumption cycle: what those
@@ -650,7 +791,18 @@ pub(crate) fn run_deferred(lua: &Lua) -> Result<()> {
             break;
         }
         for (thread, args) in deferred {
-            resume(lua, thread, args)?;
+            let key = thread.to_pointer() as usize;
+            {
+                let mut scheduler = engine.scheduler.borrow_mut();
+                scheduler.depth = scheduler.defer_depth.remove(&key).unwrap_or(0);
+                scheduler.event = scheduler.event_depth.remove(&key);
+            }
+            let resumed = resume(lua, thread, args);
+            let mut scheduler = engine.scheduler.borrow_mut();
+            scheduler.depth = 0;
+            scheduler.event = None;
+            drop(scheduler);
+            resumed?;
         }
         deferred = engine.scheduler.borrow_mut().deferred.drain(..).collect();
     }

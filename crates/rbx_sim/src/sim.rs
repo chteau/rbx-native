@@ -98,7 +98,16 @@ pub struct Simulation {
     stream: Option<Vec<(u64, Change)>>,
     /// Parts another peer simulates that a script here moved.
     overruled: Vec<Ref>,
+    /// What the last step cost (see [`Simulation::take_costs`]).
+    costs: crate::profile::Costs,
+    /// See [`Simulation::set_wall_clock`].
+    wall_clock: bool,
+    /// How long the last step took, when it overran its frame.
+    overran: Option<f64>,
 }
+
+/// The most frames the world catches up after a frame that overran.
+const CATCH_UP: u64 = 3;
 
 impl Simulation {
     pub fn new(dom: WeakDom) -> Result<Self, String> {
@@ -130,7 +139,31 @@ impl Simulation {
             role: Role::Server,
             stream: None,
             overruled: Vec::new(),
+            costs: Default::default(),
+            wall_clock: false,
+            overran: None,
         })
+    }
+
+    /// What the steps since the last call cost: time in Luau and physics,
+    /// the whole steps, and the `debug.profilebegin` scopes that closed.
+    pub fn take_costs(&mut self) -> crate::profile::Costs {
+        let mut costs = std::mem::take(&mut self.costs);
+        let profiler = self.vm.profiler();
+        let mut profiler = profiler.borrow_mut();
+        costs.script = profiler.take_script_time();
+        costs.labels = profiler.take_labels();
+        costs
+    }
+
+    /// This peer's ScriptProfiler and memory categories.
+    pub fn profiler(&self) -> std::rc::Rc<std::cell::RefCell<rbx_lua::profiler::Profiler>> {
+        self.vm.profiler()
+    }
+
+    /// The Lua heap of this peer's scripts, in bytes.
+    pub fn heap_bytes(&self) -> usize {
+        self.vm.heap_bytes()
     }
 
     pub fn role(&self) -> Role {
@@ -931,6 +964,7 @@ impl Simulation {
     /// `task.delay`), `Heartbeat`, the step's `Touched`/`TouchEnded`
     /// (after `Heartbeat`: the TouchedOrder golden), the deferred queue.
     pub fn step(&mut self) {
+        let step_started = std::time::Instant::now();
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
         // A client lays its GUI out once what replication brought is in,
@@ -938,9 +972,18 @@ impl Simulation {
         if self.inputs.is_some() {
             self.gui_layout();
         }
-        let dt = 1.0 / FRAME_HZ;
+        // After a frame that overran (wall clock pacing only), the step
+        // the events report is the frame's real length, while the world
+        // moves on at most `CATCH_UP` frames: the rest is skipped (the
+        // FrameOverrun golden: a 2 s stall reports dt 2.0, time() and
+        // physics move 0.05 s).
+        let (dt, frames) = match self.overran.take() {
+            Some(wall) => (wall, ((wall * FRAME_HZ).round() as u64).clamp(1, CATCH_UP)),
+            None => (1.0 / FRAME_HZ, 1),
+        };
+        let world_dt = frames as f64 / FRAME_HZ;
         let started = self.time();
-        self.frame += 1;
+        self.frame += frames;
         let now = self.time();
         self.vm.set_time(now);
         // `Workspace.DistributedGameTime`: the server's game time, which
@@ -960,15 +1003,20 @@ impl Simulation {
         // Tweens step first (TweenRuntime `phase`: a tween played after
         // Heartbeat has moved by PreAnimation, on a client by
         // PreSimulation after its render step).
-        let changes = self.vm.tween_step(dt);
+        let changes = self.vm.tween_step(world_dt);
         self.apply(changes);
-        self.sound_step(dt);
+        self.sound_step(world_dt);
         self.fire(Event::RunService("PreAnimation", vec![dt]));
-        self.animate(dt);
+        self.animate(world_dt);
         self.fire(Event::RunService("Stepped", vec![started, dt]));
         self.fire(Event::RunService("PreSimulation", vec![dt]));
 
-        let touches = self.physics_step();
+        let physics_started = std::time::Instant::now();
+        let mut touches = Vec::new();
+        for _ in 0..frames {
+            touches.extend(self.physics_step());
+        }
+        self.costs.physics += physics_started.elapsed();
 
         self.fire(Event::RunService("PostSimulation", vec![dt]));
         self.resume();
@@ -977,6 +1025,19 @@ impl Simulation {
         self.resume();
         self.collect_output();
         self.client_frame(dt);
+        let wall = step_started.elapsed();
+        self.costs.total += wall;
+        if self.wall_clock && wall.as_secs_f64() > 1.0 / FRAME_HZ {
+            self.overran = Some(wall.as_secs_f64());
+        }
+    }
+
+    /// Frames paced by the wall clock, as in the editor: a frame scripts
+    /// make overrun stretches the next one's step (see [`Self::step`]).
+    /// Off for headless runs, whose frames are all 1/60 s.
+    pub fn set_wall_clock(&mut self, on: bool) {
+        self.wall_clock = on;
+        self.overran = None;
     }
 
     /// `game:IsLoaded()`; turning it on fires `game.Loaded`.

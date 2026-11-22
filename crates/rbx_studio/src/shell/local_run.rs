@@ -656,6 +656,9 @@ impl Shell {
             }
         };
         session.set_network(local_network(&self.play.network.applied.conditions));
+        // A frame scripts overrun stretches the next one's step, as on a
+        // real server.
+        session.set_wall_clock(true);
         session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
             rbx_cloud::ApiKey::from_env_or_config(),
         ))));
@@ -1087,6 +1090,8 @@ impl Shell {
         if due > steps {
             run.clock = run.session.time();
         }
+        // What showing the frame costs the editor, the profiler's render.
+        let render_started = Instant::now();
         run.prompts.extend(run.session.take_prompts());
         let teleports = run.session.take_teleports();
         if let Some(teleport) = teleports.into_iter().next() {
@@ -1263,7 +1268,15 @@ impl Shell {
                 self.rebuild_explorer(cx);
             }
         }
+        if let Some(run) = self.play.live.local.running.as_mut() {
+            run.session.set_render_time(render_started.elapsed());
+        }
         cx.notify();
+    }
+
+    /// The running Local Run session, for the MicroProfiler dock.
+    pub(crate) fn local_run_session(&self) -> Option<&rbx_sim::Session> {
+        self.play.live.local.running.as_ref().map(|r| &r.session)
     }
 
     /// Edits made to the shown copy during the run: written into the

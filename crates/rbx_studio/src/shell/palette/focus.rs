@@ -51,6 +51,7 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::Loren
         | Panel::AvatarSettings
         | Panel::Localization
+        | Panel::MicroProfiler
         | Panel::Plugin(_) => None,
     }
 }
