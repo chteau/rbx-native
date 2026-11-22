@@ -3,6 +3,8 @@
 
 use rbx_dom::Variant;
 
+mod look;
+
 use super::{
     at, content, float, rgb, tilted_x, udim2, Builder, Scene, BALL, BLOCK, CYLINDER, PLASTIC, WEDGE,
 };
@@ -946,6 +948,7 @@ pub fn scenes() -> Vec<Scene> {
         },
     ]
     .into_iter()
+    .chain(look::scenes())
     .chain(tone_scenes())
     .chain(falloff_scenes(false))
     .chain(falloff_scenes(true))

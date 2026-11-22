@@ -215,9 +215,10 @@ struct Mapped {
 }
 
 /// How much of Plastic's normal map reaches the shading: the real client's
-/// plastic is nearly flat past a few studs, and the whole map read as a
-/// visible grain over every grey part (the Local Run side-by-sides).
-const PLASTIC_GRAIN: f32 = 0.4;
+/// plastic shows no grain from a few studs away (the `noob` fidelity scene:
+/// a torso 8 studs off and the floor around it carry 0.04 and 0.06 grey
+/// levels of fine detail there against 1.9 and 0.95 at 0.4 here).
+const PLASTIC_GRAIN: f32 = 0.03;
 
 /// Plastic's normal: its map's tilt scaled down to [`PLASTIC_GRAIN`].
 fn plastic_normal(mapped: Mapped) -> vec3<f32> {
