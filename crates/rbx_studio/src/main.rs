@@ -332,6 +332,7 @@ fn main() {
         verbose,
         configure: None,
         settings_only: false,
+        test_peer: false,
     };
 
     // Everything read from the config directory beyond `settings.json`, in one

@@ -898,7 +898,39 @@ impl Shell {
     /// Studio's "Current: Client / Server" switch: which game tree the
     /// Explorer and Properties show while a test runs.
     fn view_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        use super::local_run::windows::Role;
         use super::play::live::View;
+        // Server & Clients: the Server window can show the first player's
+        // client; a player window shows its own.
+        match self.local_run_role() {
+            Some(Role::Server { client_view }) => {
+                let (icon, label) = if client_view {
+                    (IconName::Globe, "Current: Client")
+                } else {
+                    (IconName::Server, "Current: Server")
+                };
+                return tile(&self.ribbon_nav, "ribbon-view", icon, label, cx)
+                    .tooltip(|window, cx| {
+                        super::tooltip::text(
+                            "Switch this window between the server and Player1's client.",
+                            window,
+                            cx,
+                        )
+                    })
+                    .on_click(
+                        cx.listener(|shell, _, _, cx| shell.local_run_toggle_server_view(cx)),
+                    );
+            }
+            Some(Role::Player) => {
+                return unavailable_tile(
+                    "ribbon-view",
+                    IconName::Globe,
+                    "Client",
+                    "a player's window shows their client; the Server window shows the server",
+                );
+            }
+            _ => {}
+        }
         // Play (local): the server, then each local player's client.
         if let Some((peer, label)) = self.local_run_view() {
             let icon = match peer {
@@ -1074,6 +1106,34 @@ impl Shell {
                 "turn on the Local Run beta in Settings",
             )
         };
+        let server_clients = if local_beta && idle && !local_active {
+            live_stack_row(
+                nav,
+                "ribbon-server-clients",
+                IconName::Users,
+                "Server & Clients",
+                cx,
+            )
+            .tooltip(|window, cx| {
+                super::tooltip::text(
+                    "Start a local server and Test \u{203a} Players test players, each in a window of their own, as Studio's Server & Clients does.",
+                    window,
+                    cx,
+                )
+            })
+            .on_click(cx.listener(|shell, _, _, cx| shell.server_and_clients(cx)))
+        } else {
+            unavailable_row(
+                "ribbon-server-clients",
+                IconName::Users,
+                "Server & Clients",
+                if local_beta {
+                    "a test is already running"
+                } else {
+                    "turn on the Local Run beta in Settings"
+                },
+            )
+        };
         let pause = if local_active {
             let paused = self.local_run_paused();
             live_stack_row(nav, "ribbon-pause", IconName::Pause, "Pause", cx)
@@ -1139,7 +1199,13 @@ impl Shell {
                 "run the place locally first",
             )
         };
-        let stop = if local_active {
+        let stop = if self.local_run_role().is_some() {
+            tile(nav, "ribbon-stop", IconName::Square, "End Session", cx)
+                .tooltip(|window, cx| {
+                    super::tooltip::text("Close the server and all client windows.", window, cx)
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
+        } else if local_active {
             tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
                 .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
         } else if idle {
@@ -1170,7 +1236,7 @@ impl Shell {
             // rows in an 80px ribbon are ~25px each, and Stop is the control a
             // person reaches for in a hurry.
             stack(vec![play_local, run]).into_any_element(),
-            stack(vec![pause]).into_any_element(),
+            stack(vec![server_clients, pause]).into_any_element(),
             stack(vec![replay, save_recording]).into_any_element(),
             primary("ribbon-stop", stop).into_any_element(),
             invite.into_any_element(),
@@ -1191,13 +1257,43 @@ impl Shell {
     /// Test › Players: how many local players the next Play (local)
     /// starts, 1 to 4; a click counts up and wraps.
     fn players_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        use super::local_run::windows::Role;
+        const LABELS: [&str; super::local_run::MAX_PLAYERS] = [
+            "1 Player",
+            "2 Players",
+            "3 Players",
+            "4 Players",
+            "5 Players",
+            "6 Players",
+            "7 Players",
+            "8 Players",
+        ];
         let count = self.play.live.local.players;
-        let label = match count {
-            1 => "1 Player",
-            2 => "2 Players",
-            3 => "3 Players",
-            _ => "4 Players",
-        };
+        let label = LABELS[count.clamp(1, LABELS.len()) - 1];
+        // Server & Clients: a player window's Exit, Add Clients elsewhere.
+        match self.local_run_role() {
+            Some(Role::Player) => {
+                return tile(&self.ribbon_nav, "ribbon-players", IconName::LogOut, "Exit", cx)
+                    .tooltip(|window, cx| {
+                        super::tooltip::text("Exit client window.", window, cx)
+                    })
+                    .on_click(cx.listener(|shell, _, _, cx| shell.local_run_exit_client(cx)));
+            }
+            Some(_) => {
+                return tile(
+                    &self.ribbon_nav,
+                    "ribbon-players",
+                    IconName::UserPlus,
+                    "Add Client",
+                    cx,
+                )
+                .tooltip(|window, cx| {
+                    super::tooltip::text("Add a client to the current session.", window, cx)
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_add_client(cx)));
+            }
+            None => {}
+        }
         if !crate::beta::enabled(super::local_run::BETA_ID) {
             return unavailable_tile(
                 "ribbon-players",
@@ -1207,11 +1303,16 @@ impl Shell {
             );
         }
         if let Some(count) = self.local_run_player_count().filter(|n| *n > 1) {
-            let label = match count {
-                2 => "Players: 2",
-                3 => "Players: 3",
-                _ => "Players: 4",
-            };
+            const RUNNING: [&str; super::local_run::MAX_PLAYERS - 1] = [
+                "Players: 2",
+                "Players: 3",
+                "Players: 4",
+                "Players: 5",
+                "Players: 6",
+                "Players: 7",
+                "Players: 8",
+            ];
+            let label = RUNNING[count.clamp(2, RUNNING.len() + 1) - 2];
             return tile(
                 &self.ribbon_nav,
                 "ribbon-players",
@@ -1241,7 +1342,7 @@ impl Shell {
         )
         .tooltip(|window, cx| {
             super::tooltip::text(
-                "Local players for Play (local), each with a client of their own. Click to change.",
+                "Local players for Play (local) and Server & Clients, each with a client of their own. Click to change.",
                 window,
                 cx,
             )

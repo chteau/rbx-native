@@ -220,6 +220,9 @@ impl Shell {
                 divergence: first,
                 seek: None,
             }),
+            windowed: false,
+            windows: Vec::new(),
+            audible: None,
         });
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);

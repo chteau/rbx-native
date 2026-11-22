@@ -1152,8 +1152,11 @@ impl Shell {
         // Settings opened from Home: Account still reads the sign-in, but
         // nothing that acts on a place, or announces one, starts.
         let live = !launch.settings_only;
-        if discord_presence_enabled && live {
+        if discord_presence_enabled && live && !launch.test_peer {
             shell.start_discord();
+        }
+        if launch.test_peer {
+            return shell;
         }
         // Reads the stored Roblox sign-in, then starts the pulse if enabled.
         shell.restore_roblox_session(cx);
@@ -2186,6 +2189,11 @@ impl Shell {
         div()
             .relative()
             .size_full()
+            // A Server & Clients window's view is framed as Studio frames
+            // it: green for the server's, blue for a client's.
+            .when_some(self.local_run_frame(), |this, color| {
+                this.border_2().border_color(color)
+            })
             .child(self.viewport.clone())
             .child(measure)
             .children(self.plugin_viewport_overlays(cx))
@@ -2405,8 +2413,11 @@ impl Render for Shell {
             .children(self.command_palette(cx))
             .children(self.floating_widget_overlays(window, cx))
             .children(plugin_dialogs)
-            .children(crate::updater::toast(cx))
-            .children(crate::crash_log::notice(cx))
+            // App-wide notices stay in the editor, not in a test window.
+            .when(self.play.live.local.peer.is_none(), |this| {
+                this.children(crate::updater::toast(cx))
+                    .children(crate::crash_log::notice(cx))
+            })
             .children(self.theme_background(true))
     }
 }
