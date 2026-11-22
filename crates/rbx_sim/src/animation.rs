@@ -237,7 +237,9 @@ impl Animations {
             .get(animation)
             .map(|i| i.name().to_owned())
             .unwrap_or_default();
+        // A track has no parent: in no tree, so no Explorer lists it.
         let track = dom.new_instance("AnimationTrack", &name, None);
+        dom.unparent(track);
         set(dom, db, track, "Animation", Variant::Ref(animation));
         self.tracks.insert(
             track,
