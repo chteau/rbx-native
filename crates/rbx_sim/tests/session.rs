@@ -915,3 +915,52 @@ fn a_drag_detector_crate_and_a_ui_drag_detector_follow_the_mouse() {
         "{lines:#?}"
     );
 }
+
+#[test]
+fn the_client_joins_after_the_servers_first_frames() {
+    let mut s = Session::new(place(
+        "task.delay(0.1, function() workspace:SetAttribute('Mark', true) end) \
+             local p = game:GetService('Players').PlayerAdded:Wait() \
+             print('joined', time() >= 1.5)",
+        "print('client sees', workspace:GetAttribute('Mark'))",
+    ))
+    .unwrap();
+    s.set_join_after(rbx_sim::JOIN_AFTER);
+    s.start();
+    s.join("Player1", 1, None).unwrap();
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "joined true"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "client sees true"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn a_tool_given_on_character_added_stays_in_the_backpack() {
+    let mut dom = place(
+        "local tool = game:GetService('ServerScriptService'):WaitForChild('Kept') \
+         game:GetService('Players').PlayerAdded:Connect(function(player) \
+           player.CharacterAdded:Connect(function() tool.Parent = player.Backpack end) end)",
+        "local bp = game:GetService('Players').LocalPlayer:WaitForChild('Backpack') \
+         local t = bp:WaitForChild('Kept', 3) print('client has', t ~= nil, t and t:FindFirstChild('Handle') ~= nil)",
+    );
+    let sss = service(&dom, "ServerScriptService");
+    let tool = dom.new_instance("Tool", "Kept", Some(sss));
+    dom.new_instance("Part", "Handle", Some(tool));
+    dom.take_changes();
+    let mut s = session(dom, 1);
+    let mut lines = Vec::new();
+    for _ in 0..240 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(
+        has(&lines, Peer::Client(0), "client has true true"),
+        "{lines:#?}"
+    );
+}

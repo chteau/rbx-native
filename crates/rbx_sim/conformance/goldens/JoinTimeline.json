@@ -1,0 +1,26 @@
+{
+  "status": "recorded",
+  "source": "real Roblox server, place 3086963177 version 642, joined with Sober",
+  "passes": 1,
+  "result": {
+    "character_after_join_s": 0.43,
+    "client_sees_early_mark_when_loaded": true,
+    "player_added_s": 1.63,
+    "server_beats_before_join": 97.0,
+    "server_ran_before_join": true
+  },
+  "spread": {
+    "character_after_join_s": 0.0,
+    "player_added_s": 0.0,
+    "server_beats_before_join": 0.0
+  },
+  "raw": [
+    {
+      "server_ran_before_join": true,
+      "server_beats_before_join": 97,
+      "client_sees_early_mark_when_loaded": true,
+      "character_after_join_s": 0.43,
+      "player_added_s": 1.63
+    }
+  ]
+}

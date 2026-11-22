@@ -640,8 +640,9 @@ impl Players {
     }
 
     /// The second: the old character leaves (destroyed on the next frame),
-    /// the new one is built, unparented, and becomes `Character`; then
-    /// `CharacterAdded` (PlayersCharacter `added:nil`).
+    /// the new one is built, unparented, and becomes `Character`, the new
+    /// `Backpack` is filled; then `CharacterAdded` (PlayersCharacter
+    /// `added:nil`), whose handlers give tools into that `Backpack`.
     pub fn build(
         &mut self,
         dom: &mut WeakDom,
@@ -655,6 +656,7 @@ impl Players {
         }
         let character = self.new_character(dom, db, &self.members[index]);
         set(dom, db, player, "Character", Variant::Ref(character));
+        self.refill_backpack(dom, player);
         Some((
             player,
             "CharacterAdded".into(),
@@ -699,7 +701,6 @@ impl Players {
             member.appearance.push((frame + 1, character));
             first = !std::mem::replace(&mut member.spawned, true);
         }
-        self.refill_backpack(dom, player);
         self.refill_gui(dom, db, player, first);
     }
 

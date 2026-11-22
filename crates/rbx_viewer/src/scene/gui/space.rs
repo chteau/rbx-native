@@ -259,14 +259,17 @@ fn read(
         true => {
             let size = span(properties, "Size");
             let origin = origin(context, adornee)?;
+            let half = half_extents(context, adornee);
             (
                 billboard_canvas(size),
                 Anchor::Billboard {
                     origin,
                     size: studs(size),
                     pixels: pixels(size),
-                    view_offset: vector3(properties, "StudsOffset"),
-                    world_offset: vector3(properties, "StudsOffsetWorldSpace"),
+                    view_offset: vector3(properties, "StudsOffset")
+                        + vector3(properties, "ExtentsOffset") * half,
+                    world_offset: vector3(properties, "StudsOffsetWorldSpace")
+                        + vector3(properties, "ExtentsOffsetWorldSpace") * half,
                     size_offset: vector2(properties, "SizeOffset"),
                 },
             )
@@ -385,6 +388,33 @@ fn origin(context: Context<'_>, adornee: Ref) -> Option<Vec3> {
         }
     }
     (low.x <= high.x).then(|| (low + high) / 2.0)
+}
+
+/// Half the adornee's world bounding box, what `ExtentsOffset` and
+/// `ExtentsOffsetWorldSpace` count in: (0, 1, 0) is the adornee's top.
+/// Nothing for an attachment.
+fn half_extents(context: Context<'_>, adornee: Ref) -> Vec3 {
+    let (mut low, mut high) = (Vec3::INFINITY, Vec3::NEG_INFINITY);
+    for part in crate::scene::descendants_of(context.dom, adornee) {
+        if let Some(placement) = context.placements.get(&part) {
+            // The matrix scales a unit cube to the part.
+            let m = placement.model;
+            let centre = m.w_axis.truncate();
+            let reach =
+                (m.x_axis.truncate().abs() + m.y_axis.truncate().abs() + m.z_axis.truncate().abs())
+                    / 2.0;
+            low = low.min(centre - reach);
+            high = high.max(centre + reach);
+            if part == adornee {
+                break;
+            }
+        }
+    }
+    if low.x <= high.x {
+        (high - low) / 2.0
+    } else {
+        Vec3::ZERO
+    }
 }
 
 fn vector3(properties: &BTreeMap<String, Variant>, name: &str) -> Vec3 {
