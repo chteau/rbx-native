@@ -49,7 +49,7 @@ impl Shell {
                 self.output.push(
                     "MCP server",
                     Feedback::Info(format!(
-                        "studio {} listening on 127.0.0.1:{}; connect a client with `rbxnative --mcp`",
+                        "studio {} listening on 127.0.0.1:{}; Settings \u{203a} AI assistants has the setup for each client",
                         server.endpoint().studio_id,
                         server.endpoint().port
                     )),

@@ -83,6 +83,7 @@ actions!(
         MenuQuit,
         MenuCustomizeShortcuts,
         MenuBetaFeatures,
+        MenuConnectAi,
         MenuScriptTemplates,
         MenuUndo,
         MenuRedo,
@@ -280,6 +281,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         // Studio keeps both of these under File as well.
         MenuItem::action("Customize Shortcuts…", MenuCustomizeShortcuts),
         MenuItem::action("Beta Features…", MenuBetaFeatures),
+        MenuItem::action("Connect an AI Assistant…", MenuConnectAi),
         MenuItem::action("Script Templates…", MenuScriptTemplates),
     ];
     if crate::beta::enabled(crate::update_planning::BETA_ID) {

@@ -254,6 +254,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuConnectAi, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_settings_on("ai", cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuRequireGraph, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_require_graph(cx));
         }

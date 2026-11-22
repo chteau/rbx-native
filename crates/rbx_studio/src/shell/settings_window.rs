@@ -1,5 +1,5 @@
 //! Studio Settings (`File › Studio Settings…`, `Alt+S`): every preference
-//! the editor keeps, on ten pages behind a nav, the way real Studio's own
+//! the editor keeps, on eleven pages behind a nav, the way real Studio's own
 //! `File > Studio Settings` gathers its preferences into one dialog.
 //! Keyboard shortcuts stay a window of their own, as real Studio's
 //! `File > Customize Shortcuts` is.
@@ -21,6 +21,7 @@ use crate::tokens;
 use super::toolbar::snap::NumberField;
 use super::Shell;
 
+mod ai;
 mod appearance;
 mod argon;
 mod beta;
@@ -71,6 +72,7 @@ pub(crate) struct SettingsWindow {
     argon: argon::ArgonControls,
     appearance: appearance::AppearanceControls,
     recovery: files_account::RecoveryControls,
+    ai: ai::AiControls,
     /// The colour popover, while open.
     picker: Option<appearance::Picker>,
     /// Where the Custom accent swatch was laid out, to open the popover
@@ -234,6 +236,7 @@ impl SettingsWindow {
             argon,
             appearance,
             recovery,
+            ai: ai::AiControls::new(),
             picker: None,
             custom_swatch: Default::default(),
             pending_picker: std::env::var("RBX_STUDIO_SETTINGS_PICKER")
@@ -281,6 +284,7 @@ impl SettingsWindow {
             Page::Argon => self.argon_page(window, cx),
             Page::Appearance => self.appearance_page(window, cx),
             Page::Account => self.account_page(cx),
+            Page::Ai => self.ai_page(cx),
             _ => Vec::new(),
         }
     }
