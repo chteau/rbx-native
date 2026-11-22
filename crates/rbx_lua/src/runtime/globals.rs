@@ -49,7 +49,7 @@ pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
     }
 
     install_graphemes(lua)?;
-    install_profiler_labels(lua)?;
+    crate::profiler::install(lua)?;
     install_error_strings(lua)
 }
 
@@ -63,22 +63,6 @@ pub(crate) fn install_shared(lua: &Lua) -> Result<(), LuaError> {
     globals.raw_set("shared", lua.create_table()?)?;
     globals.raw_set("_G", lua.create_table()?)?;
     globals.set_readonly(true);
-    Ok(())
-}
-
-/// `debug.profilebegin(label)` / `debug.profileend()`: Roblox's MicroProfiler
-/// scopes, and `debug.setmemorycategory` / `resetmemorycategory`: its
-/// memory tags. Nothing here times or tags anything.
-fn install_profiler_labels(lua: &Lua) -> Result<(), LuaError> {
-    let debug: mlua::Table = lua.globals().get("debug")?;
-    for name in [
-        "profilebegin",
-        "profileend",
-        "setmemorycategory",
-        "resetmemorycategory",
-    ] {
-        debug.set(name, lua.create_function(|_, _: Variadic<Value>| Ok(()))?)?;
-    }
     Ok(())
 }
 

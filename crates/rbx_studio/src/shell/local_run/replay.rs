@@ -209,6 +209,7 @@ impl Shell {
             last: Instant::now(),
             task: Some(task),
             playing: false,
+            joining: false,
             sound: super::sound::Mixer::new(self.viewport.read(cx).core_gui.volume),
             prompts: std::collections::VecDeque::new(),
             editables: rbx_dom::editable::generation(),

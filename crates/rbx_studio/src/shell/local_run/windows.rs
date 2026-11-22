@@ -24,7 +24,7 @@ use std::rc::Rc;
 
 use gpui_kit::component::Root;
 use gpui_kit::*;
-use rbx_dom::{Change, CFrameData, Ref, WeakDom};
+use rbx_dom::{CFrameData, Change, Ref, WeakDom};
 use rbx_lua::server::ChatLine;
 use rbx_sim::replay::Action;
 use rbx_sim::{MouseBehavior, Peer, Session, Simulation};
@@ -51,7 +51,9 @@ pub(crate) enum Role {
     /// The window that started it, on the edited place.
     Edit,
     /// `client_view`: showing the first player's client.
-    Server { client_view: bool },
+    Server {
+        client_view: bool,
+    },
     Player,
 }
 
@@ -244,26 +246,34 @@ impl Shell {
         true
     }
 
-    /// Opens the Server window and one per player, then shows each what
-    /// its peer printed while joining.
+    /// Opens the Server window and one per player already in, then shows
+    /// each what its peer printed so far.
     pub(super) fn local_run_open_windows(
         &mut self,
         output: Vec<(Peer, rbx_lua::Output)>,
         cx: &mut Context<Self>,
     ) {
-        let players: Vec<Ref> = self
-            .play
-            .live
-            .local
-            .running
-            .as_ref()
-            .map(|run| run.session.clients.iter().map(|c| c.player).collect())
-            .unwrap_or_default();
-        let homes = std::iter::once(Home::Server).chain(players.into_iter().map(Home::Player));
-        for home in homes {
-            self.local_run_open_window(home, cx);
-        }
+        self.local_run_open_window(Home::Server, cx);
+        self.local_run_open_player_windows(cx);
         self.local_run_route_rows(output, cx);
+    }
+
+    /// A window for each player who has none: the test players once they
+    /// joined.
+    pub(super) fn local_run_open_player_windows(&mut self, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_ref() else {
+            return;
+        };
+        let new: Vec<Ref> = run
+            .session
+            .clients
+            .iter()
+            .map(|c| c.player)
+            .filter(|p| !run.windows.iter().any(|w| w.home == Home::Player(*p)))
+            .collect();
+        for player in new {
+            self.local_run_open_window(Home::Player(player), cx);
+        }
     }
 
     fn local_run_open_window(&mut self, home: Home, cx: &mut Context<Self>) {
@@ -449,7 +459,9 @@ impl Shell {
             client_bursts.push(bursts(&mut client.sim));
         }
         // One client is heard: the one last played.
-        let audible = run.audible.and_then(|p| players.iter().position(|q| *q == p));
+        let audible = run
+            .audible
+            .and_then(|p| players.iter().position(|q| *q == p));
         let mut heard = false;
         for (i, client) in run.session.clients.iter().enumerate() {
             let audio = client.sim.take_audio();
@@ -562,7 +574,8 @@ impl Shell {
                 editables,
                 paused: run.paused,
             };
-            let (actions, menu_open) = shell.update(cx, |shell, cx| shell.local_run_show(shown, cx));
+            let (actions, menu_open) =
+                shell.update(cx, |shell, cx| shell.local_run_show_frame(shown, cx));
             if let (true, Some(player)) = (input, player) {
                 done.push((player, actions, menu_open));
             }
@@ -609,7 +622,11 @@ impl Shell {
 
     /// A test window shows one frame of its peer; what its player did in
     /// the core GUI, and whether its menu is open.
-    fn local_run_show(&mut self, shown: Shown, cx: &mut Context<Self>) -> (Vec<CoreAction>, bool) {
+    fn local_run_show_frame(
+        &mut self,
+        shown: Shown,
+        cx: &mut Context<Self>,
+    ) -> (Vec<CoreAction>, bool) {
         let Shown {
             dom,
             changes,

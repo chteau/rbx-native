@@ -49,6 +49,13 @@ const STREAM_KEEP: u64 = 303;
 /// Services whose contents a client never gets.
 const SERVER_ONLY: &[&str] = &["ServerStorage", "ServerScriptService"];
 
+/// How long a fresh server runs before the first player arrives: a real
+/// client joins once the server is up, so the server's first frames (a
+/// `task.wait` or two, the attributes it sets) have run by then. Live joins
+/// on the sandbox fired `PlayerAdded` 1.63 s and 3.28 s into the server's
+/// run (JoinTimeline).
+pub const JOIN_AFTER: f64 = 1.6;
+
 /// The origin a client gives the server's own track operations.
 const SERVER: Ref = Ref::new(u32::MAX);
 
@@ -244,6 +251,16 @@ pub struct Session {
     network: Network,
     /// Recording or replaying.
     pub(crate) trace: Option<Trace>,
+    wall_clock: bool,
+    /// The last frames' costs (see [`Session::frames`]).
+    profile: crate::profile::FrameLog,
+    frames: u64,
+    /// Server seconds a join waits for, see [`Session::set_join_after`].
+    join_after: f64,
+    /// Joins [`Session::join_later`] queued, made once `join_after` passed.
+    pending: Vec<(String, i64, Option<WeakDom>)>,
+    /// Why a queued join failed, not yet taken.
+    join_failures: Vec<String>,
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -270,9 +287,26 @@ fn copy_subtree(from: &WeakDom, root: Ref, into: &mut WeakDom, parent: Option<Re
     Some(made)
 }
 
+/// Roblox makes `StarterPlayer` with its two script folders in every
+/// DataModel, so a place saved without one still plays with its defaults
+/// (third person, Classic camera).
+fn add_starter_player(dom: &mut WeakDom) {
+    let has = dom
+        .root_refs()
+        .iter()
+        .any(|r| dom.get(*r).is_some_and(|i| i.class() == "StarterPlayer"));
+    if !has {
+        let starter = dom.new_instance("StarterPlayer", "StarterPlayer", None);
+        for class in ["StarterPlayerScripts", "StarterCharacterScripts"] {
+            dom.new_instance(class, class, Some(starter));
+        }
+    }
+}
+
 impl Session {
     /// A session over `dom`, the place as the server loads it.
-    pub fn new(dom: WeakDom) -> Result<Session, String> {
+    pub fn new(mut dom: WeakDom) -> Result<Session, String> {
+        add_starter_player(&mut dom);
         let mut server = Simulation::new(dom)?;
         server.make_server();
         // Clients copy the server's `Stats`, so their own items under it
@@ -292,6 +326,12 @@ impl Session {
             script_timeout: None,
             network: Network::default(),
             trace: None,
+            wall_clock: false,
+            profile: Default::default(),
+            frames: 0,
+            join_after: 0.0,
+            pending: Vec::new(),
+            join_failures: Vec::new(),
         })
     }
 
@@ -311,6 +351,12 @@ impl Session {
 
     pub fn network(&self) -> Network {
         self.network
+    }
+
+    /// Players join once the server has run `seconds` ([`JOIN_AFTER`] is
+    /// what a live join takes); 0, the default, joins them at once.
+    pub fn set_join_after(&mut self, seconds: f64) {
+        self.join_after = seconds;
     }
 
     /// Starts the server's scripts. Players join after.
@@ -429,7 +475,9 @@ impl Session {
     }
 
     /// A local player joins as `name`, wearing `template` or the default
-    /// character: the server adds their `Player`, and their client starts
+    /// character, once the server has run `join_after` seconds (see
+    /// [`Session::set_join_after`]): the server adds
+    /// their `Player`, and their client starts
     /// with `ReplicatedFirst` alone, its LocalScripts run; the rest comes
     /// on the session's next frame.
     pub fn join(
@@ -438,6 +486,9 @@ impl Session {
         user_id: i64,
         template: Option<WeakDom>,
     ) -> Result<usize, String> {
+        while self.server.time() < self.join_after {
+            self.step();
+        }
         let frame = self.server.frame();
         if let Some(trace) = self.trace.as_mut().filter(|t| t.recording()) {
             let template = template
@@ -499,6 +550,7 @@ impl Session {
         sim.make_client(index, player);
         network_items(&mut sim.dom_mut());
         sim.set_network_ping(self.network.ping());
+        sim.set_wall_clock(self.wall_clock);
         if let Some(timeout) = self.script_timeout {
             sim.set_script_timeout(timeout);
         }
@@ -563,9 +615,35 @@ impl Session {
         Ok(index)
     }
 
+    /// [`Session::join`] without the wait: the player joins on the first
+    /// [`Session::step`] the server starts at or after `join_after`, the
+    /// frame `join` would have joined them on, so a caller stepping in real
+    /// time (the editor) never runs the server's first seconds at once.
+    /// Joins queued together join in order.
+    pub fn join_later(&mut self, name: &str, user_id: i64, template: Option<WeakDom>) {
+        self.pending.push((name.into(), user_id, template));
+    }
+
+    /// Players queued by [`Session::join_later`] are still to join.
+    pub fn joining(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// Why queued joins failed, oldest first.
+    pub fn take_join_failures(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.join_failures)
+    }
+
     /// One frame: what the clients sent arrives at the server, the server
     /// steps, then each client gets the server's frame and steps.
     pub fn step(&mut self) {
+        if self.joining() && self.server.time() >= self.join_after {
+            for (name, user_id, template) in std::mem::take(&mut self.pending) {
+                if let Err(why) = self.join(&name, user_id, template) {
+                    self.join_failures.push(why);
+                }
+            }
+        }
         if let Some(trace) = &self.trace {
             trace.set_frame(self.server.frame());
         }
@@ -578,6 +656,7 @@ impl Session {
     }
 
     fn step_peers(&mut self) {
+        let step_started = std::time::Instant::now();
         self.relayed.clear();
         let now = self.server.frame();
         for client in &mut self.clients {
@@ -630,6 +709,7 @@ impl Session {
         let sent = self.server.frame();
         let stream = self.server.take_stream();
         let packets = self.server.take_outgoing();
+        let renamed = renamed_stats(&self.server.dom(), &stream);
         let ops = frame_ops(stream, packets);
         let mut moved = self.server.moved_parts_since(&mut self.moving);
         moved.extend(self.relayed.iter().copied());
@@ -655,6 +735,7 @@ impl Session {
         let rtt = network.ping();
         let server = &self.server;
         for client in &mut self.clients {
+            client.sim.renamed_stats.extend(renamed.iter().copied());
             let owned = server.ownership_mut().owned_by(client.player);
             // Paused, the client stops simulating its character.
             let paused = client.stream.as_ref().is_some_and(|s| s.paused);
@@ -730,6 +811,18 @@ impl Session {
         }
         self.meter(sent);
 
+        self.frames += 1;
+        let mut peers = vec![(Peer::Server, self.server.take_costs())];
+        for (index, client) in self.clients.iter_mut().enumerate() {
+            peers.push((Peer::Client(index), client.sim.take_costs()));
+        }
+        self.profile.push(crate::profile::frame(
+            self.frames,
+            step_started,
+            step_started.elapsed(),
+            peers,
+        ));
+
         let mut kicked = self.server.take_kicked();
         for client in &mut self.clients {
             kicked.extend(client.sim.take_kicked());
@@ -758,6 +851,18 @@ impl Session {
         }
         let [down, down_physics, up, up_physics] = server;
         write_rates(&self.server, [up, down, up_physics, down_physics]);
+    }
+
+    /// The last frames' costs, oldest first (see [`crate::profile`]).
+    pub fn frames(&self) -> &std::collections::VecDeque<crate::profile::FrameProfile> {
+        self.profile.frames()
+    }
+
+    /// The editor's time showing the last frame, the frame's render cost.
+    pub fn set_render_time(&mut self, render: std::time::Duration) {
+        if let Some(frame) = self.profile.last_mut() {
+            frame.render = render;
+        }
     }
 
     /// Local player `index` leaves: the server's `PlayerRemoving`, their
@@ -918,6 +1023,16 @@ impl Session {
             client.sim.set_script_timeout(timeout);
         }
         self.script_timeout = Some(timeout);
+    }
+
+    /// Wall clock pacing on the server and every client, those to come too
+    /// (see [`Simulation::set_wall_clock`]).
+    pub fn set_wall_clock(&mut self, on: bool) {
+        self.server.set_wall_clock(on);
+        for client in &mut self.clients {
+            client.sim.set_wall_clock(on);
+        }
+        self.wall_clock = on;
     }
 
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
@@ -1866,6 +1981,45 @@ fn network_items(dom: &mut WeakDom) {
     let network = dom.new_instance("StatsItem", "Network", Some(stats));
     let server = dom.new_instance("StatsItem", "ServerStatsItem", Some(network));
     dom.new_instance("StatsItem", "Data Ping", Some(server));
+}
+
+/// `leaderstats` values the server renamed once they were in their folder
+/// this frame (`Instance.new(class, folder)` then `.Name =`): a live client
+/// sees the rename arrive after the value, and its player list sorts those
+/// by name.
+fn renamed_stats(dom: &WeakDom, stream: &[(u64, Change)]) -> Vec<Ref> {
+    let mut parented: HashSet<Ref> = HashSet::new();
+    let mut renamed = Vec::new();
+    for (_, change) in stream {
+        match change {
+            Change::Parent {
+                referent: r,
+                new: Some(_),
+                ..
+            } => {
+                parented.insert(*r);
+            }
+            Change::Property { referent, name } if name == "Name" => {
+                let in_stats = dom
+                    .parent(*referent)
+                    .and_then(|p| dom.get(p))
+                    .is_some_and(|p| p.name() == "leaderstats");
+                // Named before it went in (a later move this frame): not
+                // a rename the client sees.
+                let moved_later = || {
+                    !parented.contains(referent)
+                        && stream.iter().any(|(_, c)| {
+                            matches!(c, Change::Parent { referent: r, new: Some(_), .. } if r == referent)
+                        })
+                };
+                if in_stats && !moved_later() {
+                    renamed.push(*referent);
+                }
+            }
+            _ => {}
+        }
+    }
+    renamed
 }
 
 /// The server's frame as one ordered list: its changes (each property once,

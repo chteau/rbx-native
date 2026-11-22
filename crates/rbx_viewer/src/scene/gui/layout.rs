@@ -130,6 +130,12 @@ pub(crate) struct Grouped {
 /// A running game's top bar, in GUI pixels.
 pub(crate) const TOPBAR_INSET: f32 = 58.0;
 
+/// Where the top bar's free strip (`GuiService.TopbarInset`) starts and how
+/// far it stops short of the right edge: right of the logo and the menu and
+/// chat buttons the core GUI draws, as `gui.luau` reports it.
+const TOPBAR_LEFT: f32 = 12.0 + 44.0 + 12.0 + 44.0 + 44.0 + 12.0;
+const TOPBAR_RIGHT: f32 = 12.0;
+
 /// The edges of a device's screen its cutouts and home indicator cover, in
 /// the same pixels as the viewport: what `ScreenInsets.DeviceSafeInsets`
 /// keeps a `ScreenGui` clear of. All zero for a desktop window.
@@ -189,6 +195,9 @@ pub(crate) fn resolve_inset<'a>(
     let mut elements = Vec::new();
     for screen in order {
         let frame = screen_frame(screen, viewport, insets);
+        let content = screen.padding.as_ref().map_or(frame, |padding| {
+            sizing::inset(&frame, &padding.against(frame.size()))
+        });
         let start = elements.len();
         children(
             Scope {
@@ -196,7 +205,7 @@ pub(crate) fn resolve_inset<'a>(
                 groups: &screen.groups,
                 layout: screen.list.as_ref(),
             },
-            &frame,
+            &content,
             None,
             Context {
                 global_z_index: screen.global_z_index,
@@ -227,6 +236,14 @@ pub(crate) fn resolve_inset<'a>(
 /// there and a `ScreenGui` with `IgnoreGuiInset` off sits at (0, 0). A
 /// running game's (`set_player_gui`) keeps such a screen 58 px down.
 pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2], insets: SafeInsets) -> Rect {
+    if screen.in_topbar {
+        return Rect {
+            x: TOPBAR_LEFT,
+            y: 0.0,
+            width: (viewport[0] - TOPBAR_LEFT - TOPBAR_RIGHT).max(0.0),
+            height: TOPBAR_INSET,
+        };
+    }
     let device = match screen.device_safe {
         true => insets,
         false => SafeInsets::default(),

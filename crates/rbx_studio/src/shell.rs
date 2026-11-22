@@ -93,6 +93,7 @@ pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
 pub(crate) use plugins::install_text_box_keys;
+pub(crate) use profiler_dock::OpenMicroProfiler;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use script_folds::FoldMemory;
@@ -110,6 +111,7 @@ mod datastores;
 mod find_in_place;
 mod game_settings;
 pub(crate) mod local_run;
+mod profiler_dock;
 mod require_graph;
 mod rows;
 mod save;
@@ -416,6 +418,9 @@ pub(crate) struct Shell {
     toolbox: toolbox::ToolboxDock,
     /// The Find in Place dock's fields and results; see `shell::find_in_place`.
     find_place: find_in_place::FindInPlace,
+    /// The MicroProfiler dock's held frames and ScriptProfiler view; see
+    /// `shell::profiler_dock`.
+    profiler: profiler_dock::ProfilerDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -1007,6 +1012,7 @@ impl Shell {
             bytecode: bytecode_dock::BytecodeDock::default(),
             toolbox: toolbox::ToolboxDock::default(),
             find_place: find_in_place::FindInPlace::default(),
+            profiler: profiler_dock::ProfilerDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
@@ -2316,6 +2322,9 @@ impl Render for Shell {
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);
+            }))
+            .on_action(cx.listener(|shell, _: &OpenMicroProfiler, _, cx| {
+                shell.open_micro_profiler(cx);
             }))
             .on_action(cx.listener(|shell, find: &OpenFindInPlace, window, cx| {
                 shell.open_find_in_place(find.replace, window, cx);

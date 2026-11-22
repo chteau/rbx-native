@@ -27,11 +27,11 @@ pub(crate) struct Client {
 
 impl Client {
     pub(crate) fn spawn(mut command: Command) -> io::Result<Client> {
-        let mut child = command
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stderr(Stdio::null());
+        let mut child = super::bundle::retry_busy(|| command.spawn())?;
         rbx_play::child_job::kill_with_editor(&child);
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             return Err(io::Error::other("the server's stdio was not piped"));

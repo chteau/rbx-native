@@ -21,13 +21,27 @@ pub(crate) fn load(
     let Some(Arg::Number(id)) = args.first() else {
         return Err("Attempted to call require with invalid argument(s).".into());
     };
+    // Roblox's words for an id that loads nothing (the ScriptLimits golden).
+    let shown = if id.fract() == 0.0 {
+        format!("{}", *id as i64)
+    } else {
+        id.to_string()
+    };
+    let failed = || {
+        format!(
+            "Downloading asset failed for asset id {shown}.  Is the asset id correct and is \
+             the asset type \"Model\"?"
+        )
+    };
+    if *id < 1.0 {
+        return Err(failed());
+    }
     let id = *id as u64;
     if let Some(&module) = shared.modules.get(&id) {
         if dom.get(module).is_some() {
             return Ok(CallReply::value(Arg::Instance(module)));
         }
     }
-    let failed = || format!("Unable to load module asset {id}");
     let cached = crate::replay::cached(shared.sounds.fetcher.as_ref(), id);
     let bytes = match cached {
         Some(bytes) => bytes,

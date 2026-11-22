@@ -145,6 +145,9 @@ pub(crate) struct CoreGuiView {
     arrived: Arc<Mutex<Vec<(String, Icon)>>>,
     /// Who the People list marks as the owner and as verified.
     pub(crate) badges: crate::shell::local_run::badges::Badges,
+    /// Play (local)'s players are still joining: the server runs its
+    /// first moments under a loading screen.
+    pub(crate) joining: bool,
 }
 
 impl Default for CoreGuiView {
@@ -168,6 +171,7 @@ impl Default for CoreGuiView {
             icons: HashMap::new(),
             arrived: Arc::default(),
             badges: Default::default(),
+            joining: false,
         }
     }
 }
@@ -797,6 +801,20 @@ fn toast(title: &str, text: &str) -> Div {
         .when(!text.is_empty(), |this| {
             this.child(div().text_color(rgb(0xc4c6ca)).child(text.to_owned()))
         })
+}
+
+/// The loading screen while Play (local)'s players join.
+fn joining() -> Div {
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(rgb(0x191b1d))
+        .text_color(rgb(0xc4c6ca))
+        .text_size(px(18.))
+        .child("Joining\u{2026}")
 }
 
 fn kicked(message: &str) -> Div {
@@ -1552,12 +1570,16 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let core = &self.core_gui;
-        if core.state.is_none() && core.kicked.is_none() && core.purchase.is_none() {
+        if core.state.is_none() && core.kicked.is_none() && core.purchase.is_none() && !core.joining
+        {
             return None;
         }
         let mut root = div().absolute().inset_0();
         if client_font(cx) {
             root = root.font_family(FONT);
+        }
+        if core.joining {
+            return Some(root.child(joining()).into_any_element());
         }
         if let Some(state) = &core.state {
             let dead = state.health.is_some_and(|(now, _)| now <= 0.0);

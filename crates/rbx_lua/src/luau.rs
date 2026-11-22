@@ -83,6 +83,43 @@ pub(crate) fn new_vm() -> mlua::Lua {
     lua
 }
 
+/// Compiles a script's `source` to run in `scope`, a "safe" environment as
+/// a Roblox script's is (until it calls getfenv/setfenv): `pairs`/`next`
+/// loops walk the table by index, so keys a loop adds as it goes are still
+/// visited (HD Admin's Janitor aliases its methods that way). Luau resolves
+/// a safe chunk's globals (`GETIMPORT`) once, at load, against the loading
+/// thread's globals, so `scope` stands in for them while it loads.
+pub(crate) fn load_scoped(
+    lua: &mlua::Lua,
+    source: impl AsRef<[u8]>,
+    name: String,
+    scope: mlua::Table,
+) -> mlua::Result<mlua::Function> {
+    use mlua::ffi;
+    scope.set_safeenv(true);
+    // SAFETY: only swaps the current thread's globals for a table and back;
+    // nothing raises in between.
+    let globals = unsafe {
+        lua.exec_raw::<mlua::Table>(scope.clone(), |state| {
+            ffi::lua_pushvalue(state, ffi::LUA_GLOBALSINDEX);
+            ffi::lua_insert(state, 1);
+            ffi::lua_replace(state, ffi::LUA_GLOBALSINDEX);
+        })?
+    };
+    let chunk = lua
+        .load(source.as_ref())
+        .set_name(name)
+        .set_environment(scope)
+        .into_function();
+    // SAFETY: as above, putting the thread's own globals back.
+    unsafe {
+        lua.exec_raw::<()>(globals, |state| {
+            ffi::lua_replace(state, ffi::LUA_GLOBALSINDEX);
+        })?;
+    }
+    chunk
+}
+
 /// Roblox's `loadstring(source, chunkname?)`: code that doesn't compile
 /// returns `nil` and the message rather than raising, and the chunk is
 /// named after its source (`[string "return 1i"]:1: Malformed number`),

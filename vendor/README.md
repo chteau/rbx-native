@@ -189,6 +189,12 @@ with it) with the Luau sources under `luau/` (`Ast`, `Bytecode`, `CodeGen`,
 upstream `luau-lang/luau`'s 0.748 release, unmodified, and the version
 raised to 0.24.1+luau748 so mlua-sys's `luau0-src = "0.24.0"` takes it.
 `luau/Custom` (mlua's `luau_setfflag` and two helpers) is luau0-src's own.
+One patch, marked `rbx-native patch` in `Compiler/src/Compiler.cpp`: the
+fast `pcall`/`xpcall` call is only compiled for a global left out of
+`mutableGlobals`. Scripts run in a safe environment, where the fast call
+goes straight to the builtin; `rbx_lua` lists `pcall`/`xpcall` as mutable
+so a call reaches its own `pcall`, which hands scripts a binding error's
+message rather than its error object. Re-apply it on a bump.
 Patched in through the root `Cargo.toml`, which also takes `mlua` and
 `mlua-sys` from mlua's master at a pinned commit: no mlua release has the
 Luau 0.747 C API yet (the `integer` type is gone, so the type tags moved),

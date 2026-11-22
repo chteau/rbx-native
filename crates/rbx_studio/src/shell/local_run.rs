@@ -66,6 +66,8 @@ struct Running {
     task: Option<Task<()>>,
     /// Play (local): a local player whose character the keys drive.
     playing: bool,
+    /// Play (local)'s players are queued to join (`Session::join_later`).
+    joining: bool,
     /// What the viewed peer hears.
     sound: sound::Mixer,
     /// Purchase prompts waiting for the test purchase dialog, the shown
@@ -254,6 +256,23 @@ impl LocalRun {
     /// edited place.
     pub(in crate::shell) fn shown(&self) -> bool {
         self.running.as_ref().is_some_and(|run| !run.windowed) || self.peer.is_some()
+    }
+}
+
+/// Play (local)'s players, you then the extra test players (noobs,
+/// numbered as Studio numbers its test players), queued to join once the
+/// server ran its first moments: the frame loop's ticks join them
+/// (`local_run_joined`), the editor never waits for them.
+fn queue_players(
+    session: &mut rbx_sim::Session,
+    name: &str,
+    user_id: i64,
+    character: Option<WeakDom>,
+    players: usize,
+) {
+    session.join_later(name, user_id, character);
+    for n in 2..=players {
+        session.join_later(&format!("Player{n}"), -(n as i64), None);
     }
 }
 
@@ -721,6 +740,9 @@ impl Shell {
         // Every run is recorded, for Replay and Save recording.
         session.record(replay::seed());
         session.set_network(local_network(&self.play.network.applied.conditions));
+        // A frame scripts overrun stretches the next one's step, as on a
+        // real server.
+        session.set_wall_clock(true);
         session.set_fetcher(Arc::new(Fetcher(rbx_cloud::Client::new(
             rbx_cloud::ApiKey::from_env_or_config(),
         ))));
@@ -751,52 +773,38 @@ impl Shell {
             }
         }
         session.set_services(services);
+        session.set_join_after(rbx_sim::JOIN_AFTER);
         session.start();
         let playing = player.is_some();
         let kept = player.as_ref().map(|(p, _)| p.clone());
         let mut note = None;
         if let Some((player, avatars)) = player {
             session.set_avatars(std::rc::Rc::new(avatars));
-            let joined = match windows {
+            match windows {
                 // Studio's test players, every one wearing your avatar.
-                Some(count) => session
-                    .join_test_players(count, player.character.as_ref())
-                    .map(|_| ()),
-                None => {
-                    // You, then the extra test players: noobs, numbered as
-                    // Studio numbers its test players.
-                    let mut joined = session
-                        .join(&player.name, player.user_id, player.character.clone())
-                        .map(|_| ());
-                    for n in 2..=self.play.live.local.players {
-                        if joined.is_ok() {
-                            joined = session
-                                .join(&format!("Player{n}"), -(n as i64), None)
-                                .map(|_| ());
-                        }
+                Some(count) => {
+                    for n in 1..=count {
+                        session.join_later(
+                            &format!("Player{n}"),
+                            -(n as i64),
+                            player.character.clone(),
+                        );
                     }
-                    joined
                 }
-            };
-            if let Err(why) = joined {
-                push_row(
-                    &mut self.output,
-                    Feedback::Error(format!("Play (local) couldn\u{2019}t start: {why}")),
-                );
-                cx.notify();
-                return;
+                None => queue_players(
+                    &mut session,
+                    &player.name,
+                    player.user_id,
+                    player.character,
+                    self.play.live.local.players,
+                ),
             }
             note = Some(player.note);
         }
         let windowed = windows.is_some();
-        let view = if playing && !windowed {
-            rbx_sim::Peer::Client(0)
-        } else {
-            rbx_sim::Peer::Server
-        };
-        for client in &mut session.clients {
-            client.sim.watch_view_changes();
-        }
+        // Play (local) shows the server under the loading screen until
+        // its players joined; Server & Clients opens their windows then.
+        let view = rbx_sim::Peer::Server;
         session.server.watch_view_changes();
         let output = session.take_output();
         // Server & Clients leaves this window on the edited place.
@@ -836,6 +844,7 @@ impl Shell {
             last: Instant::now(),
             task: Some(task),
             playing,
+            joining: playing,
             sound: sound::Mixer::new(self.viewport.read(cx).core_gui.volume),
             prompts: std::collections::VecDeque::new(),
             editables: rbx_dom::editable::generation(),
@@ -860,7 +869,7 @@ impl Shell {
         }
         if playing {
             self.viewport
-                .update(cx, |viewport, _| viewport.set_play_local(true));
+                .update(cx, |viewport, _| viewport.core_gui.joining = true);
         }
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);
@@ -891,11 +900,44 @@ impl Shell {
             return;
         };
         let count = run.session.clients.len();
-        run.view = match run.view {
+        let view = match run.view {
             rbx_sim::Peer::Server if count > 0 => rbx_sim::Peer::Client(0),
             rbx_sim::Peer::Client(i) if i + 1 < count => rbx_sim::Peer::Client(i + 1),
             _ => rbx_sim::Peer::Server,
         };
+        self.local_run_show(view, cx);
+    }
+
+    /// Play (local)'s players joined (on a frame `local_run_tick` ran):
+    /// the run shows the first one's client, or stops when a join failed.
+    fn local_run_joined(&mut self, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        if let Some(why) = run.session.take_join_failures().into_iter().next() {
+            push_row(
+                &mut self.output,
+                Feedback::Error(format!("Play (local) couldn\u{2019}t start: {why}")),
+            );
+            self.local_run_stop(cx);
+            return;
+        }
+        for client in &mut run.session.clients {
+            client.sim.watch_view_changes();
+        }
+        if run.windowed {
+            self.local_run_open_player_windows(cx);
+            return;
+        }
+        self.local_run_show(rbx_sim::Peer::Client(0), cx);
+    }
+
+    /// The shown tree becomes `view`'s.
+    fn local_run_show(&mut self, view: rbx_sim::Peer, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        run.view = view;
         let client = matches!(run.view, rbx_sim::Peer::Client(_));
         let Some(sim) = run.session.sim_mut(run.view) else {
             return;
@@ -1280,6 +1322,13 @@ impl Shell {
                 replay.divergence = Some(divergence);
             }
         }
+        if run.joining && !run.session.joining() {
+            run.joining = false;
+            self.local_run_joined(cx);
+            return;
+        }
+        // What showing the frame costs the editor, the profiler's render.
+        let render_started = Instant::now();
         run.prompts.extend(run.session.take_prompts());
         let teleports = run.session.take_teleports();
         if let Some(teleport) = teleports.into_iter().next() {
@@ -1452,7 +1501,15 @@ impl Shell {
                 self.rebuild_explorer(cx);
             }
         }
+        if let Some(run) = self.play.live.local.running.as_mut() {
+            run.session.set_render_time(render_started.elapsed());
+        }
         cx.notify();
+    }
+
+    /// The running Local Run session, for the MicroProfiler dock.
+    pub(crate) fn local_run_session(&self) -> Option<&rbx_sim::Session> {
+        self.play.live.local.running.as_ref().map(|r| &r.session)
     }
 
     /// Edits made to the shown copy during the run: written into the
@@ -1497,7 +1554,26 @@ mod tests {
     use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 
     // Not `super::*`: gpui_kit's glob brings its own `test` attribute.
-    use super::{changes_between, dedupe, mirror, restore_edited, stash_edited};
+    use super::{changes_between, dedupe, mirror, queue_players, restore_edited, stash_edited};
+
+    #[test]
+    fn play_local_starts_without_waiting_for_its_players() {
+        let mut session =
+            rbx_sim::Session::new(rbx_sim::conformance::bare_place()).expect("the place runs");
+        session.set_join_after(rbx_sim::JOIN_AFTER);
+        session.start();
+        queue_players(&mut session, "Player1", 1, None, 2);
+        // Not one server frame ran: the editor shows the run at once.
+        assert_eq!(session.server.frame(), 0);
+        assert!(session.clients.is_empty() && session.joining());
+        // The frame loop's ticks join them once the server ran JOIN_AFTER.
+        while session.joining() {
+            session.step();
+        }
+        assert!(session.server.time() >= rbx_sim::JOIN_AFTER);
+        let names: Vec<_> = session.clients.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["Player1", "Player2"]);
+    }
 
     fn cframe(y: f32) -> Variant {
         Variant::CFrame(CFrameData {

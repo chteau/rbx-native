@@ -127,10 +127,13 @@ fn three_players_replay_with_zero_divergence() {
             }
         }
         if frame == 90 {
-            s.act(Peer::Client(1), Action::Input(Input::Key {
-                code: "Space".into(),
-                down: true,
-            }));
+            s.act(
+                Peer::Client(1),
+                Action::Input(Input::Key {
+                    code: "Space".into(),
+                    down: true,
+                }),
+            );
         }
         s.step();
     }

@@ -639,6 +639,17 @@ pub const TESTS: &[Test] = &[
         tolerance: &[],
     },
     Test {
+        name: "JoinTimeline",
+        source: include_str!("../conformance/tests/JoinTimeline.luau"),
+        // A live join's timing scatters with the network; what must match
+        // is that the server ran first and the client saw what it did.
+        tolerance: &[
+            ("player_added_s", f64::INFINITY),
+            ("server_beats_before_join", f64::INFINITY),
+            ("character_after_join_s", f64::INFINITY),
+        ],
+    },
+    Test {
         name: "StyleRuntime",
         source: include_str!("../conformance/tests/StyleRuntime.luau"),
         tolerance: &[],
@@ -714,6 +725,21 @@ pub const TESTS: &[Test] = &[
         source: include_str!("../conformance/tests/CsgApi.luau"),
         tolerance: &[("*", 0.02)],
     },
+    Test {
+        name: "ScriptLimits",
+        source: include_str!("../conformance/tests/ScriptLimits.luau"),
+        tolerance: &[("stack_depth", 4.0), ("index_stack_depth", 4.0)],
+    },
+    Test {
+        name: "ProfilerApi",
+        source: include_str!("../conformance/tests/ProfilerApi.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "FrameOverrun",
+        source: include_str!("../conformance/tests/FrameOverrun.luau"),
+        tolerance: &[("after_stall_dts", 0.003), ("overrun_dts", 0.01)],
+    },
 ];
 
 /// The folder in `ReplicatedStorage` holding the client halves of the
@@ -788,10 +814,15 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
         "InputActions",
         include_str!("../conformance/client/InputActions.luau"),
     ),
+    (
+        "JoinTimeline",
+        include_str!("../conformance/client/JoinTimeline.luau"),
+    ),
 ];
 const PARALLEL_PROBE: &str = include_str!("../conformance/client/ParallelProbe.luau");
 const CLIENT_RUNNER: &str = include_str!("../conformance/client/Runner.luau");
 const FIRST_PROBE: &str = include_str!("../conformance/client/FirstProbe.luau");
+const JOIN_CLOCK: &str = include_str!("../conformance/tests/JoinClock.server.luau");
 
 /// The tests named in `only` (all of them when it's empty).
 pub fn selected(only: &[String]) -> impl Iterator<Item = (usize, &'static Test)> + '_ {
@@ -857,10 +888,23 @@ pub fn add_to(dom: &mut WeakDom, runs: u32, only: &[String]) {
         let module = child(dom, "ModuleScript", name, folder);
         let _ = dom.set_property(module, "Source", Variant::String(source.into()));
     }
+    // ScriptLimits' require cases: a cycle, a module that errors, one that
+    // returns nothing.
+    for (name, source) in [
+        ("LimitsCycleA", "return require(script.Parent.LimitsCycleB)"),
+        ("LimitsCycleB", "return require(script.Parent.LimitsCycleA)"),
+        ("LimitsBroken", "error(\"broken module\")"),
+        ("LimitsEmpty", "local x = 1"),
+    ] {
+        let module = child(dom, "ModuleScript", name, folder);
+        let _ = dom.set_property(module, "Source", Variant::String(source.into()));
+    }
     // ParallelLuau: a script inside an Actor, from the start.
     let actor = child(dom, "Actor", "ConfActor", sss);
     let probe = child(dom, "Script", "ParallelProbe", actor);
     let _ = dom.set_property(probe, "Source", Variant::String(PARALLEL_PROBE.into()));
+    let clock = child(dom, "Script", "JoinClock", sss);
+    let _ = dom.set_property(clock, "Source", Variant::String(JOIN_CLOCK.into()));
     let runner = child(dom, "Script", RUNNER, sss);
     let _ = dom.set_property(runner, "Source", Variant::String(runner_source(runs, only)));
     add_client_half(dom);
@@ -1259,16 +1303,47 @@ fn run(
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
     network: crate::link::Network,
 ) -> Result<BTreeMap<String, Value>, String> {
+    let (timed, rest): (Vec<String>, Vec<String>) = selected(only)
+        .map(|(_, t)| t.name.to_owned())
+        .partition(|name| WALL_CLOCK.contains(&name.as_str()));
+    let mut out = BTreeMap::new();
+    if !rest.is_empty() {
+        out = run_session(limit, &rest, PASSES, fetcher.clone(), false, network)?;
+    }
+    if !timed.is_empty() {
+        out.extend(run_session(limit, &timed, 1, fetcher, true, network)?);
+    }
+    Ok(out)
+}
+
+/// Tests of frames that overrun: they run in a session of their own, paced
+/// by the wall clock with the real 10 s script timeout, one pass (each
+/// stalls for 3 s of real time).
+const WALL_CLOCK: &[&str] = &["FrameOverrun"];
+
+fn run_session(
+    limit: f64,
+    only: &[String],
+    passes: u32,
+    fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
+    wall_clock: bool,
+    network: crate::link::Network,
+) -> Result<BTreeMap<String, Value>, String> {
     let mut dom = bare_place();
-    add_to(&mut dom, PASSES, only);
+    add_to(&mut dom, passes, only);
     dom.take_changes();
     let mut session = Session::new(dom)?;
     session.set_network(network);
     // A test's verdict mustn't hang on how loaded the machine is.
-    session.set_script_timeout(std::time::Duration::from_secs(86_400));
+    if wall_clock {
+        session.set_wall_clock(true);
+    } else {
+        session.set_script_timeout(std::time::Duration::from_secs(86_400));
+    }
     if let Some(fetcher) = fetcher {
         session.set_fetcher(fetcher);
     }
+    session.set_join_after(crate::JOIN_AFTER);
     session.start();
     session.join("Player1", -1, None)?;
     let mut lines = Vec::new();

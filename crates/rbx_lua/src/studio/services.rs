@@ -236,6 +236,22 @@ fn player_arg(args: &MultiValue, message: &str) -> Result<()> {
 /// `ScriptProfilerService`: in edit mode the server half starts and stops
 /// with nothing to report, the client half wants a player.
 fn profiler(lua: &Lua, referent: Ref, key: &str) -> Result<Option<Value>> {
+    // A running game's scripts can't reach it (the ProfilerApi golden): the
+    // editor's MicroProfiler dock drives its sampler from outside.
+    let live = crate::profiler::of(lua).borrow().live;
+    let callable = [
+        "ClientRequestData",
+        "ClientStart",
+        "ClientStop",
+        "DeserializeJSON",
+        "ServerRequestData",
+        "ServerStart",
+        "ServerStop",
+    ];
+    if live && callable.contains(&key) {
+        let message = format!("The current thread cannot call '{key}' (lacking capability Plugin)");
+        return func(lua, move |_, _| Err(fail(&message)));
+    }
     match key {
         "ServerStart" | "ServerStop" | "ServerRequestData" => void(lua, |_, _| Ok(())),
         "ClientStart" | "ClientStop" | "ClientRequestData" => {

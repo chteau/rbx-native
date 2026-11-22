@@ -10,6 +10,8 @@ use rbx_sim::link::{Network, Way};
 use rbx_sim::{Peer, Session};
 use serde_json::Value;
 
+mod common;
+
 /// Parts a stud or two from a cube edge at the target radius: whether they
 /// are in depends on where on the spawn the character lands (random, on
 /// Roblox as here).
@@ -293,7 +295,13 @@ fn run_over(dom: WeakDom, seconds: f64, network: Network) -> Vec<(Peer, String)>
     while session.time() < seconds {
         session.step();
         for (peer, output) in session.take_output() {
-            lines.extend(output.lines().iter().map(|l| (peer, l.clone())));
+            lines.extend(
+                output
+                    .lines()
+                    .iter()
+                    .filter(|l| !common::animation_warning(l))
+                    .map(|l| (peer, l.clone())),
+            );
         }
     }
     lines

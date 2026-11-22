@@ -62,9 +62,17 @@ pub use terrain::{TerrainOp, TerrainReply};
 const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
 
 const LEGACY_WAIT: &str = r#"
-local wait = ...
+local wait, delay = ...
+local function legacyDelay(seconds, f)
+    local started = time()
+    delay(math.max(tonumber(seconds) or 0, 0.03), function()
+        f(time() - started, elapsedTime())
+    end)
+end
 return function(seconds)
     return wait(math.max(tonumber(seconds) or 0, 0.03))
+end, legacyDelay, function(f)
+    legacyDelay(0, f)
 end
 "#;
 
@@ -287,6 +295,57 @@ struct ServerHost {
     now: Cell<f64>,
     next_id: Cell<u32>,
     physics: Rc<dyn Physics>,
+    /// Lines output since `LogService.MessageOut` last fired.
+    logged: RefCell<Vec<(LineKind, String)>>,
+    /// `MessageOut` handlers are running: what they print isn't fired
+    /// again.
+    logging: Cell<bool>,
+}
+
+impl ServerHost {
+    /// Fires `LogService.MessageOut` (message, `Enum.MessageType`) for each
+    /// line output since the last call; nothing when no script asked for
+    /// `LogService`.
+    fn fire_logs(&self, lua: &Lua) -> mlua::Result<()> {
+        let lines = std::mem::take(&mut *self.logged.borrow_mut());
+        if lines.is_empty() {
+            return Ok(());
+        }
+        let log = {
+            let ctx = engine(lua).ctx.clone();
+            let dom = ctx.dom();
+            dom.root_refs()
+                .iter()
+                .copied()
+                .find(|r| dom.get(*r).is_some_and(|i| i.class() == "LogService"))
+        };
+        let Some(log) = log else {
+            return Ok(());
+        };
+        let key = instance_key(log, "MessageOut");
+        self.logging.set(true);
+        let mut fired = Ok(());
+        for (kind, text) in lines {
+            let item = match kind {
+                LineKind::Print => "MessageOutput",
+                LineKind::Warn => "MessageWarning",
+                LineKind::Error => "MessageError",
+            };
+            let args = [
+                Arg::String(text),
+                Arg::Enum {
+                    enum_name: "MessageType".into(),
+                    item: item.into(),
+                },
+            ];
+            fired = signal::fire(lua, &key, &args);
+            if fired.is_err() {
+                break;
+            }
+        }
+        self.logging.set(false);
+        fired
+    }
 }
 
 impl Host for ServerHost {
@@ -321,6 +380,9 @@ impl Host for ServerHost {
     }
 
     fn output(&self, kind: LineKind, text: String) {
+        if !self.logging.get() {
+            self.logged.borrow_mut().push((kind, text.clone()));
+        }
         self.output.borrow_mut().push_text(kind, text);
     }
 
@@ -368,11 +430,20 @@ impl ServerVm {
             now: Cell::new(0.0),
             next_id: Cell::new(0),
             physics: physics.clone(),
+            logged: RefCell::default(),
+            logging: Cell::new(false),
         });
         let groups = Rc::new(RefCell::new(CollisionGroups::default()));
         let lua = crate::luau::new_vm();
-        // See `Runtime::build`: DOM-backed globals must not be import-cached.
-        lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
+        // See `Runtime::build`: DOM-backed globals and `pcall`/`xpcall` must
+        // not be import-cached.
+        lua.set_compiler(Compiler::new().set_mutable_globals([
+            "game",
+            "workspace",
+            "Workspace",
+            "pcall",
+            "xpcall",
+        ]));
         let fired = Rc::new(Cell::new(0));
         let client = Rc::new(Cell::new(false));
         let remotes = remote::Shared::default();
@@ -406,12 +477,18 @@ impl ServerVm {
         // The legacy `wait` never takes less than two 60 Hz frames on a
         // real server (the TaskTiming golden: `wait()` = 2 heartbeats,
         // 0.033 s); `task.wait` has no such floor.
-        let legacy: mlua::Function = lua.load(LEGACY_WAIT).set_name("=wait").call(
-            lua.globals()
-                .get::<Table>("task")?
-                .get::<mlua::Function>("wait")?,
-        )?;
-        lua.globals().set("wait", legacy)?;
+        // The legacy `delay` and `spawn` share that floor and call their
+        // function with the time waited and the game's time (ScriptLimits:
+        // `spawn` runs 2 heartbeats later with 2 numbers, `delay(0)` too).
+        let task: Table = lua.globals().get("task")?;
+        let (wait, delay, spawn): (mlua::Function, mlua::Function, mlua::Function) =
+            lua.load(LEGACY_WAIT).set_name("=wait").call((
+                task.get::<mlua::Function>("wait")?,
+                task.get::<mlua::Function>("delay")?,
+            ))?;
+        lua.globals().set("wait", wait)?;
+        lua.globals().set("delay", delay)?;
+        lua.globals().set("spawn", spawn)?;
         let runtime = services.clone();
         lua.globals().set(
             "UserSettings",
@@ -419,6 +496,7 @@ impl ServerVm {
         )?;
         lua.sandbox(true)?;
         install_shared(&lua)?;
+        crate::profiler::of(&lua).borrow_mut().live = true;
         Ok(ServerVm {
             lua,
             dom,
@@ -448,6 +526,17 @@ impl ServerVm {
     /// (Local Run's record and replay), from before the first script.
     pub fn set_tape(&self, tape: crate::tape::Tape) -> Result<(), LuaError> {
         crate::tape::install(&self.lua, tape)
+    }
+
+    /// This VM's profiling: `debug.profilebegin` scopes, time in Luau, the
+    /// ScriptProfiler session.
+    pub fn profiler(&self) -> Rc<RefCell<crate::profiler::Profiler>> {
+        crate::profiler::of(&self.lua)
+    }
+
+    /// The Lua heap in bytes.
+    pub fn heap_bytes(&self) -> usize {
+        self.lua.used_memory()
     }
 
     /// Makes this VM a client's: `RunService:IsClient()` is true and
@@ -746,12 +835,7 @@ impl ServerVm {
         let meta = self.lua.create_table()?;
         meta.set("__index", self.lua.globals())?;
         scope.set_metatable(Some(meta))?;
-        let chunk = self
-            .lua
-            .load(source)
-            .set_name(format!("={name}"))
-            .set_environment(scope)
-            .into_function();
+        let chunk = crate::luau::load_scoped(&self.lua, source, format!("={name}"), scope);
         match chunk {
             Ok(chunk) => {
                 let main = self.lua.create_thread(chunk)?;
@@ -775,17 +859,27 @@ impl ServerVm {
         let client = self.client.get();
         let runtime = self.services.clone();
         let styles = self.styles.clone();
+        let host = self.host.clone();
+        self.profiler().borrow_mut().set_category("Resume");
         self.guarded(move |lua| {
             remote::flush(lua, &remotes, client)?;
             services::poll(lua, &runtime)?;
             styles::poll(lua, &styles)?;
-            scheduler::tick(lua, now)
+            scheduler::tick(lua, now)?;
+            host.fire_logs(lua)
         })
     }
 
     /// Fires `event` to the scripts (handlers run now), then the instance
     /// events their changes call for; returns the DOM changes made.
     pub fn fire(&mut self, event: Event) -> Vec<Change> {
+        let category = match &event {
+            Event::RunService(name, _) => name,
+            Event::Touched { .. } => "Touched",
+            Event::TouchEnded { .. } => "TouchEnded",
+            Event::Signal { name, .. } => name.as_str(),
+        };
+        self.profiler().borrow_mut().set_category(category);
         self.guarded(|lua| match &event {
             Event::RunService(name, args) => {
                 let args: Vec<Arg> = args.iter().copied().map(Arg::Number).collect();
@@ -891,6 +985,9 @@ impl ServerVm {
                 Ok(VmState::Continue)
             }
         });
+        crate::profiler::arm(&self.lua);
+        let started = Instant::now();
+        scheduler::reset_rounds(&self.lua);
         self.fired.set(from);
         let mut ran = f(&self.lua);
         for _ in 0..ROUNDS {
@@ -914,6 +1011,9 @@ impl ServerVm {
         }
         engine(&self.lua).signals.borrow_mut().settle();
         self.lua.remove_interrupt();
+        crate::profiler::of(&self.lua)
+            .borrow_mut()
+            .add_script_time(started.elapsed());
         if let Err(error) = ran {
             self.host.output(LineKind::Error, error.to_string());
         }
@@ -926,6 +1026,7 @@ impl ServerVm {
 /// moves `fired` past them first, so a handler's own writes fire after.
 /// `false` when there was nothing new.
 fn fire_fresh(lua: &Lua, fired: &Cell<usize>) -> mlua::Result<bool> {
+    scheduler::next_round(lua);
     let ctx = engine(lua).ctx.clone();
     let (fresh, first) = {
         let dom = ctx.dom();

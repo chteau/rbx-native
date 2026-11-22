@@ -4,6 +4,8 @@
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_sim::{conformance, Input, Peer, Session};
 
+mod common;
+
 #[test]
 fn tags_replicate_and_debris_and_player_helpers_work() {
     let mut s = session(
@@ -226,12 +228,72 @@ fn session(dom: WeakDom, players: usize) -> Session {
 /// Every line printed so far, per peer.
 fn printed(session: &mut Session, lines: &mut Vec<(Peer, String)>) {
     for (peer, output) in session.take_output() {
-        lines.extend(output.lines().iter().map(|l| (peer, l.clone())));
+        lines.extend(
+            output
+                .lines()
+                .iter()
+                .filter(|l| !common::animation_warning(l))
+                .map(|l| (peer, l.clone())),
+        );
     }
 }
 
 fn has(lines: &[(Peer, String)], peer: Peer, text: &str) -> bool {
     lines.iter().any(|(p, l)| *p == peer && l == text)
+}
+
+#[test]
+fn a_place_without_starter_player_plays_with_its_defaults() {
+    let mut dom = place("", "");
+    let starter_player = service(&dom, "StarterPlayer");
+    dom.remove(starter_player);
+    let sss = service(&dom, "ServerScriptService");
+    let script = dom.new_instance("Script", "Check", Some(sss));
+    let _ = dom.set_property(
+        script,
+        "Source",
+        Variant::String(
+            "local sp = game:GetService('StarterPlayer') \
+             print('folders', sp:FindFirstChild('StarterPlayerScripts') ~= nil, sp:FindFirstChild('StarterCharacterScripts') ~= nil) \
+             local p = game:GetService('Players').PlayerAdded:Wait() \
+             print('camera', p.CameraMode, p.CameraMaxZoomDistance, p.CameraMinZoomDistance)"
+                .into(),
+        ),
+    );
+    let mut s = session(dom, 1);
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "folders true true"), "{lines:#?}");
+    assert!(
+        has(
+            &lines,
+            Peer::Server,
+            "camera Enum.CameraMode.Classic 400 0.5"
+        ),
+        "{lines:#?}"
+    );
+}
+
+/// Janitor-style alias loops add keys while they walk the table; on a live
+/// server (sandbox probe) all 14 aliases land, 28 keys.
+#[test]
+fn a_loop_that_adds_keys_as_it_walks_sees_them_as_live() {
+    let probe = "local t = {} \
+         for _, k in {'Add','AddPromise','AddObject','Remove','Get','Cleanup','Destroy','LinkToInstance', \
+           'LinkToInstances','Give','GivePromise','GiveObject','Clean','CurrentlyCleaning'} do t[k] = true end \
+         for k, v in next, t do t[string.lower(string.sub(k, 1, 1)) .. string.sub(k, 2)] = v end \
+         local n = 0 for _ in pairs(t) do n += 1 end print('keys', n, t.clean)";
+    let mut s = session(place(probe, probe), 1);
+    let mut lines = Vec::new();
+    for _ in 0..10 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "keys 28 true"), "{lines:#?}");
+    assert!(has(&lines, Peer::Client(0), "keys 28 true"), "{lines:#?}");
 }
 
 #[test]
@@ -858,6 +920,105 @@ fn a_drag_detector_crate_and_a_ui_drag_detector_follow_the_mouse() {
     assert!(has(&lines, Peer::Client(0), "ui 140 120"), "{lines:#?}");
     assert!(
         has(&lines, Peer::Client(0), "vp 400 300 true -89"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn the_client_joins_after_the_servers_first_frames() {
+    let mut s = Session::new(place(
+        "task.delay(0.1, function() workspace:SetAttribute('Mark', true) end) \
+             local p = game:GetService('Players').PlayerAdded:Wait() \
+             print('joined', time() >= 1.5)",
+        "print('client sees', workspace:GetAttribute('Mark'))",
+    ))
+    .unwrap();
+    s.set_join_after(rbx_sim::JOIN_AFTER);
+    s.start();
+    s.join("Player1", 1, None).unwrap();
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "joined true"), "{lines:#?}");
+    assert!(
+        has(&lines, Peer::Client(0), "client sees true"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn a_join_later_does_not_run_the_server_and_lands_on_the_joins_frame() {
+    let session = || {
+        let mut s = Session::new(place(
+            "game:GetService('Players').PlayerAdded:Connect(function(p) \
+               print('joined', p.Name, time()) end)",
+            "print('client at', workspace.DistributedGameTime)",
+        ))
+        .unwrap();
+        s.set_join_after(rbx_sim::JOIN_AFTER);
+        s.start();
+        s
+    };
+    let mut waited = session();
+    waited.join("Player1", 1, None).unwrap();
+    waited.join("Player2", 2, None).unwrap();
+    let joined_on = waited.server.frame();
+
+    // The editor's path: queuing returns before the server ran a frame.
+    let mut queued = session();
+    queued.join_later("Player1", 1, None);
+    queued.join_later("Player2", 2, None);
+    assert_eq!(queued.server.frame(), 0);
+    assert!(queued.clients.is_empty() && queued.joining());
+    while queued.joining() {
+        queued.step();
+    }
+    assert!(queued.take_join_failures().is_empty());
+    assert_eq!(queued.clients.len(), 2);
+    assert_eq!(queued.server.frame(), joined_on + 1);
+
+    waited.step();
+    let (mut a, mut b) = (Vec::new(), Vec::new());
+    for _ in 0..30 {
+        waited.step();
+        queued.step();
+        printed(&mut waited, &mut a);
+        printed(&mut queued, &mut b);
+    }
+    for who in ["joined Player1", "joined Player2"] {
+        assert!(
+            a.iter()
+                .any(|(p, l)| *p == Peer::Server && l.starts_with(who)),
+            "{a:#?}"
+        );
+    }
+    assert!(has(&a, Peer::Client(1), "client at 1.6"), "{a:#?}");
+    assert_eq!(a, b);
+}
+
+#[test]
+fn a_tool_given_on_character_added_stays_in_the_backpack() {
+    let mut dom = place(
+        "local tool = game:GetService('ServerScriptService'):WaitForChild('Kept') \
+         game:GetService('Players').PlayerAdded:Connect(function(player) \
+           player.CharacterAdded:Connect(function() tool.Parent = player.Backpack end) end)",
+        "local bp = game:GetService('Players').LocalPlayer:WaitForChild('Backpack') \
+         local t = bp:WaitForChild('Kept', 3) print('client has', t ~= nil, t and t:FindFirstChild('Handle') ~= nil)",
+    );
+    let sss = service(&dom, "ServerScriptService");
+    let tool = dom.new_instance("Tool", "Kept", Some(sss));
+    dom.new_instance("Part", "Handle", Some(tool));
+    dom.take_changes();
+    let mut s = session(dom, 1);
+    let mut lines = Vec::new();
+    for _ in 0..240 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(
+        has(&lines, Peer::Client(0), "client has true true"),
         "{lines:#?}"
     );
 }

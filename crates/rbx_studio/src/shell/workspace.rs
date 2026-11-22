@@ -155,6 +155,7 @@ impl Shell {
             Panel::Localization => self.localization_dock(cx),
             Panel::Toolbox => self.toolbox_dock(window, cx),
             Panel::FindInPlace => self.find_in_place_dock(window, cx),
+            Panel::MicroProfiler => self.micro_profiler_dock(cx),
         }
     }
 

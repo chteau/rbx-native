@@ -75,8 +75,32 @@ end)
 "#;
     let mut session = playing(server, "");
     let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
-    assert_eq!(core.stats, ["Rolls", "Highest rarity"]);
-    assert_eq!(core.players.expect("the list")[0].stats, ["0", "None"]);
+    // Named after they were parented, so in name order, as live.
+    assert_eq!(core.stats, ["Highest rarity", "Rolls"]);
+    assert_eq!(core.players.expect("the list")[0].stats, ["None", "0"]);
+}
+
+#[test]
+fn stats_named_before_parenting_keep_added_order_the_rest_go_by_name() {
+    let server = r#"
+game:GetService("Players").PlayerAdded:Connect(function(player)
+	local stats = Instance.new("Folder")
+	stats.Name = "leaderstats"
+	for _, name in { "Delta", "Bravo" } do
+		local v = Instance.new("IntValue")
+		v.Name = name
+		v.Parent = stats
+	end
+	stats.Parent = player
+	for _, name in { "Charlie", "Alpha" } do
+		local v = Instance.new("IntValue", stats)
+		v.Name = name
+	end
+end)
+"#;
+    let mut session = playing(server, "");
+    let core = session.sim_mut(Peer::Client(0)).unwrap().core_gui();
+    assert_eq!(core.stats, ["Delta", "Bravo", "Alpha", "Charlie"]);
 }
 
 #[test]

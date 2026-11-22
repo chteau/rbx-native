@@ -996,8 +996,17 @@ pub(super) fn alpha(properties: &std::collections::BTreeMap<String, Variant>, ki
 /// `Enum.NormalId` order (Right, Top, Back, Left, Bottom, Front), for
 /// `material.wgsl`'s `surface_relief`. Only the patterns the real client
 /// paints on a face are kept (Glue, Weld, Studs, Inlet, Universal); Smooth,
-/// the hinges and motors are left flat.
+/// the hinges and motors are left flat. The real client paints them on
+/// Plastic only: a SmoothPlastic or Metal floor saved with studded tops
+/// shows none.
 fn surfaces(properties: &std::collections::BTreeMap<String, Variant>) -> u32 {
+    const PLASTIC: u32 = 256;
+    if properties
+        .get("Material")
+        .is_some_and(|m| !matches!(m, Variant::Enum(PLASTIC)))
+    {
+        return 0;
+    }
     const FACES: [&str; 6] = [
         "RightSurface",
         "TopSurface",

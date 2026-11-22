@@ -1,3 +1,5 @@
+// rbx-native: the Luau sources carry one patch (see vendor/README.md); a
+// change to them only rebuilds once this file changes too.
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};

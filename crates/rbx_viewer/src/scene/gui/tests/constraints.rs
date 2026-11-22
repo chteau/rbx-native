@@ -57,6 +57,30 @@ fn ui_padding_shrinks_the_box_children_resolve_against() {
 }
 
 #[test]
+fn ui_padding_under_a_screen_gui_pads_the_screen() {
+    let (mut dom, gui) = screen_gui();
+    let pad = component(&mut dom, gui, "UIPadding");
+    dom.set_property(pad, "PaddingBottom", udim(0.02, 0))
+        .unwrap();
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 1.0, -20),
+        udim2(0.0, 10, 0.0, 20),
+    );
+    // 2% of 600 off the bottom: the frame ends at 588, not 600.
+    assert_eq!(
+        rects(&dom)[0],
+        Rect {
+            x: 0.0,
+            y: 568.0,
+            width: 10.0,
+            height: 20.0,
+        }
+    );
+}
+
+#[test]
 fn ui_padding_scale_is_a_fraction_of_the_padded_elements_own_size() {
     let (mut dom, gui) = screen_gui();
     let parent = frame(

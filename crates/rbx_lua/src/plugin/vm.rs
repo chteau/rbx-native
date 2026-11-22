@@ -28,7 +28,7 @@ const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
 /// `studio::install`, `debugger_api::install`,
 /// `native::install`; `Env` as app data and `crate::hooks::HookSlot(
 /// PluginHooks)`; compiled with `game`/`workspace`/`Workspace`/`script`
-/// mutable; an interrupt that errors with "Script timeout: exhausted
+/// and `pcall`/`xpcall` mutable (see `Runtime::build`); an interrupt that errors with "Script timeout: exhausted
 /// allowed execution time" once `Shared::deadline` has passed. Sandboxed
 /// last.
 pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
@@ -38,6 +38,8 @@ pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
         "workspace",
         "Workspace",
         "script",
+        "pcall",
+        "xpcall",
     ]));
     lua.set_app_data(env.clone());
     lua.set_app_data(HookSlot(Rc::new(PluginHooks)));
@@ -122,12 +124,7 @@ pub(crate) fn compile(lua: &Lua, script: Ref) -> Result<Option<mlua::Function>> 
     meta.set("__index", lua.globals())?;
     scope.set_metatable(Some(meta))?;
 
-    match lua
-        .load(source)
-        .set_name(format!("={name}"))
-        .set_environment(scope)
-        .into_function()
-    {
+    match crate::luau::load_scoped(lua, source, format!("={name}"), scope) {
         Ok(function) => Ok(Some(function)),
         Err(error) => {
             env.shared

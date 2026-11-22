@@ -134,6 +134,11 @@ fn a_block_packs_the_surface_patterns_it_shows_three_bits_a_face() {
     .collect();
     assert_eq!(surfaces(&properties), 3 << 3 | 4 << 12 | 2 << 15);
     assert_eq!(surfaces(&Default::default()), 0);
+    let mut smooth = properties.clone();
+    smooth.insert("Material".to_owned(), Variant::Enum(272));
+    assert_eq!(surfaces(&smooth), 0, "SmoothPlastic shows no surfaces");
+    smooth.insert("Material".to_owned(), Variant::Enum(256));
+    assert_eq!(surfaces(&smooth), surfaces(&properties));
 }
 
 #[test]

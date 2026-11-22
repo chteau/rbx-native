@@ -59,6 +59,11 @@ fn either<M, A, R>(
     );
 }
 
+/// `GetService`/`FindService` on a name that is no class at all.
+fn not_a_service(class: &str) -> mlua::Error {
+    mlua::Error::runtime(format!("'{class}' is not a valid Service name"))
+}
+
 impl UserData for LuaGame {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
         fields.add_meta_field(MetaMethod::Type, "Instance");
@@ -81,11 +86,10 @@ impl UserData for LuaGame {
                     crate::defaults::apply(&this.ctx, &class, referent);
                     referent
                 }
-                None => {
-                    return Err(mlua::Error::runtime(format!(
-                        "{class} is not a valid Service name"
-                    )))
-                }
+                // A class that exists but isn't a service gives nil; any
+                // other name is an error (the ScriptLimits golden).
+                None if this.ctx.database().class(&class).is_some() => return Ok(Value::Nil),
+                None => return Err(not_a_service(&class)),
             };
             LuaInstance::new(referent, this.ctx.clone()).into_lua(lua)
         });
@@ -201,6 +205,9 @@ impl UserData for LuaGame {
             },
         );
         methods.add_method("FindService", |_, this, class: String| {
+            if this.ctx.database().class(&class).is_none() {
+                return Err(not_a_service(&class));
+            }
             let found = LuaGame::service(&this.ctx.dom(), &class);
             Ok(found.map(|referent| LuaInstance::new(referent, this.ctx.clone())))
         });
