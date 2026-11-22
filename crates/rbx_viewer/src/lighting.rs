@@ -117,8 +117,12 @@ impl Calibration {
 /// flat silhouette. Roblox feeds it from its own constant buffer; a tenth of the
 /// sun, tinted cool, is what lands the shaded side of that same 163-grey part
 /// between Studio's (94, 110, 137) and (108, 122, 147) once the sky irradiance
-/// is in.
+/// is in, under `Voxel` (the `game_retro_room` scene). The filmic look takes
+/// half of that, its sky's light from above lifted instead (see `sky_ambient`
+/// in `lighting.wgsl`): what lands the shaded fronts and the floor in shadow
+/// of `studio_lighting` nearest the real client's.
 const FILL_FRACTION: f32 = 0.10;
+const FILMIC_FILL_FRACTION: f32 = 0.05;
 const FILL_TINT: Vec3 = Vec3::new(0.82, 0.9, 1.0);
 /// Moonlight, once the sun is below the horizon: same lamp, 0.21 as bright
 /// and as white as the sun, fitted to the lit tops of the `night` scene.
@@ -453,14 +457,14 @@ impl Lighting {
         let sun_direction = sun_direction(read.clock, read.latitude);
         // 1 in full daylight, 0 once the sun is a hair below the horizon.
         let day = ((sun_direction.y + TWILIGHT_BAND) / (2.0 * TWILIGHT_BAND)).clamp(0.0, 1.0);
-        let (sun_base, ambient_scale, moon) = if filmic {
+        let (sun_base, ambient_scale, moon, fill) = if filmic {
             if effects.tonemap == Tonemap::Default {
                 effects.tonemap = Tonemap::Filmic;
             }
-            (FILMIC_SUN, FILMIC_AMBIENT, 1.0)
+            (FILMIC_SUN, FILMIC_AMBIENT, 1.0, FILMIC_FILL_FRACTION)
         } else {
             let ambient = VOXEL_NIGHT_AMBIENT + (1.0 - VOXEL_NIGHT_AMBIENT) * day;
-            (VOXEL_SUN, ambient, VOXEL_MOON)
+            (VOXEL_SUN, ambient, VOXEL_MOON, FILL_FRACTION)
         };
         let lamp = sun_base * read.brightness.max(0.0);
 
@@ -472,7 +476,7 @@ impl Lighting {
             // One lamp does both jobs: a bounce opposite the sun by day, the
             // moon by night (see `Lighting::fill_direction`).
             fill_color: Vec3::splat(lamp)
-                * (FILL_FRACTION * FILL_TINT * day
+                * (fill * FILL_TINT * day
                     + moon * MOON_FRACTION * MOON_TINT * (1.0 - day))
                 * (Vec3::ONE + read.shift_bottom),
             ambient: read.ambient * ambient_scale,

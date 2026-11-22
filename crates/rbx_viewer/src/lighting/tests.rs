@@ -193,7 +193,7 @@ fn brightness_scales_the_sun_and_its_fill_together() {
     assert!(close(lighting.sun_color, Vec3::splat(2.0 * FILMIC_SUN)));
     assert!(close(
         lighting.fill_color,
-        Vec3::splat(2.0 * FILMIC_SUN) * FILL_FRACTION * FILL_TINT
+        Vec3::splat(2.0 * FILMIC_SUN) * FILMIC_FILL_FRACTION * FILL_TINT
     ));
 }
 

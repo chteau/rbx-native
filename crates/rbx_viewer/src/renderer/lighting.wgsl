@@ -218,15 +218,24 @@ fn env_level(roughness: f32) -> f32 {
     return clamp(top_mip - PROBE_LOG2_FACE + probe, 0.0, top_mip);
 }
 
+const SKY_UP_GAIN: f32 = 1.4;
+
 /// The sky's own irradiance on a surface, rebuilt from the six cardinal values
 /// the uniform carries: an ambient cube, whose squared weights sum to one for
 /// any unit normal and are exact on the axes themselves.
+///
+/// The light from straight above is lifted by [`SKY_UP_GAIN`] once the sun
+/// is up: the real client lights a floor in shadow by day that much more
+/// than the sky's integral gives (`studio_lighting`'s floor shadow read
+/// 27,58,82 against 39,74,99), while at dusk (`evening`) it gives no more.
 fn sky_ambient(normal: vec3<f32>) -> vec3<f32> {
     let weight = normal * normal;
     let x = select(lighting.sky_irradiance[1], lighting.sky_irradiance[0], normal.x >= 0.0);
-    let y = select(lighting.sky_irradiance[3], lighting.sky_irradiance[2], normal.y >= 0.0);
+    let high = saturate((normalize(lighting.sun_direction.xyz).y - 0.05) / 0.2);
+    let up = lighting.sky_irradiance[2].rgb * mix(1.0, SKY_UP_GAIN, high);
+    let y = select(lighting.sky_irradiance[3].rgb, up, normal.y >= 0.0);
     let z = select(lighting.sky_irradiance[5], lighting.sky_irradiance[4], normal.z >= 0.0);
-    let irradiance = x.rgb * weight.x + y.rgb * weight.y + z.rgb * weight.z;
+    let irradiance = x.rgb * weight.x + y * weight.y + z.rgb * weight.z;
     return irradiance * lighting.tuning.z * lighting.sky_tint.rgb;
 }
 
