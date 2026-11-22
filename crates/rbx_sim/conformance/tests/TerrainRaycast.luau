@@ -9,6 +9,7 @@ return function(h, origin)
 	-- Slab top at origin.Y, studs -32..32 on X and Z.
 	terrain:FillBlock(CFrame.new(at(0, -8, 0)), Vector3.new(64, 16, 64), Enum.Material.Grass)
 	terrain:FillBall(at(-16, 4, -16), 8, Enum.Material.Sand)
+	terrain:FillBall(at(16, 4, -16), 8, Enum.Material.Grass)
 	-- A lake 8 deep over rock, next to the slab.
 	terrain:FillBlock(CFrame.new(at(48, -12, 0)), Vector3.new(32, 8, 32), Enum.Material.Rock)
 	terrain:FillBlock(CFrame.new(at(48, -4, 0)), Vector3.new(32, 8, 32), Enum.Material.Water)
@@ -69,6 +70,32 @@ return function(h, origin)
 	result.bounds = h.names(workspace:GetPartBoundsInBox(CFrame.new(at(0, 0, 0)), Vector3.new(8, 8, 8)))
 	result.radius = h.names(workspace:GetPartBoundsInRadius(at(0, 0, 0), 6))
 	result._ready = ready
+	-- Heights of the Sand and Grass balls, a ray down every stud.
+	for _, ball in { { "sand_ball", -16 }, { "grass_ball", 16 } } do
+		local rows = {}
+		for z = -26, -6 do
+			local row = {}
+			for x = -10, 10 do
+				local r = workspace:Raycast(at(ball[2] + x + 0.25, 20, z + 0.25), down)
+				table.insert(row, r and string.format("%.2f", r.Position.Y - origin.Y) or "-")
+			end
+			table.insert(rows, table.concat(row, " "))
+		end
+		result[ball[1]] = table.concat(rows, " / ")
+		-- Its voxels in the slab's top layer and the one above.
+		local materials, occupancies =
+			terrain:ReadVoxels(Region3.new(at(ball[2] - 12, -4, -28), at(ball[2] + 12, 4, -4)), 4)
+		local cells = {}
+		for y = 1, 2 do
+			for z = 1, 6 do
+				for x = 1, 6 do
+					local m = materials[x][y][z].Name
+					table.insert(cells, if m == "Air" then "-" else string.format("%s%d", m:sub(1, 2), math.floor(occupancies[x][y][z] * 255 + 0.5)))
+				end
+			end
+		end
+		result["_" .. ball[1] .. "_voxels"] = table.concat(cells, " ")
+	end
 	terrain:Clear()
 	return result
 end
