@@ -157,9 +157,11 @@ fn gather(
             display_order: integer(properties, "DisplayOrder", 0),
             device_safe: constraints::device_safe(properties),
             under_topbar: starter::player_gui().is_some() && constraints::under_topbar(properties),
+            in_topbar: starter::player_gui().is_some() && constraints::in_topbar(properties),
             global_z_index: constraints::global_z_index(properties),
             clip_to_safe_area: constraints::clip_to_safe_area(properties),
             list: layout_of(dom, database, styles, instance.children()),
+            padding: constraints::constraints(dom, database, styles, instance.children()).padding,
             roots,
             groups,
         });
@@ -187,9 +189,11 @@ fn gather(
             display_order: 0,
             device_safe: false,
             under_topbar: false,
+            in_topbar: false,
             global_z_index: constraints::global_z_index(properties),
             clip_to_safe_area: false,
             list: layout_of(dom, database, styles, instance.children()),
+            padding: None,
             roots,
             groups,
         });
