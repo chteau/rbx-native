@@ -117,7 +117,7 @@ impl Sounds {
             }
         }
         if !self.clips.contains_key(&id) {
-            let cached = AssetCache::new(None).ok().and_then(|c| c.get_id(id));
+            let cached = crate::replay::cached(self.fetcher.as_ref(), id);
             let load = match cached.map(crate::audio::decode) {
                 Some(Ok(clip)) => Load::Ready(Arc::new(clip)),
                 _ => {

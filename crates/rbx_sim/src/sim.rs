@@ -2206,7 +2206,7 @@ impl std::fmt::Debug for Models {
 impl rbx_lua::server::AssetSource for Models {
     fn fetch(&self, id: u64) -> Result<Vec<u8>, String> {
         let cache = rbx_assets::AssetCache::new(None).ok();
-        if let Some(bytes) = cache.as_ref().and_then(|c| c.get_id(id)) {
+        if let Some(bytes) = crate::replay::cached(Some(&self.0), id) {
             return Ok(bytes);
         }
         let bytes = self.0.fetch_id(id).map_err(|e| match e {

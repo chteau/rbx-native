@@ -333,8 +333,13 @@ impl Session {
             }
         }
         let place = rbx_xml::serialize(&place).unwrap_or_default().into_bytes();
-        self.trace = Some(Trace::record(seed, place));
+        let trace = Trace::record(seed, place);
+        // Assets come through the trace even with no fetcher (cache hits
+        // included), so a replay never depends on this machine's cache.
+        let fetcher = trace.fetcher(self.fetcher.take());
+        self.trace = Some(trace);
         self.tape_server();
+        self.install_fetcher(fetcher);
     }
 
     /// A replay's trace: every VM reads its recorded tape, assets and
@@ -900,6 +905,10 @@ impl Session {
             Some(trace) => trace.fetcher(Some(fetcher)),
             None => fetcher,
         };
+        self.install_fetcher(fetcher);
+    }
+
+    fn install_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {
         self.server.set_fetcher(fetcher.clone());
         for client in &mut self.clients {
             client.sim.set_fetcher(fetcher.clone());

@@ -158,7 +158,7 @@ fn load_clip(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Clip, St
 /// An asset's bytes: the asset cache's, else the fetcher's, kept.
 fn fetch(id: u64, fetcher: Option<Arc<dyn AssetFetcher>>) -> Result<Vec<u8>, String> {
     let cache = AssetCache::new(None).ok();
-    let bytes = match cache.as_ref().and_then(|c| c.get_id(id)) {
+    let bytes = match crate::replay::cached(fetcher.as_ref(), id) {
         Some(bytes) => bytes,
         None => {
             let fetcher = fetcher

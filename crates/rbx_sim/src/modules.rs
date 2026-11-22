@@ -28,7 +28,7 @@ pub(crate) fn load(
         }
     }
     let failed = || format!("Unable to load module asset {id}");
-    let cached = AssetCache::new(None).ok().and_then(|c| c.get_id(id));
+    let cached = crate::replay::cached(shared.sounds.fetcher.as_ref(), id);
     let bytes = match cached {
         Some(bytes) => bytes,
         None => {

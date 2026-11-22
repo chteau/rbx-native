@@ -473,6 +473,7 @@ impl Trace {
         inner: Option<Arc<dyn rbx_assets::AssetFetcher>>,
     ) -> Arc<dyn rbx_assets::AssetFetcher> {
         Arc::new(Fetcher {
+            recording: self.recording(),
             inner: inner.filter(|_| self.recording()),
             blobs: self.blobs.clone(),
         })
@@ -552,8 +553,22 @@ fn keep(blobs: &Blobs, key: String, value: Result<Vec<u8>, String>) {
         .insert(key, value);
 }
 
-/// Assets by id: fetched and kept, or the kept ones.
+/// The asset cache's copy of `id`, unless `fetcher` reads the cache itself
+/// (a recording or replay's, which keeps cache hits too).
+pub(crate) fn cached(
+    fetcher: Option<&Arc<dyn rbx_assets::AssetFetcher>>,
+    id: u64,
+) -> Option<Vec<u8>> {
+    if fetcher.is_some_and(|f| f.caches()) {
+        return None;
+    }
+    rbx_assets::AssetCache::new(None).ok()?.get_id(id)
+}
+
+/// Assets by id: from the asset cache or fetched, and kept; or the kept
+/// ones.
 struct Fetcher {
+    recording: bool,
     inner: Option<Arc<dyn rbx_assets::AssetFetcher>>,
     blobs: Blobs,
 }
@@ -566,6 +581,23 @@ impl Fetcher {
         fetch: impl FnOnce(&dyn rbx_assets::AssetFetcher) -> Result<Vec<u8>, rbx_assets::FetchError>,
     ) -> Result<Vec<u8>, rbx_assets::FetchError> {
         let refused = |message| rbx_assets::FetchError::Refused { id, message };
+        if self.recording {
+            let cached = key
+                .starts_with("asset:")
+                .then(|| rbx_assets::AssetCache::new(None).ok()?.get_id(id))
+                .flatten();
+            let got = match (cached, &self.inner) {
+                (Some(bytes), _) => Ok(bytes),
+                (None, Some(inner)) => fetch(inner.as_ref()),
+                (None, None) => Err(rbx_assets::FetchError::NotFound(id)),
+            };
+            keep(
+                &self.blobs,
+                key,
+                got.as_ref().map(|b| b.clone()).map_err(|e| e.to_string()),
+            );
+            return got;
+        }
         match &self.inner {
             Some(inner) => {
                 let got = fetch(inner.as_ref());
@@ -585,6 +617,10 @@ impl Fetcher {
 }
 
 impl rbx_assets::AssetFetcher for Fetcher {
+    fn caches(&self) -> bool {
+        true
+    }
+
     fn fetch_id(&self, id: u64) -> Result<Vec<u8>, rbx_assets::FetchError> {
         self.get(format!("asset:{id}"), id, |f| f.fetch_id(id))
     }

@@ -145,7 +145,7 @@ impl Videos {
             }
         }
         if !self.loads.contains_key(&id) {
-            let cached = AssetCache::new(None).ok().and_then(|c| c.get_id(id));
+            let cached = crate::replay::cached(self.fetcher.as_ref(), id);
             let load = match cached.as_deref().and_then(webm_info) {
                 Some(info) => Load::Ready(info),
                 None => {
