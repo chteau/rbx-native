@@ -254,6 +254,10 @@ pub struct Session {
     frames: u64,
     /// Server seconds a join waits for, see [`Session::set_join_after`].
     join_after: f64,
+    /// Joins [`Session::join_later`] queued, made once `join_after` passed.
+    pending: Vec<(String, i64, Option<WeakDom>)>,
+    /// Why a queued join failed, not yet taken.
+    join_failures: Vec<String>,
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -322,6 +326,8 @@ impl Session {
             profile: Default::default(),
             frames: 0,
             join_after: 0.0,
+            pending: Vec::new(),
+            join_failures: Vec::new(),
         })
     }
 
@@ -443,9 +449,35 @@ impl Session {
         Ok(index)
     }
 
+    /// [`Session::join`] without the wait: the player joins on the first
+    /// [`Session::step`] the server starts at or after `join_after`, the
+    /// frame `join` would have joined them on, so a caller stepping in real
+    /// time (the editor) never runs the server's first seconds at once.
+    /// Joins queued together join in order.
+    pub fn join_later(&mut self, name: &str, user_id: i64, template: Option<WeakDom>) {
+        self.pending.push((name.into(), user_id, template));
+    }
+
+    /// Players queued by [`Session::join_later`] are still to join.
+    pub fn joining(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// Why queued joins failed, oldest first.
+    pub fn take_join_failures(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.join_failures)
+    }
+
     /// One frame: what the clients sent arrives at the server, the server
     /// steps, then each client gets the server's frame and steps.
     pub fn step(&mut self) {
+        if self.joining() && self.server.time() >= self.join_after {
+            for (name, user_id, template) in std::mem::take(&mut self.pending) {
+                if let Err(why) = self.join(&name, user_id, template) {
+                    self.join_failures.push(why);
+                }
+            }
+        }
         let step_started = std::time::Instant::now();
         self.relayed.clear();
         let now = self.server.frame();
