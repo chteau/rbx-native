@@ -65,6 +65,39 @@ pub enum Wire {
     Table(Vec<(Wire, Wire)>),
 }
 
+impl Wire {
+    /// About how many bytes this value takes on the wire. Roblox's encoding
+    /// isn't documented: a type byte, then each type's raw fields.
+    pub fn size(&self) -> usize {
+        match self {
+            Wire::Nil => 1,
+            Wire::Bool(_) => 2,
+            Wire::Number(_) | Wire::Instance(_) => 9,
+            Wire::String(bytes) | Wire::Buffer(bytes) => 3 + bytes.len(),
+            Wire::Enum { .. } => 5,
+            Wire::Data(_, kind) => {
+                1 + match kind.as_str() {
+                    "BrickColor" => 4,
+                    "Vector2" | "UDim" => 8,
+                    "Vector3" | "Color3" => 12,
+                    "CFrame" => 48,
+                    _ => 16,
+                }
+            }
+            Wire::Table(entries) => {
+                3 + entries
+                    .iter()
+                    .map(|(k, v)| k.size() + v.size())
+                    .sum::<usize>()
+            }
+        }
+    }
+}
+
+/// The most an `UnreliableRemoteEvent` carries: "Events with payloads
+/// larger than 1000 bytes are dropped" (creator-docs).
+const UNRELIABLE_LIMIT: usize = 1000;
+
 /// Who a packet is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum To {
@@ -127,6 +160,9 @@ pub(super) struct Remotes {
     events: VecDeque<(signal::SignalKey, Option<Ref>, Vec<Wire>)>,
     /// Invocations of a remote with no callback yet.
     invokes: VecDeque<(Option<Ref>, Ref, u32, Vec<Wire>)>,
+    /// Unreliable remotes already warned about losing an event for want
+    /// of a listener.
+    discarded: std::collections::HashSet<Ref>,
 }
 
 pub(super) type Shared = Rc<RefCell<Remotes>>;
@@ -158,7 +194,28 @@ pub(super) fn member(
     let unreliable = is(ctx, class, "UnreliableRemoteEvent");
     let ctx = ctx.clone();
     let remotes = remotes.clone();
-    let send = move |ctx: &Ctx, to: To, packet: Packet| {
+    let send = move |lua: &Lua, ctx: &Ctx, to: To, packet: Packet| {
+        if let Packet::Event {
+            args,
+            unreliable: true,
+            ..
+        } = &packet
+        {
+            let size: usize = args.iter().map(Wire::size).sum();
+            if size > UNRELIABLE_LIMIT {
+                // Studio says how far over it went; the event is dropped.
+                let name =
+                    crate::instance::tree::full_name(&ctx.dom(), referent).unwrap_or_default();
+                engine(lua).host.output(
+                    crate::LineKind::Warn,
+                    format!(
+                        "UnreliableRemoteEvent {name} dropped an event: its payload is {} bytes over the {UNRELIABLE_LIMIT} byte limit",
+                        size - UNRELIABLE_LIMIT
+                    ),
+                );
+                return;
+            }
+        }
         let at = ctx.dom().mutations();
         remotes
             .borrow_mut()
@@ -187,6 +244,7 @@ pub(super) fn member(
             }
             let args = encode_args(lua, args.into_iter().skip(1))?;
             send(
+                lua,
                 &ctx,
                 To::Server,
                 Packet::Event {
@@ -215,6 +273,7 @@ pub(super) fn member(
                 };
                 let args = encode_args(lua, rest)?;
                 send(
+                    lua,
                     &ctx,
                     to,
                     Packet::Event {
@@ -242,6 +301,7 @@ pub(super) fn member(
                 let args = encode_args(lua, rest)?;
                 let id = scheduler::new_await(lua);
                 send(
+                    lua,
                     &ctx,
                     to,
                     Packet::Invoke {
@@ -461,16 +521,31 @@ pub(super) fn receive(
     packet: Packet,
 ) -> Result<()> {
     match packet {
-        Packet::Event { remote, args, .. } => {
+        Packet::Event {
+            remote,
+            args,
+            unreliable,
+        } => {
             let name = if client {
                 "OnClientEvent"
             } else {
                 "OnServerEvent"
             };
-            remotes
-                .borrow_mut()
-                .events
-                .push_back((instance_key(remote, name), from, args));
+            let key = instance_key(remote, name);
+            // "Unlike a RemoteEvent, Roblox discards the message
+            // immediately instead of queuing it" (creator-docs).
+            if unreliable && !engine(lua).signals.borrow().has(&key) {
+                if remotes.borrow_mut().discarded.insert(remote) {
+                    let path = crate::instance::tree::full_name(&engine(lua).ctx.dom(), remote)
+                        .unwrap_or_default();
+                    engine(lua).host.output(
+                        crate::LineKind::Warn,
+                        format!("Remote event invocation discarded for {path}; did you forget to implement {name}?"),
+                    );
+                }
+                return Ok(());
+            }
+            remotes.borrow_mut().events.push_back((key, from, args));
         }
         Packet::Invoke { remote, id, args } => {
             remotes
