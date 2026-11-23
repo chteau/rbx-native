@@ -90,8 +90,9 @@ struct Running {
     /// The player whose window last had input: what the run plays aloud
     /// and the Controller Emulator drives.
     audible: Option<Ref>,
-    /// What the Remote inspector captured, for every window's dock.
-    remotes: crate::shell::remote_inspector::Store,
+    /// What the Remote inspector captured, shared with every test tab's
+    /// dock.
+    remotes: crate::shell::remote_inspector::Shared,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -1198,11 +1199,12 @@ impl Shell {
 
     /// One tick of the frame loop: steps the frames due on the wall clock.
     fn local_run_tick(&mut self, cx: &mut Context<Self>) {
-        // Only while a Remote inspector shows does the session log remotes.
-        let capture = self.remote_inspector_wanted(cx);
+        let showing = self.is_panel_showing(crate::shell::layout::Panel::RemoteInspector);
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
+        // Only while a Remote inspector shows does the session log remotes.
+        let capture = showing || run.remotes.borrow().watched();
         run.session.capture_remotes(capture);
         let now = Instant::now();
         let elapsed = now.duration_since(run.last).as_secs_f64();
@@ -1321,7 +1323,7 @@ impl Shell {
         }
         if capture {
             let events = run.session.take_remote_events();
-            run.remotes.take(events, run.session.time());
+            run.remotes.borrow_mut().take(events, run.session.time());
         }
         if due > steps || run.paused {
             run.clock = run.session.time();
@@ -1535,49 +1537,12 @@ impl Shell {
 
     /// The Remote inspector's captures: this window's run's, or in a
     /// Server & Clients tab, the run of the window that started it.
-    pub(in crate::shell) fn remote_store<'a>(
-        &'a self,
-        cx: &'a App,
-    ) -> Option<&'a crate::shell::remote_inspector::Store> {
-        if let Some(run) = &self.play.live.local.running {
-            return Some(&run.remotes);
+    pub(in crate::shell) fn remote_store(&self) -> Option<crate::shell::remote_inspector::Shared> {
+        match (&self.play.live.local.running, &self.play.live.local.peer) {
+            (Some(run), _) => Some(run.remotes.clone()),
+            (None, Some(peer)) => Some(peer.remotes.clone()),
+            (None, None) => None,
         }
-        let host = self.play.live.local.peer.as_ref()?.host()?;
-        let run = host.read(cx).play.live.local.running.as_ref()?;
-        Some(&run.remotes)
-    }
-
-    /// Changes the captures [`Shell::remote_store`] reads.
-    pub(in crate::shell) fn remote_store_update(
-        &mut self,
-        cx: &mut Context<Self>,
-        change: impl FnOnce(&mut crate::shell::remote_inspector::Store),
-    ) {
-        if let Some(run) = &mut self.play.live.local.running {
-            change(&mut run.remotes);
-        } else if let Some(host) = self.play.live.local.peer.as_ref().and_then(|p| p.host()) {
-            host.update(cx, |host, cx| {
-                if let Some(run) = &mut host.play.live.local.running {
-                    change(&mut run.remotes);
-                }
-                cx.notify();
-            });
-        }
-        cx.notify();
-    }
-
-    /// Whether a Remote inspector shows in this window or one of its run's
-    /// Server & Clients tabs.
-    fn remote_inspector_wanted(&self, cx: &App) -> bool {
-        let panel = crate::shell::layout::Panel::RemoteInspector;
-        self.is_panel_showing(panel)
-            || self
-                .play
-                .live
-                .local
-                .running
-                .as_ref()
-                .is_some_and(|run| windows::showing(run, panel, cx))
     }
 
     /// The edited place's script a capture's caller names (a client's copy

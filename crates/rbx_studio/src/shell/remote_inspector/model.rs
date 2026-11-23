@@ -1,7 +1,10 @@
 //! What the Remote inspector holds: the captured calls, their rates per
 //! remote and per player, the filters and the exports. No GPUI here.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use rbx_sim::remote_log::{Arg, Direction, Event, Fate, Kind, RemoteCall, Reply, LONG_INVOKE};
 
@@ -171,9 +174,18 @@ impl Filter {
     }
 }
 
+/// How long a dock's last look keeps the session capturing.
+const WATCH: Duration = Duration::from_secs(1);
+
+/// The run's captures, held by the window running it and lent to each of
+/// its Server & Clients tabs.
+pub(crate) type Shared = Rc<RefCell<Store>>;
+
 /// The session's captured calls, kept by the window running it.
 #[derive(Default)]
 pub(crate) struct Store {
+    /// When a dock last showed them: the session captures while one does.
+    watched_at: Option<Instant>,
     rows: VecDeque<Row>,
     pub(super) paused: bool,
     pub(super) by_remote: BTreeMap<String, Rate>,
@@ -229,16 +241,25 @@ impl Store {
         }
     }
 
+    pub(super) fn watch(&mut self) {
+        self.watched_at = Some(Instant::now());
+    }
+
+    /// A dock showed these within the last second.
+    pub(crate) fn watched(&self) -> bool {
+        self.watched_at.is_some_and(|at| at.elapsed() < WATCH)
+    }
+
     fn row_mut(&mut self, id: u64) -> Option<&mut Row> {
         let at = self.rows.binary_search_by_key(&id, |r| r.call.id).ok()?;
         self.rows.get_mut(at)
     }
 
     pub(crate) fn clear(&mut self) {
-        let now = self.now;
         *self = Store {
+            watched_at: self.watched_at,
             paused: self.paused,
-            now,
+            now: self.now,
             ..Store::default()
         };
     }

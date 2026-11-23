@@ -105,6 +105,8 @@ pub(in crate::shell) struct PeerLink {
     pub(super) tabs: WeakEntity<TestWindow>,
     /// This tab is the one the test window shows.
     pub(in crate::shell) tab_shown: bool,
+    /// The session's Remote inspector captures.
+    pub(super) remotes: crate::shell::remote_inspector::Shared,
 }
 
 impl PeerLink {
@@ -119,15 +121,6 @@ impl PeerLink {
         let run = host.read(cx).play.live.local.running.as_ref()?;
         run.session.sim(self.view).map(Simulation::dom_rc)
     }
-}
-
-/// Whether `panel` shows in one of `run`'s test tabs.
-pub(super) fn showing(run: &Running, panel: crate::shell::layout::Panel, cx: &App) -> bool {
-    run.windows.iter().any(|w| {
-        w.shell
-            .upgrade()
-            .is_some_and(|shell| shell.read(cx).is_panel_showing(panel))
-    })
 }
 
 /// One frame of a peer, for its window.
@@ -396,6 +389,7 @@ impl Shell {
                 .as_ref()
                 .map_or_else(WeakEntity::new_invalid, |(_, view)| view.clone()),
             tab_shown: existing.is_none(),
+            remotes: run.remotes.clone(),
         };
         let title = SharedString::from(name.clone());
         let build = move |window: &mut Window, cx: &mut App| {

@@ -25,12 +25,16 @@ use super::menu::{self, MenuId};
 use super::Shell;
 use crate::launcher::ui;
 use crate::tokens;
-pub(crate) use model::Store;
 use model::{Filter, Row, SPARK, UNRELIABLE_PER_SECOND};
+pub(crate) use model::{Shared, Store};
 
 /// Calls listed, the newest first.
 const ROWS: usize = 300;
 const SPARK_H: f32 = 14.0;
+/// The picked call's argument tree, scrolled past this.
+const DETAILS_H: f32 = 160.0;
+/// About one call row, for the list's least height.
+const ROW_H: f32 = 19.0;
 
 #[derive(Default)]
 pub(crate) struct RemoteInspectorDock {
@@ -137,7 +141,7 @@ impl Shell {
             cx,
         );
         self.ensure_remote_input(window, cx);
-        if self.remote_store(cx).is_none() {
+        let Some(shared) = self.remote_store() else {
             let empty = div()
                 .p(px(12.))
                 .text_size(tokens::text_sm())
@@ -152,19 +156,15 @@ impl Shell {
                 Some(overflow.into_any_element()),
                 Some(empty.into_any_element()),
             );
-        }
+        };
+        shared.borrow_mut().watch();
+        let store = shared.borrow();
         let body = v_flex()
             .id("remote-inspector-dock")
             .size_full()
-            .child(self.remote_toolbar(cx))
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .items_start()
-                    .child(self.remote_calls(cx))
-                    .child(self.remote_rates(cx)),
-            );
+            .child(self.remote_toolbar(&store, cx))
+            .child(remote_rates(&store))
+            .child(self.remote_calls(&store, cx));
         (
             Some(overflow.into_any_element()),
             Some(body.into_any_element()),
@@ -185,11 +185,16 @@ impl Shell {
         self.remote_inspector.input = Some((input, subscription));
     }
 
-    fn remote_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
-        let (paused, players) = self
-            .remote_store(cx)
-            .map(|s| (s.paused, s.players()))
-            .unwrap_or_default();
+    /// Changes the captures [`Shell::remote_store`] lends.
+    fn remote_store_update(&self, change: impl FnOnce(&mut Store), cx: &mut Context<Self>) {
+        if let Some(shared) = self.remote_store() {
+            change(&mut shared.borrow_mut());
+        }
+        cx.notify();
+    }
+
+    fn remote_toolbar(&self, store: &Store, cx: &Context<Self>) -> impl IntoElement {
+        let (paused, players) = (store.paused, store.players());
         let filter = &self.remote_inspector.filter;
         let player_toggle = |label: String, player: Option<String>| {
             let on = filter.player == player;
@@ -244,14 +249,14 @@ impl Shell {
                     paused,
                 )
                 .on_click(cx.listener(|shell, _, _, cx| {
-                    shell.remote_store_update(cx, |store| store.paused = !store.paused);
+                    shell.remote_store_update(|store| store.paused = !store.paused, cx);
                 })),
             )
             .child(
                 ui::button("remote-clear", "Clear", ui::Weight::Ghost, true).on_click(cx.listener(
                     |shell, _, _, cx| {
                         shell.remote_inspector.picked = None;
-                        shell.remote_store_update(cx, Store::clear);
+                        shell.remote_store_update(Store::clear, cx);
                     },
                 )),
             )
@@ -265,12 +270,9 @@ impl Shell {
             )
     }
 
-    fn remote_calls(&self, cx: &Context<Self>) -> impl IntoElement {
-        let filter = self.remote_inspector.filter.clone();
+    fn remote_calls(&self, store: &Store, cx: &Context<Self>) -> impl IntoElement {
+        let filter = &self.remote_inspector.filter;
         let picked = self.remote_inspector.picked;
-        let Some(store) = self.remote_store(cx) else {
-            return v_flex();
-        };
         let now = store.now;
         let rows: Vec<(u64, AnyElement)> = store
             .rows()
@@ -281,6 +283,10 @@ impl Shell {
             .collect();
         let details = picked.and_then(|id| store.row(id)).map(|row| {
             v_flex()
+                .id("remote-details")
+                .flex_none()
+                .max_h(px(DETAILS_H))
+                .overflow_y_scroll()
                 .px(px(8.))
                 .pb(px(6.))
                 .gap(px(1.))
@@ -309,32 +315,34 @@ impl Shell {
         let empty = rows.is_empty();
         v_flex()
             .flex_1()
-            .min_w_0()
-            .h_full()
+            .min_h_0()
+            .w_full()
             .child(
                 h_flex()
                     .px(px(8.))
                     .gap(px(8.))
                     .text_color(tokens::text3())
-                    .child(cell(70., "Time"))
-                    .child(cell(56., "Way"))
-                    .child(cell(200., "Remote"))
-                    .child(cell(80., "Player"))
+                    .child(cell(54., "Time"))
+                    .child(cell(48., "Way"))
+                    .child(cell(130., "Remote"))
+                    .child(cell(64., "Player"))
                     .child(
                         div()
                             .flex_1()
+                            .min_w_0()
+                            .truncate()
                             .text_size(tokens::text_xs())
                             .child("Arguments"),
                     )
-                    .child(cell(60., "Bytes"))
-                    .child(cell(110., "Script"))
-                    .child(cell(140., "Flag")),
+                    .child(cell(52., "Bytes"))
+                    .child(cell(96., "Script"))
+                    .child(cell(120., "Flag")),
             )
             .child(
                 v_flex()
                     .id("remote-calls")
                     .flex_1()
-                    .min_h_0()
+                    .min_h(px(ROW_H * 3.))
                     .overflow_y_scroll()
                     .when(empty, |this| {
                         this.child(
@@ -355,76 +363,11 @@ impl Shell {
             .children(details)
     }
 
-    fn remote_rates(&self, cx: &App) -> impl IntoElement {
-        let Some(store) = self.remote_store(cx) else {
-            return v_flex().id("remote-rates");
-        };
-        let now = store.now;
-        let rate_row = |name: &str, rate: &model::Rate, warn: Option<String>| {
-            let (calls, bytes) = rate.per_second(now);
-            v_flex()
-                .px(px(8.))
-                .py(px(2.))
-                .child(
-                    h_flex()
-                        .gap(px(6.))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .truncate()
-                                .text_size(tokens::text_xs())
-                                .child(name.to_owned()),
-                        )
-                        .child(sparkline(rate.spark(now))),
-                )
-                .child(small(format!("{calls}/s  ·  {}/s", bytes_text(bytes))))
-                .when_some(warn, |this, warn| {
-                    this.child(
-                        div()
-                            .text_size(tokens::text_xs())
-                            .text_color(tokens::text_error())
-                            .child(warn),
-                    )
-                })
-        };
-        let lost = store
-            .rows()
-            .filter(|r| r.flag(now).is_some_and(|(_, error)| error))
-            .count();
-        v_flex()
-            .id("remote-rates")
-            .w(px(260.))
-            .flex_none()
-            .h_full()
-            .overflow_y_scroll()
-            .border_l_1()
-            .border_color(tokens::border())
-            .child(heading("PER REMOTE"))
-            .children(
-                store
-                    .by_remote
-                    .iter()
-                    .map(|(name, rate)| rate_row(name.rsplit('.').next().unwrap_or(name), rate, None)),
-            )
-            .child(heading("PER PLAYER"))
-            .children(store.by_player.iter().map(|(name, rate)| {
-                let peak = rate.unreliable_peak();
-                let warn = (peak > UNRELIABLE_PER_SECOND).then(|| {
-                    format!("{peak} unreliable/s to the server: over {UNRELIABLE_PER_SECOND}/s are dropped")
-                });
-                rate_row(name, rate, warn)
-            }))
-            .child(heading("DROPPED, LOST, FAILED"))
-            .child(div().px(px(8.)).child(small(format!("{lost} of the calls kept"))))
-    }
-
     fn remote_pick(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.remote_inspector.picked = Some(id);
         let caller = self
-            .remote_store(cx)
-            .and_then(|s| s.row(id))
-            .and_then(|r| r.call.caller.clone());
+            .remote_store()
+            .and_then(|s| s.borrow().row(id).and_then(|r| r.call.caller.clone()));
         if let Some(caller) = caller {
             self.remote_reveal(caller, window, cx);
         }
@@ -473,9 +416,10 @@ impl Shell {
     /// Saves the calls the filters keep as CSV or JSON.
     fn remote_export(&mut self, json: bool, cx: &mut Context<Self>) {
         let filter = self.remote_inspector.filter.clone();
-        let Some(store) = self.remote_store(cx) else {
+        let Some(shared) = self.remote_store() else {
             return;
         };
+        let store = shared.borrow();
         let rows: Vec<&Row> = store.rows().filter(|r| filter.keeps(&r.call)).collect();
         let text = if json {
             model::json(rows.into_iter())
@@ -518,6 +462,83 @@ impl Shell {
     }
 }
 
+/// A card per remote and per player: calls and bytes a second, a
+/// sparkline, and what went over a limit or got lost.
+fn remote_rates(store: &Store) -> impl IntoElement {
+    let now = store.now;
+    let card = |name: String, rate: &model::Rate, warn: Option<String>| {
+        let (calls, bytes) = rate.per_second(now);
+        let over = warn.is_some();
+        v_flex()
+            .w(px(176.))
+            .px(px(6.))
+            .py(px(3.))
+            .rounded(px(4.))
+            .border_1()
+            .border_color(if over {
+                tokens::text_error()
+            } else {
+                tokens::border()
+            })
+            .child(
+                h_flex()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(tokens::text_xs())
+                            .child(name),
+                    )
+                    .child(sparkline(rate.spark(now))),
+            )
+            .child(small(format!("{calls}/s  ·  {}/s", bytes_text(bytes))))
+            .when_some(warn, |this, warn| {
+                this.child(
+                    div()
+                        .text_size(tokens::text_xs())
+                        .text_color(tokens::text_error())
+                        .child(warn),
+                )
+            })
+    };
+    let failed = store
+        .rows()
+        .filter(|r| r.flag(now).is_some_and(|(_, error)| error))
+        .count();
+    let remotes = store.by_remote.iter().map(|(path, rate)| {
+        let name = path.rsplit('.').next().unwrap_or(path).to_owned();
+        card(name, rate, None)
+    });
+    let players = store.by_player.iter().map(|(name, rate)| {
+        let peak = rate.unreliable_peak();
+        let warn = (peak > UNRELIABLE_PER_SECOND)
+            .then(|| format!("{peak} unreliable/s up: over {UNRELIABLE_PER_SECOND} dropped"));
+        card(name.clone(), rate, warn)
+    });
+    h_flex()
+        .id("remote-rates")
+        .px(px(8.))
+        .pb(px(4.))
+        .gap(px(6.))
+        .flex_wrap()
+        .max_h(px(104.))
+        .overflow_y_scroll()
+        .children(remotes)
+        .children(players)
+        .child(
+            div()
+                .text_size(tokens::text_xs())
+                .text_color(if failed > 0 {
+                    tokens::text_error()
+                } else {
+                    tokens::text3()
+                })
+                .child(format!("{failed} dropped, lost or failed")),
+        )
+}
+
 fn call_row(row: &Row, now: f64, picked: bool) -> AnyElement {
     let call = &row.call;
     let flag = row.flag(now);
@@ -527,10 +548,17 @@ fn call_row(row: &Row, now: f64, picked: bool) -> AnyElement {
         .gap(px(8.))
         .when(picked, |this| this.bg(tokens::selection()))
         .hover(|this| this.bg(tokens::hover()))
-        .child(cell(70., format!("{:.3}", call.time)).text_color(tokens::text2()))
-        .child(cell(56., short_direction(call.direction)))
-        .child(cell(200., call.path.clone()))
-        .child(cell(80., call.player.clone()))
+        .child(cell(54., format!("{:.2}", call.time)).text_color(tokens::text2()))
+        .child(cell(48., short_direction(call.direction)))
+        .child(cell(
+            130.,
+            call.path
+                .rsplit('.')
+                .next()
+                .unwrap_or(&call.path)
+                .to_owned(),
+        ))
+        .child(cell(64., call.player.clone()))
         .child(
             div()
                 .flex_1()
@@ -540,15 +568,15 @@ fn call_row(row: &Row, now: f64, picked: bool) -> AnyElement {
                 .text_color(tokens::text2())
                 .child(row.summary()),
         )
-        .child(cell(60., bytes_text(call.bytes)))
-        .child(cell(110., row.caller()).text_color(ui::accent()))
+        .child(cell(52., bytes_text(call.bytes)))
+        .child(cell(96., row.caller()).text_color(ui::accent()))
         .child(match flag {
-            Some((text, error)) => cell(140., text).text_color(if error {
+            Some((text, error)) => cell(120., text).text_color(if error {
                 tokens::text_error()
             } else {
                 tokens::warning()
             }),
-            None => cell(140., ""),
+            None => cell(120., ""),
         })
         .into_any_element()
 }
