@@ -7,7 +7,6 @@
 mod common;
 
 use std::io::{Read, Write};
-use std::net::TcpListener;
 use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -200,7 +199,7 @@ fn the_plugin_drops_a_vanished_host_and_joins_the_next() {
     let key = auth::derive_key(&secret, 4567);
     let room = auth::room_id(&key);
     // What a dead quick tunnel's address answers: Cloudflare's 530 page.
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = rbx_presence::announce::bind_outside_loopback_range().unwrap();
     let dead = format!("http://{}", listener.local_addr().unwrap());
     thread::spawn(move || {
         for mut stream in listener.incoming().flatten() {

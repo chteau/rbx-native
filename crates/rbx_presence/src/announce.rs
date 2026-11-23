@@ -81,7 +81,29 @@ pub fn loopback_port(room: &str) -> u16 {
         .get(..4)
         .and_then(|hex| u16::from_str_radix(hex, 16).ok())
         .unwrap_or(0);
-    40960 + word % 8192
+    LOOPBACK_FIRST + word % LOOPBACK_PORTS
+}
+
+/// The loopback ports [`loopback_port`] hands out.
+const LOOPBACK_FIRST: u16 = 40960;
+const LOOPBACK_PORTS: u16 = 8192;
+
+/// A listener on a free `127.0.0.1` port outside the range
+/// [`loopback_port`] hands out: a relay or anything else on one of those
+/// ports would sit on some room's loopback port, and Studio on this
+/// computer would knock on the wrong door. The ports the system picks
+/// (Linux's 32768-60999) overlap that range, so a listener given one in it
+/// is held while asking for another.
+pub fn bind_outside_loopback_range() -> std::io::Result<std::net::TcpListener> {
+    let mut held = Vec::new();
+    loop {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let port = listener.local_addr()?.port();
+        if !(LOOPBACK_FIRST..LOOPBACK_FIRST + LOOPBACK_PORTS).contains(&port) || held.len() >= 64 {
+            return Ok(listener);
+        }
+        held.push(listener);
+    }
 }
 
 /// The `host` id of hosts started by the rbx-native install `install` (its
@@ -230,6 +252,22 @@ mod tests {
     const KEY: &str = "k3y";
     const ROOM: &str = "0123456789abcdef0123456789abcdef";
     const NOW: u64 = 1_800_000_000_000;
+
+    /// A relay, or a test's fake server, on a room's loopback port would
+    /// answer Studio in that room's place (a flaky CI run, 2026-11-23).
+    #[test]
+    fn free_ports_stay_off_the_rooms_loopback_ports() {
+        let held: Vec<_> = (0..300)
+            .map(|_| bind_outside_loopback_range().unwrap())
+            .collect();
+        for listener in &held {
+            let port = listener.local_addr().unwrap().port();
+            assert!(
+                !(LOOPBACK_FIRST..LOOPBACK_FIRST + LOOPBACK_PORTS).contains(&port),
+                "{port}"
+            );
+        }
+    }
 
     #[test]
     fn the_loopback_port_comes_from_the_room() {
