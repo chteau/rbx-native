@@ -3310,6 +3310,12 @@ impl Window {
         #[cfg(any(feature = "inspector", debug_assertions))]
         let inspector_element = self.prepaint_inspector(_inspector_width, cx);
 
+        // rbx-native addition: where the layers drawn over the tree begin,
+        // see `prepaint_tooltip`.
+        let layered_from = (
+            self.next_frame.hitboxes.len(),
+            self.next_frame.tooltip_requests.len(),
+        );
         self.prepaint_deferred_draws(cx);
 
         let mut prompt_element = None;
@@ -3332,7 +3338,7 @@ impl Window {
             active_drag_element = Some(element);
             cx.active_drag = Some(active_drag);
         } else {
-            tooltip_element = self.prepaint_tooltip(cx);
+            tooltip_element = self.prepaint_tooltip(layered_from, cx);
         }
 
         self.mouse_hit_test = self.next_frame.hit_test(self.mouse_position);
@@ -3385,7 +3391,11 @@ impl Window {
         }
     }
 
-    fn prepaint_tooltip(&mut self, cx: &mut App) -> Option<AnyElement> {
+    fn prepaint_tooltip(
+        &mut self,
+        (layered_hitboxes, layered_tooltips): (usize, usize),
+        cx: &mut App,
+    ) -> Option<AnyElement> {
         // Use indexing instead of iteration to avoid borrowing self for the duration of the loop.
         for tooltip_request_index in (0..self.next_frame.tooltip_requests.len()).rev() {
             let Some(Some(tooltip_request)) = self
@@ -3430,6 +3440,22 @@ impl Window {
                         tooltip_bounds.origin.y - tooltip_bounds.bottom() - window_bounds.bottom(),
                     );
                 }
+            }
+
+            // rbx-native addition: the tooltip layer is drawn over every deferred one, so a
+            // tooltip from the tree under an open menu or popover (asked for before the press
+            // that opened it, or by a trigger the menu leaves uncovered) would sit on top of
+            // the menu. One that would overlap anything drawn in those layers is not shown;
+            // the layers' own tooltips are.
+            if tooltip_request_index < layered_tooltips
+                && self.next_frame.hitboxes[layered_hitboxes..].iter().any(|hitbox| {
+                    hitbox
+                        .bounds
+                        .intersect(&hitbox.content_mask.bounds)
+                        .intersects(&tooltip_bounds)
+                })
+            {
+                continue;
             }
 
             // It's possible for an element to have an active tooltip while not being painted (e.g.

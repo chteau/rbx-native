@@ -776,14 +776,15 @@ impl Shell {
         let root_focus = cx.focus_handle();
         let focus_lost = cx.on_focus_lost(window, |shell, window, cx| {
             // A Server & Clients tab not on show leaves the focus to the one
-            // that is: it shares the window.
+            // that is: it shares the window. One popped out into its own
+            // window has that window's watch (`local_run::tabs`).
             if shell
                 .play
                 .live
                 .local
                 .peer
                 .as_ref()
-                .is_some_and(|p| !p.tab_shown)
+                .is_some_and(|p| !p.tab_shown || p.detached)
             {
                 return;
             }
@@ -2386,6 +2387,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window, cx);
+                    shell.end_peer_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )
@@ -2400,6 +2402,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window, cx);
+                    shell.end_peer_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )

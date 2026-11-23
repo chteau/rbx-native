@@ -1121,9 +1121,7 @@ impl Shell {
         if windowed {
             // End Session: the test window closes with it.
             if let Some(test_window) = test_window {
-                let _ = test_window
-                    .handle
-                    .update(cx, |_, window, _| window.remove_window());
+                test_window.close(cx);
             }
             push_row(
                 &mut self.output,

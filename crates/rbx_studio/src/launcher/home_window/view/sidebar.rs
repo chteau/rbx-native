@@ -1,5 +1,5 @@
 //! Home's sidebar: brand, New place, Open file, the page links, and the
-//! key card at the bottom.
+//! Discord card and the key card at the bottom.
 
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
@@ -132,7 +132,56 @@ impl HomeWindow {
             .child(nav("nav-recent", "clock", "Recent", Page::Recent, cx))
             .child(nav("nav-games", "gamepad-2", "My Games", Page::MyGames, cx))
             .child(div().flex_1())
+            .child(self.discord_card())
             .child(self.account_card(cx))
+    }
+
+    /// "Join the Discord": help, feedback and release news, one click out.
+    fn discord_card(&self) -> impl IntoElement {
+        h_flex()
+            .id("sidebar-discord")
+            .mb(px(6.))
+            .items_center()
+            .gap(px(10.))
+            .py(px(10.))
+            .px(px(12.))
+            .rounded(px(8.))
+            .border_1()
+            .border_color(tokens::border())
+            .bg(ui::panel())
+            .cursor_pointer()
+            .hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
+            .child(
+                h_flex()
+                    .size(px(28.))
+                    .flex_none()
+                    .rounded_full()
+                    .bg(tokens::accent_soft())
+                    .items_center()
+                    .justify_center()
+                    .text_color(ui::accent())
+                    .child(ui::icon("messages-square", 14.)),
+            )
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(1.))
+                    .child(
+                        ui::text(12., 16.)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(tokens::text())
+                            .child("Join the Discord"),
+                    )
+                    .child(
+                        ui::text(11., 15.)
+                            .truncate()
+                            .text_color(tokens::text2())
+                            .child("Help and feedback"),
+                    ),
+            )
+            .child(ui::icon("external-link", 13.).text_color(tokens::text3()))
+            .on_click(|_, _, cx| cx.open_url(crate::crash_log::DISCORD_URL))
     }
 
     pub(super) fn account_card(&self, cx: &mut Context<Self>) -> AnyElement {
