@@ -94,6 +94,9 @@ struct Running {
     audible: Option<Ref>,
     /// Server & Clients: players from collaborators' editors.
     remote: rbx_sim::remote::Host,
+    /// Collaborators a teleport brought, to join once the local players
+    /// have.
+    carried: Vec<rbx_sim::remote::Offer>,
     /// What the Remote inspector captured, shared with every test tab's
     /// dock.
     remotes: crate::shell::remote_inspector::Shared,
@@ -105,6 +108,8 @@ struct Arriving {
     place: Option<WeakDom>,
     arrivals: std::collections::HashMap<i64, rbx_lua::server::Arrival>,
     guis: Vec<(i64, WeakDom)>,
+    /// Collaborators playing from their own editors, coming along.
+    carried: Vec<rbx_sim::remote::Offer>,
 }
 
 pub(crate) struct LocalRun {
@@ -779,11 +784,13 @@ impl Shell {
                 gamepad: device.platform == crate::device_sim::Platform::Console,
             };
         }
+        let mut carried = Vec::new();
         if let Some(arriving) = arriving {
             services.arrivals = arriving.arrivals;
             for (user, gui) in arriving.guis {
                 session.set_arriving_gui(user, gui);
             }
+            carried = arriving.carried;
         }
         session.set_services(services);
         session.set_join_after(rbx_sim::JOIN_AFTER);
@@ -869,6 +876,7 @@ impl Shell {
             test_window: None,
             audible: None,
             remote: rbx_sim::remote::Host::default(),
+            carried,
             remotes: Default::default(),
         });
         if windowed {
@@ -1159,7 +1167,7 @@ impl Shell {
     /// the run stops and starts again there, each player bringing their
     /// TeleportData and teleport GUI.
     fn local_run_teleport(&mut self, teleport: rbx_sim::Teleport, cx: &mut Context<Self>) {
-        let Some(run) = self.play.live.local.running.as_ref() else {
+        let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
         let place = teleport.request.place;
@@ -1201,7 +1209,12 @@ impl Shell {
         }
         drop(dom);
         let player = run.player.clone();
-        let windows = run.windowed.then_some(run.session.clients.len());
+        // Collaborators come along as they are, on their own connections;
+        // the test players are started again.
+        let carried = run.remote.carry();
+        let windows = run
+            .windowed
+            .then_some(run.session.clients.len().saturating_sub(carried.len()));
         push_row(
             &mut self.output,
             Feedback::Info(format!("Teleporting to place {place}\u{2026}")),
@@ -1210,6 +1223,7 @@ impl Shell {
             place: target,
             arrivals,
             guis,
+            carried,
         });
         self.local_run_stop(cx);
         let player = player.map(|p| (p, avatars::lookups()));
@@ -1366,6 +1380,16 @@ impl Shell {
             if !windowed {
                 return;
             }
+        }
+        if self
+            .play
+            .live
+            .local
+            .running
+            .as_ref()
+            .is_some_and(|run| !run.carried.is_empty() && !run.session.joining())
+        {
+            self.local_run_arrive_remote(cx);
         }
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;

@@ -229,6 +229,7 @@ impl Shell {
             }),
             windowed: false,
             remote: rbx_sim::remote::Host::default(),
+            carried: Vec::new(),
             windows: Vec::new(),
             test_window: None,
             audible: None,
