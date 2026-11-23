@@ -451,7 +451,8 @@ fn stacking(b: &mut Builder) {
 /// `CanvasGroup`s at `GroupTransparency` 0.5 with a white background and
 /// three kinds of child, with no background of their own, at 0.25 tinted by
 /// `GroupColor3`, at 0 over a half transparent child, and one inside a
-/// plain frame.
+/// plain frame, on a `Global` screen (the class default), then two on a
+/// `Sibling` one.
 fn canvas_groups(b: &mut Builder) {
     let screen = backdrop(b);
     let group = |b: &mut Builder, parent, at: [f32; 2], fade: f32| {
@@ -477,6 +478,16 @@ fn canvas_groups(b: &mut Builder) {
     let holder = frame(b, screen, [40.0, 380.0], [300.0, 300.0], [40, 120, 220]);
     let inner = group(b, holder, [30.0, 30.0], 0.5);
     frame(b, inner, [40.0, 40.0], [160.0, 160.0], [200, 40, 40]);
+    // The same under `ZIndexBehavior.Sibling`, where a group is flattened.
+    let sibling = b.screen();
+    b.set(sibling, "IgnoreGuiInset", Variant::Bool(true));
+    b.set(sibling, "ZIndexBehavior", Variant::Enum(1));
+    let flat = group(b, sibling, [400.0, 380.0], 0.5);
+    frame(b, flat, [20.0, 20.0], [100.0, 100.0], [200, 40, 40]);
+    image(b, flat, [130.0, 20.0], [90.0, 90.0], GRID);
+    let flat_tinted = group(b, sibling, [680.0, 380.0], 0.25);
+    b.set(flat_tinted, "GroupColor3", rgb(0, 255, 255));
+    frame(b, flat_tinted, [40.0, 40.0], [160.0, 160.0], [200, 40, 40]);
 }
 
 pub(super) fn scenes() -> Vec<Scene> {
@@ -523,7 +534,7 @@ pub(super) fn scenes() -> Vec<Scene> {
         ),
         gui(
             "gui_canvas_groups",
-            "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested",
+            "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested; under Global and Sibling",
             canvas_groups,
         ),
     ]

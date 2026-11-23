@@ -160,10 +160,11 @@ impl Builder {
     }
 
     /// An anchored plastic `MeshPart` of the mesh at `mesh` at `position`,
-    /// fitted to `size`.
+    /// fitted to `size`. `initial` is the mesh's own size, the `InitialSize`
+    /// Studio saves beside it, which the real client scales from.
     pub fn mesh_part(
         &mut self,
-        mesh: &str,
+        (mesh, initial): (&str, [f32; 3]),
         size: [f32; 3],
         position: [f32; 3],
         rgb: [u8; 3],
@@ -173,6 +174,7 @@ impl Builder {
             .new_instance("MeshPart", "MeshPart", Some(self.world));
         self.set(part, "Anchored", Variant::Bool(true));
         self.set(part, "MeshId", content(mesh));
+        self.set(part, "InitialSize", vec3(initial));
         self.set(part, "size", vec3(size));
         self.set(part, "CFrame", Variant::CFrame(at(position)));
         let [r, g, b] = rgb;

@@ -185,8 +185,9 @@ fn material_variant_anchor(b: &mut Builder) {
     }
 }
 
-/// Roblox's traffic cone mesh and its texture, public assets.
-const CONE_MESH: &str = "rbxassetid://1082802";
+/// Roblox's traffic cone mesh, with its size (a version 1.00 mesh, read at
+/// half its coordinates), and its texture, public assets.
+const CONE_MESH: (&str, [f32; 3]) = ("rbxassetid://1082802", [1.88452, 2.1347, 1.88452]);
 const CONE_TEXTURE: &str = "rbxassetid://1082804";
 /// `Enum.AlphaMode`.
 const OVERLAY: u32 = 0;
