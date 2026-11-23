@@ -35,6 +35,16 @@ pub use particles::take_particle_bursts;
 pub use printed::{PrintPart, PrintValue, TableDump, TableEntry};
 pub use runtime::{Reported, RunError, RunState, Runtime, Step};
 
+/// Turns Luau's `export` statements on or off for every VM in the process
+/// (Studio's "Luau Exports and Cyclic Requires" beta): `export local`,
+/// `export const` and `export function` in a ModuleScript make it return
+/// a table of those values, and a module that exports may be required
+/// again while it still loads. Call it before any script compiles.
+pub fn set_luau_exports(on: bool) {
+    let _ = mlua::Lua::set_fflag("LuauExportValueSyntax", on);
+    engine::require::EXPORTS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Whether `source` compiles as Luau (nothing runs). `Err` is the
 /// compiler's message, e.g. a syntax error or "too many upvalues".
 pub fn compile_check(source: &str, name: &str) -> Result<(), String> {
