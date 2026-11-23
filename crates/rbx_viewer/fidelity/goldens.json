@@ -1,114 +1,114 @@
 {
   "ambient_colour": {
     "about": "Coloured Ambient, OutdoorAmbient and ColorShift, Brightness 1, no environment light",
-    "delta_e": 5.766,
-    "delta_e_p90": 8.902,
-    "ssim": 0.934,
+    "delta_e": 5.795,
+    "delta_e_p90": 8.94,
+    "ssim": 0.932,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
   "atmosphere": {
     "about": "Atmosphere Density 0.45, Offset 0.3, Glare 0.6, Haze 1.5 toward a 17:00 sun",
-    "delta_e": 4.805,
-    "delta_e_p90": 10.154,
-    "ssim": 0.855,
+    "delta_e": 4.947,
+    "delta_e_p90": 10.463,
+    "ssim": 0.852,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
   "atmosphere_floor": {
     "about": "Atmosphere Density 0.4, Haze 2, Glare 0.5 over a grey floor seen at a shallow angle",
-    "delta_e": 2.367,
-    "delta_e_p90": 3.588,
-    "ssim": 0.937,
-    "tolerance_delta_e": 0.35501188039779663,
+    "delta_e": 2.24,
+    "delta_e_p90": 3.57,
+    "ssim": 0.935,
+    "tolerance_delta_e": 0.33592551946640015,
     "tolerance_ssim": 0.019999999552965164
   },
   "bloom_colour_correction": {
     "about": "Bloom (threshold 0.8) on neon, ColorCorrection tint, contrast and saturation",
-    "delta_e": 4.321,
-    "delta_e_p90": 6.842,
+    "delta_e": 4.144,
+    "delta_e_p90": 6.822,
     "ssim": 0.904,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
   "blur": {
     "about": "BlurEffect Size 10",
-    "delta_e": 2.412,
-    "delta_e_p90": 3.905,
+    "delta_e": 2.224,
+    "delta_e_p90": 3.522,
     "ssim": 0.953,
-    "tolerance_delta_e": 0.3618519902229309,
+    "tolerance_delta_e": 0.33355531096458435,
     "tolerance_ssim": 0.019999999552965164
   },
   "custom_sky": {
     "about": "The template's Sky skybox, looking up",
-    "delta_e": 0.856,
-    "delta_e_p90": 2.032,
-    "ssim": 0.994,
+    "delta_e": 0.954,
+    "delta_e_p90": 2.471,
+    "ssim": 0.993,
     "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
   "decals_textures": {
     "about": "A stretched Decal, a Texture tiled at 2 studs with an offset, a tinted half transparent Texture",
-    "delta_e": 3.139,
-    "delta_e_p90": 7.008,
-    "ssim": 0.925,
-    "tolerance_delta_e": 0.47078606486320496,
+    "delta_e": 3.152,
+    "delta_e_p90": 7.006,
+    "ssim": 0.926,
+    "tolerance_delta_e": 0.47282084822654724,
     "tolerance_ssim": 0.019999999552965164
   },
   "default_lighting": {
     "about": "Lighting left at its class defaults, no Sky: Roblox's own defaults",
-    "delta_e": 1.47,
-    "delta_e_p90": 3.501,
+    "delta_e": 1.427,
+    "delta_e_p90": 3.502,
     "ssim": 0.953,
     "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
   "depth_of_field": {
     "about": "DepthOfField focused at 15 studs, radius 6, far 0.8, near 0.6",
-    "delta_e": 2.453,
-    "delta_e_p90": 4.18,
-    "ssim": 0.941,
-    "tolerance_delta_e": 0.3679541051387787,
+    "delta_e": 2.369,
+    "delta_e_p90": 4.121,
+    "ssim": 0.94,
+    "tolerance_delta_e": 0.35532310605049133,
     "tolerance_ssim": 0.019999999552965164
   },
   "evening": {
     "about": "ClockTime 17.8: sunset colours",
-    "delta_e": 2.797,
+    "delta_e": 2.81,
     "delta_e_p90": 4.603,
     "ssim": 0.956,
-    "tolerance_delta_e": 0.41948992013931274,
+    "tolerance_delta_e": 0.42146870493888855,
     "tolerance_ssim": 0.019999999552965164
   },
   "exposure": {
     "about": "ExposureCompensation 1.5",
-    "delta_e": 2.274,
-    "delta_e_p90": 3.781,
-    "ssim": 0.965,
-    "tolerance_delta_e": 0.3410908877849579,
+    "delta_e": 2.237,
+    "delta_e_p90": 3.779,
+    "ssim": 0.967,
+    "tolerance_delta_e": 0.33556658029556274,
     "tolerance_ssim": 0.019999999552965164
   },
   "fog": {
     "about": "Linear fog: FogStart 10, FogEnd 140, FogColor warm",
-    "delta_e": 2.594,
-    "delta_e_p90": 4.683,
-    "ssim": 0.927,
-    "tolerance_delta_e": 0.3891736567020416,
+    "delta_e": 2.598,
+    "delta_e_p90": 4.773,
+    "ssim": 0.929,
+    "tolerance_delta_e": 0.38969534635543823,
     "tolerance_ssim": 0.019999999552965164
   },
   "game_day_effects": {
     "about": "A white path in the sun under a game's stack of effects: blue Atmosphere, saturated ColorCorrection, strong Bloom, DepthOfField",
-    "delta_e": 2.106,
-    "delta_e_p90": 3.339,
-    "ssim": 0.982,
-    "tolerance_delta_e": 0.3158858120441437,
+    "delta_e": 1.939,
+    "delta_e_p90": 2.839,
+    "ssim": 0.977,
+    "tolerance_delta_e": 0.290776789188385,
     "tolerance_ssim": 0.019999999552965164
   },
   "game_retro_room": {
     "about": "A lobby's look: Voxel mid-morning, Brightness 0.6, no environment light, a grey ColorCorrection and a Retro ColorGradingEffect, inside a room with a doorway",
-    "delta_e": 1.823,
+    "delta_e": 1.814,
     "delta_e_p90": 3.283,
-    "ssim": 0.783,
-    "tolerance_delta_e": 0.27347609400749207,
+    "ssim": 0.784,
+    "tolerance_delta_e": 0.27216580510139465,
     "tolerance_ssim": 0.019999999552965164
   },
   "game_voxel_night": {
@@ -185,18 +185,26 @@
   },
   "gui_text_layout": {
     "about": "TextScaled, wrapped lines at LineHeight 1 and 1.5, RichText, TextStroke, TextYAlignment",
-    "delta_e": 1.01,
+    "delta_e": 0.509,
     "delta_e_p90": 0.0,
-    "ssim": 0.927,
+    "ssim": 0.972,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_text_scaled": {
+    "about": "TextScaled with and without TextWrapped, in Builder Sans and the legacy Font, in wide, tall and small boxes",
+    "delta_e": 0.285,
+    "delta_e_p90": 0.0,
+    "ssim": 0.991,
     "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
   "latitude": {
     "about": "GeographicLatitude 60 at noon",
-    "delta_e": 2.4,
-    "delta_e_p90": 3.841,
-    "ssim": 0.943,
-    "tolerance_delta_e": 0.35996222496032715,
+    "delta_e": 2.369,
+    "delta_e_p90": 3.734,
+    "ssim": 0.944,
+    "tolerance_delta_e": 0.3554236888885498,
     "tolerance_ssim": 0.019999999552965164
   },
   "light_point_1": {
@@ -281,42 +289,42 @@
   },
   "material_variant_anchor": {
     "about": "The grid MaterialVariant at 4 studs on 5, 7 and 3 stud faces, two equal blocks a fraction of a tile apart",
-    "delta_e": 3.529,
-    "delta_e_p90": 7.647,
+    "delta_e": 3.56,
+    "delta_e_p90": 7.663,
     "ssim": 0.917,
-    "tolerance_delta_e": 0.5293131470680237,
+    "tolerance_delta_e": 0.5340316891670227,
     "tolerance_ssim": 0.019999999552965164
   },
   "material_variants": {
     "about": "MaterialVariants with a colour map: StudsPerTile 4, Organic at 8, tinted, and on Metal with a metalness map",
-    "delta_e": 2.987,
-    "delta_e_p90": 5.856,
+    "delta_e": 3.012,
+    "delta_e_p90": 5.919,
     "ssim": 0.951,
-    "tolerance_delta_e": 0.44805288314819336,
+    "tolerance_delta_e": 0.4518631398677826,
     "tolerance_ssim": 0.019999999552965164
   },
   "materials_a": {
     "about": "The first 20 materials on grey slabs",
-    "delta_e": 3.432,
-    "delta_e_p90": 5.778,
-    "ssim": 0.943,
-    "tolerance_delta_e": 0.5147850513458252,
+    "delta_e": 2.613,
+    "delta_e_p90": 4.151,
+    "ssim": 0.947,
+    "tolerance_delta_e": 0.39196768403053284,
     "tolerance_ssim": 0.019999999552965164
   },
   "materials_b": {
     "about": "The other 19 materials on grey slabs",
-    "delta_e": 3.244,
-    "delta_e_p90": 5.652,
-    "ssim": 0.956,
-    "tolerance_delta_e": 0.4865487515926361,
+    "delta_e": 2.412,
+    "delta_e_p90": 3.186,
+    "ssim": 0.961,
+    "tolerance_delta_e": 0.3617553412914276,
     "tolerance_ssim": 0.019999999552965164
   },
   "morning": {
     "about": "ClockTime 7 on the equator: a low sun in the east",
-    "delta_e": 3.475,
-    "delta_e_p90": 6.898,
-    "ssim": 0.926,
-    "tolerance_delta_e": 0.5212505459785461,
+    "delta_e": 3.623,
+    "delta_e_p90": 7.28,
+    "ssim": 0.924,
+    "tolerance_delta_e": 0.5435183048248291,
     "tolerance_ssim": 0.019999999552965164
   },
   "night": {
@@ -329,130 +337,130 @@
   },
   "noob": {
     "about": "The classic noob up close: colours, round head and the default face",
-    "delta_e": 2.277,
-    "delta_e_p90": 3.883,
+    "delta_e": 2.325,
+    "delta_e_p90": 3.885,
     "ssim": 0.976,
-    "tolerance_delta_e": 0.3416116237640381,
+    "tolerance_delta_e": 0.34877529740333557,
     "tolerance_ssim": 0.019999999552965164
   },
   "realistic_style": {
     "about": "LightingStyle Realistic",
-    "delta_e": 2.413,
-    "delta_e_p90": 3.975,
+    "delta_e": 2.225,
+    "delta_e_p90": 3.696,
     "ssim": 0.941,
-    "tolerance_delta_e": 0.3619091510772705,
+    "tolerance_delta_e": 0.33372917771339417,
     "tolerance_ssim": 0.019999999552965164
   },
   "shadows_half": {
     "about": "ShadowSoftness 0.5: poles and a floating slab",
-    "delta_e": 2.587,
-    "delta_e_p90": 4.42,
-    "ssim": 0.982,
-    "tolerance_delta_e": 0.3880789577960968,
+    "delta_e": 1.992,
+    "delta_e_p90": 2.87,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.2988146245479584,
     "tolerance_ssim": 0.019999999552965164
   },
   "shadows_hard": {
     "about": "ShadowSoftness 0: poles and a floating slab",
-    "delta_e": 2.591,
-    "delta_e_p90": 4.388,
-    "ssim": 0.982,
-    "tolerance_delta_e": 0.38858017325401306,
+    "delta_e": 1.996,
+    "delta_e_p90": 2.837,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.29941755533218384,
     "tolerance_ssim": 0.019999999552965164
   },
   "shadows_soft": {
     "about": "ShadowSoftness 1: poles and a floating slab",
-    "delta_e": 2.618,
-    "delta_e_p90": 4.481,
-    "ssim": 0.975,
-    "tolerance_delta_e": 0.3927253782749176,
+    "delta_e": 2.029,
+    "delta_e_p90": 2.907,
+    "ssim": 0.976,
+    "tolerance_delta_e": 0.30431804060935974,
     "tolerance_ssim": 0.019999999552965164
   },
   "special_materials": {
     "about": "Glass, Neon, ForceField, Reflectance, Metal, Foil and overlapping transparency",
-    "delta_e": 2.95,
+    "delta_e": 2.754,
     "delta_e_p90": 5.14,
-    "ssim": 0.919,
-    "tolerance_delta_e": 0.442452996969223,
+    "ssim": 0.918,
+    "tolerance_delta_e": 0.4130288064479828,
     "tolerance_ssim": 0.019999999552965164
   },
   "studio_baseplate": {
     "about": "Studio's Baseplate template lighting with its Sky, Atmosphere, SunRays and Bloom",
-    "delta_e": 1.949,
-    "delta_e_p90": 3.777,
+    "delta_e": 1.807,
+    "delta_e_p90": 3.616,
     "ssim": 0.983,
-    "tolerance_delta_e": 0.29228588938713074,
+    "tolerance_delta_e": 0.2710309326648712,
     "tolerance_ssim": 0.019999999552965164
   },
   "studio_future": {
     "about": "The template's Lighting values under Technology Future",
-    "delta_e": 2.413,
-    "delta_e_p90": 3.975,
+    "delta_e": 2.225,
+    "delta_e_p90": 3.696,
     "ssim": 0.941,
-    "tolerance_delta_e": 0.36188754439353943,
+    "tolerance_delta_e": 0.3337070047855377,
     "tolerance_ssim": 0.019999999552965164
   },
   "studio_lighting": {
     "about": "The template's Lighting values alone, default sky",
-    "delta_e": 2.413,
-    "delta_e_p90": 3.975,
+    "delta_e": 2.225,
+    "delta_e_p90": 3.696,
     "ssim": 0.941,
-    "tolerance_delta_e": 0.3619091510772705,
+    "tolerance_delta_e": 0.33372917771339417,
     "tolerance_ssim": 0.019999999552965164
   },
   "studs": {
     "about": "Smooth, Studs, Inlet, Universal, Weld and Glue tops and fronts, and a studded plate",
-    "delta_e": 2.552,
-    "delta_e_p90": 4.72,
-    "ssim": 0.942,
-    "tolerance_delta_e": 0.3828718960285187,
+    "delta_e": 2.186,
+    "delta_e_p90": 3.521,
+    "ssim": 0.941,
+    "tolerance_delta_e": 0.3278868794441223,
     "tolerance_ssim": 0.019999999552965164
   },
   "sun_rays": {
     "about": "SunRaysEffect Intensity 0.3, Spread 0.8 toward a 17:00 sun past pillars",
-    "delta_e": 5.782,
-    "delta_e_p90": 10.577,
-    "ssim": 0.935,
+    "delta_e": 5.872,
+    "delta_e_p90": 10.711,
+    "ssim": 0.933,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
   "surface_appearance": {
     "about": "A MeshPart with its TextureID, and SurfaceAppearances: Overlay tinted, Transparency, metalness and roughness maps",
-    "delta_e": 3.153,
-    "delta_e_p90": 6.748,
-    "ssim": 0.937,
-    "tolerance_delta_e": 0.47300025820732117,
+    "delta_e": 3.148,
+    "delta_e_p90": 6.505,
+    "ssim": 0.943,
+    "tolerance_delta_e": 0.4721769392490387,
     "tolerance_ssim": 0.019999999552965164
   },
   "template_spawn": {
     "about": "The Baseplate template's textured floor and SpawnLocation decal, as Play opens",
-    "delta_e": 2.709,
-    "delta_e_p90": 4.913,
-    "ssim": 0.984,
-    "tolerance_delta_e": 0.40638771653175354,
+    "delta_e": 2.237,
+    "delta_e_p90": 4.103,
+    "ssim": 0.986,
+    "tolerance_delta_e": 0.33556270599365234,
     "tolerance_ssim": 0.019999999552965164
   },
   "text_boxes": {
     "about": "TextBoxes and TextLabels whose text overflows: placeholder, alignment, ClipsDescendants, TextTruncate",
-    "delta_e": 2.887,
-    "delta_e_p90": 4.461,
-    "ssim": 0.91,
-    "tolerance_delta_e": 0.4329816997051239,
+    "delta_e": 2.705,
+    "delta_e_p90": 4.401,
+    "ssim": 0.911,
+    "tolerance_delta_e": 0.40567639470100403,
     "tolerance_ssim": 0.019999999552965164
   },
   "text_sizes": {
     "about": "Labels in Legacy and SourceSans at TextSizes on and between Enum.FontSize's steps",
-    "delta_e": 1.775,
-    "delta_e_p90": 3.982,
-    "ssim": 0.951,
-    "tolerance_delta_e": 0.26629799604415894,
+    "delta_e": 1.456,
+    "delta_e_p90": 2.136,
+    "ssim": 0.954,
+    "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
   "texture_blend": {
     "about": "Blue tinted and untinted Textures at Transparency 0, 0.25, 0.5 and 0.75 over red parts",
-    "delta_e": 3.288,
-    "delta_e_p90": 7.161,
-    "ssim": 0.906,
-    "tolerance_delta_e": 0.49326515197753906,
+    "delta_e": 3.174,
+    "delta_e_p90": 7.15,
+    "ssim": 0.907,
+    "tolerance_delta_e": 0.4760662019252777,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_ambient": {
@@ -489,10 +497,10 @@
   },
   "tone_exposure": {
     "about": "The ramp under an overhead sun, Brightness 1, ExposureCompensation 2",
-    "delta_e": 3.837,
-    "delta_e_p90": 7.684,
+    "delta_e": 3.831,
+    "delta_e_p90": 7.658,
     "ssim": 0.977,
-    "tolerance_delta_e": 0.5755717754364014,
+    "tolerance_delta_e": 0.5746238827705383,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sky": {
@@ -505,10 +513,10 @@
   },
   "tone_sun_1": {
     "about": "The ramp under an overhead sun, Brightness 1",
-    "delta_e": 2.737,
+    "delta_e": 2.736,
     "delta_e_p90": 5.628,
-    "ssim": 0.931,
-    "tolerance_delta_e": 0.4105275571346283,
+    "ssim": 0.932,
+    "tolerance_delta_e": 0.410442054271698,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_15": {
@@ -516,39 +524,39 @@
     "delta_e": 2.779,
     "delta_e_p90": 5.736,
     "ssim": 0.924,
-    "tolerance_delta_e": 0.41684845089912415,
+    "tolerance_delta_e": 0.41680997610092163,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2": {
     "about": "The ramp under an overhead sun, Brightness 2",
-    "delta_e": 2.73,
+    "delta_e": 2.725,
     "delta_e_p90": 5.629,
     "ssim": 0.931,
-    "tolerance_delta_e": 0.4095320403575897,
+    "tolerance_delta_e": 0.4087532162666321,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2_retro": {
     "about": "tone_sun_2 under a ColorGradingEffect with TonemapperPreset Retro",
-    "delta_e": 2.894,
+    "delta_e": 2.887,
     "delta_e_p90": 5.646,
     "ssim": 0.927,
-    "tolerance_delta_e": 0.43408873677253723,
+    "tolerance_delta_e": 0.4330829083919525,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2_voxel": {
     "about": "tone_sun_2 in a place that leaves Technology and LightingStyle at their defaults",
-    "delta_e": 2.894,
+    "delta_e": 2.887,
     "delta_e_p90": 5.646,
     "ssim": 0.927,
-    "tolerance_delta_e": 0.43408873677253723,
+    "tolerance_delta_e": 0.4330829083919525,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2_voxel_retro": {
     "about": "tone_sun_2_voxel under a ColorGradingEffect with TonemapperPreset Retro",
-    "delta_e": 2.894,
+    "delta_e": 2.887,
     "delta_e_p90": 5.646,
     "ssim": 0.927,
-    "tolerance_delta_e": 0.43408873677253723,
+    "tolerance_delta_e": 0.4330829083919525,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_30": {
@@ -556,20 +564,20 @@
     "delta_e": 2.778,
     "delta_e_p90": 5.72,
     "ssim": 0.925,
-    "tolerance_delta_e": 0.41665393114089966,
+    "tolerance_delta_e": 0.416747123003006,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_4": {
     "about": "The ramp under an overhead sun, Brightness 4",
-    "delta_e": 2.814,
-    "delta_e_p90": 5.695,
-    "ssim": 0.926,
-    "tolerance_delta_e": 0.4220593273639679,
+    "delta_e": 2.805,
+    "delta_e_p90": 5.696,
+    "ssim": 0.927,
+    "tolerance_delta_e": 0.42070531845092773,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_5": {
     "about": "tone_sun_2 with the sun 5 degrees up",
-    "delta_e": 4.056,
+    "delta_e": 4.055,
     "delta_e_p90": 7.682,
     "ssim": 0.924,
     "tolerance_delta_e": 0.6000000238418579,
@@ -580,23 +588,23 @@
     "delta_e": 2.754,
     "delta_e_p90": 5.662,
     "ssim": 0.926,
-    "tolerance_delta_e": 0.4131700098514557,
+    "tolerance_delta_e": 0.41307154297828674,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_8": {
     "about": "The ramp under an overhead sun, Brightness 8",
-    "delta_e": 2.854,
-    "delta_e_p90": 5.773,
+    "delta_e": 2.838,
+    "delta_e_p90": 5.758,
     "ssim": 0.928,
-    "tolerance_delta_e": 0.42803165316581726,
+    "tolerance_delta_e": 0.4257098138332367,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_8_voxel_retro": {
     "about": "The ramp under an overhead sun, Brightness 8, Voxel, TonemapperPreset Retro",
-    "delta_e": 3.071,
-    "delta_e_p90": 5.803,
-    "ssim": 0.921,
-    "tolerance_delta_e": 0.46070507168769836,
+    "delta_e": 3.058,
+    "delta_e_p90": 5.777,
+    "ssim": 0.922,
+    "tolerance_delta_e": 0.4587688446044922,
     "tolerance_ssim": 0.019999999552965164
   }
 }

@@ -655,7 +655,7 @@ Gaps from M14:
 | Area | Roblox | ours |
 |---|---|---|
 | Audio effects | Roblox's DSP | `AudioFilter` fitted; reverb, chorus, flanger, distortion, tremolo, equalizer parameters guessed |
-| EditableMesh on a MeshPart, EditableImage as a MeshPart/Decal texture | drawn | not drawn: the viewer caches meshes and textures by asset key in the streaming loader and GPU caches; needs versioned keys |
+| EditableMesh on a MeshPart, EditableImage as a MeshPart/Decal texture | drawn | a MeshPart's EditableMesh and EditableImage drawn as first published (fidelity pass 4); later edits not re-uploaded, since the viewer caches meshes and textures by key (needs versioned keys); a Decal's not drawn |
 | Styles in the renderer | a script-set property beats the rules | `GetStyled` is right, but the viewport still draws the rule's value |
 | Style pseudo-instances, `:Hover`-style states, transitions | applied | not applied at run time (`GetPropertyTransitions` and friends missing) |
 | DragDetector VR and gamepad modes, trackball roll | Roblox's | mouse only; trackball turns by the angle between the two cursor points |
@@ -1275,6 +1275,23 @@ Left, and why:
 - `surface_appearance` (3.15): the shapes and the Overlay, Transparency and tint behaviour match; ours has a little more sheen on the textured mesh (blue 75 against 45 on the orange cone) and a slightly lighter Transparency cone. The default roughness of a set with no roughness map (0.9) was swept from 0.5 to 1 with no measurable change, so it is kept.
 - `atmosphere_floor` (2.37): the floor through haze is within a few levels of the real client at every distance; ours is a little bluer toward the horizon (blue +5 to +10) and a little lighter right under the camera. The horizon in `template_spawn` is now slightly darker than real, not lighter.
 - The client still logs "Failed to load ... PBR textures may not be visible" for a `MaterialVariant` or `SurfaceAppearance` using the public grid image, though it draws it.
+
+### Fourth pass: floor highlight, SurfaceAppearance sheen, haze in reflections, TextScaled (branch feat/local-run-fidelity-4)
+
+Golden mean ΔE 2.41 (75 scenes) to 2.29 (76); over the 74 scenes whose references did not change, 2.398 to 2.309. No scene moved past its tolerance.
+
+- The far floor was not a mip or alpha problem: `studio_lighting` and `studio_baseplate`, with no `Texture` on the floor, show it too. The real client's lit floor gains a little toward the horizon (151 far, 144 near in `studio_lighting`); ours peaked under the camera (141 far, 150 near), because the sun highlight's Fresnel boost went by the half vector. It now goes by the surface's angle to the eye, like the reflection's, and the highlight's share at full `EnvironmentSpecularScale` is refitted from 0.5 to 0.35 (`lighting.wgsl`). `template_spawn` 2.71 to 2.24, `studio_lighting` 2.41 to 2.22, the three `shadows_*` 2.6 to 2.0, `materials_a`/`_b` 3.43/3.24 to 2.61/2.41, `studs` 2.55 to 2.19. Broader or narrower highlights, other shares and other Fresnel powers were swept; all scored worse.
+- `surface_appearance` no longer draws Roblox's traffic cone: the scene builds a lathed cone and a 64 x 64 striped texture of its own (`look.rs`). Here they are an `EditableMesh` and `EditableImage` bound through `MeshContent`/`TextureContent`; in the real client's place they travel as text in two `StringValue`s, and the client script rebuilds them with `CreateEditableMesh`, `CreateEditableImage` and `CreateMeshPartAsync` and swaps the part in (`roblox.rs`). Nothing is uploaded. The reference is re-recorded: the mapping (V down from the tip, U from -Z) and the shapes match. To draw it, the viewer now draws an `EditableMesh` on a `MeshPart` and an `EditableImage` as its texture (`fit::mesh_part`, `assets::editable_mesh`), which a Local Run game gets too.
+- `SurfaceAppearance` sheen: the real Overlay cone tinted orange shows a sky sheen at the default roughness (blue 62 against our 20 on its lit side), and the grid metalness cone's white lines are dimmer than paint. A `SurfaceAppearance` now keeps at least half of Plastic's highlight strength however rough it is, and a metal in one at least 0.2 of its reflection (`material.wgsl`): the lit side of the Overlay cone is now 235,193,61, was 233,186,20 (real 233,180,62); the grid cone's green and blue excess fell from 15 to 20 levels to 5 to 13. The built-in materials keep their roughness rule.
+- `Atmosphere` haze in reflections: the environment probe held the bare sky panels, so a floor mirroring the horizon at a grazing angle mirrored the panel's blue. A reflection now passes through the same air-mass haze the skybox draws (`hazed_sky` in `atmosphere.wgsl`). `atmosphere_floor` 2.37 to 2.24, `studio_baseplate` 1.95 to 1.81, `game_day_effects` 2.11 to 1.94.
+- `TextScaled`: the real client holds it only with `TextWrapped`. Turning `TextScaled` on turns `TextWrapped` on, turning `TextWrapped` off turns `TextScaled` off, and the other two writes touch only themselves (a script in the new `gui_text_scaled` scene printed exactly that). A file that saves `TextScaled` without `TextWrapped` loads with `TextScaled` false and draws plain 14 px text, which was the second pass's "oddity". The renderer now scales only with both on (`plan/text.rs`), and the Luau setters keep the pair together (`pseudo.rs`, test `text_scaled_and_text_wrapped_move_together`). Scaled text never breaks inside a word ("Scaled" over "text" in a 110 px box, where we broke "Scale/d"). `gui_text_layout` 1.01 to 0.51, the new `gui_text_scaled` 0.29.
+
+Left, and why:
+
+- `atmosphere_floor`: the floor 300 studs off is still bluer than the real one (134,161,178 against 130,156,167). Neither a greyer haze colour nor the sky's horizon instead of its mean in the haze moved it, and an even scatter across channels made the other haze scenes worse. `atmosphere` (4.95) and `sun_rays` (5.87) got slightly worse, within tolerance; their gap is the 17:00 sky.
+- `surface_appearance` (3.15): the lit side of the Transparency cone is still about 20 levels lighter than the real one, and ours casts a longer shadow from the cone than the real client's soft one under it.
+- The lit floor at grazing angles now comes out a little lighter than real in `studio_lighting` (160 against 151 at the far rows).
+- An `EditableMesh` or `EditableImage` that a script edits after it is first drawn stays as first drawn (the viewer still caches by its key); a `Decal` with an `EditableImage` is not drawn.
 
 ## Where things are
 
