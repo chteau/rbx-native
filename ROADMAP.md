@@ -3573,7 +3573,42 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   to the metre. No skinned rigs, since the glTF export has none either
   ([FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566)).
 
+- [ ] 📋 **Pre-publish check**: one button before publishing that runs
+  the Security Audit (remotes the server trusts without checking) plus
+  what it doesn't cover: broken asset ids, deprecated calls (`wait`,
+  `spawn`, `delay`), unanchored parts that fall at start, DataStore calls
+  without `pcall`, and huge unions or part counts, each linking to where
+  it is in the place.
+- [ ] 📋 **Free model kits in the Toolbox**: Poly Haven's CC0 models
+  (public API, no key) browsed and imported in one click, scaled to studs
+  with pivots set and a credit attribute; Kenney packs (CC0, but no
+  automated downloads) added from a downloaded zip. Quaternius moved to a
+  non-CC0 licence and Poly Pizza's API needs a key, so neither is listed.
+  The MCP `import_model` tool lets an assistant pull a kit in itself.
+  Built on `feat/kit-browser`.
+- [ ] 📋 **Blender integration, someday**: building with Parts covers
+  modeling for now. Later, a live link to Blender (send a selection over,
+  get the mesh back as a MeshPart, keep the two in sync) for anything
+  Parts and CSG can't do.
+
 ### Play / Test workflow
+- [ ] 📋 **Shareable bug repros**: Recorded playtests (`.rbxrec`) keep
+  positions and events; Local Run's `.rbxnrec` replays the whole session
+  deterministically. This is the share side: export a session, open one
+  a teammate sent, and watch exactly what happened, frame by frame.
+- [ ] 📋 **Integration tests on Local Run**: `rbxlua test` already runs
+  TestEZ/Jest-Lua specs headlessly for CI. Next is running whole-game
+  tests on Local Run (a server and clients, physics, remotes, players
+  joining) from the same command, with the same JUnit output.
+- [ ] 📋 **Remote inspector**: every RemoteEvent and RemoteFunction call
+  per player during Local Run, with arguments, size, rate and the script
+  that fired it, flagging calls over Roblox's limits.
+- [ ] 📋 **Bot players for load tests**: 20 to 50 scripted players that
+  walk, jump, click and fire remotes on a local server, while server load,
+  memory and DataStore calls are watched.
+- [ ] 📋 **Leak finder**: over a Local Run session, connections never
+  disconnected, instances piling up parented to nil and tables that keep
+  growing.
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
