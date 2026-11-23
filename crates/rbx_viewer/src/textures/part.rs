@@ -167,7 +167,11 @@ fn painted(
     // A script's `EditableImage` comes through `TextureContent`.
     let reference = content_property(properties, "Texture")
         .and_then(|value| AssetRef::parse(asset_uri(value)?).ok())
-        .or_else(|| properties.get("TextureContent").and_then(editable_version_key))?;
+        .or_else(|| {
+            properties
+                .get("TextureContent")
+                .and_then(editable_version_key)
+        })?;
     if reference == AssetRef::Empty {
         return None;
     }
