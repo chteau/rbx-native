@@ -13,6 +13,11 @@ use crate::error::XmlError;
 /// The binary type id of Terrain's `VoxelGridAssetContentMap`.
 const CONTENT_MAP_TYPE_ID: u8 = 0x23;
 
+/// Properties Studio types as NetworkAssetRef (the same list as `rbx_binary`'s
+/// writer): a SharedString it only accepts as a `<NetAssetRef>` element. A
+/// union's `SolidMeshHolder` holds its whole CSG geometry.
+const NET_ASSET_REF_PROPERTIES: &[&str] = &["SolidMeshHolder"];
+
 pub(super) fn write_item<'a>(
     writer: &mut Writer,
     dom: &'a WeakDom,
@@ -46,12 +51,21 @@ pub(super) fn write_item<'a>(
             }
             continue;
         }
+        let net_asset_ref = NET_ASSET_REF_PROPERTIES.contains(&name.as_str());
         match prop_value {
             Variant::Unknown { type_id: 0x1C, raw } => {
                 let key = STANDARD.encode(Md5::digest(raw));
-                writer.leaf("SharedString", &[("name", name)], &key);
+                let tag = if net_asset_ref {
+                    "NetAssetRef"
+                } else {
+                    "SharedString"
+                };
+                writer.leaf(tag, &[("name", name)], &key);
                 shared.insert(key, raw);
             }
+            // The legacy always-empty String shape of a NetAssetRef property,
+            // which Studio refuses to convert; its own save has none.
+            _ if net_asset_ref => {}
             // Terrain's `VoxelGridAssetContentMap`, which every place Studio
             // 0.744 saves carries, is a binary-only kind with no XML tag we
             // know, and refusing it would fail every such save. Studio opens
