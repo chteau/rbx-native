@@ -26,5 +26,60 @@
       "idempotentHint": true,
       "openWorldHint": false
     }
+  },
+  {
+    "name": "import_model",
+    "title": "Import Model",
+    "description": "rbx-native's own tool, not one of Studio's (Studio's MCP cannot read a model file). Imports a 3D model into the place as Model > Import 3D Model does, uploading it through Open Cloud with the editor's API key, then makes it a ready kit piece: one Model named after the asset, every part anchored, scaled to studs, its pivot on its base centre at `position`, and Source/License/Author attributes for a kit. Give either `path`, a local .glb, .gltf, .obj or .fbx file, or `provider` and `id`, a free CC0 kit model: provider \"polyhaven\" with a Poly Haven model slug (the end of polyhaven.com/a/<slug>, e.g. ArmChair_01), or provider \"local\" with a <pack>/<model> id from a pack the user added in Toolbox > Free kits. Scale defaults to the kit's own: metres to studs (1 stud = 28 cm) for Poly Haven and glTF files, 4.5 studs per unit for Kenney's kits (24 for its city kits), 1 for OBJ and FBX. Each call is one upload. Answers like insert_asset, with the new Model's fullPath.",
+    "inputSchema": {
+      "properties": {
+        "path": {
+          "description": "A local .glb, .gltf, .obj or .fbx file to import.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "A free kit provider, with `id`: \"polyhaven\" or \"local\" (a pack added in the Toolbox).",
+          "enum": [
+            "polyhaven",
+            "local"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "description": "The kit model: a Poly Haven slug, or <pack>/<model> for an added pack.",
+          "type": "string"
+        },
+        "scale": {
+          "description": "Studs per unit of the file, replacing the kit's own scale.",
+          "type": "number"
+        },
+        "position": {
+          "description": "Where the model's base centre lands, [x, y, z] in studs. The origin when left out.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "parentPath": {
+          "description": "Dotted path to insert under, like Workspace.Props. Workspace when left out or not found.",
+          "type": "string"
+        },
+        "studio_id": {
+          "description": "Which editor to act on: an id from list_roblox_studios. May be left out while only one editor is open.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "studio_id"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Import Model",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
   }
 ]

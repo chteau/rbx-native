@@ -1,6 +1,6 @@
 ---
 name: build-importing-assets
-description: Bringing free 3D kits such as Kenney's (CC0) into a place in this editor: which file to pick (GLB, glTF, OBJ, FBX), Model > Import 3D Model and drag-and-drop, what the importer does (Open Cloud upload, 20,000-triangle decimation, no rescale), scaling to Roblox metrics, textures, turning imports into a kit, Creator Store search and insert through MCP tools, and the licence note. Pull it before using any outside model.
+description: Bringing free CC0 3D kits (Poly Haven, Kenney) and local model files into a place in this editor with the import_model tool: which file to pick (GLB, glTF, OBJ, FBX), what the import does (Open Cloud upload, 20,000-triangle decimation, scaling to studs, base-centre pivot, credit attributes), Toolbox > Free kits, textures, turning imports into a kit, Creator Store search and insert through MCP tools, and the licence note. Pull it before using any outside model.
 ---
 
 # Importing assets
@@ -14,25 +14,26 @@ Kenney publishes hundreds of 3D kits for free under CC0 at https://kenney.nl/ass
 - Never commit downloaded model files to a code repository unless the user asks; the place and Roblox's asset store hold them once imported.
 - Kenney offers no help importing into specific engines, so the steps below are this editor's, not theirs.
 
-## What the user does, what you do
+## Importing with `import_model`
 
-MCP has no tool that reads a local model file, so the import itself is a menu action for the user. Tell them exactly what to click, then take over with tools.
+`import_model` imports a model and makes it a kit piece in one call: it uploads the file through Open Cloud with the editor's API key (as Model > Import 3D Model does, so the result is a real asset usable in-game), then gathers it into one `Model` named after the asset, anchors every part, scales it to studs, puts its pivot on its base centre at `position`, and tags it `Assistant:<guid>`. The answer names the new Model's `fullPath`.
 
-1. The user downloads the kit from its page (for example https://kenney.nl/assets/platformer-kit) and unzips it.
-2. Pick the file: GLB first (one self-contained file with its texture embedded), then glTF, then FBX, then OBJ. This editor uploads `.fbx`, `.gltf` and `.glb` as they are, inlines a `.gltf`'s side files, and rewrites `.obj` as glTF.
-3. The user runs Model > Import 3D Model... (or drops the file on the editor window) for each piece needed. Model > Insert Mesh... places only the MeshParts, without a Model around a single one.
-4. You find what arrived with `search_game_tree` (`path: "Workspace"`, `instance_type: "Model"`, `keywords` set to the file's name) and read it with `inspect_instance`.
+- A free kit model: `provider` and `id`.
+  - `provider: "polyhaven"` with a Poly Haven model slug, the end of its page's address (https://polyhaven.com/a/ArmChair_01 is `id: "ArmChair_01"`). Every Poly Haven asset is CC0. A wrong id answers with close matches.
+  - `provider: "local"` with `<pack>/<model>` for a pack the user added in Toolbox > Free kits (for example `kenney_platformer-kit/flag`).
+- A file on disk: `path` to a `.glb`, `.gltf`, `.obj` or `.fbx`. Prefer GLB (one file), then glTF (its side files are read from beside it), then FBX, then OBJ (rewritten as glTF).
+- `position: [x, y, z]` is where the base centre lands; `parentPath` (for example `ServerStorage.Kit`) is where it goes, Workspace by default.
+- `scale` replaces the default studs per file unit. Defaults: Poly Haven and glTF files are in metres and become studs at 1 stud = 28 cm (x3.57); a Kenney kit is 4.5 studs per unit (its characters stand 1.1 units, so they come out a Roblox character's 5 studs), and 24 for Kenney's city kits (one tile, a road or a small house, becomes 24 studs); OBJ and FBX stay one unit to the stud.
+- A kit model carries `Source` (its page), `License` (CC0) and `Author` attributes; a file from disk carries only `Source`, its file name, because its licence is unknown.
+- Each call is one upload. Without a key it fails, and the user adds one from Home > Manage key.
 
-What the importer does:
+Kenney's own site can't be downloaded from automatically, so for a Kenney kit the user downloads the zip from its page (for example https://kenney.nl/assets/platformer-kit) and adds it with Toolbox > Free kits > Add pack, or unzips it and you import files with `path`.
 
-- Uploads the file through Open Cloud with the editor's API key, as Studio's own importer does, so the result is a real asset usable in-game. Without a key the import fails; the user adds one from Home > Manage key.
-- A mesh over Roblox's 20,000-triangle budget is decimated to it first. Kenney pieces are far below it.
-- Places the result in `Workspace` as a `Model` of `MeshPart`s named after the file, and the Output names the new asset id.
-- Keeps the file's axes and units: 1 unit in the file becomes 1 stud. No rescale happens, so most kits arrive small.
+After importing, check the result with `inspect_instance` on the returned path, and keep one scale for every piece of the same kit.
 
-## Scale to Roblox metrics
+## Rescaling
 
-Measure first, then pick one scale for the whole kit. Kenney kits are authored on a small unit grid, so a scale of 4 to 8 is typical; derive yours from a door, a character or a floor tile so it matches `build-level-design` (doors 7 to 9 studs tall, tiles 4, 8 or 16 studs).
+To match a size the default didn't hit, measure, then use `Model:ScaleTo`, which scales around the pivot relative to the imported size, so calling it again replaces the scale instead of compounding it:
 
 ```lua
 local NAME = "Imported"
@@ -45,23 +46,16 @@ if not model or not model:IsA("Model") then
 end
 
 local _, size = model:GetBoundingBox()
-local scale = TARGET_HEIGHT / size.Y
-local pivot = model:GetPivot()
-for _, part in ipairs(model:GetDescendants()) do
-	if part:IsA("BasePart") then
-		local offset = pivot:ToObjectSpace(part.CFrame)
-		part.Size *= scale
-		part.CFrame = pivot * (CFrame.new(offset.Position * scale) * offset.Rotation)
-	end
-end
-print(string.format("%s scaled by %.2f to %.1f studs tall", NAME, scale, TARGET_HEIGHT))
+local scale = model:GetScale() * TARGET_HEIGHT / size.Y
+model:ScaleTo(scale)
+print(string.format("%s scaled to %.2f, %.1f studs tall", NAME, scale, TARGET_HEIGHT))
 ```
 
-Use the scale this prints for every other piece of the same kit (set `scale` directly instead of computing it), so pieces stay on one grid.
+Use the same scale for every other piece of the kit (`model:ScaleTo(scale)`), so pieces stay on one grid that matches `build-level-design` (doors 7 to 9 studs tall, tiles 4, 8 or 16 studs).
 
 ## Textures
 
-Kenney's recent kits colour every model from one small shared palette texture; in a GLB it is embedded. Check a MeshPart with `inspect_instance`:
+Kenney's recent kits colour every model from one small shared palette texture beside the GLBs; `import_model` and the Toolbox embed it in the upload. Check a MeshPart with `inspect_instance`:
 
 - `TextureID` set: done.
 - `TextureID` empty and the part is plain grey: the user imports the kit's texture PNG with Model > Import Image..., the Output names its asset id, and you apply it to every MeshPart of the kit:
@@ -89,8 +83,8 @@ print("textured", count, "mesh parts")
 
 Imported pieces behave like any Model. Make them a real modular kit (`build-modular-kits`):
 
-1. Scale each piece by the kit's one scale.
-2. Set the pivot rule: `model.WorldPivot` at the floor corner for tiles and walls, bottom centre for props.
+1. Keep the kit's one scale on every piece.
+2. Set the pivot rule: imports already pivot at the bottom centre, right for props; move `model.WorldPivot` to the floor corner for tiles and walls.
 3. Set `PrimaryPart`, anchor every part, and for decoration set `CanCollide`, `CanQuery` and `CanTouch` to false and `CollisionFidelity` to Box.
 4. Rename to the kit's naming (`Floor_1x1`, `Tree_Pine_Tall`) and move it into `ServerStorage.Kit`.
 5. Lay out the level by cloning from there.
@@ -130,13 +124,14 @@ Generation tools listed for Studio compatibility (`generate_mesh`, `generate_pro
 
 - Mixing kits from different artists or at different scales in one area without unifying palette and grid.
 - Importing a whole kit "just in case". Each import is an upload; take the pieces the level needs.
-- Leaving imports in `Workspace` at their imported, tiny size.
+- Mixing scales: an import scaled by hand next to one left at the kit default.
 - Free models with unknown scripts.
 - Claiming CC0 for assets whose page says otherwise.
 
 ## Sources used
 
 - https://kenney.nl/assets/category:3D
+- https://polyhaven.com/license
 - https://kenney.nl/support
 - https://kenney.nl/assets/platformer-kit
 - https://kenney.nl/assets/nature-kit

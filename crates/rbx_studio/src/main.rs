@@ -132,6 +132,7 @@ mod history;
 mod home;
 mod input_actions;
 mod key_store;
+mod kits;
 mod launcher;
 mod layers;
 mod localization;

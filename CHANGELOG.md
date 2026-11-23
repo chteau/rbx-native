@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-23
+
+- **Free kits in the Toolbox.** The Toolbox has a Free kits tab next to Creator Store: CC0 model packs from Poly Haven with previews, open one, click a model to import it or tick up to 12 and import them in one go. Each one comes in as a Model named after it, scaled to studs, anchored, pivot on its base centre, with `Source`, `License` and `Author` attributes for the credit. Downloads are cached so a pack is only fetched once. Kenney packs work too but you download the zip yourself and hit Add pack (their site doesn't allow automated downloads), and a zip without a CC0 licence file is refused. Quaternius moved to its own non-CC0 licence and Poly Pizza needs an API key, so neither is listed. The MCP server gets `import_model` for the same thing (a local .glb/.gltf/.obj/.fbx or a kit model by id, at a position), and Edit-mode Luau has `Model:ScaleTo` and `Model:GetScale`. Kenney GLBs with their colormap next to them carry it on upload now, and meshes and SurfaceAppearance maps that Roblox's importer puts only in `MeshContent`/`ColorMapContent` show up in the viewport instead of grey boxes. (@chteau)
+
 ## 2026-11-20
 
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)

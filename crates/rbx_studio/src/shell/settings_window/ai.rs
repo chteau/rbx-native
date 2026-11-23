@@ -388,7 +388,7 @@ fn install_line(installed: &Result<Installed, String>) -> Div {
 }
 
 /// The tools, grouped by what a user would ask for, with how many each
-/// group holds (29 in all, as `tools/list` answers).
+/// group holds (30 in all, as `tools/list` answers).
 const GROUPS: [(&str, &str, &str, usize); 8] = [
     (
         "Explore the place",
@@ -418,8 +418,9 @@ const GROUPS: [(&str, &str, &str, usize); 8] = [
     (
         "Assets",
         "image",
-        "Search the Creator Store, insert models, upload and store images.",
-        4,
+        "Search the Creator Store, insert models, import model files and free CC0 kits, \
+         upload and store images.",
+        5,
     ),
     (
         "Roblox docs and guides",

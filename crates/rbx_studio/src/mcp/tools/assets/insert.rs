@@ -90,16 +90,31 @@ pub(super) fn run(arguments: &Value, session: &mut Session) -> Outcome {
                 .find(|(known, _)| known.eq_ignore_ascii_case(name.trim()))
         })
         .copied();
-    let dom = session.dom;
+    let (parent, parent_warning) = parent(arguments, session.dom).map_err(failure)?;
+    let name = text_argument(arguments, "assetName")
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned);
+    session.inserting = Some(Box::new(move || {
+        let mut insertion = fetch(asset_id, hint, name, parent).map_err(failure)?;
+        insertion.parent_warning = parent_warning;
+        Ok(insertion)
+    }));
+    Ok(Value::Null)
+}
+
+/// Where `parentPath` says to insert, Workspace when it is left out, and
+/// Studio's warning when it names nothing.
+pub(super) fn parent(arguments: &Value, dom: &WeakDom) -> Result<(Ref, Option<String>), String> {
     let Some(workspace) = dom
         .root_refs()
         .iter()
         .copied()
         .find(|&r| dom.get(r).is_some_and(|i| i.class() == "Workspace"))
     else {
-        return Err(failure("The place has no Workspace to insert into."));
+        return Err("The place has no Workspace to insert into.".to_owned());
     };
-    let (parent, parent_warning) = match text_argument(arguments, "parentPath") {
+    Ok(match text_argument(arguments, "parentPath") {
         Some(path) => match resolve(dom, path) {
             Some(parent) => (parent, None),
             None => (
@@ -111,17 +126,7 @@ pub(super) fn run(arguments: &Value, session: &mut Session) -> Outcome {
             ),
         },
         None => (workspace, None),
-    };
-    let name = text_argument(arguments, "assetName")
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(str::to_owned);
-    session.inserting = Some(Box::new(move || {
-        let mut insertion = fetch(asset_id, hint, name, parent).map_err(failure)?;
-        insertion.parent_warning = parent_warning;
-        Ok(insertion)
-    }));
-    Ok(Value::Null)
+    })
 }
 
 /// `insert_asset`'s answer, once the shell has grafted `roots`.
@@ -167,8 +172,28 @@ fn fetch(
     let (asset_type, kind) =
         Kind::of(&content, hint).ok_or_else(|| unsupported(asset_id, &content))?;
     let asset_name = name.unwrap_or_else(|| display_name(&client, asset_id, kind));
-    let mut content = build(asset_id, kind, &content.bytes, &asset_name)?;
+    let content = build(asset_id, kind, &content.bytes, &asset_name)?;
     let is_package = asset_type == "Package" || holds_package_link(&content);
+    Ok(tagged(
+        asset_id,
+        parent,
+        content,
+        asset_type.to_owned(),
+        asset_name,
+        is_package,
+    ))
+}
+
+/// An [`Insertion`] of `content` with every root tagged `Assistant:<guid>`,
+/// as Studio tags what its assistant inserts.
+pub(super) fn tagged(
+    asset_id: u64,
+    parent: Ref,
+    mut content: WeakDom,
+    asset_type: String,
+    asset_name: String,
+    is_package: bool,
+) -> Insertion {
     let guid = uuid();
     let added = tag(&guid);
     for root in content.root_refs().to_vec() {
@@ -180,16 +205,16 @@ fn fetch(
         let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
         let _ = content.set_property(root, "Tags", Variant::String(encode_tags(&tags)));
     }
-    Ok(Insertion {
+    Insertion {
         asset_id,
         parent,
         content,
-        asset_type: asset_type.to_owned(),
+        asset_type,
         asset_name,
         is_package,
         parent_warning: None,
         guid,
-    })
+    }
 }
 
 /// What the Toolbox inserts for `asset_id`, with the asset's name. A model
