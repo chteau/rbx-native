@@ -429,8 +429,13 @@ fn text_sizes(b: &mut Builder) {
                 "Text",
                 Variant::String("Type a message here".to_owned()),
             );
+            // Both, as Studio saves them: the client reads `FontFace` first,
+            // and the place carries its default when only `Font` is set.
             if let Some(font) = font {
                 b.set(label, "Font", Variant::Enum(font));
+                if let Some(face) = rbx_dom::Font::from_legacy(font) {
+                    b.set(label, "FontFace", Variant::Font(face));
+                }
             }
         }
     }
