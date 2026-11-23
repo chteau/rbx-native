@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-23
+
+- **Pre-publish check.** View › Pre-publish Check lists what would go wrong once players join, grouped by rule: broken asset ids (malformed, empty where needed, or that Roblox says don't exist, checked with read-only requests and kept for the session, "not checked" when offline), deprecated API (`wait`/`spawn`/`delay`, `Instance.new(class, parent)`, `:connect`, `game.Workspace`, methods the API dump marks deprecated), unanchored parts that fall at start (counted per model), DataStore and MemoryStore calls outside `pcall`, MeshParts over Roblox's 20,000-triangle limit, unions over 10,000 triangles, more than 30,000 parts or 250,000 instances, streamed parts indexed without `WaitForChild`, plus everything the Security Audit finds. Click a row to open the script at the line or select the instance; Rules explains each one. Save/Publish to Roblox runs it first (Skip check, Review, Continue, and "Don't ask again for this place"). `rbxaudit --prepublish [--offline] [--json] place.rbxl` does the same for CI and exits 1 on errors. Rules and thresholds are in `docs/prepublish-check.md`. (@chteau)
+
 ## 2026-11-20
 
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)

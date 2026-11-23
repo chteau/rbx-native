@@ -12,6 +12,15 @@ pub(in crate::shell) enum Dialog {
         target: Target,
         name: Option<String>,
     },
+    /// The pre-publish check, before the confirmation of the same upload
+    /// (`shell::prepublish`), running or with what it found. `dont_ask` is
+    /// its "Don't ask again for this place" box.
+    Check {
+        mode: PublishMode,
+        target: Target,
+        name: Option<String>,
+        dont_ask: bool,
+    },
     Failed {
         mode: PublishMode,
         target: Target,

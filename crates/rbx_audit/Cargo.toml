@@ -12,6 +12,11 @@ rbx_loren = { path = "../rbx_loren" }
 # The Luau parser the editor's graph mode and the play sandbox already use;
 # already in Cargo.lock.
 full_moon = { version = "3", features = ["luau"] }
+# The pre-publish check: deprecated members and content property types from
+# the API dump, asset references, and mesh triangle counts.
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
+rbx_assets = { path = "../rbx_assets" }
+rbx_mesh = { path = "../rbx_mesh" }
 
 [dev-dependencies]
 # The fixture place is written out as .rbxlx for the CLI and the screenshot.

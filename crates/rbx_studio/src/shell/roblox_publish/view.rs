@@ -2,6 +2,7 @@
 //! dialog chrome.
 
 use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_cloud::PublishMode;
 
@@ -84,6 +85,7 @@ impl Shell {
                     ))
                     .into_any_element()
             }
+            Dialog::Check { mode, dont_ask, .. } => self.check_dialog(*mode, *dont_ask, cx),
             Dialog::Failed {
                 mode,
                 target,
@@ -140,6 +142,151 @@ impl Shell {
                 .into_any_element()
             }
         })
+    }
+}
+
+/// How many findings the check's dialog lists before "and N more".
+const LISTED: usize = 5;
+
+impl Shell {
+    /// The pre-publish check before an upload: a spinner while it runs,
+    /// then the worst findings, Review, and Continue.
+    fn check_dialog(
+        &self,
+        mode: PublishMode,
+        dont_ask: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        use super::super::prepublish::{checkbox, severity_icon, summary};
+        let go = match mode {
+            PublishMode::Published => "publishing",
+            PublishMode::Saved => "saving",
+        };
+        let skip = |label: &'static str, cx: &mut Context<Self>| {
+            ui::button("roblox-check-continue", label, Weight::Primary, false)
+                .on_click(cx.listener(|shell, _, _, cx| shell.continue_past_check(cx)))
+                .into_any_element()
+        };
+        let dont_ask_row = h_flex()
+            .id("roblox-check-dont-ask")
+            .mt(px(12.))
+            .ml(px(78.))
+            .mr(px(20.))
+            .gap(px(8.))
+            .cursor_pointer()
+            .on_click(cx.listener(|shell, _, _, cx| shell.toggle_prepublish_dont_ask(cx)))
+            .child(checkbox(dont_ask))
+            .child(
+                ui::text(12., 18.)
+                    .text_color(tokens::text2())
+                    .child("Don\u{2019}t ask again for this place"),
+            )
+            .into_any_element();
+        let findings = &self.prepublish.findings;
+        if self.prepublish.at != Some(self.edit_dom().mutations()) {
+            let body = v_flex()
+                .child(
+                    h_flex()
+                        .mt(px(14.))
+                        .ml(px(78.))
+                        .gap(px(8.))
+                        .text_color(tokens::text2())
+                        .child(ui::spinner("roblox-check-spinner", 14.))
+                        .child(
+                            ui::text(12., 18.).child("Checking assets, scripts and parts\u{2026}"),
+                        ),
+                )
+                .child(dont_ask_row)
+                .into_any_element();
+            return self.check_frame(
+                ui::dialog_glyph("list-checks", ui::accent(), ui::wash()),
+                format!("Checking before {go}"),
+                "Broken asset ids, deprecated API, parts that fall at start, DataStore calls outside pcall, heavy geometry and the Security Audit's findings.".to_string(),
+                body,
+                vec![cancel(cx), skip("Skip check", cx)],
+            );
+        }
+        let mut worst: Vec<&rbx_audit::Finding> = findings.iter().collect();
+        worst.sort_by_key(|finding| finding.severity);
+        let more = worst.len().saturating_sub(LISTED);
+        let rows = worst.into_iter().take(LISTED).map(|finding| {
+            h_flex()
+                .gap(px(8.))
+                .min_w_0()
+                .child(severity_icon(finding.severity, cx))
+                .child(
+                    ui::text(12., 18.)
+                        .flex_none()
+                        .text_color(tokens::text())
+                        .child(finding.check.title()),
+                )
+                .child(
+                    ui::text(12., 18.)
+                        .min_w_0()
+                        .truncate()
+                        .text_color(tokens::text2())
+                        .child(match finding.line {
+                            Some(line) => format!("{}:{line}", finding.path),
+                            None => finding.path.clone(),
+                        }),
+                )
+        });
+        let list = v_flex()
+            .mt(px(14.))
+            .mx(px(20.))
+            .ml(px(78.))
+            .p(px(10.))
+            .gap(px(4.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(tokens::border())
+            .bg(ui::panel2())
+            .children(rows)
+            .when(more > 0, |this| {
+                this.child(
+                    ui::text(12., 18.)
+                        .text_color(tokens::text3())
+                        .child(format!("and {more} more in the Pre-publish dock")),
+                )
+            });
+        let body = v_flex().child(list).child(dont_ask_row).into_any_element();
+        let errors = findings
+            .iter()
+            .any(|finding| finding.severity == rbx_audit::Severity::High);
+        let (glyph, fg, fill) = if errors {
+            ("circle-alert", ui::red(), ui::red_soft())
+        } else {
+            ("triangle-alert", tokens::warning(), ui::wash())
+        };
+        self.check_frame(
+            ui::dialog_glyph(glyph, fg, fill),
+            summary(findings),
+            format!("The pre-publish check found problems in this place. Review them in the Pre-publish dock, or go on {go} as it is."),
+            body,
+            vec![
+                ui::button("roblox-check-review", "Review", Weight::Secondary, false)
+                    .on_click(cx.listener(|shell, _, _, cx| shell.review_prepublish(cx)))
+                    .into_any_element(),
+                cancel(cx),
+                skip("Continue", cx),
+            ],
+        )
+    }
+
+    fn check_frame(
+        &self,
+        glyph: AnyElement,
+        title: String,
+        text: String,
+        body: AnyElement,
+        buttons: Vec<AnyElement>,
+    ) -> AnyElement {
+        div()
+            .absolute()
+            .inset_0()
+            .track_focus(&self.roblox.focus)
+            .child(ui::dialog(560., glyph, title, text, Some(body), buttons))
+            .into_any_element()
     }
 }
 

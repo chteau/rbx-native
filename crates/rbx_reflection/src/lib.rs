@@ -14,7 +14,7 @@ mod error;
 mod parse;
 mod stored;
 
-pub use class::{ClassDescriptor, PropertyDescriptor};
+pub use class::{ClassDescriptor, FunctionDescriptor, PropertyDescriptor};
 pub use database::ReflectionDatabase;
 pub use enums::EnumDescriptor;
 pub use error::ReflectionError;
