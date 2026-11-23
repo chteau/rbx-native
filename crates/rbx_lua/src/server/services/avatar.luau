@@ -827,10 +827,25 @@ local function itemType(value)
 	return value.Name
 end
 
+local BUNDLE_TYPES = {}
+for _, item in Enum.BundleType:GetEnumItems() do
+	BUNDLE_TYPES[item.Value] = item.Name
+end
+
+-- What the catalog answers that a live server leaves out of an item's
+-- details (the AvatarApi golden's `aes_*_shape` fields).
+local UNSHOWN = { "ItemCreatedUtc", "RenderProperties", "Taxonomy" }
+
 local function details(raw)
 	local out = pascal(raw)
 	if type(out.AssetType) == "number" then
 		out.AssetType = ASSET_TYPES[out.AssetType] or tostring(out.AssetType)
+	end
+	if type(out.BundleType) == "number" then
+		out.BundleType = BUNDLE_TYPES[out.BundleType] or tostring(out.BundleType)
+	end
+	for _, key in UNSHOWN do
+		out[key] = nil
 	end
 	return out
 end
@@ -893,6 +908,22 @@ function EDITOR.GetRecommendedBundlesAsync(_, bundleId)
 	return pascal(reply.data or {})
 end
 
+-- CatalogPages' state by instance id: the current page, whether it's the
+-- last, and for a search its URL and cursor.
+local CATALOG_PAGES = {}
+local catalog = {}
+
+-- What a bundle's catalog details show in a listing (a search page, the
+-- bundles an asset is in): the details less what only a single item's
+-- answer has.
+local function listed(raw)
+	local out = details(raw)
+	out.ExpectedSellerId, out.IsPurchasable, out.IsOffSale, out.Owned, out.OffSaleDeadline = nil, nil, nil, nil, nil
+	return out
+end
+
+-- The bundles holding an asset, one CatalogPages page of them as a
+-- catalog search lists items.
 function EDITOR.GetBundlesByAssetIdAsync(_, assetId)
 	needed(assetId)
 	assetId = integer(assetId)
@@ -902,7 +933,19 @@ function EDITOR.GetBundlesByAssetIdAsync(_, assetId)
 		nil,
 		"bundles"
 	)
-	return pascal(reply.data or {})
+	local page = {}
+	for _, bundle in reply.data or {} do
+		local raw = host.web(
+			"https://catalog.roblox.com/v1/catalog/items/" .. integer(bundle.id) .. "/details?itemType=Bundle",
+			"GET",
+			nil,
+			"item details"
+		)
+		table.insert(page, listed(raw))
+	end
+	local pages, id = host.new("CatalogPages", "CatalogPages")
+	catalog[id] = { page = page, finished = true }
+	return pages
 end
 
 function EDITOR.GetHeadShapesAsync(_)
@@ -942,8 +985,6 @@ end
 
 -- The catalog's search, a page at a time: CatalogPages over the web
 -- catalog's `search/items/details`, its cursor kept per pages object.
-local CATALOG_PAGES = {}
-local catalog = {}
 local LIMITS = { 10, 28, 30, 50, 60, 100, 120 }
 
 local function catalogPage(state)

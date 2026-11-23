@@ -114,7 +114,9 @@ fn main() {
              Roblox's value is the median over the recorded passes. A number passes when the delta is inside the test's \
              tolerance (`rbx_sim::conformance::TESTS`) or Roblox's own spread across passes, whichever is wider; text must match the common value or one a pass printed. \
              `ok (pass N)` means the median check failed but the value is within tolerance of recorded pass N: the real server is not deterministic \
-             (its first passes often take extra substeps on a test's first frames), and rbx_sim models the clean passes.\n\n",
+             (its first passes often take extra substeps on a test's first frames), and rbx_sim models the clean passes. \
+             `ok (live data)` marks a field the golden lists as `volatile`: a live web answer (catalog fields, the avatar rules) \
+             that changes over time, so ours need only be the same kind of value (the same type, text that opens the same way).\n\n",
         );
         text.push_str(&table);
         if !gaps.is_empty() {
@@ -182,6 +184,7 @@ fn print_drift(old: &Path, only: &[String]) {
 
 fn mark(row: &Row) -> String {
     match (row.pass, row.matched_pass) {
+        (true, _) if row.volatile => "ok (live data)".into(),
         (true, Some(pass)) => format!("ok (pass {pass})"),
         (true, None) => "ok".into(),
         (false, _) if row.gap.is_some() => "known gap".into(),

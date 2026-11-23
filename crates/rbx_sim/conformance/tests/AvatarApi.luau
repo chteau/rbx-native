@@ -587,5 +587,36 @@ return function(h, origin)
 		local pages = aes:SearchCatalogAsync(params)
 		return { pages.ClassName, typeof(pages:GetCurrentPage()) }
 	end)
+	-- The shapes of live catalog answers: each key with its value's type.
+	local function shape(t)
+		if type(t) ~= "table" then
+			return typeof(t)
+		end
+		local list = {}
+		for k, v in t do
+			table.insert(list, tostring(k) .. ":" .. typeof(v))
+		end
+		table.sort(list)
+		return table.concat(list, ",")
+	end
+	result.aes_item_shape = try(function()
+		return shape(aes:GetItemDetailsAsync(1028606, Enum.AvatarItemType.Asset))
+	end)
+	result.aes_bundle_shape = try(function()
+		return shape(aes:GetItemDetailsAsync(192, Enum.AvatarItemType.Bundle))
+	end)
+	result.aes_bundles_of = try(function()
+		local got = aes:GetBundlesByAssetIdAsync(139607570)
+		if typeof(got) == "Instance" then
+			local page = got:GetCurrentPage()
+			return { got.ClassName, got.IsFinished, #page > 0, shape(page[1]) }
+		end
+		return { typeof(got), shape(got[1]) }
+	end)
+	result.aes_search_shape = try(function()
+		local params = CatalogSearchParams.new()
+		params.SearchKeyword = "hat"
+		return shape(aes:SearchCatalogAsync(params):GetCurrentPage()[1])
+	end)
 	return result
 end

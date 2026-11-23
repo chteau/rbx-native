@@ -134,6 +134,17 @@ return function(h)
 	result.bundle_zero = err(function()
 		return AssetService:GetBundleDetailsAsync(0)
 	end)
+	local okInfo, info = pcall(function()
+		return MarketplaceService:GetProductInfo(192, Enum.InfoType.Bundle)
+	end)
+	result.bundle_info = okInfo and keys(info) or (tostring(info):gsub("^.-:%d+: ", ""))
+	if okInfo then
+		result.bundle_info_creator = keys(info.Creator)
+		result._bundle_info_name = info.Name
+	end
+	result.bundle_info_zero = err(function()
+		return MarketplaceService:GetProductInfo(0, Enum.InfoType.Bundle)
+	end)
 	result.audio_empty = kind(function()
 		return AssetService:GetAudioMetadataAsync({})
 	end)

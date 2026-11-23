@@ -122,6 +122,11 @@ end
 
 function ASSETS.GetBundleDetailsAsync(_, bundleId)
 	bundleId = int64(bundleId)
+	-- The catalog refuses ids below 1 without looking them up: no request
+	-- needed, so an offline run answers the same.
+	if bundleId < 1 then
+		fail("HTTP 400")
+	end
 	local ok, found = pcall(web, "https://catalog.roblox.com/v1/bundles/" .. bundleId .. "/details", "AssetService:GetBundleDetailsAsync()")
 	if not ok then
 		-- Roblox gives only the status ("HTTP 400").

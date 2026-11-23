@@ -18,7 +18,7 @@ mod web;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
@@ -1965,6 +1965,23 @@ fn host_more(lua: &Lua, runtime: &Rc<Runtime>, host: &Table) -> Result<()> {
     Ok(())
 }
 
+/// The name a web answer is kept under (by its URL, method and body).
+fn web_key(url: &str, method: &str, body: Option<&str>) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (url, method, body).hash(&mut hasher);
+    format!("web-{:016x}", hasher.finish())
+}
+
+/// The file under `cache` (a [`Services::cache_dir`]) a web answer is kept
+/// in, which an offline run answers from: seeding it lets a run answer a
+/// request without the network.
+pub fn web_cache_file(cache: &Path, url: &str, method: &str, body: Option<&str>) -> PathBuf {
+    cache
+        .join("web")
+        .join(format!("{}.json", web_key(url, method, body)))
+}
+
 /// A JSON answer from one of Roblox's public web APIs, kept like product
 /// info (by its URL and body) for offline runs.
 fn web_cached(
@@ -1974,11 +1991,8 @@ fn web_cached(
     what: &str,
     cache: Option<PathBuf>,
 ) -> std::result::Result<serde_json::Value, String> {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    (&url, &method, &body).hash(&mut hasher);
-    let key = format!("web-{:016x}", hasher.finish());
-    let file = cache.map(|dir| dir.join("web").join(format!("{key}.json")));
+    let key = web_key(&url, &method, body.as_deref());
+    let file = cache.map(|dir| web_cache_file(&dir, &url, &method, body.as_deref()));
     let headers = match body {
         Some(_) => vec![("Content-Type".into(), "application/json".into())],
         None => Vec::new(),
@@ -2041,7 +2055,6 @@ fn product_info(
         "Product" => format!(
             "https://apis.roblox.com/developer-products/v1/developer-products/{id}/product-info"
         ),
-        "Bundle" => format!("https://catalog.roblox.com/v1/bundles/{id}/details"),
         _ => format!("https://economy.roblox.com/v2/assets/{id}/details"),
     };
     fetch_cached(
