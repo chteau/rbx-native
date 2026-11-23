@@ -500,6 +500,52 @@ fn framing_distance(bounds: &Bounds) -> f32 {
 /// created (or resynced, see `Controller::sync_ortho_scale`) right on top of
 /// whatever `distance` was measured from doesn't collapse the view volume to
 /// zero size.
+/// Which extent of the view a `Camera.OrthographicSize` spans, Roblox's
+/// `Enum.OrthographicMode` in value order. Measured in Studio 0.748 with the
+/// Orthographic Camera beta on: Vertical is the full height in studs, and
+/// Horizontal the full width (switching Vertical 40 to Horizontal on a
+/// 759×435 view rewrote the size to 69.79 and kept the picture).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OrthoAxis {
+    #[default]
+    Vertical,
+    Horizontal,
+    Diagonal,
+    MaxAxis,
+}
+
+impl OrthoAxis {
+    /// From the enum's value; anything unknown is Vertical, Roblox's default.
+    pub fn from_value(value: u32) -> Self {
+        match value {
+            1 => OrthoAxis::Horizontal,
+            2 => OrthoAxis::Diagonal,
+            3 => OrthoAxis::MaxAxis,
+            _ => OrthoAxis::Vertical,
+        }
+    }
+
+    /// How many view heights `size` spans on a view `aspect` wide per high.
+    fn heights(self, aspect: f32) -> f32 {
+        match self {
+            OrthoAxis::Vertical => 1.0,
+            OrthoAxis::Horizontal => aspect,
+            OrthoAxis::Diagonal => (1.0 + aspect * aspect).sqrt(),
+            OrthoAxis::MaxAxis => aspect.max(1.0),
+        }
+    }
+
+    /// The view volume's half height (`Pose::ortho_scale`) for a `size`.
+    pub fn half_height(self, size: f32, aspect: f32) -> f32 {
+        size / self.heights(aspect) * 0.5
+    }
+
+    /// The `OrthographicSize` that frames `half_height`.
+    pub fn size(self, half_height: f32, aspect: f32) -> f32 {
+        half_height * 2.0 * self.heights(aspect)
+    }
+}
+
 pub(crate) fn initial_ortho_scale(distance: f32, fov_degrees: f32) -> f32 {
     distance.max(MIN_DISTANCE) * (fov_degrees * 0.5).to_radians().tan()
 }

@@ -69,6 +69,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Adds Total and Physics to the Viewport dock's Performance view and ranks the costliest models with a breakdown of what each costs: triangles, texture memory, instances, physics, shadows and overdraw. The weights are an estimate, not Roblox's own costs.",
     },
     Feature {
+        id: crate::camera::ORTHOGRAPHIC_BETA_ID,
+        name: "Orthographic Camera",
+        description: "The 3D view follows the place camera's ProjectionType, OrthographicSize and OrthographicMode, like Studio's beta of the same name: set workspace.CurrentCamera.ProjectionType to Orthographic and the view goes flat at that size, and zooming writes the size back.",
+    },
+    Feature {
         id: crate::explorer::insert::UI_PARTICLES_BETA_ID,
         name: "UI Particles",
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",

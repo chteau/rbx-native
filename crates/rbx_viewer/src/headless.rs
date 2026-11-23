@@ -83,6 +83,9 @@ pub struct Headless {
     /// many frames the host managed to draw.
     start: Instant,
     from: Viewpoint,
+    /// A `Camera.OrthographicSize` waiting for the next frame's aspect, see
+    /// [`Headless::set_ortho_span`].
+    ortho_span: Option<(f32, crate::OrthoAxis)>,
     /// What [`Headless::load`] downloaded with: replayed by [`Headless::reload`]
     /// so a command-bar edit keeps the same textures/materials/lights choice.
     toggles: Toggles,
@@ -315,6 +318,7 @@ impl Headless {
             input: Input::default(),
             start: Instant::now(),
             from: Viewpoint::Orbit(0.0),
+            ortho_span: None,
             toggles,
             database,
             loaded,
@@ -545,6 +549,21 @@ impl Headless {
     pub fn set_fullbright(&mut self, fullbright: bool) {
         self.view.fullbright = fullbright;
         self.offscreen.set_fullbright(fullbright);
+    }
+
+    /// Zooms the orthographic view to span `size` studs along `axis`, a
+    /// place's `Camera.OrthographicSize` and `OrthographicMode`. Applied at
+    /// the next frame, the first one whose aspect is known.
+    pub fn set_ortho_span(&mut self, size: f32, axis: crate::OrthoAxis) {
+        if size.is_finite() && size > 0.0 {
+            self.ortho_span = Some((size, axis));
+        }
+    }
+
+    /// Whether the orthographic view is the place camera's own, which Studio
+    /// draws over black with no sky; the editor's own toggle keeps the sky.
+    pub fn set_place_orthographic(&mut self, place: bool) {
+        self.offscreen.set_place_orthographic(place);
     }
 
     /// The projection mode [`Headless::set_orthographic`] last set.
@@ -1033,6 +1052,13 @@ impl Headless {
         }
         if self.ooms != gpu::ooms() {
             self.recover();
+        }
+        if let Some((size, axis)) = self.ortho_span.take() {
+            let half_height = axis.half_height(size, width as f32 / height.max(1) as f32);
+            self.controller.set_ortho_scale(half_height);
+            if let Viewpoint::Free(pose) = &mut self.from {
+                pose.ortho_scale = half_height;
+            }
         }
         self.offscreen.set_elapsed(self.start.elapsed());
         self.offscreen.queue_frame((width, height), self.from)

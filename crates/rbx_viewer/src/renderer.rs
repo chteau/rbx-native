@@ -236,6 +236,10 @@ pub(crate) struct Renderer {
     /// [`Renderer::set_isolated`]): no environment, neutral light, a flat
     /// backdrop. Which *parts* are drawn is the scene's to say, not this.
     isolated: bool,
+    /// The orthographic view is the place camera's own (`ProjectionType`
+    /// Orthographic), which Studio draws over black with no sky, unlike the
+    /// editor's own orthographic toggle.
+    place_ortho: bool,
     /// See [`Renderer::set_fullbright`].
     fullbright: bool,
     /// What the sun's shadow map is fitted to instead of `bounds` while
@@ -454,6 +458,7 @@ impl Renderer {
             target,
             refracting: scene.has_glass(),
             isolated: false,
+            place_ortho: false,
             fullbright: false,
             stage: None,
         }
@@ -519,6 +524,17 @@ impl Renderer {
     /// see `Camera::with_orthographic`.
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
         self.camera = self.camera.with_orthographic(orthographic);
+    }
+
+    /// See the `place_ortho` field.
+    pub(crate) fn set_place_orthographic(&mut self, place: bool) {
+        self.place_ortho = place;
+    }
+
+    /// Whether this frame leaves the sky out for a place camera's
+    /// orthographic view.
+    fn sky_hidden(&self) -> bool {
+        self.place_ortho && self.camera.is_orthographic()
     }
 
     /// The `ScrollingFrame` of the screen overlay the wheel over `point` (in

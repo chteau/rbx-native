@@ -60,7 +60,7 @@ mod view;
 mod web;
 
 pub use assets::{decode_image_uri, DecodedImage};
-pub use camera::Pose;
+pub use camera::{OrthoAxis, Pose};
 #[cfg(not(target_arch = "wasm32"))]
 pub use capture::Rendered;
 pub use changes::{Applied, Rebuild};
