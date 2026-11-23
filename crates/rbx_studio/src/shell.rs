@@ -110,6 +110,7 @@ mod argon_dock;
 mod datastores;
 mod find_in_place;
 mod game_settings;
+mod leak_finder;
 pub(crate) mod local_run;
 mod profiler_dock;
 mod require_graph;
@@ -421,6 +422,8 @@ pub(crate) struct Shell {
     /// The MicroProfiler dock's held frames and ScriptProfiler view; see
     /// `shell::profiler_dock`.
     profiler: profiler_dock::ProfilerDock,
+    /// The Leak finder dock's snapshots; see `shell::leak_finder`.
+    leaks: leak_finder::LeakDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -1025,6 +1028,7 @@ impl Shell {
             toolbox: toolbox::ToolboxDock::default(),
             find_place: find_in_place::FindInPlace::default(),
             profiler: profiler_dock::ProfilerDock::default(),
+            leaks: leak_finder::LeakDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),

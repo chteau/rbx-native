@@ -164,6 +164,10 @@ pub(crate) enum Panel {
     /// ScriptProfiler of a Local Run (`shell::profiler_dock`). Shut until
     /// asked for (Ctrl+F6).
     MicroProfiler,
+    /// What keeps growing in a Local Run, per peer: connections,
+    /// nil-parented instances, tables, heap (`shell::leak_finder`). Shut
+    /// until asked for.
+    LeakFinder,
     /// One plugin's `DockWidgetPluginGui`, a dock like any other. Not in
     /// [`Panel::ALL`]: it joins a layout when its plugin first opens it.
     Plugin(PluginDock),
@@ -173,7 +177,7 @@ impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 23] = [
+    pub(crate) const ALL: [Panel; 24] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -197,6 +201,7 @@ impl Panel {
         Panel::Toolbox,
         Panel::FindInPlace,
         Panel::MicroProfiler,
+        Panel::LeakFinder,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged, also
@@ -221,7 +226,8 @@ impl Panel {
             | Panel::AvatarSettings
             | Panel::Localization
             | Panel::FindInPlace
-            | Panel::MicroProfiler => Edge::Bottom,
+            | Panel::MicroProfiler
+            | Panel::LeakFinder => Edge::Bottom,
             Panel::Plugin(dock) => dock.home(),
         }
     }
@@ -252,6 +258,7 @@ impl Panel {
             Panel::Toolbox => "Toolbox",
             Panel::FindInPlace => "Find in Place",
             Panel::MicroProfiler => "MicroProfiler",
+            Panel::LeakFinder => "Leak Finder",
             Panel::Plugin(dock) => dock.key(),
         }
     }
@@ -285,6 +292,7 @@ impl Panel {
                 | Panel::Toolbox
                 | Panel::FindInPlace
                 | Panel::MicroProfiler
+                | Panel::LeakFinder
         )
     }
 
