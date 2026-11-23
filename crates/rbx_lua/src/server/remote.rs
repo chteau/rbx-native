@@ -149,6 +149,25 @@ pub struct Outgoing {
     pub to: To,
     pub packet: Packet,
     pub at: u64,
+    /// The script line that sent it, while remotes are traced
+    /// ([`super::ServerVm::trace_remotes`]).
+    pub caller: Option<Caller>,
+}
+
+/// Where a remote call was made: the script's full name and the line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Caller {
+    pub script: String,
+    pub line: usize,
+}
+
+/// The innermost script frame of the running thread.
+fn caller(lua: &Lua) -> Option<Caller> {
+    let (script, line, _) = scheduler::script_frames(lua).into_iter().next()?;
+    Some(Caller {
+        script,
+        line: line.unwrap_or(0),
+    })
 }
 
 /// One VM's remote traffic: what it sent, and what arrived before anyone
@@ -163,6 +182,9 @@ pub(super) struct Remotes {
     /// Unreliable remotes already warned about losing an event for want
     /// of a listener.
     discarded: std::collections::HashSet<Ref>,
+    /// Tracing: callers are noted and over-limit events kept in `oversized`.
+    pub(super) trace: bool,
+    pub(super) oversized: Vec<Outgoing>,
 }
 
 pub(super) type Shared = Rc<RefCell<Remotes>>;
@@ -195,11 +217,20 @@ pub(super) fn member(
     let ctx = ctx.clone();
     let remotes = remotes.clone();
     let send = move |lua: &Lua, ctx: &Ctx, to: To, packet: Packet| {
+        let at = ctx.dom().mutations();
+        let mut remotes = remotes.borrow_mut();
+        let caller = if remotes.trace { caller(lua) } else { None };
+        let out = Outgoing {
+            to,
+            packet,
+            at,
+            caller,
+        };
         if let Packet::Event {
             args,
             unreliable: true,
             ..
-        } = &packet
+        } = &out.packet
         {
             let size: usize = args.iter().map(Wire::size).sum();
             if size > UNRELIABLE_LIMIT {
@@ -213,14 +244,13 @@ pub(super) fn member(
                         size - UNRELIABLE_LIMIT
                     ),
                 );
+                if remotes.trace {
+                    remotes.oversized.push(out);
+                }
                 return;
             }
         }
-        let at = ctx.dom().mutations();
-        remotes
-            .borrow_mut()
-            .outbox
-            .push(Outgoing { to, packet, at });
+        remotes.outbox.push(out);
     };
     // Each side's half of the API (the RemoteArgs golden).
     match key {
@@ -505,6 +535,7 @@ fn dispatcher(lua: &Lua, remotes: &Shared, to: To) -> Result<Function> {
             to,
             packet: Packet::Reply { id, result },
             at,
+            caller: None,
         });
         Ok(())
     })?;

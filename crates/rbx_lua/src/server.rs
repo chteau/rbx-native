@@ -51,7 +51,7 @@ pub use chat::ChatLine;
 pub use hooks::CollisionGroups;
 pub use input::VirtualInput;
 pub use query::{QueryFilter, QueryHit, QueryShape};
-pub use remote::{Outgoing, Packet, To, Wire};
+pub use remote::{Caller, Outgoing, Packet, To, Wire};
 pub use services::{
     set_text_measure, Arrival, AssetSource, Device, LiveData, Notice, PurchasePrompt, Services,
     StreamRequest, TeleportRequest, TextMeasure, WebSession,
@@ -576,6 +576,24 @@ impl ServerVm {
     /// The remote packets scripts sent since the last call, in order.
     pub fn take_outgoing(&self) -> Vec<Outgoing> {
         std::mem::take(&mut self.remotes.borrow_mut().outbox)
+    }
+
+    /// Notes the script line of every remote call and keeps the
+    /// `UnreliableRemoteEvent` calls dropped for their size (see
+    /// [`ServerVm::take_oversized`]), for the Remote inspector. Off, the
+    /// remotes cost nothing more.
+    pub fn trace_remotes(&self, on: bool) {
+        let mut remotes = self.remotes.borrow_mut();
+        remotes.trace = on;
+        if !on {
+            remotes.oversized.clear();
+        }
+    }
+
+    /// The `UnreliableRemoteEvent` calls dropped for a payload over the
+    /// 1000 byte limit since the last call, while traced.
+    pub fn take_oversized(&self) -> Vec<Outgoing> {
+        std::mem::take(&mut self.remotes.borrow_mut().oversized)
     }
 
     /// A packet from the other side: `from` is the player whose client

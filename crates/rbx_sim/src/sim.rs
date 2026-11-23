@@ -1147,6 +1147,14 @@ impl Simulation {
         self.vm.take_outgoing()
     }
 
+    pub(crate) fn trace_remotes(&self, on: bool) {
+        self.vm.trace_remotes(on);
+    }
+
+    pub(crate) fn take_oversized(&self) -> Vec<rbx_lua::server::Outgoing> {
+        self.vm.take_oversized()
+    }
+
     /// The round trip to the server, seconds: what `Player:GetNetworkPing()`
     /// returns and, on a client, `Stats.Network.ServerStatsItem["Data
     /// Ping"]` reads (in milliseconds).
