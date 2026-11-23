@@ -24,6 +24,11 @@ const KEPT: usize = 10;
 #[cfg(windows)]
 const TAIL: usize = 200;
 
+/// Where a crash gets reported: GitHub issues, with the log attached.
+pub(crate) const ISSUES_URL: &str = "https://github.com/chteau/rbx-native/issues/new";
+/// The community Discord, for help and feedback.
+pub(crate) const DISCORD_URL: &str = "https://discord.gg/5KSmhcqHt5";
+
 /// The newest stderr lines (Windows only), for a crash log to end with.
 static TAIL_LINES: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 
@@ -407,6 +412,14 @@ impl Render for CrashNotice {
                                 cx.write_to_clipboard(ClipboardItem::new_string(text));
                             }
                         }),
+                    )
+                    .child(
+                        action("crash-notice-report", "Report on GitHub")
+                            .on_click(|_, _, cx| cx.open_url(ISSUES_URL)),
+                    )
+                    .child(
+                        action("crash-notice-discord", "Discord")
+                            .on_click(|_, _, cx| cx.open_url(DISCORD_URL)),
                     )
                     .child(
                         div()
