@@ -123,12 +123,19 @@ pub(super) fn gradient(gradient: &Gradient, size: [f32; 2]) -> GradientPx {
     let axis = match gradient.kind {
         GradientKind::Linear => {
             // "The beginning and end control points snap to the edges of the
-            // parent": the ramp spans the box's projection onto its own
-            // direction, and `Scale` stretches that span about the centre.
-            // The docs do not say where `Scale` is anchored; the centre is
-            // what keeps `Offset`'s "translation from the centre" wording
-            // true at every scale.
-            let span = (size[0] * cos).abs() + (size[1] * sin).abs();
+            // parent": the ramp runs between the two points where a line
+            // through the centre along its direction leaves the box (the
+            // real client's 45 degree ramp on a 260 x 160 frame spans 226
+            // px, twice 80 / sin 45), not across the box's projection, and
+            // `Scale` stretches that span about the centre. The docs do not
+            // say where `Scale` is anchored; the centre is what keeps
+            // `Offset`'s "translation from the centre" wording true at every
+            // scale.
+            let reach = |side: f32, along: f32| match along.abs() > 1e-6 {
+                true => side / along.abs(),
+                false => f32::INFINITY,
+            };
+            let span = reach(size[0], cos).min(reach(size[1], sin));
             let scaled = (span * gradient.scale).max(f32::EPSILON);
             [cos / scaled, sin / scaled]
         }
