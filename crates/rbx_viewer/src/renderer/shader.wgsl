@@ -84,6 +84,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.reflectance = in.reflectance;
     input.layer = in.material.x;
     input.studs_per_tile = in.studs_per_tile;
+    input.extent = in.extent;
     input.kind = in.material.y;
     surface_relief(&input, in.material.z, in.extent);
 

@@ -15,20 +15,28 @@
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
+  "atmosphere_floor": {
+    "about": "Atmosphere Density 0.4, Haze 2, Glare 0.5 over a grey floor seen at a shallow angle",
+    "delta_e": 2.367,
+    "delta_e_p90": 3.588,
+    "ssim": 0.937,
+    "tolerance_delta_e": 0.35501188039779663,
+    "tolerance_ssim": 0.019999999552965164
+  },
   "bloom_colour_correction": {
     "about": "Bloom (threshold 0.8) on neon, ColorCorrection tint, contrast and saturation",
-    "delta_e": 4.331,
-    "delta_e_p90": 6.894,
-    "ssim": 0.903,
+    "delta_e": 4.321,
+    "delta_e_p90": 6.842,
+    "ssim": 0.904,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
   "blur": {
     "about": "BlurEffect Size 10",
     "delta_e": 2.412,
-    "delta_e_p90": 3.903,
+    "delta_e_p90": 3.905,
     "ssim": 0.953,
-    "tolerance_delta_e": 0.3618674576282501,
+    "tolerance_delta_e": 0.3618519902229309,
     "tolerance_ssim": 0.019999999552965164
   },
   "custom_sky": {
@@ -41,10 +49,10 @@
   },
   "decals_textures": {
     "about": "A stretched Decal, a Texture tiled at 2 studs with an offset, a tinted half transparent Texture",
-    "delta_e": 3.138,
+    "delta_e": 3.139,
     "delta_e_p90": 7.008,
     "ssim": 0.925,
-    "tolerance_delta_e": 0.47070401906967163,
+    "tolerance_delta_e": 0.47078606486320496,
     "tolerance_ssim": 0.019999999552965164
   },
   "default_lighting": {
@@ -60,15 +68,15 @@
     "delta_e": 2.453,
     "delta_e_p90": 4.18,
     "ssim": 0.941,
-    "tolerance_delta_e": 0.3680090308189392,
+    "tolerance_delta_e": 0.3679541051387787,
     "tolerance_ssim": 0.019999999552965164
   },
   "evening": {
     "about": "ClockTime 17.8: sunset colours",
-    "delta_e": 2.796,
-    "delta_e_p90": 4.604,
+    "delta_e": 2.797,
+    "delta_e_p90": 4.603,
     "ssim": 0.956,
-    "tolerance_delta_e": 0.4194689691066742,
+    "tolerance_delta_e": 0.41948992013931274,
     "tolerance_ssim": 0.019999999552965164
   },
   "exposure": {
@@ -76,15 +84,15 @@
     "delta_e": 2.274,
     "delta_e_p90": 3.781,
     "ssim": 0.965,
-    "tolerance_delta_e": 0.3410281538963318,
+    "tolerance_delta_e": 0.3410908877849579,
     "tolerance_ssim": 0.019999999552965164
   },
   "fog": {
     "about": "Linear fog: FogStart 10, FogEnd 140, FogColor warm",
     "delta_e": 2.594,
-    "delta_e_p90": 4.68,
+    "delta_e_p90": 4.683,
     "ssim": 0.927,
-    "tolerance_delta_e": 0.38916251063346863,
+    "tolerance_delta_e": 0.3891736567020416,
     "tolerance_ssim": 0.019999999552965164
   },
   "game_day_effects": {
@@ -92,7 +100,7 @@
     "delta_e": 2.106,
     "delta_e_p90": 3.339,
     "ssim": 0.982,
-    "tolerance_delta_e": 0.31584253907203674,
+    "tolerance_delta_e": 0.3158858120441437,
     "tolerance_ssim": 0.019999999552965164
   },
   "game_retro_room": {
@@ -100,7 +108,7 @@
     "delta_e": 1.823,
     "delta_e_p90": 3.283,
     "ssim": 0.783,
-    "tolerance_delta_e": 0.2734784483909607,
+    "tolerance_delta_e": 0.27347609400749207,
     "tolerance_ssim": 0.019999999552965164
   },
   "game_voxel_night": {
@@ -125,6 +133,14 @@
     "delta_e_p90": 0.157,
     "ssim": 0.97,
     "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_canvas_groups": {
+    "about": "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested",
+    "delta_e": 3.29,
+    "delta_e_p90": 23.769,
+    "ssim": 0.945,
+    "tolerance_delta_e": 0.4935474693775177,
     "tolerance_ssim": 0.019999999552965164
   },
   "gui_fonts": {
@@ -180,7 +196,7 @@
     "delta_e": 2.4,
     "delta_e_p90": 3.841,
     "ssim": 0.943,
-    "tolerance_delta_e": 0.3599707782268524,
+    "tolerance_delta_e": 0.35996222496032715,
     "tolerance_ssim": 0.019999999552965164
   },
   "light_point_1": {
@@ -250,7 +266,7 @@
   "local_lights": {
     "about": "Point, spot and surface lights with shadows at night",
     "delta_e": 4.634,
-    "delta_e_p90": 7.577,
+    "delta_e_p90": 7.571,
     "ssim": 0.917,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
@@ -263,36 +279,44 @@
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
+  "material_variant_anchor": {
+    "about": "The grid MaterialVariant at 4 studs on 5, 7 and 3 stud faces, two equal blocks a fraction of a tile apart",
+    "delta_e": 3.529,
+    "delta_e_p90": 7.647,
+    "ssim": 0.917,
+    "tolerance_delta_e": 0.5293131470680237,
+    "tolerance_ssim": 0.019999999552965164
+  },
   "material_variants": {
     "about": "MaterialVariants with a colour map: StudsPerTile 4, Organic at 8, tinted, and on Metal with a metalness map",
-    "delta_e": 7.673,
-    "delta_e_p90": 23.314,
-    "ssim": 0.738,
-    "tolerance_delta_e": 0.6000000238418579,
+    "delta_e": 2.987,
+    "delta_e_p90": 5.856,
+    "ssim": 0.951,
+    "tolerance_delta_e": 0.44805288314819336,
     "tolerance_ssim": 0.019999999552965164
   },
   "materials_a": {
     "about": "The first 20 materials on grey slabs",
-    "delta_e": 3.414,
-    "delta_e_p90": 5.77,
-    "ssim": 0.942,
-    "tolerance_delta_e": 0.51213538646698,
+    "delta_e": 3.432,
+    "delta_e_p90": 5.778,
+    "ssim": 0.943,
+    "tolerance_delta_e": 0.5147850513458252,
     "tolerance_ssim": 0.019999999552965164
   },
   "materials_b": {
     "about": "The other 19 materials on grey slabs",
-    "delta_e": 3.248,
-    "delta_e_p90": 5.638,
+    "delta_e": 3.244,
+    "delta_e_p90": 5.652,
     "ssim": 0.956,
-    "tolerance_delta_e": 0.48719462752342224,
+    "tolerance_delta_e": 0.4865487515926361,
     "tolerance_ssim": 0.019999999552965164
   },
   "morning": {
     "about": "ClockTime 7 on the equator: a low sun in the east",
     "delta_e": 3.475,
-    "delta_e_p90": 6.897,
+    "delta_e_p90": 6.898,
     "ssim": 0.926,
-    "tolerance_delta_e": 0.5212849378585815,
+    "tolerance_delta_e": 0.5212505459785461,
     "tolerance_ssim": 0.019999999552965164
   },
   "night": {
@@ -305,10 +329,10 @@
   },
   "noob": {
     "about": "The classic noob up close: colours, round head and the default face",
-    "delta_e": 2.276,
-    "delta_e_p90": 3.882,
+    "delta_e": 2.277,
+    "delta_e_p90": 3.883,
     "ssim": 0.976,
-    "tolerance_delta_e": 0.3413922190666199,
+    "tolerance_delta_e": 0.3416116237640381,
     "tolerance_ssim": 0.019999999552965164
   },
   "realistic_style": {
@@ -316,7 +340,7 @@
     "delta_e": 2.413,
     "delta_e_p90": 3.975,
     "ssim": 0.941,
-    "tolerance_delta_e": 0.36195099353790283,
+    "tolerance_delta_e": 0.3619091510772705,
     "tolerance_ssim": 0.019999999552965164
   },
   "shadows_half": {
@@ -324,39 +348,47 @@
     "delta_e": 2.587,
     "delta_e_p90": 4.42,
     "ssim": 0.982,
-    "tolerance_delta_e": 0.38808342814445496,
+    "tolerance_delta_e": 0.3880789577960968,
     "tolerance_ssim": 0.019999999552965164
   },
   "shadows_hard": {
     "about": "ShadowSoftness 0: poles and a floating slab",
-    "delta_e": 2.59,
+    "delta_e": 2.591,
     "delta_e_p90": 4.388,
     "ssim": 0.982,
-    "tolerance_delta_e": 0.38855549693107605,
+    "tolerance_delta_e": 0.38858017325401306,
     "tolerance_ssim": 0.019999999552965164
   },
   "shadows_soft": {
     "about": "ShadowSoftness 1: poles and a floating slab",
     "delta_e": 2.618,
-    "delta_e_p90": 4.485,
+    "delta_e_p90": 4.481,
     "ssim": 0.975,
-    "tolerance_delta_e": 0.39272966980934143,
+    "tolerance_delta_e": 0.3927253782749176,
     "tolerance_ssim": 0.019999999552965164
   },
   "special_materials": {
     "about": "Glass, Neon, ForceField, Reflectance, Metal, Foil and overlapping transparency",
-    "delta_e": 2.962,
-    "delta_e_p90": 5.172,
-    "ssim": 0.917,
-    "tolerance_delta_e": 0.4442472457885742,
+    "delta_e": 2.95,
+    "delta_e_p90": 5.14,
+    "ssim": 0.919,
+    "tolerance_delta_e": 0.442452996969223,
     "tolerance_ssim": 0.019999999552965164
   },
   "studio_baseplate": {
     "about": "Studio's Baseplate template lighting with its Sky, Atmosphere, SunRays and Bloom",
-    "delta_e": 1.948,
-    "delta_e_p90": 3.773,
+    "delta_e": 1.949,
+    "delta_e_p90": 3.777,
     "ssim": 0.983,
-    "tolerance_delta_e": 0.29225313663482666,
+    "tolerance_delta_e": 0.29228588938713074,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "studio_future": {
+    "about": "The template's Lighting values under Technology Future",
+    "delta_e": 2.413,
+    "delta_e_p90": 3.975,
+    "ssim": 0.941,
+    "tolerance_delta_e": 0.36188754439353943,
     "tolerance_ssim": 0.019999999552965164
   },
   "studio_lighting": {
@@ -364,15 +396,15 @@
     "delta_e": 2.413,
     "delta_e_p90": 3.975,
     "ssim": 0.941,
-    "tolerance_delta_e": 0.36195099353790283,
+    "tolerance_delta_e": 0.3619091510772705,
     "tolerance_ssim": 0.019999999552965164
   },
   "studs": {
     "about": "Smooth, Studs, Inlet, Universal, Weld and Glue tops and fronts, and a studded plate",
-    "delta_e": 2.553,
+    "delta_e": 2.552,
     "delta_e_p90": 4.72,
     "ssim": 0.942,
-    "tolerance_delta_e": 0.3828854262828827,
+    "tolerance_delta_e": 0.3828718960285187,
     "tolerance_ssim": 0.019999999552965164
   },
   "sun_rays": {
@@ -383,20 +415,28 @@
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
+  "surface_appearance": {
+    "about": "A MeshPart with its TextureID, and SurfaceAppearances: Overlay tinted, Transparency, metalness and roughness maps",
+    "delta_e": 5.736,
+    "delta_e_p90": 12.521,
+    "ssim": 0.801,
+    "tolerance_delta_e": 0.6000000238418579,
+    "tolerance_ssim": 0.019999999552965164
+  },
   "template_spawn": {
     "about": "The Baseplate template's textured floor and SpawnLocation decal, as Play opens",
-    "delta_e": 2.71,
+    "delta_e": 2.709,
     "delta_e_p90": 4.913,
     "ssim": 0.984,
-    "tolerance_delta_e": 0.40642616152763367,
+    "tolerance_delta_e": 0.40638771653175354,
     "tolerance_ssim": 0.019999999552965164
   },
   "text_boxes": {
     "about": "TextBoxes and TextLabels whose text overflows: placeholder, alignment, ClipsDescendants, TextTruncate",
     "delta_e": 2.887,
-    "delta_e_p90": 4.458,
+    "delta_e_p90": 4.461,
     "ssim": 0.91,
-    "tolerance_delta_e": 0.43302521109580994,
+    "tolerance_delta_e": 0.4329816997051239,
     "tolerance_ssim": 0.019999999552965164
   },
   "text_sizes": {
@@ -404,7 +444,7 @@
     "delta_e": 1.775,
     "delta_e_p90": 3.982,
     "ssim": 0.951,
-    "tolerance_delta_e": 0.26627638936042786,
+    "tolerance_delta_e": 0.26629799604415894,
     "tolerance_ssim": 0.019999999552965164
   },
   "texture_blend": {
@@ -412,7 +452,7 @@
     "delta_e": 3.288,
     "delta_e_p90": 7.161,
     "ssim": 0.906,
-    "tolerance_delta_e": 0.4932411313056946,
+    "tolerance_delta_e": 0.49326515197753906,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_ambient": {
@@ -450,9 +490,9 @@
   "tone_exposure": {
     "about": "The ramp under an overhead sun, Brightness 1, ExposureCompensation 2",
     "delta_e": 3.837,
-    "delta_e_p90": 7.691,
+    "delta_e_p90": 7.684,
     "ssim": 0.977,
-    "tolerance_delta_e": 0.5755792856216431,
+    "tolerance_delta_e": 0.5755717754364014,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sky": {
@@ -468,7 +508,7 @@
     "delta_e": 2.737,
     "delta_e_p90": 5.628,
     "ssim": 0.931,
-    "tolerance_delta_e": 0.4105270802974701,
+    "tolerance_delta_e": 0.4105275571346283,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_15": {
@@ -476,7 +516,7 @@
     "delta_e": 2.779,
     "delta_e_p90": 5.736,
     "ssim": 0.924,
-    "tolerance_delta_e": 0.41685420274734497,
+    "tolerance_delta_e": 0.41684845089912415,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2": {
@@ -484,7 +524,7 @@
     "delta_e": 2.73,
     "delta_e_p90": 5.629,
     "ssim": 0.931,
-    "tolerance_delta_e": 0.40952274203300476,
+    "tolerance_delta_e": 0.4095320403575897,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2_retro": {
@@ -492,7 +532,7 @@
     "delta_e": 2.894,
     "delta_e_p90": 5.646,
     "ssim": 0.927,
-    "tolerance_delta_e": 0.43407195806503296,
+    "tolerance_delta_e": 0.43408873677253723,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2_voxel": {
@@ -500,7 +540,7 @@
     "delta_e": 2.894,
     "delta_e_p90": 5.646,
     "ssim": 0.927,
-    "tolerance_delta_e": 0.43407195806503296,
+    "tolerance_delta_e": 0.43408873677253723,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_2_voxel_retro": {
@@ -508,7 +548,7 @@
     "delta_e": 2.894,
     "delta_e_p90": 5.646,
     "ssim": 0.927,
-    "tolerance_delta_e": 0.43407195806503296,
+    "tolerance_delta_e": 0.43408873677253723,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_30": {
@@ -516,7 +556,7 @@
     "delta_e": 2.778,
     "delta_e_p90": 5.72,
     "ssim": 0.925,
-    "tolerance_delta_e": 0.41665467619895935,
+    "tolerance_delta_e": 0.41665393114089966,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_4": {
@@ -524,13 +564,13 @@
     "delta_e": 2.814,
     "delta_e_p90": 5.695,
     "ssim": 0.926,
-    "tolerance_delta_e": 0.42206087708473206,
+    "tolerance_delta_e": 0.4220593273639679,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_5": {
     "about": "tone_sun_2 with the sun 5 degrees up",
     "delta_e": 4.056,
-    "delta_e_p90": 7.681,
+    "delta_e_p90": 7.682,
     "ssim": 0.924,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
@@ -540,7 +580,7 @@
     "delta_e": 2.754,
     "delta_e_p90": 5.662,
     "ssim": 0.926,
-    "tolerance_delta_e": 0.41316476464271545,
+    "tolerance_delta_e": 0.4131700098514557,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_8": {
@@ -548,15 +588,15 @@
     "delta_e": 2.854,
     "delta_e_p90": 5.773,
     "ssim": 0.928,
-    "tolerance_delta_e": 0.4280446469783783,
+    "tolerance_delta_e": 0.42803165316581726,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_sun_8_voxel_retro": {
     "about": "The ramp under an overhead sun, Brightness 8, Voxel, TonemapperPreset Retro",
     "delta_e": 3.071,
-    "delta_e_p90": 5.804,
-    "ssim": 0.922,
-    "tolerance_delta_e": 0.46070989966392517,
+    "delta_e_p90": 5.803,
+    "ssim": 0.921,
+    "tolerance_delta_e": 0.46070507168769836,
     "tolerance_ssim": 0.019999999552965164
   }
 }

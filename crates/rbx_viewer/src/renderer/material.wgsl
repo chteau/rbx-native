@@ -103,6 +103,10 @@ struct MaterialInput {
     reflectance: f32,
     layer: u32,
     studs_per_tile: f32,
+    // The part's size in studs, which puts the tile grid's origin on a
+    // face's corner; left zero (the grid centred on the part) by passes that
+    // have no box to measure.
+    extent: vec3<f32>,
     kind: u32,
     // How much of a `ForceField` mesh's own image is showing here, from
     // `force_field_window`. Left zeroed, no pattern, by every pass with no
@@ -347,11 +351,16 @@ fn force_field_window(red: f32, phase: f32) -> f32 {
 /// of the triplanar blend both funnel through here so they sample identically.
 fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
     let frame = face_frame(axis);
-    // Studs per tile, so a part keeps its texel density whatever its size.
-    let uv = vec2<f32>(
+    // Studs per tile, so a part keeps its texel density whatever its size,
+    // counted from the face's corner where both projection axes start, as
+    // the real client lays a MaterialVariant (`material_variant_anchor`: a
+    // 5 stud face starts on a whole tile at its top left as seen from the
+    // front, whichever way the part stands).
+    let corner = 0.5 * vec2<f32>(dot(abs(frame.u), input.extent), dot(abs(frame.v), input.extent));
+    let uv = (vec2<f32>(
         dot(input.object_studs, frame.u),
         dot(input.object_studs, frame.v),
-    ) / max(input.studs_per_tile, 0.001);
+    ) + corner) / max(input.studs_per_tile, 0.001);
 
     // Sampled before any branch: implicit-derivative sampling is only defined
     // in uniform control flow, and `kind` varies per instance.
