@@ -1549,7 +1549,7 @@ impl Simulation {
         self.world.write_constraints(&mut self.dom.borrow_mut());
         let posed =
             crate::animation::lay_out(&mut self.dom.borrow_mut(), &self.shared.borrow().animations);
-        self.shared.borrow_mut().moved.extend(posed);
+        self.shared.borrow_mut().moved.extend(posed.iter().copied());
         self.shared
             .borrow_mut()
             .humanoids
@@ -1568,6 +1568,15 @@ impl Simulation {
                     .collect()
             };
             self.seen(&moved);
+        }
+        // Limbs and what they wear (an accessory's handle on its weld) as
+        // the animations laid them out: the view's copy follows them. The
+        // replay trace leaves them out; it hashes what physics moved.
+        if let Some(kept) = self.view_changes.as_mut() {
+            kept.extend(posed.into_iter().map(|referent| Change::Property {
+                referent,
+                name: "CFrame".to_string(),
+            }));
         }
         let fallen = self.world.fallen(fallen_height, self.role != Role::Client);
         for part in fallen {
@@ -1719,6 +1728,13 @@ impl Simulation {
         let mut voices = shared.sounds.voices(&dom, self.db, listener.as_ref());
         voices.extend(shared.videos.voices(&dom, self.db));
         voices
+    }
+
+    /// The sounds playing now and each one's clock, in seconds: what a
+    /// remote player's editor needs to play them from the same assets.
+    pub fn sound_clocks(&self) -> Vec<(Ref, f64)> {
+        let dom = self.dom.borrow();
+        self.shared.borrow().sounds.clocks(&dom, self.db)
     }
 
     /// What this client's audio graph played since the last call, stereo

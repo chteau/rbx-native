@@ -585,6 +585,9 @@ impl Shell {
         kicked: Vec<(String, String)>,
         cx: &mut Context<Self>,
     ) {
+        // A link behind on what it sends gets its collaborators' frames
+        // merged until it catches up.
+        let slow = self.play.live.local.remote.slow();
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
@@ -736,7 +739,13 @@ impl Shell {
             if let Some(player) = remote {
                 let frame = remote::frame_of(&shown);
                 let dom = shown.dom.borrow();
-                outgoing.extend(run.remote.frame(player, &dom, &shown.changes, frame));
+                let shot = rbx_sim::remote::Shot {
+                    dom: &dom,
+                    changes: &shown.changes,
+                    sounds: sim.sound_clocks(),
+                    time: sim.time(),
+                };
+                outgoing.extend(run.remote.frame(player, shot, frame, slow));
             }
             let (actions, menu_open) =
                 shell.update(cx, |shell, cx| shell.local_run_show_frame(shown, cx));

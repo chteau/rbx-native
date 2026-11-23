@@ -30,7 +30,7 @@ const MOVE_TO_TIMEOUT: u64 = 480;
 const MOVE_TO_REACHED: f64 = 1.04;
 /// JumpPower 30, 50, 70, 100 take off at 1.06 times the power
 /// (HumanoidJumpScale); JumpHeight h at sqrt(2 g h).
-const JUMP_POWER_SCALE: f64 = 1.06;
+pub(crate) const JUMP_POWER_SCALE: f64 = 1.06;
 /// Climbing speed per WalkSpeed: 11.2 stud/s at 16 (HumanoidClimb).
 const CLIMB_PER_WALKSPEED: f64 = 0.7;
 /// How far from a truss an R15 holds while climbing (HumanoidClimb

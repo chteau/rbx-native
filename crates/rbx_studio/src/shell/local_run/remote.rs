@@ -15,23 +15,33 @@
 //!   session announced. Their avatar is the one Play (local) would use
 //!   (signed in: theirs; else the noob). Once let in, a window shows their
 //!   player's view, built and kept up from the frames, and their input
-//!   goes up as the same actions a recording keeps. Exit, End Session or
-//!   closing the window leaves.
+//!   goes up as the same actions a recording keeps. Their own character
+//!   moves on their keys at once (`rbx_sim::remote::Predictor`), the
+//!   frames pulling it back where the host has it. The game's sounds play
+//!   here from the same assets, heard from their camera. A teleport takes
+//!   them along: their window reopens on the new place. Exit, End Session
+//!   or closing the window leaves.
+//!
+//! The hosted relay (the default), a Worker relay or a plain ntfy server
+//! all carry it (`rbx_presence::play`). A host whose connection is behind
+//! sends its collaborators fewer, merged frames.
 
 use std::sync::mpsc::Receiver;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::Root;
 use gpui_kit::*;
-use rbx_dom::{Change, Ref};
+use rbx_dom::{CFrameData, Change, Ref};
 use rbx_presence::client::Route;
 use rbx_presence::play::{self, Event, Link};
 use rbx_presence::relay::RelayKind;
-use rbx_sim::remote::{self as wire, Down, Frame, Up, Viewer};
+use rbx_sim::remote::{self as wire, Down, Frame, Speaker, Up, Viewer};
 use rbx_sim::replay::Action;
 use rbx_sim::Peer;
 
 use super::avatars;
+use super::sound::Mixer;
 use super::tabs::TestWindow;
 use super::windows::{Home, PeerLink, Shown};
 use super::{push_row, MAX_PLAYERS};
@@ -51,6 +61,9 @@ const HOST_GONE: Duration = Duration::from_secs(6);
 /// Tries on this computer's loopback port before going through the
 /// tunnel, for a host whose relay didn't get its usual port.
 const LOOPBACK_TRIES: u32 = 2;
+/// Bytes waiting to leave past which the host's connection counts as
+/// slow: a quarter of a second of a tunnel's few hundred KB/s.
+const SLOW_BACKLOG: u64 = 64 * 1024;
 
 /// A session someone in the room announced.
 pub(in crate::shell) struct Announced {
@@ -72,6 +85,15 @@ pub(in crate::shell) struct Guest {
     core: Option<rbx_sim::gui::CoreGui>,
     /// Frames that arrived since the last pump.
     frames: Vec<Frame>,
+    /// The host's camera as the newest frame had it, and the rest of its
+    /// state (mouse, PlayerGui, dialog, paused).
+    camera: Option<(CFrameData, f32)>,
+    state: Frame,
+    /// The game's sounds, played here.
+    speaker: Speaker,
+    sound: Mixer,
+    /// The last pump, for how far the prediction and the sounds move.
+    pumped: Instant,
     /// The screen size and insets last sent, and the menu.
     sent: Option<([f32; 2], [f32; 4])>,
     menu_open: bool,
@@ -100,7 +122,6 @@ pub(crate) struct RemotePlay {
     through_tunnel: bool,
     pump: Option<Task<()>>,
     last_open: Option<Instant>,
-    told_transport: bool,
     /// Since the first collaborator was let in, and the bytes then.
     hosting: Option<(Instant, (u64, u64))>,
     pub(in crate::shell) hosts: Vec<Announced>,
@@ -118,6 +139,13 @@ impl RemotePlay {
         if let Some((_, link)) = &self.link {
             link.send(to, wire::encode_up(message));
         }
+    }
+
+    /// The connection is behind on what it sends.
+    pub(in crate::shell) fn slow(&self) -> bool {
+        self.link
+            .as_ref()
+            .is_some_and(|(_, link)| link.backlog() > SLOW_BACKLOG)
     }
 
     /// What hosting collaborators cost, for the Output once the session
@@ -186,36 +214,28 @@ pub(in crate::shell) fn betas_on() -> bool {
 }
 
 impl Shell {
-    /// Where this editor's play connection should go now: the hosted
-    /// room's relay, while both betas are on and co-editing is connected.
+    /// Where this editor's play connection should go now: the room's
+    /// relay (hosted, a Worker or a plain ntfy server), while both betas
+    /// are on and co-editing is connected.
     fn remote_play_target(&mut self) -> Option<play::Config> {
         if !betas_on() {
             return None;
         }
         let seed = self.team_presence.coedit.as_ref()?.seed();
-        if seed.kind != RelayKind::Hosted {
-            if !self.play.live.local.remote.told_transport {
-                self.play.live.local.remote.told_transport = true;
-                push_row(
-                    &mut self.output,
-                    Feedback::Warning(
-                        "Collaborators can only join a Local Run through the hosted relay (the default); this place names another.".into(),
-                    ),
-                );
-            }
-            return None;
-        }
         let remote = &self.play.live.local.remote;
-        let relay_url = match self.team_presence.route.as_ref()? {
-            // The relay runs here: its loopback port is one hop shorter
-            // than the tunnel there and back.
-            Route::Hosting(public) if remote.through_tunnel => public.clone(),
-            Route::Hosting(_) => format!(
-                "http://127.0.0.1:{}",
-                rbx_presence::announce::loopback_port(&seed.room)
-            ),
-            Route::Joined(url) => url.clone(),
-            Route::Waiting => return None,
+        let relay_url = match seed.kind {
+            RelayKind::Worker | RelayKind::Ntfy => seed.url.clone(),
+            RelayKind::Hosted => match self.team_presence.route.as_ref()? {
+                // The relay runs here: its loopback port is one hop
+                // shorter than the tunnel there and back.
+                Route::Hosting(public) if remote.through_tunnel => public.clone(),
+                Route::Hosting(_) => format!(
+                    "http://127.0.0.1:{}",
+                    rbx_presence::announce::loopback_port(&seed.room)
+                ),
+                Route::Joined(url) => url.clone(),
+                Route::Waiting => return None,
+            },
         };
         Some(play::Config {
             relay_url: relay_url.trim_end_matches('/').to_owned(),
@@ -228,6 +248,7 @@ impl Shell {
             } else {
                 remote.pid
             },
+            kind: seed.kind,
         })
     }
 
@@ -487,6 +508,38 @@ impl Shell {
         cx.notify();
     }
 
+    /// After a teleport: the collaborators who came along join the new
+    /// session, each welcomed into it on the connection they still have,
+    /// in a tab of their own again.
+    pub(super) fn local_run_arrive_remote(&mut self, cx: &mut Context<Self>) {
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        let carried = std::mem::take(&mut run.carried);
+        let arrived = run.remote.arrive(&mut run.session, carried);
+        for (to, down) in &arrived {
+            let line = match down {
+                Down::Welcome { name, .. } => Feedback::Info(format!("{name} came along")),
+                Down::Ended(why) => {
+                    Feedback::Error(format!("A collaborator couldn\u{2019}t come along: {why}"))
+                }
+                _ => continue,
+            };
+            push_row(&mut self.output, line);
+            self.play.live.local.remote.send_down(*to, down);
+        }
+        let traffic = self.play.live.local.remote.traffic();
+        self.play
+            .live
+            .local
+            .remote
+            .hosting
+            .get_or_insert((Instant::now(), traffic));
+        self.local_run_open_player_windows(cx);
+        self.local_run_notify_tabs(cx);
+        cx.notify();
+    }
+
     /// An offer's ✕.
     pub(in crate::shell) fn local_run_decline_remote(&mut self, from: u64, cx: &mut Context<Self>) {
         if self.local_run_forward(cx, move |host, cx| host.local_run_decline_remote(from, cx)) {
@@ -513,6 +566,9 @@ impl Shell {
             return;
         };
         let host_name = announced.name.clone();
+        let fetcher = super::Fetcher(rbx_cloud::Client::new(
+            rbx_cloud::ApiKey::from_env_or_config(),
+        ));
         self.play.live.local.remote.guest = Some(Guest {
             host,
             host_name: host_name.clone(),
@@ -522,6 +578,11 @@ impl Shell {
             shell: WeakEntity::new_invalid(),
             core: None,
             frames: Vec::new(),
+            camera: None,
+            state: Frame::default(),
+            speaker: Speaker::new(Some(Arc::new(fetcher))),
+            sound: Mixer::new(self.viewport.read(cx).core_gui.volume),
+            pumped: Instant::now(),
             sent: None,
             menu_open: false,
             since: Instant::now(),
@@ -603,6 +664,24 @@ impl Shell {
             return;
         };
         match down {
+            // Welcomed again: a teleport took them into the host's next
+            // session. The window reopens on the new place's first frame.
+            Down::Welcome { player, .. } if guest.joined() => {
+                guest.player = Some(player);
+                guest.viewer = Viewer::default();
+                guest.frames.clear();
+                guest.camera = None;
+                guest.state = Frame::default();
+                guest.sent = None;
+                guest.sound.update(Vec::new(), Vec::new(), false);
+                if let Some(window) = guest.window.take() {
+                    let _ = window.update(cx, |_, window, _| window.remove_window());
+                }
+                guest.shell = WeakEntity::new_invalid();
+                let line = format!("{} teleported you to another place", guest.host_name);
+                push_row(&mut self.output, Feedback::Info(line));
+                cx.notify();
+            }
             Down::Welcome { player, .. } => {
                 guest.player = Some(player);
                 guest.since = Instant::now();
@@ -627,7 +706,15 @@ impl Shell {
         let frames = std::mem::take(&mut guest.frames);
         let reset = frames.iter().any(|f| f.reset);
         let mut changes: Vec<Change> = Vec::new();
-        let mut shown = Frame::default();
+        // A pump without a frame still shows (the prediction moves on):
+        // with the newest frame's state.
+        let mut shown = Frame {
+            mouse: guest.state.mouse,
+            player_gui: guest.state.player_gui,
+            dialog: guest.state.dialog.clone(),
+            paused: guest.state.paused,
+            ..Frame::default()
+        };
         for frame in frames {
             changes = if frame.reset {
                 guest.viewer.apply(&frame);
@@ -637,19 +724,29 @@ impl Shell {
                 all.extend(guest.viewer.apply(&frame));
                 all
             };
+            guest.speaker.hear(&frame);
             if frame.core.is_some() {
                 guest.core.clone_from(&frame.core);
+            }
+            if frame.camera.is_some() {
+                guest.camera = frame.camera;
             }
             shown.chat.extend(frame.chat);
             shown.notices.extend(frame.notices);
             shown.bursts.extend(frame.bursts);
             shown.rows.extend(frame.rows);
-            shown.camera = frame.camera;
             shown.mouse = frame.mouse;
             shown.player_gui = frame.player_gui;
             shown.dialog = frame.dialog;
             shown.paused = frame.paused;
         }
+        guest.state = Frame {
+            mouse: shown.mouse,
+            player_gui: shown.player_gui,
+            dialog: shown.dialog.clone(),
+            paused: shown.paused,
+            ..Frame::default()
+        };
         if guest.window.is_none() {
             if !reset {
                 return;
@@ -667,29 +764,6 @@ impl Shell {
         let Some(shell) = guest.shell.upgrade() else {
             return;
         };
-        let mut output = rbx_lua::Output::default();
-        for (kind, line) in shown.rows {
-            output.push_text(kind, line);
-        }
-        let view = Shown {
-            dom: guest.viewer.dom_rc(),
-            changes,
-            input: true,
-            client: true,
-            camera: shown.camera,
-            mouse: shown.mouse,
-            player_gui: shown.player_gui,
-            core: guest.core.clone(),
-            chat: shown.chat,
-            notices: shown.notices,
-            dialog: shown.dialog,
-            bursts: shown.bursts,
-            rows: vec![(Peer::Client(0), output)],
-            editables: false,
-            paused: shown.paused,
-        };
-        let (actions, menu_open) =
-            shell.update(cx, |shell, cx| shell.local_run_show_frame(view, cx));
         let (inputs, size, safe) = shell.update(cx, |shell, cx| {
             shell.viewport.update(cx, |viewport, _| {
                 (
@@ -705,25 +779,74 @@ impl Shell {
             up.push(Action::Viewport(size));
             up.push(Action::SafeInsets(safe));
         }
+        up.extend(inputs.into_iter().map(Action::Input));
+        // Their character moves on their keys now; the sounds keep time.
+        let dt = if shown.paused {
+            0.0
+        } else {
+            guest.pumped.elapsed().as_secs_f64().min(0.25)
+        };
+        guest.pumped = Instant::now();
+        guest.viewer.input(&up);
+        let (moved, camera) = guest.viewer.predict(player, guest.camera, dt);
+        changes.extend(moved);
+        {
+            let dom = guest.viewer.dom_rc();
+            let dom = dom.borrow();
+            guest.speaker.advance(&dom, dt);
+            let voices = guest.speaker.voices(&dom, camera.map(|(c, _)| c));
+            guest.sound.update(voices, Vec::new(), !shown.paused);
+        }
+        let mut output = rbx_lua::Output::default();
+        for (kind, line) in shown.rows {
+            output.push_text(kind, line);
+        }
+        let view = Shown {
+            dom: guest.viewer.dom_rc(),
+            changes,
+            input: true,
+            client: true,
+            camera,
+            mouse: shown.mouse,
+            player_gui: shown.player_gui,
+            core: guest.core.clone(),
+            chat: shown.chat,
+            notices: shown.notices,
+            dialog: shown.dialog,
+            bursts: shown.bursts,
+            rows: vec![(Peer::Client(0), output)],
+            editables: false,
+            paused: shown.paused,
+        };
+        let (actions, menu_open) =
+            shell.update(cx, |shell, cx| shell.local_run_show_frame(view, cx));
+        let mut late = Vec::new();
         if guest.menu_open != menu_open {
             guest.menu_open = menu_open;
-            up.push(Action::MenuOpen(menu_open));
+            late.push(Action::MenuOpen(menu_open));
         }
-        up.extend(inputs.into_iter().map(Action::Input));
         let host = guest.host;
         let mut leave = false;
         let mut purchases = Vec::new();
         for action in actions {
             match action {
-                CoreAction::Say(text) => up.push(Action::Chat(text)),
-                CoreAction::Reset => up.push(Action::Reset),
+                CoreAction::Say(text) => late.push(Action::Chat(text)),
+                CoreAction::Reset => late.push(Action::Reset),
                 CoreAction::Purchase(bought) => purchases.push(bought),
                 CoreAction::Leave => leave = true,
-                CoreAction::Volume(_) => {}
+                CoreAction::Volume(volume) => guest.sound.set_volume(volume),
             }
         }
+        guest.viewer.input(&late);
+        up.extend(late);
+        // While their character moves on their input, every pump sends:
+        // each message is a point the frames are checked against.
+        let send = !up.is_empty() || guest.viewer.predictor.moving();
+        if send {
+            guest.viewer.predictor.sent();
+        }
         let remote = &self.play.live.local.remote;
-        if !up.is_empty() {
+        if send {
             remote.send_up(host, &Up::Actions(up));
         }
         for bought in purchases {
