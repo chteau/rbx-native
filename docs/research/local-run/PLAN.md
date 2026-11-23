@@ -1150,6 +1150,22 @@ Left, and why:
 - `MaterialVariant` tiling: the real client centres a grid cell on a 6 stud face where ours puts a cell corner there (a quarter tile off on both axes); the colour map's alpha is ignored in both. Which corner the real client anchors to needs a capture on an odd-sized part. The client also logs "Failed to load MaterialService.Grid" for the public grid image, though it draws it.
 - The horizon haze and clouds in `template_spawn` were not taken further.
 
+### Third pass: decal blending, tile anchor, CanvasGroup (branch feat/local-run-fidelity-3)
+
+New scenes: `material_variant_anchor`, `surface_appearance`, `atmosphere_floor`, `studio_future`, `gui_canvas_groups`. A scene `MeshPart` carries its mesh's `InitialSize`, as Studio saves it: without one the real client drew the cone at another scale, its base under the floor (ours fits the mesh to `Size` either way).
+
+- `Decal`s and `Texture`s mix over their part with both lit colours raised to 1 / 2.2 before tone mapping (`textured.wgsl`; the decal instance now carries its part's colour, and the blended pipeline is premultiplied). The tinted Texture is 143,37,121 against the real 143,35,118 (was 161,38,147); `texture_blend` 4.99 to 3.29.
+- A material's tile grid (a `MaterialVariant`, and the built-in packs) starts at each face's corner where both projection axes start, its top left seen from the front, anchored to the part and not to the world: the two equal 5 stud blocks a fraction of a tile apart show the same pattern. `material_variants` 7.67 to 2.99.
+- `CanvasGroup`: under `ZIndexBehavior.Global` (the `ScreenGui` class default) the group is not flattened and the real client fades and tints only its own background, the children draw untouched. That was the second pass's open item, and it is not an Android fallback: on a `Sibling` screen the same client flattens and fades everything. Our flattened texture was also sampled through its encoded view and came out too light (a red child 137,78,81, real 123,43,46); it now decodes. `gui_canvas_groups` 0.14, `gui_stacking` 1.05 to 0.06.
+- `Technology` `Future` and `ShadowMap` draw a sunlit stage identically in the real client (`studio_future` and `studio_lighting` captures differ by at most 1 in any channel), as ours does.
+
+Left, and why:
+
+- `template_spawn` moved from 2.60 to 2.71 with the gamma blend: the near floor grid is right, the far floor darker than the real client's, where the grid is minified. Mipmapping averages the texture's alpha before the blend, and averaging a gamma blend of black over grey after it (which the real client's lighter far floor suggests) is not what a mip chain can give; not changed.
+- `surface_appearance` (3.15): the shapes and the Overlay, Transparency and tint behaviour match; ours has a little more sheen on the textured mesh (blue 75 against 45 on the orange cone) and a slightly lighter Transparency cone. The default roughness of a set with no roughness map (0.9) was swept from 0.5 to 1 with no measurable change, so it is kept.
+- `atmosphere_floor` (2.37): the floor through haze is within a few levels of the real client at every distance; ours is a little bluer toward the horizon (blue +5 to +10) and a little lighter right under the camera. The horizon in `template_spawn` is now slightly darker than real, not lighter.
+- The client still logs "Failed to load ... PBR textures may not be visible" for a `MaterialVariant` or `SurfaceAppearance` using the public grid image, though it draws it.
+
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.
