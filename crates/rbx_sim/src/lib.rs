@@ -9,6 +9,7 @@ pub mod animation;
 pub mod audio;
 mod audio_api;
 pub mod audio_graph;
+pub mod bots;
 
 /// What a script asked of a `ParticleEmitter` beyond its properties.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +32,7 @@ mod journal;
 pub mod link;
 pub mod live;
 pub mod load;
+pub mod loadtest;
 mod modules;
 pub mod offline_pack;
 pub mod ownership;

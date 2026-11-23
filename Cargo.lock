@@ -7214,6 +7214,7 @@ dependencies = [
  "rbx_loren",
  "rbx_lua",
  "rbx_reflection",
+ "rbx_sim",
  "rbx_xml",
  "serde_json",
  "tempfile",

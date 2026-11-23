@@ -15,6 +15,7 @@ mod hooks;
 mod input;
 mod meshes;
 mod pathfinding;
+pub use pathfinding::{PathRequest, Waypoint};
 mod query;
 mod remote;
 mod services;
@@ -537,6 +538,30 @@ impl ServerVm {
     /// The Lua heap in bytes.
     pub fn heap_bytes(&self) -> usize {
         self.lua.used_memory()
+    }
+
+    /// The web service requests scripts made so far, by kind: a DataStore
+    /// call by its request type's budget (`GetAsync`, `SetIncrementAsync`,
+    /// ...), every MemoryStoreService call as `MemoryStore`.
+    pub fn web_requests(&self) -> std::collections::BTreeMap<String, u64> {
+        self.services.requests.borrow().clone()
+    }
+
+    /// A path as `PathfindingService:ComputeAsync` would find it over this
+    /// VM's world, `None` when there's no way.
+    pub fn find_path(&self, request: &PathRequest) -> Option<Vec<Waypoint>> {
+        let ctx = engine(&self.lua).ctx.clone();
+        pathfinding::compute(self.services.physics.as_ref(), &ctx, request)
+    }
+
+    /// Sends `packet` to the server as this client's scripts would.
+    pub fn send_to_server(&self, packet: Packet) {
+        let at = engine(&self.lua).ctx.dom().mutations();
+        self.remotes.borrow_mut().outbox.push(Outgoing {
+            to: To::Server,
+            packet,
+            at,
+        });
     }
 
     /// Makes this VM a client's: `RunService:IsClient()` is true and

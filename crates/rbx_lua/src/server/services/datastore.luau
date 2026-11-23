@@ -167,6 +167,7 @@ local function request(kinds, key)
 	if not host.api_access() then
 		fail("StudioAccessToApisNotAllowed: Studio access to APIs is not allowed.")
 	end
+	host.count_request(kinds[1])
 	spend(kinds, key)
 	task.wait()
 end

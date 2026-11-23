@@ -68,6 +68,13 @@ pub enum Action {
         bought: bool,
     },
     Network(Network),
+    /// The client fires a `RemoteEvent` (or `UnreliableRemoteEvent`) to
+    /// the server with `args`, as its scripts' `FireServer` would: a load
+    /// test's bots.
+    Fire {
+        remote: Ref,
+        args: Vec<rbx_lua::server::Wire>,
+    },
 }
 
 /// An action as it was recorded: before frame `frame` stepped.

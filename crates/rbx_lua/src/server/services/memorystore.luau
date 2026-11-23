@@ -29,6 +29,7 @@ local function now()
 end
 
 local function request()
+	host.count_request("MemoryStore")
 	task.wait()
 end
 
