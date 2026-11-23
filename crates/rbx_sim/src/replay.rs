@@ -18,7 +18,7 @@
 //! changed, by instance path, and where physics left each moving part):
 //! a replay that hashes differently has diverged, and says where.
 
-mod format;
+pub(crate) mod format;
 
 use std::cell::Cell;
 use std::collections::BTreeMap;

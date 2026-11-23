@@ -50,3 +50,5 @@ ureq = "3"
 x11rb = "0.13"
 # examples/record_render_goldens.rs: the render fidelity scenes it captures.
 rbx_viewer = { path = "../rbx_viewer" }
+# tests/remote_play.rs: a remote player through the co-edit room's relay.
+rbx_presence = { path = "../rbx_presence" }

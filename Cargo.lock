@@ -7297,6 +7297,7 @@ dependencies = [
  "rbx_mesh",
  "rbx_net",
  "rbx_play",
+ "rbx_presence",
  "rbx_reflection",
  "rbx_terrain",
  "rbx_viewer",
