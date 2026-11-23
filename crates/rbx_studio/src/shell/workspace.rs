@@ -146,6 +146,7 @@ impl Shell {
             Panel::Plugin(dock) => self.plugin_dock(dock, window, cx),
             Panel::InputActions => self.input_actions_dock(window, cx),
             Panel::SecurityAudit => self.security_audit_dock(cx),
+            Panel::PrePublish => self.prepublish_dock(cx),
             Panel::Playtests => self.playtests_dock(window, cx),
             Panel::Tests => self.tests_dock(cx),
             Panel::Bytecode => self.bytecode_dock(cx),

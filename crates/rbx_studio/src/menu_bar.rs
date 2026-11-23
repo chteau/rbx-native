@@ -127,6 +127,7 @@ actions!(
         MenuToggleInputActions,
         MenuToggleToolbox,
         MenuToggleSecurityAudit,
+        MenuTogglePrePublish,
         MenuRequireGraph,
         MenuTogglePlaytests,
         MenuToggleLayers,
@@ -337,6 +338,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                     MenuItem::action("Toolbox", MenuToggleToolbox),
                     MenuItem::action("Input Actions", MenuToggleInputActions),
                     MenuItem::action("Security Audit", MenuToggleSecurityAudit),
+                    MenuItem::action("Pre-publish Check", MenuTogglePrePublish),
                 ]
                 .into_iter()
                 // A window rather than a dock, listed with the docks that read

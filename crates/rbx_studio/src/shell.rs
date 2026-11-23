@@ -106,6 +106,7 @@ mod argon_dock;
 mod datastores;
 mod find_in_place;
 mod game_settings;
+mod prepublish;
 mod require_graph;
 mod rows;
 mod save;
@@ -345,6 +346,8 @@ pub(crate) struct Shell {
     insert_anchored: bool,
     /// See `Settings::strip_on_publish`.
     strip_on_publish: bool,
+    /// See `Settings::prepublish_skip`.
+    prepublish_skip: Vec<u64>,
     /// Editor layers and 3D notes; see `shell::layers`.
     layers: layers::LayerState,
     search: Entity<InputState>,
@@ -416,6 +419,8 @@ pub(crate) struct Shell {
     input_edits: input_panel::InputEdits,
     /// The Security Audit dock's cached findings; see `shell::security_audit`.
     audit: security_audit::AuditState,
+    /// The Pre-publish dock's cached check; see `shell::prepublish`.
+    prepublish: prepublish::PrePublishState,
     /// The Localization dock's preview switch and strings; see
     /// `shell::localization`.
     localization: localization::LocalizationState,
@@ -689,6 +694,7 @@ impl Shell {
             expand_on_select,
             insert_anchored,
             strip_on_publish,
+            prepublish_skip,
             dragger,
             controls,
             argon_address: argon_address_setting,
@@ -963,6 +969,7 @@ impl Shell {
             expand_on_select,
             insert_anchored,
             strip_on_publish,
+            prepublish_skip,
             search,
             explorer_query: String::new(),
             query: query_select::QuerySearch::default(),
@@ -992,6 +999,7 @@ impl Shell {
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
             audit: Default::default(),
+            prepublish: Default::default(),
             localization: Default::default(),
             layers: layers::LayerState::load(&path),
             loren: loren_panel::LorenState::default(),
@@ -1353,6 +1361,7 @@ impl Shell {
         shell.apply_debug_style_editor(cx);
         shell.apply_debug_input_actions(cx);
         shell.apply_debug_security_audit(cx);
+        shell.apply_debug_prepublish(cx);
         shell.apply_debug_pseudo_locale(cx);
         if std::env::var_os(playtests::DEBUG_VARIABLE).is_some() {
             shell.set_panel_open(layout::Panel::Playtests, true, cx);
@@ -2114,6 +2123,7 @@ impl Shell {
             mcp_server: self.mcp_enabled,
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
+            prepublish_skip: self.prepublish_skip.clone(),
             expand_on_select: self.expand_on_select,
             insert_anchored: self.insert_anchored,
             dragger: self.dragger,

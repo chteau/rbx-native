@@ -135,6 +135,9 @@ pub(crate) struct Settings {
     /// own layers and notes (see `crate::strip`). Defaults on: they mean
     /// nothing to the engine, and a note is not meant for players.
     pub(crate) strip_on_publish: bool,
+    /// Places (by id) whose Save/Publish to Roblox doesn't run the
+    /// pre-publish check first: "Don't ask again for this place".
+    pub(crate) prepublish_skip: Vec<u64>,
     /// The dragger guides' switches, see [`DraggerSettings`].
     pub(crate) dragger: DraggerSettings,
     /// The camera's feel and the snap increments, see [`Controls`].
@@ -270,6 +273,7 @@ impl Default for Settings {
             expand_on_select: true,
             insert_anchored: false,
             strip_on_publish: true,
+            prepublish_skip: Vec::new(),
             dragger: DraggerSettings::default(),
             controls: Controls::default(),
             discord_presence: false,
@@ -511,6 +515,16 @@ fn load_from(path: &Path) -> Settings {
             .get("strip_on_publish")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        prepublish_skip: value
+            .get("prepublish_skip")
+            .and_then(serde_json::Value::as_array)
+            .map(|places| {
+                places
+                    .iter()
+                    .filter_map(serde_json::Value::as_u64)
+                    .collect()
+            })
+            .unwrap_or_default(),
         expand_on_select: value
             .get("expand_on_select")
             .and_then(|v| v.as_bool())
@@ -847,6 +861,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     value["device_scaling"] = settings.device_scaling.key().into();
     value["device_keyboard_layout"] = settings.device_keyboard_layout.key().into();
     value["strip_on_publish"] = settings.strip_on_publish.into();
+    value["prepublish_skip"] = settings.prepublish_skip.clone().into();
     value["closed_documents"] = settings.closed_documents.clone().into();
     value["recent_icons"] = settings.recent_icons.into();
     // A fixed-shape object always serializes; nothing here can fail.

@@ -41,7 +41,12 @@
 //! script, and a path that only exists at run time is unknown rather than
 //! missing, except a name some script assigns to `.Name`, which is assumed
 //! to be created at run time and never reported missing.
+//!
+//! [`prepublish::check`] runs this audit and the pre-publish rules on top
+//! (broken assets, deprecated API, falling parts, DataStore calls outside
+//! `pcall`, heavy geometry, budgets).
 
+pub mod prepublish;
 mod requires;
 mod resolve;
 mod walk;
@@ -86,6 +91,15 @@ pub enum Check {
     BadRequire,
     ServerApiOnClient,
     InvokeClient,
+    // The pre-publish rules; see `prepublish`.
+    BrokenAsset,
+    AssetsNotChecked,
+    DeprecatedApi,
+    UnanchoredParts,
+    DataStoreWithoutPcall,
+    HeavyGeometry,
+    PlaceBudget,
+    StreamingIndex,
 }
 
 impl Check {
@@ -99,6 +113,14 @@ impl Check {
             Check::BadRequire => "bad-require",
             Check::ServerApiOnClient => "server-api-on-client",
             Check::InvokeClient => "invoke-client",
+            Check::BrokenAsset => "broken-asset",
+            Check::AssetsNotChecked => "assets-not-checked",
+            Check::DeprecatedApi => "deprecated-api",
+            Check::UnanchoredParts => "unanchored-parts",
+            Check::DataStoreWithoutPcall => "datastore-without-pcall",
+            Check::HeavyGeometry => "heavy-geometry",
+            Check::PlaceBudget => "place-budget",
+            Check::StreamingIndex => "streaming-index",
         }
     }
 
@@ -111,6 +133,14 @@ impl Check {
             Check::BadRequire => "require target is not a ModuleScript",
             Check::ServerApiOnClient => "Server-only API on the client",
             Check::InvokeClient => "Server trusts a client callback",
+            Check::BrokenAsset => "Broken asset id",
+            Check::AssetsNotChecked => "Asset ids not checked",
+            Check::DeprecatedApi => "Deprecated API",
+            Check::UnanchoredParts => "Parts that fall at start",
+            Check::DataStoreWithoutPcall => "DataStore call outside pcall",
+            Check::HeavyGeometry => "Heavy geometry",
+            Check::PlaceBudget => "Over budget",
+            Check::StreamingIndex => "Streamed part indexed directly",
         }
     }
 }
@@ -168,7 +198,14 @@ const REMOTES: [&str; 3] = ["RemoteEvent", "UnreliableRemoteEvent", "RemoteFunct
 /// path, then line.
 pub fn audit(dom: &WeakDom) -> Vec<Finding> {
     let (scripts, remotes) = parse(dom);
-    let (mut findings, usage) = walk_all(dom, &scripts);
+    let mut findings = audit_parsed(dom, &scripts, remotes);
+    sort(&mut findings);
+    findings
+}
+
+/// [`audit`] over scripts already parsed, unsorted.
+fn audit_parsed(dom: &WeakDom, scripts: &Parsed, remotes: Vec<Ref>) -> Vec<Finding> {
+    let (mut findings, usage) = walk_all(dom, scripts);
 
     for remote in remotes {
         if usage.listened.contains(&remote) {
@@ -214,14 +251,18 @@ pub fn audit(dom: &WeakDom) -> Vec<Finding> {
         });
     }
 
+    findings
+}
+
+/// By severity, then path, then line; duplicates dropped (a named handler
+/// is walked once where it's declared and again, with its parameters
+/// tainted, where it's connected).
+fn sort(findings: &mut Vec<Finding>) {
     findings.sort_by(|a, b| {
         (a.severity, &a.path, a.line, a.check, &a.message)
             .cmp(&(b.severity, &b.path, b.line, b.check, &b.message))
     });
-    // A named handler is walked once where it's declared and again, with
-    // its parameters tainted, where it's connected.
     findings.dedup();
-    findings
 }
 
 /// A Loren Service module and the routes clients reach it through.
