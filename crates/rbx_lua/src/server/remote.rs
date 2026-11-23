@@ -66,14 +66,21 @@ pub enum Wire {
 }
 
 impl Wire {
-    /// About how many bytes this value takes on the wire. Roblox's encoding
-    /// isn't documented: a type byte, then each type's raw fields.
+    /// How many bytes this value counts for against the 1000 byte
+    /// `UnreliableRemoteEvent` limit, fitted to the RemotePayload golden
+    /// (the largest payloads a real server let through): a type byte, a
+    /// length as a varint, then the raw fields. 997 characters of string
+    /// fit, 996 bytes of buffer, 110 numbers or 76 Vector3s in an array
+    /// (whose keys don't travel), 142 four-letter keys set to `true`.
+    /// Roblox compresses buffers, which this doesn't: a buffer of zeros
+    /// counts its full length here (4000 of them still get through).
     pub fn size(&self) -> usize {
         match self {
             Wire::Nil => 1,
             Wire::Bool(_) => 2,
             Wire::Number(_) | Wire::Instance(_) => 9,
-            Wire::String(bytes) | Wire::Buffer(bytes) => 3 + bytes.len(),
+            Wire::String(bytes) => 1 + varint(bytes.len()) + bytes.len(),
+            Wire::Buffer(bytes) => 2 + varint(bytes.len()) + bytes.len(),
             Wire::Enum { .. } => 5,
             Wire::Data(_, kind) => {
                 1 + match kind.as_str() {
@@ -85,12 +92,31 @@ impl Wire {
                 }
             }
             Wire::Table(entries) => {
+                let array = entries
+                    .iter()
+                    .enumerate()
+                    .all(|(i, (k, _))| *k == Wire::Number((i + 1) as f64));
+                let key = |k: &Wire| match k {
+                    _ if array => 0,
+                    // A dictionary's string keys go without a type byte.
+                    Wire::String(bytes) => varint(bytes.len()) + bytes.len(),
+                    other => other.size(),
+                };
                 3 + entries
                     .iter()
-                    .map(|(k, v)| k.size() + v.size())
+                    .map(|(k, v)| key(k) + v.size())
                     .sum::<usize>()
             }
         }
+    }
+}
+
+/// Bytes a length takes as a varint (7 bits a byte).
+fn varint(n: usize) -> usize {
+    match n {
+        0..=0x7F => 1,
+        0x80..=0x3FFF => 2,
+        _ => 3,
     }
 }
 

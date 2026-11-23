@@ -96,9 +96,9 @@ fn every_call_each_way_with_its_player_bytes_and_caller() {
     assert_eq!(first.path, "ReplicatedStorage.Ping");
     assert_eq!(first.kind, Kind::Event);
     assert_eq!(first.fate, Fate::Delivered);
-    // Header 8; 7 → 9; "hi" → 3 + 2; Vector3 → 1 + 12; the table 3 + its
-    // entries ("part" 7 + instance 9, "n" 4 + number 9).
-    assert_eq!(first.bytes, 8 + 9 + 5 + 13 + (3 + 16 + 13));
+    // Header 8; 7 → 9; "hi" → 1 + 1 + 2; Vector3 → 1 + 12; the table 3 +
+    // its entries ("part" 1 + 4 + instance 9, "n" 1 + 1 + number 9).
+    assert_eq!(first.bytes, 8 + 9 + 4 + 13 + (3 + 14 + 11));
     let caller = first.caller.as_ref().expect("the caller");
     assert!(caller.script.ends_with("Client"), "{caller:?}");
     assert_eq!(caller.line, 3);
