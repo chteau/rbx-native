@@ -3638,6 +3638,13 @@ b	 c` |  | ok |
 | ProfilerApi | tag_string | `ok` | `ok` |  | ok |
 | ProfilerApi | total_positive | `true` | `true` |  | ok |
 | ProfilerApi | total_type | `number` | `number` |  | ok |
+| DestroyConnections | connect_after_destroy | `true` | `true` |  | ok |
+| DestroyConnections | destroyed | `false` | `false` |  | ok |
+| DestroyConnections | destroyed_child | `false` | `false` |  | ok |
+| DestroyConnections | destroying | `false` | `false` |  | ok |
+| DestroyConnections | nil_parent | `true` | `true` |  | ok |
+| DestroyConnections | nil_parent_destroyed | `false` | `false` |  | ok |
+| DestroyConnections | nil_parent_later | `true` | `true` |  | ok |
 | FrameOverrun | after_stall_dts | `0.015 0.017 0.017` | `0.017 0.017 0.017` |  | ok |
 | FrameOverrun | overrun_dts | `0.02 0.25 0.25 0.25 0.25 0.01` | `0.02 0.25 0.25 0.25 0.25 0.02` |  | ok |
 | FrameOverrun | overrun_time | `0.02 0.05 0.05 0.05 0.05 0.02` | `0.02 0.05 0.05 0.05 0.05 0.02` |  | ok |
@@ -3698,5 +3705,3 @@ Known gaps:
 - **ScriptLimits.event_count_sync**: the same synchronous Fire as plain_fire_sync; once deferred, ours reaches the same 6 runs a frame later
 - **ScriptLimits.pcall_stack_depth**: our pcall is a Luau wrapper that turns binding errors into strings, so each level through it costs 3 frames of the 20000-frame stack instead of 2
 - **ScriptLimits.plain_fire_sync**: here Fire ran the handler before returning, against the SignalBehavior golden's deferred order; it needs a measurement of its own before ours changes
-
-No golden recorded yet: DestroyConnections.
