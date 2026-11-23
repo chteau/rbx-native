@@ -221,6 +221,12 @@ Roblox's own engine · 🤔 maybe, an idea kept for later and not committed to.
   the docs describe. `WireframeHandleAdornment`, `ParabolaAdornment` and
   `SelectionLasso` serialize no geometry to draw from and are recognized
   as drawing nothing rather than guessed at.
+  `DoubleSided` (2026-11-20) works like Studio's: off by default on the
+  box, sphere, cylinder, cone and image shapes, which drops the faces
+  turned away from the eye, so a transparent box loses its far side and
+  the camera standing inside one sees nothing of it. A single-sided image
+  shows only to an eye its `LookVector` points at. Checked side by side
+  with Studio 0.748.
 - [x] `AdGui`: the ad surfaces a place holds show their own
   `FallbackImage` on the face they adorn, which is what Roblox documents
   one as showing whenever no ad is available, and no ad ever is here.

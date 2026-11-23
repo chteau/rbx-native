@@ -83,9 +83,8 @@ fn build(
         device,
         target,
         &Surface {
-            // An adornment is a thin overlay a camera may well be
-            // standing inside; culling would leave a hole where its
-            // near face should be.
+            // Culled per vertex in the shader instead, only for the
+            // single-sided `HandleAdornment` shapes (see `super`).
             cull: None,
             // Blended, and writing no depth: an adornment is drawn
             // over the scene, not part of it.
@@ -105,11 +104,11 @@ fn build(
     )
 }
 
-const SOLID_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
+const SOLID_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4, 2 => Float32];
 const LINE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32, 3 => Float32, 4 => Float32x4];
-const IMAGE_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32];
+const IMAGE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32, 3 => Float32];
 
 impl Vertex {
     pub(super) const fn layout() -> wgpu::VertexBufferLayout<'static> {

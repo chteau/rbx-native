@@ -489,3 +489,22 @@ fn a_handle_with_no_adornee_stands_in_world_space() {
     let placed = solids(&planned[0])[0].frame.w_axis.truncate();
     assert!((placed - Vec3::new(5.0, 6.0, 7.0)).length() < 1e-5);
 }
+
+/// `DoubleSided` defaults to off on the shape adornments, the way Studio
+/// creates them, and the classes without the property stay two-sided.
+#[test]
+fn double_sided_is_read_off_the_shape_adornments_only() {
+    for class in [
+        "BoxHandleAdornment",
+        "SphereHandleAdornment",
+        "ConeHandleAdornment",
+        "CylinderHandleAdornment",
+    ] {
+        let default = plan_of(class, vec![]);
+        assert!(solids(&default[0]).iter().all(|solid| !solid.double_sided));
+        let set = plan_of(class, vec![("DoubleSided", Variant::Bool(true))]);
+        assert!(solids(&set[0]).iter().all(|solid| solid.double_sided));
+    }
+    let outline = plan_of("SelectionBox", vec![]);
+    assert!(solids(&outline[0]).iter().all(|solid| solid.double_sided));
+}
