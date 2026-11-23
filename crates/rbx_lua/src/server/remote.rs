@@ -335,7 +335,8 @@ fn player_arg(ctx: &Ctx, value: Option<Value>, method: &str) -> Result<Ref> {
     )))
 }
 
-fn encode_args(lua: &Lua, args: impl Iterator<Item = Value>) -> Result<Vec<Wire>> {
+/// Values as they leave a VM for another (a remote's arguments).
+pub fn encode_args(lua: &Lua, args: impl Iterator<Item = Value>) -> Result<Vec<Wire>> {
     args.map(|v| encode(lua, &v, &mut Vec::new())).collect()
 }
 
@@ -467,7 +468,8 @@ fn decode(lua: &Lua, ctx: &Ctx, wire: &Wire) -> Result<Value> {
     })
 }
 
-fn decode_all(lua: &Lua, wires: &[Wire]) -> Result<MultiValue> {
+/// Values from another VM as this one gets them.
+pub fn decode_all(lua: &Lua, wires: &[Wire]) -> Result<MultiValue> {
     let ctx = engine(lua).ctx.clone();
     wires.iter().map(|w| decode(lua, &ctx, w)).collect()
 }

@@ -51,7 +51,7 @@ pub use chat::ChatLine;
 pub use hooks::CollisionGroups;
 pub use input::VirtualInput;
 pub use query::{QueryFilter, QueryHit, QueryShape};
-pub use remote::{Outgoing, Packet, To, Wire};
+pub use remote::{decode_all, encode_args, Outgoing, Packet, To, Wire};
 pub use services::{
     set_text_measure, Arrival, AssetSource, Device, LiveData, Notice, PurchasePrompt, Services,
     StreamRequest, TeleportRequest, TextMeasure, WebSession,
@@ -526,6 +526,29 @@ impl ServerVm {
     /// (Local Run's record and replay), from before the first script.
     pub fn set_tape(&self, tape: crate::tape::Tape) -> Result<(), LuaError> {
         crate::tape::install(&self.lua, tape)
+    }
+
+    /// The VM itself, for a host that runs its own code in it (Local Run's
+    /// integration specs).
+    pub fn lua(&self) -> &Lua {
+        &self.lua
+    }
+
+    /// Queues `function(args)` on a thread of its own, to run at the next
+    /// [`ServerVm::resume`] as a script's body would.
+    pub fn spawn(&self, function: Function, args: MultiValue) -> Result<(), LuaError> {
+        let thread = self.lua.create_thread(function)?;
+        engine(&self.lua)
+            .scheduler
+            .borrow_mut()
+            .deferred
+            .push_back((thread, args));
+        Ok(())
+    }
+
+    /// What scripts printed that [`ServerVm::take_output`] has not taken.
+    pub fn pending_output(&self) -> Rc<RefCell<Output>> {
+        self.output.clone()
     }
 
     /// This VM's profiling: `debug.profilebegin` scopes, time in Luau, the

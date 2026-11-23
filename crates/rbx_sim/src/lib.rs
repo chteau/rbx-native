@@ -26,6 +26,7 @@ mod explosion;
 pub mod gui;
 pub mod humanoid;
 pub mod input;
+pub mod integration;
 mod joints;
 mod journal;
 pub mod link;

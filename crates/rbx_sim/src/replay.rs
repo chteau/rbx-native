@@ -396,11 +396,13 @@ impl Trace {
     }
 
     /// The tape for the next VM made (the server first, then each client
-    /// as it joins), with the gate its background loads wait on.
+    /// as it joins), with the gate its background loads wait on. A
+    /// recording draws its randomness from its seed: the same seed, the
+    /// same run.
     pub(crate) fn next_tape(&mut self) -> (Tape, Gate) {
         let vm = self.tapes.len();
         let tape = match self.mode {
-            Mode::Record => Tape::record(vm_seed(self.seed, vm)),
+            Mode::Record => Tape::seeded(vm_seed(self.seed, vm)),
             Mode::Replay => Tape::replay(self.reels.get(vm).cloned().unwrap_or_default()),
         };
         self.tapes.push(tape.clone());

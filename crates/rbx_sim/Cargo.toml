@@ -14,6 +14,9 @@ lz4_flex = { version = "0.14", default-features = false, features = ["std", "saf
 rbx_xml = { path = "../rbx_xml" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_lua = { path = "../rbx_lua" }
+# integration.rs: the integration specs' `LocalRun` on the server's VM; the
+# version rbx_lua builds.
+mlua = { version = "0.12", features = ["luau"] }
 # live.rs: a published place's real DataStores through Open Cloud.
 rbx_cloud = { path = "../rbx_cloud" }
 rbx_net = { path = "../rbx_net" }

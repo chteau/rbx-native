@@ -1610,6 +1610,35 @@ mod tests {
         let hidden = crate::shell::ui_editor::beta_hidden_panels();
         assert!(hidden.contains(&crate::shell::layout::Panel::MicroProfiler));
         assert!(!crate::shortcuts::Command::MicroProfiler.available());
+
+        // The Tests dock lists no integration spec; the plain ones stay.
+        let mut dom = rbx_sim::conformance::bare_place();
+        let storage = *dom
+            .root_refs()
+            .iter()
+            .find(|r| dom.get(**r).is_some_and(|i| i.class() == "ServerStorage"))
+            .expect("bare_place has ServerStorage");
+        for name in ["Unit.spec", "Game.integration.spec"] {
+            dom.new_instance("ModuleScript", name, Some(storage));
+        }
+        let listed = |local_run| {
+            crate::shell::tests_dock::discover_specs(&dom, local_run)
+                .expect("discovers")
+                .into_iter()
+                .map(|f| f.name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            listed(crate::beta::enabled(super::BETA_ID)),
+            ["ServerStorage.Unit.spec"]
+        );
+        assert_eq!(
+            listed(true),
+            [
+                "ServerStorage.Unit.spec",
+                "ServerStorage.Game.integration.spec"
+            ]
+        );
     }
 
     #[test]
