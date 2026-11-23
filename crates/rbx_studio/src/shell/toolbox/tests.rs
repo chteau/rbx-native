@@ -179,3 +179,54 @@ fn a_decal_takes_the_face_the_view_hits() {
     .unwrap();
     assert_eq!(face_of(&dom, part, Vec3::NEG_Z), Some(0), "turned Right");
 }
+
+/// Switching source (or opening a kit pack) clears the search field while it
+/// isn't focused; that must not leave its caret blinking, which repainted the
+/// whole window twice a second for as long as the Toolbox stayed open.
+#[gpui_kit::test]
+fn clearing_an_unfocused_search_field_leaves_it_idle(cx: &mut gpui_kit::TestAppContext) {
+    use gpui_kit::component::input::{Input, InputState};
+    use gpui_kit::{AppContext as _, Entity, IntoElement, Render};
+
+    struct Field(Entity<InputState>);
+    impl Render for Field {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<Self>,
+        ) -> impl IntoElement {
+            Input::new(&self.0)
+        }
+    }
+
+    cx.update(gpui_kit::init);
+    let (view, cx) =
+        cx.add_window_view(|window, cx| Field(cx.new(|cx| InputState::new(window, cx))));
+    let input = view.read_with(cx, |field, _| field.0.clone());
+    cx.update(|window, cx| input.update(cx, |state, cx| state.set_value("crate", window, cx)));
+    cx.update(|window, cx| input.update(cx, |state, cx| state.set_value("", window, cx)));
+    cx.run_until_parked();
+
+    let notified = std::rc::Rc::new(std::cell::Cell::new(0));
+    let _watch = cx.update({
+        let notified = notified.clone();
+        |_, cx| cx.observe(&input, move |_, _| notified.set(notified.get() + 1))
+    });
+    for _ in 0..6 {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(500));
+        cx.run_until_parked();
+    }
+    assert_eq!(notified.get(), 0, "an unfocused field stays still");
+
+    // Focused, the caret still blinks.
+    cx.update(|window, cx| input.update(cx, |state, cx| state.focus(window, cx)));
+    cx.run_until_parked();
+    notified.set(0);
+    for _ in 0..4 {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(500));
+        cx.run_until_parked();
+    }
+    assert!(notified.get() >= 3, "a focused field blinks");
+}

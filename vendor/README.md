@@ -94,6 +94,14 @@ host carries `occlusion::probe()`; rbx_studio's own `deferred` popups do
 the same. During Play the editor reads `occlusion::rects` to cut those
 areas out of the embedded Roblox window (X Shape), so popups draw above it.
 
+And one fix in `src/input/base/blink_cursor.rs`, marked the same way: the
+caret blinks only between `start` (focus) and `stop` (blur). Upstream, any
+edit pauses the blink and the pause's timer then starts blinking whether or
+not the input has focus, so `set_value` on an unfocused field (the Toolbox
+clears its search field on every source switch) left a 500 ms timer
+repainting the window forever (about 10% idle CPU). Tested from
+`rbx_studio` (`shell/toolbox/tests.rs`).
+
 ## `gpui-pre` (0.3.4, Apache-2.0, `zed-industries/zed`'s GPUI as published)
 
 Unmodified crates.io 0.3.4 source (its `examples/`, `tests/` and `docs/`
