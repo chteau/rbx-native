@@ -483,8 +483,13 @@ fn from_mesh_part(
     // A SurfaceAppearance replaces the mesh's own texture, so reading both
     // would only queue a download nothing goes on to sample.
     let texture = crate::textures::content_property(properties, "TextureID")
-        .filter(|_| appearance.is_none())
-        .and_then(parsed_asset_ref);
+        .and_then(parsed_asset_ref)
+        .or_else(|| {
+            properties
+                .get("TextureContent")
+                .and_then(crate::textures::editable_key)
+        })
+        .filter(|_| appearance.is_none());
     let color = match properties.get("Color3uint8") {
         Some(&Variant::Color3uint8 { r, g, b }) => [r, g, b],
         _ => super::FALLBACK_COLOR,

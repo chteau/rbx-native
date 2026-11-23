@@ -11,7 +11,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::{parsed_asset_ref, vector3, FILE_MESH, HEAD_MESH, MESH_PART};
 use crate::scene::{cframe_matrix, shape::head_extent};
-use crate::textures::content_property;
+use crate::textures::{content_property, editable_key};
 
 /// What a `SpecialMesh` of `MeshType.Head` draws: the Studio content file the
 /// engine itself names for it, fetched like any other `rbxasset://` file.
@@ -92,7 +92,10 @@ pub(crate) fn mesh_part(
         return None;
     }
     let properties = instance.properties();
-    let mesh = parsed_asset_ref(content_property(properties, "MeshId")?)?;
+    // A script's `EditableMesh` (`CreateMeshPartAsync`) is drawn from memory.
+    let mesh = content_property(properties, "MeshId")
+        .and_then(parsed_asset_ref)
+        .or_else(|| properties.get("MeshContent").and_then(editable_key))?;
     let Some(&Variant::Vector3(size)) = properties.get("size") else {
         return None;
     };
@@ -134,7 +137,10 @@ pub(crate) fn special_mesh<'a>(
     let offset = vector3(properties.get("Offset"), Vec3::ZERO);
     match properties.get("MeshType") {
         Some(&Variant::Enum(FILE_MESH)) => {
-            let mesh = parsed_asset_ref(content_property(properties, "MeshId")?)?;
+            // A script's `EditableMesh` (`CreateMeshPartAsync`) is drawn from memory.
+            let mesh = content_property(properties, "MeshId")
+                .and_then(parsed_asset_ref)
+                .or_else(|| properties.get("MeshContent").and_then(editable_key))?;
             let fit = Fit::Special {
                 cframe,
                 scale,

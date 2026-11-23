@@ -335,6 +335,16 @@ pub(crate) fn resolver() -> Result<AssetResolver, String> {
 }
 
 fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, Failure> {
+    if let Some(rbx_dom::editable::Editable::Image(pixels)) =
+        crate::textures::editable_of(reference)
+    {
+        let pixels = rbx_dom::editable::lock(&pixels);
+        return Ok(Image {
+            width: pixels.width,
+            height: pixels.height,
+            pixels: pixels.rgba.clone(),
+        });
+    }
     let failed = |err: AssetError| Failure::resolving(reference, &err);
 
     let mut asset = resolver.resolve(reference).map_err(failed)?;
@@ -416,10 +426,46 @@ fn fetch_mesh(
     resolver: &AssetResolver,
     reference: &AssetRef,
 ) -> Result<rbx_mesh::SkinnedMesh, Failure> {
+    if let Some(rbx_dom::editable::Editable::Mesh(source)) = crate::textures::editable_of(reference)
+    {
+        return Ok(editable_mesh(&source.triangles()));
+    }
     let asset = resolver
         .resolve(reference)
         .map_err(|err| Failure::resolving(reference, &err))?;
     mesh(reference, &asset.bytes)
+}
+
+/// An `EditableMesh`'s triangles as a mesh asset would load: a vertex per
+/// corner, the bounds over all of them.
+pub(crate) fn editable_mesh(triangles: &rbx_dom::editable::Triangles) -> rbx_mesh::SkinnedMesh {
+    let corner = |i: usize| rbx_mesh::Vertex {
+        position: triangles.positions[i],
+        normal: triangles.normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]),
+        uv: triangles.uvs.get(i).copied().unwrap_or_default(),
+        color: triangles.colors.get(i).map_or([u8::MAX; 4], |c| {
+            c.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        }),
+    };
+    let vertices: Vec<rbx_mesh::Vertex> = (0..triangles.positions.len()).map(corner).collect();
+    let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
+    for vertex in &vertices {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(vertex.position[axis]);
+            max[axis] = max[axis].max(vertex.position[axis]);
+        }
+    }
+    if vertices.is_empty() {
+        (min, max) = ([0.0; 3], [0.0; 3]);
+    }
+    let count = u32::try_from(vertices.len()).unwrap_or(u32::MAX);
+    rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
+        version: (2, 0),
+        vertices,
+        indices: (0..count).collect(),
+        lods: Vec::new(),
+        bounds: rbx_mesh::Aabb { min, max },
+    })
 }
 
 pub(crate) fn mesh(reference: &AssetRef, bytes: &[u8]) -> Result<rbx_mesh::SkinnedMesh, Failure> {
