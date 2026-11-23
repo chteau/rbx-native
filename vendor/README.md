@@ -113,6 +113,9 @@ addition":
   `group_hover` refinements to `refine_hover` instead of refining with
   them outright, and `InteractiveElementState` keeps the two `HoverFade`s.
   A running fade asks for the next frame; a settled one asks for nothing.
+  Only the paint pass (the one with the hitbox) steers a fade; the layout
+  passes read it as paint left it, since their mouse-event hover can
+  disagree with the hitbox and would otherwise restart it every frame.
 - `src/gpui.rs`: the module and its re-export.
 - `src/window.rs`: `Window::new` maps the platform window only when
   `WindowOptions::show` asks for it. X11 and Wayland mapped every window
