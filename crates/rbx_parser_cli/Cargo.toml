@@ -29,7 +29,8 @@ rbx_xml = { path = "../rbx_xml" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 # rbxlua only: runs a Luau script against the loaded DOM.
 rbx_lua = { path = "../rbx_lua" }
-# rbxlua loadtest only: a Local Run server with bot players.
+# rbxlua loadtest and test: a Local Run server with bot players, and the
+# session integration specs run on.
 rbx_sim = { path = "../rbx_sim" }
 # rbxaudit only: the whole-place script security audit it prints.
 rbx_audit = { path = "../rbx_audit" }

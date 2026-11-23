@@ -6,7 +6,10 @@
 //! without running them; runs go through the same runner `rbxlua test` uses, on a
 //! background thread over a copy of the place, so the editor never waits on a
 //! spec. Loren's `return function(t)` specs go through `rbx_loren::specs`
-//! instead, Loren's own runner, and land in the same tree.
+//! instead, Loren's own runner, and land in the same tree. With the Local
+//! Run beta on, integration specs (`*.integration.spec`) are listed too and
+//! run on a Local Run session (`rbx_sim::integration`); with it off they
+//! are left out, and the plain runner works as before.
 //!
 //! Selecting a row shows what that test printed and how it failed in the
 //! pane under the tree; a file row shows everything the file printed.
@@ -248,7 +251,7 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             let planned = cx
                 .background_spawn(async move {
-                    let files = test_runner::discover(&dom, &[])?;
+                    let files = discover_specs(&dom, local_run_beta())?;
                     Ok::<_, String>(
                         files
                             .iter()
@@ -294,7 +297,24 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             let reports = cx
                 .background_spawn(async move {
-                    loren::run_mixed(&dom, &files, &database, &options).files
+                    let (integration, plain): (Vec<_>, Vec<_>) = files
+                        .into_iter()
+                        .partition(|f| test_runner::is_integration(&f.name));
+                    let mut reports = loren::run_mixed(&dom, &plain, &database, &options).files;
+                    if !integration.is_empty() {
+                        let config = rbx_sim::integration::Config::default();
+                        reports.extend(
+                            rbx_sim::integration::run(
+                                &dom,
+                                &integration,
+                                &database,
+                                &options,
+                                &config,
+                            )
+                            .files,
+                        );
+                    }
+                    reports
                 })
                 .await;
             let _ = this.update(cx, |shell, cx| {
@@ -324,7 +344,7 @@ impl Shell {
         };
         self.set_panel_open(Panel::Tests, true, cx);
         if spec == "run" {
-            let files = test_runner::discover(self.edit_dom(), &[]).unwrap_or_default();
+            let files = discover_specs(self.edit_dom(), local_run_beta()).unwrap_or_default();
             self.run_tests(files, Options::default(), cx);
         }
     }
@@ -334,7 +354,7 @@ impl Shell {
             return;
         }
         self.tests.planned = None;
-        match test_runner::discover(self.edit_dom(), &[]) {
+        match discover_specs(self.edit_dom(), local_run_beta()) {
             Ok(files) => self.run_tests(files, Options::default(), cx),
             Err(error) => {
                 self.tests.error = Some(error);
@@ -356,6 +376,23 @@ impl Shell {
 }
 
 /// The rows for one plan node, and how many ids they used.
+fn local_run_beta() -> bool {
+    crate::beta::enabled(super::local_run::BETA_ID)
+}
+
+/// The specs the dock lists: the integration specs too when Local Run
+/// (`local_run`, its beta) can run them.
+pub(super) fn discover_specs(
+    dom: &rbx_dom::WeakDom,
+    local_run: bool,
+) -> Result<Vec<SpecFile>, String> {
+    let mut files = test_runner::discover(dom, &[])?;
+    if local_run {
+        files.extend(test_runner::discover_integration(dom, &[])?);
+    }
+    Ok(files)
+}
+
 fn node_rows(
     n: usize,
     module: Ref,

@@ -943,6 +943,12 @@ impl Simulation {
         &self.world
     }
 
+    /// The scripts' VM, for a host running its own code in it (the
+    /// integration specs, [`crate::integration`]).
+    pub fn vm(&self) -> &ServerVm {
+        &self.vm
+    }
+
     /// The simulation's DOM, shared: an editor writes edits made during the
     /// run into it as logged changes, which the next [`Simulation::step`]
     /// routes.

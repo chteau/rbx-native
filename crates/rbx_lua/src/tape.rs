@@ -52,6 +52,8 @@ struct State {
     /// Replay: answers worked out again here, which win over the kept
     /// ones (a download's token is this process's).
     local: BTreeMap<u32, Result<serde_json::Value, String>>,
+    /// Recording with [`Tape::seeded`]: the generator draws come from.
+    rng: Option<u64>,
 }
 
 /// One VM's tape, shared with its background requests.
@@ -70,6 +72,14 @@ impl Tape {
         )
     }
 
+    /// A recording tape whose random draws (`Random.new()` seeds, GUIDs)
+    /// come from `seed` too, not the system: the same seed draws the same.
+    pub fn seeded(seed: u32) -> Tape {
+        let tape = Tape::record(seed);
+        tape.state().rng = Some(u64::from(seed));
+        tape
+    }
+
     /// A tape handing back what `reel` kept.
     pub fn replay(reel: Reel) -> Tape {
         Tape::new(Mode::Replay, reel)
@@ -84,6 +94,7 @@ impl Tape {
             polls: 0,
             answer: 0,
             local: BTreeMap::new(),
+            rng: None,
         })))
     }
 
@@ -132,7 +143,10 @@ impl Tape {
         let mut s = self.state();
         match s.mode {
             Mode::Record => {
-                let value = real();
+                let value = match &mut s.rng {
+                    Some(state) => splitmix(state),
+                    None => real(),
+                };
                 s.reel.entropy.push(value);
                 value
             }
@@ -239,6 +253,15 @@ pub(crate) fn entropy(lua: &Lua, real: impl FnOnce() -> u64) -> u64 {
         Some(tape) => tape.entropy(real),
         None => real(),
     }
+}
+
+/// SplitMix64's next number from `state`.
+fn splitmix(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }
 
 /// Seconds since the Unix epoch, off the system clock.
