@@ -115,6 +115,10 @@ impl Tabs {
 pub(crate) struct TestWindow {
     tabs: Tabs,
     shells: Vec<Entity<Shell>>,
+    /// Collaborators asking to join: (their end, name).
+    pub(super) offers: Vec<(u64, String)>,
+    /// Players playing from their own editor.
+    pub(super) afar: Vec<Ref>,
 }
 
 impl TestWindow {
@@ -124,6 +128,8 @@ impl TestWindow {
         TestWindow {
             tabs,
             shells: vec![shell],
+            offers: Vec::new(),
+            afar: Vec::new(),
         }
     }
 
@@ -215,8 +221,13 @@ impl Shell {
         &self,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let view = self.play.live.local.peer.as_ref()?.tabs.upgrade()?;
+        let link = self.play.live.local.peer.as_ref()?;
+        let afar = link.remote;
+        let view = link.tabs.upgrade()?;
         let window = view.read(cx);
+        // Collaborators asking to join, and who plays from their editor, as
+        // the host last said (reading the host here could catch it mid-update).
+        let (offers, remote) = (window.offers.clone(), window.afar.clone());
         let active = window.tabs().active();
         let count = window.tabs().homes().len();
         let tabs: Vec<(usize, Home, SharedString)> = window
@@ -237,8 +248,23 @@ impl Shell {
         let tabs: Vec<_> = tabs
             .into_iter()
             .map(|(index, home, label)| {
-                peer_tab(&view, index, home, label, index == active, count, cx)
+                let from_afar = matches!(home, Home::Player(p) if remote.contains(&p));
+                peer_tab(
+                    &view,
+                    index,
+                    home,
+                    label,
+                    index == active,
+                    count,
+                    from_afar,
+                    cx,
+                )
             })
+            .collect();
+        let offers: Vec<_> = offers
+            .into_iter()
+            .enumerate()
+            .map(|(i, (from, name))| offer_chip(i, from, name, cx))
             .collect();
         Some(
             h_flex()
@@ -256,33 +282,97 @@ impl Shell {
                 .role(Role::TabList)
                 .aria_label("Server and players")
                 .children(tabs)
-                .child(
-                    h_flex()
-                        .id("peer-tab-add")
-                        .flex_none()
-                        .w(tokens::tab_add_width())
-                        .h(tokens::tabs_height() - px(8.))
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .text_color(tokens::text3())
-                        .hover(|this| this.text_color(tokens::text()))
-                        .tooltip(|window, cx| {
-                            crate::shell::tooltip::text(
-                                "Add a client to the current session.",
-                                window,
-                                cx,
-                            )
-                        })
-                        .on_click(cx.listener(|shell, _, _, cx| shell.local_run_add_client(cx)))
-                        .child(Icon::new(IconName::Plus).size(px(10.))),
-                )
+                .children(offers)
+                // A collaborator's own window shows their player alone.
+                .when(!afar, |this| {
+                    this.child(
+                        h_flex()
+                            .id("peer-tab-add")
+                            .flex_none()
+                            .w(tokens::tab_add_width())
+                            .h(tokens::tabs_height() - px(8.))
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .text_color(tokens::text3())
+                            .hover(|this| this.text_color(tokens::text()))
+                            .tooltip(|window, cx| {
+                                crate::shell::tooltip::text(
+                                    "Add a client to the current session.",
+                                    window,
+                                    cx,
+                                )
+                            })
+                            .on_click(cx.listener(|shell, _, _, cx| shell.local_run_add_client(cx)))
+                            .child(Icon::new(IconName::Plus).size(px(10.))),
+                    )
+                })
                 .into_any_element(),
         )
     }
 }
 
-/// One peer's tab, as `chrome::document_tab` draws a document's.
+/// A collaborator asking to join the session: their name, Accept and ✕.
+fn offer_chip(index: usize, from: u64, name: String, cx: &mut Context<Shell>) -> Stateful<Div> {
+    let label = SharedString::from(format!("{name} wants to join as a player"));
+    h_flex()
+        .id(("peer-offer", index))
+        .flex_none()
+        .items_center()
+        .gap(px(8.))
+        .ml(px(6.))
+        .mb(px(4.))
+        .pl(px(10.))
+        .pr(px(4.))
+        .py(px(4.))
+        .rounded(tokens::radius_tile())
+        .border_1()
+        .border_color(tokens::accent_line())
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
+        .text_color(tokens::text())
+        .role(Role::Group)
+        .aria_label(label.clone())
+        .child(Icon::new(IconName::UserPlus).size(px(12.)))
+        .child(div().truncate().child(label))
+        .child(
+            div()
+                .id(("peer-offer-accept", index))
+                .px(px(8.))
+                .py(px(2.))
+                .rounded(tokens::radius_tile())
+                .cursor_pointer()
+                .role(Role::Button)
+                .text_color(tokens::text_full())
+                .bg(tokens::accent_line())
+                .hover(|this| tokens::hover_fx(this))
+                .on_click(
+                    cx.listener(move |shell, _, _, cx| shell.local_run_accept_remote(from, cx)),
+                )
+                .child("Accept"),
+        )
+        .child(
+            h_flex()
+                .id(("peer-offer-decline", index))
+                .size(px(18.))
+                .items_center()
+                .justify_center()
+                .rounded(tokens::radius_tile())
+                .cursor_pointer()
+                .role(Role::Button)
+                .aria_label(SharedString::from(format!("Turn {name} down")))
+                .text_color(tokens::text_label())
+                .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
+                .on_click(
+                    cx.listener(move |shell, _, _, cx| shell.local_run_decline_remote(from, cx)),
+                )
+                .child(Icon::new(IconName::X).size(px(8.))),
+        )
+}
+
+/// One peer's tab, as `chrome::document_tab` draws a document's; a player
+/// playing from their own editor (`from_afar`) has the globe.
+#[allow(clippy::too_many_arguments)]
 fn peer_tab(
     view: &Entity<TestWindow>,
     index: usize,
@@ -290,16 +380,17 @@ fn peer_tab(
     label: SharedString,
     active: bool,
     count: usize,
+    from_afar: bool,
     cx: &mut Context<Shell>,
 ) -> Stateful<Div> {
     let player = match home {
         Home::Player(player) => Some(player),
         Home::Server => None,
     };
-    let icon = if player.is_some() {
-        IconName::PersonStanding
-    } else {
-        IconName::Server
+    let icon = match (player, from_afar) {
+        (Some(_), true) => IconName::Globe,
+        (Some(_), false) => IconName::PersonStanding,
+        (None, _) => IconName::Server,
     };
     let view = view.downgrade();
     h_flex()

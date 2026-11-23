@@ -1058,7 +1058,18 @@ impl Shell {
                 "a test is already running",
             )
         };
-        let stop = if self.local_run_role().is_some() {
+        // Playing someone else's session: only its host ends it.
+        let stop = if self.local_run_remote_viewer() {
+            tile(nav, "ribbon-stop", IconName::LogOut, "Leave", cx)
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Leave this session; only its host can end it.",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
+        } else if self.local_run_role().is_some() {
             tile(nav, "ribbon-stop", IconName::Square, "End Session", cx)
                 .tooltip(|window, cx| {
                     super::tooltip::text("Close the server and all client windows.", window, cx)

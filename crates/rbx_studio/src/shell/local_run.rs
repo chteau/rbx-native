@@ -28,6 +28,7 @@ mod avatars;
 pub(crate) mod badges;
 pub(crate) mod data;
 mod offline;
+mod remote;
 mod replay;
 mod sound;
 pub(crate) mod tabs;
@@ -36,6 +37,7 @@ use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::workspace_view::core_gui::CoreAction;
+use rbx_sim::remote::Down;
 use rbx_sim::replay::Action;
 
 pub(crate) const BETA_ID: &str = "local-run";
@@ -90,6 +92,8 @@ struct Running {
     /// The player whose window last had input: what the run plays aloud
     /// and the Controller Emulator drives.
     audible: Option<Ref>,
+    /// Server & Clients: players from collaborators' editors.
+    remote: rbx_sim::remote::Host,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -119,6 +123,9 @@ pub(crate) struct LocalRun {
     /// The `PlayerGui` this window's viewport draws (see
     /// `WorkspaceView::set_player_gui`).
     shown_gui: Option<Ref>,
+    /// Collaborators playing this editor's session, or this editor playing
+    /// another's (see `remote`).
+    pub(in crate::shell) remote: remote::RemotePlay,
 }
 
 impl Default for LocalRun {
@@ -133,6 +140,7 @@ impl Default for LocalRun {
             rail: None,
             peer: None,
             shown_gui: None,
+            remote: remote::RemotePlay::default(),
         }
     }
 }
@@ -857,6 +865,7 @@ impl Shell {
             windows: Vec::new(),
             test_window: None,
             audible: None,
+            remote: rbx_sim::remote::Host::default(),
         });
         if windowed {
             push_row(
@@ -1072,6 +1081,10 @@ impl Shell {
         if self.local_run_forward(cx, |host, cx| host.local_run_stop(cx)) {
             return;
         }
+        // Playing someone else's session: only they end it, this leaves.
+        if self.remote_guest_leave(cx) {
+            return;
+        }
         let Some(run) = self.play.live.local.running.take() else {
             return;
         };
@@ -1083,9 +1096,17 @@ impl Shell {
             replay,
             windowed,
             test_window,
+            mut remote,
             ..
         } = run;
         drop(task);
+        let bye = Down::Ended(format!("{} ended the session.", self.presence_name()));
+        for to in remote.end() {
+            self.play.live.local.remote.send_down(to, &bye);
+        }
+        if let Some(note) = self.play.live.local.remote.hosting_note() {
+            push_row(&mut self.output, Feedback::Info(note));
+        }
         if replay.is_none() {
             self.play.live.local.recording = session.recording();
         }

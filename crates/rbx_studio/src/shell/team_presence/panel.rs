@@ -498,6 +498,7 @@ impl Shell {
                     .child(advanced_toggle)
                     .when(show_advanced, |this| this.child(owner_setup))
                     .children(catchup)
+                    .children(self.remote_play_block(cx))
                     .child(list),
             )
             .scrollbar_y(&self.team_presence.scroll);

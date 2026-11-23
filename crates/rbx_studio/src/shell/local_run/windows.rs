@@ -25,9 +25,11 @@ use gpui_kit::component::Root;
 use gpui_kit::*;
 use rbx_dom::{CFrameData, Change, Ref, WeakDom};
 use rbx_lua::server::ChatLine;
+use rbx_sim::remote::Down;
 use rbx_sim::replay::Action;
 use rbx_sim::{MouseBehavior, Peer, Session, Simulation};
 
+use super::remote;
 use super::tabs::TestWindow;
 use super::{
     changes_between, dedupe, editable_bindings, eye_and_target, mirror, pad_inputs, push_row,
@@ -80,9 +82,9 @@ impl TestWindowHandle {
 
 /// A peer's tab, as the session's owner sees it.
 pub(in crate::shell) struct PeerWindow {
-    home: Home,
-    name: String,
-    shell: WeakEntity<Shell>,
+    pub(super) home: Home,
+    pub(super) name: String,
+    pub(super) shell: WeakEntity<Shell>,
     /// The Server window's Current: Client.
     client_view: bool,
     /// Its view switched: the next frame starts it over on its peer's
@@ -96,15 +98,19 @@ pub(in crate::shell) struct PeerWindow {
 
 /// A test window's side: the session it shows.
 pub(in crate::shell) struct PeerLink {
-    host: WeakEntity<Shell>,
+    pub(super) host: WeakEntity<Shell>,
     pub(super) home: Home,
     /// The peer shown now.
-    view: Peer,
+    pub(super) view: Peer,
     pub(super) paused: bool,
     /// The test window this tab is in.
     pub(super) tabs: WeakEntity<TestWindow>,
     /// This tab is the one the test window shows.
     pub(in crate::shell) tab_shown: bool,
+    /// A collaborator's view of their player in someone else's session
+    /// (`remote`): `host` is this editor's own window, which holds the
+    /// connection.
+    pub(in crate::shell) remote: bool,
 }
 
 impl PeerLink {
@@ -118,22 +124,22 @@ impl PeerLink {
 
 /// One frame of a peer, for its window.
 pub(super) struct Shown {
-    dom: Rc<RefCell<WeakDom>>,
-    changes: Vec<Change>,
+    pub(super) dom: Rc<RefCell<WeakDom>>,
+    pub(super) changes: Vec<Change>,
     /// A player window: its client's core GUI and input.
-    input: bool,
-    client: bool,
-    camera: Option<(CFrameData, f32)>,
-    mouse: MouseBehavior,
-    player_gui: Option<Ref>,
-    core: Option<rbx_sim::gui::CoreGui>,
-    chat: Vec<ChatLine>,
-    notices: Vec<(String, String)>,
-    dialog: Option<(String, String)>,
-    bursts: Vec<(Ref, Option<u32>)>,
-    rows: Vec<(Peer, rbx_lua::Output)>,
-    editables: bool,
-    paused: bool,
+    pub(super) input: bool,
+    pub(super) client: bool,
+    pub(super) camera: Option<(CFrameData, f32)>,
+    pub(super) mouse: MouseBehavior,
+    pub(super) player_gui: Option<Ref>,
+    pub(super) core: Option<rbx_sim::gui::CoreGui>,
+    pub(super) chat: Vec<ChatLine>,
+    pub(super) notices: Vec<(String, String)>,
+    pub(super) dialog: Option<(String, String)>,
+    pub(super) bursts: Vec<(Ref, Option<u32>)>,
+    pub(super) rows: Vec<(Peer, rbx_lua::Output)>,
+    pub(super) editables: bool,
+    pub(super) paused: bool,
 }
 
 /// What `peer` printed, taken out of `output`.
@@ -191,7 +197,8 @@ pub(super) fn take_inputs(
         else {
             continue;
         };
-        if window.kicked {
+        // A collaborator's player takes their own editor's input.
+        if window.kicked || run.remote.guest(player).is_some() {
             continue;
         }
         let (inputs, size, safe) = shell.update(cx, |shell, cx| {
@@ -329,48 +336,6 @@ impl Shell {
                 crate::camera::write_pose(&mut dom, pose);
             }
         }
-        dom.take_changes();
-        let viewer = match rbx_viewer::Headless::from_dom_shared(&dom) {
-            Ok(viewer) => viewer,
-            Err(why) => {
-                push_row(
-                    &mut self.output,
-                    Feedback::Error(format!("The {name} window couldn\u{2019}t open: {why}")),
-                );
-                return;
-            }
-        };
-        // Never saved: a test tab's place is the running game's.
-        let path = std::env::temp_dir()
-            .join(format!("rbxnative-test-{}", std::process::id()))
-            .join(format!("{name}.rbxl"));
-        let place = crate::Place {
-            explorer: crate::explorer::Explorer::from_dom(
-                &dom,
-                self.icon_pack,
-                &self.folder_colors,
-                &path,
-            ),
-            properties: Properties::new(self.database.clone()),
-            selected: None,
-            camera: crate::camera::PlaceCamera::from_dom(&dom),
-            viewer,
-            dom,
-            database: self.database.clone(),
-            path,
-            format: self.format,
-            folder_colors: self.folder_colors.clone(),
-        };
-        let boot = crate::fresh_boot();
-        let settings = crate::settings::Settings {
-            auto_recovery: false,
-            ..boot.settings
-        };
-        let launch = crate::cli::Launch {
-            test_peer: true,
-            ..Default::default()
-        };
-        let user = boot.user;
         let host = cx.entity().downgrade();
         let existing = run.test_window.as_ref().map(|t| (t.handle, t.view.clone()));
         let link = PeerLink {
@@ -382,14 +347,10 @@ impl Shell {
                 .as_ref()
                 .map_or_else(WeakEntity::new_invalid, |(_, view)| view.clone()),
             tab_shown: existing.is_none(),
+            remote: false,
         };
-        let title = SharedString::from(name.clone());
-        let build = move |window: &mut Window, cx: &mut App| {
-            cx.new(|cx| {
-                let mut shell = Shell::new(title, place, settings, launch, user, window, cx);
-                shell.play.live.local.peer = Some(link);
-                shell
-            })
+        let Some(build) = self.peer_shell(dom, &name, link) else {
+            return;
         };
         let badges = self.viewport.read(cx).core_gui.badges.clone();
         let (handle, shell) = match existing {
@@ -459,6 +420,67 @@ impl Shell {
                 kicked: false,
             });
         }
+    }
+
+    /// What builds a test tab's editor on `dom` (a peer's DataModel, a
+    /// place nobody saves), linked by `link`; it starts nothing of its own.
+    /// `None` when its viewer can't be made (said in the Output).
+    pub(super) fn peer_shell(
+        &mut self,
+        mut dom: WeakDom,
+        name: &str,
+        link: PeerLink,
+    ) -> Option<impl FnOnce(&mut Window, &mut App) -> Entity<Shell> + 'static> {
+        dom.take_changes();
+        let viewer = match rbx_viewer::Headless::from_dom_shared(&dom) {
+            Ok(viewer) => viewer,
+            Err(why) => {
+                push_row(
+                    &mut self.output,
+                    Feedback::Error(format!("The {name} window couldn\u{2019}t open: {why}")),
+                );
+                return None;
+            }
+        };
+        // Never saved: a test tab's place is the running game's.
+        let path = std::env::temp_dir()
+            .join(format!("rbxnative-test-{}", std::process::id()))
+            .join(format!("{name}.rbxl"));
+        let place = crate::Place {
+            explorer: crate::explorer::Explorer::from_dom(
+                &dom,
+                self.icon_pack,
+                &self.folder_colors,
+                &path,
+            ),
+            properties: Properties::new(self.database.clone()),
+            selected: None,
+            camera: crate::camera::PlaceCamera::from_dom(&dom),
+            viewer,
+            dom,
+            database: self.database.clone(),
+            path,
+            format: self.format,
+            folder_colors: self.folder_colors.clone(),
+        };
+        let boot = crate::fresh_boot();
+        let settings = crate::settings::Settings {
+            auto_recovery: false,
+            ..boot.settings
+        };
+        let launch = crate::cli::Launch {
+            test_peer: true,
+            ..Default::default()
+        };
+        let user = boot.user;
+        let title = SharedString::from(name.to_owned());
+        Some(move |window: &mut Window, cx: &mut App| {
+            cx.new(|cx| {
+                let mut shell = Shell::new(title, place, settings, launch, user, window, cx);
+                shell.play.live.local.peer = Some(link);
+                shell
+            })
+        })
     }
 
     /// The test window showed this tab (`shown`) or another: a tab put
@@ -567,6 +589,8 @@ impl Shell {
         }
         let mut done = Vec::new();
         let mut closed = Vec::new();
+        // Frames for collaborators' editors, and goodbyes.
+        let mut outgoing = Vec::new();
         for k in 0..run.windows.len() {
             let resync = std::mem::take(&mut run.windows[k].resync);
             let window = &run.windows[k];
@@ -591,6 +615,9 @@ impl Shell {
                         match kicked.iter().find(|(name, _)| *name == window.name) {
                             Some((_, message)) => {
                                 let message = message.clone();
+                                if let Some(to) = run.remote.drop_player(player) {
+                                    outgoing.push((to, Down::Ended(message.clone())));
+                                }
                                 run.windows[k].kicked = true;
                                 shell.update(cx, |shell, cx| shell.local_run_kicked(message, cx));
                             }
@@ -666,9 +693,17 @@ impl Shell {
                 editables,
                 paused: run.paused,
             };
+            let remote = player.filter(|p| input && run.remote.guest(*p).is_some());
+            if let Some(player) = remote {
+                let frame = remote::frame_of(&shown);
+                let dom = shown.dom.borrow();
+                outgoing.extend(run.remote.frame(player, &dom, &shown.changes, frame));
+            }
             let (actions, menu_open) =
                 shell.update(cx, |shell, cx| shell.local_run_show_frame(shown, cx));
-            if let (true, Some(player)) = (input, player) {
+            // What the host does in a collaborator's tab stays there: their
+            // own editor plays them.
+            if let (true, Some(player), None) = (input, player, remote) {
                 done.push((player, actions, menu_open));
             }
         }
@@ -696,6 +731,9 @@ impl Shell {
         for k in closed.into_iter().rev() {
             let window = run.windows.remove(k);
             if let Home::Player(player) = window.home {
+                if let Some(to) = run.remote.drop_player(player) {
+                    outgoing.push((to, Down::Ended("You left the game.".into())));
+                }
                 if let Some(i) = index_of(&run.session, player) {
                     run.session.leave(i);
                 }
@@ -703,6 +741,9 @@ impl Shell {
             if let Some(test_window) = &run.test_window {
                 test_window.remove(window.home, cx);
             }
+        }
+        for (to, message) in outgoing {
+            self.play.live.local.remote.send_down(to, &message);
         }
         for player in leaving {
             self.local_run_exit_player(player, cx);
@@ -714,7 +755,7 @@ impl Shell {
 
     /// A test window shows one frame of its peer; what its player did in
     /// the core GUI, and whether its menu is open.
-    fn local_run_show_frame(
+    pub(super) fn local_run_show_frame(
         &mut self,
         shown: Shown,
         cx: &mut Context<Self>,
@@ -794,7 +835,7 @@ impl Shell {
     }
 
     /// A kicked player's window: their last frame under the message.
-    fn local_run_kicked(&mut self, message: String, cx: &mut Context<Self>) {
+    pub(super) fn local_run_kicked(&mut self, message: String, cx: &mut Context<Self>) {
         self.viewport.update(cx, |viewport, _| {
             viewport.play = None;
             viewport.core_gui.state = None;
@@ -805,7 +846,7 @@ impl Shell {
 
     /// Shows `dom` (a peer's whole DataModel) instead of what this window
     /// showed.
-    fn local_run_resync(&mut self, dom: &WeakDom, client: bool, cx: &mut Context<Self>) {
+    pub(super) fn local_run_resync(&mut self, dom: &WeakDom, client: bool, cx: &mut Context<Self>) {
         self.deselect(cx);
         let changes = changes_between(&self.dom, dom);
         self.dom = dom.clone();
@@ -884,7 +925,17 @@ impl Shell {
         self.local_run_forward(cx, move |host, cx| host.local_run_exit_player(player, cx));
     }
 
-    fn local_run_exit_player(&mut self, player: Ref, cx: &mut Context<Self>) {
+    pub(super) fn local_run_exit_player(&mut self, player: Ref, cx: &mut Context<Self>) {
+        if self.remote_guest_leave(cx) {
+            return;
+        }
+        let Some(run) = self.play.live.local.running.as_mut() else {
+            return;
+        };
+        if let Some(to) = run.remote.drop_player(player) {
+            let bye = Down::Ended("The host took you out of the game.".into());
+            self.play.live.local.remote.send_down(to, &bye);
+        }
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
