@@ -525,6 +525,34 @@ impl ServerVm {
         self.budget = timeout;
     }
 
+    /// Measures script time, and the `os.clock` scripts read, on this
+    /// thread's CPU clock instead of the wall clock, so being descheduled
+    /// mid-script costs nothing (a script-paced run).
+    pub fn set_cpu_clock(&self, on: bool) -> Result<(), LuaError> {
+        crate::profiler::of(&self.lua).borrow_mut().cpu_clock = on;
+        if !on || self.lua.named_registry_value::<bool>("rbxn.cpu_clock")? {
+            return Ok(());
+        }
+        let os: Table = self.lua.globals().get("os")?;
+        let wall: Function = os.get("clock")?;
+        os.set_readonly(false);
+        os.set(
+            "clock",
+            self.lua.create_function(move |lua, ()| {
+                if crate::profiler::of(lua).borrow().cpu_clock {
+                    Ok(crate::tape::clock(lua, || {
+                        crate::profiler::thread_cpu().as_secs_f64()
+                    }))
+                } else {
+                    wall.call::<f64>(())
+                }
+            })?,
+        )?;
+        os.set_readonly(true);
+        self.lua.set_named_registry_value("rbxn.cpu_clock", true)?;
+        Ok(())
+    }
+
     /// Reads the clock, randomness and the web's answers through `tape`
     /// (Local Run's record and replay), from before the first script.
     pub fn set_tape(&self, tape: crate::tape::Tape) -> Result<(), LuaError> {
@@ -1077,7 +1105,12 @@ impl ServerVm {
             }
         });
         crate::profiler::arm(&self.lua);
+        let profiler = crate::profiler::of(&self.lua);
         let started = Instant::now();
+        let cpu_started = profiler
+            .borrow()
+            .cpu_clock
+            .then(crate::profiler::thread_cpu);
         scheduler::reset_rounds(&self.lua);
         self.fired.set(from);
         let mut ran = f(&self.lua);
@@ -1102,9 +1135,11 @@ impl ServerVm {
         }
         engine(&self.lua).signals.borrow_mut().settle();
         self.lua.remove_interrupt();
-        crate::profiler::of(&self.lua)
-            .borrow_mut()
-            .add_script_time(started.elapsed());
+        let spent = match cpu_started {
+            Some(cpu) => crate::profiler::thread_cpu().saturating_sub(cpu),
+            None => started.elapsed(),
+        };
+        profiler.borrow_mut().add_script_time(spent);
         if let Err(error) = ran {
             self.host.output(LineKind::Error, error.to_string());
         }

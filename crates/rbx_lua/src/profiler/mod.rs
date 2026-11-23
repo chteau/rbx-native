@@ -30,6 +30,25 @@ pub struct ProfileLabel {
     pub depth: u16,
 }
 
+/// The CPU time this thread has used: what a script costs, however long
+/// the machine kept it off a core. Off Unix, the wall clock since the
+/// first call.
+pub(crate) fn thread_cpu() -> Duration {
+    #[cfg(unix)]
+    {
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: `ts` is a valid timespec to write into.
+        if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) } == 0 {
+            return Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32);
+        }
+    }
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    START.get_or_init(Instant::now).elapsed()
+}
+
 /// Roblox's sampling rates: the Developer Console offers 1 KHz (default)
 /// and 10 KHz.
 pub const DEFAULT_FREQUENCY: u32 = 1000;
@@ -42,6 +61,9 @@ pub struct Profiler {
     category: Option<String>,
     memory_category: Option<String>,
     script_time: Duration,
+    /// Script time and `os.clock` read the thread's CPU clock, not the
+    /// wall clock (a script-paced run: [`thread_cpu`]).
+    pub(crate) cpu_clock: bool,
     sampler: Option<Sampler>,
     /// The last finished session's JSON, for `RequestData` after a stop.
     last: Option<String>,
@@ -68,12 +90,13 @@ impl Profiler {
         std::mem::take(&mut self.labels)
     }
 
-    /// Wall time spent running Luau since the last call.
+    /// Time spent running Luau since the last call (wall time, or thread
+    /// CPU time under the CPU clock).
     pub fn take_script_time(&mut self) -> Duration {
         std::mem::take(&mut self.script_time)
     }
 
-    /// Wall time spent running Luau since the last [`Self::take_script_time`].
+    /// Time spent running Luau since the last [`Self::take_script_time`].
     pub fn script_time(&self) -> Duration {
         self.script_time
     }

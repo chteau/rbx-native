@@ -1142,6 +1142,7 @@ impl Simulation {
 
     pub fn set_pacing(&mut self, pacing: Pacing) {
         self.pacing = pacing;
+        let _ = self.vm.set_cpu_clock(pacing == Pacing::Scripts);
         self.overran = None;
     }
 

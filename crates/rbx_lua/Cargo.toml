@@ -36,6 +36,10 @@ uuid = { version = "1", features = ["v4"] }
 # build through the editor's text widgets.
 unicode-segmentation = "1"
 
+[target.'cfg(unix)'.dependencies]
+# `CLOCK_THREAD_CPUTIME_ID`: script time on a script-paced run.
+libc = "0.2"
+
 [dev-dependencies]
 # Integration tests script a real place file and need the bundled API dump.
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
