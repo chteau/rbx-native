@@ -1047,7 +1047,7 @@ Not done: `rbxasset://` content the renderer uses by itself (sky, studs, built-i
 ## Milestone 19 (proposed): multi-client testing, then what M18 left off
 
 1. Studio-style multi-client tests: Test → Clients and Servers, N player windows plus a server window, each with its own Explorer and Output, all fed by one `Session`. Done as Milestone 19a, below.
-2. Collaborators from our co-edit session (our own presence and p2p, never native Team Create) joining a Local Run as players.
+2. Collaborators from our co-edit session (our own presence and p2p, never native Team Create) joining a Local Run as players. Done as Milestone 19b, below.
 3. The M18 leftovers above, the swim game's loading screen first.
 
 ### Plugin and Studio-only APIs (branch api-plugin-studio)
@@ -1152,6 +1152,35 @@ VRAM is down 1.4 GB (39%): the shared material arrays and sun map. RAM barely mo
 Checked on Xephyr with the built binary (`rbx-native-targets/tabs-shots/`): `2p-server-tab.png` and `2p-player-tab.png` (2 players), `4p-server-tab.png`, `4p-player-tab.png`, `4p-after-add-client.png` (Player5's tab after "+") and `4p-after-exit.png` (Player3's tab closed, gone from the leaderboard too). Ctrl+Tab, Ctrl+1..9, the close mark and closing the window (session ends, editor stays) were all driven there too.
 
 Left: detaching a tab into a window of its own (drag out, or "Open in own window") isn't done: a `Shell` is built for the window it lives in (its focus handles, window observers and menus are that window's), so moving one means rebuilding it there; a follow-up. Other per-viewer GPU objects (the image textures of decals, meshes and particles, the local and point shadow maps, render targets) are still one set per tab.
+
+## Milestone 19b: collaborators join as players (branch feat/local-run-m19b)
+
+Someone in the place's co-edit room joins the host's Server & Clients session as a player, from their own editor. Both betas have to be on (Local Run and Live co-editing). It runs over our own presence transport, never Roblox's Team Create (issue #298), and nothing in it is Roblox's protocol.
+
+- **Transport.** The co-edit room's hosted relay (`rbx_presence::host`, the one a collaborator runs behind a cloudflared quick tunnel) gained a `play` route: `GET /v1/rooms/{room}/play?pid=…`, signed like the others. Each binary WebSocket message is `[to u64 BE][sealed]`, and the relay forwards it as `[from u64 BE][sealed]`; `to = 0` goes to every other end. The seal is the room's ChaCha20-Poly1305 key, with `rbx-presence/play/v2\n{room}\n{from}\n{to}` as AAD, so a message can't be replayed to someone else. Messages are cut into 192 KiB chunks. The relay reads every 4 ms and limits each end to 600 messages a second. The durable op log isn't used: frames are fire-and-forget. If the connection drops, the next one asks for the whole tree again (`Up::Resync`). `rbx_presence::play::Link` is one end, on a thread of its own. The Worker and ntfy relays don't have the route yet, so only hosted rooms (the default) can play.
+- **Protocol** (`rbx_sim::remote`, version 1, each message `[version, 'U'|'D']` then LZ4):
+  - Up: `Ask { name, user_id, template }` (the avatar as a binary model), `Actions(Vec<Action>)` (the very actions recordings keep), `Purchase(bool)`, `Leave`, `Resync`.
+  - Down: `Open { host }` (a broadcast every 2 s while a session takes players), `Welcome { player }`, `Frame`, `Ended(why)`.
+  - A `Frame` carries the client's `take_view_changes` as ops with the values they ended on: Add (with every sendable property), Prop, Move, Remove, Class. Repeated writes to one property in a frame go as one. The first frame is the whole tree (`reset`). It also carries what the tab shows besides the tree: camera, mouse behaviour, PlayerGui, core GUI only when it changed, chat, notices, the purchase dialog, particle bursts, printed lines, paused.
+  - Referents are the host's, so the player's copy names every instance as the client does.
+  - The host only accepts input, viewport, safe insets, menu, chat and reset from a remote player. Join, start, network shaping and the rest stay the host's.
+- **Host.** `remote::Host` (in `Running`) holds the offers and each remote player's encoder. An Ask shows as a chip in the tab row ("… wants to join as a player", Accept / ✕). Accepted, the player joins with the avatar they sent and gets a Player tab with a globe icon. The host can watch that tab, but its keys and mouse are the collaborator's. Each presented frame, that tab's `Shown` is encoded and sent instead of (as well as) drawn. End Session tells every collaborator. Exit Player on a remote tab tells them they were taken out.
+- **Collaborator.** The Collaborators dock lists announced sessions with "Join as player". The avatar is the one Play (local) would use: signed in, theirs, else the noob under their room name. The first frame opens a window: a `TestWindow` with one tab whose `Shell` is a peer like 19a's, except that its host is the collaborator's own editor and the view comes from the frames (`Viewer`). Their viewport input, screen size, menu and core GUI actions go up as `Up::Actions`. The ribbon's stop tile reads Leave. Leave, Exit and closing the window all leave. The Output reports the bandwidth used.
+- **Measured** at 60 Hz on obby.rbxlx, one remote player walking:
+  - In process: first frame 14.9 KB, then 47.3 KB/s down while walking, 1.7 KB/s up (`remote::tests`).
+  - Through a real relay on loopback, seals and addresses included: 38.1 KB/s down over 3 s (first frame included), 4.3 KB/s up (≈50 B of framing per message at 60 messages a second), a frame host to player in about 6 ms (`tests/remote_play.rs`).
+  - Live, two debug builds on Xephyr with the collaborator going through the host's trycloudflare tunnel: 6.4 KB/s down and 0.1 KB/s up over 182 s. The host only presented about 5 frames a second (a debug build drawing three viewports in software, 74.6 s of game time in those 182 s), so expect roughly ten times that at 60 Hz.
+  - Down is dominated by CFrames of moving parts. A tunnel's few hundred KB/s carries a few players.
+- **Fixed on the way:** the hosted relay's quick tunnel died seconds after it opened. cloudflared was started from the thread that takes a host public, and `PR_SET_PDEATHSIG` fires when that *thread* ends. That thread now lives as long as the tunnel does.
+
+Left:
+- Remote players hear nothing: audio stays on the host.
+- The Worker and ntfy relays lack the play route.
+- A teleport ends remote players.
+- Values the sim writes without a view change (Motor6D.Transform, assembly velocities, Stats, InputObjects) don't reach the player, the same gap the test windows have.
+- No client-side prediction: input round-trips through the host, so a tunnel's latency is felt as input lag.
+- Frames aren't thinned when the link is slow.
+- In the live run the collaborator's camera sometimes sat inside their avatar's hair while the host's tab showed it right. Suspected cause: accessory handles moved by welds without a view change. Not chased yet.
 
 ## Script limits and the profiler (branch feat/local-run-limits)
 

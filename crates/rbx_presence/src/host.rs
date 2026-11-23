@@ -12,6 +12,7 @@
 mod http;
 mod ops;
 mod ops_route;
+mod play;
 mod room;
 mod validate;
 
@@ -59,6 +60,8 @@ struct Shared {
     /// still reaches everyone.
     outboxes: Mutex<Vec<(u64, Sender<String>)>>,
     next_outbox: AtomicU64,
+    /// Every open play socket: its end, its connection, its outbox.
+    play: Mutex<Vec<play::Outbox>>,
 }
 
 impl Shared {
@@ -125,6 +128,7 @@ impl Host {
             sockets: Mutex::new(Vec::new()),
             outboxes: Mutex::new(Vec::new()),
             next_outbox: AtomicU64::new(0),
+            play: Mutex::new(Vec::new()),
         });
 
         let accept = Arc::clone(&shared);
@@ -230,7 +234,7 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
     let allowed = matches!(
         (route.as_str(), method),
         ("state", "POST" | "DELETE")
-            | ("poll" | "journal" | "ws", "GET")
+            | ("poll" | "journal" | "ws" | "play", "GET")
             | ("ops", "POST" | "GET")
             | ("ops/fill", "POST")
     );
@@ -343,27 +347,48 @@ fn handle(shared: &Arc<Shared>, stream: TcpStream) {
             drop(room);
             respond(&mut stream, 200, &body);
         }
+        ("play", _) => play::serve(shared, stream, &request),
         _ => socket(shared, stream, &request, user_id),
     }
 }
 
-/// The WebSocket route: answers the upgrade itself, sends the snapshot,
-/// takes states, and pushes every newer snapshot until either side leaves.
-fn socket(shared: &Arc<Shared>, mut stream: TcpStream, request: &Request, user_id: u64) {
+/// Answers a WebSocket upgrade (426 when it isn't one): the socket, its
+/// reads timing out after `tick`, messages at most `max_message` bytes
+/// (tungstenite's own limit when `None`).
+fn upgrade(
+    mut stream: TcpStream,
+    request: &Request,
+    tick: Duration,
+    max_message: Option<usize>,
+) -> Option<WebSocket<TcpStream>> {
     let upgrade = request
         .header("upgrade")
         .is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
     let Some(key) = request.header("sec-websocket-key").filter(|_| upgrade) else {
-        return respond(&mut stream, 426, "\"expected websocket\"");
+        respond(&mut stream, 426, "\"expected websocket\"");
+        return None;
     };
     let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
     let _ = write!(
         stream,
         "HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: Upgrade\r\nsec-websocket-accept: {accept}\r\n\r\n"
     );
-    let _ = stream.set_read_timeout(Some(SOCKET_TICK));
+    let _ = stream.set_read_timeout(Some(tick));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-    let mut ws = WebSocket::from_raw_socket(stream, Role::Server, None);
+    let config = max_message.map(|most| {
+        tungstenite::protocol::WebSocketConfig::default()
+            .max_message_size(Some(most))
+            .max_frame_size(Some(most))
+    });
+    Some(WebSocket::from_raw_socket(stream, Role::Server, config))
+}
+
+/// The WebSocket route: answers the upgrade itself, sends the snapshot,
+/// takes states, and pushes every newer snapshot until either side leaves.
+fn socket(shared: &Arc<Shared>, stream: TcpStream, request: &Request, user_id: u64) {
+    let Some(mut ws) = upgrade(stream, request, SOCKET_TICK, None) else {
+        return;
+    };
 
     // Subscribe before taking the first snapshot, so no change between the
     // two is lost.

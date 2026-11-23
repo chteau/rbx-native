@@ -113,6 +113,13 @@ pub fn ops_aad(room: &str, user_id: u64, client: Client) -> Vec<u8> {
     .into_bytes()
 }
 
+/// AAD for one Local Run play message from end `from` to end `to` (0: to
+/// everyone): `"rbx-presence/play/v2\n" + room + "\n" + from + "\n" + to`,
+/// both in hex.
+pub fn play_aad(room: &str, from: u64, to: u64) -> Vec<u8> {
+    format!("rbx-presence/play/v2\n{room}\n{from:016x}\n{to:016x}").into_bytes()
+}
+
 /// The relay's dedupe key for a journal entry, which tells it nothing about
 /// the edit: first 16 hex of `HMAC-SHA256(key, path + "\n" + property + "\n" + at)`.
 pub fn journal_tag(key: &[u8; KEY_LEN], path: &str, property: &str, at: u64) -> String {

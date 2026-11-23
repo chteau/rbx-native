@@ -37,6 +37,7 @@ pub mod ownership;
 pub mod physics;
 pub mod players;
 pub mod profile;
+pub mod remote;
 pub mod replay;
 mod scripts;
 pub mod session;

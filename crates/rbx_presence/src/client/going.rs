@@ -21,6 +21,18 @@ pub(super) struct Going {
     stop: Arc<AtomicBool>,
 }
 
+/// A tunnel that lets the thread that opened it end once it's dropped.
+struct Held {
+    tunnel: Box<dyn Tunnel>,
+    _release: mpsc::Sender<()>,
+}
+
+impl Tunnel for Held {
+    fn alive(&mut self) -> bool {
+        self.tunnel.alive()
+    }
+}
+
 /// Where the address is announced.
 pub(super) struct Topic {
     pub(super) ntfy: String,
@@ -36,12 +48,23 @@ impl Going {
         let (open, called_off) = (hosting.0.clone(), stop.clone());
         thread::spawn(move || {
             let wanted = || !called_off.load(Ordering::Relaxed);
-            let went = go_public(open(port), &id, &topic, &wanted);
+            // The tunnel's process ends with the thread that started it
+            // (PR_SET_PDEATHSIG on Linux), so this thread lives as long as
+            // the tunnel does.
+            let (held, released) = mpsc::channel::<()>();
+            let went = go_public(open(port), &id, &topic, &wanted).map(|(public, tunnel)| {
+                let tunnel: Box<dyn Tunnel> = Box::new(Held {
+                    tunnel,
+                    _release: held,
+                });
+                (public, tunnel)
+            });
             // Dropped while announcing: take the address back so nobody goes
             // to a tunnel that closes with this thread.
             if let Err(mpsc::SendError(Ok((public, _)))) = send.send(went) {
                 goodbye(&topic, &public, true);
             }
+            let _ = released.recv();
         });
         Going { done, stop }
     }

@@ -16,10 +16,10 @@ const MAGIC: &[u8; 8] = b"RBXNREPL";
 pub const FORMAT: u16 = 1;
 
 #[derive(Default)]
-struct Out(Vec<u8>);
+pub(crate) struct Out(pub(crate) Vec<u8>);
 
 impl Out {
-    fn u(&mut self, mut v: u64) {
+    pub(crate) fn u(&mut self, mut v: u64) {
         loop {
             let byte = (v & 0x7F) as u8;
             v >>= 7;
@@ -30,35 +30,35 @@ impl Out {
             self.0.push(byte | 0x80);
         }
     }
-    fn i(&mut self, v: i64) {
+    pub(crate) fn i(&mut self, v: i64) {
         self.u(((v << 1) ^ (v >> 63)) as u64);
     }
-    fn b(&mut self, v: bool) {
+    pub(crate) fn b(&mut self, v: bool) {
         self.0.push(v as u8);
     }
-    fn f32(&mut self, v: f32) {
+    pub(crate) fn f32(&mut self, v: f32) {
         self.0.extend(v.to_le_bytes());
     }
-    fn f64(&mut self, v: f64) {
+    pub(crate) fn f64(&mut self, v: f64) {
         self.0.extend(v.to_le_bytes());
     }
-    fn u64(&mut self, v: u64) {
+    pub(crate) fn u64(&mut self, v: u64) {
         self.0.extend(v.to_le_bytes());
     }
-    fn bytes(&mut self, v: &[u8]) {
+    pub(crate) fn bytes(&mut self, v: &[u8]) {
         self.u(v.len() as u64);
         self.0.extend_from_slice(v);
     }
-    fn s(&mut self, v: &str) {
+    pub(crate) fn s(&mut self, v: &str) {
         self.bytes(v.as_bytes());
     }
-    fn opt<T>(&mut self, v: Option<T>, f: impl FnOnce(&mut Self, T)) {
+    pub(crate) fn opt<T>(&mut self, v: Option<T>, f: impl FnOnce(&mut Self, T)) {
         self.b(v.is_some());
         if let Some(v) = v {
             f(self, v);
         }
     }
-    fn res<T>(&mut self, v: &Result<T, String>, f: impl FnOnce(&mut Self, &T)) {
+    pub(crate) fn res<T>(&mut self, v: &Result<T, String>, f: impl FnOnce(&mut Self, &T)) {
         match v {
             Ok(v) => {
                 self.b(true);
@@ -70,7 +70,7 @@ impl Out {
             }
         }
     }
-    fn list<T>(&mut self, v: &[T], mut f: impl FnMut(&mut Self, &T)) {
+    pub(crate) fn list<T>(&mut self, v: &[T], mut f: impl FnMut(&mut Self, &T)) {
         self.u(v.len() as u64);
         for item in v {
             f(self, item);
@@ -78,12 +78,12 @@ impl Out {
     }
 }
 
-struct In<'a>(&'a [u8]);
+pub(crate) struct In<'a>(pub(crate) &'a [u8]);
 
-type R<T> = Result<T, String>;
+pub(crate) type R<T> = Result<T, String>;
 
 impl<'a> In<'a> {
-    fn take(&mut self, n: usize) -> R<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> R<&'a [u8]> {
         if self.0.len() < n {
             return Err("the recording is cut short".into());
         }
@@ -91,7 +91,7 @@ impl<'a> In<'a> {
         self.0 = rest;
         Ok(head)
     }
-    fn u(&mut self) -> R<u64> {
+    pub(crate) fn u(&mut self) -> R<u64> {
         let mut v = 0u64;
         for shift in (0..64).step_by(7) {
             let byte = self.take(1)?[0];
@@ -102,47 +102,47 @@ impl<'a> In<'a> {
         }
         Err("a bad number in the recording".into())
     }
-    fn n(&mut self) -> R<usize> {
+    pub(crate) fn n(&mut self) -> R<usize> {
         let n = self.u()? as usize;
         if n > self.0.len() * 8 + 64 {
             return Err("a bad length in the recording".into());
         }
         Ok(n)
     }
-    fn i(&mut self) -> R<i64> {
+    pub(crate) fn i(&mut self) -> R<i64> {
         let v = self.u()?;
         Ok((v >> 1) as i64 ^ -((v & 1) as i64))
     }
-    fn b(&mut self) -> R<bool> {
+    pub(crate) fn b(&mut self) -> R<bool> {
         Ok(self.take(1)?[0] != 0)
     }
-    fn f32(&mut self) -> R<f32> {
+    pub(crate) fn f32(&mut self) -> R<f32> {
         Ok(f32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
-    fn f64(&mut self) -> R<f64> {
+    pub(crate) fn f64(&mut self) -> R<f64> {
         Ok(f64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
-    fn u64(&mut self) -> R<u64> {
+    pub(crate) fn u64(&mut self) -> R<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
-    fn bytes(&mut self) -> R<Vec<u8>> {
+    pub(crate) fn bytes(&mut self) -> R<Vec<u8>> {
         let n = self.n()?;
         Ok(self.take(n)?.to_vec())
     }
-    fn s(&mut self) -> R<String> {
+    pub(crate) fn s(&mut self) -> R<String> {
         String::from_utf8(self.bytes()?).map_err(|_| "bad text in the recording".into())
     }
-    fn opt<T>(&mut self, f: impl FnOnce(&mut Self) -> R<T>) -> R<Option<T>> {
+    pub(crate) fn opt<T>(&mut self, f: impl FnOnce(&mut Self) -> R<T>) -> R<Option<T>> {
         Ok(if self.b()? { Some(f(self)?) } else { None })
     }
-    fn res<T>(&mut self, f: impl FnOnce(&mut Self) -> R<T>) -> R<Result<T, String>> {
+    pub(crate) fn res<T>(&mut self, f: impl FnOnce(&mut Self) -> R<T>) -> R<Result<T, String>> {
         Ok(if self.b()? {
             Ok(f(self)?)
         } else {
             Err(self.s()?)
         })
     }
-    fn list<T>(&mut self, mut f: impl FnMut(&mut Self) -> R<T>) -> R<Vec<T>> {
+    pub(crate) fn list<T>(&mut self, mut f: impl FnMut(&mut Self) -> R<T>) -> R<Vec<T>> {
         let n = self.n()?;
         (0..n).map(|_| f(self)).collect()
     }
@@ -307,7 +307,7 @@ fn read_way(r: &mut In) -> R<Way> {
     })
 }
 
-fn action(w: &mut Out, a: &Action) {
+pub(crate) fn action(w: &mut Out, a: &Action) {
     match a {
         Action::Start => w.u(0),
         Action::Join {
@@ -355,7 +355,7 @@ fn action(w: &mut Out, a: &Action) {
     }
 }
 
-fn read_action(r: &mut In) -> R<Action> {
+pub(crate) fn read_action(r: &mut In) -> R<Action> {
     Ok(match r.u()? {
         0 => Action::Start,
         1 => Action::Join {

@@ -228,6 +228,7 @@ impl Shell {
                 seek: None,
             }),
             windowed: false,
+            remote: rbx_sim::remote::Host::default(),
             windows: Vec::new(),
             test_window: None,
             audible: None,
