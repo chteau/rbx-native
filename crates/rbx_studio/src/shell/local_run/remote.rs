@@ -391,13 +391,14 @@ impl Shell {
                 self.local_run_exit_player(player, cx);
                 self.local_run_notify_tabs(cx);
             }
-            Some(wire::Event::Purchase { player, bought }) => {
-                if run.prompts.front().is_some_and(|p| p.player == player) {
-                    if let Some(prompt) = run.prompts.pop_front() {
-                        run.session.purchase_finished(&prompt, bought);
-                    }
+            Some(wire::Event::Purchase { player, bought })
+                if run.prompts.front().is_some_and(|p| p.player == player) =>
+            {
+                if let Some(prompt) = run.prompts.pop_front() {
+                    run.session.purchase_finished(&prompt, bought);
                 }
             }
+            Some(wire::Event::Purchase { .. }) => {}
             None => {}
         }
     }

@@ -37,12 +37,10 @@ fn link(url: &str, pid: u64) -> (Link, Receiver<Event>) {
 
 /// The next message, waiting for it.
 fn next(events: &Receiver<Event>) -> (u64, Vec<u8>) {
-    loop {
-        match events.recv_timeout(Duration::from_secs(10)) {
-            Ok(Event::Message { from, bytes }) => return (from, bytes),
-            Ok(other) => panic!("{other:?}"),
-            Err(e) => panic!("no message: {e}"),
-        }
+    match events.recv_timeout(Duration::from_secs(10)) {
+        Ok(Event::Message { from, bytes }) => (from, bytes),
+        Ok(other) => panic!("{other:?}"),
+        Err(e) => panic!("no message: {e}"),
     }
 }
 

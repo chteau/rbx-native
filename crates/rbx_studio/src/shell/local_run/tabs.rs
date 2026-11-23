@@ -345,7 +345,7 @@ fn offer_chip(index: usize, from: u64, name: String, cx: &mut Context<Shell>) ->
                 .role(Role::Button)
                 .text_color(tokens::text_full())
                 .bg(tokens::accent_line())
-                .hover(|this| tokens::hover_fx(this))
+                .hover(tokens::hover_fx)
                 .on_click(
                     cx.listener(move |shell, _, _, cx| shell.local_run_accept_remote(from, cx)),
                 )
