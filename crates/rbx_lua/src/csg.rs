@@ -168,7 +168,10 @@ pub fn world_solid(dom: &WeakDom, db: &ReflectionDatabase, part: Ref) -> Result<
             _ => size,
         };
         let model = at * DMat4::from_scale(size / initial.max(DVec3::splat(1e-6)));
-        let part_color = matches!(read(db, instance, "UsePartColor"), Some(Variant::Bool(true)));
+        let part_color = matches!(
+            read(db, instance, "UsePartColor"),
+            Some(Variant::Bool(true))
+        );
         if let Some(mesh) = solid_mesh(instance) {
             let solid = mesh.solid(model);
             return Ok(if part_color {
@@ -182,10 +185,12 @@ pub fn world_solid(dom: &WeakDom, db: &ReflectionDatabase, part: Ref) -> Result<
         }
     }
     let (mesh, scale) = primitive(db, instance, size);
-    Ok(
-        Solid::from_triangles(&mesh.positions, &mesh.indices, at * DMat4::from_scale(scale))
-            .painted(color),
+    Ok(Solid::from_triangles(
+        &mesh.positions,
+        &mesh.indices,
+        at * DMat4::from_scale(scale),
     )
+    .painted(color))
 }
 
 fn is_negate(dom: &WeakDom, part: Ref) -> bool {

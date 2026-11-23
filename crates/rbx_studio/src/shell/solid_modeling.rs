@@ -94,7 +94,12 @@ fn apply(
     let made = match command {
         Command::Union => vec![csg::operate_in_place(dom, db, Operation::Union, selected)?],
         Command::Intersect => {
-            vec![csg::operate_in_place(dom, db, Operation::Intersect, selected)?]
+            vec![csg::operate_in_place(
+                dom,
+                db,
+                Operation::Intersect,
+                selected,
+            )?]
         }
         Command::Negate => csg::negate_in_place(dom, db, selected),
         Command::Separate => csg::separate_in_place(dom, db, selected),

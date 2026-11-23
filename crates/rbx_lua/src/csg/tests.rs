@@ -198,7 +198,10 @@ fn a_union_saves_its_mesh_where_studio_reads_it() {
     assert!(vector(instance, "UnscaledCofm").length() < 1e-5);
     let diagonal = vector(instance, "UnscaledVolInertiaDiags");
     let expected = DVec3::new(8.0, 29.0, 29.0) * 20.0 / 12.0;
-    assert!((diagonal - expected).abs().max_element() < 1e-3, "{diagonal}");
+    assert!(
+        (diagonal - expected).abs().max_element() < 1e-3,
+        "{diagonal}"
+    );
 }
 
 const NESTED_UNION: &str = include_str!("../../../../assets/tests/csg/NestedUnion.rbxmx");
@@ -225,7 +228,10 @@ fn a_studio_union_separates_into_its_parts() {
     let mut xs: Vec<f64> = parts.iter().map(|&p| position(&db, &dom, p).x).collect();
     xs.sort_by(f64::total_cmp);
     assert_eq!(parts.len(), 2);
-    assert!((xs[0] + 12.0).abs() < 1e-4 && (xs[1] + 10.0).abs() < 1e-4, "{xs:?}");
+    assert!(
+        (xs[0] + 12.0).abs() < 1e-4 && (xs[1] + 10.0).abs() < 1e-4,
+        "{xs:?}"
+    );
     assert!(parts.iter().all(|&p| dom.get(p).unwrap().class() == "Part"));
 }
 

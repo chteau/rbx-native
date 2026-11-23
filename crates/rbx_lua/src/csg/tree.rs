@@ -67,7 +67,13 @@ pub(super) fn negated(
     let size = Variant::Vector3(vector3(size_of(db, part)));
     let world = frame(&cframe_of(db, part));
     let mut inner = WeakDom::new();
-    copy_into(&mut inner, part, part.class(), None, cframe(DMat4::IDENTITY));
+    copy_into(
+        &mut inner,
+        part,
+        part.class(),
+        None,
+        cframe(DMat4::IDENTITY),
+    );
     let raw = rbx_binary::serialize(&inner).ok()?;
     let props = into.get_mut(negate)?.properties_mut();
     props.retain(|k, _| {

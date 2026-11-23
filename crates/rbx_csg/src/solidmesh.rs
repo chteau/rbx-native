@@ -167,7 +167,9 @@ pub fn encode(solid: &Solid) -> Vec<u8> {
             .collect();
         for corner in 1..ring.len().saturating_sub(1) {
             let triangle = [ring[0], ring[corner], ring[corner + 1]];
-            if triangle[0] == triangle[1] || triangle[1] == triangle[2] || triangle[0] == triangle[2]
+            if triangle[0] == triangle[1]
+                || triangle[1] == triangle[2]
+                || triangle[0] == triangle[2]
             {
                 continue;
             }
@@ -242,11 +244,18 @@ impl Reader<'_> {
 
     fn floats<const N: usize>(&mut self) -> Option<Vec<[f32; N]>> {
         let count = self.count()?;
-        let raw = self.bytes.get(self.at..self.at.checked_add(count.checked_mul(4 * N)?)?)?;
+        let raw = self
+            .bytes
+            .get(self.at..self.at.checked_add(count.checked_mul(4 * N)?)?)?;
         self.at += raw.len();
         Some(
-            raw.chunks_exact(4 * N)
-                .map(|v| std::array::from_fn(|i| f32::from_le_bytes(v[i * 4..i * 4 + 4].try_into().unwrap())))
+            (0..count)
+                .map(|k| {
+                    std::array::from_fn(|i| {
+                        let at = (k * N + i) * 4;
+                        f32::from_le_bytes(raw[at..at + 4].try_into().unwrap())
+                    })
+                })
                 .collect(),
         )
     }
@@ -265,8 +274,7 @@ pub fn decode(bytes: &[u8]) -> Option<Decoded> {
     let body = bytes.get(HEADER..)?;
     let declared = u32::from_le_bytes(bytes.get(2..6)?.try_into().ok()?) as usize;
     let compressed = u32::from_le_bytes(bytes.get(6..10)?.try_into().ok()?);
-    if bytes[..2] != [3, 1] || compressed != 0 || declared != body.len() || !body.starts_with(TAG)
-    {
+    if bytes[..2] != [3, 1] || compressed != 0 || declared != body.len() || !body.starts_with(TAG) {
         return None;
     }
     let mut r = Reader {
@@ -287,11 +295,9 @@ pub fn decode(bytes: &[u8]) -> Option<Decoded> {
     let triangles: Vec<[u32; 3]> = position_corners.as_chunks::<3>().0.to_vec();
     let colors = (0..triangles.len())
         .map(|t| {
-            color_corners
-                .get(t * 3)
-                .map_or(crate::DEFAULT_COLOR, |&i| {
-                    colors[i as usize].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
-                })
+            color_corners.get(t * 3).map_or(crate::DEFAULT_COLOR, |&i| {
+                colors[i as usize].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
+            })
         })
         .collect();
     Some(Decoded {

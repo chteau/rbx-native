@@ -37,13 +37,25 @@ fn mass_properties_match_what_studio_saves() {
     let ball = decode(BALL_MINUS_CYLINDER).unwrap().solid(DMat4::IDENTITY);
     let mass = ball.mass_properties().unwrap();
     assert!((mass.volume - 168.409485).abs() < 1e-3, "{mass:?}");
-    assert!(close(mass.inertia_diagonal, [1451.61792, 1125.4126, 1125.4126], 0.05));
+    assert!(close(
+        mass.inertia_diagonal,
+        [1451.61792, 1125.4126, 1125.4126],
+        0.05
+    ));
 
     let blocks = decode(RED_GREEN).unwrap().solid(DMat4::IDENTITY);
     let mass = blocks.mass_properties().unwrap();
     assert!((mass.volume - 28.0356178).abs() < 1e-3, "{mass:?}");
-    assert!(close(mass.centroid, [0.260120928, -0.429297447, -0.180481866], 1e-4));
-    assert!(close(mass.inertia_diagonal, [50.4832153, 50.8064346, 64.7511444], 1e-3));
+    assert!(close(
+        mass.centroid,
+        [0.260120928, -0.429297447, -0.180481866],
+        1e-4
+    ));
+    assert!(close(
+        mass.inertia_diagonal,
+        [50.4832153, 50.8064346, 64.7511444],
+        1e-3
+    ));
     assert!(close(
         mass.inertia_off_diagonal,
         [-8.98200035, -8.09648514, -8.03164482],
@@ -68,11 +80,7 @@ fn a_two_coloured_union_round_trips() {
         blob.len() - HEADER
     );
     let back = decode(&blob).unwrap();
-    let triangles: usize = solid
-        .polygons
-        .iter()
-        .map(|p| p.vertices.len() - 2)
-        .sum();
+    let triangles: usize = solid.polygons.iter().map(|p| p.vertices.len() - 2).sum();
     assert_eq!(back.triangles.len(), triangles);
     let back = back.solid(DMat4::IDENTITY);
     assert!((back.volume() - solid.volume()).abs() < 1e-3);

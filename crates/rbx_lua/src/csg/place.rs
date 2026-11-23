@@ -176,8 +176,8 @@ fn rebake(dom: &mut WeakDom, db: &ReflectionDatabase, op: Ref) {
         Some(Variant::Vector3(v)) => vec3(*v),
         _ => size,
     };
-    let placement = frame(&cframe_of(db, instance))
-        * DMat4::from_scale(size / initial.max(DVec3::splat(1e-6)));
+    let placement =
+        frame(&cframe_of(db, instance)) * DMat4::from_scale(size / initial.max(DVec3::splat(1e-6)));
     let mut scratch = WeakDom::new();
     let copy = scratch.new_instance(instance.class(), instance.name(), None);
     if let Some(copied) = scratch.get_mut(copy) {
