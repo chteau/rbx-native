@@ -49,3 +49,19 @@ fn the_shader_declares_exactly_the_locations_the_layout_supplies() {
         );
     }
 }
+
+// Server & Clients' tabs share a device: their renderers draw into one sun
+// map of a side, which goes with the last of them.
+#[test]
+fn renderers_on_one_device_share_the_sun_map() {
+    let Some((device, _queue)) = crate::gpu::for_tests() else {
+        return;
+    };
+    let first = sun_map(&device, 48);
+    let second = sun_map(&device, 48);
+    assert!(Arc::ptr_eq(&first, &second));
+    assert!(!Arc::ptr_eq(&first, &sun_map(&device, 32)));
+    let weak = Arc::downgrade(&first);
+    drop((first, second));
+    assert!(weak.upgrade().is_none());
+}

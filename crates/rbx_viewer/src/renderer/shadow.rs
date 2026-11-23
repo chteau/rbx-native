@@ -20,6 +20,10 @@ mod fit;
 pub(super) mod local;
 pub(super) mod point;
 
+use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Mutex, Weak};
+
 use super::cull;
 use super::geometry::Meshes;
 use super::mesh::Vertex;
@@ -75,7 +79,8 @@ const MATRIX_SIZE: wgpu::BufferAddress = std::mem::size_of::<[[f32; 4]; 4]>() as
 /// window, so a resize never touches it and the bind group the colour passes
 /// sample it through stays valid for the whole run.
 pub(super) struct Shadows {
-    view: wgpu::TextureView,
+    /// Shared with the device's other renderers, see [`sun_map`].
+    view: Arc<wgpu::TextureView>,
     sampler: wgpu::Sampler,
     light: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
@@ -155,7 +160,7 @@ impl Shadows {
             casters::mesh_batches(device, scene.resolved_file_meshes(), &mut Vec::new());
 
         Shadows {
-            view: map(device, sun_side(quality)),
+            view: sun_map(device, sun_side(quality)),
             // Linear filtering on a comparison sampler is the hardware's own
             // 2x2 PCF: every tap of the kernel already comes back partly lit.
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
@@ -203,7 +208,7 @@ impl Shadows {
     /// The caller must rebind every bind group holding the old views or the old
     /// [`Shadows::local_view`]/light buffer.
     pub(super) fn set_quality(&mut self, device: &wgpu::Device, quality: &QualityProfile) {
-        self.view = map(device, sun_side(quality));
+        self.view = sun_map(device, sun_side(quality));
         let (view, layers) = local_map(device, quality.local_shadow_lights_max);
         self.local_view = view;
         self.local_layers = layers;
@@ -545,6 +550,35 @@ fn sun_side(quality: &QualityProfile) -> u32 {
     } else {
         1
     }
+}
+
+/// The sun's maps by device and side. Every frame redraws its renderer's map
+/// before reading it, in the one submission that reads it, so renderers on
+/// one device (Server & Clients' tabs share one) can all draw into the same
+/// map instead of holding one each; at 8192 px that's 256 MB a renderer.
+/// Weak, so a map goes with the last renderer drawing into it. Not in the
+/// browser, which has one renderer.
+#[cfg(not(target_arch = "wasm32"))]
+static SUN_MAPS: Mutex<Vec<(wgpu::Device, u32, Weak<wgpu::TextureView>)>> = Mutex::new(Vec::new());
+
+#[cfg(not(target_arch = "wasm32"))]
+fn sun_map(device: &wgpu::Device, side: u32) -> Arc<wgpu::TextureView> {
+    let mut maps = SUN_MAPS.lock().unwrap_or_else(|e| e.into_inner());
+    maps.retain(|(.., view)| view.strong_count() > 0);
+    let held = maps
+        .iter()
+        .find(|(d, s, _)| d == device && *s == side)
+        .and_then(|(.., view)| view.upgrade());
+    held.unwrap_or_else(|| {
+        let view = Arc::new(map(device, side));
+        maps.push((device.clone(), side, Arc::downgrade(&view)));
+        view
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn sun_map(device: &wgpu::Device, side: u32) -> Arc<wgpu::TextureView> {
+    Arc::new(map(device, side))
 }
 
 /// The depth map itself.

@@ -764,6 +764,18 @@ impl Shell {
         // nearest ancestor that survived, or the window itself.
         let root_focus = cx.focus_handle();
         let focus_lost = cx.on_focus_lost(window, |shell, window, cx| {
+            // A Server & Clients tab not on show leaves the focus to the one
+            // that is: it shares the window.
+            if shell
+                .play
+                .live
+                .local
+                .peer
+                .as_ref()
+                .is_some_and(|p| !p.tab_shown)
+            {
+                return;
+            }
             let target = window
                 .focus_lost_restore_target(cx)
                 .unwrap_or_else(|| shell.root_focus.clone());

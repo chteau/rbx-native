@@ -12,14 +12,14 @@ pub(crate) fn instance() -> wgpu::Instance {
 
 /// An instance limited to `backends`, with the rest of wgpu's knobs still
 /// read from the environment.
-#[cfg(not(test))]
-pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
-    new_instance(backends)
-}
-
-/// Tests share one instance per backend set: each its own brought up a
-/// display per thread, which the NVIDIA driver crashes on in parallel.
-#[cfg(test)]
+///
+/// One per backend set for the whole process. wgpu compares devices by id
+/// within their instance only, so two instances' devices can compare equal;
+/// the caches keyed by device (`renderer::material`, the sun map) need every
+/// device in one instance to tell them apart. Tests needed it anyway: each
+/// their own brought up a display per thread, which the NVIDIA driver
+/// crashes on in parallel.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
     static SHARED: Mutex<Vec<(wgpu::Backends, wgpu::Instance)>> = Mutex::new(Vec::new());
     let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
@@ -29,6 +29,12 @@ pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
     let instance = new_instance(backends);
     shared.push((backends, instance.clone()));
     instance
+}
+
+/// The browser has one viewer, and no `Sync` instance to keep.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
+    new_instance(backends)
 }
 
 fn new_instance(backends: wgpu::Backends) -> wgpu::Instance {

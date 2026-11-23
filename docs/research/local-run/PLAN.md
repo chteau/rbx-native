@@ -1126,6 +1126,33 @@ Tests: `crates/rbx_sim/tests/multi_client.rs`: four test players join in order a
 
 For M19b (collaborators joining as players over our presence/p2p, never native Team Create): a player is already driven only through `Session::act(Peer::Client(i), Action)` (the same serializable `replay::Action`s a recording keeps), so a remote player's input stream is a transport carrying those; what its window shows is `Simulation::take_view_changes` on its client plus the `Shown` fields (camera, core GUI, chat, lines), which is what a remote viewer needs sent back. Left to M19b: a `PeerWindow` whose shell is remote (a transport instead of a `WeakEntity<Shell>`), serializing `Change` with the values it ended on (the replay hash already walks them), the collaborator's own avatar instead of the test players' shared one, and who may End Session.
 
+
+### One test window with tabs (branch feat/local-run-tabs)
+
+The user asked for Server & Clients in one window instead of Studio's window per peer, to get around them easily. What runs is unchanged (one `Session`, each peer 1:1 with Roblox); only the layout differs.
+
+- Server & Clients opens one window, `Server & Clients`, with a tab per peer where the editor has its document tabs, in the same style: Server first, then Player1..N, a player's tab with a close mark, and "+" for Add Client (`crates/rbx_studio/src/shell/local_run/tabs.rs`). Ctrl+Tab / Ctrl+Shift+Tab cycle the tabs (wrapping), Ctrl+1..9 jump to one.
+- Each tab is still a whole editor (`Shell` built with `Launch::test_peer`) on its peer, so its camera, Explorer, selection, Properties and Output stay put while another tab shows, and a switch is instant: the window's root (`TestWindow`) only swaps which editor it draws. The Server tab keeps the green frame and free camera, a player's the blue frame and the core GUI.
+- Only the shown tab is drawn: the others' viewports aren't painted, so their render threads stop drawing (`workspace_view::presence`), and only the shown player tab gets the keyboard and mouse (`Tabs::input_target`, checked again in `windows::take_inputs`). A tab put away lets go of every key and button its player held, so nothing stays down on a client nobody sees; the shown tab takes the focus (its viewport on a player's tab). Every peer keeps simulating whichever tab shows.
+- Add Client adds a tab (not shown). Exit on a player's tab, its close mark or a middle click on it is that player leaving (`PlayerRemoving` runs) and the tab goes; closing the window or End Session ends the session.
+- The tabs' viewers share one GPU device, as the windows did, and now the biggest textures on it too: a renderer on a device that already holds material arrays built from the same maps binds those instead of uploading every pack again (`renderer::material::SHARED`), and renderers on one device draw into one sun shadow map of a side (`renderer::shadow::SUN_MAPS`; each frame redraws it before reading it, in the same submission, so they never see each other's depths). Both weak, so they go with the last renderer. wgpu compares devices by id within their own instance only, so the process now has one wgpu instance per backend set (`gpu::instance_for`, which tests already did); two instances' devices could otherwise look equal and hand one device another's texture (that crashed on the first try). Not in the browser build, which has one renderer.
+- `Session::act(Peer::Client(i), Action)` and `take_view_changes` are untouched: M19b's remote players still slot in the same way.
+
+Measured with 4 players (Server & Clients, the 4-player test place), `ps` RSS, `nvidia-smi` per-process memory, CPU over 30 s with the Server tab shown:
+
+| Build | Layout | RSS | VRAM | CPU |
+|---|---|---|---|---|
+| debug | 5 windows (before) | 1679 MB | 3657 MiB | 144% |
+| debug | tabs (after) | 1569 MB | 2232 MiB | 148% |
+| release | 5 windows (before) | 1624 MB | 3633 MiB | 104% |
+| release | tabs (after) | 1588 MB | 2208 MiB | 110% |
+
+VRAM is down 1.4 GB (39%): the shared material arrays and sun map. RAM barely moves, it's the five peers' worlds and editors, which the tabs keep. CPU doesn't drop either: most of it is the session's own thread stepping five peers, which every tab keeps doing; the viewports are the smaller part. The M19a 4.4 GB RAM / 4.2 GB VRAM were a heavier place; these are the bundled `TestPlace.rbxl`, the noob, Level21, each a steady state 60 s after the joins.
+
+Checked on Xephyr with the built binary (`rbx-native-targets/tabs-shots/`): `2p-server-tab.png` and `2p-player-tab.png` (2 players), `4p-server-tab.png`, `4p-player-tab.png`, `4p-after-add-client.png` (Player5's tab after "+") and `4p-after-exit.png` (Player3's tab closed, gone from the leaderboard too). Ctrl+Tab, Ctrl+1..9, the close mark and closing the window (session ends, editor stays) were all driven there too.
+
+Left: detaching a tab into a window of its own (drag out, or "Open in own window") isn't done: a `Shell` is built for the window it lives in (its focus handles, window observers and menus are that window's), so moving one means rebuilding it there; a follow-up. Other per-viewer GPU objects (the image textures of decals, meshes and particles, the local and point shadow maps, render targets) are still one set per tab.
+
 ## Script limits and the profiler (branch feat/local-run-limits)
 
 Measured on the sandbox place (version 636, 3 passes) with three new conformance tests: `ScriptLimits`, `ProfilerApi`, `FrameOverrun`.

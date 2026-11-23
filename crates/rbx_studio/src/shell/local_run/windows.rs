@@ -1,23 +1,22 @@
 //! Test › Server & Clients, Studio's multi-client test: one session, its
-//! server and each test player in a window of their own, while the window
-//! that started it stays on the edited place.
+//! server and each test player in a tab of one test window (`tabs`), while
+//! the window that started it stays on the edited place.
 //!
-//! As in Studio (0.748, where each is a full Studio window titled
-//! `Server` or after the place), every test window here is a whole editor
-//! (`Shell`), its own viewport, Explorer, Properties and Output, built with
+//! Studio (0.748) opens a full Studio window per peer, titled `Server` or
+//! after the place; here each tab is a whole editor (`Shell`), its own
+//! viewport, Explorer, Properties and Output, built with
 //! `Launch::test_peer` so it starts nothing of its own. They are views on
 //! the session, never copies of it: the starting window owns the session
-//! and its one frame loop, steps it, and hands each window its peer's
-//! changes, camera, core GUI and printed lines ([`Shown`]); each player
-//! window's keys and mouse go to that player's client alone, the window
-//! that has focus being the only one that gets any. Edits made in a test
-//! window go to its peer's DataModel, as a Play (local) edit does.
+//! and its one frame loop, steps it, and hands each tab its peer's changes,
+//! camera, core GUI and printed lines ([`Shown`]); the keys and mouse go to
+//! the shown player tab's client alone. Edits made in a tab go to its
+//! peer's DataModel, as a Play (local) edit does.
 //!
-//! Studio's controls: Pause / Step Forward, End Session (closes every
-//! window), Add Clients, a player window's Exit (that player leaves) and
-//! closing a window (a player's leaves, the Server's ends the session).
-//! The Server window can show the first player's client (Current: Client),
-//! as older Studio's server toggle did.
+//! Studio's controls: Pause / Step Forward, End Session (closes the test
+//! window), Add Clients (a tab more), a player tab's Exit or close (that
+//! player leaves); closing the test window ends the session. The Server tab
+//! can show the first player's client (Current: Client), as older Studio's
+//! server toggle did.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,6 +28,7 @@ use rbx_lua::server::ChatLine;
 use rbx_sim::replay::Action;
 use rbx_sim::{MouseBehavior, Peer, Session, Simulation};
 
+use super::tabs::TestWindow;
 use super::{
     changes_between, dedupe, editable_bindings, eye_and_target, mirror, pad_inputs, push_row,
     push_rows, structural, Running, MAX_PLAYERS,
@@ -57,12 +57,32 @@ pub(crate) enum Role {
     Player,
 }
 
-/// A test window, as the session's owner sees it.
+/// The one test window holding every peer's tab.
+pub(in crate::shell) struct TestWindowHandle {
+    pub(super) handle: AnyWindowHandle,
+    view: WeakEntity<TestWindow>,
+}
+
+impl TestWindowHandle {
+    /// Takes `home`'s tab out of the window.
+    fn remove(&self, home: Home, cx: &mut App) {
+        let view = self.view.clone();
+        let _ = self.handle.update(cx, |_, window, cx| {
+            let _ = view.update(cx, |tabs, cx| tabs.remove(home, window, cx));
+        });
+    }
+
+    /// The player the shown tab is, who alone gets the keys and mouse.
+    fn input_target(&self, cx: &App) -> Option<Ref> {
+        self.view.upgrade()?.read(cx).tabs().input_target()
+    }
+}
+
+/// A peer's tab, as the session's owner sees it.
 pub(in crate::shell) struct PeerWindow {
     home: Home,
     name: String,
     shell: WeakEntity<Shell>,
-    pub(super) handle: AnyWindowHandle,
     /// The Server window's Current: Client.
     client_view: bool,
     /// Its view switched: the next frame starts it over on its peer's
@@ -77,10 +97,14 @@ pub(in crate::shell) struct PeerWindow {
 /// A test window's side: the session it shows.
 pub(in crate::shell) struct PeerLink {
     host: WeakEntity<Shell>,
-    home: Home,
+    pub(super) home: Home,
     /// The peer shown now.
     view: Peer,
     pub(super) paused: bool,
+    /// The test window this tab is in.
+    pub(super) tabs: WeakEntity<TestWindow>,
+    /// This tab is the one the test window shows.
+    pub(in crate::shell) tab_shown: bool,
 }
 
 impl PeerLink {
@@ -150,14 +174,15 @@ pub(super) fn bursts(sim: &mut Simulation) -> Vec<(Ref, Option<u32>)> {
         .collect()
 }
 
-/// Each player window's keys, mouse and screen size to that player's
-/// client; the Controller Emulator's pad to the player whose window last
-/// had input.
+/// The shown player tab's keys and mouse to that player's client, every
+/// player's screen size to theirs; the Controller Emulator's pad to the
+/// player whose tab last had input.
 pub(super) fn take_inputs(
     run: &mut Running,
     pad: Option<rbx_play::gamepad::PadState>,
     cx: &mut Context<Shell>,
 ) {
+    let target = run.test_window.as_ref().and_then(|t| t.input_target(cx));
     for window in &run.windows {
         let Home::Player(player) = window.home else {
             continue;
@@ -180,6 +205,9 @@ pub(super) fn take_inputs(
         });
         run.session.act(Peer::Client(i), Action::Viewport(size));
         run.session.act(Peer::Client(i), Action::SafeInsets(safe));
+        if target != Some(player) {
+            continue;
+        }
         if !inputs.is_empty() {
             run.audible = Some(player);
         }
@@ -197,7 +225,7 @@ pub(super) fn take_inputs(
 
 impl Shell {
     /// Test › Server & Clients: the server and Test › Players' count of
-    /// test players, each in a window of their own.
+    /// test players, each in a tab of the test window.
     pub(crate) fn server_and_clients(&mut self, cx: &mut Context<Self>) {
         let count = self.play.live.local.players;
         self.play_local_in(Some(count), cx);
@@ -246,8 +274,8 @@ impl Shell {
         true
     }
 
-    /// Opens the Server window and one per player already in, then shows
-    /// each what its peer printed so far.
+    /// Opens the test window on the Server's tab, a tab per player already
+    /// in, then shows each what its peer printed so far.
     pub(super) fn local_run_open_windows(
         &mut self,
         output: Vec<(Peer, rbx_lua::Output)>,
@@ -258,7 +286,7 @@ impl Shell {
         self.local_run_route_rows(output, cx);
     }
 
-    /// A window for each player who has none: the test players once they
+    /// A tab for each player who has none: the test players once they
     /// joined.
     pub(super) fn local_run_open_player_windows(&mut self, cx: &mut Context<Self>) {
         let Some(run) = self.play.live.local.running.as_ref() else {
@@ -312,8 +340,7 @@ impl Shell {
                 return;
             }
         };
-        let cascade = run.windows.len() as f32 * 32.0;
-        // Never saved: a test window's place is the running game's.
+        // Never saved: a test tab's place is the running game's.
         let path = std::env::temp_dir()
             .join(format!("rbxnative-test-{}", std::process::id()))
             .join(format!("{name}.rbxl"));
@@ -345,60 +372,125 @@ impl Shell {
         };
         let user = boot.user;
         let host = cx.entity().downgrade();
+        let existing = run.test_window.as_ref().map(|t| (t.handle, t.view.clone()));
         let link = PeerLink {
             host: host.clone(),
             home,
             view: peer,
             paused: false,
+            tabs: existing
+                .as_ref()
+                .map_or_else(WeakEntity::new_invalid, |(_, view)| view.clone()),
+            tab_shown: existing.is_none(),
         };
         let title = SharedString::from(name.clone());
-        let mut options = crate::window_options(&title, cx);
-        if let Some(WindowBounds::Windowed(bounds)) = options.window_bounds.as_mut() {
-            bounds.origin += point(px(cascade), px(cascade));
-        }
-        let badges = self.viewport.read(cx).core_gui.badges.clone();
-        let mut made = None;
-        let opened = cx.open_window(options, |window, cx| {
-            let shell = cx.new(|cx| {
+        let build = move |window: &mut Window, cx: &mut App| {
+            cx.new(|cx| {
                 let mut shell = Shell::new(title, place, settings, launch, user, window, cx);
                 shell.play.live.local.peer = Some(link);
                 shell
-            });
-            made = Some(shell.downgrade());
-            window.on_window_should_close(cx, move |_, cx| {
-                let host = host.clone();
-                cx.defer(move |cx| {
-                    let _ = host.update(cx, |host, cx| host.local_run_window_closed(home, cx));
+            })
+        };
+        let badges = self.viewport.read(cx).core_gui.badges.clone();
+        let (handle, shell) = match existing {
+            Some((handle, view)) => {
+                let made = handle.update(cx, |_, window, cx| {
+                    let shell = build(window, cx);
+                    let _ = view.update(cx, |tabs, cx| tabs.add(home, shell.clone(), cx));
+                    shell
                 });
-                // The Server window closes with the session, at End Session.
-                home != Home::Server
-            });
-            cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
-        });
+                let Ok(shell) = made else {
+                    return;
+                };
+                (None, shell)
+            }
+            None => {
+                let options = crate::window_options(&SharedString::from("Server & Clients"), cx);
+                let mut made = None;
+                let opened = cx.open_window(options, |window, cx| {
+                    let shell = build(window, cx);
+                    let view = cx.new(|_| TestWindow::new(home, shell.clone()));
+                    shell.update(cx, |shell, _| {
+                        if let Some(link) = shell.play.live.local.peer.as_mut() {
+                            link.tabs = view.downgrade();
+                        }
+                    });
+                    made = Some((shell, view.downgrade()));
+                    window.on_window_should_close(cx, move |_, cx| {
+                        let host = host.clone();
+                        cx.defer(move |cx| {
+                            let _ = host.update(cx, |host, cx| host.local_run_stop(cx));
+                        });
+                        // It closes with the session, at End Session.
+                        false
+                    });
+                    cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
+                });
+                let (Ok(handle), Some((shell, view))) = (opened, made) else {
+                    return;
+                };
+                (
+                    Some(TestWindowHandle {
+                        handle: handle.into(),
+                        view,
+                    }),
+                    shell,
+                )
+            }
+        };
         // Each new editor takes the menus; they stay this window's.
         crate::menu_bar::retarget(&cx.entity(), cx);
-        let (Ok(handle), Some(shell)) = (opened, made) else {
-            return;
-        };
-        if let Some(entity) = shell.upgrade() {
-            entity.update(cx, |shell, cx| {
-                shell.viewport.update(cx, |viewport, _| {
-                    viewport.core_gui.badges = badges;
-                    viewport.set_play_local(home != Home::Server);
-                });
+        shell.update(cx, |shell, cx| {
+            shell.viewport.update(cx, |viewport, _| {
+                viewport.core_gui.badges = badges;
+                viewport.set_play_local(home != Home::Server);
             });
-        }
+        });
         if let Some(run) = self.play.live.local.running.as_mut() {
+            if handle.is_some() {
+                run.test_window = handle;
+            }
             run.windows.push(PeerWindow {
                 home,
                 name,
-                shell,
-                handle: handle.into(),
+                shell: shell.downgrade(),
                 client_view: false,
                 resync: false,
                 kicked: false,
             });
         }
+    }
+
+    /// The test window showed this tab (`shown`) or another: a tab put
+    /// away lets go of every key and button its player held, so nothing
+    /// stays down on a client nobody is looking at; the shown one takes the
+    /// keyboard, in its viewport on a player's tab.
+    pub(in crate::shell) fn local_run_tab_shown(
+        &mut self,
+        shown: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(link) = self.play.live.local.peer.as_mut() else {
+            return;
+        };
+        link.tab_shown = shown;
+        let player = matches!(link.home, Home::Player(_));
+        if !shown {
+            self.viewport.update(cx, |viewport, _| {
+                if let Some(play) = viewport.play.as_mut() {
+                    play.release();
+                }
+            });
+            return;
+        }
+        let focus = if player {
+            self.viewport.read(cx).focus_handle()
+        } else {
+            self.root_focus.clone()
+        };
+        window.focus(&focus, cx);
+        cx.notify();
     }
 
     /// Each peer's printed lines to the window opened for it (the Server
@@ -608,9 +700,9 @@ impl Shell {
                     run.session.leave(i);
                 }
             }
-            let _ = window
-                .handle
-                .update(cx, |_, window, _| window.remove_window());
+            if let Some(test_window) = &run.test_window {
+                test_window.remove(window.home, cx);
+            }
         }
         for player in leaving {
             self.local_run_exit_player(player, cx);
@@ -747,7 +839,7 @@ impl Shell {
         window.resync = true;
     }
 
-    /// Add Clients: one more test player, in a window of their own.
+    /// Add Clients: one more test player, in a tab of their own.
     pub(crate) fn local_run_add_client(&mut self, cx: &mut Context<Self>) {
         if !crate::beta::enabled(super::BETA_ID) {
             return;
@@ -778,11 +870,17 @@ impl Shell {
         self.local_run_open_window(Home::Player(player), cx);
     }
 
-    /// A player window's Exit: that player leaves and the window closes.
+    /// A player tab's Exit (or its close): that player leaves and the tab
+    /// closes.
     pub(crate) fn local_run_exit_client(&mut self, cx: &mut Context<Self>) {
         let Some(Home::Player(player)) = self.play.live.local.peer.as_ref().map(|p| p.home) else {
             return;
         };
+        self.local_run_close_tab(player, cx);
+    }
+
+    /// `player`'s tab closed (its ×, a middle click): they leave.
+    pub(in crate::shell) fn local_run_close_tab(&mut self, player: Ref, cx: &mut Context<Self>) {
         self.local_run_forward(cx, move |host, cx| host.local_run_exit_player(player, cx));
     }
 
@@ -804,18 +902,10 @@ impl Shell {
             .position(|w| w.home == Home::Player(player))
         {
             let window = run.windows.remove(k);
-            let _ = window
-                .handle
-                .update(cx, |_, window, _| window.remove_window());
+            if let Some(test_window) = &run.test_window {
+                test_window.remove(window.home, cx);
+            }
         }
         cx.notify();
-    }
-
-    /// A test window was closed: a player's leaves, the Server's ends it.
-    fn local_run_window_closed(&mut self, home: Home, cx: &mut Context<Self>) {
-        match home {
-            Home::Server => self.local_run_stop(cx),
-            Home::Player(player) => self.local_run_exit_player(player, cx),
-        }
     }
 }

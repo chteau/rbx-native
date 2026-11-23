@@ -229,6 +229,7 @@ impl Shell {
             }),
             windowed: false,
             windows: Vec::new(),
+            test_window: None,
             audible: None,
         });
         self.properties = Properties::new(self.database.clone());

@@ -30,6 +30,7 @@ pub(crate) mod data;
 mod offline;
 mod replay;
 mod sound;
+pub(crate) mod tabs;
 pub(crate) mod windows;
 use crate::command_bar::Feedback;
 use crate::history::{History, DEFAULT_CAP};
@@ -81,10 +82,11 @@ struct Running {
     pad: Option<rbx_play::gamepad::PadState>,
     /// Playing a recording back instead of taking input.
     replay: Option<replay::ReplayState>,
-    /// Server & Clients: the session shows in a window per peer (see
-    /// `windows`), this window keeps the edited place.
+    /// Server & Clients: the session shows in a test window, a tab per
+    /// peer (see `windows`), this window keeps the edited place.
     windowed: bool,
     windows: Vec<windows::PeerWindow>,
+    test_window: Option<windows::TestWindowHandle>,
     /// The player whose window last had input: what the run plays aloud
     /// and the Controller Emulator drives.
     audible: Option<Ref>,
@@ -853,6 +855,7 @@ impl Shell {
             replay: None,
             windowed,
             windows: Vec::new(),
+            test_window: None,
             audible: None,
         });
         if windowed {
@@ -1079,7 +1082,7 @@ impl Shell {
             playing,
             replay,
             windowed,
-            windows,
+            test_window,
             ..
         } = run;
         drop(task);
@@ -1091,9 +1094,9 @@ impl Shell {
         let output = session.take_output();
         drop(session);
         if windowed {
-            // End Session: every test window closes with it.
-            for window in windows {
-                let _ = window
+            // End Session: the test window closes with it.
+            if let Some(test_window) = test_window {
+                let _ = test_window
                     .handle
                     .update(cx, |_, window, _| window.remove_window());
             }

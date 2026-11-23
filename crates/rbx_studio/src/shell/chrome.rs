@@ -243,7 +243,10 @@ impl Shell {
                     "Close",
                     true,
                     cx.listener(|shell, _, window, cx| {
-                        if shell.request_quit(cx) {
+                        // Server & Clients' window closes with the session.
+                        if shell.play.live.local.peer.is_some() {
+                            shell.local_run_stop(cx);
+                        } else if shell.request_quit(cx) {
                             window.remove_window();
                         }
                     }),
@@ -291,7 +294,11 @@ impl Shell {
     /// the strip with the arrows doesn't tear down and rebuild an editor on
     /// the way past (see `shell::roving`). Delete closes the focused editor,
     /// the same pattern's answer to a closable tab.
-    pub(super) fn document_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// In a Server & Clients test window, the peers' tabs take its place.
+    pub(super) fn document_tabs(&self, cx: &mut Context<Self>) -> AnyElement {
+        if let Some(tabs) = self.local_run_peer_tabs(cx) {
+            return tabs;
+        }
         let active = self.document;
         let place = self.title.clone();
         let tabs = self.documents.tabs();
@@ -370,6 +377,7 @@ impl Shell {
                 self.document_add_items(),
                 cx,
             ))
+            .into_any_element()
     }
 
     /// **Row B**: the ribbon's category tabs, in the black strip above it.

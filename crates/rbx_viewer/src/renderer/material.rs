@@ -4,6 +4,10 @@
 //! Bind group 1 of every surface pipeline (see `renderer::pipeline`), so a part
 //! and a file mesh sample their material exactly the same way.
 
+use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Mutex, Weak};
+
 use rbx_assets::AssetRef;
 use rbx_materials::MapKind;
 
@@ -46,8 +50,10 @@ fn format(kind: MapKind) -> wgpu::TextureFormat {
 pub(super) struct Materials {
     pub(super) bind_group: wgpu::BindGroup,
     /// One array per map kind, in [`MapKind::ALL`] order, kept alive so a change
-    /// of quality level only has to re-view and re-bind them.
-    arrays: Vec<wgpu::Texture>,
+    /// of quality level only has to re-view and re-bind them. Shared with
+    /// every renderer on the same device built from the same maps, see
+    /// [`SHARED`].
+    arrays: Arc<[wgpu::Texture]>,
     /// What the arrays were uploaded from (see [`Catalog::resolved_maps`]), so
     /// a scene rebuild can tell whether the new scene's catalog would upload
     /// the very same texels, the common case for any edit that is not a new
@@ -121,10 +127,20 @@ impl Materials {
         old: Option<&Materials>,
     ) -> Self {
         let maps = catalog.resolved_maps();
+        let side = crate::gpu::material_resolution();
+        if old.is_none() {
+            if let Some(arrays) = shared(device, &maps, side) {
+                return Materials {
+                    bind_group: bind(device, layout, &arrays, quality),
+                    arrays,
+                    maps,
+                };
+            }
+        }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("rbxview material array reuse"),
         });
-        let arrays: Vec<wgpu::Texture> = MapKind::ALL
+        let arrays: Arc<[wgpu::Texture]> = MapKind::ALL
             .iter()
             .enumerate()
             .map(|(index, &kind)| {
@@ -133,6 +149,7 @@ impl Materials {
             })
             .collect();
         queue.submit([encoder.finish()]);
+        share(device, &maps, side, &arrays);
 
         Materials {
             bind_group: bind(device, layout, &arrays, quality),
@@ -165,6 +182,53 @@ impl Materials {
         self.bind_group = bind(device, layout, &self.arrays, quality);
     }
 }
+
+/// The material arrays each device holds, by what they were built from: a
+/// second renderer on the same device (Server & Clients' tabs share one,
+/// `Headless::from_dom_shared`) binds the first one's textures instead of
+/// uploading every pack again. Weak, so the arrays go with the last
+/// renderer using them. Not in the browser, which has one renderer.
+#[cfg(not(target_arch = "wasm32"))]
+static SHARED: Mutex<Vec<Shared>> = Mutex::new(Vec::new());
+
+#[cfg(not(target_arch = "wasm32"))]
+struct Shared {
+    device: wgpu::Device,
+    maps: Vec<Maps>,
+    side: u32,
+    arrays: Weak<[wgpu::Texture]>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn shared(device: &wgpu::Device, maps: &[Maps], side: u32) -> Option<Arc<[wgpu::Texture]>> {
+    let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    shared.retain(|s| s.arrays.strong_count() > 0);
+    shared
+        .iter()
+        .find(|s| s.device == *device && s.side == side && s.maps == maps)?
+        .arrays
+        .upgrade()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn share(device: &wgpu::Device, maps: &[Maps], side: u32, arrays: &Arc<[wgpu::Texture]>) {
+    let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    shared.retain(|s| s.arrays.strong_count() > 0);
+    shared.push(Shared {
+        device: device.clone(),
+        maps: maps.to_vec(),
+        side,
+        arrays: Arc::downgrade(arrays),
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn shared(_: &wgpu::Device, _: &[Maps], _: u32) -> Option<Arc<[wgpu::Texture]>> {
+    None
+}
+
+#[cfg(target_arch = "wasm32")]
+fn share(_: &wgpu::Device, _: &[Maps], _: u32, _: &Arc<[wgpu::Texture]>) {}
 
 /// Views every array from the level the cap allows and binds the lot behind one
 /// sampler.
@@ -517,7 +581,7 @@ mod tests {
         let rebuilt = old.rebuilt(&device, &queue, &layout, &after, &quality);
         let fresh = Materials::new(&device, &queue, &layout, &after, &quality);
 
-        for (kind, (rebuilt, fresh)) in rebuilt.arrays.iter().zip(&fresh.arrays).enumerate() {
+        for (kind, (rebuilt, fresh)) in rebuilt.arrays.iter().zip(fresh.arrays.iter()).enumerate() {
             for level in [0, 2] {
                 assert!(
                     read(&device, &queue, rebuilt, level) == read(&device, &queue, fresh, level),
@@ -525,6 +589,29 @@ mod tests {
                 );
             }
         }
+    }
+
+    // Server & Clients' tabs share a device: a second renderer built from
+    // the same maps binds the first one's arrays instead of its own copy.
+    #[test]
+    fn a_second_build_on_the_device_shares_the_arrays() {
+        let Some((device, queue)) = crate::gpu::for_tests() else {
+            return;
+        };
+        let layout = layout(&device);
+        let quality = QualityLevel::default().profile();
+        let maps = catalog(&["Slate", "Marble"]);
+        let first = Materials::new(&device, &queue, &layout, &maps, &quality);
+        let second = Materials::new(&device, &queue, &layout, &maps, &quality);
+        assert!(Arc::ptr_eq(&first.arrays, &second.arrays));
+        let other = Materials::new(&device, &queue, &layout, &catalog(&["Slate"]), &quality);
+        assert!(!Arc::ptr_eq(&first.arrays, &other.arrays));
+        let weak = Arc::downgrade(&first.arrays);
+        drop((first, second));
+        assert!(
+            weak.upgrade().is_none(),
+            "the last renderer takes them along"
+        );
     }
 
     #[test]
