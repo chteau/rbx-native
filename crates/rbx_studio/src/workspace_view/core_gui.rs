@@ -547,7 +547,7 @@ fn vignette() -> Div {
 /// Sizes are the real client's at 800x600 (M18 probe): 165 px plus 77 a
 /// stat wide, stat columns 64 px apart ending 22 px in, 13 px headings and
 /// 16 px names, the owner's mark in a 16 px slot before every name and the
-/// verified badge 4 px after it.
+/// verified badge 4 px after it. The heading row only shows with stats.
 fn player_list(
     players: &[PlayerRow],
     stats: &[String],
@@ -598,11 +598,13 @@ fn player_list(
                     }),
                 ),
         )
-        .child(header)
+        // Without `leaderstats` the real client shows no heading row at all,
+        // only the close button and the names (a 64 px tall list for one).
+        .when(!stats.is_empty(), |list| list.child(header))
         .children(players.iter().map(|player| {
             row()
                 .h(px(40.))
-                .mt(px(4.))
+                .when(!stats.is_empty(), |row| row.mt(px(4.)))
                 .pl(px(13.))
                 .text_size(px(16.))
                 .child(

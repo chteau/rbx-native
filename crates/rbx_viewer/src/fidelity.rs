@@ -95,11 +95,13 @@ impl Scene {
         let players = dom.new_instance("Players", "Players", None);
         let player = dom.new_instance("Player", "Player", Some(players));
         let gui = dom.new_instance("PlayerGui", "PlayerGui", Some(player));
+        let materials = dom.new_instance("MaterialService", "MaterialService", None);
         let mut builder = Builder {
             dom,
             world: workspace,
             lighting,
             gui,
+            materials,
         };
         (self.build)(&mut builder);
         let mut dom = builder.dom;
@@ -108,14 +110,15 @@ impl Scene {
     }
 
     /// Builds the scene's world under `world`, its `Lighting` children
-    /// under `lighting` and its screens under `gui`, in a DOM of the
-    /// caller's.
-    pub fn build_into(&self, dom: WeakDom, world: Ref, lighting: Ref, gui: Ref) -> WeakDom {
+    /// under `lighting`, its screens under `gui` and its `MaterialService`
+    /// children under `materials`, in a DOM of the caller's.
+    pub fn build_into(&self, dom: WeakDom, [world, lighting, gui, materials]: [Ref; 4]) -> WeakDom {
         let mut builder = Builder {
             dom,
             world,
             lighting,
             gui,
+            materials,
         };
         (self.build)(&mut builder);
         builder.dom
@@ -128,6 +131,7 @@ pub struct Builder {
     world: Ref,
     lighting: Ref,
     gui: Ref,
+    materials: Ref,
 }
 
 impl Builder {
@@ -155,6 +159,30 @@ impl Builder {
         part
     }
 
+    /// An anchored plastic `MeshPart` of the mesh at `mesh` at `position`,
+    /// fitted to `size`. `initial` is the mesh's own size, the `InitialSize`
+    /// Studio saves beside it, which the real client scales from.
+    pub fn mesh_part(
+        &mut self,
+        (mesh, initial): (&str, [f32; 3]),
+        size: [f32; 3],
+        position: [f32; 3],
+        rgb: [u8; 3],
+    ) -> Ref {
+        let part = self
+            .dom
+            .new_instance("MeshPart", "MeshPart", Some(self.world));
+        self.set(part, "Anchored", Variant::Bool(true));
+        self.set(part, "MeshId", content(mesh));
+        self.set(part, "InitialSize", vec3(initial));
+        self.set(part, "size", vec3(size));
+        self.set(part, "CFrame", Variant::CFrame(at(position)));
+        let [r, g, b] = rgb;
+        self.set(part, "Color3uint8", Variant::Color3uint8 { r, g, b });
+        self.set(part, "Material", Variant::Enum(PLASTIC));
+        part
+    }
+
     /// A plastic block at `position`.
     pub fn block(&mut self, size: [f32; 3], position: [f32; 3], rgb: [u8; 3]) -> Ref {
         self.part(BLOCK, size, at(position), rgb, PLASTIC)
@@ -169,6 +197,13 @@ impl Builder {
     pub fn lighting_child(&mut self, class: &str) -> Ref {
         let lighting = self.lighting;
         self.child(lighting, class)
+    }
+
+    /// A `MaterialVariant` under `MaterialService`.
+    pub fn material_variant(&mut self, name: &str) -> Ref {
+        let materials = self.materials;
+        self.dom
+            .new_instance("MaterialVariant", name, Some(materials))
     }
 
     /// A `ScreenGui` the player sees over the scene.

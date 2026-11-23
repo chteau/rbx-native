@@ -1211,6 +1211,61 @@ Left, and why:
 - The ScriptProfiler isn't reachable from game scripts (as on Roblox); the Developer Console's own profiler pages aren't copied beyond the dock.
 - A plugin's `ScriptProfilerService` keeps the edit-mode behaviour (`ServerStart`/`ServerStop` do nothing, `OnNewData` never fires, `DeserializeJSON` reads version 2): plugins don't run inside a Local Run's server VM yet, so the dock is the sampler's only driver.
 
+## Look fidelity (branch feat/local-run-fidelity)
+
+Judged against real-client captures, never by eye: the `template_spawn`, `noob` and `decals_textures` fidelity scenes (`crates/rbx_viewer/src/fidelity/scenes/look.rs`, references in `crates/rbx_viewer/fidelity/refs/`) beside the earlier ones, and live Play (local) captures next to a Sober join of the same place.
+
+- The noob a player without an avatar gets is the classic one: Bright yellow head and arms, Bright blue torso, Br. yellowish green legs, and the default face (`rbxasset://textures/face.png`) as a `face` Decal on its head.
+- Decals and Textures on a MeshPart, or on a part whose SpecialMesh replaced its box (a character's head), land on the mesh, projected in the part's box space as Roblox does, instead of being dropped.
+- Plastic has almost no grain; the real client shows none on a flat Plastic face.
+- The sky's light from straight above is lifted by day and the fill lamp halved under the filmic look: floors in shadow were 15 to 30% too dark per channel.
+- The People list has no heading row when nobody has leaderstats.
+
+Built-in content (`rbxasset://`) is never committed. At run time it resolves, in order, from Roblox's own content packages on the CDN, Sober's install, a local install (Vinegar or Studio), then a public asset id standing in for it, and is cached under `~/.cache/rbx-native/assets/`. `textures/face.png` is in the `content-textures2` package, so it resolves anywhere with a network. `textures/SpawnLocation.png` is not in any CDN package; its stand-in id (6891610111) answers 401 without a key. With no install, no Open Cloud key and no cache, a SpawnLocation draws without its decal (the plain part shows), and the decal comes back as soon as any of the three is there. Offline, only what's already cached draws.
+
+Left, and why:
+
+- The sky's clouds and the horizon haze differ (ours lighter at the horizon in `template_spawn`).
+- A tinted Texture comes out too blue (real 143,35,118, ours 161,32,146 in `decals_textures`).
+- The top-left button can't be Roblox's logo (no Roblox images); a player who isn't signed in has no owner badge.
+- The RNG game floor colour against Atmosphere haze is still open.
+
+### Second pass: GUI and texture blending (branch feat/local-run-fidelity-2)
+
+New scenes (`fidelity/scenes/gui.rs`, `look.rs`): `gui_fonts`, `gui_text_layout`, `gui_strokes`, `gui_gradients`, `gui_images`, `gui_stacking`, `material_variants`, `texture_blend`. Scenes can now carry `MaterialVariant`s (the client script clones them into `MaterialService`).
+
+- The capture client had its Text Size (`GuiService.PreferredTextSize`) on Large, which adds a fixed 4 px to every `TextSize` (its `TextService:GetTextSize` heights were 14, 20, 29, 36, 64 for 10, 16, 25, 32, 60) except `TextScaled` text. `record_render_goldens` now sets Sober's `GlobalBasicSettings_13.xml` to Medium for the session and puts the player's own value back after; the client script prints the setting beside the quality level. `text_boxes` and `text_sizes` are recaptured at Medium.
+- At Medium, Source Sans, Builder Sans, Roboto and Fredoka One match the real client's text to the pixel in width and height.
+- The client no longer ships `GothamSSm.json` or `Arial.json`: a `FontFace` naming them draws in Montserrat and Arimo (Gotham rows were 4 to 8% too wide).
+- A rotated `UIGradient` spans the box edge to edge along the line through its centre (`min(w / |cos|, h / |sin|)`), not the box's projection: the real 45 degree ramp on a 260 x 160 frame fits `t = 0.5 + 0.814 u + 0.496 v`, 226 px long.
+- The client reads `FontFace` before `Font`, so a scene must set both, as Studio saves them; `text_sizes` did not and its SourceSans column showed Legacy.
+- Already right, by the captures: `UIStroke` (Border thicknesses, corner radii, line joins, transparency, Contextual on text), `ImageLabel` Stretch, Tile, Fit, Crop, nine-slice with `SliceScale`, `ImageRect`, tints and transparency, stacked transparent frames and `ZIndex`, `UIListLayout` with `UIPadding`, RichText, wrapping, `LineHeight`, `TextStroke`.
+
+Left, and why:
+
+- `TextScaled` with `TextWrapped` off: the real client draws the text at its plain `TextSize` (14 stays 14, 100 overflows the box), with or without a `FontFace`, at Medium and Large alike; with `TextWrapped` on it scales and wraps. Ours scales both. Not changed: one harness's captures (screens cloned from `ReplicatedStorage` into `PlayerGui`) against what every game relies on; it wants a check in a game that builds its labels in Studio.
+- `CanvasGroup` `GroupTransparency` 0.5: the real client fades the group's own background but not its child frame; ours fades neither. Unclear whether that is a device fallback (Sober is the Android client).
+- Arimo (Legacy, Arial) draws about 3% narrower in the real client than ours at the same size (the em rule in `renderer/gui/text/em.rs` was measured in Studio); text sits a pixel higher than the real client's at 32 px (not at 16).
+- `Texture` blending: the real client mixes a `Texture` over its part in a gamma-encoded space before tone mapping. In `texture_blend` (white Texture over red, alpha 0.576 times 1 - `Transparency`), a straight blend in sRGB terms gives the texture's red as 222 to 228 at all four transparencies, where ours, mixing linear light, comes out lighter at high transparency for a black overlay and brighter for a white one. That is the tinted Texture (real 143,35,118, ours 161,38,147 in `decals_textures`) and the near-floor grid being lighter in `template_spawn`. Our decals are a fixed-function blend over linear HDR, so this needs the blend moved into the material pass (or an encoded target); not done.
+- `MaterialVariant` tiling: the real client centres a grid cell on a 6 stud face where ours puts a cell corner there (a quarter tile off on both axes); the colour map's alpha is ignored in both. Which corner the real client anchors to needs a capture on an odd-sized part. The client also logs "Failed to load MaterialService.Grid" for the public grid image, though it draws it.
+- The horizon haze and clouds in `template_spawn` were not taken further.
+
+### Third pass: decal blending, tile anchor, CanvasGroup (branch feat/local-run-fidelity-3)
+
+New scenes: `material_variant_anchor`, `surface_appearance`, `atmosphere_floor`, `studio_future`, `gui_canvas_groups`. A scene `MeshPart` carries its mesh's `InitialSize`, as Studio saves it: without one the real client drew the cone at another scale, its base under the floor (ours fits the mesh to `Size` either way).
+
+- `Decal`s and `Texture`s mix over their part with both lit colours raised to 1 / 2.2 before tone mapping (`textured.wgsl`; the decal instance now carries its part's colour, and the blended pipeline is premultiplied). The tinted Texture is 143,37,121 against the real 143,35,118 (was 161,38,147); `texture_blend` 4.99 to 3.29.
+- A material's tile grid (a `MaterialVariant`, and the built-in packs) starts at each face's corner where both projection axes start, its top left seen from the front, anchored to the part and not to the world: the two equal 5 stud blocks a fraction of a tile apart show the same pattern. `material_variants` 7.67 to 2.99.
+- `CanvasGroup`: under `ZIndexBehavior.Global` (the `ScreenGui` class default) the group is not flattened and the real client fades and tints only its own background, the children draw untouched. That was the second pass's open item, and it is not an Android fallback: on a `Sibling` screen the same client flattens and fades everything. Our flattened texture was also sampled through its encoded view and came out too light (a red child 137,78,81, real 123,43,46); it now decodes. `gui_canvas_groups` 0.14, `gui_stacking` 1.05 to 0.06.
+- `Technology` `Future` and `ShadowMap` draw a sunlit stage identically in the real client (`studio_future` and `studio_lighting` captures differ by at most 1 in any channel), as ours does.
+
+Left, and why:
+
+- `template_spawn` moved from 2.60 to 2.71 with the gamma blend: the near floor grid is right, the far floor darker than the real client's, where the grid is minified. Mipmapping averages the texture's alpha before the blend, and averaging a gamma blend of black over grey after it (which the real client's lighter far floor suggests) is not what a mip chain can give; not changed.
+- `surface_appearance` (3.15): the shapes and the Overlay, Transparency and tint behaviour match; ours has a little more sheen on the textured mesh (blue 75 against 45 on the orange cone) and a slightly lighter Transparency cone. The default roughness of a set with no roughness map (0.9) was swept from 0.5 to 1 with no measurable change, so it is kept.
+- `atmosphere_floor` (2.37): the floor through haze is within a few levels of the real client at every distance; ours is a little bluer toward the horizon (blue +5 to +10) and a little lighter right under the camera. The horizon in `template_spawn` is now slightly darker than real, not lighter.
+- The client still logs "Failed to load ... PBR textures may not be visible" for a `MaterialVariant` or `SurfaceAppearance` using the public grid image, though it draws it.
+
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.

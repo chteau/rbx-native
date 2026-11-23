@@ -57,11 +57,14 @@ fn noob(note: String) -> Player {
     }
 }
 
-/// The noob: the rig Studio's Rig Builder makes (R15, Block), when its
-/// meshes can be had, online or all in the asset cache. `None` otherwise,
-/// and the simulation's own blocky noob plays.
+/// The noob: the rig Studio's Rig Builder makes (R15, Block) in the classic
+/// colours (Bright yellow head and arms, Bright blue torso, Br. yellowish
+/// green legs) with the default face, when its meshes can be had, online or
+/// all in the asset cache. `None` otherwise, and the simulation's own blocky
+/// noob plays.
 fn rig_builder_noob() -> Option<WeakDom> {
-    let options = RigOptions::rig_builder_block();
+    let mut options = RigOptions::rig_builder_block();
+    options.colors = BodyColors::default();
     if rbx_net::is_offline() {
         let cache = rbx_assets::AssetCache::new(None).ok()?;
         if !options
@@ -75,6 +78,9 @@ fn rig_builder_noob() -> Option<WeakDom> {
     let mut scratch = WeakDom::new();
     let folder = scratch.new_instance("Folder", "Folder", None);
     let rig = build_rig(&mut scratch, &options, folder);
+    if let Some(head) = find(&scratch, rig, "Head") {
+        rbx_sim::character::add_face(&mut scratch, head);
+    }
     let mut model = WeakDom::new();
     rbx_sim::players::graft(&mut model, &scratch, rig, None);
     Some(model)

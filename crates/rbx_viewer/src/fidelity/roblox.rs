@@ -110,7 +110,8 @@ pub fn place(scenes: &[Scene], database: &ReflectionDatabase) -> WeakDom {
         let world = dom.new_instance("Model", "World", Some(folder));
         let lighting = dom.new_instance("Folder", "Lighting", Some(folder));
         let gui = dom.new_instance("Folder", "Gui", Some(folder));
-        dom = scene.build_into(dom, world, lighting, gui);
+        let materials = dom.new_instance("Folder", "Materials", Some(folder));
+        dom = scene.build_into(dom, [world, lighting, gui, materials]);
     }
     let first = service(&mut dom, "ReplicatedFirst");
     let script = dom.new_instance("LocalScript", "Fidelity", Some(first));
@@ -208,13 +209,18 @@ for _ = 1, 50 do
 end
 game:GetService("ContentProvider"):PreloadAsync({{ root }})
 local quality = UserSettings():GetService("UserGameSettings").SavedQualityLevel
-print("{QUALITY}" .. tostring(quality))
+print("{QUALITY}" .. tostring(quality) .. " text " .. tostring(game:GetService("GuiService").PreferredTextSize))
 local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-local shown, screens = nil, {{}}
+local shown, screens, variants = nil, {{}}, {{}}
+local MaterialService = game:GetService("MaterialService")
 for _, scene in SCENES do
 	if shown then
 		shown:Destroy()
 	end
+	for _, variant in variants do
+		variant:Destroy()
+	end
+	variants = {{}}
 	for _, screen in screens do
 		screen:Destroy()
 	end
@@ -229,6 +235,11 @@ for _, scene in SCENES do
 	local folder = root:WaitForChild(scene.name)
 	for _, child in folder.Lighting:GetChildren() do
 		child:Clone().Parent = Lighting
+	end
+	for _, child in folder.Materials:GetChildren() do
+		local variant = child:Clone()
+		variant.Parent = MaterialService
+		table.insert(variants, variant)
 	end
 	shown = folder.World:Clone()
 	shown.Parent = workspace

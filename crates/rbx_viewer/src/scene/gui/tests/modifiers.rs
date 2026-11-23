@@ -323,16 +323,18 @@ fn a_gradient_rotated_a_quarter_turn_runs_down_the_height() {
 }
 
 // "The beginning and end control points snap to the edges of the parent":
-// at 45 degrees the ramp spans the box's projection onto the diagonal.
+// at 45 degrees on a 200 x 100 box the ramp runs from where the line through
+// the centre leaves the long sides, 100 / sin 45 apart, as the real client
+// draws it.
 #[test]
-fn a_diagonal_gradient_spans_the_boxs_projection_onto_its_direction() {
+fn a_diagonal_gradient_spans_the_line_through_the_centre_edge_to_edge() {
     let (mut dom, gui) = screen_gui();
     let frame = boxed(&mut dom, gui);
     gradient(&mut dom, frame, 45.0);
 
     let axis = only(&dom).gradient.unwrap().axis;
 
-    let span = (200.0 + 100.0) * std::f32::consts::FRAC_1_SQRT_2;
+    let span = 100.0 / std::f32::consts::FRAC_1_SQRT_2;
     let expected = std::f32::consts::FRAC_1_SQRT_2 / span;
     assert!((axis[0] - expected).abs() < 1e-6);
     assert!((axis[1] - expected).abs() < 1e-6);

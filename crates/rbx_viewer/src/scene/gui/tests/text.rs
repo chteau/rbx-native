@@ -105,7 +105,11 @@ fn a_text_label_reads_every_text_property() {
     assert_eq!(text.size, 24.0);
     assert!(text.scaled && text.wrapped);
     assert_eq!((text.x_align, text.y_align), (Align::Start, Align::End));
-    assert_eq!(text.face, Face::named("GothamSSm", 700, true));
+    assert_eq!(
+        text.face,
+        Face::named("Montserrat", 700, true),
+        "the client draws Gotham in Montserrat"
+    );
     assert_eq!(text.stroke, Some(([1.0, 0.0, 0.0], 0.5)));
     assert_eq!(text.line_height, 1.5);
     assert!(text.truncate);
@@ -195,6 +199,33 @@ fn a_legacy_font_enum_maps_to_its_family_weight_and_style() {
     )
     .unwrap();
     assert_eq!(text_of(&dom).face, Face::named("Nunito", 300, false));
+}
+
+#[test]
+fn a_font_face_in_a_retired_family_draws_in_its_replacement() {
+    let (mut dom, gui) = screen_gui();
+    let referent = label(&mut dom, gui, "TextLabel", "x");
+    let face_of = |dom: &mut WeakDom, family: &str| {
+        let font = Font {
+            family: format!("rbxasset://fonts/families/{family}.json"),
+            weight: 400,
+            style: FontStyle::Normal,
+            cached_face_id: None,
+        };
+        dom.set_property(referent, "FontFace", Variant::Font(font))
+            .unwrap();
+        text_of(dom).face
+    };
+
+    assert_eq!(
+        face_of(&mut dom, "GothamSSm"),
+        Face::named("Montserrat", 400, false)
+    );
+    assert_eq!(face_of(&mut dom, "Arial"), Face::named("Arimo", 400, false));
+    assert_eq!(
+        face_of(&mut dom, "Roboto"),
+        Face::named("Roboto", 400, false)
+    );
 }
 
 #[test]

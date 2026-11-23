@@ -50,6 +50,13 @@ pub(super) fn faces(
         })
         .collect();
     found.extend(worn(dom, referent, placement));
+    let base = match part.properties().get("Color3uint8") {
+        Some(&Variant::Color3uint8 { r, g, b }) => [r, g, b],
+        _ => scene::FALLBACK_COLOR,
+    };
+    for (_, face) in &mut found {
+        face.base = base;
+    }
     found
 }
 
@@ -162,6 +169,7 @@ fn painted(
     Some((
         reference,
         FaceInstance {
+            mesh: None,
             referent,
             kind: placement.kind,
             model: placement.model,
@@ -177,6 +185,7 @@ fn painted(
                 _ => [1.0; 3],
             },
             alpha,
+            base: scene::FALLBACK_COLOR,
         },
     ))
 }
@@ -214,12 +223,14 @@ fn worn(dom: &WeakDom, referent: Ref, placement: &Placement) -> Vec<(AssetRef, F
             faces.push((
                 layer.image.clone(),
                 FaceInstance {
+                    mesh: None,
                     referent: layer.referent,
                     kind: placement.kind,
                     model: placement.model,
                     projection,
                     tint: layer.tint.map(scene::srgb_to_linear),
                     alpha: 1.0,
+                    base: scene::FALLBACK_COLOR,
                 },
             ));
         }
@@ -269,12 +280,14 @@ fn advertised(
     Some((
         reference,
         FaceInstance {
+            mesh: None,
             referent,
             kind: placement.kind,
             model: placement.model,
             projection: face::projection(face, placement.kind, placement.size, Mapping::Stretched),
             tint: [1.0; 3],
             alpha: 1.0,
+            base: scene::FALLBACK_COLOR,
         },
     ))
 }
