@@ -106,12 +106,48 @@ pub(crate) fn editable_key(value: &Variant) -> Option<AssetRef> {
     }
 }
 
-/// The editable object an [`editable_key`] names.
-pub(crate) fn editable_of(reference: &AssetRef) -> Option<rbx_dom::editable::Editable> {
+/// [`editable_key`] with the object's version in it, for a 3D pass that
+/// keeps what a key decoded to: an edit after the first draw then names new
+/// pixels or triangles instead of finding the first ones cached.
+pub(crate) fn editable_version_key(value: &Variant) -> Option<AssetRef> {
+    let Variant::Content(rbx_dom::Content::Object(referent)) = value else {
+        return None;
+    };
+    let version = rbx_dom::editable::get(*referent)?.version();
+    Some(AssetRef::Thumb(format!(
+        "{EDITABLE}{}@{version}",
+        referent.value()
+    )))
+}
+
+/// The referent an [`editable_key`] or [`editable_version_key`] names, and
+/// the version the latter was taken at.
+fn editable_parts(reference: &AssetRef) -> Option<(Ref, Option<u64>)> {
     let AssetRef::Thumb(key) = reference else {
         return None;
     };
-    rbx_dom::editable::get(Ref::new(key.strip_prefix(EDITABLE)?.parse().ok()?))
+    let key = key.strip_prefix(EDITABLE)?;
+    let (referent, version) = match key.split_once('@') {
+        Some((referent, version)) => (referent, Some(version.parse().ok()?)),
+        None => (key, None),
+    };
+    Some((Ref::new(referent.parse().ok()?), version))
+}
+
+/// The editable object an [`editable_key`] names.
+pub(crate) fn editable_of(reference: &AssetRef) -> Option<rbx_dom::editable::Editable> {
+    rbx_dom::editable::get(editable_parts(reference)?.0)
+}
+
+/// Whether `reference` is an [`editable_version_key`] its object has since
+/// moved past, or one whose object is gone: nothing will ask for it again.
+pub(crate) fn editable_stale(reference: &AssetRef) -> bool {
+    match editable_parts(reference) {
+        Some((referent, Some(version))) => {
+            rbx_dom::editable::get(referent).is_none_or(|editable| editable.version() != version)
+        }
+        _ => false,
+    }
 }
 
 /// Turns one `Decal`/`Texture` into a projection onto its part's own mesh.
@@ -128,7 +164,10 @@ fn painted(
     let instance = dom.get(referent)?;
     let properties = instance.properties();
 
-    let reference = AssetRef::parse(asset_uri(properties.get("Texture")?)?).ok()?;
+    // A script's `EditableImage` comes through `TextureContent`.
+    let reference = content_property(properties, "Texture")
+        .and_then(|value| AssetRef::parse(asset_uri(value)?).ok())
+        .or_else(|| properties.get("TextureContent").and_then(editable_version_key))?;
     if reference == AssetRef::Empty {
         return None;
     }
@@ -457,6 +496,48 @@ mod tests {
         // 8-stud face for the texture.
         assert_eq!(drawn[0].1.projection.uv_scale[0], 1.0);
         assert!((drawn[1].1.projection.uv_scale[0] - 4.0).abs() < 1e-5);
+    }
+
+    /// A Decal showing a script's `EditableImage` through `TextureContent`
+    /// draws it, under a key that moves with each edit so the edit is
+    /// redrawn, and the key it had before reads as stale.
+    #[test]
+    fn a_decal_draws_an_editable_image_and_its_edits() {
+        use rbx_dom::editable::{lock, publish, Editable, Pixels};
+        let pixels = std::sync::Arc::new(std::sync::Mutex::new(Pixels {
+            width: 1,
+            height: 1,
+            rgba: vec![255; 4],
+            version: 1,
+        }));
+        let image = publish(Editable::Image(pixels.clone()));
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let part = dom.new_instance("Part", "Wall", Some(workspace));
+        let decal = dom.new_instance("Decal", "Decal", Some(part));
+        dom.set_property(decal, "Texture", Variant::String(String::new()))
+            .unwrap();
+        dom.set_property(
+            decal,
+            "TextureContent",
+            Variant::Content(rbx_dom::Content::Object(image)),
+        )
+        .unwrap();
+        let database = ReflectionDatabase::embedded();
+
+        let first = faces(&dom, &database, part, &unit_placement());
+        assert_eq!(first.len(), 1);
+        let before = first[0].0.clone();
+        assert!(matches!(editable_of(&before), Some(Editable::Image(_))));
+        assert!(!editable_stale(&before));
+
+        lock(&pixels).version = 2;
+        let after = faces(&dom, &database, part, &unit_placement())[0].0.clone();
+        assert_ne!(after, before);
+        assert!(editable_stale(&before));
+        assert!(!editable_stale(&after));
+        rbx_dom::editable::withdraw(image);
+        assert!(editable_stale(&after));
     }
 
     /// A place with an ad surface on it draws the creator's own fallback

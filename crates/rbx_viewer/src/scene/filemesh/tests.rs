@@ -405,12 +405,13 @@ fn a_mesh_part_draws_a_scripts_editable_mesh_and_image() {
         colors: vec![[1.0, 0.5, 0.0, 1.0]; 3],
     };
     let mesh = publish(Editable::Mesh(Arc::new(Built(triangle.clone()))));
-    let image = publish(Editable::Image(Arc::new(std::sync::Mutex::new(Pixels {
+    let pixels = Arc::new(std::sync::Mutex::new(Pixels {
         width: 1,
         height: 1,
         rgba: vec![255, 0, 0, 255],
         version: 0,
-    }))));
+    }));
+    let image = publish(Editable::Image(pixels.clone()));
     let mut dom = WeakDom::new();
     let workspace = Ref::new(9000);
     dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
@@ -450,6 +451,13 @@ fn a_mesh_part_draws_a_scripts_editable_mesh_and_image() {
     assert_eq!(drawn.bounds.min, [0.0, 0.0, 0.0]);
     assert_eq!(drawn.bounds.max, [2.0, 3.0, 1.0]);
     assert_eq!(drawn.vertices[2].color, [255, 128, 0, 255]);
+
+    // A script painting the image after the first draw names new pixels.
+    let first = entry.texture.clone();
+    rbx_dom::editable::lock(&pixels).version = 1;
+    let repainted = planned(&dom).entries[0].texture.clone();
+    assert_ne!(repainted, first);
+    assert!(first.as_ref().is_some_and(crate::textures::editable_stale));
     withdraw(mesh);
     withdraw(image);
 }
