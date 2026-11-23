@@ -7,12 +7,14 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) alpha: f32,
+    @location(3) single_sided: f32,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) alpha: f32,
+    @location(2) single_sided: f32,
 };
 
 struct Frame {
@@ -33,11 +35,15 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.clip_position = frame.view_proj * vec4<f32>(input.position, 1.0);
     out.uv = input.uv;
     out.alpha = input.alpha;
+    out.single_sided = input.single_sided;
     return out;
 }
 
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    if !front && input.single_sided > 0.5 {
+        discard;
+    }
     let texel = textureSample(image, image_sampler, input.uv);
     return vec4<f32>(texel.rgb, texel.a * input.alpha);
 }

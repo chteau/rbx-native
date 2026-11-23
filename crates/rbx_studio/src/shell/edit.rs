@@ -716,7 +716,8 @@ impl Shell {
         }
         result?;
 
-        if name == NAME_PROPERTY {
+        // A new `ExplorerIconContent` is a new row icon.
+        if name == NAME_PROPERTY || name == "ExplorerIconContent" {
             self.rebuild_explorer(cx);
         }
         // Nothing scrolls the panel: it keeps its offset across the rebuild

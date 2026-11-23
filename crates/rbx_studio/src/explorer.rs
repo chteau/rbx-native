@@ -9,7 +9,7 @@ use std::sync::Arc;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::tree::TreeItem;
 use gpui_kit::{RenderImage, SharedString};
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::{Content, Ref, Variant, WeakDom};
 
 // Studio's service order and its default-hidden services, shared with the
 // browser build's Explorer (see `rbx_viewer::services`).
@@ -68,6 +68,10 @@ struct Node {
     /// tinted icon for a tagged `Folder`) needs it and it no longer has a
     /// live `&WeakDom` to walk by the time it runs.
     path: String,
+    /// `ExplorerIconContent` (on `Folder` and `Model`), when it names an
+    /// image: Studio draws that image as the row's icon instead of the
+    /// class's (checked 2026-11-20, Studio 0.748).
+    icon_uri: Option<String>,
     children: Vec<Node>,
 }
 
@@ -96,6 +100,12 @@ pub(crate) struct Explorer {
     /// Every tagged `Folder` row's colour, by row id, see
     /// [`Explorer::folder_tints`].
     tints: HashMap<SharedString, Rgb>,
+    /// Every row whose `ExplorerIconContent` names an image, by row id.
+    custom_uris: HashMap<SharedString, String>,
+    /// Those rows' images, once loaded (see [`Explorer::with_custom_icons`]),
+    /// ahead of `icons`. Studio's `IconTint` doesn't recolour one, so
+    /// neither does a folder colour tag.
+    custom_icons: HashMap<SharedString, ClassIcon>,
 }
 
 impl Explorer {
@@ -113,6 +123,7 @@ impl Explorer {
         let mut icons = HashMap::new();
         let mut classes = HashMap::new();
         let mut paths = HashMap::new();
+        let mut custom_uris = HashMap::new();
         // Every instance of a class shares one icon; resolving it once per
         // class rather than once per instance keeps a place with thousands of
         // parts from repeating the same lookup thousands of times.
@@ -125,6 +136,7 @@ impl Explorer {
             &mut icons,
             &mut classes,
             &mut paths,
+            &mut custom_uris,
             pack,
             folder_colors,
             place,
@@ -136,6 +148,8 @@ impl Explorer {
             tints: tints_of(&classes, &paths, folder_colors, place),
             classes,
             paths,
+            custom_uris,
+            custom_icons: HashMap::new(),
         }
     }
 
@@ -186,6 +200,33 @@ impl Explorer {
             tints: tints_of(&self.classes, &self.paths, folder_colors, place),
             classes: self.classes.clone(),
             paths: self.paths.clone(),
+            custom_uris: self.custom_uris.clone(),
+            custom_icons: self.custom_icons.clone(),
+        }
+    }
+
+    /// Every image an `ExplorerIconContent` in this tree names, once each.
+    pub(crate) fn custom_icon_uris(&self) -> HashSet<&str> {
+        self.custom_uris.values().map(String::as_str).collect()
+    }
+
+    /// This tree with every custom icon `loaded` has an image for, the same
+    /// rows and expansion state.
+    pub(crate) fn with_custom_icons(&self, loaded: &HashMap<String, Arc<RenderImage>>) -> Self {
+        Explorer {
+            all_items: self.all_items.clone(),
+            icons: self.icons.clone(),
+            tints: self.tints.clone(),
+            classes: self.classes.clone(),
+            paths: self.paths.clone(),
+            custom_icons: self
+                .custom_uris
+                .iter()
+                .filter_map(|(id, uri)| {
+                    Some((id.clone(), ClassIcon::Sprite(loaded.get(uri)?.clone())))
+                })
+                .collect(),
+            custom_uris: self.custom_uris.clone(),
         }
     }
 
@@ -239,8 +280,9 @@ impl Explorer {
     }
 
     pub(crate) fn icon(&self, id: &SharedString) -> ClassIcon {
-        self.icons
+        self.custom_icons
             .get(id)
+            .or_else(|| self.icons.get(id))
             .cloned()
             .unwrap_or(ClassIcon::Lucide(IconName::CircleDot))
     }
@@ -354,13 +396,53 @@ fn node(dom: &WeakDom, reference: Ref, parent_path: &str) -> Option<Node> {
         .filter_map(|child| node(dom, *child, &path))
         .collect();
     sort_children(&mut children);
+    let icon_uri = match instance.properties().get("ExplorerIconContent") {
+        Some(Variant::Content(Content::Uri(uri)) | Variant::String(uri)) if !uri.is_empty() => {
+            Some(uri.clone())
+        }
+        _ => None,
+    };
     Some(Node {
         id: reference.value(),
         class: instance.class().to_string(),
         name,
         children,
         path,
+        icon_uri,
     })
+}
+
+/// `uri`'s image fitted into a class icon's square, centred on
+/// transparency the way Studio letterboxes a non-square one. Blocking: it
+/// may download.
+pub(crate) fn custom_icon(uri: &str) -> Result<Arc<RenderImage>, String> {
+    let decoded = rbx_viewer::decode_image_uri(uri)?;
+    let full = image::RgbaImage::from_raw(decoded.width, decoded.height, decoded.pixels)
+        .ok_or("the image decoded short of pixels")?;
+    let size = class_icons::RENDER_SIZE;
+    let tile = icon_tile(&full, size);
+    crate::render_image::to_render_image(tile.into_raw(), size, size)
+        .ok_or_else(|| "the icon came out short of pixels".to_owned())
+}
+
+/// `full` scaled to fit a `size` square, centred on transparency.
+fn icon_tile(full: &image::RgbaImage, size: u32) -> image::RgbaImage {
+    let (width, height) = full.dimensions();
+    let scale = size as f32 / width.max(height).max(1) as f32;
+    let fitted = image::imageops::resize(
+        full,
+        ((width as f32 * scale).round() as u32).clamp(1, size),
+        ((height as f32 * scale).round() as u32).clamp(1, size),
+        image::imageops::FilterType::Triangle,
+    );
+    let mut tile = image::RgbaImage::new(size, size);
+    image::imageops::overlay(
+        &mut tile,
+        &fitted,
+        i64::from((size - fitted.width()) / 2),
+        i64::from((size - fitted.height()) / 2),
+    );
+    tile
 }
 
 /// Where a class sits among its siblings when Studio's metadata names no
@@ -435,6 +517,7 @@ fn items(
     icons: &mut HashMap<SharedString, ClassIcon>,
     classes: &mut HashMap<SharedString, String>,
     paths: &mut HashMap<SharedString, String>,
+    custom_uris: &mut HashMap<SharedString, String>,
     pack: IconPack,
     folder_colors: &FolderColors,
     place: &Path,
@@ -464,6 +547,9 @@ fn items(
             icons.insert(id.clone(), class_icon);
             classes.insert(id.clone(), node.class.clone());
             paths.insert(id.clone(), node.path.clone());
+            if let Some(uri) = &node.icon_uri {
+                custom_uris.insert(id.clone(), uri.clone());
+            }
 
             TreeItem::new(id, node.name.clone()).children(items(
                 &node.children,
@@ -471,6 +557,7 @@ fn items(
                 icons,
                 classes,
                 paths,
+                custom_uris,
                 pack,
                 folder_colors,
                 place,

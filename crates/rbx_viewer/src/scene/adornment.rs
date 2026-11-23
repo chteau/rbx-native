@@ -91,6 +91,12 @@ pub(crate) struct Solid {
     pub(crate) frame: Mat4,
     pub(crate) color: [f32; 3],
     pub(crate) alpha: f32,
+    /// `HandleAdornment.DoubleSided`. Studio drops a single-sided shape's
+    /// faces turned away from the eye (checked 2026-11-20: from inside a
+    /// `BoxHandleAdornment` it vanishes unless this is set). Everything
+    /// that has no such property, `Handles`, `SelectionBox` and the rest,
+    /// is always two-sided.
+    pub(crate) double_sided: bool,
 }
 
 /// The shapes an adornment draws as.
@@ -151,6 +157,8 @@ pub(crate) struct Picture {
     pub(crate) size: glam::Vec2,
     pub(crate) texture: AssetRef,
     pub(crate) alpha: f32,
+    /// As [`Solid::double_sided`].
+    pub(crate) double_sided: bool,
 }
 
 /// What every builder below starts from: the adornment's own instance, the
@@ -361,6 +369,7 @@ impl Context<'_> {
             frame,
             color: self.color,
             alpha: self.alpha,
+            double_sided: true,
         })
     }
 }
