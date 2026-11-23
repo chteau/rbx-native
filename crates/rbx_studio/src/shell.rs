@@ -112,6 +112,7 @@ mod find_in_place;
 mod game_settings;
 pub(crate) mod local_run;
 mod profiler_dock;
+mod remote_inspector;
 mod require_graph;
 mod rows;
 mod save;
@@ -421,6 +422,9 @@ pub(crate) struct Shell {
     /// The MicroProfiler dock's held frames and ScriptProfiler view; see
     /// `shell::profiler_dock`.
     profiler: profiler_dock::ProfilerDock,
+    /// The Remote inspector's filters and picked call; see
+    /// `shell::remote_inspector`.
+    remote_inspector: remote_inspector::RemoteInspectorDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -1025,6 +1029,7 @@ impl Shell {
             toolbox: toolbox::ToolboxDock::default(),
             find_place: find_in_place::FindInPlace::default(),
             profiler: profiler_dock::ProfilerDock::default(),
+            remote_inspector: Default::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
@@ -2251,6 +2256,7 @@ impl Render for Shell {
         }
         self.realize_animation_dialogs(window, cx);
         self.realize_save_template(window, cx);
+        self.realize_remote_reveal(window, cx);
         // Deliberately no seeded focus. Seeding it *programmatically* is
         // what left a cold start with focus somewhere and no ring anywhere:
         // `focus_visible` only paints for keyboard-driven focus, so a

@@ -108,12 +108,26 @@ pub(in crate::shell) struct PeerLink {
 }
 
 impl PeerLink {
+    /// The window that started the session.
+    pub(in crate::shell) fn host(&self) -> Option<Entity<Shell>> {
+        self.host.upgrade()
+    }
+
     /// The shown peer's DataModel, where an edit made here goes.
     pub(super) fn shown_dom(&self, cx: &App) -> Option<Rc<RefCell<WeakDom>>> {
         let host = self.host.upgrade()?;
         let run = host.read(cx).play.live.local.running.as_ref()?;
         run.session.sim(self.view).map(Simulation::dom_rc)
     }
+}
+
+/// Whether `panel` shows in one of `run`'s test tabs.
+pub(super) fn showing(run: &Running, panel: crate::shell::layout::Panel, cx: &App) -> bool {
+    run.windows.iter().any(|w| {
+        w.shell
+            .upgrade()
+            .is_some_and(|shell| shell.read(cx).is_panel_showing(panel))
+    })
 }
 
 /// One frame of a peer, for its window.

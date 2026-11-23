@@ -122,7 +122,7 @@ fn path_of(dom: &WeakDom, referent: Ref) -> Vec<String> {
 
 /// The instance at `path` (names from the top level down), first match by
 /// name at each level; a `DataModel` root is looked through.
-fn find_path(dom: &WeakDom, path: &[String]) -> Option<Ref> {
+pub(in crate::shell) fn find_path(dom: &WeakDom, path: &[String]) -> Option<Ref> {
     let mut level: Vec<Ref> = dom.root_refs().to_vec();
     if let [only] = level.as_slice() {
         if dom.get(*only).is_some_and(|i| i.class() == "DataModel") {

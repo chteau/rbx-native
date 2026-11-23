@@ -90,6 +90,8 @@ struct Running {
     /// The player whose window last had input: what the run plays aloud
     /// and the Controller Emulator drives.
     audible: Option<Ref>,
+    /// What the Remote inspector captured, for every window's dock.
+    remotes: crate::shell::remote_inspector::Store,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -857,6 +859,7 @@ impl Shell {
             windows: Vec::new(),
             test_window: None,
             audible: None,
+            remotes: Default::default(),
         });
         if windowed {
             push_row(
@@ -1195,9 +1198,12 @@ impl Shell {
 
     /// One tick of the frame loop: steps the frames due on the wall clock.
     fn local_run_tick(&mut self, cx: &mut Context<Self>) {
+        // Only while a Remote inspector shows does the session log remotes.
+        let capture = self.remote_inspector_wanted(cx);
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
+        run.session.capture_remotes(capture);
         let now = Instant::now();
         let elapsed = now.duration_since(run.last).as_secs_f64();
         run.last = now;
@@ -1312,6 +1318,10 @@ impl Shell {
             if diverged.is_some() {
                 break;
             }
+        }
+        if capture {
+            let events = run.session.take_remote_events();
+            run.remotes.take(events, run.session.time());
         }
         if due > steps || run.paused {
             run.clock = run.session.time();
@@ -1523,6 +1533,69 @@ impl Shell {
         self.play.live.local.running.as_ref().map(|r| &r.session)
     }
 
+    /// The Remote inspector's captures: this window's run's, or in a
+    /// Server & Clients tab, the run of the window that started it.
+    pub(in crate::shell) fn remote_store<'a>(
+        &'a self,
+        cx: &'a App,
+    ) -> Option<&'a crate::shell::remote_inspector::Store> {
+        if let Some(run) = &self.play.live.local.running {
+            return Some(&run.remotes);
+        }
+        let host = self.play.live.local.peer.as_ref()?.host()?;
+        let run = host.read(cx).play.live.local.running.as_ref()?;
+        Some(&run.remotes)
+    }
+
+    /// Changes the captures [`Shell::remote_store`] reads.
+    pub(in crate::shell) fn remote_store_update(
+        &mut self,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut crate::shell::remote_inspector::Store),
+    ) {
+        if let Some(run) = &mut self.play.live.local.running {
+            change(&mut run.remotes);
+        } else if let Some(host) = self.play.live.local.peer.as_ref().and_then(|p| p.host()) {
+            host.update(cx, |host, cx| {
+                if let Some(run) = &mut host.play.live.local.running {
+                    change(&mut run.remotes);
+                }
+                cx.notify();
+            });
+        }
+        cx.notify();
+    }
+
+    /// Whether a Remote inspector shows in this window or one of its run's
+    /// Server & Clients tabs.
+    fn remote_inspector_wanted(&self, cx: &App) -> bool {
+        let panel = crate::shell::layout::Panel::RemoteInspector;
+        self.is_panel_showing(panel)
+            || self
+                .play
+                .live
+                .local
+                .running
+                .as_ref()
+                .is_some_and(|run| windows::showing(run, panel, cx))
+    }
+
+    /// The edited place's script a capture's caller names (a client's copy
+    /// of a StarterPlayerScripts script maps back to it).
+    pub(in crate::shell) fn remote_caller_script(&self, script: &str) -> Option<Ref> {
+        let path: Vec<String> = script.split('.').map(str::to_owned).collect();
+        let players: Vec<String> = self
+            .local_run_session()?
+            .clients
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
+        let place = self.edit_dom();
+        crate::shell::play::live::place_paths(&path, &players)
+            .iter()
+            .find_map(|candidate| crate::shell::play::live::find_path(place, candidate))
+    }
+
     /// Edits made to the shown copy during the run: written into the
     /// simulation's DOM (logged, so it routes them) and shown right away.
     pub(super) fn local_run_reflect(&mut self, changes: &[Change], cx: &mut Context<Self>) {
@@ -1579,8 +1652,8 @@ mod tests {
     }
 
     /// Tests never read `beta.json`, so every beta is off: Local Run's
-    /// ribbon tiles, menu item, MicroProfiler dock and its key are gone,
-    /// not greyed.
+    /// ribbon tiles, menu item, MicroProfiler and Remote Inspector docks
+    /// and the MicroProfiler's key are gone, not greyed.
     #[test]
     fn with_the_beta_off_no_local_run_entry_is_present() {
         use crate::shell::ribbon::{test_tile_order, TestTile};
@@ -1609,6 +1682,7 @@ mod tests {
 
         let hidden = crate::shell::ui_editor::beta_hidden_panels();
         assert!(hidden.contains(&crate::shell::layout::Panel::MicroProfiler));
+        assert!(hidden.contains(&crate::shell::layout::Panel::RemoteInspector));
         assert!(!crate::shortcuts::Command::MicroProfiler.available());
     }
 
