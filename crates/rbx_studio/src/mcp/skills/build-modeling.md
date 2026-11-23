@@ -1,6 +1,6 @@
 ---
 name: build-modeling
-description: Low-poly modeling in Roblox with Parts, WedgeParts, CornerWedgeParts, cylinders and MeshParts in the clean Kenney-like style: proportions, chunky silhouettes, fake bevels and chamfers, what to do instead of CSG in this editor, part budgets, naming, and grouping into Models with a PrimaryPart and a sensible pivot. Pull it before building any prop, building or vehicle out of parts.
+description: Low-poly modeling in Roblox with Parts, WedgeParts, CornerWedgeParts, cylinders and MeshParts in the clean Kenney-like style: proportions, chunky silhouettes, fake bevels and chamfers, when to cut with unions (SubtractAsync, UnionAsync, IntersectAsync) and when to frame with parts, part budgets, naming, and grouping into Models with a PrimaryPart and a sensible pivot. Pull it before building any prop, building or vehicle out of parts.
 ---
 
 # Build modeling
@@ -33,13 +33,47 @@ Roblox parts have hard edges. Kenney's look comes from chamfered edges and soft 
 - Round things are cylinders: a `Part` with `Shape = Enum.PartType.Cylinder` has its axis along its own X, so turn it with `CFrame.Angles(0, 0, math.rad(90))` to stand it up.
 - Spend wedges only on hero pieces and roof lines; a bevel on every box multiplies the part count.
 
-## No CSG in this editor
+## Cutting and joining: unions
 
-This editor has no Union or Negate command, and the Edit-side `execute_luau` has no `GeometryService` boolean methods. Unions already in a place still render and save. Instead:
+`execute_luau` has Roblox's boolean methods, and they behave as in Studio: the result is a new `UnionOperation` (an `IntersectOperation` for `IntersectAsync`), unparented, and the parts you passed stay where they were. Parent the result and destroy the parts yourself.
 
-- Frame holes: a wall with a door is three parts (left, right, lintel), not a negated block.
-- Stack and overlap: a rounded corner is a cylinder plus two boxes.
-- For anything truly curved or cut, model it in Blender and bring it in as a MeshPart (see `build-importing-assets`).
+- `base:SubtractAsync({cutter, ...})` carves the cutters out of `base`: doorways, windows, arches, a bowl.
+- `base:UnionAsync({part, ...})` merges parts into one solid that moves, colours and collides as one.
+- `base:IntersectAsync({part, ...})` keeps only the overlap: a rounded tile from a block and a cylinder.
+
+```lua
+local wall = Instance.new("Part")
+wall.Name = "Wall"
+wall.Anchored = true
+wall.Size = Vector3.new(12, 10, 1)
+wall.CFrame = CFrame.new(0, 5, 0)
+wall.Color = Color3.fromHex("#8f8577")
+wall.Parent = workspace
+
+local hole = Instance.new("Part")
+hole.Size = Vector3.new(4, 7, 3) -- deeper than the wall so the cut goes all the way through
+hole.CFrame = CFrame.new(0, 3.5, 0)
+hole.Parent = workspace
+
+local cut = wall:SubtractAsync({ hole })
+cut.Name = "Wall_Door"
+cut.Anchored = true
+cut.Parent = workspace
+wall:Destroy()
+hole:Destroy()
+print(cut.ClassName, cut.Size)
+```
+
+When to use them:
+
+- A union is one draw call, but it has many triangles and its own collision mesh. Use one for a hero piece or a shape parts can't fake (an arch, a round window, a cut-away corner), not for every box.
+- A wall that repeats down a whole street is cheaper framed: left, right and lintel parts, like `build-modular-kits` does.
+- Make a cutter thicker than the part it cuts. A cutter that only touches a face leaves a paper-thin skin.
+- Collision follows `CollisionFidelity`. Set `cut.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition` when players must walk through the opening; the default hulls can block a doorway.
+- `UnionAsync` takes the base part's properties (colour, material) for the whole result. Faces keep their own part's colour only when `UsePartColor` is off.
+- People do the same by hand from the Model tab: Union (Ctrl+Shift+G), Negate (Ctrl+Shift+N), Intersect (Ctrl+Shift+I) and Separate (Ctrl+Shift+U).
+
+For anything organic or smoothly curved, model it in Blender and bring it in as a MeshPart (see `build-importing-assets`).
 
 ## Recipe: a low-poly lamp post
 

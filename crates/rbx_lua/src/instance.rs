@@ -502,6 +502,9 @@ impl UserData for LuaInstance {
             if let Some(value) = property::get(lua, &this.ctx, this.referent, &key)? {
                 return Ok(value);
             }
+            if let Some(value) = crate::csg::script::member(lua, &this.ctx, &this.class()?, &key)? {
+                return Ok(value);
+            }
             let child = tree::find_child(&this.ctx.dom(), this.referent, &key, false);
             if child.is_none() {
                 if let Some(alias) = crate::compat::lowercase_method(lua, &key)? {

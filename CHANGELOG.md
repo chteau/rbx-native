@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-24
+
+- **Union, Negate, Intersect and Separate.** The Model tab has Studio's solid modeling tools now, with the same shortcuts (Ctrl+Shift+G / N / I / U, Ungroup moved to Ctrl+U like Studio). What we save is what current Studio saves, collision data included, so Studio opens our unions, can Separate them, and we Separate theirs.
+- **AI assistants can cut holes now.** `SubtractAsync`, `UnionAsync` and `IntersectAsync` work in edit scripts and through MCP, same as in Studio: you get a new union back and your parts stay put. The modeling guide teaches doorways, windows and arches with them, and when framing with parts is still the cheaper call.
+
 ## 2026-11-23
 
 - **Connecting Claude or another AI to RbxNative is a couple of clicks now.** Settings has an AI assistants page (also File › Connect an AI Assistant): the MCP server's status and switch, which clients are attached and their last call, Test connection, and copy-paste setup for Claude Code, Claude Desktop, Cursor, VS Code and any other stdio client, plus Add to Claude Desktop that merges the config for you. The MCP server isn't a beta anymore, it's a normal setting and on by default. (@chteau)
