@@ -3392,6 +3392,7 @@ impl Interactivity {
                     &mut style,
                     &group_hover.style,
                     is_group_hovered,
+                    hitbox.is_some(),
                     fade,
                     window,
                     cx,
@@ -3416,7 +3417,15 @@ impl Interactivity {
                 let fade = element_state
                     .as_deref_mut()
                     .map(|state| &mut state.hover_fade);
-                refine_hover(&mut style, hover_style, is_hovered, fade, window, cx);
+                refine_hover(
+                    &mut style,
+                    hover_style,
+                    is_hovered,
+                    hitbox.is_some(),
+                    fade,
+                    window,
+                    cx,
+                );
             }
         }
 
@@ -3576,10 +3585,18 @@ pub struct InteractiveElementState {
 /// rbx-native addition: lay `hover` over `style` — at once, as upstream does,
 /// unless a [`HoverTransition`] is set and the element has state to keep the
 /// blend in, in which case its colours ease (see `hover_transition`).
+///
+/// Only a pass that has the element's hitbox (paint) steers the blend. The
+/// layout passes before it read hover from the last mouse event instead,
+/// which disagrees with the hitbox whenever the pointer has not moved since
+/// the element appeared under it; letting both steer restarted the blend
+/// twice a frame, so it never finished and the window redrew forever. Those
+/// passes follow the blend as the last paint left it.
 fn refine_hover(
     style: &mut Style,
     hover: &StyleRefinement,
     hovered: bool,
+    steer: bool,
     fade: Option<&mut HoverFade>,
     window: &mut Window,
     cx: &mut App,
@@ -3594,7 +3611,12 @@ fn refine_hover(
         }
         return;
     };
-    let t = fade.progress(hovered, cx.background_executor().now(), duration);
+    let now = cx.background_executor().now();
+    let (hovered, t) = if steer {
+        (hovered, fade.progress(hovered, now, duration))
+    } else {
+        fade.current(now, duration)
+    };
     if (hovered && t < 1.) || (!hovered && t > 0.) {
         window.request_animation_frame();
     }
