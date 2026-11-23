@@ -288,6 +288,7 @@ fn focus_moves_into_every_dock_that_can_hold_it() {
             (Panel::MicroProfiler, None),
             (Panel::RemoteInspector, None),
             (Panel::LeakFinder, None),
+            (Panel::LoadTest, None),
         ]
     );
 }

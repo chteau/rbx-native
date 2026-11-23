@@ -223,7 +223,7 @@ pub(crate) const MAX_PLAYERS: usize = 8;
 /// Animations (the default ones, the catalog's) from Roblox's asset
 /// delivery; they land in the asset cache for the next run. An offline
 /// pack downloads through it too.
-struct Fetcher(rbx_cloud::Client);
+pub(in crate::shell) struct Fetcher(pub(in crate::shell) rbx_cloud::Client);
 
 impl rbx_assets::AssetFetcher for Fetcher {
     fn fetch_id(&self, id: u64) -> Result<Vec<u8>, rbx_assets::FetchError> {
@@ -593,7 +593,7 @@ fn purchase_text(
     )
 }
 
-fn push_row(log: &mut super::output::OutputLog, row: Feedback) {
+pub(in crate::shell) fn push_row(log: &mut super::output::OutputLog, row: Feedback) {
     log.push_game(OutputContext::LocalRun, row, Vec::new(), None);
 }
 
@@ -1639,9 +1639,9 @@ mod tests {
     }
 
     /// Tests never read `beta.json`, so every beta is off: Local Run's
-    /// ribbon tiles, menu item, MicroProfiler, Remote Inspector and Leak
-    /// Finder docks, the MicroProfiler's key, and the Collaborators dock's
-    /// "Join as player", are gone, not greyed.
+    /// ribbon tiles, menu item, MicroProfiler, Remote Inspector, Leak Finder
+    /// and Load test docks, the MicroProfiler's key, and the Collaborators
+    /// dock's "Join as player", are gone, not greyed.
     #[test]
     fn with_the_beta_off_no_local_run_entry_is_present() {
         use crate::shell::ribbon::{test_tile_order, TestTile};
@@ -1674,6 +1674,7 @@ mod tests {
         assert!(hidden.contains(&crate::shell::layout::Panel::MicroProfiler));
         assert!(hidden.contains(&crate::shell::layout::Panel::RemoteInspector));
         assert!(hidden.contains(&crate::shell::layout::Panel::LeakFinder));
+        assert!(hidden.contains(&crate::shell::layout::Panel::LoadTest));
         assert!(!crate::shortcuts::Command::MicroProfiler.available());
     }
 

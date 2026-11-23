@@ -701,6 +701,7 @@ impl Shell {
                 "Remote Inspector",
             ),
             (Panel::LeakFinder, IconName::Bug, "Leak Finder"),
+            (Panel::LoadTest, IconName::Users, "Load Test"),
             (Panel::Localization, IconName::Globe, "Localization"),
         ];
         let beta_hidden = super::ui_editor::beta_hidden_panels();

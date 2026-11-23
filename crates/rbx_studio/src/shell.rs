@@ -111,6 +111,7 @@ mod datastores;
 mod find_in_place;
 mod game_settings;
 mod leak_finder;
+mod loadtest_dock;
 pub(crate) mod local_run;
 mod profiler_dock;
 mod remote_inspector;
@@ -428,6 +429,9 @@ pub(crate) struct Shell {
     remote_inspector: remote_inspector::RemoteInspectorDock,
     /// The Leak finder dock's snapshots; see `shell::leak_finder`.
     leaks: leak_finder::LeakDock,
+    /// The Load test dock's settings and the run it shows; see
+    /// `shell::loadtest_dock`.
+    load_test: loadtest_dock::LoadTestDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -1034,6 +1038,7 @@ impl Shell {
             profiler: profiler_dock::ProfilerDock::default(),
             remote_inspector: Default::default(),
             leaks: leak_finder::LeakDock::default(),
+            load_test: loadtest_dock::LoadTestDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),

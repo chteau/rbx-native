@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 
+use rbx_dom::{CFrameData, Color3Data, Ref, Variant, Vector2Data, Vector3Data};
+use rbx_lua::server::Wire;
 use rbx_lua::tape::{Answer, Reel};
 
 use super::{Action, FrameHash, Logged, PeerHash, Recording, ServicesSnapshot};
@@ -352,7 +354,143 @@ pub(crate) fn action(w: &mut Out, a: &Action) {
             way(w, &n.down);
             way(w, &n.up);
         }
+        Action::Fire { remote, args } => {
+            w.u(11);
+            w.u(u64::from(remote.value()));
+            wires(w, args);
+        }
     }
+}
+
+fn wires(w: &mut Out, values: &[Wire]) {
+    w.u(values.len() as u64);
+    values.iter().for_each(|v| wire(w, v));
+}
+
+/// A remote argument; of the datatypes, only those [`Action::Fire`] keeps
+/// (`Vector2`, `Vector3`, `Color3`, `CFrame`), the rest as `nil`.
+fn wire(w: &mut Out, value: &Wire) {
+    match value {
+        Wire::Nil => w.u(0),
+        Wire::Bool(b) => {
+            w.u(1);
+            w.b(*b);
+        }
+        Wire::Number(n) => {
+            w.u(2);
+            w.f64(*n);
+        }
+        Wire::String(bytes) => {
+            w.u(3);
+            w.bytes(bytes);
+        }
+        Wire::Buffer(bytes) => {
+            w.u(4);
+            w.bytes(bytes);
+        }
+        Wire::Instance(r) => {
+            w.u(5);
+            w.u(u64::from(r.value()));
+        }
+        Wire::Enum {
+            enum_name,
+            item,
+            value,
+        } => {
+            w.u(6);
+            w.s(enum_name);
+            w.s(item);
+            w.u(u64::from(*value));
+        }
+        Wire::Data(variant, kind) => {
+            let floats: Vec<f32> = match variant {
+                Variant::Vector2(v) => vec![v.x, v.y],
+                Variant::Vector3(v) => vec![v.x, v.y, v.z],
+                Variant::Color3(c) => vec![c.r, c.g, c.b],
+                Variant::CFrame(c) => [c.position.x, c.position.y, c.position.z]
+                    .into_iter()
+                    .chain(c.rotation)
+                    .collect(),
+                _ => return w.u(0),
+            };
+            w.u(7);
+            w.s(kind);
+            floats.into_iter().for_each(|x| w.f32(x));
+        }
+        Wire::Table(entries) => {
+            w.u(8);
+            w.u(entries.len() as u64);
+            for (k, v) in entries {
+                wire(w, k);
+                wire(w, v);
+            }
+        }
+    }
+}
+
+fn read_wires(r: &mut In) -> R<Vec<Wire>> {
+    (0..r.u()?).map(|_| read_wire(r)).collect()
+}
+
+fn read_wire(r: &mut In) -> R<Wire> {
+    Ok(match r.u()? {
+        0 => Wire::Nil,
+        1 => Wire::Bool(r.b()?),
+        2 => Wire::Number(r.f64()?),
+        3 => Wire::String(r.bytes()?),
+        4 => Wire::Buffer(r.bytes()?),
+        5 => Wire::Instance(Ref::new(r.u()? as u32)),
+        6 => Wire::Enum {
+            enum_name: r.s()?,
+            item: r.s()?,
+            value: r.u()? as u32,
+        },
+        7 => {
+            let kind = r.s()?;
+            let mut f = |n: usize| (0..n).map(|_| r.f32()).collect::<R<Vec<f32>>>();
+            let variant = match kind.as_str() {
+                "Vector2" => {
+                    let v = f(2)?;
+                    Variant::Vector2(Vector2Data { x: v[0], y: v[1] })
+                }
+                "Vector3" => {
+                    let v = f(3)?;
+                    Variant::Vector3(Vector3Data {
+                        x: v[0],
+                        y: v[1],
+                        z: v[2],
+                    })
+                }
+                "Color3" => {
+                    let v = f(3)?;
+                    Variant::Color3(Color3Data {
+                        r: v[0],
+                        g: v[1],
+                        b: v[2],
+                    })
+                }
+                "CFrame" => {
+                    let v = f(12)?;
+                    Variant::CFrame(CFrameData {
+                        position: Vector3Data {
+                            x: v[0],
+                            y: v[1],
+                            z: v[2],
+                        },
+                        rotation: v[3..].try_into().expect("nine numbers"),
+                    })
+                }
+                other => return Err(format!("unknown remote datatype {other} in the recording")),
+            };
+            Wire::Data(variant, kind)
+        }
+        8 => Wire::Table(
+            (0..r.u()?)
+                .map(|_| Ok((read_wire(r)?, read_wire(r)?)))
+                .collect::<R<_>>()?,
+        ),
+        n => return Err(format!("unknown remote value {n} in the recording")),
+    })
 }
 
 pub(crate) fn read_action(r: &mut In) -> R<Action> {
@@ -378,6 +516,10 @@ pub(crate) fn read_action(r: &mut In) -> R<Action> {
             down: read_way(r)?,
             up: read_way(r)?,
         }),
+        11 => Action::Fire {
+            remote: Ref::new(r.u()? as u32),
+            args: read_wires(r)?,
+        },
         n => return Err(format!("unknown action {n} in the recording")),
     })
 }

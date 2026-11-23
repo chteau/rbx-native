@@ -54,6 +54,7 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::MicroProfiler
         | Panel::RemoteInspector
         | Panel::LeakFinder
+        | Panel::LoadTest
         | Panel::Plugin(_) => None,
     }
 }

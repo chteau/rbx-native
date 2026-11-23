@@ -1729,6 +1729,25 @@ impl Simulation {
         self.vm.set_services(config);
     }
 
+    /// The web service requests this peer's scripts made so far, by kind:
+    /// a DataStore call by its request type's budget (`GetAsync`, ...),
+    /// every MemoryStoreService call as `MemoryStore`.
+    pub fn web_requests(&self) -> std::collections::BTreeMap<String, u64> {
+        self.vm.web_requests()
+    }
+
+    /// A path over this peer's world, as `PathfindingService` finds one.
+    pub fn find_path(
+        &self,
+        request: &rbx_lua::server::PathRequest,
+    ) -> Option<Vec<rbx_lua::server::Waypoint>> {
+        self.vm.find_path(request)
+    }
+
+    pub(crate) fn send_to_server(&self, packet: rbx_lua::server::Packet) {
+        self.vm.send_to_server(packet);
+    }
+
     /// The purchase prompts scripts asked for since the last call.
     pub fn take_prompts(&self) -> Vec<rbx_lua::server::PurchasePrompt> {
         self.vm.take_prompts()

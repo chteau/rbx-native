@@ -27,7 +27,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rbx_dom::{Change, Ref, Variant, WeakDom};
-use rbx_lua::server::{Arg, Outgoing, Packet, To};
+use rbx_lua::server::{Arg, Outgoing, Packet, To, Wire};
 
 use crate::animation::TrackOp;
 use crate::humanoid::State;
@@ -265,6 +265,76 @@ pub struct Session {
     pending: Vec<(String, i64, Option<WeakDom>)>,
     /// Why a queued join failed, not yet taken.
     join_failures: Vec<String>,
+    /// Remote traffic at the link, since the session started.
+    traffic: Traffic,
+    /// The last few argument lists each remote arrived at the server with,
+    /// while kept (see [`Session::keep_remote_args`]).
+    remote_args: Option<HashMap<Ref, Vec<Vec<Wire>>>>,
+    /// The last frame's time: the server's part and the clients'.
+    step_times: StepTimes,
+}
+
+/// Remote packets (events, invocations and their replies) through the
+/// link, counted as they reach the other end's queue: in is client to
+/// server, out is server to clients, a packet to every player once per
+/// player.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Traffic {
+    pub packets_in: u64,
+    pub bytes_in: u64,
+    pub packets_out: u64,
+    pub bytes_out: u64,
+}
+
+/// One frame's time split between the server (its step, receiving and
+/// replicating) and the clients' own steps, which on Roblox run on the
+/// players' machines: CPU time of the session's thread where the platform
+/// has it, so a busy machine doesn't inflate it (physics work rapier hands
+/// its worker threads isn't counted), else wall time.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StepTimes {
+    pub server: std::time::Duration,
+    pub clients: std::time::Duration,
+}
+
+/// Argument lists kept per remote.
+const KEPT_ARGS: usize = 8;
+
+fn remote_packet(packet: &Packet) -> bool {
+    matches!(
+        packet,
+        Packet::Event { .. } | Packet::Invoke { .. } | Packet::Reply { .. }
+    )
+}
+
+/// `args` with every datatype a recording can't keep as `nil` (see
+/// `Action::Fire`).
+fn keepable(args: &[Wire]) -> Vec<Wire> {
+    args.iter()
+        .map(|arg| match arg {
+            Wire::Data(v, _)
+                if !matches!(
+                    v,
+                    Variant::Vector2(_)
+                        | Variant::Vector3(_)
+                        | Variant::Color3(_)
+                        | Variant::CFrame(_)
+                ) =>
+            {
+                Wire::Nil
+            }
+            Wire::Table(entries) => Wire::Table(
+                entries
+                    .iter()
+                    .map(|(k, v)| {
+                        let pair = keepable(&[k.clone(), v.clone()]);
+                        (pair[0].clone(), pair[1].clone())
+                    })
+                    .collect(),
+            ),
+            other => other.clone(),
+        })
+        .collect()
 }
 
 /// A teleport a peer's script asked for, with the teleport GUI copied out
@@ -337,6 +407,9 @@ impl Session {
             join_after: 0.0,
             pending: Vec::new(),
             join_failures: Vec::new(),
+            traffic: Traffic::default(),
+            remote_args: None,
+            step_times: StepTimes::default(),
         })
     }
 
@@ -461,6 +534,22 @@ impl Session {
                 if let Some(prompt) = prompt {
                     self.purchase_now(&prompt, bought);
                 }
+            }
+            Action::Fire { remote, args } => {
+                let Some(sim) = client.and_then(|i| self.clients.get(i)).map(|c| &c.sim) else {
+                    return;
+                };
+                let class = sim.dom().get(remote).map(|i| i.class().to_owned());
+                let unreliable = match class.as_deref() {
+                    Some("RemoteEvent") => false,
+                    Some("UnreliableRemoteEvent") => true,
+                    _ => return,
+                };
+                sim.send_to_server(Packet::Event {
+                    remote,
+                    args,
+                    unreliable,
+                });
             }
             action => {
                 let Some(sim) = self.sim_mut(peer) else {
@@ -662,6 +751,7 @@ impl Session {
 
     fn step_peers(&mut self) {
         let step_started = std::time::Instant::now();
+        let cpu_started = thread_cpu();
         self.relayed.clear();
         let now = self.server.frame();
         for client in &mut self.clients {
@@ -670,10 +760,12 @@ impl Session {
                 match up {
                     Up::Packets(packets) => {
                         for packet in packets {
+                            note_in(&mut self.traffic, &mut self.remote_args, &packet);
                             self.server.receive(Some(player), packet);
                         }
                     }
                     Up::Unreliable(packet, call) => {
+                        note_in(&mut self.traffic, &mut self.remote_args, &packet);
                         let second = now / FRAME_HZ as u64;
                         if client.burst.0 != second {
                             client.burst = (second, 0);
@@ -716,6 +808,15 @@ impl Session {
         let sent = self.server.frame();
         let stream = self.server.take_stream();
         let packets = self.server.take_outgoing();
+        for outgoing in packets.iter().filter(|o| remote_packet(&o.packet)) {
+            let copies = match outgoing.to {
+                To::Server => 0,
+                To::Player(_) => 1,
+                To::AllPlayers => self.clients.len() as u64,
+            };
+            self.traffic.packets_out += copies;
+            self.traffic.bytes_out += copies * packet_size(&outgoing.packet) as u64;
+        }
         let renamed = renamed_stats(&self.server.dom(), &stream);
         let ops = frame_ops(stream, packets);
         let mut moved = self.server.moved_parts_since(&mut self.moving);
@@ -741,6 +842,8 @@ impl Session {
         let network = self.network;
         let rtt = network.ping();
         let time = sent as f64 / FRAME_HZ;
+        let mut clients_time = std::time::Duration::ZERO;
+        let mut clients_cpu = std::time::Duration::ZERO;
         let server = &self.server;
         let log = &mut self.remote_log;
         if let Some(log) = log.as_mut() {
@@ -844,11 +947,17 @@ impl Session {
             };
             client.down.reliable(sent, &network.down, rtt, rest);
 
+            let client_started = std::time::Instant::now();
+            let client_cpu = thread_cpu();
             for frame in client.down.due(sent) {
                 client.apply(frame);
             }
             client.sim.step();
             client.collect(sent, &network, server, log.as_mut(), time);
+            clients_time += client_started.elapsed();
+            if let (Some(after), Some(before)) = (thread_cpu(), client_cpu) {
+                clients_cpu += after.saturating_sub(before);
+            }
         }
         if let Some(log) = log.as_mut() {
             for index in 0..self.clients.len() {
@@ -862,10 +971,21 @@ impl Session {
         for (index, client) in self.clients.iter_mut().enumerate() {
             peers.push((Peer::Client(index), client.sim.take_costs()));
         }
+        let wall = step_started.elapsed();
+        self.step_times = match (thread_cpu(), cpu_started) {
+            (Some(after), Some(before)) => StepTimes {
+                server: after.saturating_sub(before).saturating_sub(clients_cpu),
+                clients: clients_cpu,
+            },
+            _ => StepTimes {
+                server: wall.saturating_sub(clients_time),
+                clients: clients_time,
+            },
+        };
         self.profile.push(crate::profile::frame(
             self.frames,
             step_started,
-            step_started.elapsed(),
+            wall,
             peers,
         ));
 
@@ -922,6 +1042,31 @@ impl Session {
             .as_mut()
             .map(RemoteLog::take)
             .unwrap_or_default()
+    }
+
+    /// Remote traffic through the link so far.
+    pub fn traffic(&self) -> Traffic {
+        self.traffic
+    }
+
+    /// The last frame's time, the server's part and the clients'.
+    pub fn step_times(&self) -> StepTimes {
+        self.step_times
+    }
+
+    /// Keeps the last few argument lists each remote reaches the server
+    /// with, for [`Session::remote_args`].
+    pub fn keep_remote_args(&mut self) {
+        self.remote_args.get_or_insert_with(HashMap::new);
+    }
+
+    /// What clients fired `remote` with lately, newest last (empty unless
+    /// kept), with the datatypes a recording can't keep as `nil`.
+    pub fn remote_args(&self, remote: Ref) -> &[Vec<Wire>] {
+        self.remote_args
+            .as_ref()
+            .and_then(|kept| kept.get(&remote))
+            .map_or(&[], Vec::as_slice)
     }
 
     /// The last frames' costs, oldest first (see [`crate::profile`]).
@@ -1993,6 +2138,44 @@ fn log_oversized(
             time,
         };
         log.sent(&ends, out.to, out.caller, &out.packet, Fate::OverLimit, 0.0);
+    }
+}
+
+/// The CPU time the calling thread has used.
+#[cfg(unix)]
+fn thread_cpu() -> Option<std::time::Duration> {
+    let mut now = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: clock_gettime writes the timespec it's given.
+    let ok = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) } == 0;
+    ok.then(|| std::time::Duration::new(now.tv_sec as u64, now.tv_nsec as u32))
+}
+
+#[cfg(not(unix))]
+fn thread_cpu() -> Option<std::time::Duration> {
+    None
+}
+
+/// Counts a packet arriving at the server and keeps a remote event's
+/// arguments when asked to.
+fn note_in(
+    traffic: &mut Traffic,
+    kept: &mut Option<HashMap<Ref, Vec<Vec<Wire>>>>,
+    packet: &Packet,
+) {
+    if !remote_packet(packet) {
+        return;
+    }
+    traffic.packets_in += 1;
+    traffic.bytes_in += packet_size(packet) as u64;
+    if let (Some(kept), Packet::Event { remote, args, .. }) = (kept, packet) {
+        let list = kept.entry(*remote).or_default();
+        if list.len() == KEPT_ARGS {
+            list.remove(0);
+        }
+        list.push(keepable(args));
     }
 }
 

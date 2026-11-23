@@ -41,6 +41,11 @@ opus-pure = "0.2"
 # (Apache-2.0; CMU's voice data under its permissive licence).
 flite-rs = { version = "0.3", default-features = false, features = ["clustergen"] }
 
+# session.rs: the session thread's CPU time, for a load test's server step
+# time (already in Cargo.lock through rbx_play).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 # examples/record_goldens.rs: publish the suite over the sandbox place,
 # join it with the real client and read results back through the Play probe.

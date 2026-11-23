@@ -324,7 +324,9 @@ pub(crate) struct Runtime {
     streams: stream::Inbox,
     stream_out: RefCell<HashMap<u32, std::sync::mpsc::Sender<stream::Out>>>,
     client: Rc<Cell<bool>>,
-    physics: Rc<dyn super::Physics>,
+    pub(super) physics: Rc<dyn super::Physics>,
+    /// Web service requests made, by kind (see `ServerVm::web_requests`).
+    pub(super) requests: RefCell<std::collections::BTreeMap<String, u64>>,
     /// For the drag packets a client sends its server.
     remotes: super::remote::Shared,
     /// The round trip to the server, seconds (`Player:GetNetworkPing()`).
@@ -359,6 +361,7 @@ impl Runtime {
             stream_out: RefCell::default(),
             client,
             physics,
+            requests: RefCell::default(),
             remotes,
             ping: Cell::new(0.0),
         })
@@ -1060,6 +1063,14 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
             let _ = ctx
                 .dom_mut()
                 .set_property(Ref::new(id), &name, Variant::Float32(value));
+            Ok(())
+        })?,
+    )?;
+    let r = runtime.clone();
+    host.set(
+        "count_request",
+        lua.create_function(move |_, kind: String| {
+            *r.requests.borrow_mut().entry(kind).or_default() += 1;
             Ok(())
         })?,
     )?;

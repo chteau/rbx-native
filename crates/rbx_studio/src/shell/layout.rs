@@ -171,6 +171,9 @@ pub(crate) enum Panel {
     /// nil-parented instances, tables, heap (`shell::leak_finder`). Shut
     /// until asked for.
     LeakFinder,
+    /// Bot players on a headless Local Run server and what the server goes
+    /// through (`shell::loadtest_dock`). Shut until asked for.
+    LoadTest,
     /// One plugin's `DockWidgetPluginGui`, a dock like any other. Not in
     /// [`Panel::ALL`]: it joins a layout when its plugin first opens it.
     Plugin(PluginDock),
@@ -180,7 +183,7 @@ impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 25] = [
+    pub(crate) const ALL: [Panel; 26] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -206,6 +209,7 @@ impl Panel {
         Panel::MicroProfiler,
         Panel::RemoteInspector,
         Panel::LeakFinder,
+        Panel::LoadTest,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged, also
@@ -232,7 +236,8 @@ impl Panel {
             | Panel::FindInPlace
             | Panel::MicroProfiler
             | Panel::RemoteInspector
-            | Panel::LeakFinder => Edge::Bottom,
+            | Panel::LeakFinder
+            | Panel::LoadTest => Edge::Bottom,
             Panel::Plugin(dock) => dock.home(),
         }
     }
@@ -265,6 +270,7 @@ impl Panel {
             Panel::MicroProfiler => "MicroProfiler",
             Panel::RemoteInspector => "Remote Inspector",
             Panel::LeakFinder => "Leak Finder",
+            Panel::LoadTest => "Load Test",
             Panel::Plugin(dock) => dock.key(),
         }
     }
@@ -300,6 +306,7 @@ impl Panel {
                 | Panel::MicroProfiler
                 | Panel::RemoteInspector
                 | Panel::LeakFinder
+                | Panel::LoadTest
         )
     }
 
