@@ -167,6 +167,10 @@ pub(crate) enum Panel {
     /// Every remote call of a Local Run, its rates and limits
     /// (`shell::remote_inspector`). Shut until asked for.
     RemoteInspector,
+    /// What keeps growing in a Local Run, per peer: connections,
+    /// nil-parented instances, tables, heap (`shell::leak_finder`). Shut
+    /// until asked for.
+    LeakFinder,
     /// One plugin's `DockWidgetPluginGui`, a dock like any other. Not in
     /// [`Panel::ALL`]: it joins a layout when its plugin first opens it.
     Plugin(PluginDock),
@@ -176,7 +180,7 @@ impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 24] = [
+    pub(crate) const ALL: [Panel; 25] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -201,6 +205,7 @@ impl Panel {
         Panel::FindInPlace,
         Panel::MicroProfiler,
         Panel::RemoteInspector,
+        Panel::LeakFinder,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged, also
@@ -226,7 +231,8 @@ impl Panel {
             | Panel::Localization
             | Panel::FindInPlace
             | Panel::MicroProfiler
-            | Panel::RemoteInspector => Edge::Bottom,
+            | Panel::RemoteInspector
+            | Panel::LeakFinder => Edge::Bottom,
             Panel::Plugin(dock) => dock.home(),
         }
     }
@@ -258,6 +264,7 @@ impl Panel {
             Panel::FindInPlace => "Find in Place",
             Panel::MicroProfiler => "MicroProfiler",
             Panel::RemoteInspector => "Remote Inspector",
+            Panel::LeakFinder => "Leak Finder",
             Panel::Plugin(dock) => dock.key(),
         }
     }
@@ -292,6 +299,7 @@ impl Panel {
                 | Panel::FindInPlace
                 | Panel::MicroProfiler
                 | Panel::RemoteInspector
+                | Panel::LeakFinder
         )
     }
 

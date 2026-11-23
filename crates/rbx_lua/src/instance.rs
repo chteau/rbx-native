@@ -503,10 +503,11 @@ impl UserData for LuaInstance {
             }
             Ok(None)
         });
-        methods.add_method("Clone", |_, this, ()| {
+        methods.add_method("Clone", |lua, this, ()| {
             let copy = tree::deep_clone(&mut this.ctx.dom_mut(), this.referent, None)
                 .ok_or_else(property::missing_instance)?;
             this.ctx.dom_mut().unparent(copy);
+            crate::leaks::created(lua, copy, &this.class()?);
             Ok(LuaInstance::new(copy, this.ctx.clone()))
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
@@ -654,7 +655,7 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
     table.set(
         "new",
         lua.create_function(
-            move |_, (class, parent): (String, Option<Value>)| -> Result<InstanceRef> {
+            move |lua, (class, parent): (String, Option<Value>)| -> Result<InstanceRef> {
                 if ctx.database().class(&class).is_none() {
                     return Err(mlua::Error::runtime(format!(
                         "Unable to create an Instance of type {class}"
@@ -677,6 +678,7 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
                     ctx.dom_mut().unparent(referent);
                 }
                 defaults::apply(&ctx, &class, referent);
+                crate::leaks::created(lua, referent, &class);
                 Ok(LuaInstance::new(referent, ctx.clone()))
             },
         )?,

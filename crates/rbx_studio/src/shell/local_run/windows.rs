@@ -121,6 +121,11 @@ impl PeerLink {
         self.host.upgrade()
     }
 
+    /// The session's owner and the peer this tab shows.
+    pub(in crate::shell) fn shown_peer(&self) -> (WeakEntity<Shell>, Peer) {
+        (self.host.clone(), self.view)
+    }
+
     /// The shown peer's DataModel, where an edit made here goes.
     pub(super) fn shown_dom(&self, cx: &App) -> Option<Rc<RefCell<WeakDom>>> {
         let host = self.host.upgrade()?;
@@ -659,6 +664,10 @@ impl Shell {
             let Some(sim) = run.session.sim_mut(peer) else {
                 continue;
             };
+            if shell.read(cx).leak_finder_open() {
+                sim.keep_leak_tracking();
+                shell.update(cx, |shell, cx| shell.leak_feed(sim, cx));
+            }
             let client = player.is_some();
             let changes = if resync {
                 let dom = sim.dom().clone();

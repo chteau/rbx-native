@@ -700,6 +700,7 @@ impl Shell {
                 IconName::Network,
                 "Remote Inspector",
             ),
+            (Panel::LeakFinder, IconName::Bug, "Leak Finder"),
             (Panel::Localization, IconName::Globe, "Localization"),
         ];
         let beta_hidden = super::ui_editor::beta_hidden_panels();

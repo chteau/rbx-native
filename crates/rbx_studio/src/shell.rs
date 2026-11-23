@@ -110,6 +110,7 @@ mod argon_dock;
 mod datastores;
 mod find_in_place;
 mod game_settings;
+mod leak_finder;
 pub(crate) mod local_run;
 mod profiler_dock;
 mod remote_inspector;
@@ -425,6 +426,8 @@ pub(crate) struct Shell {
     /// The Remote inspector's filters and picked call; see
     /// `shell::remote_inspector`.
     remote_inspector: remote_inspector::RemoteInspectorDock,
+    /// The Leak finder dock's snapshots; see `shell::leak_finder`.
+    leaks: leak_finder::LeakDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -1030,6 +1033,7 @@ impl Shell {
             find_place: find_in_place::FindInPlace::default(),
             profiler: profiler_dock::ProfilerDock::default(),
             remote_inspector: Default::default(),
+            leaks: leak_finder::LeakDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),

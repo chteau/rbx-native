@@ -257,6 +257,7 @@ fn prepare(lua: &Lua, target: Value, args: MultiValue) -> Result<(Thread, MultiV
     match target {
         Value::Function(func) => {
             let thread = lua.create_thread(runner(lua)?)?;
+            crate::leaks::thread_started(lua, &thread, &func);
             let mut all = args;
             all.push_front(Value::Function(func));
             Ok((thread, all))

@@ -53,6 +53,7 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::Localization
         | Panel::MicroProfiler
         | Panel::RemoteInspector
+        | Panel::LeakFinder
         | Panel::Plugin(_) => None,
     }
 }

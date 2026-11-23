@@ -741,6 +741,11 @@ pub const TESTS: &[Test] = &[
         tolerance: &[],
     },
     Test {
+        name: "DestroyConnections",
+        source: include_str!("../conformance/tests/DestroyConnections.luau"),
+        tolerance: &[],
+    },
+    Test {
         name: "FrameOverrun",
         source: include_str!("../conformance/tests/FrameOverrun.luau"),
         tolerance: &[("after_stall_dts", 0.003), ("overrun_dts", 0.01)],

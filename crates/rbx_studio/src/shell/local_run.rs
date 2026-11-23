@@ -1221,6 +1221,7 @@ impl Shell {
     /// One tick of the frame loop: steps the frames due on the wall clock.
     fn local_run_tick(&mut self, cx: &mut Context<Self>) {
         let showing = self.is_panel_showing(crate::shell::layout::Panel::RemoteInspector);
+        self.leak_finder_keep_alive();
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
@@ -1638,9 +1639,9 @@ mod tests {
     }
 
     /// Tests never read `beta.json`, so every beta is off: Local Run's
-    /// ribbon tiles, menu item, MicroProfiler and Remote Inspector docks,
-    /// the MicroProfiler's key, and the Collaborators dock's "Join as
-    /// player", are gone, not greyed.
+    /// ribbon tiles, menu item, MicroProfiler, Remote Inspector and Leak
+    /// Finder docks, the MicroProfiler's key, and the Collaborators dock's
+    /// "Join as player", are gone, not greyed.
     #[test]
     fn with_the_beta_off_no_local_run_entry_is_present() {
         use crate::shell::ribbon::{test_tile_order, TestTile};
@@ -1672,6 +1673,7 @@ mod tests {
         let hidden = crate::shell::ui_editor::beta_hidden_panels();
         assert!(hidden.contains(&crate::shell::layout::Panel::MicroProfiler));
         assert!(hidden.contains(&crate::shell::layout::Panel::RemoteInspector));
+        assert!(hidden.contains(&crate::shell::layout::Panel::LeakFinder));
         assert!(!crate::shortcuts::Command::MicroProfiler.available());
     }
 

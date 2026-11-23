@@ -287,6 +287,7 @@ fn focus_moves_into_every_dock_that_can_hold_it() {
             (Panel::FindInPlace, Some(Entry::FindQuery)),
             (Panel::MicroProfiler, None),
             (Panel::RemoteInspector, None),
+            (Panel::LeakFinder, None),
         ]
     );
 }

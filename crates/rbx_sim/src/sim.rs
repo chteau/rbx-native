@@ -176,6 +176,21 @@ impl Simulation {
         self.vm.heap_bytes()
     }
 
+    /// Keeps the leak finder tracking this peer for another second.
+    pub fn keep_leak_tracking(&self) {
+        self.vm.leak_keep_alive();
+    }
+
+    /// A leak finder sample of this peer, taken now.
+    pub fn leak_sample(&self) -> rbx_lua::leaks::Sample {
+        self.vm.leak_sample()
+    }
+
+    /// This peer's leak finder samples, once it was ever tracked.
+    pub fn leak_tracker(&self) -> Option<std::rc::Rc<std::cell::RefCell<rbx_lua::leaks::Tracker>>> {
+        self.vm.leak_tracker()
+    }
+
     pub fn role(&self) -> Role {
         self.role
     }
@@ -1077,6 +1092,7 @@ impl Simulation {
         self.resume();
         self.collect_output();
         self.client_frame(dt);
+        self.vm.leak_tick();
         let wall = step_started.elapsed();
         self.costs.total += wall;
         if self.wall_clock && wall.as_secs_f64() > 1.0 / FRAME_HZ {

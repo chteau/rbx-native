@@ -157,6 +157,7 @@ impl Shell {
             Panel::FindInPlace => self.find_in_place_dock(window, cx),
             Panel::MicroProfiler => self.micro_profiler_dock(cx),
             Panel::RemoteInspector => self.remote_inspector_dock(window, cx),
+            Panel::LeakFinder => self.leak_finder_dock(cx),
         }
     }
 

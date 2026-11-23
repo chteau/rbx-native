@@ -73,6 +73,7 @@ pub(super) fn beta_hidden_panels() -> Vec<Panel> {
     if !crate::beta::enabled(super::LOCAL_RUN_BETA_ID) {
         hidden.push(Panel::MicroProfiler);
         hidden.push(Panel::RemoteInspector);
+        hidden.push(Panel::LeakFinder);
     }
     hidden
 }

@@ -183,4 +183,14 @@ impl Remains {
     pub(crate) fn get(&self, referent: Ref) -> Option<&rbx_dom::Instance> {
         self.kept.get(&referent)
     }
+
+    /// Destroyed instances a script still holds.
+    pub(crate) fn kept(&self) -> impl Iterator<Item = (&Ref, &rbx_dom::Instance)> {
+        self.kept.iter()
+    }
+
+    /// Every instance a script holds a handle to.
+    pub(crate) fn held(&self) -> impl Iterator<Item = &Ref> {
+        self.held.iter()
+    }
 }
