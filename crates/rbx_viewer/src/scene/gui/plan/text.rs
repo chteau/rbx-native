@@ -242,11 +242,29 @@ pub(super) fn text(
     }
 }
 
+/// Families the client no longer ships, and what it draws in their place:
+/// a place saved with Gotham's or Arial's `FontFace` shows Montserrat and
+/// Arimo in the real client, as `Enum.Font`'s own notes map those members.
+const REPLACED_FAMILIES: [(&str, &str); 2] = [
+    (
+        "rbxasset://fonts/families/GothamSSm.json",
+        "rbxasset://fonts/families/Montserrat.json",
+    ),
+    (
+        "rbxasset://fonts/families/Arial.json",
+        "rbxasset://fonts/families/Arimo.json",
+    ),
+];
+
 /// `FontFace` where the place carries one; the legacy `Font` enum otherwise,
 /// which older places serialize alone.
 fn face(properties: &BTreeMap<String, Variant>) -> Face {
     let face_of = |font: &Font| {
-        let family = AssetRef::parse(&font.family).ok()?;
+        let family = REPLACED_FAMILIES
+            .iter()
+            .find(|(retired, _)| *retired == font.family)
+            .map_or(font.family.as_str(), |(_, replacement)| replacement);
+        let family = AssetRef::parse(family).ok()?;
         (family != AssetRef::Empty).then_some(Face {
             family,
             weight: font.weight,
