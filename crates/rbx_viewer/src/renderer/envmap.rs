@@ -192,15 +192,19 @@ fn integration_faces(chains: &[Vec<Image>]) -> Vec<Image> {
         .collect()
 }
 
-/// Quarter turns needed per panel (only `Up` and `Dn` are rotated).
-/// Sky panel order already matches cube layer order (+X, -X, +Y, -Y, +Z, -Z);
-/// five panels need no rotation, but `Up` and `Dn` need adjustment for GL/D3D convention.
+/// Quarter turns needed per panel (only `Up` and `Dn` are rotated), in the
+/// panel order (`Rt`, `Lf`, `Up`, `Dn`, `Bk`, `Ft`).
 const QUARTER_TURNS: [u32; FACES] = [0, 0, 1, 3, 0, 0];
 
 /// Resamples the six panels into equal square faces, turning the two that need
 /// it. Cube faces must be square and the same size, and sky panels are neither
 /// guaranteed to be: the smallest side wins, which loses detail on a mismatched
 /// sky rather than refusing to reflect it at all.
+///
+/// Turned, the panels would fill the cube layers (+X, -X, +Y, -Y, +Z, -Z) in
+/// their own order as a cube map reads them from outside; the skybox shows
+/// each one unmirrored from inside (see `textures::sky`), which is that cube
+/// mirrored in X: every face flipped left to right, `Lf` on +X and `Rt` on -X.
 fn cube_faces(panels: &[Panel]) -> Option<Vec<Image>> {
     if panels.len() != FACES {
         return None;
@@ -212,13 +216,27 @@ fn cube_faces(panels: &[Panel]) -> Option<Vec<Image>> {
         .min()
         .filter(|&size| size > 0)?;
 
-    Some(
-        panels
-            .iter()
-            .zip(QUARTER_TURNS)
-            .map(|(panel, turns)| square(&panel.image, size, turns))
-            .collect(),
-    )
+    let mut faces: Vec<Image> = panels
+        .iter()
+        .zip(QUARTER_TURNS)
+        .map(|(panel, turns)| mirrored(square(&panel.image, size, turns)))
+        .collect();
+    faces.swap(0, 1);
+    Some(faces)
+}
+
+/// `image` flipped left to right.
+fn mirrored(mut image: Image) -> Image {
+    let row = image.width as usize * CHANNELS;
+    for line in image.pixels.chunks_exact_mut(row) {
+        for x in 0..image.width as usize / 2 {
+            let mirror = image.width as usize - 1 - x;
+            for channel in 0..CHANNELS {
+                line.swap(x * CHANNELS + channel, mirror * CHANNELS + channel);
+            }
+        }
+    }
+    image
 }
 
 fn grey_faces() -> Vec<Image> {
@@ -296,6 +314,23 @@ mod tests {
         let faces = cube_faces(&panels).unwrap();
 
         assert!(faces.iter().all(|face| face.width == 4 && face.height == 4));
+    }
+
+    // The probe mirrors the sky the way the skybox draws it: `Lf` on +X,
+    // `Rt` on -X, each face flipped left to right.
+    #[test]
+    fn the_cube_holds_the_sky_as_seen_from_inside() {
+        let mut panels: Vec<Panel> = (0..6).map(|i| panel(2, 2, i)).collect();
+        let mut left_red = (*panels[4].image).clone();
+        left_red.pixels[0] = 255;
+        panels[4].image = std::sync::Arc::new(left_red);
+
+        let faces = cube_faces(&panels).unwrap();
+
+        assert_eq!(faces[0].pixels[1], 1);
+        assert_eq!(faces[1].pixels[1], 0);
+        assert_eq!(faces[4].pixels[0], 4);
+        assert_eq!(faces[4].pixels[CHANNELS], 255);
     }
 
     #[test]
