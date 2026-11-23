@@ -109,9 +109,10 @@ struct DecalRaw {
     v_axis: [f32; 3],
     uv_transform: [f32; 4],
     tint: [f32; 4],
-    /// 1 on a wedge, whose slope belongs to the Front face however its normal
+    /// The part's colour as sRGB bytes in the low three bytes; the top byte 1
+    /// on a wedge, whose slope belongs to the Front face however its normal
     /// classifies, the shader has no other way to tell one mesh from another.
-    wedge: u32,
+    base_wedge: u32,
     /// From the drawn mesh's coordinates into the part's unit box: the
     /// identity on a unit shape, [`crate::textures::MeshFace::to_unit`] on a
     /// real mesh.
@@ -133,7 +134,12 @@ impl DecalRaw {
                 projection.uv_offset[1],
             ],
             tint: [face.tint[0], face.tint[1], face.tint[2], face.alpha],
-            wedge: u32::from(face.mesh.is_none() && face.kind == ShapeKind::Wedge),
+            base_wedge: u32::from_le_bytes([
+                face.base[0],
+                face.base[1],
+                face.base[2],
+                u8::from(face.mesh.is_none() && face.kind == ShapeKind::Wedge),
+            ]),
             to_unit: face
                 .mesh
                 .map_or(glam::Mat4::IDENTITY, |mesh| mesh.to_unit)
@@ -512,6 +518,15 @@ fn add_batches(device: &wgpu::Device, batches: &mut Batches, image: usize, faces
     }
 }
 
+const PREMULTIPLIED: wgpu::BlendState = wgpu::BlendState {
+    color: wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::One,
+        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+        operation: wgpu::BlendOperation::Add,
+    },
+    alpha: wgpu::BlendComponent::OVER,
+};
+
 fn create(
     device: &wgpu::Device,
     target: Target,
@@ -525,6 +540,9 @@ fn create(
         target,
         &Surface {
             translucent: blended,
+            // `textured.wgsl` hands back the mixed colour less what of the
+            // part it keeps, so the target only scales by the coverage.
+            blend: Some(PREMULTIPLIED),
             bias: DEPTH_BIAS,
             compare: wgpu::CompareFunction::GreaterEqual,
             ..Surface::new("rbxview decals", DECAL_SHADER, bind_group_layouts, &buffers)

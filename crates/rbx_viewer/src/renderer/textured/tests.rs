@@ -8,7 +8,7 @@ use crate::quality::QualityLevel;
 // compile.
 #[test]
 fn the_shader_reads_the_wedge_flag_the_layout_supplies() {
-    assert!(DECAL_SHADER.contains("@location(11) wedge: u32"));
+    assert!(DECAL_SHADER.contains("@location(11) base_wedge: u32"));
     assert!(DECAL_SHADER.contains("@location(15) to_unit_3: vec4<f32>"));
     assert_eq!(INSTANCE_ATTRIBUTES.len(), 14);
     assert_eq!(INSTANCE_ATTRIBUTES[9].shader_location, 11);

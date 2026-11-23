@@ -41,10 +41,10 @@
   },
   "decals_textures": {
     "about": "A stretched Decal, a Texture tiled at 2 studs with an offset, a tinted half transparent Texture",
-    "delta_e": 3.432,
-    "delta_e_p90": 7.849,
-    "ssim": 0.915,
-    "tolerance_delta_e": 0.5148193836212158,
+    "delta_e": 3.138,
+    "delta_e_p90": 7.008,
+    "ssim": 0.925,
+    "tolerance_delta_e": 0.47070401906967163,
     "tolerance_ssim": 0.019999999552965164
   },
   "default_lighting": {
@@ -306,9 +306,9 @@
   "noob": {
     "about": "The classic noob up close: colours, round head and the default face",
     "delta_e": 2.276,
-    "delta_e_p90": 3.881,
+    "delta_e_p90": 3.882,
     "ssim": 0.976,
-    "tolerance_delta_e": 0.3413509428501129,
+    "tolerance_delta_e": 0.3413922190666199,
     "tolerance_ssim": 0.019999999552965164
   },
   "realistic_style": {
@@ -385,10 +385,10 @@
   },
   "template_spawn": {
     "about": "The Baseplate template's textured floor and SpawnLocation decal, as Play opens",
-    "delta_e": 2.599,
-    "delta_e_p90": 4.977,
-    "ssim": 0.981,
-    "tolerance_delta_e": 0.3897861838340759,
+    "delta_e": 2.71,
+    "delta_e_p90": 4.913,
+    "ssim": 0.984,
+    "tolerance_delta_e": 0.40642616152763367,
     "tolerance_ssim": 0.019999999552965164
   },
   "text_boxes": {
@@ -409,10 +409,10 @@
   },
   "texture_blend": {
     "about": "Blue tinted and untinted Textures at Transparency 0, 0.25, 0.5 and 0.75 over red parts",
-    "delta_e": 4.989,
-    "delta_e_p90": 11.868,
-    "ssim": 0.889,
-    "tolerance_delta_e": 0.6000000238418579,
+    "delta_e": 3.288,
+    "delta_e_p90": 7.161,
+    "ssim": 0.906,
+    "tolerance_delta_e": 0.4932411313056946,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_ambient": {

@@ -212,6 +212,7 @@ mod tests {
             ),
             tint: [1.0; 3],
             alpha,
+            base: [255; 3],
         }
     }
 

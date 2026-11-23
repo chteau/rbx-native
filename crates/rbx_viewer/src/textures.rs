@@ -59,6 +59,9 @@ pub(crate) struct FaceInstance {
     pub(crate) projection: Projection,
     pub(crate) tint: [f32; 3],
     pub(crate) alpha: f32,
+    /// The part's own `Color`, sRGB bytes: what the image is mixed over. The
+    /// real client mixes the two gamma-encoded, see `textured.wgsl`.
+    pub(crate) base: [u8; 3],
 }
 
 /// The real mesh a face is projected onto when one draws in place of its

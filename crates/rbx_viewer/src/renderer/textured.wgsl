@@ -5,6 +5,9 @@
 // exactly like the surface underneath, so a painted face and a bare one read as
 // the same material.
 
+/// The encoding the real client mixes a decal over its part in.
+const DECAL_GAMMA: f32 = 1.0 / 2.2;
+
 @group(1) @binding(0) var image: texture_2d<f32>;
 @group(1) @binding(1) var image_sampler: sampler;
 
@@ -24,7 +27,8 @@ struct InstanceInput {
     // Scale in xy, offset in zw.
     @location(9) uv_transform: vec4<f32>,
     @location(10) tint: vec4<f32>,
-    @location(11) wedge: u32,
+    // The part's colour, sRGB bytes in xyz; 1 in w on a wedge.
+    @location(11) base_wedge: u32,
     // From the drawn mesh into the part's unit box: the identity for a unit
     // shape, the mesh's own fit for a real mesh a decal lands on.
     @location(12) to_unit_0: vec4<f32>,
@@ -45,6 +49,7 @@ struct VertexOutput {
     @location(7) tint: vec4<f32>,
     @location(8) world_position: vec3<f32>,
     @location(9) @interpolate(flat) wedge: u32,
+    @location(10) @interpolate(flat) base: vec3<f32>,
 }
 
 // What carries a normal through `m`: its cofactor matrix, the inverse
@@ -96,7 +101,9 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.v_axis = instance.v_axis;
     out.uv_transform = instance.uv_transform;
     out.tint = instance.tint;
-    out.wedge = instance.wedge;
+    let base_wedge = unpack4x8unorm(instance.base_wedge);
+    out.wedge = u32(base_wedge.w > 0.5);
+    out.base = base_wedge.xyz;
     return out;
 }
 
@@ -131,16 +138,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = (projected + 0.5) * in.uv_transform.xy + in.uv_transform.zw;
 
     let sample = textureSample(image, image_sampler, uv);
+    let paint = sample.rgb * in.tint.rgb;
+    let coverage = sample.a * in.tint.a;
+    // The real client mixes the image over its part gamma-encoded, before
+    // tone mapping: the two lit colours, each raised to 1 / 2.2, mixed by the
+    // coverage and decoded again (`texture_blend`: a white Texture lifts a red
+    // part far less, a blue one darkens it more, than a mix of linear light).
+    // The target already holds the part lit, so this hands back that mix less
+    // the share of the part the blend keeps (`one_minus_src_alpha`).
     // Reflectance 0: a Decal is paint on top of whatever the part is made of,
     // and Roblox gives the image no reflection of its own either.
-    let surface = plastic(
-        sample.rgb * in.tint.rgb,
-        in.world_normal,
-        in.world_position,
-        0.0,
+    let base = select(
+        pow((in.base + 0.055) / 1.055, vec3<f32>(2.4)),
+        in.base / 12.92,
+        in.base <= vec3<f32>(0.04045),
     );
-
-    // Straight (non-premultiplied) alpha: the blended pipeline pairs this with
-    // src_alpha / one_minus_src_alpha.
-    return vec4<f32>(shade(surface), sample.a * in.tint.a);
+    let painted = shade(plastic(paint, in.world_normal, in.world_position, 0.0));
+    let kept = shade(plastic(base, in.world_normal, in.world_position, 0.0));
+    let encoded = mix(pow(kept, vec3<f32>(DECAL_GAMMA)), pow(painted, vec3<f32>(DECAL_GAMMA)), coverage);
+    let lit = pow(encoded, vec3<f32>(1.0 / DECAL_GAMMA));
+    return vec4<f32>(lit - (1.0 - coverage) * kept, coverage);
 }
