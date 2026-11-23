@@ -436,8 +436,10 @@ impl ServerVm {
         let groups = Rc::new(RefCell::new(CollisionGroups::default()));
         let lua = crate::luau::new_vm();
         // See `Runtime::build`: DOM-backed globals and `pcall`/`xpcall` must
-        // not be import-cached.
-        lua.set_compiler(Compiler::new().set_mutable_globals([
+        // not be import-cached. Local names are kept (debug level 2) so the
+        // leak finder can read a waiting thread's locals; nothing a script
+        // can see changes with them.
+        lua.set_compiler(Compiler::new().set_debug_level(2).set_mutable_globals([
             "game",
             "workspace",
             "Workspace",
@@ -537,6 +539,27 @@ impl ServerVm {
     /// The Lua heap in bytes.
     pub fn heap_bytes(&self) -> usize {
         self.lua.used_memory()
+    }
+
+    /// Keeps the leak finder's tracking on for another second (see
+    /// [`crate::leaks`]).
+    pub fn leak_keep_alive(&self) {
+        crate::leaks::keep_alive(&self.lua);
+    }
+
+    /// After a step: the leak finder's sample, when tracking and one is due.
+    pub fn leak_tick(&self) {
+        crate::leaks::tick(&self.lua, self.host.now.get());
+    }
+
+    /// A leak finder sample taken now.
+    pub fn leak_sample(&self) -> crate::leaks::Sample {
+        crate::leaks::sample(&self.lua, self.host.now.get())
+    }
+
+    /// The leak finder's tracker, once it was ever kept alive.
+    pub fn leak_tracker(&self) -> Option<Rc<RefCell<crate::leaks::Tracker>>> {
+        crate::leaks::tracker(&self.lua)
     }
 
     /// Makes this VM a client's: `RunService:IsClient()` is true and
@@ -838,7 +861,8 @@ impl ServerVm {
         let chunk = crate::luau::load_scoped(&self.lua, source, format!("={name}"), scope);
         match chunk {
             Ok(chunk) => {
-                let main = self.lua.create_thread(chunk)?;
+                let main = self.lua.create_thread(chunk.clone())?;
+                crate::leaks::thread_started(&self.lua, &main, &chunk);
                 let engine = engine(&self.lua);
                 let mut scheduler = engine.scheduler.borrow_mut();
                 scheduler.owners.push((main.clone(), script));

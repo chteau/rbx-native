@@ -275,8 +275,29 @@ pub(crate) fn fire_changes(lua: &Lua, changes: &[Change], first: Option<u64>) ->
 /// cleanup (Lemonade's widget) unparents each child from its `Destroying`;
 /// a child that left `root` that way is spared. The `Removed` these leave
 /// in the change log fire nothing more in this VM. A VM with no engine
-/// (the command bar's) has no listeners to tell.
+/// (the command bar's) has no listeners to tell. Then, as Roblox's
+/// `Destroy` does, every connection to an instance it removed is
+/// disconnected.
 pub(crate) fn destroy(lua: &Lua, ctx: &Ctx, root: Ref) -> Result<()> {
+    let mut gone = Vec::new();
+    let destroyed = destroy_tree(lua, ctx, root, &mut gone);
+    if let Some(engine) = lua.app_data_ref::<std::rc::Rc<super::Engine>>() {
+        if !gone.is_empty() {
+            let gone: std::collections::HashSet<Ref> = gone.into_iter().collect();
+            engine
+                .signals
+                .borrow_mut()
+                .connections
+                .retain(|key, _| match key.owner {
+                    signal::Owner::Instance(owner) => !gone.contains(&owner),
+                    _ => true,
+                });
+        }
+    }
+    destroyed
+}
+
+fn destroy_tree(lua: &Lua, ctx: &Ctx, root: Ref, gone: &mut Vec<Ref>) -> Result<()> {
     if ctx.dom().get(root).is_none() {
         return Ok(());
     }
@@ -307,10 +328,11 @@ pub(crate) fn destroy(lua: &Lua, ctx: &Ctx, root: Ref) -> Result<()> {
             .unwrap_or_default();
         for child in children {
             if ctx.dom().parent(child) == Some(root) {
-                destroy(lua, ctx, child)?;
+                destroy_tree(lua, ctx, child, gone)?;
             }
         }
     }
     ctx.dom_mut().remove(root);
+    gone.push(root);
     Ok(())
 }

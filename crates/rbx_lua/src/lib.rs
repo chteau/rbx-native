@@ -16,6 +16,7 @@ mod engine;
 mod game;
 mod hooks;
 mod instance;
+pub mod leaks;
 mod lua_enum;
 mod luau;
 mod not_creatable;

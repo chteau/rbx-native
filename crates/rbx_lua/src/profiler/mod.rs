@@ -173,6 +173,7 @@ pub(crate) fn install(lua: &Lua) -> mlua::Result<()> {
             let name = string_arg(&tag, "setmemorycategory")?;
             let profiler = of(lua);
             let mut profiler = profiler.borrow_mut();
+            crate::leaks::set_memory_category(lua, Some(&name));
             let previous = profiler.memory_category.replace(name);
             drop(profiler);
             // Before any is set, the category is the running script's
@@ -190,6 +191,7 @@ pub(crate) fn install(lua: &Lua) -> mlua::Result<()> {
         "resetmemorycategory",
         lua.create_function(|lua, _: Variadic<Value>| {
             of(lua).borrow_mut().memory_category = None;
+            crate::leaks::set_memory_category(lua, None);
             Ok(())
         })?,
     )?;

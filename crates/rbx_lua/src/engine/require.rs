@@ -70,6 +70,11 @@ impl Modules {
     pub(crate) fn clear(&mut self) {
         *self = Modules::default();
     }
+
+    /// Each module that returned, with what it returned.
+    pub(crate) fn loaded(&self) -> impl Iterator<Item = (Ref, Value)> + '_ {
+        self.loaded.iter().map(|(r, v)| (*r, v.clone()))
+    }
 }
 
 /// Builds this VM's `require` factory. `resolve(script, target)` turns
