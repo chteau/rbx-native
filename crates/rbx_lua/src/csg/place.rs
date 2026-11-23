@@ -139,6 +139,12 @@ pub fn separate_in_place(dom: &mut WeakDom, db: &ReflectionDatabase, objects: &[
                 let size = size_of(db, child) * scale;
                 set(dom, db, referent, "Size", Variant::Vector3(vector3(size)));
             }
+            // Studio gives a subtracted part back as itself, not as the
+            // `NegateOperation` the tree keeps it in.
+            if child.class() == "NegateOperation" && shared_bytes(child, "ChildData2").is_some() {
+                out.extend(separate_in_place(dom, db, &[referent]));
+                continue;
+            }
             rebake(dom, db, referent);
             out.push(referent);
         }

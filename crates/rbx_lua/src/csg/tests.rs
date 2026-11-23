@@ -113,7 +113,10 @@ fn a_union_survives_the_place_writer_and_separates_back() {
         .iter()
         .map(|&p| back.get(p).unwrap().class())
         .collect();
-    assert_eq!(classes, ["Part", "NegateOperation"]);
+    // Studio's Separate gives the subtracted part back as itself.
+    assert_eq!(classes, ["Part", "Part"]);
+    let hole = back.get(parts[1]).unwrap();
+    assert!((frame(&cframe_of(&db, hole)).w_axis.x - 1.0).abs() < 1e-5);
 }
 
 #[test]

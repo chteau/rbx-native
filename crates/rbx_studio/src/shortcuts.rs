@@ -706,6 +706,9 @@ pub(crate) fn apply_bindings(cx: &mut App) {
             .borrow()
             .bindings()
             .filter(|binding| !owned.contains(&binding.action().as_any().type_id()))
+            // The component kit's element inspector sits on Ctrl+Shift+I,
+            // which is Studio's Intersect.
+            .filter(|binding| binding.action().name() != "inspector::ToggleInspector")
             .cloned()
             .collect();
         let added: Vec<KeyBinding> = entries
