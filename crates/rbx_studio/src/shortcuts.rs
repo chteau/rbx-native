@@ -246,6 +246,15 @@ impl Command {
         }
     }
 
+    /// False for a beta's command while its switch is off: no key, no row
+    /// in Customize Shortcuts.
+    pub(crate) fn available(self) -> bool {
+        match self {
+            Command::MicroProfiler => crate::beta::enabled(crate::shell::LOCAL_RUN_BETA_ID),
+            _ => true,
+        }
+    }
+
     pub(crate) fn from_id(id: &str) -> Option<Command> {
         ALL.iter()
             .find(|spec| spec.id == id)
@@ -708,6 +717,7 @@ pub(crate) fn apply_bindings(cx: &mut App) {
             .collect();
         let added: Vec<KeyBinding> = entries
             .iter()
+            .filter(|entry| entry.command.available())
             .flat_map(|entry| {
                 bindings(entry.command)
                     .into_iter()

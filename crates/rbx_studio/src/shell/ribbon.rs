@@ -695,10 +695,10 @@ impl Shell {
             (Panel::Loren, IconName::Layers, "Loren"),
             (Panel::FindInPlace, IconName::Search, "Find in Place"),
             (Panel::MicroProfiler, IconName::Activity, "MicroProfiler"),
+            (Panel::Localization, IconName::Globe, "Localization"),
         ];
-        if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
-            tiles.push((Panel::Localization, IconName::Globe, "Localization"));
-        }
+        let beta_hidden = super::ui_editor::beta_hidden_panels();
+        tiles.retain(|(panel, ..)| !beta_hidden.contains(panel));
         // Argon and Wally have no tab of their own to reopen from outside
         // the Script Editor, because they're nowhere to be seen outside it
         // either, see `Shell::hidden_panels`.
@@ -1058,21 +1058,91 @@ impl Shell {
                 "a test is already running",
             )
         };
+        let stop = if self.local_run_role().is_some() {
+            tile(nav, "ribbon-stop", IconName::Square, "End Session", cx)
+                .tooltip(|window, cx| {
+                    super::tooltip::text("Close the server and all client windows.", window, cx)
+                })
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
+        } else if local_active {
+            tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
+        } else if idle {
+            unavailable_tile(
+                "ribbon-stop",
+                IconName::Square,
+                "Stop",
+                "nothing is running",
+            )
+        } else {
+            tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.play_stop(StopReason::Stopped, cx)))
+        };
+        let invite = if self.play.job_id.is_some() {
+            tile(nav, "ribbon-invite", IconName::Users, "Invite", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.play_copy_join_link(cx)))
+        } else {
+            unavailable_tile(
+                "ribbon-invite",
+                IconName::Users,
+                "Invite",
+                "no test server yet",
+            )
+        };
+        let (mut play, mut stop, mut invite) = (Some(play), Some(stop), Some(invite));
+        let mut stacks = local_beta.then(|| self.local_run_stacks(cx).map(Some));
+        let mut tiles = Vec::new();
+        for slot in test_tile_order(local_beta) {
+            let mut stack_at = |i: usize| stacks.as_mut().and_then(|s| s[i].take());
+            let element = match slot {
+                TestTile::Play => play
+                    .take()
+                    .map(|t| primary("ribbon-play", t).into_any_element()),
+                TestTile::PlayLocal => stack_at(0),
+                TestTile::ServerClients => stack_at(1),
+                TestTile::Replay => stack_at(2),
+                // Stop is a tile of its own rather than a third stack row:
+                // three rows in an 80px ribbon are ~25px each, and Stop is
+                // the control a person reaches for in a hurry.
+                TestTile::Stop => stop
+                    .take()
+                    .map(|t| primary("ribbon-stop", t).into_any_element()),
+                TestTile::Invite => invite.take().map(IntoElement::into_any_element),
+                TestTile::View => Some(self.view_tile(cx).into_any_element()),
+                TestTile::Players => Some(self.players_tile(cx).into_any_element()),
+                TestTile::Data => Some(self.data_tile(cx).into_any_element()),
+                TestTile::Offline => Some(self.offline_tile(cx)),
+                TestTile::Network => Some(self.network_tile(cx)),
+                TestTile::Device => Some(self.device_tile(cx)),
+                TestTile::Controller => Some(self.controller_tile(cx).into_any_element()),
+            };
+            tiles.extend(element);
+        }
+        tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
+        tiles
+    }
+
+    /// Local Run's three stacks, only built with its beta on: Play (local)
+    /// over Run, Server & Clients over Pause, Replay over Save run.
+    fn local_run_stacks(&self, cx: &mut Context<Self>) -> [AnyElement; 3] {
+        let nav = &self.ribbon_nav;
+        let idle = self.play.phase == Phase::Idle;
+        let local_active = self.local_run_active();
         // Paused, the Run row steps the game one frame at a time.
-        let run = if local_beta && local_active && self.local_run_paused() {
+        let run = if local_active && self.local_run_paused() {
             live_stack_row(nav, "ribbon-run", IconName::SkipForward, "Step", cx)
                 .tooltip(|window, cx| {
                     super::tooltip::text("Run one frame (1/60 s) of the paused game.", window, cx)
                 })
                 .on_click(cx.listener(|shell, _, _, cx| shell.local_run_step_frame(cx)))
-        } else if local_beta && local_active {
+        } else if local_active {
             unavailable_row(
                 "ribbon-run",
                 IconName::SquarePlay,
                 "Run",
                 "Local Run is already running",
             )
-        } else if local_beta && idle {
+        } else if idle {
             live_stack_row(nav, "ribbon-run", IconName::SquarePlay, "Run", cx)
                 .on_click(cx.listener(|shell, _, _, cx| shell.run_local(cx)))
         } else {
@@ -1080,17 +1150,17 @@ impl Shell {
                 "ribbon-run",
                 IconName::SquarePlay,
                 "Run",
-                "a server-only run needs Roblox's engine; Play runs the place on Roblox",
+                "a test is already running",
             )
         };
-        let play_local = if local_beta && (local_active || self.play.live.local.starting) {
+        let play_local = if local_active || self.play.live.local.starting {
             unavailable_row(
                 "ribbon-play-local",
                 IconName::PersonStanding,
                 "Play (local)",
                 "Local Run is already running",
             )
-        } else if local_beta && idle {
+        } else if idle {
             live_stack_row(
                 nav,
                 "ribbon-play-local",
@@ -1104,10 +1174,10 @@ impl Shell {
                 "ribbon-play-local",
                 IconName::PersonStanding,
                 "Play (local)",
-                "turn on the Local Run beta in Settings",
+                "a test is already running",
             )
         };
-        let server_clients = if local_beta && idle && !local_active {
+        let server_clients = if idle && !local_active {
             live_stack_row(
                 nav,
                 "ribbon-server-clients",
@@ -1128,11 +1198,7 @@ impl Shell {
                 "ribbon-server-clients",
                 IconName::Users,
                 "Server & Clients",
-                if local_beta {
-                    "a test is already running"
-                } else {
-                    "turn on the Local Run beta in Settings"
-                },
+                "a test is already running",
             )
         };
         let pause = if local_active {
@@ -1153,7 +1219,7 @@ impl Shell {
         };
         // Every Local Run is recorded: Replay plays it back frame for
         // frame, Save run keeps its recording.
-        let recorded = local_beta && self.local_run_has_recording();
+        let recorded = self.local_run_has_recording();
         let replay = if recorded && !self.local_run_replaying() {
             live_stack_row(nav, "ribbon-replay", IconName::Film, "Replay", cx)
                 .tooltip(|window, cx| {
@@ -1194,57 +1260,11 @@ impl Shell {
                 "run the place locally first",
             )
         };
-        let stop = if self.local_run_role().is_some() {
-            tile(nav, "ribbon-stop", IconName::Square, "End Session", cx)
-                .tooltip(|window, cx| {
-                    super::tooltip::text("Close the server and all client windows.", window, cx)
-                })
-                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
-        } else if local_active {
-            tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_stop(cx)))
-        } else if idle {
-            unavailable_tile(
-                "ribbon-stop",
-                IconName::Square,
-                "Stop",
-                "nothing is running",
-            )
-        } else {
-            tile(nav, "ribbon-stop", IconName::Square, "Stop", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.play_stop(StopReason::Stopped, cx)))
-        };
-        let invite = if self.play.job_id.is_some() {
-            tile(nav, "ribbon-invite", IconName::Users, "Invite", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.play_copy_join_link(cx)))
-        } else {
-            unavailable_tile(
-                "ribbon-invite",
-                IconName::Users,
-                "Invite",
-                "no test server yet",
-            )
-        };
-        let mut tiles = vec![
-            primary("ribbon-play", play).into_any_element(),
-            // Stop is a tile of its own rather than a third stack row: three
-            // rows in an 80px ribbon are ~25px each, and Stop is the control a
-            // person reaches for in a hurry.
+        [
             stack(vec![play_local, run]).into_any_element(),
             stack(vec![server_clients, pause]).into_any_element(),
             stack(vec![replay, save_recording]).into_any_element(),
-            primary("ribbon-stop", stop).into_any_element(),
-            invite.into_any_element(),
-            self.view_tile(cx).into_any_element(),
-            self.players_tile(cx).into_any_element(),
-            self.data_tile(cx).into_any_element(),
-            self.offline_tile(cx),
-            self.network_tile(cx),
-            self.device_tile(cx),
-            self.controller_tile(cx).into_any_element(),
-        ];
-        tiles.extend(self.stats_readout().map(IntoElement::into_any_element));
-        tiles
+        ]
     }
 }
 
@@ -1292,14 +1312,6 @@ impl Shell {
                 .on_click(cx.listener(|shell, _, _, cx| shell.local_run_add_client(cx)));
             }
             None => {}
-        }
-        if !crate::beta::enabled(super::local_run::BETA_ID) {
-            return unavailable_tile(
-                "ribbon-players",
-                IconName::Users,
-                "Players",
-                "turn on the Local Run beta in Settings",
-            );
         }
         if let Some(count) = self.local_run_player_count().filter(|n| *n > 1) {
             const RUNNING: [&str; super::local_run::MAX_PLAYERS - 1] = [
@@ -1354,14 +1366,6 @@ impl Shell {
     fn data_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         use super::local_run::data;
         let mode = data::mode(&self.path);
-        if !crate::beta::enabled(super::local_run::BETA_ID) {
-            return unavailable_tile(
-                "ribbon-data",
-                IconName::Database,
-                "Data",
-                "turn on the Local Run beta in Settings",
-            );
-        }
         let tip = match mode {
             data::DataMode::Kept => "DataStores are kept from one local run of this place to the next. Click to change.",
             data::DataMode::Fresh => "Every local run of this place starts with empty DataStores. Click to change.",
@@ -1392,6 +1396,57 @@ impl Shell {
         )
         .on_click(cx.listener(|shell, _, _, cx| shell.open_controller_emulator(cx)))
     }
+}
+
+/// The Test tab's tiles, in order.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum TestTile {
+    Play,
+    PlayLocal,
+    ServerClients,
+    Replay,
+    Stop,
+    Invite,
+    View,
+    Players,
+    Data,
+    Offline,
+    Network,
+    Device,
+    Controller,
+}
+
+impl TestTile {
+    /// Only there with the Local Run beta on: hidden without it, not greyed.
+    pub(super) fn local_run(self) -> bool {
+        use TestTile::*;
+        matches!(
+            self,
+            PlayLocal | ServerClients | Replay | Players | Data | Offline
+        )
+    }
+}
+
+pub(super) fn test_tile_order(local_beta: bool) -> Vec<TestTile> {
+    use TestTile::*;
+    [
+        Play,
+        PlayLocal,
+        ServerClients,
+        Replay,
+        Stop,
+        Invite,
+        View,
+        Players,
+        Data,
+        Offline,
+        Network,
+        Device,
+        Controller,
+    ]
+    .into_iter()
+    .filter(|tile| local_beta || !tile.local_run())
+    .collect()
 }
 
 /// The Play and Stop tiles in isolation, for the 44x44 layout check.

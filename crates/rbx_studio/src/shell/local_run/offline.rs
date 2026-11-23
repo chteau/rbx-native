@@ -104,15 +104,6 @@ impl Shell {
     /// Test › Offline.
     pub(in crate::shell) fn offline_tile(&self, cx: &mut Context<Self>) -> AnyElement {
         const ID: &str = "ribbon-offline";
-        if !crate::beta::enabled(super::BETA_ID) {
-            return unavailable_tile(
-                ID,
-                IconName::CloudOff,
-                "Offline",
-                "turn on the Local Run beta in Settings",
-            )
-            .into_any_element();
-        }
         let offline = &self.play.live.local.offline;
         if let Some(packing) = &offline.packing {
             let p = *packing.progress.lock().unwrap_or_else(|e| e.into_inner());
@@ -200,7 +191,10 @@ impl Shell {
 
     /// Make available offline: packs the open place in the background.
     pub(in crate::shell) fn offline_pack(&mut self, cx: &mut Context<Self>) {
-        if self.play.live.local.offline.packing.is_some() || self.local_run_active() {
+        if !crate::beta::enabled(super::BETA_ID)
+            || self.play.live.local.offline.packing.is_some()
+            || self.local_run_active()
+        {
             return;
         }
         if rbx_net::is_offline() {

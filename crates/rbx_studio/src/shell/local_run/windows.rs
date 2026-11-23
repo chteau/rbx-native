@@ -749,6 +749,9 @@ impl Shell {
 
     /// Add Clients: one more test player, in a window of their own.
     pub(crate) fn local_run_add_client(&mut self, cx: &mut Context<Self>) {
+        if !crate::beta::enabled(super::BETA_ID) {
+            return;
+        }
         if self.local_run_forward(cx, |host, cx| host.local_run_add_client(cx)) {
             return;
         }

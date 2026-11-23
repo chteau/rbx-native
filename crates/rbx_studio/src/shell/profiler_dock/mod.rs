@@ -149,7 +149,9 @@ fn toggle(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool) ->
 
 impl Shell {
     pub(in crate::shell) fn open_micro_profiler(&mut self, cx: &mut Context<Self>) {
-        self.set_panel_open(Panel::MicroProfiler, true, cx);
+        if crate::beta::enabled(super::local_run::BETA_ID) {
+            self.set_panel_open(Panel::MicroProfiler, true, cx);
+        }
     }
 
     /// The frames on show: held ones, else the session's newest.

@@ -1564,6 +1564,51 @@ mod tests {
     // Not `super::*`: gpui_kit's glob brings its own `test` attribute.
     use super::{changes_between, dedupe, mirror, queue_players, restore_edited, stash_edited};
 
+    /// Every item name in `menus`, submenus included.
+    fn menu_names(items: &[gpui_kit::OwnedMenuItem], out: &mut Vec<String>) {
+        for item in items {
+            match item {
+                gpui_kit::OwnedMenuItem::Action { name, .. } => out.push(name.clone()),
+                gpui_kit::OwnedMenuItem::Submenu(menu) => menu_names(&menu.items, out),
+                _ => {}
+            }
+        }
+    }
+
+    /// Tests never read `beta.json`, so every beta is off: Local Run's
+    /// ribbon tiles, menu item, MicroProfiler dock and its key are gone,
+    /// not greyed.
+    #[test]
+    fn with_the_beta_off_no_local_run_entry_is_present() {
+        use crate::shell::ribbon::{test_tile_order, TestTile};
+        assert!(!crate::beta::enabled(super::BETA_ID));
+
+        let tiles = test_tile_order(false);
+        assert!(tiles.iter().all(|tile| !tile.local_run()), "{tiles:?}");
+        assert!(tiles.contains(&TestTile::Play) && tiles.contains(&TestTile::Stop));
+        let on = test_tile_order(true);
+        for tile in [
+            TestTile::PlayLocal,
+            TestTile::ServerClients,
+            TestTile::Replay,
+            TestTile::Players,
+            TestTile::Data,
+            TestTile::Offline,
+        ] {
+            assert!(on.contains(&tile) && !tiles.contains(&tile), "{tile:?}");
+        }
+
+        let mut names = Vec::new();
+        for menu in crate::menu_bar::menus(&[]) {
+            menu_names(&menu.items, &mut names);
+        }
+        assert!(!names.iter().any(|n| n.contains("(local)")), "{names:?}");
+
+        let hidden = crate::shell::ui_editor::beta_hidden_panels();
+        assert!(hidden.contains(&crate::shell::layout::Panel::MicroProfiler));
+        assert!(!crate::shortcuts::Command::MicroProfiler.available());
+    }
+
     #[test]
     fn play_local_starts_without_waiting_for_its_players() {
         let mut session =

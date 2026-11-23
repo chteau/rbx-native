@@ -80,6 +80,9 @@ impl Shell {
     /// The recording Replay and Save recording would take: the running
     /// run's, else the last one's.
     fn local_run_current_recording(&self) -> Option<Recording> {
+        if !crate::beta::enabled(super::BETA_ID) {
+            return None;
+        }
         match &self.play.live.local.running {
             Some(run) => match &run.replay {
                 Some(replay) => Some(replay.playback.recording().clone()),
@@ -152,6 +155,9 @@ impl Shell {
     }
 
     fn local_run_replay_recording(&mut self, recording: Recording, cx: &mut Context<Self>) {
+        if !crate::beta::enabled(super::BETA_ID) {
+            return;
+        }
         let frames = recording.frame_count();
         let engine = recording.engine.clone();
         let (session, playback, first) = match begin(recording) {
