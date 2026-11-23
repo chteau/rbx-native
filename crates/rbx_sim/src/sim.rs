@@ -103,8 +103,8 @@ pub struct Simulation {
     overruled: Vec<Ref>,
     /// What the last step cost (see [`Simulation::take_costs`]).
     costs: crate::profile::Costs,
-    /// See [`Simulation::set_wall_clock`].
-    wall_clock: bool,
+    /// See [`Simulation::set_pacing`].
+    pacing: Pacing,
     /// How long the last step took, when it overran its frame.
     overran: Option<f64>,
     /// `leaderstats` values renamed after they arrived (a server script's
@@ -116,6 +116,21 @@ pub struct Simulation {
 
 /// The most frames the world catches up after a frame that overran.
 const CATCH_UP: u64 = 3;
+
+/// How long a frame is, which the step after it reports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Pacing {
+    /// Every frame is 1/60 s: headless runs.
+    #[default]
+    Fixed,
+    /// A frame lasts as long as it took, as in the editor.
+    Wall,
+    /// A frame lasts as long as its Luau ran, at least 1/60 s: a script
+    /// that overruns stretches it as on a real server, while the engine's
+    /// own cost (a loaded machine) doesn't, so a test's verdict can't
+    /// depend on what else the machine is doing.
+    Scripts,
+}
 
 impl Simulation {
     pub fn new(dom: WeakDom) -> Result<Self, String> {
@@ -149,7 +164,7 @@ impl Simulation {
             stream: None,
             overruled: Vec::new(),
             costs: Default::default(),
-            wall_clock: false,
+            pacing: Pacing::Fixed,
             overran: None,
             renamed_stats: HashSet::new(),
         })
@@ -1038,6 +1053,7 @@ impl Simulation {
     /// (after `Heartbeat`: the TouchedOrder golden), the deferred queue.
     pub fn step(&mut self) {
         let step_started = std::time::Instant::now();
+        let script_before = self.vm.profiler().borrow().script_time();
         let edits = self.dom.borrow_mut().take_changes();
         self.apply(edits);
         // A client lays its GUI out once what replication brought is in,
@@ -1101,16 +1117,31 @@ impl Simulation {
         self.vm.leak_tick();
         let wall = step_started.elapsed();
         self.costs.total += wall;
-        if self.wall_clock && wall.as_secs_f64() > 1.0 / FRAME_HZ {
-            self.overran = Some(wall.as_secs_f64());
-        }
+        let length = match self.pacing {
+            Pacing::Fixed => None,
+            Pacing::Wall => Some(wall),
+            Pacing::Scripts => Some(
+                self.vm
+                    .profiler()
+                    .borrow()
+                    .script_time()
+                    .saturating_sub(script_before),
+            ),
+        };
+        self.overran = length
+            .map(|l| l.as_secs_f64())
+            .filter(|l| *l > 1.0 / FRAME_HZ);
     }
 
     /// Frames paced by the wall clock, as in the editor: a frame scripts
     /// make overrun stretches the next one's step (see [`Self::step`]).
     /// Off for headless runs, whose frames are all 1/60 s.
     pub fn set_wall_clock(&mut self, on: bool) {
-        self.wall_clock = on;
+        self.set_pacing(if on { Pacing::Wall } else { Pacing::Fixed });
+    }
+
+    pub fn set_pacing(&mut self, pacing: Pacing) {
+        self.pacing = pacing;
         self.overran = None;
     }
 

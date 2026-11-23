@@ -253,7 +253,7 @@ pub struct Session {
     network: Network,
     /// Recording or replaying.
     pub(crate) trace: Option<Trace>,
-    wall_clock: bool,
+    pacing: crate::Pacing,
     /// The last frames' costs (see [`Session::frames`]).
     profile: crate::profile::FrameLog,
     frames: u64,
@@ -400,7 +400,7 @@ impl Session {
             script_timeout: None,
             network: Network::default(),
             trace: None,
-            wall_clock: false,
+            pacing: Default::default(),
             profile: Default::default(),
             frames: 0,
             remote_log: None,
@@ -644,7 +644,7 @@ impl Session {
         sim.make_client(index, player);
         network_items(&mut sim.dom_mut());
         sim.set_network_ping(self.network.ping());
-        sim.set_wall_clock(self.wall_clock);
+        sim.set_pacing(self.pacing);
         if let Some(timeout) = self.script_timeout {
             sim.set_script_timeout(timeout);
         }
@@ -1244,11 +1244,21 @@ impl Session {
     /// Wall clock pacing on the server and every client, those to come too
     /// (see [`Simulation::set_wall_clock`]).
     pub fn set_wall_clock(&mut self, on: bool) {
-        self.server.set_wall_clock(on);
+        self.set_pacing(if on {
+            crate::Pacing::Wall
+        } else {
+            crate::Pacing::Fixed
+        });
+    }
+
+    /// The frame pacing of the server and every client, those to come too
+    /// (see [`crate::Pacing`]).
+    pub fn set_pacing(&mut self, pacing: crate::Pacing) {
+        self.server.set_pacing(pacing);
         for client in &mut self.clients {
-            client.sim.set_wall_clock(on);
+            client.sim.set_pacing(pacing);
         }
-        self.wall_clock = on;
+        self.pacing = pacing;
     }
 
     pub fn set_fetcher(&mut self, fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>) {

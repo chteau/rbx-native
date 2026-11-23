@@ -119,7 +119,7 @@ fn an_overrun_frame_stretches_the_next_step_only() {
         end)
     "#;
     let mut session = Session::new(place(source)).expect("the place runs");
-    session.set_wall_clock(true);
+    session.set_pacing(rbx_sim::Pacing::Scripts);
     session.start();
     for _ in 0..6 {
         session.step();
