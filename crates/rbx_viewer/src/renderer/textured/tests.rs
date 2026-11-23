@@ -9,10 +9,12 @@ use crate::quality::QualityLevel;
 #[test]
 fn the_shader_reads_the_wedge_flag_the_layout_supplies() {
     assert!(DECAL_SHADER.contains("@location(11) wedge: u32"));
-    assert_eq!(INSTANCE_ATTRIBUTES.len(), 10);
+    assert!(DECAL_SHADER.contains("@location(15) to_unit_3: vec4<f32>"));
+    assert_eq!(INSTANCE_ATTRIBUTES.len(), 14);
     assert_eq!(INSTANCE_ATTRIBUTES[9].shader_location, 11);
+    assert_eq!(INSTANCE_ATTRIBUTES[13].shader_location, 15);
     assert_eq!(
-        INSTANCE_ATTRIBUTES[9].offset + INSTANCE_ATTRIBUTES[9].format.size(),
+        INSTANCE_ATTRIBUTES[13].offset + INSTANCE_ATTRIBUTES[13].format.size(),
         std::mem::size_of::<DecalRaw>() as wgpu::BufferAddress
     );
 }
@@ -134,13 +136,29 @@ fn profile_texture_upload_spread() {
     // decals.
     let groups = synthetic_groups(60, 1024);
 
-    let mut before = Textured::new(&device, &queue, target, &view_projection, &groups, &quality, &Resolved::default());
+    let mut before = Textured::new(
+        &device,
+        &queue,
+        target,
+        &view_projection,
+        &groups,
+        &quality,
+        &Resolved::default(),
+    );
     let burst = Instant::now();
     before.upload_pending(&device, &queue, &quality, usize::MAX);
     wait_for_gpu(&device);
     let burst = burst.elapsed();
 
-    let mut after = Textured::new(&device, &queue, target, &view_projection, &groups, &quality, &Resolved::default());
+    let mut after = Textured::new(
+        &device,
+        &queue,
+        target,
+        &view_projection,
+        &groups,
+        &quality,
+        &Resolved::default(),
+    );
     let mut frames: Vec<Duration> = Vec::new();
     while !after.pending.is_empty() {
         let frame = Instant::now();

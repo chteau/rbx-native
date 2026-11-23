@@ -252,11 +252,15 @@ mod tests {
     fn the_noob_wears_the_classic_colours_and_the_default_face() {
         let mut dom = WeakDom::new();
         let model = super::noob(&mut dom, "Player1", None);
-        let colour = |name: &str| dom.get(child(&dom, model, name)).unwrap().properties()["BrickColor"].clone();
+        let colour = |name: &str| {
+            dom.get(child(&dom, model, name)).unwrap().properties()["BrickColor"].clone()
+        };
         assert_eq!(colour("Head"), Variant::BrickColor(24));
         assert_eq!(colour("Torso"), Variant::BrickColor(23));
         assert_eq!(colour("Left Leg"), Variant::BrickColor(119));
-        let face = dom.get(child(&dom, child(&dom, model, "Head"), "face")).unwrap();
+        let face = dom
+            .get(child(&dom, child(&dom, model, "Head"), "face"))
+            .unwrap();
         assert_eq!(face.class(), "Decal");
         assert_eq!(
             face.properties()["Texture"],

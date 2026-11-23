@@ -476,8 +476,7 @@ impl Lighting {
             // One lamp does both jobs: a bounce opposite the sun by day, the
             // moon by night (see `Lighting::fill_direction`).
             fill_color: Vec3::splat(lamp)
-                * (fill * FILL_TINT * day
-                    + moon * MOON_FRACTION * MOON_TINT * (1.0 - day))
+                * (fill * FILL_TINT * day + moon * MOON_FRACTION * MOON_TINT * (1.0 - day))
                 * (Vec3::ONE + read.shift_bottom),
             ambient: read.ambient * ambient_scale,
             exposure: read.exposure.exp2(),
