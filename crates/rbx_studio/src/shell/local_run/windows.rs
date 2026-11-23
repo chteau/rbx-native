@@ -74,9 +74,21 @@ impl TestWindowHandle {
         });
     }
 
-    /// The player the shown tab is, who alone gets the keys and mouse.
+    /// The player the shown tab is (or the popped-out window with the
+    /// keyboard), who alone gets the keys and mouse.
     fn input_target(&self, cx: &App) -> Option<Ref> {
         self.view.upgrade()?.read(cx).tabs().input_target()
+    }
+
+    /// Closes the window and every peer's popped out of it.
+    pub(super) fn close(&self, cx: &mut App) {
+        let windows = match self.view.upgrade() {
+            Some(view) => view.read(cx).windows(),
+            None => vec![self.handle],
+        };
+        for window in windows {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
     }
 }
 
@@ -107,6 +119,12 @@ pub(in crate::shell) struct PeerLink {
     pub(super) tabs: WeakEntity<TestWindow>,
     /// This tab is the one the test window shows.
     pub(in crate::shell) tab_shown: bool,
+    /// Popped out of the test window into a window of its own.
+    pub(in crate::shell) detached: bool,
+    /// The peer whose tab this editor's row is dragging.
+    pub(super) dragging: Option<Home>,
+    /// The peer whose tab was right-clicked, and where.
+    pub(super) tab_menu: Option<(Home, Point<Pixels>)>,
     /// A collaborator's view of their player in someone else's session
     /// (`remote`): `host` is this editor's own window, which holds the
     /// connection.
@@ -359,6 +377,9 @@ impl Shell {
                 .as_ref()
                 .map_or_else(WeakEntity::new_invalid, |(_, view)| view.clone()),
             tab_shown: existing.is_none(),
+            detached: false,
+            dragging: None,
+            tab_menu: None,
             remote: false,
             remotes: run.remotes.clone(),
         };
@@ -383,7 +404,8 @@ impl Shell {
                 let mut made = None;
                 let opened = cx.open_window(options, |window, cx| {
                     let shell = build(window, cx);
-                    let view = cx.new(|_| TestWindow::new(home, shell.clone()));
+                    let handle = window.window_handle();
+                    let view = cx.new(|_| TestWindow::new(home, shell.clone(), handle));
                     shell.update(cx, |shell, _| {
                         if let Some(link) = shell.play.live.local.peer.as_mut() {
                             link.tabs = view.downgrade();

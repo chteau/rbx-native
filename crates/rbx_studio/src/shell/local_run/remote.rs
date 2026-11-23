@@ -753,6 +753,9 @@ impl Shell {
             paused: false,
             tabs: WeakEntity::new_invalid(),
             tab_shown: true,
+            detached: false,
+            dragging: None,
+            tab_menu: None,
             remote: true,
             remotes: Default::default(),
         };
@@ -764,7 +767,8 @@ impl Shell {
         let mut made = None;
         let opened = cx.open_window(options, |window, cx| {
             let shell = build(window, cx);
-            let view = cx.new(|_| TestWindow::new(Home::Player(player), shell.clone()));
+            let handle = window.window_handle();
+            let view = cx.new(|_| TestWindow::new(Home::Player(player), shell.clone(), handle));
             shell.update(cx, |shell, _| {
                 if let Some(link) = shell.play.live.local.peer.as_mut() {
                     link.tabs = view.downgrade();

@@ -349,7 +349,7 @@ fn tear_out_grip() -> Point<Pixels> {
 
 /// The display under `at`: all of it, and its work area (less the taskbar
 /// or the Dock).
-fn screen_at(at: Point<Pixels>, cx: &App) -> Option<(Bounds<Pixels>, Bounds<Pixels>)> {
+pub(super) fn screen_at(at: Point<Pixels>, cx: &App) -> Option<(Bounds<Pixels>, Bounds<Pixels>)> {
     cx.displays()
         .into_iter()
         .find(|display| display.bounds().contains(&at))
@@ -360,7 +360,10 @@ fn screen_at(at: Point<Pixels>, cx: &App) -> Option<(Bounds<Pixels>, Bounds<Pixe
 /// `bounds` shrunk to fit `area` and slid inside it. A tear-out held near
 /// the screen's right edge keeps its bar under the pointer; near the
 /// bottom it moves up.
-fn keep_on_screen(bounds: Bounds<Pixels>, area: Option<Bounds<Pixels>>) -> Bounds<Pixels> {
+pub(super) fn keep_on_screen(
+    bounds: Bounds<Pixels>,
+    area: Option<Bounds<Pixels>>,
+) -> Bounds<Pixels> {
     let Some(area) = area else {
         return bounds;
     };

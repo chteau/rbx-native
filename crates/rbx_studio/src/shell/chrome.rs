@@ -243,8 +243,10 @@ impl Shell {
                     "Close",
                     true,
                     cx.listener(|shell, _, window, cx| {
-                        // Server & Clients' window closes with the session.
-                        if shell.play.live.local.peer.is_some() {
+                        // Server & Clients' window closes with the session;
+                        // a peer popped out of it goes back to its tab.
+                        if shell.local_run_dock_back(cx) {
+                        } else if shell.play.live.local.peer.is_some() {
                             shell.local_run_stop(cx);
                         } else if shell.request_quit(cx) {
                             window.remove_window();
