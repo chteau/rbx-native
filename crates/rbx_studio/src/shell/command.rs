@@ -352,6 +352,7 @@ impl Shell {
         let preselected = kept.and_then(|reference| explorer.item(reference));
 
         self.explorer = Rc::new(explorer);
+        self.refresh_explorer_icons(cx);
         let items = self.explorer_items();
         self.tree.update(cx, |tree, cx| {
             tree.set_items(items, cx);
