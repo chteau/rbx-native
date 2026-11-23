@@ -136,11 +136,11 @@
     "tolerance_ssim": 0.019999999552965164
   },
   "gui_canvas_groups": {
-    "about": "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested",
-    "delta_e": 3.29,
-    "delta_e_p90": 23.769,
-    "ssim": 0.945,
-    "tolerance_delta_e": 0.4935474693775177,
+    "about": "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested; under Global and Sibling",
+    "delta_e": 0.851,
+    "delta_e_p90": 0.347,
+    "ssim": 0.988,
+    "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
   "gui_fonts": {
@@ -169,9 +169,9 @@
   },
   "gui_stacking": {
     "about": "Stacked half transparent frames, ZIndex, CanvasGroup, UIListLayout with UIPadding",
-    "delta_e": 1.045,
+    "delta_e": 0.059,
     "delta_e_p90": 0.205,
-    "ssim": 0.981,
+    "ssim": 1.0,
     "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
@@ -417,10 +417,10 @@
   },
   "surface_appearance": {
     "about": "A MeshPart with its TextureID, and SurfaceAppearances: Overlay tinted, Transparency, metalness and roughness maps",
-    "delta_e": 5.736,
-    "delta_e_p90": 12.521,
-    "ssim": 0.801,
-    "tolerance_delta_e": 0.6000000238418579,
+    "delta_e": 3.153,
+    "delta_e_p90": 6.748,
+    "ssim": 0.937,
+    "tolerance_delta_e": 0.47300025820732117,
     "tolerance_ssim": 0.019999999552965164
   },
   "template_spawn": {

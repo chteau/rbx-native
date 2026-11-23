@@ -84,7 +84,7 @@ pub(crate) struct Element {
     pub(crate) viewport: Option<Viewport>,
     /// A `CanvasGroup` whose subtree the renderer is to flatten before
     /// tinting; `None` for every other element, and for a group under
-    /// `ZIndexBehavior.Global`.
+    /// `ZIndexBehavior.Global`, whose tint is folded into its background.
     pub(crate) group: Option<Grouped>,
     /// A `ScrollingFrame`'s window, for a host to hit-test the wheel against
     /// (see `super::wheel`); `None` for every other element.
@@ -449,12 +449,24 @@ pub(in crate::scene::gui) fn emit(
     // only when the ancestor `LayerCollector` has its `ZIndexBehavior` set to
     // `Sibling`", which is also the only mode that leaves them contiguous
     // behind the group here, since [`resolve`] re-sorts a `Global` screen.
-    if let Some(tint) = node.group.filter(|_| !context.global_z_index) {
-        into[start].group = Some(Grouped {
-            tint,
-            descendants: into.len() - start - 1,
-            texture: None,
-        });
+    // Under `Global` the real client still tints and fades the group's own
+    // background, and only that (`gui_canvas_groups`).
+    match node.group {
+        Some(tint) if context.global_z_index => {
+            let own = &mut into[start];
+            for (channel, tint) in own.background.iter_mut().zip(tint.color) {
+                *channel *= tint;
+            }
+            own.background_alpha *= tint.alpha;
+        }
+        Some(tint) => {
+            into[start].group = Some(Grouped {
+                tint,
+                descendants: into.len() - start - 1,
+                texture: None,
+            });
+        }
+        None => {}
     }
 }
 
