@@ -1,4 +1,4 @@
-//! The left column: search, the ten pages, the two settings that are
+//! The left column: search, the eleven pages, the two settings that are
 //! windows of their own, and the config folder.
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -20,12 +20,13 @@ pub(super) enum Page {
     ExplorerOutput,
     Files,
     Argon,
+    Ai,
     Account,
     Beta,
 }
 
 impl Page {
-    pub(super) const ALL: [Page; 10] = [
+    pub(super) const ALL: [Page; 11] = [
         Page::Appearance,
         Page::Accessibility,
         Page::Layout,
@@ -34,6 +35,7 @@ impl Page {
         Page::ExplorerOutput,
         Page::Files,
         Page::Argon,
+        Page::Ai,
         Page::Account,
         Page::Beta,
     ];
@@ -48,6 +50,7 @@ impl Page {
             Page::ExplorerOutput => "Explorer & Output",
             Page::Files => "Files & recovery",
             Page::Argon => "Argon",
+            Page::Ai => "AI assistants",
             Page::Account => "Account",
             Page::Beta => "Beta features",
         }
@@ -63,6 +66,7 @@ impl Page {
             Page::ExplorerOutput => "panel-left",
             Page::Files => "save",
             Page::Argon => "refresh-cw",
+            Page::Ai => "bot",
             Page::Account => "user",
             Page::Beta => "flask-conical",
         }
@@ -73,6 +77,7 @@ impl Page {
     pub(super) fn has_reset(self) -> bool {
         match self {
             Page::Beta => !crate::beta::features().is_empty(),
+            Page::Ai => false,
             _ => true,
         }
     }
@@ -88,6 +93,7 @@ impl Page {
             Page::ExplorerOutput => "Defaults for the Explorer tree and the Output log.",
             Page::Files => "Recovery copies of unsaved work, and the copies Play will make, and updates.",
             Page::Argon => "Live sync with an Argon project. The Argon dock shows the same settings.",
+            Page::Ai => "Let Claude or another MCP client read, edit and playtest the open place.",
             Page::Account => "Your Roblox access and what RbxNative shares about you.",
             Page::Beta => "Try features before they\u{2019}re finished. Switch one off if it misbehaves.",
         };

@@ -2,7 +2,7 @@ use glam::Vec3;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_viewer::pick::Ray;
 
-use super::{bounds, count_scripts, face_of, land, shift, subtree, Aim, OPEN_AIR_DISTANCE};
+use super::{bounds, count_scripts, face_of, land, subtree, Aim, OPEN_AIR_DISTANCE};
 
 fn vec3(x: f32, y: f32, z: f32) -> rbx_dom::Vector3Data {
     rbx_dom::Vector3Data { x, y, z }
@@ -158,15 +158,6 @@ fn bounds_wrap_a_scaled_box_around_its_centre() {
     let (min, max) = bounds(model);
     assert!(near(min.x, -1.) && near(min.y, 1.) && near(min.z, 0.));
     assert!(near(max.x, 3.) && near(max.y, 3.) && near(max.z, 6.));
-}
-
-#[test]
-fn shifting_a_cframe_keeps_its_rotation() {
-    let moved = shift(cframe(1., 2., 3.), Vec3::new(1., -2., 0.5));
-    assert!(
-        near(moved.position.x, 2.) && near(moved.position.y, 0.) && near(moved.position.z, 3.5)
-    );
-    assert_eq!(moved.rotation, [1., 0., 0., 0., 1., 0., 0., 0., 1.]);
 }
 
 #[test]

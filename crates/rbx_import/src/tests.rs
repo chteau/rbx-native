@@ -341,3 +341,29 @@ fn an_ascii_fbx_counts_polygons_as_triangles() {
         );
     }
 }
+
+#[test]
+fn a_glb_naming_an_image_file_beside_it_carries_it_inline() {
+    let dir = std::env::temp_dir().join(format!("rbx_import_glb_image_{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("Textures")).unwrap();
+    std::fs::write(dir.join("Textures/colormap.png"), [9, 8, 7]).unwrap();
+    let doc = serde_json::json!({
+        "asset": { "version": "2.0" },
+        "buffers": [{ "byteLength": 4 }],
+        "images": [{ "uri": "Textures/colormap.png" }],
+    });
+    let glb = glb_of(&doc, &[1, 2, 3, 4]);
+    let inlined = gltf_file::inline_glb_images(glb.clone(), Some(&dir)).unwrap();
+    let parsed = gltf::Gltf::from_slice(&inlined).unwrap();
+    assert_eq!(parsed.blob.as_deref(), Some(&[1u8, 2, 3, 4][..]));
+    let json: Value = serde_json::to_value(parsed.document.into_json()).unwrap();
+    assert_eq!(
+        json["images"][0]["uri"],
+        format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode([9, 8, 7])
+        )
+    );
+    assert!(gltf_file::inline_glb_images(glb, None).is_err());
+    std::fs::remove_dir_all(dir).unwrap();
+}

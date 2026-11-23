@@ -118,6 +118,9 @@ pub(crate) struct Settings {
     /// Whether opening a script's Graph side tidies it, rather than
     /// restoring the layout saved for it.
     pub(crate) optimize_graph_on_open: bool,
+    /// Whether the MCP server (Settings › AI assistants) listens. On by
+    /// default: it only answers on 127.0.0.1, to a client holding the token.
+    pub(crate) mcp_server: bool,
     /// Real Studio's two insertion preferences, off the `⋯` beside the
     /// Explorer's insert search field (`studio/explorer.md`). Both default
     /// on, as they do there: a second `Part` called `Part` is not something
@@ -262,6 +265,7 @@ impl Default for Settings {
             output_rich_text: false,
             output_display: OutputDisplay::default(),
             optimize_graph_on_open: false,
+            mcp_server: true,
             increment_names: true,
             expand_on_select: true,
             insert_anchored: false,
@@ -495,6 +499,10 @@ fn load_from(path: &Path) -> Settings {
             .get("optimize_graph_on_open")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        mcp_server: value
+            .get("mcp_server")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
         increment_names: value
             .get("increment_names")
             .and_then(|v| v.as_bool())
@@ -831,6 +839,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     value["play_copy_name"] = settings.play_copy_name.clone().into();
     value["icon_pack_picked"] = settings.icon_pack_picked.unwrap_or(false).into();
     value["insert_anchored"] = settings.insert_anchored.into();
+    value["mcp_server"] = settings.mcp_server.into();
     value["output_rich_text"] = settings.output_rich_text.into();
     value["playtest_rate_hz"] = settings.playtest_rate_hz.into();
     value["network_presets"] = network_presets::json(&settings.network_presets);
@@ -1616,5 +1625,22 @@ mod tests {
         let read = load_from(&path);
         assert_eq!(read.anim_sheet_height, None);
         assert_eq!(read.anim_names_width, None);
+    }
+
+    #[test]
+    fn the_mcp_server_is_on_unless_switched_off() {
+        let path = temp_settings_path();
+        assert!(load_from(&path).mcp_server, "no file: on");
+        let off = Settings {
+            mcp_server: false,
+            ..Settings::default()
+        };
+        save_to(&off, &path).expect("save settings");
+        assert!(!load_from(&path).mcp_server);
+        std::fs::write(&path, r#"{"quality": "auto"}"#).expect("write");
+        assert!(
+            load_from(&path).mcp_server,
+            "a file from before the field: on"
+        );
     }
 }

@@ -91,7 +91,11 @@ pub(crate) fn mesh_part(
         return None;
     }
     let properties = instance.properties();
-    let mesh = parsed_asset_ref(properties.get("MeshId")?)?;
+    // A model from Roblox's own import names its mesh only in the newer
+    // `MeshContent`, leaving `MeshId` empty.
+    let mesh = ["MeshId", "MeshContent"]
+        .iter()
+        .find_map(|key| parsed_asset_ref(properties.get(*key)?))?;
     let Some(&Variant::Vector3(size)) = properties.get("size") else {
         return None;
     };

@@ -362,6 +362,23 @@ impl UserData for LuaInstance {
                 None => Err(this.not_a_member("PivotTo")),
             }
         });
+        methods.add_method("GetScale", |_, this, ()| {
+            crate::pivot::scale(&this.ctx.dom(), this.ctx.database(), this.referent)
+                .ok_or_else(|| this.not_a_member("GetScale"))
+        });
+        methods.add_method("ScaleTo", |_, this, factor: f32| {
+            this.ctx.check_write(this.referent)?;
+            let scaled = crate::pivot::scale_to(
+                &mut this.ctx.dom_mut(),
+                this.ctx.database(),
+                this.referent,
+                factor,
+            );
+            match scaled {
+                Some(result) => result.map_err(mlua::Error::runtime),
+                None => Err(this.not_a_member("ScaleTo")),
+            }
+        });
         methods.add_method("Destroy", |lua, this, ()| {
             this.ctx.check_write(this.referent)?;
             if this.ctx.dom().get(this.referent).is_some() {
