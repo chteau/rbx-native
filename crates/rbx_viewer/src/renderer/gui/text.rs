@@ -248,9 +248,14 @@ impl Typesetter {
         // Not cosmic-text's own hinting, which rounds an advance plainly:
         // `glyph_xs` rounds each the way Studio does (see `em`).
         buffer.set_hinting(Hinting::Disabled);
-        buffer.set_wrap(match text.wrapped || text.scaled {
-            true => Wrap::WordOrGlyph,
-            false => Wrap::None,
+        // `TextScaled` never breaks inside a word: the real client shrinks
+        // the text until its longest word fits ("Scaled" over "text" in a
+        // 110 px box, `gui_text_scaled`), where a word wider than a wrapped
+        // box is broken.
+        buffer.set_wrap(match (text.scaled, text.wrapped) {
+            (true, _) => Wrap::Word,
+            (false, true) => Wrap::WordOrGlyph,
+            (false, false) => Wrap::None,
         });
         if let Some(ellipsize) = ellipsize {
             buffer.set_ellipsize(ellipsize);

@@ -395,6 +395,35 @@ fn brick_color_expected(value: &Value) -> mlua::Error {
     ))
 }
 
+/// A text object's `TextScaled` and `TextWrapped`, which the real client
+/// keeps together: turning `TextScaled` on turns `TextWrapped` on, turning
+/// `TextWrapped` off turns `TextScaled` off, and the other two writes touch
+/// only themselves (recorded live with the `gui_text_scaled` fidelity scene).
+/// False for every other write, which takes the generic path.
+fn text_fit_set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
+    let (coupled, on) = match (name, value) {
+        ("TextScaled", Value::Boolean(true)) => ("TextWrapped", true),
+        ("TextWrapped", Value::Boolean(false)) => ("TextScaled", false),
+        _ => return Ok(false),
+    };
+    let has_both = {
+        let dom = ctx.dom();
+        let instance = dom.get(referent).ok_or_else(missing_instance)?;
+        ctx.database()
+            .resolve_property(instance.class(), coupled)
+            .is_some()
+    };
+    if !has_both {
+        return Ok(false);
+    }
+    let mut dom = ctx.dom_mut();
+    for key in [name, coupled] {
+        dom.set_property(referent, key, Variant::Bool(on))
+            .map_err(|error| mlua::Error::runtime(error.to_string()))?;
+    }
+    Ok(true)
+}
+
 /// Writes a pseudo-property, returning `Ok(false)` for anything that isn't one
 /// so the caller falls back to the generic reflected-property path.
 pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
@@ -402,6 +431,7 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
         "Axis" | "SecondaryAxis" | "WorldAxis" | "WorldSecondaryAxis" | "WorldPosition"
         | "WorldOrientation" | "WorldCFrame" => attachment_set(ctx, referent, name, value),
         "ClockTime" | "TimeOfDay" => super::clock::set(ctx, referent, name, value),
+        "TextScaled" | "TextWrapped" => text_fit_set(ctx, referent, name, value),
         "Enabled" if is_script(ctx, referent)? => {
             let Value::Boolean(enabled) = value else {
                 return Err(mlua::Error::runtime(format!(

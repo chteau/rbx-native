@@ -362,6 +362,8 @@ fn text_scaled_picks_the_largest_whole_size_that_fits() {
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
         .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
+        .unwrap();
 
     // 100 by 20: four characters are 2s wide (fits up to 50) and s tall.
     let elements = resolve_with(&screens(&dom), VIEWPORT, &mut Fixed);
@@ -386,6 +388,8 @@ fn size_bounds_clamp_both_a_scaled_and_a_plain_size() {
     let (mut dom, gui) = screen_gui();
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
+        .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
         .unwrap();
     dom.set_property(referent, "TextSize", Variant::Float32(14.0))
         .unwrap();
@@ -456,6 +460,8 @@ fn a_ui_text_size_constraint_bounds_the_text_beside_it() {
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
         .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
+        .unwrap();
     let constraint = dom.new_instance(
         "UITextSizeConstraint",
         "UITextSizeConstraint",
@@ -478,6 +484,8 @@ fn a_labels_padding_insets_its_text() {
     let (mut dom, gui) = screen_gui();
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
+        .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
         .unwrap();
     let padding = dom.new_instance("UIPadding", "UIPadding", Some(referent));
     for side in ["PaddingLeft", "PaddingRight"] {

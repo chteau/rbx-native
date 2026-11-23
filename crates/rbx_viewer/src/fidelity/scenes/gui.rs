@@ -11,6 +11,8 @@ use super::studio;
 
 const GRID: &str = "rbxassetid://6372755229";
 const FACE: &str = "rbxasset://textures/face.png";
+/// `Enum.Font.SourceSans`.
+const SOURCE_SANS: u32 = 4;
 const ROUNDED: &str = "rbxasset://textures/ui/RoundedRect8px.png";
 const BACKDROP: [u8; 3] = [46, 46, 52];
 
@@ -141,6 +143,40 @@ fn fonts(b: &mut Builder) {
             b.set(text, "FontFace", font(family, weight, italic));
             b.set(text, "TextXAlignment", Variant::Enum(0));
         }
+    }
+}
+
+/// `TextScaled` labels in a wide, a tall and a small box: unwrapped and
+/// wrapped, in Builder Sans and in the legacy `Font`, with a plain 14 px
+/// label beside each row. The real client loads `TextScaled` off where
+/// `TextWrapped` is off (see `scene::gui::plan::text`).
+fn text_scaled(b: &mut Builder) {
+    let screen = backdrop(b);
+    let builder = font("BuilderSans", 400, false);
+    for (row, (wrapped, legacy)) in [(false, false), (true, false), (false, true), (true, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let y = 80.0 + 150.0 * row as f32;
+        for (x, size) in [
+            (30.0, [300.0, 50.0]),
+            (360.0, [300.0, 130.0]),
+            (690.0, [110.0, 130.0]),
+        ] {
+            let text = label(b, screen, [x, y], size, "Scaled text", 14.0);
+            b.set(text, "BackgroundTransparency", float(0.0));
+            b.set(text, "BackgroundColor3", rgb(70, 70, 90));
+            b.set(text, "TextScaled", Variant::Bool(true));
+            b.set(text, "TextWrapped", Variant::Bool(wrapped));
+            if legacy {
+                b.set(text, "Font", Variant::Enum(SOURCE_SANS));
+                b.set(text, "FontFace", font("SourceSansPro", 400, false));
+            } else {
+                b.set(text, "FontFace", builder.clone());
+            }
+        }
+        let plain = label(b, screen, [830.0, y], [300.0, 50.0], "Scaled text", 14.0);
+        b.set(plain, "FontFace", builder.clone());
     }
 }
 
@@ -511,6 +547,11 @@ pub(super) fn scenes() -> Vec<Scene> {
             "gui_text_layout",
             "TextScaled, wrapped lines at LineHeight 1 and 1.5, RichText, TextStroke, TextYAlignment",
             text_layout,
+        ),
+        gui(
+            "gui_text_scaled",
+            "TextScaled with and without TextWrapped, in Builder Sans and the legacy Font, in wide, tall and small boxes",
+            text_scaled,
         ),
         gui(
             "gui_strokes",

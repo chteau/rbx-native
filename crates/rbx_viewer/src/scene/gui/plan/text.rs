@@ -88,8 +88,8 @@ pub(crate) struct Text {
     pub(crate) alpha: f32,
     /// `TextSize`: the height of one line, in pixels. Ignored with `scaled`.
     pub(crate) size: f32,
-    /// `TextScaled`: the size is the largest that fits the box instead, and
-    /// the text wraps whether or not `TextWrapped` says so.
+    /// `TextScaled`, with `TextWrapped` (see [`text`]): the size is the
+    /// largest that fits the box instead, breaking only between words.
     pub(crate) scaled: bool,
     pub(crate) wrapped: bool,
     /// `TextXAlignment`/`TextYAlignment`, `Start` being Left/Top.
@@ -214,7 +214,11 @@ pub(super) fn text(
         color: tint,
         alpha: alpha(properties, "TextTransparency"),
         size: float(properties, "TextSize", 14.0).max(1.0),
-        scaled: flag(properties, "TextScaled", false),
+        // The real client holds `TextScaled` only with `TextWrapped`: turning
+        // it on turns wrapping on, and turning wrapping off turns it off, so a
+        // file saving it without `TextWrapped` loads plain (`gui_text_scaled`
+        // reads `TextScaled` false there and draws the 14 px text).
+        scaled: flag(properties, "TextScaled", false) && flag(properties, "TextWrapped", false),
         wrapped: flag(properties, "TextWrapped", false),
         x_align: match enum_of(properties, "TextXAlignment", X_CENTER) {
             X_RIGHT => Align::End,
