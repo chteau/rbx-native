@@ -52,6 +52,7 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::AvatarSettings
         | Panel::Localization
         | Panel::MicroProfiler
+        | Panel::LoadTest
         | Panel::Plugin(_) => None,
     }
 }
