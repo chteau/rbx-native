@@ -88,6 +88,10 @@ const FORCE_FIELD_INTERSECTION_STUDS: f32 = 1.0;
 // `exp2(shininess * (dot(n, h) - 1))`.
 const SHININESS_MIN: f32 = 1.0;
 const SHININESS_MAX: f32 = 11.0;
+// The least of Plastic's strength, and of a metal's reflection, a
+// `SurfaceAppearance` keeps at full roughness (see `mapped_shade`).
+const APPEARANCE_SPEC_FLOOR: f32 = 0.5;
+const APPEARANCE_METAL_FLOOR: f32 = 0.2;
 
 /// Everything a surface shader knows before its material is applied.
 struct MaterialInput {
@@ -216,6 +220,8 @@ struct Mapped {
     // `MaterialInput`'s, passed through.
     pattern: f32,
     edge: f32,
+    // A `SurfaceAppearance`'s maps (see `mapped_shade`).
+    appearance: bool,
 }
 
 /// How much of Plastic's normal map reaches the shading: the real client's
@@ -274,11 +280,23 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
     // every textured material is scaled from Plastic's own strength so the two
     // never look like they belong to different renderers. The two used to
     // drift, this file kept its own stale copy of the number.
-    surface.spec_strength = lighting.calibration.y * (1.0 - mapped.roughness);
+    //
+    // A `SurfaceAppearance` keeps some of it however rough it is, roughness
+    // blurring its reflection more than taking it away: the real client's
+    // Overlay cone tinted orange shows a sky sheen (blue 51 in
+    // `surface_appearance`, 16 when it faded with roughness).
+    let glossy = 1.0 - mapped.roughness;
+    surface.spec_strength = lighting.calibration.y
+        * select(glossy, max(glossy, APPEARANCE_SPEC_FLOOR), mapped.appearance);
     // A metal reflects its own colour where a dielectric reflects white, and
-    // the smoother it is the more of the sky it shows.
+    // the smoother it is the more of the sky it shows. A rough metal in a
+    // `SurfaceAppearance` still mirrors some (the grid metalness cone's white
+    // lines are as dim as the real client's at this share, not paint white).
     surface.spec_tint = mix(vec3<f32>(1.0), surface.albedo, mapped.metalness);
-    surface.reflectance = max(mapped.reflectance, mapped.metalness * (1.0 - mapped.roughness));
+    surface.reflectance = max(
+        mapped.reflectance,
+        mapped.metalness * select(glossy, max(glossy, APPEARANCE_METAL_FLOOR), mapped.appearance)
+    );
     if mapped.kind == KIND_GLASS {
         surface.reflectance = max(surface.reflectance, GLASS_REFLECTANCE);
     }

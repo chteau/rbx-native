@@ -109,6 +109,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     mapped.metalness = metalness;
     mapped.roughness = roughness;
     mapped.kind = in.kind;
+    mapped.appearance = true;
 
     let glow = textureSample(appearance_emissive, appearance_sampler, in.uv).r * appearance.emissive.rgb;
 
