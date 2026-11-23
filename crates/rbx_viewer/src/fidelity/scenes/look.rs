@@ -98,6 +98,67 @@ fn decals(b: &mut Builder) {
     b.set(texture, "Color3", rgb(0, 0, 255));
 }
 
+/// `Texture` transparencies 0 to 0.75 over red parts, blue tinted along the
+/// top row and untinted below, each tiled at 12 studs so a 6 stud face
+/// shows one flat quarter of the grid (white at alpha 147).
+fn texture_blend(b: &mut Builder) {
+    b.block([2048.0, 16.0, 2048.0], [0.0, -8.0, 0.0], [91, 91, 91]);
+    for (row, tint) in [[0, 0, 255], [255, 255, 255]].into_iter().enumerate() {
+        for (column, transparency) in [0.0, 0.25, 0.5, 0.75].into_iter().enumerate() {
+            let x = -10.5 + 7.0 * column as f32;
+            let y = 3.0 + 7.0 * (1 - row) as f32;
+            let part = b.part(
+                BLOCK,
+                [6.0, 6.0, 1.0],
+                at([x, y, 0.0]),
+                [196, 40, 28],
+                PLASTIC,
+            );
+            let texture = b.child(part, "Texture");
+            b.set(texture, "Texture", content(GRID));
+            b.set(texture, "Face", Variant::Enum(FRONT));
+            b.set(texture, "StudsPerTileU", float(12.0));
+            b.set(texture, "StudsPerTileV", float(12.0));
+            b.set(texture, "Transparency", float(transparency));
+            let [r, g, bl] = tint;
+            b.set(texture, "Color3", rgb(r, g, bl));
+        }
+    }
+}
+
+/// `Enum.Material.Metal`.
+const METAL: u32 = 1088;
+
+/// `MaterialVariant`s with the grid as their colour map, on blocks: plain at
+/// 4 studs a tile, `Pattern = Organic` at 8, tinted by the part's colour, and
+/// on a `Metal` base with the grid as its metalness map too.
+fn material_variants(b: &mut Builder) {
+    b.block([2048.0, 16.0, 2048.0], [0.0, -8.0, 0.0], [91, 91, 91]);
+    let variants: [(&str, u32, f32, u32, [u8; 3]); 4] = [
+        ("Grid", PLASTIC, 4.0, 0, [248, 248, 248]),
+        ("Organic", PLASTIC, 8.0, 1, [248, 248, 248]),
+        ("Tinted", PLASTIC, 4.0, 0, [196, 40, 28]),
+        ("Metallic", METAL, 4.0, 0, [163, 162, 165]),
+    ];
+    for (i, (name, base, studs, pattern, colour)) in variants.into_iter().enumerate() {
+        let variant = b.material_variant(name);
+        b.set(variant, "BaseMaterial", Variant::Enum(base));
+        b.set(variant, "ColorMap", content(GRID));
+        b.set(variant, "StudsPerTile", float(studs));
+        b.set(variant, "Pattern", Variant::Enum(pattern));
+        if base == METAL {
+            b.set(variant, "MetalnessMap", content(GRID));
+        }
+        let x = -10.5 + 7.0 * i as f32;
+        let part = b.part(BLOCK, [6.0, 6.0, 6.0], at([x, 3.0, 0.0]), colour, base);
+        b.set(
+            part,
+            "MaterialVariantSerialized",
+            Variant::String(name.to_owned()),
+        );
+    }
+}
+
 pub(super) fn scenes() -> Vec<Scene> {
     vec![
         Scene {
@@ -153,6 +214,40 @@ pub(super) fn scenes() -> Vec<Scene> {
                 ("floor", [0.0, 0.0, -6.0]),
             ],
             build: decals,
+        },
+        Scene {
+            name: "material_variants",
+            about: "MaterialVariants with a colour map: StudsPerTile 4, Organic at 8, tinted, and on Metal with a metalness map",
+            eye: [0.0, 9.0, -16.0],
+            look_at: [0.0, 3.0, 0.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: vec![
+                ("grid front", [-10.5, 3.0, -3.0]),
+                ("organic front", [-3.5, 3.0, -3.0]),
+                ("tinted front", [3.5, 3.0, -3.0]),
+                ("metallic front", [10.5, 3.0, -3.0]),
+                ("grid top", [-10.5, 6.0, 0.0]),
+                ("metallic top", [10.5, 6.0, 0.0]),
+            ],
+            build: material_variants,
+        },
+        Scene {
+            name: "texture_blend",
+            about: "Blue tinted and untinted Textures at Transparency 0, 0.25, 0.5 and 0.75 over red parts",
+            eye: [0.0, 6.5, -22.0],
+            look_at: [0.0, 6.5, 0.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: [0.0, 0.25, 0.5, 0.75]
+                .into_iter()
+                .enumerate()
+                .flat_map(|(i, _)| {
+                    let x = -10.5 + 7.0 * i as f32;
+                    [("blue", [x, 10.0, -0.5]), ("white", [x, 3.0, -0.5])]
+                })
+                .collect(),
+            build: texture_blend,
         },
     ]
 }

@@ -95,11 +95,13 @@ impl Scene {
         let players = dom.new_instance("Players", "Players", None);
         let player = dom.new_instance("Player", "Player", Some(players));
         let gui = dom.new_instance("PlayerGui", "PlayerGui", Some(player));
+        let materials = dom.new_instance("MaterialService", "MaterialService", None);
         let mut builder = Builder {
             dom,
             world: workspace,
             lighting,
             gui,
+            materials,
         };
         (self.build)(&mut builder);
         let mut dom = builder.dom;
@@ -108,14 +110,15 @@ impl Scene {
     }
 
     /// Builds the scene's world under `world`, its `Lighting` children
-    /// under `lighting` and its screens under `gui`, in a DOM of the
-    /// caller's.
-    pub fn build_into(&self, dom: WeakDom, world: Ref, lighting: Ref, gui: Ref) -> WeakDom {
+    /// under `lighting`, its screens under `gui` and its `MaterialService`
+    /// children under `materials`, in a DOM of the caller's.
+    pub fn build_into(&self, dom: WeakDom, [world, lighting, gui, materials]: [Ref; 4]) -> WeakDom {
         let mut builder = Builder {
             dom,
             world,
             lighting,
             gui,
+            materials,
         };
         (self.build)(&mut builder);
         builder.dom
@@ -128,6 +131,7 @@ pub struct Builder {
     world: Ref,
     lighting: Ref,
     gui: Ref,
+    materials: Ref,
 }
 
 impl Builder {
@@ -169,6 +173,13 @@ impl Builder {
     pub fn lighting_child(&mut self, class: &str) -> Ref {
         let lighting = self.lighting;
         self.child(lighting, class)
+    }
+
+    /// A `MaterialVariant` under `MaterialService`.
+    pub fn material_variant(&mut self, name: &str) -> Ref {
+        let materials = self.materials;
+        self.dom
+            .new_instance("MaterialVariant", name, Some(materials))
     }
 
     /// A `ScreenGui` the player sees over the scene.
