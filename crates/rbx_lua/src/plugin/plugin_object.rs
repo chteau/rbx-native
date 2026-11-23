@@ -554,6 +554,52 @@ fn prompt_function(lua: &Lua, pending: Pending) -> Result<Function> {
     Ok(f)
 }
 
+/// `plugin:Union` / `Intersect` (the new operation) and `Negate` /
+/// `Separate` (what replaced the objects), done on the place as Studio's
+/// Model tab does them, through [`crate::csg`].
+fn solid_modeling(lua: &Lua, name: &str, objects: &Value) -> Result<Value> {
+    let Value::Table(list) = objects else {
+        return Err(mlua::Error::runtime("Unable to cast value to Objects"));
+    };
+    let objects = list
+        .sequence_values::<Value>()
+        .map(|v| {
+            v?.as_userdata()
+                .and_then(|u| u.borrow::<LuaInstance>().ok())
+                .map(|i| i.referent())
+                .ok_or_else(|| mlua::Error::runtime("Unable to cast value to Objects"))
+        })
+        .collect::<Result<Vec<Ref>>>()?;
+    let ctx = env(lua).ctx.clone();
+    let db = ctx.database();
+    let made = {
+        let mut dom = ctx.dom_mut();
+        match name {
+            "Union" | "Intersect" => {
+                let operation = if name == "Union" {
+                    crate::csg::Operation::Union
+                } else {
+                    crate::csg::Operation::Intersect
+                };
+                vec![
+                    crate::csg::operate_in_place(&mut dom, db, operation, &objects)
+                        .map_err(mlua::Error::runtime)?,
+                ]
+            }
+            "Negate" => crate::csg::negate_operations_in_place(&mut dom, db, &objects),
+            _ => crate::csg::separate_in_place(&mut dom, db, &objects),
+        }
+    };
+    let mut values = made
+        .into_iter()
+        .map(|r| LuaInstance::new(r, ctx.clone()).into_lua(lua))
+        .collect::<Result<Vec<Value>>>()?;
+    match name {
+        "Union" | "Intersect" => Ok(values.remove(0)),
+        _ => lua.create_sequence_from(values).map(Value::Table),
+    }
+}
+
 fn signal(lua: &Lua, event: &str) -> Result<Value> {
     Ok(Value::UserData(lua.create_userdata(LuaSignal(
         SignalKey::new(Owner::Plugin, event),
@@ -708,11 +754,9 @@ impl UserData for LuaPlugin {
             let ctx = env(lua).ctx.clone();
             crate::plugin::input::enum_item(&ctx, "JointCreationMode", "None")?.interned(lua)
         });
-        for name in ["Union", "Separate", "Negate"] {
-            methods.add_method(name, move |_, _, _: MultiValue| -> Result<()> {
-                Err(mlua::Error::runtime(format!(
-                    "plugin:{name} is unavailable: rbx-native cannot run CSG operations from plugins"
-                )))
+        for name in ["Union", "Intersect", "Negate", "Separate"] {
+            methods.add_method(name, move |lua, _, objects: Value| {
+                solid_modeling(lua, name, &objects)
             });
         }
         methods.add_method("GetDebuggerManager", |lua, _, ()| {

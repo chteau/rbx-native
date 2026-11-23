@@ -6885,6 +6885,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_csg"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "rbx_materials",
+ "rbx_mesh",
+ "ruzstd",
+]
+
+[[package]]
 name = "rbx_dom"
 version = "0.1.0"
 dependencies = [
@@ -6953,6 +6963,7 @@ version = "0.1.0"
 dependencies = [
  "mlua",
  "rbx_binary",
+ "rbx_csg",
  "rbx_dom",
  "rbx_reflection",
  "rbx_xml",
@@ -7150,6 +7161,7 @@ dependencies = [
  "rbx_assets",
  "rbx_binary",
  "rbx_cloud",
+ "rbx_csg",
  "rbx_dom",
  "rbx_materials",
  "rbx_mesh",

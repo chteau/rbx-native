@@ -72,7 +72,7 @@
 //! sheet (see `shell::ui_editor::frame_sheet`).
 //! `RBX_STUDIO_GROUP=1` wraps the current selection in a new `Model` exactly
 //! as `Ctrl+G` would; `RBX_STUDIO_UNGROUP=1` unwraps it back out exactly as
-//! `Ctrl+Shift+G` would, the same aid, for the Explorer's Group/Ungroup
+//! `Ctrl+U` would, the same aid, for the Explorer's Group/Ungroup
 //! (see `shell::group`).
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` makes the editor

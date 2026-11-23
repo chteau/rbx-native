@@ -28,7 +28,7 @@ mod sheet;
 mod skeleton;
 mod split;
 mod stage;
-mod toast;
+pub(super) mod toast;
 mod view;
 mod widgets;
 

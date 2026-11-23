@@ -1,8 +1,9 @@
 //! Roblox's own baked union mesh (`MeshData`/`MeshData2`, the CSGMDL
-//! format), read for a union whose operation tree is gone (no `ChildData`
-//! inline and none in the `PartOperationAsset` its `AssetId` names), or
-//! whose tree the boolean cannot carve. Anything with a tree is carved from
-//! it first (`super::csg`).
+//! format, or the `SolidMeshHolder` current Studio saves instead, see
+//! `rbx_csg::solidmesh`), read for a union whose operation tree is gone (no
+//! `ChildData` inline and none in the `PartOperationAsset` its `AssetId`
+//! names), or whose tree the boolean cannot carve. Anything with a tree is
+//! carved from it first (`super::csg`).
 //!
 //! Nothing here comes from Roblox documentation, which does not describe the
 //! format. It was worked out by reading real blobs: asset 305197512, and the
@@ -151,16 +152,42 @@ struct Decoded {
     indices: Vec<u32>,
 }
 
-/// A decoded union mesh and the colour most of its surface was baked in,
-/// what paints it where `UsePartColor` is off, as the biggest leaf's colour
-/// does for a carved one.
+/// A decoded union mesh, each corner in the colour it was baked in, what
+/// paints it where `UsePartColor` is off.
 pub(super) struct Baked {
     pub(super) mesh: rbx_mesh::Mesh,
-    pub(super) color: Option<[u8; 3]>,
 }
 
-/// Decodes one `MeshData` blob, scrambled or not.
+/// A `SolidMeshHolder`'s triangles, each corner its own vertex: its
+/// corners index positions and colours separately.
+fn solid_mesh(mesh: rbx_csg::solidmesh::Decoded) -> Decoded {
+    let mut decoded = Decoded {
+        positions: Vec::new(),
+        normals: Vec::new(),
+        colors: Vec::new(),
+        indices: Vec::new(),
+    };
+    for (triangle, [r, g, b]) in mesh.triangles.iter().zip(mesh.colors) {
+        let corners = triangle.map(|i| Vec3::from(mesh.positions[i as usize]));
+        let normal = (corners[1] - corners[0])
+            .cross(corners[2] - corners[0])
+            .normalize_or_zero()
+            .to_array();
+        for corner in corners {
+            decoded.indices.push(decoded.positions.len() as u32);
+            decoded.positions.push(corner.to_array());
+            decoded.normals.push(normal);
+            decoded.colors.push([r, g, b, 255]);
+        }
+    }
+    decoded
+}
+
+/// Decodes one `MeshData` blob, scrambled or not, or a `SolidMeshHolder`.
 pub(super) fn decode(bytes: &[u8]) -> Result<Baked, Error> {
+    if let Some(mesh) = rbx_csg::solidmesh::decode(bytes) {
+        return finish(solid_mesh(mesh));
+    }
     let document = plain(bytes)?;
     let mut reader = Reader {
         bytes: &document,
@@ -197,10 +224,11 @@ fn finish(decoded: Decoded) -> Result<Baked, Error> {
     let vertices: Vec<rbx_mesh::Vertex> = positions
         .into_iter()
         .zip(normals)
-        .map(|(position, normal)| {
+        .zip(colors)
+        .map(|((position, normal), color)| {
             bounds.min = std::array::from_fn(|axis| bounds.min[axis].min(position[axis]));
             bounds.max = std::array::from_fn(|axis| bounds.max[axis].max(position[axis]));
-            let (u, v) = super::csg::dominant_axes(normal);
+            let (u, v) = rbx_csg::dominant_axes(normal);
             rbx_mesh::Vertex {
                 position,
                 normal,
@@ -208,15 +236,11 @@ fn finish(decoded: Decoded) -> Result<Baked, Error> {
                     position[u] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                     position[v] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                 ],
-                // The renderer multiplies vertex colour in; the union's own
-                // colour is the instance's, so the baked tint must not darken
-                // it a second time.
-                color: [255; 4],
+                color,
             }
         })
         .collect();
 
-    let color = dominant_color(&vertices, &colors, &indices);
     Ok(Baked {
         mesh: rbx_mesh::Mesh {
             // A CSGMDL version, not a `.mesh` header one: there is none to echo.
@@ -226,40 +250,15 @@ fn finish(decoded: Decoded) -> Result<Baked, Error> {
             lods: Vec::new(),
             bounds,
         },
-        color,
     })
 }
 
-/// The vertex colour covering the most triangle area, read off each
-/// triangle's first corner (a union bakes one colour per source part, so a
-/// triangle never straddles two).
-fn dominant_color(
-    vertices: &[rbx_mesh::Vertex],
-    colors: &[[u8; 4]],
-    indices: &[u32],
-) -> Option<[u8; 3]> {
-    let mut areas: Vec<([u8; 3], f32)> = Vec::new();
-    for triangle in indices.as_chunks::<3>().0 {
-        let [pa, pb, pc] = triangle.map(|i| Vec3::from(vertices[i as usize].position));
-        let area = (pb - pa).cross(pc - pa).length();
-        let [r, g, b, _] = colors[triangle[0] as usize];
-        match areas.iter_mut().find(|(known, _)| *known == [r, g, b]) {
-            Some((_, total)) => *total += area,
-            None => areas.push(([r, g, b], area)),
-        }
-    }
-    areas
-        .into_iter()
-        .max_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(color, _)| color)
-}
-
-/// The `MeshData`/`MeshData2` a union or `PartOperationAsset` carries,
-/// whichever is filled.
+/// The `SolidMeshHolder`, `MeshData2` or `MeshData` a union or
+/// `PartOperationAsset` carries, the first one filled.
 pub(super) fn mesh_data(
     properties: &std::collections::BTreeMap<String, rbx_dom::Variant>,
 ) -> Option<&[u8]> {
-    ["MeshData2", "MeshData"]
+    ["SolidMeshHolder", "MeshData2", "MeshData"]
         .iter()
         .find_map(|key| match properties.get(*key) {
             // Never valid UTF-8, so always `Unknown`: see `tree::child_data`.

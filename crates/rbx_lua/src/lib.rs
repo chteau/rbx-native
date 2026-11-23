@@ -7,6 +7,7 @@
 //! ([`plugin::PluginHost`]) shares the same scheduler, signals and events.
 
 mod compat;
+pub mod csg;
 mod ctx;
 mod datatypes;
 mod debugger;

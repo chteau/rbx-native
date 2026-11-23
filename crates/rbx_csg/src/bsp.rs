@@ -14,9 +14,9 @@ use glam::DVec3;
 const EPSILON: f64 = 1e-4;
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Plane {
-    pub(super) normal: DVec3,
-    pub(super) w: f64,
+pub struct Plane {
+    pub normal: DVec3,
+    pub w: f64,
 }
 
 // Which side(s) of a plane a polygon's vertices fall on, OR-combined.
@@ -27,7 +27,7 @@ const SPANNING: u8 = 3;
 
 impl Plane {
     /// `None` for a degenerate (collinear or non-finite) triangle.
-    pub(super) fn from_points(a: DVec3, b: DVec3, c: DVec3) -> Option<Self> {
+    pub fn from_points(a: DVec3, b: DVec3, c: DVec3) -> Option<Self> {
         let cross = (b - a).cross(c - a);
         if !cross.is_finite() || cross.length_squared() < 1e-24 {
             return None;
@@ -123,6 +123,7 @@ impl Plane {
                     buckets.front.push(Polygon {
                         vertices: front,
                         plane,
+                        color: polygon.color,
                     });
                 }
                 if back.len() >= 3 {
@@ -133,6 +134,7 @@ impl Plane {
                     buckets.back.push(Polygon {
                         vertices: back,
                         plane,
+                        color: polygon.color,
                     });
                 }
             }
@@ -151,9 +153,12 @@ struct Buckets {
 /// A convex, planar face; the vertex ring winds counter-clockwise seen from
 /// the side `plane.normal` points to.
 #[derive(Debug, Clone)]
-pub(super) struct Polygon {
-    pub(super) vertices: Vec<DVec3>,
-    pub(super) plane: Plane,
+pub struct Polygon {
+    pub vertices: Vec<DVec3>,
+    pub plane: Plane,
+    /// The sRGB colour of the part this face came from: a union draws each
+    /// face in its source part's colour unless `UsePartColor` is on.
+    pub color: [u8; 3],
 }
 
 impl Polygon {
@@ -165,7 +170,7 @@ impl Polygon {
 
 /// One BSP node: the polygons lying on `plane`, and the subtrees either side.
 #[derive(Default)]
-pub(super) struct BspNode {
+pub struct BspNode {
     plane: Option<Plane>,
     front: Option<Box<BspNode>>,
     back: Option<Box<BspNode>>,
@@ -173,7 +178,7 @@ pub(super) struct BspNode {
 }
 
 impl BspNode {
-    pub(super) fn from_polygons(polygons: Vec<Polygon>) -> Self {
+    pub fn from_polygons(polygons: Vec<Polygon>) -> Self {
         let mut node = BspNode::default();
         node.build(polygons);
         node
@@ -182,7 +187,7 @@ impl BspNode {
     /// Turns the solid inside out. Iterative, like every walk below: the
     /// trees built from a carved rock run deep enough to overflow a thread's
     /// stack when recursed.
-    pub(super) fn invert(&mut self) {
+    pub fn invert(&mut self) {
         let mut stack = vec![self];
         while let Some(node) = stack.pop() {
             node.polygons.iter_mut().for_each(Polygon::flip);
@@ -226,7 +231,7 @@ impl BspNode {
     }
 
     /// Removes every polygon of this tree that lies inside `other`.
-    pub(super) fn clip_to(&mut self, other: &BspNode) {
+    pub fn clip_to(&mut self, other: &BspNode) {
         let mut stack = vec![self];
         while let Some(node) = stack.pop() {
             node.polygons = other.clip_polygons(std::mem::take(&mut node.polygons));
@@ -235,7 +240,7 @@ impl BspNode {
         }
     }
 
-    pub(super) fn all_polygons(&self) -> Vec<Polygon> {
+    pub fn all_polygons(&self) -> Vec<Polygon> {
         let mut out = Vec::new();
         let mut stack = vec![self];
         while let Some(node) = stack.pop() {
@@ -248,7 +253,7 @@ impl BspNode {
 
     /// Adds `polygons` to the tree, taking each node's first polygon as its
     /// splitting plane when it has none yet.
-    pub(super) fn build(&mut self, polygons: Vec<Polygon>) {
+    pub fn build(&mut self, polygons: Vec<Polygon>) {
         let mut stack = vec![(self, polygons)];
         while let Some((node, polygons)) = stack.pop() {
             let Some(first) = polygons.first() else {

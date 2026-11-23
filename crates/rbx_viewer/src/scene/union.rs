@@ -65,7 +65,7 @@ pub(super) struct Entry {
     /// the computed mesh is one instance for the renderer, not a `Part`.
     material: Slot,
     /// `UsePartColor` on: the union's own colour paints the whole result; off:
-    /// the pieces keep theirs (see `csg::largest_additive_color`).
+    /// the pieces keep theirs, drawn from the mesh's vertex colours.
     color: Option<[u8; 3]>,
     alpha: f32,
     reflectance: f32,
@@ -78,13 +78,21 @@ impl Entry {
         self.cframe * Mat4::from_scale(self.size / self.initial_size)
     }
 
-    /// The renderer's instance for this union's computed mesh, painted
-    /// `color` (linear). Shared by [`resolve`] and [`Entry::patched`] so the
-    /// two can never disagree on what a union instance carries.
-    fn instance(&self, color: [f32; 3]) -> ResolvedInstance {
+    /// The renderer's instance for this union's computed mesh: one colour
+    /// all over, or its pieces' own under [`painted_key`]. Shared by
+    /// [`resolve`] and [`Entry::patched`] so the two can never disagree on
+    /// what a union instance carries.
+    fn instance(&self) -> ResolvedInstance {
+        let (mesh, color) = match self.color {
+            Some(color) => (
+                self.asset.clone(),
+                color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0)),
+            ),
+            None => (painted_key(&self.asset), [1.0; 3]),
+        };
         ResolvedInstance {
             referent: self.referent,
-            mesh: self.asset.clone(),
+            mesh,
             material: self.material,
             texture: None,
             appearance: None,
@@ -96,6 +104,19 @@ impl Entry {
             isolated_out: false,
         }
     }
+}
+
+/// The mesh key a union with `UsePartColor` off draws `asset`'s mesh under,
+/// so the renderer keeps its vertex colours (see [`is_painted`]).
+fn painted_key(asset: &AssetRef) -> AssetRef {
+    AssetRef::Thumb(format!("{PAINTED}{asset:?}"))
+}
+
+const PAINTED: &str = "csg-painted/";
+
+/// Whether `mesh` is a union drawn in its pieces' colours.
+pub(crate) fn is_painted(mesh: &AssetRef) -> bool {
+    matches!(mesh, AssetRef::Thumb(path) if path.starts_with(PAINTED))
 }
 
 /// Every legacy union/negate in a DOM, extracted once and reused both to list
@@ -145,7 +166,7 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
         if entry.inline && !plan.inline.contains_key(&entry.asset) {
             if let Some(raw) = dom
                 .get(referent)
-                .and_then(|i| inline_document(i.properties()))
+                .and_then(|i| inline_document(i.class(), i.properties()))
             {
                 plan.inline.insert(entry.asset.clone(), raw.to_vec());
             }
@@ -176,8 +197,17 @@ fn inline_key(raw: &[u8]) -> AssetRef {
 
 /// The bytes a union carries for itself: its operation tree, or, only
 /// when it has neither a tree nor an `AssetId` to find one behind, the
-/// mesh Studio baked for it.
-fn inline_document(properties: &std::collections::BTreeMap<String, Variant>) -> Option<&[u8]> {
+/// mesh Studio baked for it. An `IntersectOperation` draws its bake first:
+/// its tree holds the operands, which `csg::evaluate` would union.
+fn inline_document<'a>(
+    class: &str,
+    properties: &'a std::collections::BTreeMap<String, Variant>,
+) -> Option<&'a [u8]> {
+    if class == "IntersectOperation" {
+        if let Some(bake) = baked::mesh_data(properties) {
+            return Some(bake);
+        }
+    }
     tree::child_data(properties).or_else(|| {
         let linked = properties
             .get("AssetId")
@@ -299,7 +329,7 @@ fn frame(
         .and_then(asset_uri)
         .and_then(|uri| AssetRef::parse(uri).ok())
         .filter(|asset| *asset != AssetRef::Empty);
-    let (asset, inline) = match (inline_document(properties), linked) {
+    let (asset, inline) = match (inline_document(instance.class(), properties), linked) {
         (Some(raw), _) => (inline_key(raw), true),
         (None, Some(asset)) => (asset, false),
         (None, None) => return None,
@@ -412,9 +442,6 @@ impl Merged {
 pub(super) struct Evaluated {
     tree: tree::Node,
     mesh: Option<Arc<rbx_mesh::SkinnedMesh>>,
-    /// The colour a mesh decoded from `MeshData` was mostly baked in; `None`
-    /// for one carved from its tree, whose leaves say instead.
-    baked_color: Option<[u8; 3]>,
 }
 
 /// Every asset's [`Evaluated`] so far, `None` where its bytes did not
@@ -490,14 +517,13 @@ pub(crate) fn resolve(
         if entry.alpha <= 0.0 {
             continue;
         }
-        resolution
-            .instances
-            .push(entry.instance(entry.carved_color(evaluated)));
+        resolution.instances.push(entry.instance());
     }
 
     resolution.meshes = evaluated
         .into_iter()
         .filter_map(|(asset, evaluated)| Some((asset, evaluated?.mesh.clone()?)))
+        .flat_map(|(asset, mesh)| [(painted_key(&asset), mesh.clone()), (asset, mesh)])
         .collect();
     resolution
 }
@@ -523,7 +549,6 @@ fn evaluate(
                 children: Vec::new(),
             },
             mesh: Some(Arc::new(baked.mesh.into())),
-            baked_color: baked.color,
         }));
     };
     if !parsed.missing.is_empty() {
@@ -534,14 +559,13 @@ fn evaluate(
         return Some(Some(Evaluated {
             tree,
             mesh: Some(Arc::new(solid.to_mesh().into())),
-            baked_color: None,
         }));
     }
-    let baked = fallback.and_then(baked::of_bytes);
     Some(Some(Evaluated {
         tree,
-        baked_color: baked.as_ref().and_then(|baked| baked.color),
-        mesh: baked.map(|baked| Arc::new(baked.mesh.into())),
+        mesh: fallback
+            .and_then(baked::of_bytes)
+            .map(|baked| Arc::new(baked.mesh.into())),
     }))
 }
 

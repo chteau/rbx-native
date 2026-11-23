@@ -95,8 +95,12 @@ commands! {
     PasteInto, "paste_into", "Paste Into", Edit, ["secondary-shift-v"];
     Duplicate, "duplicate", "Duplicate", Edit, ["secondary-d"];
     Group, "group", "Group", Edit, ["secondary-g"];
-    Ungroup, "ungroup", "Ungroup", Edit, ["secondary-shift-g"];
+    Ungroup, "ungroup", "Ungroup", Edit, ["secondary-u"];
     MoveToLayer, "move_to_layer", "Move to Active Layer", Edit, ["secondary-alt-l"];
+    Union, "union", "Union", Edit, ["secondary-shift-g"];
+    Intersect, "intersect", "Intersect", Edit, ["secondary-shift-i"];
+    Separate, "separate", "Separate", Edit, ["secondary-shift-u"];
+    Negate, "negate", "Negate", Edit, ["secondary-shift-n"];
     UiScaleIn, "ui_scale_in", "Zoom In (UI scale)", View, ["secondary-="];
     UiScaleOut, "ui_scale_out", "Zoom Out (UI scale)", View, ["secondary--"];
     UiScaleReset, "ui_scale_reset", "Reset UI Scale", View, ["secondary-0"];
@@ -702,6 +706,9 @@ pub(crate) fn apply_bindings(cx: &mut App) {
             .borrow()
             .bindings()
             .filter(|binding| !owned.contains(&binding.action().as_any().type_id()))
+            // The component kit's element inspector sits on Ctrl+Shift+I,
+            // which is Studio's Intersect.
+            .filter(|binding| binding.action().name() != "inspector::ToggleInspector")
             .cloned()
             .collect();
         let added: Vec<KeyBinding> = entries

@@ -1,0 +1,13 @@
+[package]
+name = "rbx_csg"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Solid modeling for unions, negations and intersections: a BSP-tree CSG ported from csg.js (MIT)"
+
+[dependencies]
+glam = "0.33"
+rbx_mesh = { path = "../rbx_mesh" }
+rbx_materials = { path = "../rbx_materials" }
+ruzstd = "0.9"

@@ -386,11 +386,7 @@ fn carving(children: Vec<tree::Node>, carved: bool) -> Evaluated {
                 .into(),
         )
     });
-    Evaluated {
-        tree,
-        mesh,
-        baked_color: None,
-    }
+    Evaluated { tree, mesh }
 }
 
 /// The union fixture `replan` reads, `UsePartColor` on and painted red.
@@ -407,24 +403,29 @@ fn union_dom() -> WeakDom {
 }
 
 // `Scene::resync_part` re-plans a union through `replan`/`patched` against
-// the boolean this place already carved. That carving is what lets a colour
-// coming from the pieces (`UsePartColor` off) be repainted here too, it is
-// read off the very tree `resolve` reads it off.
+// the boolean this place already carved: `UsePartColor` off draws the very
+// mesh under the key that keeps the pieces' colours.
 #[test]
-fn a_replanned_union_takes_its_colour_from_itself_or_from_its_tree() {
+fn a_replanned_union_takes_its_colour_from_itself_or_from_its_pieces() {
     let database = database();
     let mut dom = union_dom();
     let mut materials = Catalog::new(&dom, &database);
     let carved = carving(vec![test_leaf(0.0, false, Some([0, 0, 255]))], true);
     let mut resolved = crate::scene::Resolved::default();
-    resolved.meshes.insert(
-        AssetRef::Id(42),
-        carved.mesh.clone().expect("the boolean succeeded"),
-    );
+    let mesh = carved.mesh.clone().expect("the boolean succeeded");
+    assert!(mesh
+        .mesh
+        .vertices
+        .iter()
+        .all(|v| v.color == [0, 0, 255, 255]));
+    resolved.meshes.insert(AssetRef::Id(42), mesh.clone());
+    resolved
+        .meshes
+        .insert(super::painted_key(&AssetRef::Id(42)), mesh);
 
     let entry = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
     let patched = entry
-        .patched(&carved, &resolved)
+        .patched(&resolved)
         .expect("UsePartColor on: the union's own colour");
     assert_eq!(patched.referent, Ref::new(1));
     assert_eq!(patched.mesh, AssetRef::Id(42));
@@ -438,9 +439,10 @@ fn a_replanned_union_takes_its_colour_from_itself_or_from_its_tree() {
         .unwrap();
     let entry = replan(&dom, &database, Ref::new(1), &mut materials).unwrap();
     let patched = entry
-        .patched(&carved, &resolved)
-        .expect("UsePartColor off: the biggest additive leaf's colour");
-    assert_eq!(patched.color, [0.0, 0.0, super::super::srgb_to_linear(1.0)]);
+        .patched(&resolved)
+        .expect("UsePartColor off: the pieces' colours");
+    assert_eq!(patched.color, [1.0; 3]);
+    assert!(super::is_painted(&patched.mesh));
 }
 
 // A mesh this renderer never uploaded is the one thing a re-planned union
@@ -450,13 +452,10 @@ fn a_union_whose_computed_mesh_is_not_resident_does_not_patch() {
     let database = database();
     let dom = union_dom();
     let mut materials = Catalog::new(&dom, &database);
-    let carved = carving(vec![test_leaf(0.0, false, None)], true);
 
     let entry = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
 
-    assert!(entry
-        .patched(&carved, &crate::scene::Resolved::default())
-        .is_none());
+    assert!(entry.patched(&crate::scene::Resolved::default()).is_none());
 }
 
 // The piece identity the renderer addresses each fallback piece by: its
@@ -650,7 +649,8 @@ fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
             &mut materials,
             &mut Evaluations::default(),
         );
-        assert_eq!(resolution.meshes.len(), expected.len());
+        // Every mesh twice: one colour all over, or its pieces' own.
+        assert_eq!(resolution.meshes.len(), 2 * expected.len());
         for (asset, mesh) in &expected {
             let got = resolution
                 .meshes
@@ -686,7 +686,7 @@ fn a_second_resolve_reuses_every_boolean_already_carved() {
     );
     let second = resolve(&plan, assets, &database, &mut materials, &mut evaluations);
 
-    assert_eq!(first.meshes.len(), plan.entries.len());
+    assert_eq!(first.meshes.len(), 2 * plan.entries.len());
     assert_eq!(second.instances.len(), first.instances.len());
     assert_eq!(second.hidden, first.hidden);
     for (asset, mesh) in &first.meshes {
@@ -721,11 +721,11 @@ fn a_known_asset_resolves_without_its_bytes() {
         &mut evaluations,
     );
 
-    assert_eq!(first.meshes.len(), plan.entries.len());
+    assert_eq!(first.meshes.len(), 2 * plan.entries.len());
     assert_eq!(second.instances.len(), first.instances.len());
     assert_eq!(second.hidden, first.hidden);
     for (asset, mesh) in &first.meshes {
-        assert!(evaluations.is_known(asset));
+        assert!(super::is_painted(asset) || evaluations.is_known(asset));
         let again = second.meshes.get(asset).expect("resolved without bytes");
         assert!(Arc::ptr_eq(mesh, again));
     }

@@ -59,7 +59,11 @@ fn the_boolean_leaves_no_sliver_to_weld() {
 #[test]
 fn cleaning_snaps_noisy_corners_and_drops_what_collapses() {
     let plane = Plane::from_points(DVec3::ZERO, DVec3::X, DVec3::Y).expect("a plane");
-    let quad = |vertices: Vec<DVec3>| Polygon { vertices, plane };
+    let quad = |vertices: Vec<DVec3>| Polygon {
+        vertices,
+        plane,
+        color: rbx_csg::DEFAULT_COLOR,
+    };
     // A real face, and a sliver 3e-5 wide along its left edge.
     let face = quad(vec![
         DVec3::new(0.0, 0.0, 0.0),

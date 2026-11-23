@@ -29,6 +29,7 @@ rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_assets = { path = "../rbx_assets" }
 rbx_materials = { path = "../rbx_materials" }
 rbx_mesh = { path = "../rbx_mesh" }
+rbx_csg = { path = "../rbx_csg" }
 rbx_terrain = { path = "../rbx_terrain" }
 # `noop` for a hidden host's viewer, see `Headless::load_undrawn`.
 wgpu = { version = "30.0", features = ["noop"] }
