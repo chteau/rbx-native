@@ -1,6 +1,8 @@
 //! The bytes of [`super::Up`] and [`super::Down`]: the version, the way a
 //! message goes, then its fields LZ4-compressed, in the recording's
-//! little-endian, LEB128-length layout.
+//! little-endian, LEB128-length layout. Messages are written at
+//! [`VERSION`]; any earlier version still reads (a field it didn't have
+//! reads as its default).
 
 use rbx_dom::{
     Axes, CFrameData, Color3Data, ColorSequence, ColorSequenceKeypoint, Content, Faces, Font,
@@ -29,20 +31,23 @@ fn pack(way: u8, body: Out) -> Vec<u8> {
     out
 }
 
-fn unpack(way: u8, bytes: &[u8]) -> R<Vec<u8>> {
+/// The body and the version it was written at.
+fn unpack(way: u8, bytes: &[u8]) -> R<(u8, Vec<u8>)> {
     match bytes {
-        [VERSION, w, rest @ ..] if *w == way => {
+        [v @ 1..=VERSION, w, rest @ ..] if *w == way => {
             let size = rest.get(..4).map_or(usize::MAX, |s| {
                 u32::from_le_bytes(s.try_into().unwrap()) as usize
             });
             if size > MOST_BYTES {
                 return Err("a remote play message too big".into());
             }
-            lz4_flex::decompress_size_prepended(rest).map_err(|e| e.to_string())
+            lz4_flex::decompress_size_prepended(rest)
+                .map(|body| (*v, body))
+                .map_err(|e| e.to_string())
         }
-        [VERSION, ..] => Err("a remote play message going the other way".into()),
+        [1..=VERSION, ..] => Err("a remote play message going the other way".into()),
         [v, ..] => Err(format!(
-            "remote play version {v}, this build speaks {VERSION}"
+            "remote play version {v}, this build speaks up to {VERSION}"
         )),
         [] => Err("an empty remote play message".into()),
     }
@@ -76,7 +81,7 @@ pub fn encode_up(up: &Up) -> Vec<u8> {
 }
 
 pub fn decode_up(bytes: &[u8]) -> R<Up> {
-    let body = unpack(UP, bytes)?;
+    let (_, body) = unpack(UP, bytes)?;
     let r = &mut In(&body);
     Ok(match r.u()? {
         0 => Up::Ask {
@@ -117,7 +122,7 @@ pub fn encode_down(down: &Down) -> Vec<u8> {
 }
 
 pub fn decode_down(bytes: &[u8]) -> R<Down> {
-    let body = unpack(DOWN, bytes)?;
+    let (version, body) = unpack(DOWN, bytes)?;
     let r = &mut In(&body);
     Ok(match r.u()? {
         0 => Down::Open { host: r.s()? },
@@ -125,7 +130,7 @@ pub fn decode_down(bytes: &[u8]) -> R<Down> {
             player: read_ref(r)?,
             name: r.s()?,
         },
-        2 => Down::Frame(Box::new(read_frame(r)?)),
+        2 => Down::Frame(Box::new(read_frame(r, version)?)),
         3 => Down::Ended(r.s()?),
         n => return Err(format!("unknown downstream message {n}")),
     })
@@ -693,10 +698,15 @@ fn write_frame(w: &mut Out, f: &Frame) {
         w.s(text);
     });
     w.b(f.paused);
+    w.list(&f.sounds, |w, (sound, at)| {
+        w.u(sound.value().into());
+        w.opt(*at, Out::f32);
+    });
+    w.u(f.ack.into());
 }
 
-fn read_frame(r: &mut In) -> R<Frame> {
-    Ok(Frame {
+fn read_frame(r: &mut In, version: u8) -> R<Frame> {
+    let mut frame = Frame {
         reset: r.b()?,
         ops: r.list(read_op)?,
         camera: r.opt(|r| Ok((read_cframe(r)?, r.f32()?)))?,
@@ -727,5 +737,11 @@ fn read_frame(r: &mut In) -> R<Frame> {
             Ok((kind, r.s()?))
         })?,
         paused: r.b()?,
-    })
+        ..Frame::default()
+    };
+    if version >= 2 {
+        frame.sounds = r.list(|r| Ok((read_ref(r)?, r.opt(In::f32)?)))?;
+        frame.ack = small(r)?;
+    }
+    Ok(frame)
 }

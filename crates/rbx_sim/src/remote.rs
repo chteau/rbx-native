@@ -13,24 +13,38 @@
 //! host's, so the player's copy of the tree names every instance as the
 //! client does. Each message is LZ4-compressed.
 //!
+//! Sounds cross as events, never as audio: a frame says which sounds
+//! started (and from where in their clip) or stopped, the sounds' own
+//! properties come with the tree, and the player's editor plays them from
+//! the same assets ([`Speaker`]), heard from its own camera. A slow link
+//! gets fewer, merged frames ([`Frame::merge`]): the newest state, every
+//! tree change still in order.
+//!
 //! [`Host`] is the session's side: offers to accept, the remote players,
 //! what each has been sent. [`Viewer`] is the player's: their copy of the
-//! client's DataModel, kept up by the frames.
+//! client's DataModel, kept up by the frames, with their own character
+//! moved ahead of them by their input ([`Predictor`]).
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
+use std::sync::Arc;
 
-use rbx_dom::{CFrameData, Change, Content, Instance, Ref, Variant, WeakDom};
+use rbx_assets::AssetFetcher;
+use rbx_dom::{CFrameData, Change, Content, Instance, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::server::ChatLine;
+use rbx_reflection::ReflectionDatabase;
 
+use crate::audio::Voice;
 use crate::gui::CoreGui;
+use crate::humanoid::{flag, number};
 use crate::replay::Action;
-use crate::{LineKind, MouseBehavior, Peer, Session};
+use crate::{Input, LineKind, MouseBehavior, Peer, Session};
 
-/// Bumped whenever a message's layout changes; a peer on another version
-/// is refused, not misread.
-pub const VERSION: u8 = 1;
+/// Bumped whenever a message's layout changes. A peer on a later version
+/// is refused, not misread; an earlier one's messages still read (version
+/// 1 had no sounds and no input count in a frame).
+pub const VERSION: u8 = 2;
 
 mod codec;
 pub use codec::{decode_down, decode_up, encode_down, encode_up};
@@ -132,7 +146,81 @@ pub struct Frame {
     /// What the client printed.
     pub rows: Vec<(LineKind, String)>,
     pub paused: bool,
+    /// Sounds that started (`Some`: at that many seconds into their clip,
+    /// or a clock that wandered and jumps there) or stopped (`None`) since
+    /// the last frame. A reset frame names every sound playing.
+    pub sounds: Vec<(Ref, Option<f32>)>,
+    /// How many `Up::Actions` messages from this player the host had
+    /// applied: what their prediction is checked against.
+    pub ack: u32,
 }
+
+impl Frame {
+    /// `self` and then `later` as one frame, what a slow link sends in
+    /// their place: tree changes in order (a property written in both
+    /// goes once, as it ended), the newest camera and state, every line
+    /// and event of both.
+    pub fn merge(mut self, later: Frame) -> Frame {
+        if later.reset {
+            self.ops = later.ops;
+            self.sounds = later.sounds;
+        } else {
+            self.ops.extend(later.ops);
+            self.sounds.extend(later.sounds);
+        }
+        self.ops = compact(self.ops);
+        let mut heard = HashSet::new();
+        self.sounds.reverse();
+        self.sounds.retain(|(sound, _)| heard.insert(*sound));
+        self.sounds.reverse();
+        self.reset |= later.reset;
+        self.camera = later.camera;
+        self.mouse = later.mouse;
+        self.player_gui = later.player_gui;
+        self.core = later.core.or(self.core);
+        self.chat.extend(later.chat);
+        self.notices.extend(later.notices);
+        self.dialog = later.dialog;
+        self.bursts.extend(later.bursts);
+        self.rows.extend(later.rows);
+        self.paused = later.paused;
+        self.ack = later.ack;
+        self
+    }
+}
+
+/// `ops` without the property writes a later write of the same property
+/// makes moot. Referents aren't reused, so nothing in between reads them.
+fn compact(ops: Vec<Op>) -> Vec<Op> {
+    let mut written = HashSet::new();
+    let mut out: Vec<Op> = ops
+        .into_iter()
+        .rev()
+        .filter(|op| match op {
+            Op::Prop { at, name, .. } => written.insert((*at, name.clone())),
+            _ => true,
+        })
+        .collect();
+    out.reverse();
+    out
+}
+
+/// What a remote player's client shows this frame, read off the host's
+/// session.
+pub struct Shot<'a> {
+    pub dom: &'a WeakDom,
+    /// The client's view changes since the last frame.
+    pub changes: &'a [Change],
+    /// `Simulation::sound_clocks`.
+    pub sounds: Vec<(Ref, f64)>,
+    /// The client's game time.
+    pub time: f64,
+}
+
+/// How far a sound's clock may wander from where the last frame put it
+/// before the next frame puts it right (the player's mixer jumps past
+/// 0.12 s).
+const SOUND_DRIFT: f64 = 0.1;
 
 /// Whether `value` means anything on another computer: a script's
 /// `EditableImage` or `EditableMesh` lives in the host's process only.
@@ -148,6 +236,9 @@ pub struct Encoder {
     known: HashSet<Ref>,
     /// The core GUI as last sent.
     core: Option<CoreGui>,
+    /// The sounds the player plays: where each clock was sent, and when
+    /// (game time).
+    sounds: HashMap<Ref, (f64, f64)>,
 }
 
 /// Not in the game's tree: an `AnimationTrack`, a script's
@@ -171,6 +262,7 @@ impl Encoder {
     pub fn snapshot(&mut self, dom: &WeakDom) -> Vec<Op> {
         self.known.clear();
         self.core = None;
+        self.sounds.clear();
         let mut ops = Vec::new();
         for root in dom.root_refs() {
             self.add_subtree(dom, *root, &mut ops);
@@ -246,6 +338,42 @@ impl Encoder {
         ops
     }
 
+    /// The sound events since the last frame: sounds the player has that
+    /// started or stopped, and clocks that wandered from where they were
+    /// sent (a seek, a speed change, a loop).
+    fn sounds(
+        &mut self,
+        dom: &WeakDom,
+        clocks: &[(Ref, f64)],
+        time: f64,
+    ) -> Vec<(Ref, Option<f32>)> {
+        let db = ReflectionDatabase::shared();
+        let playing: HashSet<Ref> = clocks.iter().map(|(sound, _)| *sound).collect();
+        let mut out: Vec<(Ref, Option<f32>)> = Vec::new();
+        self.sounds.retain(|sound, _| {
+            let on = playing.contains(sound);
+            if !on {
+                out.push((*sound, None));
+            }
+            on
+        });
+        out.sort_by_key(|(sound, _)| sound.value());
+        for &(sound, position) in clocks {
+            if !self.known.contains(&sound) {
+                continue;
+            }
+            let speed = number(dom, db, sound, "PlaybackSpeed").max(0.0);
+            let due = self.sounds.get(&sound).is_none_or(|(at, then)| {
+                (at + (time - then) * speed - position).abs() > SOUND_DRIFT
+            });
+            if due {
+                self.sounds.insert(sound, (position, time));
+                out.push((sound, Some(position as f32)));
+            }
+        }
+        out
+    }
+
     /// `core` when it differs from what was sent last.
     pub fn core(&mut self, core: CoreGui) -> Option<CoreGui> {
         if self.core.as_ref() == Some(&core) {
@@ -304,12 +432,15 @@ impl Encoder {
 /// A remote player's copy of their client's DataModel.
 pub struct Viewer {
     dom: Rc<RefCell<WeakDom>>,
+    /// Moves their own character ahead of the frames.
+    pub predictor: Predictor,
 }
 
 impl Default for Viewer {
     fn default() -> Self {
         Viewer {
             dom: Rc::new(RefCell::new(WeakDom::new())),
+            predictor: Predictor::default(),
         }
     }
 }
@@ -332,10 +463,14 @@ impl Viewer {
     /// the copy (a reset starts the copy over, and changes nothing).
     pub fn apply(&mut self, frame: &Frame) -> Vec<Change> {
         let mut dom = self.dom.borrow_mut();
+        // The frame's values are the host's: the prediction goes back on
+        // after.
+        let mut changes = self.predictor.unshift(&mut dom);
         if frame.reset {
             *dom = WeakDom::new();
+            self.predictor.restart();
         }
-        let mut changes = Vec::new();
+        self.predictor.saw(frame.ack);
         for op in &frame.ops {
             match op {
                 Op::Add {
@@ -396,6 +531,431 @@ impl Viewer {
         }
         changes
     }
+
+    /// The player's own input as it goes up: their character moves on it
+    /// before the host's frames show it.
+    pub fn input(&mut self, actions: &[Action]) {
+        for action in actions {
+            self.predictor.input(action);
+        }
+    }
+
+    /// Moves `player`'s character `dt` seconds on along their input,
+    /// checked against the frames applied since the last call: the parts
+    /// it moved in the copy, and `camera` (the frame's) moved with it.
+    pub fn predict(
+        &mut self,
+        player: Ref,
+        camera: Option<(CFrameData, f32)>,
+        dt: f64,
+    ) -> (Vec<Change>, Option<(CFrameData, f32)>) {
+        let mut dom = self.dom.borrow_mut();
+        self.predictor.update(&mut dom, player, camera, dt)
+    }
+}
+
+/// A correction this big (studs) is shown at once, not blended in: a
+/// respawn, a teleport, a push the player couldn't have foreseen.
+const SNAP: f64 = 4.0;
+/// How long a smaller correction takes to blend in, as a time constant.
+const BLEND: f64 = 0.1;
+/// Predicted positions kept for corrections, at most (ten seconds of
+/// input at 60 messages a second).
+const HISTORY: usize = 600;
+
+/// The player's own character, moved on their input before the host's
+/// frames show it, and pulled back to the host's as frames come (client-
+/// side prediction). Their walk is the control script's: the movement
+/// keys, relative to the camera, at the humanoid's `WalkSpeed`; a jump
+/// leaves at the humanoid's jump speed under the workspace's gravity.
+/// Each `Up::Actions` sent keeps where the root was predicted then; a
+/// frame says how many the host had applied, and the root it shows is
+/// compared with the prediction kept for that many. The difference moves
+/// the prediction (and what's kept after it) and is blended into what's
+/// shown, at once when it's over [`SNAP`].
+#[derive(Default)]
+pub struct Predictor {
+    /// Off: the frames are shown as they come.
+    pub off: bool,
+    /// Forward, back, left and right held.
+    held: [bool; 4],
+    jump: bool,
+    /// `Up::Actions` messages sent.
+    sent: u32,
+    /// What the newest frame said the host had applied, and whether it's
+    /// been checked yet.
+    ack: u32,
+    fresh: bool,
+    /// Where the root was predicted as each message left.
+    history: VecDeque<(u32, [f64; 3])>,
+    /// The predicted root position.
+    at: Option<[f64; 3]>,
+    /// In a predicted jump: the upward speed and the floor it left.
+    air: Option<(f64, f64)>,
+    /// Of the corrections so far, what isn't shown yet.
+    lag: [f64; 3],
+    character: Option<Ref>,
+    /// Parts moved in the copy, and by how much.
+    shifted: Vec<Ref>,
+    offset: [f64; 3],
+}
+
+fn child_of_class(dom: &WeakDom, parent: Ref, class: &str) -> Option<Ref> {
+    dom.get(parent)?
+        .children()
+        .iter()
+        .copied()
+        .find(|c| dom.get(*c).is_some_and(|i| i.class() == class))
+}
+
+fn cframe_of(dom: &WeakDom, part: Ref) -> Option<CFrameData> {
+    match dom.get(part)?.properties().get("CFrame")? {
+        Variant::CFrame(c) => Some(*c),
+        _ => None,
+    }
+}
+
+fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn length(v: [f64; 3]) -> f64 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+fn vec3(p: Vector3Data) -> [f64; 3] {
+    [f64::from(p.x), f64::from(p.y), f64::from(p.z)]
+}
+
+fn moved(c: CFrameData, by: [f64; 3]) -> CFrameData {
+    CFrameData {
+        position: Vector3Data {
+            x: (f64::from(c.position.x) + by[0]) as f32,
+            y: (f64::from(c.position.y) + by[1]) as f32,
+            z: (f64::from(c.position.z) + by[2]) as f32,
+        },
+        rotation: c.rotation,
+    }
+}
+
+/// `x`, `z` on the ground along `right` and `back` (a camera's columns),
+/// flattened and made unit.
+fn flat(x: f64, z: f64) -> Option<[f64; 2]> {
+    let n = x.hypot(z);
+    (n > 1e-6).then(|| [x / n, z / n])
+}
+
+impl Predictor {
+    /// Starts over: a new tree, a new character.
+    pub fn restart(&mut self) {
+        let (off, held, jump, sent) = (self.off, self.held, self.jump, self.sent);
+        *self = Predictor {
+            off,
+            held,
+            jump,
+            sent,
+            ack: sent,
+            ..Predictor::default()
+        };
+    }
+
+    /// One of the player's actions on its way up.
+    pub fn input(&mut self, action: &Action) {
+        match action {
+            Action::Input(Input::Key { code, down }) => {
+                let slot = match code.as_str() {
+                    "W" | "Up" => 0,
+                    "S" | "Down" => 1,
+                    "A" | "Left" => 2,
+                    "D" | "Right" => 3,
+                    "Space" => {
+                        self.jump = *down;
+                        return;
+                    }
+                    _ => return,
+                };
+                self.held[slot] = *down;
+            }
+            // The menu takes the keys: the control script lets go too.
+            Action::MenuOpen(true) | Action::Reset => {
+                self.held = [false; 4];
+                self.jump = false;
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether the player should send even with nothing new: their
+    /// character is moving on input, and each message is a point the
+    /// host's frames are checked against.
+    pub fn moving(&self) -> bool {
+        !self.off && (self.held.iter().any(|h| *h) || self.jump || self.air.is_some())
+    }
+
+    /// An `Up::Actions` message left: where the root is predicted now is
+    /// what the host should show once it applied it.
+    pub fn sent(&mut self) {
+        self.sent = self.sent.wrapping_add(1);
+        if let Some(at) = self.at {
+            self.history.push_back((self.sent, at));
+            if self.history.len() > HISTORY {
+                self.history.pop_front();
+            }
+        }
+    }
+
+    fn saw(&mut self, ack: u32) {
+        self.ack = ack;
+        self.fresh = true;
+    }
+
+    /// Puts the parts moved back where the frames had them; the parts.
+    fn unshift(&mut self, dom: &mut WeakDom) -> Vec<Change> {
+        let back = self.offset.map(|v| -v);
+        std::mem::take(&mut self.shifted)
+            .into_iter()
+            .filter_map(|part| {
+                let c = cframe_of(dom, part)?;
+                dom.set_property(part, "CFrame", Variant::CFrame(moved(c, back)))
+                    .ok()?;
+                Some(Change::Property {
+                    referent: part,
+                    name: "CFrame".into(),
+                })
+            })
+            .collect()
+    }
+
+    fn update(
+        &mut self,
+        dom: &mut WeakDom,
+        player: Ref,
+        camera: Option<(CFrameData, f32)>,
+        dt: f64,
+    ) -> (Vec<Change>, Option<(CFrameData, f32)>) {
+        let mut changes = self.unshift(dom);
+        let character = match dom
+            .get(player)
+            .and_then(|p| p.properties().get("Character"))
+        {
+            Some(Variant::Ref(r)) if dom.get(*r).is_some() => Some(*r),
+            _ => None,
+        };
+        let root = character.and_then(|c| {
+            dom.get(c)?
+                .children()
+                .iter()
+                .copied()
+                .find(|r| dom.get(*r).is_some_and(|i| i.name() == "HumanoidRootPart"))
+        });
+        let (Some(character), Some(host)) = (character, root.and_then(|r| cframe_of(dom, r)))
+        else {
+            self.restart();
+            return (changes, camera);
+        };
+        let host = vec3(host.position);
+        if self.character != Some(character) {
+            self.restart();
+            self.character = Some(character);
+        }
+        if self.off {
+            return (changes, camera);
+        }
+        if self.at.is_none() {
+            self.at = Some(host);
+            self.history.push_back((self.sent, host));
+        }
+        if std::mem::take(&mut self.fresh) {
+            self.reconcile(host);
+        }
+        self.step(dom, character, camera.map(|(c, _)| c), dt);
+        let shown = sub(self.at.unwrap_or(host), self.lag);
+        let offset = sub(shown, host);
+        if length(offset) < 1e-4 {
+            return (changes, camera);
+        }
+        let db = ReflectionDatabase::shared();
+        let mut stack = vec![character];
+        while let Some(at) = stack.pop() {
+            let Some(instance) = dom.get(at) else {
+                continue;
+            };
+            stack.extend(instance.children().iter().copied());
+            if !db.is_subclass_of(instance.class(), "BasePart") {
+                continue;
+            }
+            let Some(c) = cframe_of(dom, at) else {
+                continue;
+            };
+            if dom
+                .set_property(at, "CFrame", Variant::CFrame(moved(c, offset)))
+                .is_ok()
+            {
+                self.shifted.push(at);
+                if !changes
+                    .iter()
+                    .any(|ch| matches!(ch, Change::Property { referent, .. } if *referent == at))
+                {
+                    changes.push(Change::Property {
+                        referent: at,
+                        name: "CFrame".into(),
+                    });
+                }
+            }
+        }
+        self.offset = offset;
+        (changes, camera.map(|(c, fov)| (moved(c, offset), fov)))
+    }
+
+    /// The host's root, as of the newest frame, against where it was
+    /// predicted for the input the host had then.
+    fn reconcile(&mut self, host: [f64; 3]) {
+        while self.history.len() > 1 && self.history.front().is_some_and(|(n, _)| *n != self.ack) {
+            self.history.pop_front();
+        }
+        let Some(&(n, then)) = self.history.front() else {
+            return;
+        };
+        if n != self.ack {
+            return;
+        }
+        let error = sub(host, then);
+        for (_, p) in &mut self.history {
+            *p = add(*p, error);
+        }
+        self.at = self.at.map(|at| add(at, error));
+        self.lag = if length(error) > SNAP {
+            [0.0; 3]
+        } else {
+            add(self.lag, error)
+        };
+        if self.air.is_some() && error[1].abs() > SNAP {
+            self.air = None;
+        }
+    }
+
+    fn step(&mut self, dom: &WeakDom, character: Ref, camera: Option<CFrameData>, dt: f64) {
+        let db = ReflectionDatabase::shared();
+        let decay = (-dt / BLEND).exp();
+        self.lag = self.lag.map(|v| v * decay);
+        let Some(humanoid) = child_of_class(dom, character, "Humanoid") else {
+            return;
+        };
+        let able = number(dom, db, humanoid, "Health") > 0.0
+            && !flag(dom, db, humanoid, "Sit")
+            && !flag(dom, db, humanoid, "PlatformStand");
+        let Some(mut at) = self.at else { return };
+        let h = |i: usize| f64::from(u8::from(self.held[i]));
+        let (x, z) = (h(3) - h(2), h(1) - h(0));
+        let amount = x.hypot(z).min(1.0);
+        if able && amount > 0.0 {
+            let r = camera.map_or([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], |c| {
+                c.rotation
+            });
+            let right = flat(f64::from(r[0]), f64::from(r[6])).unwrap_or([1.0, 0.0]);
+            let back = flat(f64::from(r[2]), f64::from(r[8])).unwrap_or([0.0, 1.0]);
+            if let Some(dir) = flat(right[0] * x + back[0] * z, right[1] * x + back[1] * z) {
+                let step = number(dom, db, humanoid, "WalkSpeed").max(0.0) * amount * dt;
+                at[0] += dir[0] * step;
+                at[2] += dir[1] * step;
+            }
+        }
+        let gravity = dom
+            .root_refs()
+            .iter()
+            .copied()
+            .find(|r| dom.get(*r).is_some_and(|i| i.class() == "Workspace"))
+            .map_or(196.2, |w| number(dom, db, w, "Gravity"));
+        if self.jump && self.air.is_none() && able {
+            let speed = if flag(dom, db, humanoid, "UseJumpPower") {
+                crate::humanoid::JUMP_POWER_SCALE * number(dom, db, humanoid, "JumpPower")
+            } else {
+                (2.0 * gravity * number(dom, db, humanoid, "JumpHeight").max(0.0)).sqrt()
+            };
+            self.air = Some((speed, at[1]));
+        }
+        if let Some((speed, floor)) = self.air {
+            at[1] += speed * dt - 0.5 * gravity * dt * dt;
+            let speed = speed - gravity * dt;
+            self.air = if at[1] <= floor && speed < 0.0 {
+                at[1] = floor;
+                None
+            } else {
+                Some((speed, floor))
+            };
+        }
+        self.at = Some(at);
+    }
+}
+
+/// What a remote player hears: the sounds their client plays, started,
+/// moved and stopped by the frames, each one's clock kept here between
+/// them, played from the same assets (cached or fetched on this computer)
+/// as their camera hears them.
+pub struct Speaker {
+    sounds: crate::sound::Sounds,
+    clocks: HashMap<Ref, f64>,
+}
+
+impl Speaker {
+    /// `fetcher` gets the sounds not in this computer's cache.
+    pub fn new(fetcher: Option<Arc<dyn AssetFetcher>>) -> Speaker {
+        let mut sounds = crate::sound::Sounds::default();
+        sounds.fetcher = fetcher;
+        Speaker {
+            sounds,
+            clocks: HashMap::new(),
+        }
+    }
+
+    /// A frame's sound events (a reset frame starts over).
+    pub fn hear(&mut self, frame: &Frame) {
+        if frame.reset {
+            self.clocks.clear();
+        }
+        for (sound, at) in &frame.sounds {
+            match at {
+                Some(at) => self.clocks.insert(*sound, f64::from(*at)),
+                None => self.clocks.remove(sound),
+            };
+        }
+    }
+
+    /// The clocks `dt` seconds on, at each sound's `PlaybackSpeed`; a
+    /// looped one wraps.
+    pub fn advance(&mut self, dom: &WeakDom, dt: f64) {
+        let db = ReflectionDatabase::shared();
+        self.clocks.retain(|sound, _| dom.get(*sound).is_some());
+        for (sound, at) in &mut self.clocks {
+            *at += dt * number(dom, db, *sound, "PlaybackSpeed").max(0.0);
+            if flag(dom, db, *sound, "Looped") {
+                if let Some(clip) = self.sounds.clip_of(dom, *sound) {
+                    let length = clip.seconds();
+                    if length > 0.0 {
+                        *at %= length;
+                    }
+                }
+            }
+        }
+    }
+
+    /// What plays now, heard from `camera` (or wherever the place's
+    /// `SoundService` puts the listener).
+    pub fn voices(&mut self, dom: &WeakDom, camera: Option<CFrameData>) -> Vec<Voice> {
+        let db = ReflectionDatabase::shared();
+        let listener = crate::sound::listener(dom, db, camera);
+        let clocks: Vec<(Ref, f64)> = self.clocks.iter().map(|(s, at)| (*s, *at)).collect();
+        self.sounds.voices_at(dom, db, listener.as_ref(), &clocks)
+    }
+
+    /// The sounds playing, and where.
+    pub fn playing(&self) -> &HashMap<Ref, f64> {
+        &self.clocks
+    }
 }
 
 /// An ask to join, waiting for the host.
@@ -414,6 +974,13 @@ pub struct Guest {
     encoder: Encoder,
     /// Sent their first frame (the whole tree).
     started: bool,
+    /// What they asked with, to carry them through a teleport.
+    offer: Offer,
+    /// `Up::Actions` messages applied.
+    acked: u32,
+    /// A frame held back while the link is slow, sent merged with the
+    /// next.
+    held: Option<Frame>,
 }
 
 /// What a message from a remote player came to, for the editor.
@@ -461,11 +1028,12 @@ impl Host {
     /// One message from `from`: an ask is kept for the host to take, a
     /// guest's actions go straight to their client.
     pub fn receive(&mut self, session: &mut Session, from: PeerId, up: Up) -> Option<Event> {
-        let guest = self
-            .guests
-            .iter()
-            .find(|g| g.from == from)
-            .map(|g| g.player);
+        let guest = self.guests.iter_mut().find(|g| g.from == from).map(|g| {
+            if matches!(up, Up::Actions(_)) {
+                g.acked = g.acked.wrapping_add(1);
+            }
+            g.player
+        });
         match (up, guest) {
             (
                 Up::Ask {
@@ -539,6 +1107,9 @@ impl Host {
             player,
             encoder: Encoder::default(),
             started: false,
+            offer,
+            acked: 0,
+            held: None,
         });
         Ok((i, Down::Welcome { player, name }))
     }
@@ -549,26 +1120,63 @@ impl Host {
         Down::Ended("The host didn\u{2019}t let you in.".into())
     }
 
-    /// `frame` for `player`'s editor, if they're remote: the ops for
-    /// `changes` (the whole tree the first time) filled in, the core GUI
-    /// dropped when it didn't change.
+    /// `frame` for `player`'s editor, if they're remote: the ops for the
+    /// shot's changes (the whole tree the first time) filled in, its sound
+    /// events, the input applied, the core GUI dropped when it didn't
+    /// change. `slow` (the link is behind): held back and merged into the
+    /// next one sent.
     pub fn frame(
         &mut self,
         player: Ref,
-        dom: &WeakDom,
-        changes: &[Change],
+        shot: Shot<'_>,
         mut frame: Frame,
+        slow: bool,
     ) -> Option<(PeerId, Down)> {
         let guest = self.guests.iter_mut().find(|g| g.player == player)?;
         frame.reset = !guest.started;
         frame.ops = if guest.started {
-            guest.encoder.ops(dom, changes)
+            guest.encoder.ops(shot.dom, shot.changes)
         } else {
-            guest.encoder.snapshot(dom)
+            guest.encoder.snapshot(shot.dom)
         };
         guest.started = true;
         frame.core = frame.core.and_then(|core| guest.encoder.core(core));
+        frame.sounds = guest.encoder.sounds(shot.dom, &shot.sounds, shot.time);
+        frame.ack = guest.acked;
+        let frame = match guest.held.take() {
+            Some(held) => held.merge(frame),
+            None => frame,
+        };
+        if slow {
+            guest.held = Some(frame);
+            return None;
+        }
         Some((guest.from, Down::Frame(Box::new(frame))))
+    }
+
+    /// Takes every remote player out of the session, to carry them into
+    /// the one a teleport starts ([`Host::arrive`]) rather than end them.
+    pub fn carry(&mut self) -> Vec<Offer> {
+        self.guests.drain(..).map(|g| g.offer).collect()
+    }
+
+    /// Joins the players [`Host::carry`] took into `session`, wearing the
+    /// avatars they came with: for each, their new welcome (their first
+    /// frame there is the whole tree), or why they couldn't come.
+    pub fn arrive(&mut self, session: &mut Session, carried: Vec<Offer>) -> Vec<(PeerId, Down)> {
+        carried
+            .into_iter()
+            .map(|offer| {
+                let from = offer.from;
+                self.offers.retain(|o| o.from != from);
+                self.offers.push(offer);
+                let down = match self.accept(session, from) {
+                    Ok((_, welcome)) => welcome,
+                    Err(why) => Down::Ended(why),
+                };
+                (from, down)
+            })
+            .collect()
     }
 
     /// The next frame to `from` (`None`: to every guest, after the host's

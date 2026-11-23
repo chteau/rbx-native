@@ -137,7 +137,7 @@ impl Sounds {
         }
     }
 
-    fn clip_of(&mut self, dom: &WeakDom, sound: Ref) -> Option<Arc<Clip>> {
+    pub(crate) fn clip_of(&mut self, dom: &WeakDom, sound: Ref) -> Option<Arc<Clip>> {
         content_id(&sound_id(dom, sound)).and_then(|id| self.clip(id))
     }
 
@@ -278,6 +278,16 @@ impl Sounds {
         (events, ended)
     }
 
+    /// The sounds playing now and where each one's clock is, for a remote
+    /// player's editor to play them too.
+    pub(crate) fn clocks(&self, dom: &WeakDom, db: &ReflectionDatabase) -> Vec<(Ref, f64)> {
+        self.known
+            .iter()
+            .filter(|s| flag(dom, db, **s, "Playing"))
+            .map(|s| (*s, self.tracks.get(s).map_or(0.0, |t| t.position.max(0.0))))
+            .collect()
+    }
+
     /// The sounds playing now as `listener` hears them (the camera; `None`
     /// hears every sound as if at its source).
     pub(crate) fn voices(
@@ -286,14 +296,30 @@ impl Sounds {
         db: &ReflectionDatabase,
         listener: Option<&CFrameData>,
     ) -> Vec<Voice> {
+        let clocks: Vec<(Ref, f64)> = self
+            .known
+            .iter()
+            .filter(|s| flag(dom, db, **s, "Playing"))
+            .map(|s| (*s, self.tracks.get(s).map_or(0.0, |t| t.position)))
+            .collect();
+        self.voices_at(dom, db, listener, &clocks)
+    }
+
+    /// `clocks`' sounds (each at its position, in seconds) as `listener`
+    /// hears them: each at its volume after its SoundGroups and its
+    /// distance, panned by where it is from the listener's right.
+    pub(crate) fn voices_at(
+        &mut self,
+        dom: &WeakDom,
+        db: &ReflectionDatabase,
+        listener: Option<&CFrameData>,
+        clocks: &[(Ref, f64)],
+    ) -> Vec<Voice> {
         let scale = service(dom, "SoundService")
             .map_or(1.0, |s| number(dom, db, s, "RolloffScale"))
             .max(0.0);
         let mut out = Vec::new();
-        for sound in self.known.clone() {
-            if !flag(dom, db, sound, "Playing") {
-                continue;
-            }
+        for &(sound, position) in clocks {
             let Some(clip) = self.clip_of(dom, sound) else {
                 continue;
             };
@@ -326,7 +352,7 @@ impl Sounds {
             out.push(Voice {
                 sound,
                 clip,
-                position: self.tracks.get(&sound).map_or(0.0, |t| t.position),
+                position,
                 speed: number(dom, db, sound, "PlaybackSpeed").max(0.0),
                 gain: gain as f32,
                 pan,
