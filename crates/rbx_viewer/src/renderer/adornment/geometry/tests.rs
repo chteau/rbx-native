@@ -196,6 +196,7 @@ fn a_picture_is_one_quad_the_size_it_asks_for() {
         size: Vec2::new(4.0, 2.0),
         texture: rbx_assets::AssetRef::Id(1),
         alpha: 0.5,
+        double_sided: true,
     };
     picture_quad(&picture, 0.5, &mut out);
     assert_eq!(out.len(), 6);
@@ -204,5 +205,107 @@ fn a_picture_is_one_quad_the_size_it_asks_for() {
         assert!(vertex.position[0].abs() <= 2.0 + 1e-5);
         assert!(vertex.position[1].abs() <= 1.0 + 1e-5);
         assert_eq!(vertex.position[2], 0.0);
+    }
+}
+
+/// Every closed shape winds each triangle counter-clockwise from outside,
+/// what a single-sided adornment's back-face discard relies on.
+#[test]
+fn closed_shapes_wind_every_triangle_outward() {
+    let frame = Mat4::from_rotation_translation(
+        glam::Quat::from_euler(glam::EulerRot::XYZ, 0.4, 0.6, 0.1),
+        Vec3::new(3.0, -2.0, 5.0),
+    );
+    let centre = |local: Vec3| frame.transform_point3(local);
+    for (mesh, inside) in [
+        (
+            AdornMesh::Box {
+                size: Vec3::new(2.0, 4.0, 6.0),
+            },
+            centre(Vec3::ZERO),
+        ),
+        (AdornMesh::Sphere { radius: 2.0 }, centre(Vec3::ZERO)),
+        (
+            AdornMesh::Cone {
+                radius: 1.0,
+                height: 3.0,
+            },
+            centre(Vec3::new(0.0, 0.0, -0.75)),
+        ),
+        (
+            AdornMesh::Cylinder {
+                radius: 1.0,
+                inner: 0.0,
+                height: 2.0,
+                sweep: 360.0,
+            },
+            centre(Vec3::new(0.0, 0.0, -1.0)),
+        ),
+    ] {
+        let mut out = Vec::new();
+        solid(mesh, frame, WHITE, &mut out);
+        for corners in positions(&out).chunks(3) {
+            let [a, b, c] = [corners[0], corners[1], corners[2]];
+            let normal = (b - a).cross(c - a);
+            // A sphere's pole quads each hold one zero-area triangle.
+            if normal.length() < 1e-6 {
+                continue;
+            }
+            assert!(
+                normal.dot((a + b + c) / 3.0 - inside) > 0.0,
+                "{mesh:?} has an inward triangle"
+            );
+        }
+    }
+}
+
+/// A hollow sector's inner wall faces the axis and its cut faces face out
+/// of the slice: each triangle's normal points away from a point inside the
+/// solid ring beside it.
+#[test]
+fn a_hollow_sector_winds_outward_too() {
+    let mut out = Vec::new();
+    solid(
+        AdornMesh::Cylinder {
+            radius: 2.0,
+            inner: 1.0,
+            height: 2.0,
+            sweep: 270.0,
+        },
+        Mat4::IDENTITY,
+        WHITE,
+        &mut out,
+    );
+    for corners in positions(&out).chunks(3) {
+        let [a, b, c] = [corners[0], corners[1], corners[2]];
+        let centroid = (a + b + c) / 3.0;
+        // The nearest point of the solid's core: mid-radius, mid-height, at
+        // the centroid's own angle, clamped into the sweep.
+        let angle = centroid
+            .y
+            .atan2(centroid.x)
+            .rem_euclid(std::f32::consts::TAU)
+            .clamp(0.05, 270f32.to_radians() - 0.05);
+        let core = Vec3::new(angle.cos() * 1.5, angle.sin() * 1.5, -1.0);
+        assert!((b - a).cross(c - a).dot(centroid - core) > 0.0);
+    }
+}
+
+/// The image's front is the side its frame's `LookVector` (-Z) points to.
+#[test]
+fn a_picture_faces_along_its_look_vector() {
+    let mut out = Vec::new();
+    let picture = AdornPicture {
+        frame: Mat4::IDENTITY,
+        size: Vec2::new(4.0, 2.0),
+        texture: rbx_assets::AssetRef::Id(1),
+        alpha: 1.0,
+        double_sided: false,
+    };
+    picture_quad(&picture, 1.0, &mut out);
+    for corners in out.chunks(3) {
+        let [a, b, c] = [0, 1, 2].map(|i| Vec3::from(corners[i].position));
+        assert!((b - a).cross(c - a).z < 0.0);
+        assert!(corners.iter().all(|vertex| vertex.single_sided == 1.0));
     }
 }

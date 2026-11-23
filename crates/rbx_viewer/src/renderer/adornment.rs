@@ -11,10 +11,14 @@
 //! themselves, which is why the buffer is built in that order and drawn
 //! straight through.
 //!
-//! Nothing here is back-face culled. An adornment is a thin overlay that a
-//! camera is free to stand inside, a `SelectionBox` around the part the
-//! eye is in, a `Handles` arrow the camera has flown past, and culling
-//! would turn those into holes.
+//! Only a `HandleAdornment` shape with `DoubleSided = false` (its default)
+//! drops the faces turned away from the eye: stand inside a
+//! `BoxHandleAdornment` in Studio and it vanishes, look through a
+//! transparent one and its far side is gone. Each vertex carries that flag
+//! and the fragment shader discards a back face that has it, so the
+//! `ZIndex` order baked into one buffer survives. Everything else (a
+//! `SelectionBox` around the part the eye is in, a `Handles` arrow the
+//! camera has flown past) has no such property and stays two-sided.
 //!
 //! Costs nothing in a place with no adornments: the pipelines are built the
 //! first time one appears and never before, the same way
@@ -47,6 +51,8 @@ use pipelines::Gpu;
 pub(super) struct Vertex {
     position: [f32; 3],
     color: [f32; 4],
+    /// 1 to drop this triangle's back face, `DoubleSided = false`.
+    single_sided: f32,
 }
 
 /// One corner of a line's screen-space quad: like `renderer::outline`'s, but
@@ -68,6 +74,8 @@ pub(super) struct ImageVertex {
     position: [f32; 3],
     uv: [f32; 2],
     alpha: f32,
+    /// As [`Vertex::single_sided`].
+    single_sided: f32,
 }
 
 /// A vertex buffer and where its depth-tested and always-on-top halves are.
@@ -222,12 +230,20 @@ impl Adornments {
             let side = usize::from(adornment.always_on_top);
             for piece in &adornment.pieces {
                 match piece {
-                    AdornPiece::Solid(solid) => geometry::solid(
-                        solid.mesh,
-                        solid.frame,
-                        rgba(solid.color, solid.alpha),
-                        &mut solids[side],
-                    ),
+                    AdornPiece::Solid(solid) => {
+                        let start = solids[side].len();
+                        geometry::solid(
+                            solid.mesh,
+                            solid.frame,
+                            rgba(solid.color, solid.alpha),
+                            &mut solids[side],
+                        );
+                        if !solid.double_sided {
+                            for vertex in &mut solids[side][start..] {
+                                vertex.single_sided = 1.0;
+                            }
+                        }
+                    }
                     AdornPiece::Line(line) => geometry::line(
                         line.from,
                         line.to,
