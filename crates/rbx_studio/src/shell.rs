@@ -1418,13 +1418,18 @@ impl Shell {
             shell.configure_game(page, cx);
         }
 
-        // Home's Settings host has no place worth recovering or merging.
-        if !launch.settings_only {
+        // Home's Settings host and a repro's temporary copy have no place
+        // worth recovering or merging.
+        let scratch = launch.settings_only || launch.repro.is_some();
+        if !scratch {
             shell.offer_merge_sidecar(cx);
         }
         shell.watch_theme(cx);
-        if !launch.settings_only {
+        if !scratch {
             shell.watch_recovery(cx);
+        }
+        if let Some(repro) = launch.repro {
+            shell.playtests_open_repro(repro, cx);
         }
         shell.watch_script_templates(cx);
 
@@ -2241,6 +2246,7 @@ impl Render for Shell {
             }
         }
         self.open_requested_palette(window, cx);
+        self.playtests_prepare_export(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);
@@ -2250,6 +2256,7 @@ impl Render for Shell {
             self.roblox_dialog(cx),
             self.play_dialog(cx),
             self.close_place_dialog(cx),
+            self.playtests_export_dialog(cx),
             self.toolbox_notice_dialog(cx),
             self.rig_dialog_overlay(cx),
             self.animation_publish_overlay(cx),
@@ -2293,7 +2300,15 @@ impl Render for Shell {
                 cx.notify();
             }))
             .on_drop(cx.listener(|shell, paths: &ExternalPaths, _, cx| {
-                shell.import_files(paths.paths().to_vec(), cx);
+                let (repros, files): (Vec<PathBuf>, Vec<PathBuf>) = paths
+                    .paths()
+                    .iter()
+                    .cloned()
+                    .partition(|path| crate::playtests::repro::is_repro(path));
+                for repro in repros {
+                    shell.open_repro_window(repro, cx);
+                }
+                shell.import_files(files, cx);
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);

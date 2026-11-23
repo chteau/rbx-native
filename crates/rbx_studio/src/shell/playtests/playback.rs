@@ -14,11 +14,7 @@ use crate::playtests::store;
 /// How often a playing timeline advances.
 const TICK: Duration = Duration::from_millis(33);
 
-/// `m:ss`.
-pub(super) fn clock(seconds: f32) -> String {
-    let whole = seconds.max(0.0) as u64;
-    format!("{}:{:02}", whole / 60, whole % 60)
-}
+pub(super) use crate::playtests::clock;
 
 impl Shell {
     pub(super) fn playtests_toggle_play(&mut self, cx: &mut Context<Self>) {

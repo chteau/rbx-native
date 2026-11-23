@@ -58,6 +58,8 @@ pub(crate) enum MenuId {
     TerrainOverflow,
     CollaboratorsOverflow,
     PlaytestsOverflow,
+    /// The n-th Playtests row's menu (its "…", or a right-click on the row).
+    PlaytestsRow(usize),
     InputActionsOverflow,
     SecurityAuditOverflow,
     PrePublishOverflow,
@@ -125,6 +127,7 @@ impl MenuId {
             MenuId::TerrainOverflow => "menu-terrain",
             MenuId::CollaboratorsOverflow => "menu-collaborators",
             MenuId::PlaytestsOverflow => "menu-playtests",
+            MenuId::PlaytestsRow(_) => "menu-playtests-row",
             MenuId::InputActionsOverflow => "menu-input-actions",
             MenuId::SecurityAuditOverflow => "menu-security-audit",
             MenuId::PrePublishOverflow => "menu-prepublish",
@@ -173,6 +176,7 @@ impl MenuId {
     fn element_id(self) -> ElementId {
         match self {
             MenuId::WallyVersion(index)
+            | MenuId::PlaytestsRow(index)
             | MenuId::AnimTransitionFrom(index)
             | MenuId::AnimTransitionTo(index) => ElementId::from((self.id(), index)),
             _ => ElementId::from(self.id()),
@@ -186,7 +190,7 @@ type Action = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
 /// is ever open.
 pub(super) struct MenuNav {
     focus: FocusHandle,
-    cursor: Option<usize>,
+    pub(super) cursor: Option<usize>,
     scroll: ScrollHandle,
 }
 
