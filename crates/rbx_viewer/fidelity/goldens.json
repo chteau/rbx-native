@@ -137,9 +137,9 @@
   },
   "gui_canvas_groups": {
     "about": "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested; under Global and Sibling",
-    "delta_e": 0.851,
+    "delta_e": 0.137,
     "delta_e_p90": 0.347,
-    "ssim": 0.988,
+    "ssim": 0.999,
     "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
