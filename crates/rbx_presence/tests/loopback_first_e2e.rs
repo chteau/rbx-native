@@ -7,7 +7,7 @@
 mod common;
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
@@ -340,7 +340,7 @@ fn studio_on_loopback(key: &str, enc: [u8; 32]) -> (Client, Receiver<Event>) {
 /// What a killed quick tunnel's address answers (Cloudflare's 530), and how
 /// many times it was asked.
 fn dead_tunnel() -> (String, Arc<AtomicUsize>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = rbx_presence::announce::bind_outside_loopback_range().unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let asked = Arc::new(AtomicUsize::new(0));
     let count = asked.clone();

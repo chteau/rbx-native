@@ -307,11 +307,10 @@ mod tests {
     }
 
     use std::io::{Read, Write};
-    use std::net::TcpListener;
 
     /// Serves one HTTP request with a fixed body, then closes.
     fn serve_once(body: String, content_type: &str) -> (String, std::thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = crate::announce::bind_outside_loopback_range().unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let content_type = content_type.to_owned();
         let handle = std::thread::spawn(move || {

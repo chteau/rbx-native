@@ -92,7 +92,8 @@ pub struct Host {
 }
 
 impl Host {
-    /// Binds `127.0.0.1:0` for the room of `key` and starts serving.
+    /// Binds a free `127.0.0.1` port (never one of the rooms' loopback
+    /// ports) for the room of `key` and starts serving.
     pub fn start(key: &str) -> std::io::Result<Host> {
         Host::with_claim_grace(key, CLAIM_GRACE_MS)
     }
@@ -111,7 +112,10 @@ impl Host {
     }
 
     fn bind(key: &str, grace: u64, port: u16, id: String) -> std::io::Result<Host> {
-        let listener = TcpListener::bind(("127.0.0.1", port))?;
+        let listener = match port {
+            0 => crate::announce::bind_outside_loopback_range()?,
+            port => TcpListener::bind(("127.0.0.1", port))?,
+        };
         let addr = listener.local_addr()?;
         let shared = Arc::new(Shared {
             key: key.to_owned(),
