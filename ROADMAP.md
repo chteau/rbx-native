@@ -3579,10 +3579,13 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   `spawn`, `delay`), unanchored parts that fall at start, DataStore calls
   without `pcall`, and huge unions or part counts, each linking to where
   it is in the place.
-- [ ] 📋 **Free model kits in the Toolbox**: browse CC0 packs (Kenney,
-  Quaternius, Poly Pizza's CC0 section), preview them and import in one
-  click, scaled to studs with pivots set. Goes with the MCP building
-  skills, so an assistant can pull a kit in itself.
+- [ ] 📋 **Free model kits in the Toolbox**: Poly Haven's CC0 models
+  (public API, no key) browsed and imported in one click, scaled to studs
+  with pivots set and a credit attribute; Kenney packs (CC0, but no
+  automated downloads) added from a downloaded zip. Quaternius moved to a
+  non-CC0 licence and Poly Pizza's API needs a key, so neither is listed.
+  The MCP `import_model` tool lets an assistant pull a kit in itself.
+  Built on `feat/kit-browser`.
 - [ ] 📋 **Blender integration, someday**: building with Parts covers
   modeling for now. Later, a live link to Blender (send a selection over,
   get the mesh back as a MeshPart, keep the two in sync) for anything
