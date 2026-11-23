@@ -99,7 +99,7 @@ areas out of the embedded Roblox window (X Shape), so popups draw above it.
 Unmodified crates.io 0.3.4 source (its `examples/`, `tests/` and `docs/`
 dropped, and their `[[example]]`/`[[test]]` entries with them), patched in
 through the root `Cargo.toml`'s `[patch.crates-io]`, plus hover styles that
-ease instead of snapping and one window fix, each piece marked "rbx-native
+ease instead of snapping and two window fixes, each piece marked "rbx-native
 addition":
 
 - `src/hover_transition.rs` (new): the `HoverTransition` global (a
@@ -117,6 +117,13 @@ addition":
 - `src/window.rs`: `Window::new` maps the platform window only when
   `WindowOptions::show` asks for it. X11 and Wayland mapped every window
   regardless, so Home's hidden Settings host flashed over the screen.
+- `src/window.rs`: `prepaint_tooltip` drops a tooltip asked for by the
+  element tree when it would overlap anything drawn in the deferred
+  layers (menus, popovers, pickers). The tooltip layer is painted over
+  all of them, so a tooltip still waiting out its delay when its trigger
+  opened a menu, or one shown again over a trigger the menu leaves
+  uncovered, sat on top of the open menu. Tooltips from inside those layers
+  are kept. Tested in `rbx_studio`'s `shell/tooltip.rs`.
 
 GPUI has no property transitions of its own, so this is what lets every
 `hover`/`group_hover` style in the editor — and in `gpui-base`'s widgets —

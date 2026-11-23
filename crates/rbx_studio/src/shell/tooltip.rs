@@ -97,3 +97,96 @@ fn replay_pointer(window: &mut Window, still_wanted: impl FnOnce() -> bool + 'st
         })
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use std::time::Duration;
+
+    use gpui_kit::prelude::*;
+    use gpui_kit::{
+        canvas, deferred, div, point, px, Context, IntoElement, Modifiers, Render, TestAppContext,
+        Window,
+    };
+
+    /// A tooltip that counts the frames it was painted in.
+    struct Counted(Rc<Cell<usize>>);
+
+    impl Render for Counted {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let painted = self.0.clone();
+            div().w(px(80.)).h(px(20.)).child(
+                canvas(
+                    |_, _, _| {},
+                    move |_, _, _, _| painted.set(painted.get() + 1),
+                )
+                .size_full(),
+            )
+        }
+    }
+
+    /// A button with a tooltip and, with `menu`, the menu it opened just
+    /// under it, in the layer menus are drawn in.
+    struct Trigger {
+        menu: bool,
+        painted: Rc<Cell<usize>>,
+    }
+
+    impl Render for Trigger {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let painted = self.painted.clone();
+            div()
+                .size_full()
+                .child(
+                    div()
+                        .id("trigger")
+                        .absolute()
+                        .left(px(10.))
+                        .top(px(10.))
+                        .size(px(20.))
+                        .tooltip(move |_, cx| cx.new(|_| Counted(painted.clone())).into()),
+                )
+                .when(self.menu, |this| {
+                    this.child(deferred(
+                        div()
+                            .id("menu")
+                            .absolute()
+                            .left(px(10.))
+                            .top(px(34.))
+                            .w(px(120.))
+                            .h(px(80.))
+                            .occlude(),
+                    ))
+                })
+        }
+    }
+
+    /// Hovers the trigger past the tooltip's delay; how often its tooltip
+    /// was painted.
+    fn tooltip_frames(cx: &mut TestAppContext, menu: bool) -> usize {
+        let painted = Rc::new(Cell::new(0));
+        let (_view, cx) = cx.add_window_view({
+            let painted = painted.clone();
+            move |_, _| Trigger { menu, painted }
+        });
+        cx.run_until_parked();
+        cx.simulate_mouse_move(point(px(20.), px(20.)), None, Modifiers::none());
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        painted.get()
+    }
+
+    #[gpui_kit::test]
+    fn a_hovered_control_shows_its_tooltip(cx: &mut TestAppContext) {
+        assert!(tooltip_frames(cx, false) > 0);
+    }
+
+    /// The tooltip layer is drawn over every deferred one: a tooltip from
+    /// under an open menu sat on top of it.
+    #[gpui_kit::test]
+    fn a_tooltip_never_covers_an_open_menu(cx: &mut TestAppContext) {
+        assert_eq!(tooltip_frames(cx, true), 0);
+    }
+}
