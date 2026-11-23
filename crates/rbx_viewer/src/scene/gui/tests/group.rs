@@ -111,8 +111,11 @@ fn a_canvas_group_under_global_z_index_is_never_flattened() {
 
     let elements = resolve(&screens(&dom), VIEWPORT);
 
+    // The class default background, a grey, times the cyan tint.
+    let grey = srgb_to_linear(163.0 / 255.0);
     assert_eq!(elements[0].group, None);
     assert_eq!(elements[0].background_alpha, 0.5);
-    assert_eq!(elements[0].background, [0.0, 1.0, 1.0]);
+    assert_eq!(elements[0].background[0], 0.0);
+    assert!((elements[0].background[1] - grey).abs() < 0.01);
     assert_eq!(elements[1].background_alpha, 1.0);
 }
