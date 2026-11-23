@@ -4,7 +4,7 @@
 //! travel, its bytes and the script line that made it; rates per remote
 //! and per player; what went over Roblox's limits or got lost on a netsim
 //! link. The session only logs while one of these docks shows
-//! (`Shell::remote_inspector_wanted`), in the running window or one of its
+//! (`Store::watched`), in the running window or one of its
 //! Server & Clients tabs.
 
 mod model;
