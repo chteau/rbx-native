@@ -1600,8 +1600,8 @@ mod tests {
     }
 
     /// Tests never read `beta.json`, so every beta is off: Local Run's
-    /// ribbon tiles, menu item, MicroProfiler dock and its key are gone,
-    /// not greyed.
+    /// ribbon tiles, menu item, MicroProfiler dock and its key, and the
+    /// Collaborators dock's "Join as player", are gone, not greyed.
     #[test]
     fn with_the_beta_off_no_local_run_entry_is_present() {
         use crate::shell::ribbon::{test_tile_order, TestTile};
@@ -1627,6 +1627,8 @@ mod tests {
             menu_names(&menu.items, &mut names);
         }
         assert!(!names.iter().any(|n| n.contains("(local)")), "{names:?}");
+        // M19b's "Join as player" needs this beta and co-edit's.
+        assert!(!super::remote::betas_on());
 
         let hidden = crate::shell::ui_editor::beta_hidden_panels();
         assert!(hidden.contains(&crate::shell::layout::Panel::MicroProfiler));

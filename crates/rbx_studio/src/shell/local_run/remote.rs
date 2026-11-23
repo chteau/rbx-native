@@ -178,13 +178,18 @@ fn rate(bytes: u64, seconds: f64) -> f64 {
     bytes as f64 / seconds.max(0.001) / 1000.0
 }
 
+/// Whether collaborators can play a Local Run together: it takes both the
+/// Local Run and the co-edit betas. Off, the Collaborators dock offers no
+/// "Join as player".
+pub(in crate::shell) fn betas_on() -> bool {
+    crate::beta::enabled(super::BETA_ID) && crate::beta::enabled(crate::shell::coedit::BETA_ID)
+}
+
 impl Shell {
     /// Where this editor's play connection should go now: the hosted
     /// room's relay, while both betas are on and co-editing is connected.
     fn remote_play_target(&mut self) -> Option<play::Config> {
-        if !crate::beta::enabled(super::BETA_ID)
-            || !crate::beta::enabled(crate::shell::coedit::BETA_ID)
-        {
+        if !betas_on() {
             return None;
         }
         let seed = self.team_presence.coedit.as_ref()?.seed();
@@ -842,6 +847,9 @@ impl Shell {
     /// The Collaborators dock's Local Run part: the sessions announced in
     /// the room, to join as a player, or the one this editor plays.
     pub(in crate::shell) fn remote_play_block(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !betas_on() {
+            return None;
+        }
         let remote = &self.play.live.local.remote;
         let line = |text: String| {
             div()
