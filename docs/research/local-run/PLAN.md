@@ -1293,6 +1293,17 @@ Left, and why:
 - The lit floor at grazing angles now comes out a little lighter than real in `studio_lighting` (160 against 151 at the far rows).
 - An `EditableMesh` or `EditableImage` that a script edits after it is first drawn stays as first drawn (the viewer still caches by its key); a `Decal` with an `EditableImage` is not drawn.
 
+## Live web goldens (branch feat/local-run-web-goldens)
+
+The catalog and avatar answers MarketplaceService, AssetService and AvatarEditorService give, recorded on the sandbox place and matched online and offline.
+
+1. Re-recorded WebMarket and AvatarApi on the real client, with new cases: `GetProductInfo(id, Enum.InfoType.Bundle)` (Roblox answers the same table as `AssetService:GetBundleDetailsAsync`, not the catalog's raw JSON), the shapes of `GetItemDetailsAsync` for an asset and a bundle, of a `SearchCatalogAsync` result, and `GetBundlesByAssetIdAsync` (a `CatalogPages`, one finished page, items as a catalog search lists them, not a plain table). Public reads only.
+2. Ours now matches: item details drop the catalog's `ItemCreatedUtc`, `RenderProperties` and `Taxonomy`, a bundle's `BundleType` is the `Enum.BundleType` name, `GetBundlesByAssetIdAsync` gives that `CatalogPages` (each bundle's catalog details less `ExpectedSellerId`, `IsPurchasable`, `IsOffSale`, `Owned`), and `GetBundleDetailsAsync` refuses ids below 1 with `HTTP 400` without asking the catalog.
+3. Online every call goes to the same public endpoints (catalog, avatar, toolbox; no cookie) and each answer is kept under the run's cache (`<cache>/local-run/web/`); offline the kept answer serves. What can only come live: anything not asked for once while online (no kept answer: the call fails as offline), and every value in a kept answer is as old as the run that kept it (prices, favorites, sale state, the first search results, newly added avatar rules).
+4. The suite runs offline too: `conformance/web.json` holds the answers the tests ask for, as recorded with the goldens, and seeds each run's cache (online the live answer still wins). A golden's `volatile` map names the fields that are live data; they pass when ours is the same kind of value (the same type, text that opens the same way), shown as `ok (live data)`, so catalog churn can't fail the suite.
+5. `record_goldens` keeps a golden's `known_gaps` and `volatile` across re-recordings (it kept only `known_gap`).
+6. The suite's speed and its one load-sensitive test: FrameOverrun ran paced by the wall clock, so on a loaded machine the engine's own frame time stretched frames the test expects at 1/60 s (it failed once under a full parallel workspace run). Its session now uses `Pacing::Scripts`: a frame lasts as long as its Luau ran (at least 1/60 s), which is what the test measures, and nothing else on the machine moves it. The other tests split over up to four servers run side by side (test i on server i mod n; `CONFORMANCE_JOBS` overrides), each test still in its own corner of the world and on simulated time.
+
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.

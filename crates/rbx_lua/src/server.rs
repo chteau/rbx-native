@@ -54,8 +54,8 @@ pub use input::VirtualInput;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{decode_all, encode_args, Caller, Outgoing, Packet, To, Wire};
 pub use services::{
-    set_text_measure, Arrival, AssetSource, Device, LiveData, Notice, PurchasePrompt, Services,
-    StreamRequest, TeleportRequest, TextMeasure, WebSession,
+    set_text_measure, web_cache_file, Arrival, AssetSource, Device, LiveData, Notice,
+    PurchasePrompt, Services, StreamRequest, TeleportRequest, TextMeasure, WebSession,
 };
 pub use terrain::{TerrainOp, TerrainReply};
 

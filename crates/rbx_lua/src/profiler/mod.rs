@@ -73,6 +73,11 @@ impl Profiler {
         std::mem::take(&mut self.script_time)
     }
 
+    /// Wall time spent running Luau since the last [`Self::take_script_time`].
+    pub fn script_time(&self) -> Duration {
+        self.script_time
+    }
+
     pub(crate) fn add_script_time(&mut self, spent: Duration) {
         self.script_time += spent;
     }

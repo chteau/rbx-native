@@ -1,0 +1,1808 @@
+{
+ "GET https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=142376088,1516791621,139805946507533,100847230469970,110597779584354": {
+  "data": [
+   {
+    "asset": {
+     "assetGenres": [
+      "All"
+     ],
+     "assetSubTypes": [],
+     "audioDetails": {
+      "artist": "Parry Gripp",
+      "audioType": "Music",
+      "musicAlbum": "Raining Tacos",
+      "musicGenre": "electronic",
+      "tags": [
+       "Music",
+       "Sampler",
+       "Pop_music",
+       "Rhythm_and_blues",
+       "Disco",
+       "Electronic_music",
+       "House_music",
+       "Techno",
+       "Dubstep",
+       "Electronica",
+       "Electronic_dance_music",
+       "Trance_music",
+       "Music_for_children",
+       "Jingle_(music)",
+       "Christmas_music",
+       "Dance_music",
+       "Happy_music",
+       "Exciting_music",
+       "Zing"
+      ],
+      "title": "Raining Tacos"
+     },
+     "createdUtc": "2014-01-16T23:57:23.503Z",
+     "description": "The classic song about Raining Tacos.",
+     "duration": 95,
+     "hasScripts": false,
+     "id": 142376088,
+     "isAssetHashApproved": true,
+     "isEndorsed": false,
+     "name": "Parry Gripp - Raining Tacos",
+     "previewAssets": {
+      "imagePreviewAssets": [],
+      "videoPreviewAssets": []
+     },
+     "socialLinks": [],
+     "typeId": 3,
+     "updatedUtc": "2022-03-31T19:32:00.993Z",
+     "visibilityStatus": 0
+    },
+    "creator": {
+     "id": 3433718036,
+     "isVerifiedCreator": true,
+     "name": "ParryGripp",
+     "type": 1
+    },
+    "fiatProduct": {
+     "isFree": true,
+     "published": true,
+     "purchasable": true,
+     "purchasePrice": {
+      "currencyCode": "USD",
+      "quantity": {
+       "exponent": 0,
+       "significand": 0
+      }
+     }
+    },
+    "voting": {
+     "canVote": false,
+     "downVotes": 6,
+     "hasVoted": false,
+     "showVotes": true,
+     "upVotePercent": 99,
+     "upVotes": 594,
+     "voteCount": 600
+    }
+   },
+   {
+    "asset": {
+     "assetGenres": [
+      "All"
+     ],
+     "assetSubTypes": [],
+     "audioDetails": {
+      "artist": "Roblox",
+      "audioType": "Unknown",
+      "musicAlbum": "",
+      "tags": [],
+      "title": "Rain Effect"
+     },
+     "createdUtc": "2018-03-17T00:51:14.913Z",
+     "description": "Audio",
+     "duration": 59,
+     "hasScripts": false,
+     "id": 1516791621,
+     "isAssetHashApproved": true,
+     "isEndorsed": false,
+     "name": "Rain Effect",
+     "previewAssets": {
+      "imagePreviewAssets": [],
+      "videoPreviewAssets": []
+     },
+     "socialLinks": [],
+     "typeId": 3,
+     "updatedUtc": "2022-05-03T03:55:50.827Z",
+     "visibilityStatus": 0
+    },
+    "creator": {
+     "id": 1,
+     "isVerifiedCreator": true,
+     "name": "Roblox",
+     "type": 1
+    },
+    "fiatProduct": {
+     "isFree": true,
+     "published": true,
+     "purchasable": true,
+     "purchasePrice": {
+      "currencyCode": "USD",
+      "quantity": {
+       "exponent": 0,
+       "significand": 0
+      }
+     }
+    },
+    "voting": {
+     "canVote": false,
+     "downVotes": 0,
+     "hasVoted": false,
+     "showVotes": true,
+     "upVotePercent": 100,
+     "upVotes": 20,
+     "voteCount": 20
+    }
+   },
+   {
+    "asset": {
+     "assetGenres": [
+      "All"
+     ],
+     "assetSubTypes": [],
+     "audioDetails": {
+      "artist": "Calm Background Music Studio",
+      "audioType": "Music",
+      "musicAlbum": "Sad ambient gaming background music",
+      "musicGenre": "world",
+      "tags": [],
+      "title": "Calm Rain for Epic Gaming"
+     },
+     "createdUtc": "2026-03-11T16:10:01.851Z",
+     "description": "",
+     "duration": 231,
+     "hasScripts": false,
+     "id": 139805946507533,
+     "isAssetHashApproved": true,
+     "isEndorsed": false,
+     "name": "Calm Rain for Epic Gaming",
+     "previewAssets": {
+      "imagePreviewAssets": [],
+      "videoPreviewAssets": []
+     },
+     "socialLinks": [],
+     "typeId": 3,
+     "updatedUtc": "2026-03-11T16:10:01.911Z",
+     "visibilityStatus": 0
+    },
+    "creator": {
+     "id": 7135127272,
+     "isVerifiedCreator": true,
+     "name": "DistrokidOfficial",
+     "type": 1
+    },
+    "fiatProduct": {
+     "isFree": true,
+     "published": true,
+     "purchasable": true,
+     "purchasePrice": {
+      "currencyCode": "USD",
+      "quantity": {
+       "exponent": 0,
+       "significand": 0
+      }
+     }
+    },
+    "voting": {
+     "canVote": false,
+     "downVotes": 0,
+     "hasVoted": false,
+     "showVotes": true,
+     "upVotePercent": 100,
+     "upVotes": 0,
+     "voteCount": 0
+    }
+   },
+   {
+    "asset": {
+     "assetGenres": [
+      "All"
+     ],
+     "assetSubTypes": [],
+     "audioDetails": {
+      "artist": "HardestRaver",
+      "audioType": "Music",
+      "musicAlbum": "",
+      "musicGenre": "dance",
+      "tags": [],
+      "title": "It's Raining Tacos"
+     },
+     "createdUtc": "2026-02-16T21:27:38.59Z",
+     "description": "",
+     "duration": 220,
+     "hasScripts": false,
+     "id": 100847230469970,
+     "isAssetHashApproved": true,
+     "isEndorsed": false,
+     "name": "It's Raining Tacos",
+     "previewAssets": {
+      "imagePreviewAssets": [],
+      "videoPreviewAssets": []
+     },
+     "socialLinks": [],
+     "typeId": 3,
+     "updatedUtc": "2026-02-16T21:27:38.674Z",
+     "visibilityStatus": 0
+    },
+    "creator": {
+     "id": 7135127272,
+     "isVerifiedCreator": true,
+     "name": "DistrokidOfficial",
+     "type": 1
+    },
+    "fiatProduct": {
+     "isFree": true,
+     "published": true,
+     "purchasable": true,
+     "purchasePrice": {
+      "currencyCode": "USD",
+      "quantity": {
+       "exponent": 0,
+       "significand": 0
+      }
+     }
+    },
+    "voting": {
+     "canVote": false,
+     "downVotes": 3,
+     "hasVoted": false,
+     "showVotes": true,
+     "upVotePercent": 71,
+     "upVotes": 7,
+     "voteCount": 10
+    }
+   },
+   {
+    "asset": {
+     "assetGenres": [
+      "All"
+     ],
+     "assetSubTypes": [],
+     "audioDetails": {
+      "artist": "Earthbound Harmony",
+      "audioType": "Unknown",
+      "musicAlbum": "La Honda Creek",
+      "tags": [],
+      "title": "Water stream sounds in the rainforest"
+     },
+     "createdUtc": "2025-01-25T18:17:32.063Z",
+     "description": "",
+     "duration": 300,
+     "hasScripts": false,
+     "id": 110597779584354,
+     "isAssetHashApproved": true,
+     "isEndorsed": false,
+     "name": "Water stream sounds in the rainforest",
+     "previewAssets": {
+      "imagePreviewAssets": [],
+      "videoPreviewAssets": []
+     },
+     "socialLinks": [],
+     "typeId": 3,
+     "updatedUtc": "2025-01-25T18:17:32.077Z",
+     "visibilityStatus": 0
+    },
+    "creator": {
+     "id": 7135127272,
+     "isVerifiedCreator": true,
+     "name": "DistrokidOfficial",
+     "type": 1
+    },
+    "fiatProduct": {
+     "isFree": true,
+     "published": true,
+     "purchasable": true,
+     "purchasePrice": {
+      "currencyCode": "USD",
+      "quantity": {
+       "exponent": 0,
+       "significand": 0
+      }
+     }
+    },
+    "voting": {
+     "canVote": false,
+     "downVotes": 0,
+     "hasVoted": false,
+     "showVotes": true,
+     "upVotePercent": 0,
+     "upVotes": 0,
+     "voteCount": 0
+    }
+   }
+  ]
+ },
+ "GET https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=1843463175": {
+  "data": [
+   {
+    "asset": {
+     "assetGenres": [
+      "All"
+     ],
+     "assetSubTypes": [],
+     "audioDetails": {
+      "artist": "Derek Stanley Austin",
+      "audioType": "Music",
+      "musicAlbum": "THRILLER SUSPENSE & HORROR",
+      "musicGenre": "film-score",
+      "tags": [
+       "Choir",
+       "Keyboard_(musical)",
+       "Piano",
+       "Electric_piano",
+       "Organ",
+       "Electronic_organ",
+       "Hammond_organ",
+       "Timpani",
+       "Opera",
+       "Scary_music"
+      ],
+      "title": "Phantom At The Opera"
+     },
+     "createdUtc": "2018-05-27T02:04:07.98Z",
+     "description": "",
+     "duration": 97,
+     "hasScripts": false,
+     "id": 1843463175,
+     "isAssetHashApproved": true,
+     "isEndorsed": true,
+     "name": "Phantom At The Opera",
+     "previewAssets": {
+      "imagePreviewAssets": [],
+      "videoPreviewAssets": []
+     },
+     "socialLinks": [],
+     "typeId": 3,
+     "updatedUtc": "2025-10-17T03:20:03.823Z",
+     "visibilityStatus": 0
+    },
+    "creator": {
+     "id": 7462718749,
+     "isVerifiedCreator": true,
+     "name": "APMOfficial",
+     "type": 1
+    },
+    "fiatProduct": {
+     "isFree": true,
+     "published": true,
+     "purchasable": true,
+     "purchasePrice": {
+      "currencyCode": "USD",
+      "quantity": {
+       "exponent": 0,
+       "significand": 0
+      }
+     }
+    },
+    "voting": {
+     "canVote": false,
+     "downVotes": 0,
+     "hasVoted": false,
+     "showVotes": true,
+     "upVotePercent": 0,
+     "upVotes": 0,
+     "voteCount": 0
+    }
+   }
+  ]
+ },
+ "GET https://apis.roblox.com/toolbox-service/v1/marketplace/3?limit=5&keyword=rain": {
+  "data": [
+   {
+    "id": 142376088,
+    "searchResultSource": "LexicalWithSort"
+   },
+   {
+    "id": 1516791621,
+    "searchResultSource": "LexicalWithSort"
+   },
+   {
+    "id": 139805946507533,
+    "searchResultSource": "LexicalWithSort"
+   },
+   {
+    "id": 100847230469970,
+    "searchResultSource": "LexicalWithSort"
+   },
+   {
+    "id": 110597779584354,
+    "searchResultSource": "LexicalWithSort"
+   }
+  ],
+  "filteredKeyword": "rain",
+  "nextPageCursor": "MV8xXzFfNQ==_c94bc8d7050219f0335f211eee1bb65d",
+  "queryFacets": {
+   "appliedFacets": [],
+   "availableFacets": []
+  },
+  "spellCheckerResult": {
+   "correctionState": 0
+  },
+  "totalResults": 1000
+ },
+ "GET https://avatar.roblox.com/v1/avatar-rules": {
+  "accessoryRefinementLowerBounds": {
+   "BackAccessory": {
+    "position": {
+     "xPosition": -0.25,
+     "yPosition": -0.25,
+     "zPosition": -0.25
+    },
+    "rotation": {
+     "xRotation": -15.0,
+     "yRotation": -30.0,
+     "zRotation": -30.0
+    },
+    "scale": {
+     "xScale": 0.8,
+     "yScale": 0.8,
+     "zScale": 0.8
+    }
+   },
+   "FaceAccessory": {
+    "position": {
+     "xPosition": -0.25,
+     "yPosition": -0.25,
+     "zPosition": -0.25
+    },
+    "rotation": {
+     "xRotation": -30.0,
+     "yRotation": -30.0,
+     "zRotation": -30.0
+    },
+    "scale": {
+     "xScale": 0.8,
+     "yScale": 0.8,
+     "zScale": 0.8
+    }
+   },
+   "FrontAccessory": {
+    "position": {
+     "xPosition": -0.25,
+     "yPosition": -0.25,
+     "zPosition": -0.25
+    },
+    "rotation": {
+     "xRotation": -15.0,
+     "yRotation": -30.0,
+     "zRotation": -30.0
+    },
+    "scale": {
+     "xScale": 0.8,
+     "yScale": 0.8,
+     "zScale": 0.8
+    }
+   },
+   "Hat": {
+    "position": {
+     "xPosition": -0.25,
+     "yPosition": -0.25,
+     "zPosition": -0.25
+    },
+    "rotation": {
+     "xRotation": -30.0,
+     "yRotation": -30.0,
+     "zRotation": -30.0
+    },
+    "scale": {
+     "xScale": 0.8,
+     "yScale": 0.8,
+     "zScale": 0.8
+    }
+   },
+   "NeckAccessory": {
+    "position": {
+     "xPosition": -0.25,
+     "yPosition": -0.25,
+     "zPosition": -0.25
+    },
+    "rotation": {
+     "xRotation": -30.0,
+     "yRotation": -30.0,
+     "zRotation": -30.0
+    },
+    "scale": {
+     "xScale": 0.8,
+     "yScale": 0.8,
+     "zScale": 0.8
+    }
+   },
+   "ShoulderAccessory": {
+    "position": {
+     "xPosition": -0.25,
+     "yPosition": -0.25,
+     "zPosition": -0.25
+    },
+    "rotation": {
+     "xRotation": -30.0,
+     "yRotation": -30.0,
+     "zRotation": -30.0
+    },
+    "scale": {
+     "xScale": 0.8,
+     "yScale": 0.8,
+     "zScale": 0.8
+    }
+   }
+  },
+  "accessoryRefinementTypes": [
+   8,
+   42,
+   43,
+   44,
+   45,
+   46
+  ],
+  "accessoryRefinementUpperBounds": {
+   "BackAccessory": {
+    "position": {
+     "xPosition": 0.25,
+     "yPosition": 0.25,
+     "zPosition": 0.25
+    },
+    "rotation": {
+     "xRotation": 15.0,
+     "yRotation": 30.0,
+     "zRotation": 30.0
+    },
+    "scale": {
+     "xScale": 1.2,
+     "yScale": 1.2,
+     "zScale": 1.2
+    }
+   },
+   "FaceAccessory": {
+    "position": {
+     "xPosition": 0.25,
+     "yPosition": 0.25,
+     "zPosition": 0.25
+    },
+    "rotation": {
+     "xRotation": 30.0,
+     "yRotation": 30.0,
+     "zRotation": 30.0
+    },
+    "scale": {
+     "xScale": 1.2,
+     "yScale": 1.2,
+     "zScale": 1.2
+    }
+   },
+   "FrontAccessory": {
+    "position": {
+     "xPosition": 0.25,
+     "yPosition": 0.25,
+     "zPosition": 0.25
+    },
+    "rotation": {
+     "xRotation": 15.0,
+     "yRotation": 30.0,
+     "zRotation": 30.0
+    },
+    "scale": {
+     "xScale": 1.2,
+     "yScale": 1.2,
+     "zScale": 1.2
+    }
+   },
+   "Hat": {
+    "position": {
+     "xPosition": 0.25,
+     "yPosition": 0.25,
+     "zPosition": 0.25
+    },
+    "rotation": {
+     "xRotation": 30.0,
+     "yRotation": 30.0,
+     "zRotation": 30.0
+    },
+    "scale": {
+     "xScale": 1.2,
+     "yScale": 1.2,
+     "zScale": 1.2
+    }
+   },
+   "NeckAccessory": {
+    "position": {
+     "xPosition": 0.25,
+     "yPosition": 0.25,
+     "zPosition": 0.25
+    },
+    "rotation": {
+     "xRotation": 30.0,
+     "yRotation": 30.0,
+     "zRotation": 30.0
+    },
+    "scale": {
+     "xScale": 1.2,
+     "yScale": 1.2,
+     "zScale": 1.2
+    }
+   },
+   "ShoulderAccessory": {
+    "position": {
+     "xPosition": 0.25,
+     "yPosition": 0.25,
+     "zPosition": 0.25
+    },
+    "rotation": {
+     "xRotation": 30.0,
+     "yRotation": 30.0,
+     "zRotation": 30.0
+    },
+    "scale": {
+     "xScale": 1.2,
+     "yScale": 1.2,
+     "zScale": 1.2
+    }
+   }
+  },
+  "basicBodyColorsPalette": [
+   {
+    "brickColorId": 364,
+    "hexColor": "#5A4C42",
+    "name": "Dark taupe"
+   },
+   {
+    "brickColorId": 217,
+    "hexColor": "#7C5C46",
+    "name": "Brown"
+   },
+   {
+    "brickColorId": 359,
+    "hexColor": "#AF9483",
+    "name": "Linen"
+   },
+   {
+    "brickColorId": 18,
+    "hexColor": "#CC8E69",
+    "name": "Nougat"
+   },
+   {
+    "brickColorId": 125,
+    "hexColor": "#EAB892",
+    "name": "Light orange"
+   },
+   {
+    "brickColorId": 361,
+    "hexColor": "#564236",
+    "name": "Dirt brown"
+   },
+   {
+    "brickColorId": 192,
+    "hexColor": "#694028",
+    "name": "Reddish brown"
+   },
+   {
+    "brickColorId": 351,
+    "hexColor": "#BC9B5D",
+    "name": "Cork"
+   },
+   {
+    "brickColorId": 352,
+    "hexColor": "#C7AC78",
+    "name": "Burlap"
+   },
+   {
+    "brickColorId": 5,
+    "hexColor": "#D7C59A",
+    "name": "Brick yellow"
+   },
+   {
+    "brickColorId": 153,
+    "hexColor": "#957977",
+    "name": "Sand red"
+   },
+   {
+    "brickColorId": 1007,
+    "hexColor": "#A34B4B",
+    "name": "Dusty Rose"
+   },
+   {
+    "brickColorId": 101,
+    "hexColor": "#DA867A",
+    "name": "Medium red"
+   },
+   {
+    "brickColorId": 1025,
+    "hexColor": "#FFC9C9",
+    "name": "Pastel orange"
+   },
+   {
+    "brickColorId": 330,
+    "hexColor": "#FF98DC",
+    "name": "Carnation pink"
+   },
+   {
+    "brickColorId": 135,
+    "hexColor": "#74869D",
+    "name": "Sand blue"
+   },
+   {
+    "brickColorId": 305,
+    "hexColor": "#527CAE",
+    "name": "Steel blue"
+   },
+   {
+    "brickColorId": 11,
+    "hexColor": "#80BBDC",
+    "name": "Pastel Blue"
+   },
+   {
+    "brickColorId": 1026,
+    "hexColor": "#B1A7FF",
+    "name": "Pastel violet"
+   },
+   {
+    "brickColorId": 321,
+    "hexColor": "#A75E9B",
+    "name": "Lilac"
+   },
+   {
+    "brickColorId": 107,
+    "hexColor": "#008F9C",
+    "name": "Bright bluish green"
+   },
+   {
+    "brickColorId": 310,
+    "hexColor": "#5B9A4C",
+    "name": "Shamrock"
+   },
+   {
+    "brickColorId": 317,
+    "hexColor": "#7C9C6B",
+    "name": "Moss"
+   },
+   {
+    "brickColorId": 29,
+    "hexColor": "#A1C48C",
+    "name": "Medium green"
+   },
+   {
+    "brickColorId": 105,
+    "hexColor": "#E29B40",
+    "name": "Br. yellowish orange"
+   },
+   {
+    "brickColorId": 24,
+    "hexColor": "#F5CD30",
+    "name": "Bright yellow"
+   },
+   {
+    "brickColorId": 334,
+    "hexColor": "#F8D96D",
+    "name": "Daisy orange"
+   },
+   {
+    "brickColorId": 199,
+    "hexColor": "#635F62",
+    "name": "Dark stone grey"
+   },
+   {
+    "brickColorId": 1002,
+    "hexColor": "#CDCDCD",
+    "name": "Mid gray"
+   },
+   {
+    "brickColorId": 1001,
+    "hexColor": "#F8F8F8",
+    "name": "Institutional white"
+   }
+  ],
+  "bodyColorsPalette": [
+   {
+    "brickColorId": 361,
+    "hexColor": "#564236",
+    "name": "Dirt brown"
+   },
+   {
+    "brickColorId": 192,
+    "hexColor": "#694028",
+    "name": "Reddish brown"
+   },
+   {
+    "brickColorId": 217,
+    "hexColor": "#7C5C46",
+    "name": "Brown"
+   },
+   {
+    "brickColorId": 153,
+    "hexColor": "#957977",
+    "name": "Sand red"
+   },
+   {
+    "brickColorId": 359,
+    "hexColor": "#AF9483",
+    "name": "Linen"
+   },
+   {
+    "brickColorId": 352,
+    "hexColor": "#C7AC78",
+    "name": "Burlap"
+   },
+   {
+    "brickColorId": 5,
+    "hexColor": "#D7C59A",
+    "name": "Brick yellow"
+   },
+   {
+    "brickColorId": 101,
+    "hexColor": "#DA867A",
+    "name": "Medium red"
+   },
+   {
+    "brickColorId": 1007,
+    "hexColor": "#A34B4B",
+    "name": "Dusty Rose"
+   },
+   {
+    "brickColorId": 1014,
+    "hexColor": "#AA5500",
+    "name": "CGA brown"
+   },
+   {
+    "brickColorId": 38,
+    "hexColor": "#A05F35",
+    "name": "Dark orange"
+   },
+   {
+    "brickColorId": 18,
+    "hexColor": "#CC8E69",
+    "name": "Nougat"
+   },
+   {
+    "brickColorId": 125,
+    "hexColor": "#EAB892",
+    "name": "Light orange"
+   },
+   {
+    "brickColorId": 1030,
+    "hexColor": "#FFCC99",
+    "name": "Pastel brown"
+   },
+   {
+    "brickColorId": 133,
+    "hexColor": "#D5733D",
+    "name": "Neon orange"
+   },
+   {
+    "brickColorId": 106,
+    "hexColor": "#DA8541",
+    "name": "Bright orange"
+   },
+   {
+    "brickColorId": 105,
+    "hexColor": "#E29B40",
+    "name": "Br. yellowish orange"
+   },
+   {
+    "brickColorId": 1017,
+    "hexColor": "#FFAF00",
+    "name": "Deep orange"
+   },
+   {
+    "brickColorId": 24,
+    "hexColor": "#F5CD30",
+    "name": "Bright yellow"
+   },
+   {
+    "brickColorId": 334,
+    "hexColor": "#F8D96D",
+    "name": "Daisy orange"
+   },
+   {
+    "brickColorId": 226,
+    "hexColor": "#FDEA8D",
+    "name": "Cool yellow"
+   },
+   {
+    "brickColorId": 141,
+    "hexColor": "#27462D",
+    "name": "Earth green"
+   },
+   {
+    "brickColorId": 1021,
+    "hexColor": "#3A7D15",
+    "name": "Camo"
+   },
+   {
+    "brickColorId": 28,
+    "hexColor": "#287F47",
+    "name": "Dark green"
+   },
+   {
+    "brickColorId": 37,
+    "hexColor": "#4B974B",
+    "name": "Bright green"
+   },
+   {
+    "brickColorId": 310,
+    "hexColor": "#5B9A4C",
+    "name": "Shamrock"
+   },
+   {
+    "brickColorId": 317,
+    "hexColor": "#7C9C6B",
+    "name": "Moss"
+   },
+   {
+    "brickColorId": 119,
+    "hexColor": "#A4BD47",
+    "name": "Br. yellowish green"
+   },
+   {
+    "brickColorId": 1011,
+    "hexColor": "#002060",
+    "name": "Navy blue"
+   },
+   {
+    "brickColorId": 1012,
+    "hexColor": "#2154B9",
+    "name": "Deep blue"
+   },
+   {
+    "brickColorId": 1010,
+    "hexColor": "#0000FF",
+    "name": "Really blue"
+   },
+   {
+    "brickColorId": 23,
+    "hexColor": "#0D69AC",
+    "name": "Bright blue"
+   },
+   {
+    "brickColorId": 305,
+    "hexColor": "#527CAE",
+    "name": "Steel blue"
+   },
+   {
+    "brickColorId": 102,
+    "hexColor": "#6E99CA",
+    "name": "Medium blue"
+   },
+   {
+    "brickColorId": 45,
+    "hexColor": "#B4D2E4",
+    "name": "Light blue"
+   },
+   {
+    "brickColorId": 107,
+    "hexColor": "#008F9C",
+    "name": "Bright bluish green"
+   },
+   {
+    "brickColorId": 1018,
+    "hexColor": "#12EED4",
+    "name": "Teal"
+   },
+   {
+    "brickColorId": 1027,
+    "hexColor": "#9FF3E9",
+    "name": "Pastel blue-green"
+   },
+   {
+    "brickColorId": 1019,
+    "hexColor": "#00FFFF",
+    "name": "Toothpaste"
+   },
+   {
+    "brickColorId": 1013,
+    "hexColor": "#04AFEC",
+    "name": "Cyan"
+   },
+   {
+    "brickColorId": 11,
+    "hexColor": "#80BBDC",
+    "name": "Pastel Blue"
+   },
+   {
+    "brickColorId": 1024,
+    "hexColor": "#AFDDFF",
+    "name": "Pastel light blue"
+   },
+   {
+    "brickColorId": 104,
+    "hexColor": "#6B327C",
+    "name": "Bright violet"
+   },
+   {
+    "brickColorId": 1023,
+    "hexColor": "#8C5B9F",
+    "name": "Lavender"
+   },
+   {
+    "brickColorId": 321,
+    "hexColor": "#A75E9B",
+    "name": "Lilac"
+   },
+   {
+    "brickColorId": 1015,
+    "hexColor": "#AA00AA",
+    "name": "Magenta"
+   },
+   {
+    "brickColorId": 1031,
+    "hexColor": "#6225D1",
+    "name": "Royal purple"
+   },
+   {
+    "brickColorId": 1006,
+    "hexColor": "#B480FF",
+    "name": "Alder"
+   },
+   {
+    "brickColorId": 1026,
+    "hexColor": "#B1A7FF",
+    "name": "Pastel violet"
+   },
+   {
+    "brickColorId": 21,
+    "hexColor": "#C4281C",
+    "name": "Bright red"
+   },
+   {
+    "brickColorId": 1004,
+    "hexColor": "#FF0000",
+    "name": "Really red"
+   },
+   {
+    "brickColorId": 1032,
+    "hexColor": "#FF00BF",
+    "name": "Hot pink"
+   },
+   {
+    "brickColorId": 1016,
+    "hexColor": "#FF66CC",
+    "name": "Pink"
+   },
+   {
+    "brickColorId": 330,
+    "hexColor": "#FF98DC",
+    "name": "Carnation pink"
+   },
+   {
+    "brickColorId": 9,
+    "hexColor": "#E8BAC8",
+    "name": "Light reddish violet"
+   },
+   {
+    "brickColorId": 1025,
+    "hexColor": "#FFC9C9",
+    "name": "Pastel orange"
+   },
+   {
+    "brickColorId": 364,
+    "hexColor": "#5A4C42",
+    "name": "Dark taupe"
+   },
+   {
+    "brickColorId": 351,
+    "hexColor": "#BC9B5D",
+    "name": "Cork"
+   },
+   {
+    "brickColorId": 1008,
+    "hexColor": "#C1BE42",
+    "name": "Olive"
+   },
+   {
+    "brickColorId": 29,
+    "hexColor": "#A1C48C",
+    "name": "Medium green"
+   },
+   {
+    "brickColorId": 1022,
+    "hexColor": "#7F8E64",
+    "name": "Grime"
+   },
+   {
+    "brickColorId": 151,
+    "hexColor": "#789082",
+    "name": "Sand green"
+   },
+   {
+    "brickColorId": 135,
+    "hexColor": "#74869D",
+    "name": "Sand blue"
+   },
+   {
+    "brickColorId": 1020,
+    "hexColor": "#00FF00",
+    "name": "Lime green"
+   },
+   {
+    "brickColorId": 1028,
+    "hexColor": "#CCFFCC",
+    "name": "Pastel green"
+   },
+   {
+    "brickColorId": 1009,
+    "hexColor": "#FFFF00",
+    "name": "New Yeller"
+   },
+   {
+    "brickColorId": 1029,
+    "hexColor": "#FFFFCC",
+    "name": "Pastel yellow"
+   },
+   {
+    "brickColorId": 1003,
+    "hexColor": "#111111",
+    "name": "Really black"
+   },
+   {
+    "brickColorId": 26,
+    "hexColor": "#1B2A35",
+    "name": "Black"
+   },
+   {
+    "brickColorId": 199,
+    "hexColor": "#635F62",
+    "name": "Dark stone grey"
+   },
+   {
+    "brickColorId": 194,
+    "hexColor": "#A3A2A5",
+    "name": "Medium stone grey"
+   },
+   {
+    "brickColorId": 1002,
+    "hexColor": "#CDCDCD",
+    "name": "Mid gray"
+   },
+   {
+    "brickColorId": 208,
+    "hexColor": "#E5E4DF",
+    "name": "Light stone grey"
+   },
+   {
+    "brickColorId": 1,
+    "hexColor": "#F2F3F3",
+    "name": "White"
+   },
+   {
+    "brickColorId": 1001,
+    "hexColor": "#F8F8F8",
+    "name": "Institutional white"
+   }
+  ],
+  "bundlesEnabledForUser": true,
+  "defaultClothingAssetLists": {
+   "defaultPantAssetIds": [
+    855783877,
+    855780360,
+    855781078,
+    855782781,
+    855781508,
+    855785499,
+    855782253,
+    855784936
+   ],
+   "defaultShirtAssetIds": [
+    855776103,
+    855760101,
+    855766176,
+    855777286,
+    855768342,
+    855779323,
+    855773575,
+    855778084
+   ]
+  },
+  "emotesEnabledForUser": true,
+  "minimumDeltaEBodyColorDifference": 11.4,
+  "playerAvatarTypes": [
+   "R6",
+   "R15"
+  ],
+  "proportionsAndBodyTypeEnabledForUser": true,
+  "scales": {
+   "bodyType": {
+    "increment": 0.01,
+    "max": 1.0,
+    "min": 0.0
+   },
+   "head": {
+    "increment": 0.01,
+    "max": 1.0,
+    "min": 0.95
+   },
+   "height": {
+    "increment": 0.01,
+    "max": 1.05,
+    "min": 0.9
+   },
+   "proportion": {
+    "increment": 0.01,
+    "max": 1.0,
+    "min": 0.0
+   },
+   "width": {
+    "increment": 0.01,
+    "max": 1.0,
+    "min": 0.7
+   }
+  },
+  "wearableAssetTypes": [
+   {
+    "id": 2,
+    "maxNumber": 1,
+    "name": "T-Shirt"
+   },
+   {
+    "id": 8,
+    "maxNumber": 3,
+    "name": "Hat"
+   },
+   {
+    "id": 11,
+    "maxNumber": 1,
+    "name": "Shirt"
+   },
+   {
+    "id": 12,
+    "maxNumber": 1,
+    "name": "Pants"
+   },
+   {
+    "id": 19,
+    "maxNumber": 1,
+    "name": "Gear"
+   },
+   {
+    "id": 27,
+    "maxNumber": 1,
+    "name": "Torso"
+   },
+   {
+    "id": 28,
+    "maxNumber": 1,
+    "name": "Right Arm"
+   },
+   {
+    "id": 29,
+    "maxNumber": 1,
+    "name": "Left Arm"
+   },
+   {
+    "id": 30,
+    "maxNumber": 1,
+    "name": "Left Leg"
+   },
+   {
+    "id": 31,
+    "maxNumber": 1,
+    "name": "Right Leg"
+   },
+   {
+    "id": 41,
+    "maxNumber": 1,
+    "name": "Hair Accessory"
+   },
+   {
+    "id": 42,
+    "maxNumber": 1,
+    "name": "Face Accessory"
+   },
+   {
+    "id": 43,
+    "maxNumber": 1,
+    "name": "Neck Accessory"
+   },
+   {
+    "id": 44,
+    "maxNumber": 1,
+    "name": "Shoulder Accessory"
+   },
+   {
+    "id": 45,
+    "maxNumber": 1,
+    "name": "Front Accessory"
+   },
+   {
+    "id": 46,
+    "maxNumber": 1,
+    "name": "Back Accessory"
+   },
+   {
+    "id": 47,
+    "maxNumber": 1,
+    "name": "Waist Accessory"
+   },
+   {
+    "id": 48,
+    "maxNumber": 1,
+    "name": "Climb Animation"
+   },
+   {
+    "id": 50,
+    "maxNumber": 1,
+    "name": "Fall Animation"
+   },
+   {
+    "id": 51,
+    "maxNumber": 1,
+    "name": "Idle Animation"
+   },
+   {
+    "id": 52,
+    "maxNumber": 1,
+    "name": "Jump Animation"
+   },
+   {
+    "id": 53,
+    "maxNumber": 1,
+    "name": "Run Animation"
+   },
+   {
+    "id": 54,
+    "maxNumber": 1,
+    "name": "Swim Animation"
+   },
+   {
+    "id": 55,
+    "maxNumber": 1,
+    "name": "Walk Animation"
+   },
+   {
+    "id": 61,
+    "maxNumber": 0,
+    "name": "Emote Animation"
+   },
+   {
+    "id": 64,
+    "maxNumber": 1,
+    "name": "T-Shirt Accessory"
+   },
+   {
+    "id": 65,
+    "maxNumber": 1,
+    "name": "Shirt Accessory"
+   },
+   {
+    "id": 66,
+    "maxNumber": 1,
+    "name": "Pants Accessory"
+   },
+   {
+    "id": 67,
+    "maxNumber": 1,
+    "name": "Jacket Accessory"
+   },
+   {
+    "id": 68,
+    "maxNumber": 1,
+    "name": "Sweater Accessory"
+   },
+   {
+    "id": 69,
+    "maxNumber": 1,
+    "name": "Shorts Accessory"
+   },
+   {
+    "id": 70,
+    "maxNumber": 1,
+    "name": "Left Shoe Accessory"
+   },
+   {
+    "id": 71,
+    "maxNumber": 1,
+    "name": "Right Shoe Accessory"
+   },
+   {
+    "id": 72,
+    "maxNumber": 1,
+    "name": "Dress Skirt Accessory"
+   },
+   {
+    "id": 76,
+    "maxNumber": 1,
+    "name": "Eyebrow Accessory"
+   },
+   {
+    "id": 77,
+    "maxNumber": 1,
+    "name": "Eyelash Accessory"
+   },
+   {
+    "id": 78,
+    "maxNumber": 1,
+    "name": "Mood Animation"
+   },
+   {
+    "id": 79,
+    "maxNumber": 1,
+    "name": "Dynamic Head"
+   },
+   {
+    "id": 88,
+    "maxNumber": 6,
+    "name": "Face Makeup"
+   },
+   {
+    "id": 89,
+    "maxNumber": 6,
+    "name": "Lip Makeup"
+   },
+   {
+    "id": 90,
+    "maxNumber": 6,
+    "name": "Eye Makeup"
+   }
+  ]
+ },
+ "GET https://catalog.roblox.com/v1/assets/139607570/bundles?limit=100": {
+  "data": [
+   {
+    "bundleType": "BodyParts",
+    "collectibleItemDetail": {
+     "collectibleItemId": "27734c91-60e2-4640-bb79-4e43768f86ee",
+     "collectibleItemType": "NonLimited",
+     "collectibleProductId": "e7fe4c46-49d6-450a-b2d8-3298ff48fe92",
+     "hasResellers": false,
+     "lowestAvailableResaleItemInstanceId": null,
+     "lowestAvailableResaleProductId": null,
+     "lowestPrice": 17000,
+     "lowestResalePrice": 0,
+     "offSaleDeadline": null,
+     "price": 17000,
+     "quantityLimitPerUser": null,
+     "resaleRestriction": "Disabled",
+     "saleLocation": {
+      "enabledUniverseIds": [],
+      "saleLocationType": "ShopAndAllExperiences",
+      "saleLocationTypeId": 5,
+      "universeIds": []
+     },
+     "saleStatus": "OnSale",
+     "totalQuantity": 0,
+     "unitsAvailable": 0
+    },
+    "creator": {
+     "hasVerifiedBadge": true,
+     "id": 1,
+     "name": "Roblox",
+     "type": "User"
+    },
+    "description": "His tribe is widely considered the best and strongest of the twelve Korblox tribes.  No one dares challenge his authority. ",
+    "id": 192,
+    "isRecolorable": true,
+    "items": [
+     {
+      "assetType": 29,
+      "id": 139607570,
+      "name": "Korblox Deathspeaker Left Arm",
+      "type": "Asset"
+     },
+     {
+      "assetType": 28,
+      "id": 139607625,
+      "name": "Korblox Deathspeaker Right Arm",
+      "type": "Asset"
+     },
+     {
+      "assetType": 30,
+      "id": 139607673,
+      "name": "Korblox Deathspeaker Left Leg",
+      "type": "Asset"
+     },
+     {
+      "assetType": 31,
+      "id": 139607718,
+      "name": "Korblox Deathspeaker Right Leg",
+      "type": "Asset"
+     },
+     {
+      "assetType": 27,
+      "id": 139607770,
+      "name": "Korblox Deathspeaker Torso",
+      "type": "Asset"
+     },
+     {
+      "assetType": 8,
+      "id": 139610147,
+      "name": "Korblox Deathspeaker Hood",
+      "type": "Asset"
+     },
+     {
+      "id": 131929437,
+      "name": "Korblox Deathspeaker",
+      "type": "UserOutfit"
+     }
+    ],
+    "name": "Korblox Deathspeaker",
+    "product": {
+     "id": 4220707046826442,
+     "isForSale": true,
+     "isFree": false,
+     "isPublicDomain": false,
+     "noPriceText": null,
+     "priceInRobux": 17000,
+     "type": "productType"
+    }
+   }
+  ],
+  "nextPageCursor": null,
+  "previousPageCursor": null
+ },
+ "GET https://catalog.roblox.com/v1/bundles/192/details": {
+  "bundleType": "BodyParts",
+  "collectibleItemDetail": {
+   "collectibleItemId": "27734c91-60e2-4640-bb79-4e43768f86ee",
+   "collectibleItemType": "NonLimited",
+   "collectibleProductId": "e7fe4c46-49d6-450a-b2d8-3298ff48fe92",
+   "hasResellers": false,
+   "lowestAvailableResaleItemInstanceId": null,
+   "lowestAvailableResaleProductId": null,
+   "lowestPrice": 17000,
+   "lowestResalePrice": 0,
+   "offSaleDeadline": null,
+   "price": 17000,
+   "quantityLimitPerUser": null,
+   "resaleRestriction": "Disabled",
+   "saleLocation": {
+    "enabledUniverseIds": [],
+    "saleLocationType": "ShopAndAllExperiences",
+    "saleLocationTypeId": 5,
+    "universeIds": []
+   },
+   "saleStatus": "OnSale",
+   "totalQuantity": 0,
+   "unitsAvailable": 0
+  },
+  "creator": {
+   "hasVerifiedBadge": true,
+   "id": 1,
+   "name": "Roblox",
+   "type": "User"
+  },
+  "description": "His tribe is widely considered the best and strongest of the twelve Korblox tribes.  No one dares challenge his authority. ",
+  "id": 192,
+  "isRecolorable": true,
+  "items": [
+   {
+    "assetType": 29,
+    "id": 139607570,
+    "name": "Korblox Deathspeaker Left Arm",
+    "type": "Asset"
+   },
+   {
+    "assetType": 28,
+    "id": 139607625,
+    "name": "Korblox Deathspeaker Right Arm",
+    "type": "Asset"
+   },
+   {
+    "assetType": 30,
+    "id": 139607673,
+    "name": "Korblox Deathspeaker Left Leg",
+    "type": "Asset"
+   },
+   {
+    "assetType": 31,
+    "id": 139607718,
+    "name": "Korblox Deathspeaker Right Leg",
+    "type": "Asset"
+   },
+   {
+    "assetType": 27,
+    "id": 139607770,
+    "name": "Korblox Deathspeaker Torso",
+    "type": "Asset"
+   },
+   {
+    "assetType": 8,
+    "id": 139610147,
+    "name": "Korblox Deathspeaker Hood",
+    "type": "Asset"
+   },
+   {
+    "id": 131929437,
+    "name": "Korblox Deathspeaker",
+    "type": "UserOutfit"
+   }
+  ],
+  "name": "Korblox Deathspeaker",
+  "product": {
+   "id": 4220707046826442,
+   "isForSale": true,
+   "isFree": false,
+   "isPublicDomain": false,
+   "noPriceText": null,
+   "priceInRobux": 17000,
+   "type": "productType"
+  }
+ },
+ "GET https://catalog.roblox.com/v1/catalog/items/1028606/details?itemType=Asset": {
+  "assetType": 8,
+  "collectibleItemId": "f9111724-5901-45f6-9b30-4ce57bd919db",
+  "creatorHasVerifiedBadge": true,
+  "creatorName": "Roblox",
+  "creatorTargetId": 1,
+  "creatorType": "User",
+  "description": "This hat isn't worn out, it's well loved! Colored a bombastic red, with a stylish looking R that leaves no doubt which game you are playing.",
+  "expectedSellerId": 1,
+  "favoriteCount": 50381,
+  "hasResellers": true,
+  "id": 1028606,
+  "isOffSale": true,
+  "isPurchasable": true,
+  "itemCreatedUtc": "2007-05-30T07:25:25.51Z",
+  "itemRestrictions": [
+   "Limited"
+  ],
+  "itemStatus": [],
+  "itemType": "Asset",
+  "lowestPrice": 1597,
+  "lowestResalePrice": 1597,
+  "name": "Red Baseball Cap",
+  "offSaleDeadline": null,
+  "owned": false,
+  "price": 7,
+  "productId": 7834684483542479,
+  "renderProperties": [],
+  "saleLocationType": "ShopOnly",
+  "taxonomy": [
+   {
+    "taxonomyId": "thukPQUFe5EHxRrtsgq43u",
+    "taxonomyName": "Head Accessories"
+   }
+  ],
+  "totalQuantity": 118959,
+  "unitsAvailableForConsumption": 0
+ },
+ "GET https://catalog.roblox.com/v1/catalog/items/192/details?itemType=Bundle": {
+  "bundleType": 1,
+  "bundledItems": [
+   {
+    "assetType": 29,
+    "id": 139607570,
+    "name": "Korblox Deathspeaker Left Arm",
+    "type": "Asset"
+   },
+   {
+    "assetType": 28,
+    "id": 139607625,
+    "name": "Korblox Deathspeaker Right Arm",
+    "type": "Asset"
+   },
+   {
+    "assetType": 30,
+    "id": 139607673,
+    "name": "Korblox Deathspeaker Left Leg",
+    "type": "Asset"
+   },
+   {
+    "assetType": 31,
+    "id": 139607718,
+    "name": "Korblox Deathspeaker Right Leg",
+    "type": "Asset"
+   },
+   {
+    "assetType": 27,
+    "id": 139607770,
+    "name": "Korblox Deathspeaker Torso",
+    "type": "Asset"
+   },
+   {
+    "assetType": 8,
+    "id": 139610147,
+    "name": "Korblox Deathspeaker Hood",
+    "type": "Asset"
+   },
+   {
+    "id": 131929437,
+    "name": "Korblox Deathspeaker",
+    "type": "UserOutfit"
+   }
+  ],
+  "collectibleItemId": "27734c91-60e2-4640-bb79-4e43768f86ee",
+  "creatorHasVerifiedBadge": true,
+  "creatorName": "Roblox",
+  "creatorTargetId": 1,
+  "creatorType": "User",
+  "description": "His tribe is widely considered the best and strongest of the twelve Korblox tribes.  No one dares challenge his authority. ",
+  "expectedSellerId": 1,
+  "favoriteCount": 3434685,
+  "hasResellers": false,
+  "id": 192,
+  "isPurchasable": true,
+  "isRecolorable": true,
+  "itemCreatedUtc": "2018-08-14T22:51:32.123Z",
+  "itemRestrictions": [],
+  "itemStatus": [],
+  "itemType": "Bundle",
+  "lowestPrice": 17000,
+  "lowestResalePrice": 0,
+  "name": "Korblox Deathspeaker",
+  "offSaleDeadline": null,
+  "owned": false,
+  "price": 17000,
+  "productId": 4220707046826442,
+  "renderProperties": [],
+  "saleLocationType": "ShopAndAllExperiences",
+  "taxonomy": [
+   {
+    "taxonomyId": "kfHzJwaNYM8s2CWRqYUhRa",
+    "taxonomyName": "Characters"
+   }
+  ],
+  "totalQuantity": 0,
+  "unitsAvailableForConsumption": 0
+ },
+ "GET https://catalog.roblox.com/v1/search/items/details?Keyword=hat&Category=1&SortType=1&SortAggregation=6&SalesTypeFilter=1&Limit=30": {
+  "data": [
+   {
+    "assetType": 8,
+    "bundledItems": [],
+    "collectibleItemId": "fdebfc75-912e-4bea-99e0-53a9c7f4413c",
+    "creatorHasVerifiedBadge": true,
+    "creatorName": "frenchrxses",
+    "creatorTargetId": 176885746,
+    "creatorType": "User",
+    "description": "Do you like butterflies? I like them too.\nMade by @ReddietheTeddy\n\nPink Version: https://www.roblox.com/catalog/13198895793/Pink-Butterfly-Hat\nGold Version: https://www.roblox.com/catalog/134037544401826/Gold-Monarch-Butterfly-Hat\n\nFor other UGC, click here:\nhttps://www.roblox.com/catalog?Category=1&CreatorName=frenchrxses\nhttps://www.roblox.com/groups/4554000/twylas#!/store",
+    "favoriteCount": 1009919,
+    "hasResellers": false,
+    "id": 4849184439,
+    "itemCreatedUtc": "2020-04-02T19:11:15.093Z",
+    "itemRestrictions": [],
+    "itemStatus": [],
+    "itemType": "Asset",
+    "lowestPrice": 95,
+    "lowestResalePrice": 0,
+    "name": "Butterfly Hat",
+    "offSaleDeadline": null,
+    "price": 95,
+    "productId": 6410822019813755,
+    "saleLocationType": "ShopAndAllExperiences",
+    "taxonomy": [
+     {
+      "taxonomyId": "thukPQUFe5EHxRrtsgq43u",
+      "taxonomyName": "Head Accessories"
+     }
+    ],
+    "totalQuantity": 0,
+    "unitsAvailableForConsumption": 0
+   },
+   {
+    "assetType": 8,
+    "bundledItems": [],
+    "collectibleItemId": "2830ebe5-7300-4a4a-b7f4-60cbd4790279",
+    "creatorHasVerifiedBadge": true,
+    "creatorName": "Ellzd",
+    "creatorTargetId": 55799235,
+    "creatorType": "User",
+    "description": "https://www.roblox.com/groups/5081353/Ellzd\n\nMore Colors! \nhttps://www.roblox.com/catalog?Keyword=trendy%20hat&Category=13&Subcategory=40&CreatorName=ellzd",
+    "favoriteCount": 598629,
+    "hasResellers": false,
+    "id": 4904891637,
+    "itemCreatedUtc": "2020-04-16T06:35:27.447Z",
+    "itemRestrictions": [],
+    "itemStatus": [],
+    "itemType": "Asset",
+    "lowestPrice": 95,
+    "lowestResalePrice": 0,
+    "name": "Black Trendy Hat",
+    "offSaleDeadline": null,
+    "price": 95,
+    "productId": 7385340748416258,
+    "saleLocationType": "ShopAndAllExperiences",
+    "taxonomy": [
+     {
+      "taxonomyId": "thukPQUFe5EHxRrtsgq43u",
+      "taxonomyName": "Head Accessories"
+     }
+    ],
+    "totalQuantity": 0,
+    "unitsAvailableForConsumption": 0
+   }
+  ],
+  "keyword": "hat",
+  "nextPageCursor": null,
+  "previousPageCursor": null
+ }
+}

@@ -1319,28 +1319,103 @@ fn run(
 ) -> Result<BTreeMap<String, Value>, String> {
     let (timed, rest): (Vec<String>, Vec<String>) = selected(only)
         .map(|(_, t)| t.name.to_owned())
-        .partition(|name| WALL_CLOCK.contains(&name.as_str()));
-    let mut out = BTreeMap::new();
-    if !rest.is_empty() {
-        out = run_session(limit, &rest, PASSES, fetcher.clone(), false, network)?;
+        .partition(|name| SCRIPT_PACED.contains(&name.as_str()));
+    // Each test only depends on its own corner of the world (its place in
+    // `TESTS`) and simulated time, so the suite splits over servers run
+    // side by side: test i goes to server i mod `jobs`.
+    let jobs = std::env::var("CONFORMANCE_JOBS")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get().min(4)))
+        .clamp(1, rest.len().max(1));
+    let mut groups = vec![Vec::new(); jobs];
+    for (i, name) in rest.into_iter().enumerate() {
+        groups[i % jobs].push(name);
     }
-    if !timed.is_empty() {
-        out.extend(run_session(limit, &timed, 1, fetcher, true, network)?);
-    }
-    Ok(out)
+    std::thread::scope(|scope| {
+        let mut runs: Vec<_> = groups
+            .into_iter()
+            .filter(|g| !g.is_empty())
+            .map(|group| (group, PASSES, false))
+            .collect();
+        if !timed.is_empty() {
+            runs.push((timed, 1, true));
+        }
+        let handles: Vec<_> = runs
+            .into_iter()
+            .map(|(group, passes, paced)| {
+                let fetcher = fetcher.clone();
+                std::thread::Builder::new()
+                    .stack_size(16 << 20)
+                    .spawn_scoped(scope, move || {
+                        run_session(limit, &group, passes, fetcher, paced, network)
+                    })
+                    .map_err(|err| err.to_string())
+            })
+            .collect();
+        let mut out = BTreeMap::new();
+        for handle in handles {
+            let ran = handle?
+                .join()
+                .map_err(|_| "a conformance server panicked".to_owned())?;
+            out.extend(ran?);
+        }
+        Ok(out)
+    })
 }
 
-/// Tests of frames that overrun: they run in a session of their own, paced
-/// by the wall clock with the real 10 s script timeout, one pass (each
-/// stalls for 3 s of real time).
-const WALL_CLOCK: &[&str] = &["FrameOverrun"];
+/// Roblox's public web answers the suite asks for (bundle and catalog item
+/// details, the avatar rules, a catalog search), as they were when the
+/// goldens were recorded, by `"METHOD url"`. A run without the network
+/// answers from them, as an offline Local Run answers from what it kept;
+/// online the live answer wins (the golden marks what churns `volatile`).
+const WEB: &str = include_str!("../conformance/web.json");
+
+/// A web cache for one run holding [`WEB`], removed when dropped.
+struct WebCache(PathBuf);
+
+impl WebCache {
+    fn seeded() -> Self {
+        static RUNS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let run = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "rbx_sim_conformance_web_{}_{run}",
+            std::process::id()
+        ));
+        let answers: serde_json::Map<String, Value> =
+            serde_json::from_str(WEB).expect("conformance/web.json is a JSON object");
+        for (request, answer) in answers {
+            let Some((method, url)) = request.split_once(' ') else {
+                continue;
+            };
+            let file = rbx_lua::server::web_cache_file(&dir, url, method, None);
+            if let Some(parent) = file.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(file, answer.to_string());
+        }
+        WebCache(dir)
+    }
+}
+
+impl Drop for WebCache {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Tests of frames that overrun: they run in a session of their own whose
+/// frames last as long as their Luau ran ([`crate::Pacing::Scripts`], so a
+/// loaded machine can't stretch them), with the real 10 s script timeout,
+/// one pass (each stalls for 3 s of real time).
+const SCRIPT_PACED: &[&str] = &["FrameOverrun"];
 
 fn run_session(
     limit: f64,
     only: &[String],
     passes: u32,
     fetcher: Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>,
-    wall_clock: bool,
+    script_paced: bool,
     network: crate::link::Network,
 ) -> Result<BTreeMap<String, Value>, String> {
     let mut dom = bare_place();
@@ -1348,9 +1423,14 @@ fn run_session(
     dom.take_changes();
     let mut session = Session::new(dom)?;
     session.set_network(network);
+    let web = WebCache::seeded();
+    session.set_services(rbx_lua::server::Services {
+        cache_dir: Some(web.0.clone()),
+        ..Default::default()
+    });
     // A test's verdict mustn't hang on how loaded the machine is.
-    if wall_clock {
-        session.set_wall_clock(true);
+    if script_paced {
+        session.set_pacing(crate::Pacing::Scripts);
     } else {
         session.set_script_timeout(std::time::Duration::from_secs(86_400));
     }
@@ -1423,6 +1503,10 @@ pub struct Row {
     pub matched_pass: Option<usize>,
     /// Why this field is allowed to differ (the golden's `known_gaps`).
     pub gap: Option<String>,
+    /// Passed only as live data (the golden's `volatile`): web answers
+    /// that change over time (a catalog item's fields, the avatar rules)
+    /// need only be the same kind of value.
+    pub volatile: bool,
 }
 
 fn show(value: Option<&Value>) -> String {
@@ -1454,6 +1538,18 @@ fn numbers_match(g: Option<&Value>, o: Option<&Value>, tolerance: f64) -> bool {
                     .all(|(a, b)| (a - b).abs() <= tolerance + 1e-9)
         }
         _ => false,
+    }
+}
+
+/// Whether two values are the same kind: both numbers, both booleans, or
+/// text that opens the same way, up to its first `,` or `:` (a list with
+/// the same first entry, a table's shape with the same first key, the same
+/// error), so live data may change but an error never passes for an answer.
+fn same_kind(a: &Value, b: &Value) -> bool {
+    let opening = |s: &str| s.split([',', ':']).next().unwrap_or_default().to_owned();
+    match (a, b) {
+        (Value::String(a), Value::String(b)) => opening(a) == opening(b),
+        _ => std::mem::discriminant(a) == std::mem::discriminant(b),
     }
 }
 
@@ -1500,7 +1596,7 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
                     .map(|i| i + 1)
             };
             let mut matched_pass = None;
-            let pass = match delta {
+            let mut pass = match delta {
                 Some(d) => {
                     let noise = spread.get(field).and_then(Value::as_f64).unwrap_or(0.0);
                     d.abs() <= tolerance.max(noise) + 1e-9 || {
@@ -1520,6 +1616,10 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
                             || (tolerance > 0.0 && numbers_match(g, o, tolerance)))
                 }
             };
+            let volatile = !pass
+                && file["volatile"].get(field.as_str()).is_some()
+                && matches!((g, o), (Some(g), Some(o)) if same_kind(g, o));
+            pass |= volatile;
             Row {
                 test: test.name.to_owned(),
                 field: field.clone(),
@@ -1531,6 +1631,7 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
                 gap: file["known_gaps"][field.as_str()]
                     .as_str()
                     .map(str::to_owned),
+                volatile,
             }
         })
         .collect()
@@ -1538,7 +1639,7 @@ pub fn compare(test: &Test, file: &Value, ours: &Value) -> Vec<Row> {
 
 #[cfg(test)]
 mod tests {
-    use super::Test;
+    use super::{compare, Test};
 
     #[test]
     fn tolerance_keys_are_globs_and_the_most_specific_wins() {
@@ -1569,5 +1670,43 @@ mod tests {
             tolerance: &[("x", 1.0)],
         };
         assert_eq!(bare.tolerance_of("y"), 0.0);
+    }
+
+    #[test]
+    fn volatile_fields_pass_as_the_same_kind_of_value() {
+        let test = Test {
+            name: "Live",
+            source: "",
+            tolerance: &[],
+        };
+        let golden = serde_json::json!({
+            "result": { "item": "{1,Red Cap,Hat}", "shape": "A:string,B:number", "fixed": "x" },
+            "volatile": { "item": "live", "shape": "live", "fixed": "live" },
+        });
+        let pass = |ours: serde_json::Value| -> Vec<(String, bool, bool)> {
+            compare(&test, &golden, &ours)
+                .into_iter()
+                .map(|r| (r.field, r.pass, r.volatile))
+                .collect()
+        };
+        let row = |f: &str, pass: bool, volatile: bool| (f.to_owned(), pass, volatile);
+        assert_eq!(
+            pass(
+                serde_json::json!({ "item": "{1,Blue Cap,Hat}", "shape": "A:string", "fixed": "x" })
+            ),
+            [
+                row("fixed", true, false),
+                row("item", true, true),
+                row("shape", true, true)
+            ]
+        );
+        assert_eq!(
+            pass(serde_json::json!({ "item": "err: HTTP 400", "shape": 3, "fixed": "x" })),
+            [
+                row("fixed", true, false),
+                row("item", false, false),
+                row("shape", false, false)
+            ]
+        );
     }
 }

@@ -164,10 +164,14 @@ fn main() {
             "spread": spread,
             "raw": passes,
         });
-        // Why a test is expected to differ is ours to keep across recordings.
-        if let Some(gap) = conformance::golden(test.name).and_then(|g| g.get("known_gap").cloned())
-        {
-            golden["known_gap"] = gap;
+        // Why a test is expected to differ, and which fields are live data,
+        // are ours to keep across recordings.
+        if let Some(old) = conformance::golden(test.name) {
+            for key in ["known_gap", "known_gaps", "volatile"] {
+                if let Some(kept) = old.get(key) {
+                    golden[key] = kept.clone();
+                }
+            }
         }
         let path = conformance::goldens_dir().join(format!("{}.json", test.name));
         let text = serde_json::to_string_pretty(&golden).expect("json") + "\n";

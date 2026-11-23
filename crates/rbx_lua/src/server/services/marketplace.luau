@@ -236,6 +236,10 @@ function SERVICE.GetProductInfo(_, id, infoType)
 	if id <= 0 then
 		fail("MarketplaceService:GetProductInfo() " .. id .. " is not a valid assetId")
 	end
+	-- A bundle's info is its AssetService details (the WebMarket golden).
+	if kind == "Bundle" then
+		return game:GetService("AssetService"):GetBundleDetailsAsync(id)
+	end
 	return host.product_info(id, kind)
 end
 SERVICE.GetProductInfoAsync = SERVICE.GetProductInfo
