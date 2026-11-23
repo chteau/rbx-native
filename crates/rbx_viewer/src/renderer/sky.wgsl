@@ -10,9 +10,9 @@
 // at Glare 0 and broad at Studio's own maximum. Nothing here is Roblox's own
 // formula, the engine computes its glare in screen space over the finished
 // frame, which this pass has no access to.
-const GLARE_TIGHT_EXPONENT: f32 = 200.0;
+const GLARE_TIGHT_EXPONENT: f32 = 350.0;
 const GLARE_WIDE_EXPONENT: f32 = 8.0;
-const GLARE_STRENGTH: f32 = 0.6;
+const GLARE_STRENGTH: f32 = 1.0;
 const GLARE_FULL: f32 = 10.0;
 // The halo follows the sun under the horizon rather than blinking out with it.
 const GLARE_HORIZON_FADE: f32 = 8.0;
@@ -137,7 +137,10 @@ fn glare(direction: vec3<f32>) -> vec3<f32> {
     let lobe = pow(saturate(dot(direction, light)), mix(GLARE_TIGHT_EXPONENT, GLARE_WIDE_EXPONENT, width));
     let above = saturate(light.y * GLARE_HORIZON_FADE + 1.0);
 
-    return lighting.atmosphere_color.rgb * (amount * GLARE_STRENGTH * lobe * above);
+    // The sun's own hue, not the haze's: the real client's halo round a 17:00
+    // sun is bluish white under a yellow `Color` (`atmosphere`).
+    let sun = lighting.sun_color.rgb / max(max(lighting.sun_color.r, lighting.sun_color.g), max(lighting.sun_color.b, 1e-3));
+    return sun * (amount * GLARE_STRENGTH * lobe * above);
 }
 
 /// The same atmosphere, over the sky itself: a skybox panel is infinitely far

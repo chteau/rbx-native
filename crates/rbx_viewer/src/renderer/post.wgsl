@@ -159,10 +159,12 @@ const SUN_RAY_TAPS: i32 = 24;
 /// Intensity 0.3 and Spread 0.8 it adds (0.46, 0.17, 0) in linear light a
 /// third of the frame from the sun and still (0.19, 0.06, 0) at the far
 /// edge, washing the sky and the floor alike, darker only where something
-/// stands between the pixel and the sun.
-const SUN_RAY_TINT: vec3<f32> = vec3<f32>(2.6, 0.97, 0.0);
+/// stands between the pixel and the sun. Refitted once the sky panels stopped
+/// being mirrored (fidelity pass 5): the near floor takes less of the glow
+/// than the sky, so only what is past 250 studs counts as open.
+const SUN_RAY_TINT: vec3<f32> = vec3<f32>(4.1, 1.5, 0.0);
 const SUN_RAY_REACH: f32 = 0.81;
-const SUN_RAY_OPEN_STUDS: f32 = 30.0;  // fitted on `sun_rays`
+const SUN_RAY_OPEN_STUDS: f32 = 250.0;  // fitted on `sun_rays`
 
 /// A glow from the sun over the whole frame, fading with the distance to it,
 /// times how much of the straight line from the pixel to the sun is open in

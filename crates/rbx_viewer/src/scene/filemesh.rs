@@ -487,7 +487,7 @@ fn from_mesh_part(
         .or_else(|| {
             properties
                 .get("TextureContent")
-                .and_then(crate::textures::editable_key)
+                .and_then(crate::textures::editable_version_key)
         })
         .filter(|_| appearance.is_none());
     let color = match properties.get("Color3uint8") {
