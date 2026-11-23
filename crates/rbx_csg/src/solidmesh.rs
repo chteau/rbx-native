@@ -104,10 +104,57 @@ fn write_stream(out: &mut Vec<u8>, corners: &[u32]) {
     write_deltas(out, corners.iter().copied());
 }
 
+/// How close two corners must be to become one vertex in the blob. Studio
+/// only draws a closed mesh (anything else becomes a small stand-in box),
+/// and the boolean can leave corners up to ~1e-3 apart across a sliver it
+/// let through (see `repair::only_slivers`), wider than its own weld.
+const WELD: f32 = 2e-3;
+
+/// Hands out one position index per corner, reusing any vertex already
+/// within [`WELD`] of it, its own grid cell's or a neighbour's.
+#[derive(Default)]
+struct Welder {
+    values: Vec<[f32; 3]>,
+    cells: HashMap<[i64; 3], Vec<u32>>,
+}
+
+impl Welder {
+    fn index(&mut self, value: [f32; 3]) -> u32 {
+        let cell = value.map(|c| (c / WELD).floor() as i64);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let near = [cell[0] + dx, cell[1] + dy, cell[2] + dz];
+                    for &i in self.cells.get(&near).into_iter().flatten() {
+                        let other = self.values[i as usize];
+                        if (0..3).all(|axis| (other[axis] - value[axis]).abs() <= WELD) {
+                            return i;
+                        }
+                    }
+                }
+            }
+        }
+        let next = self.values.len() as u32;
+        self.values.push(value);
+        self.cells.entry(cell).or_default().push(next);
+        next
+    }
+
+    fn write(&self, out: &mut Vec<u8>) {
+        out.extend((self.values.len() as u64).to_le_bytes());
+        for value in &self.values {
+            for c in value {
+                out.extend(c.to_le_bytes());
+            }
+        }
+    }
+}
+
 /// `solid` (in the union's own space) as a `SolidMeshHolder` blob, every
-/// face flat-shaded in its polygon's colour.
+/// face flat-shaded in its polygon's colour, corners welded (see [`WELD`])
+/// and the triangles that collapses left out.
 pub fn encode(solid: &Solid) -> Vec<u8> {
-    let (mut positions, mut normals, mut colors) = (Pool::new(), Pool::new(), Pool::new());
+    let (mut positions, mut normals, mut colors) = (Welder::default(), Pool::new(), Pool::new());
     let (mut position_corners, mut normal_corners, mut color_corners) =
         (Vec::new(), Vec::new(), Vec::new());
     for polygon in &solid.polygons {
@@ -119,7 +166,12 @@ pub fn encode(solid: &Solid) -> Vec<u8> {
             .map(|v| positions.index(v.as_vec3().to_array()))
             .collect();
         for corner in 1..ring.len().saturating_sub(1) {
-            position_corners.extend([ring[0], ring[corner], ring[corner + 1]]);
+            let triangle = [ring[0], ring[corner], ring[corner + 1]];
+            if triangle[0] == triangle[1] || triangle[1] == triangle[2] || triangle[0] == triangle[2]
+            {
+                continue;
+            }
+            position_corners.extend(triangle);
             normal_corners.extend([normal; 3]);
             color_corners.extend([color; 3]);
         }

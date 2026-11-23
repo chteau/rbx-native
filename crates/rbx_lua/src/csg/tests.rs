@@ -274,3 +274,33 @@ fn a_studio_union_carves_again_by_its_mesh() {
     let colors = solid_mesh(instance).unwrap().colors;
     assert!(colors.contains(&[0, 0, 255]) && colors.contains(&[200, 200, 0]));
 }
+
+/// Studio draws a small stand-in box for a `SolidMeshHolder` that is not
+/// closed: a box cut by a ball, whose boolean leaves slivers, must still
+/// save every edge with its twin.
+#[test]
+fn a_curved_result_saves_a_closed_mesh() {
+    let db = rbx_reflection::ReflectionDatabase::embedded();
+    for operation in [Operation::Intersect, Operation::Union] {
+        let (mut dom, workspace) = place();
+        let a = part(&mut dom, workspace, [4.0, 4.0, 4.0], 8.0);
+        let b = part(&mut dom, workspace, [5.0, 5.0, 5.0], 9.0);
+        dom.get_mut(b)
+            .unwrap()
+            .properties_mut()
+            .insert("Shape".into(), Variant::Enum(0));
+        let made = operate_in_place(&mut dom, &db, operation, &[a, b]).unwrap();
+        let mesh = solid_mesh(dom.get(made).unwrap()).unwrap();
+        let mut edges = std::collections::HashMap::new();
+        for t in &mesh.triangles {
+            for edge in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                *edges.entry(edge).or_insert(0) += 1;
+            }
+        }
+        let open = edges
+            .iter()
+            .filter(|&(&(u, v), &n)| n != 1 || edges.get(&(v, u)) != Some(&1))
+            .count();
+        assert_eq!(open, 0, "{operation:?}");
+    }
+}
