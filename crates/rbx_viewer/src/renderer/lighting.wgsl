@@ -301,6 +301,21 @@ fn env_fresnel(normal: vec3<f32>, to_eye: vec3<f32>) -> f32 {
 const ENV_F0: f32 = 0.1;
 const ENV_F90: f32 = 0.4;
 
+/// What the sun's highlight is multiplied by at the half vector's angle to
+/// the eye, 1 face-on: the white glare a low sun leaves across a plain floor
+/// toward it (`atmosphere`, `sun_rays`, `morning`: some 100 levels over the
+/// floor where the sun's mirror image would be, still 25 at a dozen degrees
+/// aside). Steeper than Schlick's fifth power, so a sun beside or behind the
+/// eye leaves the far floor as it was (`studio_lighting`, 143 near to 148
+/// far; the surface's own angle to the eye drew 160 far, a fifth power 155).
+fn sun_fresnel(v_dot_h: f32) -> f32 {
+    let away = 1.0 - saturate(v_dot_h);
+    return 1.0 + SUN_FRESNEL_GAIN * pow(away, 5.0) + GLINT_GAIN * pow(away, 8.0);
+}
+
+const SUN_FRESNEL_GAIN: f32 = 24.0;
+const GLINT_GAIN: f32 = 60.0;
+
 /// The fill lamp's direction: opposite the sun by day, the moon by night,
 /// which the real client puts at the sun's direction with X and Y turned round
 /// and Z kept. `crate::lighting::Lighting::fill_direction` is the same.
@@ -345,17 +360,9 @@ fn shade(surface: Surface) -> vec3<f32> {
     let ambient = lighting.ambient.rgb + sky_ambient(normal);
 
     let half_vector = normalize(light + to_eye);
-    // Through the same Fresnel curve as the reflection, relative to its
-    // face-on value: what draws the bright streak a low sun leaves across a
-    // plain floor (the `atmosphere` and `sun_rays` scenes). Taken at the
-    // surface's own angle to the eye like the reflection's, not the half
-    // vector's: the real client's lit floor gains a little toward the horizon
-    // instead of peaking under the camera (`studio_lighting`, 151 far to 144
-    // near, where the half vector's curve drew 141 to 150).
-    let grazing = pow(1.0 - saturate(dot(normal, to_eye)), 5.0);
     let specular = surface.spec_strength
         * exp2(surface.shininess * (dot(normal, half_vector) - 1.0))
-        * (1.0 + (ENV_F90 / ENV_F0 - 1.0) * grazing)
+        * sun_fresnel(dot(to_eye, half_vector))
         * saturate(facing)
         * sun_lit;
 
