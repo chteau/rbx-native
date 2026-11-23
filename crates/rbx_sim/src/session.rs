@@ -266,7 +266,7 @@ pub struct Session {
     /// The last few argument lists each remote arrived at the server with,
     /// while kept (see [`Session::keep_remote_args`]).
     remote_args: Option<HashMap<Ref, Vec<Vec<Wire>>>>,
-    /// The last frame's wall time: the server's part and the clients'.
+    /// The last frame's time: the server's part and the clients'.
     step_times: StepTimes,
 }
 
@@ -282,9 +282,11 @@ pub struct Traffic {
     pub bytes_out: u64,
 }
 
-/// One frame's wall time split between the server (its step, receiving and
+/// One frame's time split between the server (its step, receiving and
 /// replicating) and the clients' own steps, which on Roblox run on the
-/// players' machines.
+/// players' machines: CPU time of the session's thread where the platform
+/// has it, so a busy machine doesn't inflate it (physics work rapier hands
+/// its worker threads isn't counted), else wall time.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct StepTimes {
     pub server: std::time::Duration,
@@ -744,6 +746,7 @@ impl Session {
 
     fn step_peers(&mut self) {
         let step_started = std::time::Instant::now();
+        let cpu_started = thread_cpu();
         self.relayed.clear();
         let now = self.server.frame();
         for client in &mut self.clients {
@@ -832,6 +835,7 @@ impl Session {
         let network = self.network;
         let rtt = network.ping();
         let mut clients_time = std::time::Duration::ZERO;
+        let mut clients_cpu = std::time::Duration::ZERO;
         let server = &self.server;
         for client in &mut self.clients {
             client.sim.renamed_stats.extend(renamed.iter().copied());
@@ -903,12 +907,16 @@ impl Session {
             client.down.reliable(sent, &network.down, rtt, rest);
 
             let client_started = std::time::Instant::now();
+            let client_cpu = thread_cpu();
             for frame in client.down.due(sent) {
                 client.apply(frame);
             }
             client.sim.step();
             client.collect(sent, &network);
             clients_time += client_started.elapsed();
+            if let (Some(after), Some(before)) = (thread_cpu(), client_cpu) {
+                clients_cpu += after.saturating_sub(before);
+            }
         }
         self.meter(sent);
 
@@ -918,9 +926,15 @@ impl Session {
             peers.push((Peer::Client(index), client.sim.take_costs()));
         }
         let wall = step_started.elapsed();
-        self.step_times = StepTimes {
-            server: wall.saturating_sub(clients_time),
-            clients: clients_time,
+        self.step_times = match (thread_cpu(), cpu_started) {
+            (Some(after), Some(before)) => StepTimes {
+                server: after.saturating_sub(before).saturating_sub(clients_cpu),
+                clients: clients_cpu,
+            },
+            _ => StepTimes {
+                server: wall.saturating_sub(clients_time),
+                clients: clients_time,
+            },
         };
         self.profile.push(crate::profile::frame(
             self.frames,
@@ -964,7 +978,7 @@ impl Session {
         self.traffic
     }
 
-    /// The last frame's wall time, the server's part and the clients'.
+    /// The last frame's time, the server's part and the clients'.
     pub fn step_times(&self) -> StepTimes {
         self.step_times
     }
@@ -1994,6 +2008,23 @@ impl Client {
         };
         self.up.reliable(sent, &network.up, rtt, rest);
     }
+}
+
+/// The CPU time the calling thread has used.
+#[cfg(unix)]
+fn thread_cpu() -> Option<std::time::Duration> {
+    let mut now = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: clock_gettime writes the timespec it's given.
+    let ok = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) } == 0;
+    ok.then(|| std::time::Duration::new(now.tv_sec as u64, now.tv_nsec as u32))
+}
+
+#[cfg(not(unix))]
+fn thread_cpu() -> Option<std::time::Duration> {
+    None
 }
 
 /// Counts a packet arriving at the server and keeps a remote event's

@@ -7284,6 +7284,7 @@ name = "rbx_sim"
 version = "0.1.0"
 dependencies = [
  "flite-rs",
+ "libc",
  "lz4_flex",
  "matroska-demuxer",
  "opus-pure",

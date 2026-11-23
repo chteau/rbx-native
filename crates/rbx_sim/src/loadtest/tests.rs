@@ -314,13 +314,14 @@ fn the_report_has_the_servers_numbers() {
     // Three clients a second, each answered with a GetAsync and a SetAsync.
     assert!((2.0..=4.0).contains(&last.remotes_in), "{last:?}");
     assert!(last.kb_in > 0.0);
+    // The calls in the run's first four seconds.
     assert!(
         last.datastore_by_kind
             .get("GetAsync")
-            .is_some_and(|r| *r > 60.0),
+            .is_some_and(|r| *r >= 6.0),
         "{last:?}"
     );
-    assert!(last.memorystore_per_min > 60.0, "{last:?}");
+    assert!(last.memorystore_per_min >= 6.0, "{last:?}");
     assert!(report
         .budgets
         .iter()

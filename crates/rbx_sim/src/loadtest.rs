@@ -4,9 +4,11 @@
 //!
 //! The bots' clients step on the same thread as the server, but on Roblox
 //! they run on the players' own machines, so the server's figures leave
-//! them out: [`Session::step_times`] splits each frame's wall time into the
+//! them out: [`Session::step_times`] splits each frame's time into the
 //! server's part (its step, what arrives from the clients, what it
-//! replicates) and the clients'.
+//! replicates) and the clients'. It is the thread's CPU time where the
+//! platform has one, so a run at low priority on a busy machine still
+//! measures the server, not the queue for the CPU.
 //!
 //! **Heartbeat** is the rate a dedicated server would keep at that cost: a
 //! frame takes its 60 Hz slot or, when the server overruns it, its own
@@ -148,7 +150,7 @@ pub struct Sample {
     pub instances: usize,
     pub parts: usize,
     pub assemblies: usize,
-    /// Over the last minute (or the run so far, scaled to a minute).
+    /// Calls in the last minute (in the first minute, the run so far).
     pub datastore_per_min: f64,
     pub memorystore_per_min: f64,
     /// Each DataStore request type's calls per minute.
@@ -225,7 +227,8 @@ pub struct LoadTest {
     next_ramp: f64,
     second: Second,
     samples: Vec<Sample>,
-    /// The server's web requests so far at each of the last 60 samples.
+    /// The server's web requests so far at the start and each sample since,
+    /// the last minute's worth.
     web: VecDeque<(f64, BTreeMap<String, u64>)>,
     traffic: Traffic,
     /// Resident memory before the first bot joined.
@@ -258,7 +261,7 @@ impl LoadTest {
             next_ramp: 0.0,
             second: Second::default(),
             samples: Vec::new(),
-            web: VecDeque::new(),
+            web: VecDeque::from([(0.0, BTreeMap::new())]),
             traffic: Traffic::default(),
             rss_base: None,
             streak: 0,
@@ -357,12 +360,11 @@ impl LoadTest {
         let t = session.time();
         let bots = self.bots.len();
         let web = session.server.web_requests();
-        let (then, old) = self.web.front().cloned().unwrap_or((0.0, BTreeMap::new()));
-        let span = (t - then).max(1.0);
+        let old = self.web.front().map(|(_, w)| w.clone()).unwrap_or_default();
         let per_min = |kind: &str| {
             let now = web.get(kind).copied().unwrap_or(0);
             let before = old.get(kind).copied().unwrap_or(0);
-            now.saturating_sub(before) as f64 * 60.0 / span
+            now.saturating_sub(before) as f64
         };
         let datastore_by_kind: BTreeMap<String, f64> = web
             .keys()
@@ -401,7 +403,7 @@ impl LoadTest {
             kb_out: (traffic.bytes_out - last.bytes_out) as f64 / 1000.0,
             rss_mb: resident_mb(),
         };
-        if self.web.len() == 60 {
+        if self.web.len() == 61 {
             self.web.pop_front();
         }
         self.web.push_back((t, web));
