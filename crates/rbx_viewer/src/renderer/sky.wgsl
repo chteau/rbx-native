@@ -5,20 +5,6 @@
 // a surface shader has no use for either function, and the whole model was
 // outgrowing one file.
 
-// The sky is hazed by the same atmosphere, on an air mass that thickens toward
-// the horizon: `SKY_DEPTH / (sin(elevation) + SKY_FLOOR)` studs of travel.
-// Fitted on the red channel of the same capture, the one Studio does not run
-// out of headroom in: its sky is a third of the way to the haze colour two
-// degrees up and barely a twentieth at twenty-six, which is a far steeper
-// profile than the eye expects, the white band is narrow and the zenith keeps
-// the panel's own blue.
-const ATMOSPHERE_SKY_DEPTH: f32 = 42.0;
-const ATMOSPHERE_SKY_FLOOR: f32 = 0.013;
-// `Atmosphere.Haze`, approximated: Roblox thickens the white band along the
-// horizon with it, which is what more air on the same view ray does, so it is
-// applied as a multiplier on that air mass. Studio's slider stops at 10, where
-// this leaves the band some six times deeper and the zenith still blue.
-const HAZE_AIR_MASS_GAIN: f32 = 0.5;
 // `Atmosphere.Glare`, approximated: the property brightens and widens the halo
 // around the sun, so it is one power lobe about the light direction, tightest
 // at Glare 0 and broad at Studio's own maximum. Nothing here is Roblox's own
@@ -167,10 +153,7 @@ fn shade_sky(color: vec3<f32>, direction: vec3<f32>) -> vec3<f32> {
     // panel behind it dims the clouds too, rather than painting over them.
     lit = clouds(lit, direction);
     if lighting.fog_color.w > 0.5 {
-        let haze = 1.0 + lighting.atmosphere_extra.y * HAZE_AIR_MASS_GAIN;
-        let air_mass = ATMOSPHERE_SKY_DEPTH * haze / (max(direction.y, 0.0) + ATMOSPHERE_SKY_FLOOR);
-        lit = mix(haze_color(direction), lit, transmittance(air_mass));
-        lit += glare(direction);
+        lit = hazed_sky(lit, direction) + glare(direction);
     }
     return max(lit * lighting.tuning.x, vec3<f32>(0.0));
 }

@@ -93,9 +93,10 @@ const PLASTIC_SHININESS: f32 = 15.0;
 // EnvironmentSpecularScale 0 and at 1. Fitted on the stage and material
 // fidelity scenes (M9): the real client's sun highlight is broad and about half
 // as strong as the reflection's dial, and does not vanish at scale 0, where
-// a small one is left (`default_lighting`).
+// a small one is left (`default_lighting`). Refitted with the view-angle
+// Fresnel below (fidelity pass 4).
 const SUN_SPECULAR_AT_ZERO: f32 = 0.15;
-const SUN_SPECULAR_AT_FULL: f32 = 0.5;
+const SUN_SPECULAR_AT_FULL: f32 = 0.35;
 // The strength itself is `lighting.calibration.y`, 0.28 unless the user has
 // recalibrated it (Studio Settings › Viewport › Advanced).
 const PLASTIC_ROUGHNESS: f32 = 0.25;
@@ -207,7 +208,11 @@ fn env_sample(direction: vec3<f32>, level: f32) -> vec3<f32> {
     if lighting.quality.y < 0.5 {
         return sky_flat() * lighting.sky_tint.rgb;
     }
-    return textureSampleLevel(env_cube, env_sampler, direction, level).rgb * lighting.sky_tint.rgb;
+    let sky = textureSampleLevel(env_cube, env_sampler, direction, level).rgb * lighting.sky_tint.rgb;
+    if lighting.fog_color.w > 0.5 {
+        return hazed_sky(sky, direction);
+    }
+    return sky;
 }
 
 /// Mip level a surface of this roughness reflects from, as the level whose
@@ -342,8 +347,12 @@ fn shade(surface: Surface) -> vec3<f32> {
     let half_vector = normalize(light + to_eye);
     // Through the same Fresnel curve as the reflection, relative to its
     // face-on value: what draws the bright streak a low sun leaves across a
-    // plain floor (the `atmosphere` and `sun_rays` scenes).
-    let grazing = pow(1.0 - saturate(dot(half_vector, to_eye)), 5.0);
+    // plain floor (the `atmosphere` and `sun_rays` scenes). Taken at the
+    // surface's own angle to the eye like the reflection's, not the half
+    // vector's: the real client's lit floor gains a little toward the horizon
+    // instead of peaking under the camera (`studio_lighting`, 151 far to 144
+    // near, where the half vector's curve drew 141 to 150).
+    let grazing = pow(1.0 - saturate(dot(normal, to_eye)), 5.0);
     let specular = surface.spec_strength
         * exp2(surface.shininess * (dot(normal, half_vector) - 1.0))
         * (1.0 + (ENV_F90 / ENV_F0 - 1.0) * grazing)

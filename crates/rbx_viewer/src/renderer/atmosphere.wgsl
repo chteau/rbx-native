@@ -43,6 +43,32 @@ fn haze_color(direction: vec3<f32>) -> vec3<f32> {
     return mix(sky_flat(), lit, HAZE_COLOR_WEIGHT) * lighting.sky_tint.rgb;
 }
 
+// The sky is hazed by the same atmosphere, on an air mass that thickens toward
+// the horizon: `SKY_DEPTH / (sin(elevation) + SKY_FLOOR)` studs of travel.
+// Fitted on the red channel of the same capture, the one Studio does not run
+// out of headroom in: its sky is a third of the way to the haze colour two
+// degrees up and barely a twentieth at twenty-six, which is a far steeper
+// profile than the eye expects, the white band is narrow and the zenith keeps
+// the panel's own blue.
+const ATMOSPHERE_SKY_DEPTH: f32 = 42.0;
+const ATMOSPHERE_SKY_FLOOR: f32 = 0.013;
+// `Atmosphere.Haze`, approximated: Roblox thickens the white band along the
+// horizon with it, which is what more air on the same view ray does, so it is
+// applied as a multiplier on that air mass. Studio's slider stops at 10, where
+// this leaves the band some six times deeper and the zenith still blue.
+const HAZE_AIR_MASS_GAIN: f32 = 0.5;
+
+/// The sky seen along `direction` through the atmosphere, its panel colour
+/// `color`: what the skybox draws, and what the environment probe hands a
+/// reflection, so a floor mirroring the horizon at a grazing angle mirrors
+/// its haze too (`atmosphere_floor`: the far floor was 5 to 10 levels too
+/// blue, reflecting the bare panel's blue).
+fn hazed_sky(color: vec3<f32>, direction: vec3<f32>) -> vec3<f32> {
+    let haze = 1.0 + lighting.atmosphere_extra.y * HAZE_AIR_MASS_GAIN;
+    let air_mass = ATMOSPHERE_SKY_DEPTH * haze / (max(direction.y, 0.0) + ATMOSPHERE_SKY_FLOOR);
+    return mix(haze_color(direction), color, transmittance(air_mass));
+}
+
 /// What fraction of a ray survives `studs` of atmosphere, per channel.
 fn transmittance(studs: f32) -> vec3<f32> {
     return exp2(-studs * lighting.fog_range.z * lighting.calibration.x * ATMOSPHERE_SCATTER);
