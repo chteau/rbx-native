@@ -11,6 +11,7 @@ use rbx_assets::AssetRef;
 
 use super::atlas::Slot;
 use super::gradient::Table;
+use super::particles::{Layer, Sims};
 use super::pipeline::{self, VertexRaw, ViewportRaw};
 use super::quads::{self, Run, Scissor};
 use super::text::Typesetter;
@@ -26,6 +27,8 @@ pub(super) struct Painter {
     runs: Vec<Run>,
     /// Bind group 2: the `UIGradient` ramps the last build baked.
     gradients: Table,
+    /// The `ParticleEmitter2D`s the runs mark, refilled every frame.
+    particles: Layer,
 }
 
 impl Painter {
@@ -69,7 +72,37 @@ impl Painter {
             vertex_capacity: 0,
             runs: Vec::new(),
             gradients,
+            particles: Layer::new(
+                device,
+                pipeline::encoded(format),
+                viewport_layout,
+                image_layout,
+            ),
         }
+    }
+
+    /// Whether the last [`Painter::prepare`] has any `ParticleEmitter2D`.
+    pub(super) fn has_particles(&self) -> bool {
+        self.runs.iter().any(|run| run.particles.is_some())
+    }
+
+    /// Steps the emitters the last [`Painter::prepare`] laid out and uploads
+    /// their particles for the next [`Painter::draw`]. Once a frame, outside
+    /// any render pass.
+    pub(super) fn animate(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        sims: &mut Sims,
+        slot_of: &HashMap<AssetRef, Slot>,
+    ) {
+        let slots: Vec<_> = self
+            .runs
+            .iter()
+            .filter_map(|run| run.particles.as_deref().cloned())
+            .collect();
+        let built = sims.build(&slots, slot_of);
+        self.particles.upload(device, queue, built);
     }
 
     /// Turns `elements` into the quads a target of `size` pixels wants, and
@@ -164,13 +197,18 @@ impl Painter {
             multiview_mask: None,
         });
 
-        let Some(buffer) = &self.vertices else {
-            return;
+        // Particles alone (an emitter on a frame with no background) leave
+        // no static vertices, and nothing of their own to bind.
+        let bind = |pass: &mut wgpu::RenderPass<'_>| {
+            if let Some(buffer) = &self.vertices {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.viewport_bind_group, &[]);
+                pass.set_bind_group(2, self.gradients.bind_group(), &[]);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+            }
         };
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.viewport_bind_group, &[]);
-        pass.set_bind_group(2, self.gradients.bind_group(), &[]);
-        pass.set_vertex_buffer(0, buffer.slice(..));
+        bind(&mut pass);
+        let mut emitter = 0;
         for run in &self.runs {
             let Some(group) = textures.get(run.texture) else {
                 continue;
@@ -183,8 +221,20 @@ impl Painter {
                 // otherwise still be in force for the next.
                 None => pass.set_scissor_rect(0, 0, size.0, size.1),
             }
-            pass.set_bind_group(1, group, &[]);
-            pass.draw(run.range.clone(), 0..1);
+            if run.particles.is_some() {
+                let drew =
+                    self.particles
+                        .draw(&mut pass, emitter, &self.viewport_bind_group, textures);
+                emitter += 1;
+                if drew {
+                    bind(&mut pass);
+                }
+                continue;
+            }
+            if self.vertices.is_some() && !run.range.is_empty() {
+                pass.set_bind_group(1, group, &[]);
+                pass.draw(run.range.clone(), 0..1);
+            }
         }
     }
 }

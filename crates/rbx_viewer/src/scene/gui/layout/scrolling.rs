@@ -114,6 +114,7 @@ pub(super) fn scroll(
                 text: None,
                 group: None,
                 scroll: None,
+                particles: Vec::new(),
             });
         }
         let images = &scrolling.images;
@@ -167,6 +168,7 @@ pub(super) fn scroll(
                 text: None,
                 group: None,
                 scroll: None,
+                particles: Vec::new(),
             });
         }
     }

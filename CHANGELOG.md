@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-21
+
+- **UI particles (`ParticleEmitter2D`).** Put one under any GUI object and it emits like it does in Studio with the UI Particles beta on: in the 3D view's screen GUI, on the UI Editor canvas (live, not a still), and on BillboardGuis and SurfaceGuis. Every property is in: emission area and offset, angle and spread, speed, acceleration, drag, size, squash, colour, brightness, transparency, blend, rotation, LockedToParent, TimeScale and flipbooks, all checked against Studio 0.748 to the pixel where it could be. Particles draw right on top of their parent and under its children, follow the parent's rotation and UIScale, and get clipped by ClipsDescendants. Scripts can `Emit(n)` and `Clear()` from the Command Bar and plugins, and `Content.fromUri` works now so `TextureContent` can be set from a script. Turn on "UI Particles" in Beta Features to get it in the Explorer's insert list and the UI Editor's +, same as Studio. (@chteau)
+
 ## 2026-11-20
 
 - **Roadmap caught up with Studio 0.748.** I went through everything that changed in the API dump since Oct 19 in real Studio, not just the dump. `HandleAdornment.DoubleSided` and `ExplorerIconContent` on Folder and Model actually work there. Capsule parts, the Bezier and Spring easing styles, `Lighting.LightAttenuationMode`, the colour LUT on `ColorCorrectionEffect`, the new `ImageCombineType` modes and `SerializationService` are in the dump but do nothing yet (a Capsule still draws and collides as a block in Studio). ROADMAP.md has the full table, Studio's Beta Features list as of today, and an item for each beta we don't mirror yet. Every beta was then switched on in Studio and tried: what each one does live, which ones got built (UI Particles, Orthographic Camera, Luau Exports) and why the rest didn't is in there too. (@chteau)

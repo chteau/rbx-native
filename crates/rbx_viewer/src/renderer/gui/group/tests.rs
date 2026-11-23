@@ -35,6 +35,7 @@ fn boxed(x: f32, y: f32, width: f32, height: f32, alpha: f32) -> GuiElement {
         text: None,
         group: None,
         scroll: None,
+        particles: Vec::new(),
         viewport: None,
     }
 }

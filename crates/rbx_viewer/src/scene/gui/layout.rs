@@ -7,11 +7,14 @@
 
 mod text;
 
+use std::sync::Arc;
+
 use rbx_dom::Ref;
 
 use super::plan::{Align, GroupTint, Node, Screen, Span, Viewport};
 use super::space::SpaceGui;
 use super::wheel::ScrollWindow;
+use crate::scene::particles::flat::{FlatFrame, GuiEmitter};
 // Reaches all the way to `renderer::gui::quads::image`, unlike everything
 // else `plan` hands this module, see the type's own doc comment.
 pub(crate) use super::plan::PixelRect;
@@ -89,6 +92,19 @@ pub(crate) struct Element {
     /// A `ScrollingFrame`'s window, for a host to hit-test the wheel against
     /// (see `super::wheel`); `None` for every other element.
     pub(crate) scroll: Option<ScrollWindow>,
+    /// Every `ParticleEmitter2D` of this element, drawn over everything the
+    /// element itself paints and under its children.
+    pub(crate) particles: Vec<ParticlesPx>,
+}
+
+/// One `ParticleEmitter2D` and what its particles are drawn against: the
+/// parent's frame, and the scissor its parent's `ClipsDescendants` (and the
+/// ancestors') leave, since a clipping parent clips its particles too.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ParticlesPx {
+    pub(crate) emitter: Arc<GuiEmitter>,
+    pub(crate) frame: FlatFrame,
+    pub(crate) clip: Option<Rect>,
 }
 
 /// The layout facts behind one element that an editor writing its `Position`
@@ -345,6 +361,7 @@ pub(in crate::scene::gui) fn emit(
         viewport: node.viewport.clone(),
         group: None,
         scroll: None,
+        particles: Vec::new(),
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,
@@ -356,6 +373,7 @@ pub(in crate::scene::gui) fn emit(
     // matches what is actually drawn on screen.
     let rotated = context.rotated || node.rotation != 0.0;
     let angle = context.angle + node.rotation;
+    let scale = context.scale * node.constraints.scale.unwrap_or(1.0);
     let inner = Context {
         clip: match node.clips && !rotated {
             true => Some(context.clip.map_or(rect, |outer| outer.intersect(&rect))),
@@ -363,6 +381,7 @@ pub(in crate::scene::gui) fn emit(
         },
         rotated,
         angle,
+        scale,
         // Once this element turns, its children turn about *its* centre.
         pivot: match angle == 0.0 {
             true => context.pivot,
@@ -370,6 +389,20 @@ pub(in crate::scene::gui) fn emit(
         },
         ..context
     };
+    into[start].particles = node
+        .particles
+        .iter()
+        .map(|emitter| ParticlesPx {
+            emitter: emitter.clone(),
+            frame: FlatFrame {
+                center: [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5],
+                size: [rect.width, rect.height],
+                rotation: angle,
+                scale,
+            },
+            clip: inner.clip,
+        })
+        .collect();
     match &node.scrolling {
         Some(scrolling) => {
             let window = scrolling::scroll(node, scrolling, &rect, cells, inner, measure, into);
