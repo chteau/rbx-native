@@ -324,3 +324,51 @@ fn a_script_moving_the_current_camera_moves_the_view_but_the_mirror_does_not() {
     let changes = dom.take_changes();
     assert_eq!(moved_by(&dom, &changes), None);
 }
+
+// Measured in Studio 0.748 with the Orthographic Camera beta on.
+#[test]
+fn an_orthographic_camera_opens_at_its_size_along_its_mode() {
+    let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    let mut dom = place("Camera", Some(cframe([0.0, 5.0, 0.0], identity)));
+    let camera = Ref::new(2);
+    assert_eq!(PlaceCamera::from_dom(&dom).unwrap().ortho, None);
+
+    set(&mut dom, camera, "ProjectionType", Variant::Enum(1));
+    assert_eq!(
+        PlaceCamera::from_dom(&dom).unwrap().ortho,
+        Some((35.0, OrthoAxis::Vertical))
+    );
+    set(&mut dom, camera, "OrthographicSize", Variant::Float32(40.0));
+    set(&mut dom, camera, "OrthographicMode", Variant::Enum(1));
+    assert_eq!(
+        PlaceCamera::from_dom(&dom).unwrap().ortho,
+        Some((40.0, OrthoAxis::Horizontal))
+    );
+}
+
+#[test]
+fn a_script_switching_the_projection_moves_the_view_and_zooming_writes_the_size() {
+    let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    let mut dom = place("Camera", Some(cframe([0.0, 5.0, 0.0], identity)));
+    let camera = Ref::new(2);
+    dom.set_property(camera, "ProjectionType", Variant::Enum(1))
+        .unwrap();
+    let changes = dom.take_changes();
+    let view = moved_by(&dom, &changes).expect("the projection moved the view");
+    assert_eq!(view.ortho, Some((35.0, OrthoAxis::Vertical)));
+
+    // A mode change keeps the picture: no move, the size follows the zoom.
+    dom.set_property(camera, "OrthographicMode", Variant::Enum(1))
+        .unwrap();
+    let changes = dom.take_changes();
+    assert_eq!(moved_by(&dom, &changes), None);
+    // Horizontal 40 tall on Studio's 759×435 view was 69.79 wide.
+    write_ortho_size(&mut dom, 20.0, 759.0 / 435.0);
+    let size = dom
+        .get(camera)
+        .unwrap()
+        .properties()
+        .get("OrthographicSize");
+    assert!(matches!(size, Some(Variant::Float32(size)) if (size - 69.793).abs() < 0.01));
+    assert!(dom.take_changes().is_empty());
+}

@@ -82,7 +82,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::{GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
+pub use gui::{gui_particle_burst, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};
@@ -236,6 +236,10 @@ pub(crate) struct Renderer {
     /// [`Renderer::set_isolated`]): no environment, neutral light, a flat
     /// backdrop. Which *parts* are drawn is the scene's to say, not this.
     isolated: bool,
+    /// The orthographic view is the place camera's own (`ProjectionType`
+    /// Orthographic), which Studio draws over black with no sky, unlike the
+    /// editor's own orthographic toggle.
+    place_ortho: bool,
     /// See [`Renderer::set_fullbright`].
     fullbright: bool,
     /// What the sun's shadow map is fitted to instead of `bounds` while
@@ -454,6 +458,7 @@ impl Renderer {
             target,
             refracting: scene.has_glass(),
             isolated: false,
+            place_ortho: false,
             fullbright: false,
             stage: None,
         }
@@ -519,6 +524,17 @@ impl Renderer {
     /// see `Camera::with_orthographic`.
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
         self.camera = self.camera.with_orthographic(orthographic);
+    }
+
+    /// See the `place_ortho` field.
+    pub(crate) fn set_place_orthographic(&mut self, place: bool) {
+        self.place_ortho = place;
+    }
+
+    /// Whether this frame leaves the sky out for a place camera's
+    /// orthographic view.
+    fn sky_hidden(&self) -> bool {
+        self.place_ortho && self.camera.is_orthographic()
     }
 
     /// The `ScrollingFrame` of the screen overlay the wheel over `point` (in
@@ -726,7 +742,18 @@ impl Renderer {
             || (drawn.terrain && self.terrain.grass.is_drawn())
             || (drawn.effects && (self.beams.is_live() || self.trails.is_live()))
             || (drawn.effects && self.particles.is_live())
+            || self.gui.animating()
             || self.textured.has_pending()
+    }
+
+    /// Whether a GUI's particles are moving, so a canvas of it is owed frames.
+    pub(crate) fn gui_animating(&self) -> bool {
+        self.gui.animating()
+    }
+
+    /// See `Headless::hold_gui_particles`.
+    pub(crate) fn hold_gui_particles(&mut self) {
+        self.gui.hold_particles();
     }
 
     /// The terrain half of an edit: re-meshes `keys`, rewrites every

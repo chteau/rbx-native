@@ -60,7 +60,7 @@ mod view;
 mod web;
 
 pub use assets::{decode_image_uri, DecodedImage};
-pub use camera::Pose;
+pub use camera::{OrthoAxis, Pose};
 #[cfg(not(target_arch = "wasm32"))]
 pub use capture::Rendered;
 pub use changes::{Applied, Rebuild};
@@ -83,7 +83,8 @@ pub use lighting::Calibration;
 pub use load::{parse_place, read_place};
 pub use quality::{valid_band_ends, FrameRateManager, QualityLevel, TUNED_BAND_ENDS};
 pub use renderer::{
-    Fill, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap, OverlayColors, Segment, ISOLATION_BACKDROP,
+    gui_particle_burst, Fill, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap, OverlayColors, Segment,
+    ISOLATION_BACKDROP,
 };
 pub use scene::perf;
 pub use scene::{

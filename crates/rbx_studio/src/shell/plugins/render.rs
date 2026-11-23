@@ -293,6 +293,7 @@ fn run(queue: &Shared, done: &Sender<(UiId, Drawn)>) {
             viewer
                 .render_gui(job.root, size, [0.0; 3])
                 .and_then(|black| {
+                    viewer.hold_gui_particles();
                     let mut white = viewer.render_gui(job.root, size, [1.0; 3])?;
                     white.pixels = matte(&black.pixels, &white.pixels);
                     Ok(white)

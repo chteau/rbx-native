@@ -771,3 +771,16 @@ fn basis_never_degenerates_looking_straight_up_or_down() {
         }
     }
 }
+
+// Studio 0.748: Vertical 40 on a 759x435 view rewrote to Horizontal 69.79.
+#[test]
+fn an_orthographic_size_spans_the_axis_its_mode_names() {
+    let aspect = 759.0 / 435.0;
+    assert_eq!(OrthoAxis::Vertical.half_height(40.0, aspect), 20.0);
+    let wide = OrthoAxis::Horizontal.size(20.0, aspect);
+    assert!((wide - 69.793).abs() < 0.01);
+    assert!((OrthoAxis::Horizontal.half_height(wide, aspect) - 20.0).abs() < 1e-4);
+    assert_eq!(OrthoAxis::MaxAxis.size(20.0, 0.5), 40.0);
+    assert!((OrthoAxis::Diagonal.size(20.0, 1.0) - 40.0 * 2f32.sqrt()).abs() < 1e-3);
+    assert_eq!(OrthoAxis::from_value(9), OrthoAxis::Vertical);
+}

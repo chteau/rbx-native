@@ -87,6 +87,9 @@ enum Command {
         target: [f32; 3],
         fov: f32,
     },
+    /// The place camera's orthographic span, `None` once it is perspective:
+    /// see `Headless::set_ortho_span` and `set_place_orthographic`.
+    PlaceOrtho(Option<(f32, rbx_viewer::OrthoAxis)>),
     /// The renderer's tuned constants, see `Headless::set_calibration`.
     Calibration(Calibration),
     /// Draws only these instances on a plain backdrop, or everything again
@@ -280,6 +283,10 @@ impl Pump {
 
     pub(super) fn look_at(&self, eye: [f32; 3], target: [f32; 3], fov: f32) {
         let _ = self.commands.send(Command::LookAt { eye, target, fov });
+    }
+
+    pub(super) fn place_ortho(&self, span: Option<(f32, rbx_viewer::OrthoAxis)>) {
+        let _ = self.commands.send(Command::PlaceOrtho(span));
     }
 
     pub(super) fn isolation(&self, roots: Option<Vec<rbx_dom::Ref>>) {
@@ -552,6 +559,11 @@ fn run(
             owed = true;
         }
 
+        // A script's `ParticleEmitter2D:Emit`/`Clear`, from the Command Bar,
+        // a plugin or a running game: queued by the VM, played by the GUI pass.
+        for (emitter, burst) in rbx_lua::take_particle_bursts() {
+            rbx_viewer::gui_particle_burst(emitter, burst);
+        }
         let now = Instant::now();
         let changed = viewer.tick(step(now.duration_since(ticked), interval));
         ticked = now;
@@ -938,6 +950,12 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::CameraFeel(feel) => rendering.viewer.set_camera_feel(feel),
         // Studio's own default field of view.
         Command::LookAt { eye, target, fov } => rendering.viewer.open_at(eye, target, fov),
+        Command::PlaceOrtho(span) => {
+            rendering.viewer.set_place_orthographic(span.is_some());
+            if let Some((size, axis)) = span {
+                rendering.viewer.set_ortho_span(size, axis);
+            }
+        }
         Command::Isolation(roots) => rendering.viewer.set_isolation(roots),
         Command::LayerFilter(only, hidden) => rendering.viewer.set_layer_filter(only, hidden),
         Command::Calibration(calibration) => rendering.viewer.set_calibration(calibration),

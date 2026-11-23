@@ -29,6 +29,7 @@ mod documents;
 mod drag;
 mod edit;
 mod explorer_edit;
+mod explorer_icons;
 mod export;
 mod folder_color;
 mod format;
@@ -361,6 +362,7 @@ pub(crate) struct Shell {
     /// property name; see `shell::edit`.
     edits: edit::Edits,
     image_sizes: image_size::ImageSizes,
+    explorer_icons: explorer_icons::ExplorerIcons,
     sound_preview: sound_preview::SoundPreview,
     /// The Attributes/Tags section's own rename box and add-attribute/add-tag
     /// fields; see `shell::attributes_panel`.
@@ -822,6 +824,12 @@ impl Shell {
         transform.translate.increment = controls.move_increment;
         transform.rotate.increment = controls.rotate_increment;
         transform.pivot_snap = controls.pivot_snap;
+        // With the Orthographic Camera beta the place camera decides, as in
+        // Studio: a place saved looking orthographically opens that way.
+        let orthographic = match crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+            true => camera.is_some_and(|camera| camera.ortho.is_some()),
+            false => orthographic,
+        };
         let viewport = cx.new(|cx| {
             let opened = Opened {
                 viewer,
@@ -968,6 +976,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             image_sizes: image_size::ImageSizes::default(),
+            explorer_icons: explorer_icons::ExplorerIcons::default(),
             sound_preview: sound_preview::SoundPreview::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
@@ -1125,6 +1134,8 @@ impl Shell {
         // Its light guides, for the same reason.
         shell.sync_light_guides(cx);
         shell.sync_layers(cx);
+        // Any `ExplorerIconContent` images the place names.
+        shell.refresh_explorer_icons(cx);
         // And the screen it sits in, for the UI editor's canvas.
         shell.ui_follow_selection();
 
@@ -1449,6 +1460,10 @@ impl Shell {
     /// by a pose update landing mid-edit.
     fn sync_camera_pose(&mut self, pose: rbx_viewer::Pose, cx: &mut Context<Self>) {
         crate::camera::write_pose(&mut self.dom, pose);
+        if self.orthographic && crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+            let aspect = self.viewport.read(cx).aspect();
+            crate::camera::write_ortho_size(&mut self.dom, pose.ortho_scale, aspect);
+        }
         // Not a `reflect_changes`, so the Properties cache is told here,
         // only when a camera is among the selection, or a flight would
         // rebuild a large selection's rows five times a second for nothing.

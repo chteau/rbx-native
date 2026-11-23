@@ -18,6 +18,7 @@ mod instance;
 mod lua_enum;
 mod not_creatable;
 mod output;
+mod particles;
 pub mod pattern;
 pub mod pivot;
 pub mod plugin;
@@ -30,6 +31,7 @@ pub mod test_runner;
 pub use debugger::{Breakpoint, Frame, Paused, Resume, Variable, STOPPED};
 pub use mlua::Error as LuaError;
 pub use output::{LineKind, Output};
+pub use particles::take_particle_bursts;
 pub use printed::{PrintPart, PrintValue, TableDump, TableEntry};
 pub use runtime::{Reported, RunError, RunState, Runtime, Step};
 

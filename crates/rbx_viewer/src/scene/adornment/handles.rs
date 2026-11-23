@@ -145,6 +145,7 @@ fn arc_handles(context: &Context<'_>) -> Vec<Piece> {
                     frame,
                     color,
                     alpha: context.alpha,
+                    double_sided: true,
                 })
             };
             let grip = Mat4::from_translation(ARC_GRIPS[axis] * radius);

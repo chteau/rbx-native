@@ -122,13 +122,18 @@ impl Shell {
                 .icon(IconName::AppWindow)
                 .on_click(|shell, cx| shell.insert_on_canvas(SCREEN_CLASS, cx)),
         )
-        .chain(COMPONENTS.map(|class| {
-            let item = menu::item(class);
-            match target {
-                true => item.on_click(move |shell, cx| shell.insert_on_canvas(class, cx)),
-                false => item.disabled(),
-            }
-        }))
+        .chain(
+            COMPONENTS
+                .into_iter()
+                .chain(explorer::insert::beta_classes())
+                .map(|class| {
+                    let item = menu::item(class);
+                    match target {
+                        true => item.on_click(move |shell, cx| shell.insert_on_canvas(class, cx)),
+                        false => item.disabled(),
+                    }
+                }),
+        )
         .chain(std::iter::once({
             let item = menu::item("Import from Figma\u{2026}");
             match target {

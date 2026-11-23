@@ -20,6 +20,7 @@ mod atlas;
 mod gradient;
 mod group;
 mod paint;
+mod particles;
 mod pipeline;
 mod pseudo;
 mod quads;
@@ -42,6 +43,8 @@ use crate::scene::{
 use atlas::Atlas;
 use group::Baked;
 use paint::Painter;
+pub use particles::gui_particle_burst;
+use particles::Sims;
 use space::Space;
 use text::Typesetter;
 pub use text::{GuiTextEdit, GuiTextLine, GuiTextMap};
@@ -124,6 +127,12 @@ pub(super) struct Gui {
     /// The pass that bakes a `ViewportFrame`'s 3D content into the texture
     /// its quad samples, on screen or on a canvas.
     viewports: Viewports,
+    /// Every `ParticleEmitter2D`'s running particles, on screen or on a
+    /// canvas.
+    sims: Sims,
+    /// The scene pass already started this frame's particles: the overlay
+    /// drawn after it moves on the same step rather than a second, tiny one.
+    sims_ticked: bool,
 }
 
 impl Gui {
@@ -183,6 +192,8 @@ impl Gui {
             viewport_layout,
             enabled: quality.gui,
             viewports,
+            sims: Sims::new(),
+            sims_ticked: false,
         };
         gui.rebuild(
             device,
@@ -290,6 +301,10 @@ impl Gui {
         // Billboard pixels are the same pixels a `ScreenGui` lays out in: a
         // simulated device's screen when there is one, the frame otherwise.
         let screen_height = self.screen_size.map_or(frame_height, |(_, h)| h);
+        self.sims.tick();
+        self.sims_ticked = true;
+        self.space
+            .animate(device, queue, &mut self.sims, &self.atlas);
         self.space.draw(
             device,
             queue,
@@ -326,6 +341,7 @@ impl Gui {
         let layout = self.screen_size.unwrap_or(size);
         self.drawn = size;
         self.lay_out(device, queue, layout, None, materials);
+        self.animate(device, queue);
         self.screen.draw_scaled(
             encoder,
             &pipeline::encoded_view(target),
@@ -415,6 +431,7 @@ impl Gui {
         materials: &wgpu::BindGroup,
     ) {
         self.lay_out(device, queue, size, Some(only), materials);
+        self.animate(device, queue);
         self.screen.draw(
             encoder,
             &pipeline::encoded_view(target),
@@ -460,6 +477,28 @@ impl Gui {
             _ => None,
         };
         Some((texture, look))
+    }
+
+    /// Moves the laid-out tree's particles on to this frame.
+    fn animate(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        if self.screen.has_particles() {
+            if !std::mem::take(&mut self.sims_ticked) {
+                self.sims.tick();
+            }
+            self.screen
+                .animate(device, queue, &mut self.sims, self.atlas.slot_of());
+        }
+    }
+
+    /// Whether a `ParticleEmitter2D` drawn lately is still moving, so a host
+    /// that only draws on change keeps drawing.
+    pub(super) fn animating(&self) -> bool {
+        self.sims.moving()
+    }
+
+    /// See `Headless::hold_gui_particles`.
+    pub(super) fn hold_particles(&mut self) {
+        self.sims.hold();
     }
 
     /// Every `ScrollingFrame` of the last layout, in paint order.
