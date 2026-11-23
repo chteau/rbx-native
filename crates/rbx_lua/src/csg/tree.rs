@@ -2,13 +2,12 @@
 //! in its own space, so it can be separated again.
 
 use rbx_csg::glam::DMat4;
-use rbx_csg::{solidmesh, Solid};
 use rbx_dom::{CFrameData, Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::{
-    carves, cframe, cframe_of, frame, shared, size_of, triangle_count, vector3, world_solid,
-    Operation, STALE_GEOMETRY,
+    carves, cframe, cframe_of, frame, shared, size_of, vector3, Operation, NEGATED_TAG,
+    STALE_GEOMETRY,
 };
 
 /// `source`'s instance copied into `into` under `parent` as `class`,
@@ -30,7 +29,8 @@ fn copy_into(
 }
 
 /// The `ChildData2` document: every source part in the operation's own
-/// space, a subtracted one inside a `NegateOperation` as Studio nests it.
+/// space, a subtracted or negated one inside a `NegateOperation` as Studio
+/// nests it.
 pub(super) fn child_data(
     dom: &WeakDom,
     db: &ReflectionDatabase,
@@ -43,8 +43,7 @@ pub(super) fn child_data(
         let instance = dom.get(part)?;
         let local = cframe(inverse * frame(&cframe_of(db, instance)));
         if i > 0 && carves(dom, operation, part) && instance.class() != "NegateOperation" {
-            let solid = world_solid(dom, db, part).ok()?;
-            negated(&mut nested, db, instance, local, &solid)?;
+            negated(&mut nested, db, instance, local)?;
         } else {
             copy_into(&mut nested, instance, instance.class(), None, local);
         }
@@ -52,46 +51,60 @@ pub(super) fn child_data(
     rbx_binary::serialize(&nested).ok()
 }
 
-/// A `NegateOperation` of `part` (whose world solid is `solid`) made in
-/// `into` at `at`, holding the part as Studio nests it, at the operation's
-/// own frame, and the part's mesh as its `SolidMeshHolder`.
+/// A `NegateOperation` of `part` made in `into` at `at`, the way Studio
+/// wraps a subtracted or negated part in a union's tree: "NegativePart",
+/// white plastic at `Transparency` 0.1, the part's size, no mesh of its
+/// own, and the part itself (untagged, at the wrapper's frame) in its
+/// `ChildData2`.
 pub(super) fn negated(
     into: &mut WeakDom,
     db: &ReflectionDatabase,
     part: &Instance,
     at: CFrameData,
-    solid: &Solid,
 ) -> Option<Ref> {
     const CLASS: &str = "NegateOperation";
+    /// `Enum.Material.Plastic`.
+    const PLASTIC: u32 = 256;
     let negate = copy_into(into, part, CLASS, None, at);
     let size = Variant::Vector3(vector3(size_of(db, part)));
-    let world = frame(&cframe_of(db, part));
     let mut inner = WeakDom::new();
-    copy_into(
+    let copy = copy_into(
         &mut inner,
         part,
         part.class(),
         None,
         cframe(DMat4::IDENTITY),
     );
+    let tags: Vec<&str> = rbx_dom::attributes::tags(part.properties().get("Tags"))
+        .into_iter()
+        .filter(|&t| t != NEGATED_TAG)
+        .collect();
+    inner.get_mut(copy)?.properties_mut().insert(
+        "Tags".to_owned(),
+        Variant::String(rbx_dom::attributes::encode_tags(&tags)),
+    );
     let raw = rbx_binary::serialize(&inner).ok()?;
-    let props = into.get_mut(negate)?.properties_mut();
+    let wrapper = into.get_mut(negate)?;
+    wrapper.set_name("NegativePart");
+    let props = wrapper.properties_mut();
     props.retain(|k, _| {
         !STALE_GEOMETRY.contains(&k.as_str())
+            && k != "Tags"
             && db
                 .resolve_property(CLASS, db.canonical_name(CLASS, k))
                 .is_some()
     });
     props.insert("InitialSize".to_owned(), size);
     props.insert("ChildData2".to_owned(), shared(raw));
-    let local = solid.transformed(world.inverse());
     props.insert(
-        "SolidMeshHolder".to_owned(),
-        shared(solidmesh::encode(&local)),
+        "Color3uint8".to_owned(),
+        Variant::Color3uint8 {
+            r: 255,
+            g: 255,
+            b: 255,
+        },
     );
-    props.insert(
-        "TriangleCount".to_owned(),
-        Variant::Int32(triangle_count(&local)),
-    );
+    props.insert("Material".to_owned(), Variant::Enum(PLASTIC));
+    props.insert("Transparency".to_owned(), Variant::Float32(0.1));
     Some(negate)
 }

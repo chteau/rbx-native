@@ -11,9 +11,12 @@
 //! `SolidMeshHolder`, the carved mesh in its own space at `InitialSize`,
 //! each face in its source part's colour, which Studio draws and which
 //! every later boolean, the physics and the mass read back (see
-//! [`local_mesh`]); `MeshData2` stays empty, as in Studio's own saves, and
-//! the mass properties Studio saves beside the mesh are filled in.
+//! [`local_mesh`]); `PhysicalConfigData`, the convex pieces Studio collides
+//! it as at its `CollisionFidelity` (see [`refresh_collision`]); `MeshData2`
+//! stays empty, as in Studio's own saves, and the mass properties Studio
+//! saves beside the mesh are filled in.
 
+use rbx_csg::csgphs::{self, Fidelity};
 use rbx_csg::glam::{DMat3, DMat4, DVec3};
 use rbx_csg::{csgmdl, shapes, solidmesh, MeshData, Solid};
 use rbx_dom::{CFrameData, Instance, Ref, Variant, Vector3Data, WeakDom};
@@ -24,9 +27,8 @@ use rbx_reflection::ReflectionDatabase;
 const SHARED_STRING: u8 = 0x1c;
 
 /// Where real Studio caches an operation's geometry: the solid in
-/// `SolidMeshHolder` (`MeshData2` in older saves), the collision hull in
-/// `PhysicalConfigData`, which Studio rebuilds when it is missing. An
-/// operation carved again here must lose them.
+/// `SolidMeshHolder` (`MeshData2` in older saves), the collision pieces in
+/// `PhysicalConfigData`. An operation carved again here must lose them.
 const STALE_GEOMETRY: [&str; 3] = ["SolidMeshHolder", "MeshData2", "PhysicalConfigData"];
 
 /// Drops the cached geometry ([`STALE_GEOMETRY`]) an operation whose mesh
@@ -193,13 +195,23 @@ pub fn world_solid(dom: &WeakDom, db: &ReflectionDatabase, part: Ref) -> Result<
     .painted(color))
 }
 
+/// The tag Studio's Negate puts on a part (with `Transparency` 0.5): a
+/// union carves the part out.
+pub const NEGATED_TAG: &str = "rbxNegated";
+
+fn has_negated_tag(instance: &Instance) -> bool {
+    rbx_dom::attributes::tags(instance.properties().get("Tags")).contains(&NEGATED_TAG)
+}
+
+/// A negated part: tagged by Studio's Negate, or a `NegateOperation` (older
+/// Studio's Negate, and `plugin:Negate`).
 fn is_negate(dom: &WeakDom, part: Ref) -> bool {
     dom.get(part)
-        .is_some_and(|i| i.class() == "NegateOperation")
+        .is_some_and(|i| i.class() == "NegateOperation" || has_negated_tag(i))
 }
 
 /// Whether `other` carves rather than adds: everything after the base of a
-/// subtraction, and a `NegateOperation` in a union.
+/// subtraction, and a negated part in a union.
 fn carves(dom: &WeakDom, operation: Operation, other: Ref) -> bool {
     match operation {
         Operation::Subtract => true,
@@ -378,6 +390,13 @@ pub fn build(
             dom,
             db,
             referent,
+            "PhysicalConfigData",
+            shared(csgphs::encode(&local, Fidelity::Default)),
+        );
+        set(
+            dom,
+            db,
+            referent,
             "TriangleCount",
             Variant::Int32(triangle_count(&local)),
         );
@@ -413,10 +432,39 @@ pub fn build(
     made
 }
 
+/// Rewrites `operation`'s `PhysicalConfigData` for the `CollisionFidelity`
+/// it was just given, as Studio does when the property changes: Studio
+/// never saves the property and reads it back from the blob, so a stale
+/// blob would undo the change on the next load. `false` when nothing
+/// needed doing (no such operation, no fidelity set, already matching).
+pub fn refresh_collision(dom: &mut WeakDom, db: &ReflectionDatabase, operation: Ref) -> bool {
+    let Some(instance) = dom.get(operation) else {
+        return false;
+    };
+    if !db.is_subclass_of(instance.class(), "PartOperation")
+        || instance.class() == "NegateOperation"
+    {
+        return false;
+    }
+    let Some(Variant::Enum(value)) = instance.properties().get("CollisionFidelity") else {
+        return false;
+    };
+    let wanted = Fidelity::from_value(*value);
+    if shared_bytes(instance, "PhysicalConfigData").and_then(csgphs::fidelity) == Some(wanted) {
+        return false;
+    }
+    let Some(mesh) = solid_mesh(instance) else {
+        return false;
+    };
+    let blob = csgphs::encode(&mesh.solid(DMat4::IDENTITY), wanted);
+    set(dom, db, operation, "PhysicalConfigData", shared(blob));
+    true
+}
+
 mod place;
 mod tree;
 
-pub use place::{negate_in_place, operate_in_place, separate_in_place};
+pub use place::{negate_in_place, negate_operations_in_place, operate_in_place, separate_in_place};
 use tree::child_data;
 
 #[cfg(test)]

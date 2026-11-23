@@ -104,3 +104,55 @@ the fixture in place of Studio's, and check whether Studio draws it.
 Fixtures: `assets/tests/csg/TwoCubesUnion.rbxm` (Studio export) and
 `TwoCubesUnion.rbxmx` (trimmed from a Studio-saved `.rbxlx`). Round-trip
 tests: `crates/rbx_xml/tests/union_geometry_round_trip.rs`.
+
+## `PhysicalConfigData` (observed 2026-11-23)
+
+Studio does not save `CollisionFidelity`. It reads it back from this blob,
+so the blob is the only thing that decides how a union collides.
+
+- `Box`: `CSGPHS`, four zero bytes, then `BLOCK`. Nothing else.
+- Every other fidelity: `CSGPHS`, a u32 code (`Hull` 1,
+  `PreciseConvexDecomposition` 3, `Default` 6), then one zstd frame. Inside
+  the frame is a list of convex hulls in the union's own space. Each hull is
+  a vertex count, f32 positions, and its triangles in Edgebreaker CLERS
+  order. The bits are packed MSB first, and the last word is right-aligned.
+  `crates/rbx_csg/src/csgphs.rs` re-encodes every Studio hull we saved back
+  to the same bytes.
+- Studio ignores a frame that does not declare its content size: the union
+  then collides as a box. Our writer emits single-segment raw blocks.
+- Studio's drilled 8x4x8 block with a 3-stud hole: `Hull` is 1 hull, which
+  fills the hole. `Default` is 4 hulls and `Precise` 24, and both leave the
+  hole open.
+
+What we write: `Hull` is a quickhull of the result. `Default` and `Precise`
+use our own approximate convex decomposition (`rbx_csg::decompose`): it
+cuts along axis planes until every piece is within 2% (`Default`) or 0.2%
+(`Precise`) of its own hull. Setting `CollisionFidelity` in the editor
+rewrites the blob.
+
+Checked in Studio:
+- the Properties panel shows the fidelity we wrote;
+- raycasts down the hole miss for `Default` and `Precise` and hit for `Hull`
+  and `Box`;
+- in Run mode, balls drop through our `Default` and `Precise` holes, as
+  they do through Studio's own, and rest on our `Box` and `Hull` unions.
+
+## Colours
+
+`SolidMeshHolder` stores a colour for every triangle. When `UsePartColor`
+is off, Studio draws each face in the colour of the part it came from,
+including the walls of a hole, which take the negated part's colour. The
+viewer now draws those vertex colours. It uses the carved mesh's polygon
+colours and the decoded per-corner colours of a baked mesh.
+
+## Negate
+
+The Negate button does not wrap the part. It tags the part `rbxNegated` and
+sets its Transparency to 0.5, and pressing Negate again undoes both. The
+union then wraps the part as a `NegateOperation` named `NegativePart`:
+- `Color3uint8` is white, `Material` is 256, and `Transparency` is 0.1;
+- it has an `InitialSize`;
+- it has no `SolidMeshHolder` or `PhysicalConfigData`;
+- its `ChildData2` holds the part with the tag removed.
+
+`plugin:Negate` still returns a top-level `NegateOperation`.

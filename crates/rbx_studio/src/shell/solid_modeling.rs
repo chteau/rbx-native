@@ -274,7 +274,7 @@ mod tests {
         let a = part(&mut dom, workspace, 0.0);
         let b = part(&mut dom, workspace, 1.0);
         let negate = apply(&mut dom, &db, &[b], Command::Negate).unwrap()[0];
-        assert_eq!(dom.get(negate).unwrap().class(), "NegateOperation");
+        assert_eq!((negate, dom.get(negate).unwrap().class()), (b, "Part"));
         let union = apply(&mut dom, &db, &[a, negate], Command::Union).unwrap()[0];
         let size = match dom.get(union).unwrap().properties().get("size") {
             Some(Variant::Vector3(v)) => v.x,

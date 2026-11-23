@@ -8,8 +8,9 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::tree::negated;
 use super::{
-    build, cframe, cframe_of, combine, frame, is_negate, local_mesh, read, set, shared,
-    shared_bytes, size_of, triangle_count, vec3, vector3, world_solid, Flavor, Operation,
+    build, cframe, cframe_of, combine, frame, has_negated_tag, is_negate, local_mesh, read, set,
+    shared, shared_bytes, size_of, triangle_count, vec3, vector3, world_solid, Flavor, Operation,
+    NEGATED_TAG,
 };
 
 /// The parts among `objects` an operation is made of, the first one that
@@ -56,13 +57,60 @@ pub fn operate_in_place(
     Ok(referent)
 }
 
-/// Studio's Negate: each part becomes a `NegateOperation` in its place, and
-/// a `NegateOperation` becomes its part again.
+/// Adds or removes Studio's negated tag on `part`.
+fn tag_negated(dom: &mut WeakDom, part: Ref, negated: bool) {
+    let Some(instance) = dom.get(part) else {
+        return;
+    };
+    let mut tags = rbx_dom::attributes::tags(instance.properties().get("Tags"));
+    tags.retain(|&t| t != NEGATED_TAG);
+    if negated {
+        tags.push(NEGATED_TAG);
+    }
+    let tags = Variant::String(rbx_dom::attributes::encode_tags(&tags));
+    let _ = dom.set_property(part, "Tags", tags);
+}
+
+/// Studio's Negate button (the Model tab): each part is tagged negated and
+/// turns half transparent, or, already negated, loses the tag and turns
+/// opaque; a `NegateOperation` from an older Studio becomes its part again.
+/// Returns the parts.
 pub fn negate_in_place(dom: &mut WeakDom, db: &ReflectionDatabase, objects: &[Ref]) -> Vec<Ref> {
     let mut out = Vec::new();
     for part in parts_of(dom, db, objects) {
-        if is_negate(dom, part) {
+        let Some(instance) = dom.get(part) else {
+            continue;
+        };
+        if instance.class() == "NegateOperation" {
             out.extend(separate_in_place(dom, db, &[part]));
+            continue;
+        }
+        let negated = !has_negated_tag(instance);
+        tag_negated(dom, part, negated);
+        let transparency = if negated { 0.5 } else { 0.0 };
+        set(
+            dom,
+            db,
+            part,
+            "Transparency",
+            Variant::Float32(transparency),
+        );
+        out.push(part);
+    }
+    out
+}
+
+/// `plugin:Negate`: each part becomes a `NegateOperation` in its place,
+/// carrying the part's mesh, and a negated part becomes a plain part again.
+pub fn negate_operations_in_place(
+    dom: &mut WeakDom,
+    db: &ReflectionDatabase,
+    objects: &[Ref],
+) -> Vec<Ref> {
+    let mut out = Vec::new();
+    for part in parts_of(dom, db, objects) {
+        if is_negate(dom, part) {
+            out.extend(negate_in_place(dom, db, &[part]));
             continue;
         }
         let Ok(solid) = world_solid(dom, db, part) else {
@@ -73,17 +121,37 @@ pub fn negate_in_place(dom: &mut WeakDom, db: &ReflectionDatabase, objects: &[Re
         };
         let parent = dom.parent(part);
         let mut staged = WeakDom::new();
-        let Some(negate) = negated(&mut staged, db, &instance, cframe_of(db, &instance), &solid)
-        else {
+        let Some(negate) = negated(&mut staged, db, &instance, cframe_of(db, &instance)) else {
             continue;
         };
         let Some(made) = staged.get(negate) else {
             continue;
         };
-        let referent = dom.new_instance(made.class(), made.name(), parent);
+        let referent = dom.new_instance(made.class(), instance.name(), parent);
         for (key, value) in made.properties() {
             let _ = dom.set_property(referent, key, value.clone());
         }
+        // It looks like the part, not like the wrapper a union's tree keeps.
+        for key in ["Color3uint8", "Material", "Transparency"] {
+            if let Some(value) = instance.properties().get(key) {
+                let _ = dom.set_property(referent, key, value.clone());
+            }
+        }
+        let local = solid.transformed(frame(&cframe_of(db, &instance)).inverse());
+        set(
+            dom,
+            db,
+            referent,
+            "SolidMeshHolder",
+            shared(solidmesh::encode(&local)),
+        );
+        set(
+            dom,
+            db,
+            referent,
+            "TriangleCount",
+            Variant::Int32(triangle_count(&local)),
+        );
         dom.remove(part);
         out.push(referent);
     }
@@ -139,10 +207,13 @@ pub fn separate_in_place(dom: &mut WeakDom, db: &ReflectionDatabase, objects: &[
                 let size = size_of(db, child) * scale;
                 set(dom, db, referent, "Size", Variant::Vector3(vector3(size)));
             }
-            // Studio gives a subtracted part back as itself, not as the
-            // `NegateOperation` the tree keeps it in.
+            // Studio gives a subtracted part back as itself, negated, not
+            // as the `NegateOperation` the tree keeps it in.
             if child.class() == "NegateOperation" && shared_bytes(child, "ChildData2").is_some() {
-                out.extend(separate_in_place(dom, db, &[referent]));
+                for part in separate_in_place(dom, db, &[referent]) {
+                    tag_negated(dom, part, true);
+                    out.push(part);
+                }
                 continue;
             }
             rebake(dom, db, referent);

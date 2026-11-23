@@ -9,6 +9,9 @@
 
 pub mod bsp;
 pub mod csgmdl;
+pub mod csgphs;
+pub mod decompose;
+pub mod hull;
 pub mod repair;
 pub mod shapes;
 pub mod solidmesh;
@@ -310,7 +313,9 @@ impl Solid {
     }
 
     /// Fan-triangulates every polygon with its plane normal on each corner:
-    /// flat shading, the look Roblox's own baked unions have.
+    /// flat shading, the look Roblox's own baked unions have. Each corner
+    /// carries its polygon's colour, what Studio paints a union in when
+    /// `UsePartColor` is off.
     pub fn to_mesh(&self) -> rbx_mesh::Mesh {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
@@ -338,7 +343,7 @@ impl Solid {
                         position[axis_u] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                         position[axis_v] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                     ],
-                    color: [255; 4],
+                    color: [polygon.color[0], polygon.color[1], polygon.color[2], 255],
                 });
             }
             for corner in 1..polygon.vertices.len().saturating_sub(1) as u32 {
