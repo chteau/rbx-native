@@ -95,7 +95,11 @@ fn a_canvas_group_under_global_z_index_is_never_flattened() {
     dom.set_property(
         group,
         "GroupColor3",
-        Variant::Color3(rbx_dom::Color3::new(0.0, 1.0, 1.0)),
+        Variant::Color3(rbx_dom::Color3Data {
+            r: 0.0,
+            g: 1.0,
+            b: 1.0,
+        }),
     )
     .unwrap();
     frame(
