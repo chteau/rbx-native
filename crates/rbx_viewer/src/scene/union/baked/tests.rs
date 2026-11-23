@@ -99,16 +99,18 @@ fn positions_normals_and_bounds_come_through_as_stored() {
     assert_eq!(mesh.bounds.max, [2.0, 2.0, 0.5]);
 }
 
-#[test]
-fn the_colour_covering_most_area_paints_it_and_the_vertices_go_white() {
-    let baked = decode(&two_triangles()).expect("decodes");
+/// Whether some corner of `mesh` was baked in `color`.
+pub(super) fn has_color(mesh: &rbx_mesh::Mesh, [r, g, b]: [u8; 3]) -> bool {
+    mesh.vertices.iter().any(|v| v.color == [r, g, b, 255])
+}
 
-    assert_eq!(
-        baked.color,
-        Some([200, 10, 10]),
-        "the big red triangle wins"
-    );
-    assert!(baked.mesh.vertices.iter().all(|v| v.color == [255; 4]));
+#[test]
+fn each_corner_keeps_the_colour_it_was_baked_in() {
+    let baked = decode(&two_triangles()).expect("decodes");
+    let colors: std::collections::HashSet<_> =
+        baked.mesh.vertices.iter().map(|v| v.color).collect();
+    assert!(has_color(&baked.mesh, [200, 10, 10]));
+    assert_eq!(colors.len(), 2, "{colors:?}");
 }
 
 #[test]
@@ -192,7 +194,7 @@ fn a_version_four_blob_is_wholly_scrambled_and_keeps_its_first_lod() {
     let baked = decode(&scrambled(&two_lods())).expect("decodes");
 
     assert_eq!(baked.mesh.indices, [0, 1, 2]);
-    assert_eq!(baked.color, Some([200, 10, 10]));
+    assert!(has_color(&baked.mesh, [200, 10, 10]));
 }
 
 #[test]
@@ -426,7 +428,7 @@ fn a_union_whose_tree_will_not_carve_and_has_no_bake_draws_its_pieces() {
 }
 
 #[test]
-fn a_baked_union_without_its_own_colour_takes_the_bakes() {
+fn a_baked_union_without_its_own_colour_draws_the_bakes() {
     let asset_id = "rbxassetid://305197512";
     let referent = Ref::new(1);
     let dom = dom_with(operation(referent, "UnionOperation", Some(asset_id)));
@@ -444,8 +446,13 @@ fn a_baked_union_without_its_own_colour_takes_the_bakes() {
         &mut Evaluations::default(),
     );
 
-    let red = [200.0, 10.0, 10.0].map(|c: f32| super::super::super::srgb_to_linear(c / 255.0));
-    assert_eq!(resolution.instances[0].color, red);
+    let instance = &resolution.instances[0];
+    assert_eq!(instance.color, [1.0; 3], "the vertices paint it");
+    assert!(super::super::is_painted(&instance.mesh));
+    assert!(has_color(
+        &resolution.meshes[&instance.mesh].mesh,
+        [200, 10, 10]
+    ));
 }
 
 /// `RBX_CSGMDL_FIXTURE=<a PartOperationAsset .rbxm holding only MeshData>`,
@@ -474,10 +481,10 @@ const STUDIO_SOLID_MESH: &[u8] =
     include_bytes!("../../../../../../assets/tests/csg/BallMinusCylinder.solidmesh");
 
 #[test]
-fn a_studio_solid_mesh_decodes_with_its_biggest_colour() {
+fn a_studio_solid_mesh_decodes_with_its_colours() {
     let baked = decode(STUDIO_SOLID_MESH).expect("a SolidMeshHolder decodes");
     assert_eq!(baked.mesh.indices.len(), 560 * 3);
-    assert_eq!(baked.color, Some([255, 0, 0]));
+    assert!(has_color(&baked.mesh, [255, 0, 0]));
     let (min, max) = (baked.mesh.bounds.min, baked.mesh.bounds.max);
     assert!((max[1] - 4.0).abs() < 1e-4 && (min[1] + 4.0).abs() < 1e-4);
     super::v5_tests::assert_closed(&baked.mesh, "BallMinusCylinder");

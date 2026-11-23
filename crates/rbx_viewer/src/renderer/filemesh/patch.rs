@@ -93,7 +93,8 @@ impl FileMeshes {
             let Some(mesh) = resolved.meshes.get(&key.mesh) else {
                 continue;
             };
-            let bytes = vertex_bytes(mesh, geometry.skin);
+            let painted = crate::scene::is_painted_union(&key.mesh);
+            let bytes = vertex_bytes(mesh, geometry.skin, painted);
             if bytes.len() as u64 == geometry.vertices.size() {
                 queue.write_buffer(&geometry.vertices, 0, &bytes);
             }
@@ -198,7 +199,7 @@ impl FileMeshes {
             max_size: self.texture_max_size,
         };
         let skin = Images::slot(&mut self.images, device, queue, binding, resolved, key)?;
-        Some(build(device, mesh, skin))
+        Some(build(device, &key.mesh, mesh, skin))
     }
 }
 

@@ -4,7 +4,7 @@ use glam::{DVec3, Mat4, Quat, Vec3};
 use rbx_dom::Variant;
 
 use super::super::tree::{Leaf, Node};
-use super::{evaluate, largest_additive_color, Failure, Solid};
+use super::{evaluate, Failure, Solid};
 use crate::scene::shape::Geometry;
 use crate::scene::ShapeKind;
 use crate::shapes;
@@ -583,30 +583,30 @@ fn colored(mut node: Node, color: [u8; 3]) -> Node {
     node
 }
 
-/// A union whose first-decoded additive leaf is the *smallest* piece and
-/// carries a stray dark colour, while the largest piece (decoded later)
-/// carries the intended light one. "First in tree order" is the wire order a
-/// real asset just happens to decode in, not anything a builder controls, so
-/// [`largest_additive_color`] must pick the leaf that actually dominates the
-/// union's volume instead.
+/// Studio paints a union whose `UsePartColor` is off in its pieces' own
+/// colours, a pocket's walls in the colour of the part that cut it.
 #[test]
-fn largest_additive_color_prefers_the_largest_leaf_over_tree_order() {
+fn every_face_keeps_the_colour_of_the_leaf_it_came_from() {
     let tree = union_of(vec![
         colored(
-            leaf(ShapeKind::Box, Vec3::splat(1.0), Vec3::ZERO, false),
-            [10, 8, 6],
+            leaf(ShapeKind::Box, Vec3::splat(4.0), Vec3::ZERO, false),
+            [200, 0, 0],
         ),
         colored(
             leaf(
                 ShapeKind::Box,
-                Vec3::splat(3.0),
-                Vec3::new(0.4, 0.0, 0.0),
-                false,
+                Vec3::splat(2.0),
+                Vec3::new(0.0, 2.0, 0.0),
+                true,
             ),
-            [200, 195, 190],
+            [0, 0, 200],
         ),
     ]);
-    assert_eq!(largest_additive_color(&tree), Some([200, 195, 190]));
+    let solid = evaluate(&tree, None).expect("the boolean runs");
+    let colors: std::collections::BTreeSet<_> = solid.polygons.iter().map(|p| p.color).collect();
+    assert_eq!(colors, [[0, 0, 200], [200, 0, 0]].into());
+    let mesh = solid.to_mesh();
+    assert!(mesh.vertices.iter().any(|v| v.color == [0, 0, 200, 255]));
 }
 
 #[test]

@@ -6,6 +6,8 @@
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    // White but on a union painted in its pieces' colours.
+    @location(15) color: vec4<f32>,
 }
 
 struct InstanceInput {
@@ -36,6 +38,14 @@ struct VertexOutput {
     @location(10) studs_per_tile: f32,
 }
 
+// A vertex colour is stored sRGB, like a part's; the instance colour
+// arrives already linear.
+fn vertex_tint(srgb: vec3<f32>) -> vec3<f32> {
+    let low = srgb / 12.92;
+    let high = pow((srgb + 0.055) / 1.055, vec3<f32>(2.4));
+    return select(high, low, srgb <= vec3<f32>(0.04045));
+}
+
 @vertex
 fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     let model = mat4x4<f32>(
@@ -51,7 +61,7 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     // Parts only ever carry an axis-aligned scale, so rotating the normal by the model
     // matrix and renormalizing gives the same direction as the inverse transpose would.
     out.normal = (model * vec4<f32>(vertex.normal, 0.0)).xyz;
-    out.color = instance.color;
+    out.color = vec4<f32>(instance.color.rgb * vertex_tint(vertex.color.rgb), instance.color.a);
     out.world_position = world.xyz;
     out.reflectance = instance.reflectance;
     // The material is projected in object space, in studs: the column lengths

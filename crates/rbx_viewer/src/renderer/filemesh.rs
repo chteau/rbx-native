@@ -188,7 +188,7 @@ impl FileMeshes {
             // spare batch is only the same geometry if its skin still agrees.
             let mut geometry = || {
                 take_spare(&mut spare, &key, |geometry| geometry.skin == skin)
-                    .unwrap_or_else(|| build(device, mesh, skin))
+                    .unwrap_or_else(|| build(device, &key.mesh, mesh, skin))
             };
 
             let blends = blends(resolved, &key);
@@ -431,8 +431,8 @@ fn group_by_mesh_and_skin(resolved: &Resolved) -> Vec<(GroupKey, Vec<&ResolvedIn
 ///
 /// A mesh drawn under two skins is converted twice; that is a handful of meshes
 /// per scene, against a per-batch cache that would have to outlive the loop.
-fn build(device: &wgpu::Device, mesh: &rbx_mesh::Mesh, skin: Skin) -> Geometry {
-    let vertices = vertex_bytes(mesh, skin);
+fn build(device: &wgpu::Device, asset: &AssetRef, mesh: &rbx_mesh::Mesh, skin: Skin) -> Geometry {
+    let vertices = vertex_bytes(mesh, skin, crate::scene::is_painted_union(asset));
     let indices = mesh.lod0();
 
     Geometry {
@@ -456,14 +456,19 @@ fn build(device: &wgpu::Device, mesh: &rbx_mesh::Mesh, skin: Skin) -> Geometry {
     }
 }
 
-/// `mesh`'s vertices in the format `skin`'s pipeline reads.
-fn vertex_bytes(mesh: &rbx_mesh::Mesh, skin: Skin) -> Vec<u8> {
+/// `mesh`'s vertices in the format `skin`'s pipeline reads. Only a union
+/// drawn in its pieces' colours keeps its vertex colours: Roblox draws no
+/// other mesh's.
+fn vertex_bytes(mesh: &rbx_mesh::Mesh, skin: Skin, painted: bool) -> Vec<u8> {
     match skin {
         Skin::Plain => bytemuck::cast_slice(
             &mesh
                 .vertices
                 .iter()
-                .map(|vertex| BoxVertex::new(vertex.position, vertex.normal))
+                .map(|vertex| match painted {
+                    true => BoxVertex::painted(vertex.position, vertex.normal, vertex.color),
+                    false => BoxVertex::new(vertex.position, vertex.normal),
+                })
                 .collect::<Vec<_>>(),
         )
         .to_vec(),

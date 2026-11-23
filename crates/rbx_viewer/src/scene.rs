@@ -82,6 +82,7 @@ pub(crate) use union::fit as union_fit;
 // Read by the mesh export, which leaves out what these say draws nothing.
 pub(crate) use shape::draws_nothing;
 pub(crate) use union::is_empty as union_is_empty;
+pub(crate) use union::is_painted as is_painted_union;
 pub(crate) use union::triangles as union_triangles;
 pub(crate) use union::{unit_mesh, Evaluations as UnionEvaluations};
 

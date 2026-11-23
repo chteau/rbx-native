@@ -102,7 +102,7 @@ fn a_version_five_blob_decodes_its_first_lod() {
     assert_eq!(mesh.vertices[2].position, [3.0, 0.5, 2.0]);
     assert_eq!(mesh.vertices[2].normal, [0.0, 1.0, 0.0]);
     assert_eq!(mesh.bounds.min, [-3.0, 0.5, -2.0]);
-    assert_eq!(baked.color, Some([20, 200, 40]));
+    assert!(super::tests::has_color(mesh, [20, 200, 40]));
 }
 
 #[test]

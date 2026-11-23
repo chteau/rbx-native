@@ -103,7 +103,13 @@ fn evaluate_node(node: &Node, cache: &mut Vec<(ShapeKind, MeshData)>) -> Result<
                     cache.len() - 1
                 }
             };
-            Ok(Solid::from_mesh(&cache[slot].1, leaf.model()))
+            // Every leaf, negated or not, paints the faces it leaves behind:
+            // a hole's walls show the negated part's colour in Studio.
+            let color = match leaf.properties.get("Color3uint8") {
+                Some(&Variant::Color3uint8 { r, g, b }) => [r, g, b],
+                _ => super::super::FALLBACK_COLOR,
+            };
+            Ok(Solid::from_mesh(&cache[slot].1, leaf.model()).painted(color))
         }
         Node::Operation { children, .. } => {
             let mut positive: Option<Solid> = None;
@@ -129,56 +135,6 @@ fn evaluate_node(node: &Node, cache: &mut Vec<(ShapeKind, MeshData)>) -> Result<
                 result = result.subtract(negative)?;
             }
             Ok(result)
-        }
-    }
-}
-
-/// The leaf colour a union shows when `UsePartColor` is off: Roblox keeps
-/// each original piece's own colour then, but this module's one mesh can
-/// only carry a single tint (no per-facet provenance survives the boolean),
-/// so it picks the additive leaf with the *largest volume*, the one most
-/// likely to dominate what a viewer actually sees, rather than whichever
-/// leaf happens to come first in the tree's own (arbitrary, DOM-order)
-/// traversal, which would let a small differently-coloured accent piece
-/// override the colour of the lump it sits on just by decoding first.
-pub(super) fn largest_additive_color(root: &Node) -> Option<[u8; 3]> {
-    let mut cache = Vec::new();
-    let mut best: Option<(f64, [u8; 3])> = None;
-    visit_additive_leaves(root, &mut cache, &mut best);
-    best.map(|(_, color)| color)
-}
-
-fn visit_additive_leaves(
-    node: &Node,
-    cache: &mut Vec<(ShapeKind, MeshData)>,
-    best: &mut Option<(f64, [u8; 3])>,
-) {
-    match node {
-        Node::Leaf(leaf) if !leaf.negate => {
-            let Some(&Variant::Color3uint8 { r, g, b }) = leaf.properties.get("Color3uint8") else {
-                return;
-            };
-            let kind = leaf.geometry.kind;
-            let slot = match cache.iter().position(|(known, _)| *known == kind) {
-                Some(slot) => slot,
-                None => {
-                    cache.push((kind, unit_mesh(kind)));
-                    cache.len() - 1
-                }
-            };
-            let volume = Solid::from_mesh(&cache[slot].1, leaf.model())
-                .volume()
-                .abs();
-            if !matches!(best, Some((seen, _)) if *seen >= volume) {
-                *best = Some((volume, [r, g, b]));
-            }
-        }
-        Node::Leaf(_) => {}
-        Node::Operation { negate: true, .. } => {}
-        Node::Operation { children, .. } => {
-            for child in children {
-                visit_additive_leaves(child, cache, best);
-            }
         }
     }
 }

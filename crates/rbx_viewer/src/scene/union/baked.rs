@@ -152,12 +152,10 @@ struct Decoded {
     indices: Vec<u32>,
 }
 
-/// A decoded union mesh and the colour most of its surface was baked in,
-/// what paints it where `UsePartColor` is off, as the biggest leaf's colour
-/// does for a carved one.
+/// A decoded union mesh, each corner in the colour it was baked in, what
+/// paints it where `UsePartColor` is off.
 pub(super) struct Baked {
     pub(super) mesh: rbx_mesh::Mesh,
-    pub(super) color: Option<[u8; 3]>,
 }
 
 /// A `SolidMeshHolder`'s triangles, each corner its own vertex: its
@@ -226,7 +224,8 @@ fn finish(decoded: Decoded) -> Result<Baked, Error> {
     let vertices: Vec<rbx_mesh::Vertex> = positions
         .into_iter()
         .zip(normals)
-        .map(|(position, normal)| {
+        .zip(colors)
+        .map(|((position, normal), color)| {
             bounds.min = std::array::from_fn(|axis| bounds.min[axis].min(position[axis]));
             bounds.max = std::array::from_fn(|axis| bounds.max[axis].max(position[axis]));
             let (u, v) = rbx_csg::dominant_axes(normal);
@@ -237,15 +236,11 @@ fn finish(decoded: Decoded) -> Result<Baked, Error> {
                     position[u] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                     position[v] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                 ],
-                // The renderer multiplies vertex colour in; the union's own
-                // colour is the instance's, so the baked tint must not darken
-                // it a second time.
-                color: [255; 4],
+                color,
             }
         })
         .collect();
 
-    let color = dominant_color(&vertices, &colors, &indices);
     Ok(Baked {
         mesh: rbx_mesh::Mesh {
             // A CSGMDL version, not a `.mesh` header one: there is none to echo.
@@ -255,32 +250,7 @@ fn finish(decoded: Decoded) -> Result<Baked, Error> {
             lods: Vec::new(),
             bounds,
         },
-        color,
     })
-}
-
-/// The vertex colour covering the most triangle area, read off each
-/// triangle's first corner (a union bakes one colour per source part, so a
-/// triangle never straddles two).
-fn dominant_color(
-    vertices: &[rbx_mesh::Vertex],
-    colors: &[[u8; 4]],
-    indices: &[u32],
-) -> Option<[u8; 3]> {
-    let mut areas: Vec<([u8; 3], f32)> = Vec::new();
-    for triangle in indices.as_chunks::<3>().0 {
-        let [pa, pb, pc] = triangle.map(|i| Vec3::from(vertices[i as usize].position));
-        let area = (pb - pa).cross(pc - pa).length();
-        let [r, g, b, _] = colors[triangle[0] as usize];
-        match areas.iter_mut().find(|(known, _)| *known == [r, g, b]) {
-            Some((_, total)) => *total += area,
-            None => areas.push(([r, g, b], area)),
-        }
-    }
-    areas
-        .into_iter()
-        .max_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(color, _)| color)
 }
 
 /// The `SolidMeshHolder`, `MeshData2` or `MeshData` a union or

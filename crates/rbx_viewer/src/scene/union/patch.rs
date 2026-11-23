@@ -14,7 +14,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::super::material::Catalog;
 use super::super::{Part, Resolved, ResolvedInstance};
-use super::{csg, from_operation, Entry, Evaluated, Evaluations};
+use super::{from_operation, Entry, Evaluated, Evaluations};
 
 /// The single-instance counterpart of [`super::plan`], see
 /// `filemesh::patch::replan`.
@@ -67,34 +67,18 @@ impl Entry {
     }
 
     /// The instance [`super::resolve`] would build for this entry against
-    /// `evaluated`'s computed mesh, `None` where a fresh resolution would
-    /// drop it (fully transparent) or would need a mesh `resolved` does not
-    /// hold, which only a load computes and uploads.
+    /// its computed mesh, `None` where a fresh resolution would drop it
+    /// (fully transparent) or would need a mesh `resolved` does not hold,
+    /// which only a load computes and uploads.
     ///
-    /// Where `UsePartColor` is off the colour comes from the operation tree,
-    /// exactly as `resolve` takes it: the tree is right here, so that is a
-    /// patch like any other rather than something to rebuild for.
-    pub(in crate::scene) fn patched(
-        &self,
-        evaluated: &Evaluated,
-        resolved: &Resolved,
-    ) -> Option<ResolvedInstance> {
-        if self.alpha <= 0.0 || !resolved.meshes.contains_key(&self.asset) {
+    /// Where `UsePartColor` is off the colours are the mesh's own, so
+    /// toggling it is a patch like any other rather than a rebuild.
+    pub(in crate::scene) fn patched(&self, resolved: &Resolved) -> Option<ResolvedInstance> {
+        let instance = self.instance();
+        if self.alpha <= 0.0 || !resolved.meshes.contains_key(&instance.mesh) {
             return None;
         }
-        Some(self.instance(self.carved_color(evaluated)))
-    }
-
-    /// The linear colour a computed union mesh is painted: the union's own
-    /// where `UsePartColor` is on, and otherwise the biggest additive leaf's,
-    /// which only the operation tree knows. Shared with [`super::resolve`] so
-    /// a patched union and a rebuilt one can never be painted differently.
-    pub(super) fn carved_color(&self, evaluated: &Evaluated) -> [f32; 3] {
-        self.color
-            .or_else(|| csg::largest_additive_color(&evaluated.tree))
-            .or(evaluated.baked_color)
-            .unwrap_or(super::super::FALLBACK_COLOR)
-            .map(|channel| super::super::srgb_to_linear(f32::from(channel) / 255.0))
+        Some(instance)
     }
 
     /// The pieces [`super::resolve`] would draw this union as when its
