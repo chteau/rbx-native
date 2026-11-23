@@ -17,6 +17,16 @@
 //! Nothing is kept for an end that isn't connected: a dropped connection
 //! loses what was in flight, and [`Event::Connected`] after a
 //! [`Event::Disconnected`] is the caller's cue to ask for a fresh start.
+//!
+//! The hosted relay ([`crate::host`]) and the Worker (`relay/`) both serve
+//! that route. A plain ntfy server has no routes of ours, so over
+//! [`RelayKind::Ntfy`] each end publishes to the topic of the end it
+//! addresses (`rbxnp-<room>-play-<16 hex>`, all zeros for everyone) and
+//! streams its own and the everyone topic: a message there is lines of
+//! `<from, 16 hex> <base64 of a sealed chunk>`, chunks small enough for
+//! ntfy's 4 KB message limit. The seal is the same, so ntfy can't read or
+//! forge them either; it only needs to let one end publish fast enough
+//! (a self-hosted server: public ntfy.sh allows far too few messages).
 
 use std::collections::HashMap;
 use std::net::TcpStream;
@@ -29,8 +39,11 @@ use std::time::Duration;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
+use base64::Engine as _;
+
 use crate::client::connect_route;
 use crate::crypt;
+use crate::relay::RelayKind;
 
 /// The most of a message one WebSocket message carries.
 pub const CHUNK_BYTES: usize = 192 * 1024;
@@ -44,6 +57,11 @@ const BACKOFF_START: Duration = Duration::from_millis(250);
 const BACKOFF_MAX: Duration = Duration::from_secs(5);
 /// Messages half put together, before the oldest are given up on.
 const MOST_PARTIAL: usize = 32;
+/// The most of a message one ntfy line carries: sealed and in base64 it
+/// stays under ntfy's 4096 byte message limit with room to spare.
+const NTFY_CHUNK_BYTES: usize = 2048;
+/// The most one ntfy message (lines of chunks) holds.
+const NTFY_MESSAGE_BYTES: usize = 3800;
 
 /// Where and as whom to connect.
 #[derive(Debug, Clone)]
@@ -56,6 +74,9 @@ pub struct Config {
     pub user_id: u64,
     /// This editor's end ([`new_pid`]).
     pub pid: u64,
+    /// The room's transport: the play route on the hosted relay or the
+    /// Worker, or topics on a plain ntfy server.
+    pub kind: RelayKind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +95,9 @@ pub enum Event {
 pub struct Stats {
     pub sent: AtomicU64,
     pub received: AtomicU64,
+    /// Message bytes handed to [`Link::send`] and not written yet: what a
+    /// slow link is behind by.
+    pub queued: AtomicU64,
 }
 
 /// The handle; dropping it closes the connection.
@@ -104,7 +128,12 @@ impl Link {
         let (thread_stop, thread_stats) = (stop.clone(), stats.clone());
         thread::Builder::new()
             .name("presence-play".into())
-            .spawn(move || run(config, out_rx, events_tx, thread_stop, thread_stats))
+            .spawn(move || match config.kind {
+                RelayKind::Ntfy => ntfy::run(config, out_rx, events_tx, thread_stop, thread_stats),
+                RelayKind::Hosted | RelayKind::Worker => {
+                    run(config, out_rx, events_tx, thread_stop, thread_stats)
+                }
+            })
             .expect("a thread for Local Run play");
         (Link { out, stop, stats }, events)
     }
@@ -112,12 +141,29 @@ impl Link {
     /// Sends `bytes` to end `to` (0: everyone else in the room). Dropped
     /// while disconnected.
     pub fn send(&self, to: u64, bytes: Vec<u8>) {
+        self.stats
+            .queued
+            .fetch_add(bytes.len() as u64, Ordering::Relaxed);
         let _ = self.out.send((to, bytes));
     }
 
     pub fn stats(&self) -> &Stats {
         &self.stats
     }
+
+    /// Bytes sent and not on the wire yet.
+    pub fn backlog(&self) -> u64 {
+        self.stats.queued.load(Ordering::Relaxed)
+    }
+}
+
+/// A message left the queue (written, or given up on).
+fn dequeued(stats: &Stats, bytes: &[u8]) {
+    let _ = stats
+        .queued
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |q| {
+            Some(q.saturating_sub(bytes.len() as u64))
+        });
 }
 
 impl Drop for Link {
@@ -126,12 +172,13 @@ impl Drop for Link {
     }
 }
 
-/// `bytes` cut into chunks, each `id`, its index and the count first.
-fn chunks(id: u32, bytes: &[u8]) -> Vec<Vec<u8>> {
+/// `bytes` cut into chunks of at most `size`, each `id`, its index and
+/// the count first.
+fn chunks(id: u32, bytes: &[u8], size: usize) -> Vec<Vec<u8>> {
     let parts: Vec<&[u8]> = if bytes.is_empty() {
         vec![&[]]
     } else {
-        bytes.chunks(CHUNK_BYTES).collect()
+        bytes.chunks(size).collect()
     };
     let count = parts.len() as u16;
     parts
@@ -215,7 +262,9 @@ fn run(
     let mut next_id = 0u32;
     while !stop.load(Ordering::SeqCst) {
         // What waited for a connection is stale by now (input, frames).
-        while out.try_recv().is_ok() {}
+        while let Ok((_, bytes)) = out.try_recv() {
+            dequeued(&stats, &bytes);
+        }
         let why = match connect_route(
             &config.relay_url,
             &config.room,
@@ -279,16 +328,18 @@ fn session(
                 }
             };
             let aad = crypt::play_aad(&config.room, config.pid, to);
-            for chunk in chunks(*next_id, &bytes) {
+            for chunk in chunks(*next_id, &bytes, CHUNK_BYTES) {
                 let mut message = to.to_be_bytes().to_vec();
                 message.extend(crypt::seal(&config.enc_key, &aad, &chunk));
                 stats
                     .sent
                     .fetch_add(message.len() as u64, Ordering::Relaxed);
                 if let Err(e) = socket.send(Message::binary(message)) {
+                    dequeued(stats, &bytes);
                     return Some(e.to_string());
                 }
             }
+            dequeued(stats, &bytes);
             *next_id = next_id.wrapping_add(1);
         }
         match socket.read() {
@@ -298,13 +349,7 @@ fn session(
                     .fetch_add(data.len() as u64, Ordering::Relaxed);
                 let from = u64::from_be_bytes(data[..8].try_into().unwrap_or_default());
                 let sealed = &data[8..];
-                let chunk = [config.pid, 0].into_iter().find_map(|to| {
-                    crypt::open(
-                        &config.enc_key,
-                        &crypt::play_aad(&config.room, from, to),
-                        sealed,
-                    )
-                });
+                let chunk = open_chunk(config, from, sealed);
                 if let Some(bytes) = chunk.and_then(|c| partial.add(from, &c)) {
                     if events.send(Event::Message { from, bytes }).is_err() {
                         return None;
@@ -323,6 +368,198 @@ fn session(
     }
 }
 
+/// Opens a sealed chunk from `from`, addressed to `pid` or to everyone.
+fn open_chunk(config: &Config, from: u64, sealed: &[u8]) -> Option<Vec<u8>> {
+    [config.pid, 0].into_iter().find_map(|to| {
+        crypt::open(
+            &config.enc_key,
+            &crypt::play_aad(&config.room, from, to),
+            sealed,
+        )
+    })
+}
+
+/// Play over a plain ntfy server (see the module docs).
+mod ntfy {
+    use std::io::{BufRead, BufReader};
+
+    use super::*;
+
+    /// The topic messages to `pid` are published to (0: everyone).
+    pub(super) fn topic(room: &str, pid: u64) -> String {
+        format!("{}-play-{pid:016x}", crate::relay::ntfy_topic(room))
+    }
+
+    fn agent(timeout: Option<Duration>) -> ureq::Agent {
+        rbx_net::config()
+            .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
+            .http_status_as_error(false)
+            .timeout_global(timeout)
+            .build()
+            .into()
+    }
+
+    /// The lines one message to `to` goes as.
+    fn lines(config: &Config, to: u64, id: u32, bytes: &[u8]) -> Vec<String> {
+        let aad = crypt::play_aad(&config.room, config.pid, to);
+        chunks(id, bytes, NTFY_CHUNK_BYTES)
+            .iter()
+            .map(|chunk| {
+                let sealed = crypt::seal(&config.enc_key, &aad, chunk);
+                format!(
+                    "{:016x} {}",
+                    config.pid,
+                    base64::engine::general_purpose::STANDARD.encode(sealed)
+                )
+            })
+            .collect()
+    }
+
+    pub(super) fn run(
+        config: Config,
+        out: Receiver<(u64, Vec<u8>)>,
+        events: Sender<Event>,
+        stop: Arc<AtomicBool>,
+        stats: Arc<Stats>,
+    ) {
+        let base = config.relay_url.trim_end_matches('/').to_owned();
+        {
+            let (config, events, stop, stats) =
+                (config.clone(), events.clone(), stop.clone(), stats.clone());
+            let base = base.clone();
+            thread::Builder::new()
+                .name("presence-play-ntfy".into())
+                .spawn(move || listen(&config, &base, &events, &stop, &stats))
+                .expect("a thread for Local Run play over ntfy");
+        }
+        let publisher = agent(Some(Duration::from_secs(10)));
+        let mut next_id = 0u32;
+        while !stop.load(Ordering::SeqCst) {
+            let first = match out.recv_timeout(Duration::from_millis(50)) {
+                Ok(first) => first,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            };
+            // Everything waiting goes now, a message per address holding
+            // as many lines as fit.
+            let mut waiting = vec![first];
+            while let Ok(more) = out.try_recv() {
+                waiting.push(more);
+            }
+            let mut bodies: Vec<(u64, String)> = Vec::new();
+            for (to, bytes) in &waiting {
+                for line in lines(&config, *to, next_id, bytes) {
+                    match bodies.last_mut() {
+                        Some((at, body))
+                            if *at == *to && body.len() + line.len() < NTFY_MESSAGE_BYTES =>
+                        {
+                            body.push('\n');
+                            body.push_str(&line);
+                        }
+                        _ => bodies.push((*to, line)),
+                    }
+                }
+                next_id = next_id.wrapping_add(1);
+            }
+            for (to, body) in bodies {
+                let sent = publisher
+                    .post(format!("{base}/{}", topic(&config.room, to)))
+                    .header("Content-Type", "text/plain")
+                    .send(body.as_str());
+                if sent.is_ok_and(|r| r.status().is_success()) {
+                    stats.sent.fetch_add(body.len() as u64, Ordering::Relaxed);
+                }
+            }
+            for (_, bytes) in &waiting {
+                dequeued(&stats, bytes);
+            }
+        }
+    }
+
+    /// Streams this end's topic and the everyone topic until stopped,
+    /// reconnecting with backoff.
+    fn listen(
+        config: &Config,
+        base: &str,
+        events: &Sender<Event>,
+        stop: &AtomicBool,
+        stats: &Stats,
+    ) {
+        let topics = format!(
+            "{},{}",
+            topic(&config.room, config.pid),
+            topic(&config.room, 0)
+        );
+        let listener = agent(None);
+        let mut delay = BACKOFF_START;
+        while !stop.load(Ordering::SeqCst) {
+            let why = match listener.get(format!("{base}/{topics}/json")).call() {
+                Ok(response) if response.status().is_success() => {
+                    delay = BACKOFF_START;
+                    if events.send(Event::Connected).is_err() {
+                        return;
+                    }
+                    let mut partial = Partial::default();
+                    let reader = BufReader::new(response.into_body().into_reader());
+                    let mut why = "the ntfy stream ended".to_owned();
+                    for line in reader.lines() {
+                        if stop.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        let Ok(line) = line else {
+                            why = "the ntfy stream broke".to_owned();
+                            break;
+                        };
+                        stats
+                            .received
+                            .fetch_add(line.len() as u64, Ordering::Relaxed);
+                        for (from, bytes) in read(config, &line, &mut partial) {
+                            if events.send(Event::Message { from, bytes }).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    why
+                }
+                Ok(response) => format!("ntfy: HTTP {}", response.status().as_u16()),
+                Err(e) => e.to_string(),
+            };
+            if events.send(Event::Disconnected(why)).is_err() {
+                return;
+            }
+            nap(stop, delay);
+            delay = (delay * 2).min(BACKOFF_MAX);
+        }
+    }
+
+    /// The whole messages one line of ntfy's JSON stream completes.
+    pub(super) fn read(config: &Config, line: &str, partial: &mut Partial) -> Vec<(u64, Vec<u8>)> {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            return Vec::new();
+        };
+        if event.get("event").and_then(|e| e.as_str()) != Some("message") {
+            return Vec::new();
+        }
+        let Some(text) = event.get("message").and_then(|m| m.as_str()) else {
+            return Vec::new();
+        };
+        text.lines()
+            .filter_map(|line| {
+                let (from, sealed) = line.split_once(' ')?;
+                let from = u64::from_str_radix(from, 16).ok()?;
+                if from == config.pid {
+                    return None;
+                }
+                let sealed = base64::engine::general_purpose::STANDARD
+                    .decode(sealed)
+                    .ok()?;
+                let chunk = open_chunk(config, from, &sealed)?;
+                Some((from, partial.add(from, &chunk)?))
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,6 +573,7 @@ mod tests {
             enc_key: crypt::enc_key(secret, 1),
             user_id: 7,
             pid,
+            kind: RelayKind::Hosted,
         }
     }
 
@@ -388,11 +626,114 @@ mod tests {
     #[test]
     fn a_message_is_cut_and_put_back_together() {
         let bytes: Vec<u8> = (0..CHUNK_BYTES + 10).map(|i| (i % 251) as u8).collect();
-        let parts = chunks(9, &bytes);
+        let parts = chunks(9, &bytes, CHUNK_BYTES);
         assert_eq!(parts.len(), 2);
         let mut partial = Partial::default();
         assert_eq!(partial.add(5, &parts[1]), None);
         assert_eq!(partial.add(5, &parts[0]), Some(bytes));
-        assert_eq!(partial.add(5, &chunks(1, b"")[0]), Some(Vec::new()));
+        assert_eq!(
+            partial.add(5, &chunks(1, b"", CHUNK_BYTES)[0]),
+            Some(Vec::new())
+        );
+    }
+
+    /// A stand-in ntfy server: `POST /<topic>` hands the body to every
+    /// stream open on that topic; `GET /<a>,<b>/json` streams them as
+    /// ntfy's JSON lines, an `open` event first.
+    fn fake_ntfy() -> String {
+        use std::io::{BufRead, BufReader, Read, Write};
+        type Streams = Arc<std::sync::Mutex<Vec<(Vec<String>, TcpStream)>>>;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let streams: Streams = Arc::default();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let streams = streams.clone();
+                thread::spawn(move || {
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    let mut parts = line.split_whitespace();
+                    let method = parts.next().unwrap_or("").to_owned();
+                    let path = parts
+                        .next()
+                        .unwrap_or("")
+                        .trim_start_matches('/')
+                        .to_owned();
+                    let mut len = 0;
+                    loop {
+                        let mut header = String::new();
+                        reader.read_line(&mut header).unwrap();
+                        if header.trim().is_empty() {
+                            break;
+                        }
+                        if let Some(v) = header.to_ascii_lowercase().strip_prefix("content-length:")
+                        {
+                            len = v.trim().parse().unwrap();
+                        }
+                    }
+                    if method == "POST" {
+                        let mut body = vec![0; len];
+                        reader.read_exact(&mut body).unwrap();
+                        let event = serde_json::json!({
+                            "event": "message", "topic": path,
+                            "message": String::from_utf8(body).unwrap(),
+                        })
+                        .to_string()
+                            + "\n";
+                        for (topics, out) in streams.lock().unwrap().iter_mut() {
+                            if topics.contains(&path) {
+                                let _ = out.write_all(event.as_bytes());
+                            }
+                        }
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}"
+                        );
+                    } else {
+                        let topics = path.trim_end_matches("/json");
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/x-ndjson\r\n\r\n{}\n",
+                            serde_json::json!({ "event": "open", "topic": topics })
+                        );
+                        let topics = topics.split(',').map(str::to_owned).collect();
+                        streams.lock().unwrap().push((topics, stream));
+                    }
+                });
+            }
+        });
+        url
+    }
+
+    /// Two ends over a plain ntfy server: addressed and broadcast messages,
+    /// a big one cut into ntfy-sized lines, and nothing heard back from
+    /// oneself.
+    #[test]
+    fn ends_reach_each_other_through_ntfy_sealed() {
+        let url = fake_ntfy();
+        let key = crate::auth::derive_key("secret", 1);
+        let ntfy = |pid| Config {
+            kind: RelayKind::Ntfy,
+            ..config(&url, &key, "secret", pid)
+        };
+        let (a, a_events) = Link::start(ntfy(1));
+        let (b, b_events) = Link::start(ntfy(2));
+        for events in [&a_events, &b_events] {
+            assert_eq!(next(events), Event::Connected);
+        }
+        a.send(2, b"to b".to_vec());
+        assert_eq!(message(&b_events), (1, b"to b".to_vec()));
+        b.send(0, b"to everyone".to_vec());
+        assert_eq!(message(&a_events), (2, b"to everyone".to_vec()));
+        let big: Vec<u8> = (0..NTFY_CHUNK_BYTES * 5 + 3).map(|i| i as u8).collect();
+        a.send(2, big.clone());
+        assert_eq!(message(&b_events), (1, big));
+        assert!(
+            a_events.recv_timeout(Duration::from_millis(300)).is_err(),
+            "a hears nothing of its own"
+        );
+        assert_eq!(a.backlog(), 0, "everything left");
     }
 }
