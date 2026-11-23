@@ -32,6 +32,7 @@ use rbx_lua::server::{Arg, Outgoing, Packet, To};
 use crate::animation::TrackOp;
 use crate::humanoid::State;
 use crate::link::{Meter, Network, Pipe};
+use crate::remote_log::{packet_size, Ends, Fate, RemoteLog};
 use crate::replay::{self, Action, Recording, Trace};
 use crate::sim::{Placed, Simulation};
 use crate::streaming::{self, Integrity, Kind, Settings};
@@ -168,7 +169,8 @@ enum Down {
 /// order.
 enum Up {
     Packets(Vec<Packet>),
-    Unreliable(Packet),
+    /// With the Remote inspector's number for it, while it captures.
+    Unreliable(Packet, Option<u64>),
     Physics(u64, Vec<Placed>),
     Rest {
         states: Vec<(Ref, State)>,
@@ -257,6 +259,8 @@ pub struct Session {
     frames: u64,
     /// Server seconds a join waits for, see [`Session::set_join_after`].
     join_after: f64,
+    /// The Remote inspector's capture, see [`Session::capture_remotes`].
+    remote_log: Option<RemoteLog>,
     /// Joins [`Session::join_later`] queued, made once `join_after` passed.
     pending: Vec<(String, i64, Option<WeakDom>)>,
     /// Why a queued join failed, not yet taken.
@@ -329,6 +333,7 @@ impl Session {
             wall_clock: false,
             profile: Default::default(),
             frames: 0,
+            remote_log: None,
             join_after: 0.0,
             pending: Vec::new(),
             join_failures: Vec::new(),
@@ -668,7 +673,7 @@ impl Session {
                             self.server.receive(Some(player), packet);
                         }
                     }
-                    Up::Unreliable(packet) => {
+                    Up::Unreliable(packet, call) => {
                         let second = now / FRAME_HZ as u64;
                         if client.burst.0 != second {
                             client.burst = (second, 0);
@@ -676,6 +681,8 @@ impl Session {
                         client.burst.1 += 1;
                         if client.burst.1 <= UNRELIABLE_PER_SECOND {
                             self.server.receive(Some(player), packet);
+                        } else if let (Some(log), Some(call)) = (self.remote_log.as_mut(), call) {
+                            log.fate(call, Fate::RateLimited);
                         }
                     }
                     Up::Physics(frame, parts) => {
@@ -733,8 +740,16 @@ impl Session {
 
         let network = self.network;
         let rtt = network.ping();
+        let time = sent as f64 / FRAME_HZ;
         let server = &self.server;
+        let log = &mut self.remote_log;
+        if let Some(log) = log.as_mut() {
+            log_oversized(log, server, &self.clients, None, time);
+        }
         for client in &mut self.clients {
+            if log.is_some() {
+                client.sim.trace_remotes(true);
+            }
             client.sim.renamed_stats.extend(renamed.iter().copied());
             let owned = server.ownership_mut().owned_by(client.player);
             // Paused, the client stops simulating its character.
@@ -742,6 +757,7 @@ impl Session {
             client.sim.ownership_mut().owned = if paused { HashSet::new() } else { owned };
             client.sim.sync_collision_groups(server);
             let mut unreliable = Vec::new();
+            let mut calls = Vec::new();
             let frame = if client.sent_place {
                 let mut snaps = Vec::new();
                 if let Some(character) = client.deferred.take() {
@@ -751,11 +767,31 @@ impl Session {
                     }
                 }
                 for op in &ops {
-                    match client.snap(server, op) {
-                        Some(Snap::Packet(packet)) if unreliable_event(&packet) => {
-                            unreliable.push(packet);
+                    let snap = client.snap(server, op);
+                    let call = match (log.as_mut(), op, &snap) {
+                        (Some(log), Op::Packet(out), Some(Snap::Packet(_))) => {
+                            let (sdom, cdom) = (server.dom(), client.sim.dom());
+                            let ends = Ends {
+                                sender: &sdom,
+                                receiver: &cdom,
+                                player: Some(client.player),
+                                name: &client.name,
+                                time,
+                            };
+                            let latency = network.down.latency;
+                            let caller = out.caller.clone();
+                            log.sent(&ends, out.to, caller, &out.packet, Fate::Delivered, latency)
                         }
-                        snap => snaps.extend(snap),
+                        _ => None,
+                    };
+                    match snap {
+                        Some(Snap::Packet(packet)) if unreliable_event(&packet) => {
+                            unreliable.push((packet, call));
+                        }
+                        snap => {
+                            calls.extend(call);
+                            snaps.extend(snap);
+                        }
                     }
                 }
                 Down::Ops(snaps)
@@ -766,12 +802,17 @@ impl Session {
             if let Down::Place(snaps) | Down::Ops(snaps) = &frame {
                 client.meters[DOWN_DATA].add(sent, snaps.iter().map(snap_size).sum());
             }
-            client.down.reliable(sent, &network.down, rtt, frame);
-            for packet in unreliable {
+            let resent = client.down.reliable(sent, &network.down, rtt, frame);
+            if let Some(log) = log.as_mut() {
+                log.resent(&calls, resent);
+            }
+            for (packet, call) in unreliable {
                 let bytes = packet_size(&packet);
                 let down = Down::Unreliable(packet);
                 if client.down.unreliable(sent, &network.down, down).is_ok() {
                     client.meters[DOWN_DATA].add(sent, bytes);
+                } else if let (Some(log), Some(call)) = (log.as_mut(), call) {
+                    log.fate(call, Fate::Lost);
                 }
             }
             if let Some(stream) = client.snap_stream(server) {
@@ -807,7 +848,12 @@ impl Session {
                 client.apply(frame);
             }
             client.sim.step();
-            client.collect(sent, &network);
+            client.collect(sent, &network, server, log.as_mut(), time);
+        }
+        if let Some(log) = log.as_mut() {
+            for index in 0..self.clients.len() {
+                log_oversized(log, server, &self.clients, Some(index), time);
+            }
         }
         self.meter(sent);
 
@@ -851,6 +897,31 @@ impl Session {
         }
         let [down, down_physics, up, up_physics] = server;
         write_rates(&self.server, [up, down, up_physics, down_physics]);
+    }
+
+    /// Starts or stops logging every remote call crossing the link (see
+    /// [`crate::remote_log`]); off, remotes cost nothing more.
+    pub fn capture_remotes(&mut self, on: bool) {
+        if on == self.remote_log.is_some() {
+            return;
+        }
+        self.remote_log = on.then(RemoteLog::default);
+        self.server.trace_remotes(on);
+        for client in &self.clients {
+            client.sim.trace_remotes(on);
+        }
+    }
+
+    pub fn capturing_remotes(&self) -> bool {
+        self.remote_log.is_some()
+    }
+
+    /// What the capture logged since the last call.
+    pub fn take_remote_events(&mut self) -> Vec<crate::remote_log::Event> {
+        self.remote_log
+            .as_mut()
+            .map(RemoteLog::take)
+            .unwrap_or_default()
     }
 
     /// The last frames' costs, oldest first (see [`crate::profile`]).
@@ -1798,16 +1869,40 @@ impl Client {
         }
     }
 
-    /// What the client sends the server after its frame `sent`.
-    fn collect(&mut self, sent: u64, network: &Network) {
+    /// What the client sends the server after its frame `sent`; `log`
+    /// notes the remote calls among it.
+    fn collect(
+        &mut self,
+        sent: u64,
+        network: &Network,
+        server: &Simulation,
+        mut log: Option<&mut RemoteLog>,
+        time: f64,
+    ) {
         let rtt = network.ping();
         let (unreliable, reliable): (Vec<_>, Vec<_>) = self
             .sim
             .take_outgoing()
             .into_iter()
             .filter(|o| matches!(o.to, To::Server))
-            .map(|o| o.packet)
-            .partition(unreliable_event);
+            .map(|o| {
+                let call = log.as_mut().and_then(|log| {
+                    let (cdom, sdom) = (self.sim.dom(), server.dom());
+                    let ends = Ends {
+                        sender: &cdom,
+                        receiver: &sdom,
+                        player: Some(self.player),
+                        name: &self.name,
+                        time,
+                    };
+                    let latency = network.up.latency;
+                    log.sent(&ends, o.to, o.caller, &o.packet, Fate::Delivered, latency)
+                });
+                (o.packet, call)
+            })
+            .partition(|(packet, _)| unreliable_event(packet));
+        let calls: Vec<u64> = reliable.iter().filter_map(|(_, call)| *call).collect();
+        let reliable: Vec<Packet> = reliable.into_iter().map(|(packet, _)| packet).collect();
         let parts: Vec<_> = {
             let owned = self.sim.ownership_mut().owned.clone();
             self.sim
@@ -1835,16 +1930,22 @@ impl Client {
 
         let bytes = reliable.iter().map(packet_size).sum();
         self.meters[UP_DATA].add(sent, bytes);
-        self.up
+        let resent = self
+            .up
             .reliable(sent, &network.up, rtt, Up::Packets(reliable));
-        for packet in unreliable {
+        if let Some(log) = log.as_mut() {
+            log.resent(&calls, resent);
+        }
+        for (packet, call) in unreliable {
             let bytes = packet_size(&packet);
             if self
                 .up
-                .unreliable(sent, &network.up, Up::Unreliable(packet))
+                .unreliable(sent, &network.up, Up::Unreliable(packet, call))
                 .is_ok()
             {
                 self.meters[UP_DATA].add(sent, bytes);
+            } else if let (Some(log), Some(call)) = (log.as_mut(), call) {
+                log.fate(call, Fate::Lost);
             }
         }
         let mut poses = std::mem::take(&mut self.carry_up);
@@ -1862,6 +1963,36 @@ impl Client {
             tools,
         };
         self.up.reliable(sent, &network.up, rtt, rest);
+    }
+}
+
+/// The `UnreliableRemoteEvent` calls a peer dropped for their size this
+/// frame: the server's (`client` `None`) or a client's.
+fn log_oversized(
+    log: &mut RemoteLog,
+    server: &Simulation,
+    clients: &[Client],
+    client: Option<usize>,
+    time: f64,
+) {
+    let sim = client
+        .and_then(|i| clients.get(i))
+        .map_or(server, |c| &c.sim);
+    for out in sim.take_oversized() {
+        let other = match (client, out.to) {
+            (Some(i), _) => clients.get(i),
+            (None, To::Player(p)) => clients.iter().find(|c| c.player == p),
+            _ => None,
+        };
+        let dom = sim.dom();
+        let ends = Ends {
+            sender: &dom,
+            receiver: &dom,
+            player: other.map(|c| c.player),
+            name: other.map_or("all", |c| c.name.as_str()),
+            time,
+        };
+        log.sent(&ends, out.to, out.caller, &out.packet, Fate::OverLimit, 0.0);
     }
 }
 
@@ -1900,20 +2031,6 @@ fn fresh(newest: &mut HashMap<Ref, u64>, frame: u64, poses: Vec<Placed>) -> Vec<
 
 /// About what a pose takes on the wire (a CFrame and two velocities).
 const POSE_BYTES: usize = 48;
-
-/// About what a packet takes on the wire, for `Stats`.
-fn packet_size(packet: &Packet) -> usize {
-    let wires = |w: &[rbx_lua::server::Wire]| w.iter().map(|w| w.size()).sum::<usize>();
-    8 + match packet {
-        Packet::Event { args, .. } | Packet::Invoke { args, .. } => wires(args),
-        Packet::Reply { result, .. } => match result {
-            Ok(values) => wires(values),
-            Err(message) => message.len(),
-        },
-        Packet::Chat { text, id, .. } => text.len() + id.len(),
-        Packet::Drag { phase, numbers, .. } => phase.len() + 8 * numbers.len(),
-    }
-}
 
 /// About what a replicated change takes on the wire, for `Stats`.
 fn snap_size(snap: &Snap) -> usize {

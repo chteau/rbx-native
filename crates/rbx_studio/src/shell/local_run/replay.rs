@@ -232,6 +232,7 @@ impl Shell {
             windows: Vec::new(),
             test_window: None,
             audible: None,
+            remotes: Default::default(),
         });
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);

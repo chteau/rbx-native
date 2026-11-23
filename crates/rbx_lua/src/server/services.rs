@@ -1900,6 +1900,7 @@ fn host_more(lua: &Lua, runtime: &Rc<Runtime>, host: &Table) -> Result<()> {
                         numbers,
                     },
                     at,
+                    caller: None,
                 });
                 Ok(())
             },

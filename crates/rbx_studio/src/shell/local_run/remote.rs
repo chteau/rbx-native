@@ -754,6 +754,7 @@ impl Shell {
             tabs: WeakEntity::new_invalid(),
             tab_shown: true,
             remote: true,
+            remotes: Default::default(),
         };
         let Some(build) = self.peer_shell(dom, &name, link) else {
             self.remote_guest_leave(cx);

@@ -377,6 +377,11 @@ pub const TESTS: &[Test] = &[
         tolerance: &[],
     },
     Test {
+        name: "RemotePayload",
+        source: include_str!("../conformance/tests/RemotePayload.luau"),
+        tolerance: &[],
+    },
+    Test {
         name: "ReplicationOrder",
         source: include_str!("../conformance/tests/ReplicationOrder.luau"),
         tolerance: &[],
@@ -761,6 +766,10 @@ const CLIENT_MODULES: &[(&str, &str)] = &[
     (
         "RemoteOrder",
         include_str!("../conformance/client/RemoteOrder.luau"),
+    ),
+    (
+        "RemotePayload",
+        include_str!("../conformance/client/RemotePayload.luau"),
     ),
     (
         "ReplicationOrder",

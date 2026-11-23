@@ -111,9 +111,16 @@ pub(in crate::shell) struct PeerLink {
     /// (`remote`): `host` is this editor's own window, which holds the
     /// connection.
     pub(in crate::shell) remote: bool,
+    /// The session's Remote inspector captures.
+    pub(super) remotes: crate::shell::remote_inspector::Shared,
 }
 
 impl PeerLink {
+    /// The window that started the session.
+    pub(in crate::shell) fn host(&self) -> Option<Entity<Shell>> {
+        self.host.upgrade()
+    }
+
     /// The shown peer's DataModel, where an edit made here goes.
     pub(super) fn shown_dom(&self, cx: &App) -> Option<Rc<RefCell<WeakDom>>> {
         let host = self.host.upgrade()?;
@@ -348,6 +355,7 @@ impl Shell {
                 .map_or_else(WeakEntity::new_invalid, |(_, view)| view.clone()),
             tab_shown: existing.is_none(),
             remote: false,
+            remotes: run.remotes.clone(),
         };
         let Some(build) = self.peer_shell(dom, &name, link) else {
             return;

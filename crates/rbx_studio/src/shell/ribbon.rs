@@ -695,6 +695,11 @@ impl Shell {
             (Panel::Loren, IconName::Layers, "Loren"),
             (Panel::FindInPlace, IconName::Search, "Find in Place"),
             (Panel::MicroProfiler, IconName::Activity, "MicroProfiler"),
+            (
+                Panel::RemoteInspector,
+                IconName::Network,
+                "Remote Inspector",
+            ),
             (Panel::Localization, IconName::Globe, "Localization"),
         ];
         let beta_hidden = super::ui_editor::beta_hidden_panels();

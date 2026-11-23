@@ -94,6 +94,9 @@ struct Running {
     audible: Option<Ref>,
     /// Server & Clients: players from collaborators' editors.
     remote: rbx_sim::remote::Host,
+    /// What the Remote inspector captured, shared with every test tab's
+    /// dock.
+    remotes: crate::shell::remote_inspector::Shared,
 }
 
 /// What the next run starts from after a teleport: the place it lands in
@@ -866,6 +869,7 @@ impl Shell {
             test_window: None,
             audible: None,
             remote: rbx_sim::remote::Host::default(),
+            remotes: Default::default(),
         });
         if windowed {
             push_row(
@@ -1216,9 +1220,13 @@ impl Shell {
 
     /// One tick of the frame loop: steps the frames due on the wall clock.
     fn local_run_tick(&mut self, cx: &mut Context<Self>) {
+        let showing = self.is_panel_showing(crate::shell::layout::Panel::RemoteInspector);
         let Some(run) = self.play.live.local.running.as_mut() else {
             return;
         };
+        // Only while a Remote inspector shows does the session log remotes.
+        let capture = showing || run.remotes.borrow().watched();
+        run.session.capture_remotes(capture);
         let now = Instant::now();
         let elapsed = now.duration_since(run.last).as_secs_f64();
         run.last = now;
@@ -1333,6 +1341,10 @@ impl Shell {
             if diverged.is_some() {
                 break;
             }
+        }
+        if capture {
+            let events = run.session.take_remote_events();
+            run.remotes.borrow_mut().take(events, run.session.time());
         }
         if due > steps || run.paused {
             run.clock = run.session.time();
@@ -1544,6 +1556,32 @@ impl Shell {
         self.play.live.local.running.as_ref().map(|r| &r.session)
     }
 
+    /// The Remote inspector's captures: this window's run's, or in a
+    /// Server & Clients tab, the run of the window that started it.
+    pub(in crate::shell) fn remote_store(&self) -> Option<crate::shell::remote_inspector::Shared> {
+        match (&self.play.live.local.running, &self.play.live.local.peer) {
+            (Some(run), _) => Some(run.remotes.clone()),
+            (None, Some(peer)) => Some(peer.remotes.clone()),
+            (None, None) => None,
+        }
+    }
+
+    /// The edited place's script a capture's caller names (a client's copy
+    /// of a StarterPlayerScripts script maps back to it).
+    pub(in crate::shell) fn remote_caller_script(&self, script: &str) -> Option<Ref> {
+        let path: Vec<String> = script.split('.').map(str::to_owned).collect();
+        let players: Vec<String> = self
+            .local_run_session()?
+            .clients
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
+        let place = self.edit_dom();
+        crate::shell::play::live::place_paths(&path, &players)
+            .iter()
+            .find_map(|candidate| crate::shell::play::live::find_path(place, candidate))
+    }
+
     /// Edits made to the shown copy during the run: written into the
     /// simulation's DOM (logged, so it routes them) and shown right away.
     pub(super) fn local_run_reflect(&mut self, changes: &[Change], cx: &mut Context<Self>) {
@@ -1600,8 +1638,9 @@ mod tests {
     }
 
     /// Tests never read `beta.json`, so every beta is off: Local Run's
-    /// ribbon tiles, menu item, MicroProfiler dock and its key, and the
-    /// Collaborators dock's "Join as player", are gone, not greyed.
+    /// ribbon tiles, menu item, MicroProfiler and Remote Inspector docks,
+    /// the MicroProfiler's key, and the Collaborators dock's "Join as
+    /// player", are gone, not greyed.
     #[test]
     fn with_the_beta_off_no_local_run_entry_is_present() {
         use crate::shell::ribbon::{test_tile_order, TestTile};
@@ -1632,6 +1671,7 @@ mod tests {
 
         let hidden = crate::shell::ui_editor::beta_hidden_panels();
         assert!(hidden.contains(&crate::shell::layout::Panel::MicroProfiler));
+        assert!(hidden.contains(&crate::shell::layout::Panel::RemoteInspector));
         assert!(!crate::shortcuts::Command::MicroProfiler.available());
     }
 

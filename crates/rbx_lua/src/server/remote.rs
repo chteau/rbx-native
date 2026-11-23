@@ -66,14 +66,21 @@ pub enum Wire {
 }
 
 impl Wire {
-    /// About how many bytes this value takes on the wire. Roblox's encoding
-    /// isn't documented: a type byte, then each type's raw fields.
+    /// How many bytes this value counts for against the 1000 byte
+    /// `UnreliableRemoteEvent` limit, fitted to the RemotePayload golden
+    /// (the largest payloads a real server let through): a type byte, a
+    /// length as a varint, then the raw fields. 997 characters of string
+    /// fit, 996 bytes of buffer, 110 numbers or 76 Vector3s in an array
+    /// (whose keys don't travel), 142 four-letter keys set to `true`.
+    /// Roblox compresses buffers, which this doesn't: a buffer of zeros
+    /// counts its full length here (4000 of them still get through).
     pub fn size(&self) -> usize {
         match self {
             Wire::Nil => 1,
             Wire::Bool(_) => 2,
             Wire::Number(_) | Wire::Instance(_) => 9,
-            Wire::String(bytes) | Wire::Buffer(bytes) => 3 + bytes.len(),
+            Wire::String(bytes) => 1 + varint(bytes.len()) + bytes.len(),
+            Wire::Buffer(bytes) => 2 + varint(bytes.len()) + bytes.len(),
             Wire::Enum { .. } => 5,
             Wire::Data(_, kind) => {
                 1 + match kind.as_str() {
@@ -85,12 +92,31 @@ impl Wire {
                 }
             }
             Wire::Table(entries) => {
+                let array = entries
+                    .iter()
+                    .enumerate()
+                    .all(|(i, (k, _))| *k == Wire::Number((i + 1) as f64));
+                let key = |k: &Wire| match k {
+                    _ if array => 0,
+                    // A dictionary's string keys go without a type byte.
+                    Wire::String(bytes) => varint(bytes.len()) + bytes.len(),
+                    other => other.size(),
+                };
                 3 + entries
                     .iter()
-                    .map(|(k, v)| k.size() + v.size())
+                    .map(|(k, v)| key(k) + v.size())
                     .sum::<usize>()
             }
         }
+    }
+}
+
+/// Bytes a length takes as a varint (7 bits a byte).
+fn varint(n: usize) -> usize {
+    match n {
+        0..=0x7F => 1,
+        0x80..=0x3FFF => 2,
+        _ => 3,
     }
 }
 
@@ -149,6 +175,25 @@ pub struct Outgoing {
     pub to: To,
     pub packet: Packet,
     pub at: u64,
+    /// The script line that sent it, while remotes are traced
+    /// ([`super::ServerVm::trace_remotes`]).
+    pub caller: Option<Caller>,
+}
+
+/// Where a remote call was made: the script's full name and the line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Caller {
+    pub script: String,
+    pub line: usize,
+}
+
+/// The innermost script frame of the running thread.
+fn caller(lua: &Lua) -> Option<Caller> {
+    let (script, line, _) = scheduler::script_frames(lua).into_iter().next()?;
+    Some(Caller {
+        script,
+        line: line.unwrap_or(0),
+    })
 }
 
 /// One VM's remote traffic: what it sent, and what arrived before anyone
@@ -163,6 +208,9 @@ pub(super) struct Remotes {
     /// Unreliable remotes already warned about losing an event for want
     /// of a listener.
     discarded: std::collections::HashSet<Ref>,
+    /// Tracing: callers are noted and over-limit events kept in `oversized`.
+    pub(super) trace: bool,
+    pub(super) oversized: Vec<Outgoing>,
 }
 
 pub(super) type Shared = Rc<RefCell<Remotes>>;
@@ -195,11 +243,20 @@ pub(super) fn member(
     let ctx = ctx.clone();
     let remotes = remotes.clone();
     let send = move |lua: &Lua, ctx: &Ctx, to: To, packet: Packet| {
+        let at = ctx.dom().mutations();
+        let mut remotes = remotes.borrow_mut();
+        let caller = if remotes.trace { caller(lua) } else { None };
+        let out = Outgoing {
+            to,
+            packet,
+            at,
+            caller,
+        };
         if let Packet::Event {
             args,
             unreliable: true,
             ..
-        } = &packet
+        } = &out.packet
         {
             let size: usize = args.iter().map(Wire::size).sum();
             if size > UNRELIABLE_LIMIT {
@@ -213,14 +270,13 @@ pub(super) fn member(
                         size - UNRELIABLE_LIMIT
                     ),
                 );
+                if remotes.trace {
+                    remotes.oversized.push(out);
+                }
                 return;
             }
         }
-        let at = ctx.dom().mutations();
-        remotes
-            .borrow_mut()
-            .outbox
-            .push(Outgoing { to, packet, at });
+        remotes.outbox.push(out);
     };
     // Each side's half of the API (the RemoteArgs golden).
     match key {
@@ -505,6 +561,7 @@ fn dispatcher(lua: &Lua, remotes: &Shared, to: To) -> Result<Function> {
             to,
             packet: Packet::Reply { id, result },
             at,
+            caller: None,
         });
         Ok(())
     })?;

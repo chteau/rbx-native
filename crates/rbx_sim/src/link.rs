@@ -103,15 +103,19 @@ impl<T> Pipe<T> {
     }
 
     /// Sends `item` reliably on frame `now`; `rtt` is the link's round trip,
-    /// how long a lost packet takes to be sent again.
-    pub(crate) fn reliable(&mut self, now: u64, way: &Way, rtt: f64, item: T) {
+    /// how long a lost packet takes to be sent again. Returns how many
+    /// times it had to be sent again.
+    pub(crate) fn reliable(&mut self, now: u64, way: &Way, rtt: f64, item: T) -> u32 {
         let mut due = now + self.delay(way);
+        let mut resent = 0;
         while self.lost(way) {
             due += Self::frames(rtt).max(1);
+            resent += 1;
         }
         due = due.max(self.tail);
         self.tail = due;
         self.push(due, item);
+        resent
     }
 
     /// Sends `item` unreliably on frame `now`: back if the link lost it.
