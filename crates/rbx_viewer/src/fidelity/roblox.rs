@@ -12,7 +12,7 @@
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::Scene;
+use super::{Scene, GENERATED_MESH, GENERATED_TEXTURE};
 
 pub const READY: &str = "FIDELITY_READY ";
 pub const QUALITY: &str = "FIDELITY_QUALITY ";
@@ -213,6 +213,74 @@ print("{QUALITY}" .. tostring(quality) .. " text " .. tostring(game:GetService("
 local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 local shown, screens, variants = nil, {{}}, {{}}
 local MaterialService = game:GetService("MaterialService")
+local AssetService = game:GetService("AssetService")
+local built = {{}}
+-- A generated mesh: its vertex count, each vertex's position, normal and
+-- UV, its triangle count and their 1-based vertex indices.
+local function meshFrom(text)
+	local n = {{}}
+	for word in string.gmatch(text, "%S+") do
+		table.insert(n, tonumber(word))
+	end
+	local mesh = AssetService:CreateEditableMesh()
+	local vertices, normals, uvs = {{}}, {{}}, {{}}
+	local at = 2
+	for i = 1, n[1] do
+		vertices[i] = mesh:AddVertex(Vector3.new(n[at], n[at + 1], n[at + 2]))
+		normals[i] = mesh:AddNormal(Vector3.new(n[at + 3], n[at + 4], n[at + 5]))
+		uvs[i] = mesh:AddUV(Vector2.new(n[at + 6], n[at + 7]))
+		at += 8
+	end
+	for _ = 1, n[at] do
+		local a, b, c = n[at + 1], n[at + 2], n[at + 3]
+		local face = mesh:AddTriangle(vertices[a], vertices[b], vertices[c])
+		mesh:SetFaceNormals(face, {{ normals[a], normals[b], normals[c] }})
+		mesh:SetFaceUVs(face, {{ uvs[a], uvs[b], uvs[c] }})
+		at += 3
+	end
+	return mesh
+end
+-- A generated image: width, height and its RGBA bytes in hex.
+local function imageFrom(text)
+	local w, h, hex = string.match(text, "^(%d+) (%d+) (%x+)$")
+	local image = AssetService:CreateEditableImage({{ Size = Vector2.new(tonumber(w), tonumber(h)) }})
+	local pixels = buffer.create(#hex // 2)
+	for i = 0, buffer.len(pixels) - 1 do
+		buffer.writeu8(pixels, i, tonumber(string.sub(hex, 2 * i + 1, 2 * i + 2), 16))
+	end
+	image:WritePixelsBuffer(Vector2.zero, image.Size, pixels)
+	return image
+end
+local function cached(text, make)
+	built[text] = built[text] or make(text)
+	return built[text]
+end
+-- Every MeshPart carrying a "{GENERATED_MESH}" StringValue becomes the
+-- MeshPart CreateMeshPartAsync makes of that mesh, its texture from a
+-- "{GENERATED_TEXTURE}" one, its other children moved over.
+local function generate(world)
+	for _, value in world:GetDescendants() do
+		if value.Name ~= "{GENERATED_MESH}" or not value:IsA("StringValue") then
+			continue
+		end
+		local holder = value.Parent
+		local part = AssetService:CreateMeshPartAsync(Content.fromObject(cached(value.Value, meshFrom)))
+		part.Anchored = true
+		part.Size, part.CFrame = holder.Size, holder.CFrame
+		part.Color, part.Material = holder.Color, holder.Material
+		local texture = holder:FindFirstChild("{GENERATED_TEXTURE}")
+		if texture then
+			part.TextureContent = Content.fromObject(cached(texture.Value, imageFrom))
+		end
+		for _, child in holder:GetChildren() do
+			if not child:IsA("StringValue") then
+				child.Parent = part
+			end
+		end
+		part.Parent = holder.Parent
+		holder:Destroy()
+	end
+end
 for _, scene in SCENES do
 	if shown then
 		shown:Destroy()
@@ -242,6 +310,7 @@ for _, scene in SCENES do
 		table.insert(variants, variant)
 	end
 	shown = folder.World:Clone()
+	generate(shown)
 	shown.Parent = workspace
 	for _, child in folder.Gui:GetChildren() do
 		local screen = child:Clone()

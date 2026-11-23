@@ -102,6 +102,7 @@ impl Scene {
             lighting,
             gui,
             materials,
+            live: false,
         };
         (self.build)(&mut builder);
         let mut dom = builder.dom;
@@ -119,6 +120,7 @@ impl Scene {
             lighting,
             gui,
             materials,
+            live: true,
         };
         (self.build)(&mut builder);
         builder.dom
@@ -132,9 +134,158 @@ pub struct Builder {
     lighting: Ref,
     gui: Ref,
     materials: Ref,
+    /// Building the real client's place, where a [`Generated`] mesh travels
+    /// as text for the client script to rebuild (`roblox.rs`).
+    live: bool,
+}
+
+/// A mesh made here rather than anyone's asset, indexed: a position, normal
+/// and UV per vertex, three vertices per triangle.
+pub struct Generated {
+    pub positions: Vec<[f32; 3]>,
+    pub normals: Vec<[f32; 3]>,
+    pub uvs: Vec<[f32; 2]>,
+    pub triangles: Vec<[u32; 3]>,
+}
+
+/// An image made here: RGBA8 rows, top first.
+pub struct GeneratedImage {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+/// The names of the `StringValue`s a live place carries a [`Generated`] mesh
+/// and its texture under, inside the `MeshPart` they replace.
+pub const GENERATED_MESH: &str = "FidelityMesh";
+pub const GENERATED_TEXTURE: &str = "FidelityTexture";
+
+impl Generated {
+    fn size(&self) -> [f32; 3] {
+        let (mut min, mut max) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for p in &self.positions {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(p[axis]);
+                max[axis] = max[axis].max(p[axis]);
+            }
+        }
+        [0, 1, 2].map(|axis| max[axis] - min[axis])
+    }
+
+    /// The vertex count, every vertex's position, normal and UV, the
+    /// triangle count and their 1-based vertex indices.
+    fn text(&self) -> String {
+        let mut words = vec![self.positions.len().to_string()];
+        for ((p, n), uv) in self.positions.iter().zip(&self.normals).zip(&self.uvs) {
+            words.extend(p.iter().chain(n).chain(uv).map(|v| format!("{v:.4}")));
+        }
+        words.push(self.triangles.len().to_string());
+        words.extend(self.triangles.iter().flatten().map(|i| (i + 1).to_string()));
+        words.join(" ")
+    }
+
+    fn flattened(&self) -> rbx_dom::editable::Triangles {
+        let mut out = rbx_dom::editable::Triangles::default();
+        for &i in self.triangles.iter().flatten() {
+            let i = i as usize;
+            out.positions.push(self.positions[i]);
+            out.normals.push(self.normals[i]);
+            out.uvs.push(self.uvs[i]);
+            out.colors.push([1.0; 4]);
+        }
+        out
+    }
+}
+
+impl GeneratedImage {
+    /// Width, height and the pixels in hex.
+    fn text(&self) -> String {
+        let hex: String = self.rgba.iter().map(|b| format!("{b:02x}")).collect();
+        format!("{} {} {hex}", self.width, self.height)
+    }
+}
+
+/// A [`Generated`] mesh as the editable-mesh registry hands it to the viewer.
+struct FixedMesh(rbx_dom::editable::Triangles);
+
+impl rbx_dom::editable::MeshSource for FixedMesh {
+    fn version(&self) -> u64 {
+        0
+    }
+
+    fn triangles(&self) -> rbx_dom::editable::Triangles {
+        self.0.clone()
+    }
+
+    fn into_any(self: std::sync::Arc<Self>) -> std::sync::Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
 }
 
 impl Builder {
+    /// An anchored Plastic `MeshPart` drawing `mesh` at its own size, with
+    /// `texture` as its `TextureContent`: here an `EditableMesh` and
+    /// `EditableImage` bound through `Content`, in the live place the text
+    /// the client script builds the same two from (`CreateMeshPartAsync`).
+    pub fn generated_mesh_part(
+        &mut self,
+        mesh: &Generated,
+        texture: Option<&GeneratedImage>,
+        position: [f32; 3],
+        rgb: [u8; 3],
+    ) -> Ref {
+        use rbx_dom::editable::{publish, Editable, Pixels};
+        let part = self
+            .dom
+            .new_instance("MeshPart", "MeshPart", Some(self.world));
+        let size = mesh.size();
+        self.set(part, "Anchored", Variant::Bool(true));
+        self.set(part, "InitialSize", vec3(size));
+        self.set(part, "size", vec3(size));
+        self.set(part, "CFrame", Variant::CFrame(at(position)));
+        let [r, g, b] = rgb;
+        self.set(part, "Color3uint8", Variant::Color3uint8 { r, g, b });
+        self.set(part, "Material", Variant::Enum(PLASTIC));
+        if self.live {
+            let value = self
+                .dom
+                .new_instance("StringValue", GENERATED_MESH, Some(part));
+            self.set(value, "Value", Variant::String(mesh.text()));
+            if let Some(texture) = texture {
+                let value = self
+                    .dom
+                    .new_instance("StringValue", GENERATED_TEXTURE, Some(part));
+                self.set(value, "Value", Variant::String(texture.text()));
+            }
+        } else {
+            let editable = publish(Editable::Mesh(std::sync::Arc::new(FixedMesh(
+                mesh.flattened(),
+            ))));
+            self.set(
+                part,
+                "MeshContent",
+                Variant::Content(Content::Object(editable)),
+            );
+            if let Some(texture) = texture {
+                let pixels = Pixels {
+                    width: texture.width,
+                    height: texture.height,
+                    rgba: texture.rgba.clone(),
+                    version: 0,
+                };
+                let editable = publish(Editable::Image(std::sync::Arc::new(
+                    std::sync::Mutex::new(pixels),
+                )));
+                self.set(
+                    part,
+                    "TextureContent",
+                    Variant::Content(Content::Object(editable)),
+                );
+            }
+        }
+        part
+    }
+
     /// An anchored `Part` of `shape` (Enum.PartType) in the scene's world.
     pub fn part(
         &mut self,
@@ -156,30 +307,6 @@ impl Builder {
         // defaults are studs on top and inlets below.
         self.set(part, "TopSurface", Variant::Enum(0));
         self.set(part, "BottomSurface", Variant::Enum(0));
-        part
-    }
-
-    /// An anchored plastic `MeshPart` of the mesh at `mesh` at `position`,
-    /// fitted to `size`. `initial` is the mesh's own size, the `InitialSize`
-    /// Studio saves beside it, which the real client scales from.
-    pub fn mesh_part(
-        &mut self,
-        (mesh, initial): (&str, [f32; 3]),
-        size: [f32; 3],
-        position: [f32; 3],
-        rgb: [u8; 3],
-    ) -> Ref {
-        let part = self
-            .dom
-            .new_instance("MeshPart", "MeshPart", Some(self.world));
-        self.set(part, "Anchored", Variant::Bool(true));
-        self.set(part, "MeshId", content(mesh));
-        self.set(part, "InitialSize", vec3(initial));
-        self.set(part, "size", vec3(size));
-        self.set(part, "CFrame", Variant::CFrame(at(position)));
-        let [r, g, b] = rgb;
-        self.set(part, "Color3uint8", Variant::Color3uint8 { r, g, b });
-        self.set(part, "Material", Variant::Enum(PLASTIC));
         part
     }
 

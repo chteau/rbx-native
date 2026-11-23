@@ -4,7 +4,9 @@
 
 use rbx_dom::{Variant, Vector3Data};
 
-use super::super::{at, content, float, rgb, Builder, Scene, BLOCK, PLASTIC};
+use super::super::{
+    at, content, float, rgb, Builder, Generated, GeneratedImage, Scene, BLOCK, PLASTIC,
+};
 use super::{studio, template_effects};
 
 /// The Baseplate template's stud grid tile, a public image.
@@ -185,27 +187,125 @@ fn material_variant_anchor(b: &mut Builder) {
     }
 }
 
-/// Roblox's traffic cone mesh, with its size (a version 1.00 mesh, read at
-/// half its coordinates), and its texture, public assets.
-const CONE_MESH: (&str, [f32; 3]) = ("rbxassetid://1082802", [1.88452, 2.1347, 1.88452]);
-const CONE_TEXTURE: &str = "rbxassetid://1082804";
 /// `Enum.AlphaMode`.
 const OVERLAY: u32 = 0;
 const TRANSPARENCY: u32 = 1;
 
-/// The traffic cone as a `MeshPart`: with its `TextureID`, then wearing
+/// A lathed cone of our own, 4 x 5 x 4 studs: a round base flaring into a
+/// tapering body with a cap, smooth normals, U around (0 and 1 at -Z) and V
+/// down from the tip.
+fn cone() -> Generated {
+    const SEGMENTS: u32 = 32;
+    const RINGS: u32 = 16;
+    // Radius and height up the profile, bottom edge to tip.
+    let profile = |t: f32| -> (f32, f32) {
+        let y = -2.5 + 5.0 * t;
+        let r = if t < 0.06 {
+            2.0
+        } else {
+            0.35 + 1.45 * (1.0 - (t - 0.06) / 0.94).powf(1.4)
+        };
+        (r, y)
+    };
+    let mut mesh = Generated {
+        positions: Vec::new(),
+        normals: Vec::new(),
+        uvs: Vec::new(),
+        triangles: Vec::new(),
+    };
+    let around = |segment: u32| {
+        let u = segment as f32 / SEGMENTS as f32;
+        let (sin, cos) = (u * std::f32::consts::TAU).sin_cos();
+        (u, sin, cos)
+    };
+    for ring in 0..=RINGS {
+        let t = ring as f32 / RINGS as f32;
+        let (r, y) = profile(t);
+        let (r0, y0) = profile((t - 0.01).max(0.0));
+        let (r1, y1) = profile((t + 0.01).min(1.0));
+        // The outward normal of the profile's tangent.
+        let (dr, dy) = (r1 - r0, y1 - y0);
+        let length = (dr * dr + dy * dy).sqrt();
+        let (nr, ny) = (dy / length, -dr / length);
+        for segment in 0..=SEGMENTS {
+            let (u, sin, cos) = around(segment);
+            mesh.positions.push([r * sin, y, -r * cos]);
+            mesh.normals.push([nr * sin, ny, -nr * cos]);
+            mesh.uvs.push([u, 1.0 - t]);
+        }
+    }
+    let row = SEGMENTS + 1;
+    for ring in 0..RINGS {
+        for segment in 0..SEGMENTS {
+            let a = ring * row + segment;
+            let (b, c, d) = (a + 1, a + row, a + row + 1);
+            mesh.triangles.push([a, c, b]);
+            mesh.triangles.push([b, c, d]);
+        }
+    }
+    // Flat caps, the base facing down and the tip's facing up.
+    for (t, ny) in [(0.0, -1.0), (1.0, 1.0)] {
+        let (r, y) = profile(t);
+        let centre = mesh.positions.len() as u32;
+        mesh.positions.push([0.0, y, 0.0]);
+        mesh.normals.push([0.0, ny, 0.0]);
+        mesh.uvs.push([0.5, 1.0 - t]);
+        for segment in 0..=SEGMENTS {
+            let (u, sin, cos) = around(segment);
+            mesh.positions.push([r * sin, y, -r * cos]);
+            mesh.normals.push([0.0, ny, 0.0]);
+            mesh.uvs.push([u, 1.0 - t]);
+        }
+        for segment in 0..SEGMENTS {
+            let (a, b) = (centre + 1 + segment, centre + 2 + segment);
+            mesh.triangles.push(if ny < 0.0 {
+                [centre, a, b]
+            } else {
+                [centre, b, a]
+            });
+        }
+    }
+    mesh
+}
+
+/// The cone's colour map, 64 x 64: orange with two white bands, a dark
+/// band along the bottom rows and a blue stripe down the left columns, so a
+/// flipped or turned mapping shows.
+fn cone_texture() -> GeneratedImage {
+    const SIDE: u32 = 64;
+    let mut rgba = Vec::with_capacity((SIDE * SIDE * 4) as usize);
+    for y in 0..SIDE {
+        for x in 0..SIDE {
+            let colour = match (x, y) {
+                (0..=3, _) => [40, 90, 220],
+                (_, 56..) => [40, 40, 40],
+                (_, 16..=23) | (_, 36..=43) => [245, 245, 245],
+                _ => [240, 120, 20],
+            };
+            rgba.extend(colour);
+            rgba.push(255);
+        }
+    }
+    GeneratedImage {
+        width: SIDE,
+        height: SIDE,
+        rgba,
+    }
+}
+
+/// The cone as a `MeshPart`: with its own texture, then wearing
 /// `SurfaceAppearance`s with the grid as their colour map, `AlphaMode`
 /// Overlay tinted by `Color`, `AlphaMode` Transparency, and the grid as
 /// metalness and roughness maps too.
 fn surface_appearances(b: &mut Builder) {
     b.block([2048.0, 16.0, 2048.0], [0.0, -8.0, 0.0], [91, 91, 91]);
-    let textured = b.mesh_part(
-        CONE_MESH,
-        [4.0, 5.0, 4.0],
+    let mesh = cone();
+    b.generated_mesh_part(
+        &mesh,
+        Some(&cone_texture()),
         [-9.0, 2.5, 0.0],
         [163, 162, 165],
     );
-    b.set(textured, "TextureID", content(CONE_TEXTURE));
     let looks: [(u32, [u8; 3], bool); 3] = [
         (OVERLAY, [255, 170, 0], false),
         (TRANSPARENCY, [255, 255, 255], false),
@@ -213,7 +313,7 @@ fn surface_appearances(b: &mut Builder) {
     ];
     for (i, (mode, [r, g, bl], maps)) in looks.into_iter().enumerate() {
         let x = -3.0 + 6.0 * i as f32;
-        let part = b.mesh_part(CONE_MESH, [4.0, 5.0, 4.0], [x, 2.5, 0.0], [196, 40, 28]);
+        let part = b.generated_mesh_part(&mesh, None, [x, 2.5, 0.0], [196, 40, 28]);
         let look = b.child(part, "SurfaceAppearance");
         b.set(look, "ColorMap", content(GRID));
         b.set(look, "AlphaMode", Variant::Enum(mode));
