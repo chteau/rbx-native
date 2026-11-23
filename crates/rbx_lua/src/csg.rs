@@ -462,6 +462,7 @@ pub fn refresh_collision(dom: &mut WeakDom, db: &ReflectionDatabase, operation: 
 }
 
 mod place;
+pub(crate) mod script;
 mod tree;
 
 pub use place::{negate_in_place, negate_operations_in_place, operate_in_place, separate_in_place};

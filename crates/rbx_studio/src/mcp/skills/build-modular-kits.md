@@ -89,7 +89,7 @@ block("Trim_Base", Vector3.new(TILE, 1, THICK + 0.4), Vector3.new(TILE / 2, 0.5,
 wall.WorldPivot = CFrame.new(0, 0, 0)
 wall.Parent = kit
 
--- Door wall: framed opening, no CSG.
+-- Door wall: a framed opening. Cheaper than a SubtractAsync union for a piece the level repeats.
 local door = Instance.new("Model")
 door.Name = "Wall_Door"
 local side = (TILE - 6) / 2
