@@ -13,11 +13,9 @@ pub(crate) fn instance() -> wgpu::Instance {
 /// An instance limited to `backends`, with the rest of wgpu's knobs still
 /// read from the environment.
 ///
-/// One per backend set for the whole process. wgpu compares devices by id
-/// within their instance only, so two instances' devices can compare equal;
-/// the caches keyed by device (`renderer::material`, the sun map) need every
-/// device in one instance to tell them apart. Tests needed it anyway: each
-/// their own brought up a display per thread, which the NVIDIA driver
+/// One per backend set for the whole process, so the caches keyed by device
+/// can tell its devices apart (see [`DeviceKey`]). Tests needed it anyway:
+/// each their own brought up a display per thread, which the NVIDIA driver
 /// crashes on in parallel.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
@@ -29,6 +27,29 @@ pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
     let instance = new_instance(backends);
     shared.push((backends, instance.clone()));
     instance
+}
+
+/// A device as the caches shared between renderers (`renderer::material`,
+/// the sun map) tell it apart.
+///
+/// wgpu compares devices by id within their instance only, and every
+/// instance numbers its devices from the same start. Devices of one backend
+/// all come from one instance ([`instance_for`], each backend in one set of
+/// [`backend_order`]), so the backend and the id tell real devices apart. A
+/// noop device (an undrawn `Headless`) has an instance of its own and the
+/// same id as the first real one: it gets no key, else its textures were
+/// found for the real device, and binding a view of one there failed with
+/// "Cannot get non-existent resource TextureViewId".
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(PartialEq)]
+pub(crate) struct DeviceKey(wgpu::Backend, wgpu::Device);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl DeviceKey {
+    pub(crate) fn of(device: &wgpu::Device) -> Option<Self> {
+        let backend = device.adapter_info().backend;
+        (backend != wgpu::Backend::Noop).then(|| DeviceKey(backend, device.clone()))
+    }
 }
 
 /// The browser has one viewer, and no `Sync` instance to keep.

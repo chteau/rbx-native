@@ -8,6 +8,9 @@ use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Mutex, Weak};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::gpu::DeviceKey;
+
 use rbx_assets::AssetRef;
 use rbx_materials::MapKind;
 
@@ -193,7 +196,7 @@ static SHARED: Mutex<Vec<Shared>> = Mutex::new(Vec::new());
 
 #[cfg(not(target_arch = "wasm32"))]
 struct Shared {
-    device: wgpu::Device,
+    device: DeviceKey,
     maps: Vec<Maps>,
     side: u32,
     arrays: Weak<[wgpu::Texture]>,
@@ -201,21 +204,25 @@ struct Shared {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn shared(device: &wgpu::Device, maps: &[Maps], side: u32) -> Option<Arc<[wgpu::Texture]>> {
+    let device = DeviceKey::of(device)?;
     let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
     shared.retain(|s| s.arrays.strong_count() > 0);
     shared
         .iter()
-        .find(|s| s.device == *device && s.side == side && s.maps == maps)?
+        .find(|s| s.device == device && s.side == side && s.maps == maps)?
         .arrays
         .upgrade()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn share(device: &wgpu::Device, maps: &[Maps], side: u32, arrays: &Arc<[wgpu::Texture]>) {
+    let Some(device) = DeviceKey::of(device) else {
+        return;
+    };
     let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
     shared.retain(|s| s.arrays.strong_count() > 0);
     shared.push(Shared {
-        device: device.clone(),
+        device,
         maps: maps.to_vec(),
         side,
         arrays: Arc::downgrade(arrays),
@@ -612,6 +619,24 @@ mod tests {
             weak.upgrade().is_none(),
             "the last renderer takes them along"
         );
+    }
+
+    // Every noop device has its own instance and the first real device's id:
+    // binding its arrays on another device failed ("non-existent
+    // TextureViewId") whenever an undrawn test ran alongside.
+    #[test]
+    fn a_noop_device_shares_no_arrays() {
+        let quality = QualityLevel::default().profile();
+        let maps = catalog(&["Slate", "Marble"]);
+        let build = |(device, queue): (wgpu::Device, wgpu::Queue)| {
+            Materials::new(&device, &queue, &layout(&device), &maps, &quality)
+        };
+        let noop = || wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let undrawn = build(noop());
+        assert!(!Arc::ptr_eq(&undrawn.arrays, &build(noop()).arrays));
+        if let Some(device) = crate::gpu::for_tests() {
+            assert!(!Arc::ptr_eq(&undrawn.arrays, &build(device).arrays));
+        }
     }
 
     #[test]

@@ -24,6 +24,9 @@ use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Mutex, Weak};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::gpu::DeviceKey;
+
 use super::cull;
 use super::geometry::Meshes;
 use super::mesh::Vertex;
@@ -559,19 +562,22 @@ fn sun_side(quality: &QualityProfile) -> u32 {
 /// Weak, so a map goes with the last renderer drawing into it. Not in the
 /// browser, which has one renderer.
 #[cfg(not(target_arch = "wasm32"))]
-static SUN_MAPS: Mutex<Vec<(wgpu::Device, u32, Weak<wgpu::TextureView>)>> = Mutex::new(Vec::new());
+static SUN_MAPS: Mutex<Vec<(DeviceKey, u32, Weak<wgpu::TextureView>)>> = Mutex::new(Vec::new());
 
 #[cfg(not(target_arch = "wasm32"))]
 fn sun_map(device: &wgpu::Device, side: u32) -> Arc<wgpu::TextureView> {
+    let Some(key) = DeviceKey::of(device) else {
+        return Arc::new(map(device, side));
+    };
     let mut maps = SUN_MAPS.lock().unwrap_or_else(|e| e.into_inner());
     maps.retain(|(.., view)| view.strong_count() > 0);
     let held = maps
         .iter()
-        .find(|(d, s, _)| d == device && *s == side)
+        .find(|(d, s, _)| *d == key && *s == side)
         .and_then(|(.., view)| view.upgrade());
     held.unwrap_or_else(|| {
         let view = Arc::new(map(device, side));
-        maps.push((device.clone(), side, Arc::downgrade(&view)));
+        maps.push((key, side, Arc::downgrade(&view)));
         view
     })
 }
