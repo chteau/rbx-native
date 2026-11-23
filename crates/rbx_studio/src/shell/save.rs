@@ -104,6 +104,7 @@ impl Shell {
         }
         self.handle_history_key(keystroke, window, cx);
         self.handle_group_key(keystroke, cx);
+        self.handle_solid_modeling_key(keystroke, cx);
         if crate::shortcuts::pressed(crate::shortcuts::Command::MoveToLayer, keystroke) {
             self.assign_selection_to_active_layer(cx);
         }

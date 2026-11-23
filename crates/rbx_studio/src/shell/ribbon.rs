@@ -778,7 +778,7 @@ impl Shell {
         )
     }
 
-    /// Group/Ungroup are live (`shell::group`, the same Ctrl+G/Ctrl+Shift+G
+    /// Group/Ungroup are live (`shell::group`, the same Ctrl+G/Ctrl+U
     /// handlers the Model menu calls). Material, Color, Lock and Anchor live
     /// in `model_tiles`, and act on the whole selection's parts.
     /// Cut/Copy/Paste/Duplicate run the same `shell::clipboard` entry points

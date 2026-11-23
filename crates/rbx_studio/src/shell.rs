@@ -430,6 +430,9 @@ pub(crate) struct Shell {
     ui: ui_editor::UiEditor,
     /// The Animation Editor document's own state; see `shell::animation`.
     anim: animation::Animation,
+    /// Why the last Union, Intersect, Negate or Separate failed, over the 3D
+    /// view; see `shell::solid_modeling`.
+    solid_toast: Option<animation::toast::Toast>,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
     /// `Place::dom`.
@@ -998,6 +1001,7 @@ impl Shell {
             style_scroll: ScrollHandle::new(),
             ui,
             anim: animation::Animation::new(cx).with_seams(anim_sheet_height, anim_names_width),
+            solid_toast: None,
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -2165,6 +2169,7 @@ impl Shell {
             .child(self.viewport.clone())
             .child(measure)
             .children(self.plugin_viewport_overlays(cx))
+            .children(self.toast_overlay(|shell| &mut shell.solid_toast, "solid-toast", cx))
             .children(self.play_veil(window, cx))
     }
 }

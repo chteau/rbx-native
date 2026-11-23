@@ -1,6 +1,7 @@
 //! `MeshData` blobs built here in the layout the module doc describes, no
 //! Roblox blob is committed (see `CONTRIBUTING.md`); the one real check is
-//! the ignored fixture test at the bottom.
+//! the ignored fixture test at the bottom. The `SolidMeshHolder` tests read
+//! what Studio saved for two primitive parts made for them.
 
 use std::collections::HashMap;
 
@@ -464,4 +465,49 @@ fn a_real_mesh_only_asset_decodes_to_a_closed_mesh_filling_its_bake() {
         assert!((mesh.bounds.max[axis] - mesh.bounds.min[axis] - 1.0).abs() < 1e-3);
     }
     super::v5_tests::assert_closed(mesh, "asset 305197512");
+}
+
+/// A union of two primitives made for this test in Studio (a red ball with
+/// a blue cylinder taken out), its mesh only in `SolidMeshHolder`, as
+/// current Studio saves every union.
+const STUDIO_SOLID_MESH: &[u8] =
+    include_bytes!("../../../../../../assets/tests/csg/BallMinusCylinder.solidmesh");
+
+#[test]
+fn a_studio_solid_mesh_decodes_with_its_biggest_colour() {
+    let baked = decode(STUDIO_SOLID_MESH).expect("a SolidMeshHolder decodes");
+    assert_eq!(baked.mesh.indices.len(), 560 * 3);
+    assert_eq!(baked.color, Some([255, 0, 0]));
+    let (min, max) = (baked.mesh.bounds.min, baked.mesh.bounds.max);
+    assert!((max[1] - 4.0).abs() < 1e-4 && (min[1] + 4.0).abs() < 1e-4);
+    super::v5_tests::assert_closed(&baked.mesh, "BallMinusCylinder");
+}
+
+/// An intersection's tree holds its operands, which carving would union:
+/// it draws the mesh saved for it instead.
+#[test]
+fn an_intersection_draws_its_solid_mesh() {
+    let referent = Ref::new(1);
+    let mut instance = operation(referent, "IntersectOperation", None);
+    instance.properties_mut().insert(
+        "SolidMeshHolder".into(),
+        Variant::Unknown {
+            type_id: 0x1c,
+            raw: STUDIO_SOLID_MESH.to_vec(),
+        },
+    );
+    let dom = dom_with(instance);
+    let database = database();
+    let mut materials = Catalog::new(&dom, &database);
+    let plan = plan(&dom, &database, &mut materials);
+    let resolution = resolve(
+        &plan,
+        HashMap::new(),
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
+    let (key, _) = fit(&dom, &database, referent).expect("keyed by its inline mesh");
+    assert!(resolution.meshes.contains_key(&key));
+    assert!(resolution.hidden.contains(&referent));
 }

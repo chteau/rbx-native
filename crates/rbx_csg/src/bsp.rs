@@ -123,6 +123,7 @@ impl Plane {
                     buckets.front.push(Polygon {
                         vertices: front,
                         plane,
+                        color: polygon.color,
                     });
                 }
                 if back.len() >= 3 {
@@ -133,6 +134,7 @@ impl Plane {
                     buckets.back.push(Polygon {
                         vertices: back,
                         plane,
+                        color: polygon.color,
                     });
                 }
             }
@@ -154,6 +156,9 @@ struct Buckets {
 pub struct Polygon {
     pub vertices: Vec<DVec3>,
     pub plane: Plane,
+    /// The sRGB colour of the part this face came from: a union draws each
+    /// face in its source part's colour unless `UsePartColor` is on.
+    pub color: [u8; 3],
 }
 
 impl Polygon {

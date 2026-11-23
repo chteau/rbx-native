@@ -46,16 +46,25 @@ impl Toast {
     }
 }
 
+/// Puts `text` up in `slot`, replacing whatever toast was there.
+pub(in crate::shell) fn show(slot: &mut Option<Toast>, kind: ToastKind, text: SharedString) {
+    let serial = slot.as_ref().map_or(0, |t| t.serial + 1);
+    *slot = Some(Toast {
+        text,
+        kind,
+        serial,
+        shown: Instant::now(),
+        armed: false,
+    });
+}
+
+/// Where a toast lives on the shell: the Animation document's, or the 3D
+/// view's.
+type Slot = fn(&mut Shell) -> &mut Option<Toast>;
+
 impl Animation {
     fn show(&mut self, kind: ToastKind, text: SharedString) {
-        let serial = self.toast.as_ref().map_or(0, |t| t.serial + 1);
-        self.toast = Some(Toast {
-            text,
-            kind,
-            serial,
-            shown: Instant::now(),
-            armed: false,
-        });
+        show(&mut self.toast, kind, text);
     }
 
     /// A confirmation: something happened as asked.
@@ -81,13 +90,24 @@ impl Animation {
 }
 
 impl Shell {
-    /// The toast over the 3D view, if one is up; arms its fade on first show.
+    /// The Animation document's toast over its 3D view, if one is up.
     pub(super) fn animation_toast(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let toast = self.anim.toast.as_mut()?;
+        self.toast_overlay(|shell| &mut shell.anim.toast, "anim-toast", cx)
+    }
+
+    /// The toast in `slot` over a 3D view, if one is up; arms its fade on
+    /// first show. `id` names it (and `{id}-close`, its dismiss button).
+    pub(in crate::shell) fn toast_overlay(
+        &mut self,
+        slot: Slot,
+        id: &'static str,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let toast = slot(self).as_mut()?;
         if let Some(lifetime) = toast.lifetime() {
             let left = lifetime.saturating_sub(toast.shown.elapsed());
             if left.is_zero() {
-                self.anim.toast = None;
+                *slot(self) = None;
                 return None;
             }
             if !toast.armed {
@@ -96,8 +116,8 @@ impl Shell {
                 cx.spawn(async move |this, cx| {
                     cx.background_executor().timer(left).await;
                     let _ = this.update(cx, |shell, cx| {
-                        if shell.anim.toast.as_ref().map(|t| t.serial) == Some(serial) {
-                            shell.anim.toast = None;
+                        if slot(shell).as_ref().map(|t| t.serial) == Some(serial) {
+                            *slot(shell) = None;
                             cx.notify();
                         }
                     });
@@ -121,8 +141,8 @@ impl Shell {
                 .justify_center()
                 .child(
                     h_flex()
-                        .id("anim-toast")
-                        .debug_selector(|| "anim-toast".into())
+                        .id(id)
+                        .debug_selector(move || id.into())
                         .max_w(px(560.))
                         .gap(px(6.))
                         .items_center()
@@ -136,8 +156,8 @@ impl Shell {
                         .when(kind == ToastKind::Error, |this| {
                             this.child(
                                 div()
-                                    .id("anim-toast-close")
-                                    .debug_selector(|| "anim-toast-close".into())
+                                    .id((id, 1usize))
+                                    .debug_selector(move || format!("{id}-close"))
                                     .ml(px(4.))
                                     .cursor_pointer()
                                     .text_color(rgb(0x9a9ca5))
@@ -146,8 +166,8 @@ impl Shell {
                                     .tooltip(|window, cx| {
                                         crate::shell::tooltip::text("Dismiss", window, cx)
                                     })
-                                    .on_click(cx.listener(|shell, _, _, cx| {
-                                        shell.anim.toast = None;
+                                    .on_click(cx.listener(move |shell, _, _, cx| {
+                                        *slot(shell) = None;
                                         cx.notify();
                                     })),
                             )

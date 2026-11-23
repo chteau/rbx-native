@@ -184,7 +184,7 @@ pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut Ap
 /// script classes and the OOP `ModuleScript` variant, Roblox itself offers
 /// `Script`/`LocalScript`/`ModuleScript` as distinct inserts, so this matches
 /// that rather than collapsing them into one generic "Insert Script", and
-/// Group/Ungroup (`shell::group`, Ctrl+G/Ctrl+Shift+G). View's Explorer,
+/// Group/Ungroup (`shell::group`, Ctrl+G/Ctrl+U). View's Explorer,
 /// Properties and Command Bar items show and hide their panels, and Style
 /// Editor brings its own
 /// Style Editor document to the front (see `shell::style_panel`). The

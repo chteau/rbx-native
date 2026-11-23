@@ -1,8 +1,9 @@
 //! Roblox's own baked union mesh (`MeshData`/`MeshData2`, the CSGMDL
-//! format), read for a union whose operation tree is gone (no `ChildData`
-//! inline and none in the `PartOperationAsset` its `AssetId` names), or
-//! whose tree the boolean cannot carve. Anything with a tree is carved from
-//! it first (`super::csg`).
+//! format, or the `SolidMeshHolder` current Studio saves instead, see
+//! `rbx_csg::solidmesh`), read for a union whose operation tree is gone (no
+//! `ChildData` inline and none in the `PartOperationAsset` its `AssetId`
+//! names), or whose tree the boolean cannot carve. Anything with a tree is
+//! carved from it first (`super::csg`).
 //!
 //! Nothing here comes from Roblox documentation, which does not describe the
 //! format. It was worked out by reading real blobs: asset 305197512, and the
@@ -159,8 +160,36 @@ pub(super) struct Baked {
     pub(super) color: Option<[u8; 3]>,
 }
 
-/// Decodes one `MeshData` blob, scrambled or not.
+/// A `SolidMeshHolder`'s triangles, each corner its own vertex: its
+/// corners index positions and colours separately.
+fn solid_mesh(mesh: rbx_csg::solidmesh::Decoded) -> Decoded {
+    let mut decoded = Decoded {
+        positions: Vec::new(),
+        normals: Vec::new(),
+        colors: Vec::new(),
+        indices: Vec::new(),
+    };
+    for (triangle, [r, g, b]) in mesh.triangles.iter().zip(mesh.colors) {
+        let corners = triangle.map(|i| Vec3::from(mesh.positions[i as usize]));
+        let normal = (corners[1] - corners[0])
+            .cross(corners[2] - corners[0])
+            .normalize_or_zero()
+            .to_array();
+        for corner in corners {
+            decoded.indices.push(decoded.positions.len() as u32);
+            decoded.positions.push(corner.to_array());
+            decoded.normals.push(normal);
+            decoded.colors.push([r, g, b, 255]);
+        }
+    }
+    decoded
+}
+
+/// Decodes one `MeshData` blob, scrambled or not, or a `SolidMeshHolder`.
 pub(super) fn decode(bytes: &[u8]) -> Result<Baked, Error> {
+    if let Some(mesh) = rbx_csg::solidmesh::decode(bytes) {
+        return finish(solid_mesh(mesh));
+    }
     let document = plain(bytes)?;
     let mut reader = Reader {
         bytes: &document,
@@ -254,12 +283,12 @@ fn dominant_color(
         .map(|(color, _)| color)
 }
 
-/// The `MeshData`/`MeshData2` a union or `PartOperationAsset` carries,
-/// whichever is filled.
+/// The `SolidMeshHolder`, `MeshData2` or `MeshData` a union or
+/// `PartOperationAsset` carries, the first one filled.
 pub(super) fn mesh_data(
     properties: &std::collections::BTreeMap<String, rbx_dom::Variant>,
 ) -> Option<&[u8]> {
-    ["MeshData2", "MeshData"]
+    ["SolidMeshHolder", "MeshData2", "MeshData"]
         .iter()
         .find_map(|key| match properties.get(*key) {
             // Never valid UTF-8, so always `Unknown`: see `tree::child_data`.
