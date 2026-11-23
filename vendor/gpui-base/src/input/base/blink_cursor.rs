@@ -19,6 +19,11 @@ pub(super) const CURSOR_WIDTH: Pixels = px(1.5);
 pub(crate) struct BlinkCursor {
     visible: bool,
     paused: bool,
+    // rbx-native addition: blinking only between `start` and `stop`, so a
+    // pause (any edit, `set_value` included) on an unfocused input shows no
+    // cursor and schedules nothing, instead of blinking (and repainting its
+    // window twice a second) forever.
+    active: bool,
     epoch: usize,
 
     _task: Task<()>,
@@ -29,6 +34,7 @@ impl BlinkCursor {
         Self {
             visible: false,
             paused: false,
+            active: false,
             epoch: 0,
             _task: Task::ready(()),
         }
@@ -36,10 +42,12 @@ impl BlinkCursor {
 
     /// Start the blinking
     pub(crate) fn start(&mut self, cx: &mut Context<Self>) {
+        self.active = true;
         self.blink(self.epoch, cx);
     }
 
     pub(crate) fn stop(&mut self, cx: &mut Context<Self>) {
+        self.active = false;
         self.epoch = 0;
         cx.notify();
     }
@@ -50,6 +58,10 @@ impl BlinkCursor {
     }
 
     fn blink(&mut self, epoch: usize, cx: &mut Context<Self>) {
+        // rbx-native addition: see `active`.
+        if !self.active {
+            return;
+        }
         if self.paused || epoch != self.epoch {
             self.visible = true;
             return;
@@ -103,6 +115,7 @@ mod tests {
     fn repeated_pauses_keep_cursor_visible_until_idle(cx: &mut TestAppContext) {
         let cursor = cx.new(|_| BlinkCursor::new());
         assert!(!cursor.read_with(cx, |cursor, _| cursor.visible()));
+        cursor.update(cx, |cursor, cx| cursor.start(cx));
         for _ in 0..5 {
             cursor.update(cx, |cursor, cx| cursor.pause(cx));
             cx.run_until_parked();

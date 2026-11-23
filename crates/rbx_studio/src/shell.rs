@@ -87,7 +87,6 @@ pub(crate) use export::Export;
 pub(crate) use find_in_place::OpenFindInPlace;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use localization::BETA_ID as PSEUDO_LOC_BETA_ID;
-pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
 pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
@@ -108,6 +107,7 @@ mod argon_dock;
 mod datastores;
 mod find_in_place;
 mod game_settings;
+mod prepublish;
 mod require_graph;
 mod rows;
 mod save;
@@ -347,6 +347,8 @@ pub(crate) struct Shell {
     insert_anchored: bool,
     /// See `Settings::strip_on_publish`.
     strip_on_publish: bool,
+    /// See `Settings::prepublish_skip`.
+    prepublish_skip: Vec<u64>,
     /// Editor layers and 3D notes; see `shell::layers`.
     layers: layers::LayerState,
     search: Entity<InputState>,
@@ -419,6 +421,8 @@ pub(crate) struct Shell {
     input_edits: input_panel::InputEdits,
     /// The Security Audit dock's cached findings; see `shell::security_audit`.
     audit: security_audit::AuditState,
+    /// The Pre-publish dock's cached check; see `shell::prepublish`.
+    prepublish: prepublish::PrePublishState,
     /// The Localization dock's preview switch and strings; see
     /// `shell::localization`.
     localization: localization::LocalizationState,
@@ -461,6 +465,8 @@ pub(crate) struct Shell {
     /// Whether opening a script's Graph side tidies it; persisted (see
     /// `settings`), written through `Shell::set_optimize_graph_on_open`.
     optimize_graph_on_open: bool,
+    /// Whether the MCP server should listen; see `Settings::mcp_server`.
+    mcp_enabled: bool,
     /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
     script_font_size: f32,
     output_scroll: ScrollHandle,
@@ -593,7 +599,7 @@ pub(crate) struct Shell {
     /// marked Active when several names hold the docks' arrangement.
     last_named_layout: Option<String>,
     output_collapsed: bool,
-    /// Beta Features › MCP server's listener; see `shell::mcp`.
+    /// Settings › AI assistants › MCP server's listener; see `shell::mcp`.
     mcp: Option<crate::mcp::endpoint::Server>,
     /// MCP tool calls waiting on work only the shell can do.
     mcp_jobs: mcp::Jobs,
@@ -685,10 +691,12 @@ impl Shell {
             output_rich_text,
             output_display,
             optimize_graph_on_open,
+            mcp_server,
             increment_names,
             expand_on_select,
             insert_anchored,
             strip_on_publish,
+            prepublish_skip,
             dragger,
             controls,
             argon_address: argon_address_setting,
@@ -969,6 +977,7 @@ impl Shell {
             expand_on_select,
             insert_anchored,
             strip_on_publish,
+            prepublish_skip,
             search,
             explorer_query: String::new(),
             query: query_select::QuerySearch::default(),
@@ -999,6 +1008,7 @@ impl Shell {
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
             audit: Default::default(),
+            prepublish: Default::default(),
             localization: Default::default(),
             layers: layers::LayerState::load(&path),
             loren: loren_panel::LorenState::default(),
@@ -1019,6 +1029,7 @@ impl Shell {
             output_display,
             output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
+            mcp_enabled: mcp_server,
             script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
@@ -1152,7 +1163,7 @@ impl Shell {
             shell.init_team_presence(cx);
             // Loads and starts the installed plugins (see `shell::plugins`).
             shell.plugins_start(cx);
-            // Beta Features › MCP server (see `shell::mcp`).
+            // Settings › AI assistants › MCP server (see `shell::mcp`).
             shell.mcp_start(cx);
         }
         shell.start_credential_watch(cx);
@@ -1361,6 +1372,7 @@ impl Shell {
         shell.apply_debug_style_editor(cx);
         shell.apply_debug_input_actions(cx);
         shell.apply_debug_security_audit(cx);
+        shell.apply_debug_prepublish(cx);
         shell.apply_debug_pseudo_locale(cx);
         if std::env::var_os(playtests::DEBUG_VARIABLE).is_some() {
             shell.set_panel_open(layout::Panel::Playtests, true, cx);
@@ -1417,13 +1429,18 @@ impl Shell {
             shell.configure_game(page, cx);
         }
 
-        // Home's Settings host has no place worth recovering or merging.
-        if !launch.settings_only {
+        // Home's Settings host and a repro's temporary copy have no place
+        // worth recovering or merging.
+        let scratch = launch.settings_only || launch.repro.is_some();
+        if !scratch {
             shell.offer_merge_sidecar(cx);
         }
         shell.watch_theme(cx);
-        if !launch.settings_only {
+        if !scratch {
             shell.watch_recovery(cx);
+        }
+        if let Some(repro) = launch.repro {
+            shell.playtests_open_repro(repro, cx);
         }
         shell.watch_script_templates(cx);
 
@@ -2123,8 +2140,10 @@ impl Shell {
             output_rich_text: self.output_rich_text,
             output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
+            mcp_server: self.mcp_enabled,
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
+            prepublish_skip: self.prepublish_skip.clone(),
             expand_on_select: self.expand_on_select,
             insert_anchored: self.insert_anchored,
             dragger: self.dragger,
@@ -2242,6 +2261,7 @@ impl Render for Shell {
             }
         }
         self.open_requested_palette(window, cx);
+        self.playtests_prepare_export(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);
@@ -2251,6 +2271,7 @@ impl Render for Shell {
             self.roblox_dialog(cx),
             self.play_dialog(cx),
             self.close_place_dialog(cx),
+            self.playtests_export_dialog(cx),
             self.toolbox_notice_dialog(cx),
             self.rig_dialog_overlay(cx),
             self.animation_publish_overlay(cx),
@@ -2294,7 +2315,15 @@ impl Render for Shell {
                 cx.notify();
             }))
             .on_drop(cx.listener(|shell, paths: &ExternalPaths, _, cx| {
-                shell.import_files(paths.paths().to_vec(), cx);
+                let (repros, files): (Vec<PathBuf>, Vec<PathBuf>) = paths
+                    .paths()
+                    .iter()
+                    .cloned()
+                    .partition(|path| crate::playtests::repro::is_repro(path));
+                for repro in repros {
+                    shell.open_repro_window(repro, cx);
+                }
+                shell.import_files(files, cx);
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);

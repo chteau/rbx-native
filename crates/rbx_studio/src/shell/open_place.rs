@@ -74,12 +74,14 @@ impl Shell {
     }
 
     fn open_picked(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if is_place_file(&path) || super::game::manifest::is_manifest(&path) {
+        if crate::playtests::repro::is_repro(&path) {
+            self.open_repro_window(path, cx);
+        } else if is_place_file(&path) || super::game::manifest::is_manifest(&path) {
             self.request_open(path, cx);
         } else {
             self.warn(
                 format!(
-                    "Open: {} is not a .rbxl, .rbxlx, .rbxm or .rbxmx file",
+                    "Open: {} is not a .rbxl, .rbxlx, .rbxm, .rbxmx or .rbxrepro file",
                     path.display()
                 ),
                 cx,

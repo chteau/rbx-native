@@ -3,6 +3,7 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::super::chrome;
@@ -108,6 +109,7 @@ impl Shell {
             .gap_1()
             .py_1()
             .overflow_y_scroll()
+            .children(self.playtests_repro_card(cx))
             .child(self.playtests_toolbar(cx))
             .child(self.playtests_rows(cx));
         (
@@ -355,12 +357,22 @@ impl Shell {
                 .unwrap_or_default();
             let rename_path = entry.path.clone();
             let rename_name = summary.name.clone();
+            let in_repro = self.playtests.repro.is_some();
+            let more = self.playtests_row_menu(i, &entry.path, &summary.name, in_repro, cx);
             h_flex()
                 .id(("playtests-row", i))
                 .w_full()
                 .gap_2()
                 .px_2()
                 .items_center()
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |shell, _, _, cx| {
+                        shell.open_menu = Some(MenuId::PlaytestsRow(i));
+                        shell.menu_nav.cursor = None;
+                        cx.notify();
+                    }),
+                )
                 .child(rows::checkbox(
                     ("playtests-visible", i),
                     visible,
@@ -380,19 +392,72 @@ impl Shell {
                 .child(small_text(clock(summary.duration)))
                 .child(small_text(counted(summary.players, "player")))
                 .child(small_text(counted(summary.deaths, "death")))
-                .child(
-                    chrome::icon_button(("playtests-rename", i), IconName::Pencil, "Rename")
-                        .on_click(cx.listener(move |shell, _, window, cx| {
-                            shell.playtests_start_rename(
-                                rename_path.clone(),
-                                rename_name.clone(),
-                                window,
-                                cx,
-                            )
-                        })),
-                )
-                .child(delete)
+                .when(!in_repro, |row| {
+                    row.child(
+                        chrome::icon_button(("playtests-rename", i), IconName::Pencil, "Rename")
+                            .on_click(cx.listener(move |shell, _, window, cx| {
+                                shell.playtests_start_rename(
+                                    rename_path.clone(),
+                                    rename_name.clone(),
+                                    window,
+                                    cx,
+                                )
+                            })),
+                    )
+                    .child(delete)
+                })
+                .child(more)
         });
         v_flex().w_full().gap_1().children(rows).into_any_element()
+    }
+
+    /// A row's "…" menu, also opened by a right-click on the row. Rename
+    /// needs a window for its field, which a menu action doesn't get, so it
+    /// stays a row button.
+    fn playtests_row_menu(
+        &self,
+        i: usize,
+        path: &std::path::Path,
+        name: &str,
+        in_repro: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let export_path = path.to_path_buf();
+        let copy_path = path.to_path_buf();
+        let delete_path = path.to_path_buf();
+        let mut items = vec![
+            menu::item("Export repro…")
+                .icon(IconName::Package)
+                .hint(format!(
+                    "Save {name} as one .rbxrepro file to attach to a bug report"
+                ))
+                .on_click(move |shell, cx| shell.playtests_request_export(export_path.clone(), cx)),
+            menu::item("Copy bug report")
+                .icon(IconName::Copy)
+                .hint("Copy a Markdown summary: time, players, deaths, errors, markers")
+                .on_click(move |shell, cx| shell.playtests_copy_report(&copy_path, cx)),
+        ];
+        if in_repro {
+            items.remove(0);
+        } else {
+            items.push(menu::separator());
+            items.push(
+                menu::item("Delete")
+                    .icon(IconName::Trash)
+                    .on_click(move |shell, cx| shell.playtests_delete(delete_path.clone(), cx)),
+            );
+        }
+        menu::dropdown_at(
+            self,
+            MenuId::PlaytestsRow(i),
+            chrome::Trigger::new(chrome::icon_button(
+                ("playtests-more", i),
+                IconName::Ellipsis,
+                "More",
+            )),
+            items,
+            Anchor::TopRight,
+            cx,
+        )
     }
 }

@@ -158,11 +158,12 @@ fn file_ends_with_script_templates_under_studio_settings() {
         })
         .collect();
     assert_eq!(
-        names[names.len() - 4..],
+        names[names.len() - 5..],
         [
             "Studio Settings\u{2026}",
             "Customize Shortcuts\u{2026}",
             "Beta Features\u{2026}",
+            "Connect an AI Assistant\u{2026}",
             "Script Templates\u{2026}"
         ]
     );

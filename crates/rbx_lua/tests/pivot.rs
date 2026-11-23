@@ -131,3 +131,29 @@ fn unassigning_a_primary_part_resets_the_pivot_to_the_box_centre() {
     );
     assert_eq!(printed, "nil 5 0");
 }
+
+#[test]
+fn a_model_scales_around_its_pivot_relative_to_scale_one() {
+    let mut runtime = runtime();
+    let printed = printed(
+        &mut runtime,
+        r#"
+        local model = Instance.new("Model")
+        local part = Instance.new("Part")
+        part.Size = Vector3.new(2, 2, 2)
+        part.CFrame = CFrame.new(2, 1, 0)
+        part.Parent = model
+        model.WorldPivot = CFrame.new(0, 0, 0)
+        model.Parent = workspace
+        local before = model:GetScale()
+        model:ScaleTo(2)
+        local grown = string.format("%g %g %g", part.Size.X, part.Position.X, model:GetScale())
+        model:ScaleTo(1)
+        print(before, grown, part.Size.X, part.Position.X)
+        print(pcall(function() model:ScaleTo(0) end))
+        "#,
+    );
+    let mut lines = printed.lines();
+    assert_eq!(lines.next(), Some("1 4 4 2 2 2"));
+    assert!(lines.next().unwrap().starts_with("false"));
+}

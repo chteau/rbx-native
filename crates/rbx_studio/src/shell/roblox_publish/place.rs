@@ -37,6 +37,27 @@ pub(super) fn after_pick(
     then.map(|mode| confirm(mode, target, Some(name)))
 }
 
+/// Going on from the pre-publish check: it becomes the confirmation it
+/// stood before, and hands back the place to stop checking when its box was
+/// ticked (`Some(None)` when it wasn't). Anything else open is left alone.
+pub(super) fn past_check(dialog: &mut Option<Dialog>) -> Option<Option<u64>> {
+    match dialog.take() {
+        Some(Dialog::Check {
+            mode,
+            target,
+            name,
+            dont_ask,
+        }) => {
+            *dialog = Some(confirm(mode, target, name));
+            Some(dont_ask.then_some(target.place_id))
+        }
+        other => {
+            *dialog = other;
+            None
+        }
+    }
+}
+
 /// The upload a confirmation agrees to: closes it and hands back its place
 /// and mode. Anything else open, a failure, or nothing because Cancel or
 /// Escape closed it, is left alone and uploads nothing.

@@ -2,7 +2,8 @@ use rbx_cloud::{CloudError, Experience, Owner, PublishMode, Visibility};
 
 use super::upload::{describe, mocked, not_updated, refused, upload_with};
 use super::{
-    after_pick, confirm, confirmed, outcome, pick_landed, Dialog, Failure, Picking, Target,
+    after_pick, confirm, confirmed, outcome, past_check, pick_landed, Dialog, Failure, Picking,
+    Target,
 };
 use crate::command_bar::Feedback;
 
@@ -239,4 +240,34 @@ fn a_place_with_unions_warns_that_publish_leaves_them_alone() {
         warning.contains("SurfaceAppearance, UnionOperation instances"),
         "{warning}"
     );
+}
+
+#[test]
+fn going_past_the_check_asks_to_confirm_and_never_uploads_by_itself() {
+    for dont_ask in [false, true] {
+        let mut dialog = Some(Dialog::Check {
+            mode: PublishMode::Published,
+            target: TARGET,
+            name: Some("A".to_string()),
+            dont_ask,
+        });
+        // Enter over the check isn't a confirmation.
+        assert_eq!(confirmed(&mut dialog), None);
+        assert_eq!(
+            past_check(&mut dialog),
+            Some(dont_ask.then_some(TARGET.place_id))
+        );
+        assert_eq!(
+            dialog,
+            Some(confirm(
+                PublishMode::Published,
+                TARGET,
+                Some("A".to_string())
+            ))
+        );
+    }
+    // Over anything else it does nothing.
+    let mut dialog = Some(confirm(PublishMode::Saved, TARGET, None));
+    assert_eq!(past_check(&mut dialog), None);
+    assert!(matches!(dialog, Some(Dialog::Confirm { .. })));
 }

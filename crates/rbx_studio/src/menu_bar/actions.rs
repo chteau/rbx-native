@@ -254,6 +254,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuConnectAi, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_settings_on("ai", cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuRequireGraph, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_require_graph(cx));
         }
@@ -305,6 +310,7 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         (Panel::Toolbox, &MenuToggleToolbox),
         (Panel::InputActions, &MenuToggleInputActions),
         (Panel::SecurityAudit, &MenuToggleSecurityAudit),
+        (Panel::PrePublish, &MenuTogglePrePublish),
         (Panel::Playtests, &MenuTogglePlaytests),
         (Panel::Layers, &MenuToggleLayers),
         (Panel::Loren, &MenuToggleLoren),
@@ -492,6 +498,7 @@ panel_toggle!(MenuToggleCollaborators);
 panel_toggle!(MenuToggleToolbox);
 panel_toggle!(MenuToggleInputActions);
 panel_toggle!(MenuToggleSecurityAudit);
+panel_toggle!(MenuTogglePrePublish);
 panel_toggle!(MenuTogglePlaytests);
 panel_toggle!(MenuToggleLayers);
 panel_toggle!(MenuToggleLoren);

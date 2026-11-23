@@ -47,7 +47,7 @@ mod web;
 pub use api_key::ApiKey;
 pub use archive::{archived_experiences, set_experience_archived};
 pub use asset_metadata::AssetMetadata;
-pub use assets::AssetContent;
+pub use assets::{AssetContent, AssetPresence};
 pub use avatar::{AssetType, Avatar, AvatarAsset, AvatarBodyColors, AvatarScales};
 pub use client::Client;
 pub use create_asset::ModelFile;

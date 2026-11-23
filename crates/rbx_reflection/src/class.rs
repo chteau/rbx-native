@@ -53,7 +53,17 @@ pub struct ClassDescriptor {
     pub name: String,
     pub superclass: Option<String>,
     pub properties: Vec<PropertyDescriptor>,
+    /// The class's own `Function` members (`FindPartOnRay`, `isA`), each
+    /// with whether the dump tags it `Deprecated`.
+    pub functions: Vec<FunctionDescriptor>,
     /// Class tags from the API dump (e.g. `Service`, `NotCreatable`,
     /// `NotBrowsable`). Empty when the class carries none.
     pub tags: Vec<String>,
+}
+
+/// A `Function` member of a class.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionDescriptor {
+    pub name: String,
+    pub deprecated: bool,
 }

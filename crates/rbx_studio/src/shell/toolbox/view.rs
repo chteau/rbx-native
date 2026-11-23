@@ -6,7 +6,7 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::{Category, Load};
+use super::{Category, Load, Source};
 use crate::launcher::ui::{self, Weight};
 use crate::shell::{chrome, menu, Panel, Shell};
 use crate::tokens;
@@ -74,29 +74,30 @@ impl Shell {
 
         let selected = toolbox.category;
         let chips = Category::ALL.map(|category| {
-            let on = category == selected;
-            div()
-                .id(SharedString::from(format!(
-                    "toolbox-category-{}",
-                    category.label()
-                )))
-                .flex_1()
-                .h(px(26.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(tokens::radius_tiny())
-                .cursor_pointer()
-                .text_size(tokens::text_sm())
-                .line_height(tokens::line_sm())
-                .text_color(if on { tokens::text() } else { tokens::text2() })
-                .when(on, |this| this.bg(tokens::accent_soft()))
-                .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.toolbox_set_category(category, cx);
-                }))
-                .child(category.label())
+            segment(
+                format!("toolbox-category-{}", category.label()),
+                category.label(),
+                category == selected,
+            )
+            .on_click(cx.listener(move |shell, _, _, cx| {
+                shell.toolbox_set_category(category, cx);
+            }))
         });
+        let source = toolbox.source;
+        let sources = segments(Source::ALL.map(|option| {
+            segment(
+                format!("toolbox-source-{}", option.label()),
+                option.label(),
+                option == source,
+            )
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.toolbox_set_source(option, window, cx);
+            }))
+        }));
+        if source == Source::Kits {
+            let body = self.kits_body(sources, field, cx);
+            return (Some(overflow.into_any_element()), Some(body));
+        }
 
         let results = match &toolbox.load {
             Load::Loading => h_flex()
@@ -153,16 +154,9 @@ impl Shell {
             .size_full()
             .p(px(10.))
             .gap(px(10.))
+            .child(sources)
             .children(field)
-            .child(
-                h_flex()
-                    .w_full()
-                    .p(px(2.))
-                    .gap(px(2.))
-                    .rounded(tokens::radius_segment())
-                    .bg(tokens::field_select())
-                    .children(chips),
-            )
+            .child(segments(chips))
             .child(
                 div()
                     .text_size(tokens::text_xs())
@@ -296,4 +290,34 @@ impl Shell {
                 .into_any_element(),
         )
     }
+}
+
+/// A row of [`segment`]s on the field colour, as the category chips sit.
+pub(super) fn segments(items: impl IntoIterator<Item = Stateful<Div>>) -> Div {
+    h_flex()
+        .w_full()
+        .p(px(2.))
+        .gap(px(2.))
+        .rounded(tokens::radius_segment())
+        .bg(tokens::field_select())
+        .children(items)
+}
+
+/// One chip of a segmented row, accent-washed when `on`.
+pub(super) fn segment(id: String, label: &'static str, on: bool) -> Stateful<Div> {
+    div()
+        .id(SharedString::from(id))
+        .flex_1()
+        .h(px(26.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(tokens::radius_tiny())
+        .cursor_pointer()
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
+        .text_color(if on { tokens::text() } else { tokens::text2() })
+        .when(on, |this| this.bg(tokens::accent_soft()))
+        .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
+        .child(label)
 }

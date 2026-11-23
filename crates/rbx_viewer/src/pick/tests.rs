@@ -669,3 +669,27 @@ fn an_empty_container_neither_covers_nor_is_covered() {
     let database = ReflectionDatabase::embedded();
     assert_eq!(selection(&dom, &database, &[empty, part]).len(), 2);
 }
+
+/// A model selected after a few of its own parts, among loose parts, still
+/// swallows exactly its own: the dedup must not depend on order or on how
+/// many entries sit between a part and its container.
+#[test]
+fn a_model_after_its_parts_swallows_only_them() {
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "House", None);
+    let walls: Vec<Ref> = (0..3)
+        .map(|i| dom.new_instance("Part", &format!("Wall{i}"), Some(model)))
+        .collect();
+    let loose: Vec<Ref> = (0..3)
+        .map(|i| dom.new_instance("Part", &format!("Loose{i}"), None))
+        .collect();
+
+    let database = ReflectionDatabase::embedded();
+    let referents = [walls[0], loose[0], walls[2], loose[1], model, loose[2]];
+    let kept: Vec<Ref> = selection(&dom, &database, &referents)
+        .iter()
+        .map(Selected::referent)
+        .collect();
+
+    assert_eq!(kept, [loose[0], loose[1], model, loose[2]]);
+}
