@@ -7,16 +7,26 @@
 //! - `store`: one folder per place; list, save, rename, delete.
 //! - `heat`: heat maps across recordings, time spent, deaths, stuck spots.
 //! - `replay`: a recording at a moment, as lines and dots for the viewport.
+//! - `repro`: the `.rbxrepro` file a recording is shared as, with its place.
+//! - `report`: the Markdown bug report copied from a recording.
 
 pub(crate) mod format;
 pub(crate) mod heat;
 pub(crate) mod recorder;
 pub(crate) mod replay;
+pub(crate) mod report;
+pub(crate) mod repro;
 pub(crate) mod store;
 #[cfg(test)]
 mod tests;
 
 use glam::Vec3;
+
+/// `m:ss`.
+pub(crate) fn clock(seconds: f32) -> String {
+    let whole = seconds.max(0.0) as u64;
+    format!("{}:{:02}", whole / 60, whole % 60)
+}
 
 /// The HumanoidRootPart's height above the floor it stands on, in studs
 /// (R15's default `HipHeight` 2 plus half the 2-stud root part): where a

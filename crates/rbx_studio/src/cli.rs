@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use rbx_viewer::QualityLevel;
 
 pub(crate) const USAGE: &str = "\
-usage: rbxnative [options] [file.rbxl|.rbxm|.rbxlx|.rbxmx]
+usage: rbxnative [options] [file.rbxl|.rbxm|.rbxlx|.rbxmx|.rbxrepro]
        rbxnative loren <command> [options]
 
 Without a file, opens the setup wizard (Roblox sign-in, API key) on first
@@ -142,6 +142,8 @@ pub(crate) struct Launch {
     /// opened from Home (see `main::open_settings_from_home`): it starts no
     /// plugins, presence, Discord or MCP and never takes the menus.
     pub(crate) settings_only: bool,
+    /// A shared `.rbxrepro` this window replays, read-only.
+    pub(crate) repro: Option<crate::playtests::repro::Opened>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-23
+
+- **Shareable bug repros from recorded playtests.** Right-click a session in the Playtests dock (or its "…") for Export repro…, which writes one `.rbxrepro` file with the recording, the place as it is now, the editor version and an optional note, and shows the file's size before you save. It says plainly that including the place shares all of it; a published place can be left out, and then only its id and a hash go in. File › Open, dropping the file on the editor or `rbxstudio file.rbxrepro` opens it read-only in a window of its own: the session is already shown on the timeline with its markers, its recorded errors, warnings, chat and marks are in Output with their times, and the sender's note is on top of the dock. A repro from another version, one without its place, or one whose place differs from your copy says so instead of failing, and one from a newer RbxNative tells you to update. Copy bug report (same menu, and on the repro's card) puts a short Markdown summary on the clipboard for Discord or GitHub: when, how long, players, deaths, errors and warnings with timestamps, and markers. The format is a plain zip with a versioned `repro.json`, see `docs/repro-format.md`. (@chteau)
+
 ## 2026-11-20
 
 - **Discord and bug reports one click away.** Home has a "Join the Discord" card above the account card, and the "RbxNative crashed last time" notice now has Report on GitHub (opens a new issue, attach the log from Open log) and Discord next to Open log and Copy. (@chteau)

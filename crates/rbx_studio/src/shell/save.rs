@@ -118,6 +118,12 @@ impl Shell {
     }
 
     fn save_in_place(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
+        if self.playtests.repro.is_some() {
+            let message =
+                "This repro is read-only: File › Save to File As… keeps a copy of its place.";
+            self.warn(message.to_owned(), cx);
+            return Err(message.to_owned());
+        }
         let path = self.path.clone();
         self.write_to(&path, cx)?;
         self.saved();
@@ -197,6 +203,10 @@ impl Shell {
         }
         self.saved();
         self.repoint_recovery();
+        // A repro's place saved as a file of its own is an ordinary place now.
+        if self.playtests.repro.take().is_some() {
+            self.playtests_refresh(cx);
+        }
         cx.notify();
         Ok(())
     }
