@@ -127,6 +127,54 @@
     "tolerance_delta_e": 0.25,
     "tolerance_ssim": 0.019999999552965164
   },
+  "gui_fonts": {
+    "about": "SourceSans, Builder Sans, Gotham, Arial, Roboto, Fredoka One and an italic, at 32 and 16",
+    "delta_e": 0.551,
+    "delta_e_p90": 0.0,
+    "ssim": 0.972,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_gradients": {
+    "about": "UIGradient colour and transparency sequences, Rotation, Offset, on text and a tinted frame",
+    "delta_e": 0.127,
+    "delta_e_p90": 0.368,
+    "ssim": 0.999,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_images": {
+    "about": "ImageLabel ScaleType Stretch, Tile, Fit, Crop, Slice with SliceScale, tints and ImageRect",
+    "delta_e": 0.143,
+    "delta_e_p90": 0.554,
+    "ssim": 0.999,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_stacking": {
+    "about": "Stacked half transparent frames, ZIndex, CanvasGroup, UIListLayout with UIPadding",
+    "delta_e": 1.045,
+    "delta_e_p90": 0.205,
+    "ssim": 0.981,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_strokes": {
+    "about": "UIStroke Border thicknesses with UICorner radii, line joins, transparency, Contextual on text",
+    "delta_e": 0.042,
+    "delta_e_p90": 0.0,
+    "ssim": 0.999,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_text_layout": {
+    "about": "TextScaled, wrapped lines at LineHeight 1 and 1.5, RichText, TextStroke, TextYAlignment",
+    "delta_e": 1.01,
+    "delta_e_p90": 0.0,
+    "ssim": 0.927,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
   "latitude": {
     "about": "GeographicLatitude 60 at noon",
     "delta_e": 2.4,
@@ -212,6 +260,14 @@
     "delta_e": 4.27,
     "delta_e_p90": 4.527,
     "ssim": 0.922,
+    "tolerance_delta_e": 0.6000000238418579,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "material_variants": {
+    "about": "MaterialVariants with a colour map: StudsPerTile 4, Organic at 8, tinted, and on Metal with a metalness map",
+    "delta_e": 7.673,
+    "delta_e_p90": 23.314,
+    "ssim": 0.738,
     "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
@@ -337,18 +393,26 @@
   },
   "text_boxes": {
     "about": "TextBoxes and TextLabels whose text overflows: placeholder, alignment, ClipsDescendants, TextTruncate",
-    "delta_e": 3.219,
-    "delta_e_p90": 4.738,
-    "ssim": 0.889,
-    "tolerance_delta_e": 0.4828742742538452,
+    "delta_e": 2.887,
+    "delta_e_p90": 4.458,
+    "ssim": 0.91,
+    "tolerance_delta_e": 0.43302521109580994,
     "tolerance_ssim": 0.019999999552965164
   },
   "text_sizes": {
     "about": "Labels in Legacy and SourceSans at TextSizes on and between Enum.FontSize's steps",
-    "delta_e": 2.522,
-    "delta_e_p90": 4.613,
-    "ssim": 0.892,
-    "tolerance_delta_e": 0.3782403767108917,
+    "delta_e": 1.775,
+    "delta_e_p90": 3.982,
+    "ssim": 0.951,
+    "tolerance_delta_e": 0.26627638936042786,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "texture_blend": {
+    "about": "Blue tinted and untinted Textures at Transparency 0, 0.25, 0.5 and 0.75 over red parts",
+    "delta_e": 4.989,
+    "delta_e_p90": 11.868,
+    "ssim": 0.889,
+    "tolerance_delta_e": 0.6000000238418579,
     "tolerance_ssim": 0.019999999552965164
   },
   "tone_ambient": {

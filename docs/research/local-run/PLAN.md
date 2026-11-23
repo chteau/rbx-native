@@ -1130,6 +1130,26 @@ Left, and why:
 - The top-left button can't be Roblox's logo (no Roblox images); a player who isn't signed in has no owner badge.
 - The RNG game floor colour against Atmosphere haze is still open.
 
+### Second pass: GUI and texture blending (branch feat/local-run-fidelity-2)
+
+New scenes (`fidelity/scenes/gui.rs`, `look.rs`): `gui_fonts`, `gui_text_layout`, `gui_strokes`, `gui_gradients`, `gui_images`, `gui_stacking`, `material_variants`, `texture_blend`. Scenes can now carry `MaterialVariant`s (the client script clones them into `MaterialService`).
+
+- The capture client had its Text Size (`GuiService.PreferredTextSize`) on Large, which adds a fixed 4 px to every `TextSize` (its `TextService:GetTextSize` heights were 14, 20, 29, 36, 64 for 10, 16, 25, 32, 60) except `TextScaled` text. `record_render_goldens` now sets Sober's `GlobalBasicSettings_13.xml` to Medium for the session and puts the player's own value back after; the client script prints the setting beside the quality level. `text_boxes` and `text_sizes` are recaptured at Medium.
+- At Medium, Source Sans, Builder Sans, Roboto and Fredoka One match the real client's text to the pixel in width and height.
+- The client no longer ships `GothamSSm.json` or `Arial.json`: a `FontFace` naming them draws in Montserrat and Arimo (Gotham rows were 4 to 8% too wide).
+- A rotated `UIGradient` spans the box edge to edge along the line through its centre (`min(w / |cos|, h / |sin|)`), not the box's projection: the real 45 degree ramp on a 260 x 160 frame fits `t = 0.5 + 0.814 u + 0.496 v`, 226 px long.
+- The client reads `FontFace` before `Font`, so a scene must set both, as Studio saves them; `text_sizes` did not and its SourceSans column showed Legacy.
+- Already right, by the captures: `UIStroke` (Border thicknesses, corner radii, line joins, transparency, Contextual on text), `ImageLabel` Stretch, Tile, Fit, Crop, nine-slice with `SliceScale`, `ImageRect`, tints and transparency, stacked transparent frames and `ZIndex`, `UIListLayout` with `UIPadding`, RichText, wrapping, `LineHeight`, `TextStroke`.
+
+Left, and why:
+
+- `TextScaled` with `TextWrapped` off: the real client draws the text at its plain `TextSize` (14 stays 14, 100 overflows the box), with or without a `FontFace`, at Medium and Large alike; with `TextWrapped` on it scales and wraps. Ours scales both. Not changed: one harness's captures (screens cloned from `ReplicatedStorage` into `PlayerGui`) against what every game relies on; it wants a check in a game that builds its labels in Studio.
+- `CanvasGroup` `GroupTransparency` 0.5: the real client fades the group's own background but not its child frame; ours fades neither. Unclear whether that is a device fallback (Sober is the Android client).
+- Arimo (Legacy, Arial) draws about 3% narrower in the real client than ours at the same size (the em rule in `renderer/gui/text/em.rs` was measured in Studio); text sits a pixel higher than the real client's at 32 px (not at 16).
+- `Texture` blending: the real client mixes a `Texture` over its part in a gamma-encoded space before tone mapping. In `texture_blend` (white Texture over red, alpha 0.576 times 1 - `Transparency`), a straight blend in sRGB terms gives the texture's red as 222 to 228 at all four transparencies, where ours, mixing linear light, comes out lighter at high transparency for a black overlay and brighter for a white one. That is the tinted Texture (real 143,35,118, ours 161,38,147 in `decals_textures`) and the near-floor grid being lighter in `template_spawn`. Our decals are a fixed-function blend over linear HDR, so this needs the blend moved into the material pass (or an encoded target); not done.
+- `MaterialVariant` tiling: the real client centres a grid cell on a 6 stud face where ours puts a cell corner there (a quarter tile off on both axes); the colour map's alpha is ignored in both. Which corner the real client anchors to needs a capture on an odd-sized part. The client also logs "Failed to load MaterialService.Grid" for the public grid image, though it draws it.
+- The horizon haze and clouds in `template_spawn` were not taken further.
+
 ## Where things are
 
 - `crates/rbx_lua/src/server.rs`, `server/hooks.rs`: the server VM.
