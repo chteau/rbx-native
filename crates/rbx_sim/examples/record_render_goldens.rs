@@ -110,6 +110,7 @@ mod linux {
             sober_config: vec![("fflags".to_owned(), fflags())],
             ..Default::default()
         };
+        let text_size = default_text_size();
         let mut directions = BTreeMap::new();
         let mut finished = true;
         for group in roblox::groups(scenes) {
@@ -152,6 +153,7 @@ mod linux {
             }
         }
         drop(tunnel);
+        drop(text_size);
         let text = serde_json::to_string_pretty(&directions).expect("json") + "\n";
         std::fs::write(out.join("directions.json"), text).expect("directions");
         if !finished {
@@ -225,6 +227,40 @@ mod linux {
                 return false;
             }
         }
+    }
+
+    /// The person's own Text Size setting, put back when dropped.
+    struct TextSize {
+        path: PathBuf,
+        original: String,
+    }
+
+    impl Drop for TextSize {
+        fn drop(&mut self) {
+            if let Err(why) = std::fs::write(&self.path, &self.original) {
+                eprintln!("could not restore the client's Text Size setting: {why}");
+            }
+        }
+    }
+
+    /// Sets the client's Text Size (`GuiService.PreferredTextSize`) to
+    /// `Medium`, the default, for the session: any other adds a fixed offset
+    /// to every text's size, and the references are what most players see.
+    /// Drop the result once the client is gone (it writes these settings as
+    /// it exits).
+    fn default_text_size() -> Option<TextSize> {
+        const MEDIUM: &str = "<token name=\"PreferredTextSize\">1</token>";
+        let path = PathBuf::from(std::env::var_os("HOME")?)
+            .join(".var/app/org.vinegarhq.Sober/data/sober/appData/GlobalBasicSettings_13.xml");
+        let original = std::fs::read_to_string(&path).ok()?;
+        let start = original.find("<token name=\"PreferredTextSize\">")?;
+        let end = start + original[start..].find("</token>")? + "</token>".len();
+        if original[start..end] == *MEDIUM {
+            return None;
+        }
+        let medium = format!("{}{MEDIUM}{}", &original[..start], &original[end..]);
+        std::fs::write(&path, medium).ok()?;
+        Some(TextSize { path, original })
     }
 
     /// The person's own `fflags` with the quality override added.

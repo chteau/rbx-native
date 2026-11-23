@@ -208,7 +208,7 @@ for _ = 1, 50 do
 end
 game:GetService("ContentProvider"):PreloadAsync({{ root }})
 local quality = UserSettings():GetService("UserGameSettings").SavedQualityLevel
-print("{QUALITY}" .. tostring(quality))
+print("{QUALITY}" .. tostring(quality) .. " text " .. tostring(game:GetService("GuiService").PreferredTextSize))
 local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 local shown, screens = nil, {{}}
 for _, scene in SCENES do

@@ -3,6 +3,7 @@
 
 use rbx_dom::Variant;
 
+mod gui;
 mod look;
 
 use super::{
@@ -949,6 +950,7 @@ pub fn scenes() -> Vec<Scene> {
     ]
     .into_iter()
     .chain(look::scenes())
+    .chain(gui::scenes())
     .chain(tone_scenes())
     .chain(falloff_scenes(false))
     .chain(falloff_scenes(true))
