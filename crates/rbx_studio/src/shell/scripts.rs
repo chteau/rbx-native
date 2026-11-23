@@ -233,8 +233,9 @@ impl Shell {
     /// alone, that text is what would be destroyed, and its own commit is
     /// what reaches the DOM next.
     pub(super) fn resync_scripts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Tabs belong to the edited place, stashed while a live view shows.
-        if self.live_shown() {
+        // Tabs belong to the edited place, stashed while a live view (or a
+        // Play (local) peer) shows.
+        if self.live_shown() || self.play.live.local.edited().is_some() {
             return;
         }
         self.notice_luau_lsp_dom_change(cx);

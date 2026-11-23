@@ -631,6 +631,7 @@ impl Shell {
             };
             if shell.read(cx).leak_finder_open() {
                 sim.keep_leak_tracking();
+                shell.update(cx, |shell, cx| shell.leak_feed(sim, cx));
             }
             let client = player.is_some();
             let changes = if resync {

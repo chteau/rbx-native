@@ -90,8 +90,6 @@ pub struct StaleConnections {
     /// to nil.
     pub destroyed: bool,
     pub count: usize,
-    /// Samples in a row the oldest of them has been stale.
-    pub streak: u32,
 }
 
 /// Instances out of the place, of one class from one site.
@@ -177,8 +175,8 @@ pub struct Suspect {
     pub what: String,
     pub site: Option<Site>,
     pub count: usize,
-    /// How much it rose over the last [`GROWING`] samples (0 for a stale
-    /// connection, which is a suspect for what it is).
+    /// How much it rose over the last [`GROWING`] samples (0 for a
+    /// connection to a removed instance, a suspect for what it is).
     pub growth: usize,
 }
 
@@ -191,8 +189,6 @@ pub struct Tracker {
     /// Memory category `i + 1`'s name.
     categories: Vec<String>,
     next: f64,
-    /// Connection id → samples in a row it has been stale.
-    streaks: HashMap<u32, u32>,
     history: VecDeque<Sample>,
 }
 
@@ -405,12 +401,7 @@ pub(crate) fn sample(lua: &Lua, now: f64) -> Sample {
                 .or_else(|| tracker.as_ref()?.sites.get(&r).map(|s| s.1.clone()))
                 .unwrap_or_else(|| "Instance".to_owned())
         };
-        let mut stale: HashMap<(Site, String, String, bool), (usize, u32)> = HashMap::new();
-        let mut streaks = HashMap::new();
-        let old = shared
-            .as_ref()
-            .map(|t| t.borrow().streaks.clone())
-            .unwrap_or_default();
+        let mut stale: HashMap<(Site, String, String, bool), usize> = HashMap::new();
         for (key, list) in &signals.connections {
             for connection in list {
                 out.connections += 1;
@@ -432,30 +423,21 @@ pub(crate) fn sample(lua: &Lua, now: f64) -> Sample {
                 if !destroyed && dom.in_tree(owner) {
                     continue;
                 }
-                let streak = old.get(&connection.id).copied().unwrap_or(0) + 1;
-                streaks.insert(connection.id, streak);
                 let event = key.event.split(':').next().unwrap_or(&key.event).to_owned();
-                let entry = stale
+                *stale
                     .entry((site.unwrap_or_default(), event, class_of(owner), destroyed))
-                    .or_default();
-                entry.0 += 1;
-                entry.1 = entry.1.max(streak);
+                    .or_default() += 1;
             }
-        }
-        drop(tracker);
-        if let Some(tracker) = &shared {
-            tracker.borrow_mut().streaks = streaks;
         }
         out.stale = stale
             .into_iter()
             .map(
-                |((site, event, owner, destroyed), (count, streak))| StaleConnections {
+                |((site, event, owner, destroyed), count)| StaleConnections {
                     site,
                     event,
                     owner,
                     destroyed,
                     count,
-                    streak,
                 },
             )
             .collect();
@@ -1023,17 +1005,32 @@ fn series(history: &VecDeque<Sample>, f: impl Fn(&Sample) -> Option<usize>) -> V
 }
 
 /// What in the newest sample looks like a leak: connections whose owner
-/// was removed, or has been out of the place for two samples in a row;
-/// and per-script connection counts, held instances of one class from one
-/// site, and tables, that rose at each of the last [`GROWING`] samples.
-/// The heap itself is never one: collection makes it rise and fall.
+/// was removed; and connections to nil-parented instances (by site, event
+/// and class), per-script connection counts, held instances of one class
+/// from one site, and tables, that rose at each of the last [`GROWING`]
+/// samples. One connection to a nil-parented instance is not one: an
+/// AnimationTrack or a Tween lives out of the place by design. The heap
+/// itself is never one either: collection makes it rise and fall.
 pub fn suspects(history: &VecDeque<Sample>) -> Vec<Suspect> {
     let Some(last) = history.back() else {
         return Vec::new();
     };
     let mut out = Vec::new();
+    let rise = |s: &[usize]| s.last().copied().unwrap_or(0) - s.first().copied().unwrap_or(0);
     for stale in &last.stale {
-        if stale.destroyed || stale.streak >= 2 {
+        let s = series(history, |sample| {
+            sample
+                .stale
+                .iter()
+                .find(|x| {
+                    x.site == stale.site
+                        && x.event == stale.event
+                        && x.owner == stale.owner
+                        && x.destroyed == stale.destroyed
+                })
+                .map(|x| x.count)
+        });
+        if stale.destroyed || growing(&s) {
             out.push(Suspect {
                 kind: Kind::Signals,
                 what: format!(
@@ -1048,11 +1045,10 @@ pub fn suspects(history: &VecDeque<Sample>) -> Vec<Suspect> {
                 ),
                 site: Some(stale.site.clone()).filter(|s| !s.script.is_empty()),
                 count: stale.count,
-                growth: 0,
+                growth: rise(&s),
             });
         }
     }
-    let rise = |s: &[usize]| s.last().copied().unwrap_or(0) - s.first().copied().unwrap_or(0);
     for script in &last.scripts {
         let s = series(history, |sample| {
             sample

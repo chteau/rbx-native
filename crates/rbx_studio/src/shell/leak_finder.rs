@@ -8,7 +8,8 @@
 //!
 //! Tracking costs nothing while the dock is shut: the session's owner
 //! keeps a peer's tracking alive each frame only while a dock showing that
-//! peer is open (this window's for every peer, a test tab's for its own).
+//! peer is open (this window's for every peer, a test tab's for its own),
+//! and hands a test tab its peer's samples.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{h_flex, v_flex};
@@ -49,6 +50,9 @@ pub(crate) struct LeakDock {
     snapshots: Vec<(Peer, Vec<Sample>)>,
     /// Shows the last two snapshots' diff.
     compare: bool,
+    /// A test tab's peer's recent samples, handed over by the session's
+    /// owner (a tab never reads the owner while drawing).
+    fed: Vec<Sample>,
 }
 
 fn peer_label(peer: Peer) -> String {
@@ -174,41 +178,72 @@ impl Shell {
 
     /// The peers this dock can show: every one of the session this window
     /// owns, else the one its test tab is on.
-    fn leak_peers(&self, cx: &App) -> Vec<Peer> {
+    /// The peers this dock can show: every one of the session this window
+    /// owns, else the one its test tab is on.
+    fn leak_peers(&self) -> Vec<Peer> {
         if let Some(session) = self.local_run_session() {
             return session_peers(session);
         }
         match &self.play.live.local.peer {
-            Some(link) => {
-                let (host, view) = link.shown_peer();
-                host.upgrade()
-                    .filter(|h| h.read(cx).local_run_session().is_some())
-                    .map(|_| vec![view])
-                    .unwrap_or_default()
-            }
+            Some(link) => vec![link.shown_peer().1],
             None => Vec::new(),
         }
     }
 
-    fn leak_with_sim<R>(
-        &self,
-        peer: Peer,
-        cx: &App,
-        f: impl FnOnce(&Simulation) -> R,
-    ) -> Option<R> {
+    /// `peer`'s recent samples: read off the session this window owns, or
+    /// what the owner last handed this test tab. `None` with no session.
+    fn leak_history(&self, peer: Peer) -> Option<Vec<Sample>> {
         if let Some(session) = self.local_run_session() {
-            return session.sim(peer).map(f);
+            return session.sim(peer).map(recent);
         }
-        let (host, _) = self.play.live.local.peer.as_ref()?.shown_peer();
-        let host = host.upgrade()?;
-        let host = host.read(cx);
-        host.local_run_session()?.sim(peer).map(f)
+        self.play.live.local.peer.as_ref()?;
+        Some(self.leaks.fed.clone())
     }
 
+    /// From the session's owner, each frame: a test tab's peer's samples,
+    /// when newer than what it has.
+    pub(in crate::shell) fn leak_feed(&mut self, sim: &Simulation, cx: &mut Context<Self>) {
+        let newest = sim
+            .leak_tracker()
+            .and_then(|t| t.borrow().history().back().map(|s| s.time));
+        if newest != self.leaks.fed.last().map(|s| s.time) {
+            self.leaks.fed = recent(sim);
+            cx.notify();
+        }
+    }
+
+    /// Take snapshot: right here in the window owning the session; a test
+    /// tab asks the owner, which hands the sample back.
     fn leak_take_snapshot(&mut self, peer: Peer, cx: &mut Context<Self>) {
-        let Some(sample) = self.leak_with_sim(peer, cx, Simulation::leak_sample) else {
+        if let Some(session) = self.local_run_session() {
+            if let Some(sim) = session.sim(peer) {
+                let sample = sim.leak_sample();
+                self.leak_keep_snapshot(peer, sample, cx);
+            }
+            return;
+        }
+        let Some(link) = &self.play.live.local.peer else {
             return;
         };
+        let host = link.shown_peer().0;
+        let tab = cx.weak_entity();
+        // Later: the owner may be mid-update (it is drawing this frame).
+        cx.defer(move |cx| {
+            let sample = host
+                .read_with(cx, |host, _| {
+                    host.local_run_session()
+                        .and_then(|s| s.sim(peer))
+                        .map(Simulation::leak_sample)
+                })
+                .ok()
+                .flatten();
+            if let Some(sample) = sample {
+                let _ = tab.update(cx, |tab, cx| tab.leak_keep_snapshot(peer, sample, cx));
+            }
+        });
+    }
+
+    fn leak_keep_snapshot(&mut self, peer: Peer, sample: Sample, cx: &mut Context<Self>) {
         let at = match self.leaks.snapshots.iter().position(|(p, _)| *p == peer) {
             Some(at) => at,
             None => {
@@ -258,16 +293,12 @@ impl Shell {
             self.move_items(Panel::LeakFinder),
             cx,
         );
-        let peers = self.leak_peers(cx);
+        let peers = self.leak_peers();
         let peer = match self.leaks.peer {
             Some(peer) if peers.contains(&peer) => peer,
             _ => peers.first().copied().unwrap_or(Peer::Server),
         };
-        let history: Option<Vec<Sample>> = self.leak_with_sim(peer, cx, |sim| {
-            sim.leak_tracker()
-                .map(|t| t.borrow().history().iter().cloned().collect())
-                .unwrap_or_default()
-        });
+        let history = self.leak_history(peer);
         let Some(history) = history else {
             self.leaks.snapshots.clear();
             let empty = div()
@@ -392,8 +423,8 @@ impl Shell {
         if suspects.is_empty() {
             return v_flex().px(px(8.)).child(small(format!(
                 "Nothing keeps growing. A figure has to rise at {} samples in a row ({} s of \
-                 game time) to show here; a connection, once its instance has been out of the \
-                 place for two.",
+                 game time) to show here; a connection left on a removed instance shows at \
+                 once.",
                 leaks::GROWING,
                 leaks::GROWING as f64 * leaks::SAMPLE_EVERY
             )));
@@ -598,6 +629,17 @@ impl Shell {
             .gap(px(2.))
             .children(notes.into_iter().map(small))
     }
+}
+
+/// The last [`SHOWN`] samples of `sim`.
+fn recent(sim: &Simulation) -> Vec<Sample> {
+    sim.leak_tracker()
+        .map(|t| {
+            let t = t.borrow();
+            let skip = t.history().len().saturating_sub(SHOWN);
+            t.history().iter().skip(skip).cloned().collect()
+        })
+        .unwrap_or_default()
 }
 
 fn session_peers(session: &rbx_sim::Session) -> Vec<Peer> {

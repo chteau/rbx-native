@@ -21,12 +21,14 @@ game:GetService("RunService").Heartbeat:Connect(function()
 end)
 "#;
 
-/// The same work, no leak: a capped cache, one template its handler keeps,
-/// a connection on a part in the place, parts destroyed or dropped.
+/// The same work, no leak: a capped cache, one template its handler keeps
+/// (with a connection on it), a connection on a part in the place, parts
+/// destroyed or dropped.
 const STEADY: &str = r#"
 local cache = {}
 local template = Instance.new("Part")
 template.Name = "Template"
+template.Changed:Connect(function() end)
 local live = Instance.new("Part")
 live.Parent = workspace
 live.Touched:Connect(function() end)
