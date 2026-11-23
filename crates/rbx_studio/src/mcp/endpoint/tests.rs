@@ -195,3 +195,33 @@ fn a_token_that_differs_anywhere_or_in_length_is_not_the_token() {
     assert!(!super::same(b"abc", b"abcd"));
     assert!(!super::same(b"", b"a"));
 }
+
+#[test]
+fn a_client_counts_as_attached_while_its_connection_stays_open() {
+    let dir = scratch("attached");
+    let server = Server::start(&dir).unwrap();
+    assert_eq!((server.clients(), server.last_call()), (0, None));
+    let stream = broker::connect(server.endpoint()).unwrap();
+    let mut writer = stream.try_clone().unwrap();
+    writeln!(writer, "ping").unwrap();
+    let mut lines = BufReader::new(stream).lines();
+    let reader = std::thread::spawn(move || {
+        let line = lines.next();
+        (line, lines)
+    });
+    answer_until(&server, || reader.is_finished());
+    let (line, lines) = reader.join().unwrap();
+    assert_eq!(line.unwrap().unwrap(), "echo ping");
+    assert_eq!(server.clients(), 1);
+    assert!(server.last_call().is_some());
+    drop((writer, lines));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while server.clients() != 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        server.clients(),
+        0,
+        "a closed connection is no longer counted"
+    );
+}

@@ -56,6 +56,12 @@ impl HoverFade {
         current
     }
 
+    /// Where the blend is heading and how far it has got at `now`, without
+    /// changing course.
+    pub fn current(&self, now: Instant, duration: Duration) -> (bool, f32) {
+        (self.hovered, self.sample(now, duration))
+    }
+
     fn sample(&self, now: Instant, duration: Duration) -> f32 {
         let to = if self.hovered { 1. } else { 0. };
         let Some(since) = self.since else {

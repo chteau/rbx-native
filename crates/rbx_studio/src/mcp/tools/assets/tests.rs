@@ -13,6 +13,7 @@ use crate::mcp::{Insertion, Session};
 use crate::properties::Properties;
 
 mod images;
+mod import;
 mod insert;
 mod search;
 

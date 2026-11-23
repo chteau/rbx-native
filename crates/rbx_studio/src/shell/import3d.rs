@@ -66,7 +66,7 @@ pub(crate) struct Imported {
     pub(crate) asset_id: u64,
     /// A caveat to show beside the success (a triangle count that could not
     /// be taken).
-    note: Option<String>,
+    pub(crate) note: Option<String>,
 }
 
 impl Shell {

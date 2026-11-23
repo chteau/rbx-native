@@ -83,6 +83,7 @@ actions!(
         MenuQuit,
         MenuCustomizeShortcuts,
         MenuBetaFeatures,
+        MenuConnectAi,
         MenuScriptTemplates,
         MenuUndo,
         MenuRedo,
@@ -126,6 +127,7 @@ actions!(
         MenuToggleInputActions,
         MenuToggleToolbox,
         MenuToggleSecurityAudit,
+        MenuTogglePrePublish,
         MenuRequireGraph,
         MenuTogglePlaytests,
         MenuToggleLayers,
@@ -280,6 +282,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         // Studio keeps both of these under File as well.
         MenuItem::action("Customize Shortcuts…", MenuCustomizeShortcuts),
         MenuItem::action("Beta Features…", MenuBetaFeatures),
+        MenuItem::action("Connect an AI Assistant…", MenuConnectAi),
         MenuItem::action("Script Templates…", MenuScriptTemplates),
     ];
     if crate::beta::enabled(crate::update_planning::BETA_ID) {
@@ -335,6 +338,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                     MenuItem::action("Toolbox", MenuToggleToolbox),
                     MenuItem::action("Input Actions", MenuToggleInputActions),
                     MenuItem::action("Security Audit", MenuToggleSecurityAudit),
+                    MenuItem::action("Pre-publish Check", MenuTogglePrePublish),
                 ]
                 .into_iter()
                 // A window rather than a dock, listed with the docks that read

@@ -17,6 +17,12 @@ const SKILL_NAME: &str = "skill_name";
 const FILES: &[&str] = &[
     include_str!("../skills/accessibility.md"),
     include_str!("../skills/animation.md"),
+    include_str!("../skills/build-color-and-materials.md"),
+    include_str!("../skills/build-importing-assets.md"),
+    include_str!("../skills/build-level-design.md"),
+    include_str!("../skills/build-lighting-and-atmosphere.md"),
+    include_str!("../skills/build-modeling.md"),
+    include_str!("../skills/build-modular-kits.md"),
     include_str!("../skills/data-persistence.md"),
     include_str!("../skills/debugging.md"),
     include_str!("../skills/docs-search.md"),

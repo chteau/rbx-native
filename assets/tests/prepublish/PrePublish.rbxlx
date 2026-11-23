@@ -1,0 +1,819 @@
+<roblox version="4">
+  <Meta name="ExplicitAutoJoints">true</Meta>
+  <Item class="Workspace" referent="RBX0">
+    <Properties>
+      <string name="Name">Workspace</string>
+      <bool name="StreamingEnabled">true</bool>
+    </Properties>
+    <Item class="Part" referent="RBX11">
+      <Properties>
+        <string name="Name">Baseplate</string>
+        <bool name="Anchored">true</bool>
+        <CoordinateFrame name="CFrame">
+          <X>0</X>
+          <Y>-0.5</Y>
+          <Z>0</Z>
+          <R00>1</R00>
+          <R01>0</R01>
+          <R02>0</R02>
+          <R10>0</R10>
+          <R11>1</R11>
+          <R12>0</R12>
+          <R20>0</R20>
+          <R21>0</R21>
+          <R22>1</R22>
+        </CoordinateFrame>
+        <Vector3 name="size">
+          <X>64</X>
+          <Y>1</Y>
+          <Z>64</Z>
+        </Vector3>
+      </Properties>
+    </Item>
+    <Item class="Folder" referent="RBX12">
+      <Properties>
+        <string name="Name">Map</string>
+      </Properties>
+      <Item class="Part" referent="RBX13">
+        <Properties>
+          <string name="Name">Door</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>0</X>
+            <Y>3</Y>
+            <Z>-10</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Part" referent="RBX14">
+      <Properties>
+        <string name="Name">Lamp</string>
+        <bool name="Anchored">true</bool>
+        <CoordinateFrame name="CFrame">
+          <X>6</X>
+          <Y>3</Y>
+          <Z>-10</Z>
+          <R00>1</R00>
+          <R01>0</R01>
+          <R02>0</R02>
+          <R10>0</R10>
+          <R11>1</R11>
+          <R12>0</R12>
+          <R20>0</R20>
+          <R21>0</R21>
+          <R22>1</R22>
+        </CoordinateFrame>
+        <Vector3 name="size">
+          <X>2</X>
+          <Y>2</Y>
+          <Z>2</Z>
+        </Vector3>
+      </Properties>
+    </Item>
+    <Item class="Model" referent="RBX15">
+      <Properties>
+        <string name="Name">Props</string>
+      </Properties>
+      <Item class="MeshPart" referent="RBX16">
+        <Properties>
+          <string name="Name">BadMesh</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>-8</X>
+            <Y>1</Y>
+            <Z>8</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Content name="MeshId">
+            <url>rbxassetid://abc</url>
+          </Content>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+      <Item class="MeshPart" referent="RBX17">
+        <Properties>
+          <string name="Name">EmptyMesh</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>-4</X>
+            <Y>1</Y>
+            <Z>8</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Content name="MeshId">
+            <null></null>
+          </Content>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+      <Item class="MeshPart" referent="RBX18">
+        <Properties>
+          <string name="Name">Dense</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>0</X>
+            <Y>1</Y>
+            <Z>8</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Content name="MeshId">
+            <url>rbxassetid://777</url>
+          </Content>
+          <Content name="TextureID">
+            <url>rbxassetid://1001</url>
+          </Content>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+      <Item class="Part" referent="RBX19">
+        <Properties>
+          <string name="Name">Holder</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>4</X>
+            <Y>1</Y>
+            <Z>8</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+        <Item class="Decal" referent="RBX20">
+          <Properties>
+            <string name="Name">Gone</string>
+            <Content name="Texture">
+              <url>rbxassetid://404</url>
+            </Content>
+          </Properties>
+        </Item>
+        <Item class="Sound" referent="RBX21">
+          <Properties>
+            <string name="Name">Private</string>
+            <Content name="SoundId">
+              <url>rbxassetid://403</url>
+            </Content>
+          </Properties>
+        </Item>
+        <Item class="Sound" referent="RBX22">
+          <Properties>
+            <string name="Name">Placeholder</string>
+            <Content name="SoundId">
+              <null></null>
+            </Content>
+          </Properties>
+        </Item>
+        <Item class="Animation" referent="RBX23">
+          <Properties>
+            <string name="Name">Walk</string>
+            <Content name="AnimationId">
+              <url>rbxassetid://1001</url>
+            </Content>
+          </Properties>
+        </Item>
+        <Item class="Animation" referent="RBX24">
+          <Properties>
+            <string name="Name">NoId</string>
+            <Content name="AnimationId">
+              <null></null>
+            </Content>
+          </Properties>
+        </Item>
+        <Item class="Decal" referent="RBX25">
+          <Properties>
+            <string name="Name">Native</string>
+            <Content name="Texture">
+              <url>rbxasset://textures/SpawnLocation.png</url>
+            </Content>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="UnionOperation" referent="RBX26">
+        <Properties>
+          <string name="Name">BigUnion</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>8</X>
+            <Y>1</Y>
+            <Z>8</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <int name="TriangleCount">12000</int>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+      <Item class="UnionOperation" referent="RBX27">
+        <Properties>
+          <string name="Name">SmallUnion</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>12</X>
+            <Y>1</Y>
+            <Z>8</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <int name="TriangleCount">500</int>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Model" referent="RBX28">
+      <Properties>
+        <string name="Name">Crates</string>
+      </Properties>
+      <Item class="Part" referent="RBX29">
+        <Properties>
+          <string name="Name">Crate</string>
+          <bool name="Anchored">false</bool>
+          <CoordinateFrame name="CFrame">
+            <X>-10</X>
+            <Y>4</Y>
+            <Z>-4</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+      <Item class="Part" referent="RBX30">
+        <Properties>
+          <string name="Name">Lid</string>
+          <bool name="Anchored">false</bool>
+          <CoordinateFrame name="CFrame">
+            <X>-10</X>
+            <Y>6</Y>
+            <Z>-4</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Model" referent="RBX31">
+      <Properties>
+        <string name="Name">Pair</string>
+      </Properties>
+      <Item class="Part" referent="RBX32">
+        <Properties>
+          <string name="Name">A</string>
+          <bool name="Anchored">false</bool>
+          <CoordinateFrame name="CFrame">
+            <X>-14</X>
+            <Y>4</Y>
+            <Z>-4</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+        <Item class="WeldConstraint" referent="RBX34">
+          <Properties>
+            <string name="Name">Weld</string>
+            <Ref name="Part0">RBX32</Ref>
+            <Ref name="Part1">RBX33</Ref>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="Part" referent="RBX33">
+        <Properties>
+          <string name="Name">B</string>
+          <bool name="Anchored">false</bool>
+          <CoordinateFrame name="CFrame">
+            <X>-14</X>
+            <Y>6</Y>
+            <Z>-4</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Part" referent="RBX35">
+      <Properties>
+        <string name="Name">Loose</string>
+        <bool name="Anchored">false</bool>
+        <CoordinateFrame name="CFrame">
+          <X>-18</X>
+          <Y>4</Y>
+          <Z>-4</Z>
+          <R00>1</R00>
+          <R01>0</R01>
+          <R02>0</R02>
+          <R10>0</R10>
+          <R11>1</R11>
+          <R12>0</R12>
+          <R20>0</R20>
+          <R21>0</R21>
+          <R22>1</R22>
+        </CoordinateFrame>
+        <Vector3 name="size">
+          <X>2</X>
+          <Y>2</Y>
+          <Z>2</Z>
+        </Vector3>
+      </Properties>
+    </Item>
+    <Item class="Model" referent="RBX36">
+      <Properties>
+        <string name="Name">Car</string>
+      </Properties>
+      <Item class="Part" referent="RBX37">
+        <Properties>
+          <string name="Name">Body</string>
+          <bool name="Anchored">true</bool>
+          <CoordinateFrame name="CFrame">
+            <X>10</X>
+            <Y>2</Y>
+            <Z>-4</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+        <Item class="Motor6D" referent="RBX39">
+          <Properties>
+            <string name="Name">Axle</string>
+            <Ref name="Part0">RBX37</Ref>
+            <Ref name="Part1">RBX38</Ref>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="Part" referent="RBX38">
+        <Properties>
+          <string name="Name">Wheel</string>
+          <bool name="Anchored">false</bool>
+          <CoordinateFrame name="CFrame">
+            <X>10</X>
+            <Y>1</Y>
+            <Z>-6</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Part" referent="RBX40">
+      <Properties>
+        <string name="Name">Beam</string>
+        <bool name="Anchored">true</bool>
+        <CoordinateFrame name="CFrame">
+          <X>14</X>
+          <Y>10</Y>
+          <Z>-4</Z>
+          <R00>1</R00>
+          <R01>0</R01>
+          <R02>0</R02>
+          <R10>0</R10>
+          <R11>1</R11>
+          <R12>0</R12>
+          <R20>0</R20>
+          <R21>0</R21>
+          <R22>1</R22>
+        </CoordinateFrame>
+        <Vector3 name="size">
+          <X>2</X>
+          <Y>2</Y>
+          <Z>2</Z>
+        </Vector3>
+      </Properties>
+      <Item class="Attachment" referent="RBX42">
+        <Properties>
+          <string name="Name">Top</string>
+        </Properties>
+      </Item>
+      <Item class="RopeConstraint" referent="RBX44">
+        <Properties>
+          <string name="Name">Rope</string>
+          <Ref name="Attachment0">RBX42</Ref>
+          <Ref name="Attachment1">RBX43</Ref>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Part" referent="RBX41">
+      <Properties>
+        <string name="Name">Hanging</string>
+        <bool name="Anchored">false</bool>
+        <CoordinateFrame name="CFrame">
+          <X>14</X>
+          <Y>6</Y>
+          <Z>-4</Z>
+          <R00>1</R00>
+          <R01>0</R01>
+          <R02>0</R02>
+          <R10>0</R10>
+          <R11>1</R11>
+          <R12>0</R12>
+          <R20>0</R20>
+          <R21>0</R21>
+          <R22>1</R22>
+        </CoordinateFrame>
+        <Vector3 name="size">
+          <X>2</X>
+          <Y>2</Y>
+          <Z>2</Z>
+        </Vector3>
+      </Properties>
+      <Item class="Attachment" referent="RBX43">
+        <Properties>
+          <string name="Name">Bottom</string>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Part" referent="RBX45">
+      <Properties>
+        <string name="Name">Floating</string>
+        <bool name="Anchored">false</bool>
+        <CoordinateFrame name="CFrame">
+          <X>18</X>
+          <Y>6</Y>
+          <Z>-4</Z>
+          <R00>1</R00>
+          <R01>0</R01>
+          <R02>0</R02>
+          <R10>0</R10>
+          <R11>1</R11>
+          <R12>0</R12>
+          <R20>0</R20>
+          <R21>0</R21>
+          <R22>1</R22>
+        </CoordinateFrame>
+        <Vector3 name="size">
+          <X>2</X>
+          <Y>2</Y>
+          <Z>2</Z>
+        </Vector3>
+      </Properties>
+      <Item class="Attachment" referent="RBX46">
+        <Properties>
+          <string name="Name">At</string>
+        </Properties>
+      </Item>
+      <Item class="AlignPosition" referent="RBX47">
+        <Properties>
+          <string name="Name">Hold</string>
+          <Ref name="Attachment0">RBX46</Ref>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Model" referent="RBX48">
+      <Properties>
+        <string name="Name">Npc</string>
+      </Properties>
+      <Item class="Humanoid" referent="RBX49">
+        <Properties>
+          <string name="Name">Humanoid</string>
+        </Properties>
+      </Item>
+      <Item class="Part" referent="RBX50">
+        <Properties>
+          <string name="Name">HumanoidRootPart</string>
+          <bool name="Anchored">false</bool>
+          <CoordinateFrame name="CFrame">
+            <X>22</X>
+            <Y>3</Y>
+            <Z>-4</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="Tool" referent="RBX51">
+      <Properties>
+        <string name="Name">Sword</string>
+      </Properties>
+      <Item class="Part" referent="RBX52">
+        <Properties>
+          <string name="Name">Handle</string>
+          <bool name="Anchored">false</bool>
+          <CoordinateFrame name="CFrame">
+            <X>26</X>
+            <Y>1</Y>
+            <Z>-4</Z>
+            <R00>1</R00>
+            <R01>0</R01>
+            <R02>0</R02>
+            <R10>0</R10>
+            <R11>1</R11>
+            <R12>0</R12>
+            <R20>0</R20>
+            <R21>0</R21>
+            <R22>1</R22>
+          </CoordinateFrame>
+          <Vector3 name="size">
+            <X>2</X>
+            <Y>2</Y>
+            <Z>2</Z>
+          </Vector3>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="Players" referent="RBX1">
+    <Properties>
+      <string name="Name">Players</string>
+    </Properties>
+  </Item>
+  <Item class="ServerScriptService" referent="RBX2">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Script" referent="RBX7">
+      <Properties>
+        <string name="Name">Deprecated</string>
+        <ProtectedString name="Source">-- Pre-publish fixture: deprecated API. Every flagged line carries an expect
+-- marker naming its check id; the others must stay quiet.
+local Players = game:GetService(&quot;Players&quot;)
+
+wait(1) -- expect: deprecated-api
+spawn(function() end) -- expect: deprecated-api
+delay(1, function() end) -- expect: deprecated-api
+task.wait(1)
+task.spawn(function() end)
+
+local part = Instance.new(&quot;Part&quot;, workspace) -- expect: deprecated-api
+local other = Instance.new(&quot;Part&quot;)
+other.Parent = workspace
+
+Players.PlayerAdded:connect(function() end) -- expect: deprecated-api
+Players.PlayerAdded:Connect(function() end)
+
+local base = game.Workspace.Baseplate -- expect: deprecated-api
+local same = workspace.Baseplate
+
+local hit = workspace:FindPartOnRay(Ray.new(Vector3.zero, Vector3.yAxis)) -- expect: deprecated-api
+local result = workspace:Raycast(Vector3.zero, Vector3.yAxis)
+local copy = part:clone() -- expect: deprecated-api
+local fine = part:Clone()
+
+-- A method the place's own code defines isn't Roblox's deprecated one.
+local Mover = {}
+function Mover:move() end
+Mover:move()
+</ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="Script" referent="RBX8">
+      <Properties>
+        <string name="Name">Shadowed</string>
+        <ProtectedString name="Source">-- Pre-publish fixture: globals the script declares itself aren't Roblox's.
+local wait = task.wait
+wait(1)
+
+local function spawn(f)
+	task.spawn(f)
+end
+spawn(print)
+
+local game = { Workspace = {} }
+local w = game.Workspace
+</ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="Script" referent="RBX9">
+      <Properties>
+        <string name="Name">Data</string>
+        <ProtectedString name="Source">-- Pre-publish fixture: DataStore and MemoryStore calls outside pcall.
+local DataStoreService = game:GetService(&quot;DataStoreService&quot;)
+local HttpService = game:GetService(&quot;HttpService&quot;)
+local store = DataStoreService:GetDataStore(&quot;Players&quot;)
+local ordered = DataStoreService:GetOrderedDataStore(&quot;Wins&quot;)
+local map = game:GetService(&quot;MemoryStoreService&quot;):GetSortedMap(&quot;Queue&quot;)
+local Profiles = {}
+Profiles.store = DataStoreService:GetDataStore(&quot;Profiles&quot;)
+
+local data = store:GetAsync(&quot;key&quot;) -- expect: datastore-without-pcall
+store:SetAsync(&quot;key&quot;, 1) -- expect: datastore-without-pcall
+ordered:GetSortedAsync(false, 10) -- expect: datastore-without-pcall
+map:SetAsync(&quot;k&quot;, 1, 60) -- expect: datastore-without-pcall
+DataStoreService:GetDataStore(&quot;Other&quot;):IncrementAsync(&quot;k&quot;) -- expect: datastore-without-pcall
+Profiles.store:GetAsync(&quot;k&quot;) -- expect: datastore-without-pcall
+
+local ok, value = pcall(function()
+	return store:GetAsync(&quot;key&quot;)
+end)
+
+local function save(key)
+	store:UpdateAsync(key, function(old)
+		return old
+	end)
+end
+pcall(save, &quot;key&quot;)
+
+local function load()
+	return store:GetAsync(&quot;x&quot;)
+end
+local function safeLoad()
+	return load()
+end
+pcall(safeLoad)
+
+xpcall(function()
+	store:RemoveAsync(&quot;k&quot;)
+end, warn)
+
+-- HttpService's GetAsync isn't a data store.
+local page = HttpService:GetAsync(&quot;https://example.com&quot;)
+</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="ReplicatedStorage" referent="RBX3">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="RemoteEvent" referent="RBX6">
+      <Properties>
+        <string name="Name">Orphan</string>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="RBX4">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="RBX5">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="LocalScript" referent="RBX10">
+        <Properties>
+          <string name="Name">Streaming</string>
+          <ProtectedString name="Source">-- Pre-publish fixture: client code under StreamingEnabled.
+local door = workspace.Map.Door -- expect: streaming-index
+local map = workspace.Map
+local safe = workspace.Map:WaitForChild(&quot;Door&quot;)
+workspace.Map.Door.Touched:Connect(function() end) -- expect: streaming-index
+local lamp = workspace:WaitForChild(&quot;Lamp&quot;)
+</ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+</roblox>

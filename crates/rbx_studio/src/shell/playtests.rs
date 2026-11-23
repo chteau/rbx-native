@@ -18,6 +18,7 @@
 
 mod dock;
 mod playback;
+mod share;
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -88,6 +89,13 @@ pub(super) struct Playtests {
     scrub_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// `RBX_STUDIO_PLAYTESTS` has been looked at.
     env_applied: bool,
+    /// The shared repro this window replays, read-only; the dock lists it
+    /// alone.
+    pub(super) repro: Option<share::ReproView>,
+    /// Export repro… was picked for this recording; the dialog is built at
+    /// the next render, which has the window its note field needs.
+    export_request: Option<PathBuf>,
+    pub(super) export: Option<share::ExportDraft>,
 }
 
 impl Playtests {
@@ -106,6 +114,9 @@ impl Playtests {
             listed_key: None,
             scrub_bounds: Rc::new(Cell::new(None)),
             env_applied: false,
+            repro: None,
+            export_request: None,
+            export: None,
         }
     }
 
@@ -152,6 +163,22 @@ impl Shell {
     /// and redraws the overlay.
     pub(super) fn playtests_refresh(&mut self, cx: &mut Context<Self>) {
         let key = self.playtests_place_key();
+        if let Some(repro) = &self.playtests.repro {
+            let visible = self
+                .playtests
+                .entries
+                .first()
+                .is_none_or(|entry| entry.visible);
+            self.playtests.entries = vec![Entry {
+                path: repro.file.clone(),
+                summary: Ok(repro.recording.summary()),
+                visible,
+                loaded: Some(repro.recording.clone()),
+            }];
+            self.playtests.listed_key = Some(key);
+            self.playtests_redraw(cx);
+            return;
+        }
         let listed = self
             .playtests_dir()
             .map(|dir| store::list(&dir))
@@ -245,12 +272,11 @@ impl Shell {
             self.playtests.recorder = None;
             return;
         }
-        let title = self.title.to_string();
-        let place = [".rbxlx", ".rbxl", ".rbxm"]
-            .iter()
-            .find_map(|ext| title.strip_suffix(ext))
-            .unwrap_or(&title);
-        let name = format!("{place} {}", chrono::Local::now().format("%Y-%m-%d %H:%M"));
+        let name = format!(
+            "{} {}",
+            self.playtests_place_name(),
+            chrono::Local::now().format("%Y-%m-%d %H:%M")
+        );
         let started = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());

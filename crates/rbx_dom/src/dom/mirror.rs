@@ -12,6 +12,7 @@
 //! tree and the mirror ends up restored too.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use super::WeakDom;
 use crate::change::Change;
@@ -27,7 +28,7 @@ pub struct Snapshot {
     /// `None` at the root level; meaningless when `instance` is `None`.
     parent: Option<Ref>,
     /// `None` when the DOM no longer holds the instance.
-    instance: Option<Instance>,
+    instance: Option<Arc<Instance>>,
 }
 
 impl WeakDom {
@@ -36,7 +37,7 @@ impl WeakDom {
     /// instance the log names, as it stands now, and, for one added,
     /// removed or moved, the parents whose child lists changed with it: the
     /// one it hangs under now and the one a move took it from. A property
-    /// write costs one instance copy; only a structural change copies a
+    /// write costs one shared instance; only a structural change copies a
     /// parent, since only a structural change reorders one, and a parent's
     /// copy carries its children in the order this DOM holds them, which is
     /// what an undo needs to put a moved child back in its old place among
@@ -81,7 +82,7 @@ impl WeakDom {
             .map(|referent| Snapshot {
                 referent,
                 parent: self.parent(referent),
-                instance: self.get(referent).cloned(),
+                instance: self.instances.get(&referent).cloned(),
             })
             .collect()
     }
@@ -103,7 +104,7 @@ impl WeakDom {
         }
     }
 
-    fn mirror_present(&mut self, referent: Ref, parent: Option<Ref>, instance: Instance) {
+    fn mirror_present(&mut self, referent: Ref, parent: Option<Ref>, instance: Arc<Instance>) {
         let hung_under = self.parents.get(&referent).copied();
         let at_root = hung_under.is_none() && self.root_refs.contains(&referent);
         if hung_under != parent || (parent.is_none() && !at_root) {
@@ -111,7 +112,7 @@ impl WeakDom {
             match parent {
                 Some(parent) => {
                     self.parents.insert(referent, parent);
-                    if let Some(instance) = self.instances.get_mut(&parent) {
+                    if let Some(instance) = self.instances.get_mut(&parent).map(Arc::make_mut) {
                         // Appended only where the parent's own snapshot does
                         // not settle the order, see `snapshot`.
                         if !instance.children().contains(&referent) {

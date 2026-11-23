@@ -31,6 +31,10 @@ rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_lua = { path = "../rbx_lua" }
 # rbxaudit only: the whole-place script security audit it prints.
 rbx_audit = { path = "../rbx_audit" }
+# rbxaudit --prepublish only: asks the asset service whether ids exist, and
+# reads meshes out of the local asset cache.
+rbx_cloud = { path = "../rbx_cloud" }
+rbx_assets = { path = "../rbx_assets" }
 # rbxlua test only: Loren's `return function(t)` specs and Rojo project folders.
 rbx_loren = { path = "../rbx_loren" }
 # rbxmerge only: the sidecar conflict file it leaves for the editor; both

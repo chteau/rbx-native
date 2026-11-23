@@ -87,6 +87,18 @@ fn a_set_with_only_a_colour_map_leaves_the_other_three_empty() {
 }
 
 #[test]
+fn an_empty_legacy_map_falls_back_to_its_content_twin() {
+    let dom = with_appearance(vec![
+        ("ColorMap", Variant::String(String::new())),
+        ("ColorMapContent", content(12)),
+    ]);
+
+    let appearance = planned(&dom).entries[0].appearance.clone().unwrap();
+
+    assert_eq!(appearance.maps[0], Some(AssetRef::Id(12)));
+}
+
+#[test]
 fn the_alpha_mode_enum_is_read_and_defaults_to_overlay() {
     let transparency = with_appearance(vec![
         ("ColorMap", content(10)),

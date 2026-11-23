@@ -114,3 +114,23 @@ fn a_crlf_checkout_parses_the_same() {
     assert_eq!((lf.name, lf.description), (crlf.name, crlf.description));
     assert_eq!(lf.body.lines().next(), crlf.body.lines().next());
 }
+
+/// The building skills hand their Luau to `execute_luau` in Edit, so every
+/// block has to run in the same runtime against a bare place.
+#[test]
+fn building_snippets_run_in_the_edit_runtime() {
+    use rbx_dom::{Instance, Ref, WeakDom};
+    use rbx_reflection::ReflectionDatabase;
+
+    for skill in skills().filter(|skill| skill.name.starts_with("build-")) {
+        let blocks = skill.body.split("```lua").skip(1);
+        for block in blocks.map(|rest| rest.split("```").next().unwrap_or_default()) {
+            let mut dom = WeakDom::new();
+            dom.insert(Instance::new(Ref::new(1), "Workspace", "Workspace"));
+            let mut runtime = rbx_lua::Runtime::new(dom, ReflectionDatabase::embedded()).unwrap();
+            if let Err(err) = runtime.run(block) {
+                panic!("{}: a Luau block fails: {err}\n{block}", skill.name);
+            }
+        }
+    }
+}

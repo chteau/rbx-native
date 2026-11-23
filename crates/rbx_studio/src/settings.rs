@@ -118,6 +118,9 @@ pub(crate) struct Settings {
     /// Whether opening a script's Graph side tidies it, rather than
     /// restoring the layout saved for it.
     pub(crate) optimize_graph_on_open: bool,
+    /// Whether the MCP server (Settings › AI assistants) listens. On by
+    /// default: it only answers on 127.0.0.1, to a client holding the token.
+    pub(crate) mcp_server: bool,
     /// Real Studio's two insertion preferences, off the `⋯` beside the
     /// Explorer's insert search field (`studio/explorer.md`). Both default
     /// on, as they do there: a second `Part` called `Part` is not something
@@ -132,6 +135,9 @@ pub(crate) struct Settings {
     /// own layers and notes (see `crate::strip`). Defaults on: they mean
     /// nothing to the engine, and a note is not meant for players.
     pub(crate) strip_on_publish: bool,
+    /// Places (by id) whose Save/Publish to Roblox doesn't run the
+    /// pre-publish check first: "Don't ask again for this place".
+    pub(crate) prepublish_skip: Vec<u64>,
     /// The dragger guides' switches, see [`DraggerSettings`].
     pub(crate) dragger: DraggerSettings,
     /// The camera's feel and the snap increments, see [`Controls`].
@@ -262,10 +268,12 @@ impl Default for Settings {
             output_rich_text: false,
             output_display: OutputDisplay::default(),
             optimize_graph_on_open: false,
+            mcp_server: true,
             increment_names: true,
             expand_on_select: true,
             insert_anchored: false,
             strip_on_publish: true,
+            prepublish_skip: Vec::new(),
             dragger: DraggerSettings::default(),
             controls: Controls::default(),
             discord_presence: false,
@@ -495,6 +503,10 @@ fn load_from(path: &Path) -> Settings {
             .get("optimize_graph_on_open")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        mcp_server: value
+            .get("mcp_server")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
         increment_names: value
             .get("increment_names")
             .and_then(|v| v.as_bool())
@@ -503,6 +515,16 @@ fn load_from(path: &Path) -> Settings {
             .get("strip_on_publish")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        prepublish_skip: value
+            .get("prepublish_skip")
+            .and_then(serde_json::Value::as_array)
+            .map(|places| {
+                places
+                    .iter()
+                    .filter_map(serde_json::Value::as_u64)
+                    .collect()
+            })
+            .unwrap_or_default(),
         expand_on_select: value
             .get("expand_on_select")
             .and_then(|v| v.as_bool())
@@ -831,6 +853,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     value["play_copy_name"] = settings.play_copy_name.clone().into();
     value["icon_pack_picked"] = settings.icon_pack_picked.unwrap_or(false).into();
     value["insert_anchored"] = settings.insert_anchored.into();
+    value["mcp_server"] = settings.mcp_server.into();
     value["output_rich_text"] = settings.output_rich_text.into();
     value["playtest_rate_hz"] = settings.playtest_rate_hz.into();
     value["network_presets"] = network_presets::json(&settings.network_presets);
@@ -838,6 +861,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     value["device_scaling"] = settings.device_scaling.key().into();
     value["device_keyboard_layout"] = settings.device_keyboard_layout.key().into();
     value["strip_on_publish"] = settings.strip_on_publish.into();
+    value["prepublish_skip"] = settings.prepublish_skip.clone().into();
     value["closed_documents"] = settings.closed_documents.clone().into();
     value["recent_icons"] = settings.recent_icons.into();
     // A fixed-shape object always serializes; nothing here can fail.
@@ -1616,5 +1640,22 @@ mod tests {
         let read = load_from(&path);
         assert_eq!(read.anim_sheet_height, None);
         assert_eq!(read.anim_names_width, None);
+    }
+
+    #[test]
+    fn the_mcp_server_is_on_unless_switched_off() {
+        let path = temp_settings_path();
+        assert!(load_from(&path).mcp_server, "no file: on");
+        let off = Settings {
+            mcp_server: false,
+            ..Settings::default()
+        };
+        save_to(&off, &path).expect("save settings");
+        assert!(!load_from(&path).mcp_server);
+        std::fs::write(&path, r#"{"quality": "auto"}"#).expect("write");
+        assert!(
+            load_from(&path).mcp_server,
+            "a file from before the field: on"
+        );
     }
 }
