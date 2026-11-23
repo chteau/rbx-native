@@ -507,6 +507,40 @@ pub fn scenes() -> Vec<Scene> {
             },
         ),
         stage_scene(
+            "studio_future",
+            "The template's Lighting values under Technology Future",
+            with(studio(), &[("Technology", Variant::Enum(FUTURE))]),
+            stage,
+        ),
+        Scene {
+            name: "atmosphere_floor",
+            about: "Atmosphere Density 0.4, Haze 2, Glare 0.5 over a grey floor seen at a shallow angle",
+            eye: [0.0, 3.0, 0.0],
+            look_at: [0.0, 1.0, -60.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: vec![
+                ("floor 10", [0.0, 0.0, -10.0]),
+                ("floor 30", [0.0, 0.0, -30.0]),
+                ("floor 80", [0.0, 0.0, -80.0]),
+                ("floor 300", [0.0, 0.0, -300.0]),
+                ("horizon", [0.0, 30.0, -2000.0]),
+                ("sky", [0.0, 600.0, -2000.0]),
+            ],
+            build: |b| {
+                b.floor();
+                b.block([4.0; 3], [-6.0, 2.0, -40.0], [196, 40, 28]);
+                b.block([4.0; 3], [8.0, 2.0, -120.0], [248, 248, 248]);
+                let a = b.lighting_child("Atmosphere");
+                b.set(a, "Density", float(0.4));
+                b.set(a, "Offset", float(0.25));
+                b.set(a, "Color", rgb(199, 199, 199));
+                b.set(a, "Decay", rgb(106, 112, 125));
+                b.set(a, "Glare", float(0.5));
+                b.set(a, "Haze", float(2.0));
+            },
+        },
+        stage_scene(
             "studio_lighting",
             "The template's Lighting values alone, default sky",
             studio(),

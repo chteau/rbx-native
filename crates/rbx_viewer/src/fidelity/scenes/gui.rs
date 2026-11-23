@@ -448,6 +448,37 @@ fn stacking(b: &mut Builder) {
     }
 }
 
+/// `CanvasGroup`s at `GroupTransparency` 0.5 with a white background and
+/// three kinds of child, with no background of their own, at 0.25 tinted by
+/// `GroupColor3`, at 0 over a half transparent child, and one inside a
+/// plain frame.
+fn canvas_groups(b: &mut Builder) {
+    let screen = backdrop(b);
+    let group = |b: &mut Builder, parent, at: [f32; 2], fade: f32| {
+        let group = object(b, parent, "CanvasGroup", at, [240.0, 240.0]);
+        b.set(group, "BackgroundColor3", rgb(255, 255, 255));
+        b.set(group, "GroupTransparency", float(fade));
+        group
+    };
+    let full = group(b, screen, [40.0, 90.0], 0.5);
+    frame(b, full, [20.0, 20.0], [100.0, 100.0], [200, 40, 40]);
+    let text = label(b, full, [20.0, 130.0], [200.0, 40.0], "Group", 32.0);
+    b.set(text, "TextColor3", rgb(0, 0, 0));
+    image(b, full, [130.0, 20.0], [90.0, 90.0], GRID);
+    let bare = group(b, screen, [320.0, 90.0], 0.5);
+    b.set(bare, "BackgroundTransparency", float(1.0));
+    frame(b, bare, [40.0, 40.0], [160.0, 160.0], [200, 40, 40]);
+    let tinted = group(b, screen, [600.0, 90.0], 0.25);
+    b.set(tinted, "GroupColor3", rgb(0, 255, 255));
+    frame(b, tinted, [40.0, 40.0], [160.0, 160.0], [200, 40, 40]);
+    let clear = group(b, screen, [880.0, 90.0], 0.0);
+    let child = frame(b, clear, [40.0, 40.0], [160.0, 160.0], [200, 40, 40]);
+    b.set(child, "BackgroundTransparency", float(0.5));
+    let holder = frame(b, screen, [40.0, 380.0], [300.0, 300.0], [40, 120, 220]);
+    let inner = group(b, holder, [30.0, 30.0], 0.5);
+    frame(b, inner, [40.0, 40.0], [160.0, 160.0], [200, 40, 40]);
+}
+
 pub(super) fn scenes() -> Vec<Scene> {
     let gui = |name, about, build| Scene {
         name,
@@ -489,6 +520,11 @@ pub(super) fn scenes() -> Vec<Scene> {
             "gui_stacking",
             "Stacked half transparent frames, ZIndex, CanvasGroup, UIListLayout with UIPadding",
             stacking,
+        ),
+        gui(
+            "gui_canvas_groups",
+            "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested",
+            canvas_groups,
         ),
     ]
 }

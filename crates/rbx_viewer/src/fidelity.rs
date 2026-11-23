@@ -159,6 +159,28 @@ impl Builder {
         part
     }
 
+    /// An anchored plastic `MeshPart` of the mesh at `mesh` at `position`,
+    /// fitted to `size`.
+    pub fn mesh_part(
+        &mut self,
+        mesh: &str,
+        size: [f32; 3],
+        position: [f32; 3],
+        rgb: [u8; 3],
+    ) -> Ref {
+        let part = self
+            .dom
+            .new_instance("MeshPart", "MeshPart", Some(self.world));
+        self.set(part, "Anchored", Variant::Bool(true));
+        self.set(part, "MeshId", content(mesh));
+        self.set(part, "size", vec3(size));
+        self.set(part, "CFrame", Variant::CFrame(at(position)));
+        let [r, g, b] = rgb;
+        self.set(part, "Color3uint8", Variant::Color3uint8 { r, g, b });
+        self.set(part, "Material", Variant::Enum(PLASTIC));
+        part
+    }
+
     /// A plastic block at `position`.
     pub fn block(&mut self, size: [f32; 3], position: [f32; 3], rgb: [u8; 3]) -> Ref {
         self.part(BLOCK, size, at(position), rgb, PLASTIC)

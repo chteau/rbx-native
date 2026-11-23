@@ -159,6 +159,71 @@ fn material_variants(b: &mut Builder) {
     }
 }
 
+/// The grid `MaterialVariant` at 4 studs a tile on faces that are not a
+/// whole number of tiles, and on two equal blocks a fraction of a tile
+/// apart, which tells a grid anchored to the part from one anchored to the
+/// world, and which corner (or the centre) of the face it starts at.
+fn material_variant_anchor(b: &mut Builder) {
+    b.block([2048.0, 16.0, 2048.0], [0.0, -8.0, 0.0], [91, 91, 91]);
+    let variant = b.material_variant("Grid");
+    b.set(variant, "BaseMaterial", Variant::Enum(PLASTIC));
+    b.set(variant, "ColorMap", content(GRID));
+    b.set(variant, "StudsPerTile", float(4.0));
+    let blocks: [([f32; 3], [f32; 3]); 4] = [
+        ([5.0, 5.0, 1.0], [-9.0, 2.5, 0.0]),
+        ([5.0, 5.0, 1.0], [-2.75, 3.25, 0.0]),
+        ([7.0, 3.0, 1.0], [4.5, 1.5, 0.0]),
+        ([3.0, 7.0, 3.0], [11.0, 3.5, 0.0]),
+    ];
+    for (size, position) in blocks {
+        let part = b.part(BLOCK, size, at(position), [248, 248, 248], PLASTIC);
+        b.set(
+            part,
+            "MaterialVariantSerialized",
+            Variant::String("Grid".to_owned()),
+        );
+    }
+}
+
+/// Roblox's traffic cone mesh and its texture, public assets.
+const CONE_MESH: &str = "rbxassetid://1082802";
+const CONE_TEXTURE: &str = "rbxassetid://1082804";
+/// `Enum.AlphaMode`.
+const OVERLAY: u32 = 0;
+const TRANSPARENCY: u32 = 1;
+
+/// The traffic cone as a `MeshPart`: with its `TextureID`, then wearing
+/// `SurfaceAppearance`s with the grid as their colour map, `AlphaMode`
+/// Overlay tinted by `Color`, `AlphaMode` Transparency, and the grid as
+/// metalness and roughness maps too.
+fn surface_appearances(b: &mut Builder) {
+    b.block([2048.0, 16.0, 2048.0], [0.0, -8.0, 0.0], [91, 91, 91]);
+    let textured = b.mesh_part(
+        CONE_MESH,
+        [4.0, 5.0, 4.0],
+        [-9.0, 2.5, 0.0],
+        [163, 162, 165],
+    );
+    b.set(textured, "TextureID", content(CONE_TEXTURE));
+    let looks: [(u32, [u8; 3], bool); 3] = [
+        (OVERLAY, [255, 170, 0], false),
+        (TRANSPARENCY, [255, 255, 255], false),
+        (OVERLAY, [255, 255, 255], true),
+    ];
+    for (i, (mode, [r, g, bl], maps)) in looks.into_iter().enumerate() {
+        let x = -3.0 + 6.0 * i as f32;
+        let part = b.mesh_part(CONE_MESH, [4.0, 5.0, 4.0], [x, 2.5, 0.0], [196, 40, 28]);
+        let look = b.child(part, "SurfaceAppearance");
+        b.set(look, "ColorMap", content(GRID));
+        b.set(look, "AlphaMode", Variant::Enum(mode));
+        b.set(look, "Color", rgb(r, g, bl));
+        if maps {
+            b.set(look, "MetalnessMap", content(GRID));
+            b.set(look, "RoughnessMap", content(GRID));
+        }
+    }
+}
+
 pub(super) fn scenes() -> Vec<Scene> {
     vec![
         Scene {
@@ -248,6 +313,36 @@ pub(super) fn scenes() -> Vec<Scene> {
                 })
                 .collect(),
             build: texture_blend,
+        },
+        Scene {
+            name: "material_variant_anchor",
+            about: "The grid MaterialVariant at 4 studs on 5, 7 and 3 stud faces, two equal blocks a fraction of a tile apart",
+            eye: [0.0, 4.0, -18.0],
+            look_at: [1.0, 3.0, 0.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: vec![
+                ("five", [-9.0, 2.5, -0.5]),
+                ("five shifted", [-2.75, 3.25, -0.5]),
+                ("seven", [4.5, 1.5, -0.5]),
+                ("three", [11.0, 3.5, -1.5]),
+            ],
+            build: material_variant_anchor,
+        },
+        Scene {
+            name: "surface_appearance",
+            about: "A MeshPart with its TextureID, and SurfaceAppearances: Overlay tinted, Transparency, metalness and roughness maps",
+            eye: [0.0, 5.0, -15.0],
+            look_at: [0.0, 2.5, 0.0],
+            fov: 70.0,
+            lighting: studio(),
+            probes: vec![
+                ("texture", [-9.0, 1.5, -1.5]),
+                ("overlay", [-3.0, 1.5, -1.5]),
+                ("transparency", [3.0, 1.5, -1.5]),
+                ("maps", [9.0, 1.5, -1.5]),
+            ],
+            build: surface_appearances,
         },
     ]
 }
