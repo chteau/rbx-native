@@ -55,6 +55,26 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
   # their own: a MeshPart saved around 2016 holds its mesh as `MeshID`
   # (the "Tree" by SheriffTaco on the Creator Store does), and Studio shows it.
   def legacy_aliases: {MeshPart: {MeshID: "MeshId"}};
+  # Classes the pinned rbx-dom predates, with the defaults a fresh
+  # `Instance.new` reads back in Studio 0.748 (version-8d7a1009c17e4ff8).
+  # A newer pin that has the class wins over these.
+  def seq($v): {keypoints: [{time: 0.0, value: $v, envelope: 0.0}, {time: 1.0, value: $v, envelope: 0.0}]};
+  def measured: {
+    ParticleEmitter2D: {Defaults: {
+      Acceleration: {Vector2: [0.0, 0.0]}, Blend: {Float32: 0.0}, Brightness: {Float32: 1.0},
+      Color: {ColorSequence: {keypoints: [{time: 0.0, color: [1.0, 1.0, 1.0]}, {time: 1.0, color: [1.0, 1.0, 1.0]}]}},
+      Drag: {Float32: 0.0}, EmissionAngle: {Float32: 0.0}, EmissionMode: {Enum: 1},
+      EmissionOffset: {Vector2: [0.0, 0.0]}, EmissionSpread: {Vector2: [0.0, 0.0]}, Enabled: {Bool: true},
+      FlipbookBlendFrames: {Bool: true}, FlipbookFramerate: {NumberRange: [1.0, 1.0]},
+      FlipbookLayout: {Enum: 0}, FlipbookMode: {Enum: 0}, FlipbookSizeX: {Int32: 1}, FlipbookSizeY: {Int32: 1},
+      FlipbookStartRandom: {Bool: false}, Lifetime: {NumberRange: [5.0, 10.0]}, LightInfluence: {Float32: 0.0},
+      LockedToParent: {Bool: false}, Rate: {Float32: 20.0}, RotSpeed: {NumberRange: [0.0, 0.0]},
+      Rotation: {NumberRange: [0.0, 0.0]}, Size: {NumberSequence: seq(32.0)}, Speed: {NumberRange: [64.0, 64.0]},
+      SpreadAngle: {Float32: 0.0}, Squash: {NumberSequence: seq(0.0)},
+      TextureContent: {Content: {Uri: "rbxasset://textures/particles/sparkles_main.dds"}},
+      TimeScale: {Float32: 1.0}, Transparency: {NumberSequence: seq(0.0)}, ZIndex: {Int32: 1}
+    }}
+  };
   {
     Source: ("rojo-rbx/rbx-dom@" + $rev),
     License: "MIT, Copyright (c) 2018-2025 The Rojo Developers",
@@ -85,6 +105,7 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
         | with_entries(select(.value | supported and exact)))
     } | with_entries(select(.value | length > 0)))) | with_entries(select(.value != {})))
   }
+  | .Classes |= (. as $have | . + (measured | with_entries(select(.key as $class | $have | has($class) | not))))
   # One class per line: small enough to diff, where one line for the whole
   # file or one per number would not be.
   | "{\"Source\": \(.Source | tojson), \"License\": \(.License | tojson), \"Version\": \(.Version | tojson), \"Classes\": {",

@@ -67,6 +67,12 @@ pub(crate) fn register(lua: &Lua) -> Result<()> {
         "ColorSequenceKeypoint",
         sequence::color_sequence_keypoint(lua)?,
     )?;
+    // A Content property takes its URI as a plain string here (see
+    // `property::from_lua`), so `Content.fromUri` hands the string back and
+    // `Content.none`, a missing field, is the nil that empties one.
+    let content = lua.create_table()?;
+    content.set("fromUri", lua.create_function(|_, uri: String| Ok(uri))?)?;
+    globals.set("Content", content)?;
     extra::register(lua)?;
     params::register(lua)?;
     udim::register(lua)?;

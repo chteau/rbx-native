@@ -12,6 +12,7 @@ fn node(class: &str, name: &str) -> Node {
         class: class.to_string(),
         name: name.to_string(),
         path: name.to_string(),
+        icon_uri: None,
         children: Vec::new(),
     }
 }
@@ -699,4 +700,49 @@ fn default_services_follow_the_users_overrides_and_store_only_differences() {
 fn an_override_for_a_non_service_class_is_ignored() {
     let overrides = ServiceOverrides::from([("Folder".to_owned(), false)]);
     assert!(is_listed("Folder", &overrides));
+}
+
+/// `ExplorerIconContent` on a `Folder` or a `Model` swaps the row's icon
+/// for the image once it has loaded, and only that row's.
+#[test]
+fn an_explorer_icon_content_replaces_the_class_icon_once_loaded() {
+    let mut dom = WeakDom::new();
+    let folder = insert(&mut dom, 7, "Folder", "Icons");
+    let plain = insert(&mut dom, 8, "Folder", "Plain");
+    dom.set_parent(plain, Some(folder));
+    let uri = "rbxassetid://1000024";
+    dom.get_mut(folder).unwrap().properties_mut().insert(
+        "ExplorerIconContent".into(),
+        Variant::Content(Content::Uri(uri.into())),
+    );
+
+    let explorer = from_dom(&dom);
+    assert_eq!(explorer.custom_icon_uris(), HashSet::from([uri]));
+    let bytes = |explorer: &Explorer, id: &str| match explorer.icon(&id.into()) {
+        ClassIcon::Sprite(image) => image.as_bytes(0).map(<[u8]>::to_vec),
+        ClassIcon::Lucide(_) => None,
+    };
+    let before = bytes(&explorer, "7");
+    assert_eq!(
+        before,
+        bytes(&explorer, "8"),
+        "the folder icon until it loads"
+    );
+
+    let image = crate::render_image::to_render_image(vec![9; 4], 1, 1).unwrap();
+    let loaded = HashMap::from([(uri.to_owned(), image)]);
+    let swapped = explorer.with_custom_icons(&loaded);
+    assert_eq!(bytes(&swapped, "7"), Some(vec![9; 4]));
+    assert_eq!(bytes(&swapped, "8"), before);
+}
+
+/// A wide image is scaled to the tile's width and centred top to bottom.
+#[test]
+fn a_custom_icon_is_letterboxed_into_the_tile() {
+    let wide = image::RgbaImage::from_pixel(64, 16, image::Rgba([255, 0, 0, 255]));
+    let tile = icon_tile(&wide, 32);
+    assert_eq!(tile.dimensions(), (32, 32));
+    assert_eq!(tile.get_pixel(16, 16)[3], 255);
+    assert_eq!(tile.get_pixel(16, 2)[3], 0, "transparent above");
+    assert_eq!(tile.get_pixel(16, 29)[3], 0, "and below");
 }

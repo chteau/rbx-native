@@ -74,6 +74,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "The 3D view follows the place camera's ProjectionType, OrthographicSize and OrthographicMode, like Studio's beta of the same name: set workspace.CurrentCamera.ProjectionType to Orthographic and the view goes flat at that size, and zooming writes the size back.",
     },
     Feature {
+        id: crate::explorer::insert::UI_PARTICLES_BETA_ID,
+        name: "UI Particles",
+        description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",
+    },
+    Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
         name: "Module require graph",
         description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",

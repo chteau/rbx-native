@@ -21,10 +21,23 @@
 //! Roblox's own "don't show this in a class picker", so hiding them is
 //! honouring the dump rather than second-guessing it. So is a service
 //! Studio keeps out of every view (`explorer::is_ever_listed`), which its
-//! Insert Object picker leaves out too.
+//! Insert Object picker leaves out too. The one exception is a class a
+//! Studio beta lists while it is on, here behind the same beta (see
+//! [`beta_classes`]).
 
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+
+/// Studio's "UI Particles" beta: `ParticleEmitter2D` is `NotBrowsable` in
+/// the dump, yet Studio's Insert Object lists it while the beta is on.
+pub(crate) const UI_PARTICLES_BETA_ID: &str = "ui-particles";
+
+/// The `NotBrowsable` classes a switched-on beta lists anyway.
+pub(crate) fn beta_classes() -> impl Iterator<Item = &'static str> {
+    crate::beta::enabled(UI_PARTICLES_BETA_ID)
+        .then_some("ParticleEmitter2D")
+        .into_iter()
+}
 
 /// The one class that owns the services. Never a row in this Explorer, its
 /// roots *are* the services, but the parent-legality rule is written in
@@ -50,7 +63,10 @@ pub(crate) fn choices(
     let query = query.trim().to_lowercase();
     let mut choices: Vec<Choice> = database
         .class_names()
-        .filter(|class| database.is_browsable(class) && super::is_ever_listed(class))
+        .filter(|class| {
+            (database.is_browsable(class) || beta_classes().any(|listed| listed == *class))
+                && super::is_ever_listed(class)
+        })
         .filter(|class| query.is_empty() || class.to_lowercase().contains(&query))
         .map(|class| Choice {
             class: class.to_owned(),

@@ -880,6 +880,19 @@ impl Headless {
         self.offscreen.gui_canvas((width, height), screen, backdrop)
     }
 
+    /// Whether a `ParticleEmitter2D` is moving: a [`Headless::render_gui`]
+    /// canvas is then owed a frame every tick, not only on change.
+    pub fn gui_animating(&self) -> bool {
+        self.offscreen.renderer().gui_animating()
+    }
+
+    /// The next [`Headless::render_gui`] shows the same particles as the
+    /// last one rather than moving them on: for a canvas drawn twice over
+    /// two backdrops.
+    pub fn hold_gui_particles(&mut self) {
+        self.offscreen.renderer_mut().hold_gui_particles();
+    }
+
     /// Draws one `ViewportFrame`'s content on its own at `width`×`height`
     /// the same bake the GUI paints it from, through its `CurrentCamera`
     /// (or saved pose), laid over the frame's background (unless

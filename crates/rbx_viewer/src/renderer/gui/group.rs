@@ -82,6 +82,13 @@ pub(super) fn flatten(bake: &mut Bake, elements: Vec<GuiElement>) -> Vec<GuiElem
             continue;
         };
         let end = (index + 1 + group.descendants).min(elements.len());
+        // Particles keep moving, so they stay out of the bake and draw live
+        // over the group's picture, untinted: in Studio a `CanvasGroup`'s
+        // `GroupTransparency` leaves its particles alone.
+        let particles = elements[index..end]
+            .iter()
+            .flat_map(|element| element.particles.iter().cloned())
+            .collect();
         // Inner groups first: a nested tinted group is itself one flattened
         // picture inside its parent's.
         let subtree = flatten(bake, local(&elements[index..end]));
@@ -91,6 +98,7 @@ pub(super) fn flatten(bake: &mut Bake, elements: Vec<GuiElement>) -> Vec<GuiElem
                 texture: Some(slot),
                 ..group
             }),
+            particles,
             ..element.clone()
         });
         index = end;
@@ -126,6 +134,7 @@ fn local(run: &[GuiElement]) -> Vec<GuiElement> {
             // translation away from where it belongs.
             clip: element.clip.map(|clip| shifted(&clip)),
             rotation: element.rotation - angle,
+            particles: Vec::new(),
             ..element.clone()
         })
         .collect();

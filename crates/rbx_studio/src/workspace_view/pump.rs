@@ -559,6 +559,11 @@ fn run(
             owed = true;
         }
 
+        // A script's `ParticleEmitter2D:Emit`/`Clear`, from the Command Bar,
+        // a plugin or a running game: queued by the VM, played by the GUI pass.
+        for (emitter, burst) in rbx_lua::take_particle_bursts() {
+            rbx_viewer::gui_particle_burst(emitter, burst);
+        }
         let now = Instant::now();
         let changed = viewer.tick(step(now.duration_since(ticked), interval));
         ticked = now;

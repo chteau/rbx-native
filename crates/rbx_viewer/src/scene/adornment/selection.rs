@@ -72,6 +72,7 @@ fn selection_box(context: &Context<'_>) -> Vec<Piece> {
             frame: adornee.frame,
             color: linear_color_or(context.properties, "SurfaceColor3", [1.0, 1.0, 1.0]),
             alpha: surface_alpha,
+            double_sided: true,
         }));
     }
 
@@ -128,6 +129,7 @@ fn selection_sphere(context: &Context<'_>) -> Vec<Piece> {
             frame: Mat4::from_translation(centre),
             color: linear_color_or(context.properties, "SurfaceColor3", [1.0, 1.0, 1.0]),
             alpha: surface_alpha,
+            double_sided: true,
         }));
     }
     if context.alpha > 0.0 {

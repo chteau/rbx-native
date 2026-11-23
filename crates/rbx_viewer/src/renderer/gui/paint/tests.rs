@@ -71,6 +71,7 @@ fn a_rounded_stroked_shaded_element_draws_through_the_pipeline() {
         viewport: None,
         group: None,
         scroll: None,
+        particles: Vec::new(),
     };
     let size = (64, 48);
     painter.prepare(
@@ -165,6 +166,7 @@ fn a_half_transparent_black_quad_halves_the_encoded_pixel_under_it() {
         viewport: None,
         group: None,
         scroll: None,
+        particles: Vec::new(),
     };
     painter.prepare(
         &device,

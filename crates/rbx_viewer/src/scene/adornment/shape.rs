@@ -8,8 +8,8 @@ use rbx_assets::AssetRef;
 use rbx_dom::Variant;
 use rbx_reflection::ReflectionDatabase;
 
-use super::{Context, Line, Mesh, Picture, Piece};
-use crate::scene::props::{float_or, vector3_or};
+use super::{Context, Line, Mesh, Picture, Piece, Solid};
+use crate::scene::props::{bool_or, float_or, vector3_or};
 use crate::textures::asset_uri;
 
 /// A full cylinder: `Angle` is documented as cutting a "pie slice" sector
@@ -27,14 +27,24 @@ pub(super) fn pieces(
     let is = |ancestor: &str| database.is_subclass_of(class, ancestor);
     let properties = context.properties;
     let frame = context.handle_frame();
+    let double_sided = bool_or(properties, "DoubleSided", false);
+    let solid = |mesh: Mesh| {
+        Piece::Solid(Solid {
+            mesh,
+            frame,
+            color: context.color,
+            alpha: context.alpha,
+            double_sided,
+        })
+    };
 
     if is("BoxHandleAdornment") {
         let size = vector3_or(properties, "Size", Vec3::ONE);
-        return Some(vec![context.solid(Mesh::Box { size }, frame)]);
+        return Some(vec![solid(Mesh::Box { size })]);
     }
     if is("SphereHandleAdornment") {
         let radius = float_or(properties, "Radius", 1.0).max(0.0);
-        return Some(vec![context.solid(Mesh::Sphere { radius }, frame)]);
+        return Some(vec![solid(Mesh::Sphere { radius })]);
     }
     if is("CylinderHandleAdornment") {
         let radius = float_or(properties, "Radius", 1.0).max(0.0);
@@ -42,24 +52,18 @@ pub(super) fn pieces(
             angle if angle <= 0.0 || angle >= FULL_TURN => FULL_TURN,
             angle => angle,
         };
-        return Some(vec![context.solid(
-            Mesh::Cylinder {
-                radius,
-                inner: float_or(properties, "InnerRadius", 0.0).clamp(0.0, radius),
-                height: float_or(properties, "Height", 1.0).max(0.0),
-                sweep,
-            },
-            frame,
-        )]);
+        return Some(vec![solid(Mesh::Cylinder {
+            radius,
+            inner: float_or(properties, "InnerRadius", 0.0).clamp(0.0, radius),
+            height: float_or(properties, "Height", 1.0).max(0.0),
+            sweep,
+        })]);
     }
     if is("ConeHandleAdornment") {
-        return Some(vec![context.solid(
-            Mesh::Cone {
-                radius: float_or(properties, "Radius", 1.0).max(0.0),
-                height: float_or(properties, "Height", 1.0).max(0.0),
-            },
-            frame,
-        )]);
+        return Some(vec![solid(Mesh::Cone {
+            radius: float_or(properties, "Radius", 1.0).max(0.0),
+            height: float_or(properties, "Height", 1.0).max(0.0),
+        })]);
     }
     if is("LineHandleAdornment") {
         // Documented in studs along the handle's own length, and in pixels
@@ -85,6 +89,7 @@ pub(super) fn pieces(
             size,
             texture,
             alpha: context.alpha,
+            double_sided,
         })]);
     }
     if is("WireframeHandleAdornment") {
