@@ -271,7 +271,11 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), CacheError> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let tmp_path = parent.join(format!("{file_name}.tmp-{}", std::process::id()));
+    // One temp file per write, not per process: two threads writing the
+    // same entry through one temp file let a reader see it half written.
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let write = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = parent.join(format!("{file_name}.tmp-{}-{write}", std::process::id()));
 
     std::fs::write(&tmp_path, bytes).map_err(|source| CacheError::Write {
         path: tmp_path.clone(),

@@ -555,11 +555,23 @@ fn blob(blobs: &Blobs, key: &str) -> Option<Result<Vec<u8>, String>> {
         .cloned()
 }
 
-fn keep(blobs: &Blobs, key: String, value: Result<Vec<u8>, String>) {
-    blobs
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(key, value);
+/// Keeps `value` for `key`, unless one was kept already: then that one,
+/// which every later load of `key` gets too. Peers load the same assets on
+/// their own threads, and a replay serves them all the one kept answer, so
+/// a recording must as well, or a cache or network hiccup between two
+/// peers' loads replays differently.
+fn keep(
+    blobs: &Blobs,
+    key: String,
+    value: Result<Vec<u8>, String>,
+) -> Option<Result<Vec<u8>, String>> {
+    match blobs.lock().unwrap_or_else(|e| e.into_inner()).entry(key) {
+        std::collections::btree_map::Entry::Occupied(kept) => Some(kept.get().clone()),
+        std::collections::btree_map::Entry::Vacant(slot) => {
+            slot.insert(value);
+            None
+        }
+    }
 }
 
 /// The asset cache's copy of `id`, unless `fetcher` reads the cache itself
@@ -591,6 +603,9 @@ impl Fetcher {
     ) -> Result<Vec<u8>, rbx_assets::FetchError> {
         let refused = |message| rbx_assets::FetchError::Refused { id, message };
         if self.recording {
+            if let Some(kept) = blob(&self.blobs, &key) {
+                return kept.map_err(refused);
+            }
             let cached = key
                 .starts_with("asset:")
                 .then(|| rbx_assets::AssetCache::new(None).ok()?.get_id(id))
@@ -600,22 +615,20 @@ impl Fetcher {
                 (None, Some(inner)) => fetch(inner.as_ref()),
                 (None, None) => Err(rbx_assets::FetchError::NotFound(id)),
             };
-            keep(
-                &self.blobs,
-                key,
-                got.as_ref().map(|b| b.clone()).map_err(|e| e.to_string()),
-            );
-            return got;
+            let value = got.as_ref().map(|b| b.clone()).map_err(|e| e.to_string());
+            return match keep(&self.blobs, key, value) {
+                Some(kept) => kept.map_err(refused),
+                None => got,
+            };
         }
         match &self.inner {
             Some(inner) => {
                 let got = fetch(inner.as_ref());
-                keep(
-                    &self.blobs,
-                    key,
-                    got.as_ref().map(|b| b.clone()).map_err(|e| e.to_string()),
-                );
-                got
+                let value = got.as_ref().map(|b| b.clone()).map_err(|e| e.to_string());
+                match keep(&self.blobs, key, value) {
+                    Some(kept) => kept.map_err(refused),
+                    None => got,
+                }
             }
             None => match blob(&self.blobs, &key) {
                 Some(kept) => kept.map_err(refused),
@@ -651,22 +664,22 @@ impl Avatars {
         key: String,
         look: impl FnOnce(&dyn crate::Avatars) -> Result<WeakDom, String>,
     ) -> Result<WeakDom, String> {
-        match &self.inner {
-            Some(inner) => {
+        let kept = match (&self.inner, blob(&self.blobs, &key)) {
+            (_, Some(kept)) => kept,
+            (Some(inner), None) => {
                 let got = look(inner.as_ref());
-                let kept = match &got {
+                let value = match &got {
                     Ok(dom) => rbx_binary::serialize(dom).map_err(|e| e.to_string()),
                     Err(e) => Err(e.clone()),
                 };
-                keep(&self.blobs, key, kept);
-                got
+                match keep(&self.blobs, key, value) {
+                    Some(kept) => kept,
+                    None => return got,
+                }
             }
-            None => {
-                let kept = blob(&self.blobs, &key)
-                    .unwrap_or_else(|| Err(format!("{key} is not in the recording")))?;
-                rbx_binary::deserialize(&kept).map_err(|e| e.to_string())
-            }
-        }
+            (None, None) => Err(format!("{key} is not in the recording")),
+        }?;
+        rbx_binary::deserialize(&kept).map_err(|e| e.to_string())
     }
 }
 
@@ -998,4 +1011,37 @@ pub(crate) fn hash_frame(
         })
         .unzip();
     (FrameHash(hashes), changes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// Answers once, then fails: a network or cache hiccup between two
+    /// peers' loads of one asset.
+    struct Flaky(AtomicU32);
+
+    impl rbx_assets::AssetFetcher for Flaky {
+        fn fetch_id(&self, id: u64) -> Result<Vec<u8>, rbx_assets::FetchError> {
+            match self.0.fetch_add(1, Ordering::Relaxed) {
+                0 => Ok(vec![1, 2, 3]),
+                _ => Err(rbx_assets::FetchError::NotFound(id)),
+            }
+        }
+    }
+
+    #[test]
+    fn every_load_of_an_asset_gets_the_answer_the_recording_keeps() {
+        let trace = Trace::record(1, Vec::new());
+        let id = u64::MAX - 7;
+        let server = trace.fetcher(Some(Arc::new(Flaky(AtomicU32::new(0)))));
+        let client = trace.fetcher(Some(Arc::new(Flaky(AtomicU32::new(1)))));
+        assert_eq!(server.fetch_id(id).unwrap(), [1, 2, 3]);
+        assert_eq!(client.fetch_id(id).unwrap(), [1, 2, 3]);
+        assert_eq!(
+            trace.finish().blobs[&format!("asset:{id}")],
+            Ok(vec![1, 2, 3])
+        );
+    }
 }
