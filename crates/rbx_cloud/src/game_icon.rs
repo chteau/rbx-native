@@ -159,7 +159,7 @@ impl Client {
         let file = ModelFile {
             name: "icon.png",
             content_type: "image/png",
-            bytes: png,
+            content: crate::FileContent::Bytes(png),
         };
         self.create_asset(
             "Decal",

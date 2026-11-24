@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use gpui_kit::*;
 use rbx_cloud::video::{self, UploadedVideo, VideoInfo};
-use rbx_cloud::ModelFile;
+use rbx_cloud::{FileContent, ModelFile};
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -200,7 +200,6 @@ fn upload(path: &Path, name: &str) -> Result<UploadedVideo, String> {
         });
     }
     let content_type = video::content_type(path).ok_or("Roblox takes video as .mp4 or .mov")?;
-    let bytes = std::fs::read(path).map_err(|err| format!("{}: {err}", path.display()))?;
     let (client, user) = authorize()?;
     let file_name = path
         .file_name()
@@ -208,7 +207,7 @@ fn upload(path: &Path, name: &str) -> Result<UploadedVideo, String> {
     let file = ModelFile {
         name: &file_name,
         content_type,
-        bytes: &bytes,
+        content: FileContent::Disk(path),
     };
     client
         .create_video_asset(
