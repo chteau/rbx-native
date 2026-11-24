@@ -53,10 +53,13 @@ const INSTANCE_ATTRIBUTES_AFTER_TANGENT: [wgpu::VertexAttribute; 9] = wgpu::vert
 /// the stride still matches WGSL's default layout for `InstanceInput`.
 /// Where `material_kind` keeps the variant alpha mode, past the kind's byte.
 const VARIANT_ALPHA_SHIFT: u32 = 8;
-/// Set in `material_kind` for a block or a wedge, whose material tiles from
-/// a corner of each face rather than from the part's centre (see
+/// Set in `material_kind` for every part shape but a truss, whose material
+/// tiles from a corner of each face rather than from the part's centre (see
 /// `material.wgsl`'s `anchored_face`).
 const FACE_ANCHORED: u32 = 1 << 16;
+/// With [`FACE_ANCHORED`], for a ball or a cylinder: the face is picked by
+/// the normal's main axis and pushed out onto the round side.
+const FACE_CURVED: u32 = 1 << 17;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -69,10 +72,10 @@ pub(super) struct InstanceRaw {
     material_layer: u32,
     studs_per_tile: f32,
     /// `scene::Kind` as its discriminant in the low byte,
-    /// `scene::VariantAlpha` in the next and [`FACE_ANCHORED`] above them;
+    /// `scene::VariantAlpha` in the next and the `FACE_*` bits above them;
     /// `material.wgsl` names the same values and splits them apart again
     /// (`KIND_MASK`, `VARIANT_ALPHA_SHIFT`, `VARIANT_ALPHA_MASK`,
-    /// `FACE_ANCHORED`).
+    /// `FACE_ANCHORED`, `FACE_CURVED`).
     material_kind: u32,
 }
 
@@ -85,8 +88,14 @@ impl InstanceRaw {
             part.reflectance,
             part.material,
         );
-        if matches!(part.kind, ShapeKind::Box | ShapeKind::Wedge) {
-            instance.material_kind |= FACE_ANCHORED;
+        match part.kind {
+            ShapeKind::Box | ShapeKind::Wedge | ShapeKind::CornerWedge => {
+                instance.material_kind |= FACE_ANCHORED;
+            }
+            ShapeKind::Ball | ShapeKind::CylinderX | ShapeKind::CylinderY => {
+                instance.material_kind |= FACE_ANCHORED | FACE_CURVED;
+            }
+            ShapeKind::Truss { .. } => {}
         }
         instance
     }
@@ -194,8 +203,9 @@ mod tests {
             assert!(shader.contains("const VARIANT_ALPHA_SHIFT: u32 = 8u;"));
             assert!(shader.contains("const VARIANT_ALPHA_MASK: u32 = 0xffu;"));
             assert!(shader.contains("const FACE_ANCHORED: u32 = 0x10000u;"));
+            assert!(shader.contains("const FACE_CURVED: u32 = 0x20000u;"));
         }
-        assert_eq!(FACE_ANCHORED, 0x10000);
+        assert_eq!((FACE_ANCHORED, FACE_CURVED), (0x10000, 0x20000));
     }
 
     /// The `@location(n)` list of the `InstanceInput` struct one shader

@@ -304,17 +304,21 @@ fn fs_resolve(in: VertexOutput) -> @location(0) vec4<f32> {
 
 // Studio's tone curve for an unlit depth-tested adornment, measured in Studio
 // 2026-11-24 off a ramp of opaque grey `BoxHandleAdornment`s: Color3 k/14
-// against the sRGB value on screen. White lands on 223, not 255. Past the
-// last measured point the curve is carried on at its last slope up to 255,
-// only so that every value on screen has an inverse.
-const TONE_KNOTS: u32 = 16u;
-const TONE_IN = array<f32, 16>(
+// against the sRGB value on screen. White lands on 223, not 255. Past white
+// it comes off `SelectionSphere` outlines, which are drawn at twice their
+// colour (see `renderer::adornment`): 1.32 lands on 242 and 2 on 253. The
+// last knot only carries that slope on to 255, so that every value on screen
+// has an inverse.
+const TONE_KNOTS: u32 = 18u;
+const TONE_IN = array<f32, 18>(
     0.0, 0.0714286, 0.142857, 0.214286, 0.285714, 0.357143, 0.428571, 0.5,
-    0.571429, 0.642857, 0.714286, 0.785714, 0.857143, 0.928571, 1.0, 1.326531,
+    0.571429, 0.642857, 0.714286, 0.785714, 0.857143, 0.928571, 1.0, 1.321429,
+    2.0, 2.125,
 );
-const TONE_OUT = array<f32, 16>(
+const TONE_OUT = array<f32, 18>(
     0.0, 4.0, 16.0, 35.0, 58.0, 82.0, 106.0, 130.0,
-    150.0, 168.0, 183.0, 196.0, 207.0, 216.0, 223.0, 255.0,
+    150.0, 168.0, 183.0, 196.0, 207.0, 216.0, 223.0, 242.0,
+    253.0, 255.0,
 );
 
 fn tone(g: f32) -> f32 {

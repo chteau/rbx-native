@@ -393,8 +393,10 @@ fn a_selection_sphere_is_a_ring_until_its_surface_shows() {
     let Piece::Ring(ring) = planned[0].pieces[0] else {
         panic!("a ring");
     };
-    // Big enough to hold the whole part.
-    assert!(ring.radius >= PART_SIZE.max_element() * 0.5);
+    // Round a sphere as wide as the part's smallest side, from 0.8 stud
+    // inside it to 0.2 outside, as in Studio 0.748.
+    let radius = PART_SIZE.min_element() * 0.5;
+    assert_eq!((ring.inner, ring.outer), (radius - 0.8, radius + 0.2));
 
     let filled = plan_of(
         "SelectionSphere",
@@ -531,7 +533,8 @@ fn a_handle_with_no_adornee_stands_in_world_space() {
 }
 
 /// `DoubleSided` defaults to off on the shape adornments, the way Studio
-/// creates them, and the classes without the property stay two-sided.
+/// creates them, and the classes without the property are one-sided: in
+/// Studio a see-through selection surface fades as one layer, not two.
 #[test]
 fn double_sided_is_read_off_the_shape_adornments_only() {
     for class in [
@@ -545,8 +548,27 @@ fn double_sided_is_read_off_the_shape_adornments_only() {
         let set = plan_of(class, vec![("DoubleSided", Variant::Bool(true))]);
         assert!(solids(&set[0]).iter().all(|solid| solid.double_sided));
     }
-    let outline = plan_of("SelectionBox", vec![]);
-    assert!(solids(&outline[0]).iter().all(|solid| solid.double_sided));
+    let all = Faces {
+        top: true,
+        right: true,
+        front: true,
+        back: true,
+        left: true,
+        bottom: true,
+    };
+    let axes = Axes {
+        x: true,
+        y: true,
+        z: true,
+    };
+    for planned in [
+        plan_of("SelectionBox", vec![]),
+        plan_of("Handles", vec![("Faces", Variant::Faces(all))]),
+        plan_of("ArcHandles", vec![("Axes", Variant::Axes(axes))]),
+    ] {
+        let solids = solids(&planned[0]);
+        assert!(!solids.is_empty() && solids.iter().all(|solid| !solid.double_sided));
+    }
 }
 
 // Measured in Studio 2026-11-24, see `shape::LINE_OPACITY`.
@@ -604,4 +626,13 @@ fn an_adornment_stands_at_the_mean_of_its_pieces() {
         ],
     );
     assert!((adornments[0].centre() - Vec3::new(1.0, 2.0, 1.0)).length() < 1e-5);
+}
+
+// Measured in Studio 0.748: a sphere under 0.8 stud of radius has no hole.
+#[test]
+fn a_small_selection_sphere_outline_closes_into_a_disc() {
+    let close =
+        |(a, b): (f32, f32), (c, d): (f32, f32)| (a - c).abs() < 1e-6 && (b - d).abs() < 1e-6;
+    assert!(close(selection::ring_band(0.25), (0.0, 0.45)));
+    assert!(close(selection::ring_band(4.0), (3.2, 4.2)));
 }

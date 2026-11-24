@@ -230,7 +230,7 @@ impl Adornments {
                 Draw::Solid(range) => (&set.solid, &self.solids, range.clone()),
                 Draw::Line(range) => (&set.line, &self.lines, range.clone()),
                 Draw::Ring(ring) => (
-                    &set.line,
+                    &set.solid,
                     &self.ring_vertices,
                     self.rings[*ring].range.clone(),
                 ),
