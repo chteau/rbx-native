@@ -129,6 +129,26 @@ fn the_pose_studio_saves_on_the_frame_stands_in_for_the_camera() {
     assert_eq!(viewport.light, Vec3::Y);
 }
 
+// Studio draws a frame's orthographic camera in perspective all the same.
+#[test]
+fn an_orthographic_camera_still_draws_in_perspective() {
+    let (mut dom, gui) = screen_gui();
+    let frame = viewport_frame(&mut dom, gui, 10.0);
+    let perspective = viewport(&dom).camera;
+    let Some(&Variant::Ref(camera)) = dom.get(frame).unwrap().properties().get("CurrentCamera")
+    else {
+        panic!("the frame looks through its camera");
+    };
+    dom.set_property(camera, "ProjectionType", Variant::Enum(1))
+        .unwrap();
+    dom.set_property(camera, "OrthographicSize", Variant::Float32(20.0))
+        .unwrap();
+    dom.set_property(camera, "OrthographicMode", Variant::Enum(1))
+        .unwrap();
+
+    assert_eq!(viewport(&dom).camera, perspective);
+}
+
 #[test]
 fn without_a_camera_there_is_nothing_to_look_through() {
     let (mut dom, gui) = screen_gui();
