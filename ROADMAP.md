@@ -743,12 +743,13 @@ and, on a model, each part's own face middles and centre, as the
     of its box the normal leans towards, that face's grid pushed out onto
     it from the axis or the centre (two grids meet mirrored at each seam),
     a cylinder's ends and a corner wedge's flat sides are block faces, and
-    the corner wedge's back slope runs U along +X and V up from its low
-    edge, its left slope U along +Z and V down from the apex. Rendered
-    against Studio's shots they now correlate 0.31 to 0.59 per view, 0.51
-    on average like the blocks (0.54, 0.58), up from 0 to 0.21. Still off: the left
-    slope's U start sits about 0.25 stud from Studio's, and only one view
-    shows that slope.
+    every slope runs V down from its top: the corner wedge's back slope
+    with U along +X, its left slope with U along +Z. Rendered against
+    Studio's shots they correlate 0.31 to 0.59 per view, 0.51 on average
+    like the blocks (0.54, 0.58), up from 0 to 0.21. Both corner wedge
+    slopes, looked at square on for five sizes (5x4.5x6.5, 4x4x4, 6x3x5,
+    3x6x8, 7x5x3) and a turned one, line up with Studio's to the pixel
+    (0.02 stud), correlating 0.99.
   - Editor cues among them (measured in Studio 0.748, 2026-11-24): the
     selection and hover outlines are drawn over depth-tested adornments and
     under `AlwaysOnTop` ones, at their own colour where the part's edge is
@@ -766,12 +767,22 @@ and, on a model, each part's own face middles and centre, as the
     two where the near and far bars overlap, as there). Effective alpha
     over Studio's at Transparency 0.25 to 0.9 is off by 0.039 on average
     (was 0.18), 0.15 at worst. `SelectionSphere` is as wide as the
-    adornee's smallest side, not its bounding sphere. They stack with the
-    handle shapes by depth, under on-top ones, as measured. Not matched:
-    with `Transparency` below 1 Studio fills the sphere's outline as a
-    yellow disc instead of a ring, and a `SelectionBox` surface sharing
-    its adornee with `Handles` shows darker there; neither is understood
-    yet.
+    adornee's smallest side, not its bounding sphere, and its outline is a
+    band facing the camera between the silhouettes of spheres 0.8 stud
+    smaller and 0.2 bigger (a disc below 0.8 of radius, nothing from inside
+    it), within 0.01 stud on cubes 0.5 to 8 across seen from 12 to 84 studs.
+    It's drawn at twice its `Color3` through the depth-tested curve, which
+    lands within 4 of Studio's on screen at Transparency 0, 0.5 and 0.8
+    over black and grey; that also measured the curve past white (1.32 on
+    242, 2 on 253). They stack with the handle shapes by depth, under on-top
+    ones, as measured. Not matched, on purpose: Studio sometimes draws a
+    `SelectionBox` surface lit by the scene (darker, and darker still at
+    night), but it isn't tied to sharing the adornee with `Handles`. In one
+    session 7 of 12 boxes did it, one with no handles at all, and of two
+    built the same way one did and one didn't; toggling `Visible` changed
+    which, and after re-adding the handles none did. That's Studio's
+    internal draw state, nothing a place file decides, so the plain surface
+    stays.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
