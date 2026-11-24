@@ -71,6 +71,7 @@ mod quality;
 mod query_select;
 mod recovery;
 mod ref_pick;
+mod reimport;
 mod reparent;
 mod reveal;
 mod ribbon;
@@ -92,6 +93,7 @@ pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
 pub(crate) use plugins::install_text_box_keys;
+pub(crate) use reimport::BETA_ID as AUTO_REIMPORT_BETA_ID;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use script_folds::FoldMemory;
@@ -252,6 +254,9 @@ pub(crate) struct Shell {
     /// (see `shell::theme_live`).
     theme: crate::theme::ThemePack,
     theme_watch: crate::theme::Watch,
+    /// Auto-Reimport's watched instances and reimports in flight (see
+    /// `shell::reimport`).
+    reimports: reimport::Reimports,
     /// The render loop's frame rate cap while the window is unfocused (see
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
@@ -941,6 +946,7 @@ impl Shell {
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
             theme_watch: crate::theme::Watch::new(user.theme.dir.clone()),
+            reimports: reimport::Reimports::default(),
             theme: user.theme,
             unfocused_fps,
             dragger,
