@@ -402,7 +402,7 @@ impl Renderer {
                 images,
                 quality,
             ),
-            adornments: Adornments::new(device, queue, target, scene.adornments(), images, quality),
+            adornments: Adornments::new(device, queue, scene.adornments(), images, quality),
             highlights: highlight::Highlights::new(
                 device,
                 queue,
@@ -691,8 +691,11 @@ impl Renderer {
         let axes = handle_axes(editing, gizmo.local, gizmo.pivot, rotation);
         let arm = handle_length(origin, pose, orthographic, height);
         let handles = Handles::new(origin, basis(axes), arm);
+        // Only Move and Rotate take the next-gen geometry; Transform's and
+        // Edit Pivot's combined gizmos keep the classic one in its colours.
+        let skinned = handles.skinned(gizmo.skin, pose, orthographic, gizmo.kind == Kind::Rotate);
         Some(match gizmo.kind {
-            Kind::Rotate => Shape::Rotate(handles),
+            Kind::Rotate => Shape::Rotate(skinned),
             Kind::Pivot => {
                 // Squared to the pivot, so the hotspots turn with it.
                 let axes = Mat3::from_mat4(gizmo.pivot?);
@@ -713,7 +716,7 @@ impl Renderer {
                 Shape::Transform(handles, faces)
             }
             // `Kind::Scale` never reaches here, it returned above.
-            _ => Shape::Move(handles),
+            _ => Shape::Move(skinned),
         })
     }
 
@@ -836,8 +839,15 @@ impl Renderer {
         // shadow inside the frame.
         let held = self.gizmo.and_then(|gizmo| gizmo.held);
         let hover = self.gizmo.and_then(|gizmo| gizmo.hover);
-        self.draggers
-            .update(queue, self.handles(from, size.1 as f32), held, hover, eye);
+        let skin = self.gizmo.map_or_else(Default::default, |gizmo| gizmo.skin);
+        self.draggers.update(
+            queue,
+            self.handles(from, size.1 as f32),
+            held,
+            hover,
+            eye,
+            skin,
+        );
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let drawn = self.surroundings();
@@ -919,8 +929,11 @@ impl Renderer {
         }
         // A `SelectionSphere`'s outline faces the eye, so its vertices are
         // the camera's to decide, and a buffer written here cannot be
-        // written inside the pass that reads it.
-        self.adornments.prepare(device, eye);
+        // written inside the pass that reads it. The adornments' draw order
+        // is the eye's too (see `renderer::adornment`).
+        self.adornments.prepare(device, eye, view_projection);
+        // Not over an isolated view, where an adornee may well be hidden.
+        let adorned = self.surroundings().adornments;
 
         // Every frame rather than when the switch flips: a `Lighting` edit
         // writes the place's effects into the chain while isolated too.
@@ -1045,6 +1058,17 @@ impl Renderer {
             size,
         );
 
+        // Place content over every scene pass, editor cues included: the
+        // resolve lays the depth-tested adornments over the frame through
+        // Studio's tone curve (see `renderer::adornment`).
+        self.adornments.draw_layer(
+            device,
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+        );
+
         // The scene is HDR and unclamped until here: the bloom, the grade and
         // the tone map all live in the resolve.
         let view = target.create_view(&wgpu::TextureViewDescriptor {
@@ -1052,6 +1076,15 @@ impl Renderer {
             ..Default::default()
         });
         self.post.resolve(&mut encoder, &view);
+        // After the curve, the way Studio draws an `AlwaysOnTop` one.
+        self.adornments.draw_on_top(
+            device,
+            &mut encoder,
+            target,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+        );
         // Onto the finished frame, so a one-pixel guide keeps its colour
         // (see `renderer::lines`), and under the `ScreenGui` like the rest
         // of the 3D view.

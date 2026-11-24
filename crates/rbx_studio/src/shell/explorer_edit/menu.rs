@@ -42,7 +42,7 @@ use rbx_reflection::ReflectionDatabase;
 use super::super::export::{self, Export};
 use super::super::property_clipboard::{applies_to_any, CopiedProperties};
 use super::super::roving::Move;
-use super::super::{clipboard, freeze, group, keys, menu};
+use super::super::{clipboard, freeze, group, keys, menu, reimport};
 use super::rename::renameable;
 use super::{give_focus_back, Shell};
 use crate::change_class;
@@ -439,6 +439,14 @@ impl Shell {
                 |shell, _, cx| shell.export_selected(Export::Fbx, cx),
             ),
         ];
+        let mut rows = Vec::from(rows);
+        if super::super::reimport::enabled() {
+            rows.extend(reimport_rows(
+                self.reimport_rows(target),
+                self.reimports.is_watched(target),
+                target,
+            ));
+        }
         let actions: Vec<Option<RowAction>> = rows
             .iter()
             .map(|row| row.enabled.then(|| row.action.clone()))
@@ -480,6 +488,46 @@ impl Shell {
             .into_any_element(),
         )
     }
+}
+
+/// Studio's Reimport submenu, flat as the rest of this menu: Reimport,
+/// Configure…, Remove reimport config and Auto-Reimport, each greyed where
+/// its handler would do nothing (see `shell::reimport`).
+fn reimport_rows(live: reimport::Rows, watched: bool, target: Ref) -> [Row; 4] {
+    [
+        row(
+            "reimport",
+            IconName::RefreshCw,
+            "Reimport",
+            live.configured,
+            move |shell, _, cx| shell.reimport(target, cx),
+        ),
+        row(
+            "reimport-configure",
+            IconName::FolderOpen,
+            "Configure Reimport\u{2026}",
+            live.model,
+            move |shell, _, cx| shell.configure_reimport(target, cx),
+        ),
+        row(
+            "reimport-remove",
+            IconName::Unlink,
+            "Remove Reimport Config",
+            live.has_id,
+            move |shell, _, cx| shell.remove_reimport_config(target, cx),
+        ),
+        row(
+            "auto-reimport",
+            if watched {
+                IconName::Check
+            } else {
+                IconName::RefreshCwOff
+            },
+            "Auto-Reimport",
+            live.configured,
+            move |shell, _, cx| shell.toggle_auto_reimport(target, cx),
+        ),
+    ]
 }
 
 /// What one row does when clicked. A `Window` as well as a `Context`,

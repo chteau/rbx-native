@@ -22,6 +22,12 @@ use rbx_reflection::ReflectionDatabase;
 use crate::assets::Image;
 use crate::textures::asset_uri;
 
+mod variant;
+
+pub use variant::set_variant_alpha_modes;
+use variant::variant;
+pub(crate) use variant::VariantAlpha;
+
 const MATERIAL_SERVICE: &str = "MaterialService";
 const MATERIAL_VARIANT: &str = "MaterialVariant";
 const MATERIAL_ENUM: &str = "Material";
@@ -51,6 +57,7 @@ pub(crate) struct Slot {
     pub(crate) layer: u32,
     pub(crate) kind: Kind,
     pub(crate) studs_per_tile: f32,
+    pub(crate) alpha: VariantAlpha,
 }
 
 /// The maps of one material, indexed by [`MapKind::ALL`].
@@ -60,6 +67,7 @@ struct Def {
     kind: Kind,
     studs_per_tile: f32,
     maps: Maps,
+    alpha: VariantAlpha,
 }
 
 /// `MaterialService`: which texture set the place asks for, the variants it
@@ -92,20 +100,27 @@ impl Slot {
             layer: 0,
             kind: Kind::Plastic,
             studs_per_tile: rbx_materials::DEFAULT_STUDS_PER_TILE,
+            alpha: VariantAlpha::Ignored,
         }
     }
 }
 
 impl Catalog {
     pub(crate) fn new(dom: &WeakDom, database: &ReflectionDatabase) -> Self {
+        Self::build(dom, database, variant::alpha_modes())
+    }
+
+    /// [`Catalog::new`] with the alpha-mode switch given rather than read.
+    fn build(dom: &WeakDom, database: &ReflectionDatabase, alpha_modes: bool) -> Self {
         Catalog {
-            service: service(dom, database),
+            service: service(dom, database, alpha_modes),
             // Layer 0 is plastic, so an empty scene still has the fallback every
             // unresolved part points at.
             defs: vec![Def {
                 kind: Kind::Plastic,
                 studs_per_tile: rbx_materials::DEFAULT_STUDS_PER_TILE,
                 maps: Maps::default(),
+                alpha: VariantAlpha::Ignored,
             }],
             images: HashMap::new(),
         }
@@ -144,13 +159,23 @@ impl Catalog {
             return Slot::plastic();
         };
 
+        let kind = match def.kind {
+            Kind::Textured if !self.has_maps(def) => Kind::Plastic,
+            kind => kind,
+        };
+        // The mode describes the colour map's alpha, so without that map
+        // (not downloaded yet, or never named) there is nothing for it to do.
+        let colored = def.maps[MapKind::Color.index()]
+            .as_ref()
+            .is_some_and(|reference| self.images.contains_key(reference));
         Slot {
             layer,
-            kind: match def.kind {
-                Kind::Textured if !self.has_maps(def) => Kind::Plastic,
-                kind => kind,
-            },
+            kind,
             studs_per_tile: def.studs_per_tile,
+            alpha: match kind {
+                Kind::Textured if colored => def.alpha,
+                _ => VariantAlpha::Ignored,
+            },
         }
     }
 
@@ -238,6 +263,7 @@ impl Catalog {
                 kind: def.kind,
                 studs_per_tile: def.studs_per_tile,
                 maps: def.maps.clone(),
+                alpha: def.alpha,
             },
             None => builtin(name, self.service.set),
         }
@@ -292,6 +318,7 @@ fn builtin(name: &str, set: Set) -> Def {
             kind: Kind::Plastic,
             studs_per_tile: rbx_materials::DEFAULT_STUDS_PER_TILE,
             maps: Maps::default(),
+            alpha: VariantAlpha::Ignored,
         };
     };
 
@@ -310,12 +337,15 @@ fn builtin(name: &str, set: Set) -> Def {
         kind,
         studs_per_tile: material.studs_per_tile(),
         maps: MapKind::ALL.map(|map| material.map(map).map(AssetRef::Id)),
+        alpha: VariantAlpha::Ignored,
     }
 }
 
 /// Reads `MaterialService`, which a place file may leave out entirely, in
-/// which case every part is a built-in 2022 material.
-pub(super) fn service(dom: &WeakDom, database: &ReflectionDatabase) -> Service {
+/// which case every part is a built-in 2022 material. `alpha_modes` is
+/// whether each variant's `AlphaMode` is honoured (see
+/// [`set_variant_alpha_modes`]).
+pub(super) fn service(dom: &WeakDom, database: &ReflectionDatabase, alpha_modes: bool) -> Service {
     let mut service = Service {
         set: Set::Current,
         overrides: HashMap::new(),
@@ -361,48 +391,11 @@ pub(super) fn service(dom: &WeakDom, database: &ReflectionDatabase) -> Service {
         service.referents.insert(child);
         service.variants.insert(
             child_instance.name().to_string(),
-            variant(child_instance.properties(), database),
+            variant(child_instance.properties(), database, alpha_modes),
         );
     }
 
     service
-}
-
-/// One `MaterialVariant`: its own maps over its `BaseMaterial`'s flavour.
-///
-/// Maps it leaves empty stay empty rather than falling back to the base
-/// material's own pack, Studio requires a colour and a normal map to create
-/// one, so a missing map is the author saying "none", not "inherit".
-fn variant(properties: &BTreeMap<String, Variant>, database: &ReflectionDatabase) -> Def {
-    let base = match properties.get("BaseMaterial") {
-        Some(&Variant::Enum(value)) => database
-            .enum_name(MATERIAL_ENUM, value)
-            .unwrap_or(DEFAULT_MATERIAL),
-        _ => DEFAULT_MATERIAL,
-    };
-    let studs_per_tile = match properties.get("StudsPerTile") {
-        Some(&Variant::Float32(studs)) if studs > 0.0 => studs,
-        Some(&Variant::Float64(studs)) if studs > 0.0 => studs as f32,
-        _ => rbx_materials::DEFAULT_STUDS_PER_TILE,
-    };
-    let maps = MapKind::ALL.map(|kind| {
-        properties
-            .get(property_of(kind))
-            .and_then(asset_uri)
-            .and_then(|uri| AssetRef::parse(uri).ok())
-            .filter(|reference| *reference != AssetRef::Empty)
-    });
-
-    Def {
-        // A variant is textured by definition; only its base material's special
-        // flavours (Neon, ForceField, Glass) survive the substitution.
-        kind: match builtin(base, Set::Current).kind {
-            Kind::Plastic | Kind::Textured => Kind::Textured,
-            flavored => flavored,
-        },
-        studs_per_tile,
-        maps,
-    }
 }
 
 /// `pub(super)`: a `SurfaceAppearance` serializes its own four maps under
@@ -422,6 +415,7 @@ fn same(left: &Def, right: &Def) -> bool {
     left.kind == right.kind
         && left.studs_per_tile.to_bits() == right.studs_per_tile.to_bits()
         && left.maps == right.maps
+        && left.alpha == right.alpha
 }
 
 #[cfg(test)]

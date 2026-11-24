@@ -262,6 +262,19 @@ impl Default for Transform {
     }
 }
 
+/// Studio's "Next-Gen Draggers" beta: the handles' second skin, see
+/// `rbx_viewer::gizmo::Skin`.
+pub(crate) const NEXT_GEN_DRAGGERS_BETA_ID: &str = "next-gen-draggers";
+
+/// The skin the handles take, from the beta.
+pub(crate) fn skin() -> rbx_viewer::gizmo::Skin {
+    if crate::beta::enabled(NEXT_GEN_DRAGGERS_BETA_ID) {
+        rbx_viewer::gizmo::Skin::NextGen
+    } else {
+        rbx_viewer::gizmo::Skin::Classic
+    }
+}
+
 impl Transform {
     /// What the renderer should draw over the selection, if anything.
     pub(crate) fn gizmo(self) -> Option<Gizmo> {
@@ -269,6 +282,7 @@ impl Transform {
             kind,
             local: self.local,
             hotspots: self.effective() == Tool::Pivot && self.pivot_snap,
+            skin: skin(),
             ..Gizmo::default()
         })
     }

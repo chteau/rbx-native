@@ -694,6 +694,53 @@ and, on a model, each part's own face middles and centre, as the
   rig from the Explorer's **Play Animation** row (the rig the animation sits
   in, as the `Animate` script's are, else the bound one). Animation Graph
   Clip nodes naming a published id download before the preview starts.
+- [x] **MaterialVariant Alpha Mode** (Studio beta, PR #407): behind a
+  beta of the same name, a `MaterialVariant`'s `AlphaMode` decides what its
+  colour map's alpha does, measured in Studio 0.748 with the beta on:
+  Opaque ignores it (map times part colour, as with the beta off), TintMask
+  blends from the bare map where the alpha is clear to the tinted map where
+  it is opaque, Overlay from the part colour to the bare map, and
+  Transparency colours like TintMask and cuts the surface out (no
+  blending) below half alpha. Both ramps are linear in sRGB, as Studio
+  draws them. The Properties row shows only with the beta on; the value
+  round-trips either way.
+- [x] **`PyramidHandleAdornment`** (PR #407): live in Studio 0.748 and
+  drawn here like the other shape adornments, flat colour, single-sided
+  unless `DoubleSided`. Measured there: the base is a regular polygon on
+  the frame's origin with one edge flat along -Y and `Size` studs from that
+  edge to the top (an even polygon's inradius is `Size`/2), the apex
+  `Height` along -Z, `Sides` clamped to 3..32, negative `Height` flips the
+  apex to +Z, negative `Size` turns the base half a turn, `Height` 0 is a
+  flat polygon seen from both sides and `Size` 0 draws nothing.
+  `SizeRelativeOffset`, `CFrame`, `AlwaysOnTop`, `ZIndex`, `Transparency`
+  and `Color3` work as on the other handle adornments. `Shading` is not
+  read for any adornment yet.
+- [x] **Adornment blending and draw order, variant tiling start**
+  (measured in Studio 0.748, 2026-11-24, side by side):
+  - Blending: a depth-tested adornment is blended in sRGB values at exactly
+    `1 - Transparency` *before* Studio's tone curve (an opaque white one
+    shows 223), an `AlwaysOnTop` one after it (white stays 255). Here the
+    depth-tested ones go into a layer the resolve lays over the frame
+    through the measured curve, the on-top ones onto the finished frame.
+    `LineHandleAdornment` fades faster (0.469, 0.27, 0.123, 0.047 at 0.25,
+    0.5, 0.75, 0.9) and an on-top one draws at half its colour.
+    `ImageHandleAdornment` is tinted by `Color3`. Every probe over flat
+    white, grey and black is within 2 levels of Studio (was 36 on average,
+    255 at worst).
+  - Draw order: depth-tested adornments hide each other by depth (`ZIndex`
+    ignored, crossing boxes cut along their intersection); on-top ones
+    never test each other and are painted by `ZIndex`, then far to near
+    along the view, then creation order; an opaque depth-tested one nearer
+    than an on-top one hides it, parts never do; blended ones are painted
+    far to near and write no depth; every tie goes to the later adornment.
+  - Tiling: on a block or wedge the variant grid starts at each face's
+    corner, the top and bottom face half a turn from the decal frame, a
+    wedge's slope laid flat in its own plane. All 45 measured faces (blocks
+    of uneven size, turned, and a wedge) match Studio's U/V directions with
+    the origin within 0.31 stud. Other shapes keep the centred, triplanar
+    mapping; they weren't measured. `SelectionBox`, `SelectionSphere` and
+    `Handles` follow the same blending and order as the handle shapes, also
+    unmeasured.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -2356,6 +2403,30 @@ both the plain fetch failure and the silent fall back to a default
   a `Decal`. A mesh over the 20,000-triangle budget is refused before
   anything is uploaded, naming the mesh (the new `rbx_import` crate); an FBX
   whose triangles can't be counted is uploaded with a warning.
+- [x] **Video uploads** (`rbx_cloud::video`, `shell/video_upload.rs`),
+  behind a "Video Uploads" beta like Studio's. With no Asset Manager here,
+  video goes through Import instead: Import › Video… on the ribbon, Model
+  › Import Video…, or a `.mp4`/`.mov` dropped on the window. Roblox's
+  documented limits (5 minutes, 4096×2160, under 3.75 GB) are read off the
+  file's `mvhd` and video `tkhd` boxes and checked before anything is sent,
+  the 2,000 Robux price is asked first and sent as `expectedPrice`, and the
+  video lands as a `VideoFrame` in the selected GUI or a new `ScreenGui`.
+  Refusals (not ID-verified, too long, the daily limit, the price) and a
+  pending review are said in plain words. Studio's own Asset Manager
+  checks none of the limits before it queues a video.
+- [x] **Reimport and Auto-Reimport** (`shell/reimport.rs`), behind an
+  "Auto-Reimport" beta like Studio's. Import 3D stamps the model with an
+  `RBX_ReimportId` (a UUID string, as Studio writes it) and keeps its file
+  in `<config>/reimport.json` on this device only, the same id to
+  `{"filepath"}` map Studio keeps in its own settings. The Explorer's menu
+  has Studio's Reimport submenu flat: Reimport, Configure Reimport…,
+  Remove Reimport Config and Auto-Reimport. A reimport uploads the file
+  again through Import 3D and updates matching `MeshPart`s by their path
+  of names (mesh, size, transform; texture only when the file has one),
+  adds new ones and leaves the rest, pivoted onto where the model now
+  stands. Auto-Reimport polls the file, reimports once it has settled,
+  marks the row in the Explorer, and is for the session only. Studio's
+  Creator and Import Preset choices aren't here, the importer has none.
 - [x] **`AnimationConstraint` rigs, the Avatar Joint Upgrade: rig
   insertion.** Insert Rig emits `AnimationConstraint` joints (with
   `RigAttachment`s) for R15 when `StarterPlayer.AvatarJointUpgrade` is on
@@ -3053,6 +3124,41 @@ both the plain fetch failure and the silent fall back to a default
   `legacy-universe:manage` game-icon route
   (`docs/research/update-planning-icon-api.md`). Timer edits apply to the
   next update only.
+- [x] **New Studio Camera Controls (beta)**: Studio's reworked edit camera,
+  behind a beta of the same name, off by default (the old camera stays as
+  it was). Measured in Studio 0.748 from `workspace.CurrentCamera.CFrame`
+  and `Focus` sampled every frame, beta off and on (2026-11-24):
+  - Old camera: W/A/S/D/Q/E move 2 studs per rendered frame (no ramp,
+    frame-rate bound), Shift a fifth of that; a wheel notch moves 15 studs
+    along the cursor's ray; the right button orbits the focus at 0.4°/px
+    yaw and 0.3°/px pitch; the middle button pans 0.8 studs/px; F snaps.
+  - New camera: time-based flight that ramps up with a 0.137 s time
+    constant and stops with 0.040 s; the speed is the multiplier (2.00x)
+    times the focus distance while orbiting, kept as it was once flying;
+    right button + wheel steps the multiplier by 2^(1/4); the wheel zooms
+    by 2^(1/5) per notch (5 notches halve the distance), towards the focus
+    while orbiting and towards the surface under the cursor while flying,
+    easing in over about a quarter second; the right button turns 0.65°/px
+    about the focus while orbiting and in place while flying; Alt + right
+    drag dollies, doubling the distance every 150 px; the middle button
+    pans at the focus depth while orbiting; F glides in and frames the
+    selection's box at 70% of the view on whichever axis fills first, then
+    orbits its centre. Adaptive, FPS and Orbit modes sit under the View
+    Selector like in Studio.
+- [x] **Next-Gen Draggers (beta)**: Studio's redesigned Move and Rotate
+  handles as a second skin on the same gizmo code, behind a beta of the
+  same name, off by default. Read off Studio 0.748's DraggerFramework and
+  checked against screenshots at fixed cameras: the Dragger Visualization
+  colours (X 237,77,59, Y 71,184,79, Z 68,127,253, view 230,230,230),
+  handles sized as Studio's (arrows reaching 0.188 x sin(fov) x depth,
+  rings 0.147 x, thin shafts and small heads), Move's arrows on the
+  positive ends only with a square per plane that slides the selection in
+  it, a hovered arrow 30% thicker, and Rotate's rings drawn and grabbed on
+  their near half inside a white view ring (turns about the line from the
+  camera) with a trackball inside for a free turn. Scale's balls take the
+  colours; their shape doesn't change with the beta. Still classic with it
+  on: arrows start at a fixed gap rather than at the part's surface, and
+  Transform and Edit Pivot keep their combined classic handles.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -3793,7 +3899,7 @@ there. What each does live, and where it stands here:
 | Luau Exports and Cyclic Requires | `export local`/`const`/`function` make a module return a table of them; modules that export may require each other; `export` plus a top-level `return` is a compile error | Built behind a beta of the same name (PR #399) |
 | If Local/Const Bindings | `const x = 1` and `if local y = f() then` both run | Not built: `if local` needs Luau 740, newer than the 736 mlua ships |
 | InputActionLabel | A `GuiObject` (TextColor3 0.105, 0.164, 0.207, ImageColor3 white, TextSize 8); in edit it draws a white box with a placeholder cube glyph | Not built: the keybinding glyph set is Roblox's art, and what it shows in Play is unmeasured |
-| MaterialVariant Alpha Mode | `MaterialVariant.AlphaMode`, default Opaque (Overlay 0, Transparency 1, TintMask 2, Opaque 3) | Not built: the variant path has no alpha blending to switch yet |
+| MaterialVariant Alpha Mode | `MaterialVariant.AlphaMode`, default Opaque (Overlay 0, Transparency 1, TintMask 2, Opaque 3); the row shows under Appearance only with the beta on | Built behind a beta of the same name (PR #407) |
 | Collections | `CollectionService:CreateCollection(query)` returns a `CollectionHandle` (`Query`, `Root`, `Destroy`), no `GetInstances` | Not built: the handle's reads and callbacks aren't discoverable yet |
 | CreateAssetAsync Lua API | `AssetService:CreateAssetAsync` exists | Not built: an upload API, nothing for the editor to draw |
 | Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run's business (runtime API) |
@@ -3801,11 +3907,14 @@ there. What each does live, and where it stands here:
 | New Video API | `VideoPlayer` (Looping, PlaybackSpeed, Volume, TimeLength, IsPlaying, Resolution) and a `VideoDisplay` GuiObject (VideoColor3, VideoTransparency, ScaleType, ResampleMode, TileSize) | Not built: no video decoding here |
 | AvatarAbilities Character Controller Library | No new creatable class beyond `ControllerManager` | Not built: nothing to mirror yet |
 | Animation Graph State Machines | `AnimationGraphDefinition` creatable | Already here (Animation) |
-| Next-Gen Draggers, New Studio Camera Controls (Updated) | Studio's own draggers and edit camera | Not built: Studio UI feel, a re-measure job each |
+| New Studio Camera Controls (Updated) | Time-based flight with a ramp, speed from the focus distance, log zoom to the cursor, Alt + right dolly, F glides and frames at 70%, Adaptive/FPS/Orbit modes | Built behind a beta of the same name (PR #410) |
+| Next-Gen Draggers | New colours, smaller handles, positive Move arrows plus plane squares, near-half rings in a view ring with a trackball | Built behind a beta of the same name (PR #410) |
 | Face Capture, Live Animation Creator, Animation Generation, Prompt-to-Avatar, Scene Generation, Playtest Agent | Assistant/camera/AI tools in Studio | Not built: Roblox's cloud AI services |
 | Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
+| Video Uploads | Asset Manager › Import's file picker gains "Video Files (*.mp4 *.mov)"; a picked video joins the Import Queue as "Ready to Import" with no length check (a 5:30 clip was queued) | Built behind a beta of the same name, through Import |
+| Auto-Reimport | Explorer › Reimport › Auto-Reimport, shown once the model has saved reimport settings (an `RBX_ReimportId` attribute plus a file path kept on the device); on, it reimports at once and again on every save, for the session | Built behind a beta of the same name |
 | Visualizing UGC Validation | Clicking a check's row draws it on the item: edges and dots on the flagged vertices, nothing for checks without per-vertex data; hovering draws nothing | Built behind a beta of the same name for the checks the validator here has (open edges, cage UVs) |
-| Package Overrides, Auto-Reimport, Video Uploads, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
+| Package Overrides, SLIM Debug Tints | Package and engine-debug tooling | Not built: see their items |
 
 #### Renderer
 - [ ] 📋 **New primitive shapes: Capsule, Cone, Disc and rounded
@@ -3859,10 +3968,6 @@ there. What each does live, and where it stands here:
   `MaterialVariant`, `SurfaceAppearance`). It needs new captures from real
   Studio once it ships, the same discipline the lighting model was built
   under, and not a stretch of today's constants.
-- [ ] 📋 **`PyramidHandleAdornment`**: in the dump (with `DoubleSided`
-  like the other shapes) but not drawn here at all yet, so a place holding
-  one shows nothing. Its geometry (how `Sides`, `Height` and `Size` shape
-  it) has to be measured in Studio first.
 - [ ] 📋 **CSG on meshes** (moved from Late 2025 to Late 2026 in the same
   post). The from-scratch boolean (`scene::union::csg`) works on primitives. A
   `MeshPart` operand means feeding it `rbx_mesh` geometry instead. A saved
@@ -3993,9 +4098,6 @@ there. What each does live, and where it stands here:
 Studio's own betas as of 2026-11-20 that nothing here answers yet. Each one
 is a beta, so its shape can still change; the work starts by switching it
 on in real Studio and measuring it there, the same as everything above.
-- [ ] 📋 **Auto-Reimport**: a toggle that reimports an instance by itself
-  when its local file changes. The 3D import item's importer is where it
-  would hang off; a file watcher on the imported path is all it adds.
 - [ ] 📋 **AvatarAbilities character controller library**: a Luau
   character controller on `ControllerManager` physics instead of the
   Humanoid state machine. For the editor that is a Rig insertion option
@@ -4017,21 +4119,9 @@ on in real Studio and measuring it there, the same as everything above.
   beta here (PR #399), from the `LuauExportValueSyntax` flag the shipped
   Luau 736 already has. `if local` needs Luau 740, so it waits for an mlua
   release carrying it. The bundled `luau-lsp` still needs to accept both.
-- [ ] 📋 **MaterialVariant Alpha Mode**: `AlphaMode` on a `MaterialVariant`
-  (plus an Opaque mode), the way a `SurfaceAppearance` already has one. The
-  material pass already honours `SurfaceAppearance.AlphaMode`; this is the
-  same switch on the variant path. Measured 2026-11-21: default Opaque, enum
-  Overlay 0, Transparency 1, TintMask 2, Opaque 3.
-- [ ] 📋 **New Studio Camera Controls (Updated)**: Studio's reworked edit
-  camera. The viewport camera here was matched to the old one; this needs
-  the new one's speeds, focus and orbit measured.
 - [ ] 📋 **New Video API** (`VideoPlayer`): videos on several surfaces,
   wired into the new Audio API. Nothing here plays video or audio yet; a
   still first frame is what the viewer could draw.
-- [ ] 📋 **Next-Gen Draggers**: Roblox's redesigned Move, Rotate and Scale
-  draggers. The draggers here were matched to the current ones (see
-  "What's been implemented" → Editor); the new look is a second skin on the
-  same gizmo code once it ships.
 - [ ] 📋 **Party Simulator**: Party API logic in Server & Clients
   playtests. That rides on the sandbox Play's multiple clients.
 - [ ] 📋 **Playtest Agent**: an Assistant subagent that playtests by
@@ -4044,9 +4134,6 @@ on in real Studio and measuring it there, the same as everything above.
   server half, through the probe that sandbox Play already talks to.
 - [ ] 📋 **SLIM Debug Tints**: a visualization mode tinting what SLIM
   merged. SLIM runs in Roblox's engine; the tint has nothing to show here.
-- [ ] 📋 **Video Uploads**: video through the Asset Manager. The upload
-  half is the same Open Cloud Assets call the importer uses, with the
-  video asset type.
 - [ ] 📋 **Animation Generation in Assistant**, **CreateAssetAsync Lua
   API** and **Mixed Content for CreateSurfaceAppearance**: an Assistant
   feature (AI content generation below) and two in-game APIs. Nothing in

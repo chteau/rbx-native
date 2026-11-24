@@ -65,7 +65,7 @@ pub use camera::{OrthoAxis, Pose};
 pub use capture::Rendered;
 pub use changes::{Applied, Rebuild};
 pub use cli::Options;
-pub use controller::{CameraFeel, Flight};
+pub use controller::{focus_distance, CameraFeel, CameraMode, CameraStyle, Flight};
 pub use gizmo::Gizmo;
 // Only so a report (`examples/bench`) can label its numbers with the GPU that
 // produced them; nothing in the render path itself asks for this.
@@ -88,8 +88,8 @@ pub use renderer::{
 };
 pub use scene::perf;
 pub use scene::{
-    pseudo_localize, resolved_shape_label, rich_runs, shows_screen, GuiScrolls, PseudoLocale,
-    RichRun, SafeInsets, ScrollTarget, ThumbGrab, STAGE_REACH,
+    pseudo_localize, resolved_shape_label, rich_runs, set_variant_alpha_modes, shows_screen,
+    GuiScrolls, PseudoLocale, RichRun, SafeInsets, ScrollTarget, ThumbGrab, STAGE_REACH,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};

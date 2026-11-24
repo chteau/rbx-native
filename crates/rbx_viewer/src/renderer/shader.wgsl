@@ -36,6 +36,7 @@ struct VertexOutput {
     @location(8) axis_z: vec3<f32>,
     @location(9) @interpolate(flat) material: vec2<u32>,
     @location(10) studs_per_tile: f32,
+    @location(11) @interpolate(flat) extent: vec3<f32>,
 }
 
 // A vertex colour is stored sRGB, like a part's; the instance colour
@@ -66,7 +67,8 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.reflectance = instance.reflectance;
     // The material is projected in object space, in studs: the column lengths
     // are the part's own size, since the only scale a part carries is its own.
-    out.object_studs = vertex.position * model_extent(model);
+    out.extent = model_extent(model);
+    out.object_studs = vertex.position * out.extent;
     out.object_normal = vertex.normal;
     out.axis_x = normalize(model[0].xyz);
     out.axis_y = normalize(model[1].xyz);
@@ -88,7 +90,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.reflectance = in.reflectance;
     input.layer = in.material.x;
     input.studs_per_tile = in.studs_per_tile;
-    input.kind = in.material.y;
+    input.kind = in.material.y & KIND_MASK;
+    input.variant_alpha = (in.material.y >> VARIANT_ALPHA_SHIFT) & VARIANT_ALPHA_MASK;
+    input.extent = in.extent;
+    input.anchored = (in.material.y & FACE_ANCHORED) != 0u;
 
     // Straight (non-premultiplied) alpha: the translucent pipeline pairs this
     // with src_alpha / one_minus_src_alpha, and the opaque one always gets 1.

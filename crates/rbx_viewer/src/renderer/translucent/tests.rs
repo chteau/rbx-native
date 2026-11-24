@@ -8,6 +8,7 @@ fn plastic() -> crate::scene::Slot {
         layer: 0,
         kind: crate::scene::Kind::Plastic,
         studs_per_tile: 10.0,
+        alpha: crate::scene::VariantAlpha::Ignored,
     }
 }
 

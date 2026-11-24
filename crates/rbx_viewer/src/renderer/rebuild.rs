@@ -195,7 +195,7 @@ impl Renderer {
             &quality,
         );
         self.adornments
-            .replace(device, queue, self.target, scene.adornments(), images);
+            .replace(device, queue, scene.adornments(), images);
         // After `shaped`/`filemesh` above only for readability, the mask's
         // own batches are built from the scene, not from theirs.
         self.highlights.replace(

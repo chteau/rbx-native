@@ -64,6 +64,9 @@ const DISPLAY_GAMMA: f32 = 2.2;
 // That is also why `renderer::post` builds this shader twice, retyping this one
 // line, see its DEPTH_BINDING.
 @group(3) @binding(2) var scene_depth: texture_depth_2d;
+// The depth-tested adornments, premultiplied, before the tone curve (see
+// renderer::adornment and `composite_adornments`).
+@group(3) @binding(3) var adornments: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -276,6 +279,11 @@ fn fs_resolve(in: VertexOutput) -> @location(0) vec4<f32> {
         post.misc.x > 0.5,
     );
 
+    let layer = textureLoad(adornments, vec2<i32>(in.clip_position.xy), 0);
+    if layer.a > 0.0 {
+        mapped = composite_adornments(mapped, layer);
+    }
+
     if post.correction.w > 0.5 {
         // Graded after the tone map, on gamma-encoded values: Roblox's grade
         // runs on the displayable frame, and a +0.1 Brightness has to lift
@@ -292,4 +300,68 @@ fn fs_resolve(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     return vec4<f32>(mapped, 1.0);
+}
+
+// Studio's tone curve for an unlit depth-tested adornment, measured in Studio
+// 2026-11-24 off a ramp of opaque grey `BoxHandleAdornment`s: Color3 k/14
+// against the sRGB value on screen. White lands on 223, not 255. Past the
+// last measured point the curve is carried on at its last slope up to 255,
+// only so that every value on screen has an inverse.
+const TONE_KNOTS: u32 = 16u;
+const TONE_IN = array<f32, 16>(
+    0.0, 0.0714286, 0.142857, 0.214286, 0.285714, 0.357143, 0.428571, 0.5,
+    0.571429, 0.642857, 0.714286, 0.785714, 0.857143, 0.928571, 1.0, 1.326531,
+);
+const TONE_OUT = array<f32, 16>(
+    0.0, 4.0, 16.0, 35.0, 58.0, 82.0, 106.0, 130.0,
+    150.0, 168.0, 183.0, 196.0, 207.0, 216.0, 223.0, 255.0,
+);
+
+fn tone(g: f32) -> f32 {
+    var x = TONE_IN;
+    var y = TONE_OUT;
+    for (var k = 1u; k < TONE_KNOTS; k++) {
+        if g <= x[k] || k == TONE_KNOTS - 1u {
+            let t = (g - x[k - 1u]) / (x[k] - x[k - 1u]);
+            return mix(y[k - 1u], y[k], t) / 255.0;
+        }
+    }
+    return 1.0;
+}
+
+fn untone(display: f32) -> f32 {
+    var x = TONE_IN;
+    var y = TONE_OUT;
+    let d = display * 255.0;
+    for (var k = 1u; k < TONE_KNOTS; k++) {
+        if d <= y[k] || k == TONE_KNOTS - 1u {
+            let t = (d - y[k - 1u]) / (y[k] - y[k - 1u]);
+            return mix(x[k - 1u], x[k], t);
+        }
+    }
+    return x[TONE_KNOTS - 1u];
+}
+
+fn encode_srgb(c: f32) -> f32 {
+    return select(1.055 * pow(c, 1.0 / 2.4) - 0.055, c * 12.92, c <= 0.0031308);
+}
+
+fn decode_srgb(c: f32) -> f32 {
+    return select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045);
+}
+
+// Studio blends a depth-tested adornment over the scene in sRGB values
+// *before* its tone curve, at exactly `1 - Transparency` (measured: 0.751,
+// 0.500, 0.250, 0.098 for 0.25, 0.5, 0.75, 0.9, where blending on screen
+// would scatter by 0.09). This frame was never through that curve, so the
+// pixel under the layer is taken back through its inverse, the layer laid
+// over it, and the result put through the curve again: exact where no
+// adornment is, and Studio's own arithmetic where one is.
+fn composite_adornments(mapped: vec3<f32>, layer: vec4<f32>) -> vec3<f32> {
+    var out = mapped;
+    for (var c = 0; c < 3; c++) {
+        let under = untone(encode_srgb(clamp(mapped[c], 0.0, 1.0)));
+        out[c] = decode_srgb(tone(layer[c] + (1.0 - layer.a) * under));
+    }
+    return out;
 }

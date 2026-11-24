@@ -47,6 +47,7 @@ fn main() -> ExitCode {
         }
     };
 
+    rbx_viewer::set_variant_alpha_modes(options.variant_alpha_modes());
     if let Err(err) = rbx_viewer::run(&options) {
         eprintln!("error: {err}");
         return ExitCode::FAILURE;

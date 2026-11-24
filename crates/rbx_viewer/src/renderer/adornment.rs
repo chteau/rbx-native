@@ -4,19 +4,31 @@
 //!
 //! `scene::adornment` has already resolved every one of them into world
 //! -space primitives, so this pass only turns those into triangles (see
-//! [`geometry`]) and picks which of two depth behaviours to draw them with:
-//! an adornment is documented as being "occluded by scene geometry like an
-//! ordinary world object" by default, and as drawing over everything while
-//! `AlwaysOnTop`: with `ZIndex` ordering the ones that do among
-//! themselves, which is why the buffer is built in that order and drawn
-//! straight through.
+//! [`geometry`]) and draws them the way Studio does, measured 2026-11-24:
+//!
+//! - A depth-tested adornment is blended in sRGB values at its own opacity
+//!   *before* Studio's tone curve, so it is drawn into a layer of its own
+//!   (`post::Targets::adornment_layer`) that the resolve lays over the frame
+//!   through that curve (`post.wgsl`'s `composite_adornments`). An opaque one
+//!   also writes an adornment-only depth: depth-tested adornments hide each
+//!   other by depth, `ZIndex` plays no part, and two crossing boxes cut
+//!   each other along their intersection.
+//! - An `AlwaysOnTop` one is blended in sRGB values onto the finished frame,
+//!   after the curve (white stays 255), tested only against that adornment
+//!   depth: parts never hide it, a nearer opaque depth-tested adornment
+//!   does, a tie goes to it. Never against each other: they are painted in
+//!   `ZIndex` order, then far to near, then creation order.
+//! - The blended depth-tested ones write no depth and are painted far to
+//!   near after the opaque ones.
+//! - Every tie goes to the adornment created later (DOM order here).
 //!
 //! Only a `HandleAdornment` shape with `DoubleSided = false` (its default)
 //! drops the faces turned away from the eye: stand inside a
 //! `BoxHandleAdornment` in Studio and it vanishes, look through a
 //! transparent one and its far side is gone. Each vertex carries that flag
-//! and the fragment shader discards a back face that has it, so the
-//! `ZIndex` order baked into one buffer survives. Everything else (a
+//! and the fragment shader discards a back face that has it, so one
+//! pipeline draws both kinds in whatever order the passes need. Everything
+//! else (a
 //! `SelectionBox` around the part the eye is in, a `Handles` arrow the
 //! camera has flown past) has no such property and stays two-sided.
 //!
@@ -25,6 +37,7 @@
 //! `renderer::highlight` builds its own.
 
 mod geometry;
+mod passes;
 mod pipelines;
 
 pub(super) use geometry::line;
@@ -33,23 +46,25 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use bytemuck::{Pod, Zeroable};
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
 use wgpu::util::DeviceExt;
 
-use super::pipeline::Target;
 use super::texture;
 use crate::load::Answered;
 use crate::quality::QualityProfile;
-use crate::scene::{AdornPiece, Adornment};
+use crate::scene::{linear_to_srgb, AdornPiece, Adornment};
 
-use pipelines::Gpu;
+use passes::draw_order;
+use pipelines::{Layer, Top};
 
 /// One corner of a solid adornment triangle.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct Vertex {
     position: [f32; 3],
+    /// sRGB-encoded, unlike every other colour the renderer is handed:
+    /// Studio blends adornments in sRGB values (see this module's docs).
     color: [f32; 4],
     /// 1 to drop this triangle's back face, `DoubleSided = false`.
     single_sided: f32,
@@ -73,7 +88,8 @@ pub(super) struct LineVertex {
 pub(super) struct ImageVertex {
     position: [f32; 3],
     uv: [f32; 2],
-    alpha: f32,
+    /// The tint, sRGB, and the opacity, as [`Vertex::color`].
+    color: [f32; 4],
     /// As [`Vertex::single_sided`].
     single_sided: f32,
 }
@@ -122,11 +138,27 @@ impl Batch {
     }
 }
 
-/// One `ImageHandleAdornment`'s draw: which texture, which vertices.
-struct Picture {
-    bind_group: wgpu::BindGroup,
-    range: Range<u32>,
+/// One draw of an adornment's: which buffer, which vertices.
+#[derive(Debug, Clone, PartialEq)]
+enum Draw {
+    Solid(Range<u32>),
+    Line(Range<u32>),
+    /// Index into [`Adornments::rings`], whose vertices follow the eye.
+    Ring(usize),
+    /// Index into [`Adornments::images`].
+    Picture(usize, Range<u32>),
+}
+
+/// One adornment, as the passes order it.
+#[derive(Debug, Clone, PartialEq)]
+struct Entry {
+    draws: Vec<Draw>,
     on_top: bool,
+    /// Fully opaque and textureless, the only kind that writes the
+    /// adornment depth.
+    opaque: bool,
+    order: i32,
+    centre: Vec3,
 }
 
 /// A `SelectionSphere`'s outline, kept as data rather than geometry: it
@@ -136,21 +168,33 @@ struct RingSource {
     radius: f32,
     pixels: f32,
     color: [f32; 4],
-    on_top: bool,
+    range: Range<u32>,
 }
 
 pub(super) struct Adornments {
-    format: Target,
-    gpu: Option<Gpu>,
-    solids: Batch,
-    lines: Batch,
+    /// Built the first frame an adornment is drawn, for the scene's sample
+    /// count (the layer) and the frame's format (on top).
+    layer_gpu: Option<(u32, Layer)>,
+    top_gpu: Option<(wgpu::TextureFormat, Top)>,
+    solids: Option<wgpu::Buffer>,
+    lines: Option<wgpu::Buffer>,
+    pictures: Option<wgpu::Buffer>,
+    images: Vec<wgpu::BindGroup>,
+    entries: Vec<Entry>,
     rings: Vec<RingSource>,
-    /// The rings' vertices as of [`Adornments::prepare`]'s last eye, grown
-    /// but never shrunk.
-    ring_batch: Batch,
-    ring_eye: Option<Vec3>,
-    pictures: Vec<Picture>,
-    picture_vertices: Option<wgpu::Buffer>,
+    ring_vertices: Option<wgpu::Buffer>,
+    /// The camera [`Adornments::prepare`] last sorted and faced rings for.
+    camera: Option<(Vec3, Mat4)>,
+    /// This frame's draw order: the depth-tested entries, then the
+    /// always-on-top ones.
+    layered: Vec<usize>,
+    on_top: Vec<usize>,
+    /// Whether the layer still holds a frame's adornments, so a frame with
+    /// none clears it once rather than every frame.
+    layer_dirty: bool,
+    /// Whether this frame's layer pass cleared the adornment depth, which
+    /// the on-top pass then tests against instead of clearing it itself.
+    depth_written: bool,
     /// Every image an `ImageHandleAdornment` asked for, uploaded once and
     /// kept across re-plans, `None` for one the loader answered with a
     /// failure, which is not asked for again.
@@ -164,27 +208,31 @@ impl Adornments {
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        target: Target,
         adornments: &[Adornment],
         images: &Answered,
         quality: &QualityProfile,
     ) -> Self {
         let mut pass = Adornments {
-            format: target,
-            gpu: None,
-            solids: Batch::default(),
-            lines: Batch::default(),
+            layer_gpu: None,
+            top_gpu: None,
+            solids: None,
+            lines: None,
+            pictures: None,
+            images: Vec::new(),
+            entries: Vec::new(),
             rings: Vec::new(),
-            ring_batch: Batch::default(),
-            ring_eye: None,
-            pictures: Vec::new(),
-            picture_vertices: None,
+            ring_vertices: None,
+            camera: None,
+            layered: Vec::new(),
+            on_top: Vec::new(),
+            layer_dirty: false,
+            depth_written: false,
             uploaded: HashMap::new(),
             sampler: texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy),
             image_layout: texture::layout(device),
             anisotropy: quality.anisotropy,
         };
-        pass.replace(device, queue, target, adornments, images);
+        pass.replace(device, queue, adornments, images);
         pass
     }
 
@@ -195,202 +243,180 @@ impl Adornments {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        target: Target,
         adornments: &[Adornment],
         images: &Answered,
     ) {
-        self.format = target;
+        self.entries.clear();
         self.rings.clear();
-        self.pictures.clear();
-        self.picture_vertices = None;
-        self.ring_batch = Batch::default();
-        self.ring_eye = None;
-        if adornments.is_empty() {
-            self.solids = Batch::default();
-            self.lines = Batch::default();
-            return;
-        }
-        if self.gpu.is_none() {
-            self.gpu = Some(Gpu::new(device, target, &self.image_layout));
-        }
+        self.images.clear();
+        self.ring_vertices = None;
+        self.camera = None;
+        self.layered.clear();
+        self.on_top.clear();
 
-        // `ZIndex` orders the always-on-top ones among themselves, and the
-        // pass draws straight through the buffer, so the order is baked in
-        // here. The depth-tested ones keep DOM order, which is all a depth
-        // test leaves to decide.
-        let mut ordered: Vec<&Adornment> = adornments.iter().collect();
-        ordered.sort_by_key(|adornment| adornment.order);
-
-        let mut solids: [Vec<Vertex>; 2] = [Vec::new(), Vec::new()];
-        let mut lines: [Vec<LineVertex>; 2] = [Vec::new(), Vec::new()];
+        let mut solids: Vec<Vertex> = Vec::new();
+        let mut lines: Vec<LineVertex> = Vec::new();
         let mut pictures: Vec<ImageVertex> = Vec::new();
-        let mut picture_draws: Vec<(AssetRef, Range<u32>, bool)> = Vec::new();
-
-        for adornment in ordered {
-            let side = usize::from(adornment.always_on_top);
+        for adornment in adornments {
+            let mut draws = Vec::new();
+            let mut opaque = true;
             for piece in &adornment.pieces {
                 match piece {
                     AdornPiece::Solid(solid) => {
-                        let start = solids[side].len();
+                        let start = solids.len();
                         geometry::solid(
                             solid.mesh,
                             solid.frame,
-                            rgba(solid.color, solid.alpha),
-                            &mut solids[side],
+                            encoded(solid.color, solid.alpha),
+                            &mut solids,
                         );
                         if !solid.double_sided {
-                            for vertex in &mut solids[side][start..] {
+                            for vertex in &mut solids[start..] {
                                 vertex.single_sided = 1.0;
                             }
                         }
+                        opaque &= solid.alpha >= 1.0;
+                        draws.push(Draw::Solid(start as u32..solids.len() as u32));
                     }
-                    AdornPiece::Line(line) => geometry::line(
-                        line.from,
-                        line.to,
-                        line.pixels,
-                        rgba(line.color, line.alpha),
-                        &mut lines[side],
-                    ),
-                    AdornPiece::Ring(ring) => self.rings.push(RingSource {
-                        centre: ring.centre,
-                        radius: ring.radius,
-                        pixels: ring.pixels,
-                        color: rgba(ring.color, ring.alpha),
-                        on_top: adornment.always_on_top,
-                    }),
+                    AdornPiece::Line(line) => {
+                        let start = lines.len() as u32;
+                        geometry::line(
+                            line.from,
+                            line.to,
+                            line.pixels,
+                            line_color(line.color, line.alpha, adornment.always_on_top),
+                            &mut lines,
+                        );
+                        opaque &= line.alpha >= 1.0;
+                        draws.push(Draw::Line(start..lines.len() as u32));
+                    }
+                    AdornPiece::Ring(ring) => {
+                        opaque &= ring.alpha >= 1.0;
+                        draws.push(Draw::Ring(self.rings.len()));
+                        self.rings.push(RingSource {
+                            centre: ring.centre,
+                            radius: ring.radius,
+                            pixels: ring.pixels,
+                            color: encoded(ring.color, ring.alpha),
+                            range: 0..0,
+                        });
+                    }
                     AdornPiece::Picture(picture) => {
+                        // An image can carry its own alpha, so it is never
+                        // treated as opaque.
+                        opaque = false;
                         let start = pictures.len() as u32;
-                        geometry::picture_quad(picture, picture.alpha, &mut pictures);
-                        picture_draws.push((
-                            picture.texture.clone(),
-                            start..pictures.len() as u32,
-                            adornment.always_on_top,
-                        ));
+                        geometry::picture_quad(
+                            picture,
+                            encoded(picture.color, picture.alpha),
+                            &mut pictures,
+                        );
+                        if let Some(image) = self.image(device, queue, images, &picture.texture) {
+                            draws.push(Draw::Picture(image, start..pictures.len() as u32));
+                        }
                     }
                 }
             }
+            self.entries.push(Entry {
+                draws,
+                on_top: adornment.always_on_top,
+                opaque,
+                order: adornment.order,
+                centre: adornment.centre(),
+            });
         }
-
-        self.solids = Batch::build(device, "rbxview adornment solids", &solids[0], &solids[1]);
-        self.lines = Batch::build(device, "rbxview adornment lines", &lines[0], &lines[1]);
-        self.build_pictures(device, queue, images, &pictures, picture_draws);
+        self.solids = vertex_buffer(device, "rbxview adornment solids", &solids);
+        self.lines = vertex_buffer(device, "rbxview adornment lines", &lines);
+        self.pictures = vertex_buffer(device, "rbxview adornment images", &pictures);
     }
 
-    fn build_pictures(
+    /// The bind group of the image `reference` names, uploading it the first
+    /// time, or `None` while it has no answer or failed.
+    fn image(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         images: &Answered,
-        vertices: &[ImageVertex],
-        draws: Vec<(AssetRef, Range<u32>, bool)>,
-    ) {
-        if vertices.is_empty() {
-            return;
+        reference: &AssetRef,
+    ) -> Option<usize> {
+        if !self.uploaded.contains_key(reference) {
+            // No answer yet leaves the reference unrecorded, so the
+            // rebuild that follows its landing picks it up, the same
+            // rule `renderer::particles` follows for an emitter texture.
+            let answer = images.get(reference)?;
+            let uploaded = answer
+                .as_ref()
+                .map(|image| texture::Uploaded::color(device, queue, image));
+            self.uploaded.insert(reference.clone(), uploaded);
         }
-        self.picture_vertices = Some(device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview adornment images"),
-                contents: bytemuck::cast_slice(vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            },
+        let uploaded = self.uploaded.get(reference)?.as_ref()?;
+        self.images.push(uploaded.bind(
+            device,
+            &self.image_layout,
+            &self.sampler,
+            u32::from(self.anisotropy),
         ));
-        for (reference, range, on_top) in draws {
-            if !self.uploaded.contains_key(&reference) {
-                // No answer yet leaves the reference unrecorded, so the
-                // rebuild that follows its landing picks it up, the same
-                // rule `renderer::particles` follows for an emitter texture.
-                let Some(answer) = images.get(&reference) else {
-                    continue;
-                };
-                let uploaded = answer
-                    .as_ref()
-                    .map(|image| texture::Uploaded::color(device, queue, image));
-                self.uploaded.insert(reference.clone(), uploaded);
-            }
-            let Some(Some(uploaded)) = self.uploaded.get(&reference) else {
-                continue;
-            };
-            self.pictures.push(Picture {
-                bind_group: uploaded.bind(
-                    device,
-                    &self.image_layout,
-                    &self.sampler,
-                    u32::from(self.anisotropy),
-                ),
-                range,
-                on_top,
-            });
-        }
+        Some(self.images.len() - 1)
     }
 
-    /// Follows a new sample count, see
-    /// `renderer::switch::Renderer::rebuild_pipelines`.
-    pub(super) fn set_target(&mut self, device: &wgpu::Device, target: Target) {
-        self.format = target;
-        if self.gpu.is_some() {
-            self.gpu = Some(Gpu::new(device, target, &self.image_layout));
-        }
-    }
-
-    /// Rebuilds the camera-facing rings, if this place has any and the eye
-    /// has moved since they were last built. Outside the render pass,
-    /// because it writes a buffer that pass reads.
-    pub(super) fn prepare(&mut self, device: &wgpu::Device, eye: Vec3) {
-        if self.rings.is_empty() || self.ring_eye == Some(eye) {
+    /// Faces the rings at `eye` and sorts this frame's draws for the camera
+    /// `view_projection` describes, if it has moved since. Outside the
+    /// render passes, because it writes a buffer they read.
+    pub(super) fn prepare(&mut self, device: &wgpu::Device, eye: Vec3, view_projection: Mat4) {
+        if self.entries.is_empty() || self.camera == Some((eye, view_projection)) {
             return;
         }
-        let mut sides: [Vec<LineVertex>; 2] = [Vec::new(), Vec::new()];
-        for ring in &self.rings {
-            geometry::ring(
-                ring.centre,
-                ring.radius,
-                ring.pixels,
-                ring.color,
-                eye,
-                &mut sides[usize::from(ring.on_top)],
-            );
+        self.camera = Some((eye, view_projection));
+        if !self.rings.is_empty() {
+            let mut vertices: Vec<LineVertex> = Vec::new();
+            for ring in &mut self.rings {
+                let start = vertices.len() as u32;
+                geometry::ring(
+                    ring.centre,
+                    ring.radius,
+                    ring.pixels,
+                    ring.color,
+                    eye,
+                    &mut vertices,
+                );
+                ring.range = start..vertices.len() as u32;
+            }
+            self.ring_vertices = vertex_buffer(device, "rbxview adornment rings", &vertices);
         }
-        let [occluded, on_top] = sides;
-        self.ring_batch = Batch::build(device, "rbxview adornment rings", &occluded, &on_top);
-        self.ring_eye = Some(eye);
-    }
-
-    /// Draws every adornment into the scene pass: the depth-tested ones
-    /// first, then the always-on-top ones over them.
-    pub(super) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, frame: &'a wgpu::BindGroup) {
-        let Some(gpu) = &self.gpu else {
-            return;
-        };
-        for on_top in [false, true] {
-            if let Some((buffer, range)) = self.solids.range(on_top) {
-                pass.set_pipeline(gpu.solid(on_top));
-                pass.set_bind_group(0, frame, &[]);
-                pass.set_vertex_buffer(0, buffer.slice(..));
-                pass.draw(range, 0..1);
-            }
-            for batch in [&self.lines, &self.ring_batch] {
-                if let Some((buffer, range)) = batch.range(on_top) {
-                    pass.set_pipeline(gpu.line(on_top));
-                    pass.set_bind_group(0, frame, &[]);
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(range, 0..1);
-                }
-            }
-            let Some(vertices) = &self.picture_vertices else {
-                continue;
-            };
-            for picture in self.pictures.iter().filter(|one| one.on_top == on_top) {
-                pass.set_pipeline(gpu.image(on_top));
-                pass.set_bind_group(0, frame, &[]);
-                pass.set_bind_group(1, &picture.bind_group, &[]);
-                pass.set_vertex_buffer(0, vertices.slice(..));
-                pass.draw(picture.range.clone(), 0..1);
-            }
-        }
+        (self.layered, self.on_top) = draw_order(&self.entries, view_projection);
     }
 }
 
-/// A linear colour and its alpha, as the shaders take it.
-fn rgba(color: [f32; 3], alpha: f32) -> [f32; 4] {
-    [color[0], color[1], color[2], alpha.clamp(0.0, 1.0)]
+fn vertex_buffer<T: Pod>(
+    device: &wgpu::Device,
+    label: &str,
+    vertices: &[T],
+) -> Option<wgpu::Buffer> {
+    (!vertices.is_empty()).then(|| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    })
 }
+
+/// A linear colour as the sRGB values Studio blends adornments in, and its
+/// opacity.
+fn encoded(color: [f32; 3], alpha: f32) -> [f32; 4] {
+    let [r, g, b] = color.map(linear_to_srgb);
+    [r, g, b, alpha.clamp(0.0, 1.0)]
+}
+
+/// A `LineHandleAdornment`'s colour: an `AlwaysOnTop` one draws at half
+/// its `Color3` (measured: white lands on 127 over every background), a
+/// depth-tested one at its full colour.
+fn line_color(color: [f32; 3], alpha: f32, on_top: bool) -> [f32; 4] {
+    let [r, g, b, a] = encoded(color, alpha);
+    let scale = if on_top { 0.5 } else { 1.0 };
+    [r * scale, g * scale, b * scale, a]
+}
+
+#[cfg(test)]
+#[path = "adornment/tests.rs"]
+mod tests;

@@ -253,6 +253,46 @@ fn the_shape_adornments_each_read_their_own_size() {
     );
 }
 
+/// Measured in Studio 0.748: `Sides` clamps to 3..=32, `Size` and `Height`
+/// pass through, negatives included, and the class defaults are 4, 1 and 2.
+#[test]
+fn a_pyramid_reads_its_sides_clamped_and_its_size_as_given() {
+    let pyramid = |properties: Vec<(&str, Variant)>| {
+        let planned = plan_of("PyramidHandleAdornment", properties);
+        // An adornment with nothing to draw is left out of the plan.
+        planned
+            .first()
+            .and_then(|adornment| Some(solids(adornment).first()?.mesh))
+    };
+    assert_eq!(
+        pyramid(vec![]),
+        Some(Mesh::Pyramid {
+            sides: 4,
+            size: 1.0,
+            height: 2.0
+        })
+    );
+    for (asked, drawn) in [(0, 3), (2, 3), (-3, 3), (7, 7), (100, 32)] {
+        let Some(Mesh::Pyramid { sides, .. }) = pyramid(vec![("Sides", Variant::Int32(asked))])
+        else {
+            panic!("a pyramid");
+        };
+        assert_eq!(sides, drawn, "Sides = {asked}");
+    }
+    assert_eq!(
+        pyramid(vec![
+            ("Size", Variant::Float32(-3.0)),
+            ("Height", Variant::Float32(-2.0)),
+        ]),
+        Some(Mesh::Pyramid {
+            sides: 4,
+            size: -3.0,
+            height: -2.0
+        })
+    );
+    assert_eq!(pyramid(vec![("Size", Variant::Float32(0.0))]), None);
+}
+
 /// A cylinder with no `Angle` at all is a whole cylinder: a zero-degree
 /// sector would draw nothing, which cannot be what a default does.
 #[test]
@@ -507,4 +547,61 @@ fn double_sided_is_read_off_the_shape_adornments_only() {
     }
     let outline = plan_of("SelectionBox", vec![]);
     assert!(solids(&outline[0]).iter().all(|solid| solid.double_sided));
+}
+
+// Measured in Studio 2026-11-24, see `shape::LINE_OPACITY`.
+#[test]
+fn a_line_fades_faster_than_its_transparency() {
+    for (transparency, drawn) in [
+        (0.0, 1.0),
+        (0.25, 0.469),
+        (0.5, 0.27),
+        (0.9, 0.047),
+        (1.0, 0.0),
+    ] {
+        assert!((shape::line_alpha(1.0 - transparency) - drawn).abs() < 1e-5);
+    }
+    assert!((shape::line_alpha(1.0 - 0.375) - (0.469 + 0.27) / 2.0).abs() < 1e-5);
+}
+
+// Studio breaks every draw-order tie in favour of the adornment created
+// later, so the plan keeps siblings first to last, nested ones included.
+#[test]
+fn adornments_are_planned_in_dom_order() {
+    let database = ReflectionDatabase::embedded();
+    let (mut dom, placements) = place("BoxHandleAdornment", vec![], true);
+    let workspace = Ref::new(WORKSPACE);
+    let folder = insert(&mut dom, 30, "Folder", Some(workspace), vec![]);
+    let adornee = ("Adornee", Variant::Ref(Ref::new(PART)));
+    insert(
+        &mut dom,
+        31,
+        "SphereHandleAdornment",
+        Some(folder),
+        vec![adornee.clone()],
+    );
+    insert(
+        &mut dom,
+        32,
+        "ConeHandleAdornment",
+        Some(workspace),
+        vec![adornee],
+    );
+    let order: Vec<Ref> = plan(&dom, &database, &placements)
+        .iter()
+        .map(|adornment| adornment.referent)
+        .collect();
+    assert_eq!(order, [Ref::new(ADORNMENT), Ref::new(31), Ref::new(32)]);
+}
+
+#[test]
+fn an_adornment_stands_at_the_mean_of_its_pieces() {
+    let adornments = plan_of(
+        "LineHandleAdornment",
+        vec![
+            ("CFrame", cframe_at(Vec3::new(1.0, 2.0, 3.0))),
+            ("Length", Variant::Float32(4.0)),
+        ],
+    );
+    assert!((adornments[0].centre() - Vec3::new(1.0, 2.0, 1.0)).length() < 1e-5);
 }

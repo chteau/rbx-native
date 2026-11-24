@@ -3,7 +3,7 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
-use crate::scene::{Part, Slot};
+use crate::scene::{Part, ShapeKind, Slot};
 
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 9] = wgpu::vertex_attr_array![
     2 => Float32x4,
@@ -51,6 +51,13 @@ const INSTANCE_ATTRIBUTES_AFTER_TANGENT: [wgpu::VertexAttribute; 9] = wgpu::vert
 ///
 /// The material triple sits exactly where the padding to 16 bytes used to, so
 /// the stride still matches WGSL's default layout for `InstanceInput`.
+/// Where `material_kind` keeps the variant alpha mode, past the kind's byte.
+const VARIANT_ALPHA_SHIFT: u32 = 8;
+/// Set in `material_kind` for a block or a wedge, whose material tiles from
+/// a corner of each face rather than from the part's centre (see
+/// `material.wgsl`'s `anchored_face`).
+const FACE_ANCHORED: u32 = 1 << 16;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct InstanceRaw {
@@ -61,19 +68,27 @@ pub(super) struct InstanceRaw {
     /// Layer of every material texture array (see `renderer::material`).
     material_layer: u32,
     studs_per_tile: f32,
-    /// `scene::Kind` as its discriminant; `material.wgsl` names the same values.
+    /// `scene::Kind` as its discriminant in the low byte,
+    /// `scene::VariantAlpha` in the next and [`FACE_ANCHORED`] above them;
+    /// `material.wgsl` names the same values and splits them apart again
+    /// (`KIND_MASK`, `VARIANT_ALPHA_SHIFT`, `VARIANT_ALPHA_MASK`,
+    /// `FACE_ANCHORED`).
     material_kind: u32,
 }
 
 impl InstanceRaw {
     pub(super) fn from_part(part: &Part) -> Self {
-        Self::new(
+        let mut instance = Self::new(
             part.transform.to_cols_array_2d(),
             part.color,
             part.alpha,
             part.reflectance,
             part.material,
-        )
+        );
+        if matches!(part.kind, ShapeKind::Box | ShapeKind::Wedge) {
+            instance.material_kind |= FACE_ANCHORED;
+        }
+        instance
     }
 
     /// Used directly by `renderer::filemesh`, which has no `Part`: its model
@@ -92,7 +107,7 @@ impl InstanceRaw {
             reflectance,
             material_layer: material.layer,
             studs_per_tile: material.studs_per_tile,
-            material_kind: material.kind as u32,
+            material_kind: material.kind as u32 | (material.alpha as u32) << VARIANT_ALPHA_SHIFT,
         }
     }
 
@@ -132,13 +147,14 @@ impl InstanceRaw {
 mod tests {
     use super::super::pipeline::{APPEARANCE_SHADER, BOX_SHADER, FILEMESH_SHADER};
     use super::*;
-    use crate::scene::Kind;
+    use crate::scene::{Kind, VariantAlpha};
 
     fn plastic() -> Slot {
         Slot {
             layer: 0,
             kind: Kind::Plastic,
             studs_per_tile: 10.0,
+            alpha: VariantAlpha::Ignored,
         }
     }
 
@@ -148,12 +164,38 @@ mod tests {
             layer: 3,
             kind: Kind::Neon,
             studs_per_tile: 4.0,
+            alpha: VariantAlpha::Ignored,
         };
         let instance = InstanceRaw::new([[0.0; 4]; 4], [1.0; 3], 1.0, 0.0, material);
 
         assert_eq!(instance.material_layer, 3);
         assert_eq!(instance.studs_per_tile, 4.0);
         assert_eq!(instance.material_kind, 2);
+    }
+
+    #[test]
+    fn a_variant_alpha_mode_rides_above_the_kind() {
+        let material = Slot {
+            layer: 1,
+            kind: Kind::Textured,
+            studs_per_tile: 4.0,
+            alpha: VariantAlpha::TintMask,
+        };
+        let instance = InstanceRaw::new([[0.0; 4]; 4], [1.0; 3], 1.0, 0.0, material);
+
+        assert_eq!(instance.material_kind & 0xff, Kind::Textured as u32);
+        assert_eq!(
+            instance.material_kind >> VARIANT_ALPHA_SHIFT,
+            VariantAlpha::TintMask as u32
+        );
+        // The shaders split the word with the same two numbers.
+        for shader in [BOX_SHADER, FILEMESH_SHADER] {
+            assert!(shader.contains("const KIND_MASK: u32 = 0xffu;"));
+            assert!(shader.contains("const VARIANT_ALPHA_SHIFT: u32 = 8u;"));
+            assert!(shader.contains("const VARIANT_ALPHA_MASK: u32 = 0xffu;"));
+            assert!(shader.contains("const FACE_ANCHORED: u32 = 0x10000u;"));
+        }
+        assert_eq!(FACE_ANCHORED, 0x10000);
     }
 
     /// The `@location(n)` list of the `InstanceInput` struct one shader
