@@ -1,0 +1,244 @@
+# Everything third-party RbxNative ships, fetches and shows, or owes an idea
+# to: the one list CREDITS.md is generated from and Settings > About shows.
+# After editing it, regenerate CREDITS.md with
+#   RBX_WRITE_CREDITS=1 cargo test -p rbx_studio credits
+#
+# Each entry: name, owner, url, license, use (what RbxNative uses it for),
+# required (whether the licence or terms require the credit, as opposed to
+# only welcoming it), and, for a licence text that has to travel with the
+# files, notice = "<path in the repo> as <file name in licenses/>", one
+# line, which .github/release/notices.sh copies into every package.
+
+[[group]]
+title = "Fonts"
+
+[[group.entry]]
+name = "Manrope"
+owner = "Mikhail Sharanda and the Manrope Project Authors"
+url = "https://github.com/googlefonts/manrope"
+license = "SIL Open Font License 1.1"
+use = "The editor's interface typeface, built into the program."
+required = true
+notice = "assets/fonts/OFL-Manrope.txt as OFL-Manrope.txt"
+
+[[group.entry]]
+name = "JetBrains Mono"
+owner = "JetBrains and the JetBrains Mono Project Authors"
+url = "https://github.com/JetBrains/JetBrainsMono"
+license = "SIL Open Font License 1.1"
+use = "The script editor's and every code field's monospace font, built into the program."
+required = true
+notice = "assets/fonts/OFL-JetBrainsMono.txt as OFL-JetBrainsMono.txt"
+
+[[group]]
+title = "Icons and graphics"
+
+[[group.entry]]
+name = "Lucide"
+owner = "Lucide Icons and Contributors (Feather icons by Cole Bemis)"
+url = "https://lucide.dev"
+license = "ISC (the Feather-derived icons MIT)"
+use = "The toolbar, menu and dock icons, from the catalogue longbridge's gpui-kit-assets packs."
+required = true
+notice = "assets/licenses/Lucide-ISC.txt as Lucide-ISC.txt"
+
+[[group.entry]]
+name = "Twemoji"
+owner = "Twitter, Inc., jdecked and other contributors"
+url = "https://github.com/jdecked/twemoji"
+license = "CC BY 4.0"
+use = "The emoji page of the Device Simulator's keyboard, unmodified."
+required = true
+notice = "assets/twemoji/LICENSE-GRAPHICS.txt as Twemoji-CC-BY-4.0.txt"
+
+[[group]]
+title = "Free 3D models"
+
+[[group.entry]]
+name = "Poly Haven"
+owner = "Poly Haven and its artists"
+url = "https://polyhaven.com"
+license = "CC0 1.0"
+use = "The Toolbox's Free kits, browsed live. Each model's card names its artists, and an imported model keeps Author, Source and License attributes. The models need no credit; the Poly Haven API's terms ask for Poly Haven to be named where its content shows."
+required = true
+
+[[group.entry]]
+name = "Kenney"
+owner = "Kenney"
+url = "https://kenney.nl"
+license = "CC0 1.0"
+use = "3D kit packs you download from kenney.nl and add to the Toolbox's Free kits. Nothing is downloaded from kenney.nl by RbxNative itself."
+required = false
+
+[[group]]
+title = "Code and data built in"
+
+[[group.entry]]
+name = "Loren"
+owner = "fabi"
+url = "https://github.com/fabideveloper/Loren-Framework"
+license = "MIT"
+use = "The optional built-in game framework: its Luau runtime, project template and specs, and its CLI ported as rbxstudio loren."
+required = true
+notice = "vendor/loren/LICENSE as Loren-MIT.txt"
+
+[[group.entry]]
+name = "roblox-lua-promise"
+owner = "Eryn L. K."
+url = "https://github.com/evaera/roblox-lua-promise"
+license = "MIT"
+use = "The Promise library Loren's runtime bundles."
+required = true
+notice = "vendor/loren/project/loren_packages/Promise/LICENSE as roblox-lua-promise-MIT.txt"
+
+[[group.entry]]
+name = "csg.js"
+owner = "Evan Wallace"
+url = "https://github.com/evanw/csg.js"
+license = "MIT"
+use = "The BSP-tree boolean algorithm behind Union, Negate and Intersect, ported to Rust."
+required = true
+notice = "assets/licenses/csg.js-MIT.txt as csg.js-MIT.txt"
+
+[[group.entry]]
+name = "rbx-dom reflection database"
+owner = "The Rojo Developers"
+url = "https://github.com/rojo-rbx/rbx-dom"
+license = "MIT"
+use = "Each class's default property values and serialized property names (assets/reflection-defaults.json), and the binary format docs."
+required = true
+notice = "assets/licenses/rbx-dom-MIT.txt as rbx-dom-MIT.txt"
+
+[[group.entry]]
+name = "Roblox API dump"
+owner = "Roblox Corporation, mirrored by MaximumADHD's Roblox-Client-Tracker"
+url = "https://github.com/MaximumADHD/Roblox-Client-Tracker"
+license = "No licence stated"
+use = "Every class, property and enum the editor knows, built in (assets/API-Dump.json)."
+required = false
+
+[[group.entry]]
+name = "luau-lsp"
+owner = "JohnnyMorganz"
+url = "https://github.com/JohnnyMorganz/luau-lsp"
+license = "MIT"
+use = "Autocomplete, hover, Go to Definition and Script Analysis. Carried inside the program; its licence and Luau's are in THIRD-PARTY-EMBEDDED.txt."
+required = true
+
+[[group.entry]]
+name = "Luau"
+owner = "Roblox Corporation and Lua.org, PUC-Rio"
+url = "https://github.com/luau-lang/luau"
+license = "MIT"
+use = "The scripting language: luau-lsp is built from it, and the plugin host runs it."
+required = true
+
+[[group.entry]]
+name = "cloudflared"
+owner = "Cloudflare"
+url = "https://github.com/cloudflare/cloudflared"
+license = "Apache-2.0"
+use = "Play's tunnel. Carried inside the program; licence in THIRD-PARTY-EMBEDDED.txt."
+required = true
+
+[[group.entry]]
+name = "slirp4netns"
+owner = "The slirp4netns authors (rootless-containers)"
+url = "https://github.com/rootless-containers/slirp4netns"
+license = "GPL-2.0-or-later"
+use = "Play's network simulator on Linux. Carried inside the program, unmodified; licence and source offer in THIRD-PARTY-EMBEDDED.txt."
+required = true
+
+[[group]]
+title = "Fetched while you work"
+
+[[group.entry]]
+name = "Roblox"
+owner = "Roblox Corporation"
+url = "https://www.roblox.com"
+license = "Roblox Terms of Use"
+use = "Studio's content packages (the default sky, material textures), assets, thumbnails and the Creator Store, downloaded when a place needs them. The setup wizard's three Creator Dashboard screenshots show Roblox's own pages."
+required = false
+
+[[group.entry]]
+name = "Roblox Creator Documentation"
+owner = "Roblox Corporation"
+url = "https://github.com/Roblox/creator-docs"
+license = "CC BY 4.0 (code samples MIT)"
+use = "The documentation pages the MCP docs tool reads for an AI assistant, fetched from their source."
+required = true
+
+[[group.entry]]
+name = "Roblox-Client-Tracker"
+owner = "MaximumADHD"
+url = "https://github.com/MaximumADHD/Roblox-Client-Tracker"
+license = "No licence stated"
+use = "Roblox's API reference text for hover docs, downloaded at run time. Its shader sources are what the renderer's lighting was studied from."
+required = false
+
+[[group.entry]]
+name = "luau-lsp type definitions"
+owner = "JohnnyMorganz"
+url = "https://github.com/JohnnyMorganz/luau-lsp"
+license = "MIT"
+use = "Roblox's API types for autocomplete, downloaded at run time."
+required = true
+
+[[group]]
+title = "Ideas and references"
+
+[[group.entry]]
+name = "Reclass and Relight"
+owner = "Elttob"
+url = "https://www.roblox.com/users/1670764/profile"
+license = "Idea only"
+use = "Inspired Change Class and sun placement. Rebuilt from how the plugins behave; no code, assets or UI used."
+required = false
+
+[[group.entry]]
+name = "Icon Updater"
+owner = "MiniDev"
+url = "https://vm.tiktok.com/ZN8AFbRwp/"
+license = "Idea only"
+use = "Update planning's countdown icons follow MiniDev's design. No code or assets used."
+required = false
+
+[[group.entry]]
+name = "Community redesign concept"
+owner = "u/1324764019 on the Roblox DevForum"
+url = "https://www.roblox.com/users/1324764019/profile"
+license = "Idea only"
+use = "The calmer dock and panel look the editor's theme takes its direction from."
+required = false
+
+[[group.entry]]
+name = "Argon"
+owner = "argon-rbx"
+url = "https://argon.wiki"
+license = "Apache-2.0"
+use = "The file sync tool the Argon dock connects to; its plugin source is where the wire protocol was checked. No code copied."
+required = false
+
+[[group.entry]]
+name = "Wally"
+owner = "UpliftGames"
+url = "https://wally.run"
+license = "MPL-2.0"
+use = "The package manager the Wally dock is built around; its source is where the registry API and install layout were checked. No code copied."
+required = false
+
+[[group.entry]]
+name = "Roblox-Materials and the FileMesh spec"
+owner = "MaximumADHD"
+url = "https://github.com/MaximumADHD/Roblox-Materials"
+license = "Reference only"
+use = "The material texture pack layout and the mesh format the renderer reads."
+required = false
+
+[[group.entry]]
+name = "Bytecode viewer request"
+owner = "A Roblox DevForum feature request"
+url = "https://devforum.roblox.com/t/bytecodenative-code-viewer/4964517"
+license = "Idea only"
+use = "The Bytecode dock."
+required = false

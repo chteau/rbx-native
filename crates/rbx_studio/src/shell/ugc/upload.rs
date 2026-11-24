@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use rbx_cloud::{ModelFile, Owner};
+use rbx_cloud::{FileContent, ModelFile, Owner};
 
 use super::super::freeze::{authorize, describe};
 
@@ -63,12 +63,12 @@ pub(super) fn send_with(
         Payload::Rbxm(bytes) => ModelFile {
             name: "item.rbxm",
             content_type: "model/x-rbxm",
-            bytes,
+            content: FileContent::Bytes(bytes),
         },
         Payload::File(upload) => ModelFile {
             name: &upload.file_name,
             content_type: upload.content_type,
-            bytes: &upload.bytes,
+            content: FileContent::Bytes(&upload.bytes),
         },
     };
     client

@@ -45,6 +45,8 @@ Name: "associate"; Description: "Open .rbxl and .rbxlx places with RbxNative"; G
 Source: "{#Source}\RbxNative.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\*.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\*.html"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Source}\CREDITS.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Source}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
 ; Play's network simulator. A loaded driver can't be overwritten, and these
 ; never change between releases.
 Source: "{#Source}\WinDivert.dll"; DestDir: "{app}"; Flags: onlyifdoesntexist

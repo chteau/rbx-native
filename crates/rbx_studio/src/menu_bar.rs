@@ -1,4 +1,4 @@
-//! The top menu bar: File / Edit / Model / View, mounted above the dock area
+//! The top menu bar: File / Edit / Model / View / Help, mounted above the dock area
 //! (see `Render for Shell`). The structure is GPUI's own OS-menu shape
 //! (`Menu`/`MenuItem`/`OwnedMenu`), and each dropdown is `gpui_component`'s
 //! stock [`PopupMenu`](gpui_kit::component::menu::PopupMenu), which already
@@ -79,6 +79,8 @@ actions!(
         MenuUpdatePlanning,
         MenuOpenAutoSaves,
         MenuStudioSettings,
+        /// Help › About RbxNative, and macOS's app menu item of that name.
+        MenuAbout,
         /// Cmd+Q on macOS: the close button's question, then the whole app.
         MenuQuit,
         MenuCustomizeShortcuts,
@@ -195,6 +197,8 @@ pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut Ap
 /// the ribbon's Script menu names them, so the two menus list the same
 /// things; last because the list is the user's and can run long, and the
 /// popup does not scroll, so it must not push Group/Ungroup out of reach.
+/// Help holds About RbxNative, Settings' About page: the version and the
+/// credits.
 ///
 /// Also the command palette's source (`shell::palette`): every enabled item
 /// here is a palette row, so the two cannot list different commands.
@@ -374,6 +378,9 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 ])
                 .collect::<Vec<_>>(),
             )
+            .owned(),
+        Menu::new("Help")
+            .items(vec![MenuItem::action("About RbxNative", MenuAbout)])
             .owned(),
     ]
 }

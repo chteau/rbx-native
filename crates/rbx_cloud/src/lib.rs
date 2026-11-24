@@ -51,7 +51,7 @@ pub use asset_metadata::AssetMetadata;
 pub use assets::{AssetContent, AssetPresence};
 pub use avatar::{AssetType, Avatar, AvatarAsset, AvatarBodyColors, AvatarScales};
 pub use client::Client;
-pub use create_asset::ModelFile;
+pub use create_asset::{FileContent, ModelFile};
 pub use datastores::{
     validate_entry, value_bytes, DataStoreInfo, Entry, EntryRef, EntryWrite, MapItem, MapItemWrite,
     OrderedEntry, OrderedQuery, Page, QueueItem, QueueRead, Revision, SortKey, StoreRef,

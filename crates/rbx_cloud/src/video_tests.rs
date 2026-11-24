@@ -175,7 +175,7 @@ fn a_video_upload_says_its_price_and_reports_pending_review() {
     let file = ModelFile {
         name: "clip.mp4",
         content_type: "video/mp4",
-        bytes: b"mp4",
+        content: crate::FileContent::Bytes(b"mp4"),
     };
     let uploaded = client
         .create_video_asset("Clip", "", Owner::User(5), &file)
@@ -201,4 +201,42 @@ fn a_video_upload_says_its_price_and_reports_pending_review() {
     );
     assert!(requests[0].contains("Content-Type: video/mp4\r\n\r\nmp4"));
     assert!(requests[1].starts_with("GET /assets/v1/operations/v1 "));
+}
+
+/// Counts the bytes a probe pulls in.
+struct Counting<R> {
+    inner: R,
+    read: u64,
+}
+
+impl<R: std::io::Read> std::io::Read for Counting<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.read += n as u64;
+        Ok(n)
+    }
+}
+
+impl<R: std::io::Seek> std::io::Seek for Counting<R> {
+    fn seek(&mut self, to: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.inner.seek(to)
+    }
+}
+
+#[test]
+fn only_the_headers_are_read_not_the_media_or_sample_tables() {
+    let mut video = track(b"vide", 1920, 1080);
+    // A megabyte of sample tables inside the track, as a long video has.
+    let minf = boxed(b"minf", &boxed(b"stbl", &vec![0u8; 1 << 20]));
+    video = boxed(b"trak", &[&video[8..], &minf].concat());
+    let mut bytes = file(mvhd_v0(600, 600 * 90), &[video]);
+    bytes.splice(0..0, boxed(b"mdat", &vec![0u8; 1 << 20]));
+    let mut reader = Counting {
+        inner: Cursor::new(&bytes),
+        read: 0,
+    };
+    let info = probe(&mut reader, bytes.len() as u64).unwrap();
+    assert_eq!((info.width, info.height), (1920, 1080));
+    assert_eq!(info.duration, Duration::from_secs(90));
+    assert!(reader.read < 256, "read {} bytes", reader.read);
 }

@@ -252,7 +252,12 @@ impl Source {
                 &mut cache,
                 |name, png| {
                     client
-                        .create_image_asset(name, "Imported from Figma by rbx-native.", user, png)
+                        .create_image_asset(
+                            name,
+                            "Imported from Figma by rbx-native.",
+                            user,
+                            rbx_cloud::FileContent::Bytes(png),
+                        )
                         .map_err(|e| describe(&e))
                 },
                 |line| *progress.lock().unwrap() = line,

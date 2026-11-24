@@ -145,7 +145,12 @@ fn upload_one(client: &Client, owner: u64, path: &str) -> Result<u64, String> {
         return Err(format!("Not a PNG, JPEG or BMP image: {path}"));
     }
     client
-        .create_image_asset(&stem(path), DESCRIPTION, owner, &bytes)
+        .create_image_asset(
+            &stem(path),
+            DESCRIPTION,
+            owner,
+            rbx_cloud::FileContent::Bytes(&bytes),
+        )
         .map_err(|err| describe(&err, UPLOAD_SCOPE))
 }
 
