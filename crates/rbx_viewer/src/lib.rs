@@ -88,8 +88,8 @@ pub use renderer::{
 };
 pub use scene::perf;
 pub use scene::{
-    pseudo_localize, resolved_shape_label, rich_runs, shows_screen, GuiScrolls, PseudoLocale,
-    RichRun, SafeInsets, ScrollTarget, ThumbGrab, STAGE_REACH,
+    pseudo_localize, resolved_shape_label, rich_runs, set_variant_alpha_modes, shows_screen,
+    GuiScrolls, PseudoLocale, RichRun, SafeInsets, ScrollTarget, ThumbGrab, STAGE_REACH,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};
