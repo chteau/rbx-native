@@ -79,6 +79,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "The edit camera flies like Studio's beta of the same name: Adaptive, FPS and Orbit modes under the View Selector, fly speed that follows the focus distance, wheel zoom towards the cursor, Alt + right drag to dolly, and Focus that glides in and frames the selection at 70% of the view.",
     },
     Feature {
+        id: crate::transform::NEXT_GEN_DRAGGERS_BETA_ID,
+        name: "Next-Gen Draggers",
+        description: "Move and Rotate handles in the look of Studio's beta of the same name: its colours, smaller and thinner handles, positive arrows only with a square to drag along each plane, and rings drawn on their near half inside a white view ring, with a trackball inside them for a free turn.",
+    },
+    Feature {
         id: crate::explorer::insert::UI_PARTICLES_BETA_ID,
         name: "UI Particles",
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",

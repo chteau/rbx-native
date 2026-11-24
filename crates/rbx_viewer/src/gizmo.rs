@@ -23,10 +23,13 @@ use crate::Pose;
 mod bounds;
 mod faces;
 mod origin;
+mod skin;
 
 pub use bounds::{bounds_along, bounds_of, box_along, centre_of, scale_box};
 pub use faces::{Faces, Hotspots, HOTSPOTS, HOTSPOT_PARTS, PART_HOTSPOTS};
 pub(crate) use origin::ORIGIN_RADIUS;
+pub use skin::{trackball_point, Skin};
+pub(crate) use skin::{Profile, HOVER_THICKNESS, PLANE_HALF, VIEW_COLOR, VIEW_RING_RADIUS};
 
 /// The arm length of one dragger as a fraction of the viewport's half-height,
 /// so the gizmo keeps the same size on screen however far away the part is.
@@ -160,6 +163,8 @@ pub struct Gizmo {
     /// user can see what a press would grab before pressing, Studio lights
     /// a hovered arrow or ring the same way.
     pub hover: Option<Axis>,
+    /// Studio's "Next-Gen Draggers" look, or the classic one.
+    pub skin: Skin,
 }
 
 /// One Move arrow or Scale ball: the axis it stands on, and which end of it
@@ -195,11 +200,21 @@ pub struct Handles {
     origin: Vec3,
     basis: [Vec3; 3],
     arm: f32,
+    /// The look they take and the camera they are seen from, see
+    /// [`Handles::skinned`].
+    skin: Skin,
+    eye: Vec3,
 }
 
 impl Handles {
     pub fn new(origin: Vec3, basis: [Vec3; 3], arm: f32) -> Self {
-        Handles { origin, basis, arm }
+        Handles {
+            origin,
+            basis,
+            arm,
+            skin: Skin::Classic,
+            eye: Vec3::ZERO,
+        }
     }
 
     pub fn origin(&self) -> Vec3 {
@@ -237,6 +252,11 @@ impl Handles {
                 // point on the *dragger* is its endpoint, not the nearest point
                 // on the infinite axis line.
                 let sign = if along < 0.0 { -1.0 } else { 1.0 };
+                // Next-gen draws the positive arrows only ("Show Move
+                // Dragger Negative Axes" is off by default).
+                if sign < 0.0 && self.next_gen() {
+                    return None;
+                }
                 // `max`/`min`, not `clamp`: a NaN arm (a NaN pivot) must not panic.
                 let clamped = along.abs().max(SHAFT_START * self.arm).min(self.arm) * sign;
                 let (distance, offset) = ray.nearest(self.origin + direction * clamped);
@@ -297,7 +317,8 @@ impl Handles {
             .into_iter()
             .filter_map(|axis| {
                 let (_, out, distance) = ring_crossing(self.origin, self.ring_frame(axis), ray)?;
-                ((out - radius).abs() <= reach).then_some((axis, distance))
+                ((out - radius).abs() <= reach && self.faces_eye(ray.at(distance)))
+                    .then_some((axis, distance))
             })
             .min_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(axis, _)| axis)
