@@ -1,7 +1,7 @@
 use glam::{Mat4, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_ugc::{
-    AssetType, BodyScale, Cage, CageKind, Finding, Geometry, Item, Part, Rule, Severity,
+    Affine, AssetType, BodyScale, Cage, CageKind, Finding, Geometry, Item, Part, Rule, Severity,
 };
 
 use super::{cframe_matrix, drawable, segments, Place};
@@ -102,8 +102,15 @@ fn holed_hat(dom: &mut WeakDom) -> (Ref, Collected) {
 
 #[test]
 fn only_checks_with_vertices_to_point_at_are_drawn() {
-    assert!(drawable(Rule::Watertight));
-    assert!(drawable(Rule::CageUvs));
+    for rule in [
+        Rule::Watertight,
+        Rule::CageUvs,
+        Rule::DegenerateTriangles,
+        Rule::MeshOutsideCage,
+        Rule::CageDistance,
+    ] {
+        assert!(drawable(rule));
+    }
     for rule in [
         Rule::ItemSize,
         Rule::Attachment,
@@ -165,6 +172,7 @@ fn a_cage_with_a_moved_uv_draws_the_whole_cage_and_marks_the_vertex() {
         name: name.into(),
         geometry,
         template,
+        to_mesh: rbx_ugc::IDENTITY,
     };
     let lifted = Mat4::from_translation(Vec3::new(0.0, 2.0, 0.0));
     let item = collected(
@@ -206,4 +214,115 @@ fn a_cframe_turns_like_roblox_rotates() {
     let c = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0];
     let p = cframe_matrix(&c).transform_point3(Vec3::X);
     assert!((p - Vec3::new(0.0, 0.0, -1.0)).length() < 1e-6);
+}
+
+fn dots(out: &[rbx_viewer::Segment]) -> Vec<Vec3> {
+    out.iter()
+        .filter(|s| s.from == s.to)
+        .map(|s| s.from)
+        .collect()
+}
+
+#[test]
+fn a_collapsed_triangle_marks_its_corners() {
+    let mut dom = WeakDom::new();
+    let (_, mut item) = holed_hat(&mut dom);
+    let geometry = item.item.parts[0].geometry.as_mut().unwrap();
+    geometry.triangles = CUBE.to_vec();
+    // A triangle with a corner halfway along the 0-1 edge.
+    geometry.positions.push([0.5, 0.0, 0.0]);
+    geometry.triangles.push([0, 1, 8]);
+    let out = segments(&dom, &item, &finding(Rule::DegenerateTriangles, "Handle"));
+    let mut at = dots(&out);
+    at.sort_by(|a, b| a.x.total_cmp(&b.x));
+    assert_eq!(
+        at,
+        vec![
+            Vec3::new(10.0, 0.0, 0.0),
+            Vec3::new(10.5, 0.0, 0.0),
+            Vec3::new(11.0, 0.0, 0.0)
+        ]
+    );
+}
+
+fn jacket(dom: &mut WeakDom, cage_scale: f32) -> Collected {
+    let handle = dom.new_instance("MeshPart", "Handle", None);
+    place_at(dom, handle, 0.0);
+    let mut outer = cube(&CUBE);
+    for p in &mut outer.positions {
+        *p = p.map(|c| 0.5 + (c - 0.5) * cage_scale);
+    }
+    let cage = |kind, name: &str, geometry: Geometry, to_mesh: Affine| Cage {
+        kind,
+        name: name.into(),
+        geometry,
+        template: None,
+        to_mesh,
+    };
+    // The outer cage file sits 5 studs up; its origin brings it back.
+    let mut lifted = outer.clone();
+    for p in &mut lifted.positions {
+        p[1] += 5.0;
+    }
+    let mut back = rbx_ugc::IDENTITY;
+    back[1] = -5.0;
+    let place = |name: &str, local| Place {
+        name: name.into(),
+        node: handle,
+        local,
+    };
+    let mut item = collected(
+        vec![Part {
+            name: "Handle".into(),
+            geometry: Some(cube(&CUBE)),
+            cframe: rbx_ugc::IDENTITY,
+            attachments: vec![],
+        }],
+        vec![
+            cage(
+                CageKind::Inner,
+                "Cap_InnerCage",
+                cube(&CUBE),
+                rbx_ugc::IDENTITY,
+            ),
+            cage(CageKind::Outer, "Cap_OuterCage", lifted, back),
+        ],
+        vec![
+            place("Handle", Mat4::IDENTITY),
+            place(
+                "Cap_OuterCage",
+                Mat4::from_translation(Vec3::new(0.0, -5.0, 0.0)),
+            ),
+        ],
+    );
+    item.item.asset_type = AssetType::Jacket;
+    item
+}
+
+#[test]
+fn a_mesh_outside_its_cage_marks_the_vertices_poking_out() {
+    let mut dom = WeakDom::new();
+    let item = jacket(&mut dom, 0.5);
+    let out = segments(&dom, &item, &finding(Rule::MeshOutsideCage, "Handle"));
+    assert_eq!(dots(&out).len(), 8, "every corner of the handle");
+    assert!(dots(&out).contains(&Vec3::new(1.0, 1.0, 1.0)));
+    let inside = jacket(&mut dom, 1.5);
+    assert!(dots(&segments(
+        &dom,
+        &inside,
+        &finding(Rule::MeshOutsideCage, "Handle")
+    ))
+    .is_empty());
+}
+
+#[test]
+fn a_cage_too_far_from_the_mesh_draws_the_whole_cage() {
+    let mut dom = WeakDom::new();
+    let item = jacket(&mut dom, 3.0);
+    let out = segments(&dom, &item, &finding(Rule::CageDistance, "Cap_OuterCage"));
+    assert_eq!(out.iter().filter(|s| s.from != s.to).count(), 18);
+    // The cage corners sit a stud out on each axis, drawn where the place
+    // puts the cage.
+    assert!(dots(&out).contains(&Vec3::new(2.0, 2.0, 2.0)));
+    assert_eq!(dots(&out).len(), 8);
 }

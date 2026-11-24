@@ -2704,10 +2704,17 @@ both the plain fetch failure and the silent fall back to a default
   with per-vertex data: the triangles around each flagged vertex in gray
   `#404040`, the edges meeting it in `#7F2020`, a `#FF4040` dot on top at
   each one, a cage check drawing the whole cage. Of those, the validator here
-  has open edges (Studio's watertight and manifold measures) and cage UVs
-  off the template. Studio's cage relevancy, cage distance, mesh outside
-  cage, degenerate and intersecting triangle measures run on Roblox's
-  servers and have no check here yet; bounds, attachments, schema and
+  has open edges (Studio's watertight and manifold measures), cage UVs
+  off the template, and since 0.2.3 degenerate triangles, mesh outside
+  the outer cage and cage-to-mesh distance (`rbx_ugc::rules::{degenerate,
+  fit}`), with Studio 0.748's messages and the validation-system page's
+  limits (65% outside, 0.6 studs, 30% inside). Degenerate is area under
+  1e-6 of the longest edge squared, which gives Studio's 17 of 1004 on
+  mesh 2938588047. On the leather jacket with its cage pushed 0 to 1 stud,
+  outside lands within 1.5 points and the farthest cage vertex to the
+  thousandth; the share of cage vertices inside the mesh still reads
+  lower than Studio's. Studio's cage relevancy and intersecting triangle
+  measures have no check here yet; bounds, attachments, schema and
   texture checks draw nothing there either.
 - [x] **The Animation Editor writes `CurveAnimation`s and fits the stage's
   shadow to the rig**:
@@ -3980,7 +3987,7 @@ there. What each does live, and where it stands here:
 | Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
 | Video Uploads | Asset Manager › Import's file picker gains "Video Files (*.mp4 *.mov)"; a picked video joins the Import Queue as "Ready to Import" with no length check (a 5:30 clip was queued) | Built behind a beta of the same name, through Import |
 | Auto-Reimport | Explorer › Reimport › Auto-Reimport, shown once the model has saved reimport settings (an `RBX_ReimportId` attribute plus a file path kept on the device); on, it reimports at once and again on every save, for the session | Built behind a beta of the same name |
-| Visualizing UGC Validation | Clicking a check's row draws it on the item: edges and dots on the flagged vertices, nothing for checks without per-vertex data; hovering draws nothing | Built behind a beta of the same name for the checks the validator here has (open edges, cage UVs) |
+| Visualizing UGC Validation | Clicking a check's row draws it on the item: edges and dots on the flagged vertices, nothing for checks without per-vertex data; hovering draws nothing | Built behind a beta of the same name for the checks the validator here has (open edges, cage UVs, degenerate triangles, mesh outside cage, cage distance) |
 | Package Overrides, SLIM Debug Tints | Package and engine-debug tooling | Not built: see their items |
 
 #### Renderer
