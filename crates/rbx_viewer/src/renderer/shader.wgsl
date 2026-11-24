@@ -94,6 +94,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.variant_alpha = (in.material.y >> VARIANT_ALPHA_SHIFT) & VARIANT_ALPHA_MASK;
     input.extent = in.extent;
     input.anchored = (in.material.y & FACE_ANCHORED) != 0u;
+    input.curved = (in.material.y & FACE_CURVED) != 0u;
 
     // Straight (non-premultiplied) alpha: the translucent pipeline pairs this
     // with src_alpha / one_minus_src_alpha, and the opaque one always gets 1.

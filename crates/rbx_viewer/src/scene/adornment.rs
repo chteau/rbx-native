@@ -405,7 +405,7 @@ impl Context<'_> {
             frame,
             color: self.color,
             alpha: self.alpha,
-            double_sided: true,
+            double_sided: false,
         })
     }
 }

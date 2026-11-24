@@ -72,7 +72,7 @@ fn selection_box(context: &Context<'_>) -> Vec<Piece> {
             frame: adornee.frame,
             color: linear_color_or(context.properties, "SurfaceColor3", [1.0, 1.0, 1.0]),
             alpha: surface_alpha,
-            double_sided: true,
+            double_sided: false,
         }));
     }
 
@@ -111,14 +111,15 @@ fn edges(adornee: &Adornee, thickness: f32) -> impl Iterator<Item = (Mesh, Mat4)
 /// whole of what shows); the ring is the sphere's own silhouette, which only
 /// the renderer can face at the camera.
 ///
-/// How large the sphere is around its adornee is not published: this one is
-/// the adornee box's own bounding sphere, so nothing inside it pokes out.
+/// How large the sphere is isn't published. Studio 0.748 draws it as wide as
+/// the adornee's smallest side (a 3-stud cube gets a 3-stud sphere, a thin
+/// plate a tiny one), so the box pokes out of it rather than fitting inside.
 fn selection_sphere(context: &Context<'_>) -> Vec<Piece> {
     let Some(adornee) = context.adornee else {
         return Vec::new();
     };
     let centre = adornee.frame.w_axis.truncate();
-    let radius = adornee.size.length() * 0.5;
+    let radius = adornee.size.min_element() * 0.5;
     let mut pieces = Vec::new();
 
     let surface_alpha =
@@ -129,7 +130,7 @@ fn selection_sphere(context: &Context<'_>) -> Vec<Piece> {
             frame: Mat4::from_translation(centre),
             color: linear_color_or(context.properties, "SurfaceColor3", [1.0, 1.0, 1.0]),
             alpha: surface_alpha,
-            double_sided: true,
+            double_sided: false,
         }));
     }
     if context.alpha > 0.0 {

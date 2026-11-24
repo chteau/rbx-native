@@ -34,6 +34,7 @@ const VARIANT_ALPHA_SHIFT: u32 = 8u;
 const VARIANT_ALPHA_MASK: u32 = 0xffu;
 // A block or a wedge: tiled from a corner of each face (see `anchored_face`).
 const FACE_ANCHORED: u32 = 0x10000u;
+const FACE_CURVED: u32 = 0x20000u;
 const VARIANT_ALPHA_OVERLAY: u32 = 1u;
 const VARIANT_ALPHA_TRANSPARENCY: u32 = 2u;
 const VARIANT_ALPHA_TINT_MASK: u32 = 3u;
@@ -122,11 +123,13 @@ struct MaterialInput {
     // `VARIANT_ALPHA_*`, 0 (the alpha does nothing) everywhere but a
     // `MaterialVariant` whose `AlphaMode` is honoured.
     variant_alpha: u32,
-    // The part's size in studs, and whether it tiles from a corner of each
-    // face (`FACE_ANCHORED`). Left zeroed, centred tiling, by every pass but
-    // the block and wedge one.
+    // The part's size in studs, whether it tiles from a corner of each face
+    // (`FACE_ANCHORED`), and whether it is round, a ball or a cylinder, its
+    // face picked by the normal and pushed out onto it (`FACE_CURVED`).
+    // Left zeroed, centred tiling, by every pass but the part one.
     extent: vec3<f32>,
     anchored: bool,
+    curved: bool,
     // How much of a `ForceField` mesh's own image is showing here, from
     // `force_field_window`. Left zeroed, no pattern, by every pass with no
     // image of its own, which is every plain part.
@@ -400,36 +403,55 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
     return sample_frame(face_frame(axis), vec2<f32>(0.0), input);
 }
 
-/// A block's or a wedge's face, tiled the way Studio tiles it (measured
-/// 2026-11-24 on all six faces of blocks of uneven size, turned or not, and
-/// a wedge, with `StudsPerTile` dividing none of them): the grid starts at
-/// the face's corner from which U and V both run into it, the four sides as
-/// `face_frame` has them, the top and bottom half a turn from it (top: U
-/// along -X, V along -Z; bottom: U along -X, V along +Z), and a wedge's
-/// slope laid flat in its own plane, U along -X and V down the slope from
-/// its high edge.
+/// A part's face, tiled the way Studio tiles it (measured 2026-11-24 with
+/// `StudsPerTile` dividing none of the sizes, turned or not): the grid starts
+/// at the face's corner from which U and V both run into it, the four sides
+/// as `face_frame` has them, the top and bottom half a turn from it (top: U
+/// along -X, V along -Z; bottom: U along -X, V along +Z).
+///
+/// The slopes are laid flat in their own plane: a wedge's with U along -X
+/// and V down from its high edge, a corner wedge's back slope with U along
+/// +X and V up from its low edge, its left slope with U along +Z and V down
+/// from the apex. A round side takes the face of its box the normal leans
+/// towards, that face's grid pushed out onto it from the cylinder's axis or
+/// the ball's centre, so two grids meet mirrored at each seam.
 fn anchored_face(input: MaterialInput) -> Mapped {
     var frame: Frame;
+    var mapped = input;
     let n = input.object_normal;
     let w = abs(n);
-    if max(w.x, max(w.y, w.z)) >= TRIPLANAR_FAST_PATH * length(n) {
+    if input.curved || max(w.x, max(w.y, w.z)) >= TRIPLANAR_FAST_PATH * length(n) {
         let axis = dominant_axis(n);
         frame = face_frame(axis);
         if axis.y != 0.0 {
             frame.u = vec3<f32>(-1.0, 0.0, 0.0);
             frame.v = vec3<f32>(0.0, 0.0, -axis.y);
         }
+        if input.curved {
+            // Out from the axis (a cylinder) or the centre (a ball) along
+            // the normal, onto the face of the box around it.
+            let normal = normalize(n);
+            let radius = dot(input.object_studs, normal);
+            let reach = max(abs(dot(input.object_studs, axis)), 0.001);
+            mapped.object_studs += normal * radius * (radius / reach - 1.0);
+        }
     } else {
         // The slope's normal is the unit mesh's; in studs it is that over
         // the size, and V runs across U within the plane it spans.
-        frame.u = vec3<f32>(-1.0, 0.0, 0.0);
-        frame.v = normalize(cross(frame.u, n / max(input.extent, vec3<f32>(0.001))));
+        let slope = n / max(input.extent, vec3<f32>(0.001));
+        if abs(n.x) > 0.001 {
+            frame.u = vec3<f32>(0.0, 0.0, 1.0);
+            frame.v = normalize(cross(frame.u, slope));
+        } else {
+            frame.u = vec3<f32>(sign_of(n.z), 0.0, 0.0);
+            frame.v = normalize(cross(vec3<f32>(-1.0, 0.0, 0.0), slope));
+        }
     }
-    // The face's centre sits on the part's (a wedge's slope passes through
-    // it too), so half the face's own extent along each direction moves
-    // the origin out to the corner.
+    // The face's centre sits on the part's (a slope passes through it too),
+    // so half the face's own extent along each direction moves the origin
+    // out to the corner.
     let half = 0.5 * vec2<f32>(dot(abs(frame.u), input.extent), dot(abs(frame.v), input.extent));
-    return sample_frame(frame, half, input);
+    return sample_frame(frame, half, mapped);
 }
 
 fn sample_frame(frame: Frame, origin: vec2<f32>, input: MaterialInput) -> Mapped {
