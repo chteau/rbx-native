@@ -2,6 +2,7 @@
 
 ## 2026-11-24
 
+- **Seeing where an avatar item check failed.** Turn on the Visualizing UGC Validation beta and clicking a finding in Check Avatar Item draws it on the item in the 3D view, same colours as Studio: the open edges of a mesh that isn't watertight, and the cage vertices whose UVs moved off the template. Checks Studio doesn't draw don't draw here either. (@chteau)
 - **Union, Negate, Intersect and Separate.** The Model tab has Studio's solid modeling tools now, with the same shortcuts (Ctrl+Shift+G / N / I / U, Ungroup moved to Ctrl+U like Studio). What we save is what current Studio saves, collision data included, so Studio opens our unions, can Separate them, and we Separate theirs.
 - **AI assistants can cut holes now.** `SubtractAsync`, `UnionAsync` and `IntersectAsync` work in edit scripts and through MCP, same as in Studio: you get a new union back and your parts stay put. The modeling guide teaches doorways, windows and arches with them, and when framing with parts is still the cheaper call.
 
