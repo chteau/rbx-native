@@ -13,6 +13,8 @@ pub mod spec;
 
 mod rules;
 
+pub use rules::{cage_uv_mismatches, open_edges, weld, welded_triangles};
+
 pub use spec::{AssetType, BodyGroup, BodyScale, Bounds, Category};
 
 /// Mesh data in the part's own space. `positions` are studs when

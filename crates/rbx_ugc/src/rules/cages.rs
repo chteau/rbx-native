@@ -72,6 +72,27 @@ fn find<'a>(
     cage
 }
 
+/// The vertices of `cage` whose UV is not the one `base` has at the same
+/// index (every vertex when only one of the two has UVs); none when the
+/// vertex counts differ, since then indices do not pair up.
+pub fn cage_uv_mismatches(cage: &Geometry, base: &Geometry) -> Vec<usize> {
+    if cage.positions.len() != base.positions.len() {
+        return Vec::new();
+    }
+    let (a, b) = (&cage.uvs, &base.uvs);
+    if a.is_empty() != b.is_empty() {
+        return (0..cage.positions.len()).collect();
+    }
+    a.iter()
+        .zip(b)
+        .enumerate()
+        .filter(|(_, (p, q))| {
+            (p[0] - q[0]).abs() > UV_TOLERANCE || (p[1] - q[1]).abs() > UV_TOLERANCE
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
 fn compare(cage: &Cage, base: &Geometry, base_name: &str, lead: &str, out: &mut Vec<Finding>) {
     let count = cage.geometry.positions.len();
     let expected = base.positions.len();
@@ -91,17 +112,7 @@ fn compare(cage: &Cage, base: &Geometry, base_name: &str, lead: &str, out: &mut 
         });
         return;
     }
-    let (a, b) = (&cage.geometry.uvs, &base.uvs);
-    let differing = if a.is_empty() != b.is_empty() {
-        count
-    } else {
-        a.iter()
-            .zip(b)
-            .filter(|(p, q)| {
-                (p[0] - q[0]).abs() > UV_TOLERANCE || (p[1] - q[1]).abs() > UV_TOLERANCE
-            })
-            .count()
-    };
+    let differing = cage_uv_mismatches(&cage.geometry, base).len();
     if differing > 0 {
         out.push(Finding {
             rule: Rule::CageUvs,
@@ -229,6 +240,21 @@ mod tests {
         assert_eq!(f[0].severity, Severity::Warning);
         assert_eq!(f[0].measured, Some(Value::Count(4)));
         assert_eq!(f[0].limit, Some(Value::Count(3)));
+    }
+
+    #[test]
+    fn uv_mismatches_name_the_moved_vertices() {
+        let base = geo(4, 0.5);
+        let mut moved = base.clone();
+        moved.uvs[1] = [0.1, 0.5];
+        moved.uvs[3] = [0.5, 0.9];
+        assert_eq!(cage_uv_mismatches(&moved, &base), vec![1, 3]);
+        assert!(cage_uv_mismatches(&geo(3, 0.1), &base).is_empty());
+        let bare = Geometry {
+            positions: vec![[0.0; 3]; 4],
+            ..Default::default()
+        };
+        assert_eq!(cage_uv_mismatches(&bare, &base), vec![0, 1, 2, 3]);
     }
 
     #[test]
