@@ -65,6 +65,8 @@ impl WorkspaceView {
             }
             Drag::Plane { .. }
             | Drag::Ring { .. }
+            | Drag::Slide { .. }
+            | Drag::Ball { .. }
             | Drag::Sun
             | Drag::Terrain
             | Drag::Joint { .. } => return,
@@ -120,6 +122,8 @@ impl WorkspaceView {
             } => (origin, axis, grabbed),
             Drag::Plane { .. }
             | Drag::Ring { .. }
+            | Drag::Slide { .. }
+            | Drag::Ball { .. }
             | Drag::Sun
             | Drag::Terrain
             | Drag::Joint { .. } => return,

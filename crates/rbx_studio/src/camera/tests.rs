@@ -372,3 +372,13 @@ fn a_script_switching_the_projection_moves_the_view_and_zooming_writes_the_size(
     assert!(matches!(size, Some(Variant::Float32(size)) if (size - 69.793).abs() < 0.01));
     assert!(dom.take_changes().is_empty());
 }
+
+#[test]
+fn a_focus_the_view_aims_at_sets_the_orbit_distance() {
+    let eye = [0.0, 10.0, 30.0];
+    let look = [0.0, 0.0, -1.0];
+    assert_eq!(focus_depth(eye, look, [0.0, 10.0, 0.0]), 30.0);
+    // Off to the side or behind, it is no focus of this view.
+    assert_eq!(focus_depth(eye, look, [5.0, 10.0, 0.0]), 1.0);
+    assert_eq!(focus_depth(eye, look, [0.0, 10.0, 40.0]), 1.0);
+}

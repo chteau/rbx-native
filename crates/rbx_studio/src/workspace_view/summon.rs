@@ -305,6 +305,8 @@ impl WorkspaceView {
                 .unwrap_or(Vec3::ZERO),
             Drag::Plane { .. }
             | Drag::Ring { .. }
+            | Drag::Slide { .. }
+            | Drag::Ball { .. }
             | Drag::Sun
             | Drag::Terrain
             | Drag::Joint { .. } => Vec3::ZERO,
