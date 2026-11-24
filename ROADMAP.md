@@ -3170,9 +3170,15 @@ both the plain fetch failure and the silent fall back to a default
   it, a hovered arrow 30% thicker, and Rotate's rings drawn and grabbed on
   their near half inside a white view ring (turns about the line from the
   camera) with a trackball inside for a free turn. Scale's balls take the
-  colours; their shape doesn't change with the beta. Still classic with it
-  on: arrows start at a fixed gap rather than at the part's surface, and
-  Transform and Edit Pivot keep their combined classic handles.
+  colours; their shape doesn't change with the beta. Arrows and squares
+  are built as the adornments Studio draws them with (handle scale s =
+  0.033 x sin(fov) x depth): the shaft starts 0.7 s out of the pivot
+  whatever the part's size, runs 4 s at radius 0.1 s, the head adds s at
+  radius 0.3 s, and the squares are 0.7 s across, centred 1.75 s out on
+  both axes. While a drag holds a square, an arrow, a ring or the view
+  ring only that handle stays drawn (the held ring whole), and a trackball
+  drag hides every ring, as in Studio. Transform and Edit Pivot keep their
+  combined classic handles.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):

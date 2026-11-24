@@ -13,7 +13,7 @@ use glam::Vec3;
 
 use super::{
     ring_crossing, Axis, Handles, HEAD_RADIUS, HEAD_START, MIN_DISTANCE, RING_PICK, RING_RADIUS,
-    SHAFT_RADIUS,
+    SHAFT_RADIUS, SHAFT_START,
 };
 use crate::pick::{self, Ray};
 use crate::Pose;
@@ -29,8 +29,9 @@ pub enum Skin {
 /// Studio sizes its handles `sin(fov) * depth * k`, `k` 0.05 classic and
 /// 0.033 times DraggerScaleFactor (1 by default) next-gen. Measured on a
 /// 4-stud cube 28.1 studs off (a 397 px high view): Move's arrows reach
-/// 4.96 studs from the pivot and Rotate's rings are 3.87 studs round, so
-/// `k` per handle is these over `sin(fov) * depth`.
+/// 4.96 studs from the pivot (`5.7 s`, see [`ARROW_REACH`]) and Rotate's
+/// rings are 3.87 studs round, so `k` per handle is these over
+/// `sin(fov) * depth`.
 const MOVE_REACH: f32 = 0.188;
 const RING_REACH: f32 = 0.1467;
 /// An orthographic view has no depth to size by: the classic arm, scaled as
@@ -39,11 +40,18 @@ const ORTHOGRAPHIC_SCALE: f32 = 0.033 / 0.05;
 /// A hovered next-gen arrow grows its radius by this much and keeps its
 /// length (classic grows the head instead, which this renderer lights).
 pub(crate) const HOVER_THICKNESS: f32 = 1.3;
-/// Where a plane square's centre sits along each of its two axes, and half
-/// its side, in arm lengths: measured off Studio's screenshot of a 1-stud
-/// cube (the squares' near corner level with the arrows' shaft start).
-pub(crate) const PLANE_AT: f32 = 0.45;
-pub(crate) const PLANE_HALF: f32 = 0.07;
+/// A next-gen arrow in Studio's handle scale `s` (see [`MOVE_REACH`]), read
+/// off the `CylinderHandleAdornment` and `ConeHandleAdornment` Studio 0.748
+/// builds it from: the shaft starts `0.7 s` out of the pivot whatever the
+/// part's size, runs `4 s` at radius `0.1 s`, and the head adds `s` more at
+/// radius `0.3 s`, so the whole arrow reaches `5.7 s`.
+const ARROW_REACH: f32 = 5.7;
+const ARROW_GAP: f32 = 0.7;
+/// Where a plane square's centre sits along each of its two axes, `1.75 s`,
+/// and half its side, `0.35 s`, in arm lengths: the `BoxHandleAdornment`s
+/// Studio 0.748 draws them with.
+pub(crate) const PLANE_AT: f32 = 1.75 / ARROW_REACH;
+pub(crate) const PLANE_HALF: f32 = 0.35 / ARROW_REACH;
 /// The view ring's radius, in arm lengths: 4.36 studs against the axis
 /// rings' 3.87 in the same screenshot.
 pub(crate) const VIEW_RING_RADIUS: f32 = 1.13;
@@ -63,28 +71,43 @@ impl Skin {
     }
 
     /// How a Move arrow is built in this skin, in arm lengths. Next-gen's
-    /// is Studio's MoveHandleView: a shaft of radius `0.1 s` and a head of
-    /// radius `3 r` and length `L / 4`, `L` being `4 s` of a `4.7 s` reach.
+    /// is Studio's (see [`ARROW_REACH`]).
     pub(crate) fn profile(self) -> Profile {
         match self {
             Skin::Classic => Profile {
+                start: SHAFT_START,
                 shaft: SHAFT_RADIUS,
                 head: HEAD_RADIUS,
                 neck: HEAD_START,
             },
             Skin::NextGen => Profile {
-                shaft: 0.1 / 4.7,
-                head: 0.3 / 4.7,
-                neck: 1.0 - 1.0 / 4.7,
+                start: ARROW_GAP / ARROW_REACH,
+                shaft: 0.1 / ARROW_REACH,
+                head: 0.3 / ARROW_REACH,
+                neck: (ARROW_REACH - 1.0) / ARROW_REACH,
             },
         }
     }
 }
 
-/// A Move arrow's shape: its shaft's and head's radii and where the head
-/// starts, in arm lengths.
+/// The next-gen handle a drag holds besides a Move arrow (which
+/// [`super::End`] names): Studio draws it alone for the whole drag,
+/// `MoveHandles:_renderDraggingPlaneHandles` the one plane square, and
+/// Rotate the one ring (whole, not just its near half), the view ring, or
+/// no ring at all for the trackball (checked in Studio 0.748).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Grip {
+    Plane(Axis),
+    Ring(Axis),
+    View,
+    Ball,
+}
+
+/// A Move arrow's shape: where its shaft starts, its shaft's and head's
+/// radii and where the head starts, in arm lengths.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Profile {
+    pub(crate) start: f32,
     pub(crate) shaft: f32,
     pub(crate) head: f32,
     pub(crate) neck: f32,
@@ -131,6 +154,27 @@ impl Handles {
 
     pub(crate) fn next_gen(&self) -> bool {
         self.skin == Skin::NextGen
+    }
+
+    /// How far out of the pivot a Move arrow's shaft starts, in studs.
+    pub fn shaft_start(&self) -> f32 {
+        self.skin.profile().start * self.arm
+    }
+
+    /// The next-gen handle besides an arrow that `ray` grabs, tried in the
+    /// order a press tries them: a plane square on Move, else on Rotate
+    /// (`rotate`) an axis ring, the view ring, then the trackball.
+    pub fn grip(&self, ray: Ray, rotate: bool) -> Option<Grip> {
+        if !self.next_gen() {
+            return None;
+        }
+        if !rotate {
+            return self.grab_plane(ray).map(Grip::Plane);
+        }
+        self.grab_ring(ray)
+            .map(Grip::Ring)
+            .or_else(|| self.grab_view_ring(ray).then_some(Grip::View))
+            .or_else(|| self.grab_trackball(ray).map(|_| Grip::Ball))
     }
 
     /// Whether a point on a ring faces the camera: next-gen draws and grabs

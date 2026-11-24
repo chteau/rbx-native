@@ -106,3 +106,65 @@ fn next_gen_colours_are_studios_swatches() {
     assert_eq!(Skin::Classic.color(Axis::Y), Axis::Y.color());
     assert_eq!(Skin::NextGen.color(Axis::Z), [0.058, 0.212, 0.982]);
 }
+
+#[test]
+fn a_next_gen_arrow_and_square_are_built_as_studio_builds_them() {
+    // Studio 0.748's adornments for a cube seen from 31.24 studs (handle
+    // scale 0.969): the shaft from 0.678 out to 4.553 at radius 0.0969, a
+    // head of radius 0.2906, and squares 0.678 across centred 1.695 out on
+    // both of their axes, whatever the part's size.
+    let handles = Handles::new(Vec3::ZERO, basis(None), 3.0).skinned(
+        Skin::NextGen,
+        seen_from(Vec3::new(16.0, 12.0, 24.0)),
+        false,
+        false,
+    );
+    let arm = handles.arm();
+    let profile = Skin::NextGen.profile();
+    for (got, studio) in [
+        (handles.shaft_start(), 0.678),
+        (profile.neck * arm, 4.553),
+        (profile.shaft * arm, 0.0969),
+        (profile.head * arm, 0.2906),
+        (PLANE_HALF * 2.0 * arm, 0.678),
+    ] {
+        assert!((got - studio).abs() < 0.005, "{got} against {studio}");
+    }
+    let (_, _, centre) = handles.plane(Axis::Y);
+    assert!(
+        (centre - Vec3::new(1.695, 0.0, 1.695)).length() < 0.01,
+        "{centre}"
+    );
+}
+
+#[test]
+fn a_press_grips_the_square_ring_view_ring_or_trackball_under_it() {
+    let eye = Vec3::new(0.0, 0.0, 20.0);
+    let skinned = |skin, rings| {
+        Handles::new(Vec3::ZERO, basis(None), 3.0).skinned(skin, seen_from(eye), false, rings)
+    };
+    let mover = skinned(Skin::NextGen, false);
+    let (_, _, centre) = mover.plane(Axis::Z);
+    assert_eq!(
+        mover.grip(ray_to(eye, centre), false),
+        Some(Grip::Plane(Axis::Z))
+    );
+    assert_eq!(
+        skinned(Skin::Classic, false).grip(ray_to(eye, centre), false),
+        None
+    );
+
+    let rotator = skinned(Skin::NextGen, true);
+    let diagonal = Vec3::new(1.0, 1.0, 0.0).normalize();
+    let ring = diagonal * RING_RADIUS * rotator.arm();
+    assert_eq!(
+        rotator.grip(ray_to(eye, ring), true),
+        Some(Grip::Ring(Axis::Z))
+    );
+    let view = diagonal * VIEW_RING_RADIUS * rotator.arm();
+    assert_eq!(rotator.grip(ray_to(eye, view), true), Some(Grip::View));
+    assert_eq!(
+        rotator.grip(ray_to(eye, Vec3::ZERO), true),
+        Some(Grip::Ball)
+    );
+}

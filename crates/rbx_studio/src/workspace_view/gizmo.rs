@@ -574,11 +574,17 @@ impl WorkspaceView {
         self.click_on_release = None;
     }
 
-    /// Draws only the Move arrow or Scale ball `ray` grabbed, for as long as
-    /// the drag holds it: Studio hides the other five mid-drag (see
-    /// `rbx_viewer::gizmo::Gizmo::held`), and [`WorkspaceView::end_drag`]
-    /// brings them back.
+    /// Draws only the Move arrow or Scale ball `ray` grabbed, or next-gen's
+    /// plane square or ring, for as long as the drag holds it: Studio hides
+    /// the rest mid-drag (see `rbx_viewer::gizmo::Gizmo::held` and
+    /// `Gizmo::grip`), and [`WorkspaceView::end_drag`] brings them back.
     fn hold_handle(&mut self, ray: Ray) {
+        let grip = match self.transform.tool {
+            Tool::Move | Tool::Rotate => self
+                .handles()
+                .and_then(|handles| handles.grip(ray, self.transform.tool == Tool::Rotate)),
+            _ => None,
+        };
         let end = match self.transform.tool {
             Tool::Move => self.handles().and_then(|handles| handles.grab_arm(ray)),
             Tool::Scale => self.faces().and_then(|faces| faces.grab(ray)),
@@ -596,9 +602,12 @@ impl WorkspaceView {
             | Tool::Pivot
             | Tool::Terrain => None,
         };
-        if let Some(end) = end {
+        let end = end.map(End::of);
+        if end.is_some() || grip.is_some() {
             let held = self.transform.gizmo().map(|gizmo| Gizmo {
-                held: Some(End::of(end)),
+                held: end,
+                // An arrow under the cursor wins the press over a square.
+                grip: grip.filter(|_| end.is_none()),
                 ..gizmo
             });
             self.show_gizmo(held);

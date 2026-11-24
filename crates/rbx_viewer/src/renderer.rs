@@ -838,17 +838,8 @@ impl Renderer {
         // and this level's render distance. The shadow pass below never uses
         // this, see `Fit::visible`, so a caster it culls can still land a
         // shadow inside the frame.
-        let held = self.gizmo.and_then(|gizmo| gizmo.held);
-        let hover = self.gizmo.and_then(|gizmo| gizmo.hover);
-        let skin = self.gizmo.map_or_else(Default::default, |gizmo| gizmo.skin);
-        self.draggers.update(
-            queue,
-            self.handles(from, size.1 as f32),
-            held,
-            hover,
-            eye,
-            skin,
-        );
+        self.draggers
+            .update(queue, self.handles(from, size.1 as f32), self.gizmo, eye);
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let drawn = self.surroundings();

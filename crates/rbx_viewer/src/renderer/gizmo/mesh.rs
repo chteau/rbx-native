@@ -20,8 +20,8 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
 use crate::gizmo::{
-    Axis, End, Faces, Handles, Hotspots, Profile, Shape, Skin, HOTSPOTS, HOTSPOT_PARTS,
-    HOVER_THICKNESS, PART_HOTSPOTS, RING_RADIUS, RING_THICKNESS, SHAFT_START,
+    Axis, End, Faces, Grip, Handles, Hotspots, Profile, Shape, Skin, HOTSPOTS, HOTSPOT_PARTS,
+    HOVER_THICKNESS, PART_HOTSPOTS, RING_RADIUS, RING_THICKNESS,
 };
 #[cfg(test)]
 use balls::ORIGIN_COLOR;
@@ -114,36 +114,45 @@ impl Vertex {
 /// the `held` one, while a drag holds a Move arrow or a Scale ball.
 #[cfg(test)]
 pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
-    hovered_mesh(shape, held, None, eye)
+    hovered_mesh(shape, held, None, None, eye)
 }
 
-/// [`mesh`], with the handle the cursor rests on drawn as its skin draws a
-/// hovered one (next-gen's arrows thicken).
+/// [`mesh`], with only the next-gen handle a drag holds (`grip`) drawn, and
+/// the handle the cursor rests on drawn as its skin draws a hovered one
+/// (next-gen's arrows thicken).
 pub(super) fn hovered_mesh(
     shape: &Shape,
     held: Option<End>,
+    grip: Option<Grip>,
     hover: Option<Axis>,
     eye: Vec3,
 ) -> Vec<Vertex> {
     let shown = |axis: Axis, sign: f32| held.is_none_or(|end| end.is(axis, sign));
     match shape {
         Shape::Move(handles) if handles.next_gen() => {
-            let positive = |axis: Axis, sign: f32| sign > 0.0 && shown(axis, sign);
-            let mut vertices = next_gen::planes(handles, eye, held.is_none());
+            let positive =
+                |axis: Axis, sign: f32| sign > 0.0 && grip.is_none() && shown(axis, sign);
+            let square = |axis: Axis| held.is_none() && grip.is_none_or(|g| g == Grip::Plane(axis));
+            let mut vertices = next_gen::planes(handles, eye, square);
             vertices.extend(arms_hovered(handles, eye, positive, false, hover));
             vertices
         }
         Shape::Move(handles) => arms(handles, eye, shown, held.is_none()),
         Shape::Scale(faces) => balls(faces, eye, shown),
-        Shape::Rotate(handles) if handles.next_gen() => {
-            let mut vertices = next_gen::view_ring(handles);
-            vertices.extend(rings(handles, eye));
-            vertices
-        }
-        Shape::Rotate(handles) => rings(handles, eye),
+        Shape::Rotate(handles) if handles.next_gen() => match grip {
+            None => {
+                let mut vertices = next_gen::view_ring(handles);
+                vertices.extend(rings(handles, eye, None));
+                vertices
+            }
+            Some(Grip::Ring(axis)) => rings(handles, eye, Some(axis)),
+            Some(Grip::View) => next_gen::view_ring(handles),
+            Some(Grip::Plane(_) | Grip::Ball) => Vec::new(),
+        },
+        Shape::Rotate(handles) => rings(handles, eye, None),
         Shape::Transform(handles, faces) => transform(handles, faces, eye, shown, held.is_none()),
         Shape::Pivot(handles, hotspots) => {
-            let mut vertices = rings(handles, eye);
+            let mut vertices = rings(handles, eye, None);
             vertices.extend(arms(handles, eye, shown, held.is_none()));
             if let Some((hotspots, snapped)) = hotspots {
                 dots(&mut vertices, hotspots, *snapped);
@@ -390,7 +399,7 @@ fn arrow_shaped(
 
 /// The tube a Move arrow hangs its head on, capped at the end nearest the
 /// gizmo's centre and open at the other, where the head covers it. The shaft
-/// starts at `SHAFT_START`, which is the gap that leaves the part itself
+/// starts at its profile's `start`, the gap that leaves the part itself
 /// clickable, and ends where the head begins.
 fn shaft(
     vertices: &mut Vec<Vertex>,
@@ -407,9 +416,12 @@ fn shaft(
             + direction * offset * arm
             + (across * angle.cos() + round * angle.sin()) * profile.shaft * arm
     };
-    let base = origin + direction * SHAFT_START * arm;
+    let base = origin + direction * profile.start * arm;
     for segment in 0..SEGMENTS {
-        let (a, b) = (ring(SHAFT_START, segment), ring(SHAFT_START, segment + 1));
+        let (a, b) = (
+            ring(profile.start, segment),
+            ring(profile.start, segment + 1),
+        );
         let (c, d) = (ring(profile.neck, segment), ring(profile.neck, segment + 1));
         // The side, as two triangles of one quad, then the open end facing
         // back towards the gizmo's centre, hence the reversed winding.
@@ -419,22 +431,26 @@ fn shaft(
     }
 }
 
-/// The three rotation rings, as tori, painted furthest slice first.
+/// The three rotation rings, as tori, painted furthest slice first, or only
+/// the one about `only`, whole, while a next-gen drag holds it.
 ///
 /// Sorted per slice rather than per ring: three rings of the same radius about
 /// one centre pass through each other's planes, so no order over whole rings
 /// can be right. Each slice is a small convex piece, and the rings only ever
 /// touch, never interpenetrate, so an order over slices is exact.
-fn rings(handles: &Handles, eye: Vec3) -> Vec<Vertex> {
+fn rings(handles: &Handles, eye: Vec3, only: Option<Axis>) -> Vec<Vertex> {
     let radius = RING_RADIUS * handles.arm();
     let mut slices: Vec<(f32, Axis, usize)> = Vec::with_capacity(Axis::ALL.len() * RING_SEGMENTS);
-    for axis in Axis::ALL {
+    for axis in Axis::ALL
+        .into_iter()
+        .filter(|&axis| only.is_none_or(|only| only == axis))
+    {
         let (_, zero, quarter) = handles.ring_frame(axis);
         for step in 0..RING_SEGMENTS {
             let angle = std::f32::consts::TAU * (step as f32 + 0.5) / RING_SEGMENTS as f32;
             let middle = handles.origin() + (zero * angle.cos() + quarter * angle.sin()) * radius;
-            // Next-gen draws each ring's near half only.
-            if handles.faces_eye(middle) {
+            // Next-gen draws each ring's near half only, until it is held.
+            if only.is_some() || handles.faces_eye(middle) {
                 slices.push(((middle - eye).length(), axis, step));
             }
         }

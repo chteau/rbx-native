@@ -231,7 +231,7 @@ impl WorkspaceView {
         let at = label::move_label(
             base,
             direction,
-            (gizmo::SHAFT_START * arm, arm),
+            (handles.shaft_start(), arm),
             along,
             lagging.direction,
             offset,
