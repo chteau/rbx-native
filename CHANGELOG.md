@@ -2,6 +2,8 @@
 
 ## 2026-11-24
 
+- **MaterialVariant alpha modes (beta).** Turn on "MaterialVariant Alpha Mode" in Beta Features and a variant's `AlphaMode` works like Studio's beta of the same name. Overlay shows the part colour where the colour map is see-through, TintMask only tints where it's solid, and Transparency cuts the surface out below half alpha. Opaque looks like it always did. I measured each one in Studio side by side. The AlphaMode row shows in Properties with the beta on, and the value saves either way. (@chteau)
+- **`PyramidHandleAdornment` draws now.** It's live in Studio, so it's drawn next to the other handle adornments, with Sides (3 to 32), Size, Height, negative values, DoubleSided and AlwaysOnTop matching what Studio shows. (@chteau)
 - **Union, Negate, Intersect and Separate.** The Model tab has Studio's solid modeling tools now, with the same shortcuts (Ctrl+Shift+G / N / I / U, Ungroup moved to Ctrl+U like Studio). What we save is what current Studio saves, collision data included, so Studio opens our unions, can Separate them, and we Separate theirs.
 - **AI assistants can cut holes now.** `SubtractAsync`, `UnionAsync` and `IntersectAsync` work in edit scripts and through MCP, same as in Studio: you get a new union back and your parts stay put. The modeling guide teaches doorways, windows and arches with them, and when framing with parts is still the cheaper call.
 
