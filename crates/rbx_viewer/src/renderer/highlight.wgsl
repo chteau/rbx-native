@@ -58,3 +58,26 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) u32 {
     return input.index;
 }
+
+// `DepthMode::Faded`'s second draw: the same index with `VISIBLE` set, over
+// the pixels where the geometry is the nearest thing there. The pipeline's
+// depth test has already dropped the ones a part hides; this drops the ones
+// an opaque depth-tested adornment hides, whose depth is a buffer of its own
+// (see `renderer::adornment`). Only this entry point reads group 1.
+const VISIBLE: u32 = 0x80u;
+
+@group(1) @binding(0)
+var adornment_depth: texture_depth_2d;
+
+@fragment
+fn fs_visible(input: VertexOutput) -> @location(0) u32 {
+    // Clamped: with no adornment drawn the binding is a 1x1 stand-in at the
+    // far plane (see `post::Targets::adornment_depth_binding`).
+    let last = vec2<i32>(textureDimensions(adornment_depth)) - vec2<i32>(1, 1);
+    let texel = min(vec2<i32>(input.clip_position.xy), last);
+    // Reversed-Z: the larger depth is the nearer surface.
+    if textureLoad(adornment_depth, texel, 0) > input.clip_position.z {
+        discard;
+    }
+    return input.index | VISIBLE;
+}

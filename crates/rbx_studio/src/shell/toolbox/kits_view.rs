@@ -101,7 +101,7 @@ impl Shell {
                 .models
                 .iter()
                 .filter(|model| matches(&model.name))
-                .map(|model| self.kits_model_card(model, pack, cx))
+                .map(|model| self.kits_model_card(model, cx))
                 .collect(),
             None => browser
                 .packs
@@ -219,10 +219,17 @@ impl Shell {
                             .line_height(tokens::line_xs())
                             .text_color(tokens::text3())
                             .child(match action {
-                                Some(_) => format!("{} models \u{b7} CC0", pack.models.len()),
-                                None => format!(
-                                    "{} models \u{b7} CC0 \u{b7} tick up to {}",
+                                // The pack's source stays named while its
+                                // cards name each model's artist.
+                                Some(_) => format!(
+                                    "{} models \u{b7} {} \u{b7} CC0",
                                     pack.models.len(),
+                                    pack.author
+                                ),
+                                None => format!(
+                                    "{} models \u{b7} {} \u{b7} CC0 \u{b7} tick up to {}",
+                                    pack.models.len(),
+                                    pack.author,
                                     kits::BATCH_LIMIT
                                 ),
                             }),
@@ -257,7 +264,7 @@ impl Shell {
         .into_any_element()
     }
 
-    fn kits_model_card(&self, model: &KitModel, pack: &Pack, cx: &mut Context<Self>) -> AnyElement {
+    fn kits_model_card(&self, model: &KitModel, cx: &mut Context<Self>) -> AnyElement {
         let browser = &self.toolbox.kits;
         let picked = browser.selected.contains(&model.id);
         let busy = browser.busy.contains(&model.id);
@@ -296,7 +303,7 @@ impl Shell {
             format!("kits-model-{}", model.id),
             self.kits_thumbnail(&model.thumb, "box", Some(busy)),
             model.name.clone(),
-            format!("{} \u{b7} CC0", pack.author),
+            format!("{} \u{b7} CC0", model.author),
         )
         .relative()
         .when(picked, |this| this.border_color(ui::accent()))

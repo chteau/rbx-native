@@ -33,6 +33,7 @@ mkdir -p "$stage"
 docs() {
   cp LICENSE "$1/LICENSE.txt"
   cp THIRD-PARTY-LICENSES.html .github/release/THIRD-PARTY-EMBEDDED.txt "$1/"
+  .github/release/notices.sh "$1"
   {
     cat .github/release/README.txt
     echo

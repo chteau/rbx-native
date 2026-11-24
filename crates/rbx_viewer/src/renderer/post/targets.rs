@@ -4,6 +4,7 @@
 //! the result.
 
 use super::super::pipeline::DEPTH_FORMAT;
+use super::super::scene_depth;
 use super::pipelines::{attachment, attachment_texture};
 use super::{FIRST_LEVEL_DIVISOR, HDR_FORMAT};
 
@@ -75,6 +76,10 @@ pub(in crate::renderer) struct Targets {
     /// What the opaque depth-tested adornments leave behind for the
     /// `AlwaysOnTop` ones to be tested against, and nothing else.
     adornment_depth: wgpu::TextureView,
+    /// `adornment_depth` for the editor cues' mask to read, and a 1x1
+    /// stand-in at the far plane for a frame that drew no opaque adornment
+    /// into it (see `renderer::cue`).
+    adornment_depth_read: [wgpu::BindGroup; 2],
     pub(super) chain: Vec<Level>,
     /// The full-frame blur's own chain, sized independently of `chain` since a
     /// `BlurEffect.Size` and a `BloomEffect.Size` need not agree. Empty where the
@@ -96,6 +101,7 @@ impl Targets {
         let scene = scene_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let depth = attachment(device, "rbxview depth", size, DEPTH_FORMAT, samples);
         let blur_chain = build_chain(device, sources, size, blur_levels, "rbxview blur");
+        let adornment_depth = attachment(device, "rbxview adornment depth", size, DEPTH_FORMAT, 1);
         let adornment_layer = attachment(
             device,
             "rbxview adornment layer",
@@ -118,10 +124,26 @@ impl Targets {
                 &depth,
                 &adornment_layer,
             ),
-            scene_depth: super::super::scene_depth::bind(device, &depth, samples),
+            scene_depth: scene_depth::bind(device, &depth, samples),
             depth,
             adornment_layer,
-            adornment_depth: attachment(device, "rbxview adornment depth", size, DEPTH_FORMAT, 1),
+            adornment_depth_read: [
+                scene_depth::bind(device, &adornment_depth, 1),
+                // Never drawn into: a new texture reads as zeroes, the far
+                // plane under reversed-Z.
+                scene_depth::bind(
+                    device,
+                    &attachment(
+                        device,
+                        "rbxview no adornment depth",
+                        (1, 1),
+                        DEPTH_FORMAT,
+                        1,
+                    ),
+                    1,
+                ),
+            ],
+            adornment_depth,
             multisampled: (samples > 1)
                 .then(|| attachment(device, "rbxview scene (msaa)", size, HDR_FORMAT, samples)),
             scene_source: bind(device, sources, &scene),
@@ -220,6 +242,12 @@ impl Targets {
 
     pub(in crate::renderer) fn adornment_depth(&self) -> &wgpu::TextureView {
         &self.adornment_depth
+    }
+
+    /// The adornment depth as a texture to read, or the stand-in for it
+    /// when this frame `written` nothing there.
+    pub(in crate::renderer) fn adornment_depth_read(&self, written: bool) -> &wgpu::BindGroup {
+        &self.adornment_depth_read[usize::from(!written)]
     }
 }
 

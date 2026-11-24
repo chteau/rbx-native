@@ -13,6 +13,8 @@
 //! asset in the key owner's inventory. Request construction and response
 //! parsing are unit-tested instead; the one live check is `#[ignore]`d.
 
+use std::io::{Cursor, Read};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -32,7 +34,17 @@ const PROCESSING_LIMIT: Duration = Duration::from_secs(120);
 pub struct ModelFile<'a> {
     pub name: &'a str,
     pub content_type: &'a str,
-    pub bytes: &'a [u8],
+    pub content: FileContent<'a>,
+}
+
+/// Where an upload's bytes come from. Either way they are streamed into the
+/// request as it goes out, never copied into one whole body first.
+#[derive(Clone, Copy)]
+pub enum FileContent<'a> {
+    Bytes(&'a [u8]),
+    /// Read from disk while sending, so a video of several gigabytes keeps
+    /// the editor's memory flat.
+    Disk(&'a Path),
 }
 
 impl Client {
@@ -50,7 +62,8 @@ impl Client {
     }
 
     /// Uploads a PNG, JPEG or BMP (told apart by their first bytes, since a
-    /// Figma image fill comes back in whatever format went in) as a new
+    /// Figma image fill comes back in whatever format went in; a file on disk
+    /// is streamed, only its first bytes read up front) as a new
     /// `Decal` asset owned by `user_id` and waits for
     /// Roblox to process it. Returns the new asset's id, used as
     /// `rbxassetid://<id>` in `ImageLabel.Image`; the creator docs do not
@@ -61,13 +74,22 @@ impl Client {
         display_name: &str,
         description: &str,
         user_id: u64,
-        image: &[u8],
+        image: FileContent,
     ) -> Result<u64, CloudError> {
-        let (name, content_type) = Self::image_kind(image);
+        let (name, content_type) = match image {
+            FileContent::Bytes(bytes) => Self::image_kind(bytes),
+            FileContent::Disk(path) => {
+                let mut magic = Vec::with_capacity(3);
+                std::fs::File::open(path)
+                    .and_then(|file| file.take(3).read_to_end(&mut magic))
+                    .map_err(|err| CloudError::Transport(format!("{}: {err}", path.display())))?;
+                Self::image_kind(&magic)
+            }
+        };
         let file = ModelFile {
             name,
             content_type,
-            bytes: image,
+            content: image,
         };
         self.create_asset(
             "Decal",
@@ -95,7 +117,7 @@ impl Client {
         let file = ModelFile {
             name: "animation.rbxm",
             content_type: "model/x-rbxm",
-            bytes: rbxm,
+            content: FileContent::Bytes(rbxm),
         };
         self.create_asset("Animation", display_name, description, creator, &file)
     }
@@ -134,12 +156,16 @@ impl Client {
         file: &ModelFile,
         price: Option<u64>,
     ) -> Result<Value, CloudError> {
-        let boundary = boundary(file.bytes);
+        let boundary = match file.content {
+            FileContent::Bytes(bytes) => boundary(bytes),
+            FileContent::Disk(_) => random_boundary(),
+        };
         let request = request(asset_type, display_name, description, creator, price);
-        let body = multipart(&request, file, &boundary);
+        let (length, body) = multipart(&request, file, &boundary)
+            .map_err(|err| CloudError::Transport(err.to_string()))?;
         let content_type = format!("multipart/form-data; boundary={boundary}");
         let create_url = self.apis_url(CREATE_PATH);
-        let response = self.post_bytes_raw(&create_url, &content_type, &body)?;
+        let response = self.post_stream_raw(&create_url, &content_type, length, body)?;
         let operation = answer(&create_url, response)?;
 
         let started = Instant::now();
@@ -269,28 +295,52 @@ fn request(
 }
 
 /// The `request` and `fileContent` fields the endpoint takes, as
-/// `multipart/form-data`.
-fn multipart(request: &Value, file: &ModelFile, boundary: &str) -> Vec<u8> {
+/// `multipart/form-data`: the body's length and a reader that sends the
+/// framing around the file's own bytes as they are read.
+fn multipart<'a>(
+    request: &Value,
+    file: &ModelFile<'a>,
+    boundary: &str,
+) -> std::io::Result<(u64, impl Read + Send + 'a)> {
     // A header value cannot hold a quote or a line break.
     let name: String = file
         .name
         .chars()
         .filter(|c| !matches!(c, '"' | '\r' | '\n'))
         .collect();
-    let mut body = Vec::with_capacity(file.bytes.len() + 512);
-    body.extend_from_slice(
-        format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"request\"\r\n\
-             Content-Type: application/json\r\n\r\n{request}\r\n\
-             --{boundary}\r\nContent-Disposition: form-data; name=\"fileContent\"; filename=\"{name}\"\r\n\
-             Content-Type: {}\r\n\r\n",
-            file.content_type
-        )
-        .as_bytes(),
-    );
-    body.extend_from_slice(file.bytes);
-    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-    body
+    let head = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"request\"\r\n\
+         Content-Type: application/json\r\n\r\n{request}\r\n\
+         --{boundary}\r\nContent-Disposition: form-data; name=\"fileContent\"; filename=\"{name}\"\r\n\
+         Content-Type: {}\r\n\r\n",
+        file.content_type
+    )
+    .into_bytes();
+    let tail = format!("\r\n--{boundary}--\r\n").into_bytes();
+    let (length, content): (u64, Box<dyn Read + Send + 'a>) = match file.content {
+        FileContent::Bytes(bytes) => (bytes.len() as u64, Box::new(bytes)),
+        FileContent::Disk(path) => {
+            let opened = std::fs::File::open(path)?;
+            let length = opened.metadata()?.len();
+            // `take` holds the body to the length already announced even if
+            // the file grows while it uploads.
+            (length, Box::new(opened.take(length)))
+        }
+    };
+    let total = head.len() as u64 + length + tail.len() as u64;
+    Ok((
+        total,
+        Cursor::new(head).chain(content).chain(Cursor::new(tail)),
+    ))
+}
+
+/// A boundary for a file too big to scan: 128 random bits, which no real
+/// file will happen to contain.
+fn random_boundary() -> String {
+    let mut bits = [0u8; 16];
+    getrandom::fill(&mut bits).expect("OS random number generator");
+    let hex: String = bits.iter().map(|b| format!("{b:02x}")).collect();
+    format!("rbx-native-{hex}")
 }
 
 /// A boundary that does not occur in `bytes`, as RFC 2046 requires.
@@ -309,14 +359,60 @@ pub(crate) fn boundary(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    /// The whole body `multipart` streams, checked against its stated length.
+    fn sent(request: &Value, file: &ModelFile, boundary: &str) -> Vec<u8> {
+        let (length, mut reader) = multipart(request, file, boundary).unwrap();
+        let mut body = Vec::new();
+        reader.read_to_end(&mut body).unwrap();
+        assert_eq!(body.len() as u64, length);
+        body
+    }
+
+    #[test]
+    fn a_file_on_disk_is_streamed_whole_between_the_framing() {
+        let dir = std::env::temp_dir().join(format!("rbx-cloud-stream-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clip.mp4");
+        let content: Vec<u8> = (0..200_000u32).map(|n| n as u8).collect();
+        std::fs::write(&path, &content).unwrap();
+        let file = ModelFile {
+            name: "clip.mp4",
+            content_type: "video/mp4",
+            content: FileContent::Disk(&path),
+        };
+        let boundary = random_boundary();
+        let body = sent(
+            &request("Video", "Clip", "", Owner::User(1), Some(2000)),
+            &file,
+            &boundary,
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+        let marker = b"Content-Type: video/mp4\r\n\r\n";
+        let start = body
+            .windows(marker.len())
+            .position(|w| w == marker)
+            .unwrap()
+            + marker.len();
+        assert_eq!(&body[start..start + content.len()], &content[..]);
+        assert_eq!(
+            &body[start + content.len()..],
+            format!("\r\n--{boundary}--\r\n").as_bytes()
+        );
+        assert_ne!(boundary, random_boundary());
+        assert!(
+            boundary.len() > 32 && boundary.len() <= 70,
+            "RFC 2046 caps a boundary at 70"
+        );
+    }
+
     #[test]
     fn the_body_carries_the_request_then_the_file() {
         let file = ModelFile {
             name: "freeze\".gltf",
             content_type: "model/gltf+json",
-            bytes: b"{}",
+            content: FileContent::Bytes(b"{}"),
         };
-        let body = multipart(
+        let body = sent(
             &request("Model", "Name", "Desc", Owner::User(42), None),
             &file,
             "B",
@@ -335,9 +431,9 @@ mod tests {
         let file = ModelFile {
             name: "animation.rbxm",
             content_type: "model/x-rbxm",
-            bytes: b"<roblox!",
+            content: FileContent::Bytes(b"<roblox!"),
         };
-        let body = multipart(
+        let body = sent(
             &request("Animation", "Walk", "", Owner::Group(7), None),
             &file,
             "B",
@@ -361,9 +457,9 @@ mod tests {
         let file = ModelFile {
             name: "image.png",
             content_type: "image/png",
-            bytes: b"png",
+            content: FileContent::Bytes(b"png"),
         };
-        let body = multipart(
+        let body = sent(
             &request("Decal", "Icon", "", Owner::User(7), None),
             &file,
             "B",
@@ -391,7 +487,7 @@ mod tests {
         let client = Client::new(crate::ApiKey::from_env_or_config());
         let user = client.introspect().unwrap().authorized_user_id;
         let id = client
-            .create_image_asset("rbx-native image test", "", user, PNG)
+            .create_image_asset("rbx-native image test", "", user, FileContent::Bytes(PNG))
             .unwrap();
         std::thread::sleep(Duration::from_secs(5));
         let content = client.asset(id).unwrap();
@@ -456,7 +552,7 @@ mod tests {
         let file = ModelFile {
             name: "hat.fbx",
             content_type: "model/fbx",
-            bytes: b"fbx",
+            content: FileContent::Bytes(b"fbx"),
         };
         let client = Client::new(Some(crate::ApiKey::new("k"))).with_apis_root(root);
         let id = client

@@ -15,6 +15,24 @@ const SOLID_SHADER: &str = include_str!("../adornment.wgsl");
 const LINE_SHADER: &str = include_str!("../adornment_line.wgsl");
 const IMAGE_SHADER: &str = include_str!("../adornment_image.wgsl");
 
+/// The transform tool's handles in the layer: a hole wherever one stands in
+/// front of every depth-tested adornment so far, so the resolve shows the
+/// handle the scene pass drew there, and the handle's depth for the
+/// adornments drawn after it to test against (see `super::passes`).
+const HANDLE_SHADER: &str = "
+@group(0) @binding(0) var<uniform> view_proj: mat4x4<f32>;
+
+@vertex
+fn vs_main(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
+    return view_proj * vec4<f32>(position, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0);
+}
+";
+
 /// Premultiplied "over": the layer accumulates every depth-tested
 /// adornment over the ones behind it, and the resolve lays the sum over the
 /// frame in one go, which "over" being associative makes the same thing.
@@ -43,6 +61,7 @@ pub(super) struct Set {
 pub(super) struct Layer {
     opaque: Set,
     blended: Set,
+    pub(super) handles: wgpu::RenderPipeline,
 }
 
 impl Layer {
@@ -60,6 +79,7 @@ impl Layer {
         Layer {
             opaque: build(true),
             blended: build(false),
+            handles: handles(device),
         }
     }
 
@@ -191,6 +211,48 @@ fn build(
             targets: &[Some(wgpu::ColorTargetState {
                 format,
                 blend: Some(blend),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn handles(device: &wgpu::Device) -> wgpu::RenderPipeline {
+    let label = "rbxview adornment handles";
+    let module = crate::gpu::shader(device, label, HANDLE_SHADER);
+    let frame = pipeline::frame_layout(device);
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(label),
+        bind_group_layouts: &[Some(&frame)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[Some(crate::renderer::gizmo::vertex_layout())],
+        },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: ADORNMENT_LAYER_FORMAT,
+                blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),

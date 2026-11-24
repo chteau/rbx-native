@@ -200,24 +200,39 @@ impl Client {
         content_type: &str,
         bytes: &[u8],
     ) -> Result<RawResponse, CloudError> {
+        self.post_stream_raw(url, content_type, bytes.len() as u64, bytes)
+    }
+
+    /// [`Client::post_bytes_raw`] with the body read from `body` as it goes
+    /// out, `length` bytes of it, so a body of gigabytes is never held whole.
+    pub(crate) fn post_stream_raw(
+        &self,
+        url: &str,
+        content_type: &str,
+        length: u64,
+        mut body: impl std::io::Read,
+    ) -> Result<RawResponse, CloudError> {
         // A place upload can be up to 100 MB, so the agent's 30-second
         // whole-call budget would fail any large place on a slow line.
         // Connecting and Roblox's answer keep their own limits; sending the
         // body gets as long as it takes.
         // ponytail: no body-send limit, a stalled socket waits for TCP to
-        // give up; add one sized from `bytes.len()` if that bites.
+        // give up; add one sized from `length` if that bites.
         let req = self
             .agent
             .post(url)
             .header("x-api-key", self.require_api_key()?.as_str())
             .content_type(content_type)
+            // Announced up front, so the body goes out length-delimited
+            // rather than chunked.
+            .header("content-length", length)
             .config()
             .timeout_global(None)
             .timeout_connect(Some(Duration::from_secs(30)))
             .timeout_recv_response(Some(Duration::from_secs(300)))
             .timeout_recv_body(Some(Duration::from_secs(30)))
             .build();
-        watch_key(true, run(req.send(bytes)))
+        watch_key(true, run(req.send(ureq::SendBody::from_reader(&mut body))))
     }
 }
 

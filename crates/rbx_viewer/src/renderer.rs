@@ -408,6 +408,7 @@ impl Renderer {
                 queue,
                 &layout,
                 target,
+                highlight::Onto::Scene,
                 highlight::Source {
                     highlights: scene.highlights(),
                     parts: scene.parts(),
@@ -1038,8 +1039,19 @@ impl Renderer {
             &self.meshes,
             size,
         );
-        // After the place's own highlights: the editor's cue for what is
-        // selected has to read on top of whatever the file asks for.
+        // Place content over every scene pass: the resolve lays the
+        // depth-tested adornments over the frame through Studio's tone curve
+        // (see `renderer::adornment`).
+        self.adornments.draw_layer(
+            device,
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+        );
+        // Between the layer's two passes: the selection fades where an
+        // opaque adornment stands in front of it, and not where a handle
+        // does (see `renderer::cue`).
         self.cues.draw(
             device,
             &mut encoder,
@@ -1047,17 +1059,14 @@ impl Renderer {
             &self.frame.bind_group,
             &self.meshes,
             size,
+            self.adornments.depth_written(),
         );
-
-        // Place content over every scene pass, editor cues included: the
-        // resolve lays the depth-tested adornments over the frame through
-        // Studio's tone curve (see `renderer::adornment`).
-        self.adornments.draw_layer(
-            device,
+        self.adornments.finish_layer(
             &mut encoder,
             targets,
             &self.frame.bind_group,
             adorned,
+            self.draggers.triangles(),
         );
 
         // The scene is HDR and unclamped until here: the bloom, the grade and
@@ -1067,6 +1076,10 @@ impl Renderer {
             ..Default::default()
         });
         self.post.resolve(&mut encoder, &view);
+        // Onto the finished frame, over the depth-tested adornments and
+        // under the `AlwaysOnTop` ones, which is where Studio draws its
+        // selection and hover outlines.
+        self.cues.composite(device, &mut encoder, target);
         // After the curve, the way Studio draws an `AlwaysOnTop` one.
         self.adornments.draw_on_top(
             device,

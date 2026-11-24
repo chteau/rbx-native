@@ -173,11 +173,13 @@ fn read(dir: &Path) -> Option<Pack> {
     let slug = dir.file_name()?.to_string_lossy().into_owned();
     let files = dir.join(FILES);
     let previews = previews(&files);
+    let author = text(&manifest, "author");
     let models: Vec<KitModel> = models(&files)
         .into_keys()
         .map(|stem| KitModel {
             id: format!("{slug}/{stem}"),
             name: title(&stem),
+            author: author.clone(),
             thumb: previews
                 .get(&stem.to_ascii_lowercase())
                 .map_or(Thumb::None, |path| Thumb::File(path.clone())),
@@ -186,7 +188,7 @@ fn read(dir: &Path) -> Option<Pack> {
     (!models.is_empty()).then(|| Pack {
         id: format!("local:{slug}"),
         name: text(&manifest, "name"),
-        author: text(&manifest, "author"),
+        author,
         provider: Provider::Local,
         models,
     })
