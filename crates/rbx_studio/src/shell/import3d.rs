@@ -24,7 +24,7 @@
 use std::path::{Path, PathBuf};
 
 use gpui_kit::*;
-use rbx_cloud::ModelFile;
+use rbx_cloud::{FileContent, ModelFile};
 use rbx_dom::{Ref, Variant, Vector3Data, WeakDom};
 use rbx_import::Format;
 use rbx_reflection::ReflectionDatabase;
@@ -344,7 +344,7 @@ pub(crate) fn upload_model(
     let file = ModelFile {
         name: &upload.file_name,
         content_type: upload.content_type,
-        bytes: &upload.bytes,
+        content: FileContent::Bytes(&upload.bytes),
     };
     let asset_id = client
         .create_model_asset(
@@ -374,10 +374,14 @@ fn upload_image(path: &Path) -> Result<u64, String> {
     if std::env::var_os(MOCK_VARIABLE).is_some() {
         return Ok(0);
     }
-    let bytes = std::fs::read(path).map_err(|err| format!("{}: {err}", path.display()))?;
     let (client, user) = authorize()?;
     client
-        .create_image_asset(&stem(path), "Imported by rbx-native.", user, &bytes)
+        .create_image_asset(
+            &stem(path),
+            "Imported by rbx-native.",
+            user,
+            FileContent::Disk(path),
+        )
         .map_err(|err| describe(&err))
 }
 

@@ -10,7 +10,9 @@
 //!
 //! The duration and resolution are read from the file's own ISO base media
 //! boxes (`moov/mvhd` and each video track's `tkhd`), which `.mp4` and
-//! QuickTime `.mov` share; only the boxes are read, the media is skipped.
+//! QuickTime `.mov` share; only those boxes are read, everything else is
+//! seeked past. The upload itself streams from disk ([`crate::FileContent::Disk`]),
+//! so a 3.75 GB video never sits in memory.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -93,104 +95,34 @@ pub fn clock(duration: Duration) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
-/// Walks the top-level boxes of a `len`-byte file for `moov` and reads it.
+/// Seeks from box header to box header for `moov/mvhd` and each track's
+/// `tkhd` and `hdlr`, reading those few bytes and skipping everything else
+/// (the media, and the sample tables inside `moov`), so a file of several
+/// gigabytes costs a few hundred bytes of reads.
 pub fn probe<R: Read + Seek>(reader: &mut R, len: u64) -> Result<VideoInfo, String> {
-    let mut at = 0;
-    while at < len {
-        let Some((kind, body, end)) = header(reader, at, len)? else {
-            break;
-        };
-        if &kind == b"moov" {
-            let mut moov = vec![0; usize::try_from(end - body).map_err(|e| e.to_string())?];
-            reader
-                .seek(SeekFrom::Start(body))
-                .map_err(|e| e.to_string())?;
-            reader.read_exact(&mut moov).map_err(|e| e.to_string())?;
-            return movie(&moov, len);
-        }
-        at = end;
-    }
-    Err("this file holds no movie header; is it really a video?".into())
-}
-
-/// One box header at `at`: its type, where its body starts and where it ends.
-fn header<R: Read + Seek>(
-    reader: &mut R,
-    at: u64,
-    len: u64,
-) -> Result<Option<([u8; 4], u64, u64)>, String> {
-    if len - at < 8 {
-        return Ok(None);
-    }
-    let mut head = [0u8; 16];
-    reader
-        .seek(SeekFrom::Start(at))
-        .map_err(|e| e.to_string())?;
-    reader
-        .read_exact(&mut head[..8])
-        .map_err(|e| e.to_string())?;
-    let size = u64::from(u32::from_be_bytes([head[0], head[1], head[2], head[3]]));
-    let kind = [head[4], head[5], head[6], head[7]];
-    let (size, body) = match size {
-        0 => (len - at, at + 8),
-        1 => {
-            reader
-                .read_exact(&mut head[8..])
-                .map_err(|e| e.to_string())?;
-            (u64::from_be_bytes(head[8..16].try_into().unwrap()), at + 16)
-        }
-        size => (size, at + 8),
-    };
-    if size < body - at || at + size > len {
-        return Err("the video's boxes are cut short or damaged".into());
-    }
-    Ok(Some((kind, body, at + size)))
-}
-
-/// The boxes directly inside `data`, as (type, body).
-fn children(data: &[u8]) -> impl Iterator<Item = ([u8; 4], &[u8])> {
-    let mut at = 0usize;
-    std::iter::from_fn(move || {
-        let head = data.get(at..at + 8)?;
-        let size = u32::from_be_bytes(head[..4].try_into().ok()?) as usize;
-        let kind: [u8; 4] = head[4..8].try_into().ok()?;
-        let (size, body) = match size {
-            0 => (data.len() - at, at + 8),
-            1 => (
-                usize::try_from(u64::from_be_bytes(
-                    data.get(at + 8..at + 16)?.try_into().ok()?,
-                ))
-                .ok()?,
-                at + 16,
-            ),
-            size => (size, at + 8),
-        };
-        let end = at
-            .checked_add(size)
-            .filter(|&end| end <= data.len() && size >= body - at)?;
-        let found = (kind, &data[body..end]);
-        at = end;
-        Some(found)
-    })
-}
-
-fn movie(moov: &[u8], bytes: u64) -> Result<VideoInfo, String> {
-    let mvhd = children(moov)
-        .find(|(kind, _)| kind == b"mvhd")
-        .map(|(_, body)| body)
-        .ok_or("the video has no movie header (mvhd)")?;
-    let duration = mvhd_duration(mvhd).ok_or("the video's movie header is damaged")?;
+    let (moov, moov_end) = find(reader, 0, len, b"moov")?
+        .ok_or("this file holds no movie header; is it really a video?")?;
+    let (mvhd, mvhd_end) =
+        find(reader, moov, moov_end, b"mvhd")?.ok_or("the video has no movie header (mvhd)")?;
+    let head = read_at(reader, mvhd, (mvhd_end - mvhd).min(32))?;
+    let duration = mvhd_duration(&head).ok_or("the video's movie header is damaged")?;
     let (mut width, mut height) = (0, 0);
-    for (_, trak) in children(moov).filter(|(kind, _)| kind == b"trak") {
-        if !is_video_track(trak) {
+    for (kind, trak, trak_end) in boxes(reader, moov, moov_end)? {
+        if &kind != b"trak" || !is_video_track(reader, trak, trak_end)? {
             continue;
         }
-        let Some((w, h)) = children(trak)
-            .find(|(kind, _)| kind == b"tkhd")
-            .and_then(|(_, tkhd)| tkhd_size(tkhd))
-        else {
+        let Some((tkhd, tkhd_end)) = find(reader, trak, trak_end, b"tkhd")? else {
             continue;
         };
+        // A `tkhd` ends with the track's width and height in 16.16 fixed point.
+        if tkhd_end - tkhd < 8 {
+            continue;
+        }
+        let size = read_at(reader, tkhd_end - 8, 8)?;
+        let (w, h) = (
+            be32(&size, 0).unwrap_or(0) >> 16,
+            be32(&size, 4).unwrap_or(0) >> 16,
+        );
         if u64::from(w) * u64::from(h) > u64::from(width) * u64::from(height) {
             (width, height) = (w, h);
         }
@@ -202,8 +134,71 @@ fn movie(moov: &[u8], bytes: u64) -> Result<VideoInfo, String> {
         duration,
         width,
         height,
-        bytes,
+        bytes: len,
     })
+}
+
+/// One box header at `at`, inside a parent ending at `end`: its type, where
+/// its body starts and where it ends.
+fn header<R: Read + Seek>(
+    reader: &mut R,
+    at: u64,
+    end: u64,
+) -> Result<Option<([u8; 4], u64, u64)>, String> {
+    if end - at < 8 {
+        return Ok(None);
+    }
+    let head = read_at(reader, at, 8)?;
+    let size = u64::from(be32(&head, 0).unwrap_or(0));
+    let kind = [head[4], head[5], head[6], head[7]];
+    let (size, body) = match size {
+        0 => (end - at, at + 8),
+        1 if end - at >= 16 => (be64(&read_at(reader, at + 8, 8)?, 0).unwrap_or(0), at + 16),
+        size => (size, at + 8),
+    };
+    if size < body - at || size > end - at {
+        return Err("the video's boxes are cut short or damaged".into());
+    }
+    Ok(Some((kind, body, at + size)))
+}
+
+/// The boxes directly inside `at..end`, as (type, body start, end).
+fn boxes<R: Read + Seek>(
+    reader: &mut R,
+    mut at: u64,
+    end: u64,
+) -> Result<Vec<([u8; 4], u64, u64)>, String> {
+    let mut found = Vec::new();
+    while let Some(next) = header(reader, at, end)? {
+        at = next.2;
+        found.push(next);
+    }
+    Ok(found)
+}
+
+/// The body of the first `kind` box directly inside `at..end`.
+fn find<R: Read + Seek>(
+    reader: &mut R,
+    mut at: u64,
+    end: u64,
+    kind: &[u8; 4],
+) -> Result<Option<(u64, u64)>, String> {
+    while let Some((found, body, next)) = header(reader, at, end)? {
+        if &found == kind {
+            return Ok(Some((body, next)));
+        }
+        at = next;
+    }
+    Ok(None)
+}
+
+fn read_at<R: Read + Seek>(reader: &mut R, at: u64, len: u64) -> Result<Vec<u8>, String> {
+    let mut bytes = vec![0; len as usize];
+    reader
+        .seek(SeekFrom::Start(at))
+        .and_then(|_| reader.read_exact(&mut bytes))
+        .map_err(|e| e.to_string())?;
+    Ok(bytes)
 }
 
 fn be32(data: &[u8], at: usize) -> Option<u32> {
@@ -224,18 +219,19 @@ fn mvhd_duration(mvhd: &[u8]) -> Option<Duration> {
     (scale > 0).then(|| Duration::from_secs_f64(duration as f64 / f64::from(scale)))
 }
 
-/// A `tkhd` ends with the track's width and height in 16.16 fixed point.
-fn tkhd_size(tkhd: &[u8]) -> Option<(u32, u32)> {
-    let at = tkhd.len().checked_sub(8)?;
-    Some((be32(tkhd, at)? >> 16, be32(tkhd, at + 4)? >> 16))
-}
-
 /// `trak/mdia/hdlr` names a video track `vide`.
-fn is_video_track(trak: &[u8]) -> bool {
-    children(trak)
-        .filter(|(kind, _)| kind == b"mdia")
-        .flat_map(|(_, mdia)| children(mdia))
-        .any(|(kind, hdlr)| &kind == b"hdlr" && hdlr.get(8..12) == Some(&b"vide"[..]))
+fn is_video_track<R: Read + Seek>(reader: &mut R, at: u64, end: u64) -> Result<bool, String> {
+    for (kind, mdia, mdia_end) in boxes(reader, at, end)? {
+        if &kind != b"mdia" {
+            continue;
+        }
+        if let Some((hdlr, hdlr_end)) = find(reader, mdia, mdia_end, b"hdlr")? {
+            if hdlr_end - hdlr >= 12 && read_at(reader, hdlr + 8, 4)? == b"vide" {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// A finished video upload.

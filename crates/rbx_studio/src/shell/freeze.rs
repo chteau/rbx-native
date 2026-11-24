@@ -8,7 +8,7 @@ use std::time::Duration;
 use glam::Vec3;
 use gpui_kit::*;
 use rbx_assets::AssetRef;
-use rbx_cloud::{ApiKey, Client, CloudError, ModelFile};
+use rbx_cloud::{ApiKey, Client, CloudError, FileContent, ModelFile};
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -165,7 +165,7 @@ fn upload(plan: &Plan, gltf: Vec<u8>) -> Result<(u64, Vec3), String> {
     let file = ModelFile {
         name: "frozen.gltf",
         content_type: "model/gltf+json",
-        bytes: &gltf,
+        content: FileContent::Bytes(&gltf),
     };
     let model = client
         .create_model_asset(
