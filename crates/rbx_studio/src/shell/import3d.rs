@@ -137,11 +137,12 @@ impl Shell {
             .set_feedback(Feedback::Output(format!("Importing {name}\u{2026}")));
         cx.notify();
         cx.spawn(async move |this, cx| {
+            let file = path.clone();
             let result = cx
-                .background_spawn(async move { upload_model(&path, &stem(&path), avatar) })
+                .background_spawn(async move { upload_model(&file, &stem(&file), avatar) })
                 .await;
             let _ = this.update(cx, |shell, cx| {
-                shell.finish_model(name, mesh, avatar, result, cx)
+                shell.finish_model(&path, name, mesh, avatar, result, cx)
             });
         })
         .detach();
@@ -149,6 +150,7 @@ impl Shell {
 
     fn finish_model(
         &mut self,
+        path: &Path,
         name: String,
         mesh: bool,
         avatar: Option<super::ugc::ItemKind>,
@@ -168,6 +170,9 @@ impl Shell {
         } else {
             place_model(&mut self.dom, &imported.dom, &name, workspace)
         };
+        if let Some(root) = root.filter(|_| !mesh && super::reimport::enabled()) {
+            self.stamp_import(root, path);
+        }
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
         if let Some(root) = root {
@@ -404,7 +409,12 @@ fn place_meshes(dom: &mut WeakDom, imported: &WeakDom, name: &str, parent: Ref) 
 
 /// The imported model under `parent`, named `name`: Roblox's `Model` as it
 /// came, or a new one holding whatever else the import's top level held.
-fn place_model(dom: &mut WeakDom, imported: &WeakDom, name: &str, parent: Ref) -> Option<Ref> {
+pub(super) fn place_model(
+    dom: &mut WeakDom,
+    imported: &WeakDom,
+    name: &str,
+    parent: Ref,
+) -> Option<Ref> {
     let roots = imported.root_refs();
     let single_model = match roots {
         [only] => imported

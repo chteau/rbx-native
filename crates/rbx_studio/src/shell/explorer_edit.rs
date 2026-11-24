@@ -16,7 +16,7 @@
 //! not inside the element, so opening either closes the other and Escape
 //! closes both.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use gpui_kit::component::h_flex;
@@ -116,6 +116,7 @@ impl Shell {
         RowSlots {
             layer: Rc::new(layer),
             marks: Rc::new(self.presence_marks()),
+            watched: Rc::new(self.reimports.watched()),
             hovered: self.explorer_edit.hovered,
             renaming: self
                 .explorer_edit
@@ -250,6 +251,8 @@ pub(super) struct RowSlots {
     /// Colour, dimmed, and whether the instance is a direct member.
     layer: Rc<HashMap<Ref, (Rgb, bool, bool)>>,
     marks: Rc<HashMap<Ref, Vec<PresenceMark>>>,
+    /// What Auto-Reimport watches, marked as Studio marks it.
+    watched: Rc<HashSet<Ref>>,
     hovered: Option<Ref>,
     renaming: Option<(Ref, Entity<InputState>)>,
 }
@@ -278,6 +281,7 @@ impl RowSlots {
             trailing,
             presence,
             layer,
+            watched: self.watched.contains(&reference),
         }
     }
 }
@@ -323,4 +327,6 @@ pub(super) struct RowWidgets {
     /// Layer colour, whether the row dims, and whether the instance is
     /// itself on the layer (rather than inheriting it from an ancestor).
     pub(super) layer: Option<(Rgb, bool, bool)>,
+    /// Auto-Reimport is on for it.
+    pub(super) watched: bool,
 }

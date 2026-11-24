@@ -79,6 +79,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",
     },
     Feature {
+        id: crate::shell::AUTO_REIMPORT_BETA_ID,
+        name: "Auto-Reimport",
+        description: "Reimport for imported 3D models, like Studio's beta of the same name: the Explorer's menu can reimport a model from its file, pick the file, and turn on Auto-Reimport, which reimports whenever the file is saved, for this session. Each reimport uploads the file again, so the meshes get new asset ids.",
+    },
+    Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
         name: "Module require graph",
         description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",

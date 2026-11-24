@@ -2,6 +2,7 @@
 
 ## 2026-11-24
 
+- **Reimport and Auto-Reimport (beta).** Turn on "Auto-Reimport" in Beta Features and a model you bring in with Import 3D remembers its file, like Studio's beta. Right-click it in the Explorer to Reimport, pick another file, or turn on Auto-Reimport, which reimports it every time you save the file in Blender or whatever you use, for this session. Matching meshes get the new geometry and keep your colours, collision settings and anything you put under them, new meshes are added, and the model stays where you moved it. Each reimport uploads the file again, same as in Studio, so the meshes get new asset ids. (@chteau)
 - **Union, Negate, Intersect and Separate.** The Model tab has Studio's solid modeling tools now, with the same shortcuts (Ctrl+Shift+G / N / I / U, Ungroup moved to Ctrl+U like Studio). What we save is what current Studio saves, collision data included, so Studio opens our unions, can Separate them, and we Separate theirs.
 - **AI assistants can cut holes now.** `SubtractAsync`, `UnionAsync` and `IntersectAsync` work in edit scripts and through MCP, same as in Studio: you get a new union back and your parts stay put. The modeling guide teaches doorways, windows and arches with them, and when framing with parts is still the cheaper call.
 
